@@ -31,7 +31,8 @@ Named claims:
   F11 on a department on the engine runtime each function's pane agrees with the record: the registry's older cards
       (the department card, the framework, Proposals, Queue, the graph, Recent) are not drawn under the page, so the
       owner is named once and no pane says there are no engines or nothing in the queue while the record holds them;
-      and Identity's pane shows what it holds from the record, once: the goal, the done-when and each rule with its tag
+      and Identity's pane shows what it holds from the record, once: the goal, the done-when and each rule with its tag;
+      a record from before Root drafted done-when items keeps its done line, and the pane says that line, once
   F12 Coordination's own state from the record (PRD M4.5): one timetable row per engine of the line, each with its slot
       and where it stands; a waiting engine names what it waits for ('Pages v2 is not filed yet'); who makes and who
       reads each thing, on a website and an organic line; a tie Coordination's AI broke ('Coordination chose Write
@@ -1148,6 +1149,14 @@ def test_m17_a_runtime_departments_panes_agree_with_its_record(mods, born, tmp_p
     assert d["rules"] and "The department Goal" not in idn, "one set of cards, not a second under the page"
     for r in d["rules"]:
         assert idn.count(r["line"]) == 1 and "%s %s" % ({"refuse": "never"}.get(r["tag"], r["tag"]), r["line"]) in idn, (r, "each rule once, its tag beside it")
+    # m1fix, gap 5 residual: a record from before Root drafted done-when items (PRD M3.2) keeps its done line, and
+    # Identity's pane says that line, once, never 'No done-when items yet'; the goal and each rule stay once
+    d.pop("done_items", None)
+    W.save_dept(ref, d)
+    idn = _panes(tmp_path, _reads(W, ref))["identity"]["rest"]
+    assert d["done"] and idn.count(d["done"]) == 1 and "No done-when items yet" not in idn, ("the done line, once", idn.count(d["done"]))
+    assert "Drafted by Root at birth" not in idn and d["goal"] in idn, "the line as the record has it, under the goal"
+    assert all(idn.count(r["line"]) == 1 for r in d["rules"]), "each rule still once"
 
 
 def test_m17_a_record_written_before_reads_in_the_owners_words_on_every_chat(mods):

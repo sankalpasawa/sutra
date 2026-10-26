@@ -1617,6 +1617,17 @@ test("M1.7: Identity's pane shows the goal, done-when and each rule with its tag
   for (const t of ["Every page checked and live", "Plan, write and check inside the record", "Never publish a build whose check failed"])
     assert.strictEqual((own.match(new RegExp(t, "g")) || []).length, 1, t + ", once");
   assert.ok(own.indexOf('<span class="wbchip ask">never</span><span>Never publish a build whose check failed</span><span class="dpchk">the template</span>') >= 0, "S5's rule row");
+  /* (m1fix, gap 5 residual) a record from before Root drafted done-when items keeps its done line: S5 draws that line,
+     once, as the record has it, never 'No done-when items yet' and never 'Drafted by Root at birth' */
+  const before = Object.assign(JSON.parse(JSON.stringify(j2)), { done: "Every page checked and live", done_items: [] });
+  const old5 = await fnCard(await opened({ map, fnpage: fn => Object.assign(fnPageOf(fn), fn === "identity" ? { j2: JSON.parse(JSON.stringify(before)) } : {}) }), "identity");
+  assert.ok(/<h3>Done when<\/h3><div class="dpbig">Every page checked and live<\/div>/.test(old5), "the done line, on S5's Done when card");
+  assert.strictEqual((old5.match(/Every page checked and live/g) || []).length, 1, "the done line, once");
+  assert.ok(old5.indexOf("No done-when items yet") < 0 && old5.indexOf("Drafted by Root at birth") < 0 && old5.indexOf("<h3>The department</h3>") < 0,
+            "never 'no items', never 'drafted by Root', and no second card");
+  assert.ok(/No done-when items yet/.test(c.wbIdentityHtml("r3", Object.assign({}, before, { done: "" }))), "a record with neither says so");
+  assert.notStrictEqual(JSON.stringify(c.wbIdSig(before)), JSON.stringify(c.wbIdSig(Object.assign({}, before, { done: "Every page checked, live and read" }))),
+                        "a new done line paints");
   /* while the page is read, nothing is drawn twice; a department off the runtime keeps the registry's card (20-dept.js),
      so this one draws none */
   const wait = await opened({ map });
