@@ -992,6 +992,29 @@ def test_m4_1_an_engine_the_owner_stamped_joins_the_line_by_coordination_and_its
     assert len(grown) == 1 and grown[0]["actor"] == "Coordination"
 
 
+def test_m4_1_a_born_word_on_the_board_that_names_no_engine_changes_nothing(j2):
+    """The fixed trigger 'an engine is born', posted on the board with nothing in it (Identity may inform Coordination
+    and Priority), emptying the line, leaving every engine out or touching a limit must fail. A born post that names
+    engines is read from its payload, and only the department's own engines count (born_item)."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    path = W.ddir(ref) / "coordination.json"
+    before, envs = W._read(path, None), dict(W.dept(ref)["envelopes"])
+    assert before["line"] == LINE
+    R.post(ref, "Identity", ["Coordination"], "inform", {"word": "born"})
+    R.post(ref, "Identity", ["Priority"], "inform", {"word": "born"})
+    W.run_until_idle(ref, limit=50)
+    heard = [r for r in R.step_rows(ref) if r["step"] in ("coord.table", "priority.grant") and r.get("mode") != "gate"]
+    assert sorted(r["engine"] for r in heard) == ["Coordination", "Priority"], "both handlers ran from the board"
+    assert W._read(path, None) == before, "the table is not written"
+    assert W.dept(ref)["envelopes"] == envs and R.coordination(ref)["line"] == LINE
+    # a born post that names engines is read from its payload; a name that is not the department's is not taken
+    R.post(ref, "Identity", ["Coordination"], "inform", {"word": "born", "engines": ["Plan", "Write", "Check", "Nobody"], "version": 1})
+    W.run_until_idle(ref, limit=50)
+    t = W._read(path, None)
+    assert (t["by"], t["line"], [r["engine"] for r in t["left_out"]]) == ("Coordination", ["Plan", "Write", "Check"], ["Publish"])
+
+
 def _sm3(W, R, ref, j5=()):
     """SM-3: runs of an engine that is on no registered line and was not stamped through J5, the five functions aside."""
     d = W.dept(ref)

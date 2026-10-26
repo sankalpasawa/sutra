@@ -3976,10 +3976,41 @@ def set_line(ref, engines, version=None, full=True):
     return _put_table(ref, t, "the plan Root registered")
 
 
+#: what the word born carries to the two handlers that keep it (PRD M4.1; the layer schema binds it, and this is the one
+#: place its shape is named): a plan Root registered, {engines, version, full}, or an engine the owner stamped, {grow,
+#: before}. A born word that names no engine changes nothing.
+BORN_FIELDS = ("engines", "version", "full", "grow", "before")
+
+
+def born_item(ctx, item=None):
+    """What an engine born says to the handler that keeps it, in BORN_FIELDS: the item it was run in place with (Root's
+    registration, the owner's stamp), else the payload of the post that woke it on the board. From the board it names
+    only engines on the department's record. Empty when it names no engine, so a stray born word writes nothing."""
+    post_ = (ctx.get("post") or {}) if item is None else {}
+    src = item if item is not None else (post_.get("payload") or {})
+    if not isinstance(src, dict):
+        return {}
+    out = {k: src[k] for k in BORN_FIELDS if k in src and src[k] is not None}
+    names = [str(n) for n in out.get("engines") or [] if n] if isinstance(out.get("engines"), list) else []
+    grow = str(out.get("grow") or "").strip()
+    if item is None:                                   # a post on the board: the department's own engines, never another's
+        mine = set((ctx.get("dept") or W.dept(ctx["ref"]) or {}).get("engines") or [])
+        names, grow = [n for n in names if n in mine], (grow if grow in mine else "")
+    out.update({"engines": names})
+    if grow:
+        out["grow"] = grow
+    else:
+        out.pop("grow", None)
+    return out if names or grow else {}
+
+
 def coord_table(ctx, step, item):
     """Coordination's handler for an engine born: a registered plan sets the line (`item` {engines, version}); an engine
-    the owner stamped grows it (`item` {grow, before}). Its table is written by Coordination and by nobody else."""
-    item, J = item or {}, _j2()
+    the owner stamped grows it (`item` {grow, before}). Run in place or from the board (born_item); a born word that
+    names no engine writes nothing. Its table is written by Coordination and by nobody else."""
+    item, J = born_item(ctx, item), _j2()
+    if not item:
+        return {"said": "nothing to do: the word born names no engine"}
     if item.get("grow"):
         t = grow_line(ctx["ref"], item["grow"], item.get("before"))
         said = "added %s to the line: %s" % (item["grow"], " -> ".join(t["line"]))
@@ -3994,9 +4025,10 @@ def coord_table(ctx, step, item):
 def priority_grant(ctx, step, item):
     """Priority's handler for an engine born: each new engine is given its limit, from Priority's template (a
     work engine work_calls times the calls, as at birth); one that already holds a limit (the one it was born with, or
-    the owner's own) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}."""
-    ref, item = ctx["ref"], item or {}
-    names = [str(n) for n in item.get("engines") or [] if n]
+    the owner's own) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}, run in place or from the
+    board (born_item); a born word that names no engine gives nothing."""
+    ref, item = ctx["ref"], born_item(ctx, item)
+    names = list(item.get("engines") or [])
     if not names:
         return {"said": "no new engine to give a limit"}
     t = priority_template()
