@@ -414,3 +414,500 @@ def test_site_rows_of_the_saved_file():
         site.status_of("Partly built: x") == "partly" and site.status_of("To build.") == "to_build" and site.status_of("hm") == "none"
     # a file that is not the saved one is read from its path
     assert site.load(site.SAVED)["journeys"][0]["id"] == "j1"
+
+
+# ---- Q3: the twelve cases ---------------------------------------------------------------------------------------------
+from journeys import contract as C                                             # noqa: E402
+
+STATIC_CASES = ("JC-1", "JC-2", "JC-3", "JC-4", "JC-5", "JC-6", "JC-7", "JC-9", "JC-10", "JC-11", "JC-12")
+#: what the fixture journey's edge says to the owner (outcome.golden): the code says it, and the test the edge lists asserts it
+#: here, in this file: "the department already has this rule"
+GOLDEN = "the department already has this rule"
+
+
+def proven(**change):
+    """The fixture journey with the one thing it lacks to pass every case: a test for its edge (the test that asserts the
+    edge, which is the one below)."""
+    j = good(**change)
+    j["edges"][0]["tests"] = ["test_layer_journeys.py::test_the_good_journey_passes_every_case"]
+    return j
+
+
+def broken(cid, journey_list, *words, also=()):
+    """The case `cid` finds a fault in these journeys, one sentence names every word given, and no other case finds any
+    (but those in `also`): a failing example is a single mutation, and a single mutation breaks one rule."""
+    got = C.cases(journey_list if isinstance(journey_list, list) else [journey_list])
+    assert set(got) == set(STATIC_CASES), "the cases: JC-1 to JC-7 and JC-9 to JC-12 (JC-8 needs a run)"
+    assert any(all(w in f for w in words) for f in got[cid]), (cid, words, got[cid])
+    others = {k: v for k, v in got.items() if k != cid and k not in also and v}
+    assert not others, others
+    return got[cid]
+
+
+def test_the_good_journey_passes_every_case():
+    assert GOLDEN in HERE.joinpath("test_layer_journeys.py").read_text(encoding="utf-8").lower()
+    got = C.cases([proven()])
+    assert set(got) == set(STATIC_CASES)
+    assert got == {k: [] for k in STATIC_CASES}, got
+    # the journey as the fixture is has one fault, and it is the one the fixture says it proves nothing about
+    assert C.cases([good()])["JC-7"] == ["J9 edge J9.1 has code and lists no test: it is unproven"]
+    # and the earlier rows a journey keeps are not rows: the same ids in `was` are not a clash
+    old = proven(**{"was": good("good-with-was")["was"]})
+    assert C.cases([old]) == {k: [] for k in STATIC_CASES}
+    # a list, a dict of them, and one journey are the same journeys
+    assert C.cases({"J9": proven()}) == C.cases(proven()) == C.cases([proven()])
+
+
+def test_a_case_never_raises_on_what_it_is_given(folder):
+    whole = proven()
+    rubbish = [{}, {"id": "J9"}, {"id": "J8", "steps": [None, 3, {}, {"n": 4}], "edges": [{"id": "J8.1"}, "x"], "was": "x", "sub": [1],
+                                  "serves": [5], "children": [7], "lanes": None, "build_rows": ["x"], "scenarios": [None]},
+               {"id": "J7", "steps": [{"n": "1", "binds": [{"kind": "act"}, {"kind": "step"}, {"kind": "mystery"}, {}], "code": [3], "tests": "x"}],
+                "edges": [{"id": "J7.1", "at": None, "outcome": "ask", "tests": [None], "site": 4}], "was": {"steps": [{}], "edges": [{}]}},
+               whole]
+    got = C.cases(rubbish)
+    assert set(got) == set(STATIC_CASES) and all(isinstance(v, list) and all(isinstance(f, str) for f in v) for v in got.values())
+    assert not any("could not be checked" in f for v in got.values() for f in v), "a journey that is not whole is a fault, not a crash"
+    assert got["JC-1"], "and the shape is where it is told"
+    # nothing at all, and the folder: an empty folder passes, a folder with a bad file says so in JC-1
+    assert C.cases([]) == {k: [] for k in STATIC_CASES} == C.cases()
+    (folder / "J8.json").write_text("{ not json", encoding="utf-8")
+    assert C.cases()["JC-1"] == ["the journey file J8.json is refused: it is not JSON (Expecting property name enclosed in double quotes: "
+                                 "line 1 column 3 (char 2))"]
+    assert all(v == [] for k, v in C.cases().items() if k != "JC-1")
+
+
+def test_jc1_a_step_with_no_lane_and_an_unknown_field_fail_the_shape():
+    j = proven()
+    del j["steps"][0]["lane"]
+    broken("JC-1", j, "J9 step 1", "does not fit the journey definition", "lane: is missing")
+    j = proven()
+    j["edges"][0]["colour"] = "red"
+    broken("JC-1", j, "J9 edge J9.1", "colour: is not a field here")
+    j = proven()
+    j["state"] = "proven"
+    broken("JC-1", j, "J9 does not fit the journey definition", "state: is not a field here")
+    j = proven()
+    j["steps"][1]["lane"] = "audit"
+    broken("JC-1", j, "J9 step 2", "lane audit", "lists no such lane")
+
+
+def test_jc2_ids_are_unique_and_begin_with_their_journeys():
+    j = proven()
+    j["edges"].append(copy.deepcopy(j["edges"][0]))
+    broken("JC-2", j, "J9 has the edge id J9.1 twice")
+    j = proven()
+    j["steps"].append(copy.deepcopy(j["steps"][0]))
+    broken("JC-2", j, "J9 has the step number 1 twice")
+    j = proven()
+    j["edges"].append(dict(copy.deepcopy(j["edges"][0]), id="J2.9"))
+    broken("JC-2", j, "J9 edge J2.9 does not begin with J9.")
+    j = proven()
+    j["sub"] = [{"id": "J2.a", "title": "A", "step": "1"}, {"id": "J9.b", "title": "B", "step": "1"}, {"id": "J9.b", "title": "C", "step": "2"}]
+    got = broken("JC-2", j, "J9 sub-journey J2.a does not begin with J9.")
+    assert any("J9 has the sub-journey J9.b twice" in f for f in got)
+    # two journeys with one id; and a backlog entry defined twice
+    broken("JC-2", [proven(), proven()], "J9 is the id of more than one journey")
+    a, b = proven(), proven(id="J8")
+    a["backlog"] = b["backlog"] = [{"id": "BL-1", "row": "edge:J9.1", "smallest": "Say it.", "package": "later"}]
+    broken("JC-2", [a, b], "the backlog entry BL-1 is defined more than once (J9, J8)")
+    # build rows and directions carry ids too
+    j = proven()
+    j["build_rows"] = [{"id": "B1", "change": "x"}, {"id": "B1", "change": "y"}]
+    broken("JC-2", j, "J9 has the build row B1 twice")
+    # `was` is a namespace of its own: it may reuse the ids of the rows above, and repeats nothing of its own
+    old = proven(**{"was": good("good-with-was")["was"]})
+    assert C.case_jc2([old]) == []
+    old["was"]["edges"].append(copy.deepcopy(old["was"]["edges"][0]))
+    assert C.case_jc2([old]) == ["J9 has the earlier edge id J9.1 twice"]
+    old["was"]["edges"][1]["id"] = "J2.1"
+    assert C.case_jc2([old]) == ["J9 earlier edge J2.1 does not begin with J9."]
+
+
+def test_jc3_places_resolve():
+    broken("JC-3", proven(serves=["J99:1"]), "J9 serves step 1 of J99", "there is no journey J99")
+    parent = proven(id="J8")
+    broken("JC-3", [parent, proven(serves=["J8:9"])], "J9 serves step 9 of J8", "J8 has no step 9")
+    assert C.case_jc3([parent, proven(serves=["J8:1"])]) == []
+    broken("JC-3", proven(inside="J13"), "J9 is inside J13", "there is no journey J13")
+    broken("JC-3", proven(inside="J9"), "J9 is inside itself")
+    a, b = proven(id="J10", inside="J11"), proven(id="J11", inside="J10")
+    got = C.case_jc3([a, b])
+    assert any("J10 is inside itself" in f for f in got) and any("J11 is inside itself" in f for f in got) and len(got) == 2
+    c = proven(id="J12", inside="J10")                     # inside a loop, but not part of it: no sentence of its own
+    assert len(C.case_jc3([a, b, c])) == 2
+    broken("JC-3", proven(children=["J8"]), "J9 lists J8 as a child", "there is no journey J8")
+    kid = proven(id="J8")
+    broken("JC-3", [proven(children=["J8"]), kid], "J9 lists J8 as a child", "J8 is not inside J9")
+    assert C.case_jc3([proven(children=["J8"]), dict(kid, inside="J9")]) == []
+    j = proven()
+    j["steps"][1]["child"] = "J5"
+    broken("JC-3", j, "J9 step 2 opens the journey J5")
+    j = proven()
+    j["sub"] = [{"id": "J9.a", "title": "A", "step": "7"}]
+    broken("JC-3", j, "J9 sub-journey J9.a hangs under step 7")
+    j = proven()
+    j["edges"][0]["at"] = "9"
+    broken("JC-3", j, "J9 edge J9.1 hangs under step 9", "J9 has no such step", also=("JC-9",) if False else ())
+    j["edges"][0]["at"] = "any"
+    assert C.case_jc3([j]) == [], "an edge of a function journey may hang under any step"
+    old = proven(**{"was": good("good-with-was")["was"]})
+    old["was"]["edges"][0]["at"] = "7"
+    assert C.case_jc3([old]) == ["J9 earlier edge J9.1 hangs under step 7, and the earlier version has no such step"]
+    # a function journey is bound to a function, a user journey to none
+    broken("JC-3", proven(kind="function"), "J9 is a function journey and is bound to no function", also=("JC-12",))
+    broken("JC-3", proven(bound_to="identity"), "J9 is a user journey and is bound to identity")
+
+
+def test_jc4_binds_are_held_to_what_exists(monkeypatch):
+    bind = lambda **b: b                                                                       # noqa: E731
+    cases = [
+        (bind(kind="act", src="Audit", act="request", word="x", dst="Owner"), "binds the act (Audit, request, x, Owner)", "no sender sends it"),
+        (bind(kind="act", src="Owner", act="request", word="front", dst="Audit"), "binds the act (Owner, request, front, Audit)", "no sender sends it"),
+        (bind(kind="act", src="Identity", act="inform", word="request"), "binds act and leaves out its dst", ""),
+        (bind(kind="step", id="no.such_step"), "binds the step no.such_step", "no engine has a step of that id"),
+        (bind(kind="event", action="x.y"), "binds the event x.y", "the ledger has no such action"),
+        (bind(kind="ui", symbol="wbNoSuchThing"), "binds the screen symbol wbNoSuchThing", "no script defines it"),
+        (bind(kind="ui", symbol="setup_say"), "binds the screen symbol setup_say", "no script defines it"),       # a Python name is no script's
+        (bind(kind="api", method="POST", path="/api/native/nope"), "binds the route POST /api/native/nope", "the app has no such route"),
+        (bind(kind="api", method="GET", path="/api/native/found"), "binds the route GET /api/native/found", "the app has no such route"),
+        (bind(kind="api", path="/api/native/found"), "binds api and leaves out its method", ""),
+    ]
+    monkeypatch.setitem(C._ROUTES, "routes", {("POST", "/api/native/found"), ("GET", "/api/native/{ref}/chat")})
+    for b, *words in cases:
+        j = proven()
+        j["steps"][0]["binds"].append(b)
+        broken("JC-4", j, "J9 step 1", *[w for w in words if w])
+        j = proven()
+        j["edges"][0]["binds"].append(b)
+        broken("JC-4", j, "J9 edge J9.1", *[w for w in words if w])
+    good_binds = [bind(kind="act", src="Owner", act="request", word="front", dst="Identity"), bind(kind="act", src="Identity", act="inform", word="question", dst="Owner"),
+                  bind(kind="act", src="Priority", act="accept-proposal", word="anything at all", dst="Adaptation"),     # a row that takes any word
+                  bind(kind="step", id="setup.converse"), bind(kind="step", id="identity.rule"), bind(kind="event", action="ask.created"),
+                  bind(kind="ui", symbol="wbFoundGo"), bind(kind="api", method="POST", path="/api/native/found"),
+                  bind(kind="api", method="GET", path="/api/native/{ref}/chat"), bind(kind="person", what="You type the name")]
+    j = proven()
+    j["steps"][0]["binds"] = good_binds
+    assert C.case_jc4([j]) == []
+    # a step of a journey that is not declared binds something; an edge need not, a declared journey need not, and a step that
+    # is the same as another's or that the owner dropped need not
+    j = proven()
+    j["steps"][1]["binds"] = []
+    broken("JC-4", j, "J9 step 2 binds nothing")
+    j["edges"][0]["binds"] = []
+    assert len(C.case_jc4([j])) == 1
+    k = copy.deepcopy(j)
+    k["steps"][1].update(same_as="J8/step/1")
+    assert C.case_jc4([k]) == []
+    k["steps"][1].pop("same_as")
+    k["steps"][1]["disposition"] = "drop"
+    assert C.case_jc4([k]) == []
+    j["declared"] = True
+    assert C.case_jc4([j]) == []
+    # the earlier rows of a journey bind nothing, and a bind on one is still held to what exists
+    old = proven(**{"was": good("good-with-was")["was"]})
+    assert C.case_jc4([old]) == []
+    old["was"]["steps"][0]["binds"] = [bind(kind="event", action="x.y")]
+    assert C.case_jc4([old]) == ["J9 earlier step 0a binds the event x.y, and the ledger has no such action"]
+    # an app that does not import skips the routes with a printed line, and nothing else
+    monkeypatch.setitem(C._ROUTES, "routes", None)
+    j = proven()
+    j["steps"][0]["binds"].append(bind(kind="api", method="POST", path="/api/native/nope"))
+    assert C.case_jc4([j]) == []
+
+
+def test_jc4_api_binds_are_held_to_the_route_table_of_the_real_app(monkeypatch):
+    monkeypatch.delitem(C._ROUTES, "routes", raising=False)
+    j = proven()
+    j["steps"][0]["binds"].append({"kind": "api", "method": "POST", "path": "/api/native/found"})
+    j["steps"][0]["binds"].append({"kind": "api", "method": "GET", "path": "/api/native/{ref}/chat"})
+    assert C.case_jc4([j]) == [], "the routes the J1 and J3 journeys bind are the app's"
+    assert ("POST", "/api/native/found") in C._ROUTES["routes"] and len(C._ROUTES["routes"]) > 200
+    j["steps"][1]["binds"].append({"kind": "api", "method": "POST", "path": "/api/native/found/again"})
+    assert C.case_jc4([j]) == ["J9 step 2 binds the route POST /api/native/found/again, and the app has no such route"]
+
+
+def test_jc5_a_name_no_code_defines_fails_its_row():
+    j = proven()
+    j["steps"][0]["code"] = ["identity_file", "setup_sayy"]
+    broken("JC-5", j, "J9 step 1", "names setup_sayy in its code", "no code defines it")
+    j = proven()
+    j["edges"][0]["code"] = ["website_dept.nope"]
+    broken("JC-5", j, "J9 edge J9.1", "website_dept.nope")
+    j = proven()
+    j["steps"][0]["code"] = ["setup_say", "website_dept.create", "wbFoundGo", "engine_runtime.setup_say"]
+    assert C.case_jc5([j]) == []
+
+
+def test_jc6_a_test_no_suite_has_fails_its_row():
+    j = proven()
+    j["steps"][0]["tests"].append("test_j1.py::test_no_such")
+    broken("JC-6", j, "J9 step 1", "lists the test test_j1.py::test_no_such", "there is no such test")
+    j = proven()
+    j["edges"][0]["tests"] = ["js:test_website.js#W999"]
+    broken("JC-6", j, "J9 edge J9.1", "js:test_website.js#W999", also=("JC-10",))
+    j = proven()
+    j["build_rows"] = [{"id": "B1", "change": "x", "tests": [REAL_TEST, "test_nothing.py::test_x"]}]
+    broken("JC-6", j, "J9 build row B1", "test_nothing.py::test_x")
+    j = proven()
+    j["scenarios"] = [{"id": "J9.walk", "lane": "the life", "test": "test_layer_journey_j9.py::test_walk"}]
+    broken("JC-6", j, "J9 scenario J9.walk", "test_layer_journey_j9.py::test_walk")
+    j = proven()
+    j["steps"][0]["tests"] = ["test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp",
+                              "js:test_website.js#W45", REAL_TEST]
+    assert C.case_jc6([j]) == []
+
+
+def test_jc7_a_row_is_proven_or_wanted():
+    # code and no tests: unproven
+    j = proven()
+    j["edges"][0]["tests"] = []
+    broken("JC-7", j, "J9 edge J9.1", "has code and lists no test", "unproven", also=("JC-10",))   # and nothing asserts what it says
+    # an edge that lists tests says what the code does, in at least 20 characters
+    for says in ("", "Says it.", "  "):
+        j = proven()
+        j["edges"][0]["code_does"] = says
+        broken("JC-7", j, "J9 edge J9.1", "does not say what the code does")
+    # a step needs no sentence
+    j = proven()
+    assert not j["steps"][0].get("code_does")
+    assert C.case_jc7([j]) == []
+    # wanted: no code, a backlog entry some journey defines, no test
+    def wanted(**row):
+        w = proven()
+        w["edges"][0].update(code=[], binds=[], tests=[], backlog="BL-1", outcome={"kind": "none", "voice": "none", "golden": None}, **row)
+        w["backlog"] = [{"id": "BL-1", "row": "edge:J9.1", "smallest": "Say it back.", "package": "later"}]
+        return w
+    assert C.case_jc7([wanted()]) == []
+    w = wanted()
+    w["edges"][0]["tests"] = [REAL_TEST]
+    broken("JC-7", w, "J9 edge J9.1", "has no code and lists a test", "a wanted row lists none")
+    w = wanted()
+    w["edges"][0]["backlog"] = None
+    broken("JC-7", w, "J9 edge J9.1", "has no code and no backlog entry")
+    w = wanted()
+    w["backlog"] = []
+    broken("JC-7", w, "J9 edge J9.1", "names the backlog entry BL-1", "no journey defines it")
+    assert C.case_jc7([w, dict(proven(id="J8"), backlog=wanted()["backlog"])]) == [], "some other journey may define it"
+    # built, with a part named as not built: partly, and still code and tests
+    p = proven()
+    p["edges"][0]["backlog"] = "BL-1"
+    p["backlog"] = wanted()["backlog"]
+    assert C.case_jc7([p]) == []
+    # a row that is the same as another, or that the owner dropped, is not held to this; nor is a declared journey
+    s = proven()
+    s["edges"][0].update(tests=[], same_as="J1/edge/J1.5")
+    assert C.case_jc7([s]) == []
+    d = proven()
+    d["edges"][0].update(tests=[], disposition="drop")
+    assert C.case_jc7([d]) == []
+    d = proven(declared=True)
+    d["edges"][0]["tests"] = []
+    assert C.case_jc7([d]) == []
+
+
+def _from_site(jid="J1"):
+    """A journey that carries everything the saved site file lists for `jid`, in the site's words: faithful by construction."""
+    from journeys import site
+    data = site.load()
+    live = {x["id"].upper(): x for x in data["journeys"]}[jid]
+    listed, blocks = site.rows(data)[jid], site.blocks(data).get(jid, {})
+    j = {"schema_version": 1, "id": jid, "title": "From the site", "kind": "person", "inside": None, "bound_to": None, "serves": [],
+         "declared": True, "goal": "x", "lanes": [], "steps": [site.step_row(s) for s in live["steps"]],
+         "edges": [site.edge_row(e) for e in live["edges"]], "site_ids": list(listed["ids"]),
+         "build_rows": [{"id": "B%d" % (i + 1), "change": "x"} for i, _ in enumerate(live.get("build") or [])],
+         "directions": [{"id": x["id"], "direction": "x"} for x in data["directed"]] if jid == "J1" else [],
+         "sub": [{"id": s[0], "title": "x", "step": "1"} for s in live.get("sub") or []],
+         "quotes": [{"text": "x"} for _ in live.get("said") or []]}
+    for key in ("tag", "today", "was"):
+        if key in blocks:
+            j[key] = copy.deepcopy(blocks[key])
+    return j
+
+
+def test_jc9_a_journey_made_of_the_sites_rows_is_faithful():
+    for jid in ("J1", "J2", "J3", "J4", "J5", "J6", "J7"):
+        assert C.case_jc9([_from_site(jid)]) == [], jid
+    assert C.case_jc9([proven()]) == [], "a journey the site does not list is not held to it"
+    assert C.case_jc9([]) == []
+    j = _from_site("J1")
+    assert len(j["steps"]) == 7 and len(j["edges"]) == 9 and len(j["site_ids"]) == 30
+    # the token {helper} counts as the site's word Sutra
+    for row in j["steps"] + j["edges"]:
+        for key in ("text", "trigger"):
+            if key in row:
+                row[key] = row[key].replace("Sutra", "{helper}")
+    j["steps"][4]["text"] = j["steps"][4]["text"].replace("Sutra", "{helper}")
+    assert any("{helper}" in r.get("text", "") + r.get("trigger", "") for r in j["steps"] + j["edges"])
+    assert C.case_jc9([j]) == []
+
+
+def test_jc9_a_row_deleted_from_both_the_steps_and_the_site_ids_is_still_caught():
+    j = _from_site("J1")
+    j["edges"] = [e for e in j["edges"] if e["id"] != "J1.3"]
+    j["site_ids"].remove("edge:J1.3")
+    assert [f for f in C.case_jc9([j])] == ["J1 lacks the row edge:J1.3 that the site lists: a row leaves only by the owner's mark drop"], \
+        "the journey data alone could not catch this: it holds neither the row nor the id; the saved copy of the site does"
+    j = _from_site("J1")
+    j["steps"] = [s for s in j["steps"] if s["n"] != "4"]
+    got = C.case_jc9([j])
+    assert any("J1 lacks the row step:4" in f for f in got) and not any("step:5" in f for f in got)
+    for rid in ("build:B2", "direction:D-c", "today"):
+        j = _from_site("J1")
+        if rid == "build:B2":
+            j["build_rows"] = [b for b in j["build_rows"] if b["id"] != "B2"]
+        elif rid == "direction:D-c":
+            j["directions"] = [d for d in j["directions"] if d["id"] != "D-c"]
+        else:
+            del j["today"]
+        j["site_ids"].remove(rid)
+        assert any(("J1 lacks the row " + rid) in f for f in C.case_jc9([j])), rid
+    j = _from_site("J2")
+    j["sub"] = j["sub"][:-1]
+    j["quotes"] = j["quotes"][:-1]
+    j["was"]["steps"] = j["was"]["steps"][1:]
+    j["was"]["edges"] = j["was"]["edges"][:-1]
+    got = C.case_jc9([j])
+    for rid in ("sub:J2.h", "quote:8", "was:step:0a", "was:edge:J2.20"):
+        assert any(("J2 lacks the row " + rid) in f for f in got), rid
+    # a row that is there but is not in the journey's own list of the rows the site lists
+    j = _from_site("J1")
+    j["site_ids"].remove("edge:J1.3")
+    assert C.case_jc9([j]) == ["J1 does not list the row edge:J1.3 among the rows the site lists (site_ids)"]
+    # a row the owner dropped stays: the mark keeps the row and removes its weight
+    j = _from_site("J1")
+    j["edges"][2]["disposition"] = "drop"
+    assert C.case_jc9([j]) == []
+
+
+def test_jc9_an_edge_moved_under_another_step_or_a_changed_word_fails_its_row():
+    j = _from_site("J1")
+    edge = next(e for e in j["edges"] if e["id"] == "J1.7")
+    assert edge["at"] == "2"
+    edge["at"] = "3"
+    assert C.case_jc9([j]) == ["J1 edge J1.7 hangs under step 3, and the site hangs it under step 2"]
+    for where, key, what in (("steps", "text", "text"), ("steps", "site_code", "Code column"), ("steps", "site_says", "status words"),
+                             ("steps", "site_function", "function"), ("edges", "trigger", "trigger")):
+        j = _from_site("J1")
+        j[where][2][key] = j[where][2][key] + " (and more)"
+        got = C.case_jc9([j])
+        assert len(got) == 1 and (("step 3" if where == "steps" else "edge J1.3") in got[0]) and ("says its %s differently from the site" % what) in got[0], got
+    j = _from_site("J1")
+    j["edges"][4]["site"]["text"] = "Built: it is done."
+    assert C.case_jc9([j]) == ["J1 edge J1.5 says its status words differently from the site (the site: " + _from_site("J1")["edges"][4]["site"]["text"][:60] + "...)"]
+    # the words of the page and of the earlier version are the site's too
+    j = _from_site("J1")
+    j["tag"] = "THE FLOW I WANT"
+    j["today"]["text"] += " Not so."
+    j["today"]["sources"] = "somewhere else"
+    got = C.case_jc9([j])
+    assert [f.split(" says ")[1].split(" differently")[0] for f in got] == ["its tag", 'its "how it runs today" block', 'its sources of the "how it runs today" block']
+    j = _from_site("J2")
+    j["was"]["title"] = "Another title"
+    j["was"]["steps"][4]["text"] += "!"
+    j["was"]["edges"][6]["at"] = "1"
+    got = C.case_jc9([j])
+    assert len(got) == 3 and any("J2 earlier step 3 says its text" in f for f in got) and any("J2 earlier edge J2.7 hangs under step 1" in f for f in got)
+    # a short label and the normalised status word are the author's, not the site's
+    j = _from_site("J1")
+    j["steps"][0]["short"] = "Type the name"
+    j["steps"][0]["site_status"] = "to_build"
+    j["edges"][0]["short"] = "Vague"
+    j["edges"][0]["site"]["status"] = "built"
+    assert C.case_jc9([j]) == []
+    # a missing saved file is a fault, not a crash
+    assert "cannot be read" in C.case_jc9([j], path=HERE / "test_fixtures" / "journeys" / "nope.json")[0]
+
+
+def test_jc10_the_words_an_edge_says_are_in_the_code_and_in_a_test_it_lists():
+    j = proven()
+    j["edges"][0]["outcome"]["golden"] = "this sentence is in no code at all"
+    broken("JC-10", j, "J9 edge J9.1", 'says "this sentence is in no code at all" to the owner', "no code says it")
+    # the code says it, but no test file the journey lists does
+    j = proven()
+    j["edges"][0]["tests"] = [REAL_TEST]
+    j["steps"][0]["tests"] = [REAL_TEST]
+    j["steps"][1]["tests"] = [REAL_TEST]
+    got = broken("JC-10", j, "J9 edge J9.1", 'says "%s" to the owner' % GOLDEN, "no test file the journey lists asserts it")
+    assert len(got) == 1
+    # case, a backslash in the source and the spaces between words do not matter
+    j = proven()
+    j["edges"][0]["outcome"]["golden"] = "The department  ALREADY has this rule"
+    assert C.case_jc10([j]) == []
+    # only an ask or a tell has a golden lead the owner reads; nothing to search for otherwise
+    for kind in ("file", "hold", "refuse", "block", "retry", "none"):
+        j = proven()
+        j["edges"][0]["outcome"] = {"kind": kind, "voice": "none", "golden": "this sentence is in no code at all"}
+        assert C.case_jc10([j]) == [], kind
+    j = proven()
+    j["edges"][0]["outcome"] = {"kind": "ask", "voice": "Identity", "golden": None}
+    assert C.case_jc10([j]) == []
+    # a step has no outcome; a test file the journey lists that is not there is JC-6's to say
+    j = proven()
+    for row in j["steps"] + j["edges"]:
+        row["tests"] = ["test_layer_journey_j9.py::test_walk"]
+    assert C.case_jc10([j]) == [], "the walk file is not written yet: only JC-6 says so"
+    assert C.case_jc6([j]) != []
+
+
+def test_jc11_the_words_an_owner_reads_hold_no_banned_word():
+    for word in ("charter", "Charters", "grant", "Granted", "counter", "refuse", "refused", "requester", "CEO", "internal system"):
+        j = proven()
+        j["edges"][0]["outcome"]["golden"] = "the department already has this rule (%s)" % word
+        got = C.case_jc11([j])
+        assert len(got) == 1 and "J9 edge J9.1 has the word" in got[0] and "in its golden lead" in got[0], (word, got)
+        j = proven()
+        j["edges"][0]["reword"] = "Say it back with the word %s in it." % word
+        got = C.case_jc11([j])
+        assert len(got) == 1 and "in its reword" in got[0], (word, got)
+    # the site's own labels are data and may say it; so may the trigger and the code's description
+    j = proven()
+    j["edges"][0].update(short="Priority refuses", trigger="Priority refuses the offer.", code_does="The offer is refused and the owner is told so.")
+    j["edges"][0]["site"]["text"] = "Refused: the owner is told why."
+    j["steps"][0]["text"] = "A grant, a counter or a refusal."
+    assert C.case_jc11([j]) == []
+    assert C.case_jc11([proven()]) == []
+
+
+def test_jc12_function_journeys_are_bound_and_point_at_rows_that_exist():
+    def fn(jid="FI1", **change):
+        return proven(**dict({"id": jid, "kind": "function", "bound_to": "identity"}, **change))
+    user = proven(id="J8")
+    assert C.case_jc12([user, fn(serves=["J8:1"])]) == []
+    broken("JC-12", fn(bound_to="marketing"), "FI1 is bound to marketing", "not one of the five functions", also=("JC-1", "JC-3"))
+    broken("JC-12", fn(bound_to=None), "FI1 is bound to None", also=("JC-3",))
+    target = proven(id="J8", kind="function", bound_to="audit")
+    broken("JC-12", fn(serves=["J8:1"]), "FI1 serves a step of J8", "which is a function journey", also=("JC-3",)) if False else None
+    got = C.case_jc12([target, fn(serves=["J8:1"])])
+    assert got == ["FI1 serves a step of J8, which is a function journey: it serves a step of a user journey"], got
+    # same_as: the row exists, and is not itself a same_as
+    j = proven()
+    j["steps"][1].update(same_as="J10/step/3", tests=[], code=[], binds=[], backlog="BL-1")
+    j["backlog"] = [{"id": "BL-1", "row": "step:2", "smallest": "x", "package": "x"}]
+    got = broken("JC-12", j, "J9 step 2 is the same row as J10/step/3", "there is no such row")
+    other = proven(id="J10")
+    other["steps"].append(dict(other["steps"][0], n="3"))
+    assert C.case_jc12([j, other]) == []
+    other["steps"][2].update(same_as="J10/step/1")
+    broken("JC-12", [j, other], "J9 step 2 is the same row as J10/step/3", "itself the same as another")
+    j["steps"][1]["same_as"] = "J10/edge/J10.9"
+    assert "J9 step 2 is the same row as J10/edge/J10.9" in C.case_jc12([j, other])[0]
+    # a function journey that is not declared has every row proven
+    f = fn()
+    assert C.case_jc12([f]) == []
+    f["edges"][0]["tests"] = []
+    got = C.case_jc12([f])
+    assert got == ["FI1 is not declared, and its edge FI1.1 would read unproven even if every test passed: every row is proven, or the journey is declared"] or \
+        got == ["FI1 is not declared, and its edge J9.1 would read unproven even if every test passed: every row is proven, or the journey is declared"], got
+    f["declared"] = True
+    assert C.case_jc12([f]) == []
+    w = fn()
+    w["edges"][0]["backlog"] = "BL-1"
+    assert "would read partly" in C.case_jc12([w])[0], "built with a part not built is not proven: it is declared, or it is proven"
+
+
+def test_every_shipped_journey_passes_every_static_case():
+    """The journeys of journeys/ (the content packages add them) pass the static cases; an empty folder passes too."""
+    got = C.cases()
+    assert set(got) == set(STATIC_CASES)
+    assert got == {k: [] for k in STATIC_CASES}, {k: v[:5] for k, v in got.items() if v}

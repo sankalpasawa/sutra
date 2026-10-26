@@ -147,14 +147,15 @@ def code_roots():
     return py, sorted(ROOT.glob('static/js/*.js'))
 
 
-def resolve_code(name):
+def resolve_code(name, scripts_only=False):
     """Whether `name` (a bare name, or module.name) is defined in the code roots. A bare name is found if any root defines it;
-    module.name if a file whose stem is `module` defines `name`."""
+    module.name if a file whose stem is `module` defines `name`. `scripts_only` looks in static/js alone (a name a screen binds)."""
     module, _, bare = name.rpartition('.')
     py, js = code_roots()
-    for path in py:
-        if (not module or path.stem == module) and bare in (_cached(path, _py_names) or ()):
-            return True
+    if not scripts_only:
+        for path in py:
+            if (not module or path.stem == module) and bare in (_cached(path, _py_names) or ()):
+                return True
     if module:
         return False
     return any(bare in (_cached(path, lambda t: set(_JS_NAME.findall(t))) or ()) for path in js)
