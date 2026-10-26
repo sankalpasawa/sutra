@@ -327,3 +327,66 @@ def _new_step_faults(step, sid):
     if miss:
         raise ModelFault('%s: a step with a prompt also names its %s' % (sid, ' and '.join(
             'draft' if k == 'draft' else 'out (the shape of its answer)' for k in miss)))
+
+
+# ---- the substitutability law (L3) --------------------------------------------------------------------------------------
+def recipe_faults(parent, child, layer):
+    """The first law over a recipe, child against parent (A2-R4, A2-R5, A2-R7): [] when it holds, else one plain sentence for
+    each thing that does not, in the order the checks run:
+      1  the handlers are the parent's (a version hears what its parent hears)
+      2  every step of the parent is in the child
+      3  on each such step every STEP_FIXED field is the parent's (`out` through enums_kept: the child may add keys)
+      4  every gate and rule of the parent is still a gate or a rule of the child
+      5  ids are used once across gates, rules, steps and handler steps
+      6  no only_if points at an id that is no step of the child
+    With parent None only the child's own soundness is judged, 5 and 6. A step that is missing altogether is said once, at 2, and
+    not again at 4. The runtime's own rules (a unit starts and ends with a step by code, an id another layer uses) are not seen
+    here: layers.definition_faults is the second law. `layer` is the layer's name, kept for symmetry with merge_recipe."""
+    if not isinstance(child, dict):
+        return ['the recipe is not an object']
+    if parent is not None and not isinstance(parent, dict):
+        return ["the parent's recipe is not an object"]
+    out = []
+    steps = all_steps(child)
+    cmap = _by_id(steps)
+    if parent is not None:
+        pk, ck = _handler_keys(parent), _handler_keys(child)
+        for key in sorted(pk - ck, key=_say):
+            out.append('the handler for %s is gone: a version hears what its parent hears' % _say(key))
+        for key in sorted(ck - pk, key=_say):
+            out.append('the handler for %s is new: a version hears what its parent hears and no more' % _say(key))
+        pgr = [s['id'] for key in ('gates', 'rules') for s in _items(parent.get(key)) if s.get('id')]
+        for sid, ps in _by_id(all_steps(parent)).items():
+            if sid not in cmap:
+                out.append('%s: a version keeps every %s of its parent, and this one is gone'
+                           % (sid, 'gate and rule' if sid in pgr else 'step'))
+        for sid, ps in _by_id(all_steps(parent)).items():
+            cs = cmap.get(sid)
+            if cs is None:
+                continue
+            for f in STEP_FIXED:
+                if f == 'out':
+                    why = enums_kept(ps.get('out'), cs.get('out'))
+                    if why:
+                        out.append('%s: %s' % (sid, why))
+                elif ps.get(f) != cs.get(f):
+                    out.append("%s: %s is the parent's and a version leaves it as it is" % (sid, f))
+        cgr = {s['id'] for key in ('gates', 'rules') for s in _items(child.get(key)) if s.get('id')}
+        for sid in pgr:
+            if sid in cmap and sid not in cgr:
+                out.append('%s: a gate or a rule of the parent stays a gate or a rule' % sid)
+    seen, said = set(), set()
+    for s in steps:
+        sid = s.get('id')
+        if not sid:
+            out.append('a step has no id: %s' % (s.get('name') or 'it has no name either'))
+        elif sid in seen and sid not in said:
+            said.add(sid)
+            out.append('%s: this id is used by more than one step' % sid)
+        seen.add(sid)
+    for s in steps:
+        if s.get('only_if'):
+            target = only_if_target(s['only_if'])
+            if target not in cmap:
+                out.append('%s: only_if points at %s, which is no step of this recipe' % (s.get('id') or 'a step', target))
+    return out

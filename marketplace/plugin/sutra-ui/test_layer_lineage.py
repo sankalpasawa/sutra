@@ -455,3 +455,217 @@ def test_l2_the_same_refusals_hold_against_the_other_real_recipes():
         # and a step of the first list can be renamed in place, whatever the layer
         got = merged(r, {key: [{"id": some, "name": "Renamed"}]}, layer)
         assert got[key][0]["name"] == "Renamed" and ids(L.all_steps(got)) == ids(L.all_steps(r))
+
+
+# ---- L3 . recipe_faults ------------------------------------------------------------------------------------------------
+def step_of(r, sid):
+    return next(s for s in L.all_steps(r) if s["id"] == sid)
+
+
+def the_one_fault(parent, child, *words):
+    """Exactly one fault, a plain sentence that holds every word."""
+    got = L.recipe_faults(parent, child, "coordination")
+    assert len(got) == 1, got
+    for w in words:
+        assert w in got[0], "%r is not in %r" % (w, got[0])
+    assert not any(c in got[0] for c in "{}[]"), got[0]
+    return got[0]
+
+
+@pytest.mark.parametrize("layer", FUNCTION_LAYERS)
+def test_l3_a_recipe_is_a_child_of_itself_and_is_sound_alone(layer):
+    r = recipe(layer)
+    assert L.recipe_faults(r, r, layer) == []
+    assert L.recipe_faults(r, copy.deepcopy(r), layer) == []
+    assert L.recipe_faults(None, r, layer) == []
+
+
+def test_l3_the_merges_of_l2_hold_the_law():
+    ident, coord = recipe("identity"), recipe("coordination")
+    assert L.recipe_faults(ident, merged(ident, fixture("identity.patch.json")), "identity") == []
+    assert L.recipe_faults(coord, merged(coord, fixture("coordination.patch.json"), "coordination"), "coordination") == []
+    assert L.recipe_faults(None, merged(ident, fixture("identity.patch.json")), "identity") == []
+
+
+def test_l3_a_handler_removed_is_a_fault_and_a_handler_added_is_one():
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    child["on"] = [h for h in child["on"] if L.handler_key(h) != ("inform", "born")]
+    got = L.recipe_faults(parent, child, "coordination")
+    assert got[0] == "the handler for inform/born is gone: a version hears what its parent hears"
+    assert any("coord.table" in f for f in got[1:])               # its step is gone with it, said at the step
+    child = copy.deepcopy(parent)
+    child["on"].append({"name": "Hear a thing", "when": {"msg_type": "inform", "word": "thing"},
+                        "steps": [{"id": "coord.thing", "name": "T", "nature": "transform", "born": "C2", "code": "coord_ready",
+                                   "check": "said_what_it_did"}]})
+    the_one_fault(parent, child, "inform/thing", "new")
+
+
+def test_l3_a_step_removed_is_a_fault_that_names_it():
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    child["steps"] = [s for s in child["steps"] if s["id"] != "coord.ready"]
+    the_one_fault(parent, child, "coord.ready", "gone")
+    child = copy.deepcopy(parent)
+    child["on"][-1]["steps"] = []                                    # coord.table, the only step of its handler
+    the_one_fault(parent, child, "coord.table", "gone")
+
+
+@pytest.mark.parametrize("sid,field,value", [
+    ("coord.ready", "nature", "decide"),
+    ("coord.ready", "check", "said_what_it_did"),
+    ("coord.tie", "answer", "why"),
+    ("coord.tie", "stringency", "high"),
+    ("coord.busy", "only_if", "coord.ready.later"),
+    ("coord.tie", "each", "run"),
+    ("coord.tie", "files", ["a.md"]),
+    ("coord.tie", "by_hand", True),
+    ("coord.tie", "or", {"cannot": "dict"}),
+])
+def test_l3_a_fixed_field_changed_is_a_fault_that_names_the_step_and_the_field(sid, field, value):
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    step_of(child, sid)[field] = value               # (an only_if here points at a step that exists: one fault, not two)
+    the_one_fault(parent, child, sid, field)
+
+
+def test_l3_a_fixed_field_deleted_is_a_fault_too():
+    parent = recipe("identity")
+    child = copy.deepcopy(parent)
+    del step_of(child, "identity.take")["only_if"]
+    the_one_fault(parent, child, "identity.take", "only_if")
+    child = copy.deepcopy(parent)
+    del step_of(child, "identity.take")["answer"]
+    the_one_fault(parent, child, "identity.take", "answer")
+
+
+def test_l3_an_out_key_removed_or_an_enum_changed_is_a_fault_and_a_key_added_is_not():
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    del step_of(child, "coord.tie")["out"]["why"]
+    the_one_fault(parent, child, "coord.tie", "why", "gone")
+    child = copy.deepcopy(parent)
+    step_of(child, "coord.tie")["out"]["note"] = "str"
+    assert L.recipe_faults(parent, child, "coordination") == []
+    parent = recipe("identity")
+    child = copy.deepcopy(parent)
+    step_of(child, "identity.take")["out"]["verdict"] = ["go", "ask"]
+    the_one_fault(parent, child, "identity.take", "verdict")
+    child = copy.deepcopy(parent)
+    step_of(child, "identity.take")["out"]["verdict"] = ["refuse", "ask", "go"]      # the same members, another order
+    assert L.recipe_faults(parent, child, "identity") == []
+    child = copy.deepcopy(parent)
+    step_of(child, "identity.enough")["out"]["enough"] = "str"
+    the_one_fault(parent, child, "identity.enough", "enough")
+
+
+def test_l3_a_gate_removed_or_a_rule_removed_is_a_fault_said_once():
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    child["gates"] = []
+    the_one_fault(parent, child, "coord.chain", "gate and rule")
+    child = copy.deepcopy(parent)
+    child["rules"] = [r for r in child["rules"] if r["id"] != "coord.busy"]
+    the_one_fault(parent, child, "coord.busy", "gate and rule")
+
+
+def test_l3_a_gate_that_is_moved_into_the_steps_is_no_longer_a_gate():
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    child["steps"].insert(0, child["gates"].pop())
+    the_one_fault(parent, child, "coord.chain", "gate or a rule")
+    child = copy.deepcopy(parent)
+    child["gates"].append(child["rules"].pop(0))                      # a rule that becomes a gate is still one of the two
+    assert L.recipe_faults(parent, child, "coordination") == []
+
+
+def test_l3_a_duplicate_id_is_a_fault_said_once_whatever_the_lists():
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    child["steps"].append(copy.deepcopy(step_of(child, "coord.ready")))
+    the_one_fault(parent, child, "coord.ready", "more than one")
+    child = copy.deepcopy(parent)
+    child["on"][0]["steps"].append(copy.deepcopy(child["gates"][0]))   # a handler step that reuses a gate's id
+    child["on"][1]["steps"].append(copy.deepcopy(child["gates"][0]))   # and again
+    the_one_fault(parent, child, "coord.chain", "more than one")
+
+
+def test_l3_a_dangling_only_if_is_a_fault_that_names_the_step_and_its_target():
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    child["steps"].append({"id": "coord.extra", "name": "E", "nature": "transform", "born": "C2", "code": "coord_ready",
+                           "check": "said_what_it_did", "only_if": "coord.nowhere.answer=yes"})
+    the_one_fault(parent, child, "coord.extra", "coord.nowhere", "no step")
+    child = copy.deepcopy(parent)
+    child["steps"][-1]["only_if"] = "coord.ready.later"              # a target that is a step: sound
+    child["steps"][-1]["id"] = "coord.record"
+    assert [f for f in L.recipe_faults(parent, child, "coordination") if "no step" in f] == []
+
+
+def test_l3_a_removed_step_that_another_step_reads_is_two_faults_in_the_order_of_the_checks():
+    parent = recipe("identity")
+    child = copy.deepcopy(parent)
+    handler(child, "request", "request")["steps"] = [s for s in handler(child, "request", "request")["steps"]
+                                                       if s["id"] != "identity.recognise"]
+    got = L.recipe_faults(parent, child, "identity")
+    assert "identity.recognise" in got[0] and "gone" in got[0]
+    assert any("identity.take" in f and "identity.recognise" in f and "no step" in f for f in got[1:])
+
+
+def test_l3_the_faults_come_in_the_order_the_checks_run():
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    child["on"] = [h for h in child["on"] if L.handler_key(h) != ("inform", "born")]             # 1, and 2 for coord.table
+    child["steps"] = [s for s in child["steps"] if s["id"] != "coord.record"]                    # 2
+    step_of(child, "coord.tie")["check"] = "said_what_it_did"                                    # 3
+    del step_of(child, "coord.tie")["out"]["why"]                                                # 3
+    child["steps"].insert(0, child["gates"].pop())                                               # 4
+    child["steps"].append(copy.deepcopy(step_of(child, "coord.ready")))                          # 5
+    child["steps"].append({"id": "coord.extra", "name": "E", "nature": "transform", "born": "C2", "code": "coord_ready",
+                           "check": "said_what_it_did", "only_if": "coord.nowhere.answer=yes"})  # 6
+    got = L.recipe_faults(parent, child, "coordination")
+    # a missing step is said in the parent's order: its steps, then each handler's
+    marks = ["is gone: a version hears", "coord.record: a version keeps every step", "coord.table: a version keeps every step",
+             "coord.tie: check", "coord.tie: the out key why", "coord.chain: a gate or a rule", "coord.ready: this id is used",
+             "coord.extra: only_if"]
+    at = [next(i for i, f in enumerate(got) if m in f) for m in marks]
+    assert at == sorted(at) and len(set(at)) == len(marks), (at, got)
+    assert len(got) == len(marks), got
+
+
+def test_l3_with_no_parent_only_the_childs_own_soundness_is_judged():
+    r = recipe("coordination")
+    assert L.recipe_faults(None, r, "coordination") == []
+    dup = copy.deepcopy(r)
+    dup["steps"].append(copy.deepcopy(dup["rules"][0]))
+    the_one_fault(None, dup, "coord.busy", "more than one")
+    dangling = copy.deepcopy(r)
+    step_of(dangling, "coord.tie")["only_if"] = "coord.gone.answer=1"
+    the_one_fault(None, dangling, "coord.tie", "coord.gone")
+    # no handler, step or gate is missed when there is nothing to miss them against
+    gutted = {"kind": "function", "steps": []}
+    assert L.recipe_faults(None, gutted, "coordination") == []
+
+
+def test_l3_a_recipe_that_is_not_in_shape_is_a_fault_not_an_exception():
+    parent = recipe("coordination")
+    assert L.recipe_faults(parent, None, "coordination") == ["the recipe is not an object"]
+    assert L.recipe_faults(parent, [], "coordination") == ["the recipe is not an object"]
+    assert L.recipe_faults([], parent, "coordination") == ["the parent's recipe is not an object"]
+    child = copy.deepcopy(parent)
+    child["steps"] = "none"
+    child["gates"].append("not a step")
+    child["rules"].append({"name": "A rule with no id"})
+    got = L.recipe_faults(parent, child, "coordination")
+    assert any("no id" in f and "A rule with no id" in f for f in got)
+    assert any("coord.ready" in f and "gone" in f for f in got)
+    assert L.recipe_faults(None, {"on": [None, {"steps": [None]}]}, "coordination") == []
+
+
+def test_l3_a_handler_whose_when_has_no_word_hears_any():
+    parent = recipe("identity")
+    child = copy.deepcopy(parent)
+    assert any(h["when"].get("word") is None for h in child["on"])      # accept-proposal and reject-proposal hear any word
+    assert L.recipe_faults(parent, child, "identity") == []
+    child["on"] = [h for h in child["on"] if L.handler_key(h) != ("accept-proposal", S.ANY)]
+    assert L.recipe_faults(parent, child, "identity")[0].startswith("the handler for accept-proposal/%s is gone" % S.ANY)
