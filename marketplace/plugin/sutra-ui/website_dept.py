@@ -26,6 +26,7 @@ Engines that write (Plan, Write) call the model the way routines.py does; when
 the model is not there (SUTRA_WEBSITE_OFFLINE=1, or the call fails) they fall
 back to a plain deterministic draft, and the run says which it used.
 """
+import contextvars
 import json
 import os
 import re
@@ -38,6 +39,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
+import layer_schema as S           # the interface of Root and the five layers (PRD A1): this file's writes are its sink
 import record                      # the platform product: rows and documents, deployed into each thing's own folder
 import versions as VERS            # the platform product: versions, deployed into each artifact's own folder
 
@@ -339,14 +341,73 @@ def _read(p, default):
     return record.read(p, default)
 
 
+#: the department save_dept is writing now: dept.json written past save_dept is a fault in itself (PRD A1.20)
+_SAVING = contextvars.ContextVar("website_dept_saving", default=None)
+
+
+def _sink_ref(p):
+    """The department whose own file `p` is (<home>/<ref>/<name>), else None."""
+    try:
+        p = Path(p)
+        return p.parent.name if p.parent.parent == home() else None
+    except Exception:  # noqa: BLE001 -- a path outside any department is no interface file
+        return None
+
+
+def _check_sink(p, name, ref, obj):
+    """An interface file of a department, checked before it is written (PRD A1.20, the sink): dept.json only through
+    save_dept; each asks.json row that is new or changed against the stored rows, whoever writes the file; Coordination's
+    table and the owner's instructions whole. In warn mode a fault is a row and the write goes on."""
+    if name == "dept.json":
+        if _SAVING.get() != ref:
+            S.report("department", ["$: dept.json is written only by save_dept"], ref=ref, owner="root")
+        return
+    if name == "asks.json":
+        if not isinstance(obj, list):
+            S.report("identity.ask", ["$: asks.json is not a list"], ref=ref, owner="identity")
+            return
+        stored = {r.get("id"): r for r in _read(p, []) or [] if isinstance(r, dict)}
+        for row in obj:
+            if not isinstance(row, dict) or stored.get(row.get("id")) != row:
+                S.check("identity.ask", row, ref=ref, owner="identity")
+        return
+    S.check(S.SINK[name], obj, ref=ref, owner={"coordination.json": "coordination"}.get(name, "identity"))
+
+
 def _write(p, obj):
+    name = Path(p).name
+    if name in S.SINK:
+        ref = _sink_ref(p)
+        if ref:
+            _check_sink(p, name, ref, obj)
     record.write(p, obj)
+
+
+def append_row(ref, name, row):
+    """One row onto one of the layers' journals (readings, prices, rounds, spot checks: S.SINK_JOURNALS), checked as
+    the interface types it, under the department's lock (PRD A1.20). Returns the row."""
+    if name not in S.SINK_JOURNALS:
+        raise ValueError("no journal named %s" % name)
+    with _lock(ref):
+        S.check(S.SINK_JOURNALS[name], row, ref=ref)
+        return record.append(ddir(ref) / name, row)
+
+
+def rows(ref, name):
+    """One of the layers' journals, oldest first."""
+    if name not in S.SINK_JOURNALS:
+        raise ValueError("no journal named %s" % name)
+    return record.lines(ddir(ref) / name)
 
 
 # ---- the record --------------------------------------------------------------------------------------------------
 def dept(ref):
+    """The department's record, read as the interface's current schema version (a record from before A1 is migrated
+    on the read, never written by it: the next save writes it back)."""
     d = _read(ddir(ref) / "dept.json", None)
-    return d if isinstance(d, dict) and d.get("kind") in KINDS else None
+    if not isinstance(d, dict) or d.get("kind") not in KINDS:
+        return None
+    return d if d.get("schema_version") == S.SCHEMA_VERSION else S.migrate("department", d)
 
 
 def list_depts():
@@ -361,8 +422,17 @@ def list_depts():
     return out
 
 
-def save_dept(ref, d):
-    _write(ddir(ref) / "dept.json", d)
+def save_dept(ref, d, by=None):
+    """The department's record, written whole, after the interface checks the keys this save changes against the stored
+    record (PRD A1.20): a fault is a row in warn mode; stopped and control always land. `by` is the layer saving, when it
+    says, and a key another layer owns is a row."""
+    p = ddir(ref) / "dept.json"
+    S.check_department(d, ref, before=_read(p, None), by=by)
+    token = _SAVING.set(ref)
+    try:
+        _write(p, d)
+    finally:
+        _SAVING.reset(token)
 
 
 def bump_identity(ref, d):

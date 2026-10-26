@@ -1319,7 +1319,10 @@ def _same_json(a, b):
 
 def _available():
     """The implementations the registry can find, {layer: [impl id]}: layers.available() once the registry has it
-    (W1-CORE), else every layers/<layer>/v<N>.py on disk."""
+    (W1-CORE), else every layers/<layer>/v<N>.py on disk; with no layer package at all, the default pins, which are
+    what every department runs until there is one."""
+    if not (HERE / 'layers').is_dir():
+        return {layer: [impl] for layer, impl in DEFAULT_PINS.items()}
     try:
         import layers
         if callable(getattr(layers, 'available', None)):

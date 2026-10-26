@@ -42,6 +42,7 @@ temp-root-guard-test.sh checks that this assignment is present."""
 import atexit
 import os
 import shutil
+import sys
 import tempfile
 
 import pytest
@@ -153,6 +154,27 @@ def pytest_runtest_setup(item):
     setUp() still wins."""
     if _SHADOW_TEST_HOME and not os.environ.get("SUTRA_SHADOW_HOME", "").strip():
         os.environ["SUTRA_SHADOW_HOME"] = _SHADOW_TEST_HOME
+
+
+@pytest.fixture(autouse=True)
+def _a_fault_of_the_interface_fails_the_test():
+    """The app warns while the tests are strict (PRD A1.4, A1.20): when the interface schema layer is loaded and the
+    test met a fault outside S.expect_refused(), the test fails, naming the first three faults. layer_schema is never
+    imported here; a test that never loads it meets no fault."""
+    S = sys.modules.get("layer_schema")
+    seen = S.REFUSED if S else None
+    count, start = (seen["count"], len(seen["rows"])) if seen else (0, 0)
+    yield
+    S = sys.modules.get("layer_schema")
+    if S is None:
+        return
+    if S.REFUSED is not seen:                       # loaded, or reloaded, during the test: everything it holds is new
+        count, start = 0, 0
+    grew = S.REFUSED["count"] - count
+    if grew > 0:
+        met = ["%s: %s" % (r.get("name"), "; ".join(r.get("faults") or [])) for r in S.REFUSED["rows"][start:]]
+        pytest.fail("the test met %d fault%s of the interface schema layer: %s"
+                    % (grew, "" if grew == 1 else "s", " | ".join(met[:3])), pytrace=False)
 
 
 _redirect_registry_home_to_temp()

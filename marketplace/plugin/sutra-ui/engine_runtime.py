@@ -716,6 +716,8 @@ def post(ref, src, dst, msg_type, payload=None, thread=None, about=None, by=None
         raise ValueError(why)
     if src == "Identity" and OWNER in dst:
         payload = _plainly(ref, payload or {})        # one voice, in plain words (PRD M3.6)
+    import layer_schema as S
+    S.check_act(src, dst, msg_type, payload or {}, ref)   # the act against the interface (PRD A1.13): a row in warn mode
     with W._lock(ref):
         ths = threads(ref)
         th = next((t for t in ths if t["id"] == thread), None) if thread else None
