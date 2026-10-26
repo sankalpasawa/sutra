@@ -124,13 +124,7 @@ def captured_keys():
     return {"top": list(mp), "nodes": nodes, "edge": list(mp["edges"][0]), "status": list(mp["status"])}
 
 
-#: website_dept.status reads a["engine"] of every pending ask, and Identity's open question (kind j2_identity) has none, so
-#: website_dept.map_view raises KeyError while the owner is asked a question (found 2026-10-26, reported; a file this package does not
-#: own). j2ui_common then has no engines, notes "map: KeyError", and the Map draws its steps without their names.
-KNOWN_MAP_DEFECT = "map: KeyError"
-
-
-def check_map(mp, s, engines, reasons=()):
+def check_map(mp, s, engines):
     cap = captured_keys()
     statuses = proto.consts("j2_map.py", "STATUSES")
     node_kinds = [k for k in proto.consts("j2_map.py", "NODE_KINDS") if k != "know"]
@@ -149,11 +143,10 @@ def check_map(mp, s, engines, reasons=()):
     assert ids[0] == "person:requester" and ids[1:6] == ["fn:identity", "fn:adaptation", "fn:priority", "fn:coordination", "fn:audit"]
     steps = [n for n in nodes if n["kind"] == "engine" and n.get("lane") == "trunk" and not n["id"].startswith("step:charter>")]
     line = [w["name"] for w in s["workflows"]]
-    if KNOWN_MAP_DEFECT not in reasons:
-        assert [n["label"] for n in steps] == [e for e in engines if e in line or not line], \
-            "the trunk's steps are the department's engines in the registered line's order (the Charter's own step apart)"
-        if line:
-            assert [n["workflows"] for n in steps] == [[w["id"]] for w in s["workflows"]]
+    assert [n["label"] for n in steps] == [e for e in engines if e in line or not line], \
+        "the trunk's steps are the department's engines in the registered line's order (the Charter's own step apart)"
+    if line:
+        assert [n["workflows"] for n in steps] == [[w["id"]] for w in s["workflows"]]
     # every workflow of the state is on exactly one box, or named where the map says it does not know
     boxes = [n for n in nodes if n["kind"] == "work"]
     said = " ".join(mp["not_recorded"])
@@ -233,7 +226,8 @@ def check_page(ref, bodies, client):
 def everything(client, ref, m, row=None):
     bodies = read_all(client, ref)
     check_state(bodies["state"], row)
-    check_map(bodies["map"], bodies["state"], [e[0] for e in m.W.engines_of(m.W.dept(ref))], m.C.get_ctx(ref).reasons)
+    check_map(bodies["map"], bodies["state"], [e[0] for e in m.W.engines_of(m.W.dept(ref))])
+    assert not m.C.get_ctx(ref).reasons, "the read of the department failed in no part: " + str(m.C.get_ctx(ref).reasons)
     check_artifacts(bodies["artifacts"])
     check_board(bodies["board"])
     assert list(bodies["docs"]) == ["prd", "hld", "lld"] and all(v == {"asked": False, "text": None, "workflows": []} for v in bodies["docs"].values())
@@ -483,7 +477,8 @@ def test_t35_a_clean_reading_is_one_line_with_no_per_item_pass_and_no_workable_c
     assert "Workable (checked by code)" not in seen and "Not workable yet" not in seen
     assert not re.search(r">\s*PASS\s*<", pane) and "PASS" not in seen, "no cell says a check passed that nobody made"
     assert "Audit read" in seen and "found nothing to put right" in seen
-    assert all(c["evidence"].startswith("Check engine") for c in s["conditions"]), "the conditions say who ran the check: the Check engine"
+    assert s["conditions"] and all(c["evidence"].startswith(("Check engine", "Root's check")) for c in s["conditions"]), \
+        "every condition says who recorded the check: the Check engine, or Root's check of the plan"
 
 
 # ---- T3-6: scope ----------------------------------------------------------------------------------------------------------
@@ -561,12 +556,11 @@ def test_t37_a_site_a_file_and_a_shot_carry_the_safe_headers_and_stay_inside_the
     assert nothing.status_code == 200 and "Your website will appear here once it's built." in nothing.text
 
 
-@pytest.mark.xfail(strict=True, reason="website_dept.status reads a['engine'] of Identity's open question, which has none: map_view raises "
-                                       "KeyError while the owner is asked a question (reported in the j2ui-verify hand-over); when it is "
-                                       "mended this test passes, strict xfail turns red, and the KNOWN_MAP_DEFECT allowance goes")
-def test_t31_known_defect_the_map_keeps_its_steps_while_identity_asks_a_question(client, plant):
+def test_t31_the_map_keeps_its_steps_and_their_names_while_identity_asks_a_question(client, plant):
+    """Identity's open question names no engine; website_dept.status once read one from every pending ask, so map_view raised and the
+    Map lost its steps (found by this package on main cbb61740, mended by j2ui-views' fix 78170ba7). Pinned so it stays mended."""
     ref, m = plant("waiting")
     c = m.C.get_ctx(ref)
-    assert KNOWN_MAP_DEFECT not in c.reasons and len(c.engines) == 4
+    assert c.reasons == [] and len(c.engines) == 4
     mp = client.get(url(ref, "api/map")).json()
     assert [n["label"] for n in mp["nodes"] if n["kind"] == "engine" and not n["id"].startswith("step:charter>")] == ["Plan", "Write", "Check", "Publish"]
