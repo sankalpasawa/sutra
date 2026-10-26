@@ -181,8 +181,10 @@ def test_modelfault_is_not_a_valueerror():
 def test_the_names_the_inheritance_codes_against():
     assert L.PATCH_KEYS == ("parent", "set", "gates", "rules", "steps", "on")
     assert L.TOP_SET == ("description", "skills") and L.POSITION == ("after", "before")
-    assert L.STEP_FIXED == ("nature", "check", "answer", "out", "or", "only_if", "stringency", "each", "files", "by_hand")
-    assert L.STEP_FREE == ("name", "born", "code", "prompt", "draft", "ceiling", "facts", "tools", "timeout_s", "below")
+    # may_end (fixed) and side_by_side (free) are the two fields the recipes use that these lists left out: A3-CORE classified them
+    # in DEFS['step'] (A2.12 rule 6), and test_layer_templates holds the two classifications equal
+    assert L.STEP_FIXED == ("nature", "check", "answer", "out", "or", "only_if", "stringency", "each", "files", "may_end", "by_hand")
+    assert L.STEP_FREE == ("name", "born", "code", "prompt", "draft", "ceiling", "facts", "tools", "timeout_s", "side_by_side", "below")
     assert L.STEP_FIELDS == ("id",) + L.STEP_FIXED + L.STEP_FREE
     assert L.GATE_ORDER == ("admit", "wait", "refuse")
     assert L.handler_key({"when": {"msg_type": "inform", "word": "born"}}) == ("inform", "born")
