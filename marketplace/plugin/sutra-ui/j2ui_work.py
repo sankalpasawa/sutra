@@ -17,6 +17,8 @@ ctx.reasons, and every other group is filled. The result is memoised on ctx.memo
 poll. Strings the record wrote pass owner_words (said yes, asked for less, said no); the owner's own words are not
 rewritten, and no string says an act's id or a check's id.
 """
+import bisect
+
 import engine_runtime as R
 import j2ui_atoms as A
 import j2ui_audit as X
@@ -246,17 +248,26 @@ def _link(ctx, rows):
     """Set `calls: [id]` on a function's message when exactly one call of that function brackets the message's time: the call
     began no later and ended no more than a second before. A message that matches two calls or none is left alone, and so is
     one that already has them: a link is never a guess."""
-    spans = [(r, A.epoch(s.get("started")), A.epoch(s.get("ended"))) for r, s in rows]
-    spans = [(r, a, b) for r, a, b in spans if a is not None and b is not None]
-    if not spans:
+    by = {}
+    for r, s in rows:
+        a, b = A.epoch(s.get("started")), A.epoch(s.get("ended"))
+        if a is not None and b is not None:
+            by.setdefault(r["fn"], []).append((a, b, r["id"]))
+    if not by:
         return
+    for spans in by.values():
+        spans.sort()
+    reach = {fn: max(b - a for a, b, _ in spans) + LINK_GRACE_S for fn, spans in by.items()}      # how far back a call can still bracket
+    starts = {fn: [a for a, _, _ in spans] for fn, spans in by.items()}
     times = _times(ctx)
     when = {i: times.get(key[0], {}).get(key[1]) for key, i in (getattr(ctx, "msg_of", None) or {}).items()}
     for m in getattr(ctx, "chat", None) or []:
         at = A.epoch(when.get(m.get("id")))
-        if at is None or m.get("who") in (None, "user", "validator") or "calls" in m:
+        if at is None or m.get("who") not in by or "calls" in m:
             continue
-        hit = [r["id"] for r, a, b in spans if r["fn"] == m.get("who") and a <= at <= b + LINK_GRACE_S]
+        fn = m["who"]
+        near = by[fn][bisect.bisect_left(starts[fn], at - reach[fn]):bisect.bisect_right(starts[fn], at)]
+        hit = [i for a, b, i in near if a <= at <= b + LINK_GRACE_S]
         if len(hit) == 1:
             m["calls"] = hit
 

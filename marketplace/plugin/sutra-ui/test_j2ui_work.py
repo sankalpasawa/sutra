@@ -430,8 +430,8 @@ def test_w2_a_workflow_carries_every_key_the_page_reads_in_the_prototypes_order(
 
 def test_w2_numbers_are_the_records_own(mods):
     W, R, J, F = mods
-    run(W, "Plan", status="ok", spend={"calls": 3, "usd": 0.2}, retries=1, started=ago(300))
-    run(W, "Plan", status="ok", id="r-plan-again", spend={"calls": 2, "usd": 0.1}, retries=2, started=ago(100))
+    run(W, "Plan", status="ok", spend={"calls": 3, "usd": 0.2}, retries=1)
+    run(W, "Plan", status="ok", id="r-plan-again", spend={"calls": 2, "usd": 0.1}, retries=2)
     W.set_envelope(REF, "Plan", calls=17, usd=1.5)
     wfs, ctx = workflows(mods)
     w = wfs[0]
@@ -586,7 +586,7 @@ def test_w4_a_fault_is_blocked(mods):
 
 def test_w4_the_numbers_are_the_records_not_the_prototypes(mods):
     W, R, J, F = mods
-    run(W, "Write", status="ok", id="r-write-a", spend={"calls": 4, "usd": 0.1}, retries=2, started=ago(200))
+    run(W, "Write", status="ok", id="r-write-a", spend={"calls": 4, "usd": 0.1}, retries=2)
     W.set_envelope(REF, "Write", calls=17, usd=2.0)
     ls, ctx = lanes(mods)
     p = by_id(ls)["W-2"]["progress"]
@@ -672,7 +672,7 @@ def test_w4_the_prototypes_page_draws_the_lanes(mods):
     text = shown(html)
     assert "Agents · live status" in text and "Identity" in text and "Validator" in text and "W-1 Plan" in text
     assert "waiting on you" in text and "working" in text
-    assert re.search(r"section\s*· attempts 0/240 · retries 0/3", text), text
+    assert re.search(r"section\s*· attempts 0/%d · retries 0/%d" % (W.limit_of(W.dept(REF), "Plan")["calls"], len(R.WAITS)), text), text
     assert "last check: not run yet" in text
     assert not re.search(r"undefined|NaN|\bnull\b|\[object", text)
 
@@ -826,3 +826,33 @@ def test_w7_a_ctx_with_no_step_rows_at_all_still_gives_every_key(mods):
     got = K.build(ctx)
     assert got["call_log"] == [] and sorted(got) == sorted(K.KEYS) and json.loads(json.dumps(got)) == got
     assert ctx.reasons, "and says why"
+
+
+def test_w7_a_department_with_thousands_of_rows_builds_in_bounded_time_and_links_the_same(mods):
+    """The page polls every 700 ms and the adapter rebuilds on a change: linking a message to its call must not look at every
+    call for every message (5,000 posts, 20,000 step rows and 20,000 ledger events)."""
+    import time
+    ctx = standin(mods)
+    base = datetime(2026, 10, 26, 10, 0, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    at = lambda s: (base + timedelta(seconds=s)).isoformat(timespec="seconds")
+    steps_per_engine = ("plan.read", "plan.pages", "write.list", "check.build", "publish.copy")
+    ctx.steps = [{"id": "s-%d" % i, "run": "r-%d" % (i // 5), "engine": ("Plan", "Plan", "Write", "Check", "Publish")[i % 5], "step": steps_per_engine[i % 5],
+                  "mode": "slot", "check": {"ok": True, "notes": ["fine"]}, "calls": 0, "started": at(i), "ended": at(i), "ms": 10,
+                  "read": [{"art": "Brief", "v": 1}]} for i in range(20000)]
+    for k in range(2500):                                  # Priority's calls: one every 4 seconds, 2 seconds long
+        ctx.steps.append({"id": "c-%d" % k, "run": None, "engine": "Priority", "step": "priority.bargain", "mode": "slot", "calls": 1,
+                          "check": {"ok": True, "notes": ["fine"]}, "started": at(4 * k), "ended": at(4 * k + 2), "ms": 2000})
+    ctx.posts = [{"n": n, "src": "Priority", "dst": ["Adaptation"], "msg_type": "accept-proposal", "thread": "x-%d" % n, "hop": 2,
+                  "payload": {"word": "line", "why": "fits"}, "at": at(4 * n + 1)} for n in range(1, 5001)]
+    ctx.events = [{"seq": i, "step": 6, "action": "run.completed", "occurred_at": at(i), "payload": {}} for i in range(1, 20001)]
+    fake_chat(ctx)
+    t = time.time()
+    got = K.build(ctx)
+    took = time.time() - t
+    assert took < 10, "built in %.1f s" % took
+    assert len(got["call_log"]) == 2500 and [r["id"] for r in got["call_log"][:3]] == [1, 2, 3]
+    linked = [m for m in ctx.chat if m.get("calls")]
+    # post n is at 4n+1 and call k (id k+1) runs from 4k to 4k+2, a second's grace after: post n is inside call n, and no other; there
+    # is no call 2500, so the last post of the 2,500 calls' span is linked to none
+    assert len(linked) == 2499 and all(m["calls"] == [m["id"] + 1] for m in linked), (len(linked), [m["calls"] for m in linked[:5]])
+    assert ctx.reasons == [], ctx.reasons

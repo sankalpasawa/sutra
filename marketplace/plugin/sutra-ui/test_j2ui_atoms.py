@@ -34,17 +34,15 @@ def proto_text():
 
 
 def proto_schema():
-    """The pinned prototype's j2_schema as a module. test_fixtures/j2ui/proto.py (package j2ui-core) loads it once that is merged;
-    until then it is built from the git object."""
+    """The pinned prototype's j2_schema as a module. test_fixtures/j2ui/proto.py (package j2ui-core) loads it, once that is merged
+    and it can read the prototype (J2_PROTOTYPE); otherwise it is built from the git object proto_text() reads."""
     helper = UI / "test_fixtures" / "j2ui" / "proto.py"
     if helper.exists():
         spec = importlib.util.spec_from_file_location("j2ui_proto", str(helper))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        try:
+        if mod.skip_reason() is None:
             return mod.load("j2_schema")
-        except Exception as e:  # noqa: BLE001
-            pytest.skip("the prototype's j2_schema is not loadable: %s" % e)
     mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("j2_schema_pinned", loader=None))
     exec(compile(proto_text(), "j2_schema.py@" + PINNED[:7], "exec"), mod.__dict__)
     return mod
@@ -390,4 +388,4 @@ def test_w3_the_prototypes_page_draws_every_card_from_these_atoms(mods, monkeypa
         assert w["id"] in table and w["name"] in table
     for text in (plan, check, never, table):
         assert not re.search(r"undefined|NaN|\bnull\b|\[object", text), re.findall(r".{30}(?:undefined|NaN|null|\[object).{30}", text)
-    assert "calls 0/" in table and "retries 0/3" in table and "15 min" in table
+    assert "calls 0/" in table and "retries 0/%d" % len(mods[1].WAITS) in table and "%d min" % mods[0].dept(REF)["windows"]["Plan"] in table
