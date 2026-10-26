@@ -245,9 +245,12 @@ LAYOUT = {
 # cycle; past either, Identity tells Adaptation to go on to Priority with the doubt named (a line request marked go_on),
 # and a doubt that comes back after that is a blocked plan with a way out, never a loop (rule 8: what Identity cannot
 # settle goes to the owner).
-#: what the plan goes on with when a doubt names no fallback, or one that would reach outside the site or that the owner
-#: cannot be told in plain words; and what the question says of a doubt it cannot put in the owner's words
-FALLBACK = "I go ahead with the plan as it stands, and nothing in it reaches outside the site"
+#: what the plan goes on with when a doubt names no fallback, or one that would reach outside the department or that the owner
+#: cannot be told in plain words; and what the question says of a doubt it cannot put in the owner's words. A website is the
+#: owner's site and any other kind is the department (as engine_runtime.identity_file says them): fallback_default(d) says it for
+#: the department it is put to, and FALLBACK is a website's.
+FALLBACK_OF = "I go ahead with the plan as it stands, and nothing in it reaches outside the %s"
+FALLBACK = FALLBACK_OF % "site"
 SOMETHING = "one thing in the plan rests on something only you can say."
 QUESTION = 'Before I set up the work for %s: %s Unless you say, %s. Answer in your own words, or say "just do it".'
 
@@ -278,11 +281,17 @@ def _plain_or(ref, text, otherwise):
     return otherwise if how == "template" or inside(line) else line
 
 
+def fallback_default(d):
+    """What the plan goes on with when nothing better is said, for the department it is put to: its site when it is a
+    website, the department otherwise."""
+    return FALLBACK_OF % ("site" if (d or {}).get("kind") == "website" else "department")
+
+
 def fallback_of(ref, payload):
     """What the plan does when the owner says nothing more: the doubt's own fallback, unless it says nothing, reaches
-    outside the site (the fallback never does) or cannot be told to the owner in plain words."""
-    f = _said(payload.get("fallback"), 600).rstrip(".")
-    return FALLBACK if not f or R.LEAVES.search(f) else _plain_or(ref, f, FALLBACK)
+    outside the department (the fallback never does) or cannot be told to the owner in plain words."""
+    f, default = _said(payload.get("fallback"), 600).rstrip("."), fallback_default(W.dept(ref))
+    return default if not f or R.LEAVES.search(f) else _plain_or(ref, f, default)
 
 
 def question(name, doubt, fallback):
@@ -405,7 +414,7 @@ def doubt_answered(ctx, got):
     meta = ask.get("doubt") or {}
     if meta.get("answered"):
         return {"said": "took words for a doubt that was answered already"}
-    doubt, fallback = meta.get("doubt") or "", meta.get("fallback") or FALLBACK
+    doubt, fallback = meta.get("doubt") or "", meta.get("fallback") or fallback_default(d)
     shown = meta.get("shown") or _plain_or(ref, doubt, SOMETHING)             # the Brief says what the owner was asked, as they read it
     answer = ("going with this: " + fallback.rstrip(".")) if hurry else words
     row = R._file_words(ref, d, "To Identity's question (%s): %s" % (shown.rstrip("?."), answer), "the owner's answer")
