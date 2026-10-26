@@ -911,3 +911,205 @@ def test_every_shipped_journey_passes_every_static_case():
     got = C.cases()
     assert set(got) == set(STATIC_CASES)
     assert got == {k: [] for k in STATIC_CASES}, {k: v[:5] for k, v in got.items() if v}
+
+
+# ---- Q4: the walk helper -----------------------------------------------------------------------------------------------
+from journeys import walk as WK                                                # noqa: E402
+
+TRACE_SAMPLE = FIXTURES / "trace-sample.json"
+SAY = "It teaches algebra to Class 8 students so that they practise every week"
+
+
+@pytest.fixture(scope="module")
+def run(tmp_path_factory):
+    """A department founded and asked the way test_j1.py's fixture does, with the offline model, run to idle: Root said one
+    question, the owner answered, and Root made the department. (W, R, J, the root's ref, the child's ref.)"""
+    import importlib
+    with pytest.MonkeyPatch.context() as mp:
+        home = tmp_path_factory.mktemp("walk")
+        mp.setenv("SUTRA_NATIVE_DEPT_HOME", str(home / "departments"))
+        mp.setenv("SUTRA_NATIVE_HOME", str(home / "registry"))
+        mp.setenv("SUTRA_UI_PROPOSALS", str(home / "proposals"))
+        mp.setenv("SUTRA_WEBSITE_OFFLINE", "1")
+        mp.setenv("J1_FLOW_V1", "1")
+        mp.setenv("J2_FLOW_V1", "1")
+        mp.delenv("SUTRA_ENGINE_RUNTIME", raising=False)
+        import website_dept as W
+        import founding
+        import placement_engine as E
+        import org2_apply
+        import engine_runtime as R
+        import j2_runtime as J
+        for module in (E, W, org2_apply, founding, R, J):
+            importlib.reload(module)
+        if not E.active_roots(E.load_domains()):
+            E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
+        root = founding.found_structure("Acme Learning", owner="Sankalp")["root"]
+        W.owner_ask(root, "Build me a website")
+        W.run_until_idle(root, limit=200)
+        W.owner_ask(root, SAY)
+        W.run_until_idle(root, limit=200)
+        child = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+        yield W, R, J, root, child, home
+
+
+def _files(home):
+    """Every file of the record and what is in it: a read must leave all of this as it was."""
+    import hashlib
+    return {str(p.relative_to(home)): (p.stat().st_size, p.stat().st_mtime_ns, hashlib.sha256(p.read_bytes()).hexdigest())
+            for p in sorted(home.rglob("*")) if p.is_file()}
+
+
+def test_trace_reads_only_the_record(run):
+    W, R, J, root, child, home = run
+    before = _files(home)
+    assert before, "there is a record to read"
+    got = WK.trace(W, R, J, root, child)
+    assert _files(home) == before, "a trace writes nothing: not a row, not a file, not a time"
+    assert set(got) == {"board", "steps", "events", "asks"}
+    first = got["board"][0]
+    assert first == {"ref": root, "n": 1, "src": "Owner", "dst": ["Identity"], "act": "request", "word": "front"}
+    assert [(p["src"], p["act"], p["word"]) for p in got["board"] if p["ref"] == root][:3] == \
+        [("Owner", "request", "front"), ("Identity", "inform", "question"), ("Owner", "request", "front")], "the order it was written"
+    assert got["board"][-1]["ref"] == child, "the departments in the order they were given"
+    assert all(set(p) == {"ref", "n", "src", "dst", "act", "word"} and isinstance(p["dst"], list) for p in got["board"])
+    steps = [s["step"] for s in got["steps"]]
+    assert {"setup.converse", "setup.say", "setup.shape", "setup.make", "setup.file"} <= set(steps)
+    assert steps.index("setup.converse") < steps.index("setup.say") < steps.index("setup.shape") < steps.index("setup.make") < steps.index("setup.file")
+    assert all(set(s) == {"engine", "step", "status"} for s in got["steps"])
+    assert got["events"] == [] and got["asks"] == [], "Root has no cycle and asked nothing: it said, and made the department"
+    # the same record, the same trace; one department alone is the part of it
+    assert WK.trace(W, R, J, root, child) == got
+    assert WK.trace(W, R, J, root)["board"] == [p for p in got["board"] if p["ref"] == root]
+    assert WK.trace(W, R, J) == {"board": [], "steps": [], "events": [], "asks": []}
+    assert _files(home) == before
+
+
+def _walked(**change):
+    """A hand-made journey of two steps that the J1 run really produced: the owner's words and Root's one question; Root's
+    answer to the second words, and the department it made."""
+    j = proven(id="J9")
+    j["steps"] = [dict(j["steps"][0], n="1", binds=[
+        {"kind": "act", "src": "Owner", "act": "request", "word": "front", "dst": "Identity"},
+        {"kind": "step", "id": "setup.converse"}, {"kind": "step", "id": "setup.say"},
+        {"kind": "act", "src": "Identity", "act": "inform", "word": "question", "dst": "Owner"}]),
+        dict(j["steps"][1], n="2", binds=[
+            {"kind": "step", "id": "setup.shape"}, {"kind": "step", "id": "setup.make"}, {"kind": "step", "id": "setup.file"},
+            {"kind": "act", "src": "Identity", "act": "inform", "word": "department", "dst": "Owner"}])]
+    j["scenarios"] = [{"id": "J9.walk", "lane": "the life", "test": "test_layer_journeys.py::test_follows_a_real_run", "walks": ["1", "2"]}]
+    j.update(change)
+    return j
+
+
+def test_follows_a_real_run(run):
+    W, R, J, root, child, home = run
+    got = WK.trace(W, R, J, root)
+    assert WK.follows(_walked(), got) == [], "the walk the scenario names is followed, in the order the steps give"
+    assert WK.follows(_walked(), got, walks=["1"]) == [] == WK.follows(_walked(), got, ["1", "2"])
+    # the trace of the child as well: its Owner request was posted by Root, and the steps of both are in one list
+    both = WK.trace(W, R, J, root, child)
+    assert WK.follows(_walked(), both) == []
+
+
+def test_follows_names_a_missing_bind():
+    sample = json.loads(TRACE_SAMPLE.read_text(encoding="utf-8"))
+    assert WK.follows(_walked(), sample) == []
+    # a bind that did not happen: the fault names the step and the bind
+    j = _walked()
+    j["steps"][1]["binds"].append({"kind": "act", "src": "Audit", "act": "inform", "word": "finding", "dst": "Identity"})
+    assert WK.follows(j, sample) == ["J9 step 2: the act (Audit, inform, finding, Identity) did not happen"]
+    j = _walked()
+    j["steps"][0]["binds"].append({"kind": "step", "id": "setup.no_such_step"})
+    assert WK.follows(j, sample) == ["J9 step 1: the step setup.no_such_step did not happen"]
+    j = _walked()
+    j["steps"][1]["binds"].append({"kind": "event", "action": "ask.created"})
+    assert WK.follows(j, sample) == ["J9 step 2: the event ask.created did not happen"]
+    with_event = dict(sample, events=[{"action": "ask.created", "step": 4}])
+    assert WK.follows(j, with_event) == [], "and when it did, it did"
+    # an act is matched on all four: the sender, the act, the word and the receiver
+    for change in ({"src": "Root"}, {"act": "request"}, {"word": "front"}, {"dst": "Adaptation"}):
+        j = _walked()
+        j["steps"][0]["binds"][3] = dict(j["steps"][0]["binds"][3], **change)
+        assert len(WK.follows(j, sample)) == 1, change
+    # the receiver is one of the list the post named
+    row = dict(sample["board"][1], dst=["Owner", "Audit"])
+    assert WK.follows(_walked(), dict(sample, board=[sample["board"][0], row] + sample["board"][2:])) == []
+    # a step whose row failed did not run; one that is waiting or asked did
+    for status, ok in (("failed", False), ("ok", True), ("waiting", True), ("asked", True)):
+        steps = [dict(s, status=status) if s["step"] == "setup.shape" else s for s in sample["steps"]]
+        assert (WK.follows(_walked(), dict(sample, steps=steps)) == []) is ok, status
+    # a step the journey names that the journey does not have
+    assert WK.follows(_walked(), sample, walks=["1", "7"]) == ["J9: the walk names step 7, and the journey has no such step"]
+    # an empty trace follows nothing
+    empty = {"board": [], "steps": [], "events": [], "asks": []}
+    got = WK.follows(_walked(), empty)
+    assert len(got) == 8 and all(f.startswith("J9 step ") and "did not happen" in f for f in got)
+
+
+def test_follows_checks_order_within_a_source():
+    sample = json.loads(TRACE_SAMPLE.read_text(encoding="utf-8"))
+    # step 2 names what happened after step 1: the walk says step 2 first, and the board and the step rows say otherwise.
+    # Each bind of step 1 happened, but only before step 2's place
+    got = WK.follows(_walked(), sample, walks=["2", "1"])
+    assert "J9 step 1: the act (Owner, request, front, Identity) happened only before step 2 on the board, and the journey puts step 2 first" in got
+    assert "J9 step 1: the act (Identity, inform, question, Owner) happened only before step 2 on the board, and the journey puts step 2 first" in got
+    assert "J9 step 1: the step setup.converse happened only before step 2 on the step rows, and the journey puts step 2 first" in got
+    assert "J9 step 1: the step setup.say happened only before step 2 on the step rows, and the journey puts step 2 first" in got
+    assert len(got) == 4, got
+    # in one source only: the department Root told of (step 2) trades places with the owner's words (step 1) on the board
+    board = list(sample["board"])
+    board[0], board[4] = board[4], board[0]
+    got = WK.follows(_walked(), dict(sample, board=board))
+    assert all("on the board" in f for f in got) and got, got
+    assert not WK.follows(_walked(), dict(sample, board=board), walks=["1"]), "step 1 alone is still followed"
+    # a word the owner says twice is two places: step 4 of J1 binds the second front, and step 3's question lies between them
+    j = _walked()
+    j["steps"][0]["binds"] = [{"kind": "act", "src": "Owner", "act": "request", "word": "front", "dst": "Identity"}]
+    j["steps"][1]["binds"] = [{"kind": "act", "src": "Identity", "act": "inform", "word": "question", "dst": "Owner"}]
+    j["steps"].append(dict(j["steps"][0], n="3"))                  # the owner answers: the same words again
+    assert WK.follows(j, sample, walks=["1", "2", "3"]) == []
+    only_one = dict(sample, board=[sample["board"][0]] + sample["board"][1:2] + sample["board"][3:])    # the second front is gone
+    assert WK.follows(j, only_one, walks=["1", "2", "3"]) == ["J9 step 3: the act (Owner, request, front, Identity) happened only before step 2 on the board, and the journey puts step 2 first"]
+    # the first of a step's binds is its place: a later repeat of an earlier step's bind does not matter
+    again = dict(sample, board=sample["board"] + [sample["board"][0]], steps=sample["steps"] + [s for s in sample["steps"] if s["step"] == "setup.converse"])
+    assert WK.follows(_walked(), again) == []
+    # a step that shares its place with another is in order; and the ledger is a source of its own
+    j = _walked()
+    j["steps"][0]["binds"] = [{"kind": "event", "action": "ask.created"}]
+    j["steps"][1]["binds"] = [{"kind": "event", "action": "run.started"}, {"kind": "event", "action": "ask.created"}]
+    ledger = dict(sample, events=[{"action": "ask.created", "step": 3}, {"action": "run.started", "step": 6}])
+    assert WK.follows(j, ledger) == []
+    swapped = dict(sample, events=list(reversed(ledger["events"])))
+    fault = ["J9 step 2: the event run.started happened only before step 1 on the ledger, and the journey puts step 1 first"]
+    assert WK.follows(j, swapped) == fault, "ask.created is found, run.started lies before it"
+    j["steps"][1]["binds"] = [{"kind": "event", "action": "run.started"}]
+    assert WK.follows(j, swapped) == fault and WK.follows(j, ledger) == []
+
+
+def test_follows_ignores_ui_api_and_person_binds_and_optional_ones():
+    sample = json.loads(TRACE_SAMPLE.read_text(encoding="utf-8"))
+    j = _walked()
+    j["steps"][0]["binds"] += [{"kind": "ui", "symbol": "wbFoundGo"}, {"kind": "api", "method": "POST", "path": "/api/native/found"},
+                               {"kind": "person", "what": "You type the name"}]
+    assert WK.follows(j, sample) == [], "the node and API tests prove those; the trace cannot"
+    # an optional bind may be absent
+    j = _walked()
+    j["steps"][1]["binds"].append({"kind": "act", "src": "Audit", "act": "inform", "word": "finding", "dst": "Identity", "optional": True})
+    assert WK.follows(j, sample) == []
+    # but at least one bind of a step must appear: a step that has only optional binds, none of which happened, did not happen
+    j = _walked()
+    j["steps"][1]["binds"] = [{"kind": "event", "action": "ask.created", "optional": True}, {"kind": "step", "id": "setup.no_such_step", "optional": True}]
+    assert WK.follows(j, sample) == ["J9 step 2: none of its binds happened"]
+    # a step with no bind the trace can see (a screen's, a person's) asks nothing of it
+    j = _walked()
+    j["steps"][1]["binds"] = [{"kind": "ui", "symbol": "wbOrgHtml"}, {"kind": "person", "what": "You read it"}]
+    assert WK.follows(j, sample) == []
+    j["steps"][1].pop("binds")
+    assert WK.follows(j, sample) == []
+    # the default is the first scenario's steps; with no scenario, every step
+    j = _walked()
+    j["scenarios"][0]["walks"] = ["1"]
+    j["steps"][1]["binds"] = [{"kind": "step", "id": "setup.no_such_step"}]
+    assert WK.follows(j, sample) == [] and len(WK.follows(j, sample, walks=["1", "2"])) == 1
+    j["scenarios"] = []
+    assert WK.follows(j, sample) == ["J9 step 2: the step setup.no_such_step did not happen"]
