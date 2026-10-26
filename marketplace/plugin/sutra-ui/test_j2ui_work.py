@@ -17,13 +17,18 @@ import importlib
 import json
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import types
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
 import j2ui_work as K
 
+PINNED = "f9ceba15192bbd6f62047cb7288d0f291b2fbc4f"          # the J2 prototype commit the page was copied from
 REF = "dref-jw0001"
 FUNCS = ["Identity", "Adaptation", "Priority", "Coordination", "Audit"]
 LINE = ["Plan", "Write", "Check", "Publish"]
@@ -201,6 +206,73 @@ def born(mods, monkeypatch):
         W.run_until_idle(child["ref"], limit=300)
         return child["ref"]
     return make
+
+
+# ---- the prototype's page, rendered with this package's output (a skip when the prototype or node is not on this machine) --
+def proto_file(name):
+    """The text of one file of the J2 prototype at the pinned commit, from its git object (never its working tree)."""
+    repo = next((p for p in (os.environ.get("J2_PROTOTYPE"), str(Path.home() / "Desktop" / "development" / "J2_Prototype")) if p
+                 and (Path(p) / ".git").exists()), None)
+    if not repo or not shutil.which("git"):
+        pytest.skip("the J2 prototype repo is not on this machine (set J2_PROTOTYPE)")
+    got = subprocess.run(["git", "-C", repo, "show", "%s:%s" % (PINNED, name)], capture_output=True, text=True)
+    if got.returncode:
+        pytest.skip("the prototype's pinned commit %s is not in %s" % (PINNED[:7], repo))
+    return got.stdout
+
+
+DRIVER = r"""
+const fs = require("fs"), vm = require("vm");
+const [htmlPath, statePath, expr] = process.argv.slice(2);
+const noop = () => noop;
+const el = () => new Proxy({innerHTML: "", textContent: "", value: "", style: {}, dataset: {}, disabled: false, open: false,
+  classList: {toggle: noop, add: noop, remove: noop, contains: () => false}, children: [], scrollHeight: 0},
+  {get: (t, k) => k in t ? t[k] : k === "querySelectorAll" ? () => [] : noop, set: (t, k, v) => (t[k] = v, true)});
+const els = {};
+const ctx = vm.createContext({
+  document: {getElementById: id => els[id] || (els[id] = el()), querySelector: () => el(), querySelectorAll: () => [],
+             body: el(), addEventListener: noop, createElement: el},
+  location: {search: "", href: ""}, localStorage: {getItem: () => null, setItem: noop}, CSS: {escape: x => x},
+  fetch: () => Promise.reject(new Error("no network")), setTimeout: noop, setInterval: noop, requestAnimationFrame: noop,
+  console, URLSearchParams, Date, JSON, Math, Set, Map, Promise});
+const scripts = [...fs.readFileSync(htmlPath, "utf8").matchAll(/<script>([\s\S]*?)<\/script>/g)];
+vm.runInContext(scripts[scripts.length - 1][1], ctx);
+const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+state.allChat = state.chat;
+console.log(JSON.stringify(vm.runInContext("(s) => { CTX = s; return " + expr + "; }", ctx)(state)));
+"""
+
+
+def page_state(got, **more):
+    """A state as the page polls it: the keys this package builds, and the few others the panes read, at their empty values."""
+    s = {"chat": [], "total": 0, "status": "idle", "thinking": None, "turn": None, "step": 0, "steps": {}, "goal": None, "stamped": False,
+         "budget": 960, "spent": 0, "calls": 0, "cycle": 1, "doc": False, "done": False, "outcome": None, "paused": None,
+         "versions": 0, "output": "website", "files": [], "docset": [], "docset_files": [], "mock": False}
+    s.update(got)
+    s.update(more)
+    return s
+
+
+def render(state, expr):
+    """The prototype's own page code, run in a stub DOM (its j2_ui_render.js way) on `state`, and `expr` of s evaluated in it:
+    the HTML a pane draws. A skip without node or the prototype."""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not on PATH")
+    with tempfile.TemporaryDirectory() as t:
+        t = Path(t)
+        (t / "page.html").write_text(proto_file("j2_ui.html"))
+        (t / "state.json").write_text(json.dumps(state))
+        (t / "driver.js").write_text(DRIVER)
+        got = subprocess.run([node, str(t / "driver.js"), str(t / "page.html"), str(t / "state.json"), expr], capture_output=True,
+                             text=True, timeout=60)
+    assert got.returncode == 0, got.stderr[-1500:]
+    return json.loads(got.stdout)
+
+
+def shown(html):
+    """What a person reads of a pane's HTML."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
 
 
 # ---- W1: the skeleton -----------------------------------------------------------------------------------------------

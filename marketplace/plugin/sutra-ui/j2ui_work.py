@@ -122,7 +122,13 @@ def _workflows(ctx):
 
 
 def _atoms(ctx, workflows):
-    return {"atoms_v1": {}, "sections": [], "agents": {}}
+    """The workflows' atoms (one for each slot step of the engine), the prototype's atom/1 view of each, no sections (a website
+    has none), and who builds each workflow. The atoms are made first and set on the workflows together, so a failure leaves
+    the workflows as they were."""
+    made = {w["id"]: A.legacy_atoms(ctx, next((e for e in ctx.engines if e.get("wid") == w["id"]), None)) for w in workflows}
+    for w in workflows:
+        w["atoms"] = made[w["id"]]
+    return {"atoms_v1": A.views(workflows), "sections": [], "agents": {w["id"]: w["agent"] for w in workflows}}
 
 
 def _lanes(ctx, workflows):
