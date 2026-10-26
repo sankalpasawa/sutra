@@ -21,6 +21,122 @@
     "not-understood",
     "cancel"
   ],
+  "ask_forms": {
+    "alarm": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "blocked": {
+      "by": "identity",
+      "lead": null,
+      "options": [
+        "words",
+        "leave",
+        "stop"
+      ]
+    },
+    "conflict": {
+      "by": "identity",
+      "lead": null,
+      "options": [
+        "words",
+        "root_setup",
+        "leave",
+        "stop",
+        "raise"
+      ]
+    },
+    "done_items": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "engine": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "envelope": {
+      "by": "identity",
+      "lead": null,
+      "options": [
+        "raise",
+        "leave",
+        "stop"
+      ]
+    },
+    "finding": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "goal": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "hole": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "instructions": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "j2_identity": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "line": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "model": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "publish": {
+      "by": "identity",
+      "lead": "Publish: go live for the first time",
+      "options": []
+    },
+    "request": {
+      "by": "identity",
+      "lead": "Your words reach outside the site",
+      "options": []
+    },
+    "rule": {
+      "by": "identity",
+      "lead": "A rule, as understood",
+      "options": []
+    },
+    "rung": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "setup": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "step": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "trial": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    }
+  },
   "calls": [
     {
       "from": "Root",
@@ -8402,6 +8518,38 @@
       "vsm": "Root: the organisation's own department"
     }
   },
+  "ledger_actions": [
+    "proposal.requested",
+    "proposal.created",
+    "proposal.granted",
+    "proposal.countered",
+    "proposal.refused",
+    "proposal.accepted",
+    "workflow.validated",
+    "workflow.registered",
+    "workflow.blocked",
+    "timetable.written",
+    "envelope.granted",
+    "envelope.held",
+    "slot.assigned",
+    "run.started",
+    "run.completed",
+    "run.failed",
+    "artifact.filed",
+    "audit.finding_filed",
+    "audit.not_read",
+    "identity.assessed",
+    "identity.questioned",
+    "identity.ruled",
+    "conflict.raised",
+    "ask.created",
+    "ask.answered",
+    "goal.reached",
+    "cycle.stopped",
+    "cycle.resumed",
+    "cycle.reopened",
+    "check.failed"
+  ],
   "legacy_keys": [],
   "option_kinds": {
     "leave": {
@@ -8857,6 +9005,13 @@
       }
     }
   },
+  "recognitions": [
+    "task",
+    "query",
+    "directive",
+    "feedback",
+    "new-idea"
+  ],
   "records": {
     "adaptation": {
       "idea": {
@@ -9450,6 +9605,194 @@
     "rounds.jsonl": "adaptation.round",
     "spot_checks.jsonl": "audit.spot_check"
   },
+  "steps": {
+    "ctx": [
+      "ref",
+      "dept",
+      "engine",
+      "def",
+      "slot",
+      "inp",
+      "post",
+      "run",
+      "bag",
+      "how",
+      "spend",
+      "table",
+      "rs",
+      "done",
+      "ready",
+      "item",
+      "peek"
+    ],
+    "gate_answers": [
+      "admit",
+      "wait",
+      "refuse"
+    ],
+    "kinds": [
+      "code",
+      "ai",
+      "person",
+      "gate",
+      "rule"
+    ],
+    "model_tools": [
+      "WebSearch",
+      "WebFetch"
+    ],
+    "natures": [
+      "transform",
+      "check",
+      "decide",
+      "make"
+    ],
+    "row": [
+      "id",
+      "run",
+      "engine",
+      "step",
+      "item",
+      "mode",
+      "slot",
+      "impl",
+      "asked_rung",
+      "rung",
+      "miss",
+      "by",
+      "agent",
+      "applied",
+      "read",
+      "facts",
+      "in_sig",
+      "usd",
+      "calls",
+      "def_version",
+      "started",
+      "status",
+      "why",
+      "ask",
+      "answer",
+      "out_hash",
+      "out_shape",
+      "check",
+      "trial",
+      "ended",
+      "ms"
+    ],
+    "rungs": [
+      "P",
+      "C0",
+      "C1",
+      "C2"
+    ]
+  },
+  "template_levels": [
+    {
+      "base": "journey",
+      "children": "journeys/*.json",
+      "keeps": "A journey may add steps, edges, sub-journeys, tests, rulings and quotes. It may not drop, move or re-word a row the site lists (a row leaves only by the owner's mark drop), and it carries no status, which is computed. Every row either binds to code and passing tests, or says it is wanted and names its smallest behaviour.",
+      "level": "L0",
+      "name": "user journey",
+      "rules": [
+        "JC-1",
+        "JC-2",
+        "JC-3",
+        "JC-4",
+        "JC-5",
+        "JC-6",
+        "JC-7",
+        "JC-8",
+        "JC-9",
+        "JC-10",
+        "JC-11",
+        "JC-12"
+      ]
+    },
+    {
+      "base": "kind",
+      "children": "engine_defs/website.json kinds",
+      "keeps": "A kind names its line of work engines, the ones required inside the line, its artifacts, a goal, rules (each tagged), a use case, and a functions_template that every function has.",
+      "level": "L1",
+      "name": "department kind",
+      "rules": [
+        "K-1",
+        "K-2"
+      ]
+    },
+    {
+      "base": "LAYERS",
+      "children": "layers/<layer>/v<N>.py; function-templates/<function>/*.json",
+      "keeps": "A version places the interface's role phrase, its 'is not' and 'never' lines and the working agreement (its layout holds all eight inputs), supplies every typed word within its limits and uses no banned word. A use-case template adds floor lines and keeps the Default's checks.",
+      "level": "L2",
+      "name": "function",
+      "rules": [
+        "FT-1",
+        "FT-2",
+        "FT-3",
+        "FT-4",
+        "FT-5",
+        "FT-6",
+        "FT-7",
+        "FT-8",
+        "FT-9",
+        "FT-10"
+      ]
+    },
+    {
+      "base": "engine.library",
+      "children": "engine-templates/*.json; the _library of born templates",
+      "keeps": "A template names an id, a name, a use case, what it reads and writes (artifacts that have templates), a start (trigger kinds that exist, blockers that are gates) and steps that conform to the step template. A born template adds made_by.",
+      "level": "L3",
+      "name": "engine and workflow",
+      "rules": [
+        "E-1",
+        "E-2",
+        "E-3",
+        "E-4"
+      ]
+    },
+    {
+      "base": "step",
+      "children": "layers/<layer>/v<N>.json; engine-templates/*.json",
+      "keeps": "A step has an identity (id, name), a nature, a born rung, a registered check and a body: code, or a prompt with its plain draft and the shape of its answer, or by_hand. A unit starts and ends with a step by code. Ids are unique. Only the free fields change between versions.",
+      "level": "L4",
+      "name": "step",
+      "rules": [
+        "ST-1",
+        "ST-2",
+        "ST-3",
+        "ST-4",
+        "ST-5",
+        "ST-6",
+        "ST-7",
+        "ST-8",
+        "ST-9"
+      ]
+    },
+    {
+      "base": "artifact.template",
+      "children": "artifact-templates/*.json",
+      "keeps": "A template names an id, a name, a kind, a use case, files, checks that exist in artifacts.CHECKS, counts_after (filing or stamp) and operations that are engines.",
+      "level": "L5",
+      "name": "artifact",
+      "rules": [
+        "AR-1",
+        "AR-2"
+      ]
+    },
+    {
+      "base": "identity.ask",
+      "children": "ASK_FORMS: one form for each kind of ask",
+      "keeps": "An ask has a kind from the list, at most three options each of a known kind, is filed only by Identity to the owner, and has a status from the list.",
+      "level": "L6",
+      "name": "ask",
+      "rules": [
+        "AS-1",
+        "AS-2"
+      ]
+    }
+  ],
   "title": {
     "adaptation": "Adaptation",
     "audit": "Audit",

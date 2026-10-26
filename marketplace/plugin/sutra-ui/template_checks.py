@@ -101,3 +101,38 @@ def artifact_faults(template):
             if not template.get(key):
                 out.append('%s: an app template names its %s, and this one names none' % (label, key))
     return out
+
+
+_LEVEL_KEYS = ('level', 'name', 'base', 'children', 'keeps', 'rules')
+_RULE_ID = r'^(JC|K|FT|E|ST|AR|AS)-[1-9][0-9]?$'
+
+
+def levels_faults():
+    """What is wrong with the table of levels, S.TEMPLATE_LEVELS (A3.1): seven levels, L0 to L6, once each and in order; each
+    names its six parts; its base is a definition of the interface or a table of it; and each rule id belongs to one level
+    and is spelled as the rules of A3.1 are (JC-1, K-1, FT-10 ...). [] when it is sound."""
+    import re
+    out, levels = [], S.TEMPLATE_LEVELS
+    ids = [l.get('level') if isinstance(l, dict) else None for l in levels]
+    if ids != ['L%d' % i for i in range(7)]:
+        out.append('the levels are L0 to L6, once each and in that order, and the table holds %s' % ', '.join(str(i) for i in ids))
+    owner = {}
+    for l in levels:
+        if not isinstance(l, dict):
+            out.append('a level is a table of its parts, and %r is not one' % (l,))
+            continue
+        label = '%s (%s)' % (l.get('level'), l.get('name'))
+        for key in _LEVEL_KEYS:
+            if not l.get(key):
+                out.append('level %s names no %s' % (label, key))
+        for key in sorted(set(l) - set(_LEVEL_KEYS)):
+            out.append('level %s holds %s, which is not one of its parts: %s' % (label, key, ', '.join(_LEVEL_KEYS)))
+        base = l.get('base')
+        if base and base not in S.DEFS and not isinstance(getattr(S, str(base), None), (dict, tuple, list)):
+            out.append('level %s names the base %s, which is neither a definition nor a table of the interface' % (label, base))
+        for rule in l.get('rules') or ():
+            if not re.match(_RULE_ID, str(rule)):
+                out.append('level %s names the rule %s, which is not spelled as the rules of A3.1 are' % (label, rule))
+            elif owner.setdefault(rule, l.get('level')) != l.get('level'):
+                out.append('the rule %s is held by %s and by %s: a rule belongs to one level' % (rule, owner[rule], l.get('level')))
+    return out

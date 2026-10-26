@@ -697,3 +697,140 @@ def test_recognitions_are_identitys_five():
         assert R.c_journey_is_known(None, None, None, {"journey": word})["ok"] is True, word
     assert R.c_journey_is_known(None, None, None, {"journey": "J1"})["ok"] is False, "a user journey is not a recognition"
     assert not set(S.RECOGNITIONS) & set(S.JOURNEY_KINDS)
+
+
+# ---- C4: the levels, the ask forms, the generated schemas ------------------------------------------------------------------
+def test_every_level_names_a_base_that_exists(monkeypatch):
+    assert T.levels_faults() == []
+    levels = S.TEMPLATE_LEVELS
+    assert [l["level"] for l in levels] == ["L%d" % i for i in range(7)]
+    assert [l["name"] for l in levels] == ["user journey", "department kind", "function", "engine and workflow", "step", "artifact", "ask"]
+    for l in levels:
+        assert l["base"] in S.DEFS or isinstance(getattr(S, l["base"], None), (dict, tuple)), "%s: %s" % (l["level"], l["base"])
+        assert set(l) == {"level", "name", "base", "children", "keeps", "rules"} and l["keeps"].endswith(".")
+    assert {l["base"] for l in levels if l["base"] in S.DEFS} == {"journey", "kind", "engine.library", "step", "artifact.template", "identity.ask"}
+    # the failing examples: a base that is nothing, a level missing, a rule held twice, a part left out
+    def broken(change):
+        monkeypatch.setattr(S, "TEMPLATE_LEVELS", change)
+        return T.levels_faults()
+    assert broken(tuple(dict(l, base="nothing_at_all") if l["level"] == "L4" else l for l in levels)) == [
+        "level L4 (step) names the base nothing_at_all, which is neither a definition nor a table of the interface"]
+    assert broken(levels[:6])[0].startswith("the levels are L0 to L6, once each and in that order")
+    twice = broken(tuple(dict(l, rules=l["rules"] + ("K-1",)) if l["level"] == "L5" else l for l in levels))
+    assert twice == ["the rule K-1 is held by L1 and by L5: a rule belongs to one level"]
+    assert broken(tuple(dict(l, rules=("X-1",)) if l["level"] == "L6" else l for l in levels)) == [
+        "level L6 (ask) names the rule X-1, which is not spelled as the rules of A3.1 are"]
+    assert broken(tuple({k: v for k, v in l.items() if k != "keeps"} if l["level"] == "L2" else l for l in levels)) == ["level L2 (function) names no keeps"]
+    assert broken(tuple(dict(l, colour="red") if l["level"] == "L0" else l for l in levels))[0].startswith("level L0 (user journey) holds colour")
+
+
+def test_every_rule_of_a_level_is_a_rule_of_the_a3_document():
+    import re
+    doc = HERE / "design" / "PRD-FIVE-FUNCTIONS-A3.md"
+    if not doc.exists():
+        pytest.skip("the A3 document is not in this tree")
+    text = doc.read_text(encoding="utf-8")
+    ids = [r for l in S.TEMPLATE_LEVELS for r in l["rules"]]
+    assert len(ids) == len(set(ids)) == 12 + 2 + 10 + 4 + 9 + 2 + 2
+    missing = [r for r in ids if not re.search(r"^\| %s \|" % re.escape(r), text, re.M)]
+    assert not missing, "A3 lists no rule %s: the table of levels and the document must name the same rules" % missing
+    listed = set(re.findall(r"^\| ((?:JC|K|FT|E|ST|AR|AS)-[1-9][0-9]?) \|", text, re.M))
+    assert listed == set(ids), "the document lists rules the table does not: %s" % sorted(listed ^ set(ids))
+
+
+def test_as1_every_ask_kind_has_a_form_and_its_options_are_known():
+    forms = S.ASK_FORMS
+    print("ask kinds:", len(S.ASK_KINDS))
+    assert set(forms) == set(S.ASK_KINDS) and list(forms) == list(S.ASK_KINDS), "every kind of ask has a form, and only those"
+    for kind, form in forms.items():
+        assert set(form) == {"by", "options", "lead"}, kind
+        assert form["by"] == "identity", "%s: only Identity speaks to the owner, so it files every ask" % kind
+        assert len(set(form["options"])) == len(form["options"]) and set(form["options"]) <= set(S.OPTION_KINDS), \
+            "%s: a way out the interface does not name" % kind
+        assert form["lead"] is None or (isinstance(form["lead"], str) and form["lead"] and "\n" not in form["lead"]), kind
+    assert forms["blocked"]["options"] == ("words", "leave", "stop")
+    assert set(forms["conflict"]["options"]) >= {"words", "leave", "stop", "raise"} and forms["envelope"]["options"] == ("raise", "leave", "stop")
+    assert {k for k, f in forms.items() if f["options"]} == {"blocked", "conflict", "envelope"}, "the rest are stamped yes or no"
+    assert {k: f["lead"] for k, f in forms.items() if f["lead"]} == {
+        "publish": "Publish: go live for the first time", "rule": "A rule, as understood", "request": "Your words reach outside the site"}
+    # a lead is the writer's own first words: it stands in the source of the code that says it
+    sources = {"publish": "website_dept.py", "rule": "engine_runtime.py", "request": "engine_runtime.py"}
+    for kind, name in sources.items():
+        assert forms[kind]["lead"] in (HERE / name).read_text(encoding="utf-8"), "%s: the lead is not in %s" % (kind, name)
+
+
+def test_as1_the_forms_hold_what_the_writers_attach(j2):
+    """Widen the table to what a writer attaches, never narrow a writer: the ways out each writer on main builds are in the form
+    of the ask it files."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    d = copy.deepcopy(W.dept(ref))
+    d["done_items"] = [{"id": "D1", "text": "Every page is live", "how": "model", "level": "outcome"},
+                       {"id": "D2", "text": "The phone number is shown", "how": "model", "level": "outcome"}]
+    ask = R._blocked(ref, d, {"src": W.dept(ref)["name"]}, "Write cannot run: the plan has no pages.", "The plan is blocked.", "Identity", "no pages, D2")
+    assert ask["kind"] == "blocked" and len(ask["options"]) == 3
+    assert [o["kind"] for o in ask["options"]] == ["words", "leave", "stop"], "the plan's card: change it in my words, leave an item out, stop"
+    assert {o["kind"] for o in ask["options"]} <= set(S.ASK_FORMS["blocked"]["options"])
+    with pytest.raises(ValueError, match="takes one of its options"):
+        W.decide_ask(ref, ask["id"], True)                   # an ask with options is answered by choosing one, never stamped
+    import layers.adaptation.v1 as A
+    cannot = {"engine": "Write", "items": ["D2"], "why": "it has no way to show a phone number"}
+    kinds = [o["kind"] for o in A.cannot_options(d, cannot, "a site")]
+    assert kinds == ["root_setup", "leave", "stop"] and set(kinds) <= set(S.ASK_FORMS["conflict"]["options"])
+    # every ask a writer builds with options_ask is cut to OPTIONS_MAX, and each option's kind is the part of its id before ':'
+    five = [{"id": "words", "label": "a", "cost": "b"}, {"id": "leave:D1", "label": "c", "cost": "d"}, {"id": "stop", "label": "e", "cost": "f"},
+            {"id": "raise", "label": "g", "cost": "h"}, {"id": "root_setup", "label": "i", "cost": "j"}]
+    built = W.options_ask("conflict", "x", five)
+    assert len(built["options"]) == S.OPTIONS_MAX == W.OPTIONS_MAX == 3 and [o["kind"] for o in built["options"]] == ["words", "leave", "stop"]
+    assert all(S.validate("option", o) == [] for o in built["options"])
+
+
+def test_as1_a_fourth_option_is_refused():
+    option = {"id": "stop", "label": "Stop here", "cost": "the department stops where it is", "kind": "stop"}
+    ask = {"id": "a-1", "kind": "blocked", "status": "pending", "text": "Write cannot run.", "options": [option] * S.OPTIONS_MAX}
+    assert S.validate("identity.ask", ask) == []
+    assert S.validate("identity.ask", dict(ask, options=[option] * (S.OPTIONS_MAX + 1))) == ["$.options: more than %d items" % S.OPTIONS_MAX]
+    assert S.validate("identity.ask", dict(ask, kind="colour")) != [] and S.validate("identity.ask", dict(ask, status="maybe")) != []
+    assert S.validate("identity.ask", dict(ask, options=[dict(option, kind="teleport")])) != [], "an option is of a known kind"
+    # no form offers more kinds of way out than there are kinds, and an ask carries three of them at most
+    assert all(len(f["options"]) <= len(S.OPTION_KINDS) for f in S.ASK_FORMS.values())
+
+
+def test_the_generated_files_equal_json_schemas():
+    got = S.json_schemas()
+    for name in ("templates.schema.json", "journeys.schema.json"):
+        assert name in got, name
+        assert (S.SCHEMA_FOLDER / name).read_text(encoding="utf-8") == S._dump(got[name]), \
+            "%s differs from layer_schema.py: run `python layer_schema.py --write`" % name
+    templates, journeys = got["templates.schema.json"], got["journeys.schema.json"]
+    assert {"step", "step.row", "engine.start", "engine.library", "kind", "artifact.template"} <= set(templates["$defs"])
+    assert templates["x-levels"] == json.loads(json.dumps(S.TEMPLATE_LEVELS)) and templates["x-ask-forms"] == json.loads(json.dumps(S.ASK_FORMS))
+    assert templates["x-steps"]["ctx"] == list(S.STEP_CTX) and templates["x-steps"]["row"] == list(S.STEP_ROW)
+    assert {n for n in S.DEFS if n == "journey" or n.startswith("journey.")} == set(journeys["$defs"]), "every journey.* definition, and no other"
+    assert journeys["$ref"] == "#/$defs/journey" and journeys["x-ledger-actions"] == list(S.LEDGER_ACTIONS)
+    assert journeys["x-recognitions"] == list(S.RECOGNITIONS)
+    # a definition changed and not written fails the check, as for every other file
+    on_disk = (S.SCHEMA_FOLDER / "templates.schema.json").read_text(encoding="utf-8")
+    assert json.loads(on_disk)["$defs"]["step"]["properties"]["may_end"]["x-law"] == "fixed", "the law is in the file"
+    assert S.faults(json.loads(on_disk)["$defs"]["step"], {"id": "a.b", "name": "x", "nature": "make", "born": "C0", "check": "c"}) == []
+
+
+def test_describe_carries_the_a3_tables():
+    got = S.describe()
+    assert json.loads(json.dumps(got)) == got
+    assert got["template_levels"] == json.loads(json.dumps(S.TEMPLATE_LEVELS)) and len(got["template_levels"]) == 7
+    assert got["ask_forms"] == json.loads(json.dumps(S.ASK_FORMS)) and set(got["ask_forms"]) == set(S.ASK_KINDS)
+    assert got["ledger_actions"] == list(S.LEDGER_ACTIONS) and got["recognitions"] == list(S.RECOGNITIONS)
+    assert got["steps"] == {"kinds": list(S.STEP_KINDS), "natures": list(S.NATURES), "rungs": list(S.RUNGS), "gate_answers": list(S.GATE_ANSWERS),
+                            "model_tools": list(S.MODEL_TOOLS), "ctx": list(S.STEP_CTX), "row": list(S.STEP_ROW)}
+    assert {"step", "step.row", "engine.start", "engine.library", "kind", "artifact.template", "journey", "journey.status"} <= set(got["defs"])
+    interface = json.loads((S.SCHEMA_FOLDER / "interface.v1.json").read_text(encoding="utf-8"))
+    assert interface["template_levels"] == got["template_levels"] and interface["ask_forms"] == got["ask_forms"]
+
+
+def test_the_readme_has_the_a3_rows():
+    readme = (S.SCHEMA_FOLDER / "README.md").read_text(encoding="utf-8")
+    for level in ("L0 User journey", "L1 Department kind", "L2 Function", "L3 Engine and workflow", "L4 Step", "L5 Artifact", "L6 Ask"):
+        assert "| %s |" % level in readme, level
+    for name in ("templates.schema.json", "journeys.schema.json", "TEMPLATE_LEVELS", "ASK_FORMS", "LEDGER_ACTIONS", "template_checks.py"):
+        assert name in readme, name

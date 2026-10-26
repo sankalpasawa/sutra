@@ -1590,6 +1590,56 @@ LEDGER_ACTIONS = ('proposal.requested', 'proposal.created', 'proposal.granted', 
 #: user journeys. The key `journeys` of engine_defs/website.json and the check journey_is_known name them and are not renamed
 RECOGNITIONS = VERDICTS['identity']['journey']
 
+# the levels (A3.1) as data, so the generated JSON Schema, describe() and a screen can read them: each level's name, the base
+# class that is its template (a DEFS name, or a table of this module), where its children are, the one sentence a child keeps
+# and the ids of the rules that hold it (A3.1 lists each rule with its case and its failing example). L2's base is the layer
+# interface the function template extends; C5 of A3-CORE names the function template's own table there
+TEMPLATE_LEVELS = (
+    {'level': 'L0', 'name': 'user journey', 'base': 'journey', 'children': 'journeys/*.json',
+     'keeps': 'A journey may add steps, edges, sub-journeys, tests, rulings and quotes. It may not drop, move or re-word a row the '
+              "site lists (a row leaves only by the owner's mark drop), and it carries no status, which is computed. Every row either "
+              'binds to code and passing tests, or says it is wanted and names its smallest behaviour.',
+     'rules': ('JC-1', 'JC-2', 'JC-3', 'JC-4', 'JC-5', 'JC-6', 'JC-7', 'JC-8', 'JC-9', 'JC-10', 'JC-11', 'JC-12')},
+    {'level': 'L1', 'name': 'department kind', 'base': 'kind', 'children': 'engine_defs/website.json kinds',
+     'keeps': 'A kind names its line of work engines, the ones required inside the line, its artifacts, a goal, rules (each tagged), '
+              'a use case, and a functions_template that every function has.',
+     'rules': ('K-1', 'K-2')},
+    {'level': 'L2', 'name': 'function', 'base': 'LAYERS', 'children': 'layers/<layer>/v<N>.py; function-templates/<function>/*.json',
+     'keeps': "A version places the interface's role phrase, its 'is not' and 'never' lines and the working agreement (its layout "
+              'holds all eight inputs), supplies every typed word within its limits and uses no banned word. A use-case template adds '
+              "floor lines and keeps the Default's checks.",
+     'rules': ('FT-1', 'FT-2', 'FT-3', 'FT-4', 'FT-5', 'FT-6', 'FT-7', 'FT-8', 'FT-9', 'FT-10')},
+    {'level': 'L3', 'name': 'engine and workflow', 'base': 'engine.library', 'children': 'engine-templates/*.json; the _library of born templates',
+     'keeps': 'A template names an id, a name, a use case, what it reads and writes (artifacts that have templates), a start (trigger '
+              'kinds that exist, blockers that are gates) and steps that conform to the step template. A born template adds made_by.',
+     'rules': ('E-1', 'E-2', 'E-3', 'E-4')},
+    {'level': 'L4', 'name': 'step', 'base': 'step', 'children': 'layers/<layer>/v<N>.json; engine-templates/*.json',
+     'keeps': 'A step has an identity (id, name), a nature, a born rung, a registered check and a body: code, or a prompt with its '
+              'plain draft and the shape of its answer, or by_hand. A unit starts and ends with a step by code. Ids are unique. Only the '
+              'free fields change between versions.',
+     'rules': ('ST-1', 'ST-2', 'ST-3', 'ST-4', 'ST-5', 'ST-6', 'ST-7', 'ST-8', 'ST-9')},
+    {'level': 'L5', 'name': 'artifact', 'base': 'artifact.template', 'children': 'artifact-templates/*.json',
+     'keeps': 'A template names an id, a name, a kind, a use case, files, checks that exist in artifacts.CHECKS, counts_after (filing '
+              'or stamp) and operations that are engines.',
+     'rules': ('AR-1', 'AR-2')},
+    {'level': 'L6', 'name': 'ask', 'base': 'identity.ask', 'children': 'ASK_FORMS: one form for each kind of ask',
+     'keeps': 'An ask has a kind from the list, at most three options each of a known kind, is filed only by Identity to the owner, '
+              'and has a status from the list.',
+     'rules': ('AS-1', 'AS-2')},
+)
+
+#: the form of each kind of ask (L6, A3.5): who files it (always Identity: only Identity speaks to the owner), the kinds of way
+#: out its writers attach to it (OPTION_KINDS; an ask carries at most OPTIONS_MAX of them, and an ask whose options are empty is
+#: stamped yes or no), and the lead it says first, in the writer's own words (None for the rest). Checked against the writers
+#: (website_dept.options_ask, _put_ask, decide_ask; engine_runtime._blocked; adaptation's cannot_options): widened to what they
+#: attach, never narrowed. blocked is the plan's card (words, leave, stop); conflict also carries root_setup, which adaptation's
+#: cannot_options attaches to the conflict it files, and raise, which W2-IDENTITY's options ask adds (M5.4); envelope is M5.4's
+_ASK_OPTIONS = {'blocked': ('words', 'leave', 'stop'), 'conflict': ('words', 'root_setup', 'leave', 'stop', 'raise'),
+                'envelope': ('raise', 'leave', 'stop')}
+_ASK_LEADS = {'publish': 'Publish: go live for the first time', 'rule': 'A rule, as understood',
+              'request': 'Your words reach outside the site'}
+ASK_FORMS = {kind: {'by': 'identity', 'options': _ASK_OPTIONS.get(kind, ()), 'lead': _ASK_LEADS.get(kind)} for kind in ASK_KINDS}
+
 
 # ---- reading the tables ----------------------------------------------------------------------------------------------
 def _layer(name):
@@ -1936,6 +1986,10 @@ def describe():
         'groups': GROUPS, 'prompts': PROMPTS, 'option_kinds': OPTION_KINDS,
         'workflow_standards': [{'id': i, 'says': s, 'sources': src, 'stages': st} for i, s, src, st in WORKFLOW_STANDARDS],
         'views': VIEWS, 'sink': SINK, 'sink_journals': SINK_JOURNALS, 'defs': DEFS,
+        # the templates at every level (A3): the levels, the ask forms, the step's constants, the ledger's words and Identity's five
+        'template_levels': TEMPLATE_LEVELS, 'ask_forms': ASK_FORMS, 'ledger_actions': LEDGER_ACTIONS, 'recognitions': RECOGNITIONS,
+        'steps': {'kinds': STEP_KINDS, 'natures': NATURES, 'rungs': RUNGS, 'gate_answers': GATE_ANSWERS, 'model_tools': MODEL_TOOLS,
+                  'ctx': STEP_CTX, 'row': STEP_ROW},
     }
     return json.loads(json.dumps(out, ensure_ascii=False))
 
@@ -2051,6 +2105,22 @@ def json_schemas():
             'views.schema.json', "The panes' read models",
             'What each pane renders, as the screens read it: Identity, Adaptation, Priority, Coordination and Audit, and the '
             'engine card (PRD A1.17).', sorted(VIEWS.values()), **{'x-views': VIEWS}),
+        'templates.schema.json': _file(
+            'templates.schema.json', 'The templates of the levels below the journey',
+            "The step with its row and its start, the department kind, the Library's engine template and the artifact template, "
+            'the base classes of levels L1, L3, L4 and L5 (x-levels holds all seven levels, x-steps the constants of the step and '
+            'x-ask-forms the form of each kind of ask) (PRD A3.1, A3.3, A3.5).',
+            ['step', 'step.row', 'engine.start', 'engine.library', 'kind', 'artifact.template'],
+            **{'x-levels': TEMPLATE_LEVELS, 'x-ask-forms': ASK_FORMS,
+               'x-steps': {'kinds': STEP_KINDS, 'natures': NATURES, 'rungs': RUNGS, 'gate_answers': GATE_ANSWERS,
+                           'model_tools': MODEL_TOOLS, 'ctx': STEP_CTX, 'row': STEP_ROW}}),
+        'journeys.schema.json': _file(
+            'journeys.schema.json', 'A user journey',
+            'The user-journey template (level L0): a journey file under journeys/, its parts (lane, step, edge, bind, outcome, '
+            'sub-journey, ruling, quote, scenario, backlog entry, direction, build row, the earlier rows kept as was) and the status '
+            'document that is computed for each journey; x-ledger-actions are the ledger words an event bind may name (PRD A3.6).',
+            sorted(n for n in DEFS if n == 'journey' or n.startswith('journey.')), 'journey',
+            **{'x-ledger-actions': LEDGER_ACTIONS, 'x-recognitions': RECOGNITIONS}),
         'interface.v1.json': describe(),
     }
 

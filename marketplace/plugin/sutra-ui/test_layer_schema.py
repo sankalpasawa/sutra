@@ -924,14 +924,14 @@ def test_s4_describe_is_the_whole_interface_as_json():
     assert json.loads(json.dumps(got)) == got
     for k in ("layers", "records", "department_keys", "hears", "sends", "edges", "calls", "verdicts", "checks", "shared_checks",
               "contract_samples", "outputs", "settings", "groups", "prompts", "option_kinds", "workflow_standards", "views",
-              "sink", "sink_journals", "defs"):
+              "sink", "sink_journals", "defs", "template_levels", "ask_forms", "ledger_actions", "recognitions", "steps"):
         assert got[k], k
     assert got["edges"] == R.defs()["edges"] and got["schema_version"] == S.SCHEMA_VERSION
 
 
 # ---- S6: the generated JSON Schema files ------------------------------------------------------------------------------
 FILES = ("department.schema.json", "workflow.schema.json", "records.schema.json", "acts.schema.json",
-         "instructions.schema.json", "views.schema.json", "interface.v1.json")
+         "instructions.schema.json", "views.schema.json", "templates.schema.json", "journeys.schema.json", "interface.v1.json")
 
 
 def test_s6_the_files_on_disk_are_what_the_definitions_generate():

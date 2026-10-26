@@ -1,0 +1,967 @@
+{
+  "$defs": {
+    "artifact.template": {
+      "additionalProperties": true,
+      "properties": {
+        "checks": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "counts_after": {
+          "enum": [
+            "filing",
+            "stamp"
+          ]
+        },
+        "files": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 0,
+          "type": "array"
+        },
+        "form": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 60,
+          "pattern": "^artifact/[a-z0-9-]+$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "text",
+            "plan",
+            "pages",
+            "build",
+            "site",
+            "record",
+            "app"
+          ]
+        },
+        "made_from": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "operations": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "put_back": {
+          "type": "boolean"
+        },
+        "reads": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "screen": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "use_case": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "written_by": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "use_case",
+        "files",
+        "counts_after"
+      ],
+      "type": "object"
+    },
+    "check.verdict": {
+      "additionalProperties": true,
+      "properties": {
+        "notes": {
+          "items": {
+            "maxLength": 2000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "engine.library": {
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "maxLength": 400,
+          "minLength": 0,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 80,
+          "pattern": "^engine/[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "instruction": {
+          "maxLength": 4000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "kind": {
+          "const": "work"
+        },
+        "name": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "reads": {
+          "$ref": "#/$defs/name"
+        },
+        "skills": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "start": {
+          "$ref": "#/$defs/engine.start"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "use_case": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "writes": {
+          "$ref": "#/$defs/name"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "use_case",
+        "kind",
+        "description",
+        "reads",
+        "writes",
+        "start",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "engine.start": {
+      "additionalProperties": false,
+      "properties": {
+        "on": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "checked": {
+                "type": "boolean"
+              },
+              "every_s": {
+                "minimum": 1,
+                "type": "number"
+              },
+              "kind": {
+                "enum": [
+                  "version",
+                  "post",
+                  "timer"
+                ]
+              },
+              "of": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/name"
+                  },
+                  {
+                    "const": "$deliverable"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "unless": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "on"
+      ],
+      "type": "object"
+    },
+    "impl": {
+      "maxLength": 24,
+      "pattern": "^(root|identity|adaptation|priority|coordination|audit)/v[1-9][0-9]*$",
+      "type": "string"
+    },
+    "kind": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "done": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "done_words": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "functions_template": {
+          "maxLength": 40,
+          "pattern": "^[a-z][a-z-]*$",
+          "type": "string"
+        },
+        "goal": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "line": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "required": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "rules": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "line": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "tag": {
+                "enum": [
+                  "go",
+                  "ask",
+                  "refuse",
+                  "always"
+                ]
+              }
+            },
+            "required": [
+              "tag",
+              "line"
+            ],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "say": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "use_case": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "line",
+        "artifacts",
+        "goal",
+        "rules",
+        "use_case",
+        "functions_template"
+      ],
+      "type": "object"
+    },
+    "name": {
+      "maxLength": 40,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$",
+      "type": "string"
+    },
+    "step": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "below": {
+          "enum": [
+            "P",
+            "C0",
+            "C1"
+          ],
+          "x-law": "free"
+        },
+        "born": {
+          "enum": [
+            "P",
+            "C0",
+            "C1",
+            "C2"
+          ],
+          "x-law": "free"
+        },
+        "by_hand": {
+          "maxLength": 600,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "ceiling": {
+          "enum": [
+            "C0",
+            "C1",
+            "C2"
+          ],
+          "x-law": "free"
+        },
+        "check": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "code": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "free"
+        },
+        "draft": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "free"
+        },
+        "each": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "facts": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array",
+          "x-law": "free"
+        },
+        "files": {
+          "type": "boolean",
+          "x-law": "fixed"
+        },
+        "id": {
+          "maxLength": 60,
+          "pattern": "^[a-z][a-z0-9]*\\.[a-z0-9_.]+$",
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "may_end": {
+          "type": "boolean",
+          "x-law": "fixed"
+        },
+        "name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "free",
+          "x-say": true
+        },
+        "nature": {
+          "enum": [
+            "transform",
+            "check",
+            "decide",
+            "make"
+          ],
+          "x-law": "fixed"
+        },
+        "only_if": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "or": {
+          "x-law": "fixed"
+        },
+        "out": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "minLength": 0,
+                "type": "string"
+              },
+              {
+                "items": {
+                  "maxLength": 40,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "maxItems": 12,
+                "minItems": 1,
+                "type": "array"
+              }
+            ]
+          },
+          "type": "object",
+          "x-law": "fixed"
+        },
+        "prompt": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "free"
+        },
+        "side_by_side": {
+          "maximum": 16,
+          "minimum": 1,
+          "type": "integer",
+          "x-law": "free"
+        },
+        "stringency": {
+          "enum": [
+            "high",
+            "low"
+          ],
+          "x-law": "fixed"
+        },
+        "timeout_s": {
+          "minimum": 0,
+          "type": "number",
+          "x-law": "free"
+        },
+        "tools": {
+          "items": {
+            "enum": [
+              "WebSearch",
+              "WebFetch"
+            ]
+          },
+          "minItems": 0,
+          "type": "array",
+          "x-law": "free"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "nature",
+        "born",
+        "check"
+      ],
+      "type": "object"
+    },
+    "step.row": {
+      "additionalProperties": true,
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "check": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/check.verdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ended": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "engine": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "impl": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/impl"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "enum": [
+            "slot",
+            "gate",
+            "mark"
+          ]
+        },
+        "rung": {
+          "anyOf": [
+            {
+              "enum": [
+                "P",
+                "C0",
+                "C1",
+                "C2"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "status": {
+          "maxLength": 20,
+          "minLength": 1,
+          "type": "string"
+        },
+        "step": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "engine",
+        "step",
+        "status"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://sutra.asawa.co/schemas/layers/templates.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The step with its row and its start, the department kind, the Library's engine template and the artifact template, the base classes of levels L1, L3, L4 and L5 (x-levels holds all seven levels, x-steps the constants of the step and x-ask-forms the form of each kind of ask) (PRD A3.1, A3.3, A3.5). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "title": "The templates of the levels below the journey",
+  "x-ask-forms": {
+    "alarm": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "blocked": {
+      "by": "identity",
+      "lead": null,
+      "options": [
+        "words",
+        "leave",
+        "stop"
+      ]
+    },
+    "conflict": {
+      "by": "identity",
+      "lead": null,
+      "options": [
+        "words",
+        "root_setup",
+        "leave",
+        "stop",
+        "raise"
+      ]
+    },
+    "done_items": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "engine": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "envelope": {
+      "by": "identity",
+      "lead": null,
+      "options": [
+        "raise",
+        "leave",
+        "stop"
+      ]
+    },
+    "finding": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "goal": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "hole": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "instructions": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "j2_identity": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "line": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "model": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "publish": {
+      "by": "identity",
+      "lead": "Publish: go live for the first time",
+      "options": []
+    },
+    "request": {
+      "by": "identity",
+      "lead": "Your words reach outside the site",
+      "options": []
+    },
+    "rule": {
+      "by": "identity",
+      "lead": "A rule, as understood",
+      "options": []
+    },
+    "rung": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "setup": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "step": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    },
+    "trial": {
+      "by": "identity",
+      "lead": null,
+      "options": []
+    }
+  },
+  "x-levels": [
+    {
+      "base": "journey",
+      "children": "journeys/*.json",
+      "keeps": "A journey may add steps, edges, sub-journeys, tests, rulings and quotes. It may not drop, move or re-word a row the site lists (a row leaves only by the owner's mark drop), and it carries no status, which is computed. Every row either binds to code and passing tests, or says it is wanted and names its smallest behaviour.",
+      "level": "L0",
+      "name": "user journey",
+      "rules": [
+        "JC-1",
+        "JC-2",
+        "JC-3",
+        "JC-4",
+        "JC-5",
+        "JC-6",
+        "JC-7",
+        "JC-8",
+        "JC-9",
+        "JC-10",
+        "JC-11",
+        "JC-12"
+      ]
+    },
+    {
+      "base": "kind",
+      "children": "engine_defs/website.json kinds",
+      "keeps": "A kind names its line of work engines, the ones required inside the line, its artifacts, a goal, rules (each tagged), a use case, and a functions_template that every function has.",
+      "level": "L1",
+      "name": "department kind",
+      "rules": [
+        "K-1",
+        "K-2"
+      ]
+    },
+    {
+      "base": "LAYERS",
+      "children": "layers/<layer>/v<N>.py; function-templates/<function>/*.json",
+      "keeps": "A version places the interface's role phrase, its 'is not' and 'never' lines and the working agreement (its layout holds all eight inputs), supplies every typed word within its limits and uses no banned word. A use-case template adds floor lines and keeps the Default's checks.",
+      "level": "L2",
+      "name": "function",
+      "rules": [
+        "FT-1",
+        "FT-2",
+        "FT-3",
+        "FT-4",
+        "FT-5",
+        "FT-6",
+        "FT-7",
+        "FT-8",
+        "FT-9",
+        "FT-10"
+      ]
+    },
+    {
+      "base": "engine.library",
+      "children": "engine-templates/*.json; the _library of born templates",
+      "keeps": "A template names an id, a name, a use case, what it reads and writes (artifacts that have templates), a start (trigger kinds that exist, blockers that are gates) and steps that conform to the step template. A born template adds made_by.",
+      "level": "L3",
+      "name": "engine and workflow",
+      "rules": [
+        "E-1",
+        "E-2",
+        "E-3",
+        "E-4"
+      ]
+    },
+    {
+      "base": "step",
+      "children": "layers/<layer>/v<N>.json; engine-templates/*.json",
+      "keeps": "A step has an identity (id, name), a nature, a born rung, a registered check and a body: code, or a prompt with its plain draft and the shape of its answer, or by_hand. A unit starts and ends with a step by code. Ids are unique. Only the free fields change between versions.",
+      "level": "L4",
+      "name": "step",
+      "rules": [
+        "ST-1",
+        "ST-2",
+        "ST-3",
+        "ST-4",
+        "ST-5",
+        "ST-6",
+        "ST-7",
+        "ST-8",
+        "ST-9"
+      ]
+    },
+    {
+      "base": "artifact.template",
+      "children": "artifact-templates/*.json",
+      "keeps": "A template names an id, a name, a kind, a use case, files, checks that exist in artifacts.CHECKS, counts_after (filing or stamp) and operations that are engines.",
+      "level": "L5",
+      "name": "artifact",
+      "rules": [
+        "AR-1",
+        "AR-2"
+      ]
+    },
+    {
+      "base": "identity.ask",
+      "children": "ASK_FORMS: one form for each kind of ask",
+      "keeps": "An ask has a kind from the list, at most three options each of a known kind, is filed only by Identity to the owner, and has a status from the list.",
+      "level": "L6",
+      "name": "ask",
+      "rules": [
+        "AS-1",
+        "AS-2"
+      ]
+    }
+  ],
+  "x-steps": {
+    "ctx": [
+      "ref",
+      "dept",
+      "engine",
+      "def",
+      "slot",
+      "inp",
+      "post",
+      "run",
+      "bag",
+      "how",
+      "spend",
+      "table",
+      "rs",
+      "done",
+      "ready",
+      "item",
+      "peek"
+    ],
+    "gate_answers": [
+      "admit",
+      "wait",
+      "refuse"
+    ],
+    "kinds": [
+      "code",
+      "ai",
+      "person",
+      "gate",
+      "rule"
+    ],
+    "model_tools": [
+      "WebSearch",
+      "WebFetch"
+    ],
+    "natures": [
+      "transform",
+      "check",
+      "decide",
+      "make"
+    ],
+    "row": [
+      "id",
+      "run",
+      "engine",
+      "step",
+      "item",
+      "mode",
+      "slot",
+      "impl",
+      "asked_rung",
+      "rung",
+      "miss",
+      "by",
+      "agent",
+      "applied",
+      "read",
+      "facts",
+      "in_sig",
+      "usd",
+      "calls",
+      "def_version",
+      "started",
+      "status",
+      "why",
+      "ask",
+      "answer",
+      "out_hash",
+      "out_shape",
+      "check",
+      "trial",
+      "ended",
+      "ms"
+    ],
+    "rungs": [
+      "P",
+      "C0",
+      "C1",
+      "C2"
+    ]
+  }
+}
