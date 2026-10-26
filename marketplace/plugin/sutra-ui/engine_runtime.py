@@ -3855,7 +3855,7 @@ def _audit_reading_findings(found, art):
         sev = "high" if sev == "critical" else sev if sev in ("high", "medium", "low") else "medium"
         item_id = f.get("item") if re.match(r"^D[1-9][0-9]?$", str(f.get("item") or "")) else None
         out.append({"id": "F%d" % n, "severity": sev, "claim": _clip(f.get("claim"), 600),
-                    "where": " ".join(str(f.get("page") or f.get("where") or art or "").split())[:200], "item": item_id,
+                    "where": " ".join(str(f.get("where") or f.get("page") or art or "").split())[:200], "item": item_id,
                     "went_to": "Identity"})
     return out
 
@@ -3897,6 +3897,7 @@ def audit_file(ctx, step, item):
     faults = mech.get("faults") if "faults" in mech else (mech.get("notes") if not mech.get("ok") else [])
     found = [{"page": None, "claim": n, "severity": "high"} for n in faults or []]
     found += list(mech.get("holes") or [])
+    found += list(mech.get("defects") or [])          # the page defects of audit/v1's mechanical step (M8.6), each naming where and what
     found += [f for f in judged.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
     found += [{"page": f.get("where"), "claim": f["claim"], "severity": f.get("severity"), "item": f.get("item")}
               for f in said.get("findings") or [] if isinstance(f, dict) and f.get("claim")]

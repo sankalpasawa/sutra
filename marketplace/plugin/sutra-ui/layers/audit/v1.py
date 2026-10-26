@@ -8,16 +8,279 @@ Every code, prompt, draft and check name the recipe uses is provided here by ref
 engine_runtime's Audit region until they move, and a name the layer changes is copied into this module and changed here
 (PRD A1.19). It holds its words (WORDS and LAYOUT, which layers/prompts.py compiles), so no part of it is read from
 the .md bundle. view() is today's pane, by reference, with the readings of readings.jsonl added.
+
+audit_mechanical is the first body to move (W2-CHECKS, M8.6): it checks the record as it always did, and the HTML of the
+deliverable besides, without a browser: a link that goes to no page or anchor of the site, a form with no submit, an image
+with no alt, a page with no h1 or with more than one, and a placeholder where a fact should be. Each defect is a finding
+that names where it is (the page and the element) and what is wrong, and how serious it is; at most one for each element.
+A defect of medium or high weight fails the measure, so a done-when item the measure covers does not hold; a low one is
+filed and noted. It is the engine_runtime body's superset: the legacy body stays there as the fallback a broken layer
+file leaves, and W3-PROOF deletes it.
 """
+import json
+import posixpath
+import re
+from html.parser import HTMLParser
+from urllib.parse import unquote
+
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
 LAYER = 'audit'
 VERSION = 1
 IMPLEMENTS = 1
 RECIPE = 'v1.json'
+
+
+# ---- the page checks of the mechanical step (M8.6): browser-free, one finding for each defect ---------------------------------
+class _Page(HTMLParser):
+    """One page, read once: its links with the words on them, its forms and whether each has a submit, its images and
+    whether each has alt, its h1s, and every id and name an anchor can point at."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.ids, self.links, self.forms, self.images, self.h1s = set(), [], [], [], []
+        self._words = []        # [(tag, record)]: the elements whose words are wanted, still open
+        self._forms = []        # the forms still open, innermost last
+        self._named = set()     # ids of forms a button outside them names (its form attribute)
+
+    def _submit(self, a):
+        if a.get('form'):
+            self._named.add(a['form'])
+        elif self._forms:
+            self._forms[-1]['submit'] = True
+
+    def handle_starttag(self, tag, attrs):
+        a = {k: v if v is not None else '' for k, v in attrs}
+        if a.get('id'):
+            self.ids.add(a['id'])
+        if tag == 'a' and a.get('name'):
+            self.ids.add(a['name'])
+        if tag == 'a' and 'href' in a:
+            rec = {'href': a['href'], 'words': []}
+            self.links.append(rec)
+            self._words.append((tag, rec))
+        elif tag == 'h1':
+            rec = {'words': []}
+            self.h1s.append(rec)
+            self._words.append((tag, rec))
+        elif tag == 'form':
+            rec = {'label': a.get('aria-label') or a.get('name') or a.get('id') or '', 'id': a.get('id'), 'submit': False}
+            self.forms.append(rec)
+            self._forms.append(rec)
+        elif tag == 'button':
+            if a.get('type', 'submit').strip().lower() not in ('button', 'reset'):       # a button with no type submits
+                self._submit(a)
+        elif tag == 'input':
+            if a.get('type', '').strip().lower() in ('submit', 'image'):
+                self._submit(a)
+        elif tag == 'img':
+            self.images.append({'src': a.get('src', ''), 'alt': a.get('alt') if 'alt' in a else None})
+
+    def handle_endtag(self, tag):
+        if tag == 'form' and self._forms:
+            self._forms.pop()
+        for n in range(len(self._words) - 1, -1, -1):
+            if self._words[n][0] == tag:
+                del self._words[n]
+                break
+
+    def handle_data(self, data):
+        for _, rec in self._words:
+            rec['words'].append(data)
+
+    def done(self):
+        self.close()
+        for f in self.forms:
+            if f['id'] in self._named:
+                f['submit'] = True
+        return self
+
+
+# The weight of a defect: medium fails the measure, low is filed and noted. A link to a page the site lacks, a form with no
+# submit, an image with no alt and a page with no h1 weigh medium; a link to an anchor that is not there and a page with more
+# than one h1 weigh low. A placeholder (a hole) weighs high, as it always did.
+_ORDINAL = ('first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth')
+_SCHEME = re.compile(r'^(?:[a-z][a-z0-9+.-]*:|//)', re.I)       # http:, mailto:, tel:, javascript:, data:, //host: not the site's own
+
+
+def _clip(text, n=40):
+    text = ' '.join(str(text or '').split())
+    return text if len(text) <= n else text[:n - 1].rstrip() + '…'
+
+
+def _html_of(raw):
+    """A page's markup: the file as filed, or, for a page filed as {title, body_html} (the Pages form), its body."""
+    text = str(raw)
+    if text.lstrip().startswith('{'):
+        try:
+            data = json.loads(text)
+        except ValueError:
+            data = None
+        if isinstance(data, dict) and isinstance(data.get('body_html'), str):
+            return data['body_html']
+    return text
+
+
+def _planned(files):
+    """The pages a link may go to: the version's own HTML files, and the pages its plan names (_plan.json)."""
+    names = {k for k in files if str(k).lower().endswith(('.html', '.htm'))}
+    try:
+        plan = json.loads(files.get('_plan.json') or '')
+    except (TypeError, ValueError):
+        plan = None
+    if isinstance(plan, dict) and isinstance(plan.get('pages'), list):
+        names |= {str(p['slug']).strip() + '.html' for p in plan['pages'] if isinstance(p, dict) and str(p.get('slug') or '').strip()}
+    return names
+
+
+def _defect(page, severity, element, claim):
+    """One finding: where it is (`where`: the page and the element), what is wrong (`claim`, which names the element too, so
+    it reads alone), and how serious. `page` is the page's own name, which the pane's notes and Identity's questions use."""
+    return {'where': _clip('%s: %s' % (page, element), 200), 'page': _clip(page, 200), 'claim': _clip(claim, 600), 'severity': severity,
+            'kind': 'defect'}
+
+
+def _link_defects(name, page, planned, parsed):
+    out = []
+    for link in page.links:
+        href = link['href'].strip()
+        if not href or _SCHEME.match(href):
+            continue
+        path, _, frag = href.partition('#')
+        path = unquote(path.split('?', 1)[0].strip())
+        label = _clip(' '.join(link['words']))
+        element = "the link '%s'" % label if label else 'a link'
+        if not path:
+            if frag not in ('', 'top') and frag not in page.ids:
+                out.append(_defect(name, 'low', element, '%s goes to #%s, and nothing on the page has that anchor' % (element, _clip(frag))))
+            continue
+        target = posixpath.normpath(path.lstrip('/') if path.startswith('/') else posixpath.join(posixpath.dirname(name), path))
+        target = 'index.html' if target in ('.', '') else target
+        if not target.lower().endswith(('.html', '.htm')):
+            continue                                             # a file that is not a page (a style, a picture) is not this check's
+        if target not in planned:
+            out.append(_defect(name, 'medium', element, '%s goes to %s, which is not a page of the site' % (element, _clip(target))))
+        elif frag not in ('', 'top') and target in parsed and frag not in parsed[target].ids:
+            out.append(_defect(name, 'low', element, '%s goes to %s#%s, and that page has no such anchor' % (element, _clip(target), _clip(frag))))
+    return out
+
+
+def _form_defects(name, page):
+    out = []
+    for n, f in enumerate(page.forms):
+        if f['submit']:
+            continue
+        which = ("the form '%s'" % _clip(f['label'])) if f['label'] else (
+            'the form' if len(page.forms) == 1 else 'the %s form' % (_ORDINAL[n] if n < len(_ORDINAL) else 'later'))
+        out.append(_defect(name, 'medium', which, '%s has no submit button, so a visitor cannot send it' % which))
+    return out
+
+
+def _image_defects(name, page):
+    out = []
+    for img in page.images:
+        if img['alt'] is None:
+            which = ("the image '%s'" % _clip(posixpath.basename(img['src']))) if img['src'] else 'an image'
+            out.append(_defect(name, 'medium', which, '%s has no alt text for a reader who cannot see it' % which))
+    return out
+
+
+def _heading_defects(name, page):
+    heads = [_clip(' '.join(h['words'])) for h in page.h1s]
+    if not heads:
+        return [_defect(name, 'medium', 'the main heading (h1)', 'the page has no h1 heading')]
+    if len(heads) > 1:
+        return [_defect(name, 'low', 'the main heading (h1)',
+                        'the page has more than one h1 heading, and should have one: %s' % ', '.join("'%s'" % h for h in heads))]
+    return []
+
+
+def page_defects(files):
+    """The defects of the HTML pages of one version that no browser is needed to find, as findings {where, page, claim,
+    severity, kind}: by page (sorted), then by element in the page's order, each defect once. A deliverable with no HTML page
+    has none. A page that cannot be parsed is skipped, since Check says that of a page."""
+    files = {k: v for k, v in (files or {}).items() if isinstance(k, str)}
+    parsed = {}
+    for name in sorted(k for k in files if k.lower().endswith(('.html', '.htm'))):
+        try:
+            parsed[name] = _Page()
+            parsed[name].feed(_html_of(files[name]))
+            parsed[name].done()
+        except Exception:  # noqa: BLE001 -- a page that does not parse is Check's to refuse, not a second fault here
+            parsed.pop(name, None)
+    planned, out, seen = _planned(files), [], set()
+    for name, page in parsed.items():
+        for d in _link_defects(name, page, planned, parsed) + _form_defects(name, page) + _image_defects(name, page) + _heading_defects(name, page):
+            if (d['where'], d['claim']) not in seen:
+                seen.add((d['where'], d['claim']))
+                out.append(d)
+    return out
+
+
+def _hole(hole):
+    """A placeholder where a fact should be, as the legacy body finds it (R.placeholders), with `where` added: the page and the
+    words that say it. `page` stays the page's name, which Identity's question to the owner is put by."""
+    phrase = R.PLACEHOLDER.search(str(hole.get('claim') or ''))
+    return dict(hole, where=_clip("%s: the text '%s'" % (hole.get('page'), phrase.group(0) if phrase else 'to be confirmed'), 200))
+
+
+def _note(defect):
+    """A defect as the mechanical step's notes say it: the page, then what is wrong (the claim names the element)."""
+    return '%s: %s' % (defect['page'], defect['claim'])
+
+
+def _has_pages(files):
+    """Whether the version has an HTML page for the page checks to read."""
+    return any(str(k).lower().endswith(('.html', '.htm')) for k in files)
+
+
+def audit_mechanical(ctx, step, item):
+    """Audit's code check of the record, and of the pages (M8.6). The record: every version has its run and its check, and the
+    deliverable traces back to the owner's words. The pages: placeholders where a fact should be (holes, which Identity puts to
+    the owner as a question for the facts), and the page defects of page_defects (defects, each a finding that names where and
+    what). `ok` is false when the record has a fault, a page has a hole, or a defect weighs medium or high."""
+    ref = ctx['ref']
+    if not ctx['bag']['audit.pick']['sample']:
+        return {'ok': True, 'notes': ['not sampled']}
+    notes = []
+    for a in W.artifacts_of(W.dept(ref))[1:]:
+        for v in W.versions(ref, a):
+            if not v.get('run') or 'check' not in v:
+                notes.append('%s has a version with no run or no check' % a)
+    art = R.audit_art(ctx)
+    if not any(c.get('kind') == 'ask' for c in (W.trace(ref, art, ctx['inp']['v']) if art else [])):
+        notes.append("the %s does not trace back to the owner's words" % (art or 'deliverable').lower())
+    files = R.audit_files(ctx)
+    # a page that says "to be confirmed" published what nobody knew (found live 2026-09-28: twelve such places on four
+    # pages); Audit names each hole, Identity asks the owner for the facts instead of a stamp
+    holes = [_hole(h) for h in R.placeholders(files)]
+    defects = page_defects(files)
+    failing = [d for d in defects if d['severity'] != 'low']
+    said = notes + (['the site says it does not know %d thing%s' % (len(holes), '' if len(holes) == 1 else 's')] if holes else [])
+    said += [_note(d) for d in failing[:4]] + (['more is wrong on the pages'] if len(failing) > 4 else [])
+    noted = ['noted, ' + _note(d) for d in defects if d['severity'] == 'low'][:2]
+    clean = "every version has its run and its check; the trace reaches the owner's words"
+    if _has_pages(files):
+        clean += "; the pages' links, forms, images and headings are in order"
+    return {'ok': not said, 'notes': said + noted or [clean], 'faults': notes, 'holes': holes, 'defects': defects}
+
+
+def has_a_verdict(ctx, step, item, out):
+    """Audit's covering of the mechanical step: it gives a verdict (ok) with its notes, and each defect it names says where it
+    is, what is wrong, and how serious (A1.12). A defect that does not fails the step, and the version is not read."""
+    got = R.c_has_a_verdict(ctx, step, item, out)
+    if not got['ok']:
+        return got
+    bad = ['defect %d names no %s' % (n, key) for n, d in enumerate(out.get('defects') or [], 1) if isinstance(d, dict)
+           for key in ('where', 'claim') if not str(d.get(key) or '').strip()]
+    bad += ['defect %d has no weight of high, medium or low' % n for n, d in enumerate(out.get('defects') or [], 1)
+            if not isinstance(d, dict) or d.get('severity') not in S.SEVERITIES]
+    return {'ok': not bad, 'notes': bad or got['notes']}
+
+
 CODE = {
     'audit_pick': ref_to('audit_pick'),
-    'audit_mechanical': ref_to('audit_mechanical'),
+    'audit_mechanical': audit_mechanical,
     'audit_file': ref_to('audit_file'),
 }
 PROMPT = {
@@ -30,7 +293,7 @@ DRAFT = {
 }
 CHECK = {
     'picked_a_sample': ref_to('c_picked_a_sample'),
-    'has_a_verdict': ref_to('c_has_a_verdict'),
+    'has_a_verdict': has_a_verdict,
     'findings_name_where_and_what': ref_to('c_findings_name_where_and_what'),
     'said_what_it_did': ref_to('c_said_what_it_did'),
     'reading_is_s30': ref_to('c_reading_is_s30'),
