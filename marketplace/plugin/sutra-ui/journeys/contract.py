@@ -491,6 +491,10 @@ def case_jc12(js=None):
     return faults
 
 
+# ---- JC-8 is the run's -----------------------------------------------------------------------------------------------------
+case_jc8 = ST.case_jc8        # needs the results of a run and the status files: journeys/status.py holds it, qa/journey_status.py runs it
+
+
 # ---- all of them ---------------------------------------------------------------------------------------------------------
 CASES = (('JC-1', case_jc1), ('JC-2', case_jc2), ('JC-3', case_jc3), ('JC-4', case_jc4), ('JC-5', case_jc5), ('JC-6', case_jc6),
          ('JC-7', case_jc7), ('JC-9', case_jc9), ('JC-10', case_jc10), ('JC-11', case_jc11), ('JC-12', case_jc12))

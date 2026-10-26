@@ -120,7 +120,10 @@ def run_python(name, refs):
             print('%s did not finish in %d seconds: the tests it lists count as missing' % (name, TIMEOUT))
             return out
         if os.path.exists(xml):
-            out.update(parse_junit(xml, here))
+            try:
+                out.update(parse_junit(xml, here))
+            except ET.ParseError:
+                print('%s left a result file that cannot be read: the tests it lists count as missing' % name)
     finally:
         shutil.rmtree(home, ignore_errors=True)
         if os.path.exists(xml):
@@ -154,11 +157,6 @@ def run_tests(refs):
 
 
 # ---- what the run means --------------------------------------------------------------------------------------------------
-def _name(key):
-    """'step:1' is 'step 1'."""
-    return key.replace(':', ' ', 1)
-
-
 def disk_docs():
     """The status documents on disk, {id: document}; a file that is not JSON is a document of nothing."""
     import journeys
@@ -172,31 +170,9 @@ def disk_docs():
 
 
 def problems(js, docs, on_disk, ran=True):
-    """The problems of a run, one sentence each: a failing row, an unproven or fault row in a journey that is not declared, and a
-    status file that is missing, stale, different from what the tests give now, or of no journey. `docs` is {id: the computed
-    document}, `on_disk` {id: the file's document}. With ran=False (--no-run) a file is only compared by its hash."""
-    import journeys
-    out = []
-    for jid in sorted(js, key=journeys.natural):
-        j = js[jid]
-        if j.get('declared'):
-            continue
-        for key, row in docs[jid]['rows'].items():
-            if row['state'] == 'failing':
-                out.append('%s %s is failing: %s' % (jid, _name(key), ', '.join(row['failing']) or 'a test it lists did not pass'))
-            elif row['state'] in ('unproven', 'fault'):
-                out.append('%s %s is %s: %s' % (jid, _name(key), 'unproven' if row['state'] == 'unproven' else 'a fault',
-                                                 'it has code and lists no test' if row['state'] == 'unproven'
-                                                 else 'it has no code and no backlog entry, or a wanted row lists a test'))
-        disk = on_disk.get(jid)
-        if disk is None:
-            out.append('%s has no status file: run qa/journey_status.py --write %s' % (jid, jid))
-        elif disk.get('definitions_sha') != docs[jid]['definitions_sha']:
-            out.append('the status file of %s is stale (the journey changed after it was written): run qa/journey_status.py --write %s' % (jid, jid))
-        elif ran and disk != docs[jid]:
-            out.append('the status file of %s differs from what the tests give now: run qa/journey_status.py --write %s' % (jid, jid))
-    out += ['the status file %s.json belongs to no journey: run qa/journey_status.py --write' % i for i in sorted(on_disk) if i not in js]
-    return out
+    """The problems of a run, one sentence each (JC-8, journeys/status.py::case_jc8)."""
+    from journeys import status
+    return status.case_jc8(js, docs, on_disk, ran)
 
 
 def summary(js, docs, found):
@@ -293,9 +269,9 @@ def main(argv=None):
             if args.write in ('*', jid):
                 write(doc, journeys)
         if args.write == '*':
-            for orphan in sorted(set(on_disk) - set(js)):
+            for orphan in sorted(set(on_disk) - set(live)):
                 (journeys.FOLDER / 'status' / (orphan + '.json')).unlink()
-                print('removed the status file of %s: it is no journey' % orphan)
+                print('removed the status file of %s: no journey has one by that name (a declared journey has none)' % orphan)
         on_disk = disk_docs()
     more = problems(live, docs, on_disk, ran=ran)
     for line in more:

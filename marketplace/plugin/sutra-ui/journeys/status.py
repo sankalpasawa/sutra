@@ -11,6 +11,8 @@ nothing is read from the record, the clock or the disk except the code roots res
     resolve_code(name), resolve_test(ref)  whether a name a row lists is defined in the code, and a test exists
     tests_listed(js)                       every test the rows of the (non-declared) journeys list, sorted
     compute(j, results, states=None)       the journey.status document of one journey
+    compute_all(js, results)               the documents of all journeys that are not declared
+    case_jc8(js, docs, on_disk, ran=True)  contract case JC-8, the one that needs a run: the problems of what the tests gave
 
 The one thing read from the disk is the code the names are looked up in; each file is read once for as long as it does not change.
 """
@@ -239,3 +241,38 @@ def compute_all(js, results):
         for key, state in row_states(j, {t: (results or {}).get(t) for t in tests_listed(j)}, states).items():
             states['%s:%s' % (j['id'], key)] = state
     return {j['id']: compute(j, results, states) for j in live}
+
+
+# ---- JC-8: the run ---------------------------------------------------------------------------------------------------------
+def _name(key):
+    """'step:1' is 'step 1'."""
+    return key.replace(':', ' ', 1)
+
+
+def case_jc8(js, docs, on_disk, ran=True):
+    """The dynamic case (JC-8), as the sentences of the problems it finds: the state of each row is computed from the results,
+    a failing row fails the lane, and so does an unproven or fault row of a journey that is not declared; and each status file is
+    the document the tests give now. `docs` is {id: the computed document}, `on_disk` {id: the document of the file, or None}.
+    A file is missing, stale (its hash is not its journey's), different from what the tests give now, or of no journey that has
+    one. With ran=False (no test was run) a file is compared by its hash only."""
+    out = []
+    for jid in sorted(js, key=natural):
+        if js[jid].get('declared'):
+            continue
+        for key, row in docs[jid]['rows'].items():
+            if row['state'] == 'failing':
+                out.append('%s %s is failing: %s' % (jid, _name(key), ', '.join(row['failing']) or 'a test it lists did not pass'))
+            elif row['state'] == 'unproven':
+                out.append('%s %s is unproven: it has code and lists no test' % (jid, _name(key)))
+            elif row['state'] == 'fault':
+                out.append('%s %s is a fault: it has no code and no backlog entry, or a wanted row lists a test' % (jid, _name(key)))
+        disk = on_disk.get(jid)
+        if disk is None:
+            out.append('%s has no status file: run qa/journey_status.py --write %s' % (jid, jid))
+        elif disk.get('definitions_sha') != docs[jid]['definitions_sha']:
+            out.append('the status file of %s is stale (the journey changed after it was written): run qa/journey_status.py --write %s' % (jid, jid))
+        elif ran and disk != docs[jid]:
+            out.append('the status file of %s differs from what the tests give now: run qa/journey_status.py --write %s' % (jid, jid))
+    out += ['the status file %s.json belongs to no journey that has one (a journey that is not declared does): run qa/journey_status.py --write' % i
+            for i in sorted(on_disk) if i not in js]
+    return out

@@ -1187,8 +1187,9 @@ def test_check_fails_on_a_failing_row_an_unproven_row_and_a_stale_file(folder):
     results = {t: "passed" for t in status.tests_listed(js)}
     docs = JS.documents(js, results)
     assert sorted(docs) == ["J9"] and docs["J9"]["state"] == "proven"
-    # no status file yet: that is a problem, and it names the command
-    assert JS.problems(js, docs, JS.disk_docs()) == ["J9 has no status file: run qa/journey_status.py --write J9"]
+    # no status file yet: that is a problem, and it names the command. JC-8 is the case that needs a run: it lives in status.py
+    assert JS.problems(js, docs, JS.disk_docs()) == ["J9 has no status file: run qa/journey_status.py --write J9"] == C.case_jc8(js, docs, {})
+    assert C.case_jc8 is ST.case_jc8 and "JC-8" not in C.cases([])
     JS.write(docs["J9"], journeys)
     text = (folder / "status" / "J9.json").read_text(encoding="utf-8")
     assert text.endswith("}\n") and text == json.dumps(docs["J9"], sort_keys=True, indent=1, ensure_ascii=False) + "\n" and "\n \"definitions_sha\"" in text
@@ -1224,8 +1225,8 @@ def test_check_fails_on_a_failing_row_an_unproven_row_and_a_stale_file(folder):
     put(folder, "status/J7.json", docs["J9"])
     (folder / "status" / "J6.json").write_text("{", encoding="utf-8")
     got = JS.problems(js, docs, JS.disk_docs())
-    assert got == ["the status file J6.json belongs to no journey: run qa/journey_status.py --write",
-                   "the status file J7.json belongs to no journey: run qa/journey_status.py --write"]
+    assert got == ["the status file J6.json belongs to no journey that has one (a journey that is not declared does): run qa/journey_status.py --write",
+                   "the status file J7.json belongs to no journey that has one (a journey that is not declared does): run qa/journey_status.py --write"]
     # a declared journey is not held to any of it
     put(folder, "functions/FI1.json", {"journeys": [good(id="FI1", kind="function", bound_to="identity", declared=True)]})
     js4 = journeys.load()
@@ -1331,7 +1332,12 @@ def test_check_and_write_the_whole_lane_with_injected_results(folder, monkeypatc
     # --write of all removes the file of a journey that is no more
     put(folder, "status/J7.json", json.loads((folder / "status" / "J9.json").read_text(encoding="utf-8")))
     assert JS.main(["--write"]) == 0
-    assert "removed the status file of J7: it is no journey" in capsys.readouterr().out and not (folder / "status" / "J7.json").exists()
+    assert "removed the status file of J7: no journey has one by that name" in capsys.readouterr().out and not (folder / "status" / "J7.json").exists()
+    put(folder, "status/FI1.json", json.loads((folder / "status" / "J9.json").read_text(encoding="utf-8")))     # a declared journey has none
+    assert JS.main(["--check", "--no-run"]) == 1 and "the status file FI1.json belongs to no journey that has one" in capsys.readouterr().out
+    assert JS.main(["--write"]) == 0 and not (folder / "status" / "FI1.json").exists()
+    capsys.readouterr()
+    assert JS.main(["--check"]) == 0
 
 
 def test_run_tests_runs_each_file_once_and_reads_what_it_printed(folder, monkeypatch):
