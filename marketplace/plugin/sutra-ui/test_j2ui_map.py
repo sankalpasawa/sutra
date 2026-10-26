@@ -21,7 +21,10 @@ Named claims:
   M6   all four views end to end in every cycle state (not started, assessing, waiting, adapting, bargaining, blocked,
        running, pursuing, done, stopped): map, board, artifacts and a site request, as the router serves them; no private key,
        no machine path, no GRANT, COUNTER or REFUSE and no act id in any string, no None where the page reads a string,
-       the same twice, nothing written, and the page's own render of each draws without undefined, NaN or null
+       the same twice, nothing written, and the page's own render of each draws without undefined, NaN or null; the same
+       holds for text a builder or a function wrote (a question, an answer, a post, an ask, a payload with a private key and a
+       path), as the router sends it: the board and the Map say the protocol's tokens in the owner's words, and the router
+       shortens the paths and drops the private keys
 Shares the department fixtures and the Ctx stand-in of test_j2ui_artifacts.py.
 """
 import json
@@ -30,8 +33,8 @@ import re
 import pytest
 
 from test_j2ui_artifacts import (REF, FUNCS, add_ver, ago, make_ctx, mods, msg, page_render, plain_text, proto_consts,  # noqa: F401 -- mods is a fixture
-                                 put_ask, put_post, put_run, put_step, seed_line, set_cycle)
-from test_j2ui_board import put_questions, q
+                                 put_ask, put_post, put_run, put_step, router_client, seed_line, set_cycle)
+from test_j2ui_board import HOSTILE, hostile, put_questions, q
 
 WORK = ["work:brief", "work:site-plan", "work:pages", "work:build", "work:live-site"]
 PERSON_KEYS = ["id", "kind", "row", "label", "status", "version", "tag", "color", "file", "detail", "workflows"]
@@ -808,8 +811,8 @@ def test_m6_every_view_in_every_state_is_clean(mods, state):
 @pytest.mark.parametrize("state", STATES)
 def test_m6_the_real_ctx_gives_the_same_views_once_core_is_merged(mods, state):
     """j2ui-core's get_ctx in place of the stand-in: the same nodes and box statuses in every state, and the same clean
-    output (skipped until j2ui_common exists). website_dept.map_view raises while Identity's question is open, so in the
-    waiting state the real ctx has no engines and says so in its reasons; the views still answer."""
+    output (skipped until j2ui_common exists). The waiting scene here files one artifact; the line with its engines is
+    test_m6_the_real_ctx_keeps_the_engines_while_identitys_question_is_open."""
     C = pytest.importorskip("j2ui_common", reason="j2ui-core is not merged yet")
     scene(mods, state)
     C.reset_caches()
@@ -820,6 +823,87 @@ def test_m6_the_real_ctx_gives_the_same_views_once_core_is_merged(mods, state):
     assert work(real["map"]) == work(stand["map"]) and real["map"]["status"]["state"] == stand["map"]["status"]["state"]
     files = lambda a: [r["file"] for r in a["deliverables"] + a["records"]]
     assert files(real["artifacts"]) == files(stand["artifacts"])
+
+
+def waiting_line(mods):
+    """The waiting state of a department that has most of its line: Root's check has registered the plan, Plan, Write and
+    Check have each filed their work and a checked step, a stamp ask names Publish, and Identity's question to the owner is
+    open beside it (the cycle waits on the owner)."""
+    W, R = mods[0], mods[1]
+    seed_line(W, upto=4)
+    register(W, R)
+    for engine in ("Plan", "Write", "Check"):
+        put_run(W, engine, "ok", id="r-" + engine.lower())
+        put_step(R, W, engine, next(s for s in R.steps_view(REF, engine)["steps"] if s["mode"] == "slot")["id"], ok=True)
+    put_ask(W, "publish", id="a-publish")
+    ask = W.j2_identity_ask("Which pages does the site need?", "cycle-test", "words", why="The brief names no pages")
+    W._put_ask(REF, ask)
+    set_cycle(W, "waiting", 1, open_ask=ask["id"])
+
+
+def test_m6_the_real_ctx_keeps_the_engines_while_identitys_question_is_open(mods):
+    """Identity's question names no engine, and website_dept.map_view read the engine of every pending ask: with the question
+    open the real ctx had no engines and no plan, so the Map labelled every step 'Make', no box carried a workflow, the
+    artifacts lost their writers and the box statuses could not see an engine's runs or asks. The real ctx and the stand-in
+    (which reads the engines part by part) must give the same picture, and it must be the whole one."""
+    C = pytest.importorskip("j2ui_common", reason="j2ui-core is not merged yet")
+    import j2ui_artifacts as A
+    import j2ui_map as M
+    waiting_line(mods)
+    C.reset_caches()
+    real, stand = C.get_ctx(REF), make_ctx(mods)
+    assert real.state == "waiting" and stand.state == "waiting" and real.paused_ask
+    assert not [r for r in real.reasons if r.startswith("map")], real.reasons             # the engines were read, not given up on
+    assert real.planned is True and len(real.engines) == 4
+    mine = lambda c: [(e["name"], e["wid"], e["state"], e["in_line"], e["writes"]) for e in c.engines]
+    assert mine(real) == mine(stand) == [("Plan", "W-1", "Idle", True, "Site plan"), ("Write", "W-2", "Idle", True, "Pages"),
+                                         ("Check", "W-3", "Idle", True, "Build"), ("Publish", "W-4", "Waits", True, "Live site")]
+    got, want = M.build(real), M.build(stand)
+    assert [node(got, s)["label"] for s in TRUNK_STEPS] == ["Make", "Plan", "Write", "Check", "Publish"]
+    assert [node(got, s)["workflows"] for s in TRUNK_STEPS] == [[], ["W-1"], ["W-2"], ["W-3"], ["W-4"]]
+    assert [node(got, s)["detail"] for s in TRUNK_STEPS[1:4]] == ["1 workflow · 1 of 1 checks passed"] * 3
+    assert node(got, "work:live-site")["status"] == "waiting_on_you" and node(got, "work:live-site")["workflows"] == ["W-4"]
+    assert not [x for x in got["not_recorded"] if x.startswith("workflows of") and x != "workflows of Brief"], got["not_recorded"]
+    assert not [x for x in got["not_recorded"] if "not placed" in x]
+    chat_free = lambda m: ([(n["id"], n["label"], n["status"], n["detail"], n["file"], n["workflows"]) for n in m["nodes"] if n["row"] == "work"],
+                           [e for e in m["edges"] if e["kind"] in ("step", "handoff")])
+    assert chat_free(got) == chat_free(want)                                              # steps, boxes, workflows, hand-offs
+    rows = lambda c: [(r["name"], r["workflows"], r["depends_on"], r["depends_on_labels"]) for r in
+                      A.listing(c)["deliverables"] + A.listing(c)["records"]]
+    assert rows(real) == rows(stand) and ("Site plan", ["W-1"], ["brief"], ["Brief"]) in rows(real)
+
+
+def hostile_scene(mods, state):
+    """The scene of a state with text a builder or a function wrote at its most hostile: a board row whose every field carries
+    HOSTILE, a function's post and an ask of Identity's that carry it too (they reach the Map through the chat)."""
+    W, R = mods[0], mods[1]
+    scene(mods, state)
+    rows = W._read(W.ddir(REF) / "questions.json", None) or {"entries": []}
+    put_questions(W, list(rows["entries"]) + [hostile("Q-9")])
+    put_post(W, R, "Adaptation", "Priority", "propose", HOSTILE, thread="x-hostile")
+    put_ask(W, "finding", engine="Audit", text=HOSTILE, id="a-hostile")
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_m6_text_a_builder_or_a_function_wrote_is_clean_as_the_router_sends_it(mods, state):
+    """Rule 4(e) holds for what the record's own writers put in: through the router, in every state, no string of the Map, the
+    Board or the Artifacts holds a machine path, a private key, GRANT, COUNTER, REFUSE or an act id. (Before, only scenes with
+    no hostile text were checked, and the board passed a question through a phrase table that leaves bare tokens alone.)"""
+    hostile_scene(mods, state)
+    client = router_client()
+    got = {}
+    for name in ("map", "board", "artifacts"):
+        r = client.get("/j2ui/%s/api/%s" % (REF, name))
+        assert r.status_code == 200, (state, name, r.text[:200])
+        got[name] = r.json()
+    clean_views(got)
+    blob = json.dumps(got)
+    assert "/Users/" not in blob and "~/" not in blob and "abc123" not in blob
+    board = got["board"]["entries"]
+    assert board and board[-1]["id"] == "Q-9" and board[-1]["question"].startswith("Where is file.txt and x.md? said yes asked for less said no")
+    assert board[-1]["artifact_update"]["kept"] == {"file": "out.json"} and "token" not in board[-1]["artifact_update"]
+    for n in got["map"]["nodes"]:
+        assert not re.search(r"GRANT|COUNTER|REFUSE|ASK_REQUESTER|-proposal|not-understood", n["detail"] + n["label"]), n
 
 
 @pytest.mark.parametrize("state", STATES)
@@ -915,8 +999,8 @@ def test_m6_the_four_views_in_the_router_order_for_a_whole_department(line):
 
 
 def test_m6_when_the_engines_could_not_be_read_the_views_still_answer(line):
-    """website_dept.map_view raises while Identity's question is open (reported to the integrator), so j2ui-core's get_ctx may
-    hand over no engines and no plan: every view then answers with what it can read, nothing raised, nothing blank."""
+    """A read the engines depend on can fail (a card the record cannot read), and j2ui-core's get_ctx then hands over no
+    engines and no plan: every view answers with what it can read, nothing raised, nothing blank."""
     import j2ui_artifacts as A
     import j2ui_map as M
     ctx = make_ctx(line)

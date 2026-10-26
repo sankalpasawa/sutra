@@ -1463,7 +1463,9 @@ def status(ref):
     rs, ak = runs(ref), asks(ref)
     pend = [a for a in ak if a["status"] == "pending"]
     name, inp, why = due(ref, peek=True) if not any(r["status"] == "running" for r in rs) else (None, None, "running")
-    waits = [{"what": a["engine"], "why": "for the stamp" if a["kind"] == "publish" else a["text"], "since": a["created"]} for a in pend]
+    # Identity's question to the owner (j2_identity_ask) names no engine: it is Identity's, so that is what it waits on
+    waits = [{"what": a.get("engine") or "Identity", "why": "for the stamp" if a["kind"] == "publish" else a["text"], "since": a["created"]}
+             for a in pend]
     rt = _runtime(ref)
     if rt:                                     # the owner's own words nobody has answered yet (ER-9)
         waits += [{"what": "Identity", "why": "your words wait: " + w["words"], "since": w["since"]} for w in rt.front_state(ref)["waiting"]]
@@ -1600,7 +1602,7 @@ def map_view(ref):
         e.pop("runs", None)
         last = next((r for r in reversed(rs) if r["engine"] == e["name"]), None)
         e["last"] = last and {"status": last["status"], "at": last["started"], "what": last.get("what"), "words": last.get("words")}
-        if any(a["engine"] == e["name"] and a["status"] == "pending" for a in asks(ref)):
+        if any(a.get("engine") == e["name"] and a["status"] == "pending" for a in asks(ref)):   # Identity's question names none
             e["state"] = "Waits"
         # an engine the registered plan left out stays on the record and never runs (PRD M4.2): it says so
         e["in_line"] = line is None or e["name"] in line

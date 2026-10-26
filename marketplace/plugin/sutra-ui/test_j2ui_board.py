@@ -8,6 +8,10 @@ Named claims:
   M5c  engine names are written as their workflow (W-k) in asked_by, to, answered_by, atom and used_by; a function is its
        lower-case id; asked_by_role is function for the five and builder for the rest; answered_from says where an answer
        came from, or is None
+       Text a builder or a function wrote is said in the owner's words: the protocol's tokens (GRANT, COUNTER, REFUSE in capitals and
+       the act ids with a hyphen, ASK_REQUESTER) become said yes, asked for less, said no..., the ledger's private keys are dropped
+       from what an entry carries on, and the router shortens the machine paths; an English word that is also an act ('refuse') is
+       the builder's own and is left
   M5d  the page's own renderBoard draws the entries (node, the pinned page); the Map draws asks and uses lines between the
        boxes of the engines that asked and answered
 Shares the department fixtures and the Ctx stand-in of test_j2ui_artifacts.py.
@@ -161,11 +165,78 @@ def test_m5c_artifact_update_is_kept_and_the_words_are_the_owners(line):
     assert (e["question"], e["answer"]) == ("Priority did not say yes to the line; Which pages?", "said no: none")
 
 
-def test_m5c_no_secret_and_no_path_leaves(line):
+#: text a builder or a function wrote, as hostile as the record can hold: two machine paths, the bargain's acts in capitals and the
+#: acts' own ids (the words are all upper case or hyphenated, so no English word is in them)
+HOSTILE = ("Where is /Users/someone/secret/file.txt and ~/notes/x.md? GRANT COUNTER REFUSE accept-proposal reject-proposal "
+           "not-understood ASK_REQUESTER")
+TOKENS = re.compile(r"\b(?:GRANT|COUNTER|REFUSE)(?:ED|D)?\b|accept-proposal|reject-proposal|not-understood|ASK_REQUESTER", re.I)
+
+
+def hostile(i="Q-9", **more):
+    """A question whose every machine-written field carries HOSTILE, and a payload that carries a private key and a path."""
+    return q(i, question=HOSTILE, about=HOSTILE, answer=HOSTILE, status="answered", answered_by="Plan",
+             artifact_update={"art": "Site plan", "v": 2, "token": "abc123", "note": HOSTILE, "kept": {"password": "p", "file": "/Users/someone/out.json"}},
+             **more)
+
+
+def test_m5c_the_protocol_words_of_a_builders_text_are_said_in_the_owners_words(line):
+    """The bargain's acts and the acts' ids never reach the page in what a builder or a function wrote: said yes, asked for less,
+    said no, said yes, said no, did not follow, asked you. (The test that stood here fed a path and asserted the absence of words
+    it never held.)"""
     import j2ui_board as B
-    put_questions(line[0], [q(question="Where is /Users/someone/secret/file.txt?", status="open")])
-    blob = json.dumps(B.build(make_ctx(line)))
-    assert "private" not in blob and "GRANT" not in blob and "COUNTER" not in blob and "REFUSE" not in blob
+    put_questions(line[0], [hostile()])
+    e = B.build(make_ctx(line))["entries"][0]
+    for field in ("question", "about", "answer"):
+        assert not TOKENS.search(e[field]), (field, e[field])
+        assert e[field].endswith("said yes asked for less said no said yes said no did not follow asked you"), e[field]
+    assert not TOKENS.search(json.dumps(e)), e
+    assert e["artifact_update"]["note"].endswith("said yes asked for less said no said yes said no did not follow asked you")
+    assert (e["artifact_update"]["art"], e["artifact_update"]["v"]) == ("Site plan", 2)
+
+
+def test_m5c_a_private_key_in_what_an_entry_carries_on_is_dropped(line):
+    import j2ui_board as B
+    import j2_runtime as J
+    put_questions(line[0], [hostile()])
+    e = B.build(make_ctx(line))["entries"][0]
+    keys = set()
+
+    def collect(v):
+        for k, x in (v.items() if isinstance(v, dict) else []):
+            keys.add(str(k).lower())
+            collect(x)
+        for x in (v if isinstance(v, list) else []):
+            collect(x)
+    collect(e)
+    assert not keys & set(J.PRIVATE_KEYS), keys & set(J.PRIVATE_KEYS)
+    assert e["artifact_update"]["kept"] == {"file": "/Users/someone/out.json"}               # the path is the router's to shorten
+    assert "abc123" not in json.dumps(e) and '"p"' not in json.dumps(e)
+
+
+def test_m5c_every_act_id_of_the_runtime_that_is_not_an_english_word_is_a_token(mods):
+    """A new hyphenated act id in engine_runtime.ACT_SAYS must be said in words here too; 'refuse', 'cancel' and the other
+    one-word acts are English and the builder's own."""
+    import engine_runtime as R
+    import j2ui_board as B
+    ids = [a for a in R.ACT_SAYS if "-" in a]
+    assert set(ids) >= {"accept-proposal", "reject-proposal", "not-understood"}
+    assert all(B.protocol_words("x %s x" % a) != "x %s x" % a for a in ids), ids
+    assert B.protocol_words("Should the site refuse cookies, or counter with a notice?") == "Should the site refuse cookies, or counter with a notice?"
+
+
+def test_m5c_a_path_and_a_private_key_leave_through_the_router_and_the_words_are_the_owners(line):
+    """What the page is sent for a hostile row: the router shortens the machine paths to their file name and drops the private
+    keys (j2ui_common.clean), and the board has already said the protocol's tokens in the owner's words."""
+    from test_j2ui_artifacts import router_client
+    put_questions(line[0], [hostile()])
+    r = router_client().get("/j2ui/%s/api/board" % REF)
+    assert r.status_code == 200
+    blob = r.text
+    assert "/Users/" not in blob and "~/" not in blob and "secret/file.txt" not in blob
+    e = r.json()["entries"][0]
+    assert e["question"].startswith("Where is file.txt and x.md?") and not TOKENS.search(blob)
+    assert e["artifact_update"] == {"art": "Site plan", "v": 2, "note": e["artifact_update"]["note"], "kept": {"file": "out.json"}}
+    assert "abc123" not in blob and "password" not in blob and '"token"' not in blob
 
 
 # ---- M5d: the page and the Map -------------------------------------------------------------------------------------------------------------------

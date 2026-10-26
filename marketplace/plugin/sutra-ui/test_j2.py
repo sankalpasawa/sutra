@@ -341,6 +341,30 @@ def test_j2_1_identitys_question_takes_words_once_and_the_standard_is_read_again
     assert _actions(J, ref) == ["identity.questioned", "ask.answered", "identity.questioned", "ask.answered"]
 
 
+def test_j2_1_the_status_and_the_map_read_while_identitys_question_is_open(j2):
+    """Identity's question names no engine (it is Identity's, and takes words, never a stamp). status() and map_view() read the
+    engine of every pending ask, so the moment a department waited on the owner they raised KeyError: no engine card, no
+    plan, and the J2 view's Map lost every workflow. A question that names no engine is Identity's wait and waits no engine."""
+    W, _, J, _ = j2
+    d, _ = W.create("dref-gap2", "Finance highlights", "", kind="website")
+    ref = d["ref"]
+    d.update({"goal": "", "done": "", "events": [{"kind": "j2_ready", "route": "template"}]})
+    W.save_dept(ref, d)
+    J.start(ref)
+    q = next(a for a in W.asks(ref) if a["kind"] == "j2_identity" and a["status"] == "pending")
+    assert "engine" not in q
+    st = W.status(ref)
+    assert [w["what"] for w in st["waits"]] == ["Identity"] and st["waits"][0]["why"] == q["text"]
+    mv = W.map_view(ref)
+    assert [e["name"] for e in mv["engines"]] == W.dept(ref)["engines"] and "planned" in mv
+    assert all(e["state"] != "Waits" for e in mv["engines"]), "Identity's question is no engine's wait"
+    W._put_ask(ref, {"id": "a-stamp", "kind": "publish", "engine": "Publish", "text": "Publish: go live", "status": "pending",
+                     "created": W.now()})
+    again = W.map_view(ref)
+    assert {e["name"]: e["state"] for e in again["engines"]}["Publish"] == "Waits"
+    assert sorted(w["what"] for w in W.status(ref)["waits"]) == ["Identity", "Publish"]
+
+
 def test_j2_1_thin_first_words_are_asked_about_and_nothing_starts(j2, monkeypatch):
     W, R, J, _ = j2
     _model(monkeypatch, R, {"identity.take": lambda prompt: {"verdict": "go", "why": "", "thin": "New website" in prompt and "algebra" not in prompt,

@@ -248,9 +248,10 @@ def seed_line(W, upto=5, ok=True):
 
 # ---- the Ctx contract's stand-in (j2ui_common.get_ctx, built by j2ui-core) --------------------------------------------
 def map_engines(W, R, F, ref):
-    """(engines, planned) as website_dept.map_view gives them. map_view raises KeyError('engine') while Identity's question is
-    open (website_dept.status reads a['engine'] of every pending ask and a j2_identity ask has none; found 2026-10-26 on
-    main 827fe38f, reported to the integrator), so the same parts are read here one by one, as j2ui-core's get_ctx must."""
+    """(engines, planned) as website_dept.map_view gives them, read part by part. map_view raised KeyError('engine') while
+    Identity's question was open (website_dept.status read a['engine'] of every pending ask and a j2_identity ask has none;
+    found 2026-10-26 on main 827fe38f, mended in website_dept by the views fix round 1). The stand-in keeps reading the
+    parts itself, so it stays an oracle that does not share map_view's code with the real ctx it is compared to."""
     d, rs, ak = W.dept(ref), W.runs(ref), W.asks(ref)
     engines = [x for x in (W.engine_view(ref, e[0]) for e in W.engines_of(d)) if x]
     table = R.coordination(ref)
@@ -309,6 +310,19 @@ def make_ctx(mods_, ref=REF, chat=None, paused=None):
     ctx.dest = lambda name: names.get(name)
     ctx.step_at = lambda iso: None
     return ctx
+
+
+def router_client():
+    """A client for the J2 router (j2ui_api) over the real ctx: what the page is sent, after the router has cleaned it (no
+    private key, no path of this machine). Skips, printing why, until j2ui-core is merged."""
+    API = pytest.importorskip("j2ui_api", reason="j2ui-core is not merged yet")
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import j2ui_common as C
+    C.reset_caches()
+    app = FastAPI()
+    app.include_router(API.router)
+    return TestClient(app)
 
 
 def msg(i, who, text, **more):

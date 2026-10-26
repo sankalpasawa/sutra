@@ -10,9 +10,17 @@ Each entry becomes the prototype's own (j2_board.new_entry at the pin): engine n
 (ctx.wid), functions as their lower-case id, and asked_by_role says whether one of the five asked or a builder.
 Nothing is invented: an answered_from the record does not say is None, and the page prints "not recorded". Reads only; no
 model call; never raises (a torn or odd file is an empty board with its reason in ctx.reasons).
+
+The questions and answers are what a builder or a function wrote, so they are machine-written text and are said in the owner's
+words on the way out: owner_words' phrases ('granted the line'), then the protocol's own tokens, which no prose contains (GRANT,
+COUNTER and REFUSE in capitals, and the act ids accept-proposal, reject-proposal, not-understood and ASK_REQUESTER; protocol_words).
+A lower-case word that is also English ('refuse', 'counter') is the builder's own and is left, as owner_words leaves it. The
+ledger's private keys (j2_runtime.PRIVATE_KEYS) are dropped from anything an entry carries on. An absolute path of this machine
+is shortened by the router, which cleans every JSON body (j2ui_common.clean), not here.
 """
 import re
 
+import j2_runtime as J
 import owner_words
 import website_dept as W
 
@@ -23,6 +31,12 @@ FUNCS = ("identity", "adaptation", "priority", "coordination", "audit")
 KEYS = ("id", "asked_by", "atom", "to", "about", "question", "answer", "answered_by", "status", "artifact_update", "used_by", "cycle",
         "attempt", "asked_by_role", "answered_from")
 _WID = re.compile(r"W-\d+")
+#: the tokens of the protocol that never occur in prose, each with the owner's words for it: the bargain's acts in capitals and the
+#: acts' own ids (engine_runtime.ACT_SAYS: the ids with a hyphen; 'refuse' and 'cancel' are English words and are not tokens)
+PROTOCOL = ((re.compile(r"\bGRANT(?:ED)?\b"), "said yes"), (re.compile(r"\bCOUNTER(?:ED)?\b"), "asked for less"),
+            (re.compile(r"\bREFUSE[D]?\b"), "said no"), (re.compile(r"\baccept-proposal\b", re.I), "said yes"),
+            (re.compile(r"\breject-proposal\b", re.I), "said no"), (re.compile(r"\bnot-understood\b", re.I), "did not follow"),
+            (re.compile(r"\bASK_REQUESTER\b"), "asked you"))
 
 
 def _reason(ctx, why):
@@ -45,9 +59,28 @@ def _who(ctx, name):
     return got or (name.lower() if name.lower() in FUNCS else name)
 
 
+def protocol_words(text):
+    """The text with the protocol's own tokens (PROTOCOL) said in the owner's words; every other word as it was. The Map's
+    line for a function uses it too: what a function wrote may carry a token, and no string we send does."""
+    for token, said in PROTOCOL:
+        text = token.sub(said, text)
+    return text
+
+
 def _text(value):
-    """Machine-written text in the owner's words ('' for none); an entry's id and names are never passed through here."""
-    return owner_words.plain(str(value)) if isinstance(value, str) else ""
+    """Machine-written text in the owner's words ('' for none): owner_words' phrases, then the protocol's tokens."""
+    return protocol_words(owner_words.plain(str(value))) if isinstance(value, str) else ""
+
+
+def _deep(value):
+    """A value an entry carries on (artifact_update, a name, an id) with the protocol's tokens said in the owner's words in
+    every string and the ledger's private keys dropped at any depth; the keys that stay and everything that is not a string
+    are as they were."""
+    if isinstance(value, dict):
+        return {k: _deep(v) for k, v in value.items() if str(k).lower() not in J.PRIVATE_KEYS}
+    if isinstance(value, (list, tuple)):
+        return [_deep(v) for v in value]
+    return protocol_words(value) if isinstance(value, str) else value
 
 
 def _version(update):
@@ -90,14 +123,14 @@ def entry(ctx, e):
         attempt = 1
     used = e.get("used_by")
     update = e.get("artifact_update")
-    return {"id": e["id"].strip(), "asked_by": _who(ctx, asked) or "", "atom": _who(ctx, e.get("atom")), "to": _who(ctx, e.get("to")) or "",
-            "about": _text(e.get("about")), "question": _text(e.get("question")),
-            "answer": _text(e.get("answer")) or None, "answered_by": answered_by, "status": e["status"],
-            "artifact_update": update if isinstance(update, dict) and update else None,
-            "used_by": [_who(ctx, u) for u in used if isinstance(u, str) and u.strip()] if isinstance(used, list) else [],
-            "cycle": e.get("cycle") if isinstance(e.get("cycle"), str) else None, "attempt": attempt,
-            "asked_by_role": "function" if asked.strip().lower() in FUNCS else "builder",
-            "answered_from": _from(ctx, e, answered_by, e["status"])}
+    return _deep({"id": e["id"].strip(), "asked_by": _who(ctx, asked) or "", "atom": _who(ctx, e.get("atom")), "to": _who(ctx, e.get("to")) or "",
+                  "about": _text(e.get("about")), "question": _text(e.get("question")),
+                  "answer": _text(e.get("answer")) or None, "answered_by": answered_by, "status": e["status"],
+                  "artifact_update": update if isinstance(update, dict) and update else None,
+                  "used_by": [_who(ctx, u) for u in used if isinstance(u, str) and u.strip()] if isinstance(used, list) else [],
+                  "cycle": e.get("cycle") if isinstance(e.get("cycle"), str) else None, "attempt": attempt,
+                  "asked_by_role": "function" if asked.strip().lower() in FUNCS else "builder",
+                  "answered_from": _from(ctx, e, answered_by, e["status"])})
 
 
 def _build(ctx):
