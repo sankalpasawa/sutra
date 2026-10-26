@@ -1153,7 +1153,7 @@ def test_m4_4_a_plan_without_check_is_refused_by_roots_check(j2):
     d = W.dept(ref)
     before = len(d["workflows"])
     out = R._j2_settle(ref, d, [{"name": n} for n in ("Plan", "Write", "Publish")], "library", d.get("goal"), "a test")
-    assert "refused" in out["said"]
+    assert "sent the workflow back" in out["said"]
     assert len(W.dept(ref)["workflows"]) == before, "nothing registered"
     blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"][-1]
     assert blocked["payload"]["faults"] == ["the plan leaves out Check, which this kind of department requires"]
@@ -1168,7 +1168,8 @@ def test_m4_4_a_plan_without_check_is_refused_by_roots_check(j2):
 
 
 def test_m4_4_a_counter_that_drops_check_goes_to_identity_as_a_conflict(j2, monkeypatch):
-    """Adaptation taking a counter that leaves out Check, or the conflict going anywhere but Identity, must fail."""
+    """Adaptation taking a counter that leaves out Check, or the conflict going anywhere but Identity, must fail; the ask
+    says it in the owner's words on the record itself."""
     W, R, J, _ = j2
     _counter_keeps(monkeypatch, R, keep=["Plan", "Write", "Publish"])
     ref = _born(j2)
@@ -1185,7 +1186,7 @@ def test_m4_4_a_counter_that_drops_check_goes_to_identity_as_a_conflict(j2, monk
     assert len(ask) == 1 and _work(W, ref) == []
     import owner_words
     said = owner_words.plain(ask[0]["text"])
-    assert "Priority asked for less" in said and "countered" not in said.lower(), said
+    assert "Priority asked for less" in ask[0]["text"] and "countered" not in said.lower(), said
     # the owner stamps it: the plan as proposed, Check in it, is registered and runs
     _stamp_all(W, ref, kind="conflict")
     assert W.dept(ref)["workflows"][-1]["engines"] == LINE

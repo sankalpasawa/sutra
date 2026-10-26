@@ -4293,9 +4293,9 @@ def adapt_line_counter(ctx, step, item):
     proposed = [e.get("name") for e in offer.get("engines") or []]
     dropped = [n for n in required_engines(ctx["dept"]) if n in proposed and n not in keep]
     if dropped:
-        _line_conflict(ref, p["thread"], "Priority countered (%s) and the line would leave out %s, which this kind of department requires"
+        _line_conflict(ref, p["thread"], "Priority asked for less (%s) and the line would leave out %s, which this kind of department requires"
                        % (why, _names(dropped)))
-        return {"said": "could not take Priority's counter: it leaves out %s, which is required; the conflict goes to Identity" % _names(dropped)}
+        return {"said": "could not take Priority's ask for less: it leaves out %s, which is required; the conflict goes to Identity" % _names(dropped)}
     if not engines or len(engines) == len(offer.get("engines") or []) or _root_check(ref, ctx["dept"], engines, offer.get("source") or "shaped"):
         _line_conflict(ref, p["thread"], "Priority asked for less (%s) and the line does not work that way" % why)
         return {"said": "could not take Priority's ask for less; the conflict goes to Identity"}
