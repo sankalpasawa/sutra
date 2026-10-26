@@ -11,10 +11,16 @@ Named claims:
   F5  the read carries no private key and no path, and it writes nothing
   F6  the route answers for a department on the engine runtime and 404s for any other ref
   F7  the cycle says where the department is in the owner's words, with its eight steps, and needs_you only when it does;
-      each function's last act is the act and to whom, in the owner's words, never the words a post carried
+      each function's last act is the act and to whom, in the owner's words, never the words a post carried, and so is
+      each of the last messages between the five that All five's Between them shows (M1.8)
   F8  every word of the read is the owner's in every state: said yes, asked for less, said no and sent back, never grant,
-      counter or refuse (the bargain on the record, a dropped plan, a department Root set up); a rule's tag (go, ask,
-      refuse, always) is the owner's own word and stays
+      counter or refuse (the bargain on the record, a dropped plan, a department Root set up, a running function, and
+      every state a real department passes through when Priority says no, Identity asks, the owner says no, Identity
+      rules it runs, or Root's check sends a plan back); a rule's tag (go, ask, refuse, always) is the owner's own word
+      and stays
+  F9  rendered by the panel's own scripts from the real reads of departments Root set up (tests/fixtures/pane_words.js),
+      no function's pane, nor the Map, All five or the list, shows grant, counter or refuse at rest or on a hover: the
+      older cards under each page (steps, gates, Moves, Control, Stamped by rule, the who-may-post table) included
 
 Each department is born the way the app makes one (website_dept.create), then its record is set to the state under
 test, so what is read is the record a real department keeps.
@@ -23,6 +29,8 @@ import importlib
 import json
 import os
 import re
+import shutil
+import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -215,6 +223,13 @@ def test_f1_stopped_and_done_are_quiet_throughout(mods):
     assert got["cycle"]["says"] == "Goal reached" and got["cycle"]["needs_you"] is False
     assert all(s["state"] in ("done", "skipped") for s in got["cycle"]["steps"])
     assert {n["word"] for n in nodes.values()} == {"quiet"} and got["stopped"] is False
+    # the goal reached, then the owner switches the department off on the Map (POST /stop: W.set_stopped only): the cycle
+    # still says Goal reached, and every function says stopped, the word the Map, the list, All five and the pane print
+    W.set_stopped(REF, True)
+    nodes, got = _expect(F)
+    assert got["cycle"]["state"] == "done" and got["cycle"]["says"] == "Goal reached" and got["stopped"] is True
+    assert {n["word"] for n in nodes.values()} == {"stopped"}, {n["name"]: n["word"] for n in nodes.values()}
+    assert F.function(REF, "identity")["node"]["word"] == "stopped"
 
 
 def test_f1_a_department_with_no_cycle_reads_its_runs_and_asks(mods):
@@ -409,6 +424,36 @@ def test_f7_on_a_born_department_the_last_act_is_the_functions_own(mods, born):
     assert last["Adaptation"]["what"].split()[0] in ("proposed", "registered"), last["Adaptation"]
 
 
+def test_m18_between_them_is_what_each_function_did_never_the_words_it_carried(mods, born, monkeypatch):
+    """All five's Between them (round 2, gap 5): the last three messages between the five, newest first, each as the act
+    its function did, in the owner's words; the words a message carried (the owner's goal that Identity hands on and
+    Adaptation proposes from, Priority's why) are its detail, for the hover, and never the row."""
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning")
+    rows = F.functions(ref)["between"]
+    assert 1 <= len(rows) <= 3, rows
+    posts = [p for p in R.board(ref) if p["src"] in FUNCS and any(x in FUNCS and x != p["src"] for x in p.get("dst") or [])]
+    assert [r["n"] for r in rows] == [p["n"] for p in reversed(posts)][:len(rows)], "newest first, between the five only"
+    for r in rows:
+        assert r["from"] in FUNCS and r["to"] and all(x in FUNCS for x in r["to"]), r
+        assert WEBSITE not in r["act"] and "Class 8" not in r["act"], r
+        assert r["act"].split()[0] in ("asked", "proposed", "said", "told", "answered", "agreed", "let", "did", "posted"), r
+    # the whole bargain, as the rows say it
+    acts = [F._did(p) for p in posts]
+    assert "asked Adaptation for the plan" in acts and "proposed the plan to Priority" in acts and "said yes to the plan" in acts, acts
+    asked = next(p for p in posts if p["src"] == "Identity" and p["dst"] == ["Adaptation"])
+    assert WEBSITE in (R._line(asked) or ""), "the owner's words were what Identity's message carried"
+    # Priority says no: Adaptation takes the disagreement to Identity, said as the act
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: ({"answer": "reject", "why": "the envelope has no room today"}, 0.01, "model")
+                        if step["id"] == "priority.bargain" else (None, 0.0, "offline"))
+    ref = born(WEBSITE, "No Room Co")
+    rows = F.functions(ref)["between"]
+    assert rows[0]["from"] == "Adaptation" and rows[0]["act"] == "told Identity about a disagreement", rows[0]
+    assert rows[1]["from"] == "Priority" and rows[1]["act"] == "said no to the plan" and rows[1]["detail"] == "the envelope has no room today", rows[1]
+    assert all(WEBSITE not in r["act"] for r in rows)
+
+
 # ---- M1.2: speaks-to and made-by from the record ---------------------------------------------------------------------
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
 ORGANIC = "Set up a laboratory system to track chemical inventory for our school science team"
@@ -427,12 +472,13 @@ def born(mods, monkeypatch):
     if not E.active_roots(E.load_domains()):
         E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
 
-    def make(words, org):
+    def make(words, org, settle=True):
         root = founding.found_structure(org, owner="Sankalp")["root"]
         W.owner_ask(root, words)
         W.run_until_idle(root, limit=300)
         child = next(d for d in W.list_depts() if d.get("parent") == root)
-        W.run_until_idle(child["ref"], limit=300)
+        if settle:
+            W.run_until_idle(child["ref"], limit=300)
         return child["ref"]
     return make
 
@@ -494,6 +540,40 @@ def test_m14_the_sheets_words_set_up_a_runtime_department_with_its_five_function
     assert len(kids) == 1 and kids[0]["runtime"] == 2, kids
     got = F.functions(kids[0]["ref"])
     assert [n["name"] for n in got["functions"]] == FUNCS
+    # the name the owner gave on the sheet is the department's name, and the words after it its goal (round 2, gap 6)
+    assert kids[0]["name"] == "Billing", kids[0]["name"]
+    asked = " ".join(str(r) for r in W.requests(kids[0]["ref"]))
+    assert "Invoices for every customer" in asked and "Set up a department" not in asked, asked
+    # a second sheet's department is a second department, never folded into the first under a draft name
+    W.owner_ask(root, "Set up a department: Design. Logos and brand pages for every product we sell")
+    W.run_until_idle(root, limit=300)
+    kids = sorted((d for d in W.list_depts() if d.get("parent") == root), key=lambda d: d["name"])
+    assert [k["name"] for k in kids] == ["Billing", "Design"], [k["name"] for k in kids]
+    assert all(k["runtime"] == 2 for k in kids)
+    said = [str((p.get("payload") or {}).get("done") or "") for p in R.board(root) if p["src"] == "Identity"]
+    assert not [x for x in said if "already exists" in x], said
+
+
+def test_m14_the_shape_prompt_keeps_the_name_the_owner_gave_and_the_covering_holds_it(mods, born, monkeypatch):
+    """The AI inside Setup is told the name the owner gave; when it shapes another name all the same, the covering keeps
+    the owner's (rules 1 and 6: the owner's own words, and the code's verdict in the covering)."""
+    W, R, J, F = mods
+    import founding
+    prompts = []
+
+    def model(prompt, step):
+        if step["id"] != "setup.shape":
+            return None, 0.0, "offline"
+        prompts.append(prompt)
+        return {"name": "Thread & Loom Department", "kind": "organic", "goal": "Invoices for every customer, sent by email",
+                "purpose": "Invoices", "second": ""}, 0.01, "model"
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setattr(R, "MODEL", model)
+    root = founding.found_structure("Thread & Loom", owner="Sankalp")["root"]
+    W.owner_ask(root, "Set up a department: Billing. Invoices for every customer, sent by email")
+    W.run_until_idle(root, limit=300)
+    assert prompts and "THE NAME THE OWNER GAVE: Billing" in prompts[-1], prompts[-1:]
+    assert [d["name"] for d in W.list_depts() if d.get("parent") == root] == ["Billing"]
 
 
 # ---- M1.7: each function as its site page holds it ------------------------------------------------------------------
@@ -627,6 +707,20 @@ def test_m17_the_bargain_and_a_dropped_plan_read_in_the_owners_words(mods):
     assert "Says no to you, Adaptation, Coordination" in fields["writes"] and "Take a no" in fields["hears"]
     assert any("Drop what was turned down" == s["name"] for s in idn["recipe"])
     assert {j["id"]: j["last"]["summary"] for j in idn["journeys"] if j["last"]}["FI1"] == "The owner said no."
+    # while a function's run goes, its line is the handler's name, which carries the inside word (round 2, gap 2): the
+    # Map's box, its hover, the All five card and the list's title read it in the owner's words too
+    _cycle(W, "unread", 7)
+    for i, (fn, what, said) in enumerate((("Adaptation", "Priority granted the line", "Priority said yes to the line"),
+                                          ("Adaptation", "Priority refused the line", "Priority said no to the line"),
+                                          ("Adaptation", "Priority countered the line", "Priority asked for less on the line"),
+                                          ("Identity", "Take a refusal", "Take a no"), ("Coordination", "Hear a refusal", "Hear a no"))):
+        W._write(W.ddir(REF) / "runs.json", [r for r in W.runs(REF) if r.get("status") != "running"])
+        _run(W, fn, system=True, what=what, id="r-running-%d" % i)
+        got = F.functions(REF)
+        node = next(n for n in got["functions"] if n["name"] == fn)
+        assert node["state"] == "working" and node["line"] == said, (what, node)
+        assert not _banned(got), (what, _banned(got))
+        assert not _banned(F.function(REF, fn.lower())["node"]), what
 
 
 def test_m17_a_born_department_reads_in_the_owners_words(mods, born):
@@ -639,3 +733,148 @@ def test_m17_a_born_department_reads_in_the_owners_words(mods, born):
     for fn in JOURNEYS:
         page = F.function(ref, fn)
         assert not _banned(page), (fn, _banned(page))
+
+
+def _model(monkeypatch, R, answers):
+    """test_j2.py's model that is a function: a step id maps to what the AI inside says; every other step falls to its
+    draft, as it does offline."""
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+
+    def model(prompt, step):
+        if step["id"] not in answers:
+            return None, 0.0, "offline"
+        return answers[step["id"]], 0.01, "model"
+    monkeypatch.setattr(R, "MODEL", model)
+
+
+def _stepped(W, J, F, ref, bad, limit=300):
+    """Run the department one start at a time, as the motor does, and read the five and each function's page after
+    every start, so every state the real flow passes through is read, not only where it comes to rest."""
+    for _ in range(limit):
+        for v in [F.functions(ref)] + [F.function(ref, fn) for fn in JOURNEYS]:
+            if _banned(v):
+                bad.append((J.status(ref).get("state"), v.get("fn") or "five", _banned(v)))
+        if not W.run_until_idle(ref, limit=1):
+            return
+
+
+def test_m17_the_real_flow_reads_in_the_owners_words_in_every_state_it_passes(mods, born, monkeypatch):
+    """Round 2, gap 4: the record's own lines reach the screen in the owner's words in the states a real department
+    passes through, not only on the happy path. Priority's AI says no, Identity's draft puts the plan to the owner (the
+    ask's text is Identity's line, at rest on All five and its pane), the owner says no (Identity's tell is its last
+    act's detail); and Root's check sends a plan back once, so Adaptation reshapes it (FA1's row and the Propose pill)."""
+    W, R, J, F = mods
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "the envelope has no room today"}})
+    ref, bad = born(WEBSITE, "Acme Learning", settle=False), []
+    _stepped(W, J, F, ref, bad)
+    got = F.functions(ref)
+    idn = next(n for n in got["functions"] if n["name"] == "Identity")
+    assert J.status(ref)["state"] == "waiting" and idn["state"] == "waiting_on_you", (J.status(ref), idn)
+    assert "Priority said no to the plan: the envelope has no room today" in idn["line"], idn["line"]
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "conflict"]:
+        W.decide_ask(ref, a["id"], False)
+    _stepped(W, J, F, ref, bad)
+    assert J.status(ref)["state"] == "blocked"
+    last = next(n for n in F.functions(ref)["functions"] if n["name"] == "Identity")["last"]
+    assert last and "said no" in " ".join(filter(None, [last["what"], last["detail"]])), last
+    # Identity rules the plan runs: its tell says Priority did not say yes, never that it did not grant
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "the envelope has no room today"},
+                            "identity.close": {"ruling": "run", "why": "the goal cannot be met without a site"}})
+    ruled = born(WEBSITE, "Run Co", settle=False)
+    _stepped(W, J, F, ruled, bad)
+    assert "workflow.registered" in [e["action"] for e in J.events(ruled)]
+    assert not bad, bad[:3]
+
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["Facts reads Notes, which nothing before it writes"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    _model(monkeypatch, R, {})
+    ref, seen = born(ORGANIC, "Lab Co", settle=False), []
+    states = []
+    for _ in range(300):
+        states.append(J.status(ref).get("state"))
+        for v in [F.functions(ref)] + [F.function(ref, fn) for fn in JOURNEYS]:
+            if _banned(v):
+                seen.append((states[-1], v.get("fn") or "five", _banned(v)))
+        if not W.run_until_idle(ref, limit=1):
+            break
+    assert calls["n"] >= 2 and "adapting" in states, states
+    assert not seen, seen[:3]
+
+
+# ---- M1.7 (round 2, gap 1): the older cards under each function's page say the owner's words too -----------------------
+PANE_DRIVER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests", "fixtures", "pane_words.js")
+
+
+def _reads(W, ref):
+    """The reads a function's pane, the Map and All five really make, from the real routes, by the tail of their path."""
+    import website_api
+    importlib.reload(website_api)
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(website_api.router)
+    c = TestClient(app)
+    tails = ["map", "functions", "board", "status"] + ["functions/" + fn for fn in JOURNEYS] + ["steps/" + fn.capitalize() for fn in JOURNEYS]
+    out = {}
+    for t in tails:
+        got = c.get("/api/native/%s/%s" % (ref, t))
+        assert got.status_code == 200, (t, got.status_code)
+        out[t] = got.json()
+    return {"name": W.dept(ref)["name"], "reads": out}
+
+
+def _panes(tmp_path, reads):
+    """What a person sees on each function's pane, the Map, All five and the list, rendered by the panel's own scripts
+    from those reads (tests/fixtures/pane_words.js): the text at rest, and the hovers apart."""
+    src = tmp_path / ("reads-%d.json" % len(list(tmp_path.glob("reads-*.json"))))
+    src.write_text(json.dumps(reads))
+    p = subprocess.run(["node", PANE_DRIVER, str(src)], capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    return json.loads(p.stdout)
+
+
+def _banned_shown(text):
+    text = RULE_TAGS.sub(" ", text.lower())
+    return [text[max(0, text.index(w) - 60):text.index(w) + 40] for w in BANNED if w in text]
+
+
+def test_m17_every_card_on_a_functions_pane_says_the_owners_words(mods, born, monkeypatch, tmp_path):
+    """The function's page sits on top of the older cards (its steps, gates and Moves, Identity's Control and Stamped by
+    rule, Priority's limits, Coordination's who-may-post table): those cards print the steps, map and status reads, whose
+    names and run lines are the record's inside words (a handler's name, a step's name, a function's goal, a run's line).
+    Rendered from the real reads of departments Root set up, the bargain on the record and Priority saying no, no pane,
+    nor the Map, All five or the list, shows grant, counter or refuse, at rest or on a hover."""
+    W, R, J, F = mods
+    if shutil.which("node") is None:
+        pytest.skip("node is not on PATH")
+    ref = born(WEBSITE, "Acme Learning")
+    panes = _panes(tmp_path, _reads(W, ref))
+    for k, v in panes.items():
+        assert v["rest"], k
+        assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))
+    assert "Runs within your rules" in panes["identity"]["rest"], "Identity's Control, in the owner's words"
+    assert "Gates" in panes["identity"]["rest"] and "Stamped by rule" in panes["identity"]["rest"], "the older cards are there"
+    assert "Say yes, ask for less, or say no" in panes["priority"]["rest"], "Priority's bargain step"
+    assert "says no" in panes["coordination"]["rest"], "the who-may-post table's act words"
+    assert "Priority said yes to the line" in panes["adaptation"]["rest"], "Adaptation's handler, as it hears Priority"
+    # Priority says no, and Identity puts the plan to the owner: the conflict ask is at rest on Identity's line
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: ({"answer": "reject", "why": "the envelope has no room today"}, 0.01, "model")
+                        if step["id"] == "priority.bargain" else (None, 0.0, "offline"))
+    ref = born(WEBSITE, "No Room Co")
+    assert J.status(ref)["state"] == "waiting"
+    panes = _panes(tmp_path, _reads(W, ref))
+    for k, v in panes.items():
+        assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))
+    assert "Priority said no to the plan" in panes["five"]["rest"], "the ask at rest on All five"
+    # an organic department: Adaptation shapes its engines and Identity adds each on Priority's yes (Stamped by rule)
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: (None, 0.0, "offline"))
+    ref = born(ORGANIC, "Lab Co")
+    assert W.dept(ref)["engines"]
+    panes = _panes(tmp_path, _reads(W, ref))
+    for k, v in panes.items():
+        assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))

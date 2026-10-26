@@ -2040,6 +2040,17 @@ JUST_DO_IT = re.compile(r"\s*just do it[.!]?\s*", re.I)
 J1_DEFAULTS = ["department name from the organisation", "Priority limits from the selected Library template"]
 SECOND = re.compile(r"\b(?:and|plus)\s+(?:also\s+)?(?:an?\s+)?(?:separate|another|second)(?:\s+(?:separate|another|second))*"
                     r"\s+(?:(?:department|team|one)\s+(?:for|to|that|which)\s+)?(.+)$", re.I)
+# the Org screen's sheet (19-org2.js o2SendRequest, PRD M1.4): "Set up a department: <name>. <words>". The name is the
+# owner's own, so it is the department's name, and the words after it are its goal
+SHEET = re.compile(r"^\s*Set up a department:\s*([^.\n]+?)\s*(?:\.\s*(.*))?$", re.S)
+
+
+def _sheet(words):
+    """The name and the words of a sheet's request, or ('', words) for words said any other way."""
+    m = SHEET.match(str(words or ""))
+    if not m or not m.group(1).strip():
+        return "", str(words or "")
+    return " ".join(m.group(1).split())[:80], " ".join(str(m.group(2) or "").split())
 
 
 def _j1_file_words(ref, d, words, note, message_id=None, thread=None):
@@ -2172,9 +2183,10 @@ def _standard_question(ctx, out):
         return None
     J = _j2()
     why = str(out.get("why") or "").strip() or "Identity's standard is not met yet: %s" % ", ".join(out.get("missing") or [])
-    J.asked(ctx["ref"], question, list(out.get("missing") or []), why, ctx["post"].get("n"))
-    # a thread of its own: the request's thread may have closed on "filed in the Brief", and a post into it would be dropped
-    _tell(ctx["ref"], ctx["dept"], ctx["post"], "inform", {"word": "question", "done": question})
+    card = (J.asked(ctx["ref"], question, list(out.get("missing") or []), why, ctx["post"].get("n")) or {}).get("open_ask")
+    # a thread of its own: the request's thread may have closed on "filed in the Brief", and a post into it would be dropped;
+    # the line names its card, and the chat leaves it to the card, which says the question once (M0.6)
+    _tell(ctx["ref"], ctx["dept"], ctx["post"], "inform", dict({"word": "question", "done": question}, **({"card": card} if card else {})))
     return question
 
 
@@ -2230,7 +2242,7 @@ def _standard_answered(ctx, got):
     starts. 'Just do it' fills what is missing from the kind's defaults and starts step 2, and the tell names them."""
     ref, d, p, J = ctx["ref"], ctx["dept"], ctx["post"], _j2()
     words, aid = got["words"], got["answers"]
-    ask = J.took(ref, aid, words) or {}
+    ask = J.took(ref, aid, words, at=_words_at(ref, p)) or {}
     if got.get("hurry"):
         used = _standard_defaults(ref, ask.get("points") or [ask.get("missing")])
         d = W.dept(ref)
@@ -2250,6 +2262,21 @@ def _standard_answered(ctx, got):
     return {"said": "took the owner's answer; the standard is met and the department starts", "filed": row["v"]}
 
 
+def _words_at(ref, p):
+    """Where the owner said the words a post carries, {board, n}: their own post on this board, or, handed on by Root,
+    their post at Root's front door. The question card those words answer keeps them, and the chat leaves that turn to
+    the card (M0.6). None when no owner's post carries them."""
+    pl = p.get("payload") or {}
+    if p.get("src") == OWNER:
+        return {"board": ref, "n": p["n"]}
+    front, th = pl.get("front"), pl.get("front_thread")
+    if p.get("src") == "Root" and front and th:
+        said = next((q for q in board(front) if q["thread"] == th and q["src"] == OWNER), None)
+        if said:
+            return {"board": front, "n": said["n"]}
+    return None
+
+
 def identity_file(ctx, step, item):
     ref, d, p = ctx["ref"], ctx["dept"], ctx["post"]
     got = ctx["bag"]["identity.read"]
@@ -2258,14 +2285,14 @@ def identity_file(ctx, step, item):
     if J and first:
         # Identity asked what the department is for (thin first words, M0.5): words said in the chat answer it, and are
         # read below as the first words, against the same standard
-        J.took_words(ref, words)
+        J.took_words(ref, words, at=_words_at(ref, p))
     if J and got.get("answers"):
         # the words answer Identity's question on its standard (M3.3): read against it again, then asked again or started
         return _standard_answered(ctx, got)
     if J and not first and J.waiting_on_owner(ref):
         # Identity's own question is open (J2.1): these words answer it. They are written to the identity, the standard
         # is read again, and the department starts once it is met
-        cur = J.answer(ref, words)
+        cur = J.answer(ref, words, at=_words_at(ref, p))
         d = W.dept(ref)
         if cur.get("state") == "waiting":
             return {"said": "took the owner's answer; Identity's next question is asked"}
@@ -2336,12 +2363,19 @@ def identity_file(ctx, step, item):
     # holes (found live 2026-09-29: the founder's own "New website" went live on a stamp and then asked for the facts)
     if first and out.get("thin") is True and d.get("kind") != "root":
         J = _j2()
+        card = None
         if J and J.active(ref):
             # J2.1: not good enough to start on; Identity asks, and the next words are read against the same standard
-            J.questioned(ref, J.THIN, p.get("n"))
-        _tell(ref, d, p, "inform", {"word": "question",
-                                    "done": "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet."},
-              thread=p["thread"])
+            card = (J.questioned(ref, J.THIN, p.get("n")) or {}).get("open_ask")
+        # a department is a site only when it is a website, as the question's card says (found by a verifier 2026-10-23:
+        # an organic department's card asked what the department is for, and the line beside it what the site is for)
+        said = {"word": "question", "done": "Say what the %s is for and about whom or what, and I will start: your words name nothing "
+                "to build from yet." % ("site" if d.get("kind") == "website" else "department")}
+        if card:
+            # the question is a card in the chat (M0.6): the line stays on the record and names its card, and the chat
+            # leaves it to the card, which says it once (found by a verifier 2026-10-23: the line, then the card, said it twice)
+            said["card"] = card
+        _tell(ref, d, p, "inform", said, thread=p["thread"])
         return {"said": "asked the owner what the department is for: the words name nothing to build from"}
 
     # words the agent reads as a standing rule are put back as a rule, never filed as an ask of the line (found live
@@ -2544,10 +2578,32 @@ def identity_hand(ctx, step, item):
     return {"said": "handed to %s: %s" % (name, words)}
 
 
-def _own_turns(dref, name):
+def _on_card(board_ref, p, cards):
+    """A post that Identity's question card says (M0.6): the question itself, when the card stands in this chat, or the
+    owner's words that answered it, which the card keeps under it. The chat leaves both to the card, so neither is said
+    twice; the board keeps them as they were (found by a verifier 2026-10-23: the line, the card, the answer under it
+    and the answer again as a turn)."""
+    return (p.get("payload") or {}).get("card") in cards["ids"] or (board_ref, p["n"]) in cards["words"]
+
+
+def _cards(rows):
+    """What the question cards in a chat carry: the ids of Identity's questions shown as cards (open, or answered with
+    words), and where the owner said each answer."""
+    ids, words = set(), set()
+    for a in rows:
+        if a.get("kind") != "j2_identity" or not (a["status"] == "pending" or (a["status"] == "stamped" and a.get("answered"))):
+            continue
+        ids.add(a["id"])
+        at = a.get("words_at") if isinstance(a.get("words_at"), dict) else {}
+        if at.get("board") and at.get("n") is not None:
+            words.add((at["board"], at["n"]))
+    return {"ids": ids, "words": words}
+
+
+def _own_turns(dref, name, cards=None):
     """A department's own owner-facing turns (ER-10): what its Identity asked or told its owner in threads Root did not
     start, and the owner's own words and stamps there. A post that went to Root's board as well (via Root) is left to
-    Root's copy, so the chat never counts it twice."""
+    Root's copy, so the chat never counts it twice; a post a question card says is left to the card."""
     ths = {t["id"]: t for t in threads(dref)}
     born_of_root = bool((W.dept(dref) or {}).get("root"))
     out = []
@@ -2558,6 +2614,8 @@ def _own_turns(dref, name):
         # what Identity said in a thread Root opened went to Root's board too; the person's own stamp or refusal in
         # such a thread lives here alone, so it shows (found live 2026-09-28: a stamp inside the department left no turn)
         if pl.get("via") == "Root" or ((ths.get(p["thread"]) or {}).get("opened_by") == "Root" and p["src"] != OWNER):
+            continue
+        if cards and _on_card(dref, p, cards):
             continue
         out.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
                     "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
@@ -2638,6 +2696,17 @@ def chat_view(ref, about=None):
         root = None
     if root and d.get("kind") != "root" and not about:
         about = ref
+    kids = _children(root) if root else []
+    refs = [about] if about else ([root] + [c["ref"] for c in kids] if root else [ref])
+    asks, answered, rows = [], [], []
+    for r in refs:
+        dn = (W.dept(r) or {}).get("name")
+        mine = W.asks(r)
+        rows += mine
+        asks += [dict(a, ref=r, dept=dn) for a in mine if a["status"] == "pending"]
+        # Identity's questions the owner answered in words: the card stays in the chat with the answer under it (M0.6)
+        answered += [dict(a, ref=r, dept=dn) for a in mine if a.get("kind") == "j2_identity" and a["status"] == "stamped" and a.get("answered")]
+    cards = _cards(rows)
     turns = []
     if root:
         for p in board(root):
@@ -2647,6 +2716,8 @@ def chat_view(ref, about=None):
             ab = p.get("about") if isinstance(p.get("about"), dict) else {}
             dref = ab.get("dept") or pl.get("dept") or ((pl.get("about") or {}) if isinstance(pl.get("about"), dict) else {}).get("dept")
             if about and dref != about:
+                continue
+            if _on_card(root, p, cards):                 # the question card says it, once
                 continue
             turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
                           "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
@@ -2659,26 +2730,17 @@ def chat_view(ref, about=None):
                 later = next((u for u in turns if u["thread"] == t["thread"] and u["n"] > t["n"] and u.get("dept")), None)
                 if later:
                     t["dept"], t["name"] = later["dept"], later.get("name")
-    kids = _children(root) if root else []
     if root:
         for c in ([W.dept(about)] if about else kids):
             if c and c.get("ref") and c["ref"] != root:
-                turns += _own_turns(c["ref"], c.get("name"))
+                turns += _own_turns(c["ref"], c.get("name"), cards)
     elif d:
-        turns += _own_turns(ref, d.get("name"))         # a department with no Root: its own chat
+        turns += _own_turns(ref, d.get("name"), cards)  # a department with no Root: its own chat
     if root and not about:
         # the goal at a department's birth is the person's words said once at the front door; on the whole chat they
         # already stand as the front turn and the setup ask, so the birth copy is not said again (finding 3)
         turns = [t for t in turns if not t.get("birth")]
     turns.sort(key=lambda t: (str(t["at"]), t["n"]))
-    refs = [about] if about else ([root] + [c["ref"] for c in kids] if root else [ref])
-    asks, answered = [], []
-    for r in refs:
-        dn = (W.dept(r) or {}).get("name")
-        rows = W.asks(r)
-        asks += [dict(a, ref=r, dept=dn) for a in rows if a["status"] == "pending"]
-        # Identity's questions the owner answered in words: the card stays in the chat with the answer under it (M0.6)
-        answered += [dict(a, ref=r, dept=dn) for a in rows if a.get("kind") == "j2_identity" and a["status"] == "stamped" and a.get("answered")]
     return {"root": root, "about": about, "turns": turns, "asks": asks, "answered": answered,
             "departments": [{"ref": c["ref"], "name": c["name"], "stopped": bool(c.get("stopped"))} for c in kids]}
 
@@ -3209,6 +3271,7 @@ def setup_read(ctx, step, item):
         conversation = json.loads(files.get("request.json") or "null")
     except (TypeError, ValueError):
         conversation = None
+    user_words = []
     if isinstance(conversation, dict):
         conversation = dict(conversation, selected_revision=ctx["inp"]["v"])
         # request.md is the readable J1 transcript ("User: ...", "Root: ...").
@@ -3221,10 +3284,13 @@ def setup_read(ctx, step, item):
     # the departments this Root already has: a new one needs a name none of them has (found live 2026-09-29: Setup shaped
     # the same name as the one that existed, made nothing and said nothing)
     existing = [c.get("name") for c in _children(ctx["ref"]) if c.get("name")]
-    return {"words": words, "conversation": conversation, "conversing": isinstance(conversation, dict),
+    # a name the owner gave on the Org sheet is the department's name (round 2, gap 6: Root named it itself, and a second
+    # sheet's department took the same draft name and was folded into the first)
+    named, _ = _sheet(user_words[0] if user_words else words)
+    return {"words": words, "conversation": conversation, "conversing": isinstance(conversation, dict), "named": named,
             "facts": {"asked": bool(words), "kinds": ", ".join(kinds),
                                       "use_cases": "; ".join("%s: %s" % (k, u) for k, u in kinds.items()),
-                                      "existing": ", ".join(existing) or "none"}}
+                                      "existing": ", ".join(existing) or "none", "named": named or "none"}}
 
 
 CONVERSE = ("You are Sutra, the helper of the organisation. The owner wants a department. Ask what you need to know, one question at a "
@@ -3321,10 +3387,12 @@ def p_setup_shape(ctx, step, item):
     got = ctx["bag"]["setup.read"]
     org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
     return ("The owner of %s asks Root for a department. Shape it: a short name (the organisation's name and what it is, like "
-            "\"%s Website\"; a NEW department takes a name none of the existing ones has, say \"%s Website 2\" or what sets it apart), "
+            "\"%s Website\"; a NEW department takes a name none of the existing ones has, say \"%s Website 2\" or what sets it apart; "
+            "when the owner gave the department a name, that name is its name, exactly as given), "
             "its kind from the Library (the kind whose use case fits the words; default when none does), and its goal in one or two "
             "sentences in the owner's own words.\n"
-            "THE OWNER'S WORDS: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\nDEPARTMENTS THIS ROOT ALREADY HAS: %s\n\n"
+            "THE OWNER'S WORDS: %s\nTHE NAME THE OWNER GAVE: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\n"
+            "DEPARTMENTS THIS ROOT ALREADY HAS: %s\n\n"
             "If the words describe MORE THAN ONE department, shape only the first: its goal covers only that one, and `second` "
             "holds, in the owner's words, what the other department is for. Otherwise `second` is an empty string.\n"
             "Draft its done-when as items: each one line that must be true when the department is done, from the owner's words "
@@ -3334,7 +3402,8 @@ def p_setup_shape(ctx, step, item):
             "Return ONLY a JSON object: {\"name\": \"...\", \"kind\": \"one of the kinds above\", \"goal\": \"...\", "
             "\"purpose\": \"one line\", \"second\": \"...\", \"done_items\": [{\"text\": \"...\", \"how\": \"code\" | \"model\" | "
             "\"person\", \"level\": \"target\" | \"outcome\", \"confirm\": \"...\"}]}."
-            % (org, org, org, got["words"], got["facts"]["kinds"], got["facts"].get("use_cases") or "", got["facts"].get("existing") or "none"))
+            % (org, org, org, got["words"], got.get("named") or "none", got["facts"]["kinds"], got["facts"].get("use_cases") or "",
+               got["facts"].get("existing") or "none"))
 
 
 def d_setup_shape(ctx, step, item):
@@ -3343,10 +3412,13 @@ def d_setup_shape(ctx, step, item):
     conversation = got.get("conversation") or {}
     user = [m.get("text", "") for m in conversation.get("messages") or [] if m.get("actor") == "user"]
     useful = " ".join(x for x in user if not JUST_DO_IT.fullmatch(x)).strip() or got["words"]
+    named, said = _sheet(useful)
+    if named and said:
+        useful = said                                   # the sheet's words after its name are the goal
     second = SECOND.search(useful)
     first = useful[:second.start()].strip(" ,;.") if second else useful
     website = bool(re.search(r"\b(website|web site|landing page|blog)\b", first, re.I))
-    return _shape_norm({"name": "%s %s" % (org.replace(" Root", ""), "Website" if website else "Department"),
+    return _shape_norm({"name": named or "%s %s" % (org.replace(" Root", ""), "Website" if website else "Department"),
                         "kind": "website" if website else "organic", "goal": first or useful, "purpose": first or useful,
                         "second": second.group(1).strip(" .") if second else ""})
 
@@ -3405,6 +3477,10 @@ def _reconcile_j1_tells(root_ref):
 def setup_make(ctx, step, item):
     """Root makes the department: under itself, with its charter, its functions' templates, its record and its goal."""
     shape = _shape_norm(ctx["bag"]["setup.shape"])
+    named = (ctx["bag"].get("setup.read") or {}).get("named")
+    if named:
+        # the owner named the department on the Org sheet: the covering keeps that name, whatever the agent shaped
+        shape = dict(shape, name=named)
     import founding
     conversation = (ctx["bag"].get("setup.read") or {}).get("conversation") or {}
     live = _j1_record(ctx["ref"]) if conversation else None

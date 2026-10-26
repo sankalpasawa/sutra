@@ -5,6 +5,7 @@ person makes them (founded, asked for, set up by Root), so what is tested is the
 on its real board, and not a record written by hand.
 """
 import importlib
+import re
 import threading
 
 import pytest
@@ -563,6 +564,35 @@ def test_m0_5_still_too_little_is_asked_again_and_a_stopped_department_uses_the_
     assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
 
 
+def test_m0_5_a_department_that_is_not_a_website_is_never_called_a_site(j2, monkeypatch):
+    """The card asking what the department is for while the line beside it asks what the site is for (one screen, two
+    names for one thing) must fail: a department is a site only when it is a website, on its birth words and on the
+    second department Root sets up."""
+    W, R, J, _ = j2
+    _model(monkeypatch, R, {"setup.converse": {"verdict": "clear", "question": ""},
+                            "identity.take": lambda prompt: {"verdict": "go", "why": "", "needs": [], "unsure": [], "thin": not any(
+                                w in prompt.split("THE REQUEST: ", 1)[1].split("\n", 1)[0] for w in ("algebra", "bakery"))}})
+    lab = _born(j2, ORGANIC, "Lab Co")
+    site = _born(j2, WEBSITE, "Acme Learning")
+    root = W.dept(site)["root"]
+    W.owner_ask(root, "Set up another department: a sales CRM for the team")      # a second name: another kind
+    W.run_until_idle(root, limit=300)
+    crm = next(d["ref"] for d in W.list_depts() if d.get("parent") == root and d["ref"] != site)
+    W.run_until_idle(crm, limit=300)
+    for ref in (lab, crm):
+        assert W.dept(ref)["kind"] != "website"
+        assert J.status(ref)["open_question"]["text"] == "What is the department for, and about whom or what?"
+        mine = _said(R, ref) + _said(R, W.dept(ref)["root"])
+        asked = [s for s in mine if "nothing to build from" in s]
+        assert asked and all(s.startswith("Say what the department is for and about whom or what") for s in asked), asked
+        told = [t["line"] for t in R.chat_view(ref)["turns"] if t["src"] != "Owner"] + mine
+        assert not [s for s in told if re.search(r"\bsites?\b", s, re.I)], told
+
+    bakery = _born(j2, "a website", "Bakery Co")                       # a website is still a site, on its card and its line
+    assert J.status(bakery)["open_question"]["text"] == "What is the site for, and about whom or what?"
+    assert [s for s in _said(R, bakery) if "nothing to build from" in s][0].startswith("Say what the site is for")
+
+
 def test_m0_6_identitys_question_is_never_closed_by_a_stamp(j2, monkeypatch):
     """A stamp that closes a question with nothing said (the cycle then waits on an answer no one can give) must fail."""
     W, R, J, _ = j2
@@ -591,6 +621,73 @@ def test_m0_6_the_chat_carries_identitys_question_and_keeps_its_answer(j2, monke
     assert not [a for a in chat["asks"] if a["kind"] == "j2_identity"]
     assert [(a["id"], a["answered"], a["ref"]) for a in chat["answered"]] == [(q[0]["id"], BAKERY, ref)]
     assert [a["id"] for a in R.chat_view(W.dept(ref)["root"])["answered"]] == [q[0]["id"]]
+
+
+def _copies(view, q, words):
+    """What a chat says of Identity's question beside its card: lines that say the question again, and the owner's
+    turns that say the answer again."""
+    turns = view["turns"]
+    return ([t["line"] for t in turns if t["src"] != "Owner" and ("nothing to build from" in t["line"] or q["text"] in t["line"])],
+            [t["line"] for t in turns if t["src"] == "Owner" and t["line"] == words])
+
+
+def test_m0_6_the_chat_says_identitys_question_once_on_its_card_and_the_answer_once_under_it(j2, monkeypatch):
+    """Identity's line about the question standing above its card, or the answer kept under the card and said again as
+    a turn of its own (the chat said each twice), must fail: on the department's chat and on Root's, whether the answer
+    came from the card's box, from the department's Chat box (through Root), or in a department with no Root. The board
+    keeps both posts; only the chat leaves them to the card."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    d, _ = W.create("dref-alone", "Alone Website", None, kind="website")       # a department with no Root
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept(d["ref"], d)
+    J.start(d["ref"])
+    W.give_goal(d["ref"], "a website")
+    W.run_until_idle(d["ref"], limit=300)
+    for how, ref in (("card", _born(j2, "a website", "Bakery Co")), ("chat", _born(j2, "a website", "Bakery Two")), ("alone", d["ref"])):
+        root = W.dept(ref).get("root")
+        views = lambda: [R.chat_view(ref)] + ([R.chat_view(root)] if root else [])
+        q = J.status(ref)["open_question"]
+        for view in views():
+            assert [a["id"] for a in view["asks"] if a["kind"] == "j2_identity"] == [q["id"]], how
+            assert _copies(view, q, BAKERY) == ([], []), how
+        if how == "card":
+            J.answer(ref, BAKERY)                                      # the card's Send: /j2/answer
+        elif how == "chat":
+            W.owner_ask(root, BAKERY, about=ref)                       # the department's Chat box: to Root, carrying it
+            W.run_until_idle(root, limit=300)
+        else:
+            W.owner_ask(ref, BAKERY)
+        W.run_until_idle(ref, limit=300)
+        assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2, how
+        for view in views():
+            assert [(a["id"], a["answered"]) for a in view["answered"]] == [(q["id"], BAKERY)], how
+            assert _copies(view, q, BAKERY) == ([], []), how
+        assert [s for s in _said(R, ref) if "nothing to build from" in s], how          # the board keeps what was said
+        boards = [ref] + ([root] if root else [])
+        assert [p for b in boards for p in R.board(b) if p["src"] == "Owner" and (p["payload"] or {}).get("words") == BAKERY], how
+
+
+def test_m0_6_a_question_on_a_gap_in_the_identity_is_said_once_on_its_card(j2):
+    """A gap in the identity asked as a card and again as Identity's line beside it must fail; the card keeps the
+    answer, and the next question is its own card."""
+    W, R, J, _ = j2
+    d, _ = W.create("dref-gap2", "Finance highlights", "Publish verified finance news", kind="website")
+    d.update({"goal": "", "done": "", "events": [{"kind": "j2_ready", "route": "template"}],
+              "rules": [{"id": "r1", "tag": "go", "line": "Work inside the record"}]})
+    W.save_dept(d["ref"], d)
+    ref = d["ref"]
+    J.start(ref)
+    goal = "Publish five verified finance highlights each morning"
+    asked = J.status(ref)["open_question"]
+    assert asked["text"] in _said(R, ref)                                # on the record
+    lines = lambda: [t["line"] for t in R.chat_view(ref)["turns"]]
+    assert asked["text"] not in lines()
+    J.answer(ref, goal)
+    after = R.chat_view(ref)
+    assert [a["answered"] for a in after["answered"]] == [goal]
+    assert [a["text"] for a in after["asks"] if a["kind"] == "j2_identity"] == ["What evidence will prove this department is done?"]
+    assert not [x for x in lines() if x in (asked["text"], goal, "What evidence will prove this department is done?")]
 
 
 def _failed(W, ref):

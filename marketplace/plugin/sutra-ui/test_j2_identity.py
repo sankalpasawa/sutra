@@ -264,6 +264,10 @@ def test_m3_3_words_the_standard_finds_thin_get_a_question_and_the_answer_is_rea
     assert "proposal.requested" not in _actions(J, ref) and _work(W, ref) == []
     assert J.status(ref)["state"] == "waiting" and J.holding(ref)
     assert WHO in _said(R, ref)
+    # the line names its card, and the chat leaves it to the card, which says the question once (M0.6)
+    line = next(p for p in R.board(ref) if (p["payload"] or {}).get("done") == WHO)
+    assert line["payload"]["card"] == q["id"]
+    assert WHO not in [t["line"] for t in R.chat_view(ref)["turns"]]
 
     W.owner_ask(ref, FAMILIES)                                               # said in the chat: it answers the question
     W.run_until_idle(ref, limit=300)
