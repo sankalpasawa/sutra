@@ -57,6 +57,7 @@ CHAIN_LIMIT = 12                                                       # == webs
 REPAIRS = 2                                                            # == j2_runtime.REPAIRS
 OPTIONS_MAX = 3                                                        # == website_dept.OPTIONS_MAX
 DONE_ITEMS_MAX = 12                                                    # == website_dept.DONE_ITEMS_MAX
+RUNGS = ('P', 'C0', 'C1', 'C2')                                        # == engine_runtime.RUNGS
 STANDARD = ('goal', 'items', 'rules', 'owner', 'budget', 'invented')   # == engine_runtime.STANDARD (MK-1)
 DONE_HOW, DONE_LEVELS = ('code', 'model', 'person'), ('target', 'outcome')    # the coverings' enums (MK-2), never the store's
 RULE_TAGS = ('go', 'ask', 'refuse', 'always')                                # the covering's enum, never the store's
@@ -562,10 +563,26 @@ DEFS.update({
                               required=('order', 'line'), open=False),
 })
 
-# Adaptation's open records (A1.9): their writers are bound when W1-ADAPT checks them
+# Adaptation's records (A1.9), typed as their writers write them (W1-ADAPT binds them): an idea parked by R.adapt_park and
+# noted by R._note_idea (the engine it was built as, or that Priority would not price it), and a step's ladder entry, written by
+# R._save_entry from R.entry, R.move, the keeper's trial and the owner's hold. Open objects: a key a later writer adds passes.
+# reflected, question and why are a model's words, so their bounds are wide (the same reason as act.conflict's why).
 DEFS.update({
-    'adaptation.idea': obj({}),
-    'adaptation.ladder': obj({}),
+    'adaptation.idea': obj({'id': text(40, 1), 'words': nullable(text(100000)), 'reflected': text(8000), 'question': nullable(text(2000)),
+                            'shapes': items(text(2000), 3), 'state': enum('parked', 'built'), 'at': text(40),
+                            'engine': nullable(text(80)), 'priced': text(40), 'why': text(2000)},
+                           required=('id', 'reflected', 'shapes', 'state', 'at')),
+    # since is null on a department record that has no created stamp; trial is the next rung run beside the incumbent, counted
+    # (R.adapt_trial, the keeper's table trial and R._trial); evidence is the numbers a move rested on (a step's rows counted),
+    # or null; by is who moved it and why, in the keeper's words
+    'adaptation.ladder': obj({'engine': text(80, 1), 'step': text(80, 1), 'rung': enum(*RUNGS), 'form': nullable(text(40)),
+                              'since': nullable(text(40)), 'since_row': integer(0), 'held': boolean(), 'pending': nullable(text(80)),
+                              'trial': nullable(obj({'rung': enum(*RUNGS), 'form': nullable(text(40)), 'runs': integer(0),
+                                                     'agree': integer(0), 'norule': integer(0), 'state': enum('running', 'done'),
+                                                     'started': text(40)})),
+                              'history': items(obj({'at': nullable(text(40)), 'from': nullable(enum(*RUNGS)), 'to': enum(*RUNGS),
+                                                    'by': text(400), 'evidence': ANYTHING}, required=('to', 'by')))},
+                             required=('engine', 'step', 'rung', 'held', 'history')),
 })
 
 # the records and acts waves 1 to 3 write first (A1.13b), declared as A1 types them

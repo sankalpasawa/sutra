@@ -1324,3 +1324,56 @@ def test_a9_a_made_website_reshape_keeps_the_librarys_own_check_and_publish_and_
     assert all(c["passed"] for c in registered["checks"]) and any(c["check"] == "required_kept" for c in registered["checks"])
     assert not [x for x in R.board(ref) if "Not added" in str((x["payload"] or {}).get("done") or "")]
     assert R.coordination(ref)["line"] == registered["engines"]
+
+
+# ---- A1 · Adaptation's two records, typed as their writers write them (A1.9, A1.20) -----------------------------------
+def test_a1_an_idea_parked_and_then_noted_is_a_typed_record_whoever_writes_it(j2):
+    W, R, _, _, _ = j2
+    ref = _dept(j2, "organic", ref="dref-ideas")
+    shaped = {"reflected": "the site in Hindi too", "question": None, "shapes": ["a second language", "a Hindi page", "a link", "a fourth"],
+              "pick": None, "engine": None}
+    ctx = {"ref": ref, "dept": W.dept(ref), "post": {"thread": "x-idea", "payload": {"words": "a page in Hindi", "for": None}},
+           "bag": {"adapt.shape": shaped}}
+    R.adapt_park(ctx, None, None)
+    R.adapt_park(dict(ctx, bag={"adapt.shape": dict(shaped, question="Which pages first?")}, post={"thread": "x-idea-2", "payload": {"words": None}}), None, None)
+    first, second = R.ideas(ref)
+    assert first["shapes"] == shaped["shapes"][:3] and first["state"] == "parked" and first["question"] is None
+    R._note_idea(ref, first["id"], {"engine": "Do", "state": "built"})                                  # the engine the owner stamped
+    R._note_idea(ref, second["id"], {"engine": "Web Facts", "priced": "refused", "why": "no room for another engine today"})
+    for row in R.ideas(ref):
+        assert S.validate_record("adaptation", "idea", row) == [], row
+    assert [(r["engine"], r["state"]) for r in R.ideas(ref)] == [("Do", "built"), ("Web Facts", "parked")]
+
+
+def test_a1_a_ladder_entry_is_a_typed_record_at_every_point_a_step_moves(j2):
+    W, R, _, _, _ = j2
+    ref = _dept(j2, "organic", ref="dref-ladder")
+    engine, step = R.step_def("adapt.line")
+    R.hold(ref, step["id"])                                                                                # a born entry, pinned
+    R.hold(ref, step["id"], held=False)
+    R.move(ref, step, "C1", "stamp a-1", evidence={"runs": 12, "differing": 0, "misses": 0, "pass": 1.0})   # a move up, with its numbers
+    R.move(ref, step, "C0", "evidence: its answers began to differ", evidence=None)                        # and one down
+    ctx = {"ref": ref, "post": {"payload": {"step": step["id"], "to": "C1", "form": None}}}
+    R.adapt_trial(ctx, None, None)                                                                          # a trial, running
+    assert R.ladder(ref)[step["id"]]["trial"]["state"] == "running"
+    R.adapt_notrial(ctx, None, None)                                                                        # and Priority's no to it
+    e = R.entry(ref, step)
+    e["trial"] = {"rung": "C2", "form": "table", "runs": 4, "agree": 4, "norule": 0, "state": "done", "started": W.now()}
+    e["pending"] = "a move, with the owner"
+    R._save_entry(ref, e)
+    _, other = R.step_def("adapt.source")
+    R.hold(ref, other["id"])
+    assert set(R.ladder(ref)) == {step["id"], other["id"]}
+    for entry in R.ladder(ref).values():
+        assert S.validate_record("adaptation", "ladder", entry) == [], entry
+    assert [h["by"] for h in R.ladder(ref)[step["id"]]["history"]][:2] == ["born", "stamp a-1"]
+
+
+def test_a1_the_two_records_are_no_longer_open_and_the_rungs_are_the_runtimes():
+    R = importlib.import_module("engine_runtime")
+    assert S.RUNGS == R.RUNGS
+    for name in ("adaptation.idea", "adaptation.ladder"):
+        assert S.DEFS[name]["properties"] and S.DEFS[name]["required"], "%s is typed" % name
+    assert S.validate_record("adaptation", "idea", "a page in Hindi") and S.validate_record("adaptation", "ladder", ["C0"])
+    assert S.validate_record("adaptation", "ladder", {"engine": "Write", "step": "write.page", "rung": "C0", "held": False, "history": [],
+                                                      "something_a_later_writer_adds": 1}) == [], "an unknown key passes and is kept"
