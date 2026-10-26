@@ -11,7 +11,7 @@
   "on": [
    {
     "kind": "version",
-    "of": "Live site",
+    "of": "$deliverable",
     "checked": true
    }
   ],
@@ -34,6 +34,21 @@
    "born": "C2",
    "code": "audit_mechanical",
    "check": "has_a_verdict"
+  },
+  {
+   "id": "audit.items",
+   "name": "Read each done-when item",
+   "nature": "check",
+   "born": "C0",
+   "ceiling": "C1",
+   "only_if": "audit.pick.sample",
+   "prompt": "audit_items",
+   "draft": "audit_items_draft",
+   "out": {
+    "items": "list",
+    "findings": "list"
+   },
+   "check": "reading_is_s30"
   },
   {
    "id": "audit.judge",

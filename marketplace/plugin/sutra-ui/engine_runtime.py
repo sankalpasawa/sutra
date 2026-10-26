@@ -1090,13 +1090,33 @@ def next_due(ref, peek=False):
 # One rule for all nine, the five internal systems and the four work engines alike. An engine's definition names its
 # start: `on`, the triggers that make it want to run, and `unless`, the blockers that hold it. `ready` is the one piece
 # of code that reads a start. No engine has a start of its own in code, so none can differ.
+#: a version trigger that reads the department's own deliverable, whatever its kind (PRD M8.2): the last output of its
+#: registered plan, which the interface says (S.deliverable)
+DELIVERABLE = "$deliverable"
+
+
+def trigger_art(d, trig):
+    """The artifact a version trigger reads: its `of`, or for '$deliverable' the department's own, the last output of its
+    registered plan (the interface's S.deliverable); None when the department has none yet. Root has none to read: what
+    Setup files is a department made, not a deliverable a goal closes on, and Audit never read it (the scenarios of the
+    kinds that have a goal are as they were)."""
+    if (trig or {}).get("of") != DELIVERABLE:
+        return (trig or {}).get("of")
+    if (d or {}).get("kind") == "root":
+        return None
+    import layer_schema as S
+    return S.deliverable(d)
+
+
 def _on_version(ctx, name, e, trig):
-    """Outside trigger: a version of what it reads that it has not run on yet."""
-    v = W.latest(ctx["ref"], trig["of"], passed=bool(trig.get("checked")))
+    """Outside trigger: a version of what it reads that it has not run on yet. A trigger on the deliverable names the
+    artifact in the input it yields (`art`), so the run reads the one that started it; with no deliverable, nothing starts."""
+    of = trigger_art(ctx.get("dept") or W.dept(ctx["ref"]), trig)
+    v = W.latest(ctx["ref"], of, passed=bool(trig.get("checked"))) if of else None
     if v:
-        slot = W._slot_id(name, trig["of"], v["v"])
+        slot = W._slot_id(name, of, v["v"])
         if slot not in ctx["done"]:
-            yield v, slot
+            yield (dict(v, art=of) if trig.get("of") == DELIVERABLE else v), slot
 
 
 def _on_post(ctx, name, e, trig):
@@ -1434,7 +1454,7 @@ def run_engine(ref, name, inp, slot):
     steps = handler["steps"] if handler else list(e.get("steps") or [])
     prior = [r for r in W.runs(ref) if r.get("slot") == slot and r.get("status") in ("interrupted", "waiting", "asked")]
     system = e["kind"] == "function"
-    what = handler["name"] if handler else "reading %s" % e.get("reads")
+    what = handler["name"] if handler else "reading %s" % ((inp.get("art") if isinstance(inp, dict) else None) or e.get("reads"))
     row = W._put_run(ref, _run_row(name, system, slot, "running", what,
                                    chain=None if system else W._chain_of(ref, e["reads"], inp["v"]),
                                    retries=len([r for r in prior if r["status"] == "interrupted"])))
@@ -1583,13 +1603,17 @@ def run_engine(ref, name, inp, slot):
         if name == "Audit" and row.get("status") == "ok" and not p and isinstance(ctx["bag"].get("audit.file"), dict):
             filed = ctx["bag"]["audit.file"]
             if filed.get("read") is False and not filed.get("filed"):
-                J.not_read(ref, inp.get("v"), filed.get("why_not_read"))      # never 'clean': the cycle stays at step 7
+                J.not_read(ref, inp.get("v"), filed.get("why_not_read"), artifact=filed.get("artifact"))      # never 'clean': the cycle stays at step 7
             else:
-                _j2_audit_read(ref, d, inp.get("v"), filed.get("filed"))
+                _j2_audit_read(ref, d, inp.get("v"), filed.get("filed"), art=filed.get("artifact"), reading=filed.get("reading"))
         elif name == "Audit" and row.get("status") == "failed" and not p and inp.get("v") is not None:
             # a reading whose covering check failed is no reading (M2.4): the version is not read, nothing is cleared,
             # and the cycle stays at step 7; the failed step is Audit's fault on every screen
-            J.not_read(ref, inp.get("v"), "its reading failed its check (%s)" % str(note or "a step failed").rstrip("."))
+            why = "its reading failed its check (%s)" % str(note or "a step failed").rstrip(".")
+            art = inp.get("art") or audit_art({"ref": ref, "dept": d})
+            if art:
+                audit_record(ref, slot, art, int(inp["v"]), False, why, [], [])
+            J.not_read(ref, inp.get("v"), why, artifact=art)
     return row
 
 
@@ -1639,7 +1663,7 @@ def run_step(ctx, step, item):
            "mode": "slot", "slot": ctx["slot"], "impl": _impl(ctx), "asked_rung": asked, "rung": rung, "miss": rung != asked, "by": how,
            "agent": ctx["engine"] if how in ("model", "checklist") else None,
            "applied": [r["id"] for r in ctx["dept"].get("rules") or [] if r.get("id")] if how in ("model", "checklist") else [],
-           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else [{"art": ctx["def"].get("reads"), "v": ctx["inp"]["v"]}],
+           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else [{"art": ctx["inp"].get("art") or ctx["def"].get("reads"), "v": ctx["inp"]["v"]}],
            "facts": facts, "in_sig": _sha(facts if facts is not None else {"step": step["id"], "item": item, "in": ctx["inp"].get("v")}),
            "usd": round(usd, 4), "calls": calls, "def_version": defs()["def_version"], "started": started}
 
@@ -3595,13 +3619,36 @@ def adapt_heard(ctx, step, item):
     return {"said": "heard the ruling on " + str(pl.get("step")) + (": moved" if pl.get("stamped") else ": left as it is")}
 
 
+def audit_art(ctx):
+    """The artifact Audit reads: the department's deliverable, the last output of its registered plan (PRD M8.1), which is
+    the interface's to say (S.deliverable); None when it has none yet. A run that was started on a version of it reads
+    that artifact, even if a later plan names another."""
+    import layer_schema as S
+    return (ctx.get("inp") or {}).get("art") or S.deliverable(ctx.get("dept") or W.dept(ctx["ref"]))
+
+
+def audit_files(ctx):
+    """The files of the version Audit is reading: the deliverable's, by their path; none when there is no deliverable."""
+    art = audit_art(ctx)
+    return W.read_files(ctx["ref"], art, int(ctx["inp"]["v"])) if art else {}
+
+
+#: the most of a deliverable that is not HTML one reading takes, in characters: its files' text (PRD M8.2)
+READ_MAX = 40000
+
+
+def audit_pages(files):
+    """What Audit reads of a version, by name: its HTML pages; a deliverable with none is read as text, every file."""
+    return sorted(k for k in files if k.endswith(".html")) or sorted(files)
+
+
 def audit_pick(ctx, step, item):
     v = int(ctx["inp"]["v"])
-    files = W.read_files(ctx["ref"], "Live site", v)
+    files = audit_files(ctx)
     # while the department lives its J2 cycle, done-when is read off Audit's reading, so every version is read (M0.3,
     # interim until M8 reads each done-when item); outside a cycle Audit drops in on a sample, as it always has
     sample = _j2_live(ctx["ref"]) or v <= 3 or v % 3 == 0
-    return {"sample": sample, "v": v, "pages": sorted(k for k in files if k.endswith(".html"))}
+    return {"sample": sample, "v": v, "pages": audit_pages(files)}
 
 
 def audit_mechanical(ctx, step, item):
@@ -3613,11 +3660,12 @@ def audit_mechanical(ctx, step, item):
         for v in W.versions(ref, a):
             if not v.get("run") or "check" not in v:
                 notes.append("%s has a version with no run or no check" % a)
-    if not any(c.get("kind") == "ask" for c in W.trace(ref, "Live site", ctx["inp"]["v"])):
-        notes.append("the live site does not trace back to the owner's words")
+    art = audit_art(ctx)
+    if not any(c.get("kind") == "ask" for c in (W.trace(ref, art, ctx["inp"]["v"]) if art else [])):
+        notes.append("the %s does not trace back to the owner's words" % (art or "deliverable").lower())
     # a page that says "to be confirmed" published what nobody knew (found live 2026-09-28: twelve such places on
     # four pages); Audit names each hole, Identity asks the owner for the facts instead of a stamp
-    holes = placeholders(W.read_files(ref, "Live site", ctx["inp"]["v"]))
+    holes = placeholders(audit_files(ctx))
     said = notes + (["the site says it does not know %d thing%s" % (len(holes), "" if len(holes) == 1 else "s")] if holes else [])
     return {"ok": not said, "notes": said or ["every version has its run and its check; the trace reaches the owner's words"],
             "faults": notes, "holes": holes}
@@ -3652,33 +3700,240 @@ def placeholders(files):
 #: how a judge step was answered, when someone actually read the pages: its agent, its checklist, or a person by hand
 READ_BY = ("model", "checklist", "stamped by the owner")
 
+#: a reading's verdicts, the worse the higher: when code and the reader disagree about an item both rows are kept (Q4)
+#: and the worse stands. Q4 rules that a measured failure stands over the reader's yes; a reader's no, or its doubt,
+#: stands over a measure that only found the record whole, since the measure is not of that item.
+VERDICT_RANK = {"met": 0, "to_confirm": 1, "not_met": 2}
+#: how serious an item's verdict is, the S-30 reading's severity
+ITEM_SEVERITY = {"met": "low", "to_confirm": "medium", "not_met": "high"}
+
+
+def audit_text(files):
+    """What one reading takes of a version, as text: each of its pages or files under its name, HTML with its tags out,
+    at most READ_MAX characters in all (PRD M8.2: a deliverable that is not HTML is read as text)."""
+    out, left = [], READ_MAX
+    for name in audit_pages(files):
+        raw = str(files.get(name, ""))
+        text = " ".join(re.sub(r"<[^>]+>", " ", raw).split()) if name.endswith(".html") else raw.strip()
+        block = "--- %s ---\n%s" % (name, text)
+        out.append(block[:left])
+        left -= len(block) + 2
+        if left <= 0:
+            break
+    return "\n\n".join(out)
+
+
+def p_audit_items(ctx, step, item):
+    ref = ctx["ref"]
+    d = ctx.get("dept") or W.dept(ref) or {}
+    mech = ctx["bag"]["audit.mechanical"]
+    items = [{k: i[k] for k in ("id", "text", "how", "level", "confirm") if i.get(k)} for i in W.items_of(d)]
+    measured = {"ok": bool(mech.get("ok")), "notes": list(mech.get("notes") or []),
+                "holes": [{"page": h.get("page"), "claim": h.get("claim")} for h in mech.get("holes") or []]}
+    return _prompt("audit", "judge", "items", ref, brief=_brief_text(ref), filed=_context_block(ref),
+                   deliverable=audit_text(audit_files(ctx)), items=json.dumps(items), measured=json.dumps(measured))
+
+
+def d_audit_items(ctx, step, item):
+    """Offline, or not needed this time, nothing reads the version: it claims no item, and nothing is ever done offline."""
+    return {"items": [], "findings": [], "read": False}
+
+
+def _audit_item_ids(ctx):
+    """The done-when items of the department the reading is of, by id; None when the check has no department in hand."""
+    if not (ctx or {}).get("ref"):
+        return None
+    d = ctx.get("dept") or W.dept(ctx["ref"])
+    return [i["id"] for i in W.items_of(d)] if d else None
+
+
+def c_reading_is_s30(ctx, step, item, out):
+    """Audit's covering (A1.12, M8.3): a reading gives each done-when item its verdict (met, not met or to confirm) with the
+    claim and the evidence behind it, each item once, and each finding names where and what. A reading that does not fails
+    the step and the version is not read; a reader that read nothing (the offline draft) claims no item."""
+    if not isinstance(out, dict) or not isinstance(out.get("items"), list) or not isinstance(out.get("findings"), list):
+        return _verdict(False, "", "a reading is a list of items and a list of findings")
+    rows = out["items"]
+    if out.get("read") is False and not rows:
+        return _verdict(True, "it read nothing, so it claims no item", "")
+    notes, seen = [], []
+    for n, r in enumerate(rows, 1):
+        if not isinstance(r, dict) or not re.match(r"^D[1-9][0-9]?$", str(r.get("id") or "")):
+            notes.append("row %d names no done-when item" % n)
+            continue
+        iid = r["id"]
+        if iid in seen:
+            notes.append("%s is read twice" % iid)
+        seen.append(iid)
+        if r.get("verdict") not in VERDICT_RANK:
+            notes.append("%s: the verdict is not one of met, not met or to confirm" % iid)
+        for k in ("claim", "evidence"):
+            if not str(r.get(k) or "").strip():
+                notes.append("%s: no %s" % (iid, k))
+    want = _audit_item_ids(ctx)
+    if want is not None:
+        notes += ["%s is not read" % i for i in want if i not in seen]
+    where = c_findings_name_where_and_what(ctx, step, item, {"findings": out["findings"]})
+    if not where["ok"]:
+        notes += where["notes"]
+    return {"ok": not notes, "notes": notes or ["%d items, each with its verdict, claim and evidence" % len(rows)]}
+
+
+def audit_verdicts(rows):
+    """The verdict of each done-when item in a reading's rows, {id: verdict}: with one row it is that row's; with two (code
+    and the reader disagreed) the worse stands (VERDICT_RANK)."""
+    out = {}
+    for r in rows or []:
+        if r.get("id") and r.get("verdict") in VERDICT_RANK and VERDICT_RANK[r["verdict"]] >= VERDICT_RANK.get(out.get(r["id"]), -1):
+            out[r["id"]] = r["verdict"]
+    return out
+
+
+def audit_rows(dept_items, mech, said, sampled):
+    """One reading row per done-when item, in the S-30 shape (subject, claim, evidence, method, verdict, severity). An item
+    whose how is code gets a row from the mechanical step's result when it measured anything; every item gets the reader's
+    row, from audit.items. When the two disagree both are kept, and the worse verdict stands (VERDICT_RANK). A reader's
+    yes with no evidence, or about an item that rests on a fact nobody gave, is a doubt, never a yes; an item the reader
+    did not read is a doubt too."""
+    by_id = {}
+    for r in said.get("items") or []:
+        if isinstance(r, dict) and r.get("id") not in by_id:
+            by_id[r.get("id")] = r
+    rows = []
+    for it in dept_items:
+        subject = _clip(it.get("text"), 200)
+        r = by_id.get(it["id"]) or {}
+        verdict = r.get("verdict") if r.get("verdict") in VERDICT_RANK else "to_confirm"
+        claim, evidence = " ".join(str(r.get("claim") or "").split()), " ".join(str(r.get("evidence") or "").split())
+        if not r:
+            claim, evidence = "Audit gave no reading of this item", "nothing in the reading speaks to it"
+        elif verdict == "met" and not evidence:
+            verdict, claim, evidence = "to_confirm", "it is said to hold, with nothing to show it", "no evidence was given"
+        if it.get("confirm") and verdict == "met":
+            verdict, claim, evidence = "to_confirm", "it waits on a fact nobody has given: %s" % it["confirm"], evidence or "no fact was given"
+        model = {"id": it["id"], "subject": subject, "claim": claim[:600], "evidence": evidence[:1000], "method": "model",
+                 "verdict": verdict, "severity": ITEM_SEVERITY[verdict]}
+        if it.get("how") == "code" and sampled:
+            ok = bool(mech.get("ok"))
+            said_what = "; ".join(str(n) for n in mech.get("notes") or []) or ("the record holds" if ok else "the record does not hold")
+            code = {"id": it["id"], "subject": subject, "claim": ("the record holds: " if ok else "the record does not hold: ") + said_what[:560],
+                    "evidence": said_what[:1000], "method": "code", "verdict": "met" if ok else "not_met",
+                    "severity": ITEM_SEVERITY["met" if ok else "not_met"]}
+            rows += [code] if code["verdict"] == model["verdict"] else [code, model]
+        else:
+            rows.append(model)
+    return rows
+
+
+def _audit_reading_findings(found, art):
+    """The findings of a reading as the interface types them (audit.finding): numbered F1, F2, ... within the reading, each
+    with where it is and what, how serious, the item it belongs to, and that Identity was told."""
+    out = []
+    for n, f in enumerate(found[:12], 1):
+        sev = str(f.get("severity") or "").strip().lower()
+        sev = "high" if sev == "critical" else sev if sev in ("high", "medium", "low") else "medium"
+        item_id = f.get("item") if re.match(r"^D[1-9][0-9]?$", str(f.get("item") or "")) else None
+        out.append({"id": "F%d" % n, "severity": sev, "claim": _clip(f.get("claim"), 600),
+                    "where": " ".join(str(f.get("page") or f.get("where") or art or "").split())[:200], "item": item_id,
+                    "went_to": "Identity"})
+    return out
+
+
+def audit_tell(ref, reading):
+    """Audit tells Identity a reading (inform/reading, act.reading), once Identity's recipe has a handler for it (A1-14: an
+    act is posted only when its receiver hears it, so no merge order leaves one unheard). Returns the post, or None."""
+    if _handler(engine_def("Identity"), {"msg_type": "inform", "payload": {"word": "reading"}}) is None:
+        return None
+    verdicts = audit_verdicts(reading["items"])
+    pl = {"word": "reading", "reading": reading["id"], "artifact": reading["artifact"], "v": reading["v"], "read": reading["read"],
+          "met": [i for i, v in verdicts.items() if v == "met"], "not_met": [i for i, v in verdicts.items() if v == "not_met"],
+          "to_confirm": [i for i, v in verdicts.items() if v == "to_confirm"], "findings": [f["id"] for f in reading["findings"]],
+          "high": any(f["severity"] == "high" for f in reading["findings"])}
+    return post(ref, "Audit", "Identity", "inform", pl, about={"art": reading["artifact"], "v": reading["v"]})
+
+
+def audit_record(ref, slot, art, v, read, why_not, rows, findings):
+    """The reading of one version, as a row of readings.jsonl (audit.reading, checked as the interface types it): one for
+    a slot, so a replay of the step writes it once. A version not read is a row with read false and why_not_read, never
+    a silence (PRD M0.3). Returns the row."""
+    slot = slot or "Audit@%s.v%d" % (W.slug(art), v)
+    try:
+        cycle = _j2().status(ref).get("cycle_id")
+    except Exception:  # noqa: BLE001 -- a reading with no cycle to name is still a reading
+        cycle = None
+    row = {"schema_version": 1, "id": "r-" + hashlib.sha1(slot.encode("utf-8")).hexdigest()[:8], "v": v, "artifact": art,
+           "cycle_id": cycle, "round": None, "read": bool(read), "why_not_read": None if read else " ".join(str(why_not or "it was not read").split())[:300],
+           "items": rows, "findings": findings, "at": W.now()}
+    kept = next((r for r in W.rows(ref, "readings.jsonl") if r.get("id") == row["id"]), None)
+    return kept or W.append_row(ref, "readings.jsonl", row)
+
 
 def audit_file(ctx, step, item):
     ref = ctx["ref"]
-    mech, judged = ctx["bag"]["audit.mechanical"], ctx["bag"]["audit.judge"]
+    d = ctx.get("dept") or W.dept(ref) or {}
+    art, v = audit_art(ctx), int(ctx["inp"]["v"])
+    mech, judged, said = ctx["bag"]["audit.mechanical"], ctx["bag"]["audit.judge"], ctx["bag"].get("audit.items") or {}
     faults = mech.get("faults") if "faults" in mech else (mech.get("notes") if not mech.get("ok") else [])
     found = [{"page": None, "claim": n, "severity": "high"} for n in faults or []]
     found += list(mech.get("holes") or [])
     found += [f for f in judged.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
-    # 'found nothing' is a reading only when the judge read the version: a judge skipped (not sampled) or answered by
-    # its offline draft read nothing, and its empty list is no evidence (M0.3; found 2026-10-23: an offline department
+    found += [{"page": f.get("where"), "claim": f["claim"], "severity": f.get("severity"), "item": f.get("item")}
+              for f in said.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
+    seen_claims, once = set(), []
+    for f in found:                                   # the reader and the judge may each find the one thing, on the one page
+        key = (str(f.get("page") or "").lower(), " ".join(str(f.get("claim")).split()).lower())
+        if key not in seen_claims:
+            seen_claims.add(key)
+            once.append(f)
+    found = once
+    # 'found nothing' is a reading only when the version was read item by item: a reader skipped (not sampled) or answered
+    # by its offline draft read nothing, and its empty list is no evidence (M0.3; found 2026-10-23: an offline department
     # reached its goal on a version no one read)
-    how = ctx["how"].get("audit.judge")
-    read = how in READ_BY
-    why_not = None if read else {SKIPPED: "it was not sampled", "offline draft": "no model was there to read it"}.get(
-        how, "how it was read is not on the record")
+    dept_items = W.items_of(d)
+    how = ctx["how"].get("audit.items")
+    read = bool(art) and how in READ_BY and said.get("read") is not False and bool(dept_items)
+    why_not = None if read else (
+        "the plan delivers nothing to read yet" if not art else
+        "the department has no done-when items to read it against" if how in READ_BY and said.get("read") is not False else
+        {SKIPPED: "it was not sampled", "offline draft": "no model was there to read it"}.get(how, "how it was read is not on the record"))
+    sampled = bool(ctx["bag"]["audit.pick"].get("sample"))
+    rows = audit_rows(dept_items, mech, said, sampled) if read else []
+    verdicts = audit_verdicts(rows)
+    # an item that does not hold, or cannot be said to, and that no finding names, is a finding of its own: it reaches
+    # Identity by the way every finding does, so no reading leaves the owner without a next move (interim until
+    # Identity weighs readings, M8.5)
+    for it in dept_items:
+        if not read or verdicts.get(it["id"]) not in ("not_met", "to_confirm") or any(f.get("item") == it["id"] for f in found):
+            continue
+        if any(r["id"] == it["id"] and r["method"] == "code" and r["verdict"] == "not_met" for r in rows):
+            continue                                  # what the measure found is already a finding of its own
+        row = next(r for r in rows if r["id"] == it["id"] and r["verdict"] == verdicts[it["id"]])
+        found.append({"page": art, "item": it["id"], "severity": ITEM_SEVERITY[verdicts[it["id"]]],
+                      "claim": "“%s” %s: %s" % (_clip(it.get("text"), 120).rstrip("."),
+                                                "does not hold" if verdicts[it["id"]] == "not_met" else "cannot be confirmed yet",
+                                                row["claim"].rstrip("."))})
+    findings = _audit_reading_findings(found, art)
+    reading = audit_record(ref, ctx.get("slot"), art, v, read, why_not, rows, findings) if art else None
+    met = [i for i, x in verdicts.items() if x == "met"]
+    summary = {"id": reading and reading["id"], "read": read, "met": met, "not_met": [i for i, x in verdicts.items() if x == "not_met"],
+               "to_confirm": [i for i, x in verdicts.items() if x == "to_confirm"], "high": any(f["severity"] == "high" for f in findings)}
     if not found:
         if not read:
             return {"said": "did not read what went live (%s); nothing is said of it" % why_not, "filed": 0, "read": False,
-                    "why_not_read": why_not}
-        return {"said": "checked what went live; found nothing", "filed": 0, "read": True}
+                    "why_not_read": why_not, "artifact": art, "reading": summary}
+        if reading:
+            audit_tell(ref, reading)
+        return {"said": "read what went live item by item; every item holds", "filed": 0, "read": True, "artifact": art, "reading": summary}
     high = [f for f in found if str(f.get("severity") or "").lower() == "high"]
     claim = str((high or found)[0]["claim"])
     post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high" if high else "low",
-                                              "findings": found[:12], "about_version": ctx["inp"]["v"]},
-         about={"art": "Live site", "v": ctx["inp"]["v"]})
+                                              "findings": found[:12], "about_version": v, "artifact": art,
+                                              "reading": reading and reading["id"]},
+         about={"art": art, "v": v})
+    if reading:
+        audit_tell(ref, reading)
     return {"said": "found %s: %s" % ("something to put right" if high else "something to note", claim), "filed": len(found),
-            "read": read, "why_not_read": why_not}
+            "read": read, "why_not_read": why_not, "artifact": art, "reading": summary}
 
 
 # ---- the rulings of 2026-09-28: every unit starts and ends with code; Coordination's own agent; Root spawns ---------
@@ -4164,9 +4419,10 @@ def slot_of(ref, name, rs=None):
     if trig.get("kind") == "version":
         rs = W.runs(ref) if rs is None else rs
         done = {r.get("slot") for r in rs if r.get("status") in ("ok", "failed", "skipped")}
-        cur = W.latest(ref, trig["of"], passed=bool(trig.get("checked")))
-        v = cur["v"] if cur and W._slot_id(name, trig["of"], cur["v"]) not in done else (cur["v"] + 1 if cur else 1)
-        return {"on": "after %s v%d" % (trig["of"], v), "of": trig["of"], "checked": bool(trig.get("checked")), "v": v}
+        of = trigger_art(W.dept(ref), trig) or "the deliverable"
+        cur = W.latest(ref, of, passed=bool(trig.get("checked")))
+        v = cur["v"] if cur and W._slot_id(name, of, cur["v"]) not in done else (cur["v"] + 1 if cur else 1)
+        return {"on": "after %s v%d" % (of, v), "of": of, "checked": bool(trig.get("checked")), "v": v}
     if trig.get("kind") == "timer":
         return {"on": "every " + _period(trig.get("every_s")), "every_s": trig.get("every_s")}
     return {"on": "on a post to it"}
@@ -5262,15 +5518,17 @@ def identity_closed(ctx, step, item):
     return {"said": "could not close the conflict from the goal and the rules; put it to the owner"}
 
 
-def _j2_audit_read(ref, d, version, filed):
-    """Audit's reading closes the loop (step 8): nothing to put right means done-when holds, and Identity says so once."""
+def _j2_audit_read(ref, d, version, filed, art=None, reading=None):
+    """Audit's reading closes the loop (step 8): when it holds done-when, the goal is reached, and Identity says so once."""
     J = _j2()
-    if not J or not J.audited(ref, version, filed):
+    if not J or not J.audited(ref, version, filed, artifact=art, reading=reading):
         return
+    import layer_schema as S
+    art = art or S.deliverable(d)
     try:
         _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
-              {"word": "goal", "done": "The goal is reached: %s. Audit read Live site v%s and found nothing to put right."
-               % (str(d.get("done") or "done").rstrip("."), version), "link": "Live site", "v": version})
+              {"word": "goal", "done": "The goal is reached: %s. Audit read %s v%s and found nothing to put right."
+               % (str(d.get("done") or "done").rstrip("."), art, version), "link": art, "v": version})
     except Exception:  # noqa: BLE001 -- the goal is reached on the record whether or not the word reached the chat
         pass
 
@@ -5842,12 +6100,17 @@ def d_priority_bargain(ctx, step, item):
 
 
 def p_audit_judge(ctx, step, item):
-    ref, v = ctx["ref"], ctx["inp"]["v"]
-    files = W.read_files(ref, "Live site", v)
-    pages = []
+    ref = ctx["ref"]
+    files = audit_files(ctx)
+    pages, html, left = [], any(str(n).endswith(".html") for n in files), READ_MAX
     for name in ctx["bag"]["audit.pick"]["pages"][:12]:
-        text = re.sub(r"<[^>]+>", " ", files.get(name, ""))
-        pages.append({"page": name, "text": " ".join(text.split())[:1500]})
+        if html:
+            text = re.sub(r"<[^>]+>", " ", files.get(name, ""))
+            pages.append({"page": name, "text": " ".join(text.split())[:1500]})
+        else:                                    # not HTML: read as text, its files' text, at most READ_MAX characters in all
+            text = str(files.get(name, "")).strip()[:left]
+            left -= len(text)
+            pages.append({"page": name, "text": text})
     # what the department's own engines filed backs a page as the brief does (found live 2026-09-29: facts Source Reader
     # filed with their URLs were asked to be "put right" because the brief did not give them)
     return _prompt("audit", "judge", "judge", ref, brief=_brief_text(ref), filed=_context_block(ref), pages=json.dumps(pages))
@@ -6292,6 +6555,8 @@ CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_na
          "department_is_shaped": c_department_is_shaped, "department_is_made": c_department_is_made,
          "setup_converse_is_valid": c_setup_converse_is_valid, "ruling_is_known": c_ruling_is_known,
          "enough_is_shaped": c_enough_is_shaped}
+# audit/v1's step audit.items (A1 W1-AUDIT, M8.3): registered beside the literals, which are not edited before W3-PROOF
+PROMPT["audit_items"], DRAFT["audit_items_draft"], CHECK["reading_is_s30"] = p_audit_items, d_audit_items, c_reading_is_s30
 
 
 # ---- what the screens read -----------------------------------------------------------------------------------------
@@ -6331,7 +6596,7 @@ def steps_view(ref, name):
     view = {"name": name, "kind": e["kind"], "description": does or e.get("description"), "skills": skills,
             "reads": e.get("reads"), "writes": e.get("writes"), "steps": out,
             "hears": ([SHARED] if rules else []) + [h["name"] for h in e.get("on") or []],
-            "start": start_view(e), "numbers": numbers(ref, name)}
+            "start": start_view(e, W.dept(ref)), "numbers": numbers(ref, name)}
     if name == "Coordination":
         t = coordination(ref)
         view["table"] = {"first": [FIRST[k] for k in t["order"]], "line": list(t["line"]),
@@ -6357,12 +6622,14 @@ SHARED = "What engines share"
 FIRST = {"posts": "A post waiting for its reader", "line": "The line, in its order", "functions": "A function woken by new work"}
 
 
-def start_view(e):
-    """An engine's start, in words: what makes it run, and what holds it."""
+def start_view(e, d=None):
+    """An engine's start, in words: what makes it run, and what holds it. A trigger on the deliverable names it by the
+    department's own when `d` is the department, else says 'deliverable'."""
     on = []
     for t in (e.get("start") or {}).get("on") or []:
         if t["kind"] == "version":
-            on.append("a new %s%s" % (t["of"], " that passed its check" if t.get("checked") else ""))
+            on.append("a new %s%s" % ((trigger_art(d, t) or "deliverable") if t["of"] == DELIVERABLE else t["of"],
+                                      " that passed its check" if t.get("checked") else ""))
         elif t["kind"] == "post":
             on.append("a post addressed to it")
         else:

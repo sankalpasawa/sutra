@@ -740,10 +740,19 @@ DEFS.update({
                            'state': enum('ok', 'warn', 'block', 'wait', 'breath', 'off'), 'says': text(300), 'at': _AT,
                            'share': nullable(number(0, 1))}, required=ENGINE_FIVE_ROW, open=False), 5, 5)},
         required=ENGINE_CARD_FIELDS, open=False),
+    # W1-AUDIT adds latest and each reading's artifact, v, read, why_not_read and verdicts (M8.3, A1.17): optional, since a
+    # reading from before the journal is only its summary and its time
     'view.audit': obj({
-        'readings': items(obj({'summary': nullable(text(4000)), 'at': _AT})),
+        'readings': items(obj({'summary': nullable(text(4000)), 'at': _AT, 'artifact': ref('name'), 'v': integer(1),
+                               'read': boolean(), 'why_not_read': nullable(text(300)),
+                               'verdicts': map_of(enum(*ITEM_VERDICTS), keys=ITEM_RE)})),
         'findings': items(obj({'text': nullable(text(4000)), 'at': _AT})),
-        'spot_checks': items(obj({}))},
+        'spot_checks': items(obj({})),
+        'latest': nullable(obj({'artifact': ref('name'), 'v': integer(1), 'at': _AT,
+                                'items': items(obj({'id': ref('id.item'), 'verdict': enum(*ITEM_VERDICTS), 'method': enum('code', 'model'),
+                                                    'evidence': text(1000), 'claim': text(600)},
+                                                   required=('id', 'verdict', 'method', 'evidence', 'claim')))},
+                               required=('artifact', 'v', 'at', 'items')))},
         required=('readings', 'findings', 'spot_checks')),
 })
 
@@ -940,6 +949,8 @@ SENDS = {
     ],
     'Audit': [
         {'act': 'inform', 'words': ('finding',), 'to': ('Identity',), 'payload': 'act.finding'},
+        # a reading (M8.3): posted only once Identity's recipe has a handler for it, which W2-IDENTITY adds (A1-14)
+        {'act': 'inform', 'words': ('reading',), 'to': ('Identity',), 'payload': 'act.reading'},
     ],
     'Coordination': [
         {'act': 'request', 'words': ('verdict',), 'to': ('Identity', 'Priority'), 'payload': 'act.verdict'},
@@ -1006,7 +1017,8 @@ CHECKS = {
                      'one_run_at_a_time': 'a start is let through only while no other run runs'},
     'audit': {'findings_name_where_and_what': 'each finding names where it is and what it claims',
               'has_a_verdict': 'a mechanical check gives a verdict with its notes',
-              'picked_a_sample': 'it says whether it sampled, and which pages'},
+              'picked_a_sample': 'it says whether it sampled, and which pages',
+              'reading_is_s30': 'each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what'},
 }
 
 #: samples every implementation's check must judge as main's bodies do (A1.21), each checked against the body on main;
@@ -1024,6 +1036,13 @@ CONTRACT_SAMPLES = {
                                   {'answer': 'grant', 'why': 'x'}]},
     'findings_name_where_and_what': {'good': [{'ok': True, 'findings': []}],
                                      'bad': [{'ok': False, 'findings': [{'claim': 'x'}]}, {'ok': False, 'findings': 'none'}]},
+    'reading_is_s30': {'good': [{'items': [{'id': 'D1', 'verdict': 'met', 'claim': 'every page is checked and live',
+                                            'evidence': 'the live site passed its check'}], 'findings': []},
+                                {'items': [], 'findings': [], 'read': False}],
+                       'bad': [{'items': [{'id': 'D1', 'verdict': 'fine', 'claim': 'x', 'evidence': 'y'}], 'findings': []},
+                               {'items': [{'id': 'D1', 'verdict': 'met', 'claim': 'x', 'evidence': ''}], 'findings': []},
+                               {'items': [{'id': 'D1', 'verdict': 'met', 'claim': 'x', 'evidence': 'y'}], 'findings': [{'claim': 'x'}]},
+                               {'items': 'none', 'findings': []}]},
     'enough_is_shaped': {'good': [],
                          'bad': [{'enough': 'yes', 'missing': []}, {'enough': False, 'missing': ['colour'], 'question': 'x?'}]},
 }
@@ -1189,6 +1208,13 @@ PROMPTS = {
                       'returns': 'Return ONLY a JSON object: {"ok": bool, "findings": [{"page": str, "claim": str, "severity": "high" | '
                                  '"low"}]}.',
                       'read_by': 'audit.judge'},
+            # added by W1-AUDIT (M8.3, A1-ITEMS): one reading per done-when item, in the S-30 shape
+            'items': {'fields': {'task': 'field.task', 'guidance': 'field.guidance'},
+                      'inputs': ('brief', 'filed', 'deliverable', 'items', 'measured'),
+                      'returns': 'Return ONLY a JSON object: {"items": [{"id": "D1", "verdict": "met" | "not_met" | "to_confirm", '
+                                 '"claim": "what is or is not true, one line", "evidence": "what in the work shows it, one line"}], '
+                                 '"findings": [{"where": str, "claim": str, "severity": "high" | "medium" | "low", "item": "D1" or null}]}.',
+                      'read_by': 'audit.items'},
         },
     },
 }

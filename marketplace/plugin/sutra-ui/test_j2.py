@@ -5,10 +5,13 @@ person makes them (founded, asked for, set up by Root), so what is tested is the
 on its real board, and not a record written by hand.
 """
 import importlib
+import json
 import re
 import threading
 
 import pytest
+
+import layers
 
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
 ORGANIC = "Set up a laboratory system to track chemical inventory for our school science team"
@@ -51,6 +54,12 @@ def _model(monkeypatch, R, answers):
         return (got(prompt) if callable(got) else got), 0.01, "model"
 
     monkeypatch.setattr(R, "MODEL", model)
+
+
+def _items_met(prompt):
+    """Audit's reader (M8.3), a function: it says every done-when item in the prompt is met, with its evidence."""
+    items = json.loads(prompt.split("THE DONE-WHEN ITEMS:\n", 1)[1].split("\n\nWHAT CODE MEASURED:", 1)[0])
+    return {"items": [{"id": i["id"], "verdict": "met", "claim": "it holds", "evidence": "the work shows it"} for i in items], "findings": []}
 
 
 def _born(j2, words=WEBSITE, org="Acme Learning", settle=True):
@@ -166,10 +175,10 @@ def test_step_2_with_no_template_adaptation_shapes_the_line_and_the_owner_stamps
 
 
 def test_steps_6_to_8_the_runs_the_audit_and_the_goal_are_on_the_ledger(j2, monkeypatch):
-    """A ledger that stops at registration, or a goal reached twice, must fail. Audit's judge reads with a model here:
-    only a version the model read can clear done-when (M0.3)."""
+    """A ledger that stops at registration, or a goal reached twice, must fail. Audit's judge and its reader of the done-when
+    items read with a model here: only a version the model read, item by item, can clear done-when (M0.3, M8.3)."""
     W, R, J, _ = j2
-    _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}})
+    _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}, "audit.items": _items_met})
     ref = _born(j2)
     _stamp_all(W, ref)                                           # the first publish: a born rule says ask
     acts = _actions(J, ref)
@@ -231,7 +240,7 @@ def test_m0_3_every_version_is_read_in_a_cycle_and_an_unsampled_v4_is_never_clea
     assert R.audit_pick({"ref": ref, "inp": {"v": 4}}, None, None)["sample"] is True      # interim: every version, in a cycle
     _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}})                  # a model there to read, unasked
     old = lambda ctx, step, item: {"sample": int(ctx["inp"]["v"]) <= 3 or int(ctx["inp"]["v"]) % 3 == 0, "v": int(ctx["inp"]["v"]), "pages": []}
-    monkeypatch.setitem(R.CODE, "audit_pick", old)
+    monkeypatch.setitem(layers.load("audit/v1").CODE, "audit_pick", old)         # Audit's code is looked up in its layer (A1.19)
     row = R.run_engine(ref, "Audit", {"v": 4}, "Audit@live-site.v4")
     assert row["status"] == "ok" and "not sampled" in row["what"]
     unread = [e for e in J.events(ref) if e["action"] == "audit.not_read"]
@@ -248,16 +257,16 @@ def test_m0_3_a_judge_the_model_read_before_the_app_closed_still_counts_as_read(
     the model did read) must fail: the kept step's how is the one its finished row says."""
     W, R, J, _ = j2
     asked = []
-    _model(monkeypatch, R, {"audit.judge": lambda prompt: asked.append(1) or {"ok": True, "findings": []}})
+    _model(monkeypatch, R, {"audit.judge": lambda prompt: asked.append(1) or {"ok": True, "findings": []}, "audit.items": _items_met})
     ref = _born(j2)
-    filing = R.CODE["audit_file"]
+    filing = layers.load("audit/v1").CODE["audit_file"]
     closes = [True]
 
     def audit_file(ctx, step, item):
         if closes.pop() if closes else False:
             raise _Closed()                              # after the judge's row, before Audit files what it read
         return filing(ctx, step, item)
-    monkeypatch.setitem(R.CODE, "audit_file", audit_file)
+    monkeypatch.setitem(layers.load("audit/v1").CODE, "audit_file", audit_file)
     with pytest.raises(_Closed):
         _stamp_all(W, ref)
     assert "goal.reached" not in _actions(J, ref) and len(asked) == 1

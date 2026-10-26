@@ -69,7 +69,8 @@
     "audit": {
       "findings_name_where_and_what": "each finding names where it is and what it claims",
       "has_a_verdict": "a mechanical check gives a verdict with its notes",
-      "picked_a_sample": "it says whether it sampled, and which pages"
+      "picked_a_sample": "it says whether it sampled, and which pages",
+      "reading_is_s30": "each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what"
     },
     "coordination": {
       "chain_under_its_limit": "a start is let through only while the chain is under its limit",
@@ -359,6 +360,69 @@
         {
           "answer": "reject",
           "why": "no room today: the first costs 0.08 USD against 0.00 USD left"
+        }
+      ]
+    },
+    "reading_is_s30": {
+      "bad": [
+        {
+          "findings": [],
+          "items": [
+            {
+              "claim": "x",
+              "evidence": "y",
+              "id": "D1",
+              "verdict": "fine"
+            }
+          ]
+        },
+        {
+          "findings": [],
+          "items": [
+            {
+              "claim": "x",
+              "evidence": "",
+              "id": "D1",
+              "verdict": "met"
+            }
+          ]
+        },
+        {
+          "findings": [
+            {
+              "claim": "x"
+            }
+          ],
+          "items": [
+            {
+              "claim": "x",
+              "evidence": "y",
+              "id": "D1",
+              "verdict": "met"
+            }
+          ]
+        },
+        {
+          "findings": [],
+          "items": "none"
+        }
+      ],
+      "good": [
+        {
+          "findings": [],
+          "items": [
+            {
+              "claim": "every page is checked and live",
+              "evidence": "the live site passed its check",
+              "id": "D1",
+              "verdict": "met"
+            }
+          ]
+        },
+        {
+          "findings": [],
+          "items": [],
+          "read": false
         }
       ]
     },
@@ -3450,10 +3514,94 @@
           "minItems": 0,
           "type": "array"
         },
+        "latest": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "artifact": {
+                  "$ref": "#/$defs/name"
+                },
+                "at": {
+                  "anyOf": [
+                    {
+                      "maxLength": 40,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "items": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "claim": {
+                        "maxLength": 600,
+                        "minLength": 0,
+                        "type": "string"
+                      },
+                      "evidence": {
+                        "maxLength": 1000,
+                        "minLength": 0,
+                        "type": "string"
+                      },
+                      "id": {
+                        "$ref": "#/$defs/id.item"
+                      },
+                      "method": {
+                        "enum": [
+                          "code",
+                          "model"
+                        ]
+                      },
+                      "verdict": {
+                        "enum": [
+                          "met",
+                          "not_met",
+                          "to_confirm"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "verdict",
+                      "method",
+                      "evidence",
+                      "claim"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "v": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "artifact",
+                "v",
+                "at",
+                "items"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "readings": {
           "items": {
             "additionalProperties": true,
             "properties": {
+              "artifact": {
+                "$ref": "#/$defs/name"
+              },
               "at": {
                 "anyOf": [
                   {
@@ -3466,10 +3614,42 @@
                   }
                 ]
               },
+              "read": {
+                "type": "boolean"
+              },
               "summary": {
                 "anyOf": [
                   {
                     "maxLength": 4000,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "v": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "verdicts": {
+                "additionalProperties": {
+                  "enum": [
+                    "met",
+                    "not_met",
+                    "to_confirm"
+                  ]
+                },
+                "propertyNames": {
+                  "pattern": "^D[1-9][0-9]?$"
+                },
+                "type": "object"
+              },
+              "why_not_read": {
+                "anyOf": [
+                  {
+                    "maxLength": 300,
                     "minLength": 0,
                     "type": "string"
                   },
@@ -5569,7 +5749,8 @@
       "checks": [
         "findings_name_where_and_what",
         "has_a_verdict",
-        "picked_a_sample"
+        "picked_a_sample",
+        "reading_is_s30"
       ],
       "hands_to": "Identity only: readings and findings.",
       "holds": "Its readings and its findings.",
@@ -5936,6 +6117,21 @@
         }
       },
       "judge": {
+        "items": {
+          "fields": {
+            "guidance": "field.guidance",
+            "task": "field.task"
+          },
+          "inputs": [
+            "brief",
+            "filed",
+            "deliverable",
+            "items",
+            "measured"
+          ],
+          "read_by": "audit.items",
+          "returns": "Return ONLY a JSON object: {\"items\": [{\"id\": \"D1\", \"verdict\": \"met\" | \"not_met\" | \"to_confirm\", \"claim\": \"what is or is not true, one line\", \"evidence\": \"what in the work shows it, one line\"}], \"findings\": [{\"where\": str, \"claim\": str, \"severity\": \"high\" | \"medium\" | \"low\", \"item\": \"D1\" or null}]}."
+        },
         "judge": {
           "fields": {
             "guidance": "field.guidance",
@@ -6401,6 +6597,16 @@
         ],
         "words": [
           "finding"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.reading",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "reading"
         ]
       }
     ],

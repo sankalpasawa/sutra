@@ -255,6 +255,7 @@ class TestTheFiles(Fixture):
             R.defs()
         self.assertIn("bargain has no part cost", str(cm.exception))
         self.assertIn("bargain, costs: no step reads this part", str(cm.exception))
+        self.on_the_bundle("audit")
         self.bundle(edit=("audit/judge", "{{pages}}", "{{pages}} {{findings}}"))
         with self.assertRaises(ValueError) as cm:
             R.defs()
@@ -364,6 +365,7 @@ class TestTheOwnersChange(Fixture):
 
     def test_m2_2c_replacing_the_bundle_keeps_the_change(self):
         R, W = self.R, self.W
+        self.on_the_bundle("audit")
         judge = R._instruction("audit", "judge")
         mine = judge.replace("At most eight findings.", "At most three findings.")
         a = self.change("audit", "judge", mine).json()["ask"]

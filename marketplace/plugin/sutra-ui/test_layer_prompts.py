@@ -167,7 +167,7 @@ def test_c3_instructions_are_the_interfaces_parts_with_the_inputs_code_fills(run
         "adaptation": {"goal": ["does", "skills"], "sense": ["shape"], "decide": [], "make": ["line", "refused"]},
         "priority": {"goal": ["does", "skills"], "bargain": ["line", "engine", "cost"]},
         "coordination": {"goal": ["does", "skills"], "tie": ["tie"]},
-        "audit": {"goal": ["does", "skills"], "judge": ["judge"]}}
+        "audit": {"goal": ["does", "skills"], "judge": ["judge", "items"]}}
     assert R.INSTRUCTIONS["identity"]["completeness"]["enough"] == ("words", "asked", "goal", "items", "rules", "owner", "budget", "confirm")
     for layer, group, part in all_parts():
         if layer == "adaptation" and group == "decide":
@@ -212,6 +212,7 @@ def test_c3_faults_name_what_keeps_a_typed_part_from_serving(runtime, monkeypatc
 
 
 def test_c3_a_file_every_part_of_which_is_typed_needs_no_bundle_file(runtime, monkeypatch, tmp_path):
+    holding(monkeypatch, "audit", {}, {})                     # as a layer that holds no words yet: the layer's real words are not the test's
     words, layout = split_of("audit", "judge")
     bundle = tmp_path / "bundle"
     shutil.copytree(runtime.PROMPTS_DIR, bundle)
@@ -333,7 +334,7 @@ def test_c4_compiled_from_its_extracted_words_every_part_is_the_md_part_byte_for
                 assert spec["returns"] is None or spec["returns"] in md, "returns is the part's own, byte for byte"
                 assert set(words[group][part]) == set(spec["fields"]), (layer, group, part)
                 seen += 1
-    assert seen == len(all_parts()) == 28
+    assert seen == len(all_parts()) == 29
 
 
 def test_c4_the_extracted_words_pass_the_interface_and_the_layouts_serve(runtime):

@@ -158,6 +158,10 @@ class Model:
             return {"ruling": "ask", "why": "the goal and the rules do not settle it"}, 0.01, "model"
         if sid == "audit.judge":
             return {"ok": not self.findings, "findings": list(self.findings)}, 0.02, "model"
+        if sid == "audit.items":                          # Audit's reader of the done-when items (M8.3): each one met, with evidence
+            items = json.loads(prompt.split("THE DONE-WHEN ITEMS:\n", 1)[1].split("\n\nWHAT CODE MEASURED:", 1)[0])
+            return {"items": [{"id": i["id"], "verdict": "met", "claim": "it holds", "evidence": "the work shows it"} for i in items],
+                    "findings": []}, 0.02, "model"
         if sid == "check.rules":
             return {"broken": [dict(b) for b in self.broken]}, 0.02, "model"
         raise AssertionError("the model was asked for a step no test expects: " + sid)
@@ -311,7 +315,7 @@ class TestOneSkeleton(Base):
 
     def test_05_a_step_on_the_code_rung_makes_no_model_call(self):
         self.live()
-        soft = {"identity.take", "plan.pages", "write.page", "audit.judge", "coord.tie"}
+        soft = {"identity.take", "plan.pages", "write.page", "audit.items", "audit.judge", "coord.tie"}
         self.assertEqual(set(self.M.calls), soft)
         for r in self.rows():
             if r["rung"] == "C2":
@@ -517,7 +521,7 @@ class TestTheLadder(Base):
     def harden(self):
         """Six asks of one kind, by a strict step: a trial by checklist that Priority grants, a move the owner stamps."""
         self.numbers(runs=3, differing=0, trial=2, misses=2)
-        for other in ("plan.pages", "write.page", "audit.judge", "priority.bargain", "identity.recognise", "coord.tie"):
+        for other in ("plan.pages", "write.page", "audit.items", "audit.judge", "priority.bargain", "identity.recognise", "coord.tie"):
             self.R.hold(REF, other)                     # one step is watched; the owner holds the others where they are
         self.live()
         for i in range(12):
