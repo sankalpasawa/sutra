@@ -343,9 +343,10 @@ def _coordination_rows(W, ref):
 
 
 @pytest.mark.parametrize("engine", ["Ghost", "Do"], ids=["unknown to the Library", "in the Library, in no registered plan"])
-def test_k3_a_hand_made_table_naming_an_unregistered_engine_is_caught_with_one_row(engine, j2):
+def test_k3_a_hand_made_table_naming_an_unregistered_engine_is_caught_with_one_row(engine, j2, monkeypatch):
     """A line with an engine nobody registered or added, written with no word, must fail: one row, by Coordination, naming
     the engine, and in warn mode the write goes through."""
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W, R, _, _, _ = j2
     ref = _born(j2)
     with S.expect_refused() as met:
@@ -380,6 +381,7 @@ def test_k3_in_refuse_mode_the_unregistered_line_is_not_written_and_the_handler_
 
 def test_k3_the_line_is_checked_before_the_table_is_put(j2, monkeypatch):
     """A check that runs after the write (when the table is already on the record) must fail."""
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W, R, _, _, _ = j2
     ref = _born(j2)
     seen, put = [], R._put_table
@@ -422,6 +424,7 @@ def test_k3_an_engine_the_plan_cut_is_not_put_back_on_the_line_by_a_hand_made_ta
     """The M4.2 hazard itself: Priority asked for less, the plan Root registered left Publish out, and Publish is still on
     the department's record. A table that puts it back on the line, written with no word, must fail: one row, naming
     Publish; the record holding the engine does not make it a registered one."""
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W, R, _, _, _ = j2
     ref = _left_out(j2, monkeypatch)
     assert W.dept(ref)["workflows"][-1]["engines"] == KEEP and "Publish" in W.dept(ref)["engines"]
@@ -449,9 +452,10 @@ def test_k3_in_refuse_mode_the_engine_the_plan_cut_stays_off_the_line(j2, monkey
     assert (W.ddir(ref) / "coordination.json").read_bytes() == before and R.coordination(ref)["line"] == KEEP
 
 
-def test_k3_only_the_plan_registered_last_counts_so_an_engine_an_earlier_plan_named_and_a_later_one_cut_is_caught(j2):
+def test_k3_only_the_plan_registered_last_counts_so_an_engine_an_earlier_plan_named_and_a_later_one_cut_is_caught(j2, monkeypatch):
     """A line that puts back an engine the latest plan cut, because an earlier plan named it, must fail: the line is what
     was granted last (PRD M4.2)."""
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W, R, _, _, _ = j2
     ref = _born(j2)
     d = W.dept(ref)
@@ -466,6 +470,7 @@ def test_k3_only_the_plan_registered_last_counts_so_an_engine_an_earlier_plan_na
 def test_k3_the_engine_the_owner_added_passes_beside_the_one_the_plan_cut(j2, monkeypatch):
     """An engine the owner added (grown) that the check calls unregistered, or the cut engine let through because a grown
     one stands beside it, must fail: the row names Publish and only Publish."""
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W, R, _, _, _ = j2
     ref = _left_out(j2, monkeypatch)
     W.add_engine(ref, "Do")
@@ -482,6 +487,7 @@ def test_k3_a_registration_that_is_not_full_adds_an_engine_only_when_a_registere
     """What stood on the line stays (it was checked when it was written); what a registration that is not full adds must be
     named by the plan Root registered last. An added engine no plan names, or one a plan named only before it was cut, must
     fail; one the plan names must pass."""
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W, R, _, _, _ = j2
     ref = _left_out(j2, monkeypatch)
     with S.expect_refused() as met:

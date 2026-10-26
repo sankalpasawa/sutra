@@ -178,19 +178,50 @@ def test_modelfault_is_not_a_valueerror():
     assert issubclass(L.ModelFault, Exception) and not issubclass(L.ModelFault, ValueError)
 
 
+# The step fields A2 named. They are a floor, not the whole list: a package classifies a field it adds to a recipe step by adding
+# it to STEP_FIXED or STEP_FREE (A3-CORE did so for may_end and side_by_side), and this test must not turn red on that one-line
+# edit. A name leaves a list only by an edit of this test, which is the review that matters.
+A2_STEP_FIXED = ("nature", "check", "answer", "out", "or", "only_if", "stringency", "each", "files", "by_hand")
+A2_STEP_FREE = ("name", "born", "code", "prompt", "draft", "ceiling", "facts", "tools", "timeout_s", "below")
+
+
 def test_the_names_the_inheritance_codes_against():
     assert L.PATCH_KEYS == ("parent", "set", "gates", "rules", "steps", "on")
     assert L.TOP_SET == ("description", "skills") and L.POSITION == ("after", "before")
-    # may_end (fixed) and side_by_side (free) are the two fields the recipes use that these lists left out: A3-CORE classified them
-    # in DEFS['step'] (A2.12 rule 6), and test_layer_templates holds the two classifications equal
-    assert L.STEP_FIXED == ("nature", "check", "answer", "out", "or", "only_if", "stringency", "each", "files", "may_end", "by_hand")
-    assert L.STEP_FREE == ("name", "born", "code", "prompt", "draft", "ceiling", "facts", "tools", "timeout_s", "side_by_side", "below")
+    # may_end (fixed) and side_by_side (free) are fields the recipes use that A2 left out: A3-CORE classified them in DEFS['step']
+    # (A2.12 rule 6) and in the two lists, and test_layer_templates holds the two classifications equal. They are not pinned here.
+    assert set(A2_STEP_FIXED) <= set(L.STEP_FIXED), set(A2_STEP_FIXED) - set(L.STEP_FIXED)
+    assert set(A2_STEP_FREE) <= set(L.STEP_FREE), set(A2_STEP_FREE) - set(L.STEP_FREE)
     assert L.STEP_FIELDS == ("id",) + L.STEP_FIXED + L.STEP_FREE
     assert L.GATE_ORDER == ("admit", "wait", "refuse")
     assert L.handler_key({"when": {"msg_type": "inform", "word": "born"}}) == ("inform", "born")
     assert L.handler_key({"when": {"msg_type": "accept-proposal"}}) == ("accept-proposal", S.ANY)
     assert L.only_if_target("adapt.source.source=library") == "adapt.source"
     assert L.only_if_target("identity.read.later") == "identity.read"
+
+
+def classify_in_lineage(monkeypatch, fixed=(), free=(), drop=()):
+    """The lists as a later package leaves them: names added to either, or (to prove the floor holds) one taken out."""
+    new_fixed = tuple(f for f in L.STEP_FIXED if f not in drop) + tuple(fixed)
+    new_free = tuple(f for f in L.STEP_FREE if f not in drop) + tuple(free)
+    monkeypatch.setattr(L, "STEP_FIXED", new_fixed)
+    monkeypatch.setattr(L, "STEP_FREE", new_free)
+    monkeypatch.setattr(L, "STEP_FIELDS", ("id",) + new_fixed + new_free)
+
+
+def test_the_names_test_takes_a_field_a_later_package_classifies(monkeypatch):
+    """The next field to be classified (one fixed, one free, as A3-CORE's were) is one line in lineage.py; the pin above stays
+    green."""
+    classify_in_lineage(monkeypatch, fixed=("next_fixed",), free=("next_free",))
+    test_the_names_the_inheritance_codes_against()
+    assert "next_fixed" in L.STEP_FIXED and "next_free" in L.STEP_FREE and "next_fixed" in L.STEP_FIELDS
+
+
+@pytest.mark.parametrize("name", A2_STEP_FIXED + A2_STEP_FREE)
+def test_the_names_test_still_fails_when_an_a2_field_leaves_a_list(monkeypatch, name):
+    classify_in_lineage(monkeypatch, drop=(name,))
+    with pytest.raises(AssertionError):
+        test_the_names_the_inheritance_codes_against()
 
 
 def test_all_steps_run_gates_rules_steps_then_each_handlers_steps():
@@ -411,6 +442,12 @@ MALFORMED = [
     ("a step named twice in one list", lambda: in_request(a_step(), a_step()), ["identity.note", "twice"]),
     ("a handler the parent lacks", lambda: in_handler("inform", "nothing", a_step()), ["inform/nothing"]),
     ("a handler with no when", lambda: {"on": [{"steps": [a_step()]}]}, ["when"]),
+    ("a handler whose when is a text", lambda: {"on": [{"when": "request", "steps": []}]}, ["when"]),
+    ("a handler whose msg_type is a list", lambda: {"on": [{"when": {"msg_type": ["request"], "word": "request"}, "steps": []}]},
+     ["when", "msg_type", "each a word"]),
+    ("a handler whose msg_type is a number", lambda: {"on": [{"when": {"msg_type": 7, "word": "request"}, "steps": []}]}, ["when"]),
+    ("a handler whose word is an object", lambda: {"on": [{"when": {"msg_type": "request", "word": {"b": 1}}, "steps": []}]},
+     ["when", "word", "each a word"]),
     ("a handler whose when has no msg_type", lambda: {"on": [{"when": {"word": "request"}, "steps": []}]}, ["when"]),
     ("a handler entry that carries more than when and steps",
      lambda: {"on": [{"when": {"msg_type": "request", "word": "request"}, "name": "Take it", "steps": []}]},
@@ -661,7 +698,202 @@ def test_l3_a_recipe_that_is_not_in_shape_is_a_fault_not_an_exception():
     got = L.recipe_faults(parent, child, "coordination")
     assert any("no id" in f and "A rule with no id" in f for f in got)
     assert any("coord.ready" in f and "gone" in f for f in got)
-    assert L.recipe_faults(None, {"on": [None, {"steps": [None]}]}, "coordination") == []
+    assert any("the steps are not a list" in f and "a text" in f for f in got)
+    assert any("the gates hold an item that is not a step" in f and "a text" in f for f in got)
+    # an item that is not an object is a fault whatever the parent, and so is a handler that says nothing of what it hears
+    got = L.recipe_faults(None, {"on": [None, {"steps": [None]}]}, "coordination")
+    assert got == ["the handlers hold an item that is not a handler (it is nothing)",
+                   "the handler number 2 does not say what it hears: its when is nothing, not an object with a msg_type and "
+                   "a word",
+                   "the steps of the handler number 2 hold an item that is not a step (it is nothing)"]
+
+
+NOT_OBJECTS = [("a text", "not a step"), ("nothing", None), ("a number", 7), ("a number", 1.5), ("a yes or no", True),
+               ("a list", ["a"]), ("a list", [])]
+SECTIONS = [("the gates hold", lambda r: r["gates"]), ("the rules hold", lambda r: r["rules"]),
+            ("the steps hold", lambda r: r["steps"]),
+            ("the steps of the handler for inform/born hold", lambda r: handler(r, "inform", "born")["steps"])]
+
+
+@pytest.mark.parametrize("has_parent", [True, False], ids=["with a parent", "alone"])
+@pytest.mark.parametrize("kind,item", NOT_OBJECTS, ids=["%s %r" % (k, i) for k, i in NOT_OBJECTS])
+@pytest.mark.parametrize("who,where", SECTIONS, ids=[w[0] for w in SECTIONS])
+def test_l3_an_item_that_is_not_an_object_is_a_fault_in_every_list_a_recipe_has(who, where, kind, item, has_parent):
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    where(child).append(copy.deepcopy(item))
+    where(child).insert(0, copy.deepcopy(item))
+    got = L.recipe_faults(parent if has_parent else None, child, "coordination")
+    want = "%s an item that is not a step (it is %s)" % (who, kind)
+    assert got == [want, want], got                       # said for each item, and nothing else is wrong with the recipe
+    assert not any(c in got[0] for c in "{}[]"), got[0]
+
+
+def test_l3_an_object_for_a_step_with_no_id_is_still_the_no_id_fault_and_not_the_not_a_step_one():
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    child["gates"].append({})
+    child["steps"].append({"name": "Nameless"})
+    got = L.recipe_faults(parent, child, "coordination")
+    assert got == ["a step has no id: it has no name either", "a step has no id: Nameless"], got
+
+
+@pytest.mark.parametrize("bad", [["a"], {"a": 1}, [], {}, 7, 1.5, True], ids=repr)
+def test_l3_an_id_that_is_not_a_word_is_a_fault_not_an_exception(bad):
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    step_of(child, "coord.ready")["id"] = bad
+    got = L.recipe_faults(parent, child, "coordination")
+    assert any("coord.ready" in f and "gone" in f for f in got), got
+    if bad in ([], {}):                                    # empty is no id at all, any other kind is an id that is no word
+        assert any(f.startswith("a step has no id: ") for f in got), got
+    else:
+        assert any(f.startswith("a step has no id that is a word: ") for f in got), got
+    assert not any(c in f for f in got for c in "{}[]"), got
+    got = L.recipe_faults(None, child, "coordination")
+    assert len(got) == 1 and got[0].startswith("a step has no id") and "coord.ready" not in got[0], got
+    assert L.step_ids(child) == [i for i in L.step_ids(parent) if i != "coord.ready"]
+    two = copy.deepcopy(parent)
+    step_of(two, "coord.ready")["id"] = bad
+    step_of(two, "coord.record")["id"] = bad               # two steps with the same unhashable id: no id, twice, not a clash
+    assert len([f for f in L.recipe_faults(None, two, "coordination") if f.startswith("a step has no id")]) == 2
+
+
+def test_l3_the_duplicate_check_and_the_by_id_map_see_words_only():
+    r = {"gates": [{"id": ["a"], "name": "G"}], "steps": [{"id": "x", "name": "S"}, {"id": "x", "name": "T"}, {"id": 5}]}
+    assert L.step_ids(r) == ["x", "x"]
+    got = L.recipe_faults(None, r, "coordination")
+    assert got == ["a step has no id that is a word: G", "x: this id is used by more than one step",
+                   "a step has no id that is a word: it has no name either"], got
+
+
+@pytest.mark.parametrize("when,kind", [("inform", "a text"), (["inform", "born"], "a list"), (7, "a number"), (None, "nothing"),
+                                       (True, "a yes or no"), ([], "a list"), ("", "a text")], ids=repr)
+def test_l3_a_handler_whose_when_is_not_an_object_is_a_fault_and_not_a_key(when, kind):
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    h = handler(child, "inform", "born")
+    h["when"] = when
+    got = L.recipe_faults(parent, child, "coordination")
+    assert got[0] == ("the handler %s does not say what it hears: its when is %s, not an object with a msg_type and a word"
+                      % (h["name"], kind)), got
+    assert "the handler for inform/born is gone: a version hears what its parent hears" in got
+    assert not any("is new" in f for f in got), got        # the handler that says nothing is not also a new one
+    assert L.recipe_faults(None, child, "coordination") == [got[0]]       # alone: the one fault, and no exception
+
+
+def test_l3_a_handler_that_says_nothing_of_its_message_or_its_word_is_a_fault_not_an_exception():
+    parent = recipe("coordination")
+    for when, mark in [({"word": "born"}, "msg_type"), ({"msg_type": "", "word": "born"}, "msg_type"),
+                       ({"msg_type": ["inform"], "word": "born"}, "msg_type"), ({"msg_type": {"x": 1}}, "msg_type"),
+                       ({"msg_type": 7, "word": "born"}, "msg_type"), ({"msg_type": "inform", "word": ["born"]}, "word"),
+                       ({"msg_type": "inform", "word": 7}, "word"), ({"msg_type": "inform", "word": {"b": 1}}, "word")]:
+        child = copy.deepcopy(parent)
+        handler(child, "inform", "born")["when"] = when
+        got = L.recipe_faults(parent, child, "coordination")
+        assert got[0].startswith("the handler ") and "does not say what it hears" in got[0] and mark in got[0], (when, got)
+        assert "the handler for inform/born is gone: a version hears what its parent hears" in got, (when, got)
+        assert not any(c in f for f in got for c in "{}[]"), (when, got)
+        assert L.recipe_faults(None, child, "coordination") == [got[0]]
+
+
+def test_l3_a_handler_with_no_when_at_all_is_named_by_its_name_or_its_number():
+    child = copy.deepcopy(recipe("coordination"))
+    h = handler(child, "inform", "born")
+    del h["when"]
+    say = "the handler %s does not say what it hears: its when is nothing, not an object with a msg_type and a word"
+    assert L.recipe_faults(None, child, "coordination") == [say % h["name"]]
+    del h["name"]
+    n = next(i for i, x in enumerate(child["on"], 1) if x is h)
+    assert L.recipe_faults(None, child, "coordination") == [say % ("number %d" % n)]
+
+
+@pytest.mark.parametrize("key,words", [("gates", "the gates"), ("rules", "the rules"), ("steps", "the steps"),
+                                       ("on", "the handlers")])
+@pytest.mark.parametrize("bad,kind", [("none", "a text"), (7, "a number"), (True, "a yes or no"), ({"id": "x"}, "an object")])
+def test_l3_a_part_that_is_not_a_list_is_a_fault_and_nothing_at_all_is_not(key, words, bad, kind):
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    child[key] = bad
+    got = L.recipe_faults(parent, child, "coordination")
+    assert got[0] == "%s are not a list (they are %s)" % (words, kind), got
+    alone = L.recipe_faults(None, child, "coordination")
+    assert alone[0] == got[0] and len(alone) == 1, alone
+    child[key] = None                                       # a key set to null is the same as a key left out: no shape fault
+    assert not [f for f in L.recipe_faults(None, child, "coordination") if "not a list" in f]
+    del child[key]
+    assert not [f for f in L.recipe_faults(None, child, "coordination") if "not a list" in f]
+
+
+@pytest.mark.parametrize("bad,kind", [("none", "a text"), (7, "a number"), ({"id": "x"}, "an object")])
+def test_l3_the_steps_of_a_handler_that_are_not_a_list_are_a_fault(bad, kind):
+    parent = recipe("coordination")
+    child = copy.deepcopy(parent)
+    handler(child, "inform", "born")["steps"] = bad
+    got = L.recipe_faults(parent, child, "coordination")
+    assert got[0] == "the steps of the handler for inform/born are not a list (they are %s)" % kind, got
+    assert any("coord.table" in f and "gone" in f for f in got[1:]), got      # its step is gone with them, said at the step
+
+
+def test_l3_an_only_if_of_another_kind_is_read_as_its_text_and_points_nowhere():
+    parent = recipe("coordination")
+    for bad in (["coord.ready.later"], 7, {"a": 1}, True):
+        child = copy.deepcopy(parent)
+        step_of(child, "coord.busy")["only_if"] = bad
+        got = L.recipe_faults(parent, child, "coordination")
+        assert any(f.startswith("coord.busy: only_if points at") for f in got), (bad, got)
+
+
+def test_l3_handler_key_is_total_and_always_a_key():
+    for h in (None, "x", 7, [], ["when"], {}, {"when": None}, {"when": "inform"}, {"when": []}, {"when": 7}):
+        assert L.handler_key(h) == (None, S.ANY), h
+    assert L.handler_key({"when": {"msg_type": ["inform"], "word": {"b": 1}}}) == ("['inform']", "{'b': 1}")
+    assert L.handler_key({"when": {"msg_type": "inform", "word": ""}}) == ("inform", S.ANY)
+    for h in ({"when": {"msg_type": ["a"], "word": ["b"]}}, {"when": {"msg_type": {"a": 1}}}, {"when": "x"}, "x"):
+        hash(L.handler_key(h))                              # usable in a set, whatever the recipe holds
+
+
+JUNK = [None, "text", "", 7, 0, 1.5, True, False, [], ["a"], [None], {}, {"x": 1}, [[]], ["born"]]
+
+
+def junk_paths(x, p=()):
+    yield p
+    for k, v in (x.items() if isinstance(x, dict) else enumerate(x) if isinstance(x, list) else ()):
+        yield from junk_paths(v, p + (k,))
+
+
+def junked(r, rng):
+    """r with one to three of its parts replaced by, or joined by, a value of another kind: the recipes a careless author writes."""
+    r = copy.deepcopy(r)
+    for _ in range(rng.choice([1, 1, 2, 3])):
+        p = rng.choice([q for q in junk_paths(r) if q])
+        holder = r
+        for k in p[:-1]:
+            holder = holder[k]
+        op = rng.random()
+        if op < 0.7:
+            holder[p[-1]] = copy.deepcopy(rng.choice(JUNK))
+        elif isinstance(holder, list):
+            holder.insert(rng.randrange(len(holder) + 1), copy.deepcopy(rng.choice(JUNK)))
+        else:
+            holder.pop(p[-1], None)
+    return r
+
+
+def test_l3_recipe_faults_never_raises_whatever_a_recipe_holds():
+    """A2.7: the contract cases that call recipe_faults never raise on a stub. 1500 recipes made from the five real ones, a part
+    or three of each replaced by, or joined by, a value of another kind, judged against the real parent, against a damaged
+    parent and alone: a list of sentences each time. The seed is fixed, so a failure is the same failure on every run."""
+    import random
+    rng = random.Random(20260427)
+    recipes = {layer: recipe(layer) for layer in FUNCTION_LAYERS}
+    for n in range(1500):
+        layer = rng.choice(FUNCTION_LAYERS)
+        parent = recipes[layer]
+        child = junked(parent, rng)
+        for against in (parent, junked(parent, rng), None):
+            got = L.recipe_faults(against, child, layer)
+            assert isinstance(got, list) and all(isinstance(f, str) and f for f in got), (n, layer)
 
 
 def test_l3_a_handler_whose_when_has_no_word_hears_any():
