@@ -194,3 +194,122 @@ def test_u3_no_live_site_literal_is_left_on_audits_path(j2):
     for fn in on_path:
         assert "Live site" not in inspect.getsource(fn), fn.__name__
     assert "Live site" not in inspect.getsource(importlib.import_module("layers.audit.v1"))
+
+
+# ---- U4 · Audit reads any kind's deliverable (M8.2) -----------------------------------------------------------------
+def _audit_rows(R, ref, step=None):
+    return [r for r in R.step_rows(ref) if r["engine"] == "Audit" and (step is None or r["step"] == step)]
+
+
+def test_u4_audit_starts_on_a_checked_version_of_the_deliverable_not_of_an_artifact(j2):
+    W, R, J, _, _ = j2
+    want = {"on": [{"kind": "version", "of": "$deliverable", "checked": True}], "unless": []}
+    assert R.engine_def("Audit")["start"] == want
+    assert json.loads((S.HERE / "layers" / "audit" / "v1.json").read_text(encoding="utf-8"))["start"] == want
+    assert R.validate(R.defs()) == [], "the definitions are clean with the trigger"
+    web = _born(j2)
+    assert R.trigger_art(W.dept(web), want["on"][0]) == "Live site"
+    assert R.trigger_art(W.dept(web), {"kind": "version", "of": "Pages"}) == "Pages", "a trigger on an artifact is as it was"
+
+
+def test_u4_the_website_scenario_is_as_it_was_the_same_slot_the_same_words(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.judge": {"ok": False, "findings": [{"page": "index", "claim": "The fees are invented", "severity": "high"}]}})
+    ref = _born(j2)
+    _stamp_all(W, ref, kind="publish")
+    audit = [r for r in W.runs(ref) if r["engine"] == "Audit"]
+    assert [r["slot"] for r in audit] == ["Audit@live-site.v1"] and audit[0]["what"] == "found something to put right: The fees are invented"
+    assert all(r["read"] == [{"art": "Live site", "v": 1}] for r in _audit_rows(R, ref))
+    found = [e for e in J.events(ref) if e["action"] == "audit.finding_filed"]
+    assert [e["evidence_refs"] for e in found] == [[{"artifact": "Live site", "version": 1}]]
+
+
+def test_u4_a_default_department_reaches_step_7_on_its_result(j2):
+    W, R, J, _, _ = j2
+    ref = _default(j2)
+    assert [r["slot"] for r in W.runs(ref) if r["engine"] == "Audit"] == ["Audit@result.v1"]
+    assert all(r["read"] == [{"art": "Result", "v": 1}] for r in _audit_rows(R, ref))
+    unread = [e for e in J.events(ref) if e["action"] == "audit.not_read"]
+    assert [(e["step"], e["actor"], e["evidence_refs"]) for e in unread] == [(7, "Audit", [{"artifact": "Result", "version": 1}])]
+    assert [r["what"] for r in W.runs(ref) if r["engine"] == "Audit"][0].startswith("did not read what went live")
+    assert (J.status(ref)["step"], J.status(ref)["state"]) == (7, "unread")
+    W.run_until_idle(ref, limit=100)
+    assert [r["slot"] for r in W.runs(ref) if r["engine"] == "Audit"] == ["Audit@result.v1"], "once, on that version"
+
+
+def test_u4_an_organic_shaped_department_reaches_step_7_on_what_its_plan_delivers(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _organic(j2, monkeypatch)
+    assert W.dept(ref)["kind"] == "organic"
+    assert [r["slot"] for r in W.runs(ref) if r["engine"] == "Audit"] == ["Audit@report.v1"]
+    unread = [e for e in J.events(ref) if e["action"] == "audit.not_read"]
+    assert [(e["step"], e["evidence_refs"]) for e in unread] == [(7, [{"artifact": "Report", "version": 1}])]
+    assert (J.status(ref)["step"], J.status(ref)["state"]) == (7, "unread")
+
+
+def test_u4_an_organic_department_not_yet_planned_has_nothing_for_audit_to_start_on(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2, ORGANIC, "Lab Co", settle=False)
+    assert S.deliverable(W.dept(ref)) is None
+    ctx = R._coord_ctx(ref, W.dept(ref))
+    assert R.ready(ctx, "Audit") is None, "no deliverable: no trigger is live"
+
+
+def test_u4_root_has_no_deliverable_audit_reads_so_its_scenarios_are_as_they_were(j2, monkeypatch):
+    W, R, J, founding, _ = j2
+    asked = []
+    _model(monkeypatch, R, {"audit.judge": lambda prompt: asked.append(prompt) or {"ok": True, "findings": []}})
+    root = founding.found_structure("Acme Learning", owner="Sankalp")["root"]
+    W.owner_ask(root, WEBSITE)
+    W.run_until_idle(root, limit=300)
+    assert W.dept(root)["kind"] == "root" and W.latest(root, "Department"), "Setup filed the department it made"
+    assert S.deliverable(W.dept(root)) == "Department", "the interface names one"
+    assert not [r for r in W.runs(root) if r["engine"] == "Audit"] and asked == [], "and Audit does not read it"
+
+
+def test_u4_a_deliverable_that_is_not_html_is_read_as_text_at_most_40000_characters(j2):
+    W, R, J, _, _ = j2
+    ref = _default(j2)
+    big = "word " * 12000                                              # 60,000 characters of text, in a file that is not HTML
+    W.add_version(ref, "Result", {"result.md": big, "notes.txt": "A second file."}, [{"art": "Brief", "v": 1}], "r-big",
+                  {"ok": True, "notes": ["by hand"]})
+    ctx = {"ref": ref, "dept": W.dept(ref), "inp": {"v": 2}, "bag": {}}
+    pick = R.audit_pick(ctx, None, None)
+    assert pick["pages"] == ["notes.txt", "result.md"], "no HTML page: every file is read, as text"
+    ctx["bag"]["audit.pick"] = pick
+    pages = json.loads(R.p_audit_judge(ctx, None, None).split("THE PAGES:\n", 1)[1])
+    assert [p["page"] for p in pages] == ["notes.txt", "result.md"]
+    assert pages[0]["text"] == "A second file."
+    assert len(pages[1]["text"]) == R.READ_MAX - len("A second file.") and R.READ_MAX == 40000, "40,000 characters of text in all"
+    assert pages[1]["text"].startswith("word word word")
+    # an HTML deliverable is read as it was: tags out, whitespace folded, a page at most 1,500 characters
+    web = _born(j2)
+    _stamp_all(W, web)
+    ctx = {"ref": web, "dept": W.dept(web), "inp": {"v": 1}, "bag": {}}
+    ctx["bag"]["audit.pick"] = R.audit_pick(ctx, None, None)
+    pages = json.loads(R.p_audit_judge(ctx, None, None).split("THE PAGES:\n", 1)[1])
+    assert pages and all(p["page"].endswith(".html") and "<" not in p["text"] and len(p["text"]) <= 1500 for p in pages)
+
+
+def test_u4_the_start_is_said_in_words_by_the_departments_own_deliverable(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    web, default = _born(j2), _default(j2)
+    assert R.steps_view(web, "Audit")["start"]["on"] == ["a new Live site that passed its check"]
+    assert R.steps_view(default, "Audit")["start"]["on"] == ["a new Result that passed its check"]
+    assert R.start_view(R.engine_def("Audit"))["on"] == ["a new deliverable that passed its check"], "with no department"
+    assert R.slot_of(default, "Audit")["on"].startswith("after Result v")
+
+
+def test_u4_audit_should_have_fired_names_the_artifact_the_plan_delivers(j2):
+    from datetime import datetime, timedelta, timezone
+    W, R, J, _, FV = j2
+    d, _ = W.create("dref-faulty", "Answers", None, kind="default")
+    ref = d["ref"]
+    W.add_version(ref, "Result", {"result.md": "An answer.\n"}, [{"art": "Brief", "v": 1}], "r-do", {"ok": True, "notes": ["by hand"]})
+    audit = lambda: next(n for n in FV.functions(ref)["functions"] if n["name"] == "Audit")      # noqa: E731
+    assert audit()["state"] != "fault", "inside the grace window it is not yet a fault"
+    p = W.ddir(ref) / "artifacts" / "result" / "versions.json"
+    rows = json.loads(p.read_text())
+    rows[-1]["at"] = (datetime.now(timezone.utc) - timedelta(seconds=FV.FIRE_GRACE_S + 60)).astimezone().isoformat(timespec="seconds")
+    p.write_text(json.dumps(rows))
+    assert (audit()["state"], audit()["why"]) == ("fault", "Audit has not read Result v1")

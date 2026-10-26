@@ -326,14 +326,15 @@ def _faults(ref, d, rs, rows, now_s):
     # should have fired: Audit by its own start (a checked version of what it reads), past the grace window
     audit = R.engine_def("Audit") or {}
     for trig in ((audit.get("start") or {}).get("on") or []):
-        if trig.get("kind") != "version" or trig.get("of") not in W.artifacts_of(d):
+        of = R.trigger_art(d, trig)                        # '$deliverable' is the department's own (PRD M8.2)
+        if trig.get("kind") != "version" or of not in W.artifacts_of(d):
             continue
-        v = W.latest(ref, trig["of"], passed=bool(trig.get("checked")))
+        v = W.latest(ref, of, passed=bool(trig.get("checked")))
         if not v or now_s - W._ts(v.get("at") or "") < FIRE_GRACE_S:
             continue
-        slot = W._slot_id("Audit", trig["of"], v["v"])
+        slot = W._slot_id("Audit", of, v["v"])
         if not any(r.get("slot") == slot for r in rs):
-            out.setdefault("Audit", "Audit has not read %s v%s" % (trig["of"], v["v"]))
+            out.setdefault("Audit", "Audit has not read %s v%s" % (of, v["v"]))
     # should have fired: Coordination idle while two engines are ready, past the grace window
     last = max((W._ts(r.get("started") or "") for r in rs), default=0.0)
     if now_s - last >= FIRE_GRACE_S:

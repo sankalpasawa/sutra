@@ -1045,7 +1045,7 @@
    "on": [
     {
      "kind": "version",
-     "of": "Live site",
+     "of": "$deliverable",
      "checked": true
     }
    ],
