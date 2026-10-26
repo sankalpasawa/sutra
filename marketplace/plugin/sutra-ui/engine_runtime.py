@@ -1514,13 +1514,13 @@ def run_engine(ref, name, inp, slot):
         if name == "Audit" and row.get("status") == "ok" and not p and isinstance(ctx["bag"].get("audit.file"), dict):
             filed = ctx["bag"]["audit.file"]
             if filed.get("read") is False and not filed.get("filed"):
-                J.not_read(ref, inp.get("v"), filed.get("why_not_read"))      # never 'clean': the cycle stays at step 7
+                J.not_read(ref, inp.get("v"), filed.get("why_not_read"), artifact=filed.get("artifact"))      # never 'clean': the cycle stays at step 7
             else:
-                _j2_audit_read(ref, d, inp.get("v"), filed.get("filed"))
+                _j2_audit_read(ref, d, inp.get("v"), filed.get("filed"), art=filed.get("artifact"))
         elif name == "Audit" and row.get("status") == "failed" and not p and inp.get("v") is not None:
             # a reading whose covering check failed is no reading (M2.4): the version is not read, nothing is cleared,
             # and the cycle stays at step 7; the failed step is Audit's fault on every screen
-            J.not_read(ref, inp.get("v"), "its reading failed its check (%s)" % str(note or "a step failed").rstrip("."))
+            J.not_read(ref, inp.get("v"), "its reading failed its check (%s)" % str(note or "a step failed").rstrip("."), artifact=inp.get("art"))
     return row
 
 
@@ -3497,9 +3497,22 @@ def adapt_heard(ctx, step, item):
     return {"said": "heard the ruling on " + str(pl.get("step")) + (": moved" if pl.get("stamped") else ": left as it is")}
 
 
+def audit_art(ctx):
+    """The artifact Audit reads: the department's deliverable, the last output of its registered plan (PRD M8.1), which is
+    the interface's to say (S.deliverable); None when it has none yet."""
+    import layer_schema as S
+    return S.deliverable(ctx.get("dept") or W.dept(ctx["ref"]))
+
+
+def audit_files(ctx):
+    """The files of the version Audit is reading: the deliverable's, by their path; none when there is no deliverable."""
+    art = audit_art(ctx)
+    return W.read_files(ctx["ref"], art, int(ctx["inp"]["v"])) if art else {}
+
+
 def audit_pick(ctx, step, item):
     v = int(ctx["inp"]["v"])
-    files = W.read_files(ctx["ref"], "Live site", v)
+    files = audit_files(ctx)
     # while the department lives its J2 cycle, done-when is read off Audit's reading, so every version is read (M0.3,
     # interim until M8 reads each done-when item); outside a cycle Audit drops in on a sample, as it always has
     sample = _j2_live(ctx["ref"]) or v <= 3 or v % 3 == 0
@@ -3515,11 +3528,12 @@ def audit_mechanical(ctx, step, item):
         for v in W.versions(ref, a):
             if not v.get("run") or "check" not in v:
                 notes.append("%s has a version with no run or no check" % a)
-    if not any(c.get("kind") == "ask" for c in W.trace(ref, "Live site", ctx["inp"]["v"])):
-        notes.append("the live site does not trace back to the owner's words")
+    art = audit_art(ctx)
+    if not any(c.get("kind") == "ask" for c in (W.trace(ref, art, ctx["inp"]["v"]) if art else [])):
+        notes.append("the %s does not trace back to the owner's words" % (art or "deliverable").lower())
     # a page that says "to be confirmed" published what nobody knew (found live 2026-09-28: twelve such places on
     # four pages); Audit names each hole, Identity asks the owner for the facts instead of a stamp
-    holes = placeholders(W.read_files(ref, "Live site", ctx["inp"]["v"]))
+    holes = placeholders(audit_files(ctx))
     said = notes + (["the site says it does not know %d thing%s" % (len(holes), "" if len(holes) == 1 else "s")] if holes else [])
     return {"ok": not said, "notes": said or ["every version has its run and its check; the trace reaches the owner's words"],
             "faults": notes, "holes": holes}
@@ -3572,15 +3586,15 @@ def audit_file(ctx, step, item):
     if not found:
         if not read:
             return {"said": "did not read what went live (%s); nothing is said of it" % why_not, "filed": 0, "read": False,
-                    "why_not_read": why_not}
-        return {"said": "checked what went live; found nothing", "filed": 0, "read": True}
+                    "why_not_read": why_not, "artifact": audit_art(ctx)}
+        return {"said": "checked what went live; found nothing", "filed": 0, "read": True, "artifact": audit_art(ctx)}
     high = [f for f in found if str(f.get("severity") or "").lower() == "high"]
     claim = str((high or found)[0]["claim"])
     post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high" if high else "low",
                                               "findings": found[:12], "about_version": ctx["inp"]["v"]},
-         about={"art": "Live site", "v": ctx["inp"]["v"]})
+         about={"art": audit_art(ctx), "v": ctx["inp"]["v"]})
     return {"said": "found %s: %s" % ("something to put right" if high else "something to note", claim), "filed": len(found),
-            "read": read, "why_not_read": why_not}
+            "read": read, "why_not_read": why_not, "artifact": audit_art(ctx)}
 
 
 # ---- the rulings of 2026-09-28: every unit starts and ends with code; Coordination's own agent; Root spawns ---------
@@ -5063,15 +5077,17 @@ def identity_closed(ctx, step, item):
     return {"said": "could not close the conflict from the goal and the rules; put it to the owner"}
 
 
-def _j2_audit_read(ref, d, version, filed):
+def _j2_audit_read(ref, d, version, filed, art=None):
     """Audit's reading closes the loop (step 8): nothing to put right means done-when holds, and Identity says so once."""
     J = _j2()
-    if not J or not J.audited(ref, version, filed):
+    if not J or not J.audited(ref, version, filed, artifact=art):
         return
+    import layer_schema as S
+    art = art or S.deliverable(d)
     try:
         _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
-              {"word": "goal", "done": "The goal is reached: %s. Audit read Live site v%s and found nothing to put right."
-               % (str(d.get("done") or "done").rstrip("."), version), "link": "Live site", "v": version})
+              {"word": "goal", "done": "The goal is reached: %s. Audit read %s v%s and found nothing to put right."
+               % (str(d.get("done") or "done").rstrip("."), art, version), "link": art, "v": version})
     except Exception:  # noqa: BLE001 -- the goal is reached on the record whether or not the word reached the chat
         pass
 
@@ -5705,8 +5721,8 @@ def d_priority_bargain(ctx, step, item):
 
 
 def p_audit_judge(ctx, step, item):
-    ref, v = ctx["ref"], ctx["inp"]["v"]
-    files = W.read_files(ref, "Live site", v)
+    ref = ctx["ref"]
+    files = audit_files(ctx)
     pages = []
     for name in ctx["bag"]["audit.pick"]["pages"][:12]:
         text = re.sub(r"<[^>]+>", " ", files.get(name, ""))

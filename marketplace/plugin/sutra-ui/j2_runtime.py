@@ -17,6 +17,7 @@ import os
 import uuid
 
 import engine_runtime as R
+import layer_schema as S
 import record
 import website_dept as W
 
@@ -630,9 +631,10 @@ def on_post(ref, row):
                  key, {"workflow": names, "bound": pl.get("bound")}, proposal_ref=pl.get("for"))
             _set(ref, step=4, state="closing")
         elif word == "finding" and src == "Audit":
+            art = _deliverable(ref, pl.get("artifact"))
             note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded", str(pl.get("claim") or "A finding."),
                  key, {"severity": pl.get("severity"), "findings": len(pl.get("findings") or [])},
-                 evidence_refs=[{"artifact": "Live site", "version": pl.get("about_version")}])
+                 evidence_refs=[{"artifact": art, "version": pl.get("about_version")}] if art else [])
             _set(ref, step=8, state="pursuing")
         elif src == "Identity" and R.OWNER in dst and act == "request":
             note(ref, int((_state(ref) or {}).get("step") or 1), "Identity", "User", "ask.created", "waiting",
@@ -795,21 +797,28 @@ def questioned(ref, question, key):
         return _move(ref, "waiting", step=1, open_ask=ask["id"])
 
 
-def not_read(ref, version, why):
+def _deliverable(ref, artifact=None):
+    """What Audit reads and the ledger cites: the artifact the event names, else the department's deliverable, the last
+    output of its registered plan (PRD M8.1: the interface's to say); None when it has none."""
+    return artifact or S.deliverable(W.dept(ref))
+
+
+def not_read(ref, version, why, artifact=None):
     """Audit's judge did not read the version (not sampled, or no model to read it): nothing is found and nothing is
     cleared. The ledger says so, and the cycle stays at step 7 until a version is read (M0.3). Never raises."""
     try:
         if not active(ref):
             return
         why = str(why or "it was not read").rstrip(".")
-        note(ref, 7, "Audit", "Identity", "audit.not_read", "not_read", "Audit did not read Live site v%s: %s." % (version, why),
-             "audit-not-read-v%s" % version, {"why_not_read": why}, evidence_refs=[{"artifact": "Live site", "version": version}])
+        art = _deliverable(ref, artifact)
+        note(ref, 7, "Audit", "Identity", "audit.not_read", "not_read", "Audit did not read %s v%s: %s." % (art or "what the plan delivers", version, why),
+             "audit-not-read-v%s" % version, {"why_not_read": why}, evidence_refs=[{"artifact": art, "version": version}] if art else [])
         _set(ref, step=7, state="unread")
     except Exception:  # noqa: BLE001 -- the ledger never fails the run it records
         return
 
 
-def audited(ref, version, findings):
+def audited(ref, version, findings, artifact=None):
     """Audit read what went out and found nothing to put right: done-when is read from that (step 8). Returns True when
     the goal is reached now, so Identity says so once."""
     if not active(ref) or findings:
@@ -817,8 +826,9 @@ def audited(ref, version, findings):
         # (found live 2026-10-08: twelve findings filed, and the next line of the ledger said nothing was found)
         return False
     dept = W.dept(ref) or {}
-    ev = [{"artifact": "Live site", "version": version}]
-    note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded", "Audit read Live site v%s and found nothing to put right." % version,
+    art = _deliverable(ref, artifact)
+    ev = [{"artifact": art, "version": version}] if art else []
+    note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded", "Audit read %s v%s and found nothing to put right." % (art or "what the plan delivers", version),
          "audit-clean-v%s" % version, {"severity": "none", "findings": 0}, evidence_refs=ev)
     note(ref, 8, "Identity", "User", "goal.reached", "done", "Done-when holds: %s." % str(dept.get("done") or "").rstrip("."),
          "goal-reached-v%s" % version, {"done_when": dept.get("done")}, evidence_refs=ev)
