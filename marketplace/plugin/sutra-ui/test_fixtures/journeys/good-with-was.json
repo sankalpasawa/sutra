@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "id": "J9",
+  "title": "A fixture journey",
+  "kind": "system",
+  "inside": null,
+  "bound_to": null,
+  "serves": [],
+  "declared": false,
+  "goal": "The smallest journey that fits the definition: two steps and one edge. It is a fixture and proves nothing.",
+  "lead": "A directive the owner says becomes one rule, restated and put back, kept only on a stamp.",
+  "ends_when": "The rule is on the record, or the owner refused it and nothing was kept.",
+  "flag": null,
+  "tag": "A FIXTURE: THE SHAPE A JOURNEY FILE TAKES",
+  "site": {
+    "page": "native/system/department.html#j4",
+    "data_version": "2.4",
+    "as_of": "2026-10-01"
+  },
+  "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+  },
+  "lanes": [
+    {
+      "id": "you",
+      "label": "You",
+      "kind": "person"
+    },
+    {
+      "id": "identity",
+      "label": "Identity",
+      "kind": "function",
+      "function": "identity"
+    }
+  ],
+  "steps": [
+    {
+      "n": "1",
+      "lane": "you",
+      "short": "You say a directive",
+      "text": "You say a directive (\"never say X\", \"always show the phone number\").",
+      "site_function": "you",
+      "site_status": "none",
+      "site_says": "none",
+      "site_code": "—",
+      "act": "say",
+      "binds": [
+        {
+          "kind": "act",
+          "src": "Owner",
+          "act": "request",
+          "word": "request",
+          "dst": "Identity"
+        }
+      ],
+      "code": [
+        "identity_file"
+      ],
+      "tests": [
+        "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp"
+      ]
+    },
+    {
+      "n": "2",
+      "lane": "identity",
+      "short": "Identity restates it",
+      "text": "Identity restates it as one rule with a tag and a scope, and asks: \"A rule, as understood: …\".",
+      "site_function": "Identity",
+      "site_status": "none",
+      "site_says": "none",
+      "site_code": "identity.rule, _rule_ask",
+      "act": "ask",
+      "binds": [
+        {
+          "kind": "step",
+          "id": "identity.rule"
+        },
+        {
+          "kind": "act",
+          "src": "Identity",
+          "act": "request",
+          "word": "rule",
+          "dst": "Owner"
+        }
+      ],
+      "code": [
+        "p_identity_rule",
+        "_rule_ask",
+        "identity_file"
+      ],
+      "tests": [
+        "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "J9.1",
+      "at": "2",
+      "short": "The rule is already there",
+      "trigger": "The rule is already on the record.",
+      "site": {
+        "status": "built",
+        "text": "Said back, not added twice."
+      },
+      "code_does": "identity_file says the department already has the rule and files nothing.",
+      "outcome": {
+        "kind": "tell",
+        "voice": "Identity",
+        "golden": "the department already has this rule"
+      },
+      "binds": [
+        {
+          "kind": "act",
+          "src": "Identity",
+          "act": "inform",
+          "word": "request",
+          "dst": "Owner"
+        }
+      ],
+      "code": [
+        "_rule_answered",
+        "identity_file"
+      ],
+      "tests": []
+    }
+  ],
+  "site_ids": [
+    "step:1",
+    "step:2",
+    "edge:J9.1"
+  ],
+  "was": {
+    "title": "The first version of the flow",
+    "lanes": [
+      "you",
+      "identity"
+    ],
+    "steps": [
+      {
+        "n": "0a",
+        "lane": "identity",
+        "short": "Identity reads the directive",
+        "text": "Identity reads the directive before anything is asked.",
+        "site_function": "Identity",
+        "site_status": "built",
+        "site_says": "built",
+        "site_code": "identity.recognise",
+        "act": "read"
+      },
+      {
+        "n": "0b",
+        "lane": "you",
+        "short": "You are told",
+        "text": "You are told what was understood.",
+        "site_function": "you",
+        "site_status": "none",
+        "site_says": "none",
+        "site_code": "—",
+        "act": "tell"
+      }
+    ],
+    "edges": [
+      {
+        "id": "J9.1",
+        "at": "0a",
+        "short": "Not a directive",
+        "trigger": "The words are a question, not a directive.",
+        "site": {
+          "status": "wanted",
+          "text": "Wanted: the words go to the query path."
+        },
+        "code_does": "",
+        "outcome": {
+          "kind": "none",
+          "voice": "none",
+          "golden": null
+        }
+      }
+    ]
+  }
+}
