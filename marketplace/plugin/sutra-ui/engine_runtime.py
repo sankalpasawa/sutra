@@ -1959,11 +1959,20 @@ def identity_read(ctx, step, item):
     J = _j2()
     pl = ctx["post"].get("payload") or {}
     live = bool(J and J.active(ctx["ref"])) and ctx["dept"].get("kind") != "root"
-    answers = (pl.get("answers") or (J.standard_question(ctx["ref"]) or {}).get("id")) if live else None
-    return {"words": words, "about": about, "later": not first, "assess": bool(live and (first or answers)), "answers": answers or None,
-            "hurry": bool(JUST_DO_IT.fullmatch(words)),
+    answers = rule = None
+    if live:
+        aid = pl.get("answers") or (J.open_question(ctx["ref"]) or {}).get("id")
+        q = next((a for a in W.asks(ctx["ref"]) if a["id"] == aid and a.get("kind") == "j2_identity"), None) if aid else None
+        if q and q.get("standard"):
+            answers = aid
+        elif q and q.get("missing") == "rules" and (pl.get("answers") == aid or not first):
+            # the words answer Identity's question on the rules (PRD M3.4): they are read as a directive, so the rule
+            # keeps the tag Identity reads in them and the owner stamps it; recognising them again is not needed
+            rule, cue = aid, "directive"
+    return {"words": words, "about": about, "later": not first and not rule, "assess": bool(live and not rule and (first or answers)),
+            "answers": answers, "rule": rule, "hurry": bool(JUST_DO_IT.fullmatch(words)),
             "facts": {"kind": kind, "leaves_site": bool(LEAVES.search(words)), "first": first,
-                      "cue": "task" if first else cue, "names_work": bool(about)}}
+                      "cue": cue if rule else ("task" if first else cue), "names_work": bool(about)}}
 
 
 def _file_brief(ref, d, words, note):
@@ -2074,11 +2083,60 @@ def _j1_file_words(ref, d, words, note, message_id=None, thread=None):
     return row, record
 
 
-def _rule_ask(ref, slot, line, tag, words, thread, lead):
+def _rule_ask(ref, slot, line, tag, words, thread, lead, **more):
+    """A rule, restated, as an ask the owner stamps; `more` is kept on the ask (its scope, the question it answers)."""
     text = "%s: %s" % (lead, line)
-    W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "rule", "engine": "Identity", "slot": slot, "text": text, "tag": tag,
-                     "line": line, "words": words, "status": "pending", "created": W.now(), "thread": thread})
+    W._put_ask(ref, dict({"id": "a-" + uuid.uuid4().hex[:8], "kind": "rule", "engine": "Identity", "slot": slot, "text": text, "tag": tag,
+                          "line": line, "words": words, "status": "pending", "created": W.now(), "thread": thread}, **more))
     return text
+
+
+#: a rule's tag and scope, as Identity restates them to the owner (PRD M3.4)
+RULE_SAYS = {"go": "it may do this", "ask": "it asks you first", "refuse": "it never does this", "always": "it always does this"}
+SCOPE_SAYS = {"standing": "from now on", "one-time": "this once"}
+#: words that say when the department is done: they change its done-when items, never its goal (PRD M3.4)
+DONE_CUE = re.compile(r"\b(?:done[- ]when|(?:is|are|counts as|it's) (?:done|finished|complete) (?:when|once|if))\b", re.I)
+DONE_LEAD = re.compile(r"^\s*(?:from now on,?\s*)?(?:(?:it|this|the (?:site|website|department|work))\s+(?:is|counts as)\s+"
+                       r"(?:done|finished|complete)\s+(?:when|once|if)|(?:it's)\s+(?:done|finished|complete)\s+(?:when|once|if)|done[- ]when)\s*[:,-]?\s*", re.I)
+
+
+def _rule_answered(ctx, got):
+    """The owner answered Identity's question on the rules (PRD M3.4). A rule given as an answer keeps its tag: Identity
+    restates it, with its tag and scope, as a rule ask the owner stamps, and nothing is written to the rules before the
+    stamp. The stamp writes it and the cycle goes on (identity_apply); a refusal asks the question again."""
+    ref, d, p, J = ctx["ref"], ctx["dept"], ctx["post"], _j2()
+    words, aid = got["words"], got["rule"]
+    J.took(ref, aid, words, at=_words_at(ref, p))
+    r = ctx["bag"]["identity.rule"]
+    line = " ".join(str(r.get("line") or words).split()).rstrip(".")
+    tag = r.get("tag") if r.get("tag") in W.RULE_TAGS else "always"
+    scope = r.get("scope") if r.get("scope") in SCOPE_SAYS else "standing"
+    if any(str(x.get("line") or "").lower() == line.lower() and x.get("tag") in W.RULE_TAGS for x in d.get("rules") or []):
+        _tell(ref, d, p, "inform", {"word": "request", "done": "the department already has this rule"}, thread=p["thread"])
+        if J:
+            J.next_gap(ref)
+        return {"said": "the department already has this rule: " + line}
+    text = _rule_ask(ref, ctx["slot"], line, tag, words, p["thread"], "A rule, as understood (%s, %s)" % (RULE_SAYS[tag], SCOPE_SAYS[scope]),
+                     scope=scope, answers=aid)
+    _tell(ref, d, p, "request", {"word": "rule", "objective": text, "output": "a stamp or a refusal", "may_read": [],
+                                 "boundaries": "this department, until the owner says otherwise"}, thread=p["thread"])
+    return {"said": "restated the owner's answer as a rule, tagged %s, and put it back: %s" % (tag, line)}
+
+
+def _done_items_said(ctx, r, words):
+    """The owner's words say when the department is done (PRD M3.4): a new done-when item, as a done_items ask the owner
+    stamps. Its own kind: the goal tag would overwrite the goal, and these words never change it."""
+    ref, d, p = ctx["ref"], ctx["dept"], ctx["post"]
+    text = DONE_LEAD.sub("", " ".join(str(r.get("line") or words).split())).rstrip(".") or words
+    text = text[:1].upper() + text[1:]
+    items = W.items_of(d) + [{"text": text, "how": "model", "level": "outcome"}]
+    new = W.done_items(items)[-1]
+    ask = W.done_items_ask("Done when, as understood: add %s %s, read by an AI. The goal stays as it is" % (new["id"], new["text"]),
+                           items, "the owner's words say when the department is done", words=words, thread=p["thread"], slot=ctx["slot"])
+    W._put_ask(ref, ask)
+    _tell(ref, d, p, "request", {"word": "done_items", "objective": ask["text"], "output": "a stamp or a refusal", "may_read": [],
+                                 "boundaries": "this department's done-when, until the owner says otherwise"}, thread=p["thread"])
+    return {"said": "restated the owner's words as a done-when item and put them back: %s %s" % (new["id"], new["text"]), "journey": "directive"}
 
 
 def _mark(ref, about, words):
@@ -2289,6 +2347,9 @@ def identity_file(ctx, step, item):
     if J and got.get("answers"):
         # the words answer Identity's question on its standard (M3.3): read against it again, then asked again or started
         return _standard_answered(ctx, got)
+    if J and got.get("rule"):
+        # the words answer Identity's question on the rules (M3.4): a rule ask, its tag and scope restated, for the stamp
+        return _rule_answered(ctx, got)
     if J and not first and J.waiting_on_owner(ref):
         # Identity's own question is open (J2.1): these words answer it. They are written to the identity, the standard
         # is read again, and the department starts once it is met
@@ -2316,6 +2377,9 @@ def identity_file(ctx, step, item):
             row = _file_words(ref, d, words, "the owner's directive, for this once")
             _tell(ref, d, p, "inform", {"word": "request", "done": "applied this once; not kept as a rule", "v": row["v"]}, thread=p["thread"])
             return {"said": "applied the owner's words once: " + words, "journey": journey, "filed": row["v"]}
+        if DONE_CUE.search(words):
+            # when the department is done is its done-when items, never its goal (M3.4): a done_items ask of its own
+            return _done_items_said(ctx, r, words)
         clash = [x["line"] for x in d.get("rules") or [] if x.get("line") and str(x["line"]).lower() == str(r["line"]).lower()]
         if clash:
             _tell(ref, d, p, "inform", {"word": "request", "done": "the department already has this rule"}, thread=p["thread"])
@@ -2832,12 +2896,25 @@ def identity_apply(ctx, step, item):
                 d["goal"] = a["line"]
                 d["publish_asks_from"] = len(W.versions(ref, "Live site"))      # the first publish under a new goal asks again
             else:
-                d["rules"] = list(d.get("rules") or []) + [{"id": "u-" + uuid.uuid4().hex[:6], "tag": a.get("tag") or "always",
-                                                            "line": a["line"], "since": W.now(), "from": a.get("words")}]
-            W.save_dept(ref, d)
+                kept = list(d.get("rules") or [])
+                if a.get("answers"):
+                    # it answers Identity's question on the rules: a rule with no tag or no line gives way to it, as before
+                    kept = [r for r in kept if str(r.get("line") or "").strip() and r.get("tag") in W.RULE_TAGS]
+                d["rules"] = kept + [W.rule_row(a.get("tag") or "always", a["line"], a.get("words"), a.get("scope"))]
+            W.bump_identity(ref, d)                      # who the department is changed: a revision, and its copy (M3.1)
         row = _file_brief(ref, d, ("The goal is now: " if a.get("tag") == "goal" else "A rule, from now on: ") + a["line"],
                           "a directive the owner stamped")
+        if a.get("answers"):
+            _j2_went_on(ref, a["answers"])               # it answered Identity's question on the rules: the cycle goes on (M3.4)
         return {"said": ("took a new goal: " if a.get("tag") == "goal" else "took a rule: ") + a["line"], "filed": row["v"]}
+    if a.get("kind") == "done_items":
+        # PRD M3.4: done-when changes as items, its own kind; the goal stays as it was
+        d = W.apply_done_items(ref, a)
+        _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
+              {"word": "done_items", "done": "Done when is now: %s." % "; ".join("%s %s" % (i["id"], i["text"]) for i in d["done_items"])})
+        if a.get("answers"):
+            _j2_went_on(ref, a["answers"])
+        return {"said": "took the done-when items, stamped: " + "; ".join(i["id"] for i in d["done_items"])}
     if a.get("kind") == "finding":
         row = _file_brief(ref, ctx["dept"], "Correct this: " + str(a.get("found") or a.get("claim") or a["text"]),
                           "a finding the owner stamped")
@@ -2846,6 +2923,21 @@ def identity_apply(ctx, step, item):
         # PRD M2.2: the owner's own words for one of a function's instruction files, used from the next run on
         return _apply_instructions(ref, ctx["dept"], a)
     return {"said": "took the owner's stamp: " + a["text"]}
+
+
+def _j2_went_on(ref, aid):
+    """An ask that answered Identity's question was stamped (M3.4): the identity is read again, the next thing missing
+    is asked, and with nothing missing the department starts (step 2) once its first words are filed. Started already,
+    nothing more happens."""
+    J = _j2()
+    if not J or not J.active(ref) or int((J._state(ref) or {}).get("step") or 1) != 1 or J.next_gap(ref):
+        return
+    d = W.dept(ref)
+    brief = _brief_text(ref).strip()
+    if not brief or any(e.get("action") == "proposal.requested" for e in J.events(ref) if e.get("cycle_id") == J._state(ref).get("cycle_id")):
+        return
+    J.assessed(ref, d, key="stamped-" + str(aid))
+    _line_request(ref, d, brief, thread=None)
 
 
 def identity_drop(ctx, step, item):
@@ -2858,6 +2950,11 @@ def identity_drop(ctx, step, item):
         _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
               {"word": "line", "done": "The plan is dropped on your refusal. Say what the department should do and I will have it shaped afresh."})
         return {"said": "dropped the plan on the owner's refusal"}
+    if a and a.get("kind") in ("rule", "done_items") and a.get("answers"):
+        # the owner refused the rule that answered Identity's question (M3.4): the question is asked again, never dropped
+        J = _j2()
+        if J:
+            J.next_gap(ref)
     if a and a.get("kind") == "rung":
         _, s = step_def(a["step"])
         e = entry(ref, s)
@@ -4607,7 +4704,7 @@ STANDARD = ("goal", "items", "rules", "owner", "budget", "invented")
 #: what each point's gap is called, in the owner's words, when code reads it on the record
 STANDARD_SAYS = {"goal": "no goal", "items": "no done-when item that says how it is checked", "rules": "a rule with no tag",
                  "owner": "no owner", "budget": "no budget"}
-_RULE_TAGS = ("go", "ask", "refuse", "always")
+_RULE_TAGS = W.RULE_TAGS
 
 
 def _standard_gaps(d):
@@ -4828,7 +4925,10 @@ def d_identity_rule(ctx, step, item):
     once = bool(re.search(r"\b(just this once|this time only|only this time|for now)\b", words, re.I))
     goal = bool(re.search(r"\b(the (?:site|department|website) is (?:now )?for|the goal is)\b", words, re.I))
     line = re.sub(r"^\s*(from now on|going forward|in future|just this once)[,:]?\s*", "", words, flags=re.I).strip()
-    tag = "goal" if goal else "refuse" if re.search(r"\bnever\b", line, re.I) else "always"
+    # a rule that asks the owner first is tagged ask, though it says never ('Never publish without asking me', M3.4)
+    asks = bool(re.search(r"\b(?:without (?:asking|checking with) (?:me|the owner)|ask(?:ing)? (?:me|the owner) (?:first|before)|"
+                          r"check with (?:me|the owner) (?:first|before))\b", line, re.I))
+    tag = "goal" if goal else "ask" if asks else "refuse" if re.search(r"\bnever\b", line, re.I) else "always"
     return {"tag": tag, "line": line[:1].upper() + line[1:], "scope": "one-time" if once else "standing"}
 
 

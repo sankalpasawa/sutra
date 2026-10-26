@@ -386,3 +386,116 @@ def test_m3_3_the_standard_is_read_only_inside_the_cycle(j2, monkeypatch):
     assert reads == [] and not [a for a in W.asks(ref) if a["kind"] == "j2_identity"]
     rows = [r for r in R.step_rows(ref) if r["step"] == "identity.enough"]
     assert rows and all(r["by"] == R.SKIPPED for r in rows)
+
+
+# ---- M3.4 ------------------------------------------------------------------------------------------------------------
+NEVER = "Never publish without asking me"
+
+
+def _rules_gap(j2, words=None):
+    """A department whose rule says no tag: Identity's question is on the rules. With `words`, its first words are filed
+    first, so later words said in the chat answer the question."""
+    W, R, J, _, _ = j2
+    d, _ = W.create("dref-rules", "Rules Website", None)
+    d.update({"events": [{"kind": "j2_ready", "route": "template"}], "rules": [{"id": "r1", "line": "Work inside the record"}]})
+    W.save_dept("dref-rules", d)
+    J.start("dref-rules")
+    if words:
+        W.give_goal("dref-rules", words)
+        W.run_until_idle("dref-rules", limit=300)
+    q = J.status("dref-rules")["open_question"]
+    assert q and q["missing"] == "rules"
+    return "dref-rules", q
+
+
+def _rule_asks(W, ref):
+    return [a for a in W.asks(ref) if a["kind"] == "rule"]
+
+
+@pytest.mark.parametrize("via", ["answer box", "chat"])
+def test_m3_4_a_rule_given_as_an_answer_keeps_its_tag_through_the_rule_ask(j2, via):
+    """The answer written straight into the rules tagged go, or a rule that waits for no stamp, must fail."""
+    W, R, J, _, _ = j2
+    ref, q = _rules_gap(j2, words=None if via == "answer box" else BAKERY)
+    before = W.dept(ref)
+    if via == "answer box":
+        assert _client().post("/api/dept/%s/j2/answer" % ref, json={"text": NEVER}).status_code == 200
+    else:
+        W.owner_ask(ref, NEVER)
+    W.run_until_idle(ref, limit=300)
+    asks = _rule_asks(W, ref)
+    assert len(asks) == 1 and asks[0]["status"] == "pending"
+    assert (asks[0]["tag"], asks[0]["line"], asks[0]["scope"], asks[0]["answers"]) == ("ask", NEVER, "standing", q["id"])
+    assert asks[0]["text"] == "A rule, as understood (it asks you first, from now on): " + NEVER     # its tag and scope restated
+    assert W.dept(ref)["rules"] == before["rules"]                                   # nothing is written before the stamp
+    assert next(a for a in W.asks(ref) if a["id"] == q["id"])["status"] == "stamped" and J.status(ref)["open_question"] is None
+    assert asks[0]["text"] in _said(R, ref)
+
+    W.decide_ask(ref, asks[0]["id"], True)
+    W.run_until_idle(ref, limit=300)
+    d = W.dept(ref)
+    assert [(r["tag"], r["line"]) for r in d["rules"]] == [("ask", NEVER)]               # the untagged rule gave way to it
+    assert d["identity_revision"] == int(before.get("identity_revision") or 1) + 1
+    assert R._standard_gaps(d) == [] and J.status(ref)["open_question"] is None
+    if via == "chat":
+        # the first words were filed: with nothing missing now, the department starts (step 2)
+        assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+
+
+def test_m3_4_a_refused_rule_answer_asks_the_question_again(j2):
+    W, R, J, _, _ = j2
+    ref, q = _rules_gap(j2)
+    J.answer(ref, NEVER)
+    W.run_until_idle(ref, limit=300)
+    W.decide_ask(ref, _rule_asks(W, ref)[0]["id"], False)
+    W.run_until_idle(ref, limit=300)
+    again = J.status(ref)["open_question"]
+    assert again and again["missing"] == "rules" and again["id"] != q["id"]
+    assert W.dept(ref)["rules"] == [{"id": "r1", "line": "Work inside the record"}]
+
+
+DONE_WORDS = "From now on, the site is done when shoppers can order a cake on WhatsApp"
+
+
+def test_m3_4_a_stamped_change_to_the_items_leaves_the_goal_as_it_was(j2, monkeypatch):
+    """A done-when change filed under the goal's tag, which a stamp writes over the goal, must fail."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    _model(monkeypatch, R, {"identity.recognise": {"journey": "directive", "why": "it says when the site is done"},
+                            "identity.rule": {"tag": "goal", "line": DONE_WORDS[len("From now on, "):], "scope": "standing"}})
+    goal, items = W.dept(ref)["goal"], W.dept(ref)["done_items"]
+    rev = int(W.dept(ref).get("identity_revision") or 1)
+    W.owner_ask(ref, DONE_WORDS)
+    W.run_until_idle(ref, limit=300)
+    assert not [a for a in _rule_asks(W, ref) if a["status"] == "pending"]           # not a goal ask
+    ask = next(a for a in W.asks(ref) if a["kind"] == "done_items")
+    assert ask["status"] == "pending" and [i["id"] for i in ask["items"]] == ["D1", "D2"]
+    assert ask["items"][1] == {"id": "D2", "text": "Shoppers can order a cake on WhatsApp", "how": "model", "level": "outcome"}
+    assert ask["text"] == "Done when, as understood: add D2 Shoppers can order a cake on WhatsApp, read by an AI. The goal stays as it is"
+    assert W.dept(ref)["done_items"] == items                                        # nothing changes before the stamp
+
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=300)
+    d = W.dept(ref)
+    assert d["goal"] == goal and not d.get("goals")                                  # the goal is as it was
+    assert d["done_items"] == items + [{"id": "D2", "text": "Shoppers can order a cake on WhatsApp", "how": "model", "level": "outcome"}]
+    assert d["done"] == W.done_line(d["done_items"]) and d["identity_revision"] == rev + 1
+    assert "Done when is now: D1 %s; D2 Shoppers can order a cake on WhatsApp." % items[0]["text"] in _said(R, ref)
+
+
+def test_m3_4_the_done_items_ask_is_one_shape_and_keeps_what_is_to_confirm(j2):
+    W = j2[0]
+    W.create("dref-items4", "Items Website", None)
+    d = W.dept("dref-items4")
+    d.update({"done_items": [{"id": "D1", "text": "A", "how": "code", "level": "target"}, {"id": "D2", "text": "B", "how": "person", "level": "outcome"},
+                             {"id": "D3", "text": "C", "how": "model", "level": "outcome"}],
+              "to_be_confirmed": [{"item": "D3", "why": "nobody gave it"}]})
+    W.save_dept("dref-items4", d)
+    items = [i for i in W.items_of(d) if i["id"] != "D2"]                            # leave D2 out
+    ask = W.done_items_ask("Leave D2 out", items, "the owner asked for less")
+    assert (ask["kind"], ask["status"], [i["id"] for i in ask["items"]]) == ("done_items", "pending", ["D1", "D2"])
+    assert ask["items"][1] == {"id": "D2", "text": "C", "how": "model", "level": "outcome", "confirm": "nobody gave it"}
+    goal = W.dept("dref-items4")["goal"]
+    out = W.apply_done_items("dref-items4", ask)
+    assert out["goal"] == goal and out["done"] == "A; C" and out["to_be_confirmed"] == [{"item": "D2", "why": "nobody gave it"}]
+    assert out["done_items"] == [{"id": "D1", "text": "A", "how": "code", "level": "target"}, {"id": "D2", "text": "C", "how": "model", "level": "outcome"}]

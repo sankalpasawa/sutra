@@ -99,6 +99,48 @@ def done_line(items):
     return "; ".join(str(i.get("text") or "").rstrip(".") for i in items or [] if str(i.get("text") or "").strip())
 
 
+def items_of(d):
+    """The record's done-when items as an ask carries them: each with its confirm note when it is to be confirmed, so a
+    change renumbers them and the notes go with their items."""
+    why = {c.get("item"): c.get("why") for c in d.get("to_be_confirmed") or [] if isinstance(c, dict)}
+    return [dict(i, **({"confirm": why[i.get("id")]} if why.get(i.get("id")) else {})) for i in d.get("done_items") or []
+            if isinstance(i, dict)]
+
+
+# Rules (PRD M3.4): every rule the record keeps is tagged (go: it may; ask: it asks the owner first; refuse: it never
+# does; always: it always does) and says when and from whose words it came. Built here only, so the record holds one shape.
+RULE_TAGS = ("go", "ask", "refuse", "always")
+
+
+def rule_row(tag, line, words=None, scope=None):
+    """One rule as the record keeps it: {id, tag, line, since, from}; a rule for this once only says so in `scope`."""
+    row = {"id": "u-" + uuid.uuid4().hex[:6], "tag": tag, "line": " ".join(str(line or "").split()), "since": now(), "from": words}
+    if scope and scope != "standing":
+        row["scope"] = scope
+    return row
+
+
+def done_items_ask(text, items, why, words=None, thread=None, slot=None, **more):
+    """A change to the done-when items, as an ask the owner stamps (PRD M3.4): `items` as they will stand, numbered
+    again. Its own kind, never the goal's tag: its stamp writes the items and leaves the goal as it was. The one shape
+    every caller files: Identity's reading of the owner's words, and a blocked plan's 'leave an item out' (M3.5)."""
+    return dict({"id": "a-" + uuid.uuid4().hex[:8], "kind": "done_items", "engine": "Identity", "slot": slot, "text": text,
+                 "items": done_items(items), "why": why, "words": words, "status": "pending", "created": now(), "thread": thread},
+                **more)
+
+
+def apply_done_items(ref, ask):
+    """A stamped done_items ask: done-when becomes its items, done their joined text, and to_be_confirmed holds the
+    notes of the items that carry one; the goal is never touched. A revision of the identity (bump_identity)."""
+    with _lock(ref):
+        d = dept(ref)
+        items = done_items(ask.get("items"), d.get("kind"))
+        d["done_items"] = [{x: i[x] for x in ("id", "text", "how", "level")} for i in items]
+        d["done"] = done_line(items)
+        d["to_be_confirmed"] = [{"item": i["id"], "why": i["confirm"]} for i in items if i.get("confirm")]
+        return bump_identity(ref, d)
+
+
 def engines_of(d):
     """The work engines of a department, in its line: the engines on its record (TPL-1: what it was born with, from the
     Library), the kind's line for one born before the record carried them; (name, reads, writes, runs as). A department

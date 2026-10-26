@@ -363,6 +363,19 @@ def _ask_gap(ref, dept, cur):
     return _move(ref, "waiting", step=1, open_ask=aid)
 
 
+def next_gap(ref):
+    """The identity is read again after an ask that answered Identity's question was stamped or refused elsewhere (a
+    rule, M3.4): the next thing missing is asked, one at a time. Returns the cycle when a question is open now, None when
+    the identity has no gap (or a question is open already, or there is no cycle)."""
+    with W._lock(ref):
+        cur = _state(ref)
+        if not cur or not cur.get("cycle_id") or cur.get("state") in ("stopped", "done"):
+            return None
+        if cur.get("open_ask") and any(a["id"] == cur["open_ask"] and a["status"] == "pending" for a in W.asks(ref)):
+            return cur
+        return _ask_gap(ref, W.dept(ref), cur)
+
+
 def begin(ref):
     """Start the department's cycle, once. Called when J1 hands over (D1: J2 is the department's own life, and nobody
     presses a button for it), and by Start for a department born before that. A stopped cycle starts again."""
@@ -420,9 +433,10 @@ def answer(ref, text, ask_id=None, at=None):
                 ask["words_at"] = {"board": ref, "n": row["n"]}
                 W._put_ask(ref, ask)
             return _state(ref)
-        if ask.get("standard"):
+        if ask.get("standard") or missing == "rules":
             # Identity's standard was not met (M3.3): the answer is the owner's words to Identity, which reads them against
-            # the standard again and asks again or starts; nothing is written to the identity here
+            # the standard again and asks again or starts. A rule given as an answer keeps its tag (M3.4): Identity reads
+            # it, restates its tag and scope, and the owner stamps it. Nothing is written to the identity here
             _took(ref, ask, text)
             _, row = R.request(ref, text, answers=ask["id"])
             if row:
@@ -433,9 +447,6 @@ def answer(ref, text, ask_id=None, at=None):
             dept["goal"] = text
         elif missing == "done-when":
             dept["done"] = text
-        elif missing == "rules":
-            dept["rules"] = [r for r in dept.get("rules") or [] if str(r.get("line") or "").strip() and r.get("tag") in RULE_TAGS]
-            dept["rules"].append({"id": "u-" + uuid.uuid4().hex[:6], "tag": "go", "line": text, "since": W.now(), "from": text})
         W.bump_identity(ref, dept)                      # the one record, and the Org screen's copy of it (M3.1)
         ask.update({"status": "stamped", "decided": W.now(), "by": "the owner", "answered": text})
         if at:
