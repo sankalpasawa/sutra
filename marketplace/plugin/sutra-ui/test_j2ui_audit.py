@@ -1,6 +1,9 @@
 """test_j2ui_audit.py -- what Audit read, the recorded conditions, and the disagreements (j2ui_audit.py; UI port, package j2ui-work).
 
 Named claims:
+  W8  built on fixtures of the panes' new keys (the record's readings item by item, Root's standards, Priority's prices): with them
+      the latest reading has a row for each item and workable becomes a list, the standards are conditions R-1 on, and Priority's
+      own words refine what it said; with none of the keys every output is what W5 and W6 gave, byte for byte
   W6  one conflict for each bargain in which Priority asked for less or said no, and for each the two took to Identity; a
       straight yes is none. Each attempt says the act in the owner's words, as the chat does, and carries the chat's id of its
       post. It is settled by the two, by Identity's ruling, or by Identity after the owner's answer, and open until then.
@@ -13,6 +16,7 @@ The helpers (the stand-in Ctx, the record's writers, the prototype's page render
 """
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -44,6 +48,13 @@ RUN = dict(NO, **{"identity.close": {"ruling": "run", "why": "the goal cannot be
 GOAL = "Build a website that teaches algebra to Class 8 students"
 
 
+def clean_reading(J, version, artifact="Live site"):
+    """What a reading that found nothing to put right leaves in the ledger: audit.finding_filed, severity none, naming what was
+    read. Written as the event itself, so these tests do not depend on how j2_runtime.audited decides to write it."""
+    return event(J, "audit.finding_filed", "Audit", "Identity", "recorded", "Audit read %s v%s and found nothing to put right." % (artifact, version),
+                 step=7, payload={"severity": "none", "findings": 0}, evidence_refs=[{"artifact": artifact, "version": version}])
+
+
 def build_version(W, check, art="Build", files=None):
     return W.VERS.add(W._abase(REF, art), files or {"index.html": "<p>x</p>"}, [], "r-x", check, W.now())
 
@@ -57,7 +68,7 @@ def audit_of(mods, **kw):
 def test_w5_a_clean_reading_is_one_entry_with_a_read_line_and_no_item_rows(mods):
     W, R, J, F = mods
     cycle(W, "running", 6)
-    assert J.audited(REF, 2, []) is True
+    clean_reading(J, 2)
     got, ctx = audit_of(mods)
     assert len(got["audits"]) == 1
     a = got["audits"][0]
@@ -71,7 +82,7 @@ def test_w5_a_clean_reading_is_one_entry_with_a_read_line_and_no_item_rows(mods)
 def test_w5_the_pane_draws_no_workable_line_and_no_pass_cell_for_a_clean_reading(mods):
     W, R, J, F = mods
     cycle(W, "running", 6)
-    J.audited(REF, 2, [])
+    clean_reading(J, 2)
     got, ctx = audit_of(mods)
     html = render(page_state(got), "renderAudit(s)")
     text = shown(html)
@@ -130,7 +141,7 @@ def test_w5_readings_are_numbered_oldest_first_across_both_kinds(mods):
     W, R, J, F = mods
     cycle(W, "running", 6)
     finding(W, R, [("index.html", "a hole", "high")], about_version=1, at=ago(300))
-    J.audited(REF, 2, [])
+    clean_reading(J, 2)
     got, ctx = audit_of(mods)
     assert [(a["cycle"], a["version"], a["all_pass"]) for a in got["audits"]] == [(1, 1, False), (2, 2, True)]
 
@@ -164,7 +175,7 @@ def test_w5_every_string_is_in_the_owners_words_and_no_check_id(mods):
     W, R, J, F = mods
     cycle(W, "running", 6)
     finding(W, R, [("index.html", "Priority granted the line; take the refusal to Identity", "high")])
-    J.audited(REF, 3, [])
+    clean_reading(J, 3)
     got, ctx = audit_of(mods)
     text = json.dumps(got["audits"])
     assert not BANNED.search(text) and "granted" not in text
@@ -230,7 +241,7 @@ def test_w5_the_previewable_artifact_is_the_build_else_the_last_one_filed(mods):
 def test_w5_the_pane_draws_the_conditions_with_their_count(mods):
     W, R, J, F = mods
     cycle(W, "running", 6)
-    J.audited(REF, 1, [])
+    clean_reading(J, 1)
     build_version(W, {"ok": True, "notes": ["6 pages render", "the home page is there"]})
     got, ctx = audit_of(mods)
     text = shown(render(page_state(got), "renderAudit(s)"))
@@ -251,7 +262,7 @@ def test_w5_refs_and_audits_condensed(mods):
 def test_w5_the_builders_memoise_and_never_raise(mods):
     W, R, J, F = mods
     cycle(W, "running", 6)
-    J.audited(REF, 2, [])
+    clean_reading(J, 2)
     ctx = standin(mods)
     first = X.build_audits(ctx)
     assert X.build_audits(ctx) is first and X.build_conditions(ctx) is X.build_conditions(ctx)
@@ -434,15 +445,15 @@ def test_w6_the_page_draws_the_conflict(mods, born, monkeypatch):
 
 # ---- the shapes the real flows above do not reach: boards written by hand ------------------------------------------------
 def bargain(W, R, thread, steps, why="the goal needs these workflows"):
-    """A bargain thread on the board: (src, act, payload) for each post, hops counting up."""
+    """A bargain thread on the board: (src, act, payload[, at]) for each post, hops counting up."""
     engines = [{"name": n, "does": "x", "reads": "Brief", "writes": n, "internet": False} for n in ("Plan", "Write", "Check")]
-    for hop, (src, act, extra) in enumerate(steps, 1):
+    for hop, (src, act, extra, *at) in enumerate(steps, 1):
         dst = "Priority" if src == "Adaptation" else "Adaptation"
         payload = dict({"word": "line"}, **extra)
         if src == "Adaptation":
             payload.setdefault("engines", engines)
             payload.setdefault("why", why)
-        post(W, R, src, dst, act, payload, thread=thread, hop=hop)
+        post(W, R, src, dst, act, payload, thread=thread, hop=hop, at=at[0] if at else None)
 
 
 def test_w6_a_straight_yes_is_not_a_conflict_and_an_unanswered_proposal_is_not_yet_one(mods):
@@ -548,3 +559,349 @@ def test_w6_the_builder_memoises_and_never_raises(mods):
     ctx = standin(mods)
     ctx.posts = 7
     assert K.build(ctx)["conflicts"] == [] and any(r.startswith("conflicts:") for r in ctx.reasons)
+
+
+# ---- W8: what the panes add once the record holds it (fixtures: their shapes are the panes' own) ----------------------------------
+import functions_view as FV                                    # the module j2ui_audit reads the panes through
+
+LATEST_READING = {"artifact": "Live site", "v": 2, "at": "2026-10-26T21:20:00+05:30", "items": [
+    {"id": "D1", "verdict": "met", "method": "code", "claim": "the record holds: every version has its run and its check",
+     "evidence": "every version has its run and its check; the trace reaches the owner's words"},
+    {"id": "D2", "verdict": "not_met", "method": "model", "claim": "the fees page names no fee", "evidence": "fees.html says to contact the office"},
+    {"id": "D3", "verdict": "to_confirm", "method": "model", "claim": "it waits on a fact nobody has given: the clinic's opening hours",
+     "evidence": "no hours are given in the brief or in anything filed"}]}
+LATEST_DONE = {"artifact": "Live site", "v": 2, "at": "2026-10-26T21:20:00+05:30", "items": [
+    {"id": "D1", "verdict": "met", "method": "model", "claim": "every ask is answered in the Result", "evidence": "result.md answers the one ask in full"}]}
+ROOT_CHECKS = [{"summary": "The workflow meets Sutra's standards.", "at": "2026-10-26T21:00:00+05:30", "passed": True, "checks": [
+    {"check": "names_an_engine", "says": "the workflow names its engines", "passed": True, "why": "the workflow names its engines"},
+    {"check": "engines_known", "says": "each engine is one the Library has", "passed": True, "why": "Plan, Write, Check and Publish are in the Library"},
+    {"check": "fits_room", "says": "Priority's room holds the plan", "passed": False, "why": "the plan costs more than today's room"}]}]
+
+
+def panes(monkeypatch, **by_fn):
+    """functions_view.function as the merged panes will answer it: {fn: its j2 part}; a function not named has none. Returns the
+    list of the functions asked for, in order."""
+    asked = []
+
+    def function(ref, fn):
+        asked.append(fn)
+        return {"fn": fn, "j2": by_fn.get(fn, {})}
+    monkeypatch.setattr(FV, "function", function)
+    return asked
+
+
+def clean_and_finding(mods, version=2):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    finding(W, R, [("fees.html", "the fees page names no fee", "high")], about_version=version)
+
+
+def test_w8_the_latest_reading_gets_a_row_for_each_item_and_workable_lists_what_is_not_met(mods, monkeypatch):
+    clean_and_finding(mods)
+    panes(monkeypatch, audit={"latest": LATEST_READING})
+    got, ctx = audit_of(mods)
+    a = got["audits"][-1]
+    assert [(r["id"], r["item"], r["verdict"], r["pass"]) for r in a["results"]] == [
+        ("D1", 1, "PASS", True), ("D2", 2, "NEEDS_REVISION", False), ("D3", 3, "NEEDS_REVISION", False)]
+    assert a["results"][0] == {"id": "D1", "item": 1, "criterion": "the record holds: every version has its run and its check", "verdict": "PASS",
+                               "pass": True, "note": "every version has its run and its check; the trace reaches the owner's words"}
+    assert a["results"][1]["note"] == "fees.html says to contact the office" and "needs_requester_fact" not in a["results"][1]
+    assert a["results"][2]["needs_requester_fact"] == "it waits on a fact nobody has given: the clinic's opening hours"
+    assert a["results"][2]["note"] == "to confirm with you: no hours are given in the brief or in anything filed"
+    assert a["all_pass"] is False and [r["id"] for r in a["extra_issues"]] == ["F-1"], "Audit's finding stays beside the items"
+    assert got["workable"] == ["the fees page names no fee", "to confirm with you: it waits on a fact nobody has given: the clinic's opening hours"]
+    text = shown(render(page_state(got), "renderAudit(s)"))
+    assert "Not workable yet (checked by code)" in text and "D2 2. the fees page names no fee" in text and "NEEDS_REVISION" in text
+
+
+def test_w8_every_item_met_is_all_pass_and_workable_is_empty(mods, monkeypatch):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    clean_reading(J, 2)
+    panes(monkeypatch, audit={"latest": LATEST_DONE})
+    got, ctx = audit_of(mods)
+    a = got["audits"][-1]
+    assert a["all_pass"] is True and [(r["id"], r["verdict"]) for r in a["results"]] == [("D1", "PASS")]
+    assert got["workable"] == []
+    html = render(page_state(got), "renderAudit(s)")
+    text = shown(html)
+    assert "Workable (checked by code)" in text and "Not workable yet" not in text and re.search(r">\s*PASS\s*<", html)
+
+
+def test_w8_a_clean_event_with_an_item_not_met_is_not_all_pass(mods, monkeypatch):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    clean_reading(J, 2)
+    panes(monkeypatch, audit={"latest": LATEST_READING})
+    a = audit_of(mods)[0]["audits"][-1]
+    assert a["all_pass"] is False and len(a["results"]) == 3
+
+
+def test_w8_with_no_reading_item_by_item_the_tab_stays_as_honest_as_before(mods, monkeypatch):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    clean_reading(J, 2)
+    for view in ({}, {"latest": None}, {"latest": {}}, {"latest": {"items": []}}, {"latest": {"v": 2, "items": [{"id": "D1", "verdict": "unknown"}]}},
+                 {"latest": "x"}, {"latest": {"items": "x"}}):
+        panes(monkeypatch, audit=view)
+        got, ctx = audit_of(mods)
+        assert got["audits"][0]["results"] == [] and got["workable"] is None, view
+        assert "Workable" not in shown(render(page_state(got), "renderAudit(s)"))
+
+
+def test_w8_a_verdict_is_never_put_against_a_reading_it_was_not_made_on(mods, monkeypatch):
+    clean_and_finding(mods, version=3)
+    panes(monkeypatch, audit={"latest": LATEST_READING})                      # the pane's latest is of v2, the newest entry of v3
+    got, ctx = audit_of(mods)
+    assert got["audits"][-1]["results"] == [] and got["workable"] is None
+    ctx2 = standin(mods)
+    ctx2.posts, ctx2.events = [], []
+    got = K.build(ctx2)
+    assert got["audits"] == [] and got["workable"] is None, "no entry is made for a reading the tab does not otherwise know"
+
+
+def test_w8_an_entry_with_no_version_takes_the_latest_readings(mods, monkeypatch):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    post(W, R, "Audit", "Identity", "inform", {"word": "finding", "claim": "a hole", "findings": [{"claim": "a hole"}]}, thread="x-f")
+    panes(monkeypatch, audit={"latest": LATEST_READING})
+    got, ctx = audit_of(mods)
+    assert got["audits"][-1]["version"] == "" and len(got["audits"][-1]["results"]) == 3
+
+
+def test_w8_the_pane_is_read_once_and_only_when_there_is_a_reading(mods, monkeypatch):
+    asked = panes(monkeypatch, audit={"latest": LATEST_READING})
+    audit_of(mods)
+    assert asked.count("audit") == 0, "no reading, nothing to refine"
+    clean_and_finding(mods)
+    asked.clear()
+    ctx = standin(mods)
+    K.build(ctx)
+    K.build(ctx)
+    X.build_workable(ctx)
+    assert asked.count("audit") == 1, asked
+
+
+def test_w8_roots_standards_are_conditions_r_1_on(mods, monkeypatch):
+    W, R, J, F = mods
+    build_version(W, {"ok": True, "notes": ["6 pages render"]})
+    panes(monkeypatch, adaptation={"root_checks": ROOT_CHECKS})
+    got, ctx = audit_of(mods)
+    assert got["conditions"] == [
+        {"id": "N1", "text": "6 pages render", "met": True, "evidence": "Check engine, Build v1"},
+        {"id": "R-1", "text": "the workflow names its engines", "met": True, "evidence": "Root's check: the workflow names its engines"},
+        {"id": "R-2", "text": "each engine is one the Library has", "met": True, "evidence": "Root's check: Plan, Write, Check and Publish are in the Library"},
+        {"id": "R-3", "text": "Priority's room holds the plan", "met": False, "evidence": "Root's check: the plan costs more than today's room"}]
+    assert X.refs(ctx)["conditions"]["R-3"] == "Priority's room holds the plan"
+    assert not [s for s in walk(got["conditions"]) if CHECK_ID.match(s)], "the standard's id is not shown"
+
+
+def test_w8_roots_standards_stand_alone_when_the_check_engine_recorded_nothing(mods, monkeypatch):
+    panes(monkeypatch, adaptation={"root_checks": ROOT_CHECKS})
+    got, ctx = audit_of(mods)
+    assert [c["id"] for c in got["conditions"]] == ["R-1", "R-2", "R-3"]
+
+
+def test_w8_only_the_latest_review_counts_and_only_a_plan_that_is_registered(mods, monkeypatch):
+    older = {"summary": "Root's check sent the plan back", "at": "2026-10-26T20:00:00+05:30", "passed": False,
+             "checks": [{"check": "one_output", "says": "each engine writes something not yet written", "passed": False, "why": "Plan and Write write the same"}]}
+    panes(monkeypatch, adaptation={"root_checks": [older] + ROOT_CHECKS})
+    got, ctx = audit_of(mods)
+    assert [c["id"] for c in got["conditions"]] == ["R-1", "R-2", "R-3"] and "each engine writes" not in json.dumps(got["conditions"])
+    got, ctx = audit_of(mods, planned=False)
+    assert got["conditions"] is None, "before Root's check registers a plan, there are no standards to show"
+
+
+def test_w8_a_standard_with_no_sentence_says_what_it_found_and_one_with_neither_is_not_shown(mods, monkeypatch):
+    review = dict(ROOT_CHECKS[0], checks=[
+        {"check": "workflow_meets_standards", "says": "workflow_meets_standards", "passed": True, "why": "the workflow fits the workflow schema"},
+        {"check": "engines_known", "says": "", "passed": True}, {"check": "names_unique", "passed": True, "why": "workflow_meets_standards"},
+        {"check": "one_output", "says": "each engine writes something not yet written", "passed": False}, "x", None])
+    panes(monkeypatch, adaptation={"root_checks": [review, "x"]})
+    got, ctx = audit_of(mods)
+    assert got["conditions"] == [
+        {"id": "R-1", "text": "the workflow fits the workflow schema", "met": True, "evidence": "Root's check: the workflow fits the workflow schema"},
+        {"id": "R-2", "text": "each engine writes something not yet written", "met": False, "evidence": "Root's check: it did not hold"}]
+
+
+def seed_bargain(mods):
+    W, R, J, F = mods
+    bargain(W, R, "x-1", [("Adaptation", "propose", {}, T0), ("Priority", "propose", {"keep": ["Plan"], "why": "Priority countered the line"}, T1),
+                          ("Adaptation", "propose", {}, T2), ("Priority", "accept-proposal", {"why": "granted"}, T3)])
+
+
+def attempts_with_prices(mods, monkeypatch, prices):
+    panes(monkeypatch, priority={"prices": prices})
+    got, ctx = conflicts_of(mods)
+    return [a["text"] for a in got[0]["attempts"]], got[0], ctx
+
+
+T0, T1, T2, T3 = ("2026-10-26T10:00:0%d+05:30" % n for n in range(4))
+
+
+def test_w8_prioritys_own_words_refine_what_it_said(mods, monkeypatch):
+    seed_bargain(mods)
+    prices = [{"at": T3, "said": "said yes", "why": "fits today: about 3 calls of the 960 left", "proposal": "line", "answer": "accept"},
+              {"at": T1, "said": "asked for less", "why": "room for one workflow today", "proposal": "line", "answer": "counter"}]       # newest first
+    texts, c, ctx = attempts_with_prices(mods, monkeypatch, prices)
+    assert texts[0].startswith("Proposed the plan to Priority: ") and texts[2].startswith("Proposed the plan to Priority: ")
+    assert texts[1] == "Asked Adaptation for less: room for one workflow today"
+    assert texts[3] == "Said yes to the plan: fits today: about 3 calls of the 960 left"
+    assert [a["position"] for a in c["attempts"]] == ["opening proposal", "asked for less", "said yes", "said yes"], "the position is the post's"
+
+
+def test_w8_a_price_that_said_something_else_or_came_much_later_changes_nothing(mods, monkeypatch):
+    seed_bargain(mods)
+    base, c0, ctx = attempts_with_prices(mods, monkeypatch, [])
+    prices = [{"at": T1, "said": "said no", "why": "no room"},                                        # another answer at the right time
+              {"at": "2026-10-26T10:01:00+05:30", "said": "asked for less", "why": "a minute later"},   # the right answer, too late
+              {"at": T3, "said": "said yes", "why": ""}, {"at": None, "said": "said yes", "why": "x"}, {"said": "said yes"}, "x"]
+    texts, c, ctx = attempts_with_prices(mods, monkeypatch, prices)
+    assert texts == base and c == c0
+
+
+def test_w8_one_price_refines_one_answer(mods, monkeypatch):
+    W, R, J, F = mods
+    bargain(W, R, "x-1", [("Adaptation", "propose", {}, T0), ("Priority", "reject-proposal", {"why": "no room"}, T1)])
+    bargain(W, R, "x-2", [("Adaptation", "propose", {}, T0), ("Priority", "reject-proposal", {"why": "no room either"}, T1)])
+    panes(monkeypatch, priority={"prices": [{"at": T1, "said": "said no", "why": "the envelope has no room today"}]})
+    got, ctx = conflicts_of(mods)
+    assert [c["attempts"][1]["text"] for c in got] == ["Said no to the plan: the envelope has no room today", "Said no to the plan: no room either"]
+
+
+def test_w8_the_prices_are_read_only_when_a_bargain_has_a_priority_answer(mods, monkeypatch):
+    W, R, J, F = mods
+    asked = panes(monkeypatch, priority={"prices": []})
+    bargain(W, R, "x-1", [("Adaptation", "propose", {}, T0)])
+    X.build_conflicts(standin(mods))
+    assert asked == []
+    bargain(W, R, "x-2", [("Adaptation", "propose", {}, T0), ("Priority", "reject-proposal", {"why": "no room"}, T1)])
+    X.build_conflicts(standin(mods))
+    assert asked == ["priority"]
+
+
+def scenario(mods):
+    """A department with every kind of thing the three enrichments touch: a reading, a Build check, a plan, and a bargain."""
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    finding(W, R, [("fees.html", "the fees page names no fee", "high")])
+    clean_reading(J, 3)
+    build_version(W, {"ok": True, "notes": ["6 pages render"]})
+    bargain(W, R, "x-1", [("Adaptation", "propose", {}, T0), ("Priority", "propose", {"keep": ["Plan"], "why": "room for one"}, T1),
+                          ("Adaptation", "propose", {}, T2), ("Priority", "accept-proposal", {"why": "fits"}, T3)])
+
+
+def test_w8_with_none_of_the_keys_every_output_is_what_w5_and_w6_gave(mods, monkeypatch):
+    scenario(mods)
+    plain_ctx = standin(mods)
+    expected = K.build(plain_ctx)                                              # the panes of main: no latest, no checks, no prices
+    for view in ({}, {"readings": [], "findings": [], "spot_checks": []}, {"latest": None, "root_checks": [], "prices": []},
+                 {"proposal": None, "root_checks": [{"summary": "x", "at": None, "passed": True}], "rounds": []}):
+        panes(monkeypatch, audit=view, adaptation=view, priority=view)
+        got = K.build(standin(mods))
+        assert got == expected and json.dumps(got, sort_keys=True) == json.dumps(expected, sort_keys=True), view
+    assert expected["workable"] is None and expected["conditions"] == [
+        {"id": "N1", "text": "6 pages render", "met": True, "evidence": "Check engine, Build v1"}]
+
+
+def test_w8_a_pane_that_fails_or_answers_nothing_leaves_the_output_as_it_was(mods, monkeypatch):
+    scenario(mods)
+    expected = K.build(standin(mods))
+
+    def boom(ref, fn):
+        raise ValueError("no function named %s" % fn)
+    monkeypatch.setattr(FV, "function", boom)
+    ctx = standin(mods)
+    got = K.build(ctx)
+    assert got == expected and any(r.startswith("audit pane: ValueError") for r in ctx.reasons), ctx.reasons
+    monkeypatch.setattr(FV, "function", lambda ref, fn: None)
+    assert K.build(standin(mods)) == expected
+    monkeypatch.setattr(FV, "function", lambda ref, fn: {"j2": "not a dict"})
+    assert K.build(standin(mods)) == expected
+
+
+def test_w8_everything_added_is_json_and_in_the_owners_words(mods, monkeypatch):
+    scenario(mods)
+    panes(monkeypatch, audit={"latest": dict(LATEST_READING, v=3)}, adaptation={"root_checks": ROOT_CHECKS},
+          priority={"prices": [{"at": T1, "said": "asked for less", "why": "Priority countered the line"}]})
+    got, ctx = audit_of(mods)
+    text = json.dumps({k: got[k] for k in ("audits", "conditions", "conflicts", "workable")})
+    assert len(got["audits"][-1]["results"]) == 3 and len(got["conditions"]) == 4 and got["conflicts"]
+    assert not BANNED.search(text)
+    assert not [s for s in walk(got) if CHECK_ID.match(s)] and json.loads(json.dumps(got)) == got
+    assert got["conflicts"][0]["attempts"][1]["text"] == "Asked Adaptation for less: Priority asked for less on the line"
+
+
+def test_w8_the_audit_layers_own_fixture_reads_as_these_stubs_do(mods, monkeypatch):
+    """The panes' shapes are the layers' (schemas/layers/fixtures/view.audit.v1.json, from package a1-audit): once that fixture is
+    on this branch, its four states are read here as the audit pane will give them."""
+    f = Path(__file__).resolve().parent / "schemas" / "layers" / "fixtures" / "view.audit.v1.json"
+    if not f.exists():
+        pytest.skip("the Audit layer's fixture (package a1-audit) is not on this branch yet")
+    states = json.loads(f.read_text())["view.audit"]
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    finding(W, R, [("fees.html", "the fees page names no fee", "high")], about_version=states["reading"]["latest"]["v"])
+    panes(monkeypatch, audit=states["reading"])
+    got, ctx = audit_of(mods)
+    assert [r["id"] for r in got["audits"][-1]["results"]] == ["D1", "D2", "D3"] and len(got["workable"]) == 2
+    for name in ("empty", "not_read"):
+        panes(monkeypatch, audit=states[name])
+        got, ctx = audit_of(mods)
+        assert got["audits"][-1]["results"] == [] and got["workable"] is None, name
+
+
+# ---- W8 against the real panes: they run when the layers that add the keys are on this branch, and skip until then -------------
+def real_pane(fn, key, ref=REF):
+    got = (FV.function(ref, fn) or {}).get("j2") or {}
+    if key not in got:
+        pytest.skip("the %s pane has no '%s' on this branch yet (waiting on its layer)" % (fn, key))
+    return got
+
+
+def test_w8_real_audit_pane_a_reading_item_by_item_gets_its_rows(mods):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    real_pane("audit", "latest")
+    finding(W, R, [("fees.html", "the fees page names no fee", "high")], about_version=1)
+    item = {"subject": "x", "evidence": "fees.html says to contact the office", "method": "model", "severity": "low"}
+    W.append_row(REF, "readings.jsonl", {"schema_version": 1, "id": "r-%08x" % 1, "v": 1, "artifact": "Live site", "cycle_id": None, "round": None,
+                                         "read": True, "why_not_read": None, "findings": [], "at": W.now(),
+                                         "items": [dict(item, id="D1", claim="the home page names the clinic", verdict="met"),
+                                                   dict(item, id="D2", claim="the fees page names no fee", verdict="not_met")]})
+    got, ctx = audit_of(mods)
+    a = got["audits"][-1]
+    assert [(r["id"], r["verdict"], r["pass"]) for r in a["results"]] == [("D1", "PASS", True), ("D2", "NEEDS_REVISION", False)]
+    assert a["all_pass"] is False and got["workable"] == ["the fees page names no fee"]
+    assert "Not workable yet (checked by code)" in shown(render(page_state(got), "renderAudit(s)"))
+
+
+def test_w8_real_adaptation_pane_roots_standards_are_conditions(mods, born):
+    W, R, J, F = mods
+    ref = born()
+    pane = real_pane("adaptation", "root_checks", ref)
+    if not (pane["root_checks"] and pane["root_checks"][-1].get("checks")):
+        pytest.skip("Adaptation's pane does not carry Root's checks on this branch yet")
+    got = K.build(standin(mods, ref=ref))
+    rows = [c for c in got["conditions"] if c["id"].startswith("R-")]
+    checks = pane["root_checks"][-1]["checks"]
+    assert len(rows) == len(checks) >= 1 and all(c["met"] for c in rows) and all(c["evidence"].startswith("Root's check: ") for c in rows)
+    assert [c["text"] for c in rows] == [A_plain(c["says"]) or A_plain(c["why"]) for c in checks]
+    assert not [s for s in walk(got["conditions"]) if CHECK_ID.match(s)] and not BANNED.search(json.dumps(got["conditions"]))
+
+
+def A_plain(text):
+    import j2ui_atoms
+    return j2ui_atoms.plain(text)
+
+
+def test_w8_real_priority_pane_prices_leave_the_bargain_in_the_owners_words(mods, born, monkeypatch):
+    W, R, J, F = mods
+    offline(monkeypatch, R, LESS)
+    ref = born()
+    real_pane("priority", "prices", ref)
+    with_prices = K.build(standin(mods, ref=ref))["conflicts"]
+    monkeypatch.setattr(FV, "function", lambda r, fn: {"j2": {}})
+    without = K.build(standin(mods, ref=ref))["conflicts"]
+    assert with_prices and with_prices == without, "Priority's own words are the post's own: the same sentence, said once"
+    assert not BANNED.search(json.dumps(with_prices))

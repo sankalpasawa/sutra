@@ -13,7 +13,7 @@ the site was workable, and neither was done. So:
                            cleared, and the cycle's own words ('Audit has not read the result') already say so
     build_conditions(ctx)  the check engine's recorded check on the latest version of the previewable artifact, named for what
                            it is (a recorded check, run by code); None when no version has one
-    build_workable(ctx)    None: nobody has checked it item by item. The page then draws no 'Workable' line and no pass
+    build_workable(ctx)    None until a reading records a verdict for each item: the page then draws no 'Workable' line and no pass
     refs(ctx)              api/refs: the conditions' texts by id, and no rubric (Sutra has none)
     audits_condensed(ctx)  api/audits: earlier stages' audits; Sutra keeps no stage before the current one, so none
     build_conflicts(ctx)   the Conflicts tab: a bargain between Adaptation and Priority in which Priority asked for less or said
@@ -22,6 +22,12 @@ the site was workable, and neither was done. So:
 
 Every builder memoises on ctx.memo and never raises: a failure gives the empty form and a reason on ctx.reasons. Nothing here
 writes, speaks or calls a model, and every string the record wrote passes owner_words.
+
+Once Audit records a verdict for each done-when item (readings.jsonl, shown in its pane as `latest`), Root's check records
+which standards held, and Priority records its prices, the tab can say more, and says it: the latest reading gets a row for
+each item and `workable` becomes a list (empty when every item is met), the standards Root's check ran become conditions R-1
+on, and Priority's own words refine what it said in a conflict. All of it is read with dict.get from each function's pane
+(functions_view.function(ref, fn)['j2']); a pane that has none of those keys leaves everything above as it was, byte for byte.
 """
 import engine_runtime as R
 import functions_view as F
@@ -63,6 +69,47 @@ def _entry(n, version, all_pass, extra, read):
             "rubric": [], "conditions": [], "read": read}
 
 
+# ---- what a function's pane adds once the record holds it (read with dict.get; absent, nothing changes) --------------------
+def _view(ctx, fn):
+    """The `j2` part of a function's pane (functions_view.function), or {} when it has none. One read for each function and each
+    read of the department, and made only by a builder that has something to refine."""
+    def read(c):
+        got = F.function(c.ref, fn)
+        j2 = (got or {}).get("j2") if isinstance(got, dict) else None
+        return j2 if isinstance(j2, dict) else {}
+    return A.memoised(ctx, "j2ui_audit.view." + fn, read, dict, "%s pane" % fn)
+
+
+ITEM = {"met": ("PASS", True), "not_met": ("NEEDS_REVISION", False), "to_confirm": ("NEEDS_REVISION", False)}
+
+
+def _item_rows(latest):
+    """A reading's done-when items as the page's rows: PASS for an item met, NEEDS_REVISION for one not met or still to confirm
+    with the owner (it is not met until they give the fact). Items with a verdict this tab does not know are not drawn."""
+    rows = []
+    for n, it in enumerate([i for i in (latest or {}).get("items") or [] if isinstance(i, dict) and i.get("verdict") in ITEM], 1):
+        verdict, passed = ITEM[it["verdict"]]
+        row = {"id": str(it.get("id") or ""), "item": n, "criterion": A.plain(it.get("claim")), "verdict": verdict, "pass": passed,
+               "note": A.plain(it.get("evidence"))}
+        if it["verdict"] == "to_confirm":
+            row["needs_requester_fact"] = A.plain(it.get("claim"))
+            row["note"] = "to confirm with you: %s" % (A.plain(it.get("evidence")) or A.plain(it.get("claim")))
+        rows.append(row)
+    return rows
+
+
+def _latest(ctx, out):
+    """(the reading the pane calls latest, the entry that stands for it): the entry is the newest one when it is of the same
+    version (or names none). None for both when the pane holds no reading item by item, or the newest entry is of another
+    version, so a verdict is never put against a reading it was not made on."""
+    if not out:
+        return None, None
+    latest = _view(ctx, "audit").get("latest")
+    if not isinstance(latest, dict) or not _item_rows(latest):
+        return None, None
+    return (latest, out[-1]) if out[-1]["version"] in ("", _version(latest.get("v"))) else (None, None)
+
+
 def _audits(ctx):
     seen = []
     for p in ctx.posts:
@@ -80,6 +127,10 @@ def _audits(ctx):
         else:
             ref = next((r for r in row.get("evidence_refs") or [] if isinstance(r, dict) and r.get("version") is not None), {})
             out.append(_entry(n, _version(ref.get("version")), True, [], A.plain(row.get("summary")) or "Audit %s." % NOTHING))
+    latest, entry = _latest(ctx, out)
+    if entry is not None:
+        entry["results"] = _item_rows(latest)
+        entry["all_pass"] = entry["all_pass"] and all(r["pass"] for r in entry["results"])
     return out
 
 
@@ -94,7 +145,9 @@ def _previewable(ctx):
     return next((a for a in arts if a.get("name") == "Build"), arts[-1] if arts else None)
 
 
-def _conditions(ctx):
+def _recorded(ctx):
+    """The check engine's recorded check on the latest version of the previewable artifact, as conditions N1 on; None when no
+    version has one."""
     art = _previewable(ctx)
     last = ((art or {}).get("versions") or [None])[-1]
     check = (last or {}).get("check")
@@ -110,15 +163,43 @@ def _conditions(ctx):
     return [{"id": "N1", "text": generic, "met": False, "evidence": "; ".join(notes) or "its check failed"}]
 
 
+def _standards(ctx):
+    """The standards Root's check ran on the registered plan, as conditions R-1 on: what the standard says, whether it held,
+    and why. Read from Adaptation's pane (its latest review of the plan). A standard with no sentence of its own (the schema's
+    shape, which the pane names by its id) says what it found; one with neither is not shown, for its id is an inside word."""
+    if not getattr(ctx, "planned", False):
+        return []
+    reviews = [r for r in _view(ctx, "adaptation").get("root_checks") or [] if isinstance(r, dict)]
+    rows = []
+    for c in [c for c in (reviews[-1].get("checks") if reviews else None) or [] if isinstance(c, dict)]:
+        text, why = A.plain(c.get("says")), A.plain(c.get("why"))
+        if text or why:
+            rows.append({"id": "R-%d" % (len(rows) + 1), "text": text or why, "met": bool(c.get("passed")),
+                         "evidence": "Root's check: %s" % (why or ("it held" if c.get("passed") else "it did not hold"))})
+    return rows
+
+
+def _conditions(ctx):
+    return (_recorded(ctx) or []) + _standards(ctx) or None
+
+
 def build_conditions(ctx):
     return A.memoised(ctx, "j2ui_audit.conditions", _conditions, lambda: None, "conditions")
 
 
 # ---- what nobody has checked item by item ----------------------------------------------------------------------------------
+def _workable(ctx):
+    latest, entry = _latest(ctx, build_audits(ctx))
+    if entry is None:
+        return None
+    return [("to confirm with you: %s" if "needs_requester_fact" in r else "%s") % r["criterion"] for r in _item_rows(latest) if not r["pass"]]
+
+
 def build_workable(ctx):
     """None until a reading records a verdict for each done-when item (the page draws 'Workable (checked by code)' for [] and
-    'Not workable yet' for a list): a clean reading is not that, so the tab draws neither."""
-    return None
+    'Not workable yet' for a list): a clean reading is not that, so the tab draws neither. Once the latest reading has one,
+    [] when every item is met and none waits on the owner, else the claims not met."""
+    return A.memoised(ctx, "j2ui_audit.workable", _workable, lambda: None, "workable")
 
 
 def refs(ctx):
@@ -148,6 +229,31 @@ def _act(p):
     did = F._did(p)
     said = F._short(F._said(p))
     return (did[:1].upper() + did[1:]) + (": %s" % said if said else "")
+
+
+SAID_BY = {"accept-proposal": "said yes", "propose": "asked for less", "reject-proposal": "said no"}
+PRICE_WINDOW_S = 5                                             # a price is filed in the step that answers; the post is stamped to the second
+
+
+def _prices(ctx, posts):
+    """Priority's prices (its pane's `prices`), oldest first, as the answers they record: when, what it said, why. Read only
+    when some bargain has a Priority answer to put them against; none when the pane carries none."""
+    if not any(p.get("src") == "Priority" for p in posts):
+        return []
+    rows = [r for r in _view(ctx, "priority").get("prices") or [] if isinstance(r, dict) and r.get("said") and A.epoch(r.get("at")) is not None]
+    return sorted(rows, key=lambda r: A.epoch(r["at"]))
+
+
+def _priced(prices, used, p):
+    """The price Priority filed for this answer: the one that said the same, filed within a few seconds of the post, the
+    nearest if several, and each price for one answer only. None if there is none."""
+    at = A.epoch(p.get("at"))
+    near = [(abs(A.epoch(r["at"]) - at), i) for i, r in enumerate(prices)
+            if at is not None and i not in used and r["said"] == SAID_BY.get(p.get("msg_type")) and abs(A.epoch(r["at"]) - at) <= PRICE_WINDOW_S]
+    if not near:
+        return None
+    used.add(min(near)[1])
+    return prices[min(near)[1]]
 
 
 def _position(p, first):
@@ -222,12 +328,16 @@ def _outcome(resolved_by, agreed_after, ruling, ask, last, escalated):
     return "Waiting for Identity." if last is not None and last.get("msg_type") == "reject-proposal" else ""
 
 
-def _conflict(ctx, n, thread, posts, conflicts):
+def _conflict(ctx, n, thread, posts, conflicts, prices, used):
     msgs = getattr(ctx, "msg_of", None) or {}
     attempts = []
     for i, p in enumerate(posts):
         position, agree = _position(p, i == 0)
         text = _act(p)
+        price = _priced(prices, used, p) if p.get("src") == "Priority" else None
+        if price and A.plain(price.get("why")):
+            did = F._did(p)
+            text = (did[:1].upper() + did[1:]) + ": %s" % F._short(A.plain(price["why"]))      # Priority's own words for its answer
         attempts.append({"n": i, "who": p["src"].lower(), "msg": msgs.get(("b", p.get("n"))), "text": text, "position": position, "agree": agree})
     used = len([a for a in attempts if a["n"] > 0])
     last = posts[-1] if posts else None
@@ -272,7 +382,9 @@ def _conflicts(ctx):
             raised.setdefault(pl["for"], []).append(p)
     disagreed = [t for t, ps in by.items() if any(p["src"] == "Priority" and p["msg_type"] != "accept-proposal" for p in ps)]
     threads = sorted(set(disagreed) | set(raised), key=lambda t: min([p.get("n") or 0 for p in by.get(t, []) + raised.get(t, [])]))
-    return [_conflict(ctx, n, t, sorted(by.get(t, []), key=lambda p: p.get("n") or 0), raised.get(t, [])) for n, t in enumerate(threads, 1)]
+    prices, used = _prices(ctx, [p for t in threads for p in by.get(t, [])]), set()
+    return [_conflict(ctx, n, t, sorted(by.get(t, []), key=lambda p: p.get("n") or 0), raised.get(t, []), prices, used)
+            for n, t in enumerate(threads, 1)]
 
 
 def build_conflicts(ctx):

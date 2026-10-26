@@ -34,7 +34,7 @@ def empty():
             "audits": [], "conditions": None, "rubric": [], "workable": None, "call_log": [], "report": None}
 
 
-# ---- W2: a workflow for each engine of the registered line --------------------------------------------------------------
+# ---- workflows: one for each engine of the registered line --------------------------------------------------------------
 def _runs(e):
     return [r for r in e.get("runs") or [] if isinstance(r, dict)]
 
@@ -120,9 +120,7 @@ def _workflows(ctx):
     return [_workflow(ctx, e, line) for e in line]
 
 
-# ---- the builders: each gives its group of keys, and is looked up by name when it runs, so a failure stays its own ----
-
-
+# ---- atoms, sections and agents -----------------------------------------------------------------------------------------
 def _atoms(ctx, workflows):
     """The workflows' atoms (one for each slot step of the engine), the prototype's atom/1 view of each, no sections (a website
     has none), and who builds each workflow. The atoms are made first and set on the workflows together, so a failure leaves
@@ -133,7 +131,7 @@ def _atoms(ctx, workflows):
     return {"atoms_v1": A.views(workflows), "sections": [], "agents": {w["id"]: w["agent"] for w in workflows}}
 
 
-# ---- W4: one lane for each agent ---------------------------------------------------------------------------------------
+# ---- lanes: one for each agent ------------------------------------------------------------------------------------------
 LANE_STATUS = {"quiet": "idle", "working": "working", "waiting": "waiting", "waiting_on_you": "waiting", "fault": "blocked"}
 LANE_LINE = 140                                              # the page's own cut of what an agent is doing
 
@@ -190,6 +188,7 @@ def _lanes(ctx, workflows):
     return lanes + [_workflow_lane(ctx, w, by_wid[w["id"]]) for w in workflows]
 
 
+# ---- audits and conflicts: j2ui_audit builds them ----------------------------------------------------------------------
 def _audit(ctx):
     """What Audit read, the check engine's recorded conditions, and no rubric or workable verdict nobody gave (j2ui_audit)."""
     return {"audits": X.build_audits(ctx), "conditions": X.build_conditions(ctx), "rubric": [], "workable": X.build_workable(ctx)}
@@ -200,7 +199,7 @@ def _conflicts(ctx):
     return X.build_conflicts(ctx)
 
 
-# ---- W7: the call log, and the answers for documents, previews and calls ------------------------------------------------
+# ---- the call log, and the answers for documents, previews and calls ----------------------------------------------------
 LINK_GRACE_S = 1                                             # a post is stamped to the second, so it may land a second after its step
 
 
@@ -291,7 +290,8 @@ def call(ctx, call_id):
 
 def _build(ctx):
     out = empty()
-    # (label, keys, how to build them from what is built already); a group's failure empties its keys and nothing more
+    # (label, how to build the group from what is built already). Each builder is looked up by name when it runs, and a group
+    # that fails empties its own keys and nothing more
     groups = (("workflows", lambda: {"workflows": _workflows(ctx)}),
               ("atoms", lambda: _atoms(ctx, out["workflows"])),
               ("lanes", lambda: {"lanes": _lanes(ctx, out["workflows"])}),
