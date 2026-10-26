@@ -10,7 +10,9 @@ Named claims:
   C1-4  JournalTail reads 5,000 rows once and then only the row appended later, survives a torn last line, and re-reads after
         a truncation; the ledger is read from its last seq
   C1-5  caches are keyed by (home, ref): two homes in one process that reuse a ref never see each other
-  C1-6  clean() leaves build/v1/index.html and 5/6/2026 alone, shortens an absolute path to its file name and drops a private key
+  C1-6  clean() leaves build/v1/index.html and 5/6/2026 alone, shortens an absolute path to its file name and drops a private key;
+        a root with nothing under it ('/home', '/private', '/opt-in', '/root') is a page of the owner's site, not a path of this
+        machine; the owner's own words (a user message's text, the goal) are never rewritten
   C1-7  a department with no cycle is 'not_started'; a broken sub-read leaves its attribute empty, says why, and still gives a ctx
   C1-8  the W-k numbering, who/dest/fn_id and step_at, on a department Root set up
 """
@@ -258,6 +260,37 @@ def test_c16_clean_keeps_relative_paths_and_dates_and_shortens_machine_paths():
     assert C.clean("/Users/x/y/z.txt") == "z.txt" and C.clean(("a", "/etc/hosts")) == ["a", "hosts"]
 
 
+OWNER_ROUTES = ("Make /home the landing page", "keep /private hidden", "see /var and /tmp and /etc", "the /opt-in page", "send /root to /login",
+                "/home", "/private", "/var", "/tmp", "/etc", "/opt", "/root", "/Users", "/Volumes", "/opt-in", "/home/ and /root/ are pages",
+                "Q&A:/faq and ratio 1:/2", "about~/home and a~/b", "see /homepage and /rooted and /variable")
+
+
+@pytest.mark.parametrize("words", OWNER_ROUTES)
+def test_c16_a_route_in_the_owners_words_is_not_a_machine_path(words):
+    """A path of this machine has a root AND something under it; '/home', '/private' or '/opt-in' alone are a website's pages."""
+    assert C.clean(words) == words
+    assert C.clean({"text": words, "who": "identity"})["text"] == words
+
+
+def test_c16_a_machine_path_is_still_shortened_wherever_it_stands():
+    for text, want in (("wrote /Users/me/.sutra-ui/departments/x/dept.json now", "wrote dept.json now"), ("(/home/me/a.md)", "(a.md)"),
+                       ("in /tmp/pytest-of-me/t1/x.txt.", "in x.txt."), ("at /private/var/folders/ab/T/x/", "at x"), ("\"/etc/hosts\"", "\"hosts\""),
+                       ("C:/Users/me/f.txt and D:\\x\\y.md", "f.txt and y.md"), ("saved to ~/notes/a.md", "saved to a.md"),
+                       ("/Volumes/Disk/site/index.html", "index.html"), ("/opt/homebrew/bin/x;", "x;")):
+        assert C.clean(text) == want, text
+
+
+def test_c16_the_owners_own_words_are_never_rewritten_even_when_they_name_a_path_shaped_page():
+    mine = "keep /home/about, /private/area and /var/news; /Users/login is the sign-in"
+    got = C.clean({"chat": [{"id": 1, "who": "user", "text": mine, "token": "t"}, {"id": 2, "who": "identity", "text": "@Requester wrote /Users/me/x/a.txt"}],
+                   "goal": {"statement": mine, "rules": ["never: " + mine], "done_when": [mine], "to_be_confirmed": [{"criterion": mine, "fact": mine}],
+                            "secret": "s"}, "other": mine})
+    assert got["chat"][0] == {"id": 1, "who": "user", "text": mine}, "the owner's message, only its private keys are dropped"
+    assert got["chat"][1]["text"] == "@Requester wrote a.txt", "what a function says of a file is machine-written"
+    assert got["goal"] == {"statement": mine, "rules": ["never: " + mine], "done_when": [mine], "to_be_confirmed": [{"criterion": mine, "fact": mine}]}
+    assert got["other"] == "keep about, area and news; login is the sign-in", "any other field is not the owner's words and is cleaned"
+
+
 def test_c16_times():
     assert C.hhmmss("2026-10-26T22:44:21+05:30") == "22:44:21" and C.hhmmss("nonsense") == "" and C.hhmmss(None) == ""
     assert C.epoch("2026-10-26T22:44:21+05:30") - C.epoch("2026-10-26T22:44:20+05:30") == 1.0
@@ -291,6 +324,86 @@ def test_c17_a_broken_read_leaves_its_attribute_empty_and_says_why(mods, monkeyp
     c = C.get_ctx(REF)
     assert c.runs == [] and any(r.startswith("runs: RuntimeError") for r in c.reasons), c.reasons
     assert c.d["ref"] == REF and c.state == "not_started", "the rest of the read stands"
+
+
+def identity_asks(m, ref=REF, question="What evidence will prove this site is done?"):
+    """Identity's question put the way the ledger puts it (J.asked: a j2_identity ask, which has no `engine` key)."""
+    d = m.W.dept(ref)
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    m.W.save_dept(ref, d)
+    if not m.J._state(ref):
+        m.J.begin(ref)
+    cur = m.J.asked(ref, question, ["done-when"], "Identity's standard is not met yet: done-when", standard=False)
+    assert cur["open_ask"] and "engine" not in next(a for a in m.W.asks(ref) if a["id"] == cur["open_ask"])
+    return cur
+
+
+def test_c17_identitys_open_question_does_not_take_the_engines_away(mods):
+    """website_dept.map_view raises KeyError('engine') while an ask with no `engine` key (Identity's question) is pending; the
+    ctx rebuilds the engines from the public readers, so the engines, the plan flag and the W-k numbering are never empty."""
+    identity_asks(mods)
+    with pytest.raises(KeyError):
+        mods.W.map_view(REF)                                   # the record's own reader still fails: reported to its owner, not hidden
+    C.touch(REF)
+    c = C.get_ctx(REF)
+    assert c.state == "waiting" and c.paused_ask and c.paused_ask["form"] == "words"
+    assert c.reasons == [], c.reasons
+    assert [e["name"] for e in c.engines] == ["Plan", "Write", "Check", "Publish"] and c.planned is False
+    assert all(e["wid"] is None and e["in_line"] and e["state"] == "Idle" and e["steps_view"] for e in c.engines), "no plan is registered yet: no W-k"
+
+
+def test_c17_the_engines_read_the_same_with_and_without_the_question(mods, born, tick):
+    ref = born()
+    C.reset_caches()
+    before = C.get_ctx(ref)
+    assert before.planned and [e["wid"] for e in before.engines] == ["W-1", "W-2", "W-3", "W-4"]
+    identity_asks(mods, ref)
+    C.touch(ref)
+    after = C.get_ctx(ref)
+    assert after.reasons == [], after.reasons
+    keys = ("k", "wid", "name", "reads", "writes", "runs_as", "in_line", "env", "window_min", "timetable")
+    assert [{k: e[k] for k in keys} for e in after.engines] == [{k: e[k] for k in keys} for e in before.engines]
+    assert after.planned is True and [e["state"] for e in after.engines] == [e["state"] for e in before.engines]
+    assert after.wid("Write") == "W-2" and after.who("Check") == "W-3"
+
+
+def test_c17_a_pending_ask_for_an_engine_still_makes_that_engine_wait_when_the_map_is_rebuilt(mods):
+    ask(mods, "publish", engine="Publish")
+    identity_asks(mods)
+    c = C.get_ctx(REF)
+    assert c.reasons == [] and {e["name"]: e["state"] for e in c.engines}["Publish"] == "Waits"
+
+
+def test_c17_the_rebuilt_engines_are_the_maps_own_rows(mods, born, tick):
+    """The by-hand rows must stay map_view's rows, or the numbering would change the moment Identity asks."""
+    import owner_words
+
+    def same(ref):
+        C.touch(ref)
+        c = C.get_ctx(ref)
+        want = owner_words.map_view(mods.W.map_view(ref))
+        got = C._engines_by_hand(c)
+        assert got["planned"] == want["planned"] and got["engines"] == want["engines"], ref
+    same(REF)                                                  # born, no cycle: the line it was born with
+    cycle(mods, "adapting", 2)
+    run(mods, "Write")
+    ask(mods, "publish", engine="Publish")
+    same(REF)                                                  # a cycle with no plan, one engine running, one waiting
+    ref = born()
+    same(ref)                                                  # a registered plan, as Root sets it up
+    mods.W.run_until_idle(ref, limit=50)
+    d = mods.W.dept(ref)
+    d["stopped"] = True
+    mods.W.save_dept(ref, d)
+    same(ref)                                                  # stopped
+
+
+def test_c17_when_the_rebuild_fails_too_the_engines_are_empty_and_the_reason_stands(mods, monkeypatch):
+    identity_asks(mods)
+    monkeypatch.setattr(mods.W, "engine_view", lambda ref, name: (_ for _ in ()).throw(RuntimeError("gone")))
+    C.touch(REF)
+    c = C.get_ctx(REF)
+    assert c.engines == [] and c.planned is False and c.reasons == ["map: KeyError"], c.reasons
 
 
 def test_c17_a_ref_with_no_folder_still_gives_a_ctx(mods):

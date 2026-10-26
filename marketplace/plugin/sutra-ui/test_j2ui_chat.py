@@ -4,7 +4,8 @@ Named claims:
   C2-1  the owner's side comes from chat_view, so after owner_ask(root, text, about=dept) there is exactly one `user` message with
         that text and none attributed to the validator; the first words and the follow-up are both `user` messages, in time order;
         the words Root hands on are not said again; Root's post 8 and the department's post 8 are two messages
-  C2-2  the validator speaks only for the ledger's workflow.validated / registered / blocked events, and carries `register` as said
+  C2-2  the validator speaks only for the ledger's workflow.validated / registered / blocked events written by Root, and carries
+        `register` as said; an engine that waits (workflow.blocked, state waiting) and Adaptation's own pre-check are not Root's check
   C2-3  a function's post to another reads as the act in the owner's words (Said yes to the plan: ...), never the bare payload,
         GRANT, COUNTER, REFUSE or an act id
   C2-4  every kind of ask is one message from Identity (who identity, to_user, act ASK_REQUESTER, the right pause) whose text the
@@ -148,6 +149,40 @@ def test_c22_the_validator_speaks_only_for_the_ledger(mods):
     assert "refused" not in v[2]["text"] and "sent the plan back" in v[2]["text"], "in the owner's words"
     assert all(x["step"] == 5 for x in v) and not [x for x in c.chat if x["who"] == "validator" and "Root" in x["text"] and "post from Root" in x["text"]]
     assert len(c.chat) == 3, "the Root post and the Priority event are not messages of the validator, nor of anyone"
+
+
+def test_c22_only_roots_own_check_is_the_validator_an_engine_that_waits_or_adaptations_precheck_is_not(mods):
+    """j2_runtime writes workflow.blocked for three things; the page prints the red 'rejected' tag on register False, so only the one
+    that really is Root's check refusing the plan may speak as the validator."""
+    J = mods.J
+    J.begin(REF)
+    J.on_run(REF, {"id": "r-write1", "engine": "Write", "status": "waiting", "what": "Write waits for the model to answer"}, "ended")
+    J.on_run(REF, {"id": "r-pub1", "engine": "Publish", "status": "asked", "what": "Publish waits for the stamp"}, "ended")
+    waits = [e for e in J.events(REF) if e["action"] == "workflow.blocked"]
+    assert [(e["actor"], e["recipient"], e["state"]) for e in waits] == [("Write", "Coordination", "waiting"), ("Publish", "Coordination", "waiting")]
+    c = chat(mods)
+    assert [x for x in c.chat if x["who"] == "validator"] == [], "an engine that waits is not Root refusing the plan"
+    assert not [x for x in c.chat if x.get("register") is False]
+    J.refused(REF, [], ["Plan has no reader"])                 # Adaptation's own check, before the line reaches Root
+    pre = [e for e in J.events(REF) if e["action"] == "workflow.blocked" and e["actor"] == "Adaptation"]
+    assert len(pre) == 1 and pre[0]["recipient"] == "Identity"
+    c = chat(mods)
+    assert [x for x in c.chat if x["who"] == "validator"] == [] and [x["text"] for x in c.chat] == [], "nor is Adaptation's pre-check"
+    J.refused(REF, ["Plan", "Write"], ["Write has no reader"], checks=[])      # Root's check refusing the plan: the validator
+    c = chat(mods)
+    v = [x for x in c.chat if x["who"] == "validator"]
+    assert [(x["register"], x["next"], x["step"]) for x in v] == [(False, "adaptation", 5)] and "sent the plan back" in v[0]["text"]
+    assert len(c.chat) == 1
+
+
+def test_c22_root_is_the_only_voice_of_the_validator_for_every_kind_of_event(mods):
+    cycle(mods, "running", 5)
+    for action in ("workflow.validated", "workflow.registered", "workflow.blocked"):
+        event(mods, action, actor="Write", recipient="Coordination", step=6, summary="%s by an engine" % action, key="e-" + action)
+        event(mods, action, actor="Adaptation", recipient="Identity", step=2, summary="%s by Adaptation" % action, key="a-" + action)
+    assert chat(mods).chat == []
+    event(mods, "workflow.registered", recipient="Coordination", summary="Registered Plan -> Write on the department's record, version 1.")
+    assert [x["who"] for x in chat(mods).chat] == ["validator"]
 
 
 def test_c23_a_function_to_function_message_is_the_act_in_the_owners_words(mods):
