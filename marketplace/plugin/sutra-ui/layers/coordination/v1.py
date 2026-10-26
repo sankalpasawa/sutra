@@ -4,8 +4,8 @@ Its recipe is v1.json beside it: the Coordination engine object, moved byte for 
 Every code, prompt, draft and check name the recipe uses is provided here by reference (A1 K1): a late-bound delegate to
 the body in engine_runtime's Coordination region (ref_to), so the module names what its recipe needs and no behaviour
 changes. A body moves into this module when this layer changes it (move on touch); engine_runtime's copy stays until W3-PROOF.
-WORDS and LAYOUT are empty until K2, so its prompts are still read from the .md bundle. view() returns the pane's read model
-by reference.
+WORDS and LAYOUT are empty until K2, so its prompts are still read from the .md bundle. view() and engine_card() return the
+pane's and the card's read models by reference (K4).
 """
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
@@ -33,5 +33,12 @@ WORDS, LAYOUT = {}, {}
 
 
 def view(ref, d, events, asks):
-    """Coordination's pane (S.VIEWS['coordination']): functions_view's read model, by reference until this layer holds its own."""
-    return FV._j2_part(ref, d, 'Coordination', events, asks)
+    """Coordination's pane (S.VIEWS['coordination'], screen S7): functions_view's read model of its own state, by reference
+    (A1.11, A1.17). It reads the record and the table, never the events, and writes nothing."""
+    return FV.coordination(ref, d, ak=asks)
+
+
+def engine_card(ref, name):
+    """One engine's card (S.VIEWS['engine_card'], screen S17): its place in the timetable, the motor's facts and one row for
+    each of the five, by reference (A1.17). None for a department not on the engine runtime."""
+    return FV.engine_card(ref, name)
