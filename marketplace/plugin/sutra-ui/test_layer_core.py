@@ -635,3 +635,104 @@ def test_c9_a_fault_is_kept_to_the_part_and_is_a_few_plain_lines(home, monkeypat
     assert "j2_faults" in f["j2"] and not [k for k in f if "fault" in k], "only the part carries it"
     assert 1 <= len(f["j2"]["j2_faults"]) <= 3 and all(isinstance(x, str) and "Traceback" not in x for x in f["j2"]["j2_faults"])
     assert not F.PATHLIKE.search(json.dumps(f["j2"]["j2_faults"])), "names, never paths"
+
+
+# ---- C10 · typed options and the line request -------------------------------------------------------------------------
+def blocked_card(ref):
+    """The card a blocked plan puts to the owner (M3.5), made by the runtime on a department with three done-when items."""
+    W, R = modules()
+    d = dict(W.dept(ref), done_items=[{"id": "D%d" % i, "text": "item %d" % i, "how": "code", "level": "outcome"} for i in (1, 2, 3)])
+    return R._blocked(ref, d, {"src": "Root"}, "The plan could not be approved.", "The plan could not be approved.",
+                      "Root, at its review", "D3 reaches outside without a rule")
+
+
+def test_c10_an_option_has_its_kind_from_its_id_and_its_params_pass_untouched(home):
+    W, _ = modules()
+    assert W.option("words", "Change it", "Adaptation shapes it afresh") == {
+        "id": "words", "label": "Change it", "cost": "Adaptation shapes it afresh", "kind": "words"}
+    assert W.option("leave:D2", "Leave D2 out", "dropped")["kind"] == "leave"
+    assert W.option("stop", "Stop", "stops")["kind"] == "stop"
+    params = {"what": "envelope", "engine": "Design", "calls": 4, "usd": 0.5}
+    got = W.option("raise", "Add room", "up to twice", params)
+    assert got["kind"] == "raise" and got["params"] == params and got["params"] is params, "params pass through untouched"
+    assert "params" not in W.option("stop", "Stop", "stops"), "no params, none stored"
+    for o in (W.option("words", "w", "c"), W.option("leave:D2", "l", "c"), got, W.option("root_setup", "r", "c", {"words": "again"})):
+        assert S.validate("option", o) == [], o
+
+
+def test_c10_options_ask_is_otherwise_unchanged_and_keeps_kind_and_params(home):
+    W, _ = modules()
+    params = {"what": "ceiling", "engine": "Design", "calls": 2, "usd": 0.1}
+    opts = [W.option("words", "A", "costs a"), W.option("raise", "B", "costs b", params), W.option("stop", "C", "c"), W.option("leave:D1", "D", "d")]
+    a = W.options_ask("blocked", "Stuck", opts, why="because")
+    assert [o["id"] for o in a["options"]] == ["words", "raise", "stop"], "at most three"
+    assert [o["kind"] for o in a["options"]] == ["words", "raise", "stop"] and a["options"][1]["params"] == params
+    assert "params" not in a["options"][0]
+    assert (a["kind"], a["engine"], a["status"], a["chosen"], a["why"]) == ("blocked", "Identity", "pending", None, "because")
+    # an option made by hand, as a caller of this ask may pass it, takes the same road
+    again = W.options_ask("blocked", "Stuck", [{"id": "stop", "label": "S", "cost": "c"}])
+    assert again["options"] == [W.option("stop", "S", "c")]
+
+
+def test_c10_the_ask_rows_pass_the_sink_and_a_way_out_the_interface_lacks_does_not(home):
+    ref = born(home)
+    W, _ = modules()
+    a = W.options_ask("blocked", "Stuck", [W.option("words", "A", "a"), W.option("leave:D1", "B", "b"), W.option("stop", "C", "c")], who="Root")
+    with S.expect_refused() as met:
+        W._put_ask(ref, a)                                 # the sink checks the row: identity.ask, options and all
+    assert list(met) == [], "a row of typed options meets no fault"
+    got = next(x for x in W.asks(ref) if x["id"] == a["id"])
+    assert S.validate("identity.ask", got) == [] and [x["kind"] for x in got["options"]] == ["words", "leave", "stop"]
+    odd = W.options_ask("blocked", "Stuck", [W.option("sideways:1", "A", "a")])
+    assert any("kind" in f for f in S.validate("identity.ask", odd)), "a kind that is not a way out of the interface is a fault"
+    with S.expect_refused() as met:
+        W._put_ask(ref, odd)
+    assert any("kind" in str(r) for r in met.rows), "the sink met it"
+
+
+def test_c10_every_blocked_ask_carries_the_kinds_words_leave_and_stop_and_validates(home):
+    ref = born(home)
+    W, _ = modules()
+    card = blocked_card(ref)
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D3", "stop"]
+    assert [o["kind"] for o in card["options"]] == ["words", "leave", "stop"]
+    assert all(o["kind"] in S.OPTION_KINDS for o in card["options"]) and S.validate("identity.ask", card) == []
+    stored_card = next(x for x in W.asks(ref) if x["id"] == card["id"])
+    assert stored_card["options"] == card["options"], "what the sink wrote is what the card offers"
+
+
+def test_c10_choose_option_behaves_as_built_and_an_unknown_option_is_409_with_its_code(api, home):
+    ref = born(home)
+    W, _ = modules()
+    card = blocked_card(ref)
+    bad = api.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "sideways"})
+    assert bad.status_code == 409 and bad.json()["detail"] == {"code": "UNKNOWN_OPTION"}
+    empty = api.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "words", "text": "  "})
+    assert empty.status_code == 400 and empty.json()["detail"] == {"code": "EMPTY_ANSWER"}
+    with pytest.raises(W.AskError) as exc:
+        W.choose_option(ref, card["id"], "kind")
+    assert exc.value.code == "UNKNOWN_OPTION", "the kind of an option is not an option's id"
+
+
+def test_c10_the_line_request_is_an_act_line_request_and_post_checks_it(home):
+    ref = born(home)
+    W, R = modules()
+    d = W.dept(ref)
+    R._line_request(ref, d, "A phone-first site for a bakery", thread=None)
+    R._line_request(ref, d, "A phone-first site for a bakery", thread="t-1", faults=["the line reaches outside without a rule"])
+    R._line_request(ref, d, "A site", faults=["x" * 900, "second"])
+    rows = [p for p in R.board(ref) if p["src"] == "Identity" and p["msg_type"] == "request" and p["payload"].get("word") == "line"]
+    assert len(rows) == 3
+    for p in rows:
+        assert S.validate("act.line_request", p["payload"]) == [], p["payload"]
+        assert S.validate_act("Identity", p["dst"], "request", p["payload"]) == [], "the act as the interface sends it"
+    assert rows[0]["payload"]["faults"] == [] and rows[1]["payload"]["faults"] == ["the line reaches outside without a rule"]
+    assert rows[2]["payload"]["faults"] == ["x" * 600, "second"], "a fault is a line, kept to the interface's length"
+    assert rows[1]["payload"]["for"] == "t-1" and rows[1]["payload"]["objective"] == "propose the workflows the goal needs"
+
+
+def test_c10_a_line_request_that_does_not_fit_is_a_fault_of_the_interface(home):
+    ref = born(home)
+    _, R = modules()
+    with S.expect_refused():
+        R.post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": 7, "objective": "x", "faults": "none"})

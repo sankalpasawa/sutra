@@ -4711,11 +4711,13 @@ def _j2_live(ref):
 
 
 def _line_request(ref, d, words, thread=None, faults=None):
-    """Identity asks Adaptation what the department does next (step 2). With faults, it is Root's refusal going back."""
+    """Identity asks Adaptation what the department does next (step 2). With faults, it is Root's refusal going back.
+    The payload is the interface's act.line_request (A1.13), which post() checks: a fault is kept to a line's length."""
     return post(ref, "Identity", "Adaptation", "request",
                 {"word": "line", "words": words, "objective": "propose the workflows the goal needs",
                  "output": "the engines, each with what it does, reads and writes", "may_read": ["Brief"],
-                 "boundaries": "nothing runs before Priority grants it and Root registers it", "for": thread, "faults": list(faults or [])})
+                 "boundaries": "nothing runs before Priority grants it and Root registers it", "for": thread,
+                 "faults": [str(f)[:600] for f in faults or []]})
 
 
 def _library_repair(d, lib):

@@ -193,16 +193,21 @@ class AskError(ValueError):
         self.code = code
 
 
-def option(oid, label, cost):
-    """One way forward on an ask: what the button says, and what it costs (said beside it, and in its title)."""
-    return {"id": str(oid), "label": str(label), "cost": str(cost)}
+def option(oid, label, cost, params=None):
+    """One way forward on an ask: what the button says, and what it costs (said beside it, and in its title). Its `kind`
+    is the part of the id before ':' (words, leave, stop: S.OPTION_KINDS, the interface's ways out, A1.15), which says
+    which layer applies it; `params`, when given, pass through untouched for that layer to read."""
+    out = {"id": str(oid), "label": str(label), "cost": str(cost), "kind": str(oid).split(":", 1)[0]}
+    if params is not None:
+        out["params"] = params
+    return out
 
 
 def options_ask(kind, text, options, **more):
     """An ask whose answer is one of its options, at most three."""
     return dict({"id": "a-" + uuid.uuid4().hex[:8], "kind": kind, "engine": "Identity", "text": text,
-                 "options": [option(o["id"], o["label"], o["cost"]) for o in options][:OPTIONS_MAX], "chosen": None,
-                 "status": "pending", "created": now()}, **more)
+                 "options": [option(o["id"], o["label"], o["cost"], o.get("params")) for o in options][:OPTIONS_MAX],
+                 "chosen": None, "status": "pending", "created": now()}, **more)
 
 
 def chosen(option, words=None, by="the owner", at=None):

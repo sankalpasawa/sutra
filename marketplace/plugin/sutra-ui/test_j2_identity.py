@@ -824,10 +824,13 @@ def _card(W, ref):
 def test_m3_5_a_blocked_plan_is_an_ask_with_options(j2, monkeypatch):
     """A blocked plan told in a line with nothing to press (a dead end) must fail."""
     W, R, J, _, _ = j2
+    import layer_schema as S
     ref = _blocked_dept(j2, monkeypatch)
     card = _card(W, ref)
     assert [o["id"] for o in card["options"]] == ["words", "leave:D3", "stop"]
-    assert all(set(o) == {"id", "label", "cost"} and o["label"] and o["cost"] for o in card["options"])
+    assert all(set(o) == {"id", "label", "cost", "kind"} and o["label"] and o["cost"] for o in card["options"])
+    assert [o["kind"] for o in card["options"]] == ["words", "leave", "stop"]                  # the interface's ways out (A1.15)
+    assert all(S.validate("option", o) == [] and o["kind"] in S.OPTION_KINDS for o in card["options"]) and S.validate("identity.ask", card) == []
     assert [o["label"] for o in card["options"]] == ["Change the plan in my words", "Leave D3 out", "Stop here"]
     assert (card["title"], card["who"], card["why"], card["chosen"]) == ("The plan could not be approved.", "Root, at its review", FAULT, None)
     assert card["if_nothing"] and card["thread"]
