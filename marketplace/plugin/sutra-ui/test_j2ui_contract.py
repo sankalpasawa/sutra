@@ -38,6 +38,7 @@ from test_fixtures.j2ui import seed as SEED
 from test_fixtures.j2ui.core_fixtures import *  # noqa: F401,F403  (blocked, card_post and the other record helpers)
 from test_j2ui_state import STATE_TABLE
 
+import engine_runtime as R
 import j2_runtime as J
 import j2ui_atoms as A
 import j2ui_common as C
@@ -50,7 +51,14 @@ GET_ROUTES = ("api/state?since=0", "api/runs", "api/map", "api/board", "api/arti
               "api/preview?atom=W-1.a1", "api/call?id=1", "api/artifact?name=brief/v1/brief.md", "site/latest", "site/latest/index.html",
               "file/prd.md", "shot/1")
 POST_ROUTES = ("api/say", "api/reset", "api/output", "api/playbooks/clear", "api/lessons/clear")
-BANNED = re.compile(r"GRANT|COUNTER|REFUSE|accept-proposal|reject-proposal|cancel-proposal", re.I)
+#: the words the owner never reads (SCREEN WORD RULES): the bargain's old names GRANT, COUNTER and REFUSE, "order" and "orders" (the old
+#: noun for what a function says to another, so the word is not used in any sense), and every act id that
+#: has a hyphen in it (accept-proposal, reject-proposal, not-understood), from the runtime's own list of acts, not a copy of it
+BANNED = re.compile(r"GRANT|COUNTER|REFUSE|\borders?\b|" + "|".join(re.escape(a) for a in R.ACTS if "-" in a), re.I)
+#: an act id printed as an id: a string that is nothing else, in the form `act: cancel`, or in capitals anywhere (FAILURE). The one-word ids
+#: are English as well (the prototype's own step is called "J2.b Propose"), so a word in a sentence is not one
+RAW_ACT = re.compile(r"^\s*(?:%s)\s*$|\b(?:act|word|msg_type)\s*[:=]\s*(?:%s)\b|\b(?:%s)\b" % (
+    "|".join(R.ACTS), "|".join(R.ACTS), "|".join(a.upper().replace("-", "[-_]") for a in R.ACTS)))
 WHO = {"user", "validator", "identity", "adaptation", "priority", "coordination", "audit"}
 JSON_ROUTES = ("api/state?since=0", "api/runs", "api/map", "api/board", "api/artifacts", "api/docs", "api/audits", "api/refs", "api/preview?atom=W-1.a1")
 EXTRA_STATES = ("two_publish_asks", "running_line", "with_board", "pursuing_line", "filed", "question", "ready", "root_follow_up", "start", "build_filed")
@@ -222,6 +230,8 @@ def check_state(s, row=None):
     for i, m in enumerate(s["chat"], 1):
         assert m["id"] == i and m["who"] in WHO and isinstance(m["text"], str), m
         assert ("to_user" not in m) or (m["to_user"] is True and m["who"] == "identity"), "only Identity speaks to the owner: " + m["who"]
+        if m["who"] != "identity":                          # rule 1: nobody else is addressed to the owner, whatever the key that says it
+            assert "user" not in (m.get("next"), m.get("audience")), "only Identity speaks to the owner (next or audience): %s %r" % (m["who"], m)
     wf = s["workflows"]
     views, warns = A.schema().run_views(wf)
     assert s["atoms_v1"] == {v["id"]: v for v in views}, "atoms_v1 is the prototype's own run_views"
@@ -234,6 +244,7 @@ def check_words(bodies):
     for name, body in bodies.items():
         for text in strings(body):
             assert not BANNED.search(text), (name, text[:120])
+            assert not RAW_ACT.search(text), (name, "an act id as it is on the board: " + text[:120])
             assert not C.ABS_PATH.search(text), (name, text[:120])
         assert not {str(k).lower() for k in all_keys(body)} & J.PRIVATE_KEYS, name
     assert not [m for m in bodies["state"]["chat"] if re.search(r"\b(?:accept|reject|propose|inform|request)\b-?\w*:", m["text"])]
@@ -249,7 +260,12 @@ def check_page(ref, bodies, client):
 
 
 def everything(client, ref, m, row=None):
+    before = files_of(m.home)                                 # hard rule 4(g): the records are hashed BEFORE the first read of the department
     bodies = read_all(client, ref)
+    assert changed(before, m.home) == [], "the first read wrote"
+    m.C.touch(ref)
+    read_all(client, ref)                                     # and a second that rebuilds the read at once
+    assert changed(before, m.home) == [], "the second read wrote"
     check_state(bodies["state"], row)
     check_map(bodies["map"], bodies["state"], [e[0] for e in m.W.engines_of(m.W.dept(ref))])
     assert not m.C.get_ctx(ref).reasons, "the read of the department failed in no part: " + str(m.C.get_ctx(ref).reasons)
@@ -302,8 +318,10 @@ def test_t31_the_departments_the_contract_adds_answer_every_route(client, plant,
         assert s["status"] == "idle" and s["chat"] == [] and s["total"] == 0
 
 
-READ_STATES = [row[0] for row in STATE_TABLE] + list(EXTRA_STATES) + ["hostile", "building"]
-READS = GET_ROUTES + ("api/artifact?name=brief/v1/brief.md",)
+#: every state of the cycle table and every extra department is read, and hashed before the first read, by everything() above; these are the
+#: ones it does not read (with the routes it does not either: the built site, a file, a screenshot, one artifact)
+READ_STATES = ("filed", "build_filed", "two_publish_asks", "hostile", "building")
+READS = GET_ROUTES
 
 
 def read_everything(client, ref):
@@ -325,13 +343,14 @@ def test_t31_the_map_is_the_same_twice_and_a_read_writes_nothing(client, plant):
 
 
 @pytest.mark.parametrize("name", READ_STATES)
-def test_t31_the_first_read_of_every_state_writes_nothing(client, plant, name):
-    """Hard rule 4(g): reads write nothing. The records home is hashed BEFORE the first GET (the first is the one that builds the
-    read of the department: the Map, the status, what is due next), in every state of the cycle table and every extra department,
-    and again after a second read that is made to rebuild at once."""
+def test_t31_every_get_of_the_page_writes_nothing_on_the_first_read_and_the_next(client, plant, name):
+    """Hard rule 4(g): reads write nothing. The records home is hashed BEFORE the first GET (the first is the one that builds the read of
+    the department: the Map, the status, what is due next), then after every route the page calls, and again after a second pass made to
+    rebuild at once. build_filed is the line stepped to the instant after Build is filed and before anything has asked the owner to
+    publish: the window in which a read once filed the ask."""
     ref, m = plant(name)
     before = files_of(m.home)
-    read_everything(client, ref)
+    assert read_everything(client, ref) > 5
     assert changed(before, m.home) == [], "the first read of %s wrote" % name
     m.C.touch(ref)
     read_everything(client, ref)
@@ -408,6 +427,49 @@ def test_t32_a_state_that_lost_a_key_is_caught_by_the_checks_themselves(client, 
     m.C.get_ctx(ref).memo.clear()
     with pytest.raises(AssertionError):
         everything(client, ref, m)
+
+
+@pytest.mark.parametrize("name", ["pursuing_line", "ready"])
+def test_t32_the_guards_of_rule_1_and_the_words_catch_what_they_guard(client, plant, name):
+    """A guard that cannot fail guards nothing: real bodies of every JSON route are mutated one way at a time, and the checks must refuse."""
+    import copy
+    ref, m = plant(name)
+    bodies = read_all(client, ref)
+    check_state(bodies["state"])
+    check_words(bodies)                                       # the real answers pass
+    n_chat = len(bodies["state"]["chat"])
+    others = [i for i, x in enumerate(bodies["state"]["chat"]) if x["who"] != "identity"]
+    assert others and n_chat, "a department with messages from the functions to mutate"
+
+    def mutated(fn):
+        out = copy.deepcopy(bodies)
+        fn(out)
+        return out
+
+    def set_key(key, value):
+        return lambda b: b["state"]["chat"][others[0]].__setitem__(key, value)
+    for label, fn in (("to_user on a function that is not Identity", set_key("to_user", True)),
+                      ("next 'user' on one", set_key("next", "user")),
+                      ("audience 'user' on one", set_key("audience", "user"))):
+        with pytest.raises(AssertionError):
+            check_state(mutated(fn)["state"])
+        print("caught:", label)
+    texts = list(R.ACTS) + ["FAILURE", "CANCEL", "act: cancel", "Said orders to Priority", "an order", "GRANT", "COUNTER", "REFUSE",
+                            "/Users/someone/work/site/index.html", "C:\\Users\\someone\\site"]
+    for text in texts:
+        for route, where in (("state", lambda b, t: b["state"]["chat"][0].__setitem__("text", t)),
+                             ("map", lambda b, t: b["map"]["not_recorded"].append(t)),
+                             ("artifacts", lambda b, t: b["artifacts"]["deliverables"][0].__setitem__("form", t))):
+            if route == "artifacts" and not bodies["artifacts"]["deliverables"]:
+                continue
+            with pytest.raises(AssertionError):
+                check_words(mutated(lambda b: where(b, text)))
+    for key in sorted(J.PRIVATE_KEYS)[:3]:
+        with pytest.raises(AssertionError):
+            check_words(mutated(lambda b: b["state"].__setitem__(key, "x")))
+    for fine in ("Said no to the plan: the plan", "Asked Adaptation for less: the plan", "J2.b Propose", "an orderly line", "a reorder", "the request they made",
+                 "the line's steps in sequence"):
+        check_words(mutated(lambda b: b["state"]["chat"][0].__setitem__("text", fine)))
 
 
 # ---- T3-4: the P1 cases ---------------------------------------------------------------------------------------------------
