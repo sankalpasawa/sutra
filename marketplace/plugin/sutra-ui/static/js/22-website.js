@@ -1128,7 +1128,7 @@ function wbTtDot(r){ return r.state === "waits" && /\b(stamp|you|owner)\b/.test(
 function wbTtSaid(r){
   if (r.state === "running") return "running since " + wbWhen(r.at);
   if (r.state === "turn") return "its turn" + (r.at ? " since " + wbWhen(r.at) : "");
-  if (r.state === "waits") return "waits: " + (r.why || "");
+  if (r.state === "waits") return /^waits\b/.test(r.why || "") ? r.why : "waits: " + (r.why || "");
   if (r.state === "ran") return "ran " + wbWhen(r.at) + (r.last && r.last.wrote ? " · " + r.last.wrote : "");
   return r.word || "";
 }
@@ -1177,7 +1177,7 @@ function wbEngHeadHtml(name, card){
   if (!card) return "";
   const h = card.head || {};
   let said = WB_ENG_HEAD[h.state] || h.word || "";
-  if (h.state === "waits") said = "Waits: " + (h.why || "");
+  if (h.state === "waits") said = /^waits\b/.test(h.why || "") ? wbCap(h.why) : "Waits: " + (h.why || "");
   const bits = [said, h.state === "running" && h.round ? "Round " + h.round : "",
                 (h.state === "running" || h.state === "turn") && h.at ? "since " + wbWhen(h.at) : (h.state === "ran" && h.at ? wbWhen(h.at) : "")];
   const dot = h.state === "waits" ? wbTtDot(h) : (WB_TT_DOT[h.state] || "off");
