@@ -624,7 +624,10 @@ def test_p4_the_prices_are_the_newest_few_newest_first_and_a_row_with_no_answer_
     for i in range(14):
         W.append_row(ref, "prices.jsonl", _price_row(at="2026-10-26T10:%02d:00+05:30" % i, why="row %d" % i))
     with S.expect_refused() as met:
-        W.append_row(ref, "prices.jsonl", {"at": "2026-10-26T11:00:00+05:30", "answer": "grant", "why": "a row that is no answer"})
+        try:
+            W.append_row(ref, "prices.jsonl", {"at": "2026-10-26T11:00:00+05:30", "answer": "grant", "why": "a row that is no answer"})
+        except S.SchemaFault:
+            pass                       # in refuse mode the journal refuses the row; in warn mode it keeps it and reports
     assert met, "the journal checks every row it is given"
     view = _view(W, J, ref)
     assert [p["why"] for p in view["prices"]] == ["row %d" % i for i in range(13, 1, -1)], "twelve, newest first; the odd row is not one"
