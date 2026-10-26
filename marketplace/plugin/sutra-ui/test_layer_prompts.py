@@ -233,10 +233,10 @@ HELD = [("identity", "take", "take"), ("coordination", "tie", "tie"), ("priority
 
 
 @pytest.mark.parametrize("layer,group,part", HELD)
-def test_c3_a_file_the_owner_changed_whole_is_read_from_their_copy_and_not_from_the_words(runtime, layer, group, part):
-    """M2.2 until W1-CORE K2's typed values take it over: the department's own copy of a file, written on the owner's stamp,
-    wins over the layer's words for that file, as the owner is told it does (a verifier found the words served and the
-    stamped change never reaching a prompt). Only that file, and only that department."""
+def test_c3_a_file_the_owner_changed_whole_is_no_run_s_words_the_typed_values_took_it_over(runtime, layer, group, part):
+    """M2.2 read a department's own copy of a file in the words' place; W1-CORE K2's typed values took that over (A1-7): a
+    whole-file copy is kept as the owner's note and no run reads it, so the layer's words (and any typed value laid over
+    them) are what a prompt is made of, in that department and in every other."""
     import website_dept as W
     ref, other = "dref-ownscopy0001", "dref-ownscopy0002"
     for r in (ref, other):
@@ -250,23 +250,18 @@ def test_c3_a_file_the_owner_changed_whole_is_read_from_their_copy_and_not_from_
     path = P.own(ref, layer, group)
     path.parent.mkdir(parents=True)
     path.write_text(mine, encoding="utf-8")
-    assert P._module(ref, layer, group, part) is None, "the copy is read in the words' place"
-    got = P.prompt(ref, layer, group, part, **inputs)
-    assert got == P.SLOT.sub(lambda m: inputs[m.group(1)], mine_part) and got.startswith("The owner's own words.\n")
-    assert "The owner's own words." in " ".join(str(v) for v in P.words(ref, layer, group, part).values())
-    assert layers.prompt(ref, layer, group, part, **inputs) == got, "layers.prompt is the compiler's"
-    # no other file of the layer, and no other department, is touched
-    assert P._module(ref, layer, "goal", "does") is module and P._module(other, layer, group, part) is module
+    assert P._module(ref, layer, group, part) is module, "the copy is not read in the words' place"
+    assert P.prompt(ref, layer, group, part, **inputs) == shipped and layers.prompt(ref, layer, group, part, **inputs) == shipped
+    assert P.words(ref, layer, group, part) == module.WORDS[group][part]
+    assert "The owner's own words." not in " ".join(str(v) for v in P.words(ref, layer, group, part).values())
     assert P.prompt(other, layer, group, part, **inputs) == shipped
-    # the copy taken away (the owner stamps the shipped words again), the words are served again
-    path.unlink()
-    assert P._module(ref, layer, group, part) is module and P.prompt(ref, layer, group, part, **inputs) == shipped
+    assert P.own_files(ref, layer) == [group] and P.own_files(other, layer) == [], "it is the department's own note, and only theirs"
 
 
-def test_c3_a_ref_that_is_no_department_has_no_copy_of_the_owners(runtime):
-    assert P._owns(None, "identity", "take") is False and P._owns("../not-a-ref", "identity", "take") is False
+def test_c3_a_ref_that_is_no_department_is_served_the_words_all_the_same(runtime):
     inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"]["take"]["gate"]["inputs"]}
     assert P.prompt("../not-a-ref", "identity", "take", "gate", **inputs) == P.prompt(None, "identity", "take", "gate", **inputs)
+    assert P.own_files("../not-a-ref", "identity") == [] and P.owner_values("../not-a-ref", "identity", "take", "gate") == {}
 
 
 # ---- C4 · the extractor and the split proof -----------------------------------------------------------------------------

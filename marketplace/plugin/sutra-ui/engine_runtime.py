@@ -5653,7 +5653,9 @@ INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done m
               "step": "the step", "cost": "what it costs", "ready": "who is ready", "what": "what each does", "order": "the usual order",
               "waiting": "what waits for the owner", "brief": "the brief", "filed": "what was filed", "examples": "the examples",
               "existing": "what exists", "conversation": "the conversation so far", "org": "the organisation", "named": "what was named",
-              "kinds": "the kinds of department", "use_cases": "the use cases"}
+              "kinds": "the kinds of department", "use_cases": "the use cases", "practices": "the practices in place",
+              "deliverable": "what was made", "measured": "what code measured", "estimate": "what it is likely to cost",
+              "remaining": "what remains of today's room"}
 
 
 def _what(fn, group, part, field):

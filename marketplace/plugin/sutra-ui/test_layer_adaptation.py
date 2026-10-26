@@ -736,8 +736,9 @@ def test_a5_the_view_is_todays_part_and_the_coverage_of_the_latest_proposal(j2, 
     assert got["proposal"]["workflow"] == LINE and got["proposal"]["source"] == "library"
     assert got["coverage"] == {"items": ["D1", "D2", "D3"], "uncovered": [], "by": "adaptation"}
     assert got["root_checks"] == [] and got["rounds"] == []
-    today = FV._j2_part(ref, d, "Adaptation", proposing, W.asks(ref))
+    today = FV._j2_body(ref, d, "Adaptation", proposing, W.asks(ref))          # what the pane showed before a layer's view took over (K2)
     assert {k: got[k] for k in ("proposal", "root_checks", "rounds")} == today, "what it showed before is what it shows"
+    assert FV._j2_part(ref, d, "Adaptation", proposing, W.asks(ref)) == got, "and the pane is the view"
 
 
 def test_a5_each_root_review_carries_the_checks_that_ran_in_the_owners_words(j2, monkeypatch):
