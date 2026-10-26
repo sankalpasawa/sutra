@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **status** | Built and merged on main in four packages (core, work, views, shell); the verification package (`j2ui-verify`) is the branch `prd/j2ui-verify`, written 2026-10-27. **No release until the owner has seen the screenshots with the sign-off list in section 7** (decision D-SIGNOFF). |
+| **status** | Built and merged on main in four packages (core, work, views, shell); the verification package (`j2ui-verify`) is the branch `prd/j2ui-verify`, written 2026-10-27, with its round-1 fixes on `prd/j2ui-verify-fix1` (section 11). **No release until the owner has seen the screenshots with the sign-off list in section 7** (decision D-SIGNOFF). |
 | **owner's instruction** | "Take latest pull from J2 prototype and implement UI in the exact same fashion, no change." (2026-10-26) |
 | **the prototype** | `J2_Prototype` at commit `f9ceba15192bbd6f62047cb7288d0f291b2fbc4f`; its page `j2_ui.html` has sha256 `23549799903e98485f404872670c49e5735c7cc9962c19b42037b1bde5ebad0d` (1724 lines) |
 | **where it lives** | the page and its pin in `j2ui_assets/`; the adapter in `j2ui_*.py`; the frame in `static/js/25-j2view.js`; the proof in `test_j2ui_*.py`, `test_fixtures/j2ui/`, `qa/walks/`; the pictures in [`design/j2ui/`](j2ui/) |
@@ -270,6 +270,20 @@ What ran on that tree, 2026-10-27:
 | `test_j2.py test_j2_api.py test_j1.py test_dept_api.py test_function_templates.py test_org2_api.py test_forbidden_calls.py` | 303 passed |
 | `node test_panel.js`, `node test_nav.js`, `node test_j2view.js` | 408 passed, 81 passed, 30 passed |
 | `bash qa/walks/j2ui-e2e.sh` (Chrome 155) | start 12 of 12, question 12 of 12, building 12 of 12, ready 73 of 73, hostile 72 of 72 claims; the skeleton of both views is the prototype's own |
+
+### Round 1 of the verification's fixes (`prd/j2ui-verify-fix1`, 2026-10-27)
+
+The verifiers checked main at `a0a7b236` and found five gaps; each is one commit.
+
+| Gap | What was wrong | What changed |
+|---|---|---|
+| T5 (medium) | the placeholder in the start screen's preview frame was served at 14px, the prototype's is 15px; the walk compared markup only | `j2ui_site.NOT_YET` is 15px; the walk draws the start screen of the app and of the prototype and compares computed style, text edge and the layout box of every element (section 12, `STRUCTURE.md`) |
+| T3 (high) | a read wrote: the first GET after the slot that files Build filed the Publish ask, a post, a ledger event and a step row; the test could not see it | `engine_runtime.identity_gate` and `priority_envelope` honour `peek` (section 10); the read tests hash the records before the first read in every state, in the instant after Build is filed, and after every slot of a line run one slot at a time |
+| T4 (medium) | the hostile department had no attacker-shaped engine or artifact names | two engines with such names are in its line; 82 fields; a raw print of an engine's name in a lane turns the check red |
+| T3 (medium) | rule 1 and the word rules were guarded more thinly than the spec says | no function but Identity has `next` or `audience` set to the owner; the banned words come from `engine_runtime.ACTS` plus GRANT, COUNTER, REFUSE and order(s); a mutation test shows each guard fails when it should |
+| T3 (medium) | the honest-Audit test had been loosened to accept Root's check among the site's conditions | the strict assertion is back as a strict expected failure (E1, open: section 7) |
+
+What ran on that branch: `bash qa/walks/suites.sh` exit 0; `test_j2.py test_j2_api.py test_j1.py test_dept_api.py test_function_templates.py test_org2_api.py test_forbidden_calls.py` 303 passed; `node test_panel.js` 408 passed, `node test_nav.js` 81 passed, `node test_j2view.js` 30 passed; the j2ui lanes: core 175 passed (1 skipped), work and audits 169, map, board, artifacts and site 229, the copy and its route 54, contract, render and hostile strings 89 passed and 2 expected failures (E1); `test_engine_runtime.py` 114 passed; `bash qa/walks/j2ui-e2e.sh` (Chrome 155): start 12 of 12, question 12 of 12, building 12 of 12, ready 73 of 73, hostile 72 of 72, the skeleton and the drawn start screen the prototype's own.
 
 ## 12. The pictures
 
