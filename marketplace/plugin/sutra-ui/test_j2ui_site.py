@@ -62,7 +62,7 @@ def test_m2a_an_unknown_version_is_404(ctx2):
 def test_m2a_nothing_built_yet_is_the_placeholder_verbatim(mods):
     import j2ui_site as S
     ctx = make_ctx(mods)
-    want = "<p style='font:14px system-ui;color:#667;padding:24px'>Your website will appear here once it's built.</p>"
+    want = "<p style='font:15px system-ui;color:#667;padding:24px'>Your website will appear here once it's built.</p>"
     for key in ("latest", "v1", "1"):
         status, body, mime, headers = S.site(ctx, key)
         assert (status, body.decode("utf-8"), mime) == (200, want, "text/html"), key

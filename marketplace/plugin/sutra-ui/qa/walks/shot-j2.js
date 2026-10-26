@@ -11,6 +11,11 @@
             node qa/walks/shot-j2.js <out-dir> <base-url> <page-path> outline <label>
        writes <out-dir>/outline-<label>.json: the DOM outline (tag, id, classes; no text) of the Simple and the Detailed view of the page
        at <page-path> (/j2ui/<ref>/ here, /?run=<id> on the prototype's server) at 1280x900
+     and, to compare what the eye sees (not only the markup) on the start screen with the prototype's own:
+            node qa/walks/shot-j2.js <out-dir> <base-url> <page-path> layout <label>
+       writes <out-dir>/layout-<label>.json and layout-<label>.png: the computed style, text and right edge of the placeholder the
+       preview frame shows while nothing is built (the server answers it, so the page cannot differ but the adapter can), and the
+       layout box (x, y, width, height) of every element of the Simple view, at 1280x900
      env: SHOT_PORT=<n> the DevTools port (default 9361); CHROME=<path> the browser (default: Google Chrome on this Mac).
    Phase 1, the page directly, at 1280x900 and at 390x844 (mobile): the Simple view and, for ready and hostile, the Detailed view:
      zero exceptions and zero console errors (a Content Security Policy violation is a console error, so this proves the page
@@ -60,11 +65,14 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok }); console.
   if (!target) { console.log("Chrome did not come up"); done(1); }
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
-  let id = 0; const waiting = {};
+  let id = 0; const waiting = {}; const attached = [];
   const events = { exceptions: [], consoleErrors: [], logErrors: [], cspViolations: [] };
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
     if (m.id && waiting[m.id]) { waiting[m.id](m); delete waiting[m.id]; return; }
+    if (m.method === "Target.attachedToTarget") { attached.push(m.params); return; }
+    if (m.method === "Target.detachedFromTarget") { const i = attached.findIndex(a => a.sessionId === m.params.sessionId); if (i >= 0) attached.splice(i, 1); return; }
+    if (m.sessionId) return;                                        // an event of a frame in a process of its own: not the page's
     if (m.method === "Runtime.exceptionThrown") {
       const d = m.params.exceptionDetails || {};
       events.exceptions.push(((d.exception && d.exception.description) || d.text || "exception") + " @" + (d.url || ""));
@@ -78,7 +86,7 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok }); console.
       else events.logErrors.push(text);
     }
   };
-  const send = (method, params) => new Promise(res => { const i = ++id; waiting[i] = res; ws.send(JSON.stringify({ id: i, method, params: params || {} })); });
+  const send = (method, params, sessionId) => new Promise(res => { const i = ++id; waiting[i] = res; ws.send(JSON.stringify(Object.assign({ id: i, method, params: params || {} }, sessionId ? { sessionId } : {}))); });
   const run = async expr => {
     const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });
     if (r.result && r.result.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails).slice(0, 400));
@@ -138,6 +146,63 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok }); console.
     console.log("saved outline-" + LABEL + ".json: " + out.simple.length + " simple lines, " + out.detail.length + " detailed lines");
     ws.close();
     done(0);
+    return;
+  }
+
+  // ---- the start screen as drawn: the placeholder the server answers and the layout box of every element ----------------------
+  // The outline above compares markup; this compares what is drawn. The right-hand pane of a start screen is an iframe on
+  // site/latest, which the SERVER answers (the page cannot differ, the adapter can). The app answers it with the sandbox header
+  // (website_api.SAFE), so the frame is a foreign origin to the page (and Chrome puts it in a process of its own): its computed
+  // style is read over the protocol, in the frame's own session, not through contentDocument. The prototype's frame is
+  // same-origin and is read through the page. The function below runs in whichever window holds the placeholder.
+  if (KIND === "layout") {
+    const PLACEHOLDER = `(win => {
+      const document = win.document, p = document.querySelector('p');
+      if (!p) return null;
+      const cs = win.getComputedStyle(p), bs = win.getComputedStyle(document.body);
+      let right = null;
+      if (p.firstChild) { const r = document.createRange(); r.selectNodeContents(p); right = Math.round(r.getBoundingClientRect().right * 10) / 10; }
+      if (!right) return null;                                      // not laid out (a frame the page has already replaced)
+      return { text: p.textContent, fontSize: cs.fontSize, fontFamily: cs.fontFamily, fontWeight: cs.fontWeight, color: cs.color, padding: cs.padding,
+        margin: cs.margin, lineHeight: cs.lineHeight, bodyMargin: bs.margin, mode: document.compatMode, textRight: right };
+    })`;
+    const BOXES = `(async () => {
+      await document.fonts.ready;
+      const q = n => Math.round(n * 10) / 10, boxes = {}, seen = {};
+      const sig = e => { const c = [...e.classList].sort(); return e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + (c.length ? "." + c.join(".") : ""); };
+      const visit = (e, at) => {
+        const k = at + "/" + sig(e), n = seen[k] = (seen[k] || 0) + 1, key = k + "[" + n + "]", r = e.getBoundingClientRect();
+        boxes[key] = [q(r.x), q(r.y), q(r.width), q(r.height)];
+        [...e.children].filter(c => !/^(script|style)$/i.test(c.tagName)).forEach(c => visit(c, key));
+      };
+      visit(document.getElementById('sview'), '');
+      return { boxes, viewport: [innerWidth, innerHeight], bodyClass: document.body.className, cards: document.querySelectorAll('#smsgs .cards button').length };
+    })()`;
+    const placeholderNow = async () => {
+      try { const same = await run(`(() => { try { return JSON.stringify((${PLACEHOLDER})(document.getElementById('sframe').contentWindow)); } catch (e) { return null; } })()`);
+        if (same && same !== "null") return JSON.parse(same); } catch (e) {}
+      for (const t of attached.filter(a => a.targetInfo && a.targetInfo.type === "iframe").reverse()) {
+        const r = await send("Runtime.evaluate", { expression: `JSON.stringify((${PLACEHOLDER})(window))`, returnByValue: true }, t.sessionId);
+        const v = r.result && r.result.result && r.result.result.value;
+        if (v && v !== "null") return JSON.parse(v);
+      }
+      return null;
+    };
+    await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+    await viewport({ w: 1280, h: 900, mobile: false });
+    await send("Page.navigate", { url: BASE + REF + (REF.includes("?") ? "&" : "?") + "view=simple" });
+    await waitFor(`document.readyState === 'complete' && !!document.querySelector('#sprog') && document.querySelector('#sprog').children.length > 0`, 25000);
+    let placeholder = null;
+    for (let i = 0; i < 60 && !placeholder; i++) { await sleep(250); placeholder = await placeholderNow(); }
+    await sleep(1500);                                              // the page reloads the frame once when its first state arrives
+    placeholder = (await placeholderNow()) || placeholder;
+    const out = Object.assign(await run(BOXES), { placeholder });
+    fs.writeFileSync(path.join(OUT, "layout-" + LABEL + ".json"), JSON.stringify(out, null, 1));
+    const r = await send("Page.captureScreenshot", { format: "png" });
+    fs.writeFileSync(path.join(OUT, "layout-" + LABEL + ".png"), Buffer.from(r.result.data, "base64"));
+    console.log("saved layout-" + LABEL + ".json: " + Object.keys(out.boxes).length + " boxes, placeholder " + (placeholder ? placeholder.fontSize + " " + placeholder.color + ", text ends at " + placeholder.textRight : "MISSING"));
+    ws.close();
+    done(placeholder ? 0 : 1);
     return;
   }
 
