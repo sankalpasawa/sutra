@@ -1,0 +1,154 @@
+{
+ "counts": {
+  "dropped": 0,
+  "failing": 0,
+  "fault": 0,
+  "partly": 2,
+  "proven": 9,
+  "unproven": 0,
+  "wanted": 1
+ },
+ "definitions_sha": "93db80aa4caad60810a3193202eb0e45a6753c06bfc374079a1cf833e5e4d197",
+ "drift": [
+  {
+   "row": "edge:J4.4",
+   "site": "built",
+   "state": "wanted"
+  },
+  {
+   "row": "edge:J4.6",
+   "site": "built",
+   "state": "partly"
+  }
+ ],
+ "id": "J4",
+ "rows": {
+  "edge:J4.1": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_layer_journey_j4.py::TestJ4Edges::test_j4_1_a_rule_the_department_already_has_is_said_back_and_not_added"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "edge:J4.2": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_39_a_directive_on_the_goal_changes_the_goal_and_the_first_publish_asks_again"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "edge:J4.3": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_41_feedback_carried_forward_is_a_rule_only_if_the_owner_says_it_sticks",
+    "test_j2_identity.py::test_m3_4_a_refused_rule_answer_asks_the_question_again"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "edge:J4.4": {
+   "drift": true,
+   "failing": [],
+   "proven_by": [],
+   "site": "built",
+   "state": "wanted"
+  },
+  "edge:J4.5": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestRunThree::test_102_words_identitys_take_calls_a_rule_are_filed_as_a_rule_not_as_a_request"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "edge:J4.6": {
+   "drift": true,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live"
+   ],
+   "site": "built",
+   "state": "partly"
+  },
+  "step:1": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site": "none",
+   "state": "proven"
+  },
+  "step:2": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp",
+    "test_j2_identity.py::test_m3_4_a_rule_given_as_an_answer_keeps_its_tag_through_the_rule_ask",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site": "none",
+   "state": "proven"
+  },
+  "step:3": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site": "none",
+   "state": "proven"
+  },
+  "step:4": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site": "none",
+   "state": "proven"
+  },
+  "step:5": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site": "none",
+   "state": "proven"
+  },
+  "step:6": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site": "none",
+   "state": "partly"
+  }
+ },
+ "schema_version": 1,
+ "state": "partly",
+ "tests": {
+  "test_engine_runtime.py::TestRunThree::test_102_words_identitys_take_calls_a_rule_are_filed_as_a_rule_not_as_a_request": "passed",
+  "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp": "passed",
+  "test_engine_runtime.py::TestTheFiveJourneys::test_39_a_directive_on_the_goal_changes_the_goal_and_the_first_publish_asks_again": "passed",
+  "test_engine_runtime.py::TestTheFiveJourneys::test_41_feedback_carried_forward_is_a_rule_only_if_the_owner_says_it_sticks": "passed",
+  "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live": "passed",
+  "test_j2_identity.py::test_m3_4_a_refused_rule_answer_asks_the_question_again": "passed",
+  "test_j2_identity.py::test_m3_4_a_rule_given_as_an_answer_keeps_its_tag_through_the_rule_ask": "passed",
+  "test_layer_journey_j4.py::TestJ4Edges::test_j4_1_a_rule_the_department_already_has_is_said_back_and_not_added": "passed",
+  "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced": "passed"
+ }
+}
