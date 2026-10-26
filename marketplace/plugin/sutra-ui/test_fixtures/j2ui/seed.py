@@ -457,26 +457,33 @@ def attacker_engines(m, ref, tags):
     """Two engines of the line whose names, and the names of what they write, are the attacker's: the quote-breaking payload in an
     engine's name and the single-quote one in its artifact's, and the other way round for the second (a name is at most 40 characters:
     one payload and the tag). add_engine and born_template take the name of an engine and of its artifact from the idea, and the
-    interface holds a name to ^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$ only on the writes it guards (the app warns where the tests are
-    strict), so a record from before it, one written by hand, or one the app let through is read all the same: the page must show
-    the name as text. The engines are put in Coordination's line, where the Map, the Workflows pane and the lanes print them; the
-    refused names are expected here (layer_schema.expect_refused), nowhere else."""
+    interface holds a name to ^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$ on the writes it guards (since 'A1 interface: refuse' the app
+    refuses such a write, so it cannot land through add_engine as the interface now stands), and a record from before it, one written
+    by hand, or one a warning let through is read all the same: the page must show the name as text. The record of such a name is
+    therefore made the way it was made then: the plant runs in warn mode (MODE put back as it was on the way out), and the faults
+    it meets are expected here (layer_schema.expect_refused), nowhere else. The engines are put in Coordination's line, where the
+    Map, the Workflows pane and the lanes print them."""
     import layer_schema as S
 
     def short(field, payload):
         n = len(tags) + 1
         tags[(TAG % n).strip()] = (field, payload)
         return payload + (TAG % n)
-    with S.expect_refused():
-        line = []
-        for which, (en, an) in zip(("", "second "), ((PAYLOADS[0], PAYLOADS[1]), (PAYLOADS[1], PAYLOADS[0]))):
-            name, art = short(which + "engine name", en), short(which + "artifact name", an)
-            m.W.add_engine(ref, name, shape={"name": name, "use_case": "makes " + art, "does": "makes " + art, "instruction": "make " + art,
-                                             "reads": "Pages", "writes": art}, registered=True)
-            line.append(name)
-        t = dict(m.R.coordination(ref))
-        t["line"] = list(t["line"]) + line
-        m.W._write(m.W.ddir(ref) / "coordination.json", t)
+    was = S.MODE
+    S.MODE = "warn"
+    try:
+        with S.expect_refused():
+            line = []
+            for which, (en, an) in zip(("", "second "), ((PAYLOADS[0], PAYLOADS[1]), (PAYLOADS[1], PAYLOADS[0]))):
+                name, art = short(which + "engine name", en), short(which + "artifact name", an)
+                m.W.add_engine(ref, name, shape={"name": name, "use_case": "makes " + art, "does": "makes " + art, "instruction": "make " + art,
+                                                 "reads": "Pages", "writes": art}, registered=True)
+                line.append(name)
+            t = dict(m.R.coordination(ref))
+            t["line"] = list(t["line"]) + line
+            m.W._write(m.W.ddir(ref) / "coordination.json", t)
+    finally:
+        S.MODE = was
 
 
 if __name__ == "__main__":
