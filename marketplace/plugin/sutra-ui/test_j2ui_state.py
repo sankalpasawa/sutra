@@ -178,10 +178,16 @@ def test_c32_a_department_with_nothing_in_it_is_the_pages_idle_shape(mods):
     c, s = read(mods)
     assert list(s) == list(C.STATE_KEYS) and len(s) == 56
     idle = C.EMPTY_STATE()
-    for k in ("chat", "total", "status", "thinking", "step", "goal", "stamped", "workflows", "conflicts", "audits", "versions", "cycle",
+    for k in ("chat", "total", "status", "thinking", "step", "goal", "stamped", "conflicts", "audits", "versions", "cycle",
               "calls", "error", "done", "turn", "paused", "outcome", "style", "model", "fixes", "has_board", "memory", "output",
-              "output_label", "doc", "files", "docset", "docset_files", "saved", "lessons", "playbooks", "report", "lanes", "call_log"):
+              "output_label", "doc", "files", "docset", "docset_files", "saved", "lessons", "playbooks", "report", "call_log"):
         assert s[k] == idle[k], (k, s[k], idle[k])
+    # j2ui_work fills the rest: a department with no J2 cycle runs the line it was born with (no_plan is false without a cycle),
+    # so its four engines are registered workflows, each with a lane after the five functions and the validator
+    assert [w["status"] for w in s["workflows"]] == ["registered"] * 4, s["workflows"]
+    assert [lane["id"] for lane in s["lanes"]] == ["identity", "adaptation", "priority", "coordination", "audit", "validator",
+                                                   "W-1", "W-2", "W-3", "W-4"], s["lanes"]
+    assert all(lane["status"] == "idle" for lane in s["lanes"]) and s["call_log"] == []
     assert s["steps"] != {} and s["budget"] > 0 and s["spent"] == 0, "the budget is the calls limit; nothing is spent"
     assert s["mock"] is True, "these tests run the offline functions"
 
