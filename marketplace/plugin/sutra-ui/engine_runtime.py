@@ -417,6 +417,39 @@ def set_numbers(ref, engine, nums, by="the owner"):
 
 
 # ---- Coordination's table ------------------------------------------------------------------------------------------
+#: coordination.json, Coordination's own state, and the one place its shape is named (PRD M4; the layer schema binds it):
+#: what is served first and the order inside each (order, functions, line); who may post what to whom (edges); the
+#: engines the registered plan left out (left_out, LEFT_OUT_FIELDS); the engines the owner added through J5 (grown); the
+#: plan it follows (registered, the workflow's version); one slot for each engine of the line (timetable, SLOT_FIELDS);
+#: who wrote it, when and why (by is born or Coordination, never Root).
+TABLE_FIELDS = ("order", "functions", "line", "edges", "left_out", "grown", "registered", "timetable", "by", "since", "why")
+LEFT_OUT_FIELDS = ("engine", "in_line", "since")
+#: one row of Coordination's timetable (PRD M4.3): the engine, what starts it in words ('after <artifact> vN' or 'every
+#: <period>'), the trigger behind the words (of and checked, or every_s), its window in minutes, and since when it has held a slot
+SLOT_FIELDS = ("engine", "on", "of", "checked", "every_s", "window_min", "since")
+
+
+def left_out_row(engine, since=None):
+    """An engine on the department's record that the registered plan left out: it stays on the record and never runs."""
+    return {"engine": engine, "in_line": False, "since": since or W.now()}
+
+
+def timetable_row(engine, slot, window_min, since=None):
+    """One slot of the timetable, from the engine's slot (slot_of) and its window, in SLOT_FIELDS' order."""
+    row = {"engine": engine, "on": slot.get("on")}
+    row.update({k: slot[k] for k in ("of", "checked", "every_s") if k in slot})
+    row.update({"window_min": int(window_min), "since": since or W.now()})
+    return row
+
+
+def _put_table(ref, t, why):
+    """Coordination writes its table: the one writer of coordination.json once the department is born."""
+    t.update({"since": W.now(), "by": "Coordination", "why": why})
+    with W._lock(ref):
+        W._write(W.ddir(ref) / "coordination.json", t)
+    return t
+
+
 def born_table(kind="website", line=None):
     """What Coordination is born with: the order of service, the department's line (the engines on its record; the
     kind's line for one born before the record carried it), and who may post what to whom, from the definitions."""
@@ -3537,6 +3570,41 @@ def born_template(name, shape, ref):
 # by a registered plan or by the owner's stamp on an engine an idea asked for (J5), Coordination writes its own table
 # and Priority gives the engine its limit, each in its own handler on the fixed trigger "an engine is born", run in
 # place on the code rung; each decision is a row of the function whose handler it is (_ask_rule).
+def _period(every_s):
+    s = int(every_s or 0)
+    for unit, n in (("day", 86400), ("h", 3600), ("min", 60)):
+        if s >= n and s % n == 0:
+            return "%d %s" % (s // n, unit)
+    return "%d s" % s
+
+
+def slot_of(ref, name, rs=None):
+    """An engine's slot as Coordination keeps it in its timetable (PRD M4.3), from the engine's own start: 'after
+    <artifact> vN', N the version it runs on next (the latest one it has not run on, else the one after the latest), or
+    'every <period>'. With the trigger it reads: of, checked, every_s. next_due keeps reading start.on itself."""
+    e = engine_def(name) or {}
+    trig = next((t for t in (e.get("start") or {}).get("on") or [] if t.get("kind") in ("version", "timer")),
+                ((e.get("start") or {}).get("on") or [{}])[0])
+    if trig.get("kind") == "version":
+        rs = W.runs(ref) if rs is None else rs
+        done = {r.get("slot") for r in rs if r.get("status") in ("ok", "failed", "skipped")}
+        cur = W.latest(ref, trig["of"], passed=bool(trig.get("checked")))
+        v = cur["v"] if cur and W._slot_id(name, trig["of"], cur["v"]) not in done else (cur["v"] + 1 if cur else 1)
+        return {"on": "after %s v%d" % (trig["of"], v), "of": trig["of"], "checked": bool(trig.get("checked")), "v": v}
+    if trig.get("kind") == "timer":
+        return {"on": "every " + _period(trig.get("every_s")), "every_s": trig.get("every_s")}
+    return {"on": "on a post to it"}
+
+
+def _timetable(ref, t):
+    """One slot for each engine of the line, from its own start, with its window; an engine that had a slot keeps the
+    time it has had one since."""
+    d, rs = W.dept(ref) or {}, W.runs(ref)
+    was = {r.get("engine"): r for r in t.get("timetable") or [] if isinstance(r, dict)}
+    return [timetable_row(name, slot_of(ref, name, rs), (d.get("windows") or {}).get(name) or 30, (was.get(name) or {}).get("since"))
+            for name in t.get("line") or []]
+
+
 def grow_line(ref, name, before=None):
     """Coordination's line, on the record, gains the engine (before another when said, as Research goes before Plan); the
     born copy is written first for a department that had none. Written by Coordination, on the owner's stamp; the engine
@@ -3551,10 +3619,8 @@ def grow_line(ref, name, before=None):
         t["line"] = line
     t["grown"] = list(t.get("grown") or []) + ([name] if name not in (t.get("grown") or []) else [])
     t["left_out"] = [r for r in t.get("left_out") or [] if isinstance(r, dict) and r.get("engine") != name]
-    t.update({"since": W.now(), "by": "Coordination", "why": "the owner's stamp"})
-    with W._lock(ref):
-        W._write(W.ddir(ref) / "coordination.json", t)
-    return t
+    t["timetable"] = _timetable(ref, t)                    # the grown engine gains its slot (PRD M4.3)
+    return _put_table(ref, t, "the owner's stamp")
 
 
 def set_line(ref, engines, version=None, full=True):
@@ -3563,7 +3629,8 @@ def set_line(ref, engines, version=None, full=True):
     order, and an engine the owner added through J5 (grown) is merged in where it stood. An engine on the department's
     record that the plan left out stays on the record, in_line false, and never runs. A registration that is not full
     adds its engines to the line (none is today: a round of Pursue never registers a line). Written by Coordination,
-    with the plan's version, so the table says which registration it follows."""
+    with the plan's version, so the table says which registration it follows, and with its timetable: one slot for
+    each engine of the line (PRD M4.3)."""
     t = coordination(ref)
     d = W.dept(ref) or {}
     old, plan = list(t.get("line") or []), [str(n) for n in engines or [] if n]
@@ -3578,13 +3645,10 @@ def set_line(ref, engines, version=None, full=True):
     else:
         line = old + [n for n in plan if n not in old]
     was = {r.get("engine"): r for r in t.get("left_out") or [] if isinstance(r, dict)}
-    left = [{"engine": n, "in_line": False, "since": (was.get(n) or {}).get("since") or W.now()}
-            for n in d.get("engines") or [] if n not in line]
-    t.update({"line": line, "left_out": left, "registered": version, "since": W.now(), "by": "Coordination",
-              "why": "the plan Root registered"})
-    with W._lock(ref):
-        W._write(W.ddir(ref) / "coordination.json", t)
-    return t
+    left = [left_out_row(n, (was.get(n) or {}).get("since")) for n in d.get("engines") or [] if n not in line]
+    t.update({"line": line, "left_out": left, "registered": version})
+    t["timetable"] = _timetable(ref, t)                    # one slot for each engine of the line (PRD M4.3)
+    return _put_table(ref, t, "the plan Root registered")
 
 
 def coord_table(ctx, step, item):

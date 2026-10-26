@@ -1057,3 +1057,80 @@ def test_m4_2_a_set_line_that_is_not_full_adds_to_the_line_and_a_faulty_table_ke
     t["line"] = KEEP + ["Nobody"]                                   # a name the Library does not define: the table is not read
     W._write(W.ddir(ref) / "coordination.json", t)
     assert R.coordination(ref)["line"] == KEEP, "the born line, without the engine the plan left out"
+
+
+def _table(W, ref):
+    return W._read(W.ddir(ref) / "coordination.json", None)
+
+
+def test_m4_3_coordinations_timetable_is_one_slot_for_each_engine_and_a_grown_engine_adds_one(j2):
+    """A timetable that is not on the record, an engine with two slots or none, or a grown engine with no slot must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    t = _table(W, ref)
+    assert [r["engine"] for r in t["timetable"]] == LINE == t["line"]
+    rows = {r["engine"]: r for r in t["timetable"]}
+    assert [rows[n]["on"] for n in LINE] == ["after Brief v1", "after Site plan v1", "after Pages v1", "after Build v1"]
+    assert [rows[n]["of"] for n in LINE] == ["Brief", "Site plan", "Pages", "Build"]
+    assert rows["Publish"]["checked"] is True and rows["Plan"]["checked"] is False
+    assert [rows[n]["window_min"] for n in LINE] == [15, 30, 5, 10], "each engine's window, from the record"
+    assert all(rows[n]["since"] for n in LINE)
+    # the record's shape is named once: the table's fields and a slot's fields, in order
+    assert set(t) <= set(R.TABLE_FIELDS) and all(list(r) == [k for k in R.SLOT_FIELDS if k in r] for r in t["timetable"])
+    written = [e for e in J.events(ref) if e["action"] == "timetable.written"]
+    assert [s["on"] for s in written[-1]["payload"]["timetable"]] == [rows[n]["on"] for n in LINE], "the ledger names the slots"
+    W.add_engine(ref, "Do")
+    t2 = _table(W, ref)
+    assert [r["engine"] for r in t2["timetable"]] == ["Do"] + LINE, "the grown engine adds one slot"
+    grown = {r["engine"]: r for r in t2["timetable"]}
+    assert grown["Do"]["on"] == "after Brief v1" and grown["Do"]["window_min"] == 15, "it has not run on the Brief yet"
+    assert all(grown[n]["since"] == rows[n]["since"] for n in LINE), "a slot keeps the time it has been held since"
+    lab = _born(j2, ORGANIC, "Lab Co")
+    t3 = _table(W, lab)
+    assert [(r["engine"], r["on"]) for r in t3["timetable"]] == [("Facts", "after Brief v1"), ("Site", "after Facts v1")]
+    assert R.slot_of(ref, "Plan")["on"] == "after Brief v2", "the slot moves on once Plan ran on Brief v1"
+
+
+def test_m4_3_no_scenario_clashes_in_a_slot_on_any_kind(j2, monkeypatch):
+    """SM-11's clash in a slot (two runs on one slot id, or a start while another run is open), in any scenario on any
+    kind, must fail; so must an engine run that no registered line or J5 stamp allowed (SM-3)."""
+    import functions_view as F
+    W, R, J, _ = j2
+    refs = [_born(j2)]
+    _stamp_all(W, refs[0])                                            # a website, published
+    refs.append(_born(j2, ORGANIC, "Lab Co"))                          # an organic line, shaped for the goal
+    d, _ = W.create("dref-answers", "Answers", None, kind="default")   # the default kind: one Do engine
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept(d["ref"], d)
+    J.start(d["ref"])
+    W.give_goal(d["ref"], "Answer what the science team asks about the lab rota")
+    W.run_until_idle(d["ref"], limit=300)
+    refs.append(d["ref"])
+    _counter_keeps(monkeypatch, R)
+    refs.append(_born(j2, WEBSITE, "Counter Co"))                      # a website whose plan Priority cut
+    W.add_engine(refs[-1], "Do")                                       # and an engine the owner added through J5
+    W.owner_ask(refs[-1], "Add a page for the timetable of the algebra classes")
+    W.run_until_idle(refs[-1], limit=300)
+    for ref in refs:
+        W.run_until_idle(ref, limit=100)
+        assert "workflow.registered" in _actions(J, ref), ref
+        assert [r for r in W.runs(ref) if not r.get("system")], "work ran: %s" % ref
+        assert F.slot_clashes(W.runs(ref)) == [], ref
+        assert _sm3(W, R, ref, j5=["Do"]) == [], ref
+        t = _table(W, ref)
+        assert sorted(r["engine"] for r in t["timetable"]) == sorted(t["line"]) and len(t["timetable"]) == len(set(t["line"]))
+    assert "Publish" not in [r["engine"] for r in W.runs(refs[-1])]
+    # the reader finds a clash when there is one
+    run = next(r for r in W.runs(refs[0]) if r.get("slot") and not r.get("system"))
+    twice = [run, dict(run, id="r-again")]
+    assert [c["why"] for c in F.slot_clashes(twice)] == ["the slot ran twice"]
+    open_ = [dict(run, started="2026-10-23T10:00:00+05:30", ended="2026-10-23T10:05:00+05:30"),
+             dict(run, id="r-two", slot="Write@site-plan.v9", engine="Write", started="2026-10-23T10:02:00+05:30", ended="2026-10-23T10:03:00+05:30")]
+    assert [c["slot"] for c in F.slot_clashes(open_)] == ["Write@site-plan.v9"]
+
+
+def test_m4_3_the_map_reads_each_engines_slot_off_coordinations_timetable(j2):
+    W, R, J, _ = j2
+    ref = _born(j2)
+    eng = {e["name"]: e for e in W.map_view(ref)["engines"]}
+    assert [eng[n]["timetable"]["on"] for n in LINE] == [r["on"] for r in _table(W, ref)["timetable"]]

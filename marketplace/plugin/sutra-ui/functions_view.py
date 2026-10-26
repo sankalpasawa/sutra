@@ -206,6 +206,28 @@ def _ready_now(ref, d):
         return []
 
 
+def slot_clashes(rs):
+    """SM-11's clash in a slot, read off the run rows (PRD M4.3): two runs that finished on one slot id, or a start while
+    another run of the department was open. [{slot, why}]; empty when the timetable held. A run row with no slot is a
+    function's note of what it did, never a start."""
+    out, ended = [], {}
+    starts = [r for r in rs if r.get("slot")]
+    for r in starts:
+        if r.get("status") in ("ok", "failed"):
+            if r["slot"] in ended:
+                out.append({"slot": r["slot"], "why": "the slot ran twice"})
+            ended[r["slot"]] = r
+    spans = sorted(((W._ts(r.get("started") or ""), W._ts(r.get("ended") or "") if r.get("ended") else float("inf"), r)
+                    for r in starts), key=lambda x: x[0])
+    for i, (a0, a1, a) in enumerate(spans):
+        for b0, _, b in spans[i + 1:]:
+            if b0 >= a1:
+                break
+            if b0 > a0:
+                out.append({"slot": b["slot"], "why": "it started while %s was running" % a.get("engine")})
+    return out
+
+
 # ---- M1.2: who spoke to whom, who made what and who reads it -------------------------------------------------------
 def speaks(ref, posts=None):
     """Every pair that spoke on the board, src > dst, the owner and Root included: how often, and when last."""

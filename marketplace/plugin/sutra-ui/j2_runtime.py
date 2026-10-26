@@ -642,12 +642,14 @@ def on_table(ref, table, grown=None):
             return
         line = list((table or {}).get("line") or [])
         v = (table or {}).get("registered")
+        # the slots it wrote, in words: one for each engine of the line (PRD M4.3)
+        slots = [{"engine": r.get("engine"), "on": r.get("on")} for r in (table or {}).get("timetable") or [] if isinstance(r, dict)]
         if grown:
             note(ref, 6, "Coordination", "Identity", "timetable.written", "complete", "Coordination added %s to the line." % grown,
-                 "table-grow-%s-%s" % (grown, uuid.uuid4().hex[:6]), {"line": line, "grown": grown})
+                 "table-grow-%s-%s" % (grown, uuid.uuid4().hex[:6]), {"line": line, "grown": grown, "timetable": slots})
         else:
             note(ref, 5, "Coordination", "Root", "timetable.written", "complete", "Coordination set its line to the plan: %s."
-                 % " -> ".join(line), "table-v%s" % v, {"line": line, "version": v}, workflow_ref="workflow/%s" % v)
+                 % " -> ".join(line), "table-v%s" % v, {"line": line, "version": v, "timetable": slots}, workflow_ref="workflow/%s" % v)
     except Exception:  # noqa: BLE001 -- the ledger never fails the table it records
         return
 

@@ -1199,6 +1199,7 @@ def map_view(ref):
     table = rt.coordination(ref) if rt else {}
     line = set(table.get("line") or []) if rt else None
     left = {r.get("engine") for r in table.get("left_out") or [] if isinstance(r, dict)}
+    slots = {r.get("engine"): r for r in table.get("timetable") or [] if isinstance(r, dict)}
     for e in engines:
         e.pop("runs", None)
         last = next((r for r in reversed(rs) if r["engine"] == e["name"]), None)
@@ -1209,6 +1210,7 @@ def map_view(ref):
         e["in_line"] = line is None or e["name"] in line
         if e["name"] in left and e["state"] not in ("Running", "Missing"):
             e["state"] = "Left out"
+        e["timetable"] = slots.get(e["name"])           # its slot in Coordination's timetable, as Coordination wrote it (PRD M4.3)
     names = artifacts_of(d)
     arts = []
     for a in names:
