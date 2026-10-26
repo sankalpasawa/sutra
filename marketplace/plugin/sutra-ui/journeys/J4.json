@@ -325,17 +325,36 @@
     "status": "built",
     "text": "Identity's own check at birth keeps the child's rules within the parent's (a born Root rule)."
    },
-   "code_does": "Not built. Root's kind carries the born rule \"A child's rules can only tighten this one's\", which the model reads on its card; identity_apply's rule branch compares nothing with an ancestor's rules (_effective_rules serves the birth gate only).",
+   "code_does": "A rule that matches an inherited ask or refuse rule with a looser tag is not asked for and not written; matching is by normalised line. _rule_ask checks the rule against the rules the ancestors hold (_effective_rules less the department's own, through rule_faults) before it files the ask, so the owner is never asked to stamp a rule that would be turned down; identity_apply checks again before it writes, since an ancestor's rule may change between the ask and the stamp. Either way Identity says \"Root's rule stands: a department's rules can only tighten it\" and a row on the record says so. A prohibition tagged always counts as refuse; a positive always rule and a goal are not compared (BL-2b).",
    "outcome": {
     "kind": "refuse",
     "voice": "Identity",
-    "golden": null
+    "golden": "a department's rules can only tighten it"
    },
-   "backlog": "BL-2",
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "request",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "identity_apply",
+    "_rule_ask",
+    "rule_faults",
+    "_effective_rules"
+   ],
+   "tests": [
+    "test_layer_journey_j4.py::TestJ4Edges::test_j4_4_a_looser_tag_on_an_inherited_line_is_refused",
+    "test_layer_journey_j4.py::TestJ4Edges::test_j4_4_a_stricter_or_unrelated_rule_is_written"
+   ],
+   "backlog": "BL-2b",
    "rulings": [
     "S-08"
    ],
-   "reword": "A department's rules can only tighten Root's: words only until the check below is built."
+   "reword": "A department's rules can only tighten Root's. Built for a rule an ancestor stamped: the same line with a looser tag is not asked for and not kept. A looser rule worded differently is not caught yet."
   },
   {
    "id": "J4.5",
@@ -438,13 +457,6 @@
   "every_ask_names_its_answers"
  ],
  "backlog": [
-  {
-   "id": "BL-2",
-   "row": "edge:J4.4",
-   "smallest": "A rule asked for, or stamped, whose normalised line equals the line of an inherited rule that forbids it (tagged refuse, or a prohibition tagged always) or asks first (tagged ask), and whose own tag is lower (go below ask below refuse), is not asked for and not written: Identity says \"Root's rule stands: a department's rules can only tighten it\" and a system_run row is written. Checked in _rule_ask (so the owner is never asked to stamp a rule that would be refused) and again in identity_apply (an ancestor's rule may change between the ask and the stamp).",
-   "decision": "S-08",
-   "package": "A3-J34 P5 (a pure helper in layers/identity/tighten.py and two call sites)"
-  },
   {
    "id": "BL-2b",
    "row": "edge:J4.4",
