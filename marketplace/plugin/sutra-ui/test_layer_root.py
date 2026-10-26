@@ -228,3 +228,80 @@ def test_r1_a_grown_line_is_held_to_the_same_reads_and_writes(home):
     first = {"source": "shaped", "kind": "organic", "engines": [{"name": "Lone", "reads": "Nothing", "writes": "Lone"}]}
     assert failed(WS.run(first, "grow", {"kind": "organic"})) == ["reads_known"]
     assert failed(WS.run(first, "registration", {"kind": "organic"})) == ["first_reads_input"], "judged once, by the standard that owns it"
+
+
+# ---- R2: Root's check through the schema -----------------------------------------------------------------------------------
+def _born(home, words=WEBSITE, org="Acme Learning"):
+    """A department as a person makes one: found the organisation, say the words, Root sets it up, and it settles."""
+    W, _, _, founding = home
+    root = founding.found_structure(org, owner="Sankalp")["root"]
+    W.owner_ask(root, words)
+    W.run_until_idle(root, limit=300)
+    child = next(d for d in W.list_depts() if d.get("parent") == root)
+    W.run_until_idle(child["ref"], limit=300)
+    return child["ref"]
+
+
+def test_r2_roots_checks_are_the_rows_of_the_workflow_schema_at_registration(home):
+    W, R, J, _ = home
+    ref = _born(home)
+    d = W.dept(ref)
+    plan = [{"name": n} for n in LINE]
+    rows = R._root_checks(ref, d, plan, "library")
+    want = S.validate_workflow(S.as_workflow(plan, "library", d), "registration", d, R._root_ctx(ref, plan))
+    assert rows == want and rows[0]["check"] == "workflow_meets_standards"
+    assert [r["check"] for r in rows[1:]] == [s[0] for s in S.WORKFLOW_STANDARDS if "registration" in s[3] and "library" in s[2]]
+    assert all(S.validate("workflow.check", r) == [] for r in rows) and R._root_check(ref, d, plan, "library") == []
+
+
+def test_r2_a_failed_row_is_a_fault_in_the_words_of_what_is_wrong_and_the_tests_old_wording_is_gone(home):
+    W, R, J, _ = home
+    ref = _born(home)
+    d = W.dept(ref)
+    assert R._root_check(ref, d, [{"name": "Plan"}, {"name": "Nobody Knows"}], "library") == [
+        "the Library has no engine named Nobody Knows", "the plan leaves out Check, which this kind of department requires"]
+    assert not any(hasattr(R, name) for name in ("LINE_CHECKS", "ROOT_HOLDS", "_root_run")), "the old lists are the schema's now"
+    # a shaped line is held to its own shape, by the same standards Adaptation's covering reads
+    shaped = [{"name": "Facts", "reads": "Notes", "writes": "Notes"}]
+    assert R._root_check(ref, d, shaped, "shaped")[0] == "Facts, the first engine, reads Notes, and the first engine reads Brief"
+    assert [n for _, n in R._line_notes(shaped)] == R._line_faults(shaped)
+    assert [c for c, _ in R._line_notes(shaped)] == ["first_reads_input"]
+
+
+def test_r2_a_plan_is_priced_by_the_latest_row_for_it_and_a_ruling_above_priority_stands(home):
+    W, R, J, _ = home
+    ref = _born(home)
+    d = W.dept(ref)
+    plan = [{"name": n} for n in LINE]
+    fits = lambda: next(r for r in R._root_checks(ref, d, plan, "library") if r["check"] == "fits_room")
+    assert fits() == {"check": "fits_room", "passed": True, "why": "not priced here"}
+    price = {"at": W.now(), "proposal": "line", "thread": "t-1", "engines": LINE, "estimate": {"calls": 60, "usd": 3.0},
+             "room": {"calls": 30, "usd": 6.0}, "answer": "counter", "keep": LINE[:3], "why": "room for three today"}
+    W.append_row(ref, "prices.jsonl", price)
+    assert not fits()["passed"] and "30 calls" in fits()["why"]
+    W.append_row(ref, "prices.jsonl", dict(price, engines=["Elsewhere"], answer="accept"))
+    assert not fits()["passed"], "a row for another plan is not this plan's price"
+    W.append_row(ref, "prices.jsonl", dict(price, answer="accept"))
+    assert fits()["passed"] and fits()["why"] == WS.SAYS["fits_room"]
+    # Priority said no, and Identity closed the conflict: the ruling stands above the price
+    W.append_row(ref, "prices.jsonl", dict(price, answer="reject"))
+    assert not fits()["passed"]
+    R.post(ref, "Adaptation", "Identity", "inform", {"word": "conflict", "engines": [{"name": n, "reads": "Brief", "writes": n} for n in LINE], "source": "library", "why": "no room", "for": "t-1"})
+    assert fits() == {"check": "fits_room", "passed": True, "why": "not priced here"}
+
+
+def test_r2_the_third_refusal_goes_to_the_options_ask_naming_the_standard_in_its_words(home):
+    # the same path as test_j2's, with the words checked to be the standard's own
+    W, R, J, _ = home
+    ref = _born(home)
+    d = W.dept(ref)
+    plan = [{"name": "Plan"}, {"name": "Write"}, {"name": "Publish"}]            # no Check, and Publish has no Build to read
+    for _ in range(J.REPAIRS + 1):
+        R._j2_settle(ref, d, plan, "library", d.get("goal"), "a test")
+    card = next(a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending")
+    for sid in ("reads_known", "required_kept"):
+        assert WS.SAYS[sid] in card["text"] and sid not in card["text"]
+    assert "Publish reads Build, which nothing before it writes" in card["why"]
+    blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"]
+    assert len(blocked) == J.REPAIRS + 1 and all(r["check"] in {s[0] for s in S.WORKFLOW_STANDARDS} | {"workflow_meets_standards"}
+                                                 for e in blocked for r in e["payload"]["checks"])

@@ -4702,47 +4702,96 @@ def required_engines(d):
     return [str(n) for n in k.get("required") or [] if n]
 
 
-def _root_run(engines, source, required=()):
-    """Root's standards on one workflow: the checks that ran, in order, and each fault with the check it breaks. With
-    the engines the kind requires, 'no required engine left out' runs last (PRD M4.4)."""
-    if not engines:
-        return ["names an engine"], [("names an engine", "the workflow names no engine")]
-    if source == "library":
-        known = defs()["engines"]
-        ran, notes = ["names an engine", "engines known"], [("engines known", "the Library has no engine named %s" % e.get("name"))
-                                                            for e in engines if (known.get(e.get("name")) or {}).get("kind") != "work"]
-    else:
-        notes = _line_notes(engines) + ([("one to six engines", "more than six engines")] if len(engines) > 6 else [])
-        ran = ["names an engine", "one to six engines"] + [c for c, _ in LINE_CHECKS]
-    if required:
-        names = [e.get("name") for e in engines]
-        out = [n for n in required if n not in names]
-        ran.append("no required engine left out")
-        if out:
-            notes.append(("no required engine left out", "the plan leaves out %s, which this kind of department requires" % _names(out)))
-    return ran, notes
+def _plan_workflow(d, engines, source, why=None):
+    """A plan's engines (names, or the dicts a proposal carries) as the workflow schema reads them (A1.14): what the line
+    leaves unsaid is what it always meant, an engine the Library lacks reading the kind's first artifact and writing its
+    own name, then layer_schema.as_workflow, which looks the Library's own up and inverts each engine's covers. The
+    level, the confidence and the doubt of a made engine ride along, which as_workflow does not carry."""
+    import layer_schema as S
+    first = S.first_input((d or {}).get("kind")) or "Brief"
+    lib = defs()["engines"]
+    rows = []
+    for e in engines or []:
+        e = dict(e) if isinstance(e, dict) else {"name": e}
+        e["name"] = " ".join(str(e.get("name") or "").split())[:40]
+        if e["name"] not in lib:
+            e["reads"] = " ".join(str(e.get("reads") or first).split())
+            e["writes"] = " ".join(str(e.get("writes") or e["name"]).split())[:40]
+        rows.append(e)
+    wf = S.as_workflow(rows, source, d)
+    for row, e in zip(wf["engines"], rows):
+        row.update({k: e[k] for k in ("level", "confidence", "doubt") if e.get(k) is not None})
+    if why:
+        wf["why"] = str(why)[:600]
+    return wf
 
 
-#: what Root's own checks say when they hold; a shaped line's checks say it in LINE_CHECKS
-ROOT_HOLDS = {"names an engine": "the workflow names its engines", "engines known": "each engine is one the Library has",
-              "one to six engines": "the workflow is one to six engines long",
-              "no required engine left out": "the plan keeps every engine its kind requires"}
+def _priced(ref, names):
+    """Priority's latest price row for this plan (prices.jsonl, once Priority writes them), or None: none written, or the
+    plan was settled above Priority (Identity ruled on a conflict over it, or the owner stamped it), which is the one
+    way a plan Priority did not say yes to comes to Root."""
+    try:
+        rows = [r for r in W.rows(ref, "prices.jsonl") if isinstance(r, dict) and set(r.get("engines") or []) == set(names)]
+    except (ValueError, OSError):
+        return None
+    if not rows:
+        return None
+    if rows[-1].get("answer") != "accept" and any(
+            set(n.get("name") if isinstance(n, dict) else n for n in (x.get("payload") or {}).get("engines") or []) == set(names)
+            for x in board(ref) if (x.get("payload") or {}).get("word") == "conflict"):
+        return None
+    return rows[-1]
+
+
+def _root_ctx(ref, engines):
+    """What Root's check reads beside the workflow: Coordination's table (the engines the owner added; the line it holds)
+    and Priority's price for this plan, when there is one."""
+    t = coordination(ref) if ref else {}
+    ctx = {"line": list(t.get("line") or []), "grown": list(t.get("grown") or []),
+           "left_out": [r.get("engine") for r in t.get("left_out") or [] if isinstance(r, dict)]}
+    price = _priced(ref, [e.get("name") if isinstance(e, dict) else e for e in engines or []]) if ref else None
+    if price:
+        ctx["price"] = price
+    return ctx
+
+
+def _plan_why(ref, engines):
+    """The why the line's proposal gave, when it was long (size_in_range asks one past six engines)."""
+    names = [e.get("name") if isinstance(e, dict) else e for e in engines or []]
+    for x in reversed(board(ref)):
+        pl = x.get("payload") or {}
+        if x.get("msg_type") == "propose" and pl.get("word") == "line" and \
+                [e.get("name") for e in pl.get("engines") or [] if isinstance(e, dict)] == names:
+            return str(pl.get("why") or "")
+    return ""
 
 
 def _root_checks(ref, d, engines, source):
-    """Root's standards, as code reads them (J2.e), one row for each check that ran: [{check, passed, why}]. A Library line
-    is checked for engines the Library has; a shaped line for one to six engines, each named once and new to the Library,
-    the first reading the Brief, each reading what one before it wrote and writing something new (M0.7: the event lists
-    these rows, not a fixed set of names), and, when the kind requires engines, that none is left out (PRD M4.4)."""
-    ran, notes = _root_run(engines, source, required_engines(d))
-    holds = dict(LINE_CHECKS, **ROOT_HOLDS)
-    return [{"check": c, "passed": not [n for k, n in notes if k == c],
-             "why": "; ".join(n for k, n in notes if k == c) or holds[c]} for c in ran]
+    """Root's standards, as the workflow schema holds them (J2.e, A1.14), one row for each that applied at registration:
+    [{check, passed, why}], the schema's own shape row first and then the standards in their order, each a standard's id
+    (workflow.check). A Library line is checked for engines the Library has; a shaped line for each engine named once and
+    new to the Library, the first reading the kind's first artifact, each reading what one before it wrote and writing
+    something new; every line for every done-when item covered, the engines the kind requires kept, a size, a check on
+    what each writes, and Priority's price fitting the room. M0.7: the event lists these rows, not a fixed set of names."""
+    import layer_schema as S
+    wf = _plan_workflow(d, engines, source, why=_plan_why(ref, engines) if ref and len(engines or []) > 6 else None)
+    return S.validate_workflow(wf, "registration", d, _root_ctx(ref, engines))
 
 
 def _root_check(ref, d, engines, source):
-    """Root's standards as the fault list its callers use: empty when the workflow meets them."""
-    return [n for _, n in _root_run(engines, source, required_engines(d))[1]]
+    """Root's standards as the fault list its callers use: empty when the workflow meets them, else what each failed row
+    says."""
+    return [r["why"] for r in _root_checks(ref, d, engines, source) if not r["passed"]]
+
+
+def _broke(checks):
+    """The standards a plan broke, in their own words (WORKFLOW_STANDARDS' says) with what is wrong, for the options ask
+    the third refusal leaves: 'each engine writes something not yet written (Site writes Facts, which is already
+    written)'. A row that is no standard (the schema's shape, a check put in Root's place) says only what is wrong."""
+    import layer_schema as S
+    says = {sid: text for sid, text, _, _ in S.WORKFLOW_STANDARDS}
+    return "; ".join('"%s" (%s)' % (says[c["check"]], c["why"]) if c.get("check") in says else str(c.get("why"))
+                     for c in checks if not c.get("passed"))
 
 
 #: who said yes to a plan that passes Root's check, as Identity tells the owner it is set: the `by` of _j2_settle, in the
@@ -4758,19 +4807,20 @@ def _j2_settle(ref, d, engines, source, words, by):
     names = [e.get("name") for e in engines]
     faults = _root_check(ref, d, engines, source)
     checks = _root_checks(ref, d, engines, source)
-    named = {n for _, n in _root_run(engines, source, required_engines(d))[1]}
+    named = {c["why"] for c in checks if not c["passed"]}
     other = [f for f in faults if f not in named]
     if other:
-        # a fault no itemised standard names (a check put in Root's place): the event lists it as the check that ran
-        checks.append({"check": "Root's check", "passed": False, "why": "; ".join(other)})
+        # a fault no standard names (a check put in Root's place): the event lists it as the check that ran
+        checks.append({"check": "workflow_meets_standards", "passed": False, "why": "; ".join(other)})
     if faults:
         n = J.refused(ref, engines, faults, checks=checks) if J else 1
         if n <= (J.REPAIRS if J else 2):
             _line_request(ref, d, words, faults=faults)
             _tell(ref, d, who, "inform", {"word": "line", "done": "Root's check sent the plan back (%s). Adaptation is reshaping it." % "; ".join(faults)})
             return {"said": "Root's check sent the workflow back to Adaptation: %s" % "; ".join(faults)}
-        _blocked(ref, d, who, "Root's check sent the plan back %d times: %s. Say what to change and I will have it shaped afresh."
-                 % (n, "; ".join(faults)), "The plan could not be approved.", "Root, at its review", "; ".join(faults))
+        broke = _broke(checks) or "; ".join(faults)
+        _blocked(ref, d, who, "Root's check sent the plan back %d times, and it still does not meet %s. Say what to change and I will have it shaped afresh."
+                 % (n, broke), "The plan could not be approved.", "Root, at its review", broke)
         return {"said": "Root's check sent the workflow back %d times; the owner is told" % n}
     added, lost = [], []
     if source == "library":
@@ -6099,38 +6149,18 @@ def c_feedback_says_what_changes(ctx, step, item, out):
     return {"ok": not notes, "notes": notes or ["what changes now, and what kind of change it is"]}
 
 
-#: the checks a shaped line is held to, in the order they are read, each with what it says when it holds (M0.7)
-LINE_CHECKS = (("each engine named", "every engine has a name"),
-               ("names unique", "no name is used twice"),
-               ("names new to the Library", "no name is one the Library already has"),
-               ("first reads the Brief", "the first engine reads the Brief"),
-               ("each reads what one before it wrote", "each engine reads the Brief or what one before it wrote"),
-               ("each writes something new", "each engine writes something not yet written"))
+#: the standards a shaped line is held to as Adaptation shapes it, before the department is known (PRD M0.7, A1.14): the
+#: line's own shape. The rest (items covered, the required engines, the room) are the department's, at Root's check.
+LINE_STANDARDS = ("each_engine_named", "names_unique", "names_new", "first_reads_input", "reads_known", "one_output")
 
 
 def _line_notes(engs):
-    """_line_faults, each fault with the check it breaks: [(check, note)], in the order the line is read."""
-    notes, names, written, lib = [], [], {"Brief"}, defs()["engines"]
-    for i, e in enumerate(engs):
-        n = " ".join(str(e.get("name") or "").split())[:40] if isinstance(e, dict) else ""
-        if not n:
-            notes.append(("each engine named", "engine %d has no name" % (i + 1)))
-            continue
-        if n in names:
-            notes.append(("names unique", "%s is named twice" % n))
-        slug = re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-")
-        if n in lib or not slug or (TEMPLATES_DIR / (slug + ".json")).exists() or (user_templates_dir() / (slug + ".json")).exists():
-            notes.append(("names new to the Library", "the Library already has an engine named %s" % n))
-        r, w = " ".join(str(e.get("reads") or "Brief").split()), " ".join(str(e.get("writes") or n).split())[:40]
-        if i == 0 and r != "Brief":
-            notes.append(("first reads the Brief", "the first engine reads the Brief"))
-        if r not in written:
-            notes.append(("each reads what one before it wrote", "%s reads %s, which nothing before it writes" % (n, r)))
-        if w in written:
-            notes.append(("each writes something new", "%s writes %s, which is already written" % (n, w)))
-        names.append(n)
-        written.add(w)
-    return notes
+    """_line_faults, each fault with the standard it breaks: [(standard id, note)], in the order the line is read. The
+    line is read as a shaped one by the workflow schema's own standards (workflow_schema), with no department behind it,
+    so its first artifact is the Brief."""
+    import workflow_schema
+    wf = _plan_workflow(None, [e if isinstance(e, dict) else {} for e in engs], "shaped")
+    return [(r["check"], r["why"]) for r in workflow_schema.run(wf, "proposal", None, {}) if r["check"] in LINE_STANDARDS and not r["passed"]]
 
 
 def _line_faults(engs):
