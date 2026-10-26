@@ -376,7 +376,8 @@ SAMPLES = {
                         {"proposal": None, "root_checks": [{"passed": "yes"}], "rounds": []}),
     # one round of the current cycle (W2-ADAPT, M9.6): rounds.jsonl folded by round number, the latest status winning
     "view.adaptation.round": ({"round": 2, "correction": "Put right D2: every page names the phone line", "covers": ["D2"], "fixes": ["F1"],
-                               "status": "granted", "estimate": {"calls": 9, "usd": 0.36}, "at": NOW, "reading": "r-0123abcd", "brief_v": None},
+                               "status": "granted", "said": "Priority said yes", "estimate": {"calls": 9, "usd": 0.36}, "at": NOW, "reading": "r-0123abcd",
+                               "brief_v": None},
                               {"round": 2, "correction": "Put right D2", "covers": ["D2"], "status": "done"}),
     "view.priority": ({"bargains": [{"said": "asked for less", "summary": "kept three engines of four", "at": NOW}],
                        "envelopes": [{"engine": "Write", "calls": 3, "usd": 0.1, "calls_limit": 40, "usd_limit": 0.5, "share": 0.2}]},

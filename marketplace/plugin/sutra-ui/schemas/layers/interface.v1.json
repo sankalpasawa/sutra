@@ -3965,6 +3965,11 @@
           "minimum": 1,
           "type": "integer"
         },
+        "said": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string"
+        },
         "status": {
           "enum": [
             "proposed",

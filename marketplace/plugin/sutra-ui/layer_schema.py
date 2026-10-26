@@ -740,7 +740,7 @@ DEFS.update({
         required=('proposal', 'root_checks', 'rounds')),
     'view.adaptation.round': obj({'round': integer(1, 99), 'correction': text(600), 'covers': items(ref('id.item')),
                                   'fixes': items(ref('id.finding')), 'status': enum('proposed', 'granted', 'refused', 'filed', 'read'),
-                                  'estimate': nullable(ref('priority.estimate')), 'at': _AT, 'reading': nullable(text(40)),
+                                  'said': text(60), 'estimate': nullable(ref('priority.estimate')), 'at': _AT, 'reading': nullable(text(40)),
                                   'brief_v': nullable(integer(1))}, required=('round', 'correction', 'covers', 'status')),
     'view.priority': obj({
         'bargains': items(obj({'said': enum('said yes', 'asked for less', 'said no'), 'summary': nullable(text(4000)), 'at': _AT})),
