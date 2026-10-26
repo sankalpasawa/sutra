@@ -818,18 +818,24 @@ def not_read(ref, version, why, artifact=None):
         return
 
 
-def audited(ref, version, findings, artifact=None):
-    """Audit read what went out and found nothing to put right: done-when is read from that (step 8). Returns True when
-    the goal is reached now, so Identity says so once."""
-    if not active(ref) or findings:
-        # with findings, Audit's own post to Identity is the event; "found nothing" is said only when that is true
-        # (found live 2026-10-08: twelve findings filed, and the next line of the ledger said nothing was found)
+def audited(ref, version, findings, artifact=None, reading=None):
+    """Audit read what went out. Done-when holds only when its reading says so (step 8): the version was read item by item,
+    every done-when item is met, none is to confirm and no high finding is open. 'Found nothing' is no reading: a version
+    nobody read, or one that read no item, clears nothing (PRD M8.3). `reading` is what Audit filed of it: {read, met,
+    not_met, to_confirm, high}. Returns True when the goal is reached now, so Identity says so once. (Interim: from
+    wave 2 Identity's covering declares done from Audit's reading, M8.4, and this only records.)"""
+    r = reading or {}
+    if not active(ref) or not (r.get("read") and r.get("met") and not r.get("not_met") and not r.get("to_confirm") and not r.get("high")):
         return False
     dept = W.dept(ref) or {}
     art = _deliverable(ref, artifact)
     ev = [{"artifact": art, "version": version}] if art else []
-    note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded", "Audit read %s v%s and found nothing to put right." % (art or "what the plan delivers", version),
-         "audit-clean-v%s" % version, {"severity": "none", "findings": 0}, evidence_refs=ev)
+    if not findings:
+        # with findings, Audit's own post to Identity is the event; "found nothing" is said only when that is true
+        # (found live 2026-10-08: twelve findings filed, and the next line of the ledger said nothing was found)
+        note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded",
+             "Audit read %s v%s and found nothing to put right." % (art or "what the plan delivers", version),
+             "audit-clean-v%s" % version, {"severity": "none", "findings": 0}, evidence_refs=ev)
     note(ref, 8, "Identity", "User", "goal.reached", "done", "Done-when holds: %s." % str(dept.get("done") or "").rstrip("."),
          "goal-reached-v%s" % version, {"done_when": dept.get("done")}, evidence_refs=ev)
     _set(ref, step=8, state="done")

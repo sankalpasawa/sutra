@@ -1070,6 +1070,21 @@
     "check": "has_a_verdict"
    },
    {
+    "id": "audit.items",
+    "name": "Read each done-when item",
+    "nature": "check",
+    "born": "C0",
+    "ceiling": "C1",
+    "only_if": "audit.pick.sample",
+    "prompt": "audit_items",
+    "draft": "audit_items_draft",
+    "out": {
+     "items": "list",
+     "findings": "list"
+    },
+    "check": "reading_is_s30"
+   },
+   {
     "id": "audit.judge",
     "name": "Judge the pages against the brief",
     "nature": "check",

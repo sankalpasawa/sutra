@@ -998,7 +998,8 @@ CHECKS = {
                      'one_run_at_a_time': 'a start is let through only while no other run runs'},
     'audit': {'findings_name_where_and_what': 'each finding names where it is and what it claims',
               'has_a_verdict': 'a mechanical check gives a verdict with its notes',
-              'picked_a_sample': 'it says whether it sampled, and which pages'},
+              'picked_a_sample': 'it says whether it sampled, and which pages',
+              'reading_is_s30': 'each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what'},
 }
 
 #: samples every implementation's check must judge as main's bodies do (A1.21), each checked against the body on main;
@@ -1011,6 +1012,13 @@ CONTRACT_SAMPLES = {
                              'bad': [{'answer': 'accept', 'why': ''}, {'answer': 'grant', 'why': 'x'}]},
     'findings_name_where_and_what': {'good': [{'ok': True, 'findings': []}],
                                      'bad': [{'ok': False, 'findings': [{'claim': 'x'}]}, {'ok': False, 'findings': 'none'}]},
+    'reading_is_s30': {'good': [{'items': [{'id': 'D1', 'verdict': 'met', 'claim': 'every page is checked and live',
+                                            'evidence': 'the live site passed its check'}], 'findings': []},
+                                {'items': [], 'findings': [], 'read': False}],
+                       'bad': [{'items': [{'id': 'D1', 'verdict': 'fine', 'claim': 'x', 'evidence': 'y'}], 'findings': []},
+                               {'items': [{'id': 'D1', 'verdict': 'met', 'claim': 'x', 'evidence': ''}], 'findings': []},
+                               {'items': [{'id': 'D1', 'verdict': 'met', 'claim': 'x', 'evidence': 'y'}], 'findings': [{'claim': 'x'}]},
+                               {'items': 'none', 'findings': []}]},
     'enough_is_shaped': {'good': [],
                          'bad': [{'enough': 'yes', 'missing': []}, {'enough': False, 'missing': ['colour'], 'question': 'x?'}]},
 }

@@ -19,15 +19,18 @@ CODE = {
 }
 PROMPT = {
     'audit_judge': ref_to('p_audit_judge'),
+    'audit_items': ref_to('p_audit_items'),
 }
 DRAFT = {
     'audit_judge_draft': ref_to('d_audit_judge'),
+    'audit_items_draft': ref_to('d_audit_items'),
 }
 CHECK = {
     'picked_a_sample': ref_to('c_picked_a_sample'),
     'has_a_verdict': ref_to('c_has_a_verdict'),
     'findings_name_where_and_what': ref_to('c_findings_name_where_and_what'),
     'said_what_it_did': ref_to('c_said_what_it_did'),
+    'reading_is_s30': ref_to('c_reading_is_s30'),
 }
 WORDS, LAYOUT = {}, {}
 

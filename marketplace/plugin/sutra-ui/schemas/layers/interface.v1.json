@@ -69,7 +69,8 @@
     "audit": {
       "findings_name_where_and_what": "each finding names where it is and what it claims",
       "has_a_verdict": "a mechanical check gives a verdict with its notes",
-      "picked_a_sample": "it says whether it sampled, and which pages"
+      "picked_a_sample": "it says whether it sampled, and which pages",
+      "reading_is_s30": "each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what"
     },
     "coordination": {
       "chain_under_its_limit": "a start is let through only while the chain is under its limit",
@@ -327,6 +328,69 @@
         {
           "findings": [],
           "ok": true
+        }
+      ]
+    },
+    "reading_is_s30": {
+      "bad": [
+        {
+          "findings": [],
+          "items": [
+            {
+              "claim": "x",
+              "evidence": "y",
+              "id": "D1",
+              "verdict": "fine"
+            }
+          ]
+        },
+        {
+          "findings": [],
+          "items": [
+            {
+              "claim": "x",
+              "evidence": "",
+              "id": "D1",
+              "verdict": "met"
+            }
+          ]
+        },
+        {
+          "findings": [
+            {
+              "claim": "x"
+            }
+          ],
+          "items": [
+            {
+              "claim": "x",
+              "evidence": "y",
+              "id": "D1",
+              "verdict": "met"
+            }
+          ]
+        },
+        {
+          "findings": [],
+          "items": "none"
+        }
+      ],
+      "good": [
+        {
+          "findings": [],
+          "items": [
+            {
+              "claim": "every page is checked and live",
+              "evidence": "the live site passed its check",
+              "id": "D1",
+              "verdict": "met"
+            }
+          ]
+        },
+        {
+          "findings": [],
+          "items": [],
+          "read": false
         }
       ]
     },
@@ -5435,7 +5499,8 @@
       "checks": [
         "findings_name_where_and_what",
         "has_a_verdict",
-        "picked_a_sample"
+        "picked_a_sample",
+        "reading_is_s30"
       ],
       "hands_to": "Identity only: readings and findings.",
       "holds": "Its readings and its findings.",
