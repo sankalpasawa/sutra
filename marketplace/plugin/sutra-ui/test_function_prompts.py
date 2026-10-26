@@ -286,7 +286,9 @@ class TestTheOwnersChange(Fixture):
         row = self.row("identity", "take")
         self.assertTrue(row["as_shipped"])
         self.assertEqual(row["waits"]["ask"], a["id"])
-        self.assertEqual(row["lead"], "How to judge a request: go, ask or refuse.")
+        # the row's line in the owner's words (PRD M1.7: go, ask or stop); the file's own text, which the owner changes, as it is
+        self.assertEqual(row["lead"], "How to judge a request: go, ask or stop.")
+        self.assertTrue(row["text"].startswith("How to judge a request: go, ask or refuse."), row["text"][:60])
         self.assertIsNone(self.row("identity", "goal")["waits"], "only the file changed waits")
         # Identity put it to the owner, on the board, in its own thread
         asked = [p for p in R.board(REF) if p["thread"] == a["thread"]]
@@ -411,7 +413,7 @@ class TestTheOwnersChange(Fixture):
         asked = [p for p in R.board(REF) if p["thread"] == a["thread"]]
         self.assertEqual(len(asked), 1)
         self.assertEqual(asked[0]["payload"]["objective"], "Change Adaptation's decide instructions to your words? In this version the code "
-                         "makes this choice, so no run reads these words yet: stamp to keep them as your note; Refuse to keep them as they are.")
+                         "makes this choice, so no run reads these words yet: stamp to keep them as your note, or say no to keep them as they are.")
         W.decide_ask(REF, a["id"], True)
         W.run_until_idle(REF, limit=200)
         self.assertEqual(R._own(REF, "adaptation", "decide").read_text(encoding="utf-8"), mine.rstrip("\n") + "\n", "kept as the owner wrote it")

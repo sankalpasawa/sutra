@@ -8,7 +8,7 @@
   "outcomes": [
     { "id": "founded", "expect": "Parasthi Hospital in the tree with its Root, On, and Root's chat open with my words as the first turn",
       "verify": { "kind": "route", "get": "/api/native/depts", "check": "a department named 'Parasthi Hospital Root' with kind root and stopped false" } },
-    { "id": "root-asks", "expect": "within two minutes Root asks: Set up a department: ... with Stamp and Refuse",
+    { "id": "root-asks", "expect": "within two minutes Root asks: Set up a department: ... with Stamp and Say no",
       "verify": { "kind": "route", "get": "/api/native/{root}/status", "check": "asks[].kind == setup, status pending" } },
     { "id": "child-born", "expect": "after Stamp, Parasthi Hospital Website under Root, On; Root says it made it",
       "verify": { "kind": "route", "get": "/api/native/depts", "check": "a department whose parent is the Root, kind website, stopped false" } },

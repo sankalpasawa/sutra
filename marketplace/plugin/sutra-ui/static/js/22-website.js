@@ -40,6 +40,8 @@ const WB_THREADS = { "submitted": ["", "Sent"], "working": ["", "Working"], "inp
    owner's ruling); the board, the chat turns and Coordination's who-may-post table print these */
 const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "says no", "propose": "proposes", "accept-proposal": "says yes",
                   "reject-proposal": "says no", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
+/* Priority's counter is a proposal on the board, and a function's chat says it as what it is (PRD M1.7) */
+const WB_COUNTER = "asks for less";
 
 function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
@@ -323,7 +325,7 @@ function wbAsksHtml(m){
     : `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
     `<div class="dpaskd">${wbEsc(a.engine)} · ${wbEsc(wbWhen(a.created))}</div>` +
     wbBtn("Stamp", `data-wbdecide="${wbEsc(a.id)}" data-wbok="1"`, "dpstamp") +
-    wbBtn("Refuse", `data-wbdecide="${wbEsc(a.id)}" data-wbok="0"`) + `</div>`).join("");
+    wbBtn("Say no", `data-wbdecide="${wbEsc(a.id)}" data-wbok="0"`) + `</div>`).join("");
 }
 function wbControls(m){
   if (wbRt(m)) return `<div class="wbctl wb">` + wbOnOff(m) + `</div>`;
@@ -730,8 +732,8 @@ function wbDeptChip(ref, name){
 const WB_HELPER = "Root";
 function wbChatTurn(t, scoped){
   const dept = !scoped && t.name ? (t.dept ? wbDeptChip(t.dept, t.name) : wbChip(t.name)) : "";
-  /* a stamp or a refusal carries no words of its own: the act is the line */
-  const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Refused" : wbCap(t.word || ""));
+  /* a stamp or a no carries no words of its own: the act is the line, in the owner's words (said no, never refused) */
+  const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Said no" : wbCap(t.word || ""));
   if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">${dept}You</div><div class="u md">${wbEsc(line)}</div></div>`;
   /* a turn that carries a way to the thing (the site that went live) shows it as the one button a person clicks
      (found live 2026-09-28: after the publish stamp the chat said nothing, and the person did not know it was live);
@@ -797,8 +799,10 @@ function wbOptionsHtml(a, ref, named){
     wbBtn(busy ? "Applying..." : "Send", attrs(words), "dpstamp") + `<span class="dpchk">${wbEsc(words.cost)}</span></div>` : "";
   const rows = (a.options || []).filter(o => o.id !== "words").map(o => `<div class="wboptrow">` +
     wbBtn(busy ? "Applying..." : o.label, attrs(o)) + `<span class="dpchk">${wbEsc(o.cost)}</span></div>`).join("");
-  return `<div class="dpask hard wbq wbopt wb"><div class="dpk">Identity asks${whose}</div><div class="dpasks">${head}</div>` +
-    kv("Who", a.who) + kv("Why", a.why || a.text) + kv("If nothing is done", a.if_nothing) + box + rows + `</div>`;
+  /* what Identity said is the card's own line, under its title: the chat leaves that line to the card (M0.6) */
+  const said = a.title && a.text && a.text !== a.title ? `<div class="dpaskd">${wbEsc(a.text)}</div>` : "";
+  return `<div class="dpask hard wbq wbopt wb"><div class="dpk">Identity asks${whose}</div><div class="dpasks">${head}</div>` + said +
+    kv("Who", a.who) + kv("Why", a.why) + kv("If nothing is done", a.if_nothing) + box + rows + `</div>`;
 }
 async function wbChoose(ref, id, at, oid){
   const st = wbS(), k = at + ":o:" + id, body = { option: oid };
@@ -847,7 +851,7 @@ function wbChatAsksHtml(c){
   return dpCard("Waiting for you", asks.map(a => `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
     `<div class="dpaskd">${wbEsc([a.dept, a.engine].filter(Boolean).join(" · "))} · ${wbEsc(wbWhen(a.created))}</div>` +
     wbBtn("Stamp", `data-wbdecide="${wbEsc(a.id)}" data-wbok="1" data-wbref="${wbEsc(a.ref || "")}"`, "dpstamp") +
-    wbBtn("Refuse", `data-wbdecide="${wbEsc(a.id)}" data-wbok="0" data-wbref="${wbEsc(a.ref || "")}"`) + `</div>`).join(""));
+    wbBtn("Say no", `data-wbdecide="${wbEsc(a.id)}" data-wbok="0" data-wbref="${wbEsc(a.ref || "")}"`) + `</div>`).join(""));
 }
 function wbChatBoxHtml(n, m){
   const st = wbS(), k = n.ref + ":ask";
@@ -940,10 +944,12 @@ async function wbLoadFnChat(ref, fn, again){
 }
 function wbFnTurn(t){
   if (t.think) return `<div class="o2quiet dpq wbthink">${wbEsc(t.line)} · ${wbEsc(wbWhen(t.at))}</div>`;
-  const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Refused" : wbCap(t.word || ""));
+  /* an act with no words of its own is said in the owner's words: the owner stamps; a function says yes or says no */
+  const line = t.line || (t.msg_type === "accept-proposal" ? (t.src === "Owner" ? "Stamped" : "Said yes")
+                          : t.msg_type === "reject-proposal" ? "Said no" : wbCap(t.word || ""));
   if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">You</div><div class="u md">${wbEsc(line)}</div></div>`;
   return `<div class="turn wbturn"><div class="who who-ai">${wbEsc(t.src)}</div><div class="a">${wbEsc(line)}` +
-    `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
+    `<span class="dpchk">${wbEsc(t.counter ? WB_COUNTER : (WB_ACTS[t.msg_type] || t.msg_type))} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
 function wbFnChatHtml(ref, fn, label){
   if (!wbIs(ref)) return null;
@@ -1072,14 +1078,18 @@ function wbReadersOf(m, mk, name){
    status and last move, and its version 1 scope. A field the record leaves
    empty is one quiet line, "not set yet". Read from functions_view.function;
    the first tab keeps its name. */
-/* a function's page paints again when its node (its word too: a department switched off says stopped), a journey's
-   status or last move and its minute, or a step's rung moved (M1.9) */
+/* a function's page paints again when anything it shows moved (M1.9; round 3, gap 5): its node (its word too: a
+   department switched off says stopped), the template it runs and each field's value as the page draws it (the Limit
+   as its bar, its share to a fiftieth as wbFvSig keeps a spend, so a bar that moves paints and a hair's move does
+   not), a step's name, group, who runs it and its rung, or a journey's status, last move and its minute */
 function wbFnPageSig(v){
   if (!v || v.failed) return "failed";
-  const n = v.node || {};
-  return JSON.stringify([n.state, n.word, n.waits_on, n.line, n.why,
-    (v.journeys || []).map(j => [j.id, j.status, j.last && j.last.summary, j.last && String(j.last.at || "").slice(0, 16)]),
-    (v.recipe || []).map(r => [r.id, r.rung]), (v.fields || []).map(f => [f.key, f.placeholder]), wbIdSig(v.j2)]);
+  const n = v.node || {}, share = x => Math.round((Number(x) || 0) * 50);
+  const value = f => f.key === "envelope" ? share((f.value || {}).share) : f.value;
+  return JSON.stringify([n.state, n.word, n.waits_on, n.line, n.why, (v.template || {}).name, v.line, v.holds, v.hands_to, v.keeps, v.v1,
+    (v.journeys || []).map(j => [j.id, j.name, j.status, j.last && j.last.summary, j.last && String(j.last.at || "").slice(0, 16)]),
+    (v.recipe || []).map(r => [r.id, r.name, r.under, r.by, r.rung, r.rung_name]),
+    (v.fields || []).map(f => [f.key, f.label, f.placeholder, value(f)]), wbIdSig(v.j2)]);
 }
 /* Identity's pane paints again when its record moves: a point of the standard, an item, a rule, its question, a ruling */
 function wbIdSig(j){
@@ -1317,6 +1327,14 @@ function wbSettingsHtml(ref, fn){
     wbStartHtml(v) +
     ((v.hears || []).length ? dpCard("Hears", `<div class="wbstep">${v.hears.map(h => wbChip(h)).join("")}</div>`) : "") +
     wbTableHtml(v);
+}
+/* 20-dept.js asks this before it draws a function's pane: on the engine runtime the pane is the function's page and
+   its own state, read from the runtime record, and the registry's cards are not drawn under it (PRD M1.7) */
+function wbFnRuntime(ref){
+  if (!wbIs(ref)) return false;
+  const m = wbS().map[ref];
+  if (!m){ wbLoadMap(ref); return false; }
+  return wbRt(m);
 }
 /* 20-dept.js asks this for every function card: null for a department that is
    not on the engine runtime, so its card keeps the tabs it had. */

@@ -14,7 +14,7 @@
     { "id": "two-asks-at-once", "where": "Root's chat", "do": "say two tasks back to back before the first finishes: Add a page on recipes. / Add a page on our founders.",
       "expect": "both run, one after the other; the site gains both pages; no request is lost",
       "verify": { "kind": "site", "get": "/api/native/{child}/site/{recipes,founders}.html", "check": "both 200" } },
-    { "id": "rule-then-refuse", "where": "Root's chat", "do": "say a rule; Refuse it",
+    { "id": "rule-then-refuse", "where": "Root's chat", "do": "say a rule; Say no to it",
       "expect": "refused: no rule kept; the next live version unchanged", "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "rules[] unchanged" } },
     { "id": "idea", "where": "the department's chat", "do": "say: What if we let customers build their own oil box?",
       "expect": "the idea is shaped and parked, nothing built", "verify": { "kind": "route", "get": "/api/native/{child}/board", "check": "ideas[] has one parked; Live site unchanged" } },

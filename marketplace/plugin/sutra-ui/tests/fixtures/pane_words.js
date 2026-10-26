@@ -1,12 +1,15 @@
-// Driver for test_functions_view.py (PRD M1.7, round 2 gap 1): renders a real department's function panes, its Map and
-// All five from the reads the server really gave, and prints what a person sees on each, as one JSON object.
+// Driver for test_functions_view.py (PRD M1.7, round 2 gap 1; round 3): renders a real department's function panes, each
+// on its three tabs (its page, Chat and Settings), its Map, All five, its own chat and the list from the reads the server
+// really gave, and prints what a person sees on each, as one JSON object.
 //
-// The reads come in as a JSON file: {"name": the department's name, "reads": {tail: body}}, where a tail is what follows
-// /api/native/<ref>/ ("map", "functions", "functions/identity", "steps/Identity", "board", "engine/Identity", ...). The
-// panel's own scripts (03-org.js's rail helpers, 19-org2.js, 20-dept.js, 22-website.js, 23-screens.js, 24-functions.js)
-// run in a vm with the same small stand-ins test_website.js uses, and each pane is painted until its reads have landed.
-// The printed text is the visible text at rest (tags dropped) and, apart, the hovers (title and aria-label), so the
-// Python side can scan both. Usage: node pane_words.js <reads.json>
+// The reads come in as a JSON file: {"name": the department's name, "reads": {tail: body}, "dept": {tail: body}}, where a
+// tail is what follows /api/native/<ref>/ ("map", "functions", "functions/identity", "steps/Identity", "board",
+// "chat", "chat?fn=identity", "engine/Identity", ...) or, under "dept", what follows /api/dept/<ref>/ (the registry's
+// reads the older cards drew from: "identity", "adaptation", "priority", "functions", "engines", ...). The panel's own
+// scripts (03-org.js's rail helpers, 19-org2.js, 20-dept.js, 22-website.js, 23-screens.js, 24-functions.js) run in a vm
+// with the same small stand-ins test_website.js uses, and each pane is painted until its reads have landed. The printed
+// text is the visible text at rest (tags dropped) and, apart, the hovers (title and aria-label), so the Python side can
+// scan both. Usage: node pane_words.js <reads.json>
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -17,7 +20,7 @@ const read = f => fs.readFileSync(path.join(JS, f), "utf8");
 const orgSrc = read("03-org.js");
 const RB = "/* rail-helpers:begin */", RE = "/* rail-helpers:end */";
 const input = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-const reads = input.reads || {};
+const reads = input.reads || {}, dept = input.dept || {};
 
 const TREE = [
   { ref: "r0", path: "D0", name: "Sutra", parent_ref: null, status: "active", ts_minted_ms: 1, node_kind: "root" },
@@ -40,7 +43,12 @@ const ctx = {
       if (Object.prototype.hasOwnProperty.call(reads, tail)) return Promise.resolve(copy(reads[tail]));
       if (/^engine\//.test(tail)) return Promise.resolve({ runs: [] });
     }
-    if (/^\/api\/dept\//.test(p)) return Promise.resolve({});
+    /* the registry's reads, as the server gave them, so a card drawn from them shows what they say */
+    const r = /^\/api\/dept\/[\w-]+\/(.+)$/.exec(p);
+    if (r){
+      const tail = decodeURIComponent(r[1]);
+      return Promise.resolve(Object.prototype.hasOwnProperty.call(dept, tail) ? copy(dept[tail]) : {});
+    }
     return new Promise(() => {});
   },
   apiPost: () => Promise.resolve({}),
@@ -89,9 +97,15 @@ const hover = h => (h.match(/ (?:title|aria-label)="[^"]*"|<title>[\s\S]*?<\/tit
   const out = {};
   click({ wbtab: "map" }); out.map = await paint();
   click({ wbtab: "five" }); out.five = await paint();
+  /* each function's pane on its three tabs: its page, its Chat (read from the record) and its Settings */
   for (const fn of ["identity", "adaptation", "priority", "coordination", "audit"]){
     click({ dptab: fn }); out[fn] = await paint();
+    click({ dppane: "chat" }); out[fn + ":chat"] = await paint();
+    click({ dppane: "settings" }); out[fn + ":settings"] = await paint();
+    click({ dppane: fn });
   }
+  /* the owner's own chat with the department */
+  click({ wbtab: "chat" }); out.chat = await paint();
   out.list = ctx.dpListHtml(WEB, {}, null, null);
   const shown = {};
   Object.keys(out).forEach(k => { shown[k] = { rest: rest(out[k]), hover: hover(out[k]) }; });

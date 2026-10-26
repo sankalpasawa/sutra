@@ -67,7 +67,7 @@
    "ceiling": "C2",
    "prompt": "setup_shape",
    "draft": "setup_shape_draft",
-   "by_hand": "Sutra could not decide the department by itself. Stamp to set it up from your words with the defaults, or refuse and say it again.",
+   "by_hand": "Sutra could not decide the department by itself. Stamp to set it up from your words with the defaults, or say no and say it again.",
    "out": {
     "name": "str",
     "kind": "str",

@@ -57,6 +57,9 @@ import website_dept as W
 
 RUNGS = ("P", "C0", "C1", "C2")
 RUNG_NAME = {"P": "Person", "C0": "Improvised call", "C1": "Checklist", "C2": "Code"}
+# a gate's verdict as a function's chat and the board say it: the words of its journey row (functions_view), never the
+# verdict's own admit, wait or refuse (PRD M1.7; the owner's ruling on the screen's words)
+GATE_SAYS = {"admit": "let through", "wait": "waiting", "refuse": "stopped"}
 NATURES = ("transform", "check", "decide", "make")
 BELOW = {"C2": "C1", "C1": "C0", "C0": "P"}
 ABOVE = {"P": "C0", "C0": "C1", "C1": "C2"}
@@ -1808,7 +1811,7 @@ def identity_wait_engine(ctx, step, item):
             W._write(W.ddir(ref) / "asks.json", rows)
         _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
               {"word": "waits", "engine": a.get("engine"),
-               "done": "The line waits for your stamp on %s: nothing is built until the engine your words need is in place, or you refuse it."
+               "done": "The line waits for your stamp on %s: nothing is built until the engine your words need is in place, or you say no to it."
                % a.get("engine")})
     return "wait", "waits for the stamp on %s" % a.get("engine")
 
@@ -2238,6 +2241,15 @@ def _tell(ref, d, p, msg_type, payload, thread=None, about=None):
     return row
 
 
+def _answers(yes, no, lead=None):
+    """How an ask Identity puts to the owner says its two answers, in the words of the ask's two buttons, Stamp and Say
+    no (the owner's ruling: said yes and said no, never refuse; PRD M1.7): 'Stamp to <yes>, or say no <no>.', where no
+    goes on from 'say no' ('to leave them out', 'and say what to change'). A lead goes first, and the answers follow it
+    in lower case. An ask whose text names its answers names them through here, so the text and the buttons agree."""
+    said = "%s to %s, or say no %s." % ("stamp" if lead else "Stamp", yes, no)
+    return lead + said if lead else said
+
+
 def tell_switch(ref, d, stopped):
     """Stop and Start are the person's own acts on the department: a turn of the chat, on Root's too, so a person who
     comes back reads what they did (found live 2026-09-28: the chat said nothing of a stop and still said 'is working')."""
@@ -2563,8 +2575,8 @@ def identity_file(ctx, step, item):
         # address came back as "This reaches outside the site"); an ask that needs something no engine has says what a
         # stamp does here: the department gets an engine for it (found live 2026-09-29: the email wording on a search)
         reach = _reaches(words, why)
-        lead = "Your words reach outside the site%s. Put them on the site as said? Stamp to go ahead, Refuse to leave them out." % (
-            (": " + reach) if reach else "")
+        lead = "Your words reach outside the site%s. Put them on the site as said? %s" % (
+            (": " + reach) if reach else "", _answers("go ahead", "to leave them out"))
         W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "request", "engine": "Identity", "slot": ctx["slot"],
                          "text": lead + " " + words, "why": why, "words": words, "needs": [], "status": "pending",
                          "created": W.now(), "thread": p["thread"]})
@@ -2573,7 +2585,7 @@ def identity_file(ctx, step, item):
                                      "why": why}, thread=p["thread"])
         return {"said": "put the owner's words back to the owner: " + (why or words)}
     _tell(ref, d, p, "refuse", {"word": "request", "why": why or "it breaks a rule"}, thread=p["thread"])
-    return {"said": "refused: " + (why or words)}
+    return {"said": "said no: " + (why or words)}
 
 
 # ---- the front door: the person speaks with Root (founder, 2026-09-28) ----------------------------------------------
@@ -2680,9 +2692,9 @@ def identity_hand(ctx, step, item):
             if a:
                 W.decide_ask(tref, a["id"], wants == "stamp")
                 dn = (W.dept(tref) or {}).get("name")
-                post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "%s: %s" % ("stamped" if wants == "stamp" else "refused", a["text"]),
+                post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "%s: %s" % ("stamped" if wants == "stamp" else "said no", a["text"]),
                                                         "dept": tref, "from": dn}, thread=th, about={"dept": tref, "name": dn})
-                return {"said": "%s the ask on %s" % ("stamped" if wants == "stamp" else "refused", dn)}
+                return {"said": "%s the ask on %s" % ("stamped" if wants == "stamp" else "said no to", dn)}
         # nothing to stamp, and Identity's question is open: the person hears the question again, and that it takes words
         qref, q = next(((k, q) for k, q in ((k, _question_of(k)) for k in kids) if q), (None, None))
         if q:
@@ -2794,15 +2806,16 @@ def fn_chat_view(ref, fn):
         of_chain = OWNER in p["dst"] and pl.get("chain") in chains
         if not own and not in_thread and not of_chain:
             continue
+        # Priority's counter is a proposal on the board; the chat says it as what it is, an ask for less (PRD M1.7)
         turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
                       "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""), "think": False,
-                      "_k": (str(p["at"]), p["n"], 0)})
+                      "counter": bool(pl.get("counter")), "_k": (str(p["at"]), p["n"], 0)})
     for r in step_rows(ref):
         if r.get("engine") != name:
             continue
         sname = (step_def(str(r.get("step")))[1] or {}).get("name") or str(r.get("step"))
         if r.get("mode") == "gate":
-            line = "%s: %s" % (sname, r.get("answer") or "")
+            line = "%s: %s" % (sname, GATE_SAYS.get(str(r.get("answer")), r.get("answer") or ""))
         else:
             line = "%s, %s" % (sname, RUNG_NAME.get(str(r.get("rung")), str(r.get("rung") or "")).lower())
         at = r.get("ended") or r.get("started") or r.get("at") or ""
@@ -2939,7 +2952,7 @@ def identity_apply(ctx, step, item):
         if bad:
             _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
                   {"word": "line", "done": "The line could not be set up: %s. Say the words again and I will shape it afresh." % "; ".join(bad)})
-            return {"said": "refused the line: " + "; ".join(bad)}
+            return {"said": "could not set up the line: " + "; ".join(bad)}
         added, faults = [], []
         for e in engines:
             try:
@@ -3026,9 +3039,9 @@ def identity_drop(ctx, step, item):
         if J:
             J._set(ref, step=4, state="blocked")
         _blocked(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER},
-                 "The plan is dropped on your refusal. Say what the department should do and I will have it shaped afresh.",
+                 "The plan is dropped because you said no. Say what the department should do and I will have it shaped afresh.",
                  "The plan is dropped.", "You, on the plan Identity put to you", "you said no to the plan")
-        return {"said": "dropped the plan on the owner's refusal"}
+        return {"said": "dropped the plan because the owner said no"}
     if a and a.get("kind") in ("rule", "done_items") and a.get("answers"):
         # the owner refused the rule that answered Identity's question (M3.4): the question is asked again, never dropped
         J = _j2()
@@ -3041,7 +3054,7 @@ def identity_drop(ctx, step, item):
         e.update({"trial": None, "pending": None})
         _save_entry(ref, e)
         post(ref, "Identity", "Adaptation", "inform", {"word": "rung", "step": a["step"], "to": a["to"], "stamped": False})
-    return {"said": "took the owner's refusal" + (": " + a["text"] if a else "")}
+    return {"said": "took the owner's no" + (": " + a["text"] if a else "")}
 
 
 def _finding_lines(ref, findings, claim):
@@ -3162,17 +3175,17 @@ def priority_post(ctx, step, item):
                 row = post(ctx["ref"], "Priority", "Adaptation", "propose",
                            {"word": "line", "counter": True, "keep": keep, "why": why or "the envelope has room for %d of them" % len(keep)},
                            thread=ctx["post"]["thread"])
-                return {"said": "countered the line: keep " + " -> ".join(keep) if row else "the bargain reached its bound"}
+                return {"said": "asked for less on the line: keep " + " -> ".join(keep) if row else "the bargain reached its bound"}
             answer = "reject" if not keep else "accept"
         ok = answer == "accept"
         row = post(ctx["ref"], "Priority", "Adaptation", "accept-proposal" if ok else "reject-proposal",
                    {"word": "line", "why": why or ("the envelope has room" if ok else "the envelope has no room")}, thread=ctx["post"]["thread"])
-        return {"said": ("granted" if ok else "refused") + " the line " + " -> ".join(names) if row else "the bargain reached its bound"}
+        return {"said": ("said yes to" if ok else "said no to") + " the line " + " -> ".join(names) if row else "the bargain reached its bound"}
     ok = got.get("answer") == "accept"
     post(ctx["ref"], "Priority", "Adaptation", "accept-proposal" if ok else "reject-proposal",
          {"word": pl.get("word"), "step": pl.get("step"), "to": pl.get("to"), "form": pl.get("form"), "why": got.get("why")},
          thread=ctx["post"]["thread"])
-    return {"said": ("granted" if ok else "refused") + " a trial of " + str(pl.get("step"))}
+    return {"said": ("said yes to" if ok else "said no to") + " a trial of " + str(pl.get("step"))}
 
 
 def adapt_sense(ctx, step, item):
@@ -3285,10 +3298,10 @@ def adapt_notrial(ctx, step, item):
     pl = ctx["post"]["payload"]
     eng, s = step_def(pl["step"])
     e = entry(ctx["ref"], s, eng)
-    e["history"].append({"at": W.now(), "from": e["rung"], "to": e["rung"], "by": "Priority refused the trial", "evidence": None})
+    e["history"].append({"at": W.now(), "from": e["rung"], "to": e["rung"], "by": "Priority said no to the trial", "evidence": None})
     e.update({"pending": None, "trial": None})
     _save_entry(ctx["ref"], e)
-    return {"said": "dropped a trial of “%s”: Priority refused it" % s["name"]}
+    return {"said": "dropped a trial of “%s”: Priority said no to it" % s["name"]}
 
 
 def adapt_heard(ctx, step, item):
@@ -3890,11 +3903,11 @@ def adapt_priced(ctx, step, item):
         # (found live 2026-09-29: the refusal stayed on the board and the ideas row)
         try:
             _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
-                  {"word": "idea", "done": "Priority refused the engine %s: %s. The idea stays parked; raise Priority's limit on its card and say the idea again to have it priced again."
+                  {"word": "idea", "done": "Priority said no to the engine %s: %s. The idea stays parked; raise Priority's limit on its card and say the idea again to have it priced again."
                    % (offer.get("engine"), why[:1].lower() + why[1:])})
         except Exception:  # noqa: BLE001 -- the refusal is on the record whether or not the word reached the person
             pass
-        return {"said": "Priority refused %s: %s; the idea stays parked, and the owner is told" % (offer.get("engine"), why)}
+        return {"said": "Priority said no to %s: %s; the idea stays parked, and the owner is told" % (offer.get("engine"), why)}
     post(ref, "Adaptation", "Identity", "propose", {"word": "engine", "engine": offer.get("engine"), "offer": offer.get("offer"),
                                                    "idea": offer.get("idea"), "for": offer.get("for"), "why": "the idea asks for it; Priority has room"})
     return {"said": "put the engine %s to Identity for the owner" % offer.get("engine")}
@@ -3906,8 +3919,9 @@ def identity_engine(ctx, step, item):
     pl = p["payload"]
     offer, name = pl.get("offer") or {}, str(pl.get("engine") or "")
     does = str(offer.get("does") or (offer.get("shape") or {}).get("does") or offer.get("use_case") or "").strip().rstrip(".")
-    text = "Add the engine %s to %s?%s Stamp to add it, Refuse to leave the idea parked." % (
-        name, ctx["dept"].get("name"), (" What it does: " + does[:1].lower() + does[1:] + ".") if does else "")
+    text = "Add the engine %s to %s?%s %s" % (
+        name, ctx["dept"].get("name"), (" What it does: " + does[:1].lower() + does[1:] + ".") if does else "",
+        _answers("add it", "to leave the idea parked"))
     W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "engine", "engine": name, "offer": offer, "idea": pl.get("idea"),
                      "text": text, "status": "pending", "created": W.now(), "thread": p["thread"]})
     post(ref, "Identity", OWNER, "request", {"word": "engine", "objective": text, "output": "a stamp or a refusal", "may_read": [],
@@ -3943,7 +3957,7 @@ def identity_line(ctx, step, item):
     engines = [e for e in (pl.get("engines") or []) if isinstance(e, dict) and e.get("name")]
     names = " -> ".join(e["name"] for e in engines)
     what = "; ".join("%s %s" % (e["name"], str(e.get("does") or "").rstrip(".")) for e in engines)
-    text = "Set up the line %s? %s. Stamp to add them and start, Refuse to say what to change." % (names, what)
+    text = "Set up the line %s? %s. %s" % (names, what, _answers("add them and start", "and say what to change"))
     W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "line", "engine": "Adaptation", "engines": engines, "words": pl.get("words"),
                      "text": text, "status": "pending", "created": W.now(), "thread": p["thread"]})
     post(ref, "Identity", OWNER, "request", {"word": "line", "objective": text, "output": "a stamp or a refusal", "may_read": ["Brief"],
@@ -4285,6 +4299,11 @@ def _root_check(ref, d, engines, source):
     return [n for _, n in _root_run(engines, source)[1]]
 
 
+#: who said yes to a plan that passes Root's check, as Identity tells the owner it is set: the `by` of _j2_settle, in the
+#: owner's words (Priority said yes, Identity ruled, or the owner stamped it; never 'granted')
+SETTLED_BY = {"Priority's yes": "Priority said yes to it", "Identity's ruling": "I ruled it runs", "the owner's stamp": "You said yes to it"}
+
+
 def _j2_settle(ref, d, engines, source, words, by):
     """A granted workflow goes to Root's check. Passed: it is registered on the department's record and its engines may
     run; the owner hears what was made. Refused: the reasons go back to Adaptation, twice at most; then the owner is told."""
@@ -4302,11 +4321,11 @@ def _j2_settle(ref, d, engines, source, words, by):
         n = J.refused(ref, engines, faults, checks=checks) if J else 1
         if n <= (J.REPAIRS if J else 2):
             _line_request(ref, d, words, faults=faults)
-            _tell(ref, d, who, "inform", {"word": "line", "done": "Root's check refused the plan (%s). Adaptation is reshaping it." % "; ".join(faults)})
-            return {"said": "Root's check refused the workflow: %s; it goes back to Adaptation" % "; ".join(faults)}
-        _blocked(ref, d, who, "Root's check refused the plan %d times: %s. Say what to change and I will have it shaped afresh."
+            _tell(ref, d, who, "inform", {"word": "line", "done": "Root's check sent the plan back (%s). Adaptation is reshaping it." % "; ".join(faults)})
+            return {"said": "Root's check sent the workflow back to Adaptation: %s" % "; ".join(faults)}
+        _blocked(ref, d, who, "Root's check sent the plan back %d times: %s. Say what to change and I will have it shaped afresh."
                  % (n, "; ".join(faults)), "The plan could not be approved.", "Root, at its review", "; ".join(faults))
-        return {"said": "Root's check refused the workflow %d times; the owner is told" % n}
+        return {"said": "Root's check sent the workflow back %d times; the owner is told" % n}
     added, lost = [], []
     if source == "library":
         added = names
@@ -4330,9 +4349,9 @@ def _j2_settle(ref, d, engines, source, words, by):
     if J:
         J.registered(ref, added, source, checks=checks)
     _tell(ref, d, who, "inform", {"word": "line", "engines": added,
-                                  "done": "The plan is set: %s (%s). Priority granted it and it passed Root's check; the first starts now.%s"
+                                  "done": "The plan is set: %s (%s). %s and it passed Root's check; the first starts now.%s"
                                   % (" -> ".join(added), "from the Library" if source == "library" else "shaped for this goal",
-                                     (" Not added: " + "; ".join(lost)) if lost else "")})
+                                     SETTLED_BY.get(by, "It was agreed"), (" Not added: " + "; ".join(lost)) if lost else "")})
     W.signal()
     return {"said": "registered the workflow %s, %s" % (" -> ".join(added), by)}
 
@@ -4446,24 +4465,24 @@ def _j2_shape_failed(ref, d, p, note):
 
 
 def adapt_line_granted(ctx, step, item):
-    """Priority granted the line: it goes to Root's check, and from there onto the record (step 5)."""
+    """Priority said yes to the line: it goes to Root's check, and from there onto the record (step 5)."""
     ref, p = ctx["ref"], ctx["post"]
     offer = _line_proposal(ref, p["thread"])
     if not offer:
         return {"said": "heard Priority on a line nobody proposed"}
-    return _j2_settle(ref, ctx["dept"], offer.get("engines") or [], offer.get("source") or "shaped", offer.get("words"), "Priority's grant")
+    return _j2_settle(ref, ctx["dept"], offer.get("engines") or [], offer.get("source") or "shaped", offer.get("words"), "Priority's yes")
 
 
 def adapt_line_refused(ctx, step, item):
-    """Priority refused the line: Adaptation does not drop it in silence; Identity closes the conflict (step 4)."""
+    """Priority said no to the line: Adaptation does not drop it in silence; Identity closes the conflict (step 4)."""
     ref, p = ctx["ref"], ctx["post"]
     why = str((p.get("payload") or {}).get("why") or "no room in the envelope").strip().rstrip(".")
-    _line_conflict(ref, p["thread"], "Priority refused the plan: %s" % why)
-    return {"said": "Priority refused the line (%s); the conflict goes to Identity" % why}
+    _line_conflict(ref, p["thread"], "Priority said no to the plan: %s" % why)
+    return {"said": "Priority said no to the line (%s); the conflict goes to Identity" % why}
 
 
 def adapt_line_counter(ctx, step, item):
-    """Priority countered: Adaptation takes the counter when it leaves a line that still works, and proposes that line
+    """Priority asked for less: Adaptation takes that when it leaves a line that still works, and proposes that line
     again in the same thread; what it cannot take goes to Identity. The thread's own bound ends a bargain that will not close."""
     ref, p = ctx["ref"], ctx["post"]
     pl = p.get("payload") or {}
@@ -4472,15 +4491,15 @@ def adapt_line_counter(ctx, step, item):
     engines = [e for e in offer.get("engines") or [] if e.get("name") in keep]
     why = str(pl.get("why") or "the envelope has no room for all of it").strip().rstrip(".")
     if not engines or len(engines) == len(offer.get("engines") or []) or _root_check(ref, ctx["dept"], engines, offer.get("source") or "shaped"):
-        _line_conflict(ref, p["thread"], "Priority countered (%s) and the line does not work that way" % why)
-        return {"said": "could not take Priority's counter; the conflict goes to Identity"}
+        _line_conflict(ref, p["thread"], "Priority asked for less (%s) and the line does not work that way" % why)
+        return {"said": "could not take Priority's ask for less; the conflict goes to Identity"}
     row = post(ref, "Adaptation", "Priority", "propose", {"word": "line", "engines": engines, "source": offer.get("source"),
                                                          "words": offer.get("words"), "for": offer.get("for"),
-                                                         "why": "took Priority's counter: " + why}, thread=p["thread"])
+                                                         "why": "took Priority's ask for less: " + why}, thread=p["thread"])
     if row is None:
         _line_conflict(ref, p["thread"], "the bargain reached its bound", bound="hops", src="Coordination")
         return {"said": "the bargain reached its bound; it goes to Identity"}
-    return {"said": "took Priority's counter and proposed again: " + " -> ".join(e["name"] for e in engines)}
+    return {"said": "took Priority's ask for less and proposed again: " + " -> ".join(e["name"] for e in engines)}
 
 
 def p_identity_close(ctx, step, item):
@@ -4511,15 +4530,15 @@ def identity_closed(ctx, step, item):
     if J:
         J.ruled(ref, ruling, why, engines)
     if ruling == "run":
-        _tell(ref, d, who, "inform", {"word": "line", "done": "Priority did not grant the plan %s; I ruled it runs: %s." % (names, why)})
+        _tell(ref, d, who, "inform", {"word": "line", "done": "Priority did not say yes to the plan %s; I ruled it runs: %s." % (names, why)})
         return _j2_settle(ref, d, engines, pl.get("source") or "shaped", pl.get("words"), "Identity's ruling")
     if ruling == "drop":
         _blocked(ref, d, who, "The plan %s is dropped: %s. Say what to change, or raise Priority's limit on its card."
                  % (names, why or str(pl.get("why") or "")), "The plan is dropped.", "Identity, settling Priority's no",
                  why or str(pl.get("why") or ""))
-        return {"said": "dropped the plan: " + (why or "Priority's refusal stands")}
-    text = ("Adaptation proposes the plan %s. %s. The goal and the rules do not settle it. Stamp to run it as proposed, Refuse to drop it."
-            % (names, str(pl.get("why") or "Priority did not grant it").rstrip(".")))
+        return {"said": "dropped the plan: " + (why or "Priority's no stands")}
+    text = ("Adaptation proposes the plan %s. %s. The goal and the rules do not settle it. %s"
+            % (names, str(pl.get("why") or "Priority did not say yes to it").rstrip("."), _answers("run it as proposed", "to drop it")))
     if not any(a.get("kind") == "conflict" and a.get("for") == pl.get("for") for a in W.asks(ref)):
         p = post(ref, "Identity", OWNER, "request", {"word": "conflict", "objective": text, "output": "a stamp or a refusal", "may_read": ["Brief"],
                                                      "boundaries": "this one plan"})
@@ -4742,10 +4761,10 @@ def instructions_ask(ref, fn, file, text):
         if text == _instruction(fn, file, ref):
             raise ValueError("these are the words %s's %s holds now" % (fn.title(), file))
         line = "Change %s's %s instructions to your words" % (fn.title(), file)
-        use = ("Stamp to use them from the next run; " if _read_by_a_run(fn, file) else
-               "In this version the code makes this choice, so no run reads these words yet: stamp to keep them as your note; ")
-        p = post(ref, "Identity", OWNER, "request", {"word": "instructions", "objective": line + "? " + use +
-                                                     "Refuse to keep them as they are.", "output": "a stamp or a refusal",
+        use = (_answers("use them from the next run", "to keep them as they are") if _read_by_a_run(fn, file) else
+               _answers("keep them as your note", "to keep them as they are",
+                        lead="In this version the code makes this choice, so no run reads these words yet: "))
+        p = post(ref, "Identity", OWNER, "request", {"word": "instructions", "objective": line + "? " + use, "output": "a stamp or a refusal",
                                                      "may_read": [], "boundaries": "this one file"})
         return W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "instructions", "engine": fn.title(), "fn": fn, "file": file,
                                 "words": text, "text": line, "status": "pending", "created": W.now(), "thread": p["thread"] if p else None})
@@ -5275,7 +5294,9 @@ def c_answer_has_its_price(ctx, step, item, out):
         notes.append("the answer names no price: nothing says what it costs against the room left")
     if out.get("answer") == "counter" and not [k for k in out.get("keep") or [] if str(k).strip()]:
         notes.append("an ask for less names nothing to keep")
-    return {"ok": not notes, "notes": notes or ["%s, with its price: %s" % (out["answer"], str(out["why"]).strip())]}
+    # the note is said on Priority's card, so it names the answer in the owner's words (said yes, asked for less, said no)
+    said = {"accept": "said yes", "reject": "said no", "counter": "asked for less"}.get(out.get("answer"), out.get("answer"))
+    return {"ok": not notes, "notes": notes or ["%s, with its price: %s" % (said, str(out["why"]).strip())]}
 
 
 def c_facts_are_closed(ctx, step, item, out):
@@ -5582,6 +5603,8 @@ def _line(p):
     """What a post said, in words. A post that carries only an id or a topic said nothing more than its act, and the
     screen shows the act: an id or a bare topic word is never printed as if it were speech."""
     pl = p.get("payload") or {}
+    if pl.get("word") == "verdict" and pl.get("answer") in GATE_SAYS and not pl.get("why"):
+        return "The verdict: " + GATE_SAYS[pl["answer"]]      # a gate's verdict in the owner's words, never admit or refuse
     for k in ("words", "objective", "claim", "done", "reflected", "line", "what", "why", "cost", "answer"):
         if pl.get(k):
             # the person's own words are shown whole; a function's line is cut short (found live 2026-09-28: a

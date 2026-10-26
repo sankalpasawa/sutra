@@ -415,7 +415,8 @@ test("W5: with a goal the Map shows the department, System status, Ask, Health a
   ["The department", "System status", "Ask", "Health", "Recent"].forEach(h => assert.ok(html.indexOf("<h3>" + h + "</h3>") >= 0, h));
   ["Identity", "Adaptation", "Priority", "Coordination", "Audit"].forEach(s => assert.ok(html.indexOf('data-wbfn="' + s.toLowerCase() + '"') >= 0, s));
   assert.strictEqual((html.match(/class="wbflow"/g) || []).length, 2, "two engines to a row");
-  assert.ok(/data-wbdecide="a-1" data-wbok="1">Stamp</.test(html) && /data-wbdecide="a-1" data-wbok="0">Refuse</.test(html));
+  assert.ok(/data-wbdecide="a-1" data-wbok="1">Stamp</.test(html) && /data-wbdecide="a-1" data-wbok="0">Say no</.test(html), "the ask's two answers, in the owner's words: Stamp and Say no");
+  assert.ok(!/>Refuse</.test(html), "never Refuse (the owner's ruling on the screen's words)");
   assert.ok(/data-wbstop="1">Stop</.test(html));
   assert.ok(/data-wbmotor="1"/.test(html), "the motor's dot is on the map");
   const stopped = await opened({ map: mapOf({ stopped: true }) });
@@ -1102,6 +1103,21 @@ test("W34: a function's chat is its existing turns and thinking from the record,
   html = old.dpViewerHtml(WEB, {}, null, null);
   assert.ok(/Start the chat with Identity/.test(html), "a department of the first build keeps the chat it had");
   assert.deepStrictEqual(readsOf(old, /\/chat\?fn=/), [], "and reads no function chat");
+});
+
+test("W34b (PRD M1.7, round 3): an act with no words of its own is said in the owner's words, on a function's chat and the owner's", async () => {
+  const c = await opened({ map: rtMap() });
+  const at = "2026-10-23T10:00:00+05:30";
+  const fn = t => c.wbFnTurn(Object.assign({ src: "Priority", dst: ["Adaptation"], at, think: false, line: "" }, t));
+  const all = [];
+  const seen = (html, re, why) => { all.push(html); assert.ok(re.test(html), why + ": " + html); };
+  seen(fn({ msg_type: "reject-proposal" }), /<div class="a">Said no<span class="dpchk">says no · /, "a function's no");
+  seen(fn({ msg_type: "accept-proposal" }), /<div class="a">Said yes<span class="dpchk">says yes · /, "a function's yes");
+  seen(fn({ src: "Owner", dst: ["Identity"], msg_type: "accept-proposal" }), /<div class="u md">Stamped<\/div>/, "the owner stamps");
+  seen(fn({ msg_type: "propose", counter: true, line: "the envelope has room for one" }),
+       /the envelope has room for one<span class="dpchk">asks for less · /, "Priority's counter is an ask for less");
+  seen(c.wbChatTurn({ src: "Owner", dst: ["Identity"], msg_type: "reject-proposal", at, line: "" }, true), /<div class="u md">Said no<\/div>/, "the owner's no");
+  assert.ok(!/refus|grant|counter/i.test(all.join(" ").replace(/class="[^"]*"/g, "")), "never refused, granted or countered");
 });
 
 test("W35: a turn that lands slides in once; the working mark breathes; nothing else moves", async () => {
@@ -2070,7 +2086,7 @@ test("W50: a function's chat box says the words go to Identity about that functi
 
 /* ── W49: a blocked plan's card and its ways out (PRD M3.5, screen S10) ── */
 const BLOCKED = { id: "a-b-1", kind: "blocked", engine: "Identity", ref: "r3", dept: DEPT, status: "pending", created: QAT, thread: "x-9",
-                  text: "Root's check refused the plan 3 times: the line reaches outside without a rule. Say what to change and I will have it shaped afresh.",
+                  text: "Root's check sent the plan back 3 times: the line reaches outside without a rule. Say what to change and I will have it shaped afresh.",
                   title: "The plan could not be approved.", who: "Root, at its review", why: "the line reaches outside without a rule",
                   if_nothing: "Nothing runs; the department waits for your words.", chosen: null,
                   options: [{ id: "words", label: "Change the plan in my words", cost: "Adaptation shapes it afresh from what you say; nothing runs before Root's review" },

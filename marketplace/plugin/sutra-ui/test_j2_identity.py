@@ -531,9 +531,9 @@ def test_m3_5_a_blocked_plan_is_an_ask_with_options(j2, monkeypatch):
     assert [o["label"] for o in card["options"]] == ["Change the plan in my words", "Leave D3 out", "Stop here"]
     assert (card["title"], card["who"], card["why"], card["chosen"]) == ("The plan could not be approved.", "Root, at its review", FAULT, None)
     assert card["if_nothing"] and card["thread"]
-    assert any("refused the plan 3 times" in s for s in _said(R, ref))                  # what Identity said is the card's text
+    assert any("sent the plan back 3 times" in s for s in _said(R, ref))                 # what Identity said is the card's text
     turns = [t["line"] for t in R.chat_view(ref)["turns"]]
-    assert not [t for t in turns if "refused the plan 3 times" in t]                   # said once, on its card
+    assert not [t for t in turns if "sent the plan back 3 times" in t]                  # said once, on its card
     assert [a["id"] for a in R.chat_view(ref)["asks"] if a["kind"] == "blocked"] == [card["id"]]
     # a department with one item has nothing to leave out: done-when is never left empty
     assert R._left_out({"done_items": [{"id": "D1", "text": "x"}]}, "") is None
