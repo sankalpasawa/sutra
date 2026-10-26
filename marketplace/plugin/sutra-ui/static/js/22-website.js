@@ -365,11 +365,14 @@ function wbFlowHtml(m){
   };
   const eng = e => `<button type="button" class="wbeng wb" data-wbengine="${wbEsc(e.name)}">${wbDot(wbEngDot(e))}${wbEsc(e.name)}</button>`;
   const arrow = `<span class="wbarrow">&rarr;</span>`;
-  /* two engines to a row, each row opening on the artifact it reads, as drawn */
-  const engs = m.engines || [], rows = [];
+  /* two engines to a row, each row opening on the artifact it reads, as drawn; an engine the registered plan left out
+     is not on the line, and is named under it (PRD M4.2) */
+  const engs = (m.engines || []).filter(e => e.in_line !== false), rows = [];
+  const out = (m.engines || []).filter(e => e.in_line === false).map(e => e.name);
   for (let i = 0; i < engs.length; i += 2) rows.push(engs.slice(i, i + 2));
   return rows.map(r => `<div class="wbflow">` + doc(r[0].reads) +
-    r.map(e => arrow + eng(e) + arrow + doc(e.writes)).join("") + `</div>`).join("");
+    r.map(e => arrow + eng(e) + arrow + doc(e.writes)).join("") + `</div>`).join("") +
+    (out.length ? `<div class="dpchk">Left out of the plan: ${wbEsc(out.join(", "))}</div>` : "");
 }
 function wbGoalHtml(n, m){
   return dpCard("Goal", `<div class="dpbig">${wbEsc(m.name)}</div>` +

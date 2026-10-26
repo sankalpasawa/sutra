@@ -5915,6 +5915,9 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wb2map .fnbar.fn-coordination{fill:var(--fn-coordination)}
 .wb2map .fnbar.fn-audit{fill:var(--fn-audit)}
 .wb2map .n.work.live .bx{fill:var(--ok-bg);stroke:var(--ok);stroke-width:2}
+/* an engine the plan left out (PRD M4.2): under the line, muted, its word beside it */
+.wb2map .n.out .bx{fill:none;stroke:var(--line-soft);stroke-dasharray:3 3}
+.wb2map .n.out text{fill:var(--faint)}
 .wb2map .bdg circle{stroke-width:1.2}
 .wb2map .bdg.ask circle{fill:var(--warn-bg);stroke:var(--warn)}
 .wb2map .bdg.block circle{fill:var(--block-bg);stroke:var(--block)}

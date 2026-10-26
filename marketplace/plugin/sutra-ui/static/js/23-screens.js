@@ -121,7 +121,9 @@ function wb2MapHtml(n, m){
   if (m.kind === "root") return wb2RootHtml(n, m);
   const fv = wbFv(n.ref);
   const W = 960, arts = {}; (m.artifacts || []).forEach(a => { arts[a.name] = a; });
-  const engs = m.engines || [];
+  /* the line of work is the plan's (PRD M4.2): an engine the registered plan left out stays on the record and never
+     runs, so it is not on the line; it sits under it, muted, with the words "left out" (map_view's in_line) */
+  const engs = (m.engines || []).filter(e => e.in_line !== false), out = (m.engines || []).filter(e => e.in_line === false);
   /* the line of work: what the first engine reads, then each engine and what it writes */
   const line = [];
   if (engs.length) line.push({ kind: "work", name: engs[0].reads });
@@ -216,7 +218,8 @@ function wb2MapHtml(n, m){
       const cls = wb2EngCls(m, node.e);
       svg += `<g class="n eng ${cls}" data-wbengine="${esc(node.e.name)}" transform="translate(${lx(i).toFixed(0)},250)">` +
         (cls === "run" ? `<circle class="halo" r="17"/>` : "") + `<circle class="bx" r="17"/><text x="0" y="4" text-anchor="middle">${esc(node.e.name)}</text>` +
-        wb2Title(node.e.name + " · " + (cls === "run" ? "running" : (cls === "ask" ? "waits on you" : (cls === "block" ? "failed" : "engine")))) + `</g>`;
+        wb2Title([node.e.name, cls === "run" ? "running" : (cls === "ask" ? "waits on you" : (cls === "block" ? "failed" : "engine")),
+                  node.e.timetable && node.e.timetable.on].filter(Boolean).join(" · ")) + `</g>`;   /* its slot, as Coordination's timetable has it */
     } else {
       const a = arts[node.name] || { versions: 0, slug: "" };
       const v = a.versions ? "v" + a.versions : "";
@@ -225,6 +228,11 @@ function wb2MapHtml(n, m){
         `<rect class="bx" width="68" height="36" rx="4"/><text x="8" y="17">${esc(node.name)}</text><text class="v" x="8" y="30">${esc(v)}</text>` +
         wb2Title(node.name + (a.versions ? " · filed, " + v : " · not made yet") + (live ? (m.live ? " · live" : " · delivered") : "")) + `</g>`;
     }
+  });
+  /* what the plan left out: under the line, muted, each with its word; a click opens its card, which says so too */
+  out.forEach((e, i) => {
+    svg += `<g class="n eng out" data-wbengine="${esc(e.name)}" transform="translate(${105 + i * 160},304)"><circle class="bx" r="8"/>` +
+      `<text x="16" y="4">${esc(e.name)} · left out</text>` + wb2Title(e.name + " · left out of the plan") + `</g>`;
   });
   /* what the department knows */
   knows.forEach((k, i) => {
@@ -242,7 +250,7 @@ function wb2MapHtml(n, m){
   });
   svg += `</svg>`;
   const empty = !engs.length ? dpQuiet("No plan yet") : "";
-  return wb2NowHtml(m, fv) + `<div class="wb2frame wb"><div class="wb2map wb">${svg}</div>` + wb2CardsHtml(m, fv, line, arts, knows, bud) + `</div>` + empty +
+  return wb2NowHtml(m, fv) + `<div class="wb2frame wb"><div class="wb2map wb">${svg}</div>` + wb2CardsHtml(m, fv, line, arts, knows, bud, out) + `</div>` + empty +
     wb2UnderHtml(fv);
 }
 /* A line of the record at rest (no counts at rest; a name such as v1, Round 2, D2 or F1 is a name, not a count): the
@@ -278,7 +286,7 @@ function wb2UnderHtml(fv){
   return dd("Messages between functions", msgs) + dd("Who made each thing", made) + dd("Not recorded", nr);
 }
 /* The same map as a list of cards, for a narrow viewer: people, the five, the work in line order, what it knows. */
-function wb2CardsHtml(m, fv, line, arts, knows, bud){
+function wb2CardsHtml(m, fv, line, arts, knows, bud, out){
   const row = (attrs, dot, name, word) => `<button type="button" class="wb2card wb" ${attrs}>${dot}<b>${wbEsc(name)}</b><span class="dpchk">${wbEsc(word)}</span></button>`;
   const fnDot = { run: "", ask: "warn", block: "block", wait: "wait", off: "off" };
   const people = row(`data-wbtab="chat"`, wbDot(wb2Asks(m).length ? "warn" : "off"), "You", wb2Asks(m).length ? "an ask waits for you" : "the owner");
@@ -295,7 +303,7 @@ function wb2CardsHtml(m, fv, line, arts, knows, bud){
     }
     const a = arts[node.name] || { versions: 0, slug: "" };
     return row(a.versions ? `data-wbart="${wbEsc(a.slug)}"` : `data-wbtab="motor"`, wbDot(a.versions ? "ok" : "off"), node.name, a.versions ? "v" + a.versions : "not made yet");
-  }).join("");
+  }).join("") + (out || []).map(e => row(`data-wbengine="${wbEsc(e.name)}"`, wbDot("off"), e.name, "left out")).join("");   /* after the line, as on the picture */
   const know = knows.map(k => k[1] === null
     ? `<button type="button" class="wb2card wb" ${k[2]}><b>${wbEsc(k[0])}</b>${dpBar(bud ? Math.max(0, Math.min(1, Number(bud.share) || 0)) : 0)}</button>`
     : row(k[2], "", k[0], /\d/.test(String(k[1])) ? k[3].split(" · ")[1] : k[1])).join("");   /* a count stays on the picture's own value */
