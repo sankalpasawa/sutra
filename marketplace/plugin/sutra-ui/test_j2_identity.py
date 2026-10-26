@@ -12,7 +12,8 @@ Named claims, each a done check of the PRD:
   M3.4  a rule given as an answer keeps its tag through the rule ask, and a change to the done-when items never touches
         the goal
   M3.5  blocked always has a way out: new words reopen step 2, and the blocked message is an ask with options, each
-        applied by code; an unknown option is 409 UNKNOWN_OPTION
+        applied by code; an unknown option is 409 UNKNOWN_OPTION; a card that waits again (after Stop, or words Identity
+        put back) waits on a thread of its own, so the next choice is applied, before Start and after it
   M3.6  one voice, in plain words: every tell passes the plain-words check, and only Identity speaks to the owner
   M3.7  Identity's pane: the read holds the standard, the done-when items, the rules, the open question and the conflicts
 
@@ -871,8 +872,123 @@ def test_m3_5_stop_then_start_leaves_exactly_one_card_to_answer(j2, monkeypatch)
     assert J.status(ref)["state"] == "blocked" and blocked() == [card["id"]]
     assert [a["id"] for a in R.chat_view(ref)["asks"] if a.get("options")] == [card["id"]]
     assert next(n for n in F.functions(ref)["functions"] if n["fn"] == "identity")["state"] == "waiting_on_you"
-    # and the way out still works after Start
+    # and the way out still works after Start: the choice is applied, never said over nothing (a card whose thread
+    # closed on the first choice took the next one with 200 and dropped it: found by a verifier 2026-10-26)
+    seen = len(J.events(ref))
     assert client.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "leave:D3"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    _applied_leave(W, J, ref, seen)
+
+
+def _applied_leave(W, J, ref, seen, item="D3"):
+    """The choice to leave an item out was applied: the item is gone from done-when, and the plan is shaped afresh at
+    step 2 (cycle.reopened, then proposal.requested)."""
+    after = J.events(ref)[seen:]
+    acts = [e["action"] for e in after]
+    assert "The owner chose: Leave %s out." % item in [e["summary"] for e in after], acts
+    assert item not in [i["id"] for i in W.dept(ref)["done_items"]]
+    assert "cycle.reopened" in acts and next(e for e in after[acts.index("cycle.reopened"):] if e["action"] == "proposal.requested")["step"] == 2
+
+
+def _open_card(W, R, ref, aid):
+    """The card waits open: pending, nothing chosen, on a thread that waits on the owner."""
+    a = next(x for x in W.asks(ref) if x["id"] == aid)
+    assert (a["status"], a["chosen"]) == ("pending", None) and R._thread(ref, a["thread"])["state"] == "input-required"
+    return a
+
+
+def test_m3_5_while_stopped_the_card_waits_on_a_live_thread_and_offers_no_stop(j2, monkeypatch):
+    """A card that waits again on the thread its first choice closed (so the next choice is dropped), or a stopped
+    department's card that still offers Stop (chosen again, it stops the department again on Start), must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card, client = _card(W, ref), _client()
+    url = "/api/native/%s/asks/%s" % (ref, card["id"])
+    assert client.post(url, json={"option": "stop"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert R._thread(ref, card["thread"])["state"] == "completed"                     # the first choice closed its thread
+    again = _open_card(W, R, ref, card["id"])
+    assert again["thread"] != card["thread"] and [o["id"] for o in again["options"]] == ["words", "leave:D3", "stop"]
+    shown = next(a for a in R.chat_view(ref)["asks"] if a["id"] == card["id"])
+    assert [o["id"] for o in shown["options"]] == ["words", "leave:D3"]               # no Stop while stopped
+    got = client.post(url, json={"option": "stop"})
+    assert got.status_code == 409 and got.json()["detail"]["code"] == "UNKNOWN_OPTION"
+    W.run_until_idle(ref, limit=300)
+    _open_card(W, R, ref, card["id"])
+    assert client.post("/api/dept/%s/j2/start" % ref).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "blocked" and W.dept(ref)["stopped"] is False   # Start is not undone by a second Stop
+    shown = next(a for a in R.chat_view(ref)["asks"] if a["id"] == card["id"])
+    assert [o["id"] for o in shown["options"]] == ["words", "leave:D3", "stop"]       # started, Stop is a way out again
+    seen = len(J.events(ref))
+    assert client.post(url, json={"option": "leave:D3"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    _applied_leave(W, J, ref, seen)
+
+
+@pytest.mark.parametrize("how", ["leave", "words"])
+def test_m3_5_a_choice_made_while_stopped_is_applied_on_start(j2, monkeypatch, how):
+    """S10 'Stopped: the card can still be answered', S6 'the answer is used on Start': a choice made while the
+    department is stopped that is said as chosen and never applied must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card, client = _card(W, ref), _client()
+    url = "/api/native/%s/asks/%s" % (ref, card["id"])
+    assert client.post(url, json={"option": "stop"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    seen = len(J.events(ref))
+    body = {"option": "leave:D3"} if how == "leave" else {"option": "words", "text": "Make it a simple one-page site that shows the cakes"}
+    assert client.post(url, json=body).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["stopped"] is True and "cycle.reopened" not in [e["action"] for e in J.events(ref)[seen:]]   # stopped: nothing runs
+    assert client.post("/api/dept/%s/j2/start" % ref).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    if how == "leave":
+        _applied_leave(W, J, ref, seen)
+    else:
+        after = J.events(ref)[seen:]
+        acts = [e["action"] for e in after]
+        assert "cycle.reopened" in acts and next(e for e in after[acts.index("cycle.reopened"):] if e["action"] == "proposal.requested")["step"] == 2
+        shut = next(a for a in W.asks(ref) if a["id"] == card["id"])
+        assert shut["status"] == "chosen" and shut["chosen"]["id"] == "words"
+
+
+def test_m3_5_box_words_identity_puts_back_leave_the_card_answerable(j2, monkeypatch):
+    """Words from the card's box that Identity's take turns into an ask leave the card open: another option chosen after
+    them that is said as chosen and never applied (its thread closed on the words) must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card, client = _card(W, ref), _client()
+    url = "/api/native/%s/asks/%s" % (ref, card["id"])
+    assert client.post(url, json={"option": "words", "text": OUTSIDE}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"].count("request") == 1
+    _open_card(W, R, ref, card["id"])
+    seen = len(J.events(ref))
+    assert client.post(url, json={"option": "leave:D3"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    _applied_leave(W, J, ref, seen)
+
+
+def test_m3_5_a_choice_is_never_dropped_even_on_a_closed_thread(j2, monkeypatch):
+    """A card kept from before (pending, its thread closed) whose choice is dropped, or a choice the runtime could not
+    post that the card still says was chosen, must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card = _card(W, ref)
+    R._thread_set(ref, card["thread"], state="completed", outcome={"by": "accept-proposal"})      # as the old fixes left it
+    real = R.on_stamp
+    monkeypatch.setattr(R, "on_stamp", lambda ref, ask, approve: None)
+    with pytest.raises(ValueError):
+        W.choose_option(ref, card["id"], "leave:D3")
+    assert _card(W, ref)["id"] == card["id"] and _card(W, ref)["chosen"] is None    # nothing heard: the card waits as it was
+    monkeypatch.setattr(R, "on_stamp", real)
+    seen = len(J.events(ref))
+    W.choose_option(ref, card["id"], "leave:D3")
+    W.run_until_idle(ref, limit=300)
+    _applied_leave(W, J, ref, seen)
+    heard = [p for p in R.board(ref) if p["src"] == "Owner" and (p["payload"] or {}).get("ask") == card["id"]]
+    assert len(heard) == 1 and heard[0]["thread"] != card["thread"] and R._thread(ref, heard[0]["thread"])["state"] == "completed"
 
 
 OUTSIDE = "Email every customer a newsletter each morning and post it on Instagram"

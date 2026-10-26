@@ -923,13 +923,22 @@ def request(ref, text, about=None, message_id=None, answers=None):
 
 def on_stamp(ref, ask, approve):
     """The owner's stamp or refusal, posted in the ask's own thread, so Identity applies it as a step; for an ask with
-    options, the option the owner chose (M3.5)."""
+    options, the option the owner chose (M3.5). An answer to an ask still pending is never dropped: when its thread
+    closed before the answer came (a card kept from before the card that waits again had a thread of its own), the
+    answer is posted in a thread of its own, which it closes as it would have closed the ask's. None when the ask has no
+    thread, or the post did not reach the board."""
     if not ask.get("thread"):
         return None
     chosen = ask.get("chosen") if isinstance(ask.get("chosen"), dict) else None
-    return post(ref, OWNER, "Identity", "accept-proposal" if approve else "reject-proposal",
-                dict({"word": ask.get("kind"), "ask": ask["id"]}, **({"option": chosen["id"], "chose": chosen["label"]} if chosen else {})),
-                thread=ask["thread"])
+    act = "accept-proposal" if approve else "reject-proposal"
+    pl = dict({"word": ask.get("kind"), "ask": ask["id"]}, **({"option": chosen["id"], "chose": chosen["label"]} if chosen else {}))
+    th = _thread(ref, ask["thread"])
+    if not th or th["state"] not in CLOSED:
+        return post(ref, OWNER, "Identity", act, pl, thread=ask["thread"])
+    row = post(ref, OWNER, "Identity", act, pl)
+    if row:
+        _thread_set(ref, row["thread"], state=_state_after(th, ["Identity"], act), outcome={"by": act, "n": row["n"]})
+    return row
 
 
 # ---- what may start now --------------------------------------------------------------------------------------------
@@ -3007,10 +3016,13 @@ def chat_view(ref, about=None):
     refs = [about] if about else ([root] + [c["ref"] for c in kids] if root else [ref])
     asks, answered, chosen, rows = [], [], [], []
     for r in refs:
-        dn = (W.dept(r) or {}).get("name")
+        dr = W.dept(r) or {}
+        dn = dr.get("name")
         mine = W.asks(r)
         rows += mine
-        asks += [dict(a, ref=r, dept=dn) for a in mine if a["status"] == "pending"]
+        # an ask with options shows the ones it offers now: no Stop on a department that is stopped (W.offered)
+        asks += [dict(a, ref=r, dept=dn, **({"options": W.offered(dr, a)} if a.get("options") else {}))
+                 for a in mine if a["status"] == "pending"]
         # Identity's questions the owner answered in words: the card stays in the chat with the answer under it (M0.6)
         answered += [dict(a, ref=r, dept=dn) for a in mine if a.get("kind") == "j2_identity" and a["status"] == "stamped" and a.get("answered")]
         # and an ask with options the owner chose one of: the card goes quiet, with the choice under it (M3.5)
@@ -4791,18 +4803,36 @@ def _blocked(ref, d, who, said, title, by, why):
     if item:
         opts.append(W.option("leave:" + item["id"], "Leave %s out" % item["id"],
                              "%s is dropped from done-when (%s); nothing more is spent" % (item["id"], str(item["text"]).rstrip("."))))
-    opts.append(W.option("stop", "Stop here", "the department stops where it is; you can start it again later"))
+    opts.append(W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later"))
     for old in W.asks(ref):
         if old.get("kind") == "blocked" and old["status"] == "pending":
             W._put_ask(ref, dict(old, status="replaced", decided=W.now()))
     ask = W.options_ask("blocked", said, opts, title=title, who=by, why=str(why or "").strip(),
                         if_nothing="Nothing runs; the department waits for your words.",
                         cycle_id=((J._state(ref) or {}).get("cycle_id") if J else None))
-    row = _tell(ref, d, who, "request", {"word": "blocked", "objective": said, "done": said, "card": ask["id"],
-                                         "output": "one of the options, or your words", "may_read": ["Brief"], "boundaries": "this plan"})
-    ask["thread"] = row["thread"] if row else None
+    ask["thread"] = _card_line(ref, d, who, ask)
     W._put_ask(ref, ask)
     return ask
+
+
+def _card_line(ref, d, who, ask):
+    """What Identity says of a blocked plan's card, on a thread of its own that waits on the owner: the line names the
+    card, so the chat says it once, on the card, and the owner's choice is posted in that thread (on_stamp). Returns the
+    thread, or None when the line did not reach the board."""
+    row = _tell(ref, d, who, "request", {"word": "blocked", "objective": ask["text"], "done": ask["text"], "card": ask["id"],
+                                         "output": "one of the options, or your words", "may_read": ["Brief"], "boundaries": "this plan"})
+    return row["thread"] if row else None
+
+
+def _card_waits(ref, d, a):
+    """A blocked plan's card the owner answered that must wait open again (M3.5): the words Identity did not take as a
+    go, or Stop, leave the plan blocked. The same card, pending again with nothing chosen, on a thread of its own: the
+    thread it had closed on the owner's choice, and a choice posted into a closed thread is dropped (found by a verifier
+    2026-10-26: after Stop and Start the next choice said 'You chose' and applied nothing, a dead end)."""
+    a = dict(a, status="pending", decided=None, by=None, chosen=None)
+    a["thread"] = _card_line(ref, d, {"src": "Root" if d.get("root") else OWNER}, a)
+    W._put_ask(ref, a)
+    return a
 
 
 def _reopen(ref, d, words, by="your words"):
@@ -4835,7 +4865,7 @@ def _blocked_chosen(ctx, a, pl):
         # Identity's take reads them against the goal and the rules, as in the chat: a go reopens the plan and the card goes
         # quiet with them (identity_file, _reopen); words that reach outside are an ask, and the plan stays blocked with
         # its card open (found by a verifier 2026-10-23: the box filed the words and reopened step 2 with no take)
-        W._put_ask(ref, dict(a, status="pending", decided=None, by=None, chosen=None))
+        _card_waits(ref, d, a)
         request(ref, words, answers=a["id"])
         return {"said": "took the owner's words for the plan to Identity, to read as said in the chat: " + words}
     if oid.startswith("leave:"):
@@ -4852,7 +4882,7 @@ def _blocked_chosen(ctx, a, pl):
         d = W.apply_done_items(ref, ask)
         _reopen(ref, d, d.get("done") or "", by="the done-when you kept")
         return {"said": "left %s out of done-when on the owner's choice; Adaptation is asked afresh" % iid}
-    if oid == "stop":
+    if oid == W.STOP_OPTION:
         J = _j2()
         if J and J._state(ref):
             J.stop(ref)
@@ -4860,8 +4890,9 @@ def _blocked_chosen(ctx, a, pl):
             W.set_stopped(ref, True)
         # the plan is still blocked, so its way out stays open: the card waits again, answerable while the department is
         # stopped and after Start (S10: 'Stopped: the card can still be answered'); the stop is the owner's act, on the
-        # ledger and the board (found by a verifier 2026-10-23: Start went back to blocked with no card to answer)
-        W._put_ask(ref, dict(a, status="pending", decided=None, by=None, chosen=None))
+        # ledger and the board (found by a verifier 2026-10-23: Start went back to blocked with no card to answer). While
+        # the department is stopped the card does not offer Stop (W.offered)
+        _card_waits(ref, W.dept(ref) or d, a)
         return {"said": "stopped the department on the owner's choice; the plan's card stays open"}
     return {"said": "took the owner's choice: %s" % oid}
 

@@ -180,6 +180,7 @@ def j2_identity_ask(text, cycle_id, missing, why="", points=None, standard=False
 # every such ask has one shape: {id, kind, engine, text, options: [{id, label, cost}], chosen, status, created, ...}.
 OPTIONS_MAX = 3
 WORDS_OPTION = "words"                       # the option that carries the owner's own words, from the card's answer box
+STOP_OPTION = "stop"                         # the option that stops the department where it is
 
 
 class AskError(ValueError):
@@ -207,31 +208,46 @@ def chosen(option, words=None, by="the owner", at=None):
     return {"id": option["id"], "label": option["label"], "at": at or now(), "by": by, "words": words or None}
 
 
+def offered(d, a):
+    """The options an ask offers now, as the card shows them and a choice is read against: all of them, but Stop while
+    the department is stopped, since it is where Stop would put it (found by a verifier 2026-10-26: Stop chosen again on a
+    stopped department stopped it again on Start)."""
+    opts = [o for o in (a or {}).get("options") or []]
+    if (d or {}).get("stopped"):
+        opts = [o for o in opts if o.get("id") != STOP_OPTION]
+    return opts
+
+
 def choose_option(ref, aid, oid, text=None, by="the owner"):
     """The owner chose one of an ask's options: the ask is answered once, with the choice and when, and the runtime
-    applies it as a step of Identity's (on_stamp, in the ask's own thread). An option the ask does not offer is
-    UNKNOWN_OPTION; the same choice again is the same answer; another one after it is ALREADY_HANDLED. The words
-    option takes the owner's words, and none is EMPTY_ANSWER."""
+    applies it as a step of Identity's (on_stamp, in the ask's own thread). An option the ask does not offer now
+    (offered) is UNKNOWN_OPTION; the same choice again is the same answer; another one after it is ALREADY_HANDLED. The
+    words option takes the owner's words, and none is EMPTY_ANSWER. A choice the runtime could not post is no choice:
+    the card waits as it was, so it never says 'You chose' over nothing applied."""
     text = " ".join(str(text or "").split())[:2000]
     with _lock(ref):
         a = next((x for x in asks(ref) if x["id"] == aid), None)
         if not a:
             raise ValueError("no such ask")
-        offered = {o["id"]: o for o in a.get("options") or []}
-        if oid not in offered:
-            raise AskError("UNKNOWN_OPTION", "this ask offers %s" % (", ".join(offered) or "no options"))
+        if a["status"] != "pending" and (a.get("chosen") or {}).get("id") == oid:
+            return a                               # the same choice again is the same answer
+        offer = {o["id"]: o for o in offered(dept(ref), a)}
+        if oid not in offer:
+            raise AskError("UNKNOWN_OPTION", "this ask offers %s" % (", ".join(offer) or "no options"))
         if a["status"] != "pending":
-            if (a.get("chosen") or {}).get("id") == oid:
-                return a
             raise AskError("ALREADY_HANDLED")
         if oid == WORDS_OPTION and not text:
             raise AskError("EMPTY_ANSWER")
+        before = dict(a)
         at = now()
-        a.update({"status": "chosen", "decided": at, "by": by, "chosen": chosen(offered[oid], text, by, at)})
+        a.update({"status": "chosen", "decided": at, "by": by, "chosen": chosen(offer[oid], text, by, at)})
         _put_ask(ref, a)
     rt = _runtime(ref)
     if rt and a.get("thread"):
-        rt.on_stamp(ref, a, True)                  # posted in the ask's thread; Identity applies the choice as a step
+        # posted in the ask's thread; Identity applies the choice as a step
+        if rt.on_stamp(ref, a, True) is None:
+            _put_ask(ref, before)
+            raise ValueError("the choice did not reach Identity; choose again")
     return a
 
 

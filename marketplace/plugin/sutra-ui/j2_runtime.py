@@ -582,11 +582,14 @@ def resume(ref):
 
 # ---- the hooks: the ledger is written where the thing happens ------------------------------------------------------
 def on_post(ref, row):
-    """A post on the department's board that is a move of the lifecycle becomes its event. Never raises."""
+    """A post on the department's board that is a move of the lifecycle becomes its event. A stopped cycle records only
+    the owner's own answer to an ask, given while it is stopped and used on Start (S10: the card can still be answered).
+    Never raises."""
     try:
-        if not active(ref):
-            return
         src, dst, act = row.get("src"), list(row.get("dst") or []), row.get("msg_type")
+        if not active(ref) and not (src == R.OWNER and act in ("accept-proposal", "reject-proposal") and enabled()
+                                    and (_state(ref) or {}).get("state") == "stopped"):
+            return
         pl = row.get("payload") or {}
         word, key = pl.get("word"), "post-%s" % row.get("n")
         names = [e.get("name") for e in pl.get("engines") or [] if isinstance(e, dict)]
