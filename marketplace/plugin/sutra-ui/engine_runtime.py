@@ -753,11 +753,14 @@ def request(ref, text, about=None, message_id=None, answers=None):
 
 
 def on_stamp(ref, ask, approve):
-    """The owner's stamp or refusal, posted in the ask's own thread, so Identity applies it as a step."""
+    """The owner's stamp or refusal, posted in the ask's own thread, so Identity applies it as a step; for an ask with
+    options, the option the owner chose (M3.5)."""
     if not ask.get("thread"):
         return None
+    chosen = ask.get("chosen") if isinstance(ask.get("chosen"), dict) else None
     return post(ref, OWNER, "Identity", "accept-proposal" if approve else "reject-proposal",
-                {"word": ask.get("kind"), "ask": ask["id"]}, thread=ask["thread"])
+                dict({"word": ask.get("kind"), "ask": ask["id"]}, **({"option": chosen["id"], "chose": chosen["label"]} if chosen else {})),
+                thread=ask["thread"])
 
 
 # ---- what may start now --------------------------------------------------------------------------------------------
@@ -2480,6 +2483,9 @@ def identity_file(ctx, step, item):
             _line_request(ref, d, filed, thread=p["thread"])
             if organic:
                 _tell(ref, d, p, "inform", {"word": "line", "done": "Adaptation is shaping the engines your words need; Priority and Root check the line before anything runs."})
+        elif not first and live and (J._state(ref) or {}).get("state") == "blocked":
+            # the plan is blocked and the owner's new words go (M3.5): step 2 again, with Root's repairs at nought
+            _reopen(ref, d, filed)
         elif first and organic and not live:
             post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": filed, "objective": "shape the line the words need",
                                                             "output": "the engines, each with what it does, reads and writes", "may_read": ["Brief"],
@@ -2647,7 +2653,9 @@ def _on_card(board_ref, p, cards):
     owner's words that answered it, which the card keeps under it. The chat leaves both to the card, so neither is said
     twice; the board keeps them as they were (found by a verifier 2026-10-23: the line, the card, the answer under it
     and the answer again as a turn)."""
-    return (p.get("payload") or {}).get("card") in cards["ids"] or (board_ref, p["n"]) in cards["words"]
+    pl = p.get("payload") or {}
+    # the owner's choice on an ask with options (M3.5) is said under its card, as 'You chose: ...'
+    return pl.get("card") in cards["ids"] or (board_ref, p["n"]) in cards["words"] or bool(pl.get("option") and pl.get("ask") in cards["ids"])
 
 
 def _cards(rows):
@@ -2655,6 +2663,9 @@ def _cards(rows):
     words), and where the owner said each answer."""
     ids, words = set(), set()
     for a in rows:
+        if a.get("options") and a["status"] in ("pending", "chosen"):
+            ids.add(a["id"])                              # an ask with options is a card too (M3.5); its choice is under it
+            continue
         if a.get("kind") != "j2_identity" or not (a["status"] == "pending" or (a["status"] == "stamped" and a.get("answered"))):
             continue
         ids.add(a["id"])
@@ -2762,7 +2773,7 @@ def chat_view(ref, about=None):
         about = ref
     kids = _children(root) if root else []
     refs = [about] if about else ([root] + [c["ref"] for c in kids] if root else [ref])
-    asks, answered, rows = [], [], []
+    asks, answered, chosen, rows = [], [], [], []
     for r in refs:
         dn = (W.dept(r) or {}).get("name")
         mine = W.asks(r)
@@ -2770,6 +2781,8 @@ def chat_view(ref, about=None):
         asks += [dict(a, ref=r, dept=dn) for a in mine if a["status"] == "pending"]
         # Identity's questions the owner answered in words: the card stays in the chat with the answer under it (M0.6)
         answered += [dict(a, ref=r, dept=dn) for a in mine if a.get("kind") == "j2_identity" and a["status"] == "stamped" and a.get("answered")]
+        # and an ask with options the owner chose one of: the card goes quiet, with the choice under it (M3.5)
+        chosen += [dict(a, ref=r, dept=dn) for a in mine if a.get("options") and a["status"] == "chosen"]
     cards = _cards(rows)
     turns = []
     if root:
@@ -2805,7 +2818,7 @@ def chat_view(ref, about=None):
         # already stand as the front turn and the setup ask, so the birth copy is not said again (finding 3)
         turns = [t for t in turns if not t.get("birth")]
     turns.sort(key=lambda t: (str(t["at"]), t["n"]))
-    return {"root": root, "about": about, "turns": turns, "asks": asks, "answered": answered,
+    return {"root": root, "about": about, "turns": turns, "asks": asks, "answered": answered, "chosen": chosen,
             "departments": [{"ref": c["ref"], "name": c["name"], "stopped": bool(c.get("stopped"))} for c in kids]}
 
 
@@ -2907,6 +2920,8 @@ def identity_apply(ctx, step, item):
         if a.get("answers"):
             _j2_went_on(ref, a["answers"])               # it answered Identity's question on the rules: the cycle goes on (M3.4)
         return {"said": ("took a new goal: " if a.get("tag") == "goal" else "took a rule: ") + a["line"], "filed": row["v"]}
+    if a.get("kind") == "blocked":
+        return _blocked_chosen(ctx, a, pl)             # PRD M3.5: a way out of a blocked plan, applied by code
     if a.get("kind") == "done_items":
         # PRD M3.4: done-when changes as items, its own kind; the goal stays as it was
         d = W.apply_done_items(ref, a)
@@ -2947,8 +2962,9 @@ def identity_drop(ctx, step, item):
         J = _j2()
         if J:
             J._set(ref, step=4, state="blocked")
-        _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
-              {"word": "line", "done": "The plan is dropped on your refusal. Say what the department should do and I will have it shaped afresh."})
+        _blocked(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER},
+                 "The plan is dropped on your refusal. Say what the department should do and I will have it shaped afresh.",
+                 "The plan is dropped.", "You, on the plan Identity put to you", "you said no to the plan")
         return {"said": "dropped the plan on the owner's refusal"}
     if a and a.get("kind") in ("rule", "done_items") and a.get("answers"):
         # the owner refused the rule that answered Identity's question (M3.4): the question is asked again, never dropped
@@ -4225,10 +4241,8 @@ def _j2_settle(ref, d, engines, source, words, by):
             _line_request(ref, d, words, faults=faults)
             _tell(ref, d, who, "inform", {"word": "line", "done": "Root's check refused the plan (%s). Adaptation is reshaping it." % "; ".join(faults)})
             return {"said": "Root's check refused the workflow: %s; it goes back to Adaptation" % "; ".join(faults)}
-        if J:
-            J._set(ref, state="blocked")
-        _tell(ref, d, who, "inform", {"word": "line", "done": "Root's check refused the plan %d times: %s. Say what to change and I will have it shaped afresh."
-                                      % (n, "; ".join(faults))})
+        _blocked(ref, d, who, "Root's check refused the plan %d times: %s. Say what to change and I will have it shaped afresh."
+                 % (n, "; ".join(faults)), "The plan could not be approved.", "Root, at its review", "; ".join(faults))
         return {"said": "Root's check refused the workflow %d times; the owner is told" % n}
     added, lost = [], []
     if source == "library":
@@ -4247,8 +4261,8 @@ def _j2_settle(ref, d, engines, source, words, by):
     if not added:
         if J:
             J.refused(ref, engines, lost or ["no engine could be added"], checks=checks)
-            J._set(ref, state="blocked")
-        _tell(ref, d, who, "inform", {"word": "line", "done": "The plan could not be set up: %s." % "; ".join(lost or ["no engine could be added"])})
+        _blocked(ref, d, who, "The plan could not be set up: %s." % "; ".join(lost or ["no engine could be added"]),
+                 "The plan could not be set up.", "Root, setting up the engines", "; ".join(lost or ["no engine could be added"]))
         return {"said": "no engine of the workflow could be added"}
     if J:
         J.registered(ref, added, source, checks=checks)
@@ -4258,6 +4272,94 @@ def _j2_settle(ref, d, engines, source, words, by):
                                      (" Not added: " + "; ".join(lost)) if lost else "")})
     W.signal()
     return {"said": "registered the workflow %s, %s" % (" -> ".join(added), by)}
+
+
+def _left_out(d, why):
+    """The done-when item a blocked plan may leave out (M3.5): the one its reason names, else the last; none when the
+    department has only one item, since done-when is never left empty."""
+    items = [i for i in d.get("done_items") or [] if isinstance(i, dict) and i.get("id")]
+    if len(items) < 2:
+        return None
+    named = [i for i in items if re.search(r"\b%s\b" % re.escape(i["id"]), str(why or ""))]
+    return (named or items)[-1]
+
+
+def _blocked(ref, d, who, said, title, by, why):
+    """The plan is blocked, and there is always a way out (PRD M3.5, screen S10): the cycle says blocked, and what
+    Identity says is an ask with options, the first the one it recommends, each applied by code when the owner chooses
+    it: change the plan in my words; leave an item out (a done_items ask, stamped by that choice); stop. The line names
+    its card, so the chat says it once, on the card; an older card for the same plan goes quiet."""
+    J = _j2()
+    if J:
+        J._set(ref, state="blocked")
+    opts = [W.option(W.WORDS_OPTION, "Change the plan in my words", "Adaptation shapes it afresh from what you say; nothing runs before Root's review")]
+    item = _left_out(d, why)
+    if item:
+        opts.append(W.option("leave:" + item["id"], "Leave %s out" % item["id"],
+                             "%s is dropped from done-when (%s); nothing more is spent" % (item["id"], str(item["text"]).rstrip("."))))
+    opts.append(W.option("stop", "Stop here", "the department stops where it is; you can start it again later"))
+    for old in W.asks(ref):
+        if old.get("kind") == "blocked" and old["status"] == "pending":
+            W._put_ask(ref, dict(old, status="replaced", decided=W.now()))
+    ask = W.options_ask("blocked", said, opts, title=title, who=by, why=str(why or "").strip(),
+                        if_nothing="Nothing runs; the department waits for your words.",
+                        cycle_id=((J._state(ref) or {}).get("cycle_id") if J else None))
+    row = _tell(ref, d, who, "request", {"word": "blocked", "objective": said, "done": said, "card": ask["id"],
+                                         "output": "one of the options, or your words", "may_read": ["Brief"], "boundaries": "this plan"})
+    ask["thread"] = row["thread"] if row else None
+    W._put_ask(ref, ask)
+    return ask
+
+
+def _reopen(ref, d, words, by="your words"):
+    """From blocked, the plan is shaped afresh (M3.5): step 2 again, with Root's repairs at nought, and the card that
+    asked for a way out goes quiet with the choice the owner made."""
+    J = _j2()
+    if J:
+        J.reopened(ref)
+    for a in W.asks(ref):
+        if a.get("kind") == "blocked" and a["status"] == "pending":
+            W._put_ask(ref, dict(a, status="chosen", decided=W.now(), by="the owner",
+                                 chosen={"id": W.WORDS_OPTION, "label": "Change the plan in my words", "at": W.now(), "by": "the owner", "words": words}))
+    _line_request(ref, d, _brief_text(ref).strip() or words)
+    _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
+          {"word": "line", "done": "Adaptation is shaping the plan afresh from %s; Priority and Root check it before anything runs." % by})
+
+
+def _blocked_chosen(ctx, a, pl):
+    """The owner chose a way out of a blocked plan (M3.5), applied here by code: the words option files the owner's
+    words and reopens step 2; leave an item out writes a done_items ask, stamped by that one click, and reopens step 2;
+    stop stops the department where it is."""
+    ref, d = ctx["ref"], ctx["dept"]
+    chosen = a.get("chosen") or {}
+    oid = str(pl.get("option") or chosen.get("id") or "")
+    if oid == W.WORDS_OPTION:
+        words = str(chosen.get("words") or "").strip()
+        row = _file_words(ref, d, words, "the owner's words for the plan")
+        _reopen(ref, W.dept(ref), words)
+        return {"said": "took the owner's words for the plan and asked Adaptation afresh: " + words, "filed": row["v"]}
+    if oid.startswith("leave:"):
+        iid = oid.split(":", 1)[1]
+        items = W.items_of(W.dept(ref))
+        gone = next((i for i in items if i["id"] == iid), None)
+        if not gone:
+            return {"said": "the item %s is no longer in done-when" % iid}
+        ask = W.done_items_ask("Leave %s out of done-when: %s. The goal stays as it is" % (iid, str(gone["text"]).rstrip(".")),
+                               [i for i in items if i["id"] != iid], "the plan was blocked, and you chose to leave it out",
+                               words=chosen.get("label"), answers=a["id"])
+        ask.update({"status": "stamped", "decided": W.now(), "by": "the owner"})   # the owner's one click is its stamp
+        W._put_ask(ref, ask)
+        d = W.apply_done_items(ref, ask)
+        _reopen(ref, d, d.get("done") or "", by="the done-when you kept")
+        return {"said": "left %s out of done-when on the owner's choice; Adaptation is asked afresh" % iid}
+    if oid == "stop":
+        J = _j2()
+        if J and J._state(ref):
+            J.stop(ref)
+        else:
+            W.set_stopped(ref, True)
+        return {"said": "stopped the department on the owner's choice"}
+    return {"said": "took the owner's choice: %s" % oid}
 
 
 def _j2_shape_failed(ref, d, p, note):
@@ -4273,9 +4375,9 @@ def _j2_shape_failed(ref, d, p, note):
         if n <= J.REPAIRS:
             _line_request(ref, d, (p.get("payload") or {}).get("words"), faults=[why])
             return
-        J._set(ref, state="blocked")
-        _tell(ref, d, who, "inform", {"word": "line", "done": "Adaptation could not shape a plan that passes its check (%s). "
-                                      "Say what the department should do, in other words, and I will have it shaped afresh." % why})
+        _blocked(ref, d, who, "Adaptation could not shape a plan that passes its check (%s). "
+                 "Say what the department should do, in other words, and I will have it shaped afresh." % why,
+                 "No plan could be shaped.", "Adaptation, shaping the plan", why)
     except Exception:  # noqa: BLE001 -- the failed run is a row whether or not the word reached the board
         pass
 
@@ -4349,8 +4451,9 @@ def identity_closed(ctx, step, item):
         _tell(ref, d, who, "inform", {"word": "line", "done": "Priority did not grant the plan %s; I ruled it runs: %s." % (names, why)})
         return _j2_settle(ref, d, engines, pl.get("source") or "shaped", pl.get("words"), "Identity's ruling")
     if ruling == "drop":
-        _tell(ref, d, who, "inform", {"word": "line", "done": "The plan %s is dropped: %s. Say what to change, or raise Priority's limit on its card."
-                                      % (names, why or str(pl.get("why") or ""))})
+        _blocked(ref, d, who, "The plan %s is dropped: %s. Say what to change, or raise Priority's limit on its card."
+                 % (names, why or str(pl.get("why") or "")), "The plan is dropped.", "Identity, settling Priority's no",
+                 why or str(pl.get("why") or ""))
         return {"said": "dropped the plan: " + (why or "Priority's refusal stands")}
     text = ("Adaptation proposes the plan %s. %s. The goal and the rules do not settle it. Stamp to run it as proposed, Refuse to drop it."
             % (names, str(pl.get("why") or "Priority did not grant it").rstrip(".")))

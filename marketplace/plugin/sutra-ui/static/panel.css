@@ -5790,6 +5790,12 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wbq.gone .dpaskd{margin-bottom:0;color:var(--ink)}
 .wbq .wbbox{margin-top:0}
 .wbq .btn[disabled]{opacity:.6;cursor:default}
+/* a blocked plan's card (S10, PRD M3.5): who, why and if nothing is done, then the ways out, each with its cost */
+.wbopt .wboptkv{display:flex;gap:8px;font:400 12.5px/1.45 var(--sans);color:var(--ink);margin:2px 0}
+.wbopt .wboptkv .dpk{flex:0 0 120px;margin:0}
+.wbopt .wboptrow{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.wbopt .wboptrow .btn{margin-right:0}
+.wbopt .wboptrow.wbbox textarea{flex:1 1 240px}
 /* a function's own chat: its turns, its thinking as quiet lines between them */
 .wbchat.wbfn .who-ai{opacity:.85}
 .wbchat .wbthink{margin:2px 0 2px 8px}

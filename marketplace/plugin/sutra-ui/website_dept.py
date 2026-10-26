@@ -129,6 +129,62 @@ def done_items_ask(text, items, why, words=None, thread=None, slot=None, **more)
                 **more)
 
 
+# Asks with options (PRD M3.5, screen S10): a card that offers up to three ways forward, each a label and what it costs,
+# the first the one Identity recommends; the owner's one click is the answer, and code applies it. Built here only, so
+# every such ask has one shape: {id, kind, engine, text, options: [{id, label, cost}], chosen, status, created, ...}.
+OPTIONS_MAX = 3
+WORDS_OPTION = "words"                       # the option that carries the owner's own words, from the card's answer box
+
+
+class AskError(ValueError):
+    """A choice an ask cannot take, by a stable code: UNKNOWN_OPTION, ALREADY_HANDLED, EMPTY_ANSWER."""
+
+    def __init__(self, code, why=""):
+        super().__init__("%s: %s" % (code, why) if why else code)
+        self.code = code
+
+
+def option(oid, label, cost):
+    """One way forward on an ask: what the button says, and what it costs (said beside it, and in its title)."""
+    return {"id": str(oid), "label": str(label), "cost": str(cost)}
+
+
+def options_ask(kind, text, options, **more):
+    """An ask whose answer is one of its options, at most three."""
+    return dict({"id": "a-" + uuid.uuid4().hex[:8], "kind": kind, "engine": "Identity", "text": text,
+                 "options": [option(o["id"], o["label"], o["cost"]) for o in options][:OPTIONS_MAX], "chosen": None,
+                 "status": "pending", "created": now()}, **more)
+
+
+def choose_option(ref, aid, oid, text=None, by="the owner"):
+    """The owner chose one of an ask's options: the ask is answered once, with the choice and when, and the runtime
+    applies it as a step of Identity's (on_stamp, in the ask's own thread). An option the ask does not offer is
+    UNKNOWN_OPTION; the same choice again is the same answer; another one after it is ALREADY_HANDLED. The words
+    option takes the owner's words, and none is EMPTY_ANSWER."""
+    text = " ".join(str(text or "").split())[:2000]
+    with _lock(ref):
+        a = next((x for x in asks(ref) if x["id"] == aid), None)
+        if not a:
+            raise ValueError("no such ask")
+        offered = {o["id"]: o for o in a.get("options") or []}
+        if oid not in offered:
+            raise AskError("UNKNOWN_OPTION", "this ask offers %s" % (", ".join(offered) or "no options"))
+        if a["status"] != "pending":
+            if (a.get("chosen") or {}).get("id") == oid:
+                return a
+            raise AskError("ALREADY_HANDLED")
+        if oid == WORDS_OPTION and not text:
+            raise AskError("EMPTY_ANSWER")
+        at = now()
+        a.update({"status": "chosen", "decided": at, "by": by,
+                  "chosen": {"id": oid, "label": offered[oid]["label"], "at": at, "by": by, "words": text or None}})
+        _put_ask(ref, a)
+    rt = _runtime(ref)
+    if rt and a.get("thread"):
+        rt.on_stamp(ref, a, True)                  # posted in the ask's thread; Identity applies the choice as a step
+    return a
+
+
 def apply_done_items(ref, ask):
     """A stamped done_items ask: done-when becomes its items, done their joined text, and to_be_confirmed holds the
     notes of the items that carry one; the goal is never touched. A revision of the identity (bump_identity)."""
@@ -518,6 +574,9 @@ def decide_ask(ref, aid, approve, by="the owner"):
             if a.get("kind") == "j2_identity":
                 # Identity's question takes words (j2_runtime.answer); a stamp would close it with nothing said (M0.6)
                 raise ValueError("Identity's question takes words: answer it in the chat")
+            if a.get("options"):
+                # an ask with options takes one of them (choose_option); a stamp would choose nothing (M3.5)
+                raise ValueError("this ask takes one of its options")
             if a["status"] != "pending":
                 if a["status"] == ("stamped" if approve else "refused"):
                     return a

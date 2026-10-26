@@ -376,6 +376,18 @@ def next_gap(ref):
         return _ask_gap(ref, W.dept(ref), cur)
 
 
+def reopened(ref):
+    """From blocked, the plan is shaped afresh (M3.5): the cycle goes back to step 2 with Root's repairs at nought. A
+    stopped cycle stays stopped and goes on from there on Start."""
+    with W._lock(ref):
+        cur = _state(ref)
+        if not cur or not cur.get("cycle_id"):
+            return None
+        note(ref, int(cur.get("step") or 5), "User", "Identity", "cycle.reopened", "running", "The plan is shaped afresh from the owner's words.",
+             "reopened-" + uuid.uuid4().hex[:6])
+        return _move(ref, "adapting", step=2, repairs=0)
+
+
 def begin(ref):
     """Start the department's cycle, once. Called when J1 hands over (D1: J2 is the department's own life, and nobody
     presses a button for it), and by Start for a department born before that. A stopped cycle starts again."""
@@ -643,8 +655,9 @@ def on_post(ref, row):
             note(ref, int((_state(ref) or {}).get("step") or 1), "Identity", "User", "ask.created", "waiting",
                  str(pl.get("objective") or pl.get("word") or "An ask.")[:300], key, {"word": word})
         elif src == R.OWNER and act in ("accept-proposal", "reject-proposal"):
+            said = ("chose: %s" % pl["chose"]) if pl.get("chose") else ("stamped it" if act == "accept-proposal" else "refused it")
             note(ref, int((_state(ref) or {}).get("step") or 1), "User", "Identity", "ask.answered", "complete",
-                 "The owner %s." % ("stamped it" if act == "accept-proposal" else "refused it"), key, {"word": word})
+                 "The owner %s." % said, key, dict({"word": word}, **({"option": pl["option"]} if pl.get("option") else {})))
     except Exception:  # noqa: BLE001 -- the ledger never fails the post it records
         return
 

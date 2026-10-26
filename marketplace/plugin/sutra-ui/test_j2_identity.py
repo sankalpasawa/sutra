@@ -499,3 +499,109 @@ def test_m3_4_the_done_items_ask_is_one_shape_and_keeps_what_is_to_confirm(j2):
     out = W.apply_done_items("dref-items4", ask)
     assert out["goal"] == goal and out["done"] == "A; C" and out["to_be_confirmed"] == [{"item": "D2", "why": "nobody gave it"}]
     assert out["done_items"] == [{"id": "D1", "text": "A", "how": "code", "level": "target"}, {"id": "D2", "text": "C", "how": "model", "level": "outcome"}]
+
+
+# ---- M3.5 ------------------------------------------------------------------------------------------------------------
+FAULT = "the line reaches outside without a rule"
+
+
+def _blocked_dept(j2, monkeypatch, items=True):
+    """Root's check refuses the plan three times, so it is blocked: a department born with three done-when items."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: [FAULT])
+    shaped = dict(SHAPED, goal="A phone-first website for Bakery Co, a bakery in Pune, where customers see every cake")
+    _model(monkeypatch, R, {"setup.shape": dict(shaped, done_items=[dict(i) for i in ITEMS]) if items else shaped})
+    ref = _born(j2)
+    assert J.status(ref)["state"] == "blocked"
+    assert _actions(J, ref).count("workflow.blocked") == J.REPAIRS + 1
+    return ref
+
+
+def _card(W, ref):
+    return next(a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending")
+
+
+def test_m3_5_a_blocked_plan_is_an_ask_with_options(j2, monkeypatch):
+    """A blocked plan told in a line with nothing to press (a dead end) must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card = _card(W, ref)
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D3", "stop"]
+    assert all(set(o) == {"id", "label", "cost"} and o["label"] and o["cost"] for o in card["options"])
+    assert [o["label"] for o in card["options"]] == ["Change the plan in my words", "Leave D3 out", "Stop here"]
+    assert (card["title"], card["who"], card["why"], card["chosen"]) == ("The plan could not be approved.", "Root, at its review", FAULT, None)
+    assert card["if_nothing"] and card["thread"]
+    assert any("refused the plan 3 times" in s for s in _said(R, ref))                  # what Identity said is the card's text
+    turns = [t["line"] for t in R.chat_view(ref)["turns"]]
+    assert not [t for t in turns if "refused the plan 3 times" in t]                   # said once, on its card
+    assert [a["id"] for a in R.chat_view(ref)["asks"] if a["kind"] == "blocked"] == [card["id"]]
+    # a department with one item has nothing to leave out: done-when is never left empty
+    assert R._left_out({"done_items": [{"id": "D1", "text": "x"}]}, "") is None
+
+
+def test_m3_5_from_blocked_new_words_reopen_step_2(j2, monkeypatch):
+    """New words that leave the cycle blocked, or reopen it with Root's repairs used up, must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card = _card(W, ref)
+    monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: [])           # Root's check holds from now on
+    seen = len(J.events(ref))
+    W.owner_ask(ref, "Make it a simple one-page site that shows the cakes")
+    W.run_until_idle(ref, limit=300)
+    after = J.events(ref)[seen:]
+    requested = next(e for e in after if e["action"] == "proposal.requested")
+    assert requested["step"] == 2
+    assert "workflow.registered" in [e["action"] for e in after] and J.status(ref)["state"] == "running"
+    shut = next(a for a in W.asks(ref) if a["id"] == card["id"])
+    assert shut["status"] == "chosen" and shut["chosen"]["id"] == "words"               # the card goes quiet
+
+
+def test_m3_5_each_option_is_applied_by_code_and_an_unknown_one_is_409(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    client = _client()
+    card = _card(W, ref)
+    url = "/api/native/%s/asks/%s" % (ref, card["id"])
+    got = client.post(url, json={"option": "raise"})
+    assert got.status_code == 409 and got.json()["detail"]["code"] == "UNKNOWN_OPTION"
+    assert client.post(url, json={"approve": True}).status_code == 400                   # it takes an option, never a stamp
+    got = client.post(url, json={"option": "words", "text": "  "})
+    assert got.status_code == 400 and got.json()["detail"]["code"] == "EMPTY_ANSWER"
+    assert _card(W, ref)["status"] == "pending"
+
+    # leave an item out: a done_items ask, stamped by that one click; the goal is as it was; step 2 again
+    goal, seen = W.dept(ref)["goal"], len(J.events(ref))
+    assert client.post(url, json={"option": "leave:D3"}).status_code == 200
+    assert client.post(url, json={"option": "leave:D3"}).status_code == 200              # the same choice again is the same answer
+    got = client.post(url, json={"option": "stop"})
+    assert got.status_code == 409 and got.json()["detail"]["code"] == "ALREADY_HANDLED"
+    W.run_until_idle(ref, limit=300)
+    d = W.dept(ref)
+    assert [i["id"] for i in d["done_items"]] == ["D1", "D2"] and d["goal"] == goal and d["to_be_confirmed"] == []
+    left = next(a for a in W.asks(ref) if a["kind"] == "done_items")
+    assert (left["status"], left["answers"]) == ("stamped", card["id"])
+    after = J.events(ref)[seen:]
+    assert "The owner chose: Leave D3 out." in [e["summary"] for e in after]
+    assert next(e for e in after if e["action"] == "proposal.requested")["step"] == 2
+
+    # blocked again (Root still refuses): the words option takes the owner's words; stop stops the department
+    W.run_until_idle(ref, limit=300)
+    card = _card(W, ref)
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"]
+    seen = len(J.events(ref))
+    assert client.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "words", "text": "Only the cakes page"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert next(e for e in J.events(ref)[seen:] if e["action"] == "proposal.requested")["step"] == 2
+    assert "Only the cakes page" in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]
+    card = _card(W, ref)
+    assert client.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "stop"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["stopped"] is True and J.status(ref)["state"] == "stopped"
+
+
+def test_m3_5_an_options_ask_is_one_shape(j2):
+    W = j2[0]
+    a = W.options_ask("blocked", "Stuck", [W.option("a", "A", "costs a"), W.option("b", "B", "costs b"), W.option("c", "C", "c"),
+                                           W.option("d", "D", "d")], why="because")
+    assert [o["id"] for o in a["options"]] == ["a", "b", "c"] and a["chosen"] is None and a["status"] == "pending"
+    assert a["why"] == "because" and a["kind"] == "blocked"

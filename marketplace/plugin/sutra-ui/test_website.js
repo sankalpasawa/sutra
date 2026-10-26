@@ -84,6 +84,10 @@
      W48 a question on Identity's standard offers Just do it, which sends
          'just do it' to the same answer box; a question on thin words offers
          none (PRD M3.3, S6)
+     W49 a blocked plan is a card with its ways out: who, why and if nothing
+         is done, each option with its cost; one click posts {option}, the box
+         posts {option: words, text}; an unknown option is a snack; chosen,
+         the card goes quiet with 'You chose: ...'; never a stamp (PRD M3.5, S10)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -1990,6 +1994,49 @@ test("W48: a question on Identity's standard offers Just do it, which sends 'jus
   assert.ok(click(s, { wbjust: "a-j2-1", wbref: "r3" })); await sleep(); await sleep();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(s.calls.apiPost)), [{ p: "/api/dept/r3/j2/answer", body: { text: "just do it" } }],
                          "one answer, 'just do it', where the question lives");
+});
+
+/* ── W49: a blocked plan's card and its ways out (PRD M3.5, screen S10) ── */
+const BLOCKED = { id: "a-b-1", kind: "blocked", engine: "Identity", ref: "r3", dept: DEPT, status: "pending", created: QAT, thread: "x-9",
+                  text: "Root's check refused the plan 3 times: the line reaches outside without a rule. Say what to change and I will have it shaped afresh.",
+                  title: "The plan could not be approved.", who: "Root, at its review", why: "the line reaches outside without a rule",
+                  if_nothing: "Nothing runs; the department waits for your words.", chosen: null,
+                  options: [{ id: "words", label: "Change the plan in my words", cost: "Adaptation shapes it afresh from what you say; nothing runs before Root's review" },
+                            { id: "leave:D3", label: "Leave D3 out", cost: "D3 is dropped from done-when (Three reviews from customers); nothing more is spent" },
+                            { id: "stop", label: "Stop here", cost: "the department stops where it is; you can start it again later" }] };
+async function blockedOpen(chosen){
+  const m = rtMap(); m.root = "r2";
+  const card = Object.assign({}, BLOCKED, chosen ? { status: "chosen", chosen } : {});
+  const chat = Object.assign(qChat({ answered: "a site" }), { asks: chosen ? [] : [card], chosen: chosen ? [card] : [] });
+  const c = await opened({ map: m, chat });
+  vm.runInContext("globalThis.__snacks = []; snack = function(m, o){ __snacks.push(m); };", c);
+  view(c); await sleep(); await sleep();
+  return c;
+}
+
+test("W49: a blocked plan is a card with its ways out, each with its cost, and never a stamp", async () => {
+  const c = await blockedOpen();
+  const html = view(c);
+  assert.ok(/<div class="dpask hard wbq wbopt wb"><div class="dpk">Identity asks<\/div><div class="dpasks">The plan could not be approved\.<\/div>/.test(html), "Identity asks, with its title");
+  assert.ok(/<span class="dpk">Who<\/span><span>Root, at its review<\/span>[^]*<span class="dpk">Why<\/span><span>the line reaches outside without a rule<\/span>[^]*<span class="dpk">If nothing is done<\/span><span>Nothing runs; the department waits for your words\.<\/span>/.test(html),
+            "who, why and if nothing is done");
+  const ids = (html.match(/data-wboption="([^"]+)"/g) || []).map(x => x.slice(15, -1));
+  assert.deepStrictEqual(ids, ["words", "leave:D3", "stop"], "the owner's words first, then the others");
+  assert.ok(/title="Leave D3 out: D3 is dropped from done-when \(Three reviews from customers\); nothing more is spent"[^>]*>Leave D3 out<\/button><span class="dpchk">D3 is dropped/.test(html), "the cost beside it and in its title");
+  assert.ok(!/data-wbdecide="a-b-1"/.test(html) && html.indexOf("Waiting for you") < 0, "never a stamp, never in Waiting for you");
+  assert.ok(click(c, { wboption: "leave:D3", wbopt: "a-b-1", wbref: "r3" })); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [{ p: "/api/native/r3/asks/a-b-1", body: { option: "leave:D3" } }], "one click, the option");
+  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:o:a-b-1" }, value: "Only the cakes page" } }));
+  click(c, { wboption: "words", wbopt: "a-b-1", wbref: "r3" }); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[1])), { p: "/api/native/r3/asks/a-b-1", body: { option: "words", text: "Only the cakes page" } }, "the box sends the words");
+  c.apiPost = (p, body) => { c.calls.apiPost.push({ p, body }); return Promise.reject(new Error('{"detail":{"code":"UNKNOWN_OPTION"}} (/api/native/r3/asks/a-b-1 -> 409)')); };
+  click(c, { wboption: "stop", wbopt: "a-b-1", wbref: "r3" }); await sleep(); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(vm.runInContext("__snacks", c))), ["That choice is no longer on the card."], "a snack says why");
+  const quiet = view(await blockedOpen({ id: "leave:D3", label: "Leave D3 out", at: "2026-10-23T10:26:00+05:30", by: "the owner", words: null }));
+  assert.ok(/<div class="dpask gone wbq wbopt wb"><div class="dpk">Identity asked<\/div><div class="dpasks">The plan could not be approved\.<\/div><div class="dpaskd">You chose: Leave D3 out · \d\d:\d\d<\/div><\/div>/.test(quiet), "chosen, it goes quiet");
+  assert.ok(!/data-wboption=/.test(quiet));
+  const t = words(html).replace(/D\d\b/g, " ");
+  assert.ok(!/\bGRANT|\bCOUNTER|\bREFUSE\b|charter|internal system/i.test(t), "owner's words only");
 });
 
 Promise.all(pending).then(() => {

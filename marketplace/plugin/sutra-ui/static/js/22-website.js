@@ -316,8 +316,9 @@ function wbAskBox(ref, key, placeholder, action, label){
 function wbAsksHtml(m){
   const asks = (m.status && m.status.asks) || [];
   if (!asks.length) return dpQuiet("Nothing is waiting for you");
-  /* Identity's question takes words, never a stamp: it is answered on its card in the Chat (M0.6) */
-  return asks.map(a => a.kind === "j2_identity" ? `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
+  /* Identity's question takes words, never a stamp: it is answered on its card in the Chat (M0.6); so is an ask with
+     options, which takes one of them (M3.5) */
+  return asks.map(a => a.kind === "j2_identity" || wbOptionAsk(a) ? `<div class="dpask wb"><div class="dpasks">${wbEsc(a.title || a.text)}</div>` +
     `<div class="dpaskd">Identity · ${wbEsc(wbWhen(a.created))}</div>` + wbBtn("Identity asks you in Chat ›", `data-wbtab="chat"`) + `</div>`
     : `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
     `<div class="dpaskd">${wbEsc(a.engine)} · ${wbEsc(wbWhen(a.created))}</div>` +
@@ -767,10 +768,56 @@ function wbQuestionHtml(q, ref, named){
 }
 /* The open questions and the answered ones, each at its time among the turns: a card goes before the first turn said
    after it was asked. The card is the one place the question and its answer are said: the chat read leaves out
-   Identity's line that names the card and the owner's words it keeps (engine_runtime._on_card). */
+   Identity's line that names the card and the owner's words it keeps (engine_runtime._on_card). An ask with options
+   (a blocked plan's way out, M3.5) is a card of the same kind, open or chosen. */
+function wbOptionAsk(a){ return !!(a && a.options && a.options.length); }
 function wbQuestions(c){
-  const open = (c.asks || []).filter(a => a.kind === "j2_identity");
-  return open.concat(c.answered || []).sort((a, b) => String(a.created || "") < String(b.created || "") ? -1 : 1);
+  const open = (c.asks || []).filter(a => a.kind === "j2_identity" || wbOptionAsk(a));
+  return open.concat(c.answered || [], c.chosen || []).sort((a, b) => String(a.created || "") < String(b.created || "") ? -1 : 1);
+}
+/* A blocked plan's card (S10, PRD M3.5): no dead end. It says what stopped, who, why, and what happens if nothing is
+   done, then up to three ways out, the first the one Identity recommends, each with its cost beside it and in its
+   title. One click applies an option by code; nothing here leaves the machine, so there is no second confirm. The
+   first way out is the owner's own words, from the box. Chosen, the card goes quiet with 'You chose: ... · time'. */
+const WB_OPTION_SAYS = { UNKNOWN_OPTION: "That choice is no longer on the card.", ALREADY_HANDLED: "That card is already answered.",
+                         EMPTY_ANSWER: "Write what to change first, then Send.", OVER_CAP: "That is more than the limit allows." };
+function wbOptionsHtml(a, ref, named){
+  const st = wbS(), at = a.ref || ref, k = at + ":o:" + a.id;
+  const whose = named && a.dept ? " · " + wbEsc(a.dept) : "";
+  const head = wbEsc(a.title || a.text);
+  if (a.chosen) return `<div class="dpask gone wbq wbopt wb"><div class="dpk">Identity asked${whose}</div><div class="dpasks">${head}</div>` +
+    `<div class="dpaskd">You chose: ${wbEsc(a.chosen.label)}${a.chosen.words ? ": " + wbEsc(a.chosen.words) : ""}` +
+    `${a.chosen.at ? " · " + wbEsc(wbWhen(a.chosen.at)) : ""}</div></div>`;
+  const busy = !!st.busy["o:" + k];
+  const kv = (label, v) => v ? `<div class="wboptkv"><span class="dpk">${label}</span><span>${wbEsc(v)}</span></div>` : "";
+  const attrs = o => `data-wboption="${wbEsc(o.id)}" data-wbopt="${wbEsc(a.id)}" data-wbref="${wbEsc(at)}" title="${wbEsc(o.label + ": " + o.cost)}"${busy ? " disabled" : ""}`;
+  const words = (a.options || []).filter(o => o.id === "words")[0];
+  const box = words ? `<div class="wboptrow wbbox wb"><textarea id="wbd-o-${wbEsc(a.id)}" data-wbdraft="${wbEsc(k)}" data-wboptid="${wbEsc(a.id)}" ` +
+    `data-wboptref="${wbEsc(at)}" rows="2" placeholder="${wbEsc(words.label + "...")}">${wbEsc(st.draft[k] || "")}</textarea>` +
+    wbBtn(busy ? "Applying..." : "Send", attrs(words), "dpstamp") + `<span class="dpchk">${wbEsc(words.cost)}</span></div>` : "";
+  const rows = (a.options || []).filter(o => o.id !== "words").map(o => `<div class="wboptrow">` +
+    wbBtn(busy ? "Applying..." : o.label, attrs(o)) + `<span class="dpchk">${wbEsc(o.cost)}</span></div>`).join("");
+  return `<div class="dpask hard wbq wbopt wb"><div class="dpk">Identity asks${whose}</div><div class="dpasks">${head}</div>` +
+    kv("Who", a.who) + kv("Why", a.why || a.text) + kv("If nothing is done", a.if_nothing) + box + rows + `</div>`;
+}
+async function wbChoose(ref, id, at, oid){
+  const st = wbS(), k = at + ":o:" + id, body = { option: oid };
+  if (st.busy["o:" + k]) return;
+  if (oid === "words") body.text = st.draft[k] || "";
+  st.busy["o:" + k] = true;
+  dpRender();
+  try {
+    await apiPost(wbUrl(at, "asks/" + encodeURIComponent(id)), body);
+    if (oid === "words") delete st.draft[k];
+  } catch (e) {
+    /* the typed words stay in the box; the snack says why, and the card is read again */
+    const code = (/"code":\s*"([A-Z_]+)"/.exec(String((e && e.message) || "")) || [])[1];
+    if (typeof snack === "function") snack(WB_OPTION_SAYS[code] || "Could not apply your choice. Try again.", { kind: "error" });
+  }
+  delete st.busy["o:" + k];
+  wbAgain(ref);
+  await wbLoadMap(ref, true);
+  dpRender();
 }
 async function wbAnswer(ref, id, at, said){
   const st = wbS(), k = at + ":q:" + id, text = said !== undefined ? said : (st.draft[k] || "");
@@ -795,7 +842,7 @@ async function wbAnswer(ref, id, at, said){
    to that department, never to the one the chat is read from. Identity's
    question takes words, so it is a card of its own in the chat (above). */
 function wbChatAsksHtml(c){
-  const asks = (c.asks || []).filter(a => a.kind !== "j2_identity");
+  const asks = (c.asks || []).filter(a => a.kind !== "j2_identity" && !wbOptionAsk(a));
   if (!asks.length) return "";
   return dpCard("Waiting for you", asks.map(a => `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
     `<div class="dpaskd">${wbEsc([a.dept, a.engine].filter(Boolean).join(" · "))} · ${wbEsc(wbWhen(a.created))}</div>` +
@@ -854,7 +901,7 @@ function wbChatHtml(n, m){
   const landed = seen !== undefined && count > seen;
   /* motion marks what just happened and nothing else: the turn that landed slides in once */
   const qs = wbQuestions(c);
-  const card = t => { let out = ""; while (qs.length && (!t || String(qs[0].created || "") < String(t.at || ""))) out += wbQuestionHtml(qs.shift(), n.ref, !scoped); return out; };
+  const card = t => { let out = ""; while (qs.length && (!t || String(qs[0].created || "") < String(t.at || ""))){ const q = qs.shift(); out += (wbOptionAsk(q) ? wbOptionsHtml : wbQuestionHtml)(q, n.ref, !scoped); } return out; };
   const turns = all.map((t, i) => card(t) + (folded(t) ? `<div class="o2quiet dpq wbfold">${wbEsc(t.line)}</div>`
     : wbChatTurn(t, scoped).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"'))).join("") + card(null);
   const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
@@ -1403,7 +1450,7 @@ if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
     "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay],[data-wbins],[data-wbfvretry]," +
-    "[data-wbanswer],[data-wbjust]";
+    "[data-wbanswer],[data-wbjust],[data-wboption]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -1485,6 +1532,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }, null, ds.wbref || ref); return; }
     if (ds.wbanswer !== undefined){ wbAnswer(ref, ds.wbanswer, ds.wbref || ref); return; }
     if (ds.wbjust !== undefined){ wbAnswer(ref, ds.wbjust, ds.wbref || ref, "just do it"); return; }
+    if (ds.wboption !== undefined){ wbChoose(ref, ds.wbopt, ds.wbref || ref, ds.wboption); return; }
     if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }
     if (ds.wbresume !== undefined){ wbPost(ref, "resume"); return; }
     if (ds.wbgoal !== undefined){ const k = ref + ":goal"; wbPost(ref, "goal", { text: st.draft[k] || "" }, k); return; }
@@ -1516,11 +1564,12 @@ if (typeof document !== "undefined" && document.addEventListener){
   /* Cmd+Enter (Ctrl+Enter) in the box of Identity's question sends the answer */
   document.addEventListener("keydown", (ev) => {
     const t = ev.target, ds = (t && t.dataset) || {};
-    if (S.screen !== "org2" || ds.wbqid === undefined || ev.key !== "Enter" || !(ev.metaKey || ev.ctrlKey)) return;
+    if (S.screen !== "org2" || (ds.wbqid === undefined && ds.wboptid === undefined) || ev.key !== "Enter" || !(ev.metaKey || ev.ctrlKey)) return;
     const ref = S.dp && S.dp.sel;
     if (!ref || !wbIs(ref)) return;
     ev.preventDefault();
     if (t.value !== undefined && ds.wbdraft !== undefined) wbS().draft[ds.wbdraft] = t.value;
+    if (ds.wboptid !== undefined){ wbChoose(ref, ds.wboptid, ds.wboptref || ref, "words"); return; }
     wbAnswer(ref, ds.wbqid, ds.wbqref || ref);
   });
 }
