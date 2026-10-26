@@ -1686,17 +1686,19 @@ class TestTheFrontDoor(Base):
         W, R = self.W, self.R
         root, child = self.structure()
         child_name = W.dept(child)["name"]
-        real = R.CODE["identity_file"]                     # a model that answers nothing steps down and asks; a broken
+        import layers
+        mine = layers.load("identity/v1").CODE             # the step is Identity's layer's now, whose table the runtime reads first (A1.19)
+        real = mine["identity_file"]                       # a model that answers nothing steps down and asks; a broken
 
         def boom(ctx, step, item):                         # code step is the failure a person never sees
             raise RuntimeError("the file step broke")
-        R.CODE["identity_file"] = boom
+        mine["identity_file"] = boom
         try:
             W.owner_ask(root, "On %s, add a page on parking." % child_name)
             W.run_until_idle(root, limit=200)
             W.run_until_idle(child, limit=200)
         finally:
-            R.CODE["identity_file"] = real
+            mine["identity_file"] = real
         failed = [r for r in W.runs(child) if r["status"] == "failed" and r["engine"] == "Identity"]
         self.assertTrue(failed, "the handling failed, as arranged")
         said = [t for t in R.chat_view(root)["turns"] if t["word"] == "lost"]
