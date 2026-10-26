@@ -17,7 +17,8 @@ runtime or j2_runtime is imported inside the function that needs it).
 THE MODES (A1.20). In warn mode a fault is a row on the department's record and an entry in REFUSED, and the write goes
 through. In refuse mode the write is refused with SchemaFault after the row is written. The mode is a code constant;
 tests change it with monkeypatch, and no environment variable reads it. The conftest fixture fails any test that met a
-fault outside expect_refused(), so the app warns while the tests are strict.
+fault outside expect_refused(). Waves 0 and 1 ran in warn mode for the app and strictly for the tests; since 'A1 interface:
+refuse' MODE is 'refuse', and a test that is about warn mode pins it with monkeypatch.
 
 Packages import it as `import layer_schema as S` and use exactly A1's names. After wave 0 every change is additive
 ('A1 interface:' commits); the JSON Schema files under schemas/layers/ are generated from here (`python layer_schema.py
@@ -72,9 +73,9 @@ CONFIDENCE = {'ask_below': 0.6, 'show_below': 0.8}                     # J2B-7 (
 RAISE_CAP, ROUNDS_DEFAULT = 2.0, 6                                     # Q6 (M5.4, M9.2, wave 2)
 QUESTION_STATUSES = ('open', 'answered', 'unanswered', 'refused')      # board/1 (M4.9, wave 3)
 INTERFACE_SHA = {}                                                     # W3-PROOF sets {1: sha256 of describe()} once nothing else changes it
-MODE = 'warn'          # 'warn' | 'refuse'. A code constant, never an environment variable; tests change it with monkeypatch.
-                       # The integrator's 'A1 interface: refuse' commit sets 'refuse' at the end of wave 1, once the full gate
-                       # shows no fault at all.
+MODE = 'refuse'        # 'warn' | 'refuse'. A code constant, never an environment variable; tests change it with monkeypatch.
+                       # 'A1 interface: refuse' (the integrator's commit at the end of wave 1, the full gate showing no fault at
+                       # all) set it: a write that does not fit the interface raises SchemaFault, after its row.
 OWNERSHIP_MODE = 'warn'          # a key written by a layer that does not own it: a row only, until W3-PROOF (wave 3) makes it 'refuse'
 NEVER_REFUSE = ('stopped', 'control')   # department keys whose writes always land (the owner's Stop); a fault is a row only
 REFUSED = {'count': 0, 'rows': []}      # every fault this process met: the conftest fixture and SM-13 read it

@@ -616,7 +616,8 @@ def test_p4_a_view_of_a_department_with_prices_validates_as_a_whole_through_the_
     assert C.case_6(V1, ctx) == [] and _view(W, J, ref)["prices"][0]["said"] == "said yes"
 
 
-def test_p4_the_prices_are_the_newest_few_newest_first_and_a_row_with_no_answer_is_not_shown(live, ctx):
+def test_p4_the_prices_are_the_newest_few_newest_first_and_a_row_with_no_answer_is_not_shown(live, ctx, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # the odd row has to be in the journal for the view to leave it out: warn mode keeps it
     W, R, J, _ = live
     ref = ctx["ref"]
     for i in range(14):
