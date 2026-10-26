@@ -192,7 +192,7 @@ def _read(names, per, room, limit=6):
 PER = {"Plan": {"calls": 2, "usd": 0.08}, "Write": {"calls": 4, "usd": 0.16}, "Check": {"calls": 1, "usd": 0.04}}
 
 
-def test_the_interface_names_the_estimate_and_what_remains_the_covering_and_the_prices_view():
+def test_p3_the_interface_names_the_estimate_and_what_remains_the_covering_and_the_prices_view():
     """The bargain line part gains estimate and remaining, the covering is listed with samples, and the view's prices are
     typed but not required, so a view written before them still validates."""
     line = S.PROMPTS["priority"]["bargain"]["line"]
@@ -207,7 +207,7 @@ def test_the_interface_names_the_estimate_and_what_remains_the_covering_and_the_
     assert S.validate("view.priority", {"bargains": [], "envelopes": []}) == []
 
 
-def test_the_covering_keeps_the_notes_of_the_covering_it_replaces_when_there_are_no_facts_to_hold_it_to():
+def test_p3_the_covering_keeps_the_notes_of_the_covering_it_replaces_when_there_are_no_facts_to_hold_it_to():
     """With no facts the answer is held to its price alone, as engine_runtime's answer_has_its_price holds it (the notes are
     the same words), so the step keeps its name and the checks that pin it stay as they were."""
     import engine_runtime as R
@@ -218,7 +218,7 @@ def test_the_covering_keeps_the_notes_of_the_covering_it_replaces_when_there_are
     assert V1.CHECK["answer_has_its_price"] is V1.CHECK["price_is_observed"]
 
 
-def test_a_yes_or_an_ask_for_less_is_held_to_the_room_and_a_no_always_stands():
+def test_p3_a_yes_or_an_ask_for_less_is_held_to_the_room_and_a_no_always_stands():
     """A yes that spends what is not there, an ask for less that keeps more than fits, and one that keeps what the
     proposal does not name must fail; a no, or a smaller yes, stands (approvals only tighten)."""
     check = V1.CHECK["price_is_observed"]
@@ -699,3 +699,20 @@ def test_p5_a_save_that_names_its_layer_is_held_to_the_keys_that_layer_owns(live
     before = S.REFUSED["count"]
     W.save_dept(ref, d2, by="priority")
     assert S.REFUSED["count"] == before
+
+
+# ---- P6: the whole of it -----------------------------------------------------------------------------------------------------
+def test_p6_the_contract_passes_for_priority_v1_with_no_part_on_the_fallback(ctx):
+    """Any of the contract's eight cases failing for priority/v1, or a part read from the bundle, must fail."""
+    for number, what, case in C.cases():
+        assert case(V1, ctx) == [], "case %d: %s" % (number, what)
+    assert C.on_the_md_fallback(V1) == []
+    assert C.by_reference(V1) == {"by_reference": 5, "own": 6}, \
+        "priority_envelope and priority_grant, and the three shared checks, still delegate; the rest are this module's"
+
+
+def test_p6_the_module_holds_no_state_besides_its_dicts_of_names():
+    """A1.18: no module-level mutable state besides CODE, PROMPT, DRAFT, CHECK, WORDS and LAYOUT."""
+    own = {"CODE", "PROMPT", "DRAFT", "CHECK", "WORDS", "LAYOUT"}
+    held = {k: type(v).__name__ for k, v in vars(V1).items() if isinstance(v, (dict, list, set)) and not k.startswith("__")}
+    assert set(held) == own, held

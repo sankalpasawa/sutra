@@ -15,6 +15,7 @@ the prices.
 import math
 import re
 import statistics
+import types
 import uuid
 
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
@@ -24,8 +25,9 @@ VERSION = 1
 IMPLEMENTS = 1
 RECIPE = 'v1.json'
 
-#: what an answer is called to the owner (the screen words: said yes, asked for less, said no; never grant, counter or refuse)
-SAID = {'accept': 'said yes', 'counter': 'asked for less', 'reject': 'said no'}
+#: what an answer is called to the owner (the screen words: said yes, asked for less, said no; never grant, counter or refuse);
+#: read only, since a module holds no state besides its dicts of names (A1.18)
+SAID = types.MappingProxyType({'accept': 'said yes', 'counter': 'asked for less', 'reject': 'said no'})
 ANSWERS = tuple(SAID)
 
 
@@ -37,7 +39,7 @@ CALL_USD = 0.04
 #: an engine shaped on the fly is born from Do (R.born_template), so until it has run it is priced as Do is
 PRIOR_ENGINE = 'Do'
 #: which proposal a price row is for; any other word is a cost (a trial)
-PROPOSALS = {'line': 'line', 'engine': 'engine'}
+PROPOSALS = types.MappingProxyType({'line': 'line', 'engine': 'engine'})
 
 
 def _calls(n):
