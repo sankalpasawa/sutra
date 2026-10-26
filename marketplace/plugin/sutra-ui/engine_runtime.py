@@ -53,6 +53,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import layers                      # each layer's bodies and words, behind the interface (PRD A1): _resolve asks its registry
+import layers.prompts              # the typed prompt compiler, and the .md reader it falls back on (PRD A1.16)
 import layer_schema                # the interface of Root and the five layers (PRD A1)
 import owner_words                 # the bargain in the owner's words (PRD M1.7), for Identity's plain-words check (M3.6)
 import record                      # the platform product: rows, deployed into the department's own folder
@@ -5152,124 +5153,60 @@ CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "w
         "audit_mechanical": audit_mechanical, "audit_file": audit_file}
 
 
-# ---- each function's version 1: one agent, its instructions as files (S-28) ----------------------------------------
-#: Version 1 of each function is one agent with .md files inside its covering (PRD M2). The words its agent is sent
-#: are in its files, named as its page names them; the code around them only fills their slots and checks what comes
-#: back. The bundle's copy sits beside the code, and an update of the app replaces it.
+# ---- each function's version 1: one agent, its instructions as typed fields (S-28, A1.16) ------------------------------
+#: Version 1 of each function is one agent with its instructions inside its covering (PRD M2, rewritten by A1). The words
+#: its agent is sent are the layer's WORDS and LAYOUT, compiled by layers/prompts.py from fields the interface types
+#: (layer_schema.PROMPTS); the code around them only fills their inputs and checks what comes back. Until a layer holds
+#: its words, the bundle's .md files (function-prompts/, which an update of the app replaces) are read through the same
+#: split. The bundle sits beside the code and is read-only from here on.
 PROMPTS_DIR = Path(__file__).parent / "function-prompts"
-#: Each function's files, in its page's order, and in each the parts its steps read, with the slots the code fills in
-#: each. A file no step reads yet (Adaptation's decide) is the owner's to read, and holds no part.
-INSTRUCTIONS = {
-    "identity": {"goal": {"does": (), "skills": (), "close": ("dept", "goal", "done", "rules", "plan", "against")},
-                 "completeness": {"thin": (), "enough": ("words", "asked", "goal", "items", "rules", "owner", "budget", "confirm")},
-                 "take": {"recognise": ("goal", "words", "facts"), "take": ("goal", "rules", "words", "facts", "completeness"),
-                          "answer": ("question", "record"), "rule": ("goal", "rules", "words"), "weigh": ("pages", "words"),
-                          "gate": ("rules", "engine")}},
-    "adaptation": {"goal": {"does": (), "skills": ()}, "sense": {"shape": ("needs", "goal", "idea", "library")}, "decide": {},
-                   "make": {"line": ("dept", "words", "taken", "out", "rules", "refused"), "refused": ("faults",)}},
-    "priority": {"goal": {"does": (), "skills": ()},
-                 "bargain": {"line": ("source", "engines", "calls", "usd", "room", "limit"),
-                             "engine": ("engine", "does", "needs", "calls", "usd", "room"), "cost": ("word", "step", "cost", "room")}},
-    "coordination": {"goal": {"does": (), "skills": ()}, "tie": {"tie": ("ready", "what", "order", "waiting")}},
-    "audit": {"goal": {"does": (), "skills": ()}, "judge": {"judge": ("brief", "filed", "pages")}},
-}
-_PART = re.compile(r"^## ([a-z][a-z0-9_-]*)[ \t]*$", re.M)
-_SLOT = re.compile(r"\{\{([a-z_]+)\}\}")
+#: Each function's files, in its page's order, and in each the parts its steps read, with the inputs the code fills in
+#: each, derived from the interface. A file no step reads (Adaptation's decide, whose only part is the note) is the
+#: owner's to read, and holds no part.
+INSTRUCTIONS = {fn: {group: {part: tuple(spec["inputs"]) for part, spec in parts.items() if "field.note" not in spec["fields"].values()}
+                     for group, parts in layer_schema.PROMPTS[fn].items()} for fn in layer_schema.FUNCTION_LAYERS}
 
 
+# the .md reader and the compiler moved into layers/prompts.py (PRD A1.16); these keep their names for their callers
 def _parts(text):
-    """An instruction file, read: its lead, the plain words before the first part that say what the file is for (no
-    agent is sent them), and its parts, each under a heading of its own name, its words exactly as written between
-    the blank lines that set it off."""
-    text = str(text or "").replace("\r\n", "\n")
-    heads = list(_PART.finditer(text))
-    parts = {}
-    for i, m in enumerate(heads):
-        if m.group(1) in parts:
-            raise ValueError("the part %s is written twice" % m.group(1))
-        parts[m.group(1)] = text[m.end():heads[i + 1].start() if i + 1 < len(heads) else len(text)].strip("\n")
-    return (text[:heads[0].start()] if heads else text).strip(), parts
+    return layers.prompts.parts_of(text)
 
 
 def instruction_faults(fn, file, text):
-    """What keeps one instruction file from serving its function: no line that says what it is for, a part a step
-    reads gone, a part no step reads, or a slot the code does not fill. [] when it serves. The covering check of every
-    file an agent's words come from: the bundle's at the definitions load."""
-    want = (INSTRUCTIONS.get(fn) or {}).get(file)
-    if want is None:
-        return ["%s has no instructions named %s" % (str(fn).title(), file)]
-    try:
-        lead, parts = _parts(text)
-    except ValueError as exc:
-        return [str(exc)]
-    faults = [] if lead else ["%s does not say first, in a line, what it is for" % file]
-    for part, slots in want.items():
-        if part not in parts:
-            faults.append("%s has no part %s" % (file, part))
-            continue
-        unknown = sorted(set(_SLOT.findall(parts[part])) - set(slots))
-        if unknown:
-            faults.append("%s, %s: the app fills no %s" % (file, part, ", ".join("{{%s}}" % s for s in unknown)))
-    return faults + ["%s, %s: no step reads this part" % (file, p) for p in parts if p not in want]
+    """What keeps one instruction file from serving its function: layers.prompts.instruction_faults."""
+    return layers.prompts.instruction_faults(fn, file, text)
 
 
 def bundle_faults():
-    """The bundle's files against the list: each one there, each serving. [] when every function has its files."""
-    out = []
-    for fn, files in INSTRUCTIONS.items():
-        for file in files:
-            p = PROMPTS_DIR / fn / (file + ".md")
-            if not p.is_file():
-                out.append("%s's %s instructions are missing from the bundle" % (fn.title(), file))
-                continue
-            out += ["%s's instructions: %s" % (fn.title(), f) for f in instruction_faults(fn, file, p.read_text(encoding="utf-8"))]
-    return out
+    """Every function's words against the list, at the definitions load: layers.prompts.faults. [] when all serve."""
+    return layers.prompts.faults()
 
 
 def _own(ref, fn, file):
-    """Where a department keeps its own copy of one instruction file: in its records home, which an update of the app
-    never replaces (PRD M2.2, J7 step 3). Written only on the owner's stamped ask."""
-    return W.ddir(ref) / "prompts" / fn / (file + ".md")
+    """Where a department keeps its own copy of one instruction file (PRD M2.2): layers.prompts.own."""
+    return layers.prompts.own(ref, fn, file)
 
 
 def _instruction(fn, file, ref=None):
-    """The text of one of a function's instruction files: the department's own copy when the owner stamped one, else
-    the bundle's."""
-    if ref:
-        own = _own(ref, fn, file)
-        if own.is_file():
-            return own.read_text(encoding="utf-8")
-    return (PROMPTS_DIR / fn / (file + ".md")).read_text(encoding="utf-8")
+    """The text of one of a function's instruction files, the department's own copy or the bundle's: layers.prompts.instruction."""
+    return layers.prompts.instruction(fn, file, ref)
 
 
 def _prompt(fn, file, part, ref=None, **slots):
-    """One part of one of a function's instruction files, its slots filled: the words its agent is sent. The
-    department's own copy wins; a part it does not hold (one a later bundle added) is the bundle's. Each slot is
-    filled once, with its value as given, so nothing a value holds is read as a slot; a slot the code does not fill is
-    an error, never a blank."""
-    parts = _parts(_instruction(fn, file, ref))[1]
-    if part not in parts and ref:
-        parts = _parts(_instruction(fn, file))[1]
-    if part not in parts:
-        raise ValueError("%s's %s instructions have no part %s" % (fn.title(), file, part))
-
-    def fill(m):
-        if m.group(1) not in slots:
-            raise ValueError("%s's %s instructions, %s: the app fills no {{%s}}" % (fn.title(), file, part, m.group(1)))
-        return str(slots[m.group(1)])
-    return _SLOT.sub(fill, parts[part])
+    """One part of one of a function's instructions, its inputs filled: the words its agent is sent (layers.prompts.prompt).
+    Each input is filled once, with its value as given, so nothing a value holds is read as a marker; one the code does not
+    fill is an error, never a blank."""
+    return layers.prompts.prompt(ref, fn, file, part, **slots)
 
 
 def _goal_of(ref, name, e=None):
-    """What an engine does and its skills, as its agent is told them: a function's from its goal file (the owner may
-    change it), any other engine's from its definition."""
+    """What an engine does and its skills, as its agent is told them: a function's from its goal words (the owner may
+    change them), any other engine's from its definition."""
     e = e if e is not None else (engine_def(name) or {})
     fn = str(name or "").lower()
     if e.get("kind") != "function" or fn not in INSTRUCTIONS:
         return e.get("description") or "", list(e.get("skills") or [])
-    skills = [ln.strip()[2:].strip() if ln.strip().startswith("- ") else ln.strip()
-              for ln in _prompt(fn, "goal", "skills", ref).split("\n") if ln.strip()]
-    return _prompt(fn, "goal", "does", ref), skills
+    return layers.words(ref, fn, "goal", "does")["text"], list(layers.words(ref, fn, "goal", "skills")["items"])
 
 
 INSTRUCTIONS_MAX = 20000                               # the most one file may hold, in characters
