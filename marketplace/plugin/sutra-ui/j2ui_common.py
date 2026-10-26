@@ -26,6 +26,7 @@ from pathlib import Path
 import engine_runtime as R
 import functions_view as F
 import j2_runtime as J
+import layers
 import owner_words
 import website_dept as W
 
@@ -529,7 +530,8 @@ def get_ctx(ref):
                 return prev
         _DIRTY.discard(key)
         try:
-            c = _build(ref, key)
+            with layers.reading():                  # the one read of the department tells no pin in the record: the tick does (rule 4(g))
+                c = _build(ref, key)
         except Exception as exc:  # noqa: BLE001
             c = Ctx(ref)
             c.reasons.append("build: %s" % type(exc).__name__)

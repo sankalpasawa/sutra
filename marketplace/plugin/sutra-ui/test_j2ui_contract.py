@@ -444,6 +444,30 @@ def test_t31_a_read_writes_nothing_at_any_slot_while_an_engine_is_held_at_its_li
     assert s["paused"] and "out of today's envelope" in json.dumps(s["paused"]), "and the page asks the owner"
 
 
+def test_t31_a_record_that_names_a_pin_the_registry_cannot_find_is_read_without_telling_it_and_the_tick_tells_it_once(client, plant):
+    """Hard rule 4(g) on the last write the audit found on the stack of a read: layers.pins() puts one row in the record when a department
+    names an implementation the registry cannot honour (a record from before the interface refused such a pin on save). The page's reads
+    and a peek of the runtime leave it, and the pin unmarked; the next tick tells it, once."""
+    import layers
+    import record
+    ref, m = plant("filed")
+    d = dict(m.W.dept(ref), layers=dict(m.R.layer_schema.DEFAULT_PINS, audit="audit/v2"))
+    record.write(m.W.ddir(ref) / "dept.json", d)
+    layers._TOLD.clear()
+    told = lambda: [r["engine"] for r in m.W.runs(ref) if "per-department" in str(r.get("what"))]  # noqa: E731
+    m.C.touch(ref)
+    before = files_of(m.home)
+    assert read_everything(client, ref) > 5
+    m.R.next_due(ref, peek=True)
+    assert changed(before, m.home) == [] and told() == [] and layers._TOLD == set(), "the reads told the pin"
+    m.R.next_due(ref)
+    assert told() == ["Audit"], "the tick tells it"
+    m.C.touch(ref)
+    read_everything(client, ref)
+    m.R.next_due(ref)
+    assert told() == ["Audit"], "once"
+
+
 def test_t32_every_act_between_functions_is_worded_for_the_owner_and_no_id_is_printed(client, plant):
     ref, m = plant("running")
     for i, act in enumerate(m.R.ACTS):
