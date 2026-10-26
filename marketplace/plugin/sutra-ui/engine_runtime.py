@@ -617,6 +617,7 @@ def rung_of(ref, step):
 
 
 def _save_entry(ref, e):
+    layer_schema.check_record("adaptation", "ladder", e, ref=ref)      # the entry as the interface types it, before it is written (A1.20)
     with W._lock(ref):
         L = ladder(ref)
         L[e["step"]] = e
@@ -841,7 +842,9 @@ PLAIN_FAULTS = (("a function addressing another",
                  re.compile(r"^\s*(?:Adaptation|Priority|Coordination|Audit)\s*[,:]|\b(?:dear|hey|hi|hello)\s+(?:Adaptation|Priority|Coordination|Audit)\b|"
                             r"@(?:Adaptation|Priority|Coordination|Audit)\b", re.I)),
                 ("a J2 code", re.compile(r"\bJ[12](?:\.[a-h1-9])?\b|\b(?:FI|FA|FP|FC|FAU)\d+(?:\.\d+)?\b|\b(?:S|SM|MK|Q)-\d+\b")),
-                ("grant or counter", re.compile(r"\bgrant(?:s|ed|ing)?\b|\bcounter(?:s|ed|ing)?\b|\bcounter-?offers?\b", re.I)))
+                ("grant or counter", re.compile(r"\bgrant(?:s|ed|ing)?\b|\bcounter(?:s|ed|ing)?\b|\bcounter-?offers?\b", re.I)),
+                # a note that names the standard a fault breaks by its id ('reads_known: ...'): owner_words.plain says the fault alone
+                ("a standard's id", owner_words.standard_lead()))
 PLAIN_KEYS = ("done", "objective", "answer", "why")
 PLAIN_TEMPLATE = {"answer": "I could not put that in plain words. Ask me again, in other words.",
                   "question": "What should I know before the department starts?",
@@ -3461,6 +3464,7 @@ def adapt_park(ctx, step, item):
     ref, pl, got = ctx["ref"], ctx["post"]["payload"], ctx["bag"]["adapt.shape"]
     row = {"id": "i-" + uuid.uuid4().hex[:6], "words": pl.get("words"), "reflected": got["reflected"], "question": got.get("question"),
            "shapes": [str(x) for x in got["shapes"]][:3], "state": "parked", "at": W.now()}
+    layer_schema.check_record("adaptation", "idea", row, ref=ref)      # the idea as the interface types it, before it is written (A1.20)
     with W._lock(ref):
         rows = ideas(ref)
         rows.append(row)
@@ -4691,6 +4695,7 @@ def _note_idea(ref, idea_id, note):
         for r in rows:
             if r.get("id") == idea_id:
                 r.update(note)
+                layer_schema.check_record("adaptation", "idea", r, ref=ref)
         W._write(W.ddir(ref) / "ideas.json", rows)
 
 
@@ -5517,6 +5522,17 @@ def identity_closed(ctx, step, item):
     engines, J = [e for e in pl.get("engines") or [] if isinstance(e, dict) and e.get("name")], _j2()
     names = " -> ".join(e["name"] for e in engines)
     who = {"src": "Root" if d.get("root") else OWNER}
+    if not engines:
+        # no plan at all: Adaptation answered that an engine the kind requires cannot serve an item (J2B-4, M6.4), so there
+        # is nothing to run, nothing to drop and no plan to stamp (a stamp would send Root a plan that names no engine, and
+        # the same card would come back). The owner is put the reason in plain words, on the card every blocked plan has,
+        # with its ways out. The conflict's own options (root_setup among them) are filed by the options ask of W2-IDENTITY J1
+        reason = str(pl.get("why") or "no plan can be made").strip().rstrip(".")
+        if J:
+            J.ruled(ref, "ask", reason, engines)
+        _blocked(ref, d, who, "%s. Say what the department should do, or choose a way forward on this card." % reason,
+                 "No plan can be made as it stands.", "Adaptation, shaping the plan", reason)
+        return {"said": "no plan can be made (%s); put to the owner, with the ways out" % reason}
     if J:
         J.ruled(ref, ruling, why, engines)
     if ruling == "run":
@@ -6329,8 +6345,12 @@ def p_adapt_line(ctx, step, item):
     rules = "; ".join(str(r.get("line")) for r in d.get("rules") or [] if r.get("line"))
     taken = ", ".join(sorted(defs()["engines"]))
     refused = ("\n\n" + _prompt("adaptation", "make", "refused", ctx["ref"], faults="; ".join(str(f) for f in pl["faults"]))) if pl.get("faults") else ""
-    return _prompt("adaptation", "make", "line", ctx["ref"], dept=d.get("name"), words=pl.get("words") or d.get("goal"), taken=taken,
-                   out=_out_artifacts() or "none", rules=rules or "none", refused=refused)
+    # the done-when items, one a line ('D1: the site is live'): make.line names them (PRD M5.1), and a layer that does not load
+    # runs this body, which must fill every slot the part has (layers/adaptation/v1.item_lines says it the same way)
+    items = "\n".join("%s: %s" % (i["id"], " ".join(str(i.get("text") or "").split()))
+                      for i in d.get("done_items") or [] if isinstance(i, dict) and i.get("id"))
+    return _prompt("adaptation", "make", "line", ctx["ref"], dept=d.get("name"), words=pl.get("words") or d.get("goal"), items=items or "none",
+                   taken=taken, out=_out_artifacts() or "none", rules=rules or "none", refused=refused)
 
 
 def d_adapt_line(ctx, step, item):

@@ -421,6 +421,50 @@ def test_a4_a_shaped_line_whose_second_engine_reads_nothing_filed_fails_naming_r
     assert "workflow.registered" in acts and W.dept(ref)["workflows"][-1]["engines"] == ["Facts 2", "Site 2"]
 
 
+STANDARD_IDS = re.compile(r"\b(?:%s)\b" % "|".join(i for i, _, _, _ in S.WORKFLOW_STANDARDS))
+
+
+def test_a4_the_owner_never_reads_a_standards_id_on_a_card_a_tell_or_the_pane(j2, monkeypatch):
+    """The notes keep the id of the standard a fault breaks (the done-check reads it); every surface the owner reads says the
+    fault in plain words: the blocked card, the line Identity tells, and the Adaptation pane's review."""
+    W, R, J, founding, FV = j2
+    bad = {"engines": [GOOD[0], dict(GOOD[1], reads="Interviews")]}
+    asked = []
+    _stub(monkeypatch, R, {"adapt.line": lambda prompt: asked.append(prompt) or bad,
+                           "priority.bargain": {"answer": "accept", "why": "the envelope has room"}})
+    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
+    W.owner_ask(root, ORGANIC)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    assert len(asked) == 3, "shaped, and shaped again twice, with the reason each time"
+    assert "reads_known: Site 2 reads Interviews" in asked[1], "the model is told the standard by its id, as the notes name it"
+    assert "reads_known" in " ".join(" ".join(e["payload"].get("faults") or []) for e in J.events(ref) if e["action"] == "workflow.blocked"), "the record keeps it"
+    card = next(a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending")
+    for field in ("text", "title", "why"):
+        assert not STANDARD_IDS.search(card[field]), "%s: %s" % (field, card[field])
+    assert "Site 2 reads Interviews, which nothing before it writes" in card["text"] and "_known" not in card["text"]
+    told = [str(p["payload"].get("done") or p["payload"].get("objective") or "") for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]]
+    assert not [t for t in told if STANDARD_IDS.search(t)], told
+    pane = FV.function(ref, "Adaptation")["j2"]
+    assert pane["root_checks"] and not [r["summary"] for r in pane["root_checks"] if STANDARD_IDS.search(r["summary"])], pane["root_checks"]
+    assert any("Site 2 reads Interviews" in r["summary"] for r in pane["root_checks"])
+
+
+def test_a4_owner_words_say_a_fault_without_its_standards_id_and_leave_everything_else_as_it_was():
+    import owner_words
+    assert owner_words.plain("reads_known: Site 2 reads Interviews, which nothing before it writes") == \
+        "Site 2 reads Interviews, which nothing before it writes"
+    assert owner_words.plain("The shaped line did not pass its check: Shape the line the words need: names_new: the Library already has an engine named Plan; "
+                             "required_kept: the plan leaves out Check.") == \
+        "The shaped line did not pass its check: Shape the line the words need: the Library already has an engine named Plan; the plan leaves out Check."
+    for every in S.WORKFLOW_STANDARDS:
+        assert not STANDARD_IDS.search(owner_words.plain("%s: x" % every[0]))
+    # a word that only looks like one, and a standard named without a colon (the pane's check column), stay as they are
+    assert owner_words.plain("reads_known") == "reads_known" and owner_words.plain("Priority said yes to it") == "Priority said yes to it"
+    assert owner_words.plain("fits_room_not: x") == "fits_room_not: x"
+
+
 # ---- A3 · proposals cover the done-when items (M5.1) ------------------------------------------------------------------
 ITEMS = [{"id": "D1", "text": "The site is live", "how": "code", "level": "outcome"},
          {"id": "D2", "text": "Every page names the phone line", "how": "model", "level": "target"},
@@ -506,6 +550,29 @@ def test_a3_covers_a_model_names_are_kept_when_known_and_the_rest_default_to_the
     assert _covers_of(posts)["covers"] == {"D1": ["Site 2"], "D2": ["Site 2"], "D3": ["Site 2"]}
 
 
+def test_a3_a_line_that_is_not_made_defaults_every_item_its_model_left_unnamed_to_the_last_engine(j2, monkeypatch):
+    """A model that was not asked for covers may still name some: what it names is kept and the rest go to the last engine,
+    so Root's check does not refuse the line on every reshape (the setting is off, as it is by default)."""
+    ref = _dept(j2, "organic")
+    partial = {"engines": [dict(GOOD[0], covers=["D1"]), dict(GOOD[1], covers=["D2"])]}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, partial, how="model")
+    sent = _covers_of(posts)
+    assert sent["covers"] == {"D1": ["Facts 2"], "D2": ["Site 2"], "D3": ["Site 2"]}
+    assert [e["covers"] for e in sent["engines"]] == [["D1"], ["D2", "D3"]] and S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+    first = {"engines": [dict(GOOD[0], covers=["D2"]), dict(GOOD[1], covers=["D2"])]}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, first, how="model")
+    assert _covers_of(posts)["covers"] == {"D2": ["Facts 2", "Site 2"], "D1": ["Site 2"], "D3": ["Site 2"]}
+
+
+def test_a3_a_made_line_keeps_exactly_the_covers_its_engines_name(j2, monkeypatch):
+    """A made line is held to every item by its own check, so the offer never invents a cover for it."""
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = _dept(j2, "organic")
+    partial = {"engines": [_made("Facts 2", "Brief", "Facts 2", ["D1"]), _made("Site 2", "Facts 2", "Live site", ["D2"])]}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, partial, how="model")
+    assert _covers_of(posts)["covers"] == {"D1": ["Facts 2"], "D2": ["Site 2"]}
+
+
 def test_a3_the_line_goes_to_identity_with_its_covers_when_no_cycle_is_live(j2, monkeypatch):
     ref = _dept(j2, "organic")
     out, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": GOOD}, how="model", live=False)
@@ -554,6 +621,16 @@ def test_a8_a_made_line_that_covers_every_item_with_a_level_and_a_confidence_pas
     ("an engine that covers nothing and feeds nothing", lambda e: e.append(_made("Extra", "Brief", "Extra", [])),
      "Extra covers no item and feeds no engine after it"),
     ("a level 1 off the Library", lambda e: e[0].update(level=1), "Play rules is level 1, and the Library has no engine of that name"),
+    # J2B-4 refuses a missing field: the offline draft is filled in (norm_engines), a made engine's guess is not
+    ("a missing does", lambda e: e[1].pop("does"), "Game says nothing of what it does"),
+    ("an empty does", lambda e: e[1].update(does="  "), "Game says nothing of what it does"),
+    ("a missing reads", lambda e: e[1].pop("reads"), "Game names nothing it reads"),
+    ("a first engine that leaves its reads out, which would be wired to the Brief", lambda e: e[0].pop("reads"), "Play rules names nothing it reads"),
+    ("a reads that is no string", lambda e: e[1].update(reads=["Play rules"]), "Game names nothing it reads"),
+    ("a missing writes", lambda e: e[1].pop("writes"), "Game names nothing it writes"),
+    ("an empty writes", lambda e: e[0].update(writes=""), "Play rules names nothing it writes"),
+    ("a missing internet", lambda e: e[1].pop("internet"), "Game does not say whether it goes to the internet"),
+    ("an internet that is no bool", lambda e: e[1].update(internet="yes"), "Game does not say whether it goes to the internet"),
 ])
 def test_a8_what_j2b_4_and_j2b_6_refuse(j2, monkeypatch, what, change, note):
     engines = json.loads(json.dumps(PLAY))
@@ -573,6 +650,30 @@ def test_a8_a_shipped_name_is_level_1_on_its_template_and_nowhere_else(j2, monke
     assert "Plan is an engine of the Library, so it is level 1" in low["notes"]
     legacy = _verdict_of(j2, monkeypatch, "organic", {"engines": [write, pages, rest]}, how="offline draft")
     assert legacy["ok"] is False and "names_new: the Library already has an engine named Plan" in legacy["notes"], "a draft is not made: the old rule"
+
+
+def test_a8_a_made_engine_that_leaves_a_field_out_is_not_filled_in_but_a_draft_is(j2, monkeypatch):
+    """norm_engines keeps its tolerant defaults for the offline draft (reads the Brief, writes its name, goes nowhere)."""
+    plan = json.loads(json.dumps(PLAY))
+    for e in plan[1:]:
+        for key in ("does", "reads", "writes", "internet"):
+            e.pop(key)
+    got = _verdict_of(j2, monkeypatch, "organic", {"engines": plan})
+    assert got["ok"] is False and {"Game says nothing of what it does", "Game names nothing it reads", "Game names nothing it writes",
+                                   "Game does not say whether it goes to the internet"} <= set(got["notes"]), got
+    row = v1().norm_engines(plan)[1]
+    assert (row["does"], row["reads"], row["writes"], row["internet"]) == ("", "Brief", "Game", False), "the draft's defaults stay"
+
+
+def test_a8_a_level_1_engine_that_leaves_its_reads_out_is_told_once(j2, monkeypatch):
+    write = _made("Plan", "Brief", "Site plan", ["D1"], level=1, confidence=0.9)
+    pages = _made("Write", "Site plan", "Pages", ["D2"], level=1)
+    rest = _made("Notes", "Pages", "Notes", ["D3"])
+    gap = dict(write)
+    gap.pop("reads")
+    got = _verdict_of(j2, monkeypatch, "organic", {"engines": [gap, pages, rest]})
+    assert got["ok"] is False and "Plan names nothing it reads" in got["notes"]
+    assert not [n for n in got["notes"] if "keeps its Library reads" in n], "a field that is missing is told as missing, once"
 
 
 def test_a8_a_reshape_keeps_the_engines_the_kind_requires_at_level_1(j2, monkeypatch):
@@ -646,6 +747,87 @@ def test_a8_a_line_under_0_6_is_a_doubt_to_identity_and_nothing_goes_to_priority
     assert "doubt" in out and not [p for p in j2[1].board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"]]
 
 
+def test_a8_a_doubt_that_names_no_fallback_is_a_whole_act_with_the_key_left_out(j2, monkeypatch):
+    """The second sentence of a doubt is optional ('Unless you say, ...'): a plain question is the common case, and act.doubt
+    holds a fallback as text, not as null, so the key is left out and Identity goes on with its default."""
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    monkeypatch.setattr(v1(), "hears_doubt", lambda: True)
+    ref = _dept(j2, "organic")
+    plain = [_made("Play rules", "Brief", "Play rules", ["D1"]),
+             _made("Game", "Play rules", "Live site", ["D2", "D3"], confidence=0.45, doubt="Where should the weekly list go?")]
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": plain}, how="model")
+    assert [p[:2] for p in posts] == [("Identity", "inform")]
+    sent = posts[0][2]
+    assert sent["word"] == "doubt" and sent["doubt"] == "Where should the weekly list go?" and "fallback" not in sent
+    assert S.validate_act("Adaptation", ["Identity"], "inform", sent) == []
+
+
+def test_a8_a_plain_doubt_reaches_the_owner_as_one_question_with_the_departments_own_fallback(j2, monkeypatch):
+    import layers.identity.v1 as identity
+    W, R, J, _, FV = j2
+    plan = {"engines": [_made("Catalogue", "Brief", "Catalogue", ["D1", "D2"], confidence=0.9),
+                        _made("Stock page", "Catalogue", "Live site", ["D3"], confidence=0.45, doubt="Where should the weekly list go?")]}
+    ref, _ = _run_scenario(j2, monkeypatch, "organic", LAB_WORDS, "Lab Co", LAB, plan)
+    doubts = _board_word(R, ref, "doubt", "Adaptation")
+    assert len(doubts) == 1 and "fallback" not in doubts[0]["payload"]
+    asked = [a for a in W.asks(ref) if a["kind"] == "j2_identity" and a.get("missing") == "plan" and a["status"] == "pending"]
+    assert len(asked) == 1 and "Where should the weekly list go?" in asked[0]["text"], "the question reached the owner"
+    assert identity.fallback_default(W.dept(ref)) in asked[0]["text"] + ".", "Unless you say, the default"
+    assert W.dept(ref).get("workflows") in (None, []), "nothing is registered while the question is open"
+
+
+def test_a8_a_request_marked_go_on_sends_a_line_under_0_6_to_priority_with_the_doubt_named_and_asks_nothing(j2, monkeypatch):
+    """Identity has asked what it can (act.line_request go_on): Adaptation goes on, as for a confidence from 0.6 to under 0.8,
+    and never doubts again."""
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    monkeypatch.setattr(v1(), "hears_doubt", lambda: True)
+    ref = _dept(j2, "organic")
+    unsure = [_made("Play rules", "Brief", "Play rules", ["D1"]),
+              _made("Game", "Play rules", "Live site", ["D2", "D3"], confidence=0.45,
+                    doubt="Where should an order go? Unless you say, the form shows the order on the screen and sends nothing.")]
+    on = {"go_on": True, "doubt": "Where should an order go?", "fallback": "the form shows the order on the screen and sends nothing"}
+    out, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": unsure}, how="model", payload=on)
+    assert [p[:2] for p in posts] == [("Priority", "propose")], "no doubt to Identity, so no second question and no blocked card"
+    sent = posts[0][2]
+    assert sent["confidence"] == 0.45 and sent["doubt"].startswith("Where should an order go?")
+    assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+    assert "doubt" not in out and out["said"].startswith("proposed the line to Priority")
+    again, more = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": unsure}, how="model")
+    assert [p[:2] for p in more] == [("Identity", "inform")], "a request that is not marked go_on still doubts"
+
+
+def test_a9_a_plan_still_under_0_6_after_the_second_answer_goes_to_priority_with_the_doubt_and_is_registered(j2, monkeypatch):
+    """J2B-7 end to end: the stub is unsure every time. Identity asks twice; the third time it tells Adaptation to go on, and
+    the plan goes to Priority, is checked and registered, with no blocked card and no third question."""
+    W, R, J, _, FV = j2
+    plan = {"engines": [_made("Catalogue", "Brief", "Catalogue", ["D1", "D2"], confidence=0.9),
+                        _made("Stock page", "Catalogue", "Live site", ["D3"], confidence=0.45, doubt="Where should the weekly list go?")]}
+    ref, _ = _run_scenario(j2, monkeypatch, "organic", LAB_WORDS, "Lab Co", LAB, plan)
+    for said in ("Send it to the science teacher", "Only the lab technician sees it"):
+        assert [a for a in W.asks(ref) if a["kind"] == "j2_identity" and a["status"] == "pending"], "a question waits for the owner"
+        J.answer(ref, said)
+        W.run_until_idle(ref, limit=300)
+    asks = [a for a in W.asks(ref) if a["kind"] == "j2_identity" and a.get("missing") == "plan"]
+    assert len(asks) == 2 and all(a["status"] != "pending" for a in asks), "two questions, and no third"
+    assert len(_board_word(R, ref, "doubt", "Adaptation")) == 3, "the third doubt is the one Identity answers by telling it to go on"
+    told = [q for q in _board_word(R, ref, "line", "Identity") if q["payload"].get("go_on")]
+    assert len(told) == 1 and told[0]["dst"] == ["Adaptation"], "told once"
+    sent = _board_word(R, ref, "line", "Adaptation")[-1]
+    assert sent["dst"] == ["Priority"] and sent["payload"]["confidence"] == 0.45 and sent["payload"]["doubt"] == "Where should the weekly list go?"
+    acts = [e["action"] for e in J.events(ref)]
+    assert "workflow.registered" in acts and J.status(ref)["state"] != "blocked"
+    assert not [a for a in W.asks(ref) if a["kind"] == "blocked"], "the owner is not blocked on a plan that was told to go on"
+    assert W.dept(ref)["workflows"][-1]["engines"] == ["Catalogue", "Stock page"]
+
+
+def test_a8_a_request_marked_go_on_changes_nothing_for_a_sure_line(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = _dept(j2, "organic")
+    sure = {"engines": [_made("Play rules", "Brief", "Play rules", ["D1"]), _made("Game", "Play rules", "Live site", ["D2", "D3"], confidence=0.85)]}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, sure, how="model", payload={"go_on": True})
+    assert [p[:2] for p in posts] == [("Priority", "propose")] and "doubt" not in posts[0][2]
+
+
 def test_a8_until_identity_hears_a_doubt_a_line_under_0_6_is_shown_not_dropped(j2, monkeypatch):
     monkeypatch.setenv("J2_ADAPT_MAKE", "1")
     monkeypatch.setattr(v1(), "hears_doubt", lambda: False)
@@ -707,6 +889,43 @@ def test_a8_the_make_shape_part_is_in_the_interface_with_its_contract_verbatim()
     assert {"act": "inform", "words": ("doubt",), "to": ("Identity",), "payload": "act.doubt"} in S.SENDS["Adaptation"]
 
 
+# ---- A1.18 · a layer that does not load runs engine_runtime's own bodies, and never stops a department -----------------
+def test_a3_the_fallback_prompt_builder_fills_every_slot_the_part_has_and_says_what_the_layers_does(j2):
+    """R.p_adapt_line is the copy a department runs when adaptation/v1 does not load. make.line gained its items slot in
+    M5.1, and the copy passed none, so every shaped line raised: 'the app fills no {{items}}'."""
+    W, R, _, _, _ = j2
+    ref = _dept(j2, "organic", ref="dref-fallback")
+    ctx = {"ref": ref, "dept": W.dept(ref), "post": {"payload": {"word": "line", "words": "A guide to the night clinic", "faults": []}}, "bag": {}}
+    got = R.p_adapt_line(ctx, None, None)
+    for line in ("D1: The site is live", "D2: Every page names the phone line", "D3: A visitor can find the doctors"):
+        assert line in got
+    assert got == v1().PROMPT["adapt_line"](ctx, None, None), "the copy and the layer's body say the same words"
+    ctx["post"]["payload"]["faults"] = ["reads_known: Site 2 reads Interviews"]
+    assert R.p_adapt_line(ctx, None, None) == v1().PROMPT["adapt_line"](ctx, None, None) and "REFUSED BY ROOT'S CHECK" in R.p_adapt_line(ctx, None, None)
+    bare = _dept(j2, "organic", ref="dref-fallback-bare", items=[])
+    ctx = {"ref": bare, "dept": W.dept(bare), "post": {"payload": {"word": "line", "words": "w"}}, "bag": {}}
+    assert R.p_adapt_line(ctx, None, None) == v1().PROMPT["adapt_line"](ctx, None, None) and "none" in R.p_adapt_line(ctx, None, None)
+
+
+def test_a3_a_department_whose_adaptation_layer_does_not_load_still_has_its_line_shaped(j2, monkeypatch):
+    """The fallback end to end: with adaptation/v1 unable to load, the prompt that shapes the line is built (it raised) and the
+    step runs on engine_runtime's own bodies."""
+    import layers
+    W, R, J, founding, FV = j2
+    real = layers.load
+    monkeypatch.setattr(layers, "load", lambda impl_id: None if str(impl_id).startswith("adaptation/") else real(impl_id))
+    asked = []
+    _stub(monkeypatch, R, {"adapt.line": lambda prompt: asked.append(prompt) or {"engines": GOOD},
+                           "priority.bargain": {"answer": "accept", "why": "the envelope has room"}})
+    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
+    W.owner_ask(root, ORGANIC)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    assert asked and "WHAT DONE MEANS, ITEM BY ITEM" in asked[0] and "D1: " in asked[0], "the shape step was asked, with the items"
+    assert not [r for r in W.runs(ref) if r.get("engine") == "Adaptation" and r.get("status") == "failed" and "items" in str(r.get("what"))]
+
+
 # ---- A5 · Adaptation's view -------------------------------------------------------------------------------------------
 def _event(action, summary, payload=None, **more):
     return dict({"action": action, "summary": summary, "payload": payload or {}, "occurred_at": "2026-10-27T10:00:00+05:30"}, **more)
@@ -764,7 +983,9 @@ def test_a5_an_item_no_engine_covers_is_named_and_the_view_validates_in_every_st
     W, R, J, _, FV = j2
     ref = _dept(j2, "organic")
     d = W.dept(ref)
-    partial = {"engines": [dict(GOOD[0], covers=["D1"]), dict(GOOD[1], covers=["D2"])]}
+    # a partial cover is a made line's to name (its own check refuses it); a line that is not made has the rest default to its last engine
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    partial = {"engines": [_made("Facts 2", "Brief", "Facts 2", ["D1"]), _made("Site 2", "Facts 2", "Live site", ["D2"])]}
     prop = _proposed(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, partial, how="model")
     states = {"proposing": [prop], "reshaping": [prop, _event("workflow.blocked", "Root's check refused the workflow: D3.", {"checks": ROWS})],
               "blocked": [prop] + [_event("workflow.blocked", "Root's check refused the workflow: D3.", {"checks": ROWS})] * 3,
@@ -818,15 +1039,22 @@ DOC_PLAN = {"engines": [_made("Outline", "Brief", "Outline", ["D1"], confidence=
                         _made("Handbook", "Outline", "Result", ["D2"], confidence=0.85)]}
 
 
-def _run_scenario(j2, monkeypatch, kind, words, org, items, plan, answers=None):
-    """A department as a person makes one, with J2_ADAPT_MAKE on and a stub in place of every model Adaptation, Priority,
-    Root and Audit would call; the motor runs until idle, and the owner's one stamp on what goes out is given."""
+def _run_scenario(j2, monkeypatch, kind, words, org, items, plan, answers=None, make=True):
+    """A department as a person makes one, with J2_ADAPT_MAKE on (off with make=False) and a stub in place of every model
+    Adaptation, Priority, Root and Audit would call; the motor runs until idle, and the owner's one stamp on what goes out
+    is given."""
     W, R, J, founding, FV = j2
-    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
-    seen = _stub(monkeypatch, R, dict({"setup.converse": {"verdict": "clear", "question": ""},
-                                       "setup.shape": {"name": org + " Department", "kind": kind, "goal": words, "done_items": items},
-                                       "adapt.line": plan, "priority.bargain": {"answer": "accept", "why": "the envelope has room"},
-                                       "audit.judge": {"ok": True, "findings": []}}, **(answers or {})))
+    if make:
+        monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    else:
+        monkeypatch.delenv("J2_ADAPT_MAKE", raising=False)
+    stubs = {"setup.converse": {"verdict": "clear", "question": ""},
+             "setup.shape": {"name": org + " Department", "kind": kind, "goal": words, "done_items": items},
+             "adapt.line": plan, "priority.bargain": {"answer": "accept", "why": "the envelope has room"},
+             "audit.judge": {"ok": True, "findings": []}}
+    if plan is None:
+        del stubs["adapt.line"]                         # no agent answers the shape: the offline draft does
+    seen = _stub(monkeypatch, R, dict(stubs, **(answers or {})))
     root = founding.found_structure(org, owner="Sankalp")["root"]
     W.owner_ask(root, words)
     W.run_until_idle(root, limit=300)
@@ -914,6 +1142,70 @@ def test_a9_a_stub_cannot_on_a_website_game_gives_one_conflict_with_three_typed_
     assert "workflow.registered" not in [e["action"] for e in J.events(ref)] and W.dept(ref).get("workflows") in (None, [])
 
 
+def test_a3_a_model_that_names_some_covers_with_the_setting_off_still_has_its_line_registered(j2, monkeypatch):
+    """With J2_ADAPT_MAKE off (today's default), a stub that names covers for two of three items used to leave D3 uncovered,
+    and Root's check refused the line on every reshape: 'D3 is covered by no engine of the plan'."""
+    W, R, J, _, FV = j2
+    plan = {"engines": [dict(GOOD[0], covers=["D1"]), dict(GOOD[1], covers=["D2"])]}
+    ref, _ = _run_scenario(j2, monkeypatch, "organic", LAB_WORDS, "Lab Co", LAB, plan, make=False)
+    acts = [e["action"] for e in J.events(ref)]
+    assert "workflow.registered" in acts and "workflow.blocked" not in acts, acts
+    registered = W.dept(ref)["workflows"][-1]
+    assert registered["engines"] == ["Facts 2", "Site 2"] and registered["covers"] == {"D1": ["Facts 2"], "D2": ["Site 2"], "D3": ["Site 2"]}
+    assert next(c for c in registered["checks"] if c["check"] == "items_covered")["passed"] is True
+
+
+def _cannot_game(j2, monkeypatch, items=GAME):
+    """A website game whose first line Root's check sends back, and a stub Make that answers cannot for D3 each time it is asked."""
+    W, R, J, _, FV = j2
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["the plan does not cover D3"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    cannot = {"cannot": {"engine": "Check", "items": ["D3"], "why": "the game needs a script and Check refuses any page with one"}}
+    return _run_scenario(j2, monkeypatch, "website", GAME_WORDS, "Game Co", items, cannot)[0]
+
+
+def test_a9_a_cannot_reaches_the_owner_as_one_card_that_says_it_in_plain_words_with_ways_out_and_no_plan_to_stamp(j2, monkeypatch):
+    """What the owner sees: not 'Adaptation proposes the plan . ... Stamp to run it as proposed' over a plan that is empty, whose
+    stamp sent Root a plan that names no engine and brought the same card back."""
+    W, R, J, _, FV = j2
+    ref = _cannot_game(j2, monkeypatch)
+    assert [a for a in W.asks(ref) if a["kind"] == "conflict"] == [], "no card offers a plan to stamp when there is none"
+    cards = [a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending"]
+    assert len(cards) == 1
+    card = cards[0]
+    assert card["text"].startswith("Check cannot serve D3: the game needs a script and Check refuses any page with one.")
+    assert "Say what the department should do" in card["text"] and "the plan ." not in card["text"]
+    assert not re.search(r"run it as proposed|Stamp|stamp|drop it", card["text"]), card["text"]
+    assert not STANDARD_IDS.search(card["text"] + card["title"] + card["why"])
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D3", "stop"], "the ways out a blocked plan always has"
+    assert J.status(ref)["state"] == "blocked"
+    told = [str(p["payload"].get("done") or "") for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]]
+    assert not [t for t in told if "the plan ." in t or "run it as proposed" in t], told
+    events = J.events(ref)
+    assert "workflow.registered" not in [e["action"] for e in events]
+    assert not [e for e in events if "names no engine" in str(e.get("summary"))], "no empty plan ever reached Root's check"
+    assert [e["action"] for e in events if e["action"] == "identity.ruled"], "the ledger says Identity put it to the owner"
+
+
+def test_a9_choosing_a_way_out_of_a_cannot_applies_it_and_does_not_bring_the_same_card_back(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _cannot_game(j2, monkeypatch)
+    card = next(a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending")
+    before = len([q for q in R.board(ref) if q["src"] == "Identity" and q["dst"] == ["Adaptation"] and q["msg_type"] == "request"])
+    W.choose_option(ref, card["id"], "leave:D3")
+    W.run_until_idle(ref, limit=300)
+    assert [i["id"] for i in W.dept(ref)["done_items"]] == ["D1", "D2"], "D3 is left out of done-when on the owner's choice"
+    asked = [q for q in R.board(ref) if q["src"] == "Identity" and q["dst"] == ["Adaptation"] and q["msg_type"] == "request"]
+    assert len(asked) > before, "Adaptation is asked afresh"
+    assert not [a for a in W.asks(ref) if a["kind"] == "conflict"]
+    assert not [e for e in J.events(ref) if "names no engine" in str(e.get("summary"))]
+    assert next(a for a in W.asks(ref) if a["id"] == card["id"])["status"] == "chosen"
+
+
 def test_a9_a_stub_at_0_7_shows_the_doubt_and_asks_nothing_and_the_department_goes_on(j2, monkeypatch):
     W, R, J, _, FV = j2
     plan = {"engines": [_made("Catalogue", "Brief", "Catalogue", ["D1", "D2"], confidence=0.9),
@@ -954,6 +1246,65 @@ def test_a9_offline_with_the_setting_on_keeps_the_draft_and_asks_nothing(j2, mon
     assert not _board_word(R, ref, "doubt")
 
 
+def test_a9_with_the_setting_on_and_no_agent_to_shape_a_default_department_keeps_do(j2, monkeypatch):
+    """J2B-9: the offline draft keeps a default department's Do. It used to be the site draft (Facts -> Site, writing Live
+    site), and Identity asked a document department whether the site may go live."""
+    W, R, J, _, FV = j2
+    ref, seen = _run_scenario(j2, monkeypatch, "default", DOC_WORDS, "Safety Co", DOC, None)
+    assert not [sid for sid, _ in seen if sid == "adapt.line"], "no agent was asked: the draft answered"
+    d = W.dept(ref)
+    assert d["kind"] == "default" and d["workflows"][-1]["engines"] == ["Do"] and d["workflows"][-1]["source"] == "library"
+    assert "Facts" not in d["engines"] and "Site" not in d["engines"]
+    assert d["workflows"][-1]["covers"] == {"D1": ["Do"], "D2": ["Do"]} and d["workflows"][-1]["deliverable"] == "Result"
+    sent = _board_word(R, ref, "line", "Adaptation")[0]["payload"]
+    assert sent["source"] == "library" and "confidence" not in sent and "doubt" not in sent
+    assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+    assert not [a for a in W.asks(ref) if "go live" in str(a.get("text"))], "a document is not a site"
+    assert "workflow.blocked" not in [e["action"] for e in J.events(ref)]
+
+
+def test_a9_with_the_setting_on_and_no_agent_to_shape_a_website_reshape_gets_the_librarys_line_with_its_check(j2, monkeypatch):
+    """A website Root sends back once, the setting on and no agent to shape it: the Library repair it has with the setting off
+    (the line again, with the Check its kind requires). The Facts -> Site draft has no Check, so required_kept failed and the
+    department ended blocked."""
+    W, R, J, _, FV = j2
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["the plan does not cover D3"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    ref, _ = _run_scenario(j2, monkeypatch, "website", GAME_WORDS, "Game Co", GAME, None)
+    acts = [e["action"] for e in J.events(ref)]
+    assert acts.count("workflow.blocked") == 1 and "workflow.registered" in acts, acts
+    registered = W.dept(ref)["workflows"][-1]
+    assert registered["engines"] == LINE and registered["source"] == "library"
+    assert not [a for a in W.asks(ref) if a["kind"] == "blocked"] and J.status(ref)["state"] != "blocked"
+
+
+def test_a9_the_librarys_draft_is_judged_as_the_librarys_line_and_only_when_it_is_the_draft(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = _dept(j2, "default", ref="dref-do-draft")
+    ctx = {"ref": ref, "dept": j2[0].dept(ref), "post": {"payload": {"word": "line", "words": "x"}}}
+    draft = v1().DRAFT["adapt_line_draft"](ctx, None, None)
+    assert draft["source"] == "library" and [e["name"] for e in draft["engines"]] == ["Do"]
+    judged = dict(ctx, bag={"adapt.source": {"shape": True, "source": "shaped"}}, how={"adapt.line": "offline draft"})
+    assert v1().CHECK["line_is_engines"](judged, None, None, draft)["ok"] is True, v1().CHECK["line_is_engines"](judged, None, None, draft)
+    # an agent that says its line is the Library's is not believed: Do is an engine the Library already has
+    claimed = dict(judged, how={"adapt.line": "model"})
+    assert v1().CHECK["line_is_engines"](claimed, None, None, draft)["ok"] is False
+    # with the setting off, or for a kind with no Library line, the draft is the two engines it has always been
+    monkeypatch.delenv("J2_ADAPT_MAKE")
+    assert [e["name"] for e in v1().DRAFT["adapt_line_draft"](ctx, None, None)["engines"]] == ["Facts", "Site"]
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    organic = _dept(j2, "organic", ref="dref-organic-draft")
+    assert [e["name"] for e in v1().DRAFT["adapt_line_draft"]({"ref": organic, "dept": j2[0].dept(organic)}, None, None)["engines"]] == ["Facts", "Site"]
+    # a default department's line Root sent back needs no Check, so the draft is again the two engines
+    sent_back = dict(ctx, post={"payload": {"word": "line", "words": "x", "faults": ["the plan does not cover D2"]}})
+    assert [e["name"] for e in v1().DRAFT["adapt_line_draft"](sent_back, None, None)["engines"]] == ["Facts", "Site"]
+    assert "practices" not in sent_back["post"]["payload"], "asking what the setting's absence would take sets nothing on the request"
+
+
 def test_a9_a_made_website_reshape_keeps_the_librarys_own_check_and_publish_and_registers_them_with_the_plan(j2, monkeypatch):
     """Level 1 takes the Library's engine as it is (J2B-3). A website department has them on its record from birth, and
     Root, which records the plan and never makes an engine (S-10), takes them as the plan names them: it adds nothing
@@ -974,3 +1325,93 @@ def test_a9_a_made_website_reshape_keeps_the_librarys_own_check_and_publish_and_
     assert all(c["passed"] for c in registered["checks"]) and any(c["check"] == "required_kept" for c in registered["checks"])
     assert not [x for x in R.board(ref) if "Not added" in str((x["payload"] or {}).get("done") or "")]
     assert R.coordination(ref)["line"] == registered["engines"]
+
+
+# ---- A1 · Adaptation's two records, typed as their writers write them (A1.9, A1.20) -----------------------------------
+def test_a1_an_idea_parked_and_then_noted_is_a_typed_record_whoever_writes_it(j2):
+    W, R, _, _, _ = j2
+    ref = _dept(j2, "organic", ref="dref-ideas")
+    shaped = {"reflected": "the site in Hindi too", "question": None, "shapes": ["a second language", "a Hindi page", "a link", "a fourth"],
+              "pick": None, "engine": None}
+    ctx = {"ref": ref, "dept": W.dept(ref), "post": {"thread": "x-idea", "payload": {"words": "a page in Hindi", "for": None}},
+           "bag": {"adapt.shape": shaped}}
+    R.adapt_park(ctx, None, None)
+    R.adapt_park(dict(ctx, bag={"adapt.shape": dict(shaped, question="Which pages first?")}, post={"thread": "x-idea-2", "payload": {"words": None}}), None, None)
+    first, second = R.ideas(ref)
+    assert first["shapes"] == shaped["shapes"][:3] and first["state"] == "parked" and first["question"] is None
+    R._note_idea(ref, first["id"], {"engine": "Do", "state": "built"})                                  # the engine the owner stamped
+    R._note_idea(ref, second["id"], {"engine": "Web Facts", "priced": "refused", "why": "no room for another engine today"})
+    for row in R.ideas(ref):
+        assert S.validate_record("adaptation", "idea", row) == [], row
+    assert [(r["engine"], r["state"]) for r in R.ideas(ref)] == [("Do", "built"), ("Web Facts", "parked")]
+
+
+def test_a1_a_ladder_entry_is_a_typed_record_at_every_point_a_step_moves(j2):
+    W, R, _, _, _ = j2
+    ref = _dept(j2, "organic", ref="dref-ladder")
+    engine, step = R.step_def("adapt.line")
+    R.hold(ref, step["id"])                                                                                # a born entry, pinned
+    R.hold(ref, step["id"], held=False)
+    R.move(ref, step, "C1", "stamp a-1", evidence={"runs": 12, "differing": 0, "misses": 0, "pass": 1.0})   # a move up, with its numbers
+    R.move(ref, step, "C0", "evidence: its answers began to differ", evidence=None)                        # and one down
+    ctx = {"ref": ref, "post": {"payload": {"step": step["id"], "to": "C1", "form": None}}}
+    R.adapt_trial(ctx, None, None)                                                                          # a trial, running
+    assert R.ladder(ref)[step["id"]]["trial"]["state"] == "running"
+    R.adapt_notrial(ctx, None, None)                                                                        # and Priority's no to it
+    e = R.entry(ref, step)
+    e["trial"] = {"rung": "C2", "form": "table", "runs": 4, "agree": 4, "norule": 0, "state": "done", "started": W.now()}
+    e["pending"] = "a move, with the owner"
+    R._save_entry(ref, e)
+    _, other = R.step_def("adapt.source")
+    R.hold(ref, other["id"])
+    assert set(R.ladder(ref)) == {step["id"], other["id"]}
+    for entry in R.ladder(ref).values():
+        assert S.validate_record("adaptation", "ladder", entry) == [], entry
+    assert [h["by"] for h in R.ladder(ref)[step["id"]]["history"]][:2] == ["born", "stamp a-1"]
+
+
+def test_a1_a_record_that_does_not_fit_is_a_row_in_warn_mode_where_the_idea_or_the_entry_is_written(j2, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")
+    W, R, _, _, _ = j2
+    ref = _dept(j2, "organic", ref="dref-bad-records")
+    engine, step = R.step_def("adapt.line")
+    e = R.entry(ref, step)
+    with S.expect_refused("adaptation.ladder") as met:
+        R._save_entry(ref, dict(e, rung="C9", held="yes"))
+    assert sorted(met) == ["$.held: is not true or false", "$.rung: is not one of P, C0, C1, C2"]
+    assert R.ladder(ref)[step["id"]]["rung"] == "C9", "warn mode: the write lands"
+    ctx = {"ref": ref, "dept": W.dept(ref), "post": {"thread": "x-idea", "payload": {"words": "w"}},
+           "bag": {"adapt.shape": {"reflected": "r" * 8001, "question": 7, "shapes": ["a", "b"]}}}
+    with S.expect_refused("adaptation.idea") as met:
+        R.adapt_park(ctx, None, None)
+    assert len(met) == 2 and any(f.startswith("$.question") for f in met) and any(f.startswith("$.reflected") for f in met), met
+
+
+def test_a1_a_record_that_does_not_fit_is_refused_in_refuse_mode_and_nothing_is_written(j2, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "refuse")
+    W, R, _, _, _ = j2
+    ref = _dept(j2, "organic", ref="dref-refused-records")
+    engine, step = R.step_def("adapt.line")
+    e = R.entry(ref, step)
+    with S.expect_refused("adaptation.ladder"):
+        with pytest.raises(S.SchemaFault):
+            R._save_entry(ref, dict(e, rung="C9"))
+    assert step["id"] not in R.ladder(ref)
+    R._save_entry(ref, e)
+    assert R.ladder(ref)[step["id"]]["rung"] == e["rung"], "an entry that fits is written"
+    ctx = {"ref": ref, "dept": W.dept(ref), "post": {"thread": "x-idea", "payload": {"words": "w"}},
+           "bag": {"adapt.shape": {"reflected": "r", "question": 7, "shapes": ["a", "b"]}}}
+    with S.expect_refused("adaptation.idea"):
+        with pytest.raises(S.SchemaFault):
+            R.adapt_park(ctx, None, None)
+    assert R.ideas(ref) == []
+
+
+def test_a1_the_two_records_are_no_longer_open_and_the_rungs_are_the_runtimes():
+    R = importlib.import_module("engine_runtime")
+    assert S.RUNGS == R.RUNGS
+    for name in ("adaptation.idea", "adaptation.ladder"):
+        assert S.DEFS[name]["properties"] and S.DEFS[name]["required"], "%s is typed" % name
+    assert S.validate_record("adaptation", "idea", "a page in Hindi") and S.validate_record("adaptation", "ladder", ["C0"])
+    assert S.validate_record("adaptation", "ladder", {"engine": "Write", "step": "write.page", "rung": "C0", "held": False, "history": [],
+                                                      "something_a_later_writer_adds": 1}) == [], "an unknown key passes and is kept"

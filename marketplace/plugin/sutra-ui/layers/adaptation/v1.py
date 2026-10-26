@@ -55,15 +55,16 @@ def practices(d):
     return {'rules': rules, 'engines': lib, 'artifacts': shelf, 'required': required, 'taken': sorted(known)}
 
 
-def adapt_source(ctx, step, item):
+def adapt_source(ctx, step, item, make=None):
     """Where the proposal comes from (J2.b): the Library's template when the department's kind has one, else Adaptation
     shapes the line itself. A line Root's check refused is shaped again, whatever its first source was, unless the
     kind requires engines: then it is the Library's line again, with the engines the kind requires (_library_repair).
     With the make setting on (J2_ADAPT_MAKE), a default department's first line and a line Root sent back are made, not
     taken, and a shaped source (M6.3) also carries the practices in place (J2B-2): in the step's answer, and on the
-    request as Adaptation holds it, for the step that shapes."""
+    request as Adaptation holds it, for the step that shapes. `make` is the setting as this call reads it: the draft asks
+    what the setting's absence would have taken (False), and nobody else says."""
     d, pl = ctx['dept'], ctx['post']['payload']
-    make, faulted = make_on(), bool(pl.get('faults'))
+    make, faulted = make_on() if make is None else bool(make), bool(pl.get('faults'))
     lib = list(d.get('engines') or (W.KINDS.get(d.get('kind') or 'website') or {}).get('line') or [])
     # with the make setting on, a line Root's check sent back is shaped, whatever the kind requires: Make keeps the engines
     # the kind requires at level 1 or answers that one cannot serve (J2B-1); the Library's line again is the setting's absence
@@ -84,7 +85,7 @@ def adapt_source(ctx, step, item):
             else "takes the Library's line: ")
     out = {'shape': shape, 'source': 'shaped' if shape else 'library', 'engines': engines,
            'said': 'shapes the line from the goal' if shape else took + ' -> '.join(lib)}
-    if shape and make_on():
+    if shape and make:
         out['practices'] = pl['practices'] = practices(d)
     return out
 
@@ -174,12 +175,19 @@ def _number(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
+def _said(x):
+    """Whether a field a made engine must give is there: a string with something in it."""
+    return isinstance(x, str) and bool(x.strip())
+
+
 def made_notes(engs, d):
     """What is wrong with a made line beyond what a shaped one may be (J2B-4, J2B-6), one note each, in the owner-neutral
-    words the other checks use: a level 1 or 2 that code agrees with (an engine named after a shipped template is level 1
-    and keeps its reads and writes; any other is level 2), a confidence from 0 to 1 and a doubt below 0.8, covers that
-    are known items, every item covered, every engine covering an item or feeding a later one, and every engine the kind
-    requires there, at level 1."""
+    words the other checks use: every field given (what it does, reads and writes, and whether it goes to the internet:
+    norm_engines fills a missing one for the offline draft, but a made engine that leaves one out is a guess, and a
+    missing reads would wire it to the Brief), a level 1 or 2 that code agrees with (an engine named after a shipped
+    template is level 1 and keeps its reads and writes; any other is level 2), a confidence from 0 to 1 and a doubt
+    below 0.8, covers that are known items, every item covered, every engine covering an item or feeding a later one,
+    and every engine the kind requires there, at level 1."""
     notes, rows = [], [e for e in engs if isinstance(e, dict)]
     items, lib, names = [i['id'] for i in items_of(d)], shipped(), []
     covered = set()
@@ -187,12 +195,19 @@ def made_notes(engs, d):
         n = ' '.join(str(e.get('name') or '').split())[:40]
         names.append(n)
         level, conf = e.get('level'), e.get('confidence')
+        given = {f: _said(e.get(f)) for f in ('does', 'reads', 'writes')}
+        for field, note in (('does', '%s says nothing of what it does'), ('reads', '%s names nothing it reads'),
+                            ('writes', '%s names nothing it writes')):
+            if not given[field]:
+                notes.append(note % n)
+        if not isinstance(e.get('internet'), bool):
+            notes.append('%s does not say whether it goes to the internet' % n)
         if isinstance(level, bool) or level not in (1, 2):
             notes.append('%s names no level, 1 or 2' % n)
         elif n in lib:
             if level != 1:
                 notes.append('%s is an engine of the Library, so it is level 1' % n)
-            elif (e.get('reads') or 'Brief', e.get('writes') or n) != (lib[n].get('reads'), lib[n].get('writes')):
+            elif given['reads'] and given['writes'] and (e['reads'], e['writes']) != (lib[n].get('reads'), lib[n].get('writes')):
                 notes.append('%s is level 1, so it keeps its Library reads (%s) and writes (%s)' % (n, lib[n].get('reads'), lib[n].get('writes')))
         elif level == 1:
             notes.append('%s is level 1, and the Library has no engine of that name' % n)
@@ -252,7 +267,8 @@ def c_line_is_engines(ctx, step, item, out):
         return {'ok': True, 'notes': ['%s cannot serve %s' % (c['engine'], ', '.join(c['items']))]}
     if not isinstance(engs, list) or not 1 <= len(engs) <= 6:
         return R._verdict(False, '', 'one to six engines')
-    legacy = R._line_notes(engs)
+    drafted = from_library(ctx, out)
+    legacy = [] if drafted else R._line_notes(engs)          # the Library's own names are not 'new to the Library'
     if made:
         # a level-1 engine is the Library's own, kept on its template: it is not 'new to the Library', and need not be
         lib = shipped()
@@ -261,7 +277,7 @@ def c_line_is_engines(ctx, step, item, out):
     notes = [n for _, n in legacy]
     if made:
         notes += [n for n in made_notes(engs, d) if n not in notes]
-    source = (((ctx or {}).get('bag') or {}).get('adapt.source') or {}).get('source') or 'shaped'
+    source = 'library' if drafted else (((ctx or {}).get('bag') or {}).get('adapt.source') or {}).get('source') or 'shaped'
     rows = made_engines(engs) if made else norm_engines(engs)
     for row in S.validate_workflow(workflow_of(rows, source, d), 'proposal', d, {}):
         if row['passed']:
@@ -291,11 +307,35 @@ def p_adapt_line(ctx, step, item):
     return R._prompt('adaptation', 'make', 'line', ctx['ref'], **slots)
 
 
+def library_draft(ctx):
+    """The Library's line, when the setting is on and no agent is there to shape one (J2B-9: a default department keeps Do):
+    what the setting's absence would have taken, which adapt_source reads as a Library line, else None. A default
+    department's first line is Do, and a website Root sent back has the Library's line again with the Check its kind
+    requires (_library_repair); a kind with no line, or a line sent back for a kind that requires nothing, has no such line,
+    and its draft is the two engines below."""
+    if not make_on() or not (ctx or {}).get('dept'):
+        return None
+    got = adapt_source(dict(ctx, post=ctx.get('post') or {'payload': {}}), None, None, make=False)
+    return None if got['shape'] else {'engines': got['engines'], 'source': 'library'}
+
+
+def from_library(ctx, out):
+    """Whether the answer in hand is the Library's line, taken by the offline draft (library_draft): an agent's own answer
+    is never taken for one, whatever it says its source is."""
+    return isinstance(out, dict) and out.get('source') == 'library' and ((ctx or {}).get('how') or {}).get('adapt.line') == 'offline draft'
+
+
 def d_adapt_line(ctx, step, item):
     """The draft, when no agent is there to judge: two engines, the facts from the internet and the site from the facts.
     Their names are ones the Library does not have yet: a second department shaped this way takes Facts 2 and Site 2
     (found 2026-10-07: it took Facts and Site again, its check refused the line, and nothing was said). The site, the last
-    engine, covers every done-when item (M5.1); the draft carries no confidence and asks no question (J2B-9)."""
+    engine, covers every done-when item (M5.1); the draft carries no confidence and asks no question (J2B-9). With the make
+    setting on, a department the Library has a line for keeps it: a default department's Do, a website's line repaired with
+    its Check (library_draft), not a site for a document or a plan with no Check."""
+    kept = library_draft(ctx)
+    if kept:
+        return kept
+
     def line(n):
         tag = '' if n == 1 else ' %d' % n
         return [{'name': 'Facts' + tag, 'does': 'finds on the internet what the goal names, each fact with its source', 'reads': 'Brief',
@@ -311,14 +351,18 @@ def d_adapt_line(ctx, step, item):
     return {'engines': engines}
 
 
-def with_covers(engines, d):
+def with_covers(engines, d, made=False):
     """Each engine's covers made known and whole (M5.1), and the map of item to engines the proposal carries. Only items
-    done-when has stay. When no engine names any, code maps every item to the last engine, as it does for a Library line."""
+    done-when has stay. Every item no engine names goes to the last engine, as code does for a Library line: a line that
+    is not made was never asked for covers, so one that names some has not said the rest are uncovered, and Root's check
+    would refuse the line on every reshape. A made line is held to every item by its own check (made_notes), so what its
+    engines name is what the proposal carries."""
     ids = [i['id'] for i in items_of(d)]
     for e in engines:
         e['covers'] = [c for c in dict.fromkeys(e.get('covers') or []) if c in ids]
-    if ids and engines and not any(e['covers'] for e in engines):
-        engines[-1]['covers'] = list(ids)
+    left = [i for i in ids if not any(i in e['covers'] for e in engines)]
+    if left and engines and not made:
+        engines[-1]['covers'] = [i for i in ids if i in engines[-1]['covers'] or i in left]
     out = {}
     for e in engines:
         for c in e['covers']:
@@ -383,8 +427,10 @@ def cannot_offer(ctx, cannot):
 def adapt_line_offer(ctx, step, item):
     """The line goes on. Each engine names the items it covers, and the proposal carries the map (M5.1). A made line
     (M6.4) is sent by how sure it is (J2B-7, S.CONFIDENCE): at 0.8 or more to Priority; from 0.6 to under 0.8 to Priority
-    with the doubt shown and nobody asked; under 0.6 to Identity as a doubt, and nothing is registered. An answer of
-    cannot is a conflict, with the ways out built by code."""
+    with the doubt shown and nobody asked; under 0.6 to Identity as a doubt, and nothing is registered, unless Identity
+    has asked what it can and sent the request marked go_on (act.line_request): then the line goes to Priority with the
+    doubt named, as for a confidence from 0.6 to under 0.8, and Adaptation does not doubt again. An answer of cannot is
+    a conflict, with the ways out built by code."""
     ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
     src = ctx['bag'].get('adapt.source') or {'shape': True, 'source': 'shaped'}
     got = ctx['bag']['adapt.line'] if src.get('shape') else src
@@ -392,8 +438,9 @@ def adapt_line_offer(ctx, step, item):
         return cannot_offer(ctx, got['cannot'])
     made = bool(src.get('shape')) and is_made(ctx)
     engines = (made_engines if made else covered_engines)(got['engines'])
-    covers = with_covers(engines, d)
-    body = {'word': 'line', 'engines': engines, 'source': src.get('source'), 'words': pl.get('words'), 'for': pl.get('for'), 'covers': covers}
+    covers = with_covers(engines, d, made)
+    source = 'library' if from_library(ctx, got) else src.get('source')
+    body = {'word': 'line', 'engines': engines, 'source': source, 'words': pl.get('words'), 'for': pl.get('for'), 'covers': covers}
     names = ' -> '.join(e['name'] for e in engines)
     if R._j2_live(ref):
         shown = None
@@ -402,12 +449,14 @@ def adapt_line_offer(ctx, step, item):
             body['confidence'] = low['confidence']
             if low['confidence'] < S.CONFIDENCE['show_below']:
                 shown = (low['name'], low.get('doubt') or '')
-        if shown and body['confidence'] < S.CONFIDENCE['ask_below'] and hears_doubt():
+        if shown and body['confidence'] < S.CONFIDENCE['ask_below'] and not pl.get('go_on') and hears_doubt():
             # not sure enough to go on: one question, and nothing is registered (the answer opens a new line request)
             doubt, fallback = split_doubt(shown[1])
-            R.post(ref, 'Adaptation', 'Identity', 'inform', {'word': 'doubt', 'engine': shown[0], 'doubt': doubt or 'the plan rests on a fact or a decision nobody has given',
-                                                            'fallback': fallback, 'confidence': body['confidence'], 'cannot': None,
-                                                            'words': pl.get('words'), 'for': pl.get('for')})
+            says = {'word': 'doubt', 'engine': shown[0], 'doubt': doubt or 'the plan rests on a fact or a decision nobody has given',
+                    'confidence': body['confidence'], 'cannot': None, 'words': pl.get('words'), 'for': pl.get('for')}
+            if fallback:
+                says['fallback'] = fallback           # a doubt that names none leaves the key out: Identity goes on with its default
+            R.post(ref, 'Adaptation', 'Identity', 'inform', says)
             return {'said': 'was not sure of the line (%s -> doubt: %s) and asked Identity; nothing is registered' % (names, shown[0]),
                     'engines': engines, 'doubt': shown[0]}
         if shown:

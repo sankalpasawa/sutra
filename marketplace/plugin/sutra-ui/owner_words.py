@@ -18,6 +18,7 @@ turn the record marks quoted, the words an ask's or a run's line ends with: kept
 always) is the owner's own word for a rule and is left as it is. One line is read whole: Coordination's who-may-post note, which
 carried the act's own id ('Identity may refuse to Owner'), is said again the way the runtime says it now (MAY_NOTE).
 """
+import functools
 import re
 
 # The bargain in the owner's words wherever a definition's name, a run's line or a ledger row's summary carries the inside
@@ -96,6 +97,16 @@ def _may_note(line):
     return R._may_note(m.group("src"), dst, m.group("act"), "may not" if m.group("not") else "may")
 
 
+@functools.lru_cache(maxsize=1)
+def standard_lead():
+    """A pattern for Root's standards named by their id where a note leads with one ('reads_known: Site 2 reads ...'): the
+    ids of layer_schema.WORKFLOW_STANDARDS, a word and a colon. The record keeps the id (a step's notes name the standard a
+    fault breaks, and the pane lists each check by id beside what it says); the owner reads the fault, which stands as a
+    sentence of its own."""
+    import layer_schema as S                       # lazy: the interface is not needed to say a bargain's words
+    return re.compile(r"(?<![\w-])(?:%s): ?" % "|".join(re.escape(i) for i, _, _, _ in S.WORKFLOW_STANDARDS))
+
+
 def plain(line):
     """One line in the owner's words; '' for nothing."""
     line = str(line or "")
@@ -104,7 +115,7 @@ def plain(line):
         return said
     for inside, said in BARGAIN_WORDS:
         line = line.replace(inside, said)
-    return line
+    return standard_lead().sub("", line)
 
 
 def _keep(value):
