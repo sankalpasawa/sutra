@@ -1,0 +1,56 @@
+{
+ "about": "The default kind's one Do engine: it passes every stage.",
+ "kind": "default",
+ "dept": {
+  "kind": "default",
+  "done_items": [
+   {
+    "id": "D1",
+    "text": "The work is done",
+    "how": "model",
+    "level": "outcome"
+   }
+  ],
+  "workflows": [
+   {
+    "version": 1,
+    "engines": [
+     "Do"
+    ],
+    "source": "library",
+    "registered": "2026-10-27T10:00:00Z",
+    "by": "Root"
+   }
+  ]
+ },
+ "workflow": {
+  "schema_version": 1,
+  "kind": "default",
+  "source": "library",
+  "engines": [
+   {
+    "name": "Do",
+    "does": "answers each ask and files the Result",
+    "reads": "Brief",
+    "writes": "Result",
+    "covers": [
+     "D1"
+    ],
+    "made_by": "library"
+   }
+  ],
+  "deliverable": "Result",
+  "covers": {
+   "D1": [
+    "Do"
+   ]
+  },
+  "covers_by": "adaptation"
+ },
+ "ctx": {
+  "line": [
+   "Do"
+  ],
+  "grown": []
+ }
+}
