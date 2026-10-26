@@ -325,7 +325,8 @@ def signature(ref, root_ref=None):
 class Ctx:
     """One read of the department (the contract is in the UI port's package spec): everything the J2 view needs, read
     once. Never mutate a record through it; every attribute is always present, empty when its read failed (the reason
-    is in `reasons`)."""
+    is in `reasons`). `memo` is this read's scratch space: build_state and the other packages' builders keep what they build
+    there, so one rebuild is shared by api/state, api/map and api/artifacts of a poll and the next poll builds nothing."""
 
     def __init__(self, ref):
         self.ref, self.kind = ref, "website"

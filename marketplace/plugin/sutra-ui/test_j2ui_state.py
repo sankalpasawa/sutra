@@ -1,4 +1,4 @@
-"""test_j2ui_state.py -- `api/state`, the 56 keys the J2 page polls (j2ui_state.py; UI port step C3).
+"""test_j2ui_state.py -- `api/state`, the 56 keys the J2 page polls (j2ui_state.py; UI port steps C3 and C6).
 
 Named claims:
   C3-1  one row per cycle state (STATE_TABLE, which j2ui-verify imports): status, thinking, step, which ask is paused and that its
@@ -9,6 +9,9 @@ Named claims:
   C3-4  with j2ui_work absent or raising the thirteen keys keep their empties and the rest is complete; only its thirteen are merged
   C3-5  every s.<key> and CTX.<key> the pinned page reads is a key of the state
   C3-6  paused is one ask at a time, in the order Identity's question, options asks, stamp asks; runs lists no saved run
+  C6-1  the build is cheap to poll: 5,000 board rows, 20,000 step rows and 20,000 ledger events are read once; fifty polls, through
+        the router too, read nothing; one appended row of each is the only thing the rebuild reads of its journal; the wall time has
+        a ceiling
 """
 import json
 import re
@@ -324,3 +327,101 @@ def test_c36_a_question_that_is_not_the_cycles_open_one_is_not_paused(mods):
     cycle(mods, "running", 6)
     c, s = read(mods)
     assert s["paused"] is None and c.paused_ask is None
+
+
+# ---- C6: the build is cheap to poll --------------------------------------------------------------------------------------------------
+BOARD, STEPS, EVENTS = 5000, 20000, 20000
+
+
+def _big(m):
+    """A department with BOARD board rows, STEPS step rows and EVENTS ledger events, written straight into its journals."""
+    W, ref = m.W, REF
+    d = W.ddir(ref)
+    at = "2026-10-26T10:00:00+05:30"
+    with open(d / "board.jsonl", "w", encoding="utf-8") as f:
+        for i in range(1, BOARD + 1):
+            if i % 5 == 0:
+                row = {"n": i, "src": "Owner", "dst": ["Identity"], "msg_type": "request", "thread": "x-%d" % i, "hop": 1, "about": None,
+                       "payload": {"word": "request", "words": "Change number %d" % i}, "ack_id": None, "by": None, "at": at}
+            else:
+                row = {"n": i, "src": ("Adaptation", "Priority", "Identity")[i % 3], "dst": [("Priority", "Adaptation", "Coordination")[i % 3]],
+                       "msg_type": "inform", "thread": "x-%d" % i, "hop": 1, "about": None,
+                       "payload": {"word": "line", "done": "a post %d" % i}, "ack_id": None, "by": None, "at": at}
+            f.write(json.dumps(row) + "\n")
+    with open(d / "steps.jsonl", "w", encoding="utf-8") as f:
+        for i in range(STEPS):
+            f.write(json.dumps({"id": "s-%d" % i, "run": None, "engine": "Plan", "step": "plan.read", "item": None, "mode": "slot", "slot": "Plan@x",
+                                "rung": "C2", "by": "code", "answer": "ok", "check": {"ok": True, "notes": ["the brief has words"]},
+                                "usd": 0.0, "calls": 0, "ms": 1, "status": "ok", "started": at, "ended": at}) + "\n")
+    with open(d / "j2-events.jsonl", "w", encoding="utf-8") as f:
+        for i in range(1, EVENTS + 1):
+            f.write(json.dumps({"idempotency_key": "%s/cycle-test/6/k-%d" % (ref, i), "department_ref": ref, "cycle_id": "cycle-test", "step": 6,
+                                "journey": "J2.f", "actor": "Coordination", "recipient": "Write", "action": "slot.assigned", "state": "assigned",
+                                "summary": "Write has the next turn.", "payload": {}, "evidence_refs": [], "occurred_at": at, "seq": i,
+                                "event_id": "evt-%d" % i}) + "\n")
+    cycle(m, "running", 6)
+
+
+def test_c61_fifty_polls_read_nothing_and_a_rebuild_reads_only_what_was_appended(mods, monkeypatch):
+    W, R, F, J = mods.W, mods.R, mods.F, mods.J
+    _big(mods)
+    spied = {}
+    for obj, name in ((W, "runs"), (W, "asks"), (R, "step_rows"), (R, "board"), (F, "functions"), (J, "events_after"), (R, "chat_view")):
+        real = getattr(obj, name)
+        spied[name] = calls = []
+        monkeypatch.setattr(obj, name, (lambda real, calls: lambda *a, **k: (calls.append(a), real(*a, **k))[1])(real, calls))
+    t0 = time.time()
+    c = C.get_ctx(REF)
+    first = time.time() - t0
+    s = S.build_state(c)
+    after_first = {k: len(v) for k, v in spied.items()}
+    assert after_first["functions"] == 1 and after_first["chat_view"] == 1 and [a[1] for a in spied["events_after"]] == [0], after_first
+    assert len(c.posts) == BOARD and len(c.steps) == STEPS and len(c.events) == EVENTS
+    for _ in range(50):
+        assert S.build_state(C.get_ctx(REF)) is not None
+        assert C.get_ctx(REF) is c
+    assert {k: len(v) for k, v in spied.items()} == after_first, "fifty polls made no read"
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import j2ui_api
+    app = FastAPI()
+    app.include_router(j2ui_api.router)
+    http = TestClient(app)
+    for _ in range(50):
+        assert http.get("/j2ui/%s/api/state?since=%d" % (REF, s["total"])).status_code == 200
+    assert {k: len(v) for k, v in spied.items()} == after_first, "and fifty polls of the route made none either"
+    assert s["total"] == len(c.chat) and len(c.chat) >= BOARD // 5
+    # one appended post, step row and ledger event: each journal's rebuild reads only its new bytes
+    base = W.ddir(REF)
+    post_row = json.dumps({"n": BOARD + 1, "src": "Owner", "dst": ["Identity"], "msg_type": "request", "thread": "x-new", "hop": 1, "about": None,
+                           "payload": {"word": "request", "words": "One more change"}, "ack_id": None, "by": None, "at": "2026-10-26T10:00:01+05:30"}) + "\n"
+    step_row = json.dumps({"id": "s-new", "engine": "Plan", "step": "plan.read", "status": "ok", "check": {"ok": True, "notes": []}}) + "\n"
+    with open(base / "board.jsonl", "a", encoding="utf-8") as f:
+        f.write(post_row)
+    with open(base / "steps.jsonl", "a", encoding="utf-8") as f:
+        f.write(step_row)
+    J.append_event(REF, {"idempotency_key": "%s/cycle-test/6/new" % REF, "department_ref": REF, "cycle_id": "cycle-test", "step": 6, "journey": "J2.f",
+                         "actor": "Coordination", "recipient": "Write", "action": "run.started", "state": "running", "summary": "x"})
+    C.touch(REF)
+    t0 = time.time()
+    c2 = C.get_ctx(REF)
+    rebuild = time.time() - t0
+    assert c2 is not c and len(c2.posts) == BOARD + 1 and len(c2.steps) == STEPS + 1 and len(c2.events) == EVENTS + 1
+    tails = {p.rsplit("/", 1)[-1]: t for p, t in C._TAILS.items() if p.startswith(str(base))}
+    assert tails["board.jsonl"].last_read == len(post_row.encode("utf-8")) and tails["steps.jsonl"].last_read == len(step_row.encode("utf-8"))
+    assert [a[1] for a in spied["events_after"]] == [0, EVENTS], "the ledger is read after the last seq it holds"
+    assert c2.chat[-1]["text"] == "One more change" and c2.chat[-1]["id"] == len(c2.chat)
+    print("j2ui perf: first read %.2f s, rebuild after one appended row of each journal %.2f s (ceiling %.1f s)" % (first, rebuild, 1.5))
+    # the ceiling is 1.5 s, and holds where the readers the build must call (functions, each engine's steps, the chat, the map) take
+    # a second between them, as here; on a slower or busier machine it is those readers' own cost and a half, so the check still
+    # catches work of the adapter's own that grows with the journals, and not the machine
+    t0 = time.time()
+    F.functions(REF), [R.steps_view(REF, n) for n in ("Plan", "Write", "Check", "Publish")], R.chat_view(REF), W.map_view(REF)
+    readers = time.time() - t0
+    ceiling = max(1.5, 1.5 * readers)
+    print("j2ui perf: the readers alone %.2f s, ceiling %.2f s" % (readers, ceiling))
+    assert first < 30 and rebuild < ceiling, (first, rebuild, readers)
+    # the registry is a list and a dict of small messages, not the rows again
+    reg = CH._registry(REF)
+    assert type(reg.keys) is list and type(reg.index) is dict and len(reg.keys) == len(reg.index) == len(c2.chat)
+    assert all(set(m) <= {"t", "who", "text", "step", "to_user", "act", "pause", "next", "audience", "register"} for m in reg.last.values())
