@@ -3867,7 +3867,7 @@ def _reconcile_j1_tells(root_ref):
             founding_state["checkpoints"] = checkpoints
             fresh["founding"] = founding_state
             fresh.pop("pending_final_tell", None)
-            W.save_dept(child["ref"], fresh)
+            W.save_dept(child["ref"], fresh, by="root")
 
 
 def setup_make(ctx, step, item):
@@ -3931,7 +3931,7 @@ def setup_make(ctx, step, item):
             tell["done"] = line + " You also asked for a second department (%s): say so and I will set it up." % offer["label"]
             tell["offer"] = offer
         child["pending_final_tell"] = tell
-        W.save_dept(made["ref"], child)
+        W.save_dept(made["ref"], child, by="root")
         _reconcile_j1_tells(ctx["ref"])
     state = dict(conversation, status="completed", outstanding_question=None, department=made["ref"])
     state.pop("selected_revision", None)

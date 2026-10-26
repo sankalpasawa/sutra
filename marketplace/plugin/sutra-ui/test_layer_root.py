@@ -598,3 +598,38 @@ def test_r6_the_root_prompts_render_as_the_inline_builders_did(home):
     assert sorted(got) == sorted(want) and len(want) == 8
     for k in sorted(want):
         assert got[k] == want[k], "%s renders as it did before the move" % k
+
+
+# ---- R7: ownership -----------------------------------------------------------------------------------------------------------
+def test_r7_roots_saves_are_roots_and_change_only_keys_it_owns_or_hand_the_rest_to_their_layer(home, monkeypatch):
+    W, R, J, founding = home
+    calls, real = [], W.save_dept
+
+    def spy(ref, d, by=None):
+        before = W._read(W.ddir(ref) / "dept.json", None) or {}
+        calls.append((by, {k for k in d if k not in before or before[k] != d[k]} - {"schema_version"}))
+        return real(ref, d, by=by)
+    monkeypatch.setattr(W, "save_dept", spy)
+    ref = _born(home)
+    W.add_engine(ref, "Do")
+    root = [keys for by, keys in calls if by == "root"]
+    assert root and all(S.owner_of_key(k) in (None, "root") for keys in root for k in keys), "Root's saves change Root's keys only"
+    assert {"workflows"} in root, "the registration is saved as Root's"
+    assert {"engines", "artifacts"} in root, "so is the engine Root records"
+    assert any(by == "root" and "pending_final_tell" in keys for by, keys in calls), "so is the birth tell Setup keeps"
+    assert any(by == "root" and "founding" in keys for by, keys in calls), "and the checkpoint that follows it"
+    assert ("identity", {"windows"}) in [(by, keys) for by, keys in calls], "the engine's window is Identity's, saved as such"
+    births = [by for by, keys in calls if "layers" in keys]
+    assert len(births) == 2 and set(births) == {None}, "the organisation's Root and the department are born, handing each layer its first values"
+
+
+def test_r7_no_ownership_row_is_met_through_a_birth_a_registration_and_a_grown_line(home):
+    W, R, J, founding = home
+    seen = len(S.REFUSED["rows"])
+    ref = _born(home)
+    W.add_engine(ref, "Do")
+    organic = _born(home, ORGANIC, "Lab Co")
+    W.add_engine(organic, "Do")
+    rows = S.REFUSED["rows"][seen:]
+    assert not [r for r in rows if any("Root wrote" in f or "is Root's" in f for f in r.get("faults") or [])], rows
+    assert not rows, "nothing at all was refused"
