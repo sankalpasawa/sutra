@@ -4175,20 +4175,33 @@ def grow_line(ref, name, before=None):
     return _put_table(ref, t, "the owner's stamp")
 
 
-def _check_line(ref, d, t):
+def _check_line(ref, d, t, standing=()):
     """Coordination's line, about to be written, against Root's standards for a write (PRD A1.14, A1.20): the workflow is the
     plan Root registered last (its engines and its source), and the line and the engines the owner added (grown) are what
     it is held against, so a line that names an engine no registered plan holds, which the owner did not add, is not
     written without a word. (The line itself is not the workflow: a standard that counted the workflow's own engines as
-    registered would pass every line.) A department with no registered plan is read as the line it is given. Warn mode
-    leaves one row, the failed standards together, and the write goes through; refuse mode raises layer_schema.SchemaFault
-    after the row, and nothing is written."""
+    registered would pass every line.) A department with no registered plan is read as the line it is given.
+
+    Registered means named by the plan registered last, or added by the owner (PRD M4.2: the line is what was granted).
+    The department's record is not a registration: an engine the plan left out, or Priority cut in a counter, stays on the
+    record and is never on the line, so a table that puts it back is one row. Root's own check of a registration reads
+    the record as it stands and lets the line a department was born with stand a moment longer (workflow_schema.
+    line_is_registered); Coordination, writing the line itself, is held to the plan, so the standard reads a department
+    view with no record engines and the last registered plan alone.
+
+    `standing` is what stood on the line before a registration that is not full adds to it: it was held to the plan
+    when it was written, so it stays, and only what the call adds must be named by the plan registered last.
+
+    Warn mode leaves one row, the failed standards together, and the write goes through; refuse mode raises
+    layer_schema.SchemaFault after the row, and nothing is written."""
     import layer_schema as S
     plans = [w for w in d.get("workflows") or [] if isinstance(w, dict) and w.get("engines")]
-    ctx = {"line": list(t.get("line") or []), "grown": list(t.get("grown") or [])}
+    grown = list(t.get("grown") or [])
+    ctx = {"line": list(t.get("line") or []), "grown": grown + [n for n in standing if n not in grown]}
     source = plans[-1].get("source") if plans else None
     registered = [str(n) for n in plans[-1]["engines"]] if plans else ctx["line"]
-    rows = S.validate_workflow(S.as_workflow(registered, source if source in S.SOURCES else "library", d), "write", d, ctx)
+    view = dict(d, engines=[], workflows=plans[-1:])
+    rows = S.validate_workflow(S.as_workflow(registered, source if source in S.SOURCES else "library", d), "write", view, ctx)
     failed = [r for r in rows if not r["passed"]]
     failed.sort(key=lambda r: r["check"] == "workflow_meets_standards")      # a standard says it in words; the shape row follows
     S.report("coordination.table", ["%s: %s" % (r["check"], r["why"]) for r in failed], ref=ref, owner="coordination")
@@ -4201,11 +4214,14 @@ def set_line(ref, engines, version=None, full=True):
     record that the plan left out stays on the record, in_line false, and never runs. A registration that is not full
     adds its engines to the line (none is today: a round of Pursue never registers a line). Written by Coordination,
     with the plan's version, so the table says which registration it follows, and with its timetable: one slot for
-    each engine of the line (PRD M4.3). The line is checked as a write before it is put (_check_line)."""
+    each engine of the line (PRD M4.3). The line is checked as a write before it is put (_check_line): an engine the plan
+    registered last does not name, which the owner did not add, is not on a line Coordination writes, though the record
+    still holds it."""
     t = coordination(ref)
     d = W.dept(ref) or {}
     old, plan = list(t.get("line") or []), [str(n) for n in engines or [] if n]
-    if full or not t.get("registered"):
+    whole = full or not t.get("registered")
+    if whole:
         line = list(plan)
         for g in [g for g in t.get("grown") or [] if g not in line and g in (d.get("engines") or [])]:
             after = next((n for n in old[old.index(g) + 1:] if n in line), None) if g in old else None
@@ -4220,7 +4236,7 @@ def set_line(ref, engines, version=None, full=True):
     # the plan's version; a registration that names none keeps the one the table follows, never None (PRD M4.1)
     t.update({"line": line, "left_out": left, "registered": version if version is not None else t.get("registered")})
     t["timetable"] = _timetable(ref, t)                    # one slot for each engine of the line (PRD M4.3)
-    _check_line(ref, d, t)
+    _check_line(ref, d, t, standing=() if whole else old)
     return _put_table(ref, t, "the plan Root registered")
 
 
