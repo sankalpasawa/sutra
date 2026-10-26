@@ -9,6 +9,7 @@
 | Build | four waves of parallel developer packages, merged one at a time on a green gate (A1.26): wave 0, one package, the schema core (about 75 min); wave 1, eight packages (about 110 min); wave 2, six (about 80 min, M9 and M10); wave 3, four (about 50 min). Waves 0 and 1 end at about 3 h 05 min, wave 2 at about 4 h 25 min, wave 3 at about 5 h 15 min. Nothing is left to a later session |
 | Decision log | the A1 rows of [PRD-FIVE-FUNCTIONS-DECISIONS.md](PRD-FIVE-FUNCTIONS-DECISIONS.md) |
 | Pointer for code | `schemas/layers/README.md` (written in wave 0) lists, per layer, the `layer_schema` names that hold it |
+| Amended by | [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md), 2026-10-26: the class model of the interface layer (the interface is the base class, a layer version is a child class that may extend an earlier version, the workflow sources are a family). A2 changes no interface table; A1 stands as written except the lines marked 'Amended by A2' under A1.18 and A1.19 |
 
 ## A1.0 The direction, and how this reads it
 
@@ -786,6 +787,8 @@ def view(ref, layer, d, events, asks) -> dict | None
 
 `resolve` takes `layer = layer_of(engine)`. If there is one and `impl(ref, layer, d)` provides `name` in its `kind.upper()` dict, it returns that callable; otherwise it returns `legacy[name]`. Nothing in `layers/__init__.py` imports engine_runtime at import time.
 
+*Amended by A2 ([PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md)): a version above 1 may name the version it extends (`PARENT = 'identity/v1'`) and write only what differs. `layers.inherit` merges its four tables, words, layout and surface functions; its recipe is a patch over its parent's (`layers.recipe`, and `recipes()` asks it for a default pin that has a patch and no whole file); `chain`, `definition_faults` and `unchanged_steps` join the registry. The module contract above is unchanged; "write identity/v2 beside v1" below reads "write identity/v2 as a child of v1"; the contract of A1.21 gains cases 9 to 13; W3-PINS assembles recipes with `layers.recipe`. Rule 3 stays a review rule: no frozen manifest is built.*
+
 ## A1.19 How engine_runtime dispatches (the seam)
 
 W1-CORE (its first merge, K1) changes only the seam; W0-SCHEMA has already made `defs()` assemble the recipes (item 4) and `post()` check its acts (item 6). With every module holding empty dicts, the app behaves exactly as before.
@@ -799,6 +802,8 @@ W1-CORE (its first merge, K1) changes only the seam; W0-SCHEMA has already made 
 8. `_prompt`, `_goal_of` and `bundle_faults` delegate to `layers.prompts` (W1-CORE, K1).
 
 Nobody edits the four registry literals before W3-PROOF. A name a layer changes is copied into its v1 and changed there (move on touch); engine_runtime's copy stays until W3-PROOF deletes the dead copies.
+
+*Amended by A2 ([PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md)): the seam is unchanged. A child's chain is flattened into its module's four dicts when it is imported, so `_resolve`, `resolve`, `names` and `call` read it as they read any module. Item 4's `layers.recipes()` resolves a patch child's recipe, and item 5's `validate()` is the definition law that contract case 13 and the pin check (W3-PINS) reuse; it gains an optional `provided` argument for the contract's fixtures.*
 
 ## A1.20 Every write validates: the sink
 
