@@ -2074,17 +2074,26 @@ def identity_read(ctx, step, item):
     pl = ctx["post"].get("payload") or {}
     live = bool(J and J.active(ctx["ref"])) and ctx["dept"].get("kind") != "root"
     answers = rule = None
+    filled = []
+    hurry = bool(JUST_DO_IT.fullmatch(words))
     if live:
         aid = pl.get("answers") or (J.open_question(ctx["ref"]) or {}).get("id")
         q = next((a for a in W.asks(ctx["ref"]) if a["id"] == aid and a.get("kind") == "j2_identity"), None) if aid else None
-        if q and q.get("standard"):
-            answers = aid
-        elif q and q.get("missing") == "rules" and (pl.get("answers") == aid or not first):
+        if q and q.get("missing") == "rules" and not hurry and (pl.get("answers") == aid or not first):
             # the words answer Identity's question on the rules (PRD M3.4): they are read as a directive, so the rule
             # keeps the tag Identity reads in them and the owner stamps it; recognising them again is not needed
             rule, cue = aid, "directive"
-    return {"words": words, "about": about, "later": not first and not rule, "assess": bool(live and not rule and (first or answers)),
-            "answers": answers, "rule": rule, "hurry": bool(JUST_DO_IT.fullmatch(words)),
+        elif q and q.get("standard"):
+            answers = aid
+            # the answer reaches the record before Identity reads its standard again (PRD M3.3): a gap only code can see
+            # (no owner, no budget, no done-when) is closed by the owner's words, so neither the reading nor its covering
+            # finds it again (found by a verifier 2026-10-23: the owner question came back after every answer, no cap)
+            filled = [] if hurry else _standard_fill(ctx["ref"], q.get("missing"), words)
+            if filled:
+                ctx["dept"] = W.dept(ctx["ref"])
+    return {"words": words, "about": about, "later": not first and not rule,
+            "assess": bool(live and not rule and (first or (answers and not hurry))),
+            "answers": answers, "rule": rule, "hurry": hurry, "filled": filled,
             "facts": {"kind": kind, "leaves_site": bool(LEAVES.search(words)), "first": first,
                       "cue": cue if rule else ("task" if first else cue), "names_work": bool(about)}}
 
@@ -2379,7 +2388,8 @@ def _standard_defaults(ref, points):
         d = W.dept(ref)
         k = W.KINDS.get(d.get("kind") or "website") or {}
         used, changed = [], False
-        for pt in [p for p in STANDARD if p in (points or [])]:
+        points = [STANDARD_ALIAS.get(p, p) for p in points or []]
+        for pt in [p for p in STANDARD if p in points]:
             if pt == "goal":
                 if not str(d.get("goal") or "").strip():
                     d["goal"], changed = k.get("goal", "Work for {name}").format(name=d.get("name")), True
@@ -2393,6 +2403,8 @@ def _standard_defaults(ref, points):
                     d["done"] = W.done_line(d["done_items"])
                     used.append("D1, the kind's done line: " + d["done"])
                 else:
+                    if not str(d.get("done") or "").strip():
+                        d["done"], changed = W.done_line(good), True      # done stays the items' joined text
                     used.append("the done-when items Root drafted")
             elif pt == "rules":
                 tagged = [r for r in d.get("rules") or [] if str(r.get("line") or "").strip() and r.get("tag") in _RULE_TAGS]
@@ -2406,9 +2418,7 @@ def _standard_defaults(ref, points):
                 used.append("you, as the owner")
             elif pt == "budget":
                 if not d.get("envelopes"):
-                    t = priority_template()
-                    base = {"calls": int(t.get("calls", W.ENVELOPE["calls"])), "usd": float(t.get("usd", W.ENVELOPE["usd"]))}
-                    d["envelopes"], changed = {s: dict(base) for s in W.SYSTEMS}, True
+                    d["envelopes"], changed = _limits_from_template(), True
                 used.append("Priority's limits from its template")
             elif pt == "invented":
                 used.append("what nobody gave stays out, to be confirmed")
@@ -2418,9 +2428,11 @@ def _standard_defaults(ref, points):
 
 
 def _standard_answered(ctx, got):
-    """The owner answered Identity's question on its standard (PRD M3.3). The answer joins the owner's words in the
-    Brief; the standard is read again on it: still not met, and the next question is asked (FI1.1); met, and step 2
-    starts. 'Just do it' fills what is missing from the kind's defaults and starts step 2, and the tell names them."""
+    """The owner answered Identity's question on its standard (PRD M3.3). What it says to a gap code reads on the record
+    is on the record already (identity_read, _standard_fill), and the answer joins the owner's words in the Brief; the
+    standard was read again on both: still not met, and the next question is asked (FI1.1); met, and step 2 starts, and
+    the tell names what the answer put on the record. 'Just do it' fills what is missing from the kind's defaults and
+    starts step 2, and the tell names them."""
     ref, d, p, J = ctx["ref"], ctx["dept"], ctx["post"], _j2()
     words, aid = got["words"], got["answers"]
     ask = J.took(ref, aid, words, at=_words_at(ref, p)) or {}
@@ -2439,7 +2451,10 @@ def _standard_answered(ctx, got):
     d = W.dept(ref)
     J.assessed(ref, d, key="answered-" + str(aid))
     _line_request(ref, d, _brief_text(ref).strip() or d.get("goal"), thread=None)
-    _tell(ref, d, p, "inform", {"word": "request", "done": "Thank you. The identity is clear now; the department starts."}, thread=p["thread"])
+    # what the answer put on the record is named, as 'just do it' names its defaults
+    taken = ["Taken: %s." % "; ".join(got["filled"])] if got.get("filled") else []
+    _tell(ref, d, p, "inform", {"word": "request", "done": " ".join(["Thank you."] + taken + ["The identity is clear now; the department starts."])},
+          thread=p["thread"])
     return {"said": "took the owner's answer; the standard is met and the department starts", "filed": row["v"]}
 
 
@@ -5110,18 +5125,30 @@ STANDARD_POINTS = (("goal", "The goal names what and for whom", ("goal",)),
                    ("owner_budget", "Owner and budget are set", ("owner", "budget")),
                    ("invented", "Nothing invented", ("invented",)))
 _RULE_TAGS = W.RULE_TAGS
+#: Identity's question for each point of its standard that code reads on the record (PRD M3.3), in the owner's words:
+#: one question, for the first point unmet; who owns the department and what it may spend are one question
+STANDARD_ASKS = {"goal": "What goal must this department achieve?",
+                 "items": "What evidence will prove this department is done?",
+                 "rules": "What may this department do, what must it ask you first, and what must it never do?",
+                 "owner": "Who owns this department, and what may it spend?",
+                 "budget": "Who owns this department, and what may it spend?"}
+STANDARD_PAIRS = {"owner": ("owner", "budget"), "budget": ("owner", "budget")}
+#: a point by the name a question asked before the standard was one (j2_runtime's own presence check said done-when)
+STANDARD_ALIAS = {"done-when": "items"}
 
 
 def _standard_gaps(d):
     """What code can read of Identity's standard on the record: the points it finds unmet, in the standard's order. The
-    goal is there; done-when has items, each saying how it is checked (a record from before the items were drafted
-    keeps its done line); every rule is tagged; the owner and the budget are set. Whether the goal names what and for
-    whom, and whether anything is invented, is the AI's reading, never code's."""
+    goal is there; done-when has items, each saying how it is checked, and its done line, their joined text, is there
+    (a record from before the items were drafted keeps its done line alone; one with items and no done line has no
+    done-when an older reader can read); every rule is tagged; the owner and the budget are set. Whether the goal names
+    what and for whom, and whether anything is invented, is the AI's reading, never code's. The one standard: Identity's
+    step, its draft, its covering, its own reading on the record and its pane all read it here (PRD M3.3)."""
     gaps = []
     if not str(d.get("goal") or "").strip():
         gaps.append("goal")
     items = [i for i in d.get("done_items") or [] if isinstance(i, dict)]
-    if (not items and not str(d.get("done") or "").strip()) or any(i.get("how") not in W.DONE_HOW for i in items):
+    if not str(d.get("done") or "").strip() or any(i.get("how") not in W.DONE_HOW for i in items):
         gaps.append("items")
     rules = d.get("rules") or []
     if not rules or any(not str(r.get("line") or "").strip() or r.get("tag") not in _RULE_TAGS for r in rules):
@@ -5168,16 +5195,90 @@ def p_identity_enough(ctx, step, item):
                    rules=rules, owner=d.get("owner") or "none", budget=budget, confirm=confirm)
 
 
+def standard_reading(d):
+    """Identity's standard as its code reads it on the record (_standard_gaps): the draft under the AI's reading in the
+    identity.enough step, and the reading Identity makes by code where the cycle starts and after an answer or a stamp
+    (identity_asks). Not met, it asks one question, for the first point unmet."""
+    gaps = _standard_gaps(d)
+    if not gaps:
+        return {"enough": True, "missing": [], "question": "", "why": "read by code: every point is on the record"}
+    return {"enough": False, "missing": gaps, "question": STANDARD_ASKS[gaps[0]],
+            "why": "Identity's standard is not met yet: the record has %s." % ", ".join(STANDARD_SAYS[g] for g in gaps)}
+
+
 def d_identity_enough(ctx, step, item):
-    """The draft under the AI: today's presence check, read by code (_standard_gaps), with Identity's question for the
-    first gap it finds."""
-    gaps = _standard_gaps(ctx["dept"])
-    J = _j2()
-    asks = {"goal": "goal", "items": "done-when", "rules": "rules"}
-    question = (J.QUESTION.get(asks.get(gaps[0])) if J and gaps and gaps[0] in asks else None) or (
-        "Who owns this department, and what may it spend?" if gaps else "")
-    return {"enough": not gaps, "missing": gaps, "question": question,
-            "why": "read by code: the record has %s" % ", ".join(STANDARD_SAYS[g] for g in gaps) if gaps else "read by code: every point is on the record"}
+    """The draft under the AI: the standard as code reads it on the record (standard_reading), with Identity's question
+    for the first gap it finds."""
+    return standard_reading(ctx["dept"])
+
+
+def identity_asks(ref):
+    """Identity reads its standard on the record by code (standard_reading) and, when a point is unmet, puts its one
+    question to the owner: j2_runtime records the ask (J.asked, its one shape), and Identity says the line on the board,
+    which names its card, so the chat says the question once, on the card (M0.6). The cycle calls this where it starts
+    and after the owner answers a question this reading asked; the question is Identity's, never the ledger's (rule 14).
+    Returns the cycle when a question is open now, None when the standard is met or there is no cycle."""
+    J, d = _j2(), W.dept(ref)
+    if not J or not d:
+        return None
+    got = standard_reading(d)
+    if got["enough"]:
+        return None
+    cur = J.asked(ref, got["question"], got["missing"], got["why"], standard=False)
+    aid = (cur or {}).get("open_ask")
+    if aid:
+        try:
+            post(ref, "Identity", OWNER, "inform", {"word": "question", "done": got["question"], "card": aid})
+        except Exception:  # noqa: BLE001 -- the ask is on the record whether or not the chat carries it
+            pass
+    return cur
+
+
+#: the owner's name in an answer to the owner question: 'I am Asha', 'my name is Asha Rao', 'owned by Asha', 'Asha owns it'
+OWNER_NAMED = re.compile(r"(?i:\bi am|\bi'm|\bmy name is|\bowned by)\s+([A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*)?)|\b([A-Z][\w'.-]*)\s+owns\b")
+
+
+def _limits_from_template():
+    """Priority's limits from its template, one for each of the five: what a department with no budget is given."""
+    t = priority_template()
+    base = {"calls": int(t.get("calls", W.ENVELOPE["calls"])), "usd": float(t.get("usd", W.ENVELOPE["usd"]))}
+    return {s: dict(base) for s in W.SYSTEMS}
+
+
+def _standard_fill(ref, point, words):
+    """The owner's answer to Identity's question on a point code reads on the record reaches the record (PRD M3.3), through
+    the record's own writers, so a gap only code can see is closed by the answer and the same question never comes back:
+    no goal, and the words are the goal; no done-when, and they are its next item (W.put_done_items); no owner, and the
+    owner is the one who answers, by the name they give; no budget, and Priority's limits are set from its template
+    (Priority prices: what the words say of money stays in the Brief for it, and a limit is the owner's to change on
+    Priority's card). Only the point the question asked about, with its pair (who owns it and what it may spend are one
+    question), and only where the record lacks it; a rule goes through the rule ask (M3.4), and 'just do it' through the
+    defaults. Returns what was taken, in the owner's words: [] when nothing was."""
+    point = STANDARD_ALIAS.get(point, point)
+    words = " ".join(str(words or "").split())
+    taken = []
+    if not words or JUST_DO_IT.fullmatch(words):
+        return taken
+    with W._lock(ref):
+        d = W.dept(ref)
+        gaps = [g for g in _standard_gaps(d) if g in STANDARD_PAIRS.get(point, (point,))]
+        if "items" in gaps:
+            d = W.put_done_items(ref, W.answered_items(d, words))
+            taken.append("done when: " + "; ".join("%s %s" % (i["id"], i["text"]) for i in d["done_items"]))
+        changed = False
+        if "goal" in gaps:
+            d["goal"], changed = words, True
+            taken.append("the goal, in your words")
+        if "owner" in gaps:
+            m = OWNER_NAMED.search(words)
+            d["owner"], changed = ((m.group(1) or m.group(2)) if m else "") or "the owner", True
+            taken.append("you, as the owner" if d["owner"] == "the owner" else "%s, as the owner" % d["owner"])
+        if "budget" in gaps:
+            d["envelopes"], changed = _limits_from_template(), True
+            taken.append("Priority's limits from its template")
+        if changed:
+            W.bump_identity(ref, d)                        # the one record, and the Org screen's copy of it (M3.1)
+    return taken
 
 
 def c_enough_is_shaped(ctx, step, item, out):

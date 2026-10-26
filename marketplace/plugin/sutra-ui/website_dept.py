@@ -164,6 +164,17 @@ def done_items_ask(text, items, why, words=None, thread=None, slot=None, **more)
                 **more)
 
 
+def j2_identity_ask(text, cycle_id, missing, why="", points=None, standard=False):
+    """Identity's question to the owner (PRD M0.5, M3.3): an ask that takes words, never a stamp, one open at a time.
+    `missing` is the point it asks about (or 'words', when the first words named nothing to build from), `points` every
+    point of Identity's standard found unmet, and `standard` says Identity's reading of its standard in a step asked it
+    (that reading reads the answer again, and the card takes 'just do it'). Built here only, so every question Identity
+    puts has one shape: {id, kind, text, why, status, created, cycle_id, missing, points, standard, answer}."""
+    return {"id": "a-j2-" + uuid.uuid4().hex[:8], "kind": "j2_identity", "text": str(text), "why": str(why or ""),
+            "status": "pending", "created": now(), "cycle_id": cycle_id, "missing": missing, "points": list(points or []),
+            "standard": bool(standard), "answer": "words"}
+
+
 # Asks with options (PRD M3.5, screen S10): a card that offers up to three ways forward, each a label and what it costs,
 # the first the one Identity recommends; the owner's one click is the answer, and code applies it. Built here only, so
 # every such ask has one shape: {id, kind, engine, text, options: [{id, label, cost}], chosen, status, created, ...}.

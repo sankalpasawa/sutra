@@ -23,7 +23,6 @@ import website_dept as W
 
 SCHEMA_VERSION = "j2.event.v1"
 ACTORS = {"Root", "Identity", "Adaptation", "Priority", "Coordination", "Audit", "User"}
-RULE_TAGS = {"go", "ask", "refuse", "always"}
 PRIVATE_KEYS = {"private_reasoning", "reasoning", "chain_of_thought", "scratchpad", "secret", "token", "password"}
 JOURNEY = {1: "J2.a", 2: "J2.b", 3: "J2.c", 4: "J2.d", 5: "J2.e", 6: "J2.f", 7: "J2.g", 8: "J2.h"}
 REPAIRS = 2                     # how often Root's check may send a workflow back before Identity tells the owner (J2.4)
@@ -312,28 +311,12 @@ def done(ref):
     return ((_state(ref) or {}).get("state") == "done") if enabled() else False
 
 
-def _identity_gaps(dept):
-    """Identity's own standard, as code can read it (J2.a): a goal, a done-when, rules that each say go, ask, refuse or
-    always, and a record to file in. Whether the first words name anything to build from is the AI's reading, in
-    Identity's take step."""
-    gaps = []
-    if not str(dept.get("goal") or "").strip():
-        gaps.append("goal")
-    if not str(dept.get("done") or "").strip():
-        gaps.append("done-when")
-    rules = dept.get("rules") or []
-    if not rules or any(not str(r.get("line") or "").strip() or r.get("tag") not in RULE_TAGS for r in rules):
-        gaps.append("rules")
-    if not W.ddir(dept["ref"]).is_dir():
-        gaps.append("record")
-    return gaps
-
-
-QUESTION = {"goal": "What goal must this department achieve?",
-            "done-when": "What evidence will prove this department is done?",
-            "rules": "What may this department do, ask about, or refuse?",
-            "record": "Where should this department file its work and evidence?",
-            "words": "What is the %s for, and about whom or what?"}
+# Identity's standard is one standard, its own (PRD M3.3, MK-1): engine_runtime reads it (R._standard_gaps, its
+# identity.enough step and that step's draft) and decides each question; this module records the question asked and
+# what the owner said to it, and never decides one nor says one to the owner (rule 14; found by a verifier 2026-10-23:
+# a presence check of its own here asked a question the marked standard does not hold, and posted it). The question on
+# words that name nothing to build from is Identity's take step's, recorded by questioned().
+QUESTION = {"words": "What is the %s for, and about whom or what?"}
 THIN = "Your words name nothing to build from yet."
 
 
@@ -347,20 +330,10 @@ def _move(ref, state, **more):
 
 
 def _ask_gap(ref, dept, cur):
-    gaps = _identity_gaps(dept)
-    if not gaps:
-        return None
-    question = QUESTION[gaps[0]]
-    aid = "a-j2-" + uuid.uuid4().hex[:8]
-    W._put_ask(ref, {"id": aid, "kind": "j2_identity", "text": question, "status": "pending", "created": W.now(),
-                     "cycle_id": cur["cycle_id"], "missing": gaps[0], "answer": "words"})
-    note(ref, 1, "Identity", "User", "identity.questioned", "waiting", question, "identity-question-" + aid, {"missing": gaps})
-    try:
-        # the line names its card: the chat shows the card, which says the question once (M0.6)
-        R.post(ref, "Identity", R.OWNER, "inform", {"word": "question", "done": question, "card": aid})
-    except Exception:  # noqa: BLE001 -- the ask is on the record whether or not the chat carries it
-        pass
-    return _move(ref, "waiting", step=1, open_ask=aid)
+    """Where the cycle starts, and after the owner answers a question Identity's code asked: Identity reads its standard
+    on the record by code and asks the next point unmet (R.identity_asks, which records it through asked()). Returns the
+    cycle when a question is open now, None when the standard is met."""
+    return R.identity_asks(ref)
 
 
 def next_gap(ref):
@@ -445,7 +418,8 @@ def answer(ref, text, ask_id=None, at=None):
                 ask["words_at"] = {"board": ref, "n": row["n"]}
                 W._put_ask(ref, ask)
             return _state(ref)
-        if ask.get("standard") or missing == "rules":
+        hurry = bool(R.JUST_DO_IT.fullmatch(text))
+        if ask.get("standard") or (missing == "rules" and not hurry):
             # Identity's standard was not met (M3.3): the answer is the owner's words to Identity, which reads them against
             # the standard again and asks again or starts. A rule given as an answer keeps its tag (M3.4): Identity reads
             # it, restates its tag and scope, and the owner stamps it. Nothing is written to the identity here
@@ -455,15 +429,14 @@ def answer(ref, text, ask_id=None, at=None):
                 ask["words_at"] = {"board": ref, "n": row["n"]}      # the card keeps the answer; the chat leaves the post to it
                 W._put_ask(ref, ask)
             return _state(ref)
-        if missing == "done-when":
-            # done-when is its items (M3.1): the answer is an item, written by the one writer of done-when, so done stays
-            # their joined text and the Org screen's copy follows (found by a verifier 2026-10-23: done was the answer
-            # and the items, the API, the copy and the pane all kept the old item)
-            W.put_done_items(ref, W.answered_items(dept, text))
+        # Identity's code asked this (where the cycle started, or after an answer or a stamp), on a point it reads on
+        # the record: Identity's code takes the answer onto the record, through the record's own writers (done-when is
+        # its items, M3.1; the owner and the budget too, so the same question never comes back, M3.3), or fills the
+        # point from the kind's defaults on 'just do it'; the revision moves the Org screen's copy
+        if hurry:
+            R._standard_defaults(ref, list(ask.get("points") or []) or [missing])
         else:
-            if missing == "goal":
-                dept["goal"] = text
-            W.bump_identity(ref, dept)                  # the one record, and the Org screen's copy of it (M3.1)
+            R._standard_fill(ref, missing, text)
         ask.update({"status": "stamped", "decided": W.now(), "by": "the owner", "answered": text})
         if at:
             ask["words_at"] = at
@@ -509,21 +482,22 @@ def standard_question(ref):
                  and a["status"] == "pending"), None)
 
 
-def asked(ref, question, missing, why, key):
-    """Identity's standard is not met (J2.a, PRD M3.3): its one question to the owner is a real ask that takes words, in
-    the chat or through /j2/answer, and nothing starts until the standard is met or the owner says 'just do it'. One
-    open question at a time, with no cap on how many are asked in turn."""
+def asked(ref, question, missing, why, key=None, standard=True):
+    """Identity's standard is not met (J2.a, PRD M3.3): the one question Identity decided is recorded here, a real ask that
+    takes words, in the chat or through /j2/answer, and nothing starts until the standard is met or the owner says 'just
+    do it'. `standard` is True when Identity's reading in a step asked it (that reading reads the answer again), False
+    when Identity's code asked it on the record (R.identity_asks). One open question at a time, with no cap on how many
+    are asked in turn."""
     with W._lock(ref):
         cur = _state(ref)
         if not cur or not cur.get("cycle_id"):
             return None
-        ask = standard_question(ref)
+        ask = next((a for a in W.asks(ref) if a["id"] == cur.get("open_ask") and a.get("kind") == "j2_identity"
+                    and a["status"] == "pending" and bool(a.get("standard")) == bool(standard)), None)
         if ask is None:
-            ask = W._put_ask(ref, {"id": "a-j2-" + uuid.uuid4().hex[:8], "kind": "j2_identity", "text": str(question), "why": str(why or ""),
-                                   "status": "pending", "created": W.now(), "cycle_id": cur["cycle_id"], "missing": (missing or ["goal"])[0],
-                                   "points": list(missing or []), "standard": True, "answer": "words"})
-        note(ref, 1, "Identity", "User", "identity.questioned", "waiting", str(question), "identity-question-" + str(key),
-             {"missing": list(missing or []), "why": str(why or ""), "standard": True})
+            ask = W._put_ask(ref, W.j2_identity_ask(question, cur["cycle_id"], (missing or ["goal"])[0], why, missing, standard))
+        note(ref, 1, "Identity", "User", "identity.questioned", "waiting", str(question), "identity-question-" + str(key or ask["id"]),
+             {"missing": list(missing or []), "why": str(why or ""), "standard": bool(standard)})
         return _move(ref, "waiting", step=1, open_ask=ask["id"])
 
 
@@ -806,8 +780,7 @@ def questioned(ref, question, key):
         ask = next((a for a in W.asks(ref) if a.get("kind") == "j2_identity" and a.get("missing") == "words"
                     and a["status"] == "pending" and a.get("cycle_id") == cur["cycle_id"]), None)
         if ask is None:
-            ask = W._put_ask(ref, {"id": "a-j2-" + uuid.uuid4().hex[:8], "kind": "j2_identity", "text": text, "why": str(question or THIN),
-                                   "status": "pending", "created": W.now(), "cycle_id": cur["cycle_id"], "missing": "words", "answer": "words"})
+            ask = W._put_ask(ref, W.j2_identity_ask(text, cur["cycle_id"], "words", question or THIN))
         note(ref, 1, "Identity", "User", "identity.questioned", "waiting", text, "identity-question-" + str(key),
              {"missing": ["words"], "why": str(question or THIN)})
         return _move(ref, "waiting", step=1, open_ask=ask["id"])

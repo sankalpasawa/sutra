@@ -433,6 +433,126 @@ def test_m3_3_the_standard_is_read_only_inside_the_cycle(j2, monkeypatch):
     assert rows and all(r["by"] == R.SKIPPED for r in rows)
 
 
+OWNER_SAYS = "I am Sankalp, I own it, and it may spend 5 dollars a day"
+GAP_ANSWERS = {"owner": OWNER_SAYS, "items": "Customers can order a cake on WhatsApp",
+               "goal": "A website for the bakery where families in Pune order cakes"}
+
+
+def _standard_gap(j2, point):
+    """A department whose cycle started with nothing missing, and whose record then lacks a point only code can read:
+    its first words are read against the standard in Identity's step, and Identity asks about that point."""
+    W, R, J, _, _ = j2
+    d, _ = W.create("dref-gap", "Gap Website", None)
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept("dref-gap", d)
+    assert J.start("dref-gap")["state"] == "assessing" and J.status("dref-gap")["open_question"] is None
+    d = W.dept("dref-gap")
+    d.update({"owner": {"owner": "", "envelopes": {}}, "items": {"done": ""}, "goal": {"goal": ""}}[point])
+    W.save_dept("dref-gap", d)
+    W.give_goal("dref-gap", BAKERY)
+    W.run_until_idle("dref-gap", limit=300)
+    q = J.status("dref-gap")["open_question"]
+    assert q and q["standard"] and q["missing"] == point and q["text"] == R.STANDARD_ASKS[point]
+    return "dref-gap", q
+
+
+@pytest.mark.parametrize("via", ["chat", "answer box"])
+@pytest.mark.parametrize("point", ["owner", "items", "goal"])
+def test_m3_3_an_answer_to_a_gap_only_code_reads_reaches_the_record(j2, point, via):
+    """FI1.1 'answer, read again, met': the owner's answer filed in the Brief alone, so the record keeps its gap and the
+    same question comes back after every answer, must fail."""
+    W, R, J, founding, _ = j2
+    ref, q = _standard_gap(j2, point)
+    rev = int(W.dept(ref).get("identity_revision") or 1)
+    if via == "chat":
+        W.owner_ask(ref, GAP_ANSWERS[point])
+    else:
+        assert _client().post("/api/dept/%s/j2/answer" % ref, json={"text": GAP_ANSWERS[point]}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    d = W.dept(ref)
+    assert R._standard_gaps(d) == [] and d["identity_revision"] == rev + 1          # on the record, one revision
+    if point == "owner":
+        assert d["owner"] == "Sankalp" and {s: d["envelopes"][s] for s in W.SYSTEMS} == R._limits_from_template()
+        taken = "Sankalp, as the owner; Priority's limits from its template"
+    elif point == "items":
+        assert d["done_items"] == [{"id": "D1", "text": GAP_ANSWERS["items"], "how": "model", "level": "outcome"}]
+        assert d["done"] == GAP_ANSWERS["items"]
+        taken = "done when: D1 " + GAP_ANSWERS["items"]
+    else:
+        assert d["goal"] == GAP_ANSWERS["goal"]
+        taken = "the goal, in your words"
+    acts = _actions(J, ref)
+    assert acts.count("identity.questioned") == 1                                    # not asked again
+    assert acts[acts.index("identity.questioned"):][:4] == ["identity.questioned", "ask.answered", "identity.assessed", "proposal.requested"]
+    assert J.status(ref)["open_question"] is None
+    assert "Thank you. Taken: %s. The identity is clear now; the department starts." % taken in _said(R, ref)
+    assert GAP_ANSWERS[point] in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]   # and in the Brief
+
+
+def test_m3_3_with_a_model_the_answer_is_on_the_record_before_identity_reads_it(j2, monkeypatch):
+    """The AI reading 'enough' from the owner's answer while its covering still finds no owner on the record (the step
+    fails, and only 'just do it' gets out) must fail."""
+    W, R, J, _, _ = j2
+    reads = []
+
+    def enough(prompt):
+        reads.append(prompt)
+        if "THE OWNER: none" in prompt or "THE BUDGET: none" in prompt:
+            return {"enough": False, "missing": ["owner", "budget"], "question": R.STANDARD_ASKS["owner"], "why": "no owner on record"}
+        return {"enough": True, "missing": [], "question": "", "why": "the owner and the budget are set"}
+    _model(monkeypatch, R, {"identity.enough": enough})
+    ref, q = _standard_gap(j2, "owner")
+    W.owner_ask(ref, OWNER_SAYS)
+    W.run_until_idle(ref, limit=300)
+    assert len(reads) == 2 and "THE OWNER: Sankalp" in reads[1]                        # read again, on the record
+    rows = [r for r in R.step_rows(ref) if r["step"] == "identity.enough"]
+    assert [r["status"] for r in rows] == ["ok", "ok"]                              # the covering held both readings
+    assert J.status(ref)["open_question"] is None and "proposal.requested" in _actions(J, ref)
+
+
+def test_m3_3_identity_has_one_standard_and_the_cycle_only_records_its_questions(j2):
+    """A question the marked standard does not hold ('Where should this department file its work?'), a question asked
+    at the start from another reading than Identity's, or j2_runtime saying a question to the owner itself, must fail."""
+    import inspect
+    W, R, J, _, F = j2
+    d, _ = W.create("dref-one", "One Website", None)
+    d.update({"events": [{"kind": "j2_ready", "route": "template"}], "owner": "", "envelopes": {}})
+    W.save_dept("dref-one", d)
+    J.start("dref-one")
+    q = J.status("dref-one")["open_question"]
+    reading = R.standard_reading(W.dept("dref-one"))
+    assert reading["missing"] == R._standard_gaps(W.dept("dref-one")) == ["owner", "budget"]
+    assert (q["text"], q["missing"], q["points"], q["standard"]) == (R.STANDARD_ASKS["owner"], "owner", ["owner", "budget"], False)
+    assert q["why"] == reading["why"]
+    line = next(p for p in R.board("dref-one") if (p["payload"] or {}).get("card") == q["id"])
+    assert (line["src"], line["dst"], line["payload"]["done"]) == ("Identity", ["Owner"], q["text"])     # Identity says it
+    row = next(r for r in F.function("dref-one", "identity")["j2"]["standard"]["rows"] if r["id"] == "owner_budget")
+    assert row["state"] == "not_met"                                                  # the pane reads the same standard
+    src = inspect.getsource(J)
+    assert "_identity_gaps" not in src and "R.post(" not in src and "file its work" not in src
+    assert set(J.QUESTION) == {"words"}
+    # one shape for every question Identity puts, the thin words' too
+    shape = {"id", "kind", "text", "why", "status", "created", "cycle_id", "missing", "points", "standard", "answer"}
+    assert set(next(a for a in W.asks("dref-one") if a["id"] == q["id"])) == shape
+    assert set(W.j2_identity_ask("What is it for?", "c-1", "words", J.THIN)) == shape
+    # answered, Identity's code reads again on the record, and the next point is asked or the standard is met
+    J.answer("dref-one", "My name is Asha Rao and it may spend what Priority says")
+    assert W.dept("dref-one")["owner"] == "Asha Rao" and J.status("dref-one")["open_question"] is None
+    assert J.status("dref-one")["state"] == "assessing"
+
+
+def test_m3_3_a_done_line_that_is_not_there_is_a_gap_and_just_do_it_writes_it(j2):
+    W, R, _, _, _ = j2
+    W.create("dref-line", "Line Website", None)
+    d = W.dept("dref-line")
+    d["done"] = ""
+    W.save_dept("dref-line", d)
+    assert R._standard_gaps(W.dept("dref-line")) == ["items"]
+    assert R._standard_defaults("dref-line", ["done-when"]) == ["the done-when items Root drafted"]
+    d = W.dept("dref-line")
+    assert d["done"] == W.done_line(d["done_items"]) and R._standard_gaps(d) == []
+
+
 # ---- M3.4 ------------------------------------------------------------------------------------------------------------
 NEVER = "Never publish without asking me"
 
