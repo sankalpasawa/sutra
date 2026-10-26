@@ -316,7 +316,8 @@ def sync(root, repo, rev, local_fonts, accept, strict, out=print):
            "raw_interp": {"count": len(distinct), "uses": uses, "acknowledged_commit": ack},
            "synced_at": None}
     if not local_fonts:
-        pin["fonts_note"] = "fonts not vendored: the page keeps the prototype's Google Fonts link (run scripts/fetch_j2_fonts.py, then this script)"
+        pin["fonts_note"] = ("fonts not vendored: the page keeps the prototype's Google Fonts link and the page's security policy allows "
+                             "its two hosts (run scripts/fetch_j2_fonts.py, then this script)")
     # a sync that changes nothing leaves the pin as it was, time included, so running it twice is no diff
     same = dict(prev, synced_at=None) == pin
     pin["synced_at"] = prev.get("synced_at") if same else datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

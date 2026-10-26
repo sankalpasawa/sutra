@@ -10,6 +10,8 @@ Named claims:
   - the prototype's repo is never written to
   - transform keeps every byte it does not name: CRLF lines, non-ASCII text, the S1 positions in the original's coordinates
   - S3 swaps the one font href only when fonts are vendored, and names a font file that is missing
+  - scripts/fetch_j2_fonts.py keeps the latin and latin-ext faces, names each file by its hash, writes fonts.css with
+    relative urls and the licence, refuses a download over 600 KB, and without a network writes nothing and exits 3
 
 The prototype is read only; the tests that need it skip with a printed reason when it is not there.
 Run: ./run-tests.sh test_j2ui_sync.py"""
@@ -25,6 +27,7 @@ import pytest
 
 UI = Path(__file__).resolve().parent
 SCRIPT = UI / "scripts" / "sync_j2_ui.py"
+FETCH = UI / "scripts" / "fetch_j2_fonts.py"
 PIN = json.loads((UI / "j2ui_assets" / "PINNED.json").read_text()) if (UI / "j2ui_assets" / "PINNED.json").exists() else {}
 
 
@@ -37,6 +40,17 @@ def _load():
 
 
 SYNC = _load()
+
+
+def _load_fetch():
+    spec = importlib.util.spec_from_file_location("fetch_j2_fonts", FETCH)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["fetch_j2_fonts"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+FETCHER = _load_fetch()
 
 FONT = "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600&family=IBM+Plex+Sans:wght@400&display=swap"
 GOOD = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
@@ -272,3 +286,108 @@ def test_a_vendored_font_folder_switches_s3_on_and_a_missing_file_is_refused(tmp
     code, said = _sync(app, repo, "--no-local-fonts")
     assert code == 0 and "S3 fonts off" in said
     assert FONT.encode() in (app / "j2ui_assets" / "j2_ui.html").read_bytes()
+
+
+# ── scripts/fetch_j2_fonts.py (offline: the network is a stub) ─────────────────────────────────────────────────────
+GCSS = """/* cyrillic */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: url(https://fonts.gstatic.com/s/ibmplexsans/v1/cyr.woff2) format('woff2');
+  unicode-range: U+0301;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/ibmplexsans/v1/ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA;
+}
+/* latin */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/ibmplexsans/v1/lat.woff2) format('woff2');
+  unicode-range: U+0000-00FF;
+}
+/* latin */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/ibmplexsans/v1/lat.woff2) format('woff2');
+  unicode-range: U+0000-00FF;
+}
+"""
+
+
+def _stub(sizes=None):
+    seen = []
+
+    def fetch(url):
+        seen.append(url)
+        if url.endswith("css2?family=IBM+Plex+Sans"):
+            return GCSS.encode()
+        return (b"wOF2" + url.encode()).ljust((sizes or {}).get(url.rsplit("/", 1)[-1], 40), b".")
+    return fetch, seen
+
+
+def test_the_fetch_script_keeps_the_latin_faces_names_files_by_hash_and_writes_the_licence(tmp_path):
+    fetch, seen = _stub()
+    files, families = FETCHER.vendor("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans", fetch)
+    assert families == ["IBM Plex Sans"]
+    woff = sorted(n for n in files if n.endswith(".woff2"))
+    assert len(woff) == 2 and all(re.fullmatch(r"ibm-plex-sans-(latin|latin-ext)-[0-9a-f]{8}\.woff2", n) for n in woff)
+    assert not any("cyr" in u for u in seen), "a subset that is not kept is never downloaded"
+    assert len([u for u in seen if u.endswith("lat.woff2")]) == 1, "two weights, one file: downloaded once"
+    css = files["fonts.css"].decode()
+    assert css.count("@font-face") == 3 and "gstatic" not in css.split("*/", 1)[1] and "font-weight:500" in css.replace(" ", "")
+    assert all(("url(%s)" % n) in css for n in woff)
+    lic = files["LICENSE.txt"].decode()
+    assert "SIL OPEN FONT LICENSE Version 1.1" in lic and "IBM Plex Sans" in lic and "css2?family=IBM+Plex+Sans" in lic
+
+
+def test_the_fetch_script_writes_a_folder_the_sync_then_pins(tmp_path):
+    repo, _, _ = _repo(tmp_path)
+    app = tmp_path / "app"
+    assert _sync(app, repo)[0] == 0
+    pin = app / "j2ui_assets" / "PINNED.json"
+    doc = json.loads(pin.read_text())
+    doc["external"] = ["https://fonts.googleapis.com/css2?family=IBM+Plex+Sans"]
+    pin.write_text(json.dumps(doc))
+    said = []
+    fetch, _ = _stub()
+    assert FETCHER.main(["--root", str(app)], said.append, fetch) == 0, said
+    folder = app / "j2ui_assets" / "fonts"
+    assert (folder / "fonts.css").exists() and (folder / "LICENSE.txt").exists() and len(list(folder.glob("*.woff2"))) == 2
+    assert sum(p.stat().st_size for p in folder.iterdir()) < 600 * 1024
+    code, out = _sync(app, repo)
+    assert code == 0 and "S3 fonts vendored" in out, out
+    css = (folder / "fonts.css").read_text()
+    assert all((folder / m).is_file() for m in re.findall(r"url\(([^)]+)\)", css)), "fonts.css names only files that are there"
+    again = json.loads(pin.read_text())
+    assert again["local_fonts"] is True and [s["id"] for s in again["substitutions"]] == ["S1", "S2", "S3"]
+
+
+def test_without_a_network_the_fetch_script_writes_nothing_and_exits_3(tmp_path):
+    def offline(url):
+        raise FETCHER.FetchError("fonts not vendored: no network (test)")
+    said = []
+    code = FETCHER.main(["--root", str(tmp_path), "--css-url", "https://fonts.googleapis.com/css2?family=X"], said.append, offline)
+    assert code == 3 and "no network" in said[0]
+    assert not (tmp_path / "j2ui_assets").exists()
+
+
+def test_the_fetch_script_refuses_fonts_over_the_budget_and_a_stylesheet_with_no_latin_face(tmp_path):
+    fetch, _ = _stub({"lat.woff2": 700 * 1024})
+    with pytest.raises(FETCHER.FetchError, match="budget"):
+        FETCHER.vendor("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans", fetch)
+    with pytest.raises(FETCHER.FetchError, match="no latin"):
+        FETCHER.vendor("x", lambda u: b"/* cyrillic */ @font-face { font-family: 'A'; src: url(a.woff2) format('woff2'); }")
+    assert FETCHER.main(["--root", str(tmp_path)], lambda *_: None) == 2, "no pin and no --css-url"

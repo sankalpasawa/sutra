@@ -60,6 +60,6 @@
     "uses": 813,
     "acknowledged_commit": null
   },
-  "synced_at": "2026-10-26T17:20:32Z",
-  "fonts_note": "fonts not vendored: the page keeps the prototype's Google Fonts link (run scripts/fetch_j2_fonts.py, then this script)"
+  "synced_at": "2026-10-26T17:24:35Z",
+  "fonts_note": "fonts not vendored: the page keeps the prototype's Google Fonts link and the page's security policy allows its two hosts (run scripts/fetch_j2_fonts.py, then this script)"
 }
