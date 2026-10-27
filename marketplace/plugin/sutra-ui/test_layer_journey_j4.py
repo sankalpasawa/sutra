@@ -243,6 +243,43 @@ class TestJ4Edges(Ruling):
         self.assertEqual(len([r for r in W.runs(child)[runs:] if "loosens one it inherits" in r["what"]]), 1)
         self.assertEqual(self.kept(child), kept)
 
+    def test_j4_4_a_rule_identitys_take_reads_out_of_a_task_is_turned_down_when_it_loosens_an_inherited_one(self):
+        """J4.5 meets J4.4: words that are a task and carry a rule on a line an ancestor holds more strictly (Identity's take reads
+        `ask: Never publish prices` out of them) are turned down at the third place a rule is asked for. Identity says a
+        department's rules can only tighten it, once; no ask of kind rule is filed, no request for a stamp is posted (the request
+        would carry no words to stamp), a row on the record says what stood, and the rules are as they were. The same take at the
+        inherited strength is asked for, so the refusal is the check's and not the take's."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        self.inherit(root, {"tag": "refuse", "line": LINE})
+        words = "Keep the prices off the site, please."
+        self.M.rules[words] = {"line": LINE, "tag": "ask"}
+        kept, asks, posts, runs = self.kept(child), len(W.asks(child)), len(R.board(child)), len(W.runs(child))
+        self.say(child, words)
+        read = [r for r in R.step_rows(child) if r["step"] == "identity.recognise"]
+        self.assertEqual(read[-1]["answer"], "task", "the words were read as a task, not as a directive")
+        told = self.told_tighten(child, posts)
+        self.assertEqual(len(told), 1, told)
+        self.assertEqual(told[0]["payload"]["word"], "request")
+        self.assertIn("Root's rule stands: " + SAID, told[0]["payload"]["done"])
+        self.assertIn(LINE, told[0]["payload"]["done"], "and it names the rule that stands")
+        self.assertEqual(self.rule_asks(child), [], "no ask of kind rule is filed")
+        self.assertEqual(len(W.asks(child)), asks, "nor any other")
+        self.assertEqual([p for p in R.board(child)[posts:] if p["msg_type"] == "request" and p["payload"].get("word") == "rule"], [],
+                         "and no request for a stamp is posted")
+        self.assertEqual(self.kept(child), kept, "the rules are unchanged")
+        rows = [r for r in W.runs(child)[runs:] if "loosens one it inherits" in r["what"]]
+        self.assertEqual([(r["engine"], r["system"]) for r in rows], [("Identity", True)], "a row on the record says Identity said no to it")
+        self.assertIn(LINE, rows[0]["what"])
+        ended = [r["what"] for r in W.runs(child)[runs:] if r["engine"] == "Identity" and "looser than an inherited" in r["what"]]
+        self.assertEqual(ended, ["said no to a rule that is looser than an inherited one: " + LINE],
+                         "and the line ends saying it said no, not that it put the rule back for a stamp")
+        # the control: the same take at the inherited strength is asked for, so the words above were turned down for the tag alone
+        again = "Keep the prices off the site, always."
+        self.M.rules[again] = {"line": LINE, "tag": "refuse"}
+        self.say(child, again)
+        self.assertEqual([(a["tag"], a["line"]) for a in self.rule_asks(child)], [("refuse", LINE)], "as strict as the ancestor's: asked for")
+
     def test_j4_4_a_stricter_or_unrelated_rule_is_written(self):
         """J4.4: the same line tagged `refuse` is as strict as the ancestor's: asked for and written. An unrelated line tagged
         `ask` is written. And with no rule above the department, the check does nothing: a `go` rule is asked for and written."""
