@@ -12,6 +12,7 @@ X1  function-prompts/ and its reader are deleted, so the layers' words are the o
 
 A test that meets a fault of the interface fails (conftest.py); a deliberate one is wrapped in S.expect_refused().
 """
+import ast
 import os
 import re
 from pathlib import Path
@@ -41,6 +42,11 @@ def runtime(tmp_path, monkeypatch):
     R._DEFS.clear()
     yield R
     R._DEFS.clear()
+
+
+def layer_schema_parts(layer):
+    """[(group, parts)] of a layer's prompts, as the interface lists them."""
+    return [(group, list(parts)) for group, parts in S.PROMPTS[layer].items()]
 
 
 # ---- X1a · the .md bundle ---------------------------------------------------------------------------------------------------
@@ -84,14 +90,18 @@ def test_x1_every_part_of_the_interface_is_served_by_the_default_versions_words(
     assert P.faults() == runtime.prompt_faults() == [] and runtime.validate(runtime.defs()) == []
 
 
-def test_x1_a_default_version_that_does_not_load_refuses_the_definitions_load_and_names_its_parts(runtime, monkeypatch):
-    """The .md files used to serve a layer that did not load; nothing does now, so the load is refused, in words, and no function
-    runs on words that are not there."""
+def test_x1_a_default_version_that_does_not_load_refuses_the_definitions_load_and_names_what_nothing_else_serves(runtime, monkeypatch):
+    """The .md files and the copies in engine_runtime used to serve a layer that did not load; nothing does now, so the load is
+    refused, in words, and no function runs on words or bodies that are not there."""
     real = layers.load
     monkeypatch.setattr(layers, "load", lambda impl_id: None if str(impl_id).startswith("adaptation/") else real(impl_id))
     runtime._DEFS.clear()
-    with pytest.raises(ValueError, match=r"the engine definitions are refused: Adaptation's goal instructions, does: the version holds no words for it"):
+    with pytest.raises(ValueError, match=r"the engine definitions are refused: Adaptation, adapt\.source: no function named adapt_source ships with the app"):
         runtime.defs()
+    faults = runtime.prompt_faults()
+    assert "Adaptation's goal instructions, does: the version holds no words for it" in faults, "and the words nothing else holds"
+    parts = [(g, p) for g, ps in layer_schema_parts("adaptation") for p in ps]
+    assert len([f for f in faults if f.startswith("Adaptation's")]) == len(faults) == len(parts) == 15, "each of Adaptation's parts, and no other layer's"
     monkeypatch.undo()
     runtime._DEFS.clear()
     assert runtime.validate(runtime.defs()) == [], "and with the version there the load is whole"
@@ -104,3 +114,72 @@ def test_x1_a_pinned_version_that_does_not_load_runs_the_default_versions_words_
     d = {"kind": "website", "layers": {"identity": "identity/v9"}}
     assert layers.pins("dref-x", d)["identity"] == "identity/v1"
     assert P._module("dref-x", "identity", "take", "gate") is layers.load("identity/v1")
+
+
+# ---- X1b · the dead copies ---------------------------------------------------------------------------------------------------
+KINDS = ("code", "prompt", "draft", "check")
+#: the registries cleared of dead copies so far, one commit each (the check below asks of these only)
+CLEARED = ("code",)
+
+
+def _tables():
+    """{kind: (the legacy registry, [every discovered version's table of that kind])} -- the versions under layers/ in order."""
+    import engine_runtime as R
+    mods = [layers.load(i) for ids in layers.available().values() for i in ids]
+    return {k: (getattr(R, k.upper()), [getattr(m, k.upper(), None) or {} for m in mods]) for k in KINDS}
+
+
+def _lineage_fixture_versions():
+    """The fixture child under test_fixtures/layers_lineage/ (A2), which extends a version and so may reach the same bodies."""
+    return sorted((HERE / "test_fixtures" / "layers_lineage").rglob("v*.py"))
+
+
+def test_x1_the_legacy_registries_hold_no_copy_of_a_body_a_version_holds_of_its_own(runtime):
+    """A name in engine_runtime's CODE, PROMPT, DRAFT or CHECK is there because a version reaches it by reference (ref_to) or because
+    no version holds a body of that name (a work engine's). One a version holds as its own body, and none reaches by reference, is
+    a dead copy: nothing can run it."""
+    dead = {}
+    for kind, (registry, tables) in _tables().items():
+        own = {n for t in tables for n, fn in t.items() if not hasattr(fn, "legacy")}
+        reached = {n for t in tables for n, fn in t.items() if hasattr(fn, "legacy")}
+        dead[kind] = sorted(n for n in registry if n in own and n not in reached)
+    assert {kind: dead[kind] for kind in CLEARED} == {kind: [] for kind in CLEARED}, dead
+
+
+def test_x1_no_version_reaches_a_body_that_is_not_there_or_is_a_delegate(runtime):
+    """Contract cases 3 and 7 on every version on disk: every name a recipe uses is provided, and no ref_to points at nothing or
+    at a delegate (so no delegate loops back to the version that points at it)."""
+    for module in C.discover():
+        assert C.case_3(module) == [] and C.case_7(module) == [], C.impl_id(module)
+    fixtures = _lineage_fixture_versions()
+    assert fixtures, "the fixture child is there"
+    for path in fixtures:
+        # the fixture child only extends a version (inherit): it points at no body of engine_runtime's by reference of its own
+        calls = [n for n in ast.walk(ast.parse(path.read_text(encoding="utf-8"))) if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", getattr(n.func, "attr", None)) == "ref_to"]
+        assert calls == [], str(path)
+
+
+def test_x1_the_registries_shrank_by_the_copies_and_the_by_reference_counts_did_not_change(runtime):
+    """What the retirement removed from the legacy registries (the entry count before, 69 + 25 + 25 + 46 = 165, and after) and what it
+    left: the live bodies are still reached by reference, so the layers' counts are as they were."""
+    sizes = {k: len(getattr(runtime, k.upper())) for k in KINDS}
+    assert sum(sizes.values()) <= 165 - 17, sizes
+    counts = {C.impl_id(m): C.by_reference(m) for m in C.discover()}
+    assert counts["root/v1"] == {"by_reference": 14, "own": 0} and counts["coordination/v1"] == {"by_reference": 19, "own": 2}
+    assert counts["audit/v1"] == {"by_reference": 9, "own": 6}
+
+
+def test_x1_a_body_a_version_wraps_stays_where_it_is_and_the_copies_it_replaced_are_gone(runtime):
+    """audit/v1 and identity/v1 run the body engine_runtime holds under their own wrapper (R.audit_pick, R.identity_read ...): those
+    are live and stay, with no registry entry of their own; the bodies a version copied whole (priority, the line's handlers, the
+    mechanical check) are deleted."""
+    for name in ("audit_pick", "audit_file", "identity_read", "identity_file", "identity_apply", "identity_drop", "identity_finding", "hear"):
+        assert callable(getattr(runtime, name)), name
+    for name in ("audit_pick", "audit_file", "identity_read", "identity_file", "identity_apply", "identity_drop", "identity_finding"):
+        assert name not in runtime.CODE, name
+    for name in ("priority_envelope", "priority_grant", "priority_read", "priority_post", "audit_mechanical", "adapt_line_offer", "adapt_source",
+                 "adapt_line_refused", "adapt_line_counter", "identity_closed", "_round_inert"):
+        assert not hasattr(runtime, name) and name not in runtime.CODE, name
+    for name in ("adapt_hearnext", "adapt_round", "adapt_round_granted", "adapt_round_refused"):
+        assert name not in runtime.CODE, name

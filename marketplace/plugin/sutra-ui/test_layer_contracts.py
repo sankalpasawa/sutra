@@ -76,10 +76,12 @@ def test_a_ref_to_pointing_at_a_delegate_fails_case_7(tmp_path, monkeypatch):
     monkeypatch.setattr(R, "_a_delegate_for_the_test", layers.ref_to("_names"), raising=False)
     fake = _fake(tmp_path, "identity", layers.recipes()["Identity"], CODE={"identity_read": layers.ref_to("_a_delegate_for_the_test")})
     assert C.case_7(fake) == ["identity/v1: code identity_read points at engine_runtime._a_delegate_for_the_test, which is itself a delegate"]
+    # every name Identity's version holds as its own body, each a reference to a body that is there (the legacy registries no longer
+    # hold a copy of a body a version has taken over, W3-PROOF X1)
+    held = ("identity_read", "identity_file", "identity_doubt", "identity_closed", "identity_apply", "identity_done",
+            "identity_weigh_reading", "identity_finding", "identity_round", "identity_drop")
     fine = _fake(tmp_path, "identity", layers.recipes()["Identity"],
-                 CODE={"identity_read": layers.ref_to("identity_read"), "identity_doubt": layers.ref_to("identity_read"),
-                       "identity_done": layers.ref_to("identity_read"), "identity_weigh_reading": layers.ref_to("identity_read"),
-                       "identity_round": layers.ref_to("identity_read")},
+                 CODE={name: layers.ref_to("identity_read") for name in held},
                  CHECK={"done_is_read": layers.ref_to("c_said_what_it_did")})
     assert C.case_7(fine) == [] and C.case_3(fine) == []
     gone = _fake(tmp_path, "identity", layers.recipes()["Identity"], CODE={"identity_read": layers.ref_to("no_such_body")})

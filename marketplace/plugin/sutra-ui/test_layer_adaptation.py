@@ -1884,11 +1884,11 @@ def test_f2_the_conflict_adaptation_files_at_a_bound_carries_the_ways_priority_p
     assert own["payload"]["options"][0]["id"] == "stop", "ways given are the ways carried; Priority's limit ways are asked for only when none are given"
 
 
-def test_f2_the_two_handlers_are_the_layers_own_now_and_the_runtimes_copies_stay_the_fallback(j2):
+def test_f2_the_two_handlers_are_the_layers_own_now_and_the_runtimes_copies_are_deleted(j2):
     R = j2[1]
     for name in ("adapt_line_refused", "adapt_line_counter"):
         assert not hasattr(v1().CODE[name], "legacy"), "%s is a body of the layer's own" % name
-        assert callable(getattr(R, name)), "and engine_runtime's copy is still there for a department whose layer does not load"
+        assert not hasattr(R, name) and name not in R.CODE, "and engine_runtime's copy is gone (W3-PROOF X1): the layer is the one body"
 
 
 # ---- F3 · propose the next round (W2-ADAPT, M9.1, M9.4) ---------------------------------------------------------------

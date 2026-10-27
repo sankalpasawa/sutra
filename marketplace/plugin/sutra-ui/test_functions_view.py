@@ -1161,7 +1161,7 @@ def test_m17_every_ask_says_its_answers_in_the_words_of_its_buttons(mods, born, 
     assert R._answers("add it", "to leave the idea parked") == "Stamp to add it, or say no to leave the idea parked."
     assert R._answers("add them and start", "and say what to change") == "Stamp to add them and start, or say no and say what to change."
     import inspect
-    for fn in (R.identity_engine, R.identity_line, R.identity_closed, R.instructions_ask):
+    for fn in (R.identity_engine, R.identity_line, R.layers.load("identity/v1").identity_closed, R.instructions_ask):
         assert "_answers(" in inspect.getsource(fn) and "Refuse to" not in inspect.getsource(fn), fn.__name__
 
 

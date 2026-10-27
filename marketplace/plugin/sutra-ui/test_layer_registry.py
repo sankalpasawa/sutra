@@ -172,13 +172,13 @@ def test_c1_a_stub_holding_a_name_is_what_resolve_returns_for_that_layers_engine
     W, R = modules()
     f = lambda ctx, step, item: {"stub": True}
     m = layers.load("identity/v1")
-    monkeypatch.setitem(m.CODE, "identity_read", f)
-    assert layers.resolve("dref-x", "Identity", "code", "identity_read", R.CODE) is f
-    assert layers.resolve("dref-x", "Priority", "code", "identity_read", R.CODE) is R.CODE["identity_read"], "another layer's engine"
-    assert layers.resolve("dref-x", "Plan", "code", "identity_read", R.CODE) is R.CODE["identity_read"], "a work engine has no layer"
+    monkeypatch.setitem(m.CODE, "identity_route", f)                       # a name the version holds by reference: R.CODE still has the body
+    assert layers.resolve("dref-x", "Identity", "code", "identity_route", R.CODE) is f
+    assert layers.resolve("dref-x", "Priority", "code", "identity_route", R.CODE) is R.CODE["identity_route"], "another layer's engine"
+    assert layers.resolve("dref-x", "Plan", "code", "identity_route", R.CODE) is R.CODE["identity_route"], "a work engine has no layer"
     assert layers.resolve("dref-x", "Identity", "code", "plan_read", R.CODE) is R.CODE["plan_read"], "a name it does not hold"
     other = lambda *a: 1
-    assert layers.resolve("dref-x", "Identity", "check", "identity_read", {"identity_read": other}) is other, "another kind"
+    assert layers.resolve("dref-x", "Identity", "check", "identity_route", {"identity_route": other}) is other, "another kind"
     # each kind is its own dict
     for kind in ("prompt", "draft", "check"):
         monkeypatch.setitem(getattr(m, kind.upper()), "a_name", f)
@@ -303,7 +303,7 @@ def test_c2_a_stub_identity_body_is_called_by_a_real_identity_run(dept, monkeypa
 
     def identity_read(ctx, step, item):
         called.append((ctx["engine"], step["id"]))
-        return R.CODE["identity_read"](ctx, step, item)
+        return R.identity_read(ctx, step, item)                             # the body the version wraps
     monkeypatch.setitem(layers.load("identity/v1").CODE, "identity_read", identity_read)
     W.owner_ask(ref, "Which page lists the doctors?")
     W.run_until_idle(ref, limit=200)

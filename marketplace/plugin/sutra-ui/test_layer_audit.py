@@ -171,7 +171,7 @@ def test_u3_a_department_with_no_deliverable_reads_nothing_and_does_not_fail(j2,
     ctx = {"ref": organic, "inp": {"v": 1}, "bag": {"audit.pick": {"sample": True}}}
     assert R.audit_files(ctx) == {}
     assert R.audit_pick(ctx, None, None)["pages"] == []
-    mech = R.audit_mechanical(ctx, None, None)
+    mech = _audit_module().audit_mechanical(ctx, None, None)
     assert mech["ok"] is False and mech["faults"] == ["the deliverable does not trace back to the owner's words"]
 
 
@@ -197,7 +197,7 @@ def test_u3_the_ledger_cites_the_deliverable_it_read_never_the_live_site_by_defa
 def test_u3_no_live_site_literal_is_left_on_audits_path(j2):
     import inspect
     W, R, J, _, _ = j2
-    on_path = [R.audit_art, R.audit_files, R.audit_pick, R.audit_mechanical, R.audit_file, R.p_audit_judge, R.d_audit_judge,
+    on_path = [R.audit_art, R.audit_files, R.audit_pick, _audit_module().audit_mechanical, R.audit_file, R.p_audit_judge, R.d_audit_judge,
                R._j2_audit_read, J.on_post, J.not_read, J.audited, J._deliverable]
     for fn in on_path:
         assert "Live site" not in inspect.getsource(fn), fn.__name__

@@ -894,13 +894,13 @@ RECORDS = {
         'ask': {'def': 'identity.ask', 'store': 'asks.json', 'writer': 'W._put_ask (whoever files it: only Identity puts a decision to the owner)'},
     },
     'adaptation': {
-        'proposal': {'def': 'act.line', 'store': 'board.jsonl propose/line', 'writer': 'R.adapt_line_offer, R.adapt_line_counter'},
+        'proposal': {'def': 'act.line', 'store': 'board.jsonl propose/line', 'writer': 'adaptation/v1 adapt_line_offer, adapt_line_counter'},
         'idea': {'def': 'adaptation.idea', 'store': 'ideas.json', 'writer': 'R.adapt_park'},
         'ladder': {'def': 'adaptation.ladder', 'store': 'ladder.json', 'writer': 'R._save_entry'},
         'round': {'def': 'adaptation.round', 'store': 'rounds.jsonl', 'writer': 'W.append_row (W2-ADAPT, M9.1)'},
     },
     'priority': {
-        'envelope': {'def': 'envelope', 'store': 'dept.json envelopes[name]', 'writer': 'W.create, W.set_envelope, W.add_engine, R.priority_grant'},
+        'envelope': {'def': 'envelope', 'store': 'dept.json envelopes[name]', 'writer': 'W.create, W.set_envelope, W.add_engine, priority/v1 priority_grant'},
         'price': {'def': 'priority.price', 'store': 'prices.jsonl', 'writer': 'W.append_row (W1-PRIORITY, M5.3)'},
         'ceiling': {'def': 'priority.ceiling', 'store': 'dept.json ceiling', 'writer': 'priority/v1 (W2-PRIORITY, M9.2)'},
     },

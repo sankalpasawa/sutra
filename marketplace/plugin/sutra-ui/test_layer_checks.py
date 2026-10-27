@@ -724,21 +724,34 @@ def test_g2_placeholder_text_is_a_finding_naming_the_page_and_what_it_says(j2, m
         == ["index.html", "lessons.html"], "one for each page that says it"
 
 
+#: what the body engine_runtime held before audit_mechanical moved into the layer said for the four deliverables below (it was deleted by
+#: W3-PROOF X1, M2.10, with the other copies of bodies a version took over): taken from it on the tree before that commit
+LEGACY_MECHANICAL = [
+    {"ok": True, "faults": [], "holes": []},
+    {"ok": False, "faults": [], "holes": [{"page": "index.html", "claim": "the page says 'Home Welcome Phone: to be confirmed'",
+                                            "severity": "high", "kind": "hole"}]},
+    {"ok": True, "faults": [], "holes": []},
+    {"ok": False, "faults": ["the deliverable does not trace back to the owner's words"], "holes": []},
+]
+
+
 def test_g2_the_record_is_checked_as_it_always_was(j2, monkeypatch):
-    """The part of the body that moved is the legacy body's: same faults, same holes, same notes without the page checks."""
+    """The part of the body that moved is the legacy body's: same faults, same holes, same notes without the page checks. (The legacy
+    body is gone; its answers for these deliverables are LEGACY_MECHANICAL.)"""
     W, R, J, _, _ = j2
     ref = a_website(j2, monkeypatch)
     ctx = {"ref": ref, "dept": W.dept(ref), "inp": {"v": 1}, "bag": {"audit.pick": {"sample": True}}}
-    for files in (site(), site("<h1>Welcome</h1><p>Phone: to be confirmed.</p>"), {"result.md": "An answer."}):
+    for files, old in zip((site(), site("<h1>Welcome</h1><p>Phone: to be confirmed.</p>"), {"result.md": "An answer."}), LEGACY_MECHANICAL):
         monkeypatch.setattr(R, "audit_files", lambda c, files=files: files)
-        old, new = R.audit_mechanical(ctx, None, None), audit_v1().audit_mechanical(ctx, None, None)
+        new = audit_v1().audit_mechanical(ctx, None, None)
         assert new["faults"] == old["faults"] and new["ok"] == old["ok"]
         assert [{k: v for k, v in h.items() if k not in ("where", "name")} for h in new["holes"]] == old["holes"], \
             "the same holes, each with a where and a name besides"
     organic_less = W.create("dref-nothing", "Nothing", None, kind="organic")[0]["ref"]            # nothing delivered: the trace fault stays a fault
     monkeypatch.setattr(R, "audit_files", lambda c: {})
     bare = {"ref": organic_less, "dept": W.dept(organic_less), "inp": {"v": 1}, "bag": {"audit.pick": {"sample": True}}}
-    assert audit_v1().audit_mechanical(bare, None, None)["faults"] == R.audit_mechanical(bare, None, None)["faults"] != []
+    assert audit_v1().audit_mechanical(bare, None, None)["faults"] == LEGACY_MECHANICAL[3]["faults"] != []
+    assert not hasattr(R, "audit_mechanical"), "and the legacy body is not there to drift from it"
 
 
 def test_g2_the_covering_wants_every_defect_to_name_where_what_and_how_serious(j2):

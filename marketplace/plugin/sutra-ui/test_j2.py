@@ -1225,8 +1225,9 @@ def test_m4_1_a_born_word_on_the_board_never_rewrites_the_plan_root_registered(j
     assert said(R.coord_table, stray[1]) == "nothing to do: the line it names is not the plan Root registered (v1)"
     assert said(R.coord_table, {"version": 2}) == "nothing to do: the word born names v2, and the plan Root registered last is v1"
     assert said(R.coord_table, {"grow": "Publish"}) == "nothing to do: nobody stamped Publish onto the department's record"
-    assert said(R.priority_grant, stray[1]) == "nothing to do: the line it names is not the plan Root registered (v1)"
-    assert said(R.priority_grant, {"version": 1}) == "nothing to do: each engine it names holds its limit"
+    grant = R.layers.load("priority/v1").CODE["priority_grant"]                      # Priority's version holds the one body
+    assert said(grant, stray[1]) == "nothing to do: the line it names is not the plan Root registered (v1)"
+    assert said(grant, {"version": 1}) == "nothing to do: each engine it names holds its limit"
     # the plan Root registered, named by its version, is what the record already holds: the table follows it, and is
     # left as it is
     R.post(ref, "Identity", ["Coordination"], "inform", {"word": "born", "version": 1, "engines": LINE})
