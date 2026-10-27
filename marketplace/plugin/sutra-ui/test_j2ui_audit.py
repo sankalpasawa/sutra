@@ -59,6 +59,19 @@ def offline(monkeypatch, R, answers):
     monkeypatch.setattr(R, "MODEL", lambda prompt, step: (answers[step["id"]], 0.01, "model") if step["id"] in answers else (None, 0.0, "offline"))
 
 
+def no_ways_out(monkeypatch, R):
+    """Priority's no as it was before it priced ways out: the answer carries none, so the conflict reaches the owner as the stamp
+    that runs or drops the plan. Priority now sends the ways out (W2-PRIORITY), and Adaptation passes them on to Identity
+    (W2-ADAPT, M5.4), whose one card then holds them instead; these rows keep the stamp's page."""
+    real = R.post
+
+    def post(ref, src, dst, msg_type, payload=None, *a, **kw):
+        if src == "Priority" and isinstance(payload, dict) and "options" in payload:
+            payload = {k: v for k, v in payload.items() if k != "options"}
+        return real(ref, src, dst, msg_type, payload, *a, **kw)
+    monkeypatch.setattr(R, "post", post)
+
+
 NO = {"priority.bargain": {"answer": "reject", "why": "the envelope has no room today"}}
 LESS = {"priority.bargain": {"answer": "counter", "why": "the envelope has room for three today", "keep": ["Plan", "Write", "Check"]}}
 RUN = dict(NO, **{"identity.close": {"ruling": "run", "why": "the goal cannot be met without a site"}})
@@ -397,6 +410,7 @@ def test_w6_asked_for_less_then_a_yes_is_settled_by_the_two(mods, born, monkeypa
 
 def test_w6_a_no_that_goes_to_the_owner_waits_for_the_owner_then_follows_the_answer(mods, born, monkeypatch):
     W, R, J, F = mods
+    no_ways_out(monkeypatch, R)
     offline(monkeypatch, R, NO)
     ref = born()
     got, ctx = conflicts_of(mods, ref=ref)
@@ -420,6 +434,7 @@ def test_w6_a_no_that_goes_to_the_owner_waits_for_the_owner_then_follows_the_ans
 
 def test_w6_the_owners_no_drops_the_plan(mods, born, monkeypatch):
     W, R, J, F = mods
+    no_ways_out(monkeypatch, R)
     offline(monkeypatch, R, NO)
     ref = born()
     ask_id = next(a["id"] for a in W.asks(ref) if a["kind"] == "conflict")

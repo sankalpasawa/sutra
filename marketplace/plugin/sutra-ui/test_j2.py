@@ -56,6 +56,19 @@ def _model(monkeypatch, R, answers):
     monkeypatch.setattr(R, "MODEL", model)
 
 
+def _priority_sends_no_options(monkeypatch, R):
+    """Priority's no or ask for less as it was before it priced ways out: the answer carries none (W2-PRIORITY sends them, and
+    W2-ADAPT passes them to Identity, whose one card then holds them, M5.4). The conflict stamp is what a conflict without
+    ways out still becomes, and these rows keep it."""
+    real = R.post
+
+    def post(ref, src, dst, msg_type, payload=None, *a, **kw):
+        if src == "Priority" and isinstance(payload, dict) and "options" in payload:
+            payload = {k: v for k, v in payload.items() if k != "options"}
+        return real(ref, src, dst, msg_type, payload, *a, **kw)
+    monkeypatch.setattr(R, "post", post)
+
+
 def _items_met(prompt):
     """Audit's reader (M8.3), a function: it says every done-when item in the prompt is met, with its evidence."""
     items = json.loads(prompt.split("THE DONE-WHEN ITEMS:\n", 1)[1].split("\n\nWHAT CODE MEASURED:", 1)[0])
@@ -389,6 +402,7 @@ def test_j2_1_thin_first_words_are_asked_about_and_nothing_starts(j2, monkeypatc
 def test_step_4_a_refusal_goes_to_identity_and_what_it_cannot_settle_is_one_ask(j2, monkeypatch):
     """A refusal that ends in silence, or two asks for one conflict, must fail (J2.2, J2.3)."""
     W, R, J, _ = j2
+    _priority_sends_no_options(monkeypatch, R)
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}})
     ref = _born(j2)
     acts = _actions(J, ref)
@@ -408,8 +422,29 @@ def test_step_4_a_refusal_goes_to_identity_and_what_it_cannot_settle_is_one_ask(
     assert len({e["cycle_id"] for e in J.events(ref)}) == 1
 
 
+def test_step_4_a_refusal_that_carries_ways_out_is_one_blocked_card_with_them(j2, monkeypatch):
+    """The same refusal as Priority gives it now (M5.4): the conflict carries the ways out Priority priced, so Identity puts the
+    owner one card that holds them, never the stamp that can only run or drop. Still one ask, still nothing runs."""
+    W, R, J, _ = j2
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}})
+    ref = _born(j2)
+    acts = _actions(J, ref)
+    assert acts[2:] == ["proposal.created", "proposal.refused", "conflict.raised", "identity.ruled", "ask.created"]
+    assert _work(W, ref) == []                                     # the disputed work does not run
+    asks = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert [a["kind"] for a in asks] == ["blocked"] and 1 <= len(asks[0]["options"]) <= 3
+    assert "Priority said no to the plan: no room in the envelope today" in asks[0]["text"]
+    assert [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Identity"] and (p["payload"] or {}).get("word") == "conflict"
+            and (p["payload"] or {}).get("options")], "Adaptation passed Priority's ways out on"
+    assert J.status(ref)["state"] in ("waiting", "blocked")
+    W.run_until_idle(ref, limit=100)
+    assert len([a for a in W.asks(ref) if a["kind"] in ("blocked", "conflict")]) == 1, "one ask for one conflict"
+    assert _work(W, ref) == [], "and nothing runs while it waits"
+
+
 def test_j2_3_the_owner_refuses_the_plan_and_nothing_runs(j2, monkeypatch):
     W, R, J, _ = j2
+    _priority_sends_no_options(monkeypatch, R)
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}})
     ref = _born(j2)
     _stamp_all(W, ref, approve=False, kind="conflict")

@@ -425,12 +425,14 @@ def test_p3_no_room_gives_a_reject_a_conflict_and_step_4(live):
     acts = _actions(J, ref)
     assert acts[2:] == ["proposal.created", "proposal.refused", "conflict.raised", "identity.ruled", "ask.created"]
     assert next(e for e in J.events(ref) if e["action"] == "identity.ruled")["step"] == 4
-    assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"] == ["conflict"]
+    # Priority's no carries the ways out it priced, Adaptation passes them on in the conflict (W2-ADAPT, M5.4), and Identity puts the
+    # owner one card that holds them (W2-IDENTITY): the question is still asked once, by Identity
+    assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"] == ["blocked"]
     assert not [r for r in W.runs(ref) if not r.get("system") and r.get("what") != "history"], "the disputed work does not run"
     [row] = _prices(W, ref)
     assert row["answer"] == "reject" and row["keep"] == [] and row["room"] == {"calls": 0, "usd": 0.0}
     assert row["why"] == "no room today: even Plan costs about 3 calls and 0.08 USD against the 0 calls and 0.00 USD left"
-    asked = next(a for a in W.asks(ref) if a["kind"] == "conflict")
+    asked = next(a for a in W.asks(ref) if a["kind"] == "blocked")
     assert "Priority said no to the plan: no room today" in asked["text"]
     assert S.validate("priority.price", row) == []
 
@@ -1439,6 +1441,26 @@ def _one_conflict_ask(W, ref):
     return asks[0]
 
 
+def _one_way_out_card(W, ref):
+    """A conflict that carries Priority's ways out reaches the owner as one blocked card that holds them (M5.4), never as the stamp
+    that can only run or drop the plan."""
+    asks = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert [a["kind"] for a in asks] == ["blocked"], asks
+    return asks[0]
+
+
+def _no_ways_out(monkeypatch, R):
+    """Priority's no as it was before it priced ways out: the answer carries none, so the conflict is the stamp that runs or drops
+    the plan. Priority sends them now and Adaptation passes them on, so a row that tests the stamp takes them off."""
+    real = R.post
+
+    def post(ref, src, dst, msg_type, payload=None, *a, **kw):
+        if src == "Priority" and isinstance(payload, dict) and "options" in payload:
+            payload = {k: v for k, v in payload.items() if k != "options"}
+        return real(ref, src, dst, msg_type, payload, *a, **kw)
+    monkeypatch.setattr(R, "post", post)
+
+
 @pytest.mark.parametrize("kind", KINDS3)
 def test_q3_priority_asks_for_less_and_adaptation_takes_it(live, monkeypatch, kind):
     """A counter treated as a no, a cut engine that runs, or a line that cannot be cut and is cut all the same, must fail: on a
@@ -1472,16 +1494,17 @@ def test_q3_priority_says_no_and_the_conflict_reaches_identity_with_the_ways_for
     _scenario(monkeypatch, R, kind, NO)
     ref = _scenario_dept(live, kind)
     assert _actions(J, ref)[-5:] == ["proposal.created", "proposal.refused", "conflict.raised", "identity.ruled", "ask.created"]
-    ask = _one_conflict_ask(W, ref)
+    ask = _one_way_out_card(W, ref)
     assert "Priority said no to the plan: no room in the envelope today" in ask["text"] and _work(W, ref) == []
     [no] = _priority_posts(R, ref, "reject-proposal")
     assert [o["id"] for o in no["payload"]["options"]] == ["leave:D2", "stop"], "the room was ample, so no raise would mend it"
     assert all(S.validate("option", o) == [] for o in no["payload"]["options"])
     assert not [o for o in no["payload"]["options"] if re.search(r"order|MODEL", o["label"] + o["cost"])]
+    assert [o["id"] for o in ask["options"]] == ["leave:D2", "stop"], "the card holds the ways Priority priced, passed on by Adaptation"
     [row] = _prices(W, ref)
     assert (row["answer"], row["keep"], row["proposal"]) == ("reject", [], "line") and S.validate("priority.price", row) == []
     W.run_until_idle(ref, limit=100)
-    assert len([a for a in W.asks(ref) if a["kind"] == "conflict"]) == 1
+    assert len([a for a in W.asks(ref) if a["kind"] in ("blocked", "conflict")]) == 1
 
 
 def _limit_scenario(live, monkeypatch, kind, bound):
@@ -1544,6 +1567,7 @@ def test_q3_identity_asks_the_owner_and_the_owners_stamp_runs_the_plan(live, mon
     """An ask Identity puts twice, or a stamp that does not resume the same cycle, must fail: one ask, in the owner's words, and
     the stamp registers the plan and the first engine runs."""
     W, R, J, _ = live
+    _no_ways_out(monkeypatch, R)
     _scenario(monkeypatch, R, kind, NO, {"identity.close": {"ruling": "ask", "why": "the goal and the rules do not settle it"}})
     ref = _scenario_dept(live, kind)
     ruled = next(e for e in J.events(ref) if e["action"] == "identity.ruled")
