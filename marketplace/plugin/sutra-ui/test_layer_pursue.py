@@ -333,6 +333,30 @@ def test_p2b_the_owner_adds_a_round_at_the_ceiling_and_the_refused_round_is_prop
     _only_registered_engines_ran(W, R, ref)
 
 
+def test_p2d_the_click_that_adds_a_round_is_all_the_owner_does_and_the_round_runs_or_a_new_question_waits(j2, monkeypatch):
+    """SM-6 after the owner's click (found by a verifier 2026-10-27: 'Add 1 more round' raised the ceiling and left the round refused,
+    the cycle blocked and no ask pending): D2 is never put right, so the pursuit runs to the ceiling of one round; the owner's one click
+    on the card, with no words, no Start and no stamp after it, has round 2 asked for again, funded and run; and where D2 is still not
+    met after it, the end is again a question with ways out, never a block with none."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(S, "ROUNDS_DEFAULT", 1)
+    _reader(monkeypatch, R, [["D2"]])
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    _pursue(j2, ref, neighbours, limit=16)
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)][-1] == (2, "refused") and J.status(ref)["state"] == "blocked"
+    W.choose_option(ref, card["id"], "raise:ceiling")
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["ceiling"]["rounds"] == 2
+    assert [(r["round"], r["status"] in v1().RAN) for r in v1().rounds_of(ref)] == [(1, True), (2, True)], "round 2 ran on the click alone"
+    assert next(a for a in W.asks(ref) if a["id"] == card["id"])["status"] == "chosen"
+    pending = [a for a in W.asks(ref) if a["status"] == "pending" and a.get("options")]
+    assert J.status(ref)["state"] != "blocked" or pending, "blocked, and no ask with options waits for the owner"
+    assert all(1 <= len(a["options"]) <= 3 and a["id"] != card["id"] for a in pending)
+    _only_registered_engines_ran(W, R, ref)
+
+
 def test_p2c_a_raise_asks_for_the_refused_round_once_and_only_where_one_was_refused(j2, monkeypatch):
     W, R, J, _, _ = j2
     monkeypatch.setattr(S, "ROUNDS_DEFAULT", 1)

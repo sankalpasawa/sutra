@@ -680,10 +680,34 @@ def ask_again(ref, d):
     return {'round': n, 'items': left, 'n': sent and sent['n']}
 
 
+def plan_again(ctx, got):
+    """The owner added budget on the card of a plan that was blocked for want of it (a bargain that reached its limit, or Priority's
+    no; M5.4): the plan is shaped afresh, so that Adaptation proposes it and Priority prices it against the room the raise made
+    (R._reopen, the way the owner's words and the leave way go on). The raise is not a go by itself, and nothing else starts the plan
+    again: a card chosen with the cycle still blocked and no question left is a dead end (SM-6). Not when the cycle is no longer
+    blocked at the plan, since something else has put it right. A stopped department keeps its stop and shapes the plan on Start
+    (the cycle's `was`, which _reopen moves)."""
+    ref = ctx['ref']
+    cj = R._j2()
+    cur = (cj._state(ref) or {}) if cj else {}
+    held = cur.get('was') if cur.get('state') == 'stopped' else cur.get('state')
+    if not (cur.get('cycle_id') and held == 'blocked' and int(cur.get('step') or 1) < 6):
+        return got
+    d = W.dept(ref) or ctx['dept']
+    R._reopen(ref, d, d.get('goal') or '', by='the budget you added')
+    return dict(got, said='%s; asked Adaptation to shape the plan afresh, now that the budget is there' % got['said'], reopened=True)
+
+
 def resume_after_raise(ctx, got):
-    """What apply_way gave back, and when the choice added room to the goal's ceiling, the round the ceiling refused asked for again
-    (ask_again): the owner who pays for one more round gets it, and not the card they chose from."""
-    if not (got.get('applied') and (got.get('result') or {}).get('what') == 'ceiling'):
+    """What apply_way gave back, and the work that stopped for want of what the choice added set going again: a raise of an engine's
+    limit on the card of a blocked plan shapes the plan afresh (plan_again); one that added room to the goal's ceiling has the round the
+    ceiling refused asked for again (ask_again). The owner who pays for more gets it, and not the card they chose from."""
+    if not got.get('applied'):
+        return got
+    what = (got.get('result') or {}).get('what')
+    if what == 'envelope':
+        return plan_again(ctx, got)
+    if what != 'ceiling':
         return got
     again = ask_again(ctx['ref'], ctx['dept'])
     if not again:

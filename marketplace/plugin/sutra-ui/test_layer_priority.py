@@ -2291,6 +2291,92 @@ def test_q1_a_limit_reaches_the_owner_with_raise_leave_and_stop_priced_from_what
     assert next(a for a in W.asks(ref) if a["id"] == card["id"])["chosen"]["id"] == "raise:Plan"
 
 
+def _never_blocked_without_a_question(W, J, ref):
+    """SM-6: an end that is not done has a pending ask with options. A cycle that says blocked while no ask waits is the dead end a
+    raise that pays for nothing left behind (found by a verifier 2026-10-27)."""
+    pending = [a for a in W.asks(ref) if a["status"] == "pending" and a.get("options")]
+    assert J.status(ref)["state"] != "blocked" or pending, "blocked, and no ask with options waits for the owner"
+
+
+def _the_world_as_usual(monkeypatch, R):
+    """What a scenario's device is not: the model answers (offline, from the drafts) and a bargain has the usual bounds."""
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: (None, 0.0, "offline"))
+    monkeypatch.setattr(R, "BOUNDS", {"hops": 4, "seconds": 900, "usd": 0.5})
+
+
+def _the_raise_paid_for_the_work(W, R, J, ref, card):
+    """The raise on `card` was applied and the department went on: the cycle left blocked, the plan was shaped afresh from the budget
+    the owner added, registered, and the funded work ran (Plan, which was raised, is the first engine of the line)."""
+    assert W.dept(ref)["envelopes"]["Plan"] == {"calls": 11, "usd": 0.395}
+    assert next(a for a in W.asks(ref) if a["id"] == card["id"])["chosen"]["id"] == "raise:Plan"
+    assert any("shaping the plan afresh from the budget you added" in s for s in _said(R, ref)), _said(R, ref)
+    assert "cycle.reopened" in _actions(J, ref) and "workflow.registered" in _actions(J, ref), _actions(J, ref)
+    assert J.status(ref)["state"] != "blocked" and _work(W, ref)[:1] == ["Plan"], (J.status(ref)["state"], _work(W, ref))
+    _never_blocked_without_a_question(W, J, ref)
+
+
+@pytest.mark.parametrize("bound", ("hops", "seconds", "usd"))
+def test_q1_the_raise_chosen_at_a_bargain_limit_sets_the_plan_going_again(live, monkeypatch, bound):
+    """A raise that is applied and then leaves the department blocked with no ask must fail (found by a verifier 2026-10-27: the
+    envelope was raised, the card said chosen, and the cycle stayed at step 4 with nothing pending and nothing to start): at hops,
+    time and spend, the owner's click on the first option has Adaptation shape the plan afresh, Priority price it against the room
+    the raise made, Root register it, and the funded work run."""
+    W, R, J, _ = live
+    ref = _short_limit(live, monkeypatch, bound)
+    card = _one_card(W, ref, "blocked")
+    assert card["options"][0]["id"] == "raise:Plan" and J.status(ref)["state"] == "blocked" and _work(W, ref) == []
+    _the_world_as_usual(monkeypatch, R)
+    W.choose_option(ref, card["id"], card["options"][0]["id"])
+    W.run_until_idle(ref, limit=300)
+    _the_raise_paid_for_the_work(W, R, J, ref, card)
+    assert [r["answer"] for r in _prices(W, ref)][-1:] == ["accept"], "Priority priced the plan against the room the raise made, and said yes"
+
+
+def test_q1_the_raise_chosen_after_a_priority_no_sets_the_plan_going_again(live):
+    """The same for the other way a plan is blocked on money: Priority's no (no room in any limit). The click on 'Add budget for
+    Plan' is the only thing the owner does."""
+    W, R, J, _ = live
+    ref = _rejected(live)
+    card = _one_card(W, ref, "blocked")
+    assert [o["id"] for o in card["options"]] == ["raise:Plan", "leave:D2", "stop"] and J.status(ref)["state"] == "blocked"
+    W.choose_option(ref, card["id"], "raise:Plan")
+    W.run_until_idle(ref, limit=300)
+    _the_raise_paid_for_the_work(W, R, J, ref, card)
+    assert [r["answer"] for r in _prices(W, ref)] == ["reject", "accept"], "Priority said no, and then yes against the room the raise made"
+
+
+def test_q1_a_raise_chosen_while_the_department_is_stopped_goes_on_when_it_starts(live):
+    """A stopped department's card can still be answered (S10): the raise is applied on Start, and the plan is shaped afresh then,
+    never left blocked with no question."""
+    W, R, J, _ = live
+    ref = _rejected(live)
+    card = _one_card(W, ref, "blocked")
+    J.stop(ref)
+    W.choose_option(ref, card["id"], "raise:Plan")
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "stopped" and _work(W, ref) == [], "nothing starts while it is stopped"
+    J.resume(ref)
+    W.run_until_idle(ref, limit=300)
+    _the_raise_paid_for_the_work(W, R, J, ref, card)
+
+
+def test_q1_a_raise_asks_nothing_afresh_of_a_cycle_that_is_not_blocked(live):
+    """A raise chosen after something else put the plan right (the cycle runs) is applied and leaves the cycle where it is: Adaptation
+    is not asked for the plan again over a line that is registered and running."""
+    import layers
+    W, R, J, _ = live
+    ref = _rejected(live)
+    card = _one_card(W, ref, "blocked")
+    W.choose_option(ref, card["id"], "raise:Plan")
+    W.run_until_idle(ref, limit=300)
+    state, reopened = J.status(ref)["state"], _actions(J, ref).count("cycle.reopened")
+    ident = layers.load("identity/v1")
+    got = {"applied": True, "said": "applied", "result": {"what": "envelope", "engine": "Plan", "raised": True}}
+    assert ident.resume_after_raise({"ref": ref, "dept": W.dept(ref)}, got) == got
+    assert (J.status(ref)["state"], _actions(J, ref).count("cycle.reopened")) == (state, reopened)
+    assert ident.resume_after_raise({"ref": ref, "dept": W.dept(ref)}, {"applied": False, "said": "waits"}) == {"applied": False, "said": "waits"}
+
+
 def test_q1_the_limit_conflict_asks_priority_for_its_ways_by_the_thread_and_the_call_is_declared(live, monkeypatch):
     """A conflict that never asks Priority at a limit, or asks for another thread's line, must fail: _line_conflict calls
     Priority's limit_options for the thread whose bound was reached, and the call is declared in S.CALLS."""
