@@ -14,7 +14,8 @@ Named claims:
         the temp folder or the app's folder, ~/..., a Windows drive path) to its file name and drops a private key; a root with
         nothing under it ('/home', '/private', '/opt-in', '/root') and a route that is not under one of this machine's folders
         ('/home/about', '/private/members', 'Plan B:/pricing') are pages of the owner's site and reach the page as they were said;
-        the owner's own words (a user message's text, the goal, a Said line) are never rewritten
+        the owner's own words (a user message's text, the goal, a Said line) are never rewritten; the line a function waits on
+        the owner with (the Identity lane, the Map node) is made from the ask, not from functions_view's own scrubbed one
   C1-7  a department with no cycle is 'not_started'; a broken sub-read leaves its attribute empty, says why, and still gives a ctx
   C1-8  the W-k numbering, who/dest/fn_id and step_at, on a department Root set up
 """
@@ -339,6 +340,78 @@ def test_c16_a_line_that_carries_the_owners_words_is_sent_as_it_is_and_only_its_
     plain = C.said("Write the page at /Users/me/work/out.txt", None)
     assert plain == "Write the page at /Users/me/work/out.txt" and not isinstance(plain, C.Said), "no words: all the machine's, and clean() has it"
     assert C.said("a granted line", "b") == "a granted line" and C.said(None, "b") is None
+
+
+def identity(mods, ref=REF):
+    """Identity's node in the Ctx's read of the functions (what the lanes and the Map print), read afresh."""
+    C.touch(ref)
+    return next(n for n in C.get_ctx(ref).fv["functions"] if n["fn"] == "identity")
+
+
+def test_c16_the_line_identity_waits_on_the_owner_with_keeps_the_owners_routes(mods, machine):
+    """Finding N1, second part. functions_view scrubs its read with a path rule of its own, to which any /a/b is a path, so the ask
+    it quotes came out as 'Never link area from the menu and keep about first': the Identity lane and the Map node said a rule
+    that was not the one the owner is asked to stamp. The line is made from the ask itself, as the pause says it."""
+    machine("/Users/me")
+    rule = "A rule, as understood: Never link /private/area from the menu and keep /home/about first; Plan B:/pricing stays"
+    ask(mods, "rule", id="a-rule", engine="Identity", text=rule)
+    node = identity(mods)
+    assert (node["state"], node["word"], node["line"]) == ("waiting_on_you", "waits on you", rule)
+    assert not isinstance(node["line"], C.Said), "no words of the owner's end it: clean() has the lead"
+    # a relative file and a date are not routes and not paths: they stay as they are too
+    plain = "Open build/v1/index.html on 5/6/2026 and keep /home/about"
+    ask(mods, "rule", id="a-rule", engine="Identity", text=plain)
+    assert identity(mods)["line"] == plain
+
+
+def test_c16_the_owners_words_that_end_the_ask_are_the_lines_own_and_the_lead_passes_the_path_rule(mods, machine):
+    machine("/Users/me")
+    words = "keep /Users/me/site/index.html as it is, and /home/about too"
+    ask(mods, "step", id="a-out", engine="Write", text="Write the page at /Users/me/work/out.txt: " + words, words=words)
+    line = identity(mods)["line"]
+    assert isinstance(line, C.Said) and line == "Write the page at out.txt: " + words
+    assert C.clean({"doing": line}) == {"doing": line}, "clean() sends it as it is"
+    # cut to the line functions_view cuts to (140), still the owner's after the cut
+    long_words = "keep /home/about and /private/area first; " + "and more " * 30 + "/Users/me/site/index.html"
+    ask(mods, "step", id="a-out", engine="Write", text="Write the page at /Users/me/work/out.txt: " + long_words, words=long_words)
+    cut = identity(mods)["line"]
+    assert isinstance(cut, C.Said) and len(cut) <= 140 and cut.endswith("…")
+    assert cut.startswith("Write the page at out.txt: keep /home/about and /private/area first; and more"), cut
+
+
+def test_c16_the_ask_the_line_is_made_of_is_the_one_functions_view_picks(mods):
+    """Identity's open question, else a finding, else the oldest pending ask: the lane says the same ask as before the line was
+    made again (the texts carry no route, so functions_view's scrub changes nothing and its line is the one to match)."""
+    def said_by_fv():
+        return next(n for n in mods.F.functions(REF)["functions"] if n["fn"] == "identity")["line"]
+    ask(mods, "publish", id="a-1", engine="Publish", text="Publish: go live for the first time")
+    assert identity(mods)["line"] == said_by_fv() == "Publish: go live for the first time"
+    ask(mods, "finding", id="a-2", engine="Audit", text="Audit found a page nobody can reach")
+    assert identity(mods)["line"] == said_by_fv() == "Audit found a page nobody can reach"
+    ask(mods, "j2_identity", id="a-3", engine="Identity", text="What is the school called?")
+    cycle(mods, "waiting", 1, open_ask="a-3")
+    assert identity(mods)["line"] == said_by_fv() == "What is the school called?"
+
+
+def test_c16_a_line_that_is_not_an_asks_is_left_as_functions_view_said_it(mods):
+    ask(mods, "step", id="a-w", engine="Write", text="Write the page")
+    cycle(mods, "blocked", 4)
+    assert identity(mods)["line"] == "the plan was dropped; it needs your words", "a plan dropped is not the ask's line"
+    cycle(mods, "done", 8)
+    node = identity(mods)
+    assert (node["state"], node["line"]) == ("quiet", ""), "a department that is done is quiet throughout"
+    cycle(mods, "waiting", 1)
+    ask(mods, "step", id="a-w", engine="Write", text="")
+    assert identity(mods)["line"] == "waits for your answer", "an ask with no words says that it waits"
+
+
+def test_c16_a_line_that_cannot_be_made_again_keeps_functions_views_and_says_why(mods, monkeypatch):
+    ask(mods, "publish", id="a-1", engine="Publish", text="Publish: go live for the first time")
+    monkeypatch.setattr(C, "_asked", lambda c: 1 / 0)
+    C.touch(REF)
+    c = C.get_ctx(REF)
+    node = next(n for n in c.fv["functions"] if n["fn"] == "identity")
+    assert node["line"] == "Publish: go live for the first time" and "owner line: ZeroDivisionError" in c.reasons
 
 
 def test_c16_times():

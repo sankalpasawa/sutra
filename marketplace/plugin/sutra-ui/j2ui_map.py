@@ -133,6 +133,8 @@ def functions(ctx, nr):
         said = [m for m in _list(ctx, "chat") if m.get("who") == fn]
         last = B.protocol_words(str(said[-1].get("text") or ""))[:140] if said else ""      # what a function wrote may carry a protocol token
         line = B.protocol_words(str(src.get("line") or ""))[:140]
+        if C is not None:                                  # the owner's words in the line (Identity waiting on a rule) stay theirs
+            line = C.keep_said(src.get("line"), line)
         wait = src.get("waits_on")
         out.append({"id": "fn:" + fn, "kind": "function", "row": "functions", "label": NAMES[fn], "status": status, "version": None,
                     "tag": None, "color": "--" + fn, "file": None, "workflows": [], "tab": FN_TAB[fn],

@@ -275,6 +275,40 @@ def test_c55_routes_the_owner_quoted_reach_the_page_unchanged_in_every_voice(mod
     assert client.get(url("api/refs")).json()["conditions"] == {"N1": ROUTES}
     for route in ("/private/area", "/home/about", "Plan B:/pricing", "/private/members"):
         assert route in "\n".join(said), route
+    # the lanes and the Map say the line Identity waits on the owner with: the question, cut to a line, routes as said (finding N1,
+    # second part: functions_view scrubs its own read and used to make it 'Never link area from the menu ... keep about first')
+    cut = rule[:139].rstrip() + "…"
+    assert "/private/area" in cut and "/home/about" in cut
+    lane = next(l for l in s["lanes"] if l["id"] == "identity")
+    assert (lane["status"], lane["on"], lane["doing"]) == ("waiting", "you", cut)
+    node = next(n for n in client.get(url("api/map")).json()["nodes"] if n["id"] == "fn:identity")
+    assert (node["status"], node["detail"]) == ("waiting_on_you", cut)
+    for text in (lane["doing"], node["detail"]):
+        assert "link area from" not in text and "keep about first" not in text, text
+
+
+def test_c55_a_done_when_the_owner_is_asked_to_stamp_reads_the_same_on_the_pause_the_lane_and_the_map(mods, born, tick, client):
+    """The verifier's end-to-end probe of finding N1 (second part): a Root sets a department up, the publish is stamped, then the
+    owner says a rule and a done-when with quoted routes. The question they are asked to stamp, the Identity lane and the Map node
+    all carry '/private/area' and '/home/about' as said; none of them says 'Never link area from the menu'."""
+    ref = born()
+    assert client.post(url("api/say", ref), json={"text": "Option 1"}).json() == {"ok": True}
+    mods.W.run_until_idle(ref, limit=300)
+    said_by_owner = ("Never link /private/area from the menu and always keep /home/about first. Plan B:/pricing stays. "
+                     "The done-when: /private/members is only for members")
+    mods.W.owner_ask(born.root, said_by_owner, about=ref)
+    mods.W.run_until_idle(born.root, limit=300)
+    mods.W.run_until_idle(ref, limit=300)
+    C.touch(ref)
+    s = client.get(url("api/state", ref)).json()
+    q = s["paused"]["questions"][0]["question"]
+    assert q.startswith("Done when, as understood: add D2 Never link /private/area from the menu and always keep /home/about first."), q
+    lane = next(l for l in s["lanes"] if l["id"] == "identity")
+    node = next(n for n in client.get(url("api/map", ref)).json()["nodes"] if n["id"] == "fn:identity")
+    for line in (lane["doing"], node["detail"]):
+        assert line.startswith("Done when, as understood: add D2 Never link /private/area from the menu and always keep /home/about first."), line
+        assert q.startswith(line.rstrip("…")), "the line is the question, cut to a line"
+        assert "link area from" not in line and "keep about first" not in line, line
 
 
 def test_c55_the_owners_own_words_in_an_ask_are_never_rewritten_even_under_this_machines_home(mods, client, machine):
@@ -288,6 +322,9 @@ def test_c55_the_owners_own_words_in_an_ask_are_never_rewritten_even_under_this_
     q = s["paused"]["questions"][0]["question"]
     assert q == "Write the page at out.txt: " + words and s["paused"]["label"] == q
     assert [m["text"] for m in s["chat"] if m.get("act") == "ASK_REQUESTER"][0].startswith("@Requester Write the page at out.txt: " + words)
+    lane = next(l for l in s["lanes"] if l["id"] == "identity")
+    node = next(n for n in client.get(url("api/map")).json()["nodes"] if n["id"] == "fn:identity")
+    assert lane["doing"] == q and node["detail"] == q, (lane["doing"], node["detail"])        # the lane and the Map say it as the pause does
 
 
 def test_c55_since_slices_the_chat(mods, client, absent):

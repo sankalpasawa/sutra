@@ -225,6 +225,12 @@ def said(line, words=None):
     return owner_words.plain(line)
 
 
+def keep_said(source, text):
+    """`text` as a Said when `source` was one: a line cut or re-spelled from the owner's words (a lane's, a Map node's) stays
+    the owner's words, whole as far as it goes, and clean() leaves it as it is."""
+    return Said(text) if isinstance(source, Said) else text
+
+
 def _private_only(value):
     """The value with the ledger's private keys dropped at any depth and every string left exactly as it is."""
     if isinstance(value, dict):
@@ -540,6 +546,35 @@ def _engines_by_hand(c):
     return {"engines": engines, "planned": not F.no_plan(ref, d, table)}
 
 
+def _asked(c):
+    """The ask Identity's line is made of, picked as functions_view picks it: the cycle's open question, else a finding, else
+    the oldest pending ask."""
+    pending = [a for a in c.asks if isinstance(a, dict) and a.get("status") == "pending"]
+    open_id = c.cur.get("open_ask") if isinstance(c.cur, dict) else None
+    question = next((a for a in pending if open_id and a.get("id") == open_id), None)
+    finding = next((a for a in pending if a.get("kind") == "finding"), None)
+    return question or finding or (pending[0] if pending else None)
+
+
+def _owner_lines(c):
+    """The line Identity waits on the owner with, in the owner's words. functions_view scrubs every string of its read with a
+    path rule of its own (to it any /a/b is a path), so the ask it quotes comes out with the owner's routes cut to their last
+    name: 'Never link /private/area from the menu' says 'Never link area from the menu' on the Identity lane and on the Map,
+    and the owner stamps a rule that reads differently from the one recorded (finding N1). The line is made again here from
+    the ask itself, as the pause and the chat say it (said): the lead the machine wrote passes this module's path rule, the
+    owner's own words after it are never rewritten, and it is cut to the same line (functions_view._short). Only a line
+    functions_view made from an ask is made again: a plan dropped, or an ask with no text, keeps the words it has."""
+    ask = _asked(c)
+    if c.state == "blocked" or not ask:
+        return
+    text = said(str(ask.get("text") or ""), ask.get("words"))
+    if not str(text).strip():
+        return
+    for node in (c.fv or {}).get("functions") or []:
+        if node.get("fn") == "identity" and node.get("state") == "waiting_on_you":
+            node["line"] = keep_said(text, F._short(text))
+
+
 def _build(ref, key):
     c = Ctx(ref)
 
@@ -579,6 +614,10 @@ def _build(ref, key):
         c._ev_t.append(peak)
     state = str(((c.fv or {}).get("cycle") or {}).get("state") or c.cur.get("state") or "not_started")
     c.state = "not_started" if state == "not_ready" else state
+    try:
+        _owner_lines(c)
+    except Exception as exc:  # noqa: BLE001 -- the lanes and the Map keep the line functions_view made
+        c.reasons.append("owner line: %s" % type(exc).__name__)
     try:
         mv = owner_words.map_view(W.map_view(ref))
     except Exception as exc:  # noqa: BLE001 -- map_view fails on a pending ask with no engine; the engines are made again by hand
