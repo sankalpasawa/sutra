@@ -15,8 +15,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
-from fastapi.routing import APIRoute
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from starlette.convertors import Convertor, register_url_convertor
 
 _LIB_DIR = str(Path(__file__).resolve().parents[1] / "lib")
@@ -26,6 +25,7 @@ if _LIB_DIR not in sys.path:
 import placement_engine as E  # noqa: E402
 import founding  # noqa: E402
 import functions_view  # noqa: E402
+from interface_http import InterfaceRoute  # noqa: E402
 import journeys  # noqa: E402
 import layers  # noqa: E402
 import layer_schema as S  # noqa: E402
@@ -33,23 +33,7 @@ import owner_words  # noqa: E402
 import website_dept as W  # noqa: E402
 
 
-class _InterfaceRoute(APIRoute):
-    """A write the interface refuses (layer_schema.SchemaFault, in refuse mode) is 422 NOT_IN_SCHEMA with its first three
-    faults, whichever of these routes met it (PRD A1.4, A1.20). One handler for the router: an APIRouter has no exception
-    handlers of its own, and a test that builds an app of its own around the router gets it too."""
-
-    def get_route_handler(self):
-        handler = super().get_route_handler()
-
-        async def guarded(request: Request):
-            try:
-                return await handler(request)
-            except S.SchemaFault as exc:
-                return JSONResponse(status_code=422, content={"detail": {"code": "NOT_IN_SCHEMA", "faults": exc.faults[:3]}})
-        return guarded
-
-
-router = APIRouter(prefix="/api/native", tags=["native"], route_class=_InterfaceRoute)
+router = APIRouter(prefix="/api/native", tags=["native"], route_class=InterfaceRoute)
 
 
 class _JourneyId(Convertor):

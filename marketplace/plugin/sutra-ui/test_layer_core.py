@@ -472,6 +472,84 @@ def test_c7_in_refuse_mode_a_write_the_interface_refuses_comes_back_422(api, hom
     assert 1 <= len(r.json()["detail"]["faults"]) <= 3 and r.json()["detail"]["faults"] == met[:3]
 
 
+def boom(*a, **k):
+    """A write the interface refuses, met inside a route: four faults, of which the answer says three."""
+    raise S.SchemaFault("department", ["$.a: is wrong", "$.b: is wrong", "$.c: is wrong", "$.d: is wrong"])
+
+
+NOT_IN_SCHEMA = {"detail": {"code": "NOT_IN_SCHEMA", "faults": ["$.a: is wrong", "$.b: is wrong", "$.c: is wrong"]}}
+
+
+def test_c7_every_router_that_writes_through_the_sink_answers_a_schema_fault_as_422(home, monkeypatch):
+    """A SchemaFault is 422 NOT_IN_SCHEMA from j2_api, j2ui_api, dept_api and org2_api as from website_api, in an app of a test's
+    own making (no handler registered): one 500 here would go live the day the interface refuses (found by a verifier, 2026-10-26)."""
+    import dept_api
+    import j2_api
+    import j2ui_api
+    import org2_api
+    import website_api
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    ref = born(home)
+    W, _ = modules()
+    monkeypatch.setattr(j2_api.J, "status", boom)                              # a read, then three writes, of the J2 lifecycle
+    monkeypatch.setattr(j2_api.J, "start", boom)
+    monkeypatch.setattr(j2_api.J, "answer", boom)
+    monkeypatch.setattr(j2ui_api, "_known", lambda r: True)                    # the screen's writes: the owner's words, a reset
+    monkeypatch.setattr(j2ui_api.SAY, "say_http", boom)
+    monkeypatch.setattr(j2ui_api.SAY, "reset", boom)
+    monkeypatch.setattr(dept_api, "_engine", boom)                             # the department screen: a read and the pause ask
+    monkeypatch.setattr(org2_api.E, "load_domains", boom)                      # the Org screen: a read
+    app = FastAPI()
+    for router in (j2_api.router, j2ui_api.router, dept_api.router, org2_api.router, website_api.router):
+        app.include_router(router)
+    c = TestClient(app)
+    calls = [("get", "/api/dept/%s/j2" % ref), ("post", "/api/dept/%s/j2/start" % ref), ("post", "/api/departments/%s/j2/answer" % ref),
+             ("post", "/j2ui/%s/api/say" % ref), ("post", "/j2ui/%s/api/reset" % ref),
+             ("get", "/api/dept/%s/engines/e1/data" % ref), ("post", "/api/dept/%s/engines/e1/pause" % ref),
+             ("get", "/api/org2/department/%s" % ref)]
+    for method, path in calls:
+        r = getattr(c, method)(path)
+        assert (r.status_code, r.json()) == (422, NOT_IN_SCHEMA), (path, r.status_code, r.text[:120])
+    # a fault that is not the interface's stays what it was
+    monkeypatch.setattr(j2_api.J, "status", lambda *a, **k: (_ for _ in ()).throw(ValueError("not ours")))
+    with pytest.raises(ValueError):
+        c.get("/api/dept/%s/j2" % ref)
+
+
+def test_c7_the_app_answers_a_schema_fault_from_a_route_of_any_router(home):
+    """One handler for the app (A1.4): a plain router, with no route class of its own, is covered by interface_http.install, in an
+    app of a test's own making and in the real app, whose handlers hold it."""
+    import interface_http
+    from fastapi import APIRouter, FastAPI
+    from fastapi.testclient import TestClient
+    def meets():
+        boom()
+
+    async def late():
+        boom()
+    plain = APIRouter()
+    plain.get("/plain")(meets)
+    plain.post("/plain")(late)
+    bare, app = FastAPI(), FastAPI()
+    bare.include_router(plain)
+    app.include_router(plain)
+    assert TestClient(bare, raise_server_exceptions=False).get("/plain").status_code == 500, "without the handler it is the 500 it was"
+    interface_http.install(app)
+    c = TestClient(app)
+    for method in ("get", "post"):
+        r = getattr(c, method)("/plain")
+        assert (r.status_code, r.json()) == (422, NOT_IN_SCHEMA), method
+    import app as A
+    assert A.app.exception_handlers[S.SchemaFault] is interface_http.handle
+    A.app.add_api_route("/__c7_plain", meets)                                 # a route of the real app with no route class
+    try:
+        r = TestClient(A.app, base_url="http://127.0.0.1:8330").get("/__c7_plain")
+    finally:
+        A.app.router.routes.pop()
+    assert (r.status_code, r.json()) == (422, NOT_IN_SCHEMA)
+
+
 # ---- C8 · the page fields from the interface --------------------------------------------------------------------------
 PAGE_KEYS = ("vsm", "line", "holds", "hands_to", "keeps", "v1")
 BANNED = re.compile(r"\b(?:grant|counter|refus|orders\b|charter|internal system)", re.I)
@@ -558,6 +636,44 @@ def test_c8_a_settings_row_is_printed_in_the_owners_words_and_the_value_is_kept_
     # a first-design file row, and a view with no rows, pass as they did
     assert owner_words.steps({"instructions": [{"file": "take", "lead": "How to judge a request: go, ask or refuse."}]})["instructions"] == \
         [{"file": "take", "lead": "How to judge a request: go, ask or stop."}]
+
+
+def test_c8_no_settings_row_of_any_function_prints_a_banned_word(api, home):
+    """Every word a Settings row prints at rest (`shown`, a group's `lead`, a part's `label`, the `inputs` and `answers` it names)
+    on every function's steps read, which is what the screen draws, in the owner's words: never grant, counter, refuse, orders,
+    charter or internal system (found by a verifier, 2026-10-26: Identity's completeness row said 'every rule is tagged go,
+    ask, refuse or always'). The raw `value` the owner edits stays the words the agent is sent, and a part's id is a name."""
+    ref = born(home)
+    _, R = modules()
+
+    def printed(x):
+        if isinstance(x, str):
+            yield x
+        elif isinstance(x, list):
+            for y in x:
+                yield from printed(y)
+
+    rows = 0
+    for layer in S.FUNCTION_LAYERS:
+        got = api.get("/api/native/%s/steps/%s" % (ref, S.TITLE[layer]))
+        assert got.status_code == 200, layer
+        for g in got.json()["instructions"]:
+            assert not BANNED.search(g["lead"]), (layer, g["group"], g["lead"])
+            for p in g["parts"]:
+                for k in ("label", "inputs", "answers"):
+                    assert not [t for t in printed(p.get(k)) if BANNED.search(t)], (layer, g["group"], p["part"], k)
+                for f in p["fields"]:
+                    rows += 1
+                    assert isinstance(f["shown"], str) and not BANNED.search(f["shown"]), (layer, g["group"], p["part"], f["field"], f["shown"])
+    assert rows >= 20, "the scan reached the fields of all five functions"
+    # the sentence that lists the rule tags says the tag the badge says; the raw value is the words the agent reads
+    enough = next(f for g in R.instructions_view(ref, "identity") if g["group"] == "completeness"
+                  for p in g["parts"] if p["part"] == "enough" for f in p["fields"] if f["field"] == "task")
+    assert "tagged go, ask, refuse or always" in enough["value"]
+    import owner_words
+    shown = owner_words.steps({"instructions": R.instructions_view(ref, "identity")})["instructions"]
+    said = next(f for g in shown if g["group"] == "completeness" for p in g["parts"] if p["part"] == "enough" for f in p["fields"])["shown"]
+    assert "tagged go, ask, never or always" in said and "refus" not in said.lower()
 
 
 # ---- C9 · views through the layers ------------------------------------------------------------------------------------
