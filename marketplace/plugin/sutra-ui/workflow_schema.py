@@ -14,6 +14,7 @@ call `run`. layer_schema.validate_workflow delegates to it after its own shape r
 record (its kind, its done-when items, its registered workflows); `ctx` is what the stage reads beside them:
     price     the latest row of the thread's prices.jsonl (fits_room); none means Priority priced nothing here
     line      Coordination's line, and grown the engines the owner added, left_out the ones the plan left out (write)
+    joining   the engine the owner adds (grow): where it repeats an output, it is the one named at fault (one_output)
 A passing row says the standard's own words (WORKFLOW_STANDARDS' says); a failing row says what is wrong, in the owner's
 plain words, naming the engines. Nothing here writes, posts or calls a model.
 
@@ -147,15 +148,22 @@ def reads_known(wf, dept, ctx):
 
 
 def one_output(wf, dept, ctx):
-    written, notes = {_first(wf, dept)}, []
+    """Each engine writes something not yet written; the later writer is the one at fault. At the grow stage ctx['joining']
+    names the engine that joins the line: where it writes what another engine writes, the fault is the joining engine's,
+    wherever the line places it (an engine that reads the Brief goes first, and the department's own would be named)."""
+    joining = (ctx or {}).get("joining")
+    written, notes = {_first(wf, dept): None}, []
     for e in _engines(wf):
         n = _name(e)
         if not n:
             continue
         w = _writes(e)
         if w in written:
-            notes.append("%s writes %s, which is already written" % (n, w))
-        written.add(w)
+            note = "%s writes %s, which is already written" % (joining if written[w] == joining and joining else n, w)
+            if note not in notes:
+                notes.append(note)
+        else:
+            written[w] = n
     return _fail(notes) if notes else _ok("one_output")
 
 

@@ -481,6 +481,24 @@ def test_r5_an_engine_that_writes_what_is_written_is_refused_naming_one_output(h
     assert W.dept(ref)["engines"] == LINE
 
 
+def test_r5_the_engine_that_joins_is_the_one_named_at_fault_wherever_the_line_places_it(home):
+    """An engine that reads the Brief goes first, so the walk meets the department's own Write second: the fault is still the
+    joining engine's, named so (found by a verifier: 'Write writes Pages, which is already written' for Site2's refusal)."""
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    shape = {"name": "Site2", "use_case": "builds a second site", "reads": "Brief", "writes": "Pages"}
+    assert W.grow_broken(W.dept(ref), "Site2", None, shape) == [("one_output", WS.SAYS["one_output"], "Site2 writes Pages, which is already written")]
+    # placed last (it reads what the line files), the same engine is named as it always was
+    late = dict(shape, reads="Pages")
+    assert W.grow_broken(W.dept(ref), "Site2", None, late) == [("one_output", WS.SAYS["one_output"], "Site2 writes Pages, which is already written")]
+    # the standard run on a line with no engine joining reads as it did: the later writer is the one at fault
+    wf = S.as_workflow([{"name": "Site2", "reads": "Brief", "writes": "Pages"}, {"name": "Write", "reads": "Brief", "writes": "Pages"}], "shaped", None)
+    assert [r["why"] for r in WS.run(wf, "grow", None, {}) if r["check"] == "one_output"] == ["Write writes Pages, which is already written"]
+    with pytest.raises(ValueError, match=r"Site2 writes Pages, which is already written"):
+        W.add_engine(ref, "Site2", shape=shape)
+    assert W.dept(ref)["engines"] == LINE
+
+
 def test_r5_a_library_engine_joins_where_it_always_did_and_a_function_or_a_repeat_is_refused_as_before(home):
     W, R, J, _ = home
     ref = _born_dept(home)
@@ -706,8 +724,8 @@ def test_r5_a_stamped_line_in_which_every_engine_is_refused_is_not_told_as_added
     assert len(said) == 1, said
     _plain_to_owner(said[0])
     assert "Added the line" not in said[0] and "starts on your words" not in said[0], said[0]
-    assert said[0].startswith("The line was not added to Acme, and nothing was changed. Not added: Site2 (Root holds every line to its "
-                              "standards, and this engine would break one: %s (" % WS.SAYS["one_output"]), said[0]
+    assert said[0] == ("The line was not added to Acme, and nothing was changed. Not added: Site2 (Root holds every line to its "
+                       "standards, and this engine would break one: %s (Site2 writes Pages, which is already written))." % WS.SAYS["one_output"]), said[0]
     after = W.dept(ref)
     assert after["engines"] == before["engines"] == LINE and after["artifacts"] == before["artifacts"]
     assert "Site2" not in R.defs()["engines"] and not list(R.user_templates_dir().glob("*.json")), "nothing was born"
