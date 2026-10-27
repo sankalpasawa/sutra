@@ -308,35 +308,74 @@ def _said(text, n):
 
 
 #: What the owner may not read in a doubt or a fallback a model wrote (J2B-8: it shows no number and names no internal part): the
-#: confidence, as the word or as a figure (0.45, .45, 45%, 45 percent; one that ends a sentence, '... at 0.45.'; and one said in
-#: words, 'sixty percent', 'a 1 in 3 chance', 'zero point four five'), the parts by name (Adaptation, Priority, Coordination,
-#: Audit) and the app's own words for its insides (engine, envelope, charter, refuse). A figure of the owner's own work (three
-#: pages, Class 8.5, 9.30, v2.1.3, 3 in 4 columns) is theirs, and so are the words their page says (workflow, a search engine):
-#: none is matched. A ratio is read as odds only beside a word of chance, so a count of the owner's own is never taken for one.
-_NUMBER = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twenty|hundred)"
-_RATIO = r"\b%s\s+(?:in|out\s+of)\s+%s\b" % (_NUMBER, _NUMBER)
-_CHANCE = r"\b(?:chances?|odds|probab\w*|likel\w*|sure|certain\w*|put\s+(?:it|this|that)\s+at|give\s+(?:it|this|that))\b"
+#: confidence, as the word or as a figure in any shape a model puts it in (0.45, .45, 0,45, 45%, 45 percent, sixty %, 60 pct; one
+#: that ends a sentence, '... at 0.45.'; one said in words, 'sixty percent', 'zero point four five'; odds, 'a 1 in 3 chance',
+#: 'one chance in three', 'fifty-fifty'; a rating, 'I'd rate it 6 out of 10', 'about 6/10', 'rate it a 6'), and the figure of the
+#: confidence the post itself carries (45, said bare) unless the owner said it (confidence_shown); the parts by name (Adaptation,
+#: Priority, Coordination, Audit) and the app's own words for its insides (engine, envelope, charter, refuse). A figure of the
+#: owner's own work (three pages, Class 8.5, 9.30, v2.1.3, 3 in 4 columns, open 9/10 July) is theirs, and so are the words their
+#: page says (workflow, a search engine): none is matched. A ratio is read as odds only beside a word of chance or of rating, so a
+#: count of the owner's own is never taken for one; one over ten or a hundred is a score wherever it stands, unless it is a date.
+_SPELLED = (r"(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|"
+            r"eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)")
+_NUMBER = r"(?:\d+|%s)" % _SPELLED
+_OF = r"(?:\s*/\s*|[\s-]+(?:in|out[\s-]+of)[\s-]+)"                # '1 in 3', '2 out of 5', '6/10', '1-in-3'
+_RATIO = r"\b%s%s%s\b" % (_NUMBER, _OF, _NUMBER)
+_CHANCE = (r"\b(?:chances?|odds|probab\w*|likel\w*|sure|certain\w*|rat(?:e|es|ed|ing)|scor\w+|"
+           r"put\s+(?:it|this|that)\s+at|give\s+(?:it|this|that))\b")
+_SCORE = (r"(?:\b(?:\d+(?:[.,]\d+)?|%s)[\s-]+(?:in|out[\s-]+of)[\s-]+(?:a[\s-]+)?(?:10|ten|100|hundred)\b"      # '6 out of 10', 'six in ten'
+          r"|(?<![\w/.,-])(?:10|\d)(?:[.,]\d)?\s*/\s*10(?!\w)(?!\s*/)"                                         # '6/10', '6.5/10': not '12/10'
+          r"|(?<![\w/.,-])(?:100|\d{1,2})(?:[.,]\d)?\s*/\s*100(?!\w)(?!\s*/))") % _SPELLED
+_DATE = r"(?!\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b)"                              # '9/10 July' is a date
 INSIDE = re.compile("|".join((
     r"(?i:confiden)",
-    r"(?<![\w.])0?\.\d+(?!\w)(?!\.\d)",             # 0.45 and .45, at the end of a sentence too; not 9.30, 8.5, v2.1.3 or 0.45.3
-    r"(?i:\d+\s*(?:%|per\s?cent)|\bper\s?cent\b|\b(?:zero|nought|naught)\s+point\b)",   # 45%, 45 percent, sixty percent, zero point
-    r"(?i:%s(?=[^.?!;]{0,40}%s)|%s[^.?!;]{0,40}?%s)" % (_RATIO, _CHANCE, _CHANCE, _RATIO),   # 'a 1 in 3 chance', 'I put it at 2 out of 5'
+    r"(?<![\w.,])0?[.,]\d+(?!\w)(?![.,]\d)",         # 0.45, .45 and 0,45, at the end of a sentence too; not 9.30, 8.5, 1,450 or v2.1.3 or 0.45.3
+    r"(?i:\d+\s*(?:%|per\s?cent|pct)|%|\bper\s?cent\b|\bpct\b|\b(?:zero|nought|naught)\s+point\b)",   # 45%, 45 percent, 60 pct, sixty %, sixty percent
+    r"(?i:%s(?=[^.?!;]{0,40}%s)|%s[^.?!;]{0,40}?%s)" % (_RATIO, _CHANCE, _CHANCE, _RATIO),   # 'a 1 in 3 chance', 'I put it at 2 out of 5', 'rate it 6/10'
+    r"(?i:%s%s)" % (_SCORE, _DATE),                  # 'six out of ten', 'about 6/10.'; not 'open 9/10 July'
+    r"(?i:\bchances?\s+in\s+%s\b|\bfifty[\s-]+fifty\b|(?<![\w.])50\s*[-/]\s*50\b)" % _NUMBER,   # 'one chance in three', 'fifty-fifty', '50/50'
+    r"(?i:\b(?:rat(?:e|ed)\s+(?:it|this|that)(?:\s+(?:a|an|at|as))?|rating|scor(?:e|ed|ing))(?:\s+(?:of|is|at))?\s+(?:\d+(?:[.,]\d+)?|%s)\b)" % _SPELLED,   # 'I'd rate it a 6', 'my score is 6', 'scored seven'
     r"\b(?:Adaptation|Priority|Coordination|Audit)\b",
     r"(?i:\b(?:engines?|envelopes?|charter|internal system|refus\w*)\b)")))
 SEARCH_ENGINE = re.compile(r"\bsearch engines?\b", re.I)
+#: a figure standing on its own, to be read for what it is worth: 45, 0.45, .45, 0,45; not part of 9.30, 1,450, v2.1.3 or 0.45.3
+_FIGURE = re.compile(r"(?<![\w.,])(\d+(?:[.,]\d+)?|[.,]\d+)(?!\w)(?![.,]\d)")
 
 
-def inside(text):
-    """What in `text` the owner may not read of the app's inside (INSIDE), as the words that match; [] when it is clean."""
-    return [m.group(0) for m in INSIDE.finditer(SEARCH_ENGINE.sub("", str(text or "")))]
+def _worth(figure):
+    """A figure as a number (0,45 is 0.45, 45,000 is forty-five thousand), rounded so that 28.999999999999996 is 29."""
+    if re.fullmatch(r"[1-9]\d{0,2}(?:,\d{3})+", str(figure)):
+        return float(str(figure).replace(",", ""))
+    return round(float(str(figure).replace(",", ".")), 6)
 
 
-def _plain_or(ref, text, otherwise):
+def confidence_shown(text, confidence, owners=""):
+    """The figures in `text` that are the confidence the post carries, in the form it has (0.45, .45, 0,45) or said bare as the
+    percentage it stands for (45), unless the owner said that figure (`owners`, lowercased): theirs to keep. [] when the post
+    carries none, or `text` shows none of it. The phrasings of INSIDE are a blacklist; this is the figure itself, so no shape it
+    is said in escapes (J2B-8: a verifier found '... at 45.', '0,45' and '6 out of 10' reach a card past the phrasings)."""
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 < confidence <= 1:
+        return []
+    worth = ({_worth(confidence)} if confidence < 1 else set()) | ({_worth(confidence * 100)} if confidence * 100 >= 10 else set())
+    theirs = {_worth(m.group(1)) for m in _FIGURE.finditer(str(owners or ""))}
+    return [m.group(1) for m in _FIGURE.finditer(str(text or "")) if _worth(m.group(1)) in worth and _worth(m.group(1)) not in theirs]
+
+
+def inside(text, confidence=None, owners=""):
+    """What in `text` the owner may not read of the app's inside (INSIDE, and the figure of `confidence`, the one the post
+    carries, unless the owner said it: confidence_shown), as the words that match; [] when it is clean."""
+    text = SEARCH_ENGINE.sub("", str(text or ""))
+    found = [m.group(0) for m in INSIDE.finditer(text)]
+    return found + [f for f in confidence_shown(text, confidence, owners) if f not in found]
+
+
+def _plain_or(ref, text, otherwise, confidence=None):
     """`text` as the owner may read it (M3.6, J2B-8): as it is, or said again in the owner's words; `otherwise` when it still
     breaks the plain-words rule (a doubt a model wrote may say 'grant' or 'counter', as a card or a tell may not) or shows
-    the confidence or a part of the app (inside())."""
-    line, _, how = R._plain_one(text, R._owners_words(ref, {}), "")
-    return otherwise if how == "template" or inside(line) else line
+    the confidence or a part of the app (inside(); `confidence` is the one the post carries)."""
+    owners = R._owners_words(ref, {})
+    line, _, how = R._plain_one(text, owners, "")
+    return otherwise if how == "template" or inside(line, confidence, owners) else line
 
 
 def fallback_default(d):
@@ -349,7 +388,7 @@ def fallback_of(ref, payload):
     """What the plan does when the owner says nothing more: the doubt's own fallback, unless it says nothing, reaches
     outside the department (the fallback never does) or cannot be told to the owner in plain words."""
     f, default = _said(payload.get("fallback"), 600).rstrip("."), fallback_default(W.dept(ref))
-    return default if not f or R.LEAVES.search(f) else _plain_or(ref, f, default)
+    return default if not f or R.LEAVES.search(f) else _plain_or(ref, f, default, payload.get("confidence"))
 
 
 def question(name, doubt, fallback):
@@ -376,6 +415,7 @@ def identity_doubt(ctx, step, item):
     ref, d, p = ctx["ref"], ctx["dept"], ctx["post"]
     pl = p.get("payload") or {}
     doubt, engine, fallback = _said(pl.get("doubt"), 600), _said(pl.get("engine"), 40), fallback_of(ref, pl)
+    confidence = pl.get("confidence")                  # Identity's to hold: the owner never reads it, in any shape (J2B-8)
     if not doubt:
         return {"said": "heard a doubt with nothing in it; nothing to ask"}
     cj = R._j2()
@@ -389,15 +429,15 @@ def identity_doubt(ctx, step, item):
         # one open question at a time: the plan is shaped again when that is answered, and the doubt comes with it if it stands
         return {"said": "the owner has another question open; the doubt waits for the plan to be shaped again"}
     if cycle and not here and len(asked) < S.REPAIRS:
-        return _ask_the_owner(ctx, cycle, doubt, engine, fallback, line)
-    return _go_on(ctx, doubt, fallback, line)
+        return _ask_the_owner(ctx, cycle, doubt, engine, fallback, line, confidence)
+    return _go_on(ctx, doubt, fallback, line, confidence)
 
 
-def _ask_the_owner(ctx, cycle, doubt, engine, fallback, line):
+def _ask_the_owner(ctx, cycle, doubt, engine, fallback, line, confidence=None):
     """The doubt as one question of Identity's, an ask that takes words and holds the cycle at step 2 until it is answered."""
     ref, d = ctx["ref"], ctx["dept"]
     cj = R._j2()
-    shown = _plain_or(ref, doubt, SOMETHING)
+    shown = _plain_or(ref, doubt, SOMETHING, confidence)
     said = R.plain_card(ref, {"text": question(d.get("name"), shown, fallback),
                               "why": "the plan rests on something only you can say"}, "question")
     with W._lock(ref):
@@ -412,19 +452,19 @@ def _ask_the_owner(ctx, cycle, doubt, engine, fallback, line):
     return {"said": "asked the owner what Adaptation doubts%s: %s" % (" of " + engine if engine else "", doubt[:160]), "asked": ask["id"]}
 
 
-def _go_on(ctx, doubt, fallback, line):
+def _go_on(ctx, doubt, fallback, line, confidence=None):
     """Past the bound: Adaptation goes on to Priority with the doubt named. A doubt that comes back after Adaptation was
     told so is the owner's, as a blocked plan with its ways out."""
     ref, d = ctx["ref"], ctx["dept"]
     who = {"src": "Root" if d.get("root") else R.OWNER}
     if line and (line.get("payload") or {}).get("go_on"):
-        shown = _plain_or(ref, doubt, SOMETHING)
+        shown = _plain_or(ref, doubt, SOMETHING, confidence)
         R._blocked(ref, d, who, "The plan cannot go on as it is: it rests on something nobody has settled. %s Say what to do, or choose a way "
                    "forward on this card." % shown, "The plan has a doubt left.", "Adaptation, still unsure of the plan", shown)
         return {"said": "the doubt came back after Adaptation was told to go on; put to the owner as a blocked plan: " + doubt[:160]}
     words = R._brief_text(ref).strip() or str((line or {}).get("payload", {}).get("words") or d.get("goal") or "")
     R.post(ref, "Identity", "Adaptation", "request", _line(ref, words, go_on=True, doubt=doubt, fallback=fallback))
-    shown = _plain_or(ref, doubt, SOMETHING)
+    shown = _plain_or(ref, doubt, SOMETHING, confidence)
     R._tell(ref, d, who, "inform", {"word": "line", "done": "I have asked what I can, so the plan goes on as it stands, with one doubt left open: %s "
                                     "Unless you say otherwise, %s. Priority and Root check it before anything runs." % (
                                         shown if shown[-1:] in (".", "?", "!") else shown + ".", fallback.rstrip("."))})
