@@ -353,6 +353,22 @@ def test_b2_the_answering_run_is_no_clash_in_the_slot(j2, monkeypatch):
     assert FV.slot_clashes([asker, dict(answer, for_run=None)]) == [{"slot": "Plan@board.n3", "why": "it started while Write was running"}]
 
 
+def test_b2_the_answering_run_is_exempt_only_while_it_is_nested_in_the_run_that_asked(j2):
+    """Decision W3B-1: the answer starts inside the asker's run, which gave it the turn, and is no clash while it ends inside it too. A
+    run that names the asker and outlasts it, or that is still open when the asker is over, is a clash like any other."""
+    W, R, J, _, FV = j2
+    asker = {"id": "r-a", "engine": "Write", "slot": "Write@x.v1", "status": "ok", "started": "2026-10-26T10:00:00+00:00",
+             "ended": "2026-10-26T10:01:00+00:00"}
+    inside = {"id": "r-b", "engine": "Plan", "slot": "Plan@board.n3", "status": "ok", "started": "2026-10-26T10:00:10+00:00",
+              "ended": "2026-10-26T10:00:20+00:00", "for_run": "r-a"}
+    clash = [{"slot": "Plan@board.n3", "why": "it started while Write was running"}]
+    assert FV.slot_clashes([asker, inside]) == []
+    assert FV.slot_clashes([asker, dict(inside, ended="2026-10-26T10:01:00+00:00")]) == [], "ending as the asker ends is inside it"
+    assert FV.slot_clashes([asker, dict(inside, ended="2026-10-26T10:02:00+00:00")]) == clash, "it outlasts the run that asked"
+    assert FV.slot_clashes([asker, dict(inside, status="running", ended=None)]) == clash, "it is open when the asker is over"
+    assert FV.slot_clashes([dict(asker, status="running", ended=None), dict(inside, status="running", ended=None)]) == [], "both open: nested so far"
+
+
 def test_b2_the_exchange_is_three_posts_in_one_thread_inside_its_bounds(j2, monkeypatch):
     W, R, J, _, _ = j2
     ref = _born(j2)

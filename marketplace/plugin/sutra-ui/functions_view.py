@@ -163,7 +163,8 @@ def slot_clashes(rs):
     """SM-11's clash in a slot, read off the run rows (PRD M4.3): two runs that finished on one slot id, or a start while
     another run of the department was open. [{slot, why}]; empty when the timetable held. A run row with no slot is a
     function's note of what it did, never a start. A run that answers a question another engine's run asked (for_run, W3-BOARD)
-    starts inside that run by design: the asker gave it the turn."""
+    starts inside that run by design, the asker having given it the turn (decision W3B-1): it is no clash when it ends inside that run
+    too, and one that outlasts its asker is a clash like any other."""
     out, ended = [], {}
     starts = [r for r in rs if r.get("slot")]
     for r in starts:
@@ -174,10 +175,11 @@ def slot_clashes(rs):
     spans = sorted(((W._ts(r.get("started") or ""), W._ts(r.get("ended") or "") if r.get("ended") else float("inf"), r)
                     for r in starts), key=lambda x: x[0])
     for i, (a0, a1, a) in enumerate(spans):
-        for b0, _, b in spans[i + 1:]:
+        for b0, b1, b in spans[i + 1:]:
             if b0 >= a1:
                 break
-            if b0 > a0 and not (b.get("for_run") and b.get("for_run") == a.get("id")):
+            answers = bool(b.get("for_run")) and b.get("for_run") == a.get("id") and b1 <= a1
+            if b0 > a0 and not answers:
                 out.append({"slot": b["slot"], "why": "it started while %s was running" % a.get("engine")})
     return out
 
