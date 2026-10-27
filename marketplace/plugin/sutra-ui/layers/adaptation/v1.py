@@ -8,6 +8,7 @@ fallback for a part no layer holds. view() returns the pane's read model.
 """
 import os
 import re
+import unicodedata
 
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
@@ -113,17 +114,35 @@ def practices_text(p):
     return '\n'.join(lines)
 
 
+def fit_name(text):
+    """A name as the interface's NAME_RE has it: letters, numbers, spaces and & ' . - only, the first a letter or a number,
+    forty at most. A model names an engine 'Facts (web)' or 'Site: 2': the words are its and the characters are the
+    interface's, so a character the interface refuses is a space and an accent is dropped ('Cafe' for 'Café'), before the
+    line is judged and as it is posted. A name that fits is left as it is, its spaces run together as they always were."""
+    kept = ''.join(' ' if not (ch.isascii() and (ch.isalnum() or ch in " &'.-")) else ch
+                   for ch in unicodedata.normalize('NFKD', str(text or '')) if not unicodedata.combining(ch))
+    return re.sub(r'^[^A-Za-z0-9]+', '', ' '.join(kept.split()))[:40]
+
+
+def fit_engines(engs):
+    """The engines a model answered, each name, reads and writes made to fit (fit_name) and everything else as it came, so
+    the check judges the names the line will be posted with (norm_engines posts the same)."""
+    return [dict(e, **{k: fit_name(e[k]) for k in ('name', 'reads', 'writes') if isinstance(e.get(k), str)}) if isinstance(e, dict) else e
+            for e in engs]
+
+
 def norm_engines(engs):
     """A line's engines as a proposal carries them (the form adapt_line_offer has always posted): a name of at most forty
-    characters, what it does in two hundred, what it reads and writes, and whether it goes to the internet. Tolerant of
-    what a model might answer, so the check can say what is wrong with it."""
+    characters, made to fit what the interface lets a name hold (fit_name), what it does in two hundred, what it reads and
+    writes, and whether it goes to the internet. Tolerant of what a model might answer, so the check can say what is
+    wrong with it."""
     out = []
     for e in engs or []:
         e = e if isinstance(e, dict) else {}
-        name = ' '.join(str(e.get('name') or '').split())[:40]
+        name = fit_name(e.get('name'))
         out.append({'name': name, 'does': ' '.join(str(e.get('does') or '').split())[:200],
-                    'reads': ' '.join(str(e.get('reads') or 'Brief').split())[:40],
-                    'writes': ' '.join(str(e.get('writes') or name).split())[:40], 'internet': bool(e.get('internet'))})
+                    'reads': fit_name(e.get('reads') or 'Brief'),
+                    'writes': fit_name(e.get('writes') or name), 'internet': bool(e.get('internet'))})
     return out
 
 
@@ -250,6 +269,35 @@ def cannot_notes(cannot, d):
     return notes
 
 
+#: the workflow schema's own row (S.validate_workflow's first): the line fits the form a workflow is kept in. It is no standard of
+#: Root's, so owner_words has no id of it to leave out, and the notes say its faults as sentences
+SHAPE_ROW = 'workflow_meets_standards'
+NAME_USES = "letters, numbers, spaces and & ' . -"       # what a name may hold, NAME_RE in words
+
+
+def shape_say(fault, rows):
+    """One fault of the shape row ('<path>: <what is wrong>', the interface's own words) as a sentence the owner can read, by
+    the engine's name: its name, what it reads or writes, or the items it covers. A fault with no sentence of its own says
+    the plan does not fit the form it is kept in. The deliverable is the last engine's writes, and a key of the covers
+    map is an item. The path and the pattern stay in the interface; fit_name has already made what can be made to fit."""
+    path, _, why = str(fault).partition(': ')
+    at = re.match(r'\$\.engines\[(\d+)\]\.(\w+)', path)
+    i, field = (int(at.group(1)), at.group(2)) if at else ((len(rows) - 1, 'writes') if path == '$.deliverable' and rows else (None, None))
+    who = (rows[i].get('name') or 'engine %d' % (i + 1)) if i is not None and i < len(rows) else 'the plan'
+    if field in ('reads', 'writes') and i is not None and i < len(rows) and not rows[i].get('name'):
+        field = 'name'                                    # an engine with no name, whose writes was to be its name, is told so once
+    if field == 'name':
+        return "%s's name may use only %s (at most 40 characters)" % (who, NAME_USES)
+    if field in ('reads', 'writes'):
+        return '%s names what it %s with only %s (at most 40 characters)' % (who, field, NAME_USES)
+    if field == 'covers' or path.startswith('$.covers'):
+        if why == 'holds an item twice':
+            return '%s names an item twice' % who
+        more = re.match(r'more than (\d+) items', why)
+        return '%s names more than %s items' % (who, more.group(1)) if more else '%s names an item in a form done-when does not use' % who
+    return '%s does not fit the form a plan is kept in' % who
+
+
 def c_line_is_engines(ctx, step, item, out):
     """One to six engines that code finds nothing wrong with: the shape is the agent's, the check is code (today's rules:
     each named once and new to the Library, the first reading the Brief, each reading what one before it wrote and
@@ -267,22 +315,28 @@ def c_line_is_engines(ctx, step, item, out):
         return {'ok': True, 'notes': ['%s cannot serve %s' % (c['engine'], ', '.join(c['items']))]}
     if not isinstance(engs, list) or not 1 <= len(engs) <= 6:
         return R._verdict(False, '', 'one to six engines')
+    fitted = fit_engines(engs)                            # today's rules and J2B-4 judge the names the line will be posted with
     drafted = from_library(ctx, out)
-    legacy = [] if drafted else R._line_notes(engs)          # the Library's own names are not 'new to the Library'
+    legacy = [] if drafted else R._line_notes(fitted)        # the Library's own names are not 'new to the Library'
     if made:
         # a level-1 engine is the Library's own, kept on its template: it is not 'new to the Library', and need not be
         lib = shipped()
-        taken = {' '.join(str(e.get('name') or '').split())[:40] for e in engs if isinstance(e, dict) and e.get('level') == 1 and e.get('name') in lib}
+        taken = {' '.join(str(e.get('name') or '').split())[:40] for e in fitted if isinstance(e, dict) and e.get('level') == 1 and e.get('name') in lib}
         legacy = [(c, n) for c, n in legacy if not (c == 'names new to the Library' and any(n == 'the Library already has an engine named %s' % t for t in taken))]
     notes = [n for _, n in legacy]
     if made:
-        notes += [n for n in made_notes(engs, d) if n not in notes]
+        notes += [n for n in made_notes(fitted, d) if n not in notes]
     source = 'library' if drafted else (((ctx or {}).get('bag') or {}).get('adapt.source') or {}).get('source') or 'shaped'
-    rows = made_engines(engs) if made else norm_engines(engs)
+    rows = made_engines(engs) if made else norm_engines(engs)      # the form the offer posts: what the workflow is judged as
     for row in S.validate_workflow(workflow_of(rows, source, d), 'proposal', d, {}):
         if row['passed']:
             continue                                      # a warning row passes
         for fault in str(row['why']).split('; '):
+            if row['check'] == SHAPE_ROW:
+                said = shape_say(fault, rows)             # the interface's path and pattern are not for the owner's card
+                if said not in notes:
+                    notes.append(said)
+                continue
             named = '%s: %s' % (row['check'], fault)
             if fault in notes:
                 notes[notes.index(fault)] = named        # today's wording, now naming the standard it breaks
