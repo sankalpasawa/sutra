@@ -1302,9 +1302,16 @@ def test_j2_g_a_reading_is_weighed_three_ways(j2, monkeypatch):
     assert (q["missing"], q["points"], q["standard"], q["reading"]) == ("fact", ["D2"], False, row["id"])
     assert "D2" in q["text"] and "Prices are on the page" in q["text"] and S.validate_record("identity", "ask", q) == []
     assert J.status(ref)["open_question"]["id"] == q["id"]
-    # (with Adaptation's own recipe the round for D3 is proposed, priced, filed and the line builds again while the question stays
-    # open, so the cycle waits on the owner only where nothing else is moving: the stub's)
-    assert J.waiting_on_owner(ref) or not stub
+    if stub:
+        assert J.waiting_on_owner(ref), "nothing else moves: the cycle waits on the owner"
+    else:
+        # With Adaptation's own recipe the round for D3 is proposed, priced and filed, and the line builds again while the question
+        # stays open: the cycle goes on and does not wait on the owner, whose question is still theirs to answer
+        folded = {r["round"]: r for r in W.rows(ref, "rounds.jsonl")}
+        assert [(n, r["status"], r["covers"]) for n, r in folded.items()] == [(1, "filed", ["D3"])], "one round, for D3, filed in the Brief"
+        assert W.latest(ref, "Live site")["v"] == 2, "and the line built again on it"
+        assert not J.waiting_on_owner(ref) and J.status(ref)["state"] != "waiting"
+        assert [a["id"] for a in _asks_of(W, ref, "j2_identity")] == [q["id"]], "while the question on D2 is still the owner's, open"
     # a finding the owner must say yes to (a rule says ask: it reaches outside the department): an ask, and its item goes no further
     (f,) = _asks_of(W, ref, "finding")
     assert f["claim"] == "The offer is not sent to subscribers by email" and f["reading"] == row["id"] and f["thread"] and "Stamp to have it put right" in f["text"]
@@ -1325,6 +1332,7 @@ def test_j2_g_an_item_to_confirm_is_one_question_whatever_their_number(j2):
     _hear(j2, ref, {"D1": "met", "D2": "to_confirm", "D3": "to_confirm", "D4": "met"})
     (q,) = _asks_of(W, ref, "j2_identity")
     assert q["points"] == ["D2", "D3"] and q["text"].count("D2") == 1 and q["text"].count("D3") == 1
+    assert J.waiting_on_owner(ref) and J.status(ref)["open_question"]["id"] == q["id"], "no round is moving, so the cycle waits on the owner"
     said = [p for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"] and p["payload"].get("card") == q["id"]]
     assert len(said) == 1, "the line names its card, so the chat says the question once, on the card"
     assert not re.search(r"\b(?:grant|counter|refuse|charter|Priority|Coordination)\b", q["text"], re.I)
