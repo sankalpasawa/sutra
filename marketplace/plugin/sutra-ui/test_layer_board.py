@@ -936,6 +936,76 @@ def test_b3_the_covering_judges_a_spot_check_and_still_judges_a_filing_as_it_did
     assert S.CHECKS["audit"]["spot_check_reads_only"] and "spot_check_reads_only" in layers.names("check")
 
 
+def test_b3_a_filing_that_measured_nothing_does_not_pass_its_covering():
+    """The covering compared two hashes the body reported and passed when it reported none (None == None): a body that returned
+    {'spot': True, 'said': ...} was a pass (found by a verifier 2026-10-27). Both states must be there, from two steps."""
+    check = AUDIT.CHECK["spot_check_reads_only"]
+    said = {"spot": True, "said": "looked in"}
+    for out in (said, dict(said, before=None, after=None), dict(said, before="a"), dict(said, after="a"), dict(said, before="", after=""),
+                dict(said, before="a", after=None), dict(said, before=None, after="a")):
+        got = check(None, None, None, out)
+        assert got["ok"] is False and "when it began and when it ended" in got["notes"][0], out
+    assert check(None, None, None, dict(said, before="a", after="a"))["ok"] is True
+    assert check({"ref": "x"}, None, None, dict(said, before="a", after="a"))["ok"] is True, "a context changes nothing about the two states"
+
+
+def _spot_due(j2, monkeypatch):
+    """A settled department at the minute of its spot check: (ref, the start the motor would take)."""
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    return ref, _timer_due(W, ref)
+
+
+def test_b3_a_write_in_any_step_of_the_run_fails_it_and_not_only_one_in_the_last_reading(j2, monkeypatch):
+    """The window the two states bracket was the one read-only call of the last step, so the covering could not fail in production.
+    It is the whole run now: the pick notes the state as the run begins, and a write by any step between that and the filing is found."""
+    W, R, J, _, _ = j2
+    ref, (name, inp, slot) = _spot_due(j2, monkeypatch)
+    real = AUDIT.CODE["audit_mechanical"]
+
+    def writes(ctx, step, item):
+        (W.ddir(ctx["ref"]) / "stray.json").write_text("{}", encoding="utf-8")
+        return real(ctx, step, item)
+    monkeypatch.setitem(AUDIT.CODE, "audit_mechanical", writes)
+    W.run_slot(ref, name, inp, slot)
+    run = _spot_runs(W, ref)[0]
+    assert run["status"] == "failed" and "wrote outside Audit's rows" in run["what"]
+    assert W.rows(ref, "spot_checks.jsonl") == [] and [p for p in R.board(ref) if (p.get("payload") or {}).get("spot")] == []
+    step = next(r for r in R.step_rows(ref) if r.get("run") == run["id"] and r["step"] == "audit.file")
+    assert step["status"] == "failed" and step["check"]["ok"] is False
+
+
+def test_b3_a_check_that_began_without_noting_the_state_files_nothing_and_fails(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref, (name, inp, slot) = _spot_due(j2, monkeypatch)
+    monkeypatch.setitem(AUDIT.CODE, "audit_pick", lambda ctx, step, item: {"sample": False, "pages": [], "spot": True})
+    W.run_slot(ref, name, inp, slot)
+    run = _spot_runs(W, ref)[0]
+    assert run["status"] == "failed" and "when it began and when it ended" in run["what"]
+    assert W.rows(ref, "spot_checks.jsonl") == [] and [p for p in R.board(ref) if (p.get("payload") or {}).get("spot")] == []
+
+
+def test_b3_a_spot_check_that_finds_something_passes_its_covering_with_both_states_the_same(j2, monkeypatch):
+    """The finding's post writes a board row, a thread and Coordination's verdict on the edge: they come after the second state is
+    taken, so the check that files a finding is a pass."""
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    W.add_version(ref, "Pages", {"index.html": "<h1>x</h1>"}, [{"art": "Site plan", "v": 1}], None, {"ok": True, "notes": []})
+    W.run_until_idle(ref, limit=100)
+    J._set(ref, state="done")
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    run = _spot_runs(W, ref)[0]
+    assert run["status"] == "ok", run["what"]
+    step = next(r for r in R.step_rows(ref) if r.get("run") == run["id"] and r["step"] == "audit.file")
+    assert step["status"] == "ok" and step["check"] == {"ok": True, "notes": ["it read the engines' state and wrote only its own row"]}
+    out = W._read(R._out_path(ref, slot, "audit.file", None), {})
+    assert out["before"] and out["before"] == out["after"] and out["filed"] == 1
+    assert len([p for p in R.board(ref) if (p.get("payload") or {}).get("spot")]) == 1
+
+
 def test_b3_the_contract_passes_for_audit_v1_whole(j2):
     W, R, J, _, _ = j2
     ref = _born(j2)

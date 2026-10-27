@@ -23,7 +23,8 @@ Audit has a start of its own besides the version it reads (W3-BOARD, M8.7): a ti
 audit.when until a minute in the period that a hash of the department's ref and the period gives. That run is the same steps with
 the reading left out, and audit_file files a spot check: the state of the engines read, one audit.spot_check row, what it found
 told to Identity. audit_pick, audit_file and audit_when are the layer's own for that; a start on a version goes to engine_runtime's
-bodies as it always did.
+bodies as it always did. The pick notes the state of the department as the run begins and the filing reads it again, so what the
+covering (spot_check_reads_only) judges is the whole run, and a filing that notes neither has measured nothing and fails.
 """
 import hashlib
 import json
@@ -431,22 +432,29 @@ def spot_checks(ref, d, now=None, skip=None):
 
 
 def audit_pick(ctx, step, item):
-    """The first step of a reading, and of a spot check, which has no version to pick from: it is not a sample, and says so."""
+    """The first step of a reading, and of a spot check, which has no version to pick from: it is not a sample, and says so. A spot
+    check also notes the state of the department as it begins (`before`): the window its covering judges is the whole run, from this
+    step to the filing, and no later step can be what takes the first look."""
     if (ctx.get('inp') or {}).get('timer') is not None:
-        return {'sample': False, 'pages': [], 'spot': True}
+        with W._lock(ctx['ref']):
+            return {'sample': False, 'pages': [], 'spot': True, 'before': spot_state(ctx['ref'])}
     return R.audit_pick(ctx, step, item)
 
 
 def spot_file(ctx):
-    """The last step of a spot check: the state is read twice, with the department's lock held so that nothing else writes in
-    between; a check that left it changed files nothing and says so (its covering fails it); else its row is one line of
-    spot_checks.jsonl (once for a slot, so a replay writes it once) and its findings go to Identity, as Audit's findings do."""
+    """The last step of a spot check: the state is read again with the department's lock held, so that nothing else writes in the middle
+    of the reading, and compared with the state the pick noted as the run began (`before`: the window is the whole run, every step of
+    it). A check that left the state changed, or that began without noting it, files nothing and says so (its covering fails it);
+    else its row is one line of spot_checks.jsonl (once for a slot, so a replay writes it once) and its findings go to Identity, as
+    Audit's findings do."""
     ref, d, slot = ctx['ref'], ctx.get('dept') or W.dept(ctx['ref']) or {}, ctx.get('slot') or ''
+    before = (ctx['bag'].get('audit.pick') or {}).get('before')
     with W._lock(ref):
-        before = spot_state(ref)
         checks, found = spot_checks(ref, d, skip=ctx.get('run'))
         after = spot_state(ref)
     out = {'spot': True, 'before': before, 'after': after, 'checks': checks, 'findings': found, 'filed': len(found), 'read': None}
+    if not before:
+        return dict(out, said="a spot check did not note the state it began from, and filed nothing")
     if before != after:
         return dict(out, said="a spot check wrote outside Audit's rows, and filed nothing")
     n = int(ctx['inp']['timer'])
@@ -471,10 +479,15 @@ def audit_file(ctx, step, item):
 
 def spot_check_reads_only(ctx, step, item, out):
     """Audit's covering of its filing (M8.7): a spot check left the department's files as it found them, apart from Audit's own
-    rows, said what it did, and files nothing otherwise; any other filing (a reading) says what it did, as every step does."""
+    rows, said what it did, and files nothing otherwise; any other filing (a reading) says what it did, as every step does. The two
+    states it compares are taken by two steps, the pick as the run began and the filing as it ended, so both must be there: a filing
+    that brings neither, or only one, has measured nothing and does not pass."""
     if not isinstance(out, dict) or not out.get('spot'):
         return R.c_said_what_it_did(ctx, step, item, out)
-    if out.get('before') != out.get('after'):
+    before, after = out.get('before'), out.get('after')
+    if not before or not after:
+        return {'ok': False, 'notes': ["a spot check did not say what the department looked like when it began and when it ended"]}
+    if before != after:
         return {'ok': False, 'notes': ["a spot check wrote outside Audit's rows"]}
     if not str(out.get('said') or '').strip():
         return {'ok': False, 'notes': ['it did not say what it did']}
