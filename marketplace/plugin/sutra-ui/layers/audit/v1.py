@@ -20,6 +20,7 @@ file leaves, and W3-PROOF deletes it.
 import json
 import posixpath
 import re
+from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import unquote
 
@@ -108,17 +109,48 @@ def _clip(text, n=40):
     return text if len(text) <= n else text[:n - 1].rstrip() + '…'
 
 
-def _html_of(raw):
-    """A page's markup: the file as filed, or, for a page filed as {title, body_html} (the Pages form), its body."""
+def _filed(raw):
+    """A page filed as {title, body_html} (the Pages form) as the dict it is; None for a page filed as it came."""
     text = str(raw)
     if text.lstrip().startswith('{'):
         try:
             data = json.loads(text)
         except ValueError:
-            data = None
+            return None
         if isinstance(data, dict) and isinstance(data.get('body_html'), str):
-            return data['body_html']
-    return text
+            return data
+    return None
+
+
+def _html_of(raw):
+    """A page's markup: the file as filed, or, for a page filed as {title, body_html} (the Pages form), its body."""
+    data = _filed(raw)
+    return data['body_html'] if data else str(raw)
+
+
+def _own_title(raw):
+    """The title a page carries: the Pages form's, or the <title> of a page filed whole; '' when it has none."""
+    data = _filed(raw)
+    if data:
+        return _clip(data.get('title'), 60)
+    found = re.search(r'<title[^>]*>(.*?)</title>', str(raw), re.I | re.S)
+    return _clip(unescape(found.group(1)), 60) if found else ''
+
+
+def _names(ref, files):
+    """What the owner calls each HTML page of the version, by its file name: the title the department's site plan gives it
+    (R._pages, as Identity's question to the owner names a page), 'Home' for the index, the title the page carries, else its file
+    name read as words ('our-fees.html' as 'our fees'). A page is named, never given as a file."""
+    try:
+        planned = {str(p.get('slug')): _clip(p.get('title'), 60) for p in R._pages(ref) if isinstance(p, dict) and p.get('title')}
+    except Exception:  # noqa: BLE001 -- a department with no readable site plan names its pages by what they carry
+        planned = {}
+    out = {}
+    for name in files:
+        if str(name).lower().endswith(('.html', '.htm')):
+            slug = str(name).rsplit('.', 1)[0]
+            out[name] = planned.get(slug) or ('Home' if slug == 'index' else '') or _own_title(files[name]) or re.sub(r'[\s/_-]+', ' ', slug).strip() or name
+    return out
 
 
 def _planned(files):
@@ -224,9 +256,11 @@ def _hole(hole):
     return dict(hole, where=_clip("%s: the text '%s'" % (hole.get('page'), phrase.group(0) if phrase else 'to be confirmed'), 200))
 
 
-def _note(defect):
-    """A defect as the mechanical step's notes say it: the page, then what is wrong (the claim names the element)."""
-    return '%s: %s' % (defect['page'], defect['claim'])
+def _note(defect, names=None):
+    """A defect as the mechanical step's notes say it: the page by the name the owner knows it by (`names`, from _names; its file
+    name when it has none), then what is wrong (the claim names the element). The finding itself keeps the page's file name in
+    `page` and `where`, which is what Identity maps to a title and what a link names."""
+    return '%s: %s' % ((names or {}).get(defect['page'], defect['page']), defect['claim'])
 
 
 def _has_pages(files):
@@ -257,8 +291,9 @@ def audit_mechanical(ctx, step, item):
     defects = page_defects(files)
     failing = [d for d in defects if d['severity'] != 'low']
     said = notes + (['the site says it does not know %d thing%s' % (len(holes), '' if len(holes) == 1 else 's')] if holes else [])
-    said += [_note(d) for d in failing[:4]] + (['more is wrong on the pages'] if len(failing) > 4 else [])
-    noted = ['noted, ' + _note(d) for d in defects if d['severity'] == 'low'][:2]
+    names = _names(ref, files)
+    said += [_note(d, names) for d in failing[:4]] + (['more is wrong on the pages'] if len(failing) > 4 else [])
+    noted = ['noted, ' + _note(d, names) for d in defects if d['severity'] == 'low'][:2]
     clean = "every version has its run and its check; the trace reaches the owner's words"
     if _has_pages(files):
         clean += "; the pages' links, forms, images and headings are in order"

@@ -3848,6 +3848,22 @@ def audit_verdicts(rows):
     return out
 
 
+def audit_code_claim(mech):
+    """What a code row of a reading says, worded by what the measure found failing: 'the record holds' when nothing is wrong,
+    'the record does not hold' for a fault of the record (a version with no run or no check, a deliverable that does not trace
+    back to the owner's words), and 'the pages need work' for what it found on the pages (a placeholder where a fact should be, a
+    broken link, a form with no submit, an image with no alt, a heading), each followed by its notes. The owner is quoted this: a
+    missing alt text is not a record that does not hold. A result that does not say which notes are the record's (no `faults`) is
+    taken as a failure of the record, as audit_file takes it."""
+    notes = [str(n) for n in mech.get("notes") or []]
+    if mech.get("ok"):
+        return "the record holds: " + ("; ".join(notes) or "the record holds")
+    faults = [str(n) for n in (mech["faults"] if "faults" in mech else notes) or []]
+    pages = [n for n in notes if n not in faults]
+    said = (["the record does not hold: " + ("; ".join(faults) or "the record does not hold")] if faults or not pages else [])
+    return "; ".join(said + (["the pages need work: " + "; ".join(pages)] if pages else []))
+
+
 def audit_rows(dept_items, mech, said, sampled):
     """One reading row per done-when item, in the S-30 shape (subject, claim, evidence, method, verdict, severity). An item
     whose how is code gets a row from the mechanical step's result when it measured anything; every item gets the reader's
@@ -3875,7 +3891,7 @@ def audit_rows(dept_items, mech, said, sampled):
         if it.get("how") == "code" and sampled:
             ok = bool(mech.get("ok"))
             said_what = "; ".join(str(n) for n in mech.get("notes") or []) or ("the record holds" if ok else "the record does not hold")
-            code = {"id": it["id"], "subject": subject, "claim": ("the record holds: " if ok else "the record does not hold: ") + said_what[:560],
+            code = {"id": it["id"], "subject": subject, "claim": audit_code_claim(mech)[:600],
                     "evidence": said_what[:1000], "method": "code", "verdict": "met" if ok else "not_met",
                     "severity": ITEM_SEVERITY["met" if ok else "not_met"]}
             rows += [code] if code["verdict"] == model["verdict"] else [code, model]
@@ -3884,13 +3900,31 @@ def audit_rows(dept_items, mech, said, sampled):
     return rows
 
 
+#: the most findings one reading carries, and the most one post to Identity names
+FINDINGS_MAX = 12
+#: how serious a finding is, the worse first (audit.finding's severities): the order a reading keeps its findings in
+SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def _finding_severity(f):
+    """A finding's weight as the interface types it (audit.finding): critical is high, and one with no weight, or one that is
+    not high, medium or low, is medium."""
+    sev = str(f.get("severity") or "").strip().lower()
+    return "high" if sev == "critical" else sev if sev in SEVERITY_ORDER else "medium"
+
+
+def _worst_first(found):
+    """The findings of a reading, the worse first and each weight in the order it was found (a stable sort), so the cap on what a
+    reading carries cuts the lightest and never the worst: a page with many small defects does not push a high finding out."""
+    return sorted(found, key=lambda f: SEVERITY_ORDER[_finding_severity(f)])
+
+
 def _audit_reading_findings(found, art):
     """The findings of a reading as the interface types them (audit.finding): numbered F1, F2, ... within the reading, each
     with where it is and what, how serious, the item it belongs to, and that Identity was told."""
     out = []
-    for n, f in enumerate(found[:12], 1):
-        sev = str(f.get("severity") or "").strip().lower()
-        sev = "high" if sev == "critical" else sev if sev in ("high", "medium", "low") else "medium"
+    for n, f in enumerate(found[:FINDINGS_MAX], 1):
+        sev = _finding_severity(f)
         item_id = f.get("item") if re.match(r"^D[1-9][0-9]?$", str(f.get("item") or "")) else None
         out.append({"id": "F%d" % n, "severity": sev, "claim": _clip(f.get("claim"), 600),
                     "where": " ".join(str(f.get("where") or f.get("page") or art or "").split())[:200], "item": item_id,
@@ -3972,6 +4006,7 @@ def audit_file(ctx, step, item):
                       "claim": "“%s” %s: %s" % (_clip(it.get("text"), 120).rstrip("."),
                                                 "does not hold" if verdicts[it["id"]] == "not_met" else "cannot be confirmed yet",
                                                 row["claim"].rstrip("."))})
+    found = _worst_first(found)                       # the reading and the post to Identity cut at FINDINGS_MAX: the lightest go, never the worst
     findings = _audit_reading_findings(found, art)
     reading = audit_record(ref, ctx.get("slot"), art, v, read, why_not, rows, findings) if art else None
     met = [i for i, x in verdicts.items() if x == "met"]
@@ -3987,7 +4022,7 @@ def audit_file(ctx, step, item):
     high = [f for f in found if str(f.get("severity") or "").lower() == "high"]
     claim = str((high or found)[0]["claim"])
     post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high" if high else "low",
-                                              "findings": found[:12], "about_version": v, "artifact": art,
+                                              "findings": found[:FINDINGS_MAX], "about_version": v, "artifact": art,
                                               "reading": reading and reading["id"]},
          about={"art": art, "v": v})
     if reading:
