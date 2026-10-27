@@ -1629,6 +1629,6 @@ def test_f14_a_department_that_is_not_there_or_not_on_the_runtime_is_a_404_and_j
     assert c.get("/api/native/%s/messages" % REF).json() == [], "a department that has not spoken: an empty list"
     got = c.get("/api/native/journeys")
     assert got.status_code == 200 and "journeys" in got.json(), "the route is not read as a department's ref"
-    one = c.get("/api/native/journeys/J1")
+    one = c.get("/api/native/journeys/J99")                  # an id no journey file has (J1 and J2 are journey files now)
     assert one.status_code == 404 and one.json()["detail"] == {"code": "UNKNOWN_JOURNEY"}, "the one-journey route is still the journeys'"
     assert c.get("/api/native/journeys/messages").json()["detail"] == "no website department here", "and `journeys` is no department's ref"
