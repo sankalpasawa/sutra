@@ -94,23 +94,24 @@ def test_a1_what_it_holds_by_reference_is_counted_for_the_hand_in(capsys):
 
 
 # ---- A2 · Adaptation's words (M2.5) -----------------------------------------------------------------------------------
-def test_a2_every_part_of_adaptations_interface_is_served_from_its_words_and_none_is_on_the_fallback(home):
+def test_a2_every_part_of_adaptations_interface_is_served_from_its_words_and_none_is_left_without(home):
     import layers.prompts as P
     for group, parts in S.PROMPTS["adaptation"].items():
         for part in parts:
-            assert P._module(home["ref"], "adaptation", group, part) is v1(), "%s.%s is read from the .md bundle" % (group, part)
-    assert C.on_the_md_fallback(v1()) == []
+            assert P._module(home["ref"], "adaptation", group, part) is v1(), "%s.%s is served by adaptation/v1's words" % (group, part)
+    assert C.parts_without_words(v1()) == []
     assert P.faults() == [] and sorted(v1().WORDS) == sorted(v1().LAYOUT) == ["decide", "goal", "make", "sense"]
 
 
 @pytest.mark.parametrize("case", C.cases(), ids=lambda c: "case %d" % c[0])
-def test_a2_the_whole_contract_passes_for_adaptation_v1_with_no_part_on_the_fallback(case, home):
+def test_a2_the_whole_contract_passes_for_adaptation_v1_with_no_part_left_without_words(case, home):
     _, what, fn = case
     assert fn(v1(), home) == [], what
 
 
-def test_a2_each_part_compiles_to_the_md_part_it_came_from_byte_for_byte(home):
+def test_a2_each_part_compiles_to_the_retired_files_part_it_came_from_byte_for_byte(home):
     import layers.prompts as P
+    from test_function_prompts import retired
     seen = 0
     for group, parts in S.PROMPTS["adaptation"].items():
         for part, spec in parts.items():
@@ -118,7 +119,7 @@ def test_a2_each_part_compiles_to_the_md_part_it_came_from_byte_for_byte(home):
                 continue
             sample = {n: "<<%s>>" % n for n in spec["inputs"]}
             got = P.prompt(home["ref"], "adaptation", group, part, **sample)
-            assert got == P.SLOT.sub(lambda m: sample[m.group(1)], P.md_part("adaptation", group, part)), "%s.%s" % (group, part)
+            assert got == P.SLOT.sub(lambda m: sample[m.group(1)], retired("adaptation", group, part)), "%s.%s" % (group, part)
             seen += 1
     assert seen == 6
 
@@ -351,12 +352,25 @@ def _line_ctx(j2, source="shaped"):
     return {"ref": "dref-line", "dept": W.dept("dref-line"), "bag": {"adapt.source": {"shape": True, "source": source}}}
 
 
+#: what engine_runtime's check of a line (c_line_is_engines, deleted by W3-PROOF X1 with the other copies of bodies a version took over) said
+#: for the five outputs below, taken from it on the tree before that commit
+LEGACY_LINE_SAYS = [
+    {"ok": True, "notes": ["2 engines, each reading what one before it wrote"]},
+    {"ok": False, "notes": ["the Library already has an engine named Plan"]},
+    {"ok": False, "notes": ["one to six engines"]},
+    {"ok": False, "notes": ["one to six engines"]},
+    {"ok": False, "notes": ["Site 2 writes Facts 2, which is already written"]},
+]
+
+
 def test_a4_a_sound_line_says_what_it_always_said_and_the_legacy_check_agrees(j2):
     R = j2[1]
+    assert not hasattr(R, "c_line_is_engines") and "line_is_engines" not in R.CHECK, "the legacy check is gone; its answers are LEGACY_LINE_SAYS"
     ctx = _line_ctx(j2)
-    for out in ({"engines": GOOD}, {"engines": [dict(GOOD[0], name="Plan")] + GOOD[1:]}, {"engines": []}, {"engines": "none"},
-                {"engines": [GOOD[0], dict(GOOD[1], reads="Brief", writes="Facts 2")]}):
-        mine, theirs = v1().CHECK["line_is_engines"](ctx, None, None, out), R.c_line_is_engines(ctx, None, None, out)
+    outs = ({"engines": GOOD}, {"engines": [dict(GOOD[0], name="Plan")] + GOOD[1:]}, {"engines": []}, {"engines": "none"},
+            {"engines": [GOOD[0], dict(GOOD[1], reads="Brief", writes="Facts 2")]})
+    for out, theirs in zip(outs, LEGACY_LINE_SAYS):
+        mine = v1().CHECK["line_is_engines"](ctx, None, None, out)
         assert mine["ok"] == theirs["ok"], out
         # today's wording, each fault now naming the standard it breaks when Root has one for it
         assert [re.sub(r"^[a-z_]+: ", "", n) for n in mine["notes"]] == theirs["notes"], out
@@ -1104,41 +1118,24 @@ def test_a8_the_make_shape_part_is_in_the_interface_with_its_contract_verbatim()
     assert {"act": "inform", "words": ("doubt",), "to": ("Identity",), "payload": "act.doubt"} in S.SENDS["Adaptation"]
 
 
-# ---- A1.18 · a layer that does not load runs engine_runtime's own bodies, and never stops a department -----------------
-def test_a3_the_fallback_prompt_builder_fills_every_slot_the_part_has_and_says_what_the_layers_does(j2):
-    """R.p_adapt_line is the copy a department runs when adaptation/v1 does not load. make.line gained its items slot in
-    M5.1, and the copy passed none, so every shaped line raised: 'the app fills no {{items}}'."""
+# ---- A1.18 · engine_runtime's own copies of the layer's bodies (retired by W3-PROOF X1: see test_layer_retire.py) --------------
+def test_a3_the_line_prompt_fills_every_slot_the_part_has_and_says_what_the_layers_does(j2):
+    """make.line gained its items slot in M5.1, and a body that passed none raised on every shaped line: 'the app fills no {{items}}'.
+    The layer's body fills every slot the part has (engine_runtime's copy of it, the fallback of a layer that does not load, is
+    deleted: W3-PROOF X1)."""
     W, R, _, _, _ = j2
+    assert not hasattr(R, "p_adapt_line") and "adapt_line" not in R.PROMPT
     ref = _dept(j2, "organic", ref="dref-fallback")
     ctx = {"ref": ref, "dept": W.dept(ref), "post": {"payload": {"word": "line", "words": "A guide to the night clinic", "faults": []}}, "bag": {}}
-    got = R.p_adapt_line(ctx, None, None)
+    got = v1().PROMPT["adapt_line"](ctx, None, None)
     for line in ("D1: The site is live", "D2: Every page names the phone line", "D3: A visitor can find the doctors"):
         assert line in got
-    assert got == v1().PROMPT["adapt_line"](ctx, None, None), "the copy and the layer's body say the same words"
+    assert "A guide to the night clinic" in got and "REFUSED BY ROOT'S CHECK" not in got
     ctx["post"]["payload"]["faults"] = ["reads_known: Site 2 reads Interviews"]
-    assert R.p_adapt_line(ctx, None, None) == v1().PROMPT["adapt_line"](ctx, None, None) and "REFUSED BY ROOT'S CHECK" in R.p_adapt_line(ctx, None, None)
+    assert "REFUSED BY ROOT'S CHECK" in v1().PROMPT["adapt_line"](ctx, None, None)
     bare = _dept(j2, "organic", ref="dref-fallback-bare", items=[])
     ctx = {"ref": bare, "dept": W.dept(bare), "post": {"payload": {"word": "line", "words": "w"}}, "bag": {}}
-    assert R.p_adapt_line(ctx, None, None) == v1().PROMPT["adapt_line"](ctx, None, None) and "none" in R.p_adapt_line(ctx, None, None)
-
-
-def test_a3_a_department_whose_adaptation_layer_does_not_load_still_has_its_line_shaped(j2, monkeypatch):
-    """The fallback end to end: with adaptation/v1 unable to load, the prompt that shapes the line is built (it raised) and the
-    step runs on engine_runtime's own bodies."""
-    import layers
-    W, R, J, founding, FV = j2
-    real = layers.load
-    monkeypatch.setattr(layers, "load", lambda impl_id: None if str(impl_id).startswith("adaptation/") else real(impl_id))
-    asked = []
-    _stub(monkeypatch, R, {"adapt.line": lambda prompt: asked.append(prompt) or {"engines": GOOD},
-                           "priority.bargain": {"answer": "accept", "why": "the envelope has room"}})
-    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
-    W.owner_ask(root, ORGANIC)
-    W.run_until_idle(root, limit=300)
-    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
-    W.run_until_idle(ref, limit=300)
-    assert asked and "WHAT DONE MEANS, ITEM BY ITEM" in asked[0] and "D1: " in asked[0], "the shape step was asked, with the items"
-    assert not [r for r in W.runs(ref) if r.get("engine") == "Adaptation" and r.get("status") == "failed" and "items" in str(r.get("what"))]
+    assert "none" in v1().PROMPT["adapt_line"](ctx, None, None)
 
 
 # ---- A5 · Adaptation's view -------------------------------------------------------------------------------------------
@@ -1990,11 +1987,11 @@ def test_f2_the_conflict_adaptation_files_at_a_bound_carries_the_ways_priority_p
     assert own["payload"]["options"][0]["id"] == "stop", "ways given are the ways carried; Priority's limit ways are asked for only when none are given"
 
 
-def test_f2_the_two_handlers_are_the_layers_own_now_and_the_runtimes_copies_stay_the_fallback(j2):
+def test_f2_the_two_handlers_are_the_layers_own_now_and_the_runtimes_copies_are_deleted(j2):
     R = j2[1]
     for name in ("adapt_line_refused", "adapt_line_counter"):
         assert not hasattr(v1().CODE[name], "legacy"), "%s is a body of the layer's own" % name
-        assert callable(getattr(R, name)), "and engine_runtime's copy is still there for a department whose layer does not load"
+        assert not hasattr(R, name) and name not in R.CODE, "and engine_runtime's copy is gone (W3-PROOF X1): the layer is the one body"
 
 
 # ---- F3 · propose the next round (W2-ADAPT, M9.1, M9.4) ---------------------------------------------------------------
@@ -2400,19 +2397,6 @@ def test_f3_the_interface_hears_and_sends_the_round_and_the_recipe_has_the_handl
     nxt = handler["steps"][1]
     assert (nxt["prompt"], nxt["draft"], nxt["check"]) == ("adapt_next", "adapt_next_draft", "round_is_new")
     assert nxt["out"] == {"correction": "str", "fixes": "list", "covers": "list", "why": "str"}
-
-
-def test_f3_a_department_whose_adaptation_layer_does_not_load_hears_a_request_for_a_round_and_proposes_none(j2, monkeypatch):
-    W, R, J, _, _ = j2
-    real = layers.load
-    monkeypatch.setattr(layers, "load", lambda impl_id: None if str(impl_id).startswith("adaptation/") else real(impl_id))
-    ref = _pursuing(j2)
-    _stub(monkeypatch, R, {"adapt.next": {"correction": "Put right D2", "fixes": [], "covers": ["D2"], "why": "x"}})
-    _ask_next(R, ref)
-    W.run_until_idle(ref, limit=100)
-    assert _round_posts(R, ref) == [] and _rows(W, ref) == []
-    ran = [r for r in W.runs(ref) if r.get("engine") == "Adaptation" and "round" in str(r.get("what"))]
-    assert ran and ran[-1]["status"] == "ok" and "not loaded" in ran[-1]["what"], [(r.get("what"), r["status"]) for r in W.runs(ref)]
 
 
 # ---- F4 · the rounds in the view (W2-ADAPT, M9.6) --------------------------------------------------------------------

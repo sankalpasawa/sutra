@@ -5,6 +5,7 @@
 | **status** | Generated, schema version 1 (PRD amendment A1, wave 0; the templates at every level added by amendment A3) |
 | Source of record | `layer_schema.py`, the interface of Root and the five layers, hard-coded |
 | Rule | Every file here except this README and `fixtures/` is generated from `layer_schema.py` and never edited by hand: run `python layer_schema.py --write` in the commit that changes the interface. A conflict in a generated file is resolved by running it again. `test_layer_schema.py` fails when a file here differs from what the code generates |
+| Frozen | At schema version 1 (W3-PROOF): `INTERFACE_SHA[1]` in `layer_schema.py` is the sha256 of `interface.v1.json`, which `shasum -a 256 schemas/layers/interface.v1.json` gives and `layer_schema.interface_sha()` computes from `describe()`. `test_layer_schema.py` fails when they differ: a change to the interface then needs schema version 2 and a migration, never a new hash for version 1. A key written by a layer that does not own it is refused, after one row (`OWNERSHIP_MODE` is `refuse`) |
 | Implementation | Each layer's behaviour, its recipe and its step bodies, is `layers/<layer>/v<N>.py` and `v<N>.json`; the interface here changes only with a new schema version and a migration (A1.21) |
 
 ## Per layer: the `layer_schema` names that hold it

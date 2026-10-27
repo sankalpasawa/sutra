@@ -1,4 +1,4 @@
-"""layers/prompts.py -- the typed prompt compiler (PRD amendment A1.16, W1-CORE).
+"""layers/prompts.py -- the typed prompt compiler (PRD amendment A1.16, W1-CORE; retired the .md bundle, W3-PROOF X1).
 
 A prompt part is three interface pieces and two implementation pieces. The interface (layer_schema.PROMPTS) names its
 fields (what the owner may change, and their types), its inputs (the names code fills) and its returns (the answer
@@ -11,61 +11,29 @@ field) and its LAYOUT (the template that arranges them), in layers/<layer>/v<N>.
                           again, so nothing a value holds is read as a marker.
 
 compile_layout() fills one; words() reads a part's fields as a department reads them now; prompt() is the words an agent
-is sent. While a pinned implementation holds no WORDS for a part, prompt() and words() read the part from the .md bundle
-(function-prompts/, and a department's own whole-file copy under M2.2), through the same split rule that the extractor
-below applies, so the two ways give one text. faults() is the covering check of both. The bundle is read-only history
-from here on: W3-PROOF deletes it.
-
-THE BUNDLE IS THE REFERENCE for what the .md files hold (A1.16, 'Parts added by later steps'). A part a later step adds to
-the interface has its words in its layer and no .md part: the extractor and the bundle check ask of the .md only the parts
-the layer's default implementation does not hold as words (from_the_bundle()), and leave the rest to the words, which the
-contract's case 5 holds to the interface. A part that neither holds is a fault.
+is sent. Every part is served by the words and the layout of a version: the one a department pins, else the layer's default
+version (a version that extends another holds its parent's through layers.inherit, so the pinned one always does). There is
+no other source: the .md files that held the words before they moved into the layers and their reader
+are deleted, and a part no version holds words for is a fault (faults()), never a blank.
 
 THE OWNER'S VALUES (A1.16, W1-CORE K2): a field the owner changed is a typed value in {ref}/instructions.json, written on a
 stamp. words() and prompt() overlay those values on the implementation's defaults, so a stamped value is the next run's
 words and a value equal to the default is not kept (a later default reaches the department). A whole-file copy made under
-M2.2 ({ref}/prompts/<fn>/<file>.md) is kept as the owner's note: no run reads it.
-
-THE SPLIT RULE (A1.16), which turns a .md part into WORDS and LAYOUT; `python -m layers.prompts --extract <layer>` prints
-the result for a layer:
-  1. A file's first paragraph is its group's lead line, S.GROUPS[layer][group] (interface text).
-  2. In a part, 'Return ONLY a JSON object: {...}.' is `returns`, wherever it stands in the part.
-  3. `task` is the text before the first line that holds an input marker ({{...}}) or before `returns`, whichever comes first.
-  4. `guidance` is the run of lines after `returns` that hold no input marker, up to a blank line.
-  5. Everything else (input lines, labels such as 'THE RECORD:', blank lines, an input after the guidance) stays in LAYOUT as written.
-  6. A `does` part is {text}; a `skills` part is {items}; a part with no `returns` (thin, refused) is {task} plus its input lines.
-  7. Adaptation's decide file has no part a step reads: it becomes the part decide.note (field text, read by no step).
+M2.2 ({ref}/prompts/<fn>/<file>.md) is kept as the owner's note: no run reads it, and it is the one .md path that stays.
 """
 import copy
 import re
-import sys
 
-from layers import R, W, S  # noqa: F401 -- lazy proxies: tests reload the runtime
+from layers import W, S  # lazy proxies: tests reload the runtime
 
 #: a marker of a layout: {{name}} (an input code fills) or one of the five field markers
 MARKER = re.compile(r"\{\{([a-z_]+)\}\}|\{(task|guidance|text|items|returns)\}")
 SLOT = re.compile(r"\{\{([a-z_]+)\}\}")
-PART = re.compile(r"^## ([a-z][a-z0-9_-]*)[ \t]*$", re.M)
-RETURNS = "Return ONLY a JSON object: "
 
 
 def who(layer, group, part):
     """A part as the errors name it: Identity's take instructions, gate."""
     return "%s's %s instructions, %s" % (S.TITLE.get(layer) or str(layer).title(), group, part)
-
-
-def held(layer, group, part):
-    """Whether the layer's default implementation holds the part as WORDS and LAYOUT: the part its words serve, with no .md."""
-    import layers
-    module = layers.load(S.DEFAULT_PINS.get(layer))
-    return part in ((getattr(module, "WORDS", None) or {}).get(group) or {}) and \
-        part in ((getattr(module, "LAYOUT", None) or {}).get(group) or {})
-
-
-def from_the_bundle(layer, group, part):
-    """Whether the .md bundle must hold the part: it is the bundle's to serve when the layer's default implementation does
-    not hold it, unless a later step added it (S.ADDED_PARTS), which no .md ever held."""
-    return (layer, group, part) not in S.ADDED_PARTS and not held(layer, group, part)
 
 
 # ---- the compiler ----------------------------------------------------------------------------------------------------
@@ -92,23 +60,37 @@ def compile_layout(layout, values, returns, inputs, part=None):
     return MARKER.sub(fill, layout)
 
 
+def _holds(module, group, part):
+    return module is not None and part in (getattr(module, "WORDS", None) or {}).get(group, {}) \
+        and part in (getattr(module, "LAYOUT", None) or {}).get(group, {})
+
+
 def _module(ref, layer, group, part):
-    """The pinned implementation of a layer when it holds words and a layout for the part; else None."""
+    """The implementation that serves a part: the one the department pins when it holds words and a layout for the part, else
+    the layer's default version when it does; None when neither does."""
     import layers
     module = layers.impl(ref, layer)
-    if module is not None and part in (getattr(module, "WORDS", None) or {}).get(group, {}) \
-            and part in (getattr(module, "LAYOUT", None) or {}).get(group, {}):
+    if _holds(module, group, part):
         return module
-    return None
+    default = layers.load(S.DEFAULT_PINS.get(layer))
+    return default if _holds(default, group, part) else None
+
+
+def _serving(ref, layer, group, part):
+    """The module that serves a part, or the error that names why none does: the interface names no such part, or no version
+    holds words for it (never a blank, never another source)."""
+    if ((S.PROMPTS.get(layer) or {}).get(group) or {}).get(part) is None:
+        raise ValueError("%s's %s instructions have no part %s" % (str(layer).title(), group, part))
+    module = _module(ref, layer, group, part)
+    if module is None:
+        raise ValueError("%s: no version holds words for this part" % who(layer, group, part))
+    return module
 
 
 def defaults(ref, layer, group, part):
-    """A part's fields as the pinned implementation ships them: {field: value}. Its WORDS when it holds the part; else the
-    bundle's .md part, split by the rule above. The owner's values are not in it (see words())."""
-    module = _module(ref, layer, group, part)
-    if module is not None:
-        return copy.deepcopy(module.WORDS[group][part])
-    return split(group, part, md_part(layer, group, part))[0]
+    """A part's fields as the implementation that serves it ships them: {field: value}, its WORDS. The owner's values are not
+    in it (see words())."""
+    return copy.deepcopy(_serving(ref, layer, group, part).WORDS[group][part])
 
 
 def words(ref, layer, group, part):
@@ -121,21 +103,12 @@ def words(ref, layer, group, part):
 
 
 def prompt(ref, layer, group, part, **inputs):
-    """One part of a layer's instructions, compiled: the words its agent is sent. The pinned implementation's WORDS and
-    LAYOUT when it holds the part, else the bundle's .md part through the same split; the owner's stamped values are laid
-    over the defaults either way. A marker the code gives no value is an error, never a blank."""
-    module = _module(ref, layer, group, part)
-    name = who(layer, group, part)
-    if module is not None:
-        return compile_layout(module.LAYOUT[group][part], words(ref, layer, group, part), S.PROMPTS[layer][group][part]["returns"],
-                              inputs, name)
-    text = md_part(layer, group, part)
-    span = returns_span(text)
-    fields, layout = split(group, part, text)
-    for field, value in owner_values(ref, layer, group, part).items():
-        if field in fields:
-            fields[field] = value
-    return compile_layout(layout, fields, text[span[0]:span[1]] if span else None, inputs, name)
+    """One part of a layer's instructions, compiled: the words its agent is sent. The serving implementation's WORDS and
+    LAYOUT, with the owner's stamped values laid over the defaults. A marker the code gives no value is an error, never a
+    blank."""
+    module = _serving(ref, layer, group, part)
+    return compile_layout(module.LAYOUT[group][part], words(ref, layer, group, part), S.PROMPTS[layer][group][part]["returns"],
+                          inputs, who(layer, group, part))
 
 
 def sample_inputs(layer, group, part):
@@ -190,10 +163,17 @@ def layout_faults(layer, group, part, values, layout):
     return out + (["the compiled part still holds %s" % ", ".join(sorted(set(left)))] if left else [])
 
 
+def unserved(layer, module):
+    """The parts of a layer's prompts a version holds no WORDS for, as 'group.part', in the interface's order: what keeps an
+    agent from being sent them. [] when it holds every part (an added part, S.ADDED_PARTS, among them: it has no other source)."""
+    words_ = getattr(module, "WORDS", None) or {}
+    return ["%s.%s" % (group, part) for group, parts in (S.PROMPTS.get(layer) or {}).items() for part in parts
+            if part not in (words_.get(group) or {})]
+
+
 def faults():
     """The covering check of every function's words, at the definitions load: for each part its default implementation
-    holds as WORDS and LAYOUT, that it serves (part_faults); for each .md file with a part no implementation holds yet,
-    that the bundle has it, with its plain first line, the parts a step reads and only the slots the code fills.
+    holds as WORDS and LAYOUT, that it serves (part_faults), and for each part of the interface it holds none for, that fault.
     [] when every function has its words."""
     import layers
     out = []
@@ -203,7 +183,8 @@ def faults():
             for part, values in parts.items():
                 out += ["%s: %s" % (who(layer, group, part), f) for f in
                         part_faults(layer, group, part, values, ((getattr(module, "LAYOUT", None) or {}).get(group) or {}).get(part))]
-    return out + bundle_faults()
+        out += ["%s: the version holds no words for it" % who(layer, *name.split(".")) for name in unserved(layer, module)]
+    return out
 
 
 # ---- the owner's typed values (PRD A1.16, M2.6) ------------------------------------------------------------------------
@@ -307,6 +288,13 @@ def store(ref, layer, group, part, field, value, ask=None):
         return result
 
 
+# ---- a department's earlier whole-file change, kept as the owner's note (PRD M2.2) ------------------------------------
+def own(ref, fn, file):
+    """Where a department keeps its own copy of one instruction file: in its records home, which an update of the app
+    never replaces (PRD M2.2, J7 step 3). It is the owner's note (kept_as_notes): no run reads it."""
+    return W.ddir(ref) / "prompts" / fn / (file + ".md")
+
+
 def own_files(ref, layer):
     """The whole-file copies a department made under M2.2 for a layer: {ref}/prompts/<layer>/<file>.md, by file name."""
     try:
@@ -360,251 +348,3 @@ def answer_keys(returns):
             i = j
         i += 1
     return out
-
-
-# ---- the .md fallback: the bundle, and a department's own whole-file copy (PRD M2) ----------------------------------------
-def parts_of(text):
-    """An instruction file, read: its lead, the plain words before the first part that say what the file is for (no
-    agent is sent them), and its parts, each under a heading of its own name, its words exactly as written between
-    the blank lines that set it off."""
-    text = str(text or "").replace("\r\n", "\n")
-    heads = list(PART.finditer(text))
-    parts = {}
-    for i, m in enumerate(heads):
-        if m.group(1) in parts:
-            raise ValueError("the part %s is written twice" % m.group(1))
-        parts[m.group(1)] = text[m.end():heads[i + 1].start() if i + 1 < len(heads) else len(text)].strip("\n")
-    return (text[:heads[0].start()] if heads else text).strip(), parts
-
-
-def own(ref, fn, file):
-    """Where a department keeps its own copy of one instruction file: in its records home, which an update of the app
-    never replaces (PRD M2.2, J7 step 3). Written only on the owner's stamped ask."""
-    return W.ddir(ref) / "prompts" / fn / (file + ".md")
-
-
-def instruction(fn, file, ref=None):
-    """The text of one of a function's instruction files: the department's own copy when the owner stamped one, else
-    the bundle's."""
-    if ref:
-        mine = own(ref, fn, file)
-        if mine.is_file():
-            return mine.read_text(encoding="utf-8")
-    return (R.PROMPTS_DIR / fn / (file + ".md")).read_text(encoding="utf-8")
-
-
-def file_parts(fn, file, ref=None):
-    """The parts of one instruction file as the app names them: its headed parts, or, for a file that has none and whose
-    group the interface gives a note (Adaptation's decide, with any part a later step adds beside it), the words after its
-    lead as the part `note`."""
-    text = instruction(fn, file, ref)
-    lead, parts = parts_of(text)
-    note = next((p for p, spec in ((S.PROMPTS.get(fn) or {}).get(file) or {}).items() if "field.note" in spec["fields"].values()), None)
-    if not parts and note:
-        parts = {note: lead.split("\n\n", 1)[1].strip("\n") if "\n\n" in lead else ""}
-    return parts
-
-
-def md_part(fn, file, part, ref=None):
-    """One part of an instruction file: the department's own copy wins; a part it does not hold (one a later bundle
-    added) is the bundle's."""
-    parts = file_parts(fn, file, ref)
-    if part not in parts and ref:
-        parts = file_parts(fn, file)
-    if part not in parts:
-        raise ValueError("%s's %s instructions have no part %s" % (fn.title(), file, part))
-    return parts[part]
-
-
-def instruction_faults(fn, file, text):
-    """What keeps one instruction file from serving its function: no line that says what it is for, a part the bundle must
-    hold gone, a part no step reads, or a slot the code does not fill in a part it serves. [] when it serves. The covering
-    check of every file an agent's words come from: the bundle's at the definitions load. Only the parts the bundle must hold
-    are asked of the text (from_the_bundle): a part the layer's words hold, or a later step added, is not."""
-    named = (R.INSTRUCTIONS.get(fn) or {}).get(file)
-    if named is None:
-        return ["%s has no instructions named %s" % (str(fn).title(), file)]
-    try:
-        lead, parts = parts_of(text)
-    except ValueError as exc:
-        return [str(exc)]
-    faults = [] if lead else ["%s does not say first, in a line, what it is for" % file]
-    for part, slots in named.items():
-        if part not in parts:
-            if from_the_bundle(fn, file, part):
-                faults.append("%s has no part %s" % (file, part))
-            continue
-        unknown = sorted(set(SLOT.findall(parts[part])) - set(slots)) if from_the_bundle(fn, file, part) else []
-        if unknown:
-            faults.append("%s, %s: the app fills no %s" % (file, part, ", ".join("{{%s}}" % s for s in unknown)))
-    return faults + ["%s, %s: no step reads this part" % (file, p) for p in parts if p not in named]
-
-
-def bundle_faults():
-    """The bundle's files against the list: each one there, each serving. A file none of whose parts the bundle must hold
-    (the default implementation holds each as words, or a later step added it) needs none, and a file with some such parts
-    is asked for the others only. [] when every function has its files."""
-    out = []
-    for fn, files in R.INSTRUCTIONS.items():
-        for file, parts in files.items():
-            if parts and not any(from_the_bundle(fn, file, p) for p in parts):
-                continue
-            p = R.PROMPTS_DIR / fn / (file + ".md")
-            if not p.is_file():
-                out.append("%s's %s instructions are missing from the bundle" % (fn.title(), file))
-                continue
-            out += ["%s's instructions: %s" % (fn.title(), f) for f in instruction_faults(fn, file, p.read_text(encoding="utf-8"))]
-    return out
-
-
-# ---- the split rule, and the extractor ---------------------------------------------------------------------------------
-def returns_span(text):
-    """(start, end) of the answer contract in a part: 'Return ONLY a JSON object: ' and its braces, balanced, and the
-    full stop that closes the sentence; None when the part has none."""
-    start = text.find(RETURNS)
-    if start < 0:
-        return None
-    i, depth = text.find("{", start), 0
-    if i < 0:
-        return None
-    for j in range(i, len(text)):
-        depth += (text[j] == "{") - (text[j] == "}")
-        if depth == 0:
-            return start, j + 1 + (text[j + 1:j + 2] == ".")
-    return None
-
-
-def split(group, part, text):
-    """One .md part by the split rule: (words, layout), words being {field: value}. The layout compiled with the words,
-    the part's returns and its inputs is the part, byte for byte."""
-    text = str(text)
-    if part == "does" or (group == "decide" and part == "note"):
-        return {"text": text}, "{text}"
-    if part == "skills":
-        return {"items": [ln.strip()[2:].strip() if ln.strip().startswith("- ") else ln.strip() for ln in text.split("\n") if ln.strip()]}, "{items}"
-    span = returns_span(text)
-    marked = next((m.start() for m in re.finditer(r"^.*\{\{.*$", text, re.M)), len(text))   # the first line holding an input
-    fields, cuts = {}, []                                    # cuts: (start, end, marker) spans of the text the fields stand for
-    end = min(marked, span[0] if span else len(text))
-    task = text[:end].rstrip()
-    if task:
-        fields["task"] = task
-        cuts.append((0, len(task), "{task}"))
-    if span:
-        cuts.append((span[0], span[1], "{returns}"))
-        pieces = text[span[1]:].split("\n")
-        run = []
-        for i, piece in enumerate(pieces):
-            if "{{" in piece or (i and not piece.strip()):
-                break
-            run.append(piece)
-        raw = "\n".join(run)
-        guidance = raw.strip()
-        if guidance:
-            at = span[1] + len(raw) - len(raw.lstrip())
-            fields["guidance"] = guidance
-            cuts.append((at, at + len(guidance), "{guidance}"))
-    layout, at = "", 0
-    for start, stop, marker in sorted(cuts):
-        layout += text[at:start] + marker
-        at = stop
-    return fields, layout + text[at:]
-
-
-def inputs_of(text):
-    """The names a part's text asks code to fill, in the order they first appear."""
-    return list(dict.fromkeys(SLOT.findall(text)))
-
-
-def extract(layer):
-    """What the split rule makes of one function layer's .md files: (WORDS, LAYOUT, faults). Each part the .md holds has its
-    fields, returns and inputs checked against the interface (S.PROMPTS), each group's lead against S.GROUPS, and the part
-    compiled back from its words is checked to be the .md part, byte for byte. A part the interface names that no .md holds
-    (one a later step added) is printed from nothing and is no fault while the layer holds its words (from_the_bundle). The
-    faults are [] when the split holds."""
-    out_words, out_layout, bad = {}, {}, []
-    for group, parts in (S.PROMPTS.get(layer) or {}).items():
-        path = R.PROMPTS_DIR / layer / (group + ".md")
-        if not path.is_file():
-            bad.append("%s: the bundle has no file %s" % (S.TITLE[layer], group))
-            continue
-        text = path.read_text(encoding="utf-8")
-        lead, found = parts_of(text)
-        if lead.split("\n\n")[0] != S.GROUPS[layer][group]:
-            bad.append("%s: the lead of %s is not the interface's" % (S.TITLE[layer], group))
-        found = file_parts(layer, group)
-        # the bundle is the reference: it holds the parts it holds, the interface's, in the interface's order. A part the
-        # interface names that it lacks (one a later step added) is the layer's words to serve, and a fault when they do not
-        if list(found) != [part for part in parts if part in found]:
-            bad.append("%s: %s holds the parts %s, and the interface %s" % (S.TITLE[layer], group, list(found), list(parts)))
-        bad += ["%s: the bundle has no such part and the layer holds no words for it" % who(layer, group, part)
-                for part in parts if part not in found and from_the_bundle(layer, group, part)]
-        for part, spec in parts.items():
-            if part not in found:
-                continue
-            fields, layout = split(group, part, found[part])
-            span = returns_span(found[part])
-            returns = found[part][span[0]:span[1]] if span else None
-            name = who(layer, group, part)
-            if set(fields) != set(spec["fields"]):
-                bad.append("%s: the split finds the fields %s, and the interface %s" % (name, sorted(fields), sorted(spec["fields"])))
-            if returns != spec["returns"]:
-                bad.append("%s: the split finds returns %r, and the interface %r" % (name, returns, spec["returns"]))
-            if inputs_of(found[part]) != list(spec["inputs"]):
-                bad.append("%s: the part asks for the inputs %s, and the interface %s" % (name, inputs_of(found[part]), list(spec["inputs"])))
-            sample = {n: "<%s>" % n for n in inputs_of(found[part])}
-            try:
-                if compile_layout(layout, fields, returns, sample, name) != SLOT.sub(lambda m: sample[m.group(1)], found[part]):
-                    bad.append("%s: compiled from its words it is not the .md part" % name)
-            except ValueError as exc:
-                bad.append(str(exc))
-            out_words.setdefault(group, {})[part] = fields
-            out_layout.setdefault(group, {})[part] = layout
-    return out_words, out_layout, bad
-
-
-def _string(s, indent):
-    """A string as source: one literal for a short line, and for a long or many-line one, pieces in parentheses that
-    join to it (a line break ends a piece; so does a space once a piece is long)."""
-    if len(repr(s)) <= 100 and "\n" not in s:
-        return repr(s)
-    pieces = []
-    for line in s.split("\n") if s.count("\n") == 0 else re.findall(r"[^\n]*\n|[^\n]+$", s):
-        buf = ""
-        for word in re.findall(r"\S+\s*|\s+", line):
-            if buf and len(repr(buf + word)) > 100:
-                pieces.append(buf)
-                buf = ""
-            buf += word
-        pieces.append(buf)
-    return "(\n" + "".join("%s    %r\n" % (" " * indent, p) for p in pieces) + " " * indent + ")"
-
-
-def literal(value, indent=0):
-    """A dict, list or string as Python source that evaluates to it (ast.literal_eval reads what this prints)."""
-    pad = " " * indent
-    if isinstance(value, dict):
-        return "{}" if not value else "{\n" + "".join("%s    %r: %s,\n" % (pad, k, literal(v, indent + 4)) for k, v in value.items()) + pad + "}"
-    if isinstance(value, (list, tuple)):
-        return "[]" if not value else "[\n" + "".join("%s    %s,\n" % (pad, literal(v, indent + 4)) for v in value) + pad + "]"
-    return _string(value, indent)
-
-
-def main(argv=None, out=None, err=None):
-    """python -m layers.prompts --extract <layer>: print WORDS and LAYOUT for that layer's .md files, as literals ready
-    to paste into layers/<layer>/v<N>.py. Exit 1 when the split does not hold against the interface, 2 when it cannot run."""
-    argv, out, err = list(sys.argv[1:] if argv is None else argv), out or sys.stdout, err or sys.stderr
-    if len(argv) != 2 or argv[0] != "--extract" or argv[1] not in S.FUNCTION_LAYERS:
-        err.write("usage: python -m layers.prompts --extract <%s>\n" % "|".join(S.FUNCTION_LAYERS))
-        return 2
-    layer = argv[1]
-    words_, layout, bad = extract(layer)
-    out.write("# %s: WORDS and LAYOUT by the split rule of A1.16, from function-prompts/%s/*.md\nWORDS = %s\nLAYOUT = %s\n"
-              % (S.TITLE[layer], layer, literal(words_), literal(layout)))
-    for line in bad:
-        err.write(line + "\n")
-    return 1 if bad else 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

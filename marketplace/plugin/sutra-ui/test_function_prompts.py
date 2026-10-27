@@ -3,9 +3,10 @@
 Named claims:
   M2.1a  every function prompt renders, for the fixtures, byte for byte what the inline builders rendered before the
          move (test_fixtures/function-prompts.snapshot.json was written from them, before the move)
-  M2.1b  each function's files are the ones its page names, each in the bundle with its plain first line and the parts
-         its steps read; a prompt is read from the file, so the words on disk are the words sent
-  M2.1c  a file gone from the bundle, or one missing a part a step reads, refuses the definitions load
+  M2.1b  each function's groups are the ones its page names, each with its plain first line and the parts its steps read; a
+         prompt is made of the layer's words, so the words held are the words sent (the .md files they came from are retired,
+         W3-PROOF X1: test_fixtures/retired-prompt-parts.json keeps their text, and no folder of them ships)
+  M2.1c  a part with no words, or words the interface cannot serve, refuses the definitions load
   M2.2a  the owner's change is one typed field, filed as an ask Identity puts to the owner, and nothing changes until the
          stamp; a stamped value is the department's own, in its records home, and the next run is sent its words
   M2.2b  a refused change leaves nothing
@@ -38,6 +39,14 @@ from unittest import mock
 
 REF = "dref-prompts0001"
 SNAP = Path(__file__).parent / "test_fixtures" / "function-prompts.snapshot.json"
+#: the text of every part the retired .md bundle held (W3-PROOF X1), {"leads": {layer: {group: first line}}, "parts": {layer: {group:
+#: {part: text}}}}: what the layers' words are held to byte for byte. A part that came after the bundle (S.ADDED_PARTS) has none.
+RETIRED = json.loads((Path(__file__).parent / "test_fixtures" / "retired-prompt-parts.json").read_text(encoding="utf-8"))
+
+
+def retired(layer, group, part):
+    """The text of a part as the retired .md file said it, its inputs still in {{name}} markers (KeyError for an added part)."""
+    return RETIRED["parts"][layer][group][part]
 KEYS = ("SUTRA_NATIVE_DEPT_HOME", "SUTRA_NATIVE_HOME", "SUTRA_WEBSITE_OFFLINE", "SUTRA_ENGINE_RUNTIME", "SUTRA_MOTOR",
         "SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS", "J2_FLOW_V1", "J2_ADAPT_MAKE")
 PLAN = {"site_name": "City Care Hospital", "tagline": "Care, every day", "palette": {"primary": "#0f5e7a", "accent": "#c4956a"},
@@ -65,7 +74,6 @@ class Fixture(unittest.TestCase):
         self.W = importlib.reload(website_dept)
         import engine_runtime
         self.R = importlib.reload(engine_runtime)
-        self.bundled = self.R.PROMPTS_DIR
         import function_templates
         self.T, self.picked = function_templates, function_templates.picked
         # the card's template lines are the function templates' words, not the function's instructions: left out, so
@@ -87,7 +95,6 @@ class Fixture(unittest.TestCase):
 
     def tearDown(self):
         self.T.picked = self.picked
-        self.R.PROMPTS_DIR = self.bundled
         self.R._DEFS.clear()
         for k, v in self.prior.items():
             if v is None:
@@ -121,21 +128,9 @@ class Fixture(unittest.TestCase):
         fn, step = R.step_def(step_id)
         return R.card(c) + R._resolve(c, "prompt", step["prompt"], engine=fn)(c, step, None)
 
-    def on_the_bundle(self, *fns):
-        """The named functions' words read from the .md bundle again, as they were before a layer held them: their layers'
-        WORDS and LAYOUT set aside until the test ends. The bundle stays the fallback until W3-PROOF deletes it, and what
-        a test of it is about (a file edited or gone, a whole-file copy of the owner's) holds whichever layers hold their
-        words by now."""
-        import layers
-        for fn in fns:
-            module = layers.load("%s/v1" % fn)
-            for name in ("WORDS", "LAYOUT"):
-                self.addCleanup(setattr, module, name, getattr(module, name))
-                setattr(module, name, {})
-
     def holds(self, fn, group, part, field, old, new):
-        """One word of a layer's own words changed until the test ends: the typed form of editing a file of the bundle, for a
-        layer whose words are its WORDS. `old` is a piece of a text field's value, or an item of a list field's."""
+        """One word of a layer's own words changed until the test ends. `old` is a piece of a text field's value, or an item
+        of a list field's."""
         import layers
         module = layers.load("%s/v1" % fn)
         words = copy.deepcopy(module.WORDS)
@@ -238,49 +233,39 @@ class TestByteForByte(Fixture):
 PAGES = {"identity": ["goal", "completeness", "take"], "adaptation": ["goal", "sense", "decide", "make"],
          "priority": ["goal", "bargain"], "coordination": ["goal", "tie"], "audit": ["goal", "judge"]}
 BUILDERS = ("p_identity_recognise", "p_identity_take", "p_identity_answer", "p_identity_rule", "p_identity_weigh", "p_identity_gate",
-            "p_identity_close", "p_adapt_shape", "p_adapt_line", "p_priority_bargain", "p_coord_tie", "p_audit_judge")
+            "p_identity_close", "p_adapt_shape", "p_coord_tie", "p_audit_judge")
 
 
-class TestTheFiles(Fixture):
-    def bundle(self, drop=None, edit=None):
-        """A copy of the shipped bundle the app reads from instead of its own: one file left out, or one file's words changed."""
-        tmp = Path(tempfile.mkdtemp(prefix="function-prompts-bundle-"))
-        shutil.copytree(self.bundled, tmp / "b")
-        if drop:
-            (tmp / "b" / (drop + ".md")).unlink()
-        if edit:
-            path, old, new = edit
-            p = tmp / "b" / (path + ".md")
-            text = p.read_text(encoding="utf-8")
-            self.assertIn(old, text)
-            p.write_text(text.replace(old, new), encoding="utf-8")
-        self.addCleanup(shutil.rmtree, tmp, True)
-        self.R.PROMPTS_DIR = tmp / "b"
-        self.R._DEFS.clear()
-        return tmp / "b"
-
-    def test_m2_1b_each_function_has_the_files_its_page_names_and_its_prompts_are_read_from_them(self):
+class TestTheWords(Fixture):
+    def test_m2_1b_each_function_has_the_groups_its_page_names_and_its_prompts_are_made_of_its_words(self):
         R = self.R
-        self.assertEqual({fn: list(files) for fn, files in R.INSTRUCTIONS.items()}, PAGES, "the files its page names, in its order")
-        self.assertEqual(R.bundle_faults(), [])
-        on_disk = sorted(str(p.relative_to(R.PROMPTS_DIR)) for p in R.PROMPTS_DIR.rglob("*.md"))
-        self.assertEqual(on_disk, sorted("%s/%s.md" % (fn, f) for fn, files in PAGES.items() for f in files), "no other file ships")
+        import layers
+        self.assertEqual({fn: list(files) for fn, files in R.INSTRUCTIONS.items()}, PAGES, "the groups its page names, in its order")
+        self.assertEqual(R.prompt_faults(), [])
+        self.assertFalse((Path(__file__).parent / "function-prompts").exists(), "no folder of .md files ships: the words are the layers'")
+        self.assertFalse(hasattr(R, "PROMPTS_DIR") or hasattr(R, "_instruction"), "and the runtime reads none")
         for fn, files in PAGES.items():
             for f in files:
-                text = (R.PROMPTS_DIR / fn / (f + ".md")).read_text(encoding="utf-8")
-                first = text.split("\n", 1)[0]
+                first = R.layer_schema.GROUPS[fn][f]
                 self.assertTrue(first and first[0].isupper() and first.endswith("."), "%s/%s says first what it is for" % (fn, f))
-                self.assertNotRegex(text.lower(), r"charter|internal system", "%s/%s keeps the screen's words" % (fn, f))
-        # what a function does and its skills are its goal file's: the same words its definition holds, as shipped
+                self.assertNotRegex(first.lower(), r"charter|internal system", "%s/%s keeps the screen's words" % (fn, f))
+                for part in R.layer_schema.PROMPTS[fn][f]:
+                    sent = layers.prompt(None, fn, f, part, **layers.prompts.sample_inputs(fn, f, part))
+                    self.assertNotRegex(sent.lower(), r"charter|internal system", "%s/%s, %s keeps the screen's words" % (fn, f, part))
+        # what a function does and its skills are its goal's: the same words its definition holds, as shipped
         for fn in PAGES:
             e = R.engine_def(fn.title())
             self.assertEqual(R._goal_of(REF, fn.title()), (e["description"], e["skills"]), fn)
-        # no builder holds a function's words any more: each fills the slots of its file
+        # no builder holds a function's words any more: each fills the slots of its part
         import inspect
         for name in BUILDERS:
             self.assertNotIn("Return ONLY", inspect.getsource(getattr(R, name)), name + " still holds its words inline")
+        for fn in R.layer_schema.FUNCTION_LAYERS:            # and the builders a layer's version holds of its own (the ones it took over)
+            for name, body in layers.load(R.layer_schema.DEFAULT_PINS[fn]).PROMPT.items():
+                if not hasattr(body, "legacy"):
+                    self.assertNotIn("Return ONLY", inspect.getsource(body), "%s's %s still holds its words inline" % (fn, name))
         # the words held are the words sent: Identity holds all of its own (A1.16), so change one of them, and the next prompt
-        # carries the change (the bundle's files are what a layer with no words of its own is sent: test_layer_prompts)
+        # carries the change
         self.holds("identity", "take", "take", "task", "Judge one request from the owner.", "Judge one request from the owner, kindly.")
         c = self.ctx("Identity", {"word": "request", "words": "Add a page about parking."})
         self.assertIn("Judge one request from the owner, kindly.\nTHE GOAL: ", self.render("identity.take", c, ("identity.read",)))
@@ -289,38 +274,38 @@ class TestTheFiles(Fixture):
         self.assertIn("gate an effect by rule; put one question at a time to the owner.\n", self.render("identity.take", c, ("identity.read",)))
         self.assertEqual(R.steps_view(REF, "Identity")["skills"][-1], "put one question at a time to the owner", "the screen shows the same words")
 
-    def test_m2_1c_a_file_gone_from_the_bundle_refuses_the_definitions_load(self):
+    def test_m2_1c_a_part_with_no_words_or_words_that_cannot_serve_refuses_the_definitions_load(self):
         R = self.R
         import layers
-        import layer_schema
-        # a layer that holds its words needs no bundle (the definitions load checks the files of the parts a layer still reads
-        # from it): Identity holds all of its own, so its file gone changes nothing, and what refuses the load is a part of
-        # its words that cannot serve (the typed form of a file missing a part a step reads)
-        self.bundle(drop="identity/take")
-        self.assertEqual(R.validate(R.defs()), [], "Identity's file gone from the bundle: its words are what is sent")
-        identity = layers.load("identity/v1")
-        layout = copy.deepcopy(identity.LAYOUT)
-        layout["take"]["gate"] = layout["take"]["gate"].replace("{{engine}}", "{{engine}} {{budget}}")
-        with mock.patch.object(identity, "LAYOUT", layout):
-            R._DEFS.clear()
-            with self.assertRaises(ValueError) as cm:
-                R.defs()
-        self.assertIn("Identity's take instructions, gate: the layout holds {{budget}} and the app fills no such input", str(cm.exception))
-        R._DEFS.clear()
-        # the bundle is what runs for a layer that holds no words of its own, so the files of the others are held to that here
-        self.on_the_bundle(*[fn for fn in layer_schema.FUNCTION_LAYERS if fn != "identity"])
-        self.bundle(edit=("priority/bargain", "## cost\n", "## costs\n"))
-        with self.assertRaises(ValueError) as cm:
-            R.defs()
-        self.assertIn("bargain has no part cost", str(cm.exception))
-        self.assertIn("bargain, costs: no step reads this part", str(cm.exception))
-        self.on_the_bundle("audit")
-        self.bundle(edit=("audit/judge", "{{pages}}", "{{pages}} {{findings}}"))
-        with self.assertRaises(ValueError) as cm:
-            R.defs()
-        self.assertIn("judge, judge: the app fills no {{findings}}", str(cm.exception))
-        self.bundle()
-        self.assertEqual(R.validate(R.defs()), [], "the bundle as shipped loads")
+        self.assertEqual(R.validate(R.defs()), [], "as shipped the definitions load")
+
+        def refused(layer, edit):
+            """The definitions load with `edit` laid over the layer's words and layout: the ValueError it raises, said."""
+            module = layers.load("%s/v1" % layer)
+            words, layout = copy.deepcopy(module.WORDS), copy.deepcopy(module.LAYOUT)
+            edit(words, layout)
+            with mock.patch.object(module, "WORDS", words), mock.patch.object(module, "LAYOUT", layout):
+                R._DEFS.clear()
+                try:
+                    with self.assertRaises(ValueError) as cm:
+                        R.defs()
+                finally:
+                    R._DEFS.clear()
+            return str(cm.exception)
+        # words the app cannot fill: a layout that asks for an input nothing supplies
+        got = refused("identity", lambda w, l: l["take"].update(gate=l["take"]["gate"].replace("{{engine}}", "{{engine}} {{budget}}")))
+        self.assertIn("Identity's take instructions, gate: the layout holds {{budget}} and the app fills no such input", got)
+        got = refused("audit", lambda w, l: l["judge"].update(judge=l["judge"]["judge"].replace("{{pages}}", "{{pages}} {{findings}}")))
+        self.assertIn("Audit's judge instructions, judge: the layout holds {{findings}} and the app fills no such input", got)
+        # a part of the interface the layer holds no words for (the typed form of a file gone, or missing a part a step reads)
+        got = refused("priority", lambda w, l: (w["bargain"].pop("cost"), l["bargain"].pop("cost")))
+        self.assertIn("Priority's bargain instructions, cost: the version holds no words for it", got)
+        got = refused("identity", lambda w, l: (w.pop("take"), l.pop("take")))
+        self.assertIn("Identity's take instructions, gate: the version holds no words for it", got)
+        # words for a part the interface does not name
+        got = refused("priority", lambda w, l: (w["bargain"].update(costs={"task": "x"}), l["bargain"].update(costs="{task}")))
+        self.assertIn("Priority's bargain instructions, costs: Priority has no part bargain.costs", got)
+        self.assertEqual(R.validate(R.defs()), [], "and as shipped again")
 
 
 class Offline:
@@ -370,30 +355,16 @@ class TestTheOwnersChange(Fixture):
         return self.R.layers.prompts.defaults(REF, fn, group, part)[name]
 
     def update_shipped(self, fn, group, part, name, old, new):
-        """An update of the app that changes the words a part ships with, wherever they live: in the layer's WORDS when its
-        implementation holds the part, else in the bundle's file."""
+        """An update of the app that changes the words a part ships with: in the layer's WORDS, which hold every part."""
         R = self.R
         module = R.layers.prompts._module(REF, fn, group, part)
-        if module is not None:
-            import copy
-            from unittest import mock
-            words = copy.deepcopy(module.WORDS)
-            self.assertIn(old, words[group][part][name])
-            words[group][part][name] = words[group][part][name].replace(old, new)
-            patch = mock.patch.object(module, "WORDS", words)
-            patch.start()
-            self.addCleanup(patch.stop)
-            return
-        tmp = Path(tempfile.mkdtemp(prefix="function-prompts-update-"))
-        self.addCleanup(shutil.rmtree, tmp, True)
-        shutil.copytree(R.PROMPTS_DIR, tmp / "b")             # on the bundle as it stands, so updates add up
-        p = tmp / "b" / fn / (group + ".md")
-        text = p.read_text(encoding="utf-8")
-        self.assertIn(old, text)
-        p.write_text(text.replace(old, new), encoding="utf-8")
-        R.PROMPTS_DIR = tmp / "b"
-        R._DEFS.clear()
-        self.assertEqual(R.validate(R.defs()), [], "the update loads")
+        self.assertIsNotNone(module, "%s holds %s.%s" % (fn, group, part))
+        words = copy.deepcopy(module.WORDS)
+        self.assertIn(old, words[group][part][name])
+        words[group][part][name] = words[group][part][name].replace(old, new)
+        patch = mock.patch.object(module, "WORDS", words)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def stamp(self, ask):
         self.W.decide_ask(REF, ask["id"], True)
@@ -571,7 +542,7 @@ class TestTheOwnersChange(Fixture):
         before = R._prompt("identity", "take", "recognise", REF, goal="G", words="W", facts="F")
         old = W.ddir(REF) / "prompts" / "identity" / "take.md"
         old.parent.mkdir(parents=True)
-        old.write_text(R._instruction("identity", "take") + "\nPrefer short answers.\n", encoding="utf-8")
+        old.write_text("How to judge a request: go, ask or stop.\n\n## take\n\nJudge one request from the owner.\n\nPrefer short answers.\n", encoding="utf-8")
         said = "Your earlier change to Identity's take is kept as a note; change the field again in Settings to use it."
         self.assertEqual(self.tells(), [], "a read of nothing says nothing")
         groups = self.groups("identity")

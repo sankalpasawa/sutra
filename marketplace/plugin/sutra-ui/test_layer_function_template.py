@@ -2,7 +2,7 @@
 
   F1  the parts and the words: each function's goal group holds done, role_is, role_may, role_procedure, role_patterns and
       the role block, as parts the interface lists (S.ADDED_PARTS), with their words and layout in the version
-  F2  Adaptation's own goal is the site's, in the six places it lives
+  F2  Adaptation's own goal is the site's, in the five places it lives (the sixth, its .md file, is retired)
   F3  contract case 14 (FT-1 to FT-6, FT-9, FT-10) and the field rule of FT-9
   F4  the role block in the card of a function engine, and nowhere else
   F5  the picked template's whole floor reaches the card
@@ -85,7 +85,7 @@ def test_ft2_every_word_part_is_present_and_within_its_limit(fn):
     assert set(re.findall(r"\{\{([a-z_]+)\}\}", S.ROLE_BLOCK_LAYOUT)) == set(S.ROLE_INPUTS) == set(parts["role_block"]["inputs"])
     assert parts["role_block"]["fields"] == {} and parts["role_block"]["returns"] is None
     assert C.case_5(m, {}) == [], "the contract compiles every new part with sample inputs"
-    assert [p for p in C.on_the_md_fallback(m) if p.split(".")[1] in ROLE_PARTS] == [], "an added part has no .md to fall back to"
+    assert [p for p in C.parts_without_words(m) if p.split(".")[1] in ROLE_PARTS] == [], "an added part is served by the version's words alone"
 
 
 def test_a_role_may_of_thirteen_lines_and_a_two_line_done_are_refused():
@@ -173,8 +173,9 @@ SITE_GOAL = ("decides how the department reaches its goal and keeps changing how
 
 def test_adaptations_goal_is_the_sites_and_the_six_places_agree(rt):
     """The goal is the site's ('decide how the department reaches its goal, and keep changing how as it learns'), at most 400
-    characters, promising nothing unbuilt; the recipe's description, the typed words, the .md file, the fixture of the
-    definitions, the test that held the old text and the prompt snapshot hold the same text (A1 requires the first two equal)."""
+    characters, promising nothing unbuilt; the recipe's description, the typed words, the fixture of the definitions, the
+    runtime's engine, the card, the test that held the old text and the prompt snapshot hold the same text (A1 requires the
+    first two equal). The .md file that was a sixth place is retired (W3-PROOF X1)."""
     import json
     W, R, J, FV, ref = rt
     typed = module_of("adaptation").WORDS["goal"]["does"]["text"]
@@ -184,12 +185,11 @@ def test_adaptations_goal_is_the_sites_and_the_six_places_agree(rt):
     places = {
         "the recipe's description": json.loads((HERE / "layers/adaptation/v1.json").read_text(encoding="utf-8"))["description"],
         "the typed words": typed,
-        "the .md file": layers.prompts.parts_of((HERE / "function-prompts/adaptation/goal.md").read_text(encoding="utf-8"))[1]["does"],
         "the fixture of the definitions": _base_description("Adaptation"),
         "the engine the runtime reads": R.engine_def("Adaptation")["description"],
         "what the card tells the agent": R._goal_of(ref, "Adaptation")[0],
     }
-    assert {name: text for name, text in places.items() if text != typed} == {}, "six places, one text"
+    assert {name: text for name, text in places.items() if text != typed} == {}, "five places, one text"
     assert SITE_GOAL in (HERE / "test_layer_adaptation.py").read_text(encoding="utf-8"), "the assertion that held the old text holds the new"
     snap = json.loads((HERE / "test_fixtures/function-prompts.snapshot.json").read_text(encoding="utf-8"))
     keys = [k for k in snap if k.startswith("adapt.")]

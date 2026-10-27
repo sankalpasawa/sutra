@@ -2,8 +2,8 @@
 
   K1  every code, prompt, draft and check name Coordination's recipe uses is provided by the module itself, by reference
       (nineteen, none of them left to the legacy registries), and contract cases 1 to 4 and 7 pass for coordination/v1
-  K2  Coordination's words: WORDS and LAYOUT for goal (does, skills) and tie (tie) are the split of its two .md files, layers.prompt
-      takes the WORDS path for every part of S.PROMPTS['coordination'], and contract case 5 finds no part on the fallback
+  K2  Coordination's words: WORDS and LAYOUT for goal (does, skills) and tie (tie) are the words of its two .md files (retired), layers.prompt
+      takes the WORDS path for every part of S.PROMPTS['coordination'], and contract case 5 finds no part without words
   K3  set_line checks the line as a write before it puts the table: an engine the plan registered last does not name and the
       owner did not add is one row in warn mode and a refusal in refuse mode (the line then stands as it was), whether the
       department's record holds it or not (the engine Priority cut is still on the record, and is not registered); a grown
@@ -12,7 +12,7 @@
       and view.engine_card in every state a department passes through (empty, running, waiting, alarm, stopped, done; an
       engine running, waiting, held, left out and stopped)
   K5  the field tuples engine_runtime names (TABLE_FIELDS, SLOT_FIELDS, LEFT_OUT_FIELDS) are the definitions' keys, what Coordination
-      writes fits them, and the contract passes for coordination/v1 whole: eight cases, no part on the fallback
+      writes fits them, and the contract passes for coordination/v1 whole: eight cases, no part without words
 """
 import importlib
 import json
@@ -300,33 +300,35 @@ TIE_INPUTS = {"ready": "Write, Check", "what": "Write: writes the pages; Check: 
               "waiting": "nothing"}
 
 
-def test_k2_the_words_and_layout_are_the_split_of_its_md_files_and_hold_every_part_of_the_interface(j2):
-    """WORDS that drift from the .md files they came from (the extractor's own output), or a part of the interface with no
-    words or no layout, must fail."""
-    words, layout, bad = P.extract("coordination")
-
-    def md_only(table):                                         # the parts later steps added have no .md part (S.ADDED_PARTS)
-        return {g: {p: v for p, v in ps.items() if ("coordination", g, p) not in S.ADDED_PARTS} for g, ps in table.items()}
-    assert bad == [] and md_only(V1.WORDS) == words and md_only(V1.LAYOUT) == layout
+def test_k2_the_words_and_layout_are_the_retired_files_text_and_hold_every_part_of_the_interface(j2):
+    """WORDS that drift from the .md files they came from (their text is kept in test_fixtures/retired-prompt-parts.json), or a
+    part of the interface with no words or no layout, must fail."""
+    from test_function_prompts import retired
+    for group, part in (("goal", "does"), ("goal", "skills"), ("tie", "tie")):
+        spec = S.PROMPTS["coordination"][group][part]
+        sample = {n: "<<%s>>" % n for n in spec["inputs"]}
+        got = P.compile_layout(V1.LAYOUT[group][part], V1.WORDS[group][part], spec["returns"], sample, P.who("coordination", group, part))
+        assert got == P.SLOT.sub(lambda m: sample[m.group(1)], retired("coordination", group, part)), (group, part)
     parts = {(g, p) for g, ps in S.PROMPTS["coordination"].items() for p in ps}
     assert {part for part in parts if ("coordination",) + part not in S.ADDED_PARTS} == {("goal", "does"), ("goal", "skills"), ("tie", "tie")}
     assert {(g, p) for g, ps in V1.WORDS.items() for p in ps} == parts == {(g, p) for g, ps in V1.LAYOUT.items() for p in ps}
 
 
-def test_k2_layers_prompt_takes_the_words_path_for_every_part_and_the_contract_finds_none_on_the_fallback(j2):
+def test_k2_layers_prompt_takes_the_words_path_for_every_part_and_the_contract_finds_none_without_words(j2):
     ref = _born(j2)
     for group, parts in S.PROMPTS["coordination"].items():
         for part in parts:
-            assert P._module(ref, "coordination", group, part) is V1, "%s.%s is read from the .md bundle" % (group, part)
-    assert C.on_the_md_fallback(V1) == []
+            assert P._module(ref, "coordination", group, part) is V1, "%s.%s is served by coordination/v1's words" % (group, part)
+    assert C.parts_without_words(V1) == []
     assert C.case_5(V1, {}) == [] and C.case_6(V1, {"ref": ref}) == []
 
 
-def test_k2_the_tie_prompt_is_the_md_part_byte_for_byte_and_is_served_from_the_words(j2, monkeypatch):
+def test_k2_the_tie_prompt_is_the_retired_files_part_byte_for_byte_and_is_served_from_the_words(j2, monkeypatch):
     """A prompt that differs by a byte from the one the .md file made (the M2.1a snapshot's own claim), or one the words
     do not reach, must fail."""
+    from test_function_prompts import retired
     ref = _born(j2)
-    md = P.md_part("coordination", "tie", "tie")
+    md = retired("coordination", "tie", "tie")
     got = P.prompt(ref, "coordination", "tie", "tie", **TIE_INPUTS)
     assert got == P.SLOT.sub(lambda m: TIE_INPUTS[m.group(1)], md) and got.endswith(S.PROMPTS["coordination"]["tie"]["tie"]["returns"])
     monkeypatch.setitem(V1.WORDS["tie"]["tie"], "task", "Pick one of the ready names.")
@@ -565,8 +567,8 @@ def test_k5_what_coordination_writes_is_made_of_those_fields(j2):
     assert set(born) <= set(R.TABLE_FIELDS) and S.validate("coordination.table", dict(born, by="born", since=W.now())) == []
 
 
-def test_k5_the_contract_passes_for_coordination_v1_whole_with_no_part_on_the_fallback(j2):
+def test_k5_the_contract_passes_for_coordination_v1_whole_with_no_part_without_words(j2):
     ref = _born(j2)
     for number, what, case in C.cases():
         assert case(V1, {"ref": ref}) == [], "case %d: %s" % (number, what)
-    assert C.on_the_md_fallback(V1) == [] and C.by_reference(V1) == {"by_reference": 19, "own": 2}
+    assert C.parts_without_words(V1) == [] and C.by_reference(V1) == {"by_reference": 19, "own": 2}

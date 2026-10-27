@@ -21,7 +21,6 @@ copied here with the pane's module reloaded too). A test that meets a fault of t
 a deliberate one is wrapped in S.expect_refused().
 """
 import importlib
-import inspect
 import json
 import re
 
@@ -160,30 +159,31 @@ def _parts():
     return [(g, p) for g, parts in S.PROMPTS["identity"].items() for p in parts]
 
 
-def test_i2_every_part_of_identitys_prompts_has_its_words_and_none_is_on_the_md_fallback(home):
+def test_i2_every_part_of_identitys_prompts_has_its_words_and_none_is_left_without(home):
     import layers.prompts as P
-    assert C.on_the_md_fallback(V1) == []
+    assert C.parts_without_words(V1) == []
     assert [(g, p) for g, parts in V1.WORDS.items() for p in parts] == _parts() == [(g, p) for g, parts in V1.LAYOUT.items() for p in parts]
     assert all(P._module(None, "identity", g, p) is V1 for g, p in _parts()), "the compiler takes the WORDS path for every part"
     assert C.case_5(V1, {}) == [] and P.faults() == []
 
 
-def test_i2_each_part_compiles_back_to_the_md_part_byte_for_byte(home):
+def test_i2_each_part_compiles_back_to_the_retired_files_part_byte_for_byte(home):
     import engine_runtime as R
     import layers.prompts as P
+    from test_function_prompts import retired
     for g, p in _parts():
-        if ("identity", g, p) in S.ADDED_PARTS:                 # an added part has no .md part (A3-FUNCTIONS)
+        if ("identity", g, p) in S.ADDED_PARTS:                 # an added part has no retired text (A3-FUNCTIONS)
             continue
         inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"][g][p]["inputs"]}
-        md = P.SLOT.sub(lambda m: inputs[m.group(1)], P.md_part("identity", g, p))
+        md = P.SLOT.sub(lambda m: inputs[m.group(1)], retired("identity", g, p))
         assert P.prompt(None, "identity", g, p, **inputs) == md, "%s.%s" % (g, p)
         assert S.PROMPTS["identity"][g][p]["returns"] is None or S.PROMPTS["identity"][g][p]["returns"] in md
     assert P.words(None, "identity", "goal", "does")["text"] == R._goal_of(None, "Identity")[0]
 
 
-def test_i2_the_prompt_is_what_the_words_say_and_without_them_the_bundle_is_read(home, monkeypatch):
+def test_i2_the_prompt_is_what_the_words_say_and_without_them_it_is_an_error(home, monkeypatch):
     """The words are what is served (the M2.1a snapshot, in test_function_prompts, passes unchanged on them): change one,
-    and the prompt changes; set them aside, and the .md part, the same text, is read instead."""
+    and the prompt changes; set them aside, and nothing else serves the part (the .md files are retired): an error that names it."""
     inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"]["take"]["take"]["inputs"]}
     shipped = layers.prompt(None, "identity", "take", "take", **inputs)
     assert shipped.startswith("Judge one request from the owner.\nTHE GOAL: <goal>\n")
@@ -192,7 +192,8 @@ def test_i2_the_prompt_is_what_the_words_say_and_without_them_the_bundle_is_read
     monkeypatch.undo()
     monkeypatch.setattr(V1, "WORDS", {})
     monkeypatch.setattr(V1, "LAYOUT", {})
-    assert layers.prompt(None, "identity", "take", "take", **inputs) == shipped
+    with pytest.raises(ValueError, match=r"^Identity's take instructions, take: no version holds words for this part$"):
+        layers.prompt(None, "identity", "take", "take", **inputs)
 
 
 def test_i2_the_owners_stamped_change_to_identitys_instructions_reaches_the_prompt_it_says_the_next_run_uses(j2):
@@ -201,7 +202,7 @@ def test_i2_the_owners_stamped_change_to_identitys_instructions_reaches_the_prom
     part of Identity's words set aside; W1-CORE K2's typed value is the same claim when it lands."""
     W, R, J, _, _ = j2
     ref, other = _born(j2), _born(j2, org="Other Co")
-    assert C.on_the_md_fallback(V1) == [], "every part is served from the words"
+    assert C.parts_without_words(V1) == [], "every part is served from the words"
     inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"]["completeness"]["enough"]["inputs"]}
     shipped = layers.prompt(ref, "identity", "completeness", "enough", **inputs)
     assert "Be brief." not in shipped
@@ -318,11 +319,8 @@ def _ownership_rows():
 
 
 def _an_instructions_ask(R, ref):
-    """The owner's change to one of Identity's instruction files, filed as an ask for the stamp: the typed change of A1.16
-    (a field of a part) once the app takes it, else M2.2's whole file."""
-    if "group" in inspect.signature(R.instructions_ask).parameters:
-        return R.instructions_ask(ref, "identity", "completeness", "enough", "task", layers.words(ref, "identity", "completeness", "enough")["task"] + " Be brief.")
-    return R.instructions_ask(ref, "identity", "completeness", R._instruction("identity", "completeness", ref) + "\nBe brief.\n")
+    """The owner's change to one of Identity's prompt fields, filed as an ask for the stamp (A1.16: a field of a part)."""
+    return R.instructions_ask(ref, "identity", "completeness", "enough", "task", layers.words(ref, "identity", "completeness", "enough")["task"] + " Be brief.")
 
 
 def _stamp_the_pending(W, ref, kinds):
@@ -371,15 +369,17 @@ def test_i4_every_save_of_identitys_keys_names_identity_and_no_row_says_otherwis
     assert _ownership_rows() == []                       # no row says a layer wrote what another's key holds
 
 
-def test_i4_a_save_that_does_name_identity_for_a_key_another_owns_is_a_row(j2):
-    """The detection is real: the same save, changing Root's name, is one row, which only this test may meet."""
+def test_i4_a_save_that_does_name_identity_for_a_key_another_owns_is_refused_with_a_row(j2):
+    """The detection is real: the same save, changing Root's name, is refused (W3-PROOF X2) after one row, which only this test may meet."""
     W, _, _, _, _ = j2
     ref = _born(j2)
     d = W.dept(ref)
     d["name"] = "Another name"
     with S.expect_refused("department") as met:
-        W.save_dept(ref, d, by="identity")
+        with pytest.raises(S.SchemaFault):
+            W.save_dept(ref, d, by="identity")
     assert met == ["$.name: is Root's, and Identity wrote it"]
+    assert W.dept(ref)["name"] != "Another name", "and nothing was written"
 
 
 def test_i4_every_ask_identity_files_validates_as_identity_ask(j2, monkeypatch):
@@ -926,7 +926,7 @@ def test_i5_words_after_the_doubt_is_answered_are_no_answer_to_it(j2):
 def test_i6_the_contract_passes_for_identity_v1_with_no_part_on_the_fallback(case, ctx):
     _, what, fn = case
     assert fn(V1, ctx) == [], what
-    assert C.on_the_md_fallback(V1) == []
+    assert C.parts_without_words(V1) == []
 
 
 # ---- J1: the conflict ask carries the ways out (M5.4) ----------------------------------------------------------------------

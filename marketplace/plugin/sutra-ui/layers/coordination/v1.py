@@ -3,9 +3,8 @@
 Its recipe is v1.json beside it: the Coordination engine object, moved byte for byte from engine_defs/website.json in wave 0.
 Every code, prompt, draft and check name the recipe uses is provided here by reference (A1 K1): a late-bound delegate to
 the body in engine_runtime's Coordination region (ref_to), so the module names what its recipe needs and no behaviour
-changes. A body moves into this module when this layer changes it (move on touch); engine_runtime's copy stays until W3-PROOF.
-WORDS and LAYOUT hold Coordination's two prompt files, goal (does, skills) and tie (tie), so layers.prompt serves them from here
-and the .md bundle is read for none of its parts (K2). view() and engine_card() return the pane's and the card's read
+changes. A body moves into this module when this layer changes it (move on touch); engine_runtime's copy of a body that moved is deleted (W3-PROOF X1).
+WORDS and LAYOUT hold Coordination's two prompt files, goal (does, skills) and tie (tie), so layers.prompt serves them from here (K2). view() and engine_card() return the pane's and the card's read
 models (K4), the card with the questions the engine asked and answered.
 
 Questions between engines (W3-BOARD, PRD M4.9, behind SUTRA_BOARD_QUESTIONS): coord_question is Coordination's handler for a

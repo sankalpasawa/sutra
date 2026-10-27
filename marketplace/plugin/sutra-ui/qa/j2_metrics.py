@@ -8,9 +8,9 @@ live Beta runs or the Human Simulation walk, which stay pending under C2), `reco
 `not run` (its input is not there).
 
     qa/j2_metrics.py                 run the scenario suite, print the report; exit 0
-    qa/j2_metrics.py --check         the same; exit 1 on a gap in SM-1, SM-2, SM-3, SM-4 or SM-13, or a failed lane (the gate's
+    qa/j2_metrics.py --check         the same; exit 1 on a gap in SM-1, SM-2, SM-3, SM-4, SM-6 or SM-13, or a failed lane (the gate's
                                      line)
-    qa/j2_metrics.py --strict        exit 1 on any gap (SM-6, SM-7 and the rest too: W3-PROOF's rerun)
+    qa/j2_metrics.py --strict        exit 1 on any gap (SM-7 and the rest too)
     qa/j2_metrics.py --records DIR   read a records home or a kept tree (a Beta home, a kept run) and run nothing
     --json | --out FILE | --keep DIR | --files a.py,b.py | --full | --workers N | --mode refuse|app | --ledger
 
@@ -75,8 +75,8 @@ UNPROVEN = ("unproven", "failing", "fault")
 RID = re.compile(r"^r-[0-9a-f]{8}$")
 RANK = {"met": 0, "to_confirm": 1, "not_met": 2}                    # the worse verdict stands (A1-16); == R.VERDICT_RANK
 TARGET = {"effort": 3, "calls": 40, "usd": 3.0, "share": 0.2}       # SM-8, SM-9 (Q15, proposed), SM-11
-#: the metrics the gate's line fails on (--check): the ones the build already holds at 0
-HARD = ("SM-1", "SM-2", "SM-3", "SM-4", "SM-13")
+#: the metrics the gate's line fails on (--check): the ones the build holds at 0 (SM-6 since W3-PROOF's ruling on an unread cycle)
+HARD = ("SM-1", "SM-2", "SM-3", "SM-4", "SM-6", "SM-13")
 #: the metrics whose gaps are runs, posts or rows, which can run to hundreds: the text report lists the first few and a count,
 #: and the report file (--out) names them all. Every other metric names each of its gaps in the text: "and 1 more" would hide the
 #: one a person looks for (SM-6, one gap for each department that stands with no next move for the owner, was cut so)
@@ -320,8 +320,25 @@ def sm4(depts):
               "board.jsonl: every post whose destination is the owner", posts=posts, read="%d posts to the owner" % posts)
 
 
+#: why a version stands unread when no live reader could have met it, as the reading records it (engine_runtime's audit_record). Two causes,
+#: both made by the scenario suite and neither reachable by a live cycle: (1) no model was there to read it, for the suite stubs every model
+#: (C2) and a live read decides; (2) it was not sampled, which a live cycle never says, for audit_pick samples every version in a cycle, and
+#: which the suite meets only where a test puts the old sampling rule back (test_j2.py's unsampled v4)
+NO_READER = ("no model was there to read it", "it was not sampled")
+
+
+def no_reader(d):
+    """The cycle stands unread because no live reader met it: the department's last reading is a version not read, and says one of NO_READER.
+    A reading that failed its check, or an unread cycle with no reading on the record, says a reader was there (or says nothing), and stands."""
+    last = d.readings[-1] if d.readings else None
+    return bool(last) and last.get("read") is False and any(why in str(last.get("why_not_read") or "") for why in NO_READER)
+
+
 def sm6(depts):
-    seen, gaps, unread = 0, [], 0
+    """Dead ends. W3-PROOF's ruling (the proof run carried it to W3-PROOF): a cycle that stands unread for want of a live reader (NO_READER) is not
+    a dead end of the suite, for the suite has no reader to read it with (C2) and a live read is what decides it; it is listed beside the
+    metric, not counted in it. A cycle that stands unread with a reader there, or in a state the owner cannot move, is a dead end as it was."""
+    seen, gaps, unread, ruled = 0, [], 0, []
     for d in depts:
         st = d.state.get("state")
         if st not in END_STATES:
@@ -331,19 +348,21 @@ def sm6(depts):
         if st == "blocked":
             pending = [a for a in pending if a.get("options")]
         if not pending:
+            if st == "unread" and no_reader(d):
+                ruled.append("%s: stands unread and holds no pending ask: %s, which no live cycle meets (models stubbed, C2), so a live read decides" % (
+                    d.label, d.readings[-1].get("why_not_read")))
+                continue
             unread += st == "unread"
             gaps.append("%s: stands %s and holds no pending ask%s: the owner has no next move" % (
                 d.label, st, " with options" if st == "blocked" else ""))
-    # an unread cycle is a product gap, not this report's: J.not_read leaves the cycle unread and files no ask. It is carried
-    # to W3-PROOF in the report itself, so the gap does not sit in a number alone
-    carried = ["%d of these stand unread: Audit could not read the version (the stubbed suite has no model to read it), so J.not_read "
-               "leaves the cycle unread and no ask is filed. Either Identity files an ask for an unread cycle (a product change "
-               "outside this package), or W3-PROOF rules that a cycle that is retried is not a dead end; until one of them, "
-               "--strict fails on SM-6" % unread] if unread else []
+    # an unread cycle with a reader there is a product gap, not this report's: J.not_read leaves it unread and files no ask
+    carried = ["%d of these stand unread with a reader there: J.not_read leaves the cycle unread and no ask is filed. Identity files an ask for an "
+               "unread cycle (a product change outside this package) before this is 0" % unread] if unread else []
     return _m("SM-6", "Dead-end states: the owner has no next move", "0", len(gaps), not gaps, gaps,
               "an end state that is not done (waiting, blocked or unread; stopped has Start) holds a pending ask; a "
-              "question the owner answers in words counts as a next move, a blocked cycle needs options", end_states=seen,
-              unread=unread, carried=carried, read="%d end states" % seen)
+              "question the owner answers in words counts as a next move, a blocked cycle needs options; a cycle unread for want of a reader "
+              "(models stubbed, C2) or skipped by a sampler a live cycle does not have is ruled not a dead end of the suite, and listed", end_states=seen,
+              unread=unread, carried=carried, waiting=ruled, ruled=len(ruled), read="%d end states" % seen)
 
 
 def real_done(d):
@@ -755,8 +774,9 @@ def render(rep, width=8):
         if len(shown) < len(m["gaps"]):
             out.append("        and %d more (the report file, --out, names every one)" % (len(m["gaps"]) - len(shown)))
         for c in m.get("carried") or []:
-            out += textwrap.wrap(c, 120, initial_indent="        carried to W3-PROOF: ", subsequent_indent=" " * 29)
-        for w in (m.get("waiting") or [])[:width]:
+            out += textwrap.wrap(c, 120, initial_indent="        carried: ", subsequent_indent=" " * 17)
+        waiting = m.get("waiting") or []
+        for w in (waiting[:width] if m["id"] in LONG_LISTS else waiting):          # a metric not on a long list names every one
             out.append("        waits: %s" % w)
     out += ["", "Pending under C2 (live runs spend the owner's subscription):"] + ["  %s: %s" % (p["what"], p["why"]) for p in rep["pending"]]
     for f in rep["lane_faults"]:
@@ -771,7 +791,7 @@ def render(rep, width=8):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--check", action="store_true", help="exit 1 on a gap in SM-1, SM-2, SM-3, SM-4 or SM-13, or a lane that failed")
+    ap.add_argument("--check", action="store_true", help="exit 1 on a gap in SM-1, SM-2, SM-3, SM-4, SM-6 or SM-13, or a lane that failed")
     ap.add_argument("--strict", action="store_true", help="exit 1 on any gap")
     ap.add_argument("--records", action="append", help="read this records home or kept tree, and run nothing")
     ap.add_argument("--keep", help="keep the suite's records in this folder (default: a temporary one, removed after)")

@@ -17,7 +17,7 @@ lane $PY test_website_motor.py > /tmp/sutra-suite-motor.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-motor.txt
 lane $PY -m pytest -q test_website_dept.py test_channel_isolation.py > /tmp/sutra-suite-pytest.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-pytest.txt
-# each function's instruction files (PRD M2): byte for byte as the inline prompts were, a stamp-only change, a refused
+# each function's words (PRD M2, A1.16): every prompt byte for byte as the snapshot has it, a stamp-only change, a refused
 # change leaving nothing, a change surviving an update; a lane of its own, since its fixture reloads the runtime
 lane $PY -m pytest -q -p no:cacheprovider test_function_prompts.py > /tmp/sutra-suite-prompts.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-prompts.txt | sed "s/^/function prompts: /"
@@ -55,8 +55,8 @@ lane $PY -m pytest -q -p no:cacheprovider test_runtime_characterization.py test_
 tail -1 /tmp/sutra-suite-a1.txt | sed "s/^/characterization, templates and PRD documents: /"
 # the proof run (PRD M10.4, M10.5): the metrics' own tests, then SM-1 to SM-14 read from the record the scenario suite leaves
 # (test_j1, test_j2, test_j2_api and one department of each kind to done, models stubbed, the interface in refuse mode); about a
-# minute. The gate fails on a gap in SM-1, SM-3, SM-4 or SM-13, a lane that failed or ran no test; SM-6, SM-7 and the rest are
-# named in the report and become the gate's with --strict (W3-PROOF). The gate shows the report's last line; the text report beside
+# minute. The gate fails on a gap in SM-1, SM-3, SM-4, SM-6 or SM-13, a lane that failed or ran no test; SM-7 and the rest are
+# named in the report and fail with --strict. The gate shows the report's last line; the text report beside
 # it names every gap of a metric that counts departments, and --out writes the whole report (JSON) to a file that is kept
 lane $PY -m pytest -q -p no:cacheprovider test_j2_metrics.py > /tmp/sutra-suite-metrics-tests.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-metrics-tests.txt | sed "s/^/proof run, its tests: /"

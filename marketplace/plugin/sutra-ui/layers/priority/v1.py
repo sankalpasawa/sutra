@@ -9,7 +9,7 @@ What moved (M5.3: Priority prices from observed spend). priority_read estimates 
 of what each engine's finished runs spent, with a prior for an engine with no runs, and reads the room actually left
 today; p_priority_bargain tells the agent both; d_priority_bargain, the offline answer, is the same arithmetic;
 priority_post answers and keeps one price row per answer; price_is_observed holds the answer to the facts. WORDS and
-LAYOUT hold its words (goal, bargain), so no part of it is read from the .md bundle. The agent's why is its own sentence and
+LAYOUT hold its words (goal, bargain). The agent's why is its own sentence and
 may use the bargain's inside words (reject, counter, grant, refuse, order as a verb): priority_post says it once in the owner's
 words (owner_words.plainly, the one pass every read shares: a noun said as the answer and a verb as the act, the words the owner said
 kept) before it posts, so the post, the price row, the ledger's line, the covering's note and the pane carry one sentence; a sentence
@@ -1048,8 +1048,8 @@ CHECK = {
     'round_within_ceiling': round_is_within,
     'said_what_it_did': ref_to('c_said_what_it_did'),
 }
-# Priority's words (A1.16): what `python -m layers.prompts --extract priority` makes of the .md bundle by the split rule,
-# byte for byte (test_layer_prompts and the M2.1a snapshot prove it). The bargain line part has no field the owner may change,
+# Priority's words (A1.16): the words of the .md files they came from, byte for byte (retired, W3-PROOF X1;
+# test_layer_priority and the M2.1a snapshot prove it). The bargain line part has no field the owner may change,
 # so its words stay in the layout; engine and cost have a task each.
 WORDS = {
     'goal': {

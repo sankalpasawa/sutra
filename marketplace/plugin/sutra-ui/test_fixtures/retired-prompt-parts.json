@@ -1,0 +1,95 @@
+{
+ "about": "The text of every prompt part the retired function-prompts/ bundle held, as it was when the bundle was deleted (PRD M2.10, W3-PROOF X1): the reference the layers' words are held to byte for byte (a part that came after the bundle, S.ADDED_PARTS, has no entry). Each layer's lead is the first line of a group's file. Changed only with the words, in a commit that says why.",
+ "leads": {
+  "identity": {
+   "goal": "What Identity is for, and the rules it keeps.",
+   "completeness": "When the department has enough to work; what to ask if not.",
+   "take": "How to judge a request: go, ask or refuse."
+  },
+  "adaptation": {
+   "goal": "What Adaptation is for, and the rules it keeps.",
+   "sense": "How Adaptation reads an idea the owner floats: what it asks, and the shapes it could take.",
+   "decide": "How Adaptation chooses its next move from what the department's own rows say.",
+   "make": "How Adaptation shapes the workflows a goal needs when none is in place."
+  },
+  "priority": {
+   "goal": "What Priority is for, and the rules it keeps.",
+   "bargain": "How Priority answers a proposal: said yes, asked for less, or said no."
+  },
+  "coordination": {
+   "goal": "What Coordination is for, and the rules it keeps.",
+   "tie": "How Coordination says who goes first when several functions are ready at once."
+  },
+  "audit": {
+   "goal": "What Audit is for, and the rules it keeps.",
+   "judge": "How Audit reads what went live against what was asked."
+  }
+ },
+ "parts": {
+  "identity": {
+   "goal": {
+    "does": "holds the goal and the rules, judges every effect, and is the one the owner speaks with",
+    "skills": "- recognise a task, a query, a directive, feedback or a new idea\n- judge a request against the goal\n- gate an effect by rule\n- put a question to the owner",
+    "close": "You are Identity of the department \"{{dept}}\". Adaptation proposed a plan and it did not close with Priority. Close it against the goal and the rules ONLY; do not invent a rule.\nTHE GOAL: {{goal}}\nDONE WHEN: {{done}}\nTHE RULES: {{rules}}\nTHE PLAN: {{plan}}\nWHAT WAS SAID AGAINST IT: {{against}}\n\nrun: the goal cannot be met without this plan and no rule forbids it. drop: a rule forbids it, or the goal does not need it. ask: the goal and the rules do not settle it, so the owner must.\nReturn ONLY a JSON object: {\"ruling\": \"run\" | \"drop\" | \"ask\", \"why\": \"one line, naming the rule or the goal\"}."
+   },
+   "completeness": {
+    "thin": "thin: true when the request names nothing to build from (no subject, no purpose).",
+    "enough": "Read who the department is against Identity's standard, and say whether it is enough to start work on. The standard has five points, and only five:\ngoal: the goal names what the department makes and for whom.\nitems: done-when is a list of items, and each item says how it is checked.\nrules: every rule is tagged go, ask, refuse or always.\nowner, budget: the department has an owner and a budget.\ninvented: nothing is invented; a fact the owner did not give is marked to confirm, never stated.\nTHE OWNER'S WORDS: {{words}}\nWHAT ROOT ASKED, AND WHAT THE OWNER SAID: {{asked}}\nTHE GOAL: {{goal}}\nDONE WHEN: {{items}}\nTHE RULES: {{rules}}\nTHE OWNER: {{owner}}\nTHE BUDGET: {{budget}}\nTO CONFIRM: {{confirm}}\n\nAsk only for what is missing, in one plain question to the owner, the most important first. Never ask what the owner's words or Root's questions already answered.\nReturn ONLY a JSON object: {\"enough\": bool, \"missing\": [\"goal\" | \"items\" | \"rules\" | \"owner\" | \"budget\" | \"invented\"], \"question\": \"one question, or an empty string when enough\", \"why\": \"one line\"}."
+   },
+   "take": {
+    "recognise": "Recognise what kind of words the owner has given. There are five kinds, and only five:\ntask: \"do X for me\". query: \"tell me Y\". directive: \"from now on, do Z\", a standing change to how the department works or to its goal. feedback: \"that was wrong\", about work already made. new-idea: \"I want a new capability\", something the department cannot do today.\nTHE GOAL: {{goal}}\nTHE WORDS: {{words}}\nREAD BY CODE: {{facts}}\n\nReturn ONLY a JSON object: {\"journey\": \"task\" | \"query\" | \"directive\" | \"feedback\" | \"new-idea\", \"why\": \"one line\"}.",
+    "take": "Judge one request from the owner.\nTHE GOAL: {{goal}}\nTHE RULES: {{rules}}\nTHE REQUEST: {{words}}\nREAD BY CODE: {{facts}}\n\nReturn ONLY a JSON object: {\"verdict\": \"go\" | \"ask\" | \"refuse\", \"why\": \"one line\", \"unsure\": [str], \"rule\": {\"line\": str, \"tag\": \"always\" | \"refuse\" | \"ask\"} | null, \"thin\": bool}.\ngo: do it. ask: it reaches outside what the department makes (money, a message to someone, a change to the goal), so the owner stamps first. refuse: it breaks a rule. Reading the web is not outside: the department can read any page.\nunsure: facts the request says the owner is not sure of, in a few words each; [] when none.\nrule: a standing rule the request states (always or never, from now on) with its tag; null when it is one piece of work.\n{{completeness}}",
+    "answer": "Answer the owner's question from the record below, and from nothing else. If the record does not hold the answer, say so.\nTHE QUESTION: {{question}}\nTHE RECORD:\n- {{record}}\n\nReturn ONLY a JSON object: {\"answer\": str, \"source\": \"which line of the record\", \"confidence\": \"high\" | \"moderate\" | \"low\" | \"unknown\"}.",
+    "rule": "The owner has given a directive. Restate it as one rule, in one line, in plain words.\nTHE GOAL: {{goal}}\nTHE RULES TODAY: {{rules}}\nTHE DIRECTIVE: {{words}}\n\nReturn ONLY a JSON object: {\"tag\": \"always\" | \"ask\" | \"refuse\" | \"goal\", \"line\": str, \"scope\": \"standing\" | \"one-time\"}. tag goal: the directive changes what the department is for. scope one-time: the owner means this once.",
+    "weigh": "The owner has given feedback on work the department made. Read what it changes.\nTHE PAGES: {{pages}}\nTHE FEEDBACK: {{words}}\n\nReturn ONLY a JSON object: {\"about\": \"the page's slug, or null\", \"what\": \"format\" | \"content\" | \"tone\" | \"scope\" | \"accuracy\", \"now\": \"the correction to make now, one line\", \"future\": \"a rule to carry forward to work like this, one line, or null\"}.",
+    "gate": "An engine asks whether it may start.\nTHE RULES: {{rules}}\nTHE ENGINE: {{engine}}\n\nReturn ONLY a JSON object: {\"verdict\": \"admit\" | \"wait\" | \"refuse\", \"why\": \"one line\"}."
+   }
+  },
+  "adaptation": {
+   "goal": {
+    "does": "decides how the department reaches its goal and keeps changing how as it learns: it proposes the workflows the goal needs, from the Library or shaped fresh, and a step's move up or down the ladder",
+    "skills": "- count from the rows\n- keep the ladder\n- propose a change\n- shape a new idea and park it"
+   },
+   "sense": {
+    "shape": "The owner floats an idea the department cannot do today. Do not plan a build. Reflect the idea back in sharper words, name the question underneath it, and give two or three shapes it could take, smallest first. Then say what engine would do it each time on its own: pick one from the Library below when its use case fits (pick), else shape one (engine: a name of one or two words, what it does in one line, and what it needs from this list: {{needs}}); both null when the idea asks for no engine.\nTHE GOAL: {{goal}}\nTHE IDEA: {{idea}}\nENGINES IN THE LIBRARY, NOT YET IN THIS DEPARTMENT: {{library}}\n\nReturn ONLY a JSON object: {\"reflected\": str, \"question\": str, \"shapes\": [str, str, str], \"pick\": str or null, \"engine\": {\"name\": str, \"does\": str, \"needs\": [str]} or null}."
+   },
+   "decide": {
+    "note": "In this version the choice is made by code, not by words its agent reads: a step whose answers agree run after run is proposed one rung up, to a checklist or to code, and is tried beside the old way first; a step that keeps missing is proposed one rung down. Every move goes to Priority first, and Adaptation never applies one itself."
+   },
+   "make": {
+    "line": "The department \"{{dept}}\" was just given its goal, in its owner's words:\n{{words}}\n\nWHAT DONE MEANS, ITEM BY ITEM:\n{{items}}\n\nIt has no engines yet. Shape the line of engines that gets this done: two to five, in the order they run, each reading one thing and writing one thing. The first reads the Brief (the owner's words); each later one reads what an earlier one wrote. An engine can search the web and open pages: say in what it does what it looks up, and mark internet true. Name each engine in one or two words none of these already use ({{taken}}), and name what it writes in one or two words (Facts, Pages, ...). When the goal is something that goes out into the world, the last engine writes it under the Library's own name for it: {{out}}.\nTHE DEPARTMENT'S RULES: {{rules}}\n\nReturn ONLY a JSON object: {\"engines\": [{\"name\": str, \"does\": str, \"reads\": str, \"writes\": str, \"internet\": bool}]}.{{refused}}",
+    "refused": "YOUR LAST LINE WAS REFUSED BY ROOT'S CHECK: {{faults}}. Shape it again without these faults."
+   }
+  },
+  "priority": {
+   "goal": {
+    "does": "grants each engine its envelope and answers proposals that cost something",
+    "skills": "- hold an engine to its envelope\n- answer a proposal that costs something"
+   },
+   "bargain": {
+    "line": "Adaptation proposes the workflows this department runs to reach its goal, {{source}}:\n{{engines}}\nWHAT EACH COSTS: up to {{calls}} calls and {{usd}} USD a day.\nROOM FOR THIS MANY WORKFLOWS: {{room}} (the limit is {{limit}})\nWHAT THE LINE IS LIKELY TO COST, from what each has cost before: {{estimate}}\nWHAT REMAINS OF TODAY'S ROOM AFTER IT: {{remaining}}\n\naccept: grant them all. counter: grant only some, and name which to keep, in order. reject: grant none. Give your reason in money and room, from the figures above.\nReturn ONLY a JSON object: {\"answer\": \"accept\" | \"counter\" | \"reject\", \"why\": \"one line\", \"keep\": [names]}.",
+    "engine": "Adaptation proposes an engine for this department, from an idea the owner floated.\nTHE ENGINE: {{engine}}\nWHAT IT DOES: {{does}}\nWHAT IT NEEDS: {{needs}}\nWHAT IT COSTS: {{calls}} calls and {{usd}} USD a day, the envelope of one more work engine\nROOM IN THE ENVELOPE TODAY: {{room}}\n\nReturn ONLY a JSON object: {\"answer\": \"accept\" | \"reject\", \"why\": \"one line\"}.",
+    "cost": "Adaptation proposes something that costs.\nTHE PROPOSAL: {{word}}, for the step {{step}}\nWHAT IT COSTS: {{cost}}\nROOM IN THE ENVELOPE TODAY: {{room}}\n\nReturn ONLY a JSON object: {\"answer\": \"accept\" | \"reject\", \"why\": \"one line\"}."
+   }
+  },
+  "coordination": {
+   "goal": {
+    "does": "keeps what engines share: one run at a time, who goes first when several are ready, who may post to whom, the chain's limit, a thread's bounds, and the alarm. Its own agent says who goes first when several functions are ready at once",
+    "skills": "- keep one run at a time\n- say who goes first\n- check who may post what to whom\n- stop a chain at its limit\n- close a thread at its bound\n- raise an alarm\n- say who goes first among equals"
+   },
+   "tie": {
+    "tie": "Several functions of the department are ready at once, and one runs at a time. Say who goes first.\nREADY NOW: {{ready}}\nWHAT EACH DOES: {{what}}\nCOORDINATION'S TABLE, THE USUAL ORDER: {{order}}\nWAITING FOR THE OWNER: {{waiting}}\n\nReturn ONLY a JSON object: {\"answer\": \"one of the ready names\", \"why\": \"one line\"}."
+   }
+  },
+  "audit": {
+   "goal": {
+    "does": "drops in on what went live and checks claims against the record",
+    "skills": "- pick what to check\n- check the record mechanically\n- judge a page against the brief"
+   },
+   "judge": {
+    "judge": "Check what the department made against what it was asked. Read the brief and what the department's own engines filed, then the pages. Find any statement of fact on a page that neither the brief nor a filed artifact gives: a phone number, an address, a date, a count, a name, a claim of history. A fact a filed artifact gives, with its source, is backed: do not report it. Return ONLY a JSON object: {\"ok\": bool, \"findings\": [{\"page\": str, \"claim\": str, \"severity\": \"high\" | \"low\"}]}. high: a reader could be harmed or misled by it. At most eight findings.\n\nTHE BRIEF:\n{{brief}}{{filed}}\n\nTHE PAGES:\n{{pages}}",
+    "items": "Read the work against what was asked, one done-when item at a time. For each item below give a verdict: met only when the work itself shows it; not met when the work leaves it out or shows it does not hold; to confirm when it rests on a fact only the owner can give, or the work cannot show it either way. Say in one line what is or is not true (the claim) and in one line what in the work shows it (the evidence). What code measured is given below: weigh it, and never call an item met that a measure shows failing.\nReturn ONLY a JSON object: {\"items\": [{\"id\": \"D1\", \"verdict\": \"met\" | \"not_met\" | \"to_confirm\", \"claim\": \"what is or is not true, one line\", \"evidence\": \"what in the work shows it, one line\"}], \"findings\": [{\"where\": str, \"claim\": str, \"severity\": \"high\" | \"medium\" | \"low\", \"item\": \"D1\" or null}]}.\nOne row for every item, each under its own id, and no other row. A finding is something to put right that you saw while reading: say where it is and what is wrong, and name the item it belongs to, or null. high: a reader could be harmed or misled by it. Never guess a fact that neither the brief nor a filed artifact gives: a phone number, an address, a date, a count, a name. A fact a filed artifact gives, with its source, is backed: do not report it. At most eight findings.\n\nTHE BRIEF:\n{{brief}}{{filed}}\n\nTHE DELIVERABLE:\n{{deliverable}}\n\nTHE DONE-WHEN ITEMS:\n{{items}}\n\nWHAT CODE MEASURED:\n{{measured}}"
+   }
+  }
+ }
+}

@@ -3,8 +3,8 @@
 Its recipe is v1.json beside it: the Adaptation engine object, moved byte for byte from engine_defs/website.json in wave 0.
 Every code, prompt, draft and check name the recipe uses is provided here (A1 step A1): by reference, to the body
 engine_runtime still holds, until this layer moves one in to change it (move on touch, A1.19). The layer's words are
-WORDS and LAYOUT below (A1.16), from the extractor and proved byte for byte against the .md bundle, which is now only the
-fallback for a part no layer holds. view() returns the pane's read model.
+WORDS and LAYOUT below (A1.16), the words of the .md files they came from byte for byte; the files are retired (W3-PROOF X1) and
+nothing else serves a part. view() returns the pane's read model.
 
 W2-ADAPT (M5.2, M5.4, M9.1, M9.4, M9.6) adds to the same version, as additions and not a new version: adapt.fit fits the Library's
 line to the goal (a note per engine, an engine left out only when the kind does not require it), the two handlers that hear
@@ -1021,7 +1021,8 @@ CHECK = {name: ref_to('c_' + name) for name in (
 CHECK['line_is_engines'] = c_line_is_engines
 CHECK['line_is_fitted'] = c_line_is_fitted
 CHECK['round_is_new'] = c_round_is_new
-# Adaptation: WORDS and LAYOUT by the split rule of A1.16, from function-prompts/adaptation/*.md
+# Adaptation's words (A1.16): the default value of every field of its prompt parts and the layout that arranges them. They are
+# the words of the .md files they came from, byte for byte (retired, W3-PROOF X1; test_fixtures/retired-prompt-parts.json).
 WORDS = {
     'goal': {
         'does': {

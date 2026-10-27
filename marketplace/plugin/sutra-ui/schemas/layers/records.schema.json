@@ -2686,7 +2686,7 @@
       "proposal": {
         "def": "act.line",
         "store": "board.jsonl propose/line",
-        "writer": "R.adapt_line_offer, R.adapt_line_counter"
+        "writer": "adaptation/v1 adapt_line_offer, adapt_line_counter"
       },
       "round": {
         "def": "adaptation.round",
@@ -2754,7 +2754,7 @@
       "envelope": {
         "def": "envelope",
         "store": "dept.json envelopes[name]",
-        "writer": "W.create, W.set_envelope, W.add_engine, R.priority_grant"
+        "writer": "W.create, W.set_envelope, W.add_engine, priority/v1 priority_grant"
       },
       "price": {
         "def": "priority.price",

@@ -955,7 +955,7 @@ def test_r6_root_v1_holds_the_setup_words_typed_and_provides_every_setup_step_by
             if s.get(kind):
                 assert s[kind] in getattr(module, kind.upper()), "%s: %s %s is provided by root/v1" % (s["id"], kind, s[kind])
                 assert hasattr(getattr(module, kind.upper())[s[kind]], "legacy"), "by reference: the body has not moved"
-    assert C.on_the_md_fallback(module) == [] and C.by_reference(module) == {"by_reference": 14, "own": 0}
+    assert C.parts_without_words(module) == [] and C.by_reference(module) == {"by_reference": 14, "own": 0}
     # the registry serves root/v1's name for a Setup step, and it runs the body engine_runtime holds
     served = layers.resolve(None, "Setup", "code", "setup_read", R.CODE)
     assert served is module.CODE["setup_read"] and served.legacy == ("engine_runtime", "setup_read")

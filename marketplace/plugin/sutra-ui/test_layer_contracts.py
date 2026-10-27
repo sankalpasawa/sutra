@@ -35,10 +35,10 @@ def test_the_contract(module, case, ctx):
 
 
 @pytest.mark.parametrize("module", MODULES, ids=C.impl_id)
-def test_what_the_contract_reports_and_no_part_is_left_on_the_md_fallback(module, capsys):
+def test_what_the_contract_reports_and_no_part_is_left_without_words(module, capsys):
     counts = C.by_reference(module)
     assert set(counts) == {"by_reference", "own"}
-    assert C.on_the_md_fallback(module) == [], "since 'A1 interface: refuse' every default pin holds the words of every part"
+    assert C.parts_without_words(module) == [], "every version holds the words of every part of its layer: nothing else serves them"
     print("%s: %d by reference, %d own" % (C.impl_id(module), counts["by_reference"], counts["own"]))
 
 
@@ -60,13 +60,15 @@ def test_a_stub_missing_a_hears_handler_fails_case_2_with_that_row_named(tmp_pat
     assert "priority/v1: the handler Hear the weather (inform/weather) is no HEARS row" in C.case_2(_fake(tmp_path, "priority", recipe), {})
 
 
-def test_a_part_left_on_the_md_fallback_fails_case_5_with_that_part_named(tmp_path):
-    """Contract case 5 is strict since 'A1 interface: refuse': a version that holds no WORDS for a part of its layer's prompts
-    fails, naming the part, where it used to be reported only."""
+def test_a_part_left_without_words_fails_case_5_with_that_part_named(tmp_path):
+    """Contract case 5 is strict: a version that holds no WORDS for a part of its layer's prompts fails, naming the part. The .md
+    files that once served such a part are retired (W3-PROOF X1), so an added part (S.ADDED_PARTS) is asked for like the rest."""
     bare = _fake(tmp_path, "coordination", layers.recipes()["Coordination"])
-    assert C.on_the_md_fallback(bare) == ["goal.does", "goal.skills", "tie.tie"]
-    assert C.case_5(bare) == ["coordination/v1: %s is on the .md fallback: the version holds no WORDS for it" % part
-                              for part in ("goal.does", "goal.skills", "tie.tie")]
+    every = ["%s.%s" % (group, part) for group, parts in S.PROMPTS["coordination"].items() for part in parts]
+    assert C.parts_without_words(bare) == every
+    assert C.case_5(bare) == ["coordination/v1: %s has no words: the version holds no WORDS for it" % part for part in every]
+    assert len(every) == 9 and [x for x in every if ("coordination",) + tuple(x.split(".")) not in S.ADDED_PARTS] == ["goal.does", "goal.skills", "tie.tie"], \
+        "the three the files held, and the six a later step added"
 
 
 def test_a_ref_to_pointing_at_a_delegate_fails_case_7(tmp_path, monkeypatch):
@@ -74,10 +76,12 @@ def test_a_ref_to_pointing_at_a_delegate_fails_case_7(tmp_path, monkeypatch):
     monkeypatch.setattr(R, "_a_delegate_for_the_test", layers.ref_to("_names"), raising=False)
     fake = _fake(tmp_path, "identity", layers.recipes()["Identity"], CODE={"identity_read": layers.ref_to("_a_delegate_for_the_test")})
     assert C.case_7(fake) == ["identity/v1: code identity_read points at engine_runtime._a_delegate_for_the_test, which is itself a delegate"]
+    # every name Identity's version holds as its own body, each a reference to a body that is there (the legacy registries no longer
+    # hold a copy of a body a version has taken over, W3-PROOF X1)
+    held = ("identity_read", "identity_file", "identity_doubt", "identity_closed", "identity_apply", "identity_done",
+            "identity_weigh_reading", "identity_finding", "identity_round", "identity_drop")
     fine = _fake(tmp_path, "identity", layers.recipes()["Identity"],
-                 CODE={"identity_read": layers.ref_to("identity_read"), "identity_doubt": layers.ref_to("identity_read"),
-                       "identity_done": layers.ref_to("identity_read"), "identity_weigh_reading": layers.ref_to("identity_read"),
-                       "identity_round": layers.ref_to("identity_read")},
+                 CODE={name: layers.ref_to("identity_read") for name in held},
                  CHECK={"done_is_read": layers.ref_to("c_said_what_it_did")})
     assert C.case_7(fine) == [] and C.case_3(fine) == []
     gone = _fake(tmp_path, "identity", layers.recipes()["Identity"], CODE={"identity_read": layers.ref_to("no_such_body")})
@@ -99,10 +103,10 @@ def test_the_other_cases_catch_what_they_are_for(tmp_path):
     assert C.case_4(fake) == ["coordination/v1: the check a_check_of_nobodys is in neither CHECKS[coordination] nor SHARED_CHECKS"]
     assert C.case_8(fake) == ["coordination/v1, coord.tie: it does not return why, which code outside the layer reads"]
     worded = _fake(tmp_path, "coordination", recipe, WORDS={"tie": {"tie": {"task": "Say who goes first {{ready}}"}}})
+    others = ["%s.%s" % (group, part) for group, parts in S.PROMPTS["coordination"].items() for part in parts if (group, part) != ("tie", "tie")]
     assert C.case_5(worded) == ["coordination/v1: tie.tie has WORDS and no LAYOUT",
-                                "coordination/v1: tie.tie.task: holds '{{' or '}}', which only the app may write",
-                                "coordination/v1: goal.does is on the .md fallback: the version holds no WORDS for it",
-                                "coordination/v1: goal.skills is on the .md fallback: the version holds no WORDS for it"]
+                                "coordination/v1: tie.tie.task: holds '{{' or '}}', which only the app may write"] + \
+        ["coordination/v1: %s has no words: the version holds no WORDS for it" % part for part in others]
     lying = _fake(tmp_path, "priority", layers.recipes()["Priority"], CHECK={"answer_has_its_price": lambda c, s, i, out: {"ok": True, "notes": []}})
     assert C.case_4(lying) == ['priority/v1: answer_has_its_price accepts the bad sample {"answer": "accept", "why": ""}',
                                'priority/v1: answer_has_its_price accepts the bad sample {"answer": "grant", "why": "x"}']

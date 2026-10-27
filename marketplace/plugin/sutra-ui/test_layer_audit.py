@@ -1,7 +1,7 @@
 """Audit behind its interface (PRD amendment A1: W1-AUDIT; M8.1 to M8.3, M8.9, M0.3), one section a step.
 
   U1  audit/v1 provides every name its recipe uses, by reference, and passes the contract
-  U2  Audit's words (goal, judge, judge.items) are typed: every part takes the WORDS path, none is on the .md fallback
+  U2  Audit's words (goal, judge, judge.items) are typed: every part takes the WORDS path, none is left without words
   U3  the deliverable: every place on Audit's path asks the interface (S.deliverable), one test per kind
   U4  Audit starts on and reads any kind's deliverable; one that is not HTML is read as text
   U5  a reading per done-when item in the S-30 shape; a version not read is a row with read false
@@ -171,7 +171,7 @@ def test_u3_a_department_with_no_deliverable_reads_nothing_and_does_not_fail(j2,
     ctx = {"ref": organic, "inp": {"v": 1}, "bag": {"audit.pick": {"sample": True}}}
     assert R.audit_files(ctx) == {}
     assert R.audit_pick(ctx, None, None)["pages"] == []
-    mech = R.audit_mechanical(ctx, None, None)
+    mech = _audit_module().audit_mechanical(ctx, None, None)
     assert mech["ok"] is False and mech["faults"] == ["the deliverable does not trace back to the owner's words"]
 
 
@@ -197,7 +197,7 @@ def test_u3_the_ledger_cites_the_deliverable_it_read_never_the_live_site_by_defa
 def test_u3_no_live_site_literal_is_left_on_audits_path(j2):
     import inspect
     W, R, J, _, _ = j2
-    on_path = [R.audit_art, R.audit_files, R.audit_pick, R.audit_mechanical, R.audit_file, R.p_audit_judge, R.d_audit_judge,
+    on_path = [R.audit_art, R.audit_files, R.audit_pick, _audit_module().audit_mechanical, R.audit_file, R.p_audit_judge, R.d_audit_judge,
                R._j2_audit_read, J.on_post, J.not_read, J.audited, J._deliverable]
     for fn in on_path:
         assert "Live site" not in inspect.getsource(fn), fn.__name__
@@ -973,7 +973,7 @@ def test_u6_the_pane_still_lists_the_ledgers_readings_for_a_department_with_no_j
     assert got["latest"] is None
 
 
-def test_u6_the_contract_passes_for_audit_v1_with_no_part_of_it_on_the_md_fallback_beyond_the_unmoved_words(contract_ctx):
+def test_u6_the_contract_passes_for_audit_v1_with_no_part_of_it_left_without_words(contract_ctx):
     m = _audit_module()
     for number, case in enumerate((C.case_1, C.case_2, C.case_3, C.case_4, C.case_5, C.case_6, C.case_7, C.case_8), 1):
         assert case(m, contract_ctx) == [], "contract case %d" % number
@@ -984,22 +984,23 @@ def test_u6_the_contract_passes_for_audit_v1_with_no_part_of_it_on_the_md_fallba
 
 
 # ---- U2 · Audit's words (M2.5) --------------------------------------------------------------------------------------
-def test_u2_every_part_of_audit_takes_the_words_path_and_none_is_on_the_md_fallback(contract_ctx):
+def test_u2_every_part_of_audit_takes_the_words_path_and_none_is_left_without_words(contract_ctx):
     m = _audit_module()
     parts = [(g, p) for g, ps in S.PROMPTS["audit"].items() for p in ps]
     assert [part for part in parts if ("audit",) + part not in S.ADDED_PARTS] == [("goal", "does"), ("goal", "skills"), ("judge", "judge"), ("judge", "items")]
     for group, part in parts:
         assert P._module(None, "audit", group, part) is m, "%s.%s is served from audit/v1's WORDS" % (group, part)
-    assert C.on_the_md_fallback(m) == [] and C.case_5(m, contract_ctx) == []
+    assert C.parts_without_words(m) == [] and C.case_5(m, contract_ctx) == []
     assert set(m.WORDS) == set(m.LAYOUT) == {"goal", "judge"}
 
 
-def test_u2_the_words_compile_to_the_bundles_part_byte_for_byte_and_the_prompts_hold_the_returns(j2):
+def test_u2_the_words_compile_to_the_retired_files_part_byte_for_byte_and_the_prompts_hold_the_returns(j2):
+    from test_function_prompts import retired
     W, R, J, _, _ = j2
     for group, part in (("goal", "does"), ("goal", "skills"), ("judge", "judge"), ("judge", "items")):
         spec = S.PROMPTS["audit"][group][part]
         sample = {n: "<<%s>>" % n for n in spec["inputs"]}
-        want = P.SLOT.sub(lambda mm: sample[mm.group(1)], P.md_part("audit", group, part))
+        want = P.SLOT.sub(lambda mm: sample[mm.group(1)], retired("audit", group, part))
         assert P.prompt(None, "audit", group, part, **sample) == want, (group, part)
         assert spec["returns"] is None or spec["returns"] in P.prompt(None, "audit", group, part, **sample)
     # and what a run sends is those words: the judge's prompt as it was, the reader's as the interface says

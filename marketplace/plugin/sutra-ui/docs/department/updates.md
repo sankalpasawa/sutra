@@ -7,11 +7,11 @@
 
 ## In the bundle (replaced by an update)
 
-The code, `engine_defs/website.json` (with its `def_version`), the shipped `engine-templates/`, the `artifact-templates/`, the `function-templates/`, each function's instruction files in `function-prompts/<function>/<file>.md` (PRD M2.1: the words each function's agent is sent; the definitions refuse to load when one is missing), the screens. Nothing a person made is written here.
+The code, `engine_defs/website.json` (with its `def_version`), the shipped `engine-templates/`, the `artifact-templates/`, the `function-templates/`, each function's words (the typed WORDS and LAYOUT of its layer's version under `layers/`: PRD M2.1 and A1.16, the words each function's agent is sent; the definitions refuse to load when a part has none), the screens. Nothing a person made is written here.
 
 ## With the records (kept by an update)
 
-The records home (`home()`: `~/.sutra-ui/native` stable, `~/.sutra-ui-beta/native` Beta): every department's directory, the boards, the runs, the versions, the served sites, a department's own copy of a function's instruction file in `{ref}/prompts/<function>/<file>.md` (PRD M2.2: written only on the owner's stamped `instructions` ask; it wins over the bundle's, and a part only a newer bundle has is read from the bundle; `_own`, `_instruction`, `_prompt`), and the Library's other half, `_library/`, where born engines live (`born_template`, `user_templates_dir`).
+The records home (`home()`: `~/.sutra-ui/native` stable, `~/.sutra-ui-beta/native` Beta): every department's directory, the boards, the runs, the versions, the served sites, a department's own copy of a function's instruction file in `{ref}/prompts/<function>/<file>.md` (PRD M2.2: kept as the owner's note since the fields were typed; no run reads it, and the owner's typed values are in `{ref}/instructions.json`; `_own`, `_prompt`), and the Library's other half, `_library/`, where born engines live (`born_template`, `user_templates_dir`).
 
 ## What happens on an update
 

@@ -449,9 +449,9 @@ def _base_defs():
             e = {k: v for k, v in t.items() if k not in ("id", "version")}
             e["from_template"] = t["id"]
             d["engines"][name] = e
-        # each function's version 1 is one agent and its files (S-28): a file gone from the bundle refuses the load, as
-        # a step with no check does, so no function runs on words that are not there (PRD M2.1)
-        faults = validate(d) + bundle_faults()
+        # each function's version 1 is one agent and its words (S-28): a part with no words refuses the load, as a step
+        # with no check does, so no function runs on words that are not there (PRD M2.1)
+        faults = validate(d) + prompt_faults()
         if faults:
             raise ValueError("the engine definitions are refused: " + "; ".join(faults[:6]))
         _DEFS["d"] = d
@@ -2454,24 +2454,6 @@ def _rule_applies_to_birth(rule):
     return bool(re.search(r"\b(new department|make|create|set up|anything|approval first|approve first)\b", line, re.I))
 
 
-def priority_envelope(ctx, step, item):
-    ref, name, slot = ctx["ref"], ctx["engine"], ctx["slot"]
-    calls, usd = W._today_spend(ref, name)
-    env = W.limit_of(ctx["dept"], name)
-    if calls >= env.get("calls", 0) or usd >= env.get("usd", 0):
-        if not ctx.get("peek") and not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
-            W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "envelope", "engine": name, "slot": slot,
-                             "text": "%s is out of today's envelope" % name, "status": "pending", "created": W.now(), "escalated": True})
-        if not ctx.get("peek"):
-            # the hold is on the ledger once for its slot, however often the motor asks again (M0.4); a panel read
-            # asking the same question writes nothing; Coordination's other waits stay in the status's 'next'
-            J = _j2()
-            if J:
-                J.on_held(ref, name, slot, "%s is out of today's envelope" % name)
-        return "wait", "%s is out of its envelope" % name
-    return "admit", None
-
-
 def coord_chain(ctx, step, item):
     ref = ctx["ref"]
     chain = W._chain_of(ref, ctx["def"]["reads"], ctx["inp"]["v"])
@@ -3862,46 +3844,6 @@ def identity_alarm(ctx, step, item):
     return {"said": "heard an alarm: " + str((ctx["post"]["payload"] or {}).get("what"))}
 
 
-def priority_read(ctx, step, item):
-    pl = ctx["post"]["payload"]
-    if pl.get("word") == "line":
-        # the department's workflows, proposed together: Priority has room for as many work engines as its template says
-        names = [str(e.get("name")) for e in pl.get("engines") or [] if isinstance(e, dict) and e.get("name")]
-        limit = int(((engine_def("Priority") or {}).get("template") or {}).get("line") or 6)
-        return {"word": "line", "engine": None, "names": names, "limit": limit,
-                "facts": {"word": "line", "room": 1 <= len(names) <= limit}}
-    eng = pl.get("engine") or "Write"
-    calls, _ = W._today_spend(ctx["ref"], eng)
-    env = W.limit_of(ctx["dept"], eng)
-    return {"word": pl.get("word"), "engine": eng, "facts": {"word": pl.get("word"), "room": calls * 2 < int(env.get("calls") or 0)}}
-
-
-def priority_post(ctx, step, item):
-    pl = ctx["post"]["payload"]
-    got = ctx["bag"]["priority.bargain"]
-    if pl.get("word") == "line":
-        read, answer = ctx["bag"]["priority.read"], got.get("answer")
-        names = list(read.get("names") or [])
-        why = str(got.get("why") or "").strip()
-        if answer == "counter":
-            keep = [n for n in names if n in [str(k) for k in got.get("keep") or []]] or names[:int(read.get("limit") or 6)]
-            if keep and len(keep) < len(names):
-                row = post(ctx["ref"], "Priority", "Adaptation", "propose",
-                           {"word": "line", "counter": True, "keep": keep, "why": why or "the envelope has room for %d of them" % len(keep)},
-                           thread=ctx["post"]["thread"])
-                return {"said": "asked for less on the line: keep " + " -> ".join(keep) if row else "the bargain reached its bound"}
-            answer = "reject" if not keep else "accept"
-        ok = answer == "accept"
-        row = post(ctx["ref"], "Priority", "Adaptation", "accept-proposal" if ok else "reject-proposal",
-                   {"word": "line", "why": why or ("the envelope has room" if ok else "the envelope has no room")}, thread=ctx["post"]["thread"])
-        return {"said": ("said yes to" if ok else "said no to") + " the line " + " -> ".join(names) if row else "the bargain reached its bound"}
-    ok = got.get("answer") == "accept"
-    post(ctx["ref"], "Priority", "Adaptation", "accept-proposal" if ok else "reject-proposal",
-         {"word": pl.get("word"), "step": pl.get("step"), "to": pl.get("to"), "form": pl.get("form"), "why": got.get("why")},
-         thread=ctx["post"]["thread"])
-    return {"said": ("said yes to" if ok else "said no to") + " a trial of " + str(pl.get("step"))}
-
-
 def adapt_sense(ctx, step, item):
     ref = ctx["ref"]
     rows, L = step_rows(ref), ladder(ref)
@@ -4053,26 +3995,6 @@ def audit_pick(ctx, step, item):
     # interim until M8 reads each done-when item); outside a cycle Audit drops in on a sample, as it always has
     sample = _j2_live(ctx["ref"]) or v <= 3 or v % 3 == 0
     return {"sample": sample, "v": v, "pages": audit_pages(files)}
-
-
-def audit_mechanical(ctx, step, item):
-    ref = ctx["ref"]
-    if not ctx["bag"]["audit.pick"]["sample"]:
-        return {"ok": True, "notes": ["not sampled"]}
-    notes = []
-    for a in W.artifacts_of(W.dept(ref))[1:]:
-        for v in W.versions(ref, a):
-            if not v.get("run") or "check" not in v:
-                notes.append("%s has a version with no run or no check" % a)
-    art = audit_art(ctx)
-    if not any(c.get("kind") == "ask" for c in (W.trace(ref, art, ctx["inp"]["v"]) if art else [])):
-        notes.append("the %s does not trace back to the owner's words" % (art or "deliverable").lower())
-    # a page that says "to be confirmed" published what nobody knew (found live 2026-09-28: twelve such places on
-    # four pages); Audit names each hole, Identity asks the owner for the facts instead of a stamp
-    holes = placeholders(audit_files(ctx))
-    said = notes + (["the site says it does not know %d thing%s" % (len(holes), "" if len(holes) == 1 else "s")] if holes else [])
-    return {"ok": not said, "notes": said or ["every version has its run and its check; the trace reaches the owner's words"],
-            "faults": notes, "holes": holes}
 
 
 PLACEHOLDER = re.compile(r"to be confirmed|to be announced|\bTBD\b|\bTBA\b|lorem ipsum|\[insert[^\]]*\]|coming soon|will be added here", re.I)
@@ -5069,52 +4991,6 @@ def coord_table(ctx, step, item):
     return {"said": said, "line": list(t["line"])}
 
 
-def priority_grant(ctx, step, item):
-    """Priority's handler for an engine born: each new engine is given its limit, from Priority's template (a
-    work engine work_calls times the calls: engine_limit); one that already holds a limit (the owner's own, or one a
-    department off J2 was born with) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}, run in
-    place, or from the board on what the record already holds (born_item), where only an engine that holds no limit is
-    given one; a born word that names nothing on the record gives nothing. Run in place for the budget Identity's
-    question asked about, `item` may carry `within_usd`, the most the owner said the department may spend a day: the
-    limits given share what the limits held leave of it, each no more than the template's, so together they never
-    exceed it (approvals only tighten; PRD M3.3)."""
-    ref, board_ = ctx["ref"], item is None
-    within = item.get("within_usd") if isinstance(item, dict) else None
-    item, why = born_item(ctx, item)
-    names = list(item.get("engines") or ([item["grow"]] if item.get("grow") else []))
-    if board_ and names:
-        envs0 = (W.dept(ref) or {}).get("envelopes") or {}
-        names = [n for n in names if not isinstance(envs0.get(n), dict)]
-        why = why or "each engine it names holds its limit"
-    if not names:
-        return {"said": "nothing to do: " + why if board_ else "no new engine to give a limit"}
-    given = []
-    with W._lock(ref):
-        d = W.dept(ref) or {}
-        envs = d.setdefault("envelopes", {})
-        new = [n for n in names if not isinstance(envs.get(n), dict)]
-        share = None
-        if within is not None and new:
-            held = sum(float((v or {}).get("usd") or 0) for k, v in envs.items() if isinstance(v, dict) and k not in new)
-            share = math.floor(max(0.0, float(within) - held) * 100 / len(new)) / 100.0
-        for n in new:
-            envs[n] = engine_limit(n)
-            if share is not None:
-                envs[n]["usd"] = min(float(envs[n]["usd"]), share)
-            given.append(n)
-        if given:
-            W.save_dept(ref, d, by="priority")
-    J = _j2()
-    if J:
-        for n in names:
-            J.on_granted(ref, n, envs.get(n), n not in given, item.get("version"))
-    kept = [n for n in names if n not in given]
-    said = (["gave a limit to " + _names(given) + (" within the %s USD a day the owner said" % _usd(within) if share is not None else "")]
-            if given else []) + (
-        ["%s %s" % (_names(kept), "keeps the limit it holds" if len(kept) == 1 else "keep the limits they hold")] if kept else [])
-    return {"said": "; ".join(said), "given": given, "kept": kept}
-
-
 def _names(xs):
     xs = list(xs)
     return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
@@ -5199,27 +5075,6 @@ def identity_engine(ctx, step, item):
     post(ref, "Identity", OWNER, "request", {"word": "engine", "objective": text, "output": "a stamp or a refusal", "may_read": [],
                                              "boundaries": "this one engine"}, thread=p["thread"])
     return {"said": "put an engine to the owner: " + name}
-
-
-# ---- the line shaped on the fly (founder, 2026-09-30: "each of the adaptations doesn't do any kind of template. It creates
-# engines on the fly. It creates a website, and data is taken from the internet"): a department born with no engines (the
-# organic kind) has Adaptation shape its line from the owner's words, Identity puts the whole line to the owner once, and
-# the stamp births every engine from Do into the Library; the first starts on the words -----------------------------------
-def adapt_line_offer(ctx, step, item):
-    ref, pl = ctx["ref"], ctx["post"]["payload"]
-    src = ctx["bag"].get("adapt.source") or {"shape": True, "source": "shaped"}
-    got = ctx["bag"]["adapt.line"] if src.get("shape") else src
-    engines = [{"name": " ".join(str(e["name"]).split())[:40], "does": " ".join(str(e.get("does") or "").split())[:200],
-                "reads": " ".join(str(e.get("reads") or "Brief").split())[:40], "writes": " ".join(str(e.get("writes") or e["name"]).split())[:40],
-                "internet": bool(e.get("internet"))} for e in got["engines"]]
-    if _j2_live(ref):
-        # J2 step 3: the proposal goes to Priority, on the board, in a thread of its own with the board's bounds
-        post(ref, "Adaptation", "Priority", "propose", {"word": "line", "engines": engines, "source": src.get("source"), "words": pl.get("words"),
-                                                       "for": pl.get("for"), "why": "the goal needs these workflows"})
-        return {"said": "proposed the line to Priority: " + " -> ".join(e["name"] for e in engines), "engines": engines}
-    post(ref, "Adaptation", "Identity", "propose", {"word": "line", "engines": engines, "words": pl.get("words"), "for": pl.get("for"),
-                                                   "why": "the goal needs a line and the department was born with none"})
-    return {"said": "shaped the line from the words: " + " -> ".join(e["name"] for e in engines), "engines": engines}
 
 
 def identity_line(ctx, step, item):
@@ -5591,28 +5446,6 @@ def _library_repair(d, lib):
         nxt = next((n for n in line if n in after), None)
         line.insert(line.index(nxt) if nxt else len(line), r)
     return line
-
-
-def adapt_source(ctx, step, item):
-    """Where the proposal comes from (J2.b): the Library's template when the department's kind has one, else Adaptation
-    shapes the line itself. A line Root's check refused is shaped again, whatever its first source was, unless the
-    kind requires engines: then it is the Library's line again, with the engines the kind requires (_library_repair)."""
-    d, pl = ctx["dept"], ctx["post"]["payload"]
-    lib = list(d.get("engines") or (W.KINDS.get(d.get("kind") or "website") or {}).get("line") or [])
-    repair = _library_repair(d, lib) if pl.get("faults") else None
-    if repair:
-        lib = repair
-    shape = (bool(pl.get("faults")) and not repair) or not lib
-    engines = []
-    if not shape:
-        known = defs()["engines"]
-        for n in lib:
-            e = known.get(n) or {}
-            engines.append({"name": n, "does": str(e.get("description") or e.get("use_case") or ""), "reads": e.get("reads") or "Brief",
-                            "writes": e.get("writes") or n, "internet": False})
-    took = "takes the Library's line again, with what its kind requires (%s): " % _names(required_engines(d)) if repair else "takes the Library's line: "
-    return {"shape": shape, "source": "shaped" if shape else "library", "engines": engines,
-            "said": "shapes the line from the goal" if shape else took + " -> ".join(lib)}
 
 
 def _line_proposal(ref, thread):
@@ -6048,42 +5881,6 @@ def adapt_line_granted(ctx, step, item):
     return _j2_settle(ref, ctx["dept"], offer.get("engines") or [], offer.get("source") or "shaped", offer.get("words"), "Priority's yes")
 
 
-def adapt_line_refused(ctx, step, item):
-    """Priority said no to the line: Adaptation does not drop it in silence; Identity closes the conflict (step 4)."""
-    ref, p = ctx["ref"], ctx["post"]
-    why = str((p.get("payload") or {}).get("why") or "no room in the envelope").strip().rstrip(".")
-    _line_conflict(ref, p["thread"], "Priority said no to the plan: %s" % why)
-    return {"said": "Priority said no to the line (%s); the conflict goes to Identity" % why}
-
-
-def adapt_line_counter(ctx, step, item):
-    """Priority asked for less: Adaptation takes that when it leaves a line that still works, and proposes that line
-    again in the same thread; what it cannot take goes to Identity. The thread's own bound ends a bargain that will not close."""
-    ref, p = ctx["ref"], ctx["post"]
-    pl = p.get("payload") or {}
-    offer = _line_proposal(ref, p["thread"]) or {}
-    keep = [str(k) for k in pl.get("keep") or []]
-    engines = [e for e in offer.get("engines") or [] if e.get("name") in keep]
-    why = str(pl.get("why") or "the envelope has no room for all of it").strip().rstrip(".")
-    # a counter that drops an engine the kind requires is never taken: Identity closes it (PRD M4.4)
-    proposed = [e.get("name") for e in offer.get("engines") or []]
-    dropped = [n for n in required_engines(ctx["dept"]) if n in proposed and n not in keep]
-    if dropped:
-        _line_conflict(ref, p["thread"], "Priority asked for less (%s) and the line would leave out %s, which this kind of department requires"
-                       % (why, _names(dropped)))
-        return {"said": "could not take Priority's ask for less: it leaves out %s, which is required; the conflict goes to Identity" % _names(dropped)}
-    if not engines or len(engines) == len(offer.get("engines") or []) or _root_check(ref, ctx["dept"], engines, offer.get("source") or "shaped"):
-        _line_conflict(ref, p["thread"], "Priority asked for less (%s) and the line does not work that way" % why)
-        return {"said": "could not take Priority's ask for less; the conflict goes to Identity"}
-    row = post(ref, "Adaptation", "Priority", "propose", {"word": "line", "engines": engines, "source": offer.get("source"),
-                                                         "words": offer.get("words"), "for": offer.get("for"),
-                                                         "why": "took Priority's ask for less: " + why}, thread=p["thread"])
-    if row is None:
-        _line_conflict(ref, p["thread"], "the bargain reached its bound", bound="hops", src="Coordination")
-        return {"said": "the bargain reached its bound; it goes to Identity"}
-    return {"said": "took Priority's ask for less and proposed again: " + " -> ".join(e["name"] for e in engines)}
-
-
 def p_identity_close(ctx, step, item):
     d, pl = ctx["dept"], ctx["post"]["payload"]
     rules = "; ".join("%s: %s" % (r.get("tag"), r.get("line")) for r in d.get("rules") or [] if r.get("line"))
@@ -6099,50 +5896,6 @@ def d_identity_close(ctx, step, item):
 
 def c_ruling_is_known(ctx, step, item, out):
     return _verdict(out.get("ruling") in ("run", "drop", "ask"), "the ruling is run, drop or ask", "not a ruling: %r" % (out.get("ruling"),))
-
-
-def identity_closed(ctx, step, item):
-    """Identity's ruling on a bargain that did not close (step 4): run it, drop it, or one ask to the owner (J2.3)."""
-    ref, d, pl = ctx["ref"], ctx["dept"], ctx["post"]["payload"]
-    got = ctx["bag"]["identity.close"]
-    ruling, why = got.get("ruling"), str(got.get("why") or "").strip().rstrip(".")
-    engines, J = [e for e in pl.get("engines") or [] if isinstance(e, dict) and e.get("name")], _j2()
-    names = " -> ".join(e["name"] for e in engines)
-    who = {"src": "Root" if d.get("root") else OWNER}
-    if not engines:
-        # no plan at all: Adaptation answered that an engine the kind requires cannot serve an item (J2B-4, M6.4), so there
-        # is nothing to run, nothing to drop and no plan to stamp (a stamp would send Root a plan that names no engine, and
-        # the same card would come back). The owner is put the reason in plain words, on the card every blocked plan has,
-        # with its ways out. The conflict's own options (root_setup among them) are filed by the options ask of W2-IDENTITY J1
-        reason = str(pl.get("why") or "no plan can be made").strip().rstrip(".")
-        if J:
-            J.ruled(ref, "ask", reason, engines)
-        _blocked(ref, d, who, "%s. Say what the department should do, or choose a way forward on this card." % reason,
-                 "No plan can be made as it stands.", "Adaptation, shaping the plan", reason)
-        return {"said": "no plan can be made (%s); put to the owner, with the ways out" % reason}
-    if J:
-        J.ruled(ref, ruling, why, engines)
-    if ruling == "run":
-        _tell(ref, d, who, "inform", {"word": "line", "done": "Priority did not say yes to the plan %s; I ruled it runs: %s." % (names, why)})
-        return _j2_settle(ref, d, engines, pl.get("source") or "shaped", pl.get("words"), "Identity's ruling")
-    if ruling == "drop":
-        _blocked(ref, d, who, "The plan %s is dropped: %s. Say what to change, or raise Priority's limit on its card."
-                 % (names, why or str(pl.get("why") or "")), "The plan is dropped.", "Identity, settling Priority's no",
-                 why or str(pl.get("why") or ""))
-        return {"said": "dropped the plan: " + (why or "Priority's no stands")}
-    text = ("Adaptation proposes the plan %s. %s. The goal and the rules do not settle it. %s"
-            % (names, str(pl.get("why") or "Priority did not say yes to it").rstrip("."), _answers("run it as proposed", "to drop it")))
-    # the card quotes Priority's why, which a model may say in the bargain's inside words: it passes the check every card
-    # passes (plain_card, M3.6), so the card says what the line it stands for may (found by a verifier 2026-10-26: the
-    # Chat's 'Waiting for you' card said grant and counter while its line was plain)
-    text = plain_card(ref, {"text": text}, "conflict")["text"]
-    if not any(a.get("kind") == "conflict" and a.get("for") == pl.get("for") for a in W.asks(ref)):
-        p = post(ref, "Identity", OWNER, "request", {"word": "conflict", "objective": text, "output": "a stamp or a refusal", "may_read": ["Brief"],
-                                                     "boundaries": "this one plan"})
-        W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "conflict", "engine": "Identity", "engines": engines,
-                         "source": pl.get("source") or "shaped", "words": pl.get("words"), "for": pl.get("for"), "text": text,
-                         "status": "pending", "created": W.now(), "thread": p["thread"] if p else None})
-    return {"said": "could not close the conflict from the goal and the rules; put it to the owner"}
 
 
 def _j2_audit_read(ref, d, version, filed, art=None, reading=None):
@@ -6165,63 +5918,41 @@ def _j2_audit_read(ref, d, version, filed, art=None, reading=None):
 
 CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "write_list": write_list, "write_file": write_file,
         "do_read": do_read, "do_file": do_file, "adapt_offer": adapt_offer, "adapt_priced": adapt_priced, "identity_engine": identity_engine,
-        "adapt_line_offer": adapt_line_offer, "identity_line": identity_line, "do_pages_list": do_pages_list,
-        "adapt_source": adapt_source, "adapt_line_granted": adapt_line_granted, "adapt_line_refused": adapt_line_refused,
-        "adapt_line_counter": adapt_line_counter, "identity_closed": identity_closed,
+        "identity_line": identity_line, "do_pages_list": do_pages_list, "adapt_line_granted": adapt_line_granted,
         "check_rules_of": check_rules_of,
         "hear": hear, "coord_ready": coord_ready, "coord_record": coord_record,
         "setup_read": setup_read, "setup_say": setup_say, "setup_make": setup_make, "setup_file": setup_file,
         "check_build": check_build, "publish_copy": publish_copy, "identity_gate": identity_gate, "identity_wait_engine": identity_wait_engine,
-        "priority_envelope": priority_envelope, "coord_chain": coord_chain, "coord_heard": coord_heard,
+        "coord_chain": coord_chain, "coord_heard": coord_heard,
         "coord_busy": coord_busy, "coord_pick": coord_pick, "coord_edge": coord_edge, "coord_verdict": coord_verdict,
-        "coord_bounds": coord_bounds, "coord_alarm": coord_alarm, "coord_table": coord_table, "priority_grant": priority_grant,
-        "identity_read": identity_read, "identity_route": identity_route, "identity_hand": identity_hand, "identity_lost": identity_lost,
-        "identity_file": identity_file, "identity_verdict": identity_verdict, "identity_rung": identity_rung,
-        "identity_apply": identity_apply, "identity_drop": identity_drop, "identity_finding": identity_finding,
+        "coord_bounds": coord_bounds, "coord_alarm": coord_alarm, "coord_table": coord_table,
+        "identity_route": identity_route, "identity_hand": identity_hand, "identity_lost": identity_lost,
+        "identity_verdict": identity_verdict, "identity_rung": identity_rung,
         "identity_alarm": identity_alarm, "identity_idea": identity_idea, "adapt_park": adapt_park,
-        "priority_read": priority_read, "priority_post": priority_post,
         "adapt_sense": adapt_sense, "adapt_ladder": adapt_ladder, "adapt_act": adapt_act, "adapt_trial": adapt_trial,
-        "adapt_notrial": adapt_notrial, "adapt_heard": adapt_heard, "audit_pick": audit_pick,
-        "audit_mechanical": audit_mechanical, "audit_file": audit_file}
+        "adapt_notrial": adapt_notrial, "adapt_heard": adapt_heard}
 
 
 # ---- each function's version 1: one agent, its instructions as typed fields (S-28, A1.16) ------------------------------
 #: Version 1 of each function is one agent with its instructions inside its covering (PRD M2, rewritten by A1). The words
 #: its agent is sent are the layer's WORDS and LAYOUT, compiled by layers/prompts.py from fields the interface types
-#: (layer_schema.PROMPTS); the code around them only fills their inputs and checks what comes back. Until a layer holds
-#: its words, the bundle's .md files (function-prompts/, which an update of the app replaces) are read through the same
-#: split. The bundle sits beside the code and is read-only from here on.
-PROMPTS_DIR = Path(__file__).parent / "function-prompts"
-#: Each function's files, in its page's order, and in each the parts its steps read, with the inputs the code fills in
-#: each, derived from the interface. A file no step reads (Adaptation's decide, whose only part is the note) is the
+#: (layer_schema.PROMPTS); the code around them only fills their inputs and checks what comes back. There is no other source:
+#: the .md files that held them before they moved into the layers are deleted (W3-PROOF X1, M2.10).
+#: Each function's groups of instructions, in its page's order, and in each the parts its steps read, with the inputs the code
+#: fills in each, derived from the interface. A group no step reads (Adaptation's decide, whose only part is the note) is the
 #: owner's to read, and holds no part.
 INSTRUCTIONS = {fn: {group: {part: tuple(spec["inputs"]) for part, spec in parts.items() if "field.note" not in spec["fields"].values()}
                      for group, parts in layer_schema.PROMPTS[fn].items()} for fn in layer_schema.FUNCTION_LAYERS}
 
 
-# the .md reader and the compiler moved into layers/prompts.py (PRD A1.16); these keep their names for their callers
-def _parts(text):
-    return layers.prompts.parts_of(text)
-
-
-def instruction_faults(fn, file, text):
-    """What keeps one instruction file from serving its function: layers.prompts.instruction_faults."""
-    return layers.prompts.instruction_faults(fn, file, text)
-
-
-def bundle_faults():
-    """Every function's words against the list, at the definitions load: layers.prompts.faults. [] when all serve."""
+def prompt_faults():
+    """Every function's words against the interface, at the definitions load: layers.prompts.faults. [] when all serve."""
     return layers.prompts.faults()
 
 
 def _own(ref, fn, file):
     """Where a department keeps its own copy of one instruction file (PRD M2.2): layers.prompts.own."""
     return layers.prompts.own(ref, fn, file)
-
-
-def _instruction(fn, file, ref=None):
-    """The text of one of a function's instruction files, the department's own copy or the bundle's: layers.prompts.instruction."""
-    return layers.prompts.instruction(fn, file, ref)
 
 
 def _prompt(fn, file, part, ref=None, **slots):
@@ -6824,31 +6555,6 @@ def _offer_lines(pl):
             "usd": "%.2f" % float(t.get("usd", 6.0))}
 
 
-def p_priority_bargain(ctx, step, item):
-    got, pl = ctx["bag"]["priority.read"], ctx["post"]["payload"]
-    room = "yes" if got["facts"]["room"] else "no"
-    if pl.get("word") == "line":
-        lines = "\n".join("- %s: %s" % (e.get("name"), str(e.get("does") or "")) for e in pl.get("engines") or [] if isinstance(e, dict))
-        t = priority_template()
-        return _prompt("priority", "bargain", "line", ctx["ref"], source="from the Library" if pl.get("source") == "library" else "shaped for the goal",
-                       engines=lines, calls="%d" % (int(t.get("work_calls", 8)) * int(t.get("calls", 30))), usd="%.2f" % float(t.get("usd", 6.0)),
-                       room=room, limit=got.get("limit"))
-    if pl.get("word") == "engine":
-        return _prompt("priority", "bargain", "engine", ctx["ref"], room=room, **_offer_lines(pl))
-    return _prompt("priority", "bargain", "cost", ctx["ref"], word=pl.get("word"), step=pl.get("step"), cost=pl.get("cost"), room=room)
-
-
-def d_priority_bargain(ctx, step, item):
-    read = ctx["bag"]["priority.read"]
-    if read.get("word") == "line" and not read["facts"]["room"]:
-        keep = list(read.get("names") or [])[:int(read.get("limit") or 6)]
-        if keep:
-            return {"answer": "counter", "why": "the envelope has room for %d workflows" % len(keep), "keep": keep}
-        return {"answer": "reject", "why": "the plan names no workflow"}
-    room = ctx["bag"]["priority.read"]["facts"]["room"]
-    return {"answer": "accept" if room else "reject", "why": "the envelope has room" if room else "the envelope has no room today"}
-
-
 def p_audit_judge(ctx, step, item):
     ref = ctx["ref"]
     files = audit_files(ctx)
@@ -6971,43 +6677,17 @@ def _out_artifacts():
     return "; ".join("%s: %s" % (t["name"], t.get("use_case") or "") for t in artifacts.templates().values() if t.get("counts_after") == "stamp")
 
 
-def p_adapt_line(ctx, step, item):
-    d, pl = ctx["dept"], ctx["post"]["payload"]
-    rules = "; ".join(str(r.get("line")) for r in d.get("rules") or [] if r.get("line"))
-    taken = ", ".join(sorted(defs()["engines"]))
-    refused = ("\n\n" + _prompt("adaptation", "make", "refused", ctx["ref"], faults="; ".join(str(f) for f in pl["faults"]))) if pl.get("faults") else ""
-    # the done-when items, one a line ('D1: the site is live'): make.line names them (PRD M5.1), and a layer that does not load
-    # runs this body, which must fill every slot the part has (layers/adaptation/v1.item_lines says it the same way)
-    items = "\n".join("%s: %s" % (i["id"], " ".join(str(i.get("text") or "").split()))
-                      for i in d.get("done_items") or [] if isinstance(i, dict) and i.get("id"))
-    return _prompt("adaptation", "make", "line", ctx["ref"], dept=d.get("name"), words=pl.get("words") or d.get("goal"), items=items or "none",
-                   taken=taken, out=_out_artifacts() or "none", rules=rules or "none", refused=refused)
-
-
-def d_adapt_line(ctx, step, item):
-    # the draft, when no agent is there to judge: two engines, the facts from the internet and the site from the facts.
-    # Their names are ones the Library does not have yet: a second department shaped this way takes Facts 2 and Site 2
-    # (found 2026-10-07: it took Facts and Site again, its check refused the line, and nothing was said)
-    def line(n):
-        tag = "" if n == 1 else " %d" % n
-        return [{"name": "Facts" + tag, "does": "finds on the internet what the goal names, each fact with its source", "reads": "Brief",
-                 "writes": "Facts" + tag, "internet": True},
-                {"name": "Site" + tag, "does": "writes the site's pages from the facts, each with its source", "reads": "Facts" + tag,
-                 "writes": "Live site", "internet": False}]
-    return {"engines": next((line(n) for n in range(1, 50) if not _line_faults(line(n))), line(1))}
-
-
-PROMPT = {"identity_recognise": p_identity_recognise, "adapt_line": p_adapt_line, "do_pages": p_do_pages, "do_page": p_do_page, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
+PROMPT = {"identity_recognise": p_identity_recognise, "do_pages": p_do_pages, "do_page": p_do_page, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
           "identity_weigh": p_identity_weigh, "adapt_shape": p_adapt_shape, "plan_pages": p_plan_pages, "write_page": p_write_page, "identity_take": p_identity_take,
-          "identity_gate_soft": p_identity_gate, "priority_bargain": p_priority_bargain, "audit_judge": p_audit_judge,
+          "identity_gate_soft": p_identity_gate, "audit_judge": p_audit_judge,
           "coord_tie": p_coord_tie, "setup_shape": p_setup_shape, "setup_converse": p_setup_converse, "identity_close": p_identity_close, "check_rules": p_check_rules, "do_make": p_do_make, "do_need": p_do_need,
           "identity_enough": p_identity_enough}
-DRAFT = {"identity_recognise_draft": d_identity_recognise, "adapt_line_draft": d_adapt_line, "do_pages_draft": d_do_pages, "do_page_draft": d_do_page, "identity_answer_draft": d_identity_answer,
+DRAFT = {"identity_recognise_draft": d_identity_recognise, "do_pages_draft": d_do_pages, "do_page_draft": d_do_page, "identity_answer_draft": d_identity_answer,
          "coord_tie_draft": d_coord_tie, "setup_shape_draft": d_setup_shape, "setup_converse_draft": d_setup_converse,
          "identity_close_draft": d_identity_close, "check_rules_draft": d_check_rules,
          "identity_rule_draft": d_identity_rule, "identity_weigh_draft": d_identity_weigh, "adapt_shape_draft": d_adapt_shape,
          "plan_pages_draft": d_plan_pages, "write_page_draft": d_write_page, "identity_take_draft": d_identity_take,
-         "identity_gate_draft": d_identity_gate, "priority_bargain_draft": d_priority_bargain, "audit_judge_draft": d_audit_judge,
+         "identity_gate_draft": d_identity_gate, "audit_judge_draft": d_audit_judge,
          "do_make_draft": d_do_make, "do_need_draft": d_do_need, "identity_enough_draft": d_identity_enough}
 
 
@@ -7098,21 +6778,6 @@ def c_names_who_goes_first(ctx, step, item, out):
 
 def c_answer_is_known(ctx, step, item, out):
     return _verdict(out.get("answer") in ("accept", "reject", "counter"), "the answer is accept, reject or counter", "not an answer: %r" % (out.get("answer"),))
-
-
-def c_answer_has_its_price(ctx, step, item, out):
-    """Priority's covering (M2.4): yes, less or no, each with its price: the line that says what it costs against the
-    room left; an ask for less names what it keeps. An answer without them fails the step; nothing is taken in its place."""
-    notes = []
-    if out.get("answer") not in ("accept", "reject", "counter"):
-        notes.append("not an answer: %r" % (out.get("answer"),))
-    if not str(out.get("why") or "").strip():
-        notes.append("the answer names no price: nothing says what it costs against the room left")
-    if out.get("answer") == "counter" and not [k for k in out.get("keep") or [] if str(k).strip()]:
-        notes.append("an ask for less names nothing to keep")
-    # the note is said on Priority's card, so it names the answer in the owner's words (said yes, asked for less, said no)
-    said = {"accept": "said yes", "reject": "said no", "counter": "asked for less"}.get(out.get("answer"), out.get("answer"))
-    return {"ok": not notes, "notes": notes or ["%s, with its price: %s" % (said, str(out["why"]).strip())]}
 
 
 def c_facts_are_closed(ctx, step, item, out):
@@ -7275,22 +6940,13 @@ def _line_faults(engs):
     return [note for _, note in _line_notes(engs)]
 
 
-def c_line_is_engines(ctx, step, item, out):
-    """One to six engines that _line_faults finds nothing wrong with: the shape is the agent's, the check is code."""
-    engs = out.get("engines") if isinstance(out, dict) else None
-    if not isinstance(engs, list) or not 1 <= len(engs) <= 6:
-        return _verdict(False, "", "one to six engines")
-    notes = _line_faults(engs)
-    return {"ok": not notes, "notes": notes or ["%d engines, each reading what one before it wrote" % len(engs)]}
-
-
 def c_idea_has_shapes(ctx, step, item, out):
     shapes = [x for x in out.get("shapes") or [] if str(x).strip()]
     ok = bool(str(out.get("reflected") or "").strip()) and 2 <= len(shapes) <= 3
     return _verdict(ok, "reflected back, in %d shapes" % len(shapes), "the idea was not reflected back in two or three shapes")
 
 
-CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_named, "page_is_html": c_page_is_html, "journey_is_known": c_journey_is_known, "answer_names_its_source": c_answer_names_its_source, "result_is_text": c_result_is_text,
+CHECK = {"pages_are_named": c_pages_are_named, "page_is_html": c_page_is_html, "journey_is_known": c_journey_is_known, "answer_names_its_source": c_answer_names_its_source, "result_is_text": c_result_is_text,
          "need_is_answer": c_need_is_answer,
          "rule_is_tagged": c_rule_is_tagged, "feedback_says_what_changes": c_feedback_says_what_changes,
          "idea_has_shapes": c_idea_has_shapes, "brief_is_text": c_brief_is_text, "plan_has_pages": c_plan_has_pages, "plan_is_fit": c_plan_is_fit,
@@ -7300,98 +6956,17 @@ CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_na
          "gate_answer_is_known": c_gate_answer_is_known, "answer_is_known": c_answer_is_known,
          "names_who_goes_first": c_names_who_goes_first,
          "facts_are_closed": c_facts_are_closed, "said_what_it_did": c_said_what_it_did, "counted_the_rows": c_counted_the_rows,
-         "moves_are_known": c_moves_are_known, "picked_a_sample": c_picked_a_sample, "has_a_verdict": c_has_a_verdict,
+         "moves_are_known": c_moves_are_known, "picked_a_sample": c_picked_a_sample,
          "findings_are_rows": c_findings_are_rows,
          # each function's covering (M2.4): code, and a step that fails one fails; no draft is taken in its place
-         "findings_name_where_and_what": c_findings_name_where_and_what, "answer_has_its_price": c_answer_has_its_price,
+         "findings_name_where_and_what": c_findings_name_where_and_what,
          "moves_name_their_rows": c_moves_name_their_rows, "one_run_at_a_time": c_one_run_at_a_time,
          "chain_under_its_limit": c_chain_under_its_limit,
          "department_is_shaped": c_department_is_shaped, "department_is_made": c_department_is_made,
          "setup_converse_is_valid": c_setup_converse_is_valid, "ruling_is_known": c_ruling_is_known,
          "enough_is_shaped": c_enough_is_shaped}
-# audit/v1's step audit.items (A1 W1-AUDIT, M8.3): registered beside the literals, which are not edited before W3-PROOF
+# audit/v1's step audit.items (A1 W1-AUDIT, M8.3): its prompt, draft and covering are these bodies, which the version holds by reference
 PROMPT["audit_items"], DRAFT["audit_items_draft"], CHECK["reading_is_s30"] = p_audit_items, d_audit_items, c_reading_is_s30
-
-
-def c_done_is_read(ctx, step, item, out):
-    """The name of identity/v1's covering of the goal reached (A1 W2-IDENTITY, M8.4), registered beside the literals as
-    reading_is_s30 is: the body is the version's, and without the version there is no claim of done to let through."""
-    got = layers.load("identity/v1")
-    if got is None:
-        return {"ok": False, "notes": ["Identity's version is not there to read a claim of done"]}
-    return got.c_done_is_read(ctx, step, item, out)
-
-
-CHECK["done_is_read"] = c_done_is_read
-
-
-def c_question_is_bounded(ctx, step, item, out):
-    """The name of coordination/v1's covering of a question between engines (W3-BOARD, M4.9), registered beside the literals as
-    done_is_read is: the body is the version's, and without the version there is no board to take a question."""
-    got = layers.load("coordination/v1")
-    if got is None:
-        return {"ok": False, "notes": ["Coordination's version is not there to judge a question"]}
-    return got.question_is_bounded(ctx, step, item, out)
-
-
-CHECK["question_is_bounded"] = c_question_is_bounded
-
-
-def c_spot_check_reads_only(ctx, step, item, out):
-    """The name of audit/v1's covering of its filing (W3-BOARD, M8.7), registered beside the literals as done_is_read is: the
-    body is the version's, and a version that is not there files nothing a covering could let through."""
-    got = layers.load("audit/v1")
-    if got is None:
-        return {"ok": False, "notes": ["Audit's version is not there to judge a filing"]}
-    return got.spot_check_reads_only(ctx, step, item, out)
-
-
-CHECK["spot_check_reads_only"] = c_spot_check_reads_only
-
-
-# adaptation/v1's step adapt.fit (W2-ADAPT, M5.2): the copy a department runs when the layer does not load. It fits nothing: the
-# Library's line stays whole, which is also what the layer's own draft answers, and the check takes that answer and no other
-def _fit_line(ctx):
-    return [e["name"] for e in ((ctx.get("bag") or {}).get("adapt.source") or {}).get("engines") or [] if isinstance(e, dict) and e.get("name")]
-
-
-def p_adapt_fit(ctx, step, item):
-    return ("Keep the Library's line whole. Answer with one JSON object only: {\"engines\": [every engine of the line, in its order], "
-            "\"fit\": {}, \"why\": \"one line\"}.\nTHE LINE: " + ", ".join(_fit_line(ctx)))
-
-
-def d_adapt_fit(ctx, step, item):
-    return {"engines": _fit_line(ctx), "fit": {}, "why": "the Library's line stands as it is"}
-
-
-def c_line_is_fitted(ctx, step, item, out):
-    ok = isinstance(out, dict) and out.get("engines") == _fit_line(ctx) and not out.get("fit")
-    return _verdict(ok, "the Library's line, whole", "the Library's line is kept whole")
-
-
-PROMPT["adapt_fit"], DRAFT["adapt_fit_draft"], CHECK["line_is_fitted"] = p_adapt_fit, d_adapt_fit, c_line_is_fitted
-
-
-# adaptation/v1's steps for the next round (W2-ADAPT, M9.1): the copies a department runs when the layer does not load. None of
-# them proposes a round: the request is heard, nothing is asked of Priority and nothing is written, and the run says so
-def _round_inert(ctx, step, item):
-    return {"said": "adaptation/v1 is not loaded, so no round is proposed"}
-
-
-def p_adapt_next(ctx, step, item):
-    return "Say in one line what to correct. Answer with one JSON object only: {\"correction\": str, \"fixes\": [], \"covers\": [], \"why\": str}."
-
-
-def d_adapt_next(ctx, step, item):
-    return {"correction": "Put right what the reading found", "fixes": [], "covers": [], "why": "no agent was there to say it"}
-
-
-def c_round_is_new(ctx, step, item, out):
-    return _verdict(isinstance(out, dict) and bool(str(out.get("correction") or "").strip()), "a round says what to correct", "a round says what to correct")
-
-
-CODE.update({"adapt_hearnext": hear, "adapt_round": _round_inert, "adapt_round_granted": _round_inert, "adapt_round_refused": _round_inert})
-PROMPT["adapt_next"], DRAFT["adapt_next_draft"], CHECK["round_is_new"] = p_adapt_next, d_adapt_next, c_round_is_new
 
 
 # ---- what the screens read -----------------------------------------------------------------------------------------

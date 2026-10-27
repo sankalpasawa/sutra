@@ -6,8 +6,7 @@ done-when item (audit.items, in the S-30 shape), judges the pages against the br
 
 Every code, prompt, draft and check name the recipe uses is provided here by reference (ref_to): the bodies stay in
 engine_runtime's Audit region until they move, and a name the layer changes is copied into this module and changed here
-(PRD A1.19). It holds its words (WORDS and LAYOUT, which layers/prompts.py compiles), so no part of it is read from
-the .md bundle. view() is today's pane, by reference, with the readings of readings.jsonl added.
+(PRD A1.19). It holds its words (WORDS and LAYOUT, which layers/prompts.py compiles). view() is today's pane, by reference, with the readings of readings.jsonl added.
 
 audit_mechanical is the first body to move (W2-CHECKS, M8.6): it checks the record as it always did, and the HTML of the
 deliverable besides, without a browser: a link that goes to no page or anchor of the site, a form with no submit, an image
@@ -529,9 +528,8 @@ CHECK = {
     'gate_answer_is_known': ref_to('c_gate_answer_is_known'),        # shared (S.SHARED_CHECKS): the covering of its gate
     'spot_check_reads_only': spot_check_reads_only,
 }
-# Audit's words, by the split rule of A1.16 from function-prompts/audit/*.md (python -m layers.prompts --extract audit);
-# judge.items is the part this layer added (A1-ITEMS), written in the bundle as the others are. The bundle is the
-# fallback every department's own whole-file copy (M2.2) reads, and W3-PROOF deletes it.
+# Audit's words (A1.16), the words of the .md files they came from byte for byte (retired, W3-PROOF X1; see
+# test_fixtures/retired-prompt-parts.json); judge.items is the part this layer added (A1-ITEMS).
 WORDS = {
     'goal': {
         'does': {
