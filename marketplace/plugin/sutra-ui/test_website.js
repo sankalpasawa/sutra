@@ -129,6 +129,16 @@
          open; the same card and state everywhere, answered in one place,
          and kept so by the poll clock on All five and on a function's pane
          (PRD M3.7)
+     M10.3 the words pass: every card of the classic panes (S1 to S18), each in its states, is drawn from its own sample
+         and held to the owner's rulings together -- no `charter`, no inside word, no GRANT, COUNTER, REFUSE or orders, no
+         act id, no path, no count at rest, a word beside every state dot; the walk fails for a card that draws nothing
+         and for a rule it cannot see broken (PRD M10.3; W2-SCREENS H6)
+     M10.2 one API family: a runtime department's five function panes make no
+         call to GET /api/dept/{ref}/identity, adaptation, priority, coordination
+         or audit -- not before the list and the map have landed, not when a
+         stamped ask would read a card again; a department of the first build
+         and one of the registry alone keep their cards and their reads
+         (PRD M10.2; W2-SCREENS H5)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -2967,6 +2977,225 @@ test("S17: on the runtime the Map emits no Motor target, and the viewer serves n
   const old = await opened();
   click(old, { wbtab: "motor" });
   assert.ok(/<h3>What it does each tick<\/h3>/.test(view(old)), "the first build's Motor stays");
+});
+
+/* ── M10.2: one API family for runtime departments (PRD-FIVE-FUNCTIONS M10.2; W2-SCREENS H5) ─────────────────────────
+   A function's pane on the engine runtime is drawn from /api/native and /j2 (the map, the functions' read, the chat);
+   the registry's five routes, GET /api/dept/{ref}/identity, adaptation, priority, coordination and audit, answer the
+   registry's cards, which a runtime department does not draw (20-dept.js dpRuntimeFnHtml). The loaders asked them
+   anyway when a pane opened. Now none is asked: not while the list of departments or the map is still being read, not
+   when a stamped ask would read a card again, and not on the clock. A department of the first build and one that is
+   not a website department at all keep their cards, and so keep the reads. */
+const REG_FN = ["identity", "adaptation", "priority", "coordination", "audit"];
+const regReads = c => readsOf(c, /\/api\/dept\/[^/]+\/(identity|adaptation|priority|coordination|audit)\b/);
+test("M10.2: a runtime department's five function panes make no call to the registry's function routes", async () => {
+  const c = await opened({ map: rtMap(), fv: fvOf({}) });
+  for (const f of REG_FN) await fnCard(c, f);
+  /* a pane's Chat and Settings tabs are the same screen: no read of the registry either */
+  for (const f of REG_FN){ vm.runInContext("dpS().tab['r3'] = '" + f + "'; dpS().pane['r3:" + f + "'] = 'chat';", c); c.dpViewerHtml(WEB, {}, null, null); await sleep(); }
+  /* a stamped org ask re-reads the cards that hold an answer; a runtime department holds none, and the read is not asked */
+  vm.runInContext("['identity', 'adaptation', 'priority', 'coordination', 'audit'].forEach(k => { dpS()[k] = { ref: 'r3' }; });", c);
+  await vm.runInContext("dpAfterDecide('r3', 'org.charter')", c);
+  await sleep(); await sleep();
+  assert.deepStrictEqual(regReads(c), [], "the registry's function routes were asked: " + regReads(c).join(", "));
+  REG_FN.forEach(f => assert.ok(readsOf(c, new RegExp("^/api/native/r3/functions/" + f + "$")).length >= 1, "the runtime's own page of " + f + " was read"));
+  assert.ok(readsOf(c, /^\/api\/native\/r3\/map$/).length >= 1, "and its map");
+  const pane = await fnCard(c, "identity");
+  assert.ok(/<div class="o2vh"><b>Identity<\/b>/.test(pane) && />Chat<\/button>/.test(pane), "and the pane still paints from them");
+});
+test("M10.2: nor before the list of departments and the map have landed", async () => {
+  const c = fresh({ map: rtMap(), fv: fvOf({}) });
+  vm.runInContext("dpS().sel = 'r3'; dpS().tab['r3'] = 'now';", c);
+  for (const f of REG_FN){
+    click(c, { dptab: f });
+    c.dpViewerHtml(WEB, {}, null, null);                  /* painted at once, with nothing read yet */
+  }
+  assert.deepStrictEqual(regReads(c), [], "asked before the department was known: " + regReads(c).join(", "));
+  for (let i = 0; i < 12; i++){ await sleep(); REG_FN.forEach(f => { click(c, { dptab: f }); c.dpViewerHtml(WEB, {}, null, null); }); }
+  assert.deepStrictEqual(regReads(c), [], "asked once the department was known: " + regReads(c).join(", "));
+});
+test("M10.2: a department of the first build and one the website knows nothing of keep the registry's cards, and the reads", async () => {
+  const old = await opened();                              /* a website department, first build */
+  for (const f of REG_FN) await fnCard(old, f);
+  REG_FN.forEach(f => assert.ok(readsOf(old, new RegExp("^/api/dept/r3/" + f + "$")).length >= 1, "first build: " + f + " is read"));
+  /* a department of the registry alone: no website record, so the department list does not name it */
+  const plain = fresh({ depts: [] }), billing = { ref: "r9", name: "Billing" };
+  vm.runInContext("dpS().sel = 'r9'; dpS().tab['r9'] = 'now';", plain);
+  /* the paint that starts the list's read, and the two that follow it as the screen repaints when it lands */
+  for (let i = 0; i < 3; i++){ plain.dpViewerHtml(billing, {}, null, null); for (let k = 0; k < 6; k++) await sleep(); }
+  for (const f of REG_FN){ click(plain, { dptab: f }); plain.dpViewerHtml(billing, {}, null, null); for (let i = 0; i < 6; i++) await sleep(); }
+  REG_FN.forEach(f => assert.ok(readsOf(plain, new RegExp("^/api/dept/r9/" + f + "$")).length >= 1, "registry only: " + f + " is read"));
+});
+
+/* ── M10.3: the words pass (PRD M10.3; W2-SCREENS H6) ────────────────────────────────────────────────────────────────
+   W9 (no count, no path) and W19 (the inside word) were written for the first cards; the cards since (S1 to S18) were each
+   checked by their own test, a rule at a time. This is the one walk: every card of the classic panes is drawn from its own
+   sample and held to the owner's rulings together. The words of the record itself -- the owner's, an ask's question -- are
+   shown whole and may hold what they hold, so the samples carry none; what is under test is what the screen adds.
+     never `charter` nor `internal system` on a card;
+     the owner's words for a bargain are said yes, asked for less and said no, never GRANT, COUNTER, REFUSE or orders,
+       and no act id (accept-proposal, ASK_REQUESTER) is printed;
+     names, never a path; no count at rest (a name such as Round 2, D2 or Site plan v2, a clock time and a window in
+       minutes are not counts; the Map's NOW line, the record's version labels and a hover's numbers are the three
+       places the rulings let a number stand: S4, M1.5);
+     a status is never a colour alone: every state dot has its word beside it;
+     Root is shown as Root.
+   WORD_WALK is the list. A card added to the classic panes is added to it, with the samples that put it in each of its
+   states; the walk fails for a card that draws nothing, so an entry cannot pass for free. The panes of the J2 page
+   (25-j2view.js, the prototype's own page) are the prototype's words and are not walked. */
+const WORD_RULES = [
+  ["the inside word", (all) => (/internal\s+system/i.exec(all) || [])[0]],
+  ["the word charter", (all) => (/charter/i.exec(all) || [])[0]],
+  ["an act of the protocol (GRANT, COUNTER, REFUSE in capitals; granted, countered, orders)", (all) => (/\b(?:GRANT|COUNTER|REFUSE)(?:ED)?\b/.exec(all) || /\b(?:granted|countered|orders)\b/i.exec(all) || [])[0]],
+  ["a verdict outside said yes, asked for less and said no (grant, counter, refuse)", (all, rest, authored) => authored ? undefined : (/\b(?:grant|counter|refuse)\b/i.exec(all) || [])[0]],
+  ["an act id", (all) => (/\b(?:accept-proposal|reject-proposal|not-understood|ASK_REQUESTER|input-required|msg_type)\b/.exec(all) || [])[0]],
+  ["a path", (all) => (/\/api\/|\.json\b|\.md\b|\.html\b|\/Users\/|function-prompts|records home|\bv\d+\/[a-z]/.exec(all) || [])[0]],
+  ["a count at rest", (all, rest) => (/.{0,30}\d.{0,30}/.exec(rest.replace(/\b\d\d:\d\d\b/g, " ").replace(/\b(?:v|[A-Z]{1,3}|Round |[Vv]ersion )\d+\b/g, " ").replace(/\b\d+ min\b/g, " ")) || [])[0]],
+  ["a helper, where Root is named", (all) => (/\bhelper\b/i.exec(all) || [])[0]],
+];
+/* a state dot is followed by words in the same row: a status never rests on its colour (the dot's own classes are colours) */
+function dotsWithoutWords(html){
+  const bad = [];
+  const re = /<span class="dpdot[^"]*"><\/span>([^]{0,240})/g;
+  let m;
+  while ((m = re.exec(html))){
+    const next = m[1].split(/<span class="dpdot|<div class="dprow|<\/div><div class="dprow/)[0];
+    if (!/[A-Za-z]{2}/.test(next.replace(/<[^>]*>/g, ""))) bad.push(html.slice(m.index, m.index + 120));
+  }
+  return bad;
+}
+/* what a person reads of a card. `all`: its text and the words a hover or a screen reader gives (title, aria-label,
+   placeholder); `rest`: the text that stands on the card, without the three places a number may stand (the Map's NOW line,
+   the record's version labels, a hover) */
+const plainText = h => h.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+function screenWords(h){
+  const rest = words(h.replace(/<div class="wb2now">[\s\S]*?<\/div>/g, " ").replace(/<text class="v"[^>]*>[^<]*<\/text>/g, " ").replace(/<title>[^<]*<\/title>/g, " "));
+  const hover = (h.match(/\b(?:title|aria-label|placeholder)="[^"]*"/g) || []).map(a => a.replace(/^[a-z-]+="|"$/g, "")).join(" ");
+  const all = plainText(words(h) + " " + hover);
+  return { all, rest: plainText(rest) };
+}
+function wordsPass(label, html, authored){
+  assert.ok(typeof html === "string" && html.length > 80, label + ": the card drew nothing");
+  const t = screenWords(html);
+  WORD_RULES.forEach(([rule, hit]) => {
+    const found = hit(t.all, t.rest, !!authored);
+    assert.ok(!found, label + ": " + rule + " on the screen: " + found);
+  });
+  const dots = dotsWithoutWords(html);
+  assert.deepStrictEqual(dots, [], label + ": a state dot with no word beside it");
+}
+/* the samples carry no numeral in the record's words (see above): the blocked card's sentence, as the walk draws it */
+const NOCOUNT_BLOCKED = Object.assign({}, BLOCKED, { text: "Root's check sent the plan back more than once: the line reaches outside without a rule. Say what to change and I will have it shaped afresh." });
+const WORD_WALK = [];
+const walks = (label, renders, make, authored) => WORD_WALK.push({ label, renders, make, authored: !!authored });
+const FV_STATES = { Identity: "waiting_on_you", Adaptation: "waiting", Priority: "fault", Coordination: "working", Audit: "quiet" };
+const FV_RICH = () => fvOf({ states: FV_STATES, waits: { Adaptation: "Priority" }, lines: { Identity: "May the reviews show first names?", Coordination: "Write's turn" },
+  last: { Priority: { what: "said yes to the round", at: AT } }, cycle: { says: "Write is working", needs_you: true, asks: 1 }, between: FV_BETWEEN });
+const rtOpen = (o) => opened(Object.assign({ map: rtMap(), fnpage: fnPageOf, fv: FV_RICH() }, o || {}));
+walks("S1 the Map", ["wb2MapHtml", "wbMapHtml"], async () => (await mapWith({ map: rtMap(), fv: FV_RICH() }))[1]);
+walks("S1 the Map, the department off", ["wb2MapHtml"], async () => (await mapWith({ map: rtMap({ stopped: true }), fv: fvOf({ stopped: true }) }))[1]);
+walks("S2 All five, a department off", ["fvAllHtml"], async () => (await allFive({ map: rtMap({ stopped: true }), fv: fvOf({ stopped: true }) }))[1]);
+walks("S2 All five", ["fvAllHtml"], async () => (await allFive({ fv: FV_RICH(), chat: Object.assign(qChat({}), { asks: [Object.assign({}, QSTD), Object.assign({}, NOCOUNT_BLOCKED)] }) }))[1]);
+walks("S3 the list", ["dpListHtml", "wbList"], async () => { const c = await rtOpen(); for (let i = 0; i < 4; i++) await settle(); return c.dpListHtml(WEB, {}, null, null); });
+walks("S5 Identity's pane", ["wbFnOwn", "wbIdentityHtml"], async () => {
+  const page = fn => Object.assign(fnPageOf(fn), fn === "identity" ? { j2: JSON.parse(JSON.stringify(ID_J2)) } : {});
+  return fnCard(await opened({ map: rtMap(), fnpage: page }), "identity");
+});
+walks("S6 Identity's question, in Chat", ["wbChatHtml", "wbQuestionHtml"], async () => view(await chatOpen({ standard: true })));
+walks("S7 Coordination's pane", ["wbFnOwn"], async () => fnCard(await opened({ map: rtMap(), fnpage: coordPage({ tie: true, alarm: true }) }), "coordination"));
+walks("S7 Coordination's pane, no plan yet", ["wbFnOwn"], async () => fnCard(await opened({ map: rtMap(), fnpage: coordPage({ empty: true }) }), "coordination"));
+walks("S7 Coordination's pane, stopped", ["wbFnOwn"], async () => fnCard(await opened({ map: rtMap(), fnpage: coordPage({ stopped: true }) }), "coordination"));
+walks("S8 Adaptation's pane, a plan Root sent back", ["wbFnOwn", "wbRootChecksHtml"], async () => (await adaptationPane("sent_back"))[1]);
+walks("S8 Adaptation's pane, a plan Root blocked", ["wbFnOwn", "wbRootChecksHtml"], async () => (await adaptationPane("blocked"))[1]);
+walks("S8 Adaptation's pane, a plan Root approved", ["wbFnOwn", "wbRootChecksHtml"], async () => (await adaptationPane("approved"))[1]);
+walks("S8 Adaptation's pane, no review yet", ["wbFnOwn", "wbRootChecksHtml"], async () => (await adaptationPane("none"))[1]);
+walks("S9 Priority's pane", ["wbFnOwn"], async () => fnCard(await rtOpen(), "priority"));
+walks("S10 a blocked plan's card, chosen", ["wbOptionsHtml"], async () => {
+  const m = rtMap(); m.root = "r2";
+  const card = Object.assign({}, NOCOUNT_BLOCKED, { status: "chosen", chosen: { id: "stop", label: "Stop here", at: "2026-10-23T10:26:00+05:30", by: "the owner", words: null } });
+  const c = await opened({ map: m, chat: Object.assign(qChat({ answered: "a site" }), { asks: [], chosen: [card] }) });
+  view(c); await sleep(); await sleep();
+  return view(c);
+});
+walks("S10 a blocked plan's card", ["wbOptionsHtml"], async () => {
+  const m = rtMap(); m.root = "r2";
+  const c = await opened({ map: m, chat: Object.assign(qChat({ answered: "a site" }), { asks: [Object.assign({}, NOCOUNT_BLOCKED)], chosen: [] }) });
+  view(c); await sleep(); await sleep();
+  return view(c);
+});
+/* Priority's chat when it has bargained: it counters (asks for less), says yes, says no -- and a turn with no words of its own is
+   said in the owner's words, never by its act (Adaptation proposes; Priority's answers are accept-proposal, reject-proposal) */
+const BARGAIN_CHAT = { fn: "Priority", dept: "r3", name: DEPT, any: true, turns: [
+  { n: 1, src: "Adaptation", dst: ["Priority"], msg_type: "propose", at: AT, thread: "x-9", word: "line", line: "the plan for the pages", think: false },
+  { n: 2, src: "Priority", dst: ["Adaptation"], msg_type: "propose", at: AT, thread: "x-9", word: "line", line: "one round less than that", think: false, counter: true },
+  { n: 3, src: "Priority", dst: ["Adaptation"], msg_type: "accept-proposal", at: AT, thread: "x-9", word: "line", line: "", think: false },
+  { n: 4, src: "Priority", dst: ["Adaptation"], msg_type: "reject-proposal", at: AT, thread: "x-10", word: "line", line: "", think: false }] };
+async function bargainChat(){
+  const c = await opened({ map: rtMap(), fnchat: BARGAIN_CHAT });
+  await fnCard(c, "priority");
+  vm.runInContext("dpS().pane['r3:priority'] = 'chat';", c);
+  for (let k = 0; k < 3; k++){ c.dpViewerHtml(WEB, {}, null, null); for (let i = 0; i < 6; i++) await sleep(); }
+  return c.dpViewerHtml(WEB, {}, null, null);
+}
+walks("S9 Priority's chat, a bargain", ["wbFnChatHtml", "wbFnTurn"], bargainChat);
+walks("S12 Audit's pane", ["wbFnOwn"], async () => fnCard(await rtOpen(), "audit"));
+walks("S13 the Board", ["wbBoardHtml"], async () => { const c = await rtOpen({ board: FV_BOARD }); click(c, { wbtab: "board" }); view(c); await sleep(); await sleep(); return view(c); });
+walks("S15 Chat", ["wbChatHtml"], async () => view(await chatOpen({ publish: true })));
+walks("S16 Settings, the files", ["wbSettingsHtml"], async () => {
+  const c = await rtOpen(); vm.runInContext("dpS().pane['r3:adaptation'] = 'settings';", c); return fnCard(c, "adaptation");
+});
+/* authored: Settings shows the interface's own group leads and the words a function is given, as written; Identity's `take`
+   lead says "go, ask or refuse", its three verdicts on a request, which are not a bargain's */
+walks("S16 Settings, the typed fields", ["wbSettingsHtml", "wbInsHtml"], async () => (await typedCard())[1], true);
+walks("S17 the engine card, running", ["wbEngineHtml"], async () => {
+  const c = await opened({ map: rtMap(), engine: { card: cardOf() } });
+  click(c, { wbengine: "Write" }); view(c); await sleep(); await sleep();
+  vm.runInContext("S.wb.pane['r3:Write'] = 'engine';", c);
+  return view(c);
+});
+walks("S17 the engine card, waiting", ["wbEngineHtml"], async () => {
+  const c = await opened({ map: rtMap(), engine: { card: cardOf({ waits: true, held: true }) } });
+  click(c, { wbengine: "Write" }); view(c); await sleep(); await sleep();
+  vm.runInContext("S.wb.pane['r3:Write'] = 'engine';", c);
+  return view(c);
+});
+walks("S18 Root settings, the standards", ["wbRootPaneHtml", "wbStandardsHtml"], async () => {
+  const c = await orgOpened({ layers: LAYERS() });
+  click(c, { wbtab: "root" });
+  for (let k = 0; k < 3; k++){ c.o2ScreenHtml(); await settle(); }
+  return c.o2ScreenHtml();
+});
+walks("the organisation's row: Root's chat", ["wbOrgHtml", "wbChatHtml"], async () => (await orgOpened()).o2ScreenHtml());
+
+test("M10.3: every card of the classic panes keeps the owner's words (W9 and W19, walked over S1 to S18)", async () => {
+  const labels = WORD_WALK.map(w => w.label);
+  ["S1", "S2", "S3", "S5", "S6", "S7", "S8", "S9", "S10", "S12", "S13", "S15", "S16", "S17", "S18"].forEach(id =>
+    assert.ok(labels.some(l => l.indexOf(id + " ") === 0), "the walk has no card for " + id));
+  const src = [dpSrc, wbSrc, sxSrc, fvSrc].join("\n");
+  WORD_WALK.forEach(w => w.renders.forEach(fn =>
+    assert.ok(new RegExp("^function " + fn + "\\(", "m").test(src), w.label + ": it names " + fn + ", which is no function of the screen's scripts")));
+  for (const w of WORD_WALK) wordsPass(w.label, await w.make(), w.authored);
+});
+
+test("M10.3: a bargain is said in the owner's words: asks for less, said yes, said no -- never the act or GRANT, COUNTER, REFUSE", async () => {
+  const html = await bargainChat();
+  assert.ok(/<div class="who who-ai">Priority<\/div><div class="a">one round less than that<span class="dpchk">asks for less · /.test(html), "a counter is asks for less");
+  assert.ok(/<div class="a">Said yes<span class="dpchk">says yes · /.test(html), "an acceptance with no words of its own is Said yes");
+  assert.ok(/<div class="a">Said no<span class="dpchk">says no · /.test(html), "a rejection with no words of its own is Said no");
+  assert.ok(/<div class="a">the plan for the pages<span class="dpchk">proposes · /.test(html), "Adaptation proposes");
+  wordsPass("the bargain", html);
+});
+
+test("M10.3: the walk catches what it is for (a card that says GRANT, charter, a path, a count, or a dot with no word fails it)", () => {
+  const ok = '<div class="dpcard"><h3>Priority</h3><div class="dprow"><span class="dpdot ok"></span><span>Priority said yes to the plan today</span></div></div>';
+  wordsPass("ok", ok);
+  [["GRANT", ok.replace("said yes", "GRANT")], ["COUNTER", ok.replace("said yes to", "COUNTER on")], ["REFUSE", ok.replace("said yes", "REFUSE")],
+   ["orders", ok.replace("said yes to the plan", "orders the plan")], ["charter", ok.replace("plan", "charter")], ["internal system", ok.replace("plan", "internal system")],
+   ["an act id", ok.replace("said yes", "accept-proposal")], ["a path", ok.replace("plan", "/api/native/r3/map")], ["a count", ok.replace("today", "3 times today")],
+   ["a dot with no word", '<div class="dpcard"><h3>Priority</h3><div class="dprow"><span class="dpdot ok"></span></div><div class="dprow"><span class="dpdot warn"></span></div></div>' + ok]
+  ].forEach(([what, html]) => assert.throws(() => wordsPass(what, html), what));
+  /* what is not a count */
+  wordsPass("names", ok.replace("today", "Round 2 of D2 on Site plan v3 at 10:21, a window of 15 min"));
 });
 
 Promise.all(pending).then(() => {
