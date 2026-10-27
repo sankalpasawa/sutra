@@ -92,7 +92,8 @@ def test_the_other_cases_catch_what_they_are_for(tmp_path):
     nameless["steps"][1]["prompt"] = "no_such_prompt"
     nameless["rules"][0]["check"] = "a_check_of_nobodys"
     nameless["steps"][1]["out"] = {"answer": "str"}            # coord.tie no longer says why
-    fake = _fake(tmp_path, "coordination", nameless)
+    fake = _fake(tmp_path, "coordination", nameless, CODE={"coord_question": layers.ref_to("coord_busy")},
+                 CHECK={"question_is_bounded": layers.ref_to("c_said_what_it_did")})      # the two bodies coordination/v1 holds as its own
     assert C.case_3(fake) == ["coordination/v1, coord.busy: no check named a_check_of_nobodys is provided",
                               "coordination/v1, coord.tie: no prompt named no_such_prompt is provided"]
     assert C.case_4(fake) == ["coordination/v1: the check a_check_of_nobodys is in neither CHECKS[coordination] nor SHARED_CHECKS"]

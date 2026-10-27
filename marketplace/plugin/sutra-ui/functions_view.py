@@ -162,7 +162,8 @@ def _ready_now(ref, d):
 def slot_clashes(rs):
     """SM-11's clash in a slot, read off the run rows (PRD M4.3): two runs that finished on one slot id, or a start while
     another run of the department was open. [{slot, why}]; empty when the timetable held. A run row with no slot is a
-    function's note of what it did, never a start."""
+    function's note of what it did, never a start. A run that answers a question another engine's run asked (for_run, W3-BOARD)
+    starts inside that run by design: the asker gave it the turn."""
     out, ended = [], {}
     starts = [r for r in rs if r.get("slot")]
     for r in starts:
@@ -176,7 +177,7 @@ def slot_clashes(rs):
         for b0, _, b in spans[i + 1:]:
             if b0 >= a1:
                 break
-            if b0 > a0:
+            if b0 > a0 and not (b.get("for_run") and b.get("for_run") == a.get("id")):
                 out.append({"slot": b["slot"], "why": "it started while %s was running" % a.get("engine")})
     return out
 
@@ -698,7 +699,7 @@ def _identity_part(ref, d, events):
 #: timetable, one row per engine of the line (TIMETABLE_ROW); the engines the plan left out; why each waiting engine
 #: waits (holds); who makes and who reads each thing (handoffs); the chain against its limit; alarms past a window; and
 #: the ties Coordination's AI broke
-COORDINATION_FIELDS = ("line", "registered", "timetable", "left_out", "holds", "handoffs", "chain", "alarms", "ties")
+COORDINATION_FIELDS = ("line", "registered", "timetable", "left_out", "holds", "handoffs", "chain", "alarms", "ties", "questions")
 #: one engine in the timetable: its slot as Coordination wrote it (on, window_min, since), what starts it in words
 #: (starts), where it stands now (state, its word, why it waits, and since when), and its last run (last)
 TIMETABLE_ROW = ("engine", "on", "starts", "window_min", "since", "state", "word", "why", "at", "last")
@@ -848,6 +849,23 @@ def _ties(ref, rows, today):
     return out
 
 
+QUESTIONS_SHOWN = 12
+
+
+def _questions(ref):
+    """The questions engines have put to each other (W3-BOARD, M4.9), the last QUESTIONS_SHOWN, oldest first, each as questions.json
+    holds it with the words a model wrote said in the owner's words (said_plainly). [] when none was asked: the file exists only once
+    a question was put with SUTRA_BOARD_QUESTIONS on."""
+    raw = W._read(W.ddir(ref) / "questions.json", None)
+    rows = raw.get("entries") if isinstance(raw, dict) else raw
+    mine = [x for x in rows or [] if isinstance(x, dict)][-QUESTIONS_SHOWN:]
+    if not mine:
+        return []
+    keep = set(R.defs()["engines"]) | set((W.dept(ref) or {}).get("engines") or [])       # an engine called Grant is not said yes to
+    return [{k: (owner_words.said_plainly(v, keep=keep) if k in ("about", "question", "answer", "reason") and isinstance(v, str) else v)
+             for k, v in e.items()} for e in mine]
+
+
 def no_plan(ref, d=None, t=None, cur=None):
     """Before Root's check (S1 and S7, Empty: 'No plan yet'): the department lives a J2 cycle and no plan is registered
     yet, so the line it was born with is not a plan, and Coordination keeps no slot for it. A department with no cycle
@@ -880,7 +898,7 @@ def coordination(ref, d=None, rs=None, ak=None, rows=None):
            "handoffs": _handoffs(ref, d), "chain": _chain(ref, rs),
            "alarms": [{"engine": a.get("engine"), "text": _plain(a.get("text")), "at": a.get("created")}
                       for a in ak if a.get("kind") == "alarm" and a.get("status") == "pending"],
-           "ties": _ties(ref, rows, today)}
+           "ties": _ties(ref, rows, today), "questions": _questions(ref)}
     return {k: out[k] for k in COORDINATION_FIELDS}
 
 

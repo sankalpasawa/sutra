@@ -503,7 +503,11 @@ def _resolve(ctx, kind, name, engine=None):
     """The function that runs `name` of `kind` ('code', 'prompt', 'draft' or 'check') for an engine of this department
     (PRD A1.19, the seam): the one its layer's pinned implementation provides, else the registry literal below, which
     stays the fallback until a body has moved into its layer. `engine` is the engine the step belongs to when that is
-    not the one the context runs: a gate, or a rule of another function, is the function's, not the engine it blocks."""
+    not the one the context runs: a gate, or a rule of another function, is the function's, not the engine it blocks. A step that
+    brings its own body (a function, not a name) is run by that body: the step Coordination makes of another engine's answer to a
+    question (W3-BOARD), and the prompt run_step wraps with the board's text."""
+    if callable(name):
+        return name
     return layers.resolve(ctx.get("ref"), engine or ctx.get("engine"), kind, name,
                           {"code": CODE, "prompt": PROMPT, "draft": DRAFT, "check": CHECK}[kind], d=ctx.get("dept"))
 
@@ -790,6 +794,11 @@ def coordination(ref):
     t.setdefault("edges", born_edges)
     if "Root" in born_edges:                         # a department born before Root spoke learns of it: Root carries the owner's words
         t["edges"].setdefault("Root", born_edges["Root"])
+    if "Engine" in born_edges:                       # ... and of questions between engines (M4.9): Engine asks, and Coordination asks and tells it
+        t["edges"].setdefault("Engine", born_edges["Engine"])
+        for act, dsts in (born_edges.get("Coordination") or {}).items():
+            have = t["edges"].setdefault("Coordination", {}).setdefault(act, [])
+            have += [x for x in dsts if x == "Engine" and x not in have]
     return t
 
 
@@ -944,10 +953,17 @@ def candidate(ref, step, rung):
 
 
 # ---- the board -----------------------------------------------------------------------------------------------------
+def _actor(name):
+    """The table's name for a sender or a receiver: a work engine of the department is the table's Engine, on either side of a post
+    (a question between engines, M4.9); every other name is its own."""
+    return "Engine" if name not in layer_schema.ACTORS and name in defs()["engines"] else name
+
+
 def may_post(src, dst, msg_type, ref=None):
-    """Who may post what to whom: Coordination's table, this department's copy. A post with nobody named is refused."""
-    allowed = ((coordination(ref)["edges"] if ref else defs()["edges"]).get(src) or {}).get(msg_type) or []
-    return bool(dst) and all(d in allowed for d in dst)
+    """Who may post what to whom: Coordination's table, this department's copy. A work engine is the table's Engine (_actor).
+    A post with nobody named is refused."""
+    allowed = ((coordination(ref)["edges"] if ref else defs()["edges"]).get(_actor(src)) or {}).get(msg_type) or []
+    return bool(dst) and all(_actor(d) in allowed for d in dst)
 
 
 def coord_edge(ctx, step, item):
@@ -1851,7 +1867,10 @@ def run_engine(ref, name, inp, slot):
     row = W._put_run(ref, row)
     if J:
         J.on_run(ref, row, "ended")
-        if name == "Audit" and row.get("status") == "ok" and not p and isinstance(ctx["bag"].get("audit.file"), dict):
+        # an Audit run started by its timer is a spot check (M8.7): it reads no version, so the cycle's reading of one is not its to move
+        if name == "Audit" and (inp or {}).get("timer") is not None:
+            pass
+        elif name == "Audit" and row.get("status") == "ok" and not p and isinstance(ctx["bag"].get("audit.file"), dict):
             filed = ctx["bag"]["audit.file"]
             if filed.get("read") is False and not filed.get("filed"):
                 J.not_read(ref, inp.get("v"), filed.get("why_not_read"), artifact=filed.get("artifact"))      # never 'clean': the cycle stays at step 7
@@ -1883,18 +1902,29 @@ def _spend(ctx, usd, calls):
         ctx["spend"]["calls"] += int(calls or 0)
 
 
+def _board(ctx, name, *args):
+    """A function of Coordination's pinned version that keeps the board of questions between engines (W3-BOARD, M4.9), called with
+    the step's context; None when that version keeps none, so a version without the board asks nothing."""
+    fn = getattr(layers.impl(ctx["ref"], "coordination", ctx.get("dept")), name, None)
+    return fn(ctx, *args) if callable(fn) else None
+
+
 def run_step(ctx, step, item):
     """One step, on the rung its record has earned. Returns (row, output)."""
     ref = ctx["ref"]
     asked = rung = rung_of(ref, step)
     t0, started = time.time(), W.now()
-    usd, calls, how, out = 0.0, 0, None, None
+    usd, calls, how, out, asking = 0.0, 0, None, None, None
     stamped = _stamped(ctx, step, item)
     if step.get("only_if") and not _cond(ctx["bag"], step["only_if"]):
         out, how = _resolve(ctx, "draft", step["draft"])(ctx, step, item), SKIPPED
     elif stamped is not None:
         out, how, rung = stamped, "stamped by the owner", "P"          # a person answered; the person's answer stands
     else:
+        # the question hook (M4.9): behind SUTRA_BOARD_QUESTIONS a work step with an agent is given the board in its prompt, and what
+        # its answer asks of another engine is Coordination's to take (layers/coordination); everything else is as it was
+        if ctx["def"].get("kind") == "work" and step.get("prompt") and _board(ctx, "board_on", step):
+            asking, step = True, _board(ctx, "board_step", step)
         while True:
             out, cost, how, n = RESOLVE[rung](ctx, step, item)
             usd += cost
@@ -1908,14 +1938,18 @@ def run_step(ctx, step, item):
                     break
                 continue
             break
+        if asking and isinstance(out, dict) and how in ("model", "checklist"):
+            out, more = _board(ctx, "board_turn", step, item, out, lambda: RESOLVE[rung](ctx, step, item))
+            usd, calls, asking = usd + more["usd"], calls + more["calls"], more
     _spend(ctx, usd, calls)
     facts = _facts(ctx, step)
     row = {"id": "s-" + uuid.uuid4().hex[:10], "run": ctx["run"], "engine": ctx["engine"], "step": step["id"], "item": item,
            "mode": "slot", "slot": ctx["slot"], "impl": _impl(ctx), "asked_rung": asked, "rung": rung, "miss": rung != asked, "by": how,
            "agent": ctx["engine"] if how in ("model", "checklist") else None,
            "applied": [r["id"] for r in ctx["dept"].get("rules") or [] if r.get("id")] if how in ("model", "checklist") else [],
-           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else
-           [{"art": ctx["inp"].get("art") or reads_art(ctx.get("dept"), ctx["def"]), "v": ctx["inp"]["v"]}],
+           "read": ([{"post": ctx["post"]["n"]}] if ctx.get("post") else
+                    [{"art": ctx["inp"].get("art") or reads_art(ctx.get("dept"), ctx["def"]), "v": ctx["inp"]["v"]}])
+           + (asking["read"] if isinstance(asking, dict) else []),
            "facts": facts, "in_sig": _sha(facts if facts is not None else {"step": step["id"], "item": item, "in": ctx["inp"].get("v")}),
            "usd": round(usd, 4), "calls": calls, "def_version": defs()["def_version"], "started": started}
 
@@ -7283,6 +7317,30 @@ def c_done_is_read(ctx, step, item, out):
 
 
 CHECK["done_is_read"] = c_done_is_read
+
+
+def c_question_is_bounded(ctx, step, item, out):
+    """The name of coordination/v1's covering of a question between engines (W3-BOARD, M4.9), registered beside the literals as
+    done_is_read is: the body is the version's, and without the version there is no board to take a question."""
+    got = layers.load("coordination/v1")
+    if got is None:
+        return {"ok": False, "notes": ["Coordination's version is not there to judge a question"]}
+    return got.question_is_bounded(ctx, step, item, out)
+
+
+CHECK["question_is_bounded"] = c_question_is_bounded
+
+
+def c_spot_check_reads_only(ctx, step, item, out):
+    """The name of audit/v1's covering of its filing (W3-BOARD, M8.7), registered beside the literals as done_is_read is: the
+    body is the version's, and a version that is not there files nothing a covering could let through."""
+    got = layers.load("audit/v1")
+    if got is None:
+        return {"ok": False, "notes": ["Audit's version is not there to judge a filing"]}
+    return got.spot_check_reads_only(ctx, step, item, out)
+
+
+CHECK["spot_check_reads_only"] = c_spot_check_reads_only
 
 
 # adaptation/v1's step adapt.fit (W2-ADAPT, M5.2): the copy a department runs when the layer does not load. It fits nothing: the

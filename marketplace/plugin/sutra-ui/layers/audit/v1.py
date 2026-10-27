@@ -18,10 +18,18 @@ filed and noted. A finding keeps the page's file name in `page` and `where` (the
 target is in `where`) and gives the owner's name for the page in `name`; its `claim` is quoted to the owner, so it names no file.
 It is the engine_runtime body's superset: the legacy body stays there as the fallback a broken layer file leaves, and W3-PROOF
 deletes it.
+
+Audit has a start of its own besides the version it reads (W3-BOARD, M8.7): a timer, every spot_every_s, held by its gate
+audit.when until a minute in the period that a hash of the department's ref and the period gives. That run is the same steps with
+the reading left out, and audit_file files a spot check: the state of the engines read, one audit.spot_check row, what it found
+told to Identity. audit_pick, audit_file and audit_when are the layer's own for that; a start on a version goes to engine_runtime's
+bodies as it always did.
 """
+import hashlib
 import json
 import posixpath
 import re
+import time
 from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import unquote
@@ -320,10 +328,164 @@ def has_a_verdict(ctx, step, item, out):
     return {'ok': not bad, 'notes': bad or got['notes']}
 
 
+# ---- spot checks (PRD M8.7, W3-BOARD) ----------------------------------------------------------------------------------------
+# Sporadic and unannounced (ruled 2026-09-27): Audit drops in on a department once in every spot_every_s, at a minute that is
+# not fixed, and reads the state of its engines, nothing more. It is a start of its own (a timer, besides the version it reads),
+# held by a gate of Audit's until its minute in the period. Its run is the steps of a reading with the reading left out: the
+# steps that read a version are not needed, and the last one files the check. It reads runs and versions; it writes its own row
+# of spot_checks.jsonl and tells Identity what it found, and nothing else (spot_check_reads_only).
+SPOT_SEVERITY = 'medium'         # what a spot check's finding weighs: the record is wrong, and no reader has been misled by it
+SPOT_SAYS = {True: 'looked in on the engines: every version has its run and its check, each run traces back, nothing is stuck',
+             False: 'looked in on the engines and found something to put right'}
+#: Audit's own rows in the journals the check reads, by the field that says whose a row is: they are not "outside Audit's rows"
+_OWN_ROWS = {'runs.json': 'engine', 'steps.jsonl': 'engine', 'board.jsonl': 'src'}
+
+
+def spot_every_s(e):
+    """The period of Audit's timer start in a definition of the engine, in seconds (the setting's default when it names none)."""
+    for t in ((e or {}).get('start') or {}).get('on') or []:
+        if t.get('kind') == 'timer' and t.get('every_s'):
+            return int(t['every_s'])
+    return int(S.SETTINGS['audit']['spot_every_s']['default'])
+
+
+def spot_jitter_s(ref, period, every_s):
+    """Where in its period a department's spot check falls, in seconds: a whole minute, from a hash of the department's ref and
+    the period's number, so it is not the same minute twice and not the same in two departments, and a replay says it again."""
+    minutes = max(1, int(every_s) // 60)
+    return 60 * (int(hashlib.sha256(('%s|%d' % (ref, int(period))).encode('utf-8')).hexdigest(), 16) % minutes)
+
+
+def audit_when(ctx, step, item):
+    """Audit's gate on its own starts (M8.7): a start on a version of the deliverable is let through; a timer start is let through
+    at its minute in the period, and only for a department that was there when the period began (one made today is first looked
+    in on in the next period), that is not Root, and that is not in the middle of a cycle (a spot check in the middle of its work
+    would not be unannounced, it would be a second reading). Reads the record and the clock, and says no more than 'not yet'."""
+    inp = ctx.get('inp') or {}
+    if inp.get('timer') is None:
+        return 'admit', None
+    ref = ctx['ref']
+    d = ctx.get('dept') or W.dept(ref) or {}
+    if d.get('kind') == 'root':
+        return 'wait', 'Audit does not look in on the organisation'
+    if J.active(ref):
+        return 'wait', 'the department is in the middle of its work'
+    every = spot_every_s(ctx.get('def'))
+    began = int(inp['timer']) * every
+    if W._ts(d.get('created') or '') > began:
+        return 'wait', 'the department was not there when this period began'
+    if time.time() < began + spot_jitter_s(ref, inp['timer'], every):
+        return 'wait', 'it is not yet time'
+    return 'admit', None
+
+
+def spot_state(ref):
+    """The department's files as they stand, apart from Audit's own rows (its spot checks, and its rows in the runs, the steps and
+    the board): one hash. A spot check takes it before and after it reads, and it is the same."""
+    base = W.ddir(ref)
+    h = hashlib.sha256()
+    for p in sorted(base.rglob('*')):
+        rel = p.relative_to(base).as_posix()
+        if not p.is_file() or rel == 'spot_checks.jsonl' or rel.startswith('steps/Audit@') or p.name.startswith('.') or p.suffix == '.lock':
+            continue
+        try:
+            data = p.read_bytes()
+        except OSError:
+            continue
+        key = _OWN_ROWS.get(rel)
+        if key:
+            text = data.decode('utf-8', 'replace')
+            try:
+                rows = json.loads(text or '[]') if rel == 'runs.json' else [json.loads(ln) for ln in text.splitlines() if ln.strip()]
+            except ValueError:
+                rows = text
+            if isinstance(rows, list):
+                data = json.dumps([r for r in rows if not (isinstance(r, dict) and r.get(key) == 'Audit')], sort_keys=True).encode('utf-8')
+        h.update(rel.encode('utf-8') + b'\0' + hashlib.sha1(data).digest())
+    return h.hexdigest()[:24]
+
+
+def spot_checks(ref, d, now=None, skip=None):
+    """What a spot check reads of the engines' state, and nothing else: every version has a run and a check, each artifact's
+    latest version traces back to the owner's words, and no run has been going past its window (its own run, `skip`, is the one
+    that is looking). [{check, ok, why}], one for each, and a finding for each that does not hold, which names where it is. Reads
+    runs and versions only."""
+    now = time.time() if now is None else now
+    arts = list(W.artifacts_of(d))[1:]
+    no_run = sorted({a for a in arts for v in W.versions(ref, a) if not v.get('run') or 'check' not in v})
+    untraced = sorted({a for a in arts if W.latest(ref, a) and
+                       not any(c.get('kind') == 'ask' for c in W.trace(ref, a, W.latest(ref, a)['v']))})
+    stuck = sorted({r['engine'] for r in W.runs(ref) if r.get('status') == 'running' and r.get('id') != skip and
+                    now - W._ts(r.get('started') or '') > 60 * int((d.get('windows') or {}).get(r['engine']) or 30)})
+    rows = [('every version has its run and its check', no_run, '%s has a version with no run or no check'),
+            ("each run traces back to the owner's words", untraced, "%s does not trace back to the owner's words"),
+            ('nothing is stuck past its window', stuck, '%s has been running past its window')]
+    checks, found = [], []
+    for name, bad, claim in rows:
+        what = claim % ' and '.join(bad) if bad else None
+        checks.append({'check': name, 'ok': not bad, 'why': (what or 'it holds')[:300]})
+        if bad:
+            found.append({'id': 'F%d' % (len(found) + 1), 'severity': SPOT_SEVERITY, 'claim': what[:600], 'where': ', '.join(bad)[:200],
+                          'item': None, 'went_to': 'Identity', 'ask': None, 'at': W.now()})
+    return checks, found
+
+
+def audit_pick(ctx, step, item):
+    """The first step of a reading, and of a spot check, which has no version to pick from: it is not a sample, and says so."""
+    if (ctx.get('inp') or {}).get('timer') is not None:
+        return {'sample': False, 'pages': [], 'spot': True}
+    return R.audit_pick(ctx, step, item)
+
+
+def spot_file(ctx):
+    """The last step of a spot check: the state is read twice, with the department's lock held so that nothing else writes in
+    between; a check that left it changed files nothing and says so (its covering fails it); else its row is one line of
+    spot_checks.jsonl (once for a slot, so a replay writes it once) and its findings go to Identity, as Audit's findings do."""
+    ref, d, slot = ctx['ref'], ctx.get('dept') or W.dept(ctx['ref']) or {}, ctx.get('slot') or ''
+    with W._lock(ref):
+        before = spot_state(ref)
+        checks, found = spot_checks(ref, d, skip=ctx.get('run'))
+        after = spot_state(ref)
+    out = {'spot': True, 'before': before, 'after': after, 'checks': checks, 'findings': found, 'filed': len(found), 'read': None}
+    if before != after:
+        return dict(out, said="a spot check wrote outside Audit's rows, and filed nothing")
+    n = int(ctx['inp']['timer'])
+    every = spot_every_s(ctx.get('def'))
+    row = {'schema_version': 1, 'id': 'sc-' + hashlib.sha1(slot.encode('utf-8')).hexdigest()[:8], 'at': W.now(),
+           'minute': ((n * every + spot_jitter_s(ref, n, every)) % 86400) // 60, 'checks': checks, 'findings': found}
+    if not any(r.get('id') == row['id'] for r in W.rows(ref, 'spot_checks.jsonl')):
+        W.append_row(ref, 'spot_checks.jsonl', row)
+        if found:
+            R.post(ref, 'Audit', 'Identity', 'inform',
+                   {'word': 'finding', 'claim': found[0]['claim'], 'severity': SPOT_SEVERITY, 'where': found[0]['where'], 'findings': found,
+                    'spot': True})
+    return dict(out, said=SPOT_SAYS[not found] + ('' if not found else ': ' + found[0]['claim']))
+
+
+def audit_file(ctx, step, item):
+    """Audit's filing: a reading's, as engine_runtime's body does it, or a spot check's."""
+    if (ctx['bag'].get('audit.pick') or {}).get('spot'):
+        return spot_file(ctx)
+    return R.audit_file(ctx, step, item)
+
+
+def spot_check_reads_only(ctx, step, item, out):
+    """Audit's covering of its filing (M8.7): a spot check left the department's files as it found them, apart from Audit's own
+    rows, said what it did, and files nothing otherwise; any other filing (a reading) says what it did, as every step does."""
+    if not isinstance(out, dict) or not out.get('spot'):
+        return R.c_said_what_it_did(ctx, step, item, out)
+    if out.get('before') != out.get('after'):
+        return {'ok': False, 'notes': ["a spot check wrote outside Audit's rows"]}
+    if not str(out.get('said') or '').strip():
+        return {'ok': False, 'notes': ['it did not say what it did']}
+    return {'ok': True, 'notes': ["it read the engines' state and wrote only its own row"]}
+
+
 CODE = {
-    'audit_pick': ref_to('audit_pick'),
+    'audit_pick': audit_pick,
     'audit_mechanical': audit_mechanical,
-    'audit_file': ref_to('audit_file'),
+    'audit_file': audit_file,
+    'audit_when': audit_when,
 }
 PROMPT = {
     'audit_judge': ref_to('p_audit_judge'),
@@ -339,6 +501,8 @@ CHECK = {
     'findings_name_where_and_what': ref_to('c_findings_name_where_and_what'),
     'said_what_it_did': ref_to('c_said_what_it_did'),
     'reading_is_s30': ref_to('c_reading_is_s30'),
+    'gate_answer_is_known': ref_to('c_gate_answer_is_known'),        # shared (S.SHARED_CHECKS): the covering of its gate
+    'spot_check_reads_only': spot_check_reads_only,
 }
 # Audit's words, by the split rule of A1.16 from function-prompts/audit/*.md (python -m layers.prompts --extract audit);
 # judge.items is the part this layer added (A1-ITEMS), written in the bundle as the others are. The bundle is the
@@ -499,13 +663,23 @@ def _latest(rows):
             'findings': [dict(f) for f in r.get('findings') or []]}
 
 
+def _spot_entry(r):
+    """One spot check of spot_checks.jsonl as the pane lists it: what it says, when, whether every check held, the checks and the
+    findings it filed. Not the minute it fell on: Audit drops in unannounced."""
+    found = [dict(f) for f in r.get('findings') or []]
+    return {'summary': SPOT_SAYS[not found] + ('' if not found else ': ' + str(found[0].get('claim'))), 'at': r.get('at'), 'ok': not found,
+            'checks': [dict(c) for c in r.get('checks') or []], 'findings': found}
+
+
 def view(ref, d, events, asks):
     """Audit's pane (S.VIEWS['audit']): today's part, by reference, with the readings of readings.jsonl in place of the
     ledger's lines once any exists, each with its artifact, version, whether it was read and the verdict of each item, and
-    `latest`: the newest version read, item by item, with the findings it filed (M8.3)."""
+    `latest`: the newest version read, item by item, with the findings it filed (M8.3); and its spot checks, the last few of
+    spot_checks.jsonl, oldest first (M8.7)."""
     part = dict(FV._j2_part(ref, d, 'Audit', events, asks))
     rows = W.rows(ref, 'readings.jsonl')
     if rows:
         part['readings'] = [_entry(r) for r in rows[-6:]]
     part['latest'] = _latest(rows)
+    part['spot_checks'] = [_spot_entry(r) for r in W.rows(ref, 'spot_checks.jsonl')[-6:]]
     return FV._clean(part)

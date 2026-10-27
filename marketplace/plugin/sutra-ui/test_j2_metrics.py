@@ -471,6 +471,17 @@ def test_sm11_runs_one_after_another_inside_their_envelopes_are_clean(tmp_path):
     assert (m["runs"], m["flagged"], m["value"], m["status"]) == (2, 0, 0.0, "met")
 
 
+def test_sm11_a_run_that_answers_a_question_inside_the_run_that_asked_it_is_no_clash(tmp_path):
+    t = "2026-10-27T10:00:%02d+05:30"
+    make(tmp_path, dept={"envelopes": {"Plan": {"calls": 30, "usd": 6.0}}},
+         runs=[_run("Write", "r-1", slot="Write@plan.v1", started=t % 0, ended=t % 9),
+               _run("Plan", "r-2", slot="Plan@board.n3", started=t % 3, ended=t % 4, for_run="r-1", spend={"calls": 1, "usd": 0.01}),
+               _run("Check", "r-3", slot="Check@pages.v1", started=t % 5, ended=t % 6)])        # a run that is no answer, started inside r-1
+    m = M.sm11(_depts(tmp_path))
+    assert (m["runs"], m["flagged"]) == (3, 1) and "Check (run r-3) started while Write was open" in " | ".join(m["gaps"])
+    assert "r-2" not in " | ".join(m["gaps"])
+
+
 # ---- SM-12 -----------------------------------------------------------------------------------------------------------
 def test_sm12_reads_the_marks_of_the_decision_log_once_each(tmp_path):
     log = tmp_path / "design"

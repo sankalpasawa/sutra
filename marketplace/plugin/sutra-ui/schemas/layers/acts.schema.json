@@ -841,6 +841,36 @@
             }
           ]
         },
+        "answered_from": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "version": {
+                  "anyOf": [
+                    {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflow": {
+                  "$ref": "#/$defs/name"
+                }
+              },
+              "required": [
+                "workflow"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "artifact_update": {
           "anyOf": [
             {
@@ -1265,11 +1295,18 @@
     },
     "Coordination": {
       "inform": [
-        "Identity"
+        "Identity",
+        "Engine"
       ],
       "request": [
         "Identity",
-        "Priority"
+        "Priority",
+        "Engine"
+      ]
+    },
+    "Engine": {
+      "request": [
+        "Coordination"
       ]
     },
     "Identity": {
@@ -1459,6 +1496,16 @@
         ]
       },
       {
+        "act": "request",
+        "payload": "act.question",
+        "to": [
+          "Engine"
+        ],
+        "words": [
+          "question"
+        ]
+      },
+      {
         "act": "inform",
         "payload": "act.any",
         "to": [
@@ -1478,9 +1525,30 @@
         "words": [
           "conflict"
         ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.answer",
+        "to": [
+          "Engine"
+        ],
+        "words": [
+          "answer"
+        ]
       }
     ],
-    "Engine": [],
+    "Engine": [
+      {
+        "act": "request",
+        "payload": "act.question",
+        "to": [
+          "Coordination"
+        ],
+        "words": [
+          "question"
+        ]
+      }
+    ],
     "Identity": [
       {
         "act": "agree",

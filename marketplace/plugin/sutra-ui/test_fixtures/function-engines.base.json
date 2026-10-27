@@ -782,6 +782,23 @@
     ]
    },
    {
+    "name": "Take a question",
+    "when": {
+     "msg_type": "request",
+     "word": "question"
+    },
+    "steps": [
+     {
+      "id": "coord.question",
+      "name": "File the question and have it answered",
+      "nature": "decide",
+      "born": "C2",
+      "code": "coord_question",
+      "check": "question_is_bounded"
+     }
+    ]
+   },
+   {
     "name": "An engine is born",
     "when": {
      "msg_type": "inform",
@@ -1224,11 +1241,26 @@
      "kind": "version",
      "of": "$deliverable",
      "checked": true
+    },
+    {
+     "kind": "timer",
+     "every_s": 86400
     }
    ],
-   "unless": []
+   "unless": [
+    "audit.when"
+   ]
   },
-  "gates": [],
+  "gates": [
+   {
+    "id": "audit.when",
+    "name": "Wait for its time in the period",
+    "nature": "decide",
+    "born": "C2",
+    "code": "audit_when",
+    "check": "gate_answer_is_known"
+   }
+  ],
   "steps": [
    {
     "id": "audit.pick",
@@ -1282,7 +1314,7 @@
     "nature": "transform",
     "born": "C2",
     "code": "audit_file",
-    "check": "said_what_it_did"
+    "check": "spot_check_reads_only"
    }
   ],
   "on": []

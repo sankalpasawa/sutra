@@ -194,10 +194,12 @@
   "Coordination": {
    "request": [
     "Identity",
-    "Priority"
+    "Priority",
+    "Engine"
    ],
    "inform": [
-    "Identity"
+    "Identity",
+    "Engine"
    ]
   },
   "Root": {
@@ -212,6 +214,11 @@
    ],
    "cancel": [
     "Identity"
+   ]
+  },
+  "Engine": {
+   "request": [
+    "Coordination"
    ]
   }
  },

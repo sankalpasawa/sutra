@@ -470,7 +470,7 @@ STAGES = ('birth', 'proposal', 'registration', 'grow', 'write')
 TABLE_FIELDS = ('order', 'functions', 'line', 'edges', 'left_out', 'grown', 'registered', 'timetable', 'by', 'since', 'why')
 LEFT_OUT_FIELDS = ('engine', 'in_line', 'since')
 SLOT_FIELDS = ('engine', 'on', 'of', 'checked', 'every_s', 'window_min', 'since')
-COORDINATION_FIELDS = ('line', 'registered', 'timetable', 'left_out', 'holds', 'handoffs', 'chain', 'alarms', 'ties')
+COORDINATION_FIELDS = ('line', 'registered', 'timetable', 'left_out', 'holds', 'handoffs', 'chain', 'alarms', 'ties', 'questions')
 TIMETABLE_ROW = ('engine', 'on', 'starts', 'window_min', 'since', 'state', 'word', 'why', 'at', 'last')
 ENGINE_CARD_FIELDS = ('engine', 'head', 'motor', 'five')
 ENGINE_FIVE_ROW = ('fn', 'state', 'says', 'at', 'share')
@@ -633,7 +633,9 @@ DEFS.update({
                                   'about': text(120), 'question': text(600), 'answer': nullable(text(2000)),
                                   'answered_by': nullable(ref('name')), 'status': enum(*QUESTION_STATUSES), 'reason': nullable(text(300)),
                                   'artifact_update': nullable(obj({})), 'used_by': items(ref('name')), 'cycle': nullable(text(80)),
-                                  'slot': text(160), 'attempt': integer(1), 'run': nullable(text(40))},
+                                  'slot': text(160), 'attempt': integer(1), 'run': nullable(text(40)),
+                                  # W3-BOARD: where an answer came from, the engine and the version of what it filed that it answered from
+                                  'answered_from': nullable(obj({'workflow': ref('name'), 'version': nullable(integer(0))}, required=('workflow',)))},
                                  required=('schema', 'id', 'asked_by', 'to', 'about', 'question', 'status', 'used_by')),
     'audit.spot_check': obj({'schema_version': integer(1), 'id': text(40), 'at': text(40), 'minute': integer(0, 1439),
                              'checks': items(obj({'check': text(80), 'ok': boolean(), 'why': text(300)}, required=('check', 'ok', 'why'))),
@@ -786,7 +788,9 @@ DEFS.update({
                                'readers': items(text(80))})),
         'chain': obj({'of': nullable(text(80)), 'used': integer(0), 'limit': integer(0), 'share': number(0, 1)}),
         'alarms': items(obj({'engine': nullable(text(80)), 'text': nullable(text(600)), 'at': _AT})),
-        'ties': items(obj({'pick': text(80), 'said': text(200), 'why': nullable(text(600)), 'at': _AT, 'today': boolean()}))},
+        'ties': items(obj({'pick': text(80), 'said': text(200), 'why': nullable(text(600)), 'at': _AT, 'today': boolean()})),
+        # from W3-BOARD (M4.9): the questions engines put to each other, the last few, oldest first; [] when none was asked
+        'questions': items(ref('coordination.question'))},
         required=COORDINATION_FIELDS, open=False),
     'view.engine_card': obj({
         'engine': text(80),
@@ -806,7 +810,11 @@ DEFS.update({
                                'read': boolean(), 'why_not_read': nullable(text(300)),
                                'verdicts': map_of(enum(*ITEM_VERDICTS), keys=ITEM_RE)})),
         'findings': items(obj({'text': nullable(text(4000)), 'at': _AT})),
-        'spot_checks': items(obj({})),
+        # from W3-BOARD (M8.7): Audit's spot checks, oldest first, each in the owner's words: what it says, when, whether every check held,
+        # the checks and the findings it filed; not the minute it fell on, since Audit drops in unannounced
+        'spot_checks': items(obj({'summary': text(1000), 'at': _AT, 'ok': boolean(),
+                                  'checks': items(obj({'check': text(80), 'ok': boolean(), 'why': text(300)}, required=('check', 'ok', 'why'))),
+                                  'findings': items(ref('audit.finding'))}, required=('summary', 'at', 'ok', 'checks', 'findings'))),
         'latest': nullable(obj({'artifact': ref('name'), 'v': integer(1), 'at': _AT,
                                 'items': items(obj({'id': ref('id.item'), 'verdict': enum(*ITEM_VERDICTS), 'method': enum('code', 'model'),
                                                     'evidence': text(1000), 'claim': text(600)},
@@ -954,6 +962,8 @@ HEARS = {
         {'act': 'agree', 'word': 'verdict', 'from': ('Identity',), 'via': 'board', 'payload': 'act.verdict', 'handler': 'Hear a verdict'},
         {'act': 'refuse', 'word': 'verdict', 'from': ('Identity',), 'via': 'board', 'payload': 'act.verdict', 'handler': 'Hear a no'},
         {'act': 'inform', 'word': 'born', 'from': ('Root', 'Identity'), 'via': 'call', 'payload': 'act.born', 'handler': 'An engine is born'},
+        # W3-BOARD (M4.9): a work engine's question, behind SUTRA_BOARD_QUESTIONS
+        {'act': 'request', 'word': 'question', 'from': ('Engine',), 'via': 'board', 'payload': 'act.question', 'handler': 'Take a question'},
     ],
     'audit': [],          # it starts on a version of the deliverable, never on a post
 }
@@ -1024,10 +1034,16 @@ SENDS = {
     ],
     'Coordination': [
         {'act': 'request', 'words': ('verdict',), 'to': ('Identity', 'Priority'), 'payload': 'act.verdict'},
+        # W3-BOARD (M4.9): a question between engines goes on to the engine that knows, and the answer comes back to the asker
+        {'act': 'request', 'words': ('question',), 'to': ('Engine',), 'payload': 'act.question'},
         {'act': 'inform', 'words': ('alarm', 'lost'), 'to': ('Identity',), 'payload': 'act.any'},
         {'act': 'inform', 'words': ('conflict',), 'to': ('Identity',), 'payload': 'act.conflict'},
+        {'act': 'inform', 'words': ('answer',), 'to': ('Engine',), 'payload': 'act.answer'},
     ],
-    'Engine': [],           # W3-BOARD adds request/question (M4.9)
+    # W3-BOARD (M4.9): a work engine asks only Coordination, and only behind SUTRA_BOARD_QUESTIONS
+    'Engine': [
+        {'act': 'request', 'words': ('question',), 'to': ('Coordination',), 'payload': 'act.question'},
+    ],
 }
 
 #: the in-process calls between layers (A1.13): a decision that runs another layer's handler in place, not as a post.
@@ -1092,11 +1108,15 @@ CHECKS = {
                                          'it; a no always stands'},
     'coordination': {'chain_under_its_limit': 'a start is let through only while the chain is under its limit',
                      'names_who_goes_first': 'it names an engine of the department',
-                     'one_run_at_a_time': 'a start is let through only while no other run runs'},
+                     'one_run_at_a_time': 'a start is let through only while no other run runs',
+                     'question_is_bounded': 'a question between engines was taken only within its bounds: one for the engine in a slot, '
+                                            'of an engine earlier in the line that has filed, and not about what is answered; a no gives its reason'},
     'audit': {'findings_name_where_and_what': 'each finding names where it is and what it claims',
               'has_a_verdict': 'a mechanical check gives a verdict with its notes, and each page defect it names says where it is, what is wrong and how serious',
               'picked_a_sample': 'it says whether it sampled, and which pages',
-              'reading_is_s30': 'each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what'},
+              'reading_is_s30': 'each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what',
+              'spot_check_reads_only': "a spot check left the department's files as it found them, apart from Audit's own rows; any other "
+                                       'filing says what it did'},
 }
 
 #: samples every implementation's check must judge as main's bodies do (A1.21), each checked against the body on main;

@@ -43,6 +43,12 @@ const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "says no", "pr
                   "reject-proposal": "says no", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
 /* Priority's counter is a proposal on the board, and a function's chat says it as what it is (PRD M1.7) */
 const WB_COUNTER = "asks for less";
+/* the act of a post on the Board, in a word: a question between engines asks (the act is a request), and Coordination's answer to
+   the asker answers (the act is an inform, which tells; PRD M4.9, with SUTRA_BOARD_QUESTIONS on). Identity's answer to the owner,
+   which has the same word, is told */
+function wbActWord(p){
+  return p && p.msg_type === "inform" && p.word === "answer" && p.src === "Coordination" ? "answers" : (WB_ACTS[p && p.msg_type] || (p && p.msg_type));
+}
 
 function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
@@ -672,7 +678,7 @@ function wbIdeasHtml(b){
 function wbBoardTurn(p){
   const to = p.dst || [];                       /* the Board is the whole record: the owner is named as a reader too */
   const said = p.line ? wbEsc(p.line) : wbEsc(wbCap(p.word || ""));
-  const act = `<span class="dpchk">${wbEsc(WB_ACTS[p.msg_type] || p.msg_type)} · ${wbEsc(wbWhen(p.at))}</span>`;
+  const act = `<span class="dpchk">${wbEsc(wbActWord(p))} · ${wbEsc(wbWhen(p.at))}</span>`;
   if (p.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">You</div><div class="u md">${said}${act}</div></div>`;
   const who = wbEsc(p.src) + (to.length ? ` <span class="wbarrow">&rarr;</span> ` + wbEsc(to.join(", ")) : "");
   return `<div class="turn wbturn"><div class="who who-ai">${who}</div><div class="a">${said}${act}</div></div>`;
@@ -713,7 +719,7 @@ function wbLineHtml(p){
   const mine = p.src === "Owner";
   return `<div class="wbline wb${mine ? " me" : ""}">${wbChip(p.src, mine ? "on" : "")}` +
     (to.length ? `<span class="wbarrow">&rarr;</span>${wbChip(to.join(", "))}` : "") +
-    `<span class="dpchk">${wbEsc(WB_ACTS[p.msg_type] || p.msg_type)}${p.line ? "" : " · " + wbEsc(wbCap(p.word || ""))} · ${wbEsc(wbWhen(p.at))}</span>` +
+    `<span class="dpchk">${wbEsc(wbActWord(p))}${p.line ? "" : " · " + wbEsc(wbCap(p.word || ""))} · ${wbEsc(wbWhen(p.at))}</span>` +
     (p.line ? `<div class="wbsaid">${wbEsc(p.line)}</div>` : "") + `</div>`;
 }
 function wbConversationHtml(n, m){

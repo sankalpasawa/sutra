@@ -3306,6 +3306,21 @@ async function boardEveryV2(mutate){
 }
 walks("S13 the Board, every act", ["wbBoardHtml", "wbBoardTurn"], () => boardEvery(), false, EVERY_ACT);
 walks("S13 the Board, second design, every act", ["wb2BoardHtml", "wb2Turn"], () => boardEveryV2(), false, EVERY_ACT);
+/* a question between engines (PRD M4.9, W3-BOARD; the flag SUTRA_BOARD_QUESTIONS): the asker's post and Coordination's on to the
+   engine ask, and the answer to the asker answers; each a row like any other, the sentence the server wrote and the act in a word */
+const QUESTION_THREAD = { id: "x-13", topic: "question", protocol: "request", state: "completed", decider: "Coordination", opened: AT, closed: AT, outcome: null,
+  bounds: {}, hops: 3, default: "failure", posts: [
+  { n: 31, src: "Write", dst: ["Coordination"], msg_type: "request", at: AT, word: "question", line: "Write asks Plan about the page list" },
+  { n: 32, src: "Coordination", dst: ["Plan"], msg_type: "request", at: AT, word: "question", line: "Write asks Plan about the page list" },
+  { n: 33, src: "Coordination", dst: ["Write"], msg_type: "inform", at: AT, word: "answer", line: "Plan answers Write" }] };
+const WALK_QUESTION = Object.assign({}, FV_BOARD, { threads: [QUESTION_THREAD].concat(FV_BOARD.threads) });
+const ASKED_AND_ANSWERED = [/Write asks Plan about the page list<span class="dpchk">asks · /, /Plan answers Write<span class="dpchk">answers · /];
+walks("S13 the Board, a question between engines", ["wbBoardHtml", "wbBoardTurn"], async () => {
+  const c = await rtOpen({ board: WALK_QUESTION }); click(c, { wbtab: "board" }); view(c); await sleep(); await sleep(); return view(c);
+}, false, ASKED_AND_ANSWERED);
+walks("S13 the Board, second design, a question between engines", ["wb2BoardHtml", "wb2Turn"], async () => {
+  const c = await v2({ map: rtMap(), board: WALK_QUESTION }); click(c, { wbtab: "board" }); await sleep(); return paint(c);
+}, false, ASKED_AND_ANSWERED);
 walks("S15 Chat", ["wbChatHtml"], async () => view(await chatOpen({ publish: true })));
 walks("S16 Settings, the files", ["wbSettingsHtml"], async () => {
   const c = await rtOpen(); vm.runInContext("dpS().pane['r3:adaptation'] = 'settings';", c); return fnCard(c, "adaptation");
@@ -3319,6 +3334,14 @@ walks("S17 the engine card, running", ["wbEngineHtml"], async () => {
   vm.runInContext("S.wb.pane['r3:Write'] = 'engine';", c);
   return view(c);
 });
+/* a question this engine asked shows in its Coordination row, as the server says it (PRD M4.9): 'asked Plan about the page list (answered)' */
+walks("S17 the engine card, a question asked", ["wbEngineHtml"], async () => {
+  const card = cardOf(); card.five[3].says = "gave it the turn; asked Plan about the page list (answered)";
+  const c = await opened({ map: rtMap(), engine: { card } });
+  click(c, { wbengine: "Write" }); view(c); await sleep(); await sleep();
+  vm.runInContext("S.wb.pane['r3:Write'] = 'engine';", c);
+  return view(c);
+}, false, /gave it the turn; asked Plan about the page list \(answered\) at 10:23/);
 walks("S17 the engine card, waiting", ["wbEngineHtml"], async () => {
   const c = await opened({ map: rtMap(), engine: { card: cardOf({ waits: true, held: true }) } });
   click(c, { wbengine: "Write" }); view(c); await sleep(); await sleep();

@@ -299,7 +299,7 @@ class TestOneSkeleton(Base):
         ran = {r["engine"] for r in W.runs(REF) if r.get("runtime") == 2}
         self.assertEqual(ran, {"Identity", "Plan", "Write", "Check", "Publish", "Adaptation", "Audit"})
         gated = {r["engine"] for r in self.rows(mode="gate")}
-        self.assertEqual(gated, {"Identity", "Priority", "Coordination"}, "the three gates answered, each as a row")
+        self.assertEqual(gated, {"Identity", "Priority", "Coordination", "Audit"}, "the four functions' gates answered, each as a row (Audit's is its own, W3-BOARD)")
         for name in ("Plan", "Write", "Check", "Publish"):
             for s in self.R.engine_def(name)["steps"]:
                 self.assertTrue(self.rows(s["id"], status="ok"), s["id"] + " has a row")
@@ -2225,7 +2225,7 @@ class TestActivation(Base):
     def test_50_a_time_is_a_trigger_too_once_in_each_period(self):
         R = self.R
         d = copy.deepcopy(R.defs())
-        d["engines"]["Audit"]["start"]["on"] = [{"kind": "timer", "every_s": 3600}]
+        d["engines"]["Audit"]["start"] = {"on": [{"kind": "timer", "every_s": 3600}], "unless": []}      # Audit as a guinea pig: no gate of its own
         self.assertEqual(R.validate(d), [])
         R._DEFS["d"] = d
         inp, slot, why = R.ready(self.ctx(now=7200.0), "Audit")

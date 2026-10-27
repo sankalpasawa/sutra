@@ -194,12 +194,14 @@
       "findings_name_where_and_what": "each finding names where it is and what it claims",
       "has_a_verdict": "a mechanical check gives a verdict with its notes, and each page defect it names says where it is, what is wrong and how serious",
       "picked_a_sample": "it says whether it sampled, and which pages",
-      "reading_is_s30": "each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what"
+      "reading_is_s30": "each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what",
+      "spot_check_reads_only": "a spot check left the department's files as it found them, apart from Audit's own rows; any other filing says what it did"
     },
     "coordination": {
       "chain_under_its_limit": "a start is let through only while the chain is under its limit",
       "names_who_goes_first": "it names an engine of the department",
-      "one_run_at_a_time": "a start is let through only while no other run runs"
+      "one_run_at_a_time": "a start is let through only while no other run runs",
+      "question_is_bounded": "a question between engines was taken only within its bounds: one for the engine in a slot, of an engine earlier in the line that has filed, and not about what is answered; a no gives its reason"
     },
     "identity": {
       "answer_names_its_source": "an answer, its source, and how sure it is",
@@ -281,7 +283,8 @@
       "handoffs",
       "chain",
       "alarms",
-      "ties"
+      "ties",
+      "questions"
     ],
     "done_how": [
       "code",
@@ -2353,6 +2356,36 @@
           "anyOf": [
             {
               "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answered_from": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "version": {
+                  "anyOf": [
+                    {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflow": {
+                  "$ref": "#/$defs/name"
+                }
+              },
+              "required": [
+                "workflow"
+              ],
+              "type": "object"
             },
             {
               "type": "null"
@@ -6469,8 +6502,70 @@
         "spot_checks": {
           "items": {
             "additionalProperties": true,
-            "properties": {},
-            "required": [],
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "checks": {
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "check": {
+                      "maxLength": 80,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "why": {
+                      "maxLength": 300,
+                      "minLength": 0,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "check",
+                    "ok",
+                    "why"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 0,
+                "type": "array"
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/$defs/audit.finding"
+                },
+                "minItems": 0,
+                "type": "array"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "summary": {
+                "maxLength": 1000,
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "required": [
+              "summary",
+              "at",
+              "ok",
+              "checks",
+              "findings"
+            ],
             "type": "object"
           },
           "minItems": 0,
@@ -6687,6 +6782,13 @@
             "maxLength": 80,
             "minLength": 0,
             "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "questions": {
+          "items": {
+            "$ref": "#/$defs/coordination.question"
           },
           "minItems": 0,
           "type": "array"
@@ -6908,7 +7010,8 @@
         "handoffs",
         "chain",
         "alarms",
-        "ties"
+        "ties",
+        "questions"
       ],
       "type": "object"
     },
@@ -8118,11 +8221,18 @@
     },
     "Coordination": {
       "inform": [
-        "Identity"
+        "Identity",
+        "Engine"
       ],
       "request": [
         "Identity",
-        "Priority"
+        "Priority",
+        "Engine"
+      ]
+    },
+    "Engine": {
+      "request": [
+        "Coordination"
       ]
     },
     "Identity": {
@@ -8692,6 +8802,16 @@
         "payload": "act.born",
         "via": "call",
         "word": "born"
+      },
+      {
+        "act": "request",
+        "from": [
+          "Engine"
+        ],
+        "handler": "Take a question",
+        "payload": "act.question",
+        "via": "board",
+        "word": "question"
       }
     ],
     "identity": [
@@ -8940,7 +9060,8 @@
         "findings_name_where_and_what",
         "has_a_verdict",
         "picked_a_sample",
-        "reading_is_s30"
+        "reading_is_s30",
+        "spot_check_reads_only"
       ],
       "hands_to": "Identity only: readings and findings.",
       "holds": "Its readings and its findings.",
@@ -8975,7 +9096,8 @@
       "checks": [
         "chain_under_its_limit",
         "names_who_goes_first",
-        "one_run_at_a_time"
+        "one_run_at_a_time",
+        "question_is_bounded"
       ],
       "hands_to": "Identity: alarms, lost requests and verdict asks. Priority: verdict asks.",
       "holds": "Its table: the order, the line and who may post to whom; the run rows and each thread's bounds.",
@@ -10224,6 +10346,16 @@
         ]
       },
       {
+        "act": "request",
+        "payload": "act.question",
+        "to": [
+          "Engine"
+        ],
+        "words": [
+          "question"
+        ]
+      },
+      {
         "act": "inform",
         "payload": "act.any",
         "to": [
@@ -10243,9 +10375,30 @@
         "words": [
           "conflict"
         ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.answer",
+        "to": [
+          "Engine"
+        ],
+        "words": [
+          "answer"
+        ]
       }
     ],
-    "Engine": [],
+    "Engine": [
+      {
+        "act": "request",
+        "payload": "act.question",
+        "to": [
+          "Coordination"
+        ],
+        "words": [
+          "question"
+        ]
+      }
+    ],
     "Identity": [
       {
         "act": "agree",

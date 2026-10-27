@@ -231,7 +231,7 @@ TT_ROW = {"engine": "Write", "on": "after Site plan v1", "starts": "when Site pl
           "state": "turn", "word": "its turn", "why": None, "at": None, "last": None}
 VIEW_COORDINATION = {"line": LINE, "registered": 1, "timetable": [TT_ROW], "left_out": [{"engine": "Check", "since": NOW}],
                      "holds": [], "handoffs": [{"art": "Site plan", "v": 1, "by": "Plan", "says": "the plan", "readers": ["Write"]}],
-                     "chain": {"of": None, "used": 0, "limit": 12, "share": 0}, "alarms": [], "ties": []}
+                     "chain": {"of": None, "used": 0, "limit": 12, "share": 0}, "alarms": [], "ties": [], "questions": []}
 VIEW_ENGINE_CARD = {"engine": "Write", "head": {"state": "quiet", "word": None, "why": None, "at": None, "round": None},
                     "motor": {"slot": "after Site plan v1", "starts": "when Site plan v1 lands", "once": False,
                               "says": "waits for Site plan", "window_min": 30, "today": 0},
