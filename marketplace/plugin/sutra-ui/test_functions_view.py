@@ -1591,7 +1591,8 @@ def test_f14_after_keeps_only_what_is_newer(mods):
     assert c.get("/api/native/%s/messages?after=%d" % (REF, n["told"])).json() == []
     assert [r["n"] for r in c.get("/api/native/%s/messages?fn=identity&after=%d" % (REF, n["yes"])).json()] == [n["handed"], n["found"], n["no"], n["told"]]
     assert len(c.get("/api/native/%s/messages?after=-5" % REF).json()) == len(c.get("/api/native/%s/messages" % REF).json()), "before the first is all"
-    assert c.get("/api/native/%s/messages?after=soon" % REF).status_code == 422
+    assert c.get("/api/native/%s/messages?fn=&after=" % REF).json() == c.get("/api/native/%s/messages" % REF).json(), "the route as the PRD spells it: all"
+    assert c.get("/api/native/%s/messages?after=soon" % REF).status_code == 400
 
 
 def test_f14_no_payload_no_private_key_no_act_id_no_path_and_nothing_written(mods):
