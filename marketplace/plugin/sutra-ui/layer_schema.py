@@ -810,7 +810,11 @@ DEFS.update({
                                'read': boolean(), 'why_not_read': nullable(text(300)),
                                'verdicts': map_of(enum(*ITEM_VERDICTS), keys=ITEM_RE)})),
         'findings': items(obj({'text': nullable(text(4000)), 'at': _AT})),
-        'spot_checks': items(obj({})),
+        # from W3-BOARD (M8.7): Audit's spot checks, oldest first, each in the owner's words: what it says, when, whether every check held,
+        # the checks and the findings it filed; not the minute it fell on, since Audit drops in unannounced
+        'spot_checks': items(obj({'summary': text(1000), 'at': _AT, 'ok': boolean(),
+                                  'checks': items(obj({'check': text(80), 'ok': boolean(), 'why': text(300)}, required=('check', 'ok', 'why'))),
+                                  'findings': items(ref('audit.finding'))}, required=('summary', 'at', 'ok', 'checks', 'findings'))),
         'latest': nullable(obj({'artifact': ref('name'), 'v': integer(1), 'at': _AT,
                                 'items': items(obj({'id': ref('id.item'), 'verdict': enum(*ITEM_VERDICTS), 'method': enum('code', 'model'),
                                                     'evidence': text(1000), 'claim': text(600)},
@@ -1110,7 +1114,9 @@ CHECKS = {
     'audit': {'findings_name_where_and_what': 'each finding names where it is and what it claims',
               'has_a_verdict': 'a mechanical check gives a verdict with its notes, and each page defect it names says where it is, what is wrong and how serious',
               'picked_a_sample': 'it says whether it sampled, and which pages',
-              'reading_is_s30': 'each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what'},
+              'reading_is_s30': 'each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what',
+              'spot_check_reads_only': "a spot check left the department's files as it found them, apart from Audit's own rows; any other "
+                                       'filing says what it did'},
 }
 
 #: samples every implementation's check must judge as main's bodies do (A1.21), each checked against the body on main;

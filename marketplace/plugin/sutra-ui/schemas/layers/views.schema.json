@@ -869,8 +869,70 @@
         "spot_checks": {
           "items": {
             "additionalProperties": true,
-            "properties": {},
-            "required": [],
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "checks": {
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "check": {
+                      "maxLength": 80,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "why": {
+                      "maxLength": 300,
+                      "minLength": 0,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "check",
+                    "ok",
+                    "why"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 0,
+                "type": "array"
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/$defs/audit.finding"
+                },
+                "minItems": 0,
+                "type": "array"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "summary": {
+                "maxLength": 1000,
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "required": [
+              "summary",
+              "at",
+              "ok",
+              "checks",
+              "findings"
+            ],
             "type": "object"
           },
           "minItems": 0,

@@ -7311,6 +7311,18 @@ def c_question_is_bounded(ctx, step, item, out):
 CHECK["question_is_bounded"] = c_question_is_bounded
 
 
+def c_spot_check_reads_only(ctx, step, item, out):
+    """The name of audit/v1's covering of its filing (W3-BOARD, M8.7), registered beside the literals as done_is_read is: the
+    body is the version's, and a version that is not there files nothing a covering could let through."""
+    got = layers.load("audit/v1")
+    if got is None:
+        return {"ok": False, "notes": ["Audit's version is not there to judge a filing"]}
+    return got.spot_check_reads_only(ctx, step, item, out)
+
+
+CHECK["spot_check_reads_only"] = c_spot_check_reads_only
+
+
 # adaptation/v1's step adapt.fit (W2-ADAPT, M5.2): the copy a department runs when the layer does not load. It fits nothing: the
 # Library's line stays whole, which is also what the layer's own draft answers, and the check takes that answer and no other
 def _fit_line(ctx):

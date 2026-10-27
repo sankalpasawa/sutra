@@ -313,6 +313,18 @@ def has_a_verdict(ctx, step, item, out):
     return {'ok': not bad, 'notes': bad or got['notes']}
 
 
+def spot_check_reads_only(ctx, step, item, out):
+    """Audit's covering of its filing (M8.7): a spot check left the department's files as it found them, apart from Audit's own
+    rows, said what it did, and files nothing otherwise; any other filing (a reading) says what it did, as every step does."""
+    if not isinstance(out, dict) or not out.get('spot'):
+        return R.c_said_what_it_did(ctx, step, item, out)
+    if out.get('before') != out.get('after'):
+        return {'ok': False, 'notes': ["a spot check wrote outside Audit's rows"]}
+    if not str(out.get('said') or '').strip():
+        return {'ok': False, 'notes': ['it did not say what it did']}
+    return {'ok': True, 'notes': ["it read the engines' state and wrote only its own row"]}
+
+
 CODE = {
     'audit_pick': ref_to('audit_pick'),
     'audit_mechanical': audit_mechanical,
@@ -332,6 +344,7 @@ CHECK = {
     'findings_name_where_and_what': ref_to('c_findings_name_where_and_what'),
     'said_what_it_did': ref_to('c_said_what_it_did'),
     'reading_is_s30': ref_to('c_reading_is_s30'),
+    'spot_check_reads_only': spot_check_reads_only,
 }
 # Audit's words, by the split rule of A1.16 from function-prompts/audit/*.md (python -m layers.prompts --extract audit);
 # judge.items is the part this layer added (A1-ITEMS), written in the bundle as the others are. The bundle is the

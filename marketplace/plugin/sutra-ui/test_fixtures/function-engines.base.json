@@ -1299,7 +1299,7 @@
     "nature": "transform",
     "born": "C2",
     "code": "audit_file",
-    "check": "said_what_it_did"
+    "check": "spot_check_reads_only"
    }
   ],
   "on": []

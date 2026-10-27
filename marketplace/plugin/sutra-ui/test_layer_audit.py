@@ -125,10 +125,13 @@ def test_u1_every_name_the_recipe_uses_is_provided_by_reference_not_by_the_legac
     for kind, names in used.items():
         assert names <= set(mine[kind]), "%s: %s are not provided by audit/v1" % (kind, sorted(names - set(mine[kind])))
     counts = C.by_reference(m)
-    # audit_mechanical and the covering of its step moved into the layer (W2-CHECKS, M8.6); every other name is still by reference
-    moved = {"audit_mechanical", "has_a_verdict"}
+    # audit_mechanical and the covering of its step moved into the layer (W2-CHECKS, M8.6), and the covering of its filing is the
+    # layer's own (W3-BOARD, M8.7); every other name is still by reference. said_what_it_did, which the filing step named before
+    # its covering became the layer's, stays in the table, by reference, though no step names it now
+    moved = {"audit_mechanical", "has_a_verdict", "spot_check_reads_only"}
+    unused = {"said_what_it_did"}
     assert {n for d in C._dicts(m).values() for n, v in d.items() if not hasattr(v, "legacy")} == moved
-    assert counts["by_reference"] == sum(len(v) for v in used.values()) - len(moved) and counts["own"] == len(moved)
+    assert counts["by_reference"] == sum(len(v) for v in used.values()) - len(moved) + len(unused) and counts["own"] == len(moved)
 
 
 # ---- U3 · the deliverable (M8.1) -----------------------------------------------------------------------------------
@@ -972,7 +975,8 @@ def test_u6_the_contract_passes_for_audit_v1_with_no_part_of_it_on_the_md_fallba
     for number, case in enumerate((C.case_1, C.case_2, C.case_3, C.case_4, C.case_5, C.case_6, C.case_7, C.case_8), 1):
         assert case(m, contract_ctx) == [], "contract case %d" % number
     counts = C.by_reference(m)
-    assert counts == {"by_reference": 10, "own": 2}, "every name audit/v1 provides is by reference, but the two bodies that moved (W2-CHECKS, M8.6)"
+    assert counts == {"by_reference": 10, "own": 3}, \
+        "every name audit/v1 provides is by reference, but the two bodies that moved (W2-CHECKS, M8.6) and the covering of its filing (W3-BOARD, M8.7)"
 
 
 # ---- U2 · Audit's words (M2.5) --------------------------------------------------------------------------------------
