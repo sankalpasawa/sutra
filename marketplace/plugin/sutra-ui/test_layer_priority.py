@@ -1864,6 +1864,41 @@ def test_q2_a_raise_past_the_cap_is_409_over_cap_and_the_ceiling_stays(live, rou
     assert W.dept(ref)["ceiling"]["rounds"] == 12
 
 
+def test_q1_q2_a_raise_past_the_cap_on_a_card_with_a_thread_is_refused_before_the_choice_is_recorded(live):
+    """check_raise guarded by nothing (found by a verifier 2026-10-27): the cards above carry no thread, and there apply_choice raises
+    OVER_CAP itself, so they pass with check_raise gone. A card with a thread (the blocked card of a bargain limit or of a refused
+    round) is Identity's to apply whole, and only check_raise, before the choice is recorded, stands between a stale raise and the
+    record: past twice where it started, in any one of calls, money or rounds, the choice is 409 OVER_CAP through POST /asks/{aid},
+    the card still waits, nothing was posted to its thread, and the limit and the ceiling are as they were."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    d = W.dept(ref)
+    c, env = d["ceiling"], d["envelopes"]["Plan"]
+    api = _client()
+    stop = W.option(W.STOP_OPTION, "Stop here", "the department stops where it is")
+    stale = [("Plan", {"what": "envelope", "engine": "Plan", "calls": 2 * env["calls"] + 1, "usd": env["usd"]}),
+             ("Plan", {"what": "envelope", "engine": "Plan", "calls": env["calls"], "usd": round(2 * env["usd"] + 0.01, 4)}),
+             ("ceiling", {"what": "ceiling", "rounds": 2 * c["start"]["rounds"] + 1, "calls": c["calls"], "usd": c["usd"]}),
+             ("ceiling", {"what": "ceiling", "rounds": c["rounds"], "calls": 2 * c["start"]["calls"] + 1, "usd": c["usd"]}),
+             ("ceiling", {"what": "ceiling", "rounds": c["rounds"], "calls": c["calls"], "usd": round(2 * c["start"]["usd"] + 0.01, 4)})]
+    for name, params in stale:
+        card = R._blocked(ref, W.dept(ref), {"src": R.OWNER}, "Priority said no.", "The plan needs your word.", "Identity, settling the bargain", "no room",
+                          options=[W.option("raise:" + name, "Add budget", "about a lot more", params), stop])
+        assert card["thread"], "a card with a thread: Identity applies the choice, and apply_choice leaves it alone"
+        posts = len(R.board(ref))
+        got = api.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "raise:" + name})
+        assert (got.status_code, got.json()["detail"]) == (409, {"code": "OVER_CAP"}), params
+        waiting = next(a for a in W.asks(ref) if a["id"] == card["id"])
+        assert (waiting["status"], waiting["chosen"]) == ("pending", None), "the card waits as it was"
+        assert len(R.board(ref)) == posts, "and nothing reached Identity"
+        assert (W.dept(ref)["envelopes"]["Plan"], W.dept(ref)["ceiling"]) == (env, c)
+    inside = R._blocked(ref, W.dept(ref), {"src": R.OWNER}, "Priority said no.", "The plan needs your word.", "Identity, settling the bargain", "no room",
+                        options=[W.option("raise:Plan", "Add budget", "to the most allowed",
+                                          {"what": "envelope", "engine": "Plan", "calls": 2 * env["calls"], "usd": round(2 * env["usd"], 4)}), stop])
+    ok = api.post("/api/native/%s/asks/%s" % (ref, inside["id"]), json={"option": "raise:Plan"})
+    assert ok.status_code == 200 and ok.json()["status"] == "chosen", "at the cap the choice is taken"
+
+
 def test_q2_a_round_past_the_calls_or_the_money_is_said_no_to_in_money_and_the_raise_is_held_to_the_cap(live, rounds_sendable):
     """A round funded though the goal has spent what the ceiling holds must fail: with 12 calls and 0.60 USD spent, a line
     estimated at the same again, and a ceiling of 20 calls, round 2 is over by calls, and the raise offered is the most the cap
