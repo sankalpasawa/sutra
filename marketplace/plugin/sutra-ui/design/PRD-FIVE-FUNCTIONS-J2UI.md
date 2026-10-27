@@ -48,7 +48,7 @@ bash qa/walks/j2ui-e2e.sh                                                       
 
 ## 4. The routes
 
-Every route is under `/j2ui/{ref}/`. `{ref}` must be a department of the engine runtime whose kind is `website` (`j2ui_common.need`, the one place that decides); anything else is `404 {"error": "no such department"}` on every route, the page included. JSON is cleaned (`j2ui_common.clean`: no private key, no path of this machine; **not** `functions_view._clean`, whose path rule turns `build/v1/index.html` into `buildindex.html` and `5/6/2026` into `52026`) and sent no-store. Reads write nothing. A route that cannot build its answer sends the page's own empty shape, because a wrong shape blanks the page.
+Every route is under `/j2ui/{ref}/`. `{ref}` must be a department of the engine runtime whose kind is `website` (`j2ui_common.need`, the one place that decides); anything else is `404 {"error": "no such department"}` on every route, the page included. JSON is cleaned (`j2ui_common.clean`: no private key, no path of this machine, the owner's own words never rewritten; `functions_view._clean` scrubs by the same rule, `machine_paths`, since its own path rule turned `build/v1/index.html` into `buildindex.html`, `5/6/2026` into `52026` and the owner's quoted `/home/about` into `about`) and sent no-store. Reads write nothing. A route that cannot build its answer sends the page's own empty shape, because a wrong shape blanks the page.
 
 | Route | Answer |
 |---|---|
@@ -231,7 +231,7 @@ How to run: `./run-tests.sh test_j2ui_verbatim.py test_j2ui_contract.py test_j2u
 | D-BAR | a slim native bar: On/Off switch and `Settings and records` | the prototype has no run controls; Sutra needs Stop and the way to the typed Instructions and Standards | drop the bar and reach Stop from the strip |
 | D-SIGNOFF | no release until the owner has seen the screenshots and section 7 | "no change" is the owner's, so the visible differences are the owner's to accept | none |
 | D-CHAT | the owner's side of the chat from `chat_view`, internal posts from the department's board, the Validator from the ledger | the owner's follow-ups are on Root's board | registry keys carry the board |
-| D-CLEAN | an own `clean()` with `ABS_PATH`, not `functions_view._clean` | `_clean` rewrites relative paths and dates | tested |
+| D-CLEAN | an own `clean()` with `ABS_PATH` (the rule lives in `machine_paths`, which `functions_view._clean` uses too) | a path rule that took any `/a/b` for a path rewrote relative paths, dates and the owner's quoted pages | tested |
 | D-SCHEMA | vendor `j2_schema.py` byte for byte | `atoms_v1` is then the prototype's code, not a copy of its logic | changes only with the sync |
 | D-HONEST | a clean Audit reading is one `read` line; `workable` None until per-item readings exist and every item's method is `code` | no invented item-by-item results or code check | none |
 | D-FIXES | `fixes` is 1 | the page prints one of two fixed strings | S4 hides the line on request |

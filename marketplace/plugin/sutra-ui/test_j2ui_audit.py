@@ -33,6 +33,7 @@ import j2ui_audit as X
 import j2ui_work as K
 from test_j2ui_work import (BANNED, CHECK_ID, LINE, REF, ago, born, cycle, event, mods, page_state, post, render, run, shown,  # noqa: F401
                             standin, step_row, walk)
+from test_fixtures.j2ui.core_fixtures import machine  # noqa: F401  (the machine the path rule sees)
 
 
 @pytest.fixture(autouse=True)
@@ -1175,6 +1176,43 @@ def test_w8_real_audit_pane_a_reading_item_by_item_gets_its_rows(mods):
     got, ctx = audit_of(mods)
     assert got["workable"] == ["the fees page names no fee"]
     assert "Not workable yet (checked by code)" in shown(render(page_state(got), "renderAudit(s)"))
+
+
+#: the done-when the owner stamped, with the pages of the owner's site in it (not paths of this machine), and what Audit found on them
+ROUTE_RULE = "Never link /private/area from the menu and always keep /home/about first"
+ROUTE_FACT = "the menu on /home/about links /private/area"
+ROUTE_ASK = "Plan B:/pricing stays, and /private/members is first"
+
+
+def test_w8_real_audit_pane_the_routes_the_owner_quoted_reach_the_tab_workable_and_the_confirm_line_as_said(mods, machine):
+    """Finding N1, third part. The done-when the owner stamped and the evidence Audit wrote come to the tab from Audit's pane, which
+    functions_view scrubs; it used to cut any /a/b to its last name, so the tab read 'Never link area from the menu and always keep
+    about first' beside the extra issue that kept the routes, and the owner saw one rule two ways. Read through the real pane (no
+    stub): the rows, `workable` and the 'to confirm with you' line carry the routes as they were said, a path of this machine in the
+    evidence is still its file name, and a relative file and a date are not touched."""
+    W, R, J, F = mods
+    machine("/Users/me")
+    cycle(W, "running", 6)
+    real_pane("audit", "latest")
+    finding(W, R, [("about.html", ROUTE_RULE, "high")], about_version=1)
+    item = {"subject": "the menu", "severity": "high", "method": "code"}
+    R.audit_record(REF, None, "Live site", 1, True, None, [        # the reading as engine_runtime.audit_file files it
+        dict(item, id="D1", claim="build/v1/index.html opens on 5/6/2026", verdict="met", evidence="read /Users/me/work/out.txt and build/v1/index.html"),
+        dict(item, id="D2", claim=ROUTE_RULE, verdict="not_met", evidence=ROUTE_FACT),
+        dict(item, id="D3", claim=ROUTE_ASK, verdict="to_confirm", evidence="nobody said which of /home/about and /private/members leads")], [])
+    got, ctx = audit_of(mods)
+    a = got["audits"][-1]
+    rows = {r["id"]: r for r in a["results"]}
+    assert rows["D1"]["criterion"] == "build/v1/index.html opens on 5/6/2026" and rows["D1"]["note"] == "read out.txt and build/v1/index.html"
+    assert (rows["D2"]["criterion"], rows["D2"]["note"]) == (ROUTE_RULE, ROUTE_FACT)
+    assert rows["D3"]["needs_requester_fact"] == ROUTE_ASK
+    assert rows["D3"]["note"] == "to confirm with you: nobody said which of /home/about and /private/members leads"
+    assert a["extra_issues"][0]["criterion"] == ROUTE_RULE == rows["D2"]["criterion"], "one rule, said one way on the whole tab"
+    assert got["workable"] == [ROUTE_RULE, "to confirm with you: " + ROUTE_ASK]
+    text = shown(render(page_state(got), "renderAudit(s)"))
+    for route in ("/private/area", "/home/about", "Plan B:/pricing", "/private/members"):
+        assert route in text, route
+    assert "link area from" not in text and "keep about first" not in text
 
 
 def test_w8_real_adaptation_pane_roots_standards_are_conditions(mods, born):

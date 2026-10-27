@@ -8,7 +8,9 @@ Named claims:
   F3  a stopped or a done department never shows a function working, whatever runs or waits
   F4  a failed step check is a fault, and so is a start that should have fired (Audit with no run after the version it
       starts on; Coordination idle while two engines are ready); inside the grace window neither is
-  F5  the read carries no private key and no path, and it writes nothing
+  F5  the read carries no private key and no path of this machine, and it writes nothing; a page the owner quotes in a rule
+      ('/home/about'), a relative file and a date leave it as they were said, for a path is this machine's only under a folder
+      this machine has (machine_paths), the one rule the J2 view's adapter shortens by too
   F6  the route answers for a department on the engine runtime and 404s for any other ref
   F7  the cycle says where the department is in the owner's words, with its eight steps, and needs_you only when it does;
       each function's last act is the act and to whom, in the owner's words, never the words a post carried, and so is
@@ -124,6 +126,13 @@ def _run(W, engine, status="running", what="Write a page", system=False, **more)
     row.update(more)
     W._put_run(REF, row)
     return row
+
+
+def _machine(monkeypatch, home="/Users/someone"):
+    """The machine the path rule sees: whose home it is. A path is this machine's only under a folder this machine has
+    (machine_paths), so a test that names a path of the machine says which home it is under."""
+    monkeypatch.setenv("HOME", home)
+    monkeypatch.setenv("USERPROFILE", home)
 
 
 def _states(F):
@@ -348,8 +357,9 @@ def test_f4_ready_now_asks_by_peek_and_finds_two_engines(mods):
 
 
 # ---- F5: no private key, no path, no write ----------------------------------------------------------------------
-def test_f5_no_private_key_no_path_and_nothing_written(mods):
+def test_f5_no_private_key_no_path_and_nothing_written(mods, monkeypatch):
     W, R, J, F = mods
+    _machine(monkeypatch, "/Users/someone")
     _cycle(W, "running", 6)
     _run(W, "Identity", status="ok", system=True, what="read /Users/someone/.sutra-ui/native/dref-fv0001/brief.md")
     J.note(REF, 6, "Identity", "Coordination", "run.completed", "complete", "filed at /Users/someone/secret/x.json", "k1",
@@ -363,6 +373,34 @@ def test_f5_no_private_key_no_path_and_nothing_written(mods):
     nodes = {n["name"]: n for n in got["functions"]}
     assert nodes["Identity"]["last"]["what"] == "read brief.md"
     assert {p: os.path.getmtime(os.path.join(home, p)) for p in os.listdir(home)} == snap, "the read wrote nothing"
+
+
+#: a rule the owner stamped: pages of their site, a relative file and a date in it (none is a path of this machine)
+OWNERS_PAGES = "Never link /private/area from the menu and always keep /home/about first; Plan B:/pricing stays on 5/6/2026 in build/v1/index.html"
+
+
+def test_f5_the_pages_the_owner_quotes_leave_the_read_as_they_were_said_and_a_path_of_this_machine_does_not(mods, monkeypatch):
+    """Finding N1: the read cut any /a/b to its last name, so the owner's 'Never link /private/area from the menu and always keep
+    /home/about first' came out as 'Never link area from the menu and always keep about first' on the Audit tab, the Identity lane
+    and the Map, 'build/v1/index.html' as 'buildindex.html' and '5/6/2026' as '52026'. A path is this machine's only under a
+    folder this machine has."""
+    W, R, J, F = mods
+    _machine(monkeypatch, "/Users/me")
+    assert F._clean({"a": [OWNERS_PAGES, {"b": OWNERS_PAGES}], "token": "t", "n": 3}) == {"a": [OWNERS_PAGES, {"b": OWNERS_PAGES}], "n": 3}
+    for pages in ("go to /home/about", "/private/members/", "see /var and /tmp and /etc", "/Users/login/settings", "keep /home/about, /private/area and /var/news"):
+        assert F._clean(pages) == pages, pages
+    for said, want in (("wrote /Users/me/work/out.txt, then /private/var/folders/ab/T/x.json.", "wrote out.txt, then x.json."),
+                       ("in ~/notes/a.md and C:\\Users\\me\\f.txt", "in a.md and f.txt"), ("(/Users/me/a) and \"/Users/me/b/c.md\"", "(a) and \"c.md\""),
+                       ("at %s" % (W.ddir(REF) / "dept.json"), "at dept.json")):
+        assert F._clean(said) == want, said
+    # read from the record: the ask Identity waits on the owner with, and the owner's words handed on in a message
+    _ask(W, "rule", engine="Identity", text="A rule, as understood: Never link /private/area from the menu and always keep /home/about first")
+    _cycle(W, "waiting", 1)
+    line = next(n for n in F.functions(REF)["functions"] if n["name"] == "Identity")["line"]
+    assert line == "A rule, as understood: Never link /private/area from the menu and always keep /home/about first"
+    _say(W, R, "Identity", "Adaptation", "request", {"word": "line", "words": OWNERS_PAGES}, "x-pages")
+    got = _client().get("/api/native/%s/messages" % REF).json()
+    assert [r["summary"] for r in got if r["from"] == "Identity"] == [OWNERS_PAGES], "the classic route says them as the owner did"
 
 
 def test_f5_the_read_never_calls_the_model(mods, monkeypatch):
@@ -1596,8 +1634,9 @@ def test_f14_after_keeps_only_what_is_newer(mods):
     assert c.get("/api/native/%s/messages?after=soon" % REF).status_code == 400
 
 
-def test_f14_no_payload_no_private_key_no_act_id_no_path_and_nothing_written(mods):
+def test_f14_no_payload_no_private_key_no_act_id_no_path_and_nothing_written(mods, monkeypatch):
     W, R, J, F = mods
+    _machine(monkeypatch, "/Users/x")
     n = _spoken(W, R)
     c = _client()
     home = str(W.ddir(REF))
