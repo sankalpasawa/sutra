@@ -1403,6 +1403,104 @@ def test_p4_the_pane_keeps_the_owners_words_in_an_older_record_and_says_the_rest
     assert pane["prices"][0]["why"] != want and "grant proposal" not in pane["prices"][0]["why"], "and a department that did not say them has them said"
 
 
+# ---- P4, closure round, gap 3: the plurals, the prefixes and the nouns the first pass did not know ----------------------------------
+#: forms a model writes that the first pass left on the owner's screen (found: 'refusals' and 'rejections' stayed on 19 reads)
+MORE_FORMS = {
+    "the refusal stands, rejections happen, refusals too": "the no stands, nos happen, nos too",
+    "Counterproposal: keep two": "Ask for less: keep two",
+    "Counterproposals: keep two, or Plan alone": "Asks for less: keep two, or Plan alone",
+    "a counter-proposal of two, two counterproposals, a counterbid, counterbids, a counter-bid":
+        "an ask for less of two, two asks for less, an ask for less, asks for less, an ask for less",
+    "ungranted, re-granted": "not said yes, said yes again",
+    "regranted the line": "said yes again to the line",
+    "the offer was regranted": "the offer was given a yes again",
+    "a grantable line": "a fit-for-a-yes line",
+    "the line is grantable": "the line is fit for a yes",
+    "unrefused": "not said no",
+    "recountered": "asked for less again",
+    "Refusals: 2. Rejections: 1. Counteroffers: 3": "Nos: 2. Nos: 1. Asks for less: 3",
+    "refusal to grant is final": "declining to say yes is final",
+    "a rejection of the plan; its rejections": "a no of the plan; its nos",
+    # 'order' as a noun and as a verb with no subject the pass knows
+    "Priority issues no orders to engines": "Priority issues no asks to engines",
+    "the orders Priority gives": "the asks Priority gives",
+    "Priority gives orders": "Priority gives asks",
+    "These orders are none": "These asks are none",
+    "orders the engines": "asks for the engines",
+    "ordered to wait": "asked to wait",
+    "the engines were ordered to wait": "the engines were asked to wait",
+    "Priority ordered the engines to wait": "Priority asked for the engines to wait",
+    "Priority orders by cost": "Priority sorts by cost",
+    # and the ordinary word is left
+    "in order to fit; the order of the line; Priority order: Plan, Write; ordered by cost; order-dependent; an ordered list":
+        "in order to fit; the order of the line; Priority order: Plan, Write; ordered by cost; order-dependent; an ordered list"}
+
+
+def test_p4_the_plurals_prefixes_and_nouns_of_the_inside_words_are_said_in_the_owners_words():
+    """INSIDE had the singular refusal and rejection only, and 'order' only after a subject it knew. Every form the first pass left
+    (refusals, rejections, counterproposals, counterbids, grantable, ungranted, re-granted, 'no orders', 'orders the engines', 'ordered to
+    wait') must be said in the owner's words, once, with its grammar whole; one that is left must fail."""
+    import owner_words
+    for why, want in MORE_FORMS.items():
+        said, plain = owner_words.plainly(why)
+        assert (said, plain) == (want, True), why
+        assert owner_words.said_plainly(said) == said, "said twice it says the same: " + why
+        assert not GARBLE.search(said), said
+        if "order" not in why:
+            assert not STEMS.search(said), said
+    assert not re.search(r"grant|counter|refus|reject", " ".join(owner_words.INSIDE.values()), re.I), "and what is put in their place is the owner's"
+
+
+def test_p4_a_form_the_pass_does_not_know_is_not_posted_the_last_line_net_puts_money_and_room_in_its_place(live):
+    """A word of the bargain that is still in the sentence after the pass, and is not the owner's, never reaches the screen: Priority
+    says the answer, its keep and the room in its own words (the net under the pass, as Identity's is under what it says). A name or a
+    word the owner said does not trip it."""
+    import owner_words
+    read = {"word": "line", "names": ["Plan", "Write"], "fits": ["Plan"], "limit": 6,
+            "estimate": {"calls": 4, "usd": 0.16, "per_engine": {"Plan": {"calls": 1, "usd": 0.04}, "Write": {"calls": 3, "usd": 0.12}}},
+            "room": {"calls": 2, "usd": 0.1}}
+    for why in ("the grantee list is long", "a counterpart of Plan", "an encounter with the room", "Orders: counterweights", "the line is regrantable"):
+        assert owner_words.plainly(why)[1] is False, why
+        assert V1._owners_why(why, read, {"answer": "reject", "why": why}) == "no room today: about 4 calls and 0.16 USD against the 2 calls and 0.10 USD left"
+        assert V1._owners_why(why, read, {"answer": "accept", "why": why}) == "fits today: about 4 calls and 0.16 USD of the 2 calls and 0.10 USD left"
+        assert V1._owners_why(why, read, {"answer": "counter", "keep": ["Plan"], "why": why}) == \
+            "room for 1 of 2 today: about 1 call and 0.04 USD for these of the 2 calls and 0.10 USD left"
+    assert V1._owners_why("the grantee list is long", dict(read, fits=[]), {"answer": "counter", "keep": [], "why": ""}) == \
+        "no room today: about 4 calls and 0.16 USD against the 2 calls and 0.10 USD left", "an ask for less that keeps nothing is a no"
+    assert V1._owners_why("the grantee list is long", read, {"answer": "counter", "keep": [], "why": ""}) == \
+        "room for 1 of 2 today: about 1 call and 0.04 USD for these of the 2 calls and 0.10 USD left", "one that names none keeps what fits"
+    assert V1._owners_why("", read, {"answer": "reject"}) == "", "no sentence is no sentence: the defaults say it"
+    assert V1._owners_why("a plain reason", read, {"answer": "reject"}) == "a plain reason"
+    assert V1._owners_why("the grantee list is long") == "the grantee list is long", "with nothing to build from, the pass is all there is"
+
+
+WHY_FORMS = ("Budget check: the refusal stands, rejections happen, refusals too. Counterproposal: keep two, no counterbid. "
+             "Priority issues no orders to engines; the orders Priority gives are none; ungranted, re-granted.")
+SAID_FORMS = ("Budget check: the no stands, nos happen, nos too. Ask for less: keep two, no ask for less. "
+              "Priority issues no asks to engines; the asks Priority gives are none; not said yes, said yes again.")
+
+
+def test_p4_the_plural_and_prefix_forms_a_model_wrote_reach_no_read_in_the_inside_words(live, monkeypatch):
+    """A model's no with 'refusals', 'rejections', a counterproposal, a counterbid, 'no orders', 'ungranted' and 're-granted' went through
+    a department and stayed on 19 reads (Priority's bargains and prices, the board, the messages, the chat's asks, the status waits, the J2
+    page's conflicts). Put it through again: no read keeps a form of the bargain, and the sentence is one on all of them."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": WHY_FORMS}})
+    ref = _priced(live, {n: (50, 5.0) for n in LINE})
+    assert "proposal.refused" in _actions(J, ref) and "conflict.raised" in _actions(J, ref)
+    found = _every_read(live, ref)
+    _held_to_the_owners_words(found, COMMON_READS)
+    assert not {k: v[:1] for k, v in found.items() if [s for s in v if STEMS.search(s) or GARBLE.search(s)]}, "no stem of the bargain and no garble on any read"
+    [post] = [p for p in R.board(ref) if p["src"] == "Priority" and p["msg_type"] == "reject-proposal"]
+    [row] = _prices(W, ref)
+    assert post["payload"]["why"] == row["why"] == SAID_FORMS
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.refused")["summary"] == SAID_FORMS
+    pane = _view(W, J, ref)
+    assert [p["why"] for p in pane["prices"]] == [SAID_FORMS] and [b["summary"] for b in pane["bargains"]] == [SAID_FORMS]
+    assert [s for s in found["the page's api/state"] if "Said no to the plan" in s and "the no stands, nos happen, nos too" in s]
+    assert S.validate("priority.price", row) == [] and S.validate_view("priority", pane) == []
+
+
 def test_p4_the_view_does_not_come_back_through_the_part_that_reads_the_views(live, ctx, monkeypatch):
     """A view that builds its pane by calling functions_view._j2_part must fail once _j2_part hands the pane to layers.view
     (A1.17, K2's C9): the two would call each other without end. _j2_part is made to do exactly that here, with no guard

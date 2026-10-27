@@ -128,14 +128,20 @@ def standard_lead():
     return re.compile(r"(?<![\w-])(?:%s): ?" % "|".join(re.escape(i) for i, _, _, _ in S.WORKFLOW_STANDARDS))
 
 
+#: each phrase of BARGAIN_WORDS to be said, with the pattern that finds it where it begins a word ('granted the line' is not found in
+#: 're-granted the line', which is read word by word, with its 'again'); a phrase that begins with a mark ('; Refuse to ') is found as it is
+_PHRASES = tuple((inside, re.compile(r"(?<![\w-])" * inside[:1].isalnum() + re.escape(inside)), said) for inside, said in BARGAIN_WORDS)
+
+
 def plain(line):
     """One line in the owner's words; '' for nothing."""
     line = str(line or "")
     said = _may_note(line)
     if said is not None:
         return said
-    for inside, said in BARGAIN_WORDS:
-        line = line.replace(inside, said)
+    for inside, rx, said in _PHRASES:
+        if inside in line:
+            line = rx.sub(lambda m, said=said: said, line)
     return standard_lead().sub("", line)
 
 
@@ -159,13 +165,17 @@ _DECLINES = ('decline', 'declines', 'declined', 'declining')
 _VERB_FORMS = types.MappingProxyType({'g': ('grant', 'grants', 'granted', 'granting'), 'r': ('reject', 'rejects', 'rejected', 'rejecting'),
                                       'f': ('refuse', 'refuses', 'refused', 'refusing'), 'c': ('counter', 'counters', 'countered', 'countering')})
 #: the nouns of the same family, singular and plural: the answer a word names ('the refusal stands', 'a counter-offer of two')
-_NOUN_FORMS = types.MappingProxyType({'r': (('rejection', None),), 'f': (('refusal', None),),
-                                      'c': (('counter-offer', 'counter-offers'), ('counteroffer', 'counteroffers'), ('counter-proposal', 'counter-proposals'))})
+_NOUN_FORMS = types.MappingProxyType({'r': (('rejection', 'rejections'),), 'f': (('refusal', 'refusals'),),
+                                      'c': (('counter-offer', 'counter-offers'), ('counteroffer', 'counteroffers'), ('counter-proposal', 'counter-proposals'),
+                                            ('counterproposal', 'counterproposals'), ('counter-bid', 'counter-bids'), ('counterbid', 'counterbids'))})
 _FORM_OF = {w: (fam, form) for fam, ws in _VERB_FORMS.items() for w, form in zip(ws, _FORMS)}
-_FORM_OF.update({w: (fam, form) for fam, pairs in _NOUN_FORMS.items() for one, many in pairs for w, form in ((one, 'n'), (many, 'ns')) if w})
+_FORM_OF.update({w: (fam, form) for fam, pairs in _NOUN_FORMS.items() for one, many in pairs for w, form in ((one, 'n'), (many, 'ns'))})
+_FORM_OF['grantable'] = ('g', 'able')
 INSIDE = types.MappingProxyType({**{w: _VERBS[fam][_FORMS.index(form)] for w, (fam, form) in _FORM_OF.items() if form in _FORMS},
-                                 **{w: _NOUNS[fam][form == 'ns'] for w, (fam, form) in _FORM_OF.items() if form in ('n', 'ns')}})
-_INSIDE_RE = re.compile(r'(?<![\w-])(?P<w>%s)(?![\w-])' % '|'.join(re.escape(w) for w in sorted(_FORM_OF, key=len, reverse=True)), re.I)
+                                 **{w: _NOUNS[fam][form == 'ns'] for w, (fam, form) in _FORM_OF.items() if form in ('n', 'ns')},
+                                 'grantable': 'fit for a yes'})
+#: a word with the prefix a model puts on it ('ungranted', 're-granted') is read as the word, with the 'not' or the 'again' it carries
+_INSIDE_RE = re.compile(r'(?<![\w-])(?P<pre>(?:un|re|non)-?)?(?P<w>%s)(?![\w-])' % '|'.join(re.escape(w) for w in sorted(_FORM_OF, key=len, reverse=True)), re.I)
 #: 'the granting of' is 'the saying yes to': the gerund that is a noun takes its 'of' with it
 _GERUND_OF = re.compile(r"(?<![\w-])(?P<det>the|a|an|this|that|its|their|any|each|no|full|whole|partial)(?P<sp>\s+)(?P<w>granting|rejecting|refusing|countering)\s+of(?![\w-])", re.I)
 
@@ -198,13 +208,12 @@ _PREV = re.compile(r"(?:(?P<w>[\w\x00'-]*[\w\x00'])|(?P<p>[^\w\s]))\s*$")
 _NEXT = re.compile(r"\s*(?:(?P<w>[\w\x00][\w\x00'-]*)|(?P<p>[^\w\s]))")
 
 #: 'order' as a verb, which the screen keeps off as it keeps off grant (Priority prices and holds and never orders), said as
-#: 'ask for'. Only where it is a verb for certain: after a subject that did the ordering, or a modal. 'order' as the word for a
-#: line's order ('in order', 'the order of the line', 'Priority order: Plan, Write', 'ordered by cost') is the ordinary word, and is left.
-_ORDERS_AS = types.MappingProxyType({'order': 'ask for', 'orders': 'asks for', 'ordered': 'asked for'})
-_ORDER_RE = re.compile(
-    r'\b(?:(?P<by>Priority|it|he|she|which|that)(?P<s1>\s+)(?P<v1>orders|ordered)'
-    r'|(?P<mod>I|we|you|they|to|will|would|shall|should|must|can|could|may|might|not|never|cannot|don\'t|doesn\'t|didn\'t|won\'t)(?P<s2>\s+)(?P<v2>order))\b'
-    r'(?![\w-])(?!\s+by\b)', re.I)
+#: 'ask for'. Only where it is a verb for certain: after a subject that did the ordering, or a modal; 'orders' (more than one,
+#: or it does) as the asks Priority gives or the asking itself. 'order' as the word for a line's order ('in order', 'the order of
+#: the line', 'Priority order: Plan, Write', 'ordered by cost') is the ordinary word, and is left.
+_ORDER_RE = re.compile(r"(?<![\w-])(?P<w>orders|ordered|order)(?![\w-])", re.I)
+_ORDERING_BEFORE = frozenset("i we you they to will would shall should must can could may might not never cannot don't doesn't didn't won't".split())
+_ORDERED_SO = frozenset('by in from alphabetically first last ascending descending'.split())
 
 #: what is left of the bargain's inside words after the pass is not plain: a form it does not know (grantee, counterpart)
 _LEFT_IN = re.compile(r"[\w'-]*(?:grant|counter|refus|reject)[\w'-]*|(?<![\w-])orders(?![\w-])", re.I)
@@ -293,36 +302,63 @@ def _inside(m, text, owners, faults):
     word = m.group(0)
     if _owners_own(word, owners):
         return word
-    fam, form = _FORM_OF[word.lower()]
+    pre, (fam, form) = (m.group('pre') or '').lower().rstrip('-'), _FORM_OF[m.group('w').lower()]
     before, before2, after = _around(text, m)
     nw, kind = after[0], 'verb'
-    if form in ('n', 'ns'):
+    if form == 'n' and fam == 'f' and nw == 'to':
+        out, kind = 'declining', 'noun'                    # a refusal to grant: declining to say yes to
+    elif form in ('n', 'ns'):
         out, kind = _NOUNS[fam][form == 'ns'], 'noun'
-    elif form in ('base', 's') and _is_noun(form, before, after):
+    elif form == 'able':
+        out, kind = 'fit-for-a-yes' if _before_a_noun(before, after) else 'fit for a yes', 'noun'
+    elif form in ('base', 's') and not pre and _is_noun(form, before, after):
         out, kind = _NOUNS[fam][form == 's'], 'noun'
-    elif form == 'ed' and _before_a_noun(before, after):
-        out, kind = _BEFORE_A_NOUN[fam], 'noun'                # the granted line
+    elif form == 'ed' and (_before_a_noun(before, after) or (pre == 'un' and nw and nw not in _NOT_AN_OBJECT and nw not in ('by', 'to') and not _starts_object(after))):
+        out, kind = _BEFORE_A_NOUN[fam], 'noun'                # the granted line; ungranted lines (which this cannot say: see pre, below)
     elif form == 'ed' and _passive(before, before2, after):
         out, kind = _GIVEN[fam], 'passive'
         if nw == 'to' and fam != 'c':
             faults.append(word)                            # 'granted to Plan' gives, and is not 'given a yes to Plan'
     else:
         out = _VERBS[fam][_FORMS.index(form)]
-        if nw == 'to' and fam == 'f':
+        if nw == 'to' and fam == 'f' and not pre:
             out = _DECLINES[_FORMS.index(form)]            # refused to grant: declined to say yes to
         elif nw == 'to' and fam != 'c':
             faults.append(word)
             out = out[:-3]
         elif fam == 'c' and _starts_object(after):
             out += ' on'
+    if pre == 're' and kind in ('verb', 'passive'):        # said yes again to the line; said yes again
+        core, tail = (out[:-3], out[-3:]) if out.endswith((' to', ' on')) else (out, '')
+        out = core + ' again' + (tail if nw and nw not in _NOT_AN_OBJECT else '')
+    elif pre == 'un' and form == 'ed' and kind in ('verb', 'passive'):
+        out = 'not ' + out
+    elif pre:
+        faults.append(word)                                # a prefix this does not read: non-granted, ungranted lines, regrantable
+        out = 'not-' + out if pre == 'un' and kind == 'noun' else out
     return _as(word, out)
 
 
-def _asked(m):
-    """'order' as a verb after the subject that did the ordering, or a modal, said as 'ask for'."""
-    subject, gap, verb = (m.group('by'), m.group('s1'), m.group('v1')) if m.group('by') else (m.group('mod'), m.group('s2'), m.group('v2'))
-    out = _ORDERS_AS[verb.lower()]
-    return subject + gap + (out.upper() if verb.isupper() and len(verb) > 1 else out)
+def _ordered(m, text, owners):
+    """'order' as a verb or as the asks Priority gives, said as 'ask for' and 'asks'; as the line's order, as it is."""
+    word = m.group('w')
+    if _owners_own(word, owners):
+        return word
+    low, (before, _, after) = word.lower(), _around(text, m)
+    (pw, _), (nw, _) = before, after
+    if low == 'order':
+        out = 'ask for' if pw in _ORDERING_BEFORE and nw != 'by' else None
+    elif low == 'orders':
+        out = 'sorts' if nw == 'by' else ('asks' if nw is None or _is_noun('s', before, after) else 'asks for')
+    elif nw in _ORDERED_SO:
+        out = None                                          # ordered by cost
+    elif nw == 'to' and pw not in _DETERMINERS and pw not in _ADJECTIVES:
+        out = 'asked'                                       # ordered to wait
+    elif pw in ('priority', 'it', 'he', 'she', 'which', 'that') or (_starts_object(after) and pw not in _DETERMINERS and pw not in _ADJECTIVES):
+        out = 'asked for'
+    else:
+        out = None
+    return word if out is None else _as(word, out)
 
 
 def plainly(text, keep=(), owners=()):
@@ -346,7 +382,7 @@ def plainly(text, keep=(), owners=()):
     text = _GERUND_OF.sub(lambda m: m.group('det') + m.group('sp') + _VERBS[_FORM_OF[m.group('w').lower()][0]][3] + (' on' if m.group('w').lower() == 'countering' else ''), text)
     text = _INSIDE_RE.sub(lambda m: _inside(m, text, owners, faults), text)
     text = _TO_DROPPED.sub(r'\1 \2', text)
-    text = _ORDER_RE.sub(_asked, text)
+    text = _ORDER_RE.sub(lambda m: _ordered(m, text, owners), text)
     text = re.sub(r'\b([Aa])(?= ask(?:ed)?\b)', r'\1n', text)
     plain_now = not faults and not [w for w in _LEFT_IN.findall(text) if not _owners_own(w, owners)]
     for mark, name in held.items():
