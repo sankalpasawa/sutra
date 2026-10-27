@@ -8,6 +8,7 @@
         "part": "does",
         "read": true,
         "read_by": [],
+        "note": null,
         "inputs": [],
         "answers": [],
         "fields": [
@@ -20,7 +21,8 @@
             "multiline": false,
             "value": "holds the goal and the rules, judges every effect, and is the one the owner speaks with",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "holds the goal and the rules, judges every effect, and is the one the owner speaks with"
           }
         ]
       },
@@ -28,6 +30,7 @@
         "part": "skills",
         "read": true,
         "read_by": [],
+        "note": null,
         "inputs": [],
         "answers": [],
         "fields": [
@@ -45,7 +48,8 @@
               "put a question to the owner"
             ],
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "recognise a task, a query, a directive, feedback or a new idea; judge a request against the goal; gate an effect by rule; put a question to the owner"
           }
         ]
       },
@@ -55,6 +59,7 @@
         "read_by": [
           "identity.close"
         ],
+        "note": null,
         "inputs": [
           "the department",
           "the goal",
@@ -68,6 +73,160 @@
           "why"
         ],
         "fields": []
+      },
+      {
+        "part": "done",
+        "read": false,
+        "read_by": [],
+        "note": "No run reads these words, and Identity's page shows them",
+        "inputs": [],
+        "answers": [],
+        "fields": [
+          {
+            "field": "text",
+            "type": "text",
+            "max": 400,
+            "min": 1,
+            "max_items": null,
+            "multiline": false,
+            "value": "every request has a verdict and every effect a gate answer, and the goal is said to be reached only from Audit's reading of every done-when item",
+            "as_shipped": true,
+            "waits": null,
+            "shown": "every request has a verdict and every effect a gate answer, and the goal is said to be reached only from Audit's reading of every done-when item"
+          }
+        ],
+        "label": "when it is done"
+      },
+      {
+        "part": "role_is",
+        "read": true,
+        "read_by": [],
+        "note": null,
+        "inputs": [],
+        "answers": [],
+        "fields": [
+          {
+            "field": "text",
+            "type": "text",
+            "max": 400,
+            "min": 1,
+            "max_items": null,
+            "multiline": false,
+            "value": "the department's voice and conscience; it keeps the department aligned with its goal, its done-when, its rules and the boundary of what it may decide, and it is the only function that speaks to the owner",
+            "as_shipped": true,
+            "waits": null,
+            "shown": "the department's voice and conscience; it keeps the department aligned with its goal, its done-when, its rules and the boundary of what it may decide, and it is the only function that speaks to the owner"
+          }
+        ],
+        "label": "what it is"
+      },
+      {
+        "part": "role_may",
+        "read": true,
+        "read_by": [],
+        "note": null,
+        "inputs": [],
+        "answers": [],
+        "fields": [
+          {
+            "field": "items",
+            "type": "list",
+            "max": 160,
+            "min": 1,
+            "max_items": 12,
+            "multiline": false,
+            "value": [
+              "rule that a proposal fits the goal and the rules, or does not",
+              "settle a disagreement between Adaptation and Priority within the goal and the rules",
+              "say what an existing rule means",
+              "stop an action that is unsafe or that no rule lets through",
+              "decide whether a finding that matters needs the work done again",
+              "say the goal is reached, when Audit's reading of every done-when item supports it",
+              "put one question to the owner, with its ways forward, when the goal and the rules cannot decide"
+            ],
+            "as_shipped": true,
+            "waits": null,
+            "shown": "rule that a proposal fits the goal and the rules, or does not; settle a disagreement between Adaptation and Priority within the goal and the rules; say what an existing rule means; stop an action that is unsafe or that no rule lets through; decide whether a finding that matters needs the work done again; say the goal is reached, when Audit's reading of every done-when item supports it; put one question to the owner, with its ways forward, when the goal and the rules cannot decide"
+          }
+        ],
+        "label": "what it may do"
+      },
+      {
+        "part": "role_procedure",
+        "read": true,
+        "read_by": [],
+        "note": null,
+        "inputs": [],
+        "answers": [],
+        "fields": [
+          {
+            "field": "items",
+            "type": "list",
+            "max": 160,
+            "min": 1,
+            "max_items": 12,
+            "multiline": false,
+            "value": [
+              "Name the goal item or the rule that applies.",
+              "Separate what is known from what is assumed.",
+              "Decide with the authority you already have when you can.",
+              "If the evidence is missing but another function can get it, ask for that evidence before asking the owner.",
+              "Ask the owner only when the choice changes the purpose, the risk, a commitment outside the department, or a trade-off of values."
+            ],
+            "as_shipped": true,
+            "waits": null,
+            "shown": "Name the goal item or the rule that applies.; Separate what is known from what is assumed.; Decide with the authority you already have when you can.; If the evidence is missing but another function can get it, ask for that evidence before asking the owner.; Ask the owner only when the choice changes the purpose, the risk, a commitment outside the department, or a trade-off of values."
+          }
+        ],
+        "label": "how it decides"
+      },
+      {
+        "part": "role_patterns",
+        "read": true,
+        "read_by": [],
+        "note": null,
+        "inputs": [],
+        "answers": [],
+        "fields": [
+          {
+            "field": "items",
+            "type": "list",
+            "max": 160,
+            "min": 1,
+            "max_items": 12,
+            "multiline": false,
+            "value": [
+              "Becoming a general manager who comments on every message.",
+              "Treating a personal preference as a rule.",
+              "Escalating without giving the ways forward.",
+              "Quietly changing what done-when means.",
+              "Doing Adaptation's or Audit's work."
+            ],
+            "as_shipped": true,
+            "waits": null,
+            "shown": "Becoming a general manager who comments on every message.; Treating a personal preference as a rule.; Escalating without giving the ways forward.; Quietly changing what done-when means.; Doing Adaptation's or Audit's work."
+          }
+        ],
+        "label": "what it avoids"
+      },
+      {
+        "part": "role_block",
+        "read": true,
+        "read_by": [],
+        "note": null,
+        "inputs": [
+          "the working agreement",
+          "what it is",
+          "what it is not",
+          "what it may do",
+          "what it never does",
+          "how it decides",
+          "what it avoids",
+          "who it hands on to"
+        ],
+        "answers": [],
+        "fields": [],
+        "label": "its role, as the agent is sent it"
       }
     ]
   },
@@ -80,6 +239,7 @@
         "part": "thin",
         "read": true,
         "read_by": [],
+        "note": null,
         "inputs": [],
         "answers": [],
         "fields": [
@@ -92,7 +252,8 @@
             "multiline": true,
             "value": "thin: true when the request names nothing to build from (no subject, no purpose).",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "thin: true when the request names nothing to build from (no subject, no purpose)."
           }
         ]
       },
@@ -102,6 +263,7 @@
         "read_by": [
           "identity.enough"
         ],
+        "note": null,
         "inputs": [
           "the request",
           "what was asked",
@@ -128,7 +290,8 @@
             "multiline": true,
             "value": "Read who the department is against Identity's standard, and say whether it is enough to start work on. The standard has five points, and only five:\ngoal: the goal names what the department makes and for whom.\nitems: done-when is a list of items, and each item says how it is checked.\nrules: every rule is tagged go, ask, refuse or always.\nowner, budget: the department has an owner and a budget.\ninvented: nothing is invented; a fact the owner did not give is marked to confirm, never stated.",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "Read who the department is against Identity's standard, and say whether it is enough to start work on. The standard has five points, and only five: goal: the goal names what the department makes and for whom. items: done-when is a list of items, and each item says how it is checked. rules: every rule is tagged go, ask, never or always. owner, budget: the department has an owner and a budget. invented: nothing is invented; a fact the owner did not give is marked to confirm, never stated."
           }
         ]
       }
@@ -136,7 +299,7 @@
   },
   {
     "group": "take",
-    "lead": "How to judge a request: go, ask or refuse.",
+    "lead": "How to judge a request: go, ask or stop.",
     "kept": null,
     "parts": [
       {
@@ -145,6 +308,7 @@
         "read_by": [
           "identity.recognise"
         ],
+        "note": null,
         "inputs": [
           "the goal",
           "the request",
@@ -164,7 +328,8 @@
             "multiline": true,
             "value": "Recognise what kind of words the owner has given. There are five kinds, and only five:\ntask: \"do X for me\". query: \"tell me Y\". directive: \"from now on, do Z\", a standing change to how the department works or to its goal. feedback: \"that was wrong\", about work already made. new-idea: \"I want a new capability\", something the department cannot do today.",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "Recognise what kind of words the owner has given. There are five kinds, and only five: task: \"do X for me\". query: \"tell me Y\". directive: \"from now on, do Z\", a standing change to how the department works or to its goal. feedback: \"that was wrong\", about work already made. new-idea: \"I want a new capability\", something the department cannot do today."
           }
         ]
       },
@@ -174,6 +339,7 @@
         "read_by": [
           "identity.take"
         ],
+        "note": null,
         "inputs": [
           "the goal",
           "the rules",
@@ -198,7 +364,8 @@
             "multiline": true,
             "value": "Judge one request from the owner.",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "Judge one request from the owner."
           },
           {
             "field": "guidance",
@@ -209,7 +376,8 @@
             "multiline": true,
             "value": "go: do it. ask: it reaches outside what the department makes (money, a message to someone, a change to the goal), so the owner stamps first. refuse: it breaks a rule. Reading the web is not outside: the department can read any page.\nunsure: facts the request says the owner is not sure of, in a few words each; [] when none.\nrule: a standing rule the request states (always or never, from now on) with its tag; null when it is one piece of work.",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "go: do it. ask: it reaches outside what the department makes (money, a message to someone, a change to the goal), so the owner stamps first. stop: it breaks a rule. Reading the web is not outside: the department can read any page. unsure: facts the request says the owner is not sure of, in a few words each; [] when none. rule: a standing rule the request states (always or never, from now on) with its tag; null when it is one piece of work."
           }
         ]
       },
@@ -219,6 +387,7 @@
         "read_by": [
           "identity.answer"
         ],
+        "note": null,
         "inputs": [
           "the question",
           "the record"
@@ -238,7 +407,8 @@
             "multiline": true,
             "value": "Answer the owner's question from the record below, and from nothing else. If the record does not hold the answer, say so.",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "Answer the owner's question from the record below, and from nothing else. If the record does not hold the answer, say so."
           }
         ]
       },
@@ -248,6 +418,7 @@
         "read_by": [
           "identity.rule"
         ],
+        "note": null,
         "inputs": [
           "the goal",
           "the rules",
@@ -268,7 +439,8 @@
             "multiline": true,
             "value": "The owner has given a directive. Restate it as one rule, in one line, in plain words.",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "The owner has given a directive. Restate it as one rule, in one line, in plain words."
           },
           {
             "field": "guidance",
@@ -279,7 +451,8 @@
             "multiline": true,
             "value": "tag goal: the directive changes what the department is for. scope one-time: the owner means this once.",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "tag goal: the directive changes what the department is for. scope one-time: the owner means this once."
           }
         ]
       },
@@ -289,6 +462,7 @@
         "read_by": [
           "identity.weigh"
         ],
+        "note": null,
         "inputs": [
           "the pages",
           "the request"
@@ -309,7 +483,8 @@
             "multiline": true,
             "value": "The owner has given feedback on work the department made. Read what it changes.",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "The owner has given feedback on work the department made. Read what it changes."
           }
         ]
       },
@@ -321,6 +496,7 @@
           "identity.wait_engine",
           "identity.judge"
         ],
+        "note": null,
         "inputs": [
           "the rules",
           "the engine"
@@ -339,7 +515,8 @@
             "multiline": true,
             "value": "An engine asks whether it may start.",
             "as_shipped": true,
-            "waits": null
+            "waits": null,
+            "shown": "An engine asks whether it may start."
           }
         ]
       }

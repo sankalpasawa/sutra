@@ -1965,11 +1965,25 @@ def _normal_words(text):
     return ' '.join(re.sub(r'[^a-z0-9 ]', '', str(text).casefold()).split())
 
 
+#: the fewest words a never line's head (the act, before its ': reason') must have to be compared on its own; a shorter head
+#: would match too much of what a function may do
+NEVER_HEAD_MIN_WORDS = 3
+
+
+def _never_forms(line):
+    """The ways a 'never' line is said: whole, and for 'act: reason' the act alone ('ask the owner directly: only Identity
+    does' is said by 'ask the owner directly'), when the act is at least NEVER_HEAD_MIN_WORDS words; as normalised words."""
+    whole = _normal_words(line)
+    head = _normal_words(str(line).split(':', 1)[0]) if ':' in str(line) else ''
+    return [f for f in (whole, head if len(head.split()) >= NEVER_HEAD_MIN_WORDS else '') if f]
+
+
 def says_a_never(layer, line):
     """The 'never' line of a function's template that `line` says again (FT-9), compared by normalised words; None when it
-    says none. A line that says what the function never does cannot be among what it may do or how it decides."""
+    says none. A line that says what the function never does cannot be among what it may do or how it decides. A never line
+    that carries its reason after a colon is said as well by its act alone; the answer is always the whole never line."""
     said = _normal_words(line)
-    return next((n for n in (FUNCTION_TEMPLATE.get(layer) or {}).get('never', ()) if _normal_words(n) and _normal_words(n) in said), None)
+    return next((n for n in (FUNCTION_TEMPLATE.get(layer) or {}).get('never', ()) if any(f in said for f in _never_forms(n))), None)
 
 
 # ---- reading the tables ----------------------------------------------------------------------------------------------

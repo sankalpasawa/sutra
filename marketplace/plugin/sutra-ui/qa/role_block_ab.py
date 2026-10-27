@@ -8,8 +8,13 @@ twice in one process, with layer_schema.ROLE_IN_CARD True and then False (a cons
 variable), on whatever model the app is configured with, and prints for each arm:
 
     steps run                 the rows the department's steps wrote
-    checks / pass             how many covering checks ran, and the share that passed
-    outside the contract      the rows whose check failed: an answer outside the shape its contract asks for
+    checks / pass             how many covering checks ran, and the share of answers that passed: an answer that fits its
+                              shape and passes its check; an answer that fits no shape has no check and counts against it
+    outside the contract      the rows whose check failed, and the answers that fit no shape the contract asks for, which
+                              leave no check: a step that ended failed with none, and a step the model's answers did not fit
+                              on any rung, which was put to the owner instead (each is listed, with the reason)
+    failed, asked             every row that ended failed, and every row that waits for the owner, so that steps minus checks
+                              is never silent
     soft calls, prompt chars  the model calls the functions and the work engines made, and the characters sent in all of them
     calls, usd                what the rows say the model reported (0 offline)
 
@@ -56,7 +61,8 @@ def _counter(prompt):
     return {"answer": "accept", "why": "the envelope has room"}
 
 
-#: name -> (what it is, the steps whose answer is scripted, whether the owner says yes to what waits for a stamp)
+#: name -> (what it is, the steps whose answer is scripted, whether the owner says yes to what waits for a stamp: True, False, or a
+#: function of the ask that answers True, False or None to leave it)
 SCENARIOS = {
     "happy": ("the happy path: the Library's line, said yes, built and read", {}, True),
     "counter": ("Priority asks for less on the first plan and says yes to the smaller one", {"priority.bargain": _counter}, True),
@@ -95,6 +101,47 @@ def records(live):
         shutil.rmtree(home, ignore_errors=True)
 
 
+def _has_check(row):
+    return isinstance(row.get("check"), dict) and "ok" in row["check"]
+
+
+def _put_to_the_owner(row):
+    """A step the model answered and no answer fit its shape, on its rung or the one below: the ladder ends at the person, so the
+    row asks the owner (status asked, rung P, from a rung that is not) and carries the calls the model was given."""
+    return row.get("status") == "asked" and row.get("rung") == "P" and row.get("asked_rung") not in (None, "P") and int(row.get("calls") or 0) > 0
+
+
+def tally(rows):
+    """What the step rows say of the contract: how many ran a covering check (`checks`), how many passed it (`passed`), how many
+    answers fit no shape and so left no check (`unfit`), and the rows outside the contract in row order. The engine writes an
+    answer that fits no shape as a row with no check: ended failed when nothing is left to try, or, when the model was called and
+    the ladder reached the person, a row that asks the owner. A row that never got a verdict (waiting for the model, asked
+    by hand) is none of them."""
+    out = {"checks": 0, "passed": 0, "unfit": 0, "outside": []}
+    for r in rows:
+        if _has_check(r):
+            out["checks"] += 1
+            if r["check"]["ok"] is False:
+                out["outside"].append({"step": r["step"], "kind": "check failed", "notes": (r["check"].get("notes") or [])[:2]})
+            else:
+                out["passed"] += 1
+        elif r.get("status") == "failed":
+            out["unfit"] += 1
+            out["outside"].append({"step": r["step"], "kind": "no answer that fits", "notes": [str(r.get("why") or "no answer that fits, on any rung")]})
+        elif _put_to_the_owner(r):
+            out["unfit"] += 1
+            out["outside"].append({"step": r["step"], "kind": "put to the owner", "notes": ["the model's answers fit no shape on any rung, so the step waits for the owner"]})
+    return out
+
+
+def _says(yes, ask):
+    """What the owner says to one pending ask: True or False, or None to leave it. `yes` is True (yes to all), False (no to a
+    conflict and nothing else), or a function of the ask."""
+    if callable(yes):
+        return yes(ask)
+    return yes if (yes or ask["kind"] == "conflict") else None
+
+
 def run_arm(name, arm, live=False):
     """One scenario on one arm ('on': the role block is in the card; 'off': it is not): the numbers it leaves."""
     import layer_schema as S
@@ -120,22 +167,24 @@ def run_arm(name, arm, live=False):
             child = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
             W.run_until_idle(child, limit=300)
             for _ in range(4):                                         # the owner answers what waits, so the work goes on
-                waiting = [a for a in W.asks(child) if a["status"] == "pending" and (yes or a["kind"] == "conflict")]
+                waiting = [(a, _says(yes, a)) for a in W.asks(child) if a["status"] == "pending"]
+                waiting = [(a, said) for a, said in waiting if said is not None]
                 if not waiting:
                     break
-                for a in waiting:
-                    W.decide_ask(child, a["id"], yes)
+                for a, said in waiting:
+                    W.decide_ask(child, a["id"], said)
                 W.run_until_idle(child, limit=300)
             rows = R.step_rows(child)
         finally:
             R.call_model = real
             S.ROLE_IN_CARD = before
-    checked = [r for r in rows if isinstance(r.get("check"), dict) and "ok" in r["check"]]
-    outside = [r for r in checked if r["check"]["ok"] is False]
     function = [c for c in calls if c[0] in ("Identity", "Adaptation", "Priority", "Coordination", "Audit")]
-    return {"scenario": name, "arm": arm, "steps": len(rows), "checks": len(checked), "passed": len(checked) - len(outside),
-            "pass_rate": round((len(checked) - len(outside)) / len(checked), 3) if checked else None,
-            "outside_the_contract": [{"step": r["step"], "notes": (r["check"].get("notes") or [])[:2]} for r in outside],
+    verdicts = tally(rows)
+    answers = verdicts["checks"] + verdicts["unfit"]
+    return {"scenario": name, "arm": arm, "steps": len(rows), "checks": verdicts["checks"], "unfit": verdicts["unfit"],
+            "passed": verdicts["passed"], "pass_rate": round(verdicts["passed"] / answers, 3) if answers else None,
+            "failed": sum(1 for r in rows if r.get("status") == "failed"), "asked": sum(1 for r in rows if r.get("status") == "asked"),
+            "outside_the_contract": verdicts["outside"],
             "soft_calls": len(calls), "function_calls": len(function), "prompt_chars": sum(c[2] for c in calls),
             "function_prompt_chars": sum(c[2] for c in function),
             "calls": sum(int(r.get("calls") or 0) for r in rows), "usd": round(sum(float(r.get("usd") or 0) for r in rows), 4)}
@@ -149,15 +198,15 @@ def run_arms(names=None, live=False):
 def report(results, live=False):
     """The numbers as the lines a person reads."""
     out = ["role block in the card: with (on) and without (off) it, on %s" % ("the app's configured model" if live else "the offline model (steps run their drafts; only Priority's answer is scripted)"),
-           "%-8s %-4s %6s %7s %7s %8s %6s %9s %7s %6s" % ("scenario", "arm", "steps", "checks", "pass", "outside", "calls", "chars", "model", "usd")]
+           "%-8s %-4s %6s %7s %7s %8s %7s %6s %6s %9s %7s %6s" % ("scenario", "arm", "steps", "checks", "pass", "outside", "failed", "asked", "calls", "chars", "model", "usd")]
     for name, arms in results.items():
         for arm in ("on", "off"):
             a = arms[arm]
-            out.append("%-8s %-4s %6d %7d %7s %8d %6d %9d %7d %6.2f" % (
-                name, arm, a["steps"], a["checks"], "n/a" if a["pass_rate"] is None else "%d%%" % round(a["pass_rate"] * 100),
-                len(a["outside_the_contract"]), a["soft_calls"], a["prompt_chars"], a["calls"], a["usd"]))
+            out.append("%-8s %-4s %6d %7d %7s %8d %7d %6d %6d %9d %7d %6.2f" % (
+                name, arm, a["steps"], a["checks"], "n/a" if a["pass_rate"] is None else "%.1f%%" % (a["pass_rate"] * 100),
+                len(a["outside_the_contract"]), a["failed"], a["asked"], a["soft_calls"], a["prompt_chars"], a["calls"], a["usd"]))
         on, off = arms["on"], arms["off"]
-        same = all(on[k] == off[k] for k in ("steps", "checks", "passed", "soft_calls")) and on["outside_the_contract"] == off["outside_the_contract"]
+        same = all(on[k] == off[k] for k in ("steps", "checks", "unfit", "passed", "failed", "asked", "soft_calls")) and on["outside_the_contract"] == off["outside_the_contract"]
         extra = on["prompt_chars"] - off["prompt_chars"]
         out.append("         the block adds %d characters over %d function calls (%.0f%% more)%s" % (
             extra, on["function_calls"], 100.0 * extra / off["prompt_chars"] if off["prompt_chars"] else 0.0,

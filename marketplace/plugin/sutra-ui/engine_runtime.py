@@ -6247,6 +6247,10 @@ NOT_READ = "in this version the code makes this choice, so no run reads it yet"
 #: and by no card. The owner is told so: the words are kept and shown on the page, never that the next run uses them (A1.16),
 #: and never that the code makes a choice for them, as NOT_READ says of a note.
 SHOWN_ONLY = (("goal", "done"),)
+#: What the owner is told of a SHOWN_ONLY part where it is listed (S16's hover on the row) and where it is asked about: the words
+#: are shown on the function's page, and no run reads them. Never NOT_READ's words about the code's choice, which are not true of
+#: a part a page shows.
+SHOWN_ONLY_SAYS = "No run reads these words, and %s's page shows them"
 #: What a part's inputs are called on the owner's screen (S16, 'filled by the app: the goal, the rules, the request'): the
 #: names code fills, in words. A name not here is said as it is, with its underscores gone.
 INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done means", "rules": "the rules", "plan": "the plan",
@@ -6341,8 +6345,9 @@ def instructions_view(ref, fn):
     """A function's instructions as its Settings shows them (S16): each group by name with the line that says what it is
     for, in it each part with whether a run reads it, the steps that do, what the app fills and what it answers with, and
     each field the owner may change with its type and bounds, the words the department reads now, whether they are as
-    shipped, and a change that waits for the stamp. An earlier whole-file change shows once as the group's `kept` note.
-    Names only, never where anything lives."""
+    shipped, and a change that waits for the stamp. An earlier whole-file change shows once as the group's `kept` note. A part
+    no run reads because a page shows it (SHOWN_ONLY) carries `note`, what its row says on hover; any other part has none
+    (a note the code makes its choice for says so in the row's own words). Names only, never where anything lives."""
     d = W.dept(ref)
     if d:
         _tell_kept_notes(ref, d, fn)
@@ -6364,6 +6369,7 @@ def instructions_view(ref, fn):
                                "value": now.get(field), "as_shipped": now.get(field) == shipped.get(field),
                                "waits": {"ask": a["id"], "at": a.get("created")} if a else None})
             rows.append({"part": part, "read": _read_by_a_run(fn, group, part), "read_by": _read_by(fn, group, part),
+                         "note": SHOWN_ONLY_SAYS % fn.title() if (group, part) in SHOWN_ONLY else None,
                          "inputs": [input_says(fn, group, part, n) for n in spec["inputs"]],
                          "answers": layers.prompts.answer_keys(spec["returns"]), "fields": fields})
         out.append({"group": group, "lead": layer_schema.GROUPS[fn][group], "kept": layers.prompts.kept_note(ref, fn, group),
@@ -6412,7 +6418,7 @@ def instructions_ask(ref, fn, group, part, field, value):
         line = "Change %s to your words" % what
         use = (_answers("use them from the next run", "to keep them as they are") if _read_by_a_run(fn, group, part) else
                _answers("show your words there", "to keep them as they are",
-                        lead="No run reads these words, and %s's page shows them: " % fn.title()) if (group, part) in SHOWN_ONLY else
+                        lead=SHOWN_ONLY_SAYS % fn.title() + ": ") if (group, part) in SHOWN_ONLY else
                _answers("keep them as your note", "to keep them as they are",
                         lead="In this version the code makes this choice, so no run reads these words yet: "))
         p = post(ref, "Identity", OWNER, "request", {"word": "instructions", "objective": line + "? " + use, "output": "a stamp or a refusal",
