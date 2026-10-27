@@ -639,6 +639,51 @@ def test_a_stamped_done_replaces_the_proposal(j2):
     assert again["value"] is None and again["placeholder"] is True
 
 
+def _instructions_told(R, ref):
+    """What Identity has told the owner of a change to instructions, in order."""
+    return [str(p["payload"]["done"]) for p in R.board(ref) if p["payload"].get("word") == "instructions" and p["payload"].get("done")]
+
+
+def test_goal_done_is_shown_on_the_page_and_no_run_reads_it_and_the_owner_is_told_so(j2):
+    """A3.4.6, a verifier's finding (F1/F6): only the function's page reads goal.done; no card does. So the view says no run
+    reads it, the ask and Identity's tell say it is shown on the page and never that the next run uses it, while the four role
+    words, which the role block carries into every card, stay read and keep the words they had."""
+    W, R, J, founding, FV = j2
+    ref = born(j2)
+    for fn in FUNCTIONS:
+        group = next(g for g in R.instructions_view(ref, fn) if g["group"] == "goal")
+        by = {p["part"]: p for p in group["parts"]}
+        assert by["done"]["read"] is False and by["done"]["read_by"] == [], "%s: no run reads when it is done" % fn
+        assert all(by[part]["read"] is True for part in ("does", "skills", "role_is", "role_may", "role_procedure", "role_patterns", "role_block")), fn
+    # the stamped words reach no card: this is what the view says
+    audit = "every page of the live site was read against the brief, and nothing is left to confirm"
+    ask = R.instructions_ask(ref, "audit", "goal", "done", "text", audit)
+    said = next(p for p in R.board(ref) if p["thread"] == ask["thread"])["payload"]["objective"]
+    assert said == ("Change when Audit is done to your words? No run reads these words, and Audit's page shows them: "
+                    "stamp to show your words there, or say no to keep them as they are.")
+    assert "next run" not in said
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=300)
+    assert _instructions_told(R, ref) == ["when Audit is done now reads as you changed it; no run reads it, and Audit's page shows it."]
+    assert field_of(FV.function(ref, "audit"), "done")["value"] == audit, "the page shows what the owner stamped"
+    for fn in FUNCTIONS:
+        card = R.card({"ref": ref, "dept": W.dept(ref), "engine": S.TITLE[fn], "def": R.engine_def(S.TITLE[fn])})
+        assert audit not in card, "%s: no card holds the stamped done" % fn
+    # the owner gives the shipped words back: still not a word about the next run
+    ask = R.instructions_ask(ref, "audit", "goal", "done", "text", module_of("audit").WORDS["goal"]["done"]["text"])
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=300)
+    assert _instructions_told(R, ref)[-1] == "when Audit is done now reads as shipped; no run reads it, and Audit's page shows it."
+    assert not [t for t in _instructions_told(R, ref) if "next run" in t]
+    # a role word is read: its ask and its tell keep the words every read part has
+    ask = R.instructions_ask(ref, "audit", "goal", "role_is", "text", "the check of this department, kept apart from its writers")
+    said = next(p for p in R.board(ref) if p["thread"] == ask["thread"])["payload"]["objective"]
+    assert said == "Change what Audit is to your words? Stamp to use them from the next run, or say no to keep them as they are."
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=300)
+    assert _instructions_told(R, ref)[-1] == "what Audit is now reads as you changed it; the next run uses it."
+
+
 PURSUE_WORDS = (("role_is", None, ", and again after each reading until the done-when holds"),
                 ("role_may", 5, "propose the next round when Audit's reading is not done and the correction advances the goal"),
                 ("role_procedure", 7, "When Audit's reading is not done, propose a correction only if it moves the goal."))

@@ -5948,6 +5948,10 @@ def _goal_of(ref, name, e=None):
 
 #: What the owner is told of a part no step reads (Adaptation's decide note): its words are kept, and no run is sent them.
 NOT_READ = "in this version the code makes this choice, so no run reads it yet"
+#: The parts no run reads because a page shows them: a function's own done (A3.4.6) is read by its page (functions_view.function)
+#: and by no card. The owner is told so: the words are kept and shown on the page, never that the next run uses them (A1.16),
+#: and never that the code makes a choice for them, as NOT_READ says of a note.
+SHOWN_ONLY = (("goal", "done"),)
 #: What a part's inputs are called on the owner's screen (S16, 'filled by the app: the goal, the rules, the request'): the
 #: names code fills, in words. A name not here is said as it is, with its underscores gone.
 INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done means", "rules": "the rules", "plan": "the plan",
@@ -6000,9 +6004,10 @@ def _read_by(fn, group, part):
 
 def _read_by_a_run(fn, group, part):
     """Whether a run is sent a part's words: every part but a note no code reads (Adaptation's decide, whose choice the code
-    makes in this version) is. A note is kept as the owner's, and the owner is told so, never that the next run uses it. A
-    part no step names may still be read: what a function does and its skills go in every agent's card."""
-    return part in ((INSTRUCTIONS.get(fn) or {}).get(group) or {})
+    makes in this version) and a part only a page shows (SHOWN_ONLY: a function's own done) is. Such a part is kept as the
+    owner's, and the owner is told so, never that the next run uses it. A part no step names may still be read: what a
+    function does and its skills go in every agent's card, and the role words go in through the role block."""
+    return (group, part) not in SHOWN_ONLY and part in ((INSTRUCTIONS.get(fn) or {}).get(group) or {})
 
 
 def _waiting_change(ref, fn, group, part, field):
@@ -6111,6 +6116,8 @@ def instructions_ask(ref, fn, group, part, field, value):
             raise ValueError("these are the words %s holds now" % what)
         line = "Change %s to your words" % what
         use = (_answers("use them from the next run", "to keep them as they are") if _read_by_a_run(fn, group, part) else
+               _answers("show your words there", "to keep them as they are",
+                        lead="No run reads these words, and %s's page shows them: " % fn.title()) if (group, part) in SHOWN_ONLY else
                _answers("keep them as your note", "to keep them as they are",
                         lead="In this version the code makes this choice, so no run reads these words yet: "))
         p = post(ref, "Identity", OWNER, "request", {"word": "instructions", "objective": line + "? " + use, "output": "a stamp or a refusal",
@@ -6124,8 +6131,8 @@ def _apply_instructions(ref, d, a):
     """The owner's stamp on a change to one field: the typed value, checked again against the interface and written
     whole and atomically (layers.prompts.store), read by the next run. A value that no longer serves (the interface
     changed under it) is not written, and the owner hears why. A value the same as the shipped one takes the owner's
-    value away, so a later default reaches the department. A part no run reads is kept as the owner's note, and the owner
-    is told that, never that the next run uses it."""
+    value away, so a later default reaches the department. A part no run reads is kept as the owner's note (or, for a part a
+    page shows, as the words that page shows), and the owner is told that, never that the next run uses it."""
     fn, group, part, field = (a.get(k) for k in ("fn", "group", "part", "field"))
     who = {"src": "Root" if d.get("root") else OWNER}
     known = fn in INSTRUCTIONS and field in ((layer_schema.PROMPTS[fn].get(group) or {}).get(part) or {}).get("fields", {})
@@ -6138,10 +6145,13 @@ def _apply_instructions(ref, d, a):
         _tell(ref, d, who, "inform", {"word": "instructions", "done": "Your change to %s was not put in place: %s. Change it again." % (what, exc)})
         return {"said": "could not put the owner's change to %s in place: %s" % (what, exc)}
     read = _read_by_a_run(fn, group, part)
-    tail = "; the next run uses it" if read else ", kept as your note; " + NOT_READ
+    if (group, part) in SHOWN_ONLY:
+        tail = removed = "; no run reads it, and %s's page shows it" % fn.title()
+    else:
+        tail = "; the next run uses it" if read else ", kept as your note; " + NOT_READ
+        removed = "; the next run uses it" if read else "; " + NOT_READ
     _tell(ref, d, who, "inform", {"word": "instructions", "done": "%s now reads as %s%s."
-                                  % (what, "shipped" if done == "removed" else "you changed it", tail if done != "removed" else
-                                     ("; the next run uses it" if read else "; " + NOT_READ))})
+                                  % (what, "shipped" if done == "removed" else "you changed it", removed if done == "removed" else tail)})
     return {"said": "put the owner's change to %s in place" % what}
 
 

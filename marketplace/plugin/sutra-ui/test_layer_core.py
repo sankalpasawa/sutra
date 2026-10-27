@@ -270,7 +270,8 @@ def test_c6_instructions_view_is_the_groups_parts_and_fields_of_the_interface(ho
                 spec = S.PROMPTS[layer][g["group"]][p["part"]]
                 assert [f["field"] for f in p["fields"]] == list(spec["fields"])
                 assert p["answers"] == P.answer_keys(spec["returns"]) and len(p["inputs"]) == len(spec["inputs"])
-                assert p["read"] is ((layer, g["group"], p["part"]) != ("adaptation", "decide", "note"))
+                # every part is read but Adaptation's decide note and a function's own done, which only its page reads (A3.4.6)
+                assert p["read"] is ((layer, g["group"], p["part"]) != ("adaptation", "decide", "note") and (g["group"], p["part"]) != ("goal", "done"))
                 for f in p["fields"]:
                     shape = S.DEFS[spec["fields"][f["field"]]]
                     listed = f["type"] == "list"

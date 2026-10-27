@@ -541,11 +541,13 @@ class TestTheOwnersChange(Fixture):
 
     def test_m2_2e_a_part_no_run_reads_is_kept_as_the_owners_note_and_the_owner_is_told_so(self):
         R, W = self.R, self.W
-        # which parts a run reads: every one but Adaptation's decide note, which no step reads
+        # which parts a run reads: every one but Adaptation's decide note, which no step reads, and a function's own done, which
+        # only its page reads (A3.4.6)
         for fn, groups in R.INSTRUCTIONS.items():
             for group, parts in groups.items():
                 for part in parts:
-                    self.assertEqual(self.row(fn, group, part)["read"], (fn, group, part) != ("adaptation", "decide", "note"), (fn, group, part))
+                    self.assertEqual(self.row(fn, group, part)["read"], (fn, group, part) != ("adaptation", "decide", "note") and (group, part) != ("goal", "done"),
+                                     (fn, group, part))
         row = self.row("adaptation", "decide", "note")
         self.assertEqual((row["read"], row["read_by"], row["inputs"], row["answers"]), (False, [], [], []))
         mine = self.shipped("adaptation", "decide", "note", "text") + " Prefer a checklist to code when both would serve."
