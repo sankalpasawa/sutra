@@ -1043,12 +1043,17 @@ def identity_finding(ctx, step, item):
 # Adaptation proposed a correction round, Priority priced it inside the goal's ceiling, and Adaptation tells Identity it was
 # granted (inform/round, act.round). Identity files the correction in the Brief as 'Correct this: ...' with no stamp, unless a rule
 # says ask (S-18), and records the round's next status as a row of rounds.jsonl: a status change is a row appended, never one
-# rewritten (W.append_row). The line, which only runs what Root registered (SM-3), runs again on the new Brief.
+# rewritten (W.append_row). The line, which only runs what Root registered (SM-3), runs again on the new Brief. Identity files a
+# round only when the round's own last row, in this cycle, says granted: every proposal passes Priority first (rule 10), and who
+# sends the word is no proof of it.
 
 
 def round_rows(ref, n):
-    """The rows rounds.jsonl holds of round n, oldest first."""
-    return [r for r in W.rows(ref, 'rounds.jsonl') if r.get('round') == n]
+    """The rows rounds.jsonl holds of round n in the cycle now at work, oldest first: rounds are numbered again in each cycle, so a
+    row of an earlier cycle says nothing of this one's round n."""
+    cj = R._j2()
+    cycle = (cj._state(ref) or {}).get('cycle_id') if cj else None
+    return [r for r in W.rows(ref, 'rounds.jsonl') if r.get('round') == n and r.get('cycle_id') in (None, cycle)]
 
 
 def round_row(ref, base, status, **more):
@@ -1087,6 +1092,10 @@ def identity_round(ctx, step, item):
         return {'said': 'round %d is %s already; nothing is filed again' % (n, rows[-1]['status']), 'round': n}
     if not cj or cj.done(ref):
         return {'said': 'the goal is reached already; round %d is not filed' % n, 'round': n}
+    if not rows or rows[-1].get('status') != 'granted':
+        # every proposal passes Priority first (rule 10): the round is filed on its last row saying granted, in this cycle, and
+        # not on the word of the one who sent it
+        return {'said': 'round %d has no yes from Priority; nothing is filed' % n, 'round': n}
     rule = rule_asking_first(ref, d, correction)
     if rule:
         if not [a for a in W.asks(ref) if a.get('kind') == 'finding' and a.get('round') == n and a['status'] == 'pending']:

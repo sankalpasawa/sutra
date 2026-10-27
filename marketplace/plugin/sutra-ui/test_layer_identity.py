@@ -1375,14 +1375,16 @@ def _adaptation_may_tell_a_round(monkeypatch):
                             [{"act": "inform", "words": ("round",), "to": ("Identity",), "payload": "act.round"}])
 
 
-def _grant_round(R, W, J, monkeypatch, ref, n=2, correction="Name the fees on every page", covers=("D2",), **more):
+def _grant_round(R, W, J, monkeypatch, ref, n=2, correction="Name the fees on every page", covers=("D2",), rows=("proposed", "granted"),
+                 cycle=None, **more):
     """A stub Adaptation: it proposed round n, Priority priced it inside the ceiling, and it tells Identity the round is granted
-    (inform/round). Its rounds.jsonl rows are its own (W2-ADAPT); the stub writes the ones it would."""
+    (inform/round). Its rounds.jsonl rows are its own (W2-ADAPT); the stub writes the ones it would: the statuses in `rows`, in the
+    cycle now at work unless `cycle` names another. A test of a round nobody granted gives fewer rows and still tells Identity."""
     _adaptation_may_tell_a_round(monkeypatch)
-    base = {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": J.status(ref)["cycle_id"], "correction": correction, "fixes": ["F1"],
+    base = {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": cycle or J.status(ref)["cycle_id"], "correction": correction, "fixes": ["F1"],
             "covers": list(covers), "estimate": {"calls": 4, "usd": 0.08}, "reading": "r-0a0a0a0a"}
-    W.append_row(ref, "rounds.jsonl", dict(base, status="proposed"))
-    W.append_row(ref, "rounds.jsonl", dict(base, status="granted"))
+    for status in rows:
+        W.append_row(ref, "rounds.jsonl", dict(base, status=status, **({"brief_v": 3} if status in ("filed", "read") else {})))
     return R.post(ref, "Adaptation", "Identity", "inform",
                   dict({"word": "round", "round": n, "correction": correction, "fixes": ["F1"], "covers": list(covers),
                         "estimate": {"calls": 4, "usd": 0.08}, "why": "it fits the room"}, **more))
@@ -1443,6 +1445,45 @@ def test_j4_a_status_change_is_a_row_appended_never_a_row_rewritten(j2, monkeypa
     assert [r["status"] for r in rows] == ["proposed", "granted", "filed"] and rows[-1]["brief_v"] == len(W.versions(ref, "Brief"))
     assert all(S.validate_record("adaptation", "round", r) == [] for r in rows)
     assert (rows[-1]["round"], rows[-1]["correction"], rows[-1]["covers"], rows[-1]["reading"]) == (2, "Name the fees on every page", ["D2"], "r-0a0a0a0a")
+
+
+@pytest.mark.parametrize("rows,cycle,why", [
+    (("proposed",), None, "Priority has not answered: the last row is proposed"),
+    ((), None, "no row at all: nobody proposed it"),
+    (("proposed", "granted"), "cycle-before", "granted in an earlier cycle, not this one"),
+    (("proposed", "granted", "filed", "read"), "cycle-before", "filed and read in an earlier cycle: rounds are numbered again in each cycle"),
+])
+def test_j4_a_round_priority_did_not_grant_is_not_filed(j2, monkeypatch, rows, cycle, why):
+    """Every proposal passes Priority first (rule 10): Identity files 'Correct this' only for a round whose last row, in the cycle
+    now at work, says granted. The sender (Adaptation) is no proof of it."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    before, state = _versions(W, ref), {k: J.status(ref)[k] for k in ("state", "step", "round", "cycle_id")}
+    told = len([p for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]])
+    for correction in ("Name the fees on every page", "Email every subscriber the new fees"):      # and the one a rule says to ask about
+        post = _grant_round(R, W, J, monkeypatch, ref, correction=correction, rows=rows, cycle=cycle)
+        written = (W.ddir(ref) / "rounds.jsonl").read_text(encoding="utf-8") if (W.ddir(ref) / "rounds.jsonl").exists() else ""
+        row = _identity_hears(R, ref, post)
+        assert row["status"] == "ok", (why, row)
+        assert "round 2 has no yes from Priority; nothing is filed" in json.dumps(row), (why, row)
+        assert _versions(W, ref) == before, (why, "no version of the Brief or of anything else")
+        now = (W.ddir(ref) / "rounds.jsonl").read_text(encoding="utf-8") if (W.ddir(ref) / "rounds.jsonl").exists() else ""
+        assert now == written, (why, "no row of the round is written")
+        assert _asks_of(W, ref, "finding") == [], (why, "and nothing is asked of the owner")
+        assert {k: J.status(ref)[k] for k in state} == state and len([p for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]]) == told
+
+
+def test_j4_a_round_numbered_again_in_a_new_cycle_is_filed_on_its_own_yes(j2, monkeypatch):
+    """Rounds are numbered again in each cycle: round 2 filed and read in an earlier cycle is no word on round 2 of this one."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _grant_round(R, W, J, monkeypatch, ref, rows=("proposed", "granted", "filed", "read"), cycle="cycle-before")
+    post = _grant_round(R, W, J, monkeypatch, ref)
+    briefs = len(W.versions(ref, "Brief"))
+    _identity_hears(R, ref, post)
+    assert len(W.versions(ref, "Brief")) == briefs + 1 and J.status(ref)["round"] == 2
+    mine = [r["status"] for r in W.rows(ref, "rounds.jsonl") if r["cycle_id"] == J.status(ref)["cycle_id"]]
+    assert mine == ["proposed", "granted", "filed"]
 
 
 def test_j4_a_round_heard_twice_is_filed_once(j2, monkeypatch):
