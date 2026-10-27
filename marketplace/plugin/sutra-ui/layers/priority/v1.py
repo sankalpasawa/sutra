@@ -9,8 +9,9 @@ What moved (M5.3: Priority prices from observed spend). priority_read estimates 
 of what each engine's finished runs spent, with a prior for an engine with no runs, and reads the room actually left
 today; p_priority_bargain tells the agent both; d_priority_bargain, the offline answer, is the same arithmetic;
 priority_post answers and keeps one price row per answer; price_is_observed holds the answer to the facts. WORDS and
-LAYOUT hold its words (goal, bargain), so no part of it is read from the .md bundle. view() is functions_view's pane plus
-the prices.
+LAYOUT hold its words (goal, bargain), so no part of it is read from the .md bundle. view() builds the pane itself, the
+bargains and envelopes from functions_view's small readers and the prices from prices.jsonl; it never asks _j2_part, which
+reads the layers' views.
 
 What moved with M5.4 (priced options): priority_envelope, the gate that holds an engine at its envelope, files its card with the
 limit, the use and the ways forward built by code (raise, leave, stop); a no to a line carries the same on its post;
@@ -278,9 +279,24 @@ def _price_row(ctx, read, answer, keep, why):
         return None                      # the fault is a row and a count already (A1.20); a price never costs Adaptation its answer
 
 
+def cut_short(names, asked, fits=None):
+    """What an ask for less keeps, as the line cut short: the workflows from the first on, as far as the ask names them with
+    no gap, and no further than the longest prefix that fits (`fits`, when given). The line works from its first workflow on,
+    each reading what the one before it filed, so a workflow left out of the middle takes every later one with it (Summary
+    reads Notes: keeping Facts and Summary is a line that does not work, and keeping Facts is). It is never more than the
+    agent asked for, so approvals only tighten (S-08); nothing named from the first on is a no."""
+    named, out = {str(k) for k in asked or []}, []
+    for n in names:
+        if n not in named:
+            break
+        out.append(n)
+    return out if fits is None else out[:len(fits)]
+
+
 def priority_post(ctx, step, item):
     """Post the answer, and keep its price: one priority.price row per answer given. A line is answered as a whole: yes, no,
-    or an ask for less that keeps the workflows the agent named, else the longest prefix that fits. Moved from
+    or an ask for less that keeps the workflows the agent named from the first on, with no gap (cut_short), else, when the
+    agent named none of the line, the longest prefix that fits; an ask that names none from the first on is a no. Moved from
     engine_runtime.priority_post; the answers and the words are the same."""
     ref, pl, thread = ctx['ref'], ctx['post']['payload'], ctx['post']['thread']
     read, got = ctx['bag']['priority.read'], ctx['bag']['priority.bargain']
@@ -290,7 +306,7 @@ def priority_post(ctx, step, item):
     if pl.get('word') == 'line':
         if answer == 'counter':
             asked = [str(k) for k in got.get('keep') or []]
-            keep = [n for n in names if n in asked] or list(read.get('fits') or [])
+            keep = cut_short(names, asked, read.get('fits')) if [n for n in names if n in asked] else list(read.get('fits') or [])
             if keep and len(keep) < len(names):
                 why = why or 'the envelope has room for %d of them' % len(keep)
                 row = R.post(ref, 'Priority', 'Adaptation', 'propose', {'word': 'line', 'counter': True, 'keep': keep, 'why': why}, thread=thread)
@@ -319,8 +335,10 @@ def priority_post(ctx, step, item):
 
 def _fact_notes(ctx, out):
     """What the facts Priority read say against the answer (M5.3): a yes, or an ask for less, never spends what the room
-    does not hold. A no, or a smaller yes, always stands: approvals only tighten (S-08). Empty when the step has no facts
-    to hold the answer to (the contract's samples, a department's older read)."""
+    does not hold. A no, or a smaller yes or ask, always stands: approvals only tighten (S-08). The shape of an ask for less
+    is not held here: priority_post posts what it names as the line cut short (cut_short), so an ask that leaves out a
+    workflow in the middle is cut where it breaks and goes no further than the agent asked. Empty when the step has no
+    facts to hold the answer to (the contract's samples, a department's older read)."""
     read = ((ctx or {}).get('bag') or {}).get('priority.read')
     if not isinstance(read, dict) or not isinstance(read.get('estimate'), dict) or not isinstance(read.get('room'), dict):
         return []
@@ -1059,12 +1077,55 @@ LAYOUT['goal'].update({'done': '{text}', 'role_is': '{text}', 'role_may': '{item
 
 #: the most prices the pane carries: the newest, as the bargains it sits beside are the newest few
 PRICES_SHOWN = 12
+#: the bargain's inside words, and what the screen says in their place (said yes, asked for less, said no; never grant,
+#: counter or refuse). The agent is taught accept, counter and reject, and writes its why in its own sentence, so a why may
+#: use them or grant and refuse. owner_words.plain says phrases and never a bare verb, so the why is read again word by word;
+#: every form is spelt out, so the sentence keeps its grammar.
+INSIDE = types.MappingProxyType({
+    'grant': 'say yes to', 'grants': 'says yes to', 'granted': 'said yes to', 'granting': 'saying yes to',
+    'reject': 'say no to', 'rejects': 'says no to', 'rejected': 'said no to', 'rejecting': 'saying no to',
+    'refuse': 'say no to', 'refuses': 'says no to', 'refused': 'said no to', 'refusing': 'saying no to',
+    'counter': 'ask for less', 'counters': 'asks for less', 'countered': 'asked for less', 'countering': 'asking for less',
+    'refusal': 'no', 'rejection': 'no',
+    'counter-offer': 'ask for less', 'counter-offers': 'asks for less', 'counteroffer': 'ask for less', 'counteroffers': 'asks for less',
+    'counter-proposal': 'ask for less', 'counter-proposals': 'asks for less'})
+_INSIDE_RE = r'\b(?:%s)\b' % '|'.join(re.escape(w) for w in sorted(INSIDE, key=len, reverse=True))
+
+
+#: 'order' as a verb, which the screen keeps off as it keeps off grant (Priority prices and holds and never orders), said as
+#: 'ask for'. Only where it is a verb for certain: after a subject that did the ordering, or a modal. 'order' as the word for
+#: a line's order ('in order', 'the order of the line', 'Priority order: Plan, Write', 'ordered by cost') is the ordinary word, and is left.
+_ORDERS_AS = types.MappingProxyType({'order': 'ask for', 'orders': 'asks for', 'ordered': 'asked for'})
+_ORDER_RE = re.compile(
+    r'\b(?:(?P<by>Priority|it|he|she|which|that)(?P<s1>\s+)(?P<v1>orders|ordered)'
+    r'|(?P<mod>I|we|you|they|to|will|would|shall|should|must|can|could|may|might|not|never|cannot|don\'t|doesn\'t|didn\'t|won\'t)(?P<s2>\s+)(?P<v2>order))\b'
+    r'(?![\w-])(?!\s+by\b)', re.I)
+
+
+def _said_plainly(text):
+    """A why in the owner's words, the inside ones (INSIDE) said again: 'I reject this; I would counter with two' is 'I say
+    no to this; I would ask for less with two'. A noun after its article (the grant) is a yes. 'Order' as a verb (Priority
+    never orders) is 'ask for'. A capital stays a capital."""
+    def said(m):
+        word, out = m.group(0), INSIDE[m.group(0).lower()]
+        return out.upper() if len(word) > 1 and word.isupper() else (out[:1].upper() + out[1:] if word[:1].isupper() else out)
+
+    def asked(m):
+        subject, gap, verb = (m.group('by'), m.group('s1'), m.group('v1')) if m.group('by') else (m.group('mod'), m.group('s2'), m.group('v2'))
+        out = _ORDERS_AS[verb.lower()]
+        return subject + gap + (out.upper() if verb.isupper() and len(verb) > 1 else out)
+    text = re.sub(r'\b(a|an|the|this|that|its|their|any|each)\s+grants?\b', r'\1 yes', str(text or ''), flags=re.I)
+    text = re.sub(_INSIDE_RE, said, text, flags=re.I)
+    text = re.sub(r'\b(say|says|said|saying)\s+(yes|no)\s+to(?=\s*(?:$|[.,;:!?)]|(?:for|because|since|as|when|if|over|given)\b))', r'\1 \2', text, flags=re.I)
+    text = _ORDER_RE.sub(asked, text)
+    return re.sub(r'\b([Aa])(?= ask for less\b)', r'\1n', text, flags=re.I)
 
 
 def _prices(ref):
     """What Priority priced and answered, newest first, from prices.jsonl and in the owner's words: the answer as said yes,
-    asked for less or said no, the estimate and the room as two amounts each, and the why as Priority gave it. A row that
-    holds no answer is not shown."""
+    asked for less or said no, the estimate and the room as two amounts each, and the why as Priority gave it, its inside
+    words (reject, counter, grant, refuse, and order as a verb) said again as the owner says them. The row keeps the why as it was given. A row
+    that holds no answer is not shown."""
     out = []
     for r in reversed([r for r in W.rows(ref, 'prices.jsonl') if isinstance(r, dict)]):
         if r.get('answer') not in SAID:
@@ -1073,15 +1134,26 @@ def _prices(ref):
         out.append({'at': r.get('at'), 'proposal': r.get('proposal'), 'answer': r['answer'], 'said': SAID[r['answer']],
                     'estimate': {'calls': int(est.get('calls') or 0), 'usd': float(est.get('usd') or 0.0)},
                     'room': {'calls': int(room.get('calls') or 0), 'usd': float(room.get('usd') or 0.0)},
-                    'why': str(FV._plain(r.get('why')) or '')[:600]})
+                    'why': _said_plainly(FV._plain(r.get('why')))[:600]})
     return FV._clean(out[:PRICES_SHOWN])
 
 
+#: what a bargain on the record is called on the pane, by the ledger's action: the owner's words, never grant, counter or refuse
+BARGAINS = types.MappingProxyType({'proposal.granted': 'said yes', 'proposal.countered': 'asked for less', 'proposal.refused': 'said no'})
+#: the most bargains the pane carries: the newest few
+BARGAINS_SHOWN = 6
+
+
 def view(ref, d, events, asks):
-    """Priority's pane (S.VIEWS['priority']): the bargains and the envelopes, as functions_view reads them from the record,
-    and the prices, from prices.jsonl (M5.3). Nothing is written."""
-    part = FV._j2_part(ref, d, 'Priority', events, asks)
-    part['prices'] = _prices(ref)
-    part['ceiling'] = ceiling_of(d)
-    part['spend_by_round'] = spend_by_round(ref, d)
-    return part
+    """Priority's pane (S.VIEWS['priority']): the bargains, newest few, and the envelopes, each engine's and function's
+    spend against its limit, as functions_view reads them from the record; the prices, from prices.jsonl (M5.3); the goal's
+    ceiling (M9.2) and its spend by round (M9.6). Nothing is written. The bargains and envelopes are built here, from
+    functions_view's small readers (_spend, _plain) and not through FV._j2_part: that part reads the layers' views (A1.17,
+    K2) and would come back here, and the guard it keeps is functions_view's to keep, not a view's to lean on. Moved from
+    functions_view._j2_body's Priority branch, which stays until W3-PROOF deletes the dead copies."""
+    return {'bargains': [{'said': BARGAINS[e['action']], 'summary': FV._plain(e.get('summary')), 'at': e.get('occurred_at')}
+                         for e in events if e.get('action') in BARGAINS][-BARGAINS_SHOWN:],
+            'envelopes': [dict(FV._spend(ref, d, n), engine=n) for n in [x[0] for x in W.engines_of(d)] + list(FV.FUNCS)],
+            'prices': _prices(ref),
+            'ceiling': ceiling_of(d),
+            'spend_by_round': spend_by_round(ref, d)}

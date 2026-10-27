@@ -6,7 +6,9 @@ One test per done-check of P1 to P5. The contract's cases are layers/contract.py
 department born the way a person makes one, a model that is a function of the step id, the same board.
 """
 import importlib
+import math
 import re
+import statistics
 from datetime import datetime, timedelta
 
 import pytest
@@ -111,11 +113,14 @@ def _stamp(ref, W):
 
 
 #: finished runs of yesterday, by engine, oldest first: (status, calls, usd). Their medians, worked by hand, are the fixture:
-#:   Plan   3 runs: calls 2, 4, 3 -> 3;  usd 0.06, 0.10, 0.08 -> 0.08                          (basis median, 3 runs)
+#:   Plan   3 runs: calls 2, 12, 3 -> 3;  usd 0.06, 0.10, 0.08 -> 0.08                         (basis median, 3 runs)
+#:           the calls are skewed on purpose: their mean is 5.67 (6 whole), their least 2 and their most 12, and only the median is 3,
+#:           so a figure that is the mean, the least or the most of the calls is not the estimate
 #:   Write  4 runs: calls 5, 6, 9, 7 -> 6.5, a call is whole, so 7;  usd 0.20, 0.25, 0.50, 0.30 -> 0.275   (4 runs, the failed one counts)
+#:           the money is skewed too: its mean is 0.3125
 #:   Check  none: the prior, one model step, one call, at 0.04 -> 1 call, 0.04
 #:   Publish none: no model step -> 0 calls, 0.00
-HISTORY = {"Plan": [("ok", 2, 0.06), ("ok", 4, 0.10), ("ok", 3, 0.08)],
+HISTORY = {"Plan": [("ok", 2, 0.06), ("ok", 12, 0.10), ("ok", 3, 0.08)],
            "Write": [("ok", 5, 0.20), ("ok", 6, 0.25), ("ok", 9, 0.50), ("failed", 7, 0.30)]}
 MEDIANS = {"Plan": {"calls": 3, "usd": 0.08, "basis": "median", "runs": 3}, "Write": {"calls": 7, "usd": 0.275, "basis": "median", "runs": 4},
            "Check": {"calls": 1, "usd": 0.04, "basis": "prior", "runs": 0}, "Publish": {"calls": 0, "usd": 0.0, "basis": "prior", "runs": 0}}
@@ -314,6 +319,13 @@ def test_p3_the_estimate_of_an_engine_is_the_median_of_its_finished_runs_or_the_
     W, R, J, _ = j2
     ref = _born(j2, settle=False)
     _history(W, ref)
+    # the fixture can tell a median from a mean, a least and a most (an estimate that is any of those must fail): Plan's calls
+    # for the calls, Write's money for the money; the mean of either, made whole or not, is not the median
+    plan = [r[1] for r in HISTORY["Plan"]]
+    spurious = {min(plan), max(plan), statistics.mean(plan), round(statistics.mean(plan)), math.ceil(statistics.mean(plan)), math.floor(statistics.mean(plan))}
+    assert statistics.median(plan) == 3 and 3 not in spurious, "Plan's calls tell a median from a mean, a least and a most"
+    write = [r[2] for r in HISTORY["Write"]]
+    assert statistics.median(write) not in {min(write), max(write), statistics.mean(write)}, "Write's money does"
     for name, want in MEDIANS.items():
         assert V1.price_of(ref, name) == want, name
     got = V1.estimate_of(ref, LINE, "line")
@@ -416,6 +428,93 @@ def test_p3_room_for_two_engines_gives_a_counter_keeping_two(live, monkeypatch):
     assert (second["answer"], second["keep"], second["engines"]) == ("accept", ["Facts", "Notes"], ["Facts", "Notes"]), "the ask is answered once, whole"
     assert second["remaining"] == {"calls": 0, "usd": 0.0}
     assert S.validate("priority.price", first) == [] and S.validate("priority.price", second) == []
+
+
+def _asks_then_says_yes(keep):
+    """Priority's agent asks for `keep` on the line that names Summary, and says yes to any line that does not."""
+    def bargain(prompt):
+        if "- Summary:" in prompt:
+            return {"answer": "counter", "keep": list(keep), "why": "room for two"}
+        return {"answer": "accept", "why": "the envelope has room"}
+    return bargain
+
+
+def test_p3_an_ask_for_less_that_leaves_out_a_workflow_in_the_middle_is_posted_as_the_line_cut_short(live, monkeypatch):
+    """A Priority that posts the agent's keep as it stands must fail: Summary reads Notes, so keeping Facts and Summary and not
+    Notes would be a line that does not work, and the department would end in a conflict for the owner over an ask Priority
+    should never have posted. The room holds Facts and Summary (5 calls, 0.15 USD of 6 calls, 0.18 USD), so only the shape of
+    the ask is wrong: what is posted is the line cut where it breaks, Facts, which is less than the agent asked for (approvals
+    only tighten) and a line that works; Adaptation takes it, and it is answered once, whole."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"adapt.line": THREE, "priority.bargain": _asks_then_says_yes(["Facts", "Summary"])})
+    ref = _priced(live, {"Facts": (3, 0.07), "Notes": (1, 0.03), "Summary": (2, 0.08)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
+    assert all(r["status"] == "ok" for r in R.step_rows(ref) if r["step"].startswith("priority"))
+    acts = _actions(J, ref)
+    assert acts[2:8] == ["proposal.created", "proposal.countered", "proposal.created", "proposal.granted", "workflow.validated", "workflow.registered"]
+    assert "conflict.raised" not in acts and not [a for a in W.asks(ref) if a["kind"] == "conflict"]
+    first, second = _prices(W, ref)
+    assert (first["answer"], first["keep"], first["engines"]) == ("counter", ["Facts"], ["Facts", "Notes", "Summary"]), "what was posted, not what was asked"
+    assert (second["answer"], second["keep"]) == ("accept", ["Facts"]) and W.dept(ref)["engines"] == ["Facts"]
+    assert S.validate("priority.price", first) == [] and S.validate("priority.price", second) == []
+
+
+def test_p3_an_ask_that_names_no_workflow_from_the_first_on_is_a_no_and_never_a_line_the_agent_did_not_ask_for(live, monkeypatch):
+    """An ask for Notes and Summary alone is a line that cannot start; the longest prefix of it is nothing, and nothing is a no
+    (approvals only tighten): not the draft's longer line in its place. The no carries the conflict to Identity, once."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"adapt.line": THREE, "priority.bargain": _asks_then_says_yes(["Notes", "Summary"])})
+    ref = _priced(live, {"Facts": (3, 0.07), "Notes": (1, 0.03), "Summary": (2, 0.08)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
+    acts = _actions(J, ref)
+    assert acts[2:7] == ["proposal.created", "proposal.refused", "conflict.raised", "identity.ruled", "ask.created"]
+    [price] = _prices(W, ref)
+    assert (price["answer"], price["keep"]) == ("reject", []) and W.dept(ref)["engines"] == []
+    assert len([a for a in W.asks(ref) if a["kind"] == "conflict"]) == 1
+
+
+def test_p3_an_ask_for_less_that_is_the_line_cut_short_stands_in_whatever_order_the_agent_names_it(live, monkeypatch):
+    """A Priority stricter than the line (a shorter prefix refused, or the same names in another order) would turn a good
+    answer into a stalled bargain: a smaller ask is allowed (approvals only tighten), and what is kept is posted in the
+    line's order."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"adapt.line": THREE, "priority.bargain": {"answer": "counter", "keep": ["Notes", "Facts"], "why": "room for two"}})
+    ref = _priced(live, {"Facts": (3, 0.07), "Notes": (2, 0.04), "Summary": (0, 0.0)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
+    first = _prices(W, ref)[0]
+    assert first["answer"] == "counter" and first["keep"] == ["Facts", "Notes"], "the line's order, not the agent's"
+    assert W.dept(ref)["engines"] == ["Facts", "Notes"] and "conflict.raised" not in _actions(J, ref)
+
+
+def test_p3_cut_short_is_the_workflows_from_the_first_on_as_far_as_the_ask_names_them_and_as_far_as_the_room_fits():
+    """Every shape of keep against a line of Facts, Notes, Summary."""
+    line = ["Facts", "Notes", "Summary"]
+    cut = lambda *asked, fits=None: V1.cut_short(line, list(asked), fits)
+    assert cut("Facts") == ["Facts"] and cut("Facts", "Notes") == ["Facts", "Notes"] and cut("Facts", "Notes", "Summary") == line
+    assert cut("Notes", "Facts") == ["Facts", "Notes"], "the line's order, not the agent's"
+    assert cut("Facts", "Summary") == ["Facts"] and cut("Summary", "Facts") == ["Facts"], "a gap cuts the line where it breaks"
+    assert cut("Facts", "Facts") == ["Facts"], "a name twice is once"
+    for nothing in (("Notes",), ("Notes", "Summary"), ("Summary",), ()):
+        assert cut(*nothing) == [], nothing
+    assert cut("Facts", "Notes", "Summary", fits=["Facts", "Notes"]) == ["Facts", "Notes"], "no further than the room fits"
+    assert cut("Facts", fits=["Facts", "Notes"]) == ["Facts"], "and no further than the agent asked"
+
+
+def test_p3_the_covering_holds_an_ask_for_less_to_the_proposal_and_the_room_and_leaves_its_shape_to_the_post(j2):
+    """The covering is code's verdict on money and names: a keep with a workflow left out of the middle is not its to refuse
+    (priority_post cuts it, and the department's own M4.4 case needs a Priority that can ask to drop Check, for Adaptation to
+    close); a name the proposal does not hold, or a keep the room cannot hold, still fails."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    line = {"word": "line", "engines": [{"name": n} for n in ("Facts", "Notes", "Summary")]}
+    c = {"ref": ref, "dept": W.dept(ref), "bag": {}, "post": {"thread": "x-1", "payload": line}}
+    c["bag"]["priority.read"] = V1.priority_read(c, None, None)
+    assert c["bag"]["priority.read"]["fits"] == ["Facts", "Notes", "Summary"]
+    check = lambda *keep: V1.CHECK["price_is_observed"](c, None, None, {"answer": "counter", "keep": list(keep), "why": "room for them"})
+    for stands in (("Facts",), ("Facts", "Notes"), ("Notes", "Facts"), ("Facts", "Summary"), ("Summary",), ("Facts", "Notes", "Summary")):
+        assert check(*stands)["ok"], stands
+    assert "which the proposal does not name" in check("Facts", "Booking")["notes"][0]
+    # the offline draft keeps the longest prefix that fits, so it is always one the covering lets through
+    c["bag"]["priority.read"]["fits"] = ["Facts", "Notes"]
+    c["bag"]["priority.read"]["facts"]["room"] = False
+    assert V1.CHECK["price_is_observed"](c, None, None, V1.d_priority_bargain(c, None, None))["ok"]
 
 
 def test_p3_no_room_gives_a_reject_a_conflict_and_step_4(live):
@@ -653,6 +752,95 @@ def test_p4_the_words_are_the_ones_the_pane_already_says_and_the_owners_not_the_
     assert [b["said"] for b in pane["bargains"]] == list(V1.SAID.values()), "the pane's own bargains say the three words"
     W.append_row(ref, "prices.jsonl", _price_row(why="Priority countered (no room) and kept /Users/someone/secret/plan.md out"))
     assert V1.view(ref, W.dept(ref), [], [])["prices"][0]["why"] == "Priority asked for less (no room) and kept plan.md out", "names, never paths"
+
+
+def test_p4_a_why_written_in_the_inside_words_reaches_the_pane_in_the_owners(live, ctx):
+    """The agent is taught accept, counter and reject and writes its why in its own sentence. A why that reaches the pane with
+    a bare grant, counter, reject or refuse in it must fail: the screen says said yes, asked for less and said no. The record
+    keeps the why as it was given; only what the pane reads is said again."""
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    said = {
+        "I reject this; I would counter with two, grant none: refused for lack of room":
+            "I say no to this; I would ask for less with two, say yes to none: said no for lack of room",
+        "Rejected: no room for the line.": "Said no: no room for the line.",
+        "Granted. It fits.": "Said yes. It fits.",
+        "This is a counter to the line, and the grant is too big": "This is an ask for less to the line, and the yes is too big",
+        "A counter-offer of two; the refusal stands": "An ask for less of two; the no stands",
+        "COUNTER with two": "ASK FOR LESS with two",
+        "I granted the first and refused the second": "I said yes to the first and said no to the second",
+        "fits today: about 11 calls and 0.40 USD of the 200 calls and 20.00 USD left": "fits today: about 11 calls and 0.40 USD of the 200 calls and 20.00 USD left",
+        "The line goes in order, and it does not accept the rest": "The line goes in order, and it does not accept the rest"}
+    for i, why in enumerate(said):
+        W.append_row(ref, "prices.jsonl", _price_row(at="2026-10-26T10:%02d:00+05:30" % i, why=why))
+    shown = {p["at"]: p["why"] for p in V1.view(ref, W.dept(ref), [], [])["prices"]}
+    for i, (why, want) in enumerate(said.items()):
+        assert shown["2026-10-26T10:%02d:00+05:30" % i] == want, why
+    inside = re.compile(r"\b(?:grant\w*|counter\w*|reject\w*|refus\w*)\b", re.I)
+    assert not [w for w in shown.values() if inside.search(w)], "no inside word is left on the pane"
+    assert [r["why"] for r in W.rows(ref, "prices.jsonl")] == list(said), "the record keeps its own words"
+    assert S.validate_view("priority", V1.view(ref, W.dept(ref), [], [])) == []
+    assert all(not inside.search(w) for w in V1.INSIDE.values()), "and the words put in their place are the owner's"
+
+
+def test_p4_order_as_a_verb_is_said_again_and_order_as_the_lines_order_is_left(live, ctx):
+    """Priority prices and holds and never orders, and the screen keeps the verb off as it keeps off grant. The word for a line's
+    order is the ordinary word and stays: a why that loses it, or keeps 'orders' as a verb, must fail."""
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    said = {
+        "Priority orders Write to run first": "Priority asks for Write to run first",
+        "I would order Plan and not order Check": "I would ask for Plan and not ask for Check",
+        "It ordered the rest": "It asked for the rest",
+        "The order of the line holds; Priority order: Plan, Write, ordered by cost, in order to fit, order-dependent":
+            "The order of the line holds; Priority order: Plan, Write, ordered by cost, in order to fit, order-dependent"}
+    for i, why in enumerate(said):
+        W.append_row(ref, "prices.jsonl", _price_row(at="2026-10-26T10:%02d:00+05:30" % i, why=why))
+    shown = {p["at"]: p["why"] for p in V1.view(ref, W.dept(ref), [], [])["prices"]}
+    for i, (why, want) in enumerate(said.items()):
+        assert shown["2026-10-26T10:%02d:00+05:30" % i] == want, why
+    assert [r["why"] for r in W.rows(ref, "prices.jsonl")] == list(said), "the record keeps its own words"
+
+
+def test_p4_the_view_does_not_come_back_through_the_part_that_reads_the_views(live, ctx, monkeypatch):
+    """A view that builds its pane by calling functions_view._j2_part must fail once _j2_part hands the pane to layers.view
+    (A1.17, K2's C9): the two would call each other without end. _j2_part is made to do exactly that here, with no guard
+    of its own; the view builds its pane from the record and never asks for it."""
+    import functions_view
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    W.append_row(ref, "prices.jsonl", _price_row())
+    asked = []
+
+    def hands_to_the_views(ref_, d_, fn, events, ak):
+        asked.append(fn)
+        return layers.view(ref_, layers.layer_of(fn), d_, events, ak)
+    monkeypatch.setattr(functions_view, "_j2_part", hands_to_the_views)
+    events = [{"action": "proposal.countered", "summary": "Priority countered the line", "occurred_at": "2026-10-26T10:00:00+05:30"}]
+    pane = V1.view(ref, W.dept(ref), events, [])
+    assert asked == [], "the view reads the record, not the part that reads the views"
+    assert S.validate_view("priority", pane) == []
+    assert [(b["said"], b["summary"]) for b in pane["bargains"]] == [("asked for less", "Priority asked for less on the line")]
+    assert [p["said"] for p in pane["prices"]] == ["said yes"] and [e["engine"] for e in pane["envelopes"]][:4] == LINE
+    # and through the registry, which is how the pane is served: the same pane, validated, with the part never asked
+    served = layers.view(ref, "priority", W.dept(ref), events, [])
+    assert served == pane and S.validate_view("priority", served) == [] and asked == []
+
+
+def test_p4_the_pane_the_app_serves_for_priority_carries_the_prices_beside_the_bargains_and_the_envelopes(live, ctx):
+    """The function's page is what the app serves; its j2 part is the pinned view, not today's body. A page that still
+    carries the bargains and the envelopes alone, with no prices, or one that comes back with an inside word in a why, must fail."""
+    import functions_view
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    W.append_row(ref, "prices.jsonl", _price_row(why="I reject this; I would counter with two"))
+    page = functions_view.function(ref, "priority")
+    assert page and page["fn"] == "priority"
+    part = page["j2"]
+    assert "j2_faults" not in part, "the pinned view fits its interface"
+    assert [p["said"] for p in part["prices"]] == ["said yes"] and part["prices"][0]["why"] == "I say no to this; I would ask for less with two"
+    assert {"bargains", "envelopes", "prices"} <= set(part) and [e["engine"] for e in part["envelopes"]][:4] == LINE
+    assert S.validate_view("priority", part) == []
 
 
 # ---- P5: Priority's writers say who they are --------------------------------------------------------------------------------
