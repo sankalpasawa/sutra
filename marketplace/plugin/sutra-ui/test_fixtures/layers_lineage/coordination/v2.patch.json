@@ -1,0 +1,12 @@
+{
+ "parent": "coordination/v1",
+ "set": {"description": "Coordination, version 2 (a fixture): version 1 and one probe step."},
+ "on": [
+  {"when": {"msg_type": "inform", "word": "born"},
+   "steps": [
+    {"id": "coord.table", "name": "Write the table, version 2"},
+    {"id": "coord.probe", "name": "Probe", "nature": "transform", "born": "C2", "code": "coord_probe",
+     "check": "said_what_it_did", "after": "coord.table"}
+   ]}
+ ]
+}

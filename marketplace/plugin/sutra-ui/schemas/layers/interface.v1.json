@@ -399,7 +399,13 @@
       "why",
       "at",
       "last"
-    ]
+    ],
+    "workflow_family": {
+      "fitted": "library",
+      "library": null,
+      "made": "shaped",
+      "shaped": null
+    }
   },
   "contract_samples": {
     "answer_has_its_price": {

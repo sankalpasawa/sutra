@@ -17,6 +17,13 @@ pinned implementation provides in its CODE, PROMPT, DRAFT or CHECK dict, else en
 until a body has moved. Until W3-PINS every department runs DEFAULT_PINS. A module that does not load runs nothing: the
 engine_runtime body is used, so a broken layer file never stops a department.
 
+A VERSION THAT EXTENDS A VERSION (PRD amendment A2): a version above 1 names the one it extends (PARENT) and writes only what
+differs. layers/lineage.py is the law (pure functions over dicts); layers/versions.py makes the child: inherit merges its four
+tables, words, layout and surface functions over its parent's, recipe resolves its recipe (a whole file, or a keyed patch over
+its parent's), chain walks its lineage, definition_faults runs the runtime's own definition law with the child in place, and
+unchanged_steps names what it leaves as its parent has it. They are published here as thin wrappers, beside prompt and words,
+and recipes() asks recipe() for a default pin that has a patch and no whole file.
+
 Nothing here imports engine_runtime at import time.
 """
 import contextlib
@@ -61,14 +68,23 @@ def ref_to(name, module='engine_runtime'):
 
 def recipes():
     """The five function engines, keyed by engine title, each read from the recipe of the version DEFAULT_PINS names
-    (layers/<layer>/v1.json), in RECIPE_ORDER. A recipe that is not there, or is not JSON, refuses the definitions load
+    (layers/<layer>/v1.json), in RECIPE_ORDER; a default pin that is a child with a patch and no whole file of its own is
+    resolved by recipe() (A2). A recipe that is not there, or is not JSON, or does not merge, refuses the definitions load
     with a named fault, as a template that is not one does."""
     import layer_schema
     out = {}
     for layer in RECIPE_ORDER:
         impl = layer_schema.DEFAULT_PINS[layer]
         title = layer_schema.TITLE[layer]
-        p = HERE / layer / (impl.split('/', 1)[1] + '.json')
+        v = impl.split('/', 1)[1]
+        p = HERE / layer / (v + '.json')
+        if not p.exists() and (HERE / layer / (v + '.py')).is_file():
+            from layers import lineage, versions
+            try:
+                out[title] = versions.recipe(impl)
+            except lineage.ModelFault as exc:
+                raise ValueError("the engine definitions are refused: %s's recipe (%s) does not merge (%s)" % (title, impl, exc))
+            continue
         try:
             out[title] = json.loads(p.read_text(encoding='utf-8'))
         except FileNotFoundError:
@@ -217,3 +233,33 @@ def words(ref, layer, group, part):
     """layers.prompts.words: a part's fields as the department reads them now."""
     from layers import prompts
     return prompts.words(ref, layer, group, part)
+
+
+def inherit(parent_id, **own):
+    """layers.versions.inherit: a version's tables, words, layout and surface functions, its parent's with its own over them."""
+    from layers import versions
+    return versions.inherit(parent_id, **own)
+
+
+def recipe(impl_id, folder=None):
+    """layers.versions.recipe: the engine object a version brings, resolved (its whole file, its patch over its parent's, or its parent's)."""
+    from layers import versions
+    return versions.recipe(impl_id, folder)
+
+
+def chain(impl_id):
+    """layers.versions.chain: [impl_id, the version it extends, ...], nearest first."""
+    from layers import versions
+    return versions.chain(impl_id)
+
+
+def definition_faults(impl, provided=None):
+    """layers.versions.definition_faults: what engine_runtime.validate finds with this version's recipe in its layer's place."""
+    from layers import versions
+    return versions.definition_faults(impl, provided)
+
+
+def unchanged_steps(impl_id):
+    """layers.versions.unchanged_steps: the steps a version leaves exactly as the version it extends has them."""
+    from layers import versions
+    return versions.unchanged_steps(impl_id)

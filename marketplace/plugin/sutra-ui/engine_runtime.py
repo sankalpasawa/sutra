@@ -115,15 +115,16 @@ def is_on(ref):
 
 
 # ---- definitions ---------------------------------------------------------------------------------------------------
-def validate(d):
+def validate(d, provided=None):
     """A definition is data, and data can be wrong. Every fault is named; one fault refuses the whole definition. A
     name is provided by engine_runtime's own registries or by a layer's module (PRD A1.19), and the definitions are held
     to the interface: their edges are the interface's, every handler of a function is a row of what its layer hears,
-    and every check a function's step names is one of its layer's or a shared one."""
+    and every check a function's step names is one of its layer's or a shared one. `provided` is {kind: names} that a
+    module outside layers/ brings (A2: a version tried before it is on disk)."""
     faults = []
     seen = {}
     S = layer_schema
-    have = {k: layers.names(k) for k in layers.KINDS}
+    have = {k: layers.names(k) | set((provided or {}).get(k) or ()) for k in layers.KINDS}
     faults += edge_faults(d.get("edges"))
     for name, e in (d.get("engines") or {}).items():
         if e.get("kind") not in ("work", "function"):
@@ -6948,11 +6949,11 @@ LINE_STANDARDS = ("each_engine_named", "names_unique", "names_new", "first_reads
 
 def _line_notes(engs):
     """_line_faults, each fault with the standard it breaks: [(standard id, note)], in the order the line is read. The
-    line is read as a shaped one by the workflow schema's own standards (workflow_schema), with no department behind it,
-    so its first artifact is the Brief."""
-    import workflow_schema
+    line is read as a shaped one by the workflow schema's own standards, through the interface's one entry
+    (layer_schema.validate_workflow, A2-D10), with no department behind it, so its first artifact is the Brief."""
     wf = _plan_workflow(None, [e if isinstance(e, dict) else {} for e in engs], "shaped")
-    return [(r["check"], r["why"]) for r in workflow_schema.run(wf, "proposal", None, {}) if r["check"] in LINE_STANDARDS and not r["passed"]]
+    return [(r["check"], r["why"]) for r in layer_schema.validate_workflow(wf, "proposal", None, {})
+            if r["check"] in LINE_STANDARDS and not r["passed"]]
 
 
 def _line_faults(engs):
