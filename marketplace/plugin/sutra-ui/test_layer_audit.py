@@ -969,7 +969,7 @@ def test_u6_the_contract_passes_for_audit_v1_with_no_part_of_it_on_the_md_fallba
 def test_u2_every_part_of_audit_takes_the_words_path_and_none_is_on_the_md_fallback(contract_ctx):
     m = _audit_module()
     parts = [(g, p) for g, ps in S.PROMPTS["audit"].items() for p in ps]
-    assert parts == [("goal", "does"), ("goal", "skills"), ("judge", "judge"), ("judge", "items")]
+    assert [part for part in parts if ("audit",) + part not in S.ADDED_PARTS] == [("goal", "does"), ("goal", "skills"), ("judge", "judge"), ("judge", "items")]
     for group, part in parts:
         assert P._module(None, "audit", group, part) is m, "%s.%s is served from audit/v1's WORDS" % (group, part)
     assert C.on_the_md_fallback(m) == [] and C.case_5(m, contract_ctx) == []

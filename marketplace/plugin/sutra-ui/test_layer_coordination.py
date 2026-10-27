@@ -297,9 +297,12 @@ def test_k2_the_words_and_layout_are_the_split_of_its_md_files_and_hold_every_pa
     """WORDS that drift from the .md files they came from (the extractor's own output), or a part of the interface with no
     words or no layout, must fail."""
     words, layout, bad = P.extract("coordination")
-    assert bad == [] and V1.WORDS == words and V1.LAYOUT == layout
+
+    def md_only(table):                                         # the parts later steps added have no .md part (S.ADDED_PARTS)
+        return {g: {p: v for p, v in ps.items() if ("coordination", g, p) not in S.ADDED_PARTS} for g, ps in table.items()}
+    assert bad == [] and md_only(V1.WORDS) == words and md_only(V1.LAYOUT) == layout
     parts = {(g, p) for g, ps in S.PROMPTS["coordination"].items() for p in ps}
-    assert parts == {("goal", "does"), ("goal", "skills"), ("tie", "tie")}
+    assert {part for part in parts if ("coordination",) + part not in S.ADDED_PARTS} == {("goal", "does"), ("goal", "skills"), ("tie", "tie")}
     assert {(g, p) for g, ps in V1.WORDS.items() for p in ps} == parts == {(g, p) for g, ps in V1.LAYOUT.items() for p in ps}
 
 

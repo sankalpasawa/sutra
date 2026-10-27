@@ -418,6 +418,28 @@ def _impl(ctx, engine=None):
     return layers.pins(ctx.get("ref"), ctx.get("dept"))[layer] if layer else None
 
 
+def _floor_lines(t):
+    """The floor of the Library template a function runs, as its card carries it: every line, at most eight (A3.4.6, FT-8). The
+    narrowing law puts the Default's lines first and a use case's own after them, so reading only the first three never
+    reached what a use case adds, nor the tail of the Default's own floor."""
+    return [str(x) for x in t["floor"]][:8]
+
+
+def _role_block(ref, name, e):
+    """What a function's agent is told of its role (A3.4.3): eight lines, from the words of its goal group as the department
+    reads them now (what it is, may do, how it decides, avoids; the owner's stamped fields over the version's), the interface's
+    boundaries (what it is not, never does, hands on to) and the working agreement every function keeps. Compiled by the layer's
+    own layout. '' for a work engine, for Root, and when the role block is not sent (S.ROLE_IN_CARD, or the function's in_card)."""
+    fn = str(name or "").lower()
+    if not layer_schema.ROLE_IN_CARD or (e or {}).get("kind") != "function" or fn not in INSTRUCTIONS:
+        return ""
+    if not (layer_schema.FUNCTION_TEMPLATE.get(fn) or {}).get("in_card"):
+        return ""
+    goal = {part: layers.words(ref, fn, "goal", part) for part in ("role_is", "role_may", "role_procedure", "role_patterns")}
+    return layers.prompt(ref, fn, "goal", "role_block", **layer_schema.role_inputs(
+        fn, goal["role_is"]["text"], goal["role_may"]["items"], goal["role_procedure"]["items"], goal["role_patterns"]["items"]))
+
+
 def card(ctx):
     """Each engine has its own agent. This is who it is: the engine's card, and for a function the brief of the
     Library template the department picked for it."""
@@ -426,6 +448,14 @@ def card(ctx):
     lines = ["You are the agent of %s, one engine of the department \"%s\"." % (name, d.get("name")),
              "What %s does: it %s." % (name, does),
              "Its skills: %s." % "; ".join(skills)]
+    # the role of a function: what it is, may do, never does, how it decides (A3.4.3). Whether the department has picked a
+    # template does not matter to it, and a block that cannot be built never stops a step
+    try:
+        block = _role_block(ctx.get("ref"), name, e)
+        if block:
+            lines.append(block)
+    except Exception:  # noqa: BLE001 -- a missing block never stops a step
+        pass
     # the template this function runs is the pick on the registry, as the Settings tab left it (found 2026-09-29: a
     # later pick reached the screen and never the agent, which read the birth copy on the record)
     try:
@@ -437,7 +467,7 @@ def card(ctx):
         try:
             t = function_templates.get(tid) or {}
             if t.get("floor"):
-                lines.append("It always: " + " ".join(str(x) for x in t["floor"][:3]))
+                lines.append("It always: " + " ".join(_floor_lines(t)))
             if t.get("choices"):
                 lines.append("It decides: " + " ".join(str(x) for x in t["choices"][:3]))
         except Exception:  # noqa: BLE001 -- a missing template never stops a step
@@ -5884,9 +5914,21 @@ INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done m
 INPUT_SAYS.update({"findings": "what Audit found", "line": "the line that ran", "last": "the last round"})       # adapt.next (W2-ADAPT, M9.1)
 
 
+#: the inputs of the role block (goal.role_block, A3.4.3), in the owner's words: the app fills them from the function's role
+#: words and from the interface's boundaries, so the owner sees what the block is made of
+INPUT_SAYS.update({"agreement": "the working agreement", "is": "what it is", "is_not": "what it is not", "may": "what it may do",
+                   "never": "what it never does", "procedure": "how it decides", "patterns": "what it avoids",
+                   "hands_on": "who it hands on to"})
+#: the parts A3 adds to the goal group, as the owner's asks call them ("Change what Priority may do to your words?")
+ROLE_SAYS = {"done": "when %s is done", "role_is": "what %s is", "role_may": "what %s may do", "role_procedure": "how %s decides",
+             "role_patterns": "what %s avoids"}
+
+
 def _what(fn, group, part, field):
     """One field as the owner and the record call it: 'Identity's gate task', 'what Identity does', 'Identity's skills'."""
     title = fn.title()
+    if part in ROLE_SAYS:
+        return ROLE_SAYS[part] % title
     if part == "does":
         return "what %s does" % title
     if part == "skills":

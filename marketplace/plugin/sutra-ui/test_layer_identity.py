@@ -172,6 +172,8 @@ def test_i2_each_part_compiles_back_to_the_md_part_byte_for_byte(home):
     import engine_runtime as R
     import layers.prompts as P
     for g, p in _parts():
+        if ("identity", g, p) in S.ADDED_PARTS:                 # an added part has no .md part (A3-FUNCTIONS)
+            continue
         inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"][g][p]["inputs"]}
         md = P.SLOT.sub(lambda m: inputs[m.group(1)], P.md_part("identity", g, p))
         assert P.prompt(None, "identity", g, p, **inputs) == md, "%s.%s" % (g, p)

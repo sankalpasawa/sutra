@@ -255,8 +255,9 @@ def test_p2_priority_holds_every_part_as_words_and_none_is_on_the_md_fallback(ct
     """A part of Priority still read from the .md bundle, or words that do not pass their field's type or compile, must fail
     (contract case 5): goal (does, skills) and bargain (line, engine, cost)."""
     parts = [(g, p) for g, ps in S.PROMPTS["priority"].items() for p in ps]
-    assert parts == [("goal", "does"), ("goal", "skills"), ("bargain", "line"), ("bargain", "engine"), ("bargain", "cost"),
-                     ("bargain", "round")], "the round part was added by W2-PRIORITY (M9.2)"
+    assert [part for part in parts if part[0] != "goal" or part[1] not in S._ROLE_PARTS] == \
+        [("goal", "does"), ("goal", "skills"), ("bargain", "line"), ("bargain", "engine"), ("bargain", "cost"),
+         ("bargain", "round")], "the round part was added by W2-PRIORITY (M9.2); the role parts of the goal group by A3-FUNCTIONS"
     assert C.on_the_md_fallback(V1) == [] and C.case_5(V1, ctx) == []
     assert all(P._module(None, "priority", g, p) is V1 for g, p in parts), "the registry takes the WORDS path for every part"
     assert V1.WORDS["bargain"]["line"] == {} and set(V1.WORDS["bargain"]["engine"]) == {"task"}, "the line part has no field the owner may change"

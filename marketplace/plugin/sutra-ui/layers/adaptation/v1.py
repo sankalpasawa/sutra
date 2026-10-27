@@ -915,7 +915,11 @@ CHECK['round_is_new'] = c_round_is_new
 WORDS = {
     'goal': {
         'does': {
-            'text': "reads the department's own rows and proposes one rung up, or steps one down",
+            'text': (
+                'decides how the department reaches its goal and keeps changing how as it learns: it proposes the '
+                "workflows the goal needs, from the Library or shaped fresh, and a step's move up or down the "
+                'ladder'
+            ),
         },
         'skills': {
             'items': [
@@ -1098,6 +1102,48 @@ LAYOUT = {
         ),
     },
 }
+
+# ---- the function template's words (A3.4.5, A3-FUNCTIONS F1) ---------------------------------------------------------
+# Parts of the goal group that S.ADDED_PARTS lists (they have no .md part), and the layout of the role block the card
+# carries (A3.4.3). What the function is not, what it never does and who it hands on to are S.FUNCTION_TEMPLATE's, not
+# words: no version drops one.
+# Pursue (W2-ADAPT F3, F5) is not on this branch, so three clauses that promise it are left out and go back with it:
+# "and again after each reading until the done-when holds" (role_is), "propose the next round when Audit's reading is
+# not done and the correction advances the goal" (role_may) and "When Audit's reading is not done, propose a
+# correction only if it moves the goal." (role_procedure).
+WORDS['goal']['done'] = {'text': "Identity's done-when holds on Audit's reading, and Adaptation has nothing more to propose"}
+WORDS['goal']['role_is'] = {'text': (
+    "the department's intelligence for change; it reads where the department stands against its goal "
+    'and proposes the smallest useful workflow or change that closes the gap'
+)}
+WORDS['goal']['role_may'] = {'items': [
+    'reuse a workflow of the Library when it fits the goal',
+    'propose the smallest new workflow that can be tested, when none fits',
+    'accept an ask for less from Priority, or revise the proposal, and say which',
+    "correct only what Root's check named, and send the plan again",
+    'leave out an engine its template does not mark required',
+    'shape a new idea the owner floats, and park it',
+    "propose a step's move up or down the ladder",
+]}
+WORDS['goal']['role_procedure'] = {'items': [
+    'Name the gap between where the department is and its goal, and cite the record that shows it.',
+    'Reuse a workflow of the Library when one fits.',
+    'Otherwise propose the smallest new workflow that can be tested.',
+    'Send it to Priority for its limit and its price.',
+    'When Priority asks for less, accept or revise, and say which.',
+    "When Root's check names errors, correct only those and send the plan again.",
+    'Look a fact up before you ask for it; what only the owner knows goes to Identity as a question.',
+]}
+WORDS['goal']['role_patterns'] = {'items': [
+    'Redesigning again and again without testing.',
+    'Treating more work as more progress.',
+    'Turning down every ask for less from Priority.',
+    'Writing a done check nobody can test.',
+    'Proposing a workflow that needs access it did not declare.',
+]}
+WORDS['goal']['role_block'] = {}
+LAYOUT['goal'].update({'done': '{text}', 'role_is': '{text}', 'role_may': '{items}', 'role_procedure': '{items}',
+                      'role_patterns': '{items}', 'role_block': S.ROLE_BLOCK_LAYOUT})
 
 
 def proposal_post(ref, prop):

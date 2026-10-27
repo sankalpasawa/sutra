@@ -9269,6 +9269,61 @@
           "read_by": null,
           "returns": null
         },
+        "done": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_block": {
+          "fields": {},
+          "inputs": [
+            "agreement",
+            "is",
+            "is_not",
+            "may",
+            "never",
+            "procedure",
+            "patterns",
+            "hands_on"
+          ],
+          "read_by": null,
+          "returns": null
+        },
+        "role_is": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_may": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_patterns": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_procedure": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
         "skills": {
           "fields": {
             "items": "field.items"
@@ -9359,6 +9414,61 @@
           "read_by": null,
           "returns": null
         },
+        "done": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_block": {
+          "fields": {},
+          "inputs": [
+            "agreement",
+            "is",
+            "is_not",
+            "may",
+            "never",
+            "procedure",
+            "patterns",
+            "hands_on"
+          ],
+          "read_by": null,
+          "returns": null
+        },
+        "role_is": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_may": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_patterns": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_procedure": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
         "skills": {
           "fields": {
             "items": "field.items"
@@ -9404,6 +9514,61 @@
         "does": {
           "fields": {
             "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "done": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_block": {
+          "fields": {},
+          "inputs": [
+            "agreement",
+            "is",
+            "is_not",
+            "may",
+            "never",
+            "procedure",
+            "patterns",
+            "hands_on"
+          ],
+          "read_by": null,
+          "returns": null
+        },
+        "role_is": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_may": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_patterns": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_procedure": {
+          "fields": {
+            "items": "field.items"
           },
           "inputs": [],
           "read_by": null,
@@ -9479,6 +9644,61 @@
         "does": {
           "fields": {
             "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "done": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_block": {
+          "fields": {},
+          "inputs": [
+            "agreement",
+            "is",
+            "is_not",
+            "may",
+            "never",
+            "procedure",
+            "patterns",
+            "hands_on"
+          ],
+          "read_by": null,
+          "returns": null
+        },
+        "role_is": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_may": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_patterns": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_procedure": {
+          "fields": {
+            "items": "field.items"
           },
           "inputs": [],
           "read_by": null,
@@ -9638,6 +9858,61 @@
         "does": {
           "fields": {
             "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "done": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_block": {
+          "fields": {},
+          "inputs": [
+            "agreement",
+            "is",
+            "is_not",
+            "may",
+            "never",
+            "procedure",
+            "patterns",
+            "hands_on"
+          ],
+          "read_by": null,
+          "returns": null
+        },
+        "role_is": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_may": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_patterns": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "role_procedure": {
+          "fields": {
+            "items": "field.items"
           },
           "inputs": [],
           "read_by": null,

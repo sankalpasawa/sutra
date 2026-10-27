@@ -14,6 +14,8 @@ import re
 
 import pytest
 
+import layer_schema as S
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "function-templates")
 FUNCTIONS = ("identity", "adaptation", "priority", "coordination", "audit")
@@ -22,7 +24,11 @@ KEYS = {"id", "function", "name", "version", "derives_from", "use_case", "floor"
 LIST_KEYS = ("floor", "choices", "reads", "may_propose", "checks")
 PLACEHOLDERS = ("{department}", "{goal}", "{done}", "{rules}", "{owner}", "{folder}")
 BRIEF_MAX = 3000
-FORBIDDEN_WORD = re.compile(r"\bcharters?\b", re.I)
+#: the words the screen does not say: the interface's list (S.TEMPLATE_BANNED, A3.4.2), the one copy. Identity's templates keep
+#: the family `refus*` out of it: go, ask and refuse are Identity's gate answers and a rule's tag, the owner's own word for a rule
+#: (owner_words says the gate's answer as stop on the way out); for the other four functions it is a banned word
+SCREEN_WORDS = re.compile(S.TEMPLATE_BANNED, re.I)
+IDENTITY_WORDS = re.compile(re.sub(r"\|refus\\w\*", "", S.TEMPLATE_BANNED, count=1), re.I)
 FORBIDDEN_ID = re.compile(r"\b(?:DS|D|A|R|LOCK|AMEND)-?\d|dref-", re.I)
 
 
@@ -108,9 +114,20 @@ def test_chat_brief(path):
 
 @pytest.mark.parametrize("path", _files(), ids=lambda p: os.path.relpath(p, ROOT))
 def test_screen_words(path):
-    for k, s in _strings(_load(path)):
-        assert not FORBIDDEN_WORD.search(s), "%s uses a word the screen does not say: %r" % (k, s[:80])
+    t = _load(path)
+    banned = IDENTITY_WORDS if t["function"] == "identity" else SCREEN_WORDS
+    for k, s in _strings(t):
+        assert not banned.search(s), "%s uses a word the screen does not say: %r" % (k, s[:80])
         assert not FORBIDDEN_ID.search(s), "%s carries a founder-only id or a ref: %r" % (k, s[:80])
+
+
+def test_the_banned_words_are_the_interfaces():
+    """One copy of the list: the file reads it from the interface, and Identity's exemption removes exactly the family `refus*`."""
+    assert SCREEN_WORDS.pattern == S.TEMPLATE_BANNED and SCREEN_WORDS.flags & re.I
+    assert IDENTITY_WORDS.pattern != S.TEMPLATE_BANNED and not IDENTITY_WORDS.search("refuse refused refuses")
+    for word in ("charter", "Charters", "CEO", "requester", "grant", "granted", "counter", "countered", "internal system"):
+        assert SCREEN_WORDS.search(word) and IDENTITY_WORDS.search(word), word
+    assert SCREEN_WORDS.search("refuse a write") and SCREEN_WORDS.search("Refused.")
 
 
 def test_a_check_is_never_a_score():
@@ -133,12 +150,12 @@ def test_priority_never_orders():
     """PRD M4.6 (S-05): Priority prices and holds the budget; who goes first is Coordination's. No field of any Priority
     template says it orders the queue or decides what runs next."""
     found = []
+    never_say = re.compile(S.TEMPLATE_NEVER_SAY["priority"], re.I)           # the interface's pattern, the one copy
     for rel, t in _all().items():
         if t["function"] != "priority":
             continue
         for k, s in _strings(t):
-            low = s.lower()
-            if "order" in low or "what runs next" in low:
+            if never_say.search(s):
                 found.append((rel, k, s[:80]))
     assert not found, found
     assert sum(1 for t in _all().values() if t["function"] == "priority") == 3, "the default and both narrowings were read"

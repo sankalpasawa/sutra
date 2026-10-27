@@ -614,6 +614,11 @@ def test_m17_every_function_has_its_page_fields_recipe_journeys_and_version_one(
         assert [f["key"] for f in p["fields"]] == ["goal", "done", "hears", "writes", "checks", "envelope", "settings"]
         done = next(f for f in p["fields"] if f["key"] == "done")
         assert done["placeholder"] is True and done["value"] is None, "a placeholder the screen shows as 'not set yet'"
+        assert done["proposal"] and done["proposal"][0].isupper(), "and it carries the version's default as a proposal (A3.4.6)"
+        goal = next(f for f in p["fields"] if f["key"] == "goal")
+        import layers
+        typed = layers.words(REF, fn, "goal", "does")["text"]
+        assert goal["value"].lower().startswith(typed[:12].lower()) or fn == "priority", "the goal is the typed goal.does"
         assert p["template"]["name"], fn
         assert p["recipe"] and all(s["by"] in ("code", "AI", "person") and s["rung"] in ("P", "C0", "C1", "C2") for s in p["recipe"])
         assert [j["id"] for j in p["journeys"]] == ids

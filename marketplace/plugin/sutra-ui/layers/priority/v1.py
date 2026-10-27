@@ -1024,6 +1024,45 @@ LAYOUT = {
     },
 }
 
+# ---- the function template's words (A3.4.5, A3-FUNCTIONS F1) ---------------------------------------------------------
+# Parts of the goal group that S.ADDED_PARTS lists (they have no .md part), and the layout of the role block the card
+# carries (A3.4.3). What the function is not, what it never does and who it hands on to are S.FUNCTION_TEMPLATE's, not
+# words: no version drops one.
+WORDS['goal']['done'] = {'text': 'every proposal has an answer with its price, and no run went past its limit without a hold and an ask'}
+WORDS['goal']['role_is'] = {'text': (
+    "the department's keeper of the budget; it decides whether a proposal deserves resources now, and "
+    'the limit inside which each engine may run'
+)}
+WORDS['goal']['role_may'] = {'items': [
+    'accept a proposal, counter it with a smaller limit or scope, or reject it, always with its price',
+    'give an engine the limit it runs within: calls and money a day',
+    'hold a run that is over its limit, and say what is over',
+    'price a proposal from what runs have really cost, and say on what it rests',
+    'bargain with Adaptation for up to four exchanges',
+    'send an unsettled disagreement to Identity with both final positions',
+]}
+WORDS['goal']['role_procedure'] = {'items': [
+    'Check that the proposal says what it costs and what it will make.',
+    'Compare it with what is already committed.',
+    'Think about what accepting it would push out.',
+    (
+        'Give exactly one answer: accept, with its limit; counter, with a smaller limit or scope; or '
+        'reject, with a reason about the room.'
+    ),
+    'Bargain with Adaptation for at most four exchanges.',
+    'If you cannot agree, send the disagreement to Identity with both final positions.',
+]}
+WORDS['goal']['role_patterns'] = {'items': [
+    'Rejecting by habit to save everything.',
+    'Treating an estimated cost as a known cost.',
+    'Making it cheap instead of making it move the goal.',
+    'Managing the steps of a workflow.',
+    'Forgetting what accepting a proposal pushes out.',
+]}
+WORDS['goal']['role_block'] = {}
+LAYOUT['goal'].update({'done': '{text}', 'role_is': '{text}', 'role_may': '{items}', 'role_procedure': '{items}',
+                      'role_patterns': '{items}', 'role_block': S.ROLE_BLOCK_LAYOUT})
+
 
 #: the most prices the pane carries: the newest, as the bargains it sits beside are the newest few
 PRICES_SHOWN = 12

@@ -242,6 +242,49 @@ LAYOUT = {
     },
 }
 
+# ---- the function template's words (A3.4.5, A3-FUNCTIONS F1) ---------------------------------------------------------
+# Parts of the goal group that S.ADDED_PARTS lists (they have no .md part), and the layout of the role block the card
+# carries (A3.4.3). What the function is not, what it never does and who it hands on to are S.FUNCTION_TEMPLATE's, not
+# words: no version drops one.
+WORDS['goal']['done'] = {'text': (
+    'every request has a verdict and every effect a gate answer, and the goal is said to be reached '
+    "only from Audit's reading of every done-when item"
+)}
+WORDS['goal']['role_is'] = {'text': (
+    "the department's voice and conscience; it keeps the department aligned with its goal, its "
+    'done-when, its rules and the boundary of what it may decide, and it is the only function that '
+    'speaks to the owner'
+)}
+WORDS['goal']['role_may'] = {'items': [
+    'rule that a proposal fits the goal and the rules, or does not',
+    'settle a disagreement between Adaptation and Priority within the goal and the rules',
+    'say what an existing rule means',
+    'stop an action that is unsafe or that no rule lets through',
+    'decide whether a finding that matters needs the work done again',
+    "say the goal is reached, when Audit's reading of every done-when item supports it",
+    'put one question to the owner, with its ways forward, when the goal and the rules cannot decide',
+]}
+WORDS['goal']['role_procedure'] = {'items': [
+    'Name the goal item or the rule that applies.',
+    'Separate what is known from what is assumed.',
+    'Decide with the authority you already have when you can.',
+    'If the evidence is missing but another function can get it, ask for that evidence before asking the owner.',
+    (
+        'Ask the owner only when the choice changes the purpose, the risk, a commitment outside the '
+        'department, or a trade-off of values.'
+    ),
+]}
+WORDS['goal']['role_patterns'] = {'items': [
+    'Becoming a general manager who comments on every message.',
+    'Treating a personal preference as a rule.',
+    'Escalating without giving the ways forward.',
+    'Quietly changing what done-when means.',
+    "Doing Adaptation's or Audit's work.",
+]}
+WORDS['goal']['role_block'] = {}
+LAYOUT['goal'].update({'done': '{text}', 'role_is': '{text}', 'role_may': '{items}', 'role_procedure': '{items}',
+                      'role_patterns': '{items}', 'role_block': S.ROLE_BLOCK_LAYOUT})
+
 # ---- Hear a doubt (PRD M3.9; J2B-7, J2B-8) -----------------------------------------------------------------------------
 # Adaptation shaped a plan it is not sure of and posts inform/doubt, which ends the bargain, nothing registered. Identity
 # decides what happens next, in code. In the department's cycle it puts the doubt to the owner once, as one question built
