@@ -10,11 +10,14 @@ models (K4), the card with the questions the engine asked and answered.
 Questions between engines (W3-BOARD, PRD M4.9, behind SUTRA_BOARD_QUESTIONS): coord_question is Coordination's handler for a
 work engine's question, question_is_bounded its covering, and board_on, board_step and board_turn what engine_runtime's one hook in
 run_step calls. A question is an entry of questions.json (board/1); the engine it names answers in a run of its own, in its own
-slot, under its own envelope and gates, and the asker's step is run once more with the answer.
+slot, under its own envelope and gates, and the asker's step is run once more with the answer. The exchange is one thread with the
+bounds of any thread between functions (rule 12): the answering run is not started when the thread has reached its spend or time bound,
+and an answer that ended past one is not used, the thread is closed at its bound, and Identity is told (thread_bound).
 """
 import json
 import os
 import re
+import time
 
 import owner_words
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
@@ -278,12 +281,66 @@ def _answer_step():
             'prompt': _answer_prompt, 'draft': _answer_draft, 'out': {'answer': 'str'}, 'answer': 'answer', 'check': _answer_check}
 
 
+# ---- the exchange is bounded like any thread between functions (rule 12) -----------------------------------------------------
+# A question, its going on to the engine and its answer are one thread, and the thread has its bounds: hops, seconds and a spend
+# limit. The hops are post()'s. The other two are held here, around the answering run, which is the one place an exchange spends: not
+# started when the thread has already reached one, and, when the run ends past one, the thread is closed at its bound, what holds is the
+# thread's default (the question is not answered, and the asker takes its normal path), and Identity is told.
+#: what an exchange says when it reached a bound before the answering run, and when the run ended past one: the reason the question was
+#: not answered, in the owner's words
+BOUND_REACHED = {'usd': 'the exchange between the engines had spent what it may', 'seconds': 'the exchange between the engines had taken as long as it may'}
+BOUND_PASSED = {'usd': 'the answer cost more than the exchange between the engines may spend',
+                'seconds': 'the answer took longer than the exchange between the engines may'}
+
+
+def thread_bound(th, reached=False, now=None):
+    """Which bound of a thread it has passed, 'seconds' or 'usd', else None: the reading coord_bounds makes (a bound that is 0 or not
+    set is no bound; the age is the sweep's, or the time since it opened when no sweep has run), and a thread the sweep closed at a bound
+    says which. `reached`: before a run starts, a bound that is met is enough, since the run would spend past it."""
+    th = th or {}
+    out = th.get('outcome') or {}
+    if th.get('state') in R.CLOSED and out.get('by') == 'bound' and out.get('which') in BOUND_REACHED:
+        return out['which']
+    b = th.get('bounds') or {}
+    opened = W._ts(th.get('opened') or '')
+    age = max(float(th.get('age_s') or 0), ((time.time() if now is None else now) - opened) if opened else 0.0)
+    spent = float(th.get('spent') or 0)
+
+    def past(x, bound):
+        return x >= bound if reached else x > bound
+    if past(age, float(b.get('seconds') or 1e12)):
+        return 'seconds'
+    if past(spent, float(b.get('usd') or 1e12)):
+        return 'usd'
+    return None
+
+
+def _close_at_bound(ref, tid, which, who, what):
+    """The exchange passed a bound (rule 12): its thread is canceled with the bound as its outcome, what holds is its default, and
+    Coordination tells Identity (`who` answered, `what` happened) in a thread of its own, once: the sweep closes a thread at a bound and
+    does not tell Identity for an engine's question. It tells no one else: the asker takes its normal path."""
+    th = R._thread(ref, tid)
+    if th and th['state'] not in R.CLOSED:
+        R._thread_set(ref, tid, state='canceled', outcome={'by': 'bound', 'which': which, 'holds': th['default']})
+        W.system_run(ref, 'Coordination', 'closed a thread at its bound; what holds: ' + str(th['default']))
+    if any((p.get('payload') or {}).get('word') == 'alarm' and (p.get('payload') or {}).get('thread') == tid for p in R.board(ref)):
+        return
+    try:
+        R.post(ref, 'Coordination', 'Identity', 'inform', {'word': 'alarm', 'engine': who, 'thread': tid, 'which': which, 'what': what})
+    except (ValueError, S.SchemaFault):
+        pass                  # the thread is closed at its bound whether or not the word reached Identity
+
+
 def answer_run(ref, d, e, p2, asker_run):
     """The target engine's run that answers a question (M4.9): in its own slot (Target@board.n<post>), started only when the
     engine's own blockers let it, as any start (the owner's stamps, its envelope, the chain), and charged to its own envelope by the
     spend on its run row. It is the run of one step, its agent given its own recorded work. It starts while the asker's run is open,
     which gave it the turn: the row says which run it answers for (for_run). Returns (the answer, or None; why there is none; the run)."""
-    target = e['to']
+    target, tid = e['to'], p2['thread']
+    which = thread_bound(R._thread(ref, tid), reached=True)
+    if which:                   # the exchange has used what it may: the target is not asked, and nothing is spent
+        _close_at_bound(ref, tid, which, target, '%s was not asked to answer %s: %s' % (target, e['asked_by'], BOUND_REACHED[which]))
+        return None, BOUND_REACHED[which], None
     tdef = R.engine_def(target)
     art = tdef['reads']
     cur = W.latest(ref, art)
@@ -304,11 +361,16 @@ def answer_run(ref, d, e, p2, asker_run):
     said = str((out or {}).get('answer') or '').strip() if srow['status'] == 'ok' and isinstance(out, dict) else ''
     answered = said.rstrip('. ').lower() not in NO_ANSWER
     why_not = None if answered else str(srow.get('why') or 'it says the question is not its own')
-    R._thread_set(ref, p2['thread'], spent=tctx['spend']['usd'])
-    row = W._put_run(ref, dict(row, status='ok' if answered else 'skipped', ended=W.now(),
+    R._thread_set(ref, tid, spent=tctx['spend']['usd'])
+    which = thread_bound(R._thread(ref, tid))
+    given = answered
+    if which:                   # the run ended past a bound (its spend, or the time it took): the answer, if any, is not used
+        answered, why_not = False, BOUND_PASSED[which]
+        _close_at_bound(ref, tid, which, target, "%s's answer to %s was not used: %s" % (target, e['asked_by'], BOUND_PASSED[which]))
+    row = W._put_run(ref, dict(row, status='ok' if given else 'skipped', ended=W.now(),
                                spend={'calls': tctx['spend']['calls'], 'usd': round(tctx['spend']['usd'], 4)},
-                               what=('answered %s about %s' % (e['asked_by'], e['about'])) if answered else
-                               ('did not answer %s: %s' % (e['asked_by'], why_not))))
+                               what=(('answered %s about %s' % (e['asked_by'], e['about'])) + ('' if answered else '; not used, for %s' % why_not))
+                               if given else ('did not answer %s: %s' % (e['asked_by'], why_not))))
     return (said if answered else None), why_not, row
 
 
@@ -549,7 +611,8 @@ def engine_card(ref, name):
     """One engine's card (S.VIEWS['engine_card'], screen S17): its place in the timetable, the motor's facts and one row for
     each of the five, by reference (A1.17). None for a department not on the engine runtime. Coordination's row also says the
     question this engine asked last, 'asked Plan about the page list (answered)', and the last it answered for another engine,
-    from the board (M4.9); an engine that put and was put no question has its row as it was."""
+    from the board (M4.9); an engine that put and was put no question has its row as it was. The app reaches this card through
+    functions_view.pinned_engine_card, the route of an engine's card (website_api.engine)."""
     card = FV.engine_card(ref, name)
     rows = entries(ref) if card else []
     asked = next((e for e in reversed(rows) if e.get('asked_by') == name), None)

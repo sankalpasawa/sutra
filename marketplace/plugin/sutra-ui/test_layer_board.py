@@ -8,15 +8,20 @@ sporadic, unannounced look at the engines' state.
   B2  the answer is a run of the target engine in its own slot, charged to its own envelope and gated like any start; "not mine" or
       none, or a gate that holds it, is no answer and the asker takes its normal path; otherwise the asker's step is run once more
       with the answer; later engines read the answered entries, and a run that names one is in its used_by and its step row reads
-      it; Coordination posts request/question to the target and inform/answer to the asker, inside the thread's bounds
+      it; Coordination posts request/question to the target and inform/answer to the asker, inside the thread's bounds: the answering
+      run is not started once the thread has reached its spend or time bound, and an answer that ended past one is not used, the thread
+      is closed at its bound and Identity is told
   B3  Audit's timer start, held by its gate until a minute in the period that a hash of the ref and the period gives: one spot check
       for a cadence at a minute that is not fixed, reading the engines' state only, one audit.spot_check row each, its findings
-      to Identity, and a check that wrote outside Audit's rows fails and files nothing
+      to Identity, and a check that wrote outside Audit's rows fails and files nothing; it looks in on settled departments only
+      (decision W3B-2), and its covering judges the whole run and fails a filing that measured nothing
   B4  view.coordination.questions, the engine card's Coordination row ('asked Plan about the page list (answered)'),
       view.audit.spot_checks, and S13's words: a question asks, its answer answers (the render walks are in test_website.js)
 """
 import importlib
 import json
+import os
+import pathlib
 import time
 
 import pytest
@@ -349,6 +354,22 @@ def test_b2_the_answering_run_is_no_clash_in_the_slot(j2, monkeypatch):
     assert FV.slot_clashes([asker, dict(answer, for_run=None)]) == [{"slot": "Plan@board.n3", "why": "it started while Write was running"}]
 
 
+def test_b2_the_answering_run_is_exempt_only_while_it_is_nested_in_the_run_that_asked(j2):
+    """Decision W3B-1: the answer starts inside the asker's run, which gave it the turn, and is no clash while it ends inside it too. A
+    run that names the asker and outlasts it, or that is still open when the asker is over, is a clash like any other."""
+    W, R, J, _, FV = j2
+    asker = {"id": "r-a", "engine": "Write", "slot": "Write@x.v1", "status": "ok", "started": "2026-10-26T10:00:00+00:00",
+             "ended": "2026-10-26T10:01:00+00:00"}
+    inside = {"id": "r-b", "engine": "Plan", "slot": "Plan@board.n3", "status": "ok", "started": "2026-10-26T10:00:10+00:00",
+              "ended": "2026-10-26T10:00:20+00:00", "for_run": "r-a"}
+    clash = [{"slot": "Plan@board.n3", "why": "it started while Write was running"}]
+    assert FV.slot_clashes([asker, inside]) == []
+    assert FV.slot_clashes([asker, dict(inside, ended="2026-10-26T10:01:00+00:00")]) == [], "ending as the asker ends is inside it"
+    assert FV.slot_clashes([asker, dict(inside, ended="2026-10-26T10:02:00+00:00")]) == clash, "it outlasts the run that asked"
+    assert FV.slot_clashes([asker, dict(inside, status="running", ended=None)]) == clash, "it is open when the asker is over"
+    assert FV.slot_clashes([dict(asker, status="running", ended=None), dict(inside, status="running", ended=None)]) == [], "both open: nested so far"
+
+
 def test_b2_the_exchange_is_three_posts_in_one_thread_inside_its_bounds(j2, monkeypatch):
     W, R, J, _, _ = j2
     ref = _born(j2)
@@ -366,6 +387,186 @@ def test_b2_the_exchange_is_three_posts_in_one_thread_inside_its_bounds(j2, monk
         assert S.validate_act(p["src"], p["dst"], p["msg_type"], p["payload"]) == []
     assert posts[0]["payload"]["what"] == "Write asks Plan about the page list" and posts[2]["payload"]["what"] == "Plan answers Write"
     assert R._line(posts[2]) == "Plan answers Write"
+
+
+def _alarms(R, tid=None):
+    """What Coordination told Identity as an alarm, on the board: [post]."""
+    return [p for p in R.board(R_REF[0]) if p["src"] == "Coordination" and p["dst"] == ["Identity"] and (p.get("payload") or {}).get("word") == "alarm"
+            and (tid is None or p["payload"].get("thread") == tid)]
+
+
+#: the department the test is about, for _alarms (a test sets it once)
+R_REF = [None]
+
+
+def _exchange_thread(R, ref):
+    return next(t for t in R.threads(ref) if t["topic"] == "question")
+
+
+def _no_digits(text):
+    return not __import__("re").search(r"\d", text)
+
+
+def test_b2_an_answer_that_cost_more_than_the_thread_may_spend_closes_it_at_its_bound_and_goes_to_identity(j2, monkeypatch):
+    """Rule 12: a thread between functions is bounded by hops, time and a spend limit, and at a limit it goes to Identity. The spend was
+    recorded and never judged (found by a verifier 2026-10-27): a run that cost 0.7 against a bound of 0.5 closed the thread 'completed'."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    calls = _model(monkeypatch, R, _asks_once(), usd=0.7)
+    assert _write_again(W, R, ref)["status"] == "ok", "the asker takes its normal path"
+    th = _exchange_thread(R, ref)
+    assert th["state"] == "canceled" and th["outcome"] == {"by": "bound", "which": "usd", "holds": "failure"}, th
+    assert th["spent"] > th["bounds"]["usd"] == R.BOUNDS["usd"]
+    e = COORD.entries(ref)[0]
+    assert (e["status"], e["answer"], e["answered_by"], e.get("answered_from")) == ("unanswered", None, None, None)
+    assert e["reason"] == COORD.BOUND_PASSED["usd"] and e["run"], "the owner's words, and the run that was charged"
+    run = next(r for r in W.runs(ref) if r.get("answers"))
+    assert run["engine"] == "Plan" and run["status"] == "ok" and run["spend"]["usd"] > 0.5 and run["what"].endswith("; not used, for " + e["reason"])
+    pages = [c for c in calls if c[0] == "write.page"]
+    plan = json.loads(W.read_files(ref, "Site plan", W.latest(ref, "Site plan")["v"])["site-plan.json"])
+    assert len(pages) == len(plan["pages"]), "no rerun for an answer that was not used: one call for each page"
+    told = _alarms(R)
+    assert len(told) == 1 and told[0]["thread"] != th["id"], "Identity is told once, in a thread of its own (the exchange's is closed)"
+    pl = told[0]["payload"]
+    assert (pl["engine"], pl["thread"], pl["which"]) == ("Plan", th["id"], "usd") and pl["what"] == \
+        "Plan's answer to Write was not used: the answer cost more than the exchange between the engines may spend" and _no_digits(pl["what"])
+    assert S.validate_act("Coordination", ["Identity"], "inform", pl) == []
+    assert [r for r in W.runs(ref) if r["engine"] == "Coordination" and r["what"] == "closed a thread at its bound; what holds: failure"]
+    assert not [p for p in R.board(ref) if (p.get("payload") or {}).get("word") == "answer" and p["thread"] == th["id"]], "a closed thread carries no more"
+    W.run_until_idle(ref, limit=50)
+    heard = [r for r in R.step_rows(ref) if r["step"] == "identity.alarm"]
+    assert heard and heard[-1]["status"] == "ok" and heard[-1]["engine"] == "Identity", "Identity's handler took it"
+    assert [r for r in W.runs(ref) if r["engine"] == "Identity" and r["what"].startswith("heard an alarm: Plan's answer to Write was not used")]
+    assert not [a for a in W.asks(ref) if a["kind"] == "alarm"], "Identity is told; the owner is asked nothing (nothing waits on it)"
+
+
+def test_b2_an_answer_inside_the_bounds_is_told_to_nobody(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once(), usd=0.4)                     # under the 0.5 the thread may spend
+    _write_again(W, R, ref)
+    assert COORD.entries(ref)[0]["status"] == "answered" and _exchange_thread(R, ref)["state"] == "completed" and _alarms(R) == []
+
+
+def test_b2_the_departments_own_bound_is_the_threads(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    d = W.dept(ref)
+    d["bounds"] = {"hops": 4, "seconds": 900, "usd": 0.02}
+    W.save_dept(ref, d)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once(), usd=0.03)                    # inside the default 0.5, past this department's 0.02
+    _write_again(W, R, ref)
+    th = _exchange_thread(R, ref)
+    assert th["bounds"]["usd"] == 0.02 and th["outcome"]["which"] == "usd" and COORD.entries(ref)[0]["status"] == "unanswered" and len(_alarms(R)) == 1
+
+
+def test_b2_an_answer_that_took_longer_than_the_thread_may_goes_the_same_way(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    clock = _clock(monkeypatch, time.time())
+    once = _asks_once()
+
+    def say(step, prompt):
+        if step == "coord.answer":
+            clock.t += R.BOUNDS["seconds"] + 60                       # the model took a quarter of an hour and a minute
+            return {"answer": "Home, About and Timetable"}
+        return once(step, prompt)
+    calls = _model(monkeypatch, R, say)
+    assert _write_again(W, R, ref)["status"] == "ok"
+    th = _exchange_thread(R, ref)
+    assert th["state"] == "canceled" and th["outcome"] == {"by": "bound", "which": "seconds", "holds": "failure"}, th
+    e = COORD.entries(ref)[0]
+    assert e["status"] == "unanswered" and e["reason"] == COORD.BOUND_PASSED["seconds"] and e["answer"] is None
+    pl = _alarms(R)[0]["payload"]
+    assert pl["which"] == "seconds" and pl["what"] == "Plan's answer to Write was not used: the answer took longer than the exchange between the engines may"
+    assert len([c for c in calls if c[0] == "write.page"]) == len(json.loads(W.read_files(ref, "Site plan", W.latest(ref, "Site plan")["v"])["site-plan.json"])["pages"])
+
+
+def test_b2_a_thread_the_sweep_closed_at_its_time_while_the_answer_ran_is_told_to_identity_too(j2, monkeypatch):
+    """The system clock closes a thread past its time at every tick, and for an engine's question it says nothing to Identity: the
+    exchange does, and the answer that came after the closing is not used."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    once = _asks_once()
+
+    def say(step, prompt):
+        if step == "coord.answer":
+            ths = R.threads(ref)
+            next(t for t in ths if t["topic"] == "question")["age_s"] = R.BOUNDS["seconds"] - 1.0
+            R._save_threads(ref, ths)
+            assert R.sweep(ref), "one tick of the system clock closes it"
+            return {"answer": "Home, About and Timetable"}
+        return once(step, prompt)
+    _model(monkeypatch, R, say)
+    assert _write_again(W, R, ref)["status"] == "ok"
+    th = _exchange_thread(R, ref)
+    assert th["state"] == "canceled" and th["outcome"]["which"] == "seconds"
+    assert COORD.entries(ref)[0]["status"] == "unanswered" and COORD.entries(ref)[0]["reason"] == COORD.BOUND_PASSED["seconds"]
+    assert len(_alarms(R)) == 1
+    closings = [r for r in W.runs(ref) if r["engine"] == "Coordination" and r["what"].startswith("closed a thread at its bound")]
+    assert len(closings) == 1, "the sweep's row, and not a second one for the same thread"
+
+
+def _exchange(R, ref):
+    """A question and its going on to Plan, posted as the exchange posts them, and not yet answered: (the entry, the post to Plan)."""
+    e = dict(COORD._draft(ref, {"engine": "Write", "slot": "Write@site-plan.v9"}, ASK, 1), id="Q-1")
+    p1 = R.post(ref, "Write", ["Coordination"], "request", {"word": "question", "entry": e, "what": COORD._said(e)})
+    p2 = R.post(ref, "Coordination", ["Plan"], "request", {"word": "question", "entry": e, "what": COORD._said(e)}, thread=p1["thread"])
+    return e, p2
+
+
+@pytest.mark.parametrize("field,which", [("spent", "usd"), ("age_s", "seconds")])
+def test_b2_an_exchange_that_has_already_reached_a_bound_does_not_start_the_answering_run(j2, monkeypatch, field, which):
+    """Refused before it starts, with the reason in the owner's words: nothing is run, nothing is spent, the thread is closed at its bound
+    and Identity is told. A bound that is met is enough (the run would spend past it)."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    calls = _model(monkeypatch, R, _asks_once())
+    e, p2 = _exchange(R, ref)
+    ths = R.threads(ref)
+    th = next(t for t in ths if t["id"] == p2["thread"])
+    below = dict(th, **{field: th["bounds"]["usd" if field == "spent" else "seconds"] - 0.1})
+    th[field] = th["bounds"]["usd" if field == "spent" else "seconds"]
+    R._save_threads(ref, ths)
+    assert COORD.thread_bound(below, reached=True) is None and COORD.thread_bound(R._thread(ref, th["id"]), reached=True) == which
+    runs = len(W.runs(ref))
+    answer, why, row = COORD.answer_run(ref, W.dept(ref), e, p2, None)
+    assert (answer, row) == (None, None) and why == COORD.BOUND_REACHED[which]
+    assert [c for c in calls if c[0] == "coord.answer"] == [] and not [r for r in W.runs(ref) if r.get("answers")], "it was not asked"
+    closed = R._thread(ref, th["id"])
+    assert closed["state"] == "canceled" and closed["outcome"] == {"by": "bound", "which": which, "holds": "failure"}
+    told = _alarms(R, th["id"])
+    assert len(told) == 1 and told[0]["payload"]["what"] == "Plan was not asked to answer Write: " + COORD.BOUND_REACHED[which]
+    assert len(W.runs(ref)) == runs + 1, "the row that says the thread was closed at its bound, and no run of Plan's"
+    COORD.answer_run(ref, W.dept(ref), e, p2, None)                   # asked again, it is told once
+    assert len(_alarms(R, th["id"])) == 1
+
+
+def test_b2_the_bound_reads_as_the_sweep_reads_it():
+    """A bound that is 0 or not set is no bound (coord_bounds says `or 1e12`); the age is the sweep's or the time since it opened."""
+    th = {"state": "working", "bounds": {"hops": 4, "seconds": 900, "usd": 0.5}, "spent": 0.5, "age_s": 0.0, "opened": "2026-10-27T10:00:00+05:30"}
+    at = COORD.W._ts(th["opened"])
+    assert COORD.thread_bound(th, now=at + 10) is None and COORD.thread_bound(th, reached=True, now=at + 10) == "usd"
+    assert COORD.thread_bound(dict(th, spent=0.51), now=at + 10) == "usd"
+    assert COORD.thread_bound(th, now=at + 901) == "seconds" and COORD.thread_bound(th, now=at + 900) is None
+    assert COORD.thread_bound(th, reached=True, now=at + 900) == "seconds"
+    assert COORD.thread_bound(dict(th, age_s=901.0, opened=""), now=at) == "seconds", "the sweep's count, when it has no start to count from"
+    assert COORD.thread_bound(dict(th, bounds={"seconds": 0, "usd": None}, spent=99), now=at + 99999) is None
+    assert COORD.thread_bound(dict(th, state="canceled", outcome={"by": "bound", "which": "seconds"}), now=at) == "seconds"
+    assert COORD.thread_bound(dict(th, state="canceled", outcome={"by": "bound", "which": "hops"}), now=at) is None, "the hops are post()'s"
+    assert COORD.thread_bound(None) is None
 
 
 @pytest.mark.parametrize("said", ["Not mine.", "not mine", "", "None", "n/a"])
@@ -623,6 +824,60 @@ def test_b3_a_department_in_the_middle_of_its_cycle_or_root_is_not_looked_in_on(
     assert AUDIT.audit_when(dict(ctx, inp={"v": 3}), None, None) == ("admit", None), "a version of the deliverable is let through as it was"
 
 
+def test_b3_the_reason_the_middle_of_a_cycle_is_not_looked_in_on_a_finding_there_is_taken_for_a_readings(j2):
+    """Decision W3B-2: the gate keeps a spot check out of a department in the middle of its cycle because the cycle's ledger takes
+    what Audit tells Identity for a reading's finding. This pins that fact: when j2_runtime tells a spot finding from a reading's, this
+    fails and the gate can go. In a settled department the same word leaves the cycle where it was."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    assert J.active(ref) and J.status(ref)["state"] != "pursuing"
+    found = [{"id": "F1", "severity": "medium", "claim": "Pages has a version with no run or no check", "where": "Pages", "item": None,
+              "went_to": "Identity", "ask": None, "at": W.now()}]
+    say = lambda claim: {"word": "finding", "claim": claim, "severity": "medium", "where": "Pages", "findings": found, "spot": True}  # noqa: E731
+    R.post(ref, "Audit", "Identity", "inform", say("Pages has a version with no run or no check"))
+    assert (J.status(ref)["state"], J.status(ref)["step"]) == ("pursuing", 8), "the cycle took it for a reading's and went to Pursue"
+    assert "audit.finding_filed" in [e["action"] for e in J.events(ref)]
+    J._set(ref, state="done")
+    R.post(ref, "Audit", "Identity", "inform", say("Pages has a version with no run or no check, still"))
+    assert J.status(ref)["state"] == "done", "settled, the cycle is not driven by it"
+
+
+def test_b3_an_untraced_version_is_found_by_the_start_the_motor_takes(j2, monkeypatch):
+    """The second reading, through W.due and W.run_slot as the first is: a version whose trace stops short of the owner's words."""
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    W.add_version(ref, "Pages", {"index.html": "<h1>x</h1>"}, [], "r-made", {"ok": True, "notes": []})        # made from nothing
+    W.run_until_idle(ref, limit=100)
+    J._set(ref, state="done")
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    row = W.rows(ref, "spot_checks.jsonl")[-1]
+    assert [c["ok"] for c in row["checks"]][:2] == [True, False] and "does not trace back to the owner's words" in row["checks"][1]["why"]
+    assert row["findings"] and row["findings"][0]["went_to"] == "Identity" and "Pages" in row["findings"][0]["where"]
+    assert [p for p in R.board(ref) if p["src"] == "Audit" and (p.get("payload") or {}).get("spot")]
+
+
+def test_b3_the_stuck_reading_holds_while_the_rule_does_and_finds_a_run_the_rule_let_stand(j2, monkeypatch):
+    """The third reading cannot fail in the motor's flow while one run at a time holds: a run left open keeps the motor from starting
+    Audit at all, and Coordination's alarm is the live finder (found by a verifier 2026-10-27). It is Audit's own look at that rule:
+    with the rule broken on purpose, so that the check starts beside a run left open long ago, it finds the run, through the motor."""
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    W._put_run(ref, R._run_row("Write", False, "Write@site-plan.v77", "running", "writing", started="2020-01-01T00:00:00+00:00"))
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    assert W.due(ref) == (None, None, "running"), "one run at a time: no spot check starts beside an open run"
+    monkeypatch.setitem(COORD.CODE, "coord_busy", lambda ctx, step, item: ("admit", None))
+    monkeypatch.setitem(R.CHECK, "one_run_at_a_time", lambda ctx, step, item, out: {"ok": True, "notes": ["broken on purpose"]})
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    row = W.rows(ref, "spot_checks.jsonl")[-1]
+    assert [c["ok"] for c in row["checks"]] == [True, True, False]
+    assert row["checks"][2]["why"] == "Write has been running past its window" and row["findings"][0]["claim"] == "Write has been running past its window"
+    assert [p for p in R.board(ref) if p["src"] == "Audit" and (p.get("payload") or {}).get("spot")], "and it goes to Identity"
+    assert _spot_runs(W, ref)[0]["status"] == "ok"
+
+
 def test_b3_a_spot_check_reads_state_only_and_writes_only_audits_own_rows(j2, monkeypatch):
     W, R, J, _, _ = j2
     ref = _done(j2)
@@ -736,6 +991,76 @@ def test_b3_the_covering_judges_a_spot_check_and_still_judges_a_filing_as_it_did
     assert S.CHECKS["audit"]["spot_check_reads_only"] and "spot_check_reads_only" in layers.names("check")
 
 
+def test_b3_a_filing_that_measured_nothing_does_not_pass_its_covering():
+    """The covering compared two hashes the body reported and passed when it reported none (None == None): a body that returned
+    {'spot': True, 'said': ...} was a pass (found by a verifier 2026-10-27). Both states must be there, from two steps."""
+    check = AUDIT.CHECK["spot_check_reads_only"]
+    said = {"spot": True, "said": "looked in"}
+    for out in (said, dict(said, before=None, after=None), dict(said, before="a"), dict(said, after="a"), dict(said, before="", after=""),
+                dict(said, before="a", after=None), dict(said, before=None, after="a")):
+        got = check(None, None, None, out)
+        assert got["ok"] is False and "when it began and when it ended" in got["notes"][0], out
+    assert check(None, None, None, dict(said, before="a", after="a"))["ok"] is True
+    assert check({"ref": "x"}, None, None, dict(said, before="a", after="a"))["ok"] is True, "a context changes nothing about the two states"
+
+
+def _spot_due(j2, monkeypatch):
+    """A settled department at the minute of its spot check: (ref, the start the motor would take)."""
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    return ref, _timer_due(W, ref)
+
+
+def test_b3_a_write_in_any_step_of_the_run_fails_it_and_not_only_one_in_the_last_reading(j2, monkeypatch):
+    """The window the two states bracket was the one read-only call of the last step, so the covering could not fail in production.
+    It is the whole run now: the pick notes the state as the run begins, and a write by any step between that and the filing is found."""
+    W, R, J, _, _ = j2
+    ref, (name, inp, slot) = _spot_due(j2, monkeypatch)
+    real = AUDIT.CODE["audit_mechanical"]
+
+    def writes(ctx, step, item):
+        (W.ddir(ctx["ref"]) / "stray.json").write_text("{}", encoding="utf-8")
+        return real(ctx, step, item)
+    monkeypatch.setitem(AUDIT.CODE, "audit_mechanical", writes)
+    W.run_slot(ref, name, inp, slot)
+    run = _spot_runs(W, ref)[0]
+    assert run["status"] == "failed" and "wrote outside Audit's rows" in run["what"]
+    assert W.rows(ref, "spot_checks.jsonl") == [] and [p for p in R.board(ref) if (p.get("payload") or {}).get("spot")] == []
+    step = next(r for r in R.step_rows(ref) if r.get("run") == run["id"] and r["step"] == "audit.file")
+    assert step["status"] == "failed" and step["check"]["ok"] is False
+
+
+def test_b3_a_check_that_began_without_noting_the_state_files_nothing_and_fails(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref, (name, inp, slot) = _spot_due(j2, monkeypatch)
+    monkeypatch.setitem(AUDIT.CODE, "audit_pick", lambda ctx, step, item: {"sample": False, "pages": [], "spot": True})
+    W.run_slot(ref, name, inp, slot)
+    run = _spot_runs(W, ref)[0]
+    assert run["status"] == "failed" and "when it began and when it ended" in run["what"]
+    assert W.rows(ref, "spot_checks.jsonl") == [] and [p for p in R.board(ref) if (p.get("payload") or {}).get("spot")] == []
+
+
+def test_b3_a_spot_check_that_finds_something_passes_its_covering_with_both_states_the_same(j2, monkeypatch):
+    """The finding's post writes a board row, a thread and Coordination's verdict on the edge: they come after the second state is
+    taken, so the check that files a finding is a pass."""
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    W.add_version(ref, "Pages", {"index.html": "<h1>x</h1>"}, [{"art": "Site plan", "v": 1}], None, {"ok": True, "notes": []})
+    W.run_until_idle(ref, limit=100)
+    J._set(ref, state="done")
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    run = _spot_runs(W, ref)[0]
+    assert run["status"] == "ok", run["what"]
+    step = next(r for r in R.step_rows(ref) if r.get("run") == run["id"] and r["step"] == "audit.file")
+    assert step["status"] == "ok" and step["check"] == {"ok": True, "notes": ["it read the engines' state and wrote only its own row"]}
+    out = W._read(R._out_path(ref, slot, "audit.file", None), {})
+    assert out["before"] and out["before"] == out["after"] and out["filed"] == 1
+    assert len([p for p in R.board(ref) if (p.get("payload") or {}).get("spot")]) == 1
+
+
 def test_b3_the_contract_passes_for_audit_v1_whole(j2):
     W, R, J, _, _ = j2
     ref = _born(j2)
@@ -789,6 +1114,92 @@ def test_b4_the_engine_card_says_what_an_engine_asked_and_what_it_answered(j2, m
     check = next(r for r in COORD.engine_card(ref, "Check")["five"] if r["fn"] == "Coordination")
     assert "asked" not in check["says"] and "answered" not in check["says"], "an engine that put and was put no question"
     assert FV.engine_card(ref, "Write") != card and S.validate_view("engine_card", FV.engine_card(ref, "Write")) == []
+
+
+def _route(ref, name):
+    """An engine's card as the app's real route gives it (GET /api/native/{ref}/engine/{name}), through the HTTP client."""
+    import website_api
+    importlib.reload(website_api)
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(website_api.router)
+    got = TestClient(app).get("/api/native/%s/engine/%s" % (ref, name))
+    assert got.status_code == 200, got.text
+    return got.json()["card"]
+
+
+def _coordination_row(card):
+    return next(r for r in card["five"] if r["fn"] == "Coordination")
+
+
+#: the card the screen walk draws for an engine that asked a question (test_website.js: S17), written from the route's own answer
+QUESTION_CARD = pathlib.Path(__file__).parent / "test_fixtures" / "views" / "engine_card.question.json"
+#: the clock of the card in that file: what the record stamps is new each run, the file holds one value (the walk's T("10:23"))
+CARD_AT = "2026-10-26T10:23:00+05:30"
+
+
+def test_b4_the_route_of_the_engine_card_carries_the_question_rows(j2, monkeypatch):
+    """The rows were in COORD.engine_card and nothing in the app called it (found by a verifier 2026-10-27): the route read
+    functions_view.engine_card, which has the other four rows and no question. The route asks the pinned Coordination version's card."""
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    assert _route(ref, "Write") == FV.engine_card(ref, "Write"), "no question asked: the route's card is as it was"
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once())
+    _write_again(W, R, ref)
+    write, plan, check = _route(ref, "Write"), _route(ref, "Plan"), _route(ref, "Check")
+    assert _coordination_row(write)["says"].endswith("; asked Plan about the page list (answered)")
+    assert _coordination_row(plan)["says"].endswith("; answered Write about the page list")
+    assert "asked" not in _coordination_row(check)["says"] and "answered" not in _coordination_row(check)["says"]
+    assert write == COORD.engine_card(ref, "Write") and plan == COORD.engine_card(ref, "Plan"), "the route serves the version's card"
+    assert write != FV.engine_card(ref, "Write")
+    assert all(S.validate_view("engine_card", c) == [] for c in (write, plan, check))
+    # the same over the engine route's whole answer: the card sits beside the engine's own read
+    import website_api
+    assert website_api.engine(ref, "Write")["card"] == write
+
+
+def test_b4_a_version_whose_card_breaks_or_does_not_fit_leaves_the_route_on_todays_card(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once())
+    _write_again(W, R, ref)
+    base = FV.engine_card(ref, "Write")
+    assert _coordination_row(_route(ref, "Write"))["says"].endswith("(answered)")
+
+    def breaks(ref_, name):
+        raise RuntimeError("a card that cannot be read")
+    monkeypatch.setattr(COORD, "engine_card", breaks)
+    assert _route(ref, "Write") == base, "a card that raises: today's read"
+    monkeypatch.setattr(COORD, "engine_card", lambda ref_, name: {"engine": name})
+    assert _route(ref, "Write") == base, "a card that does not fit the interface: today's read"
+    monkeypatch.delattr(COORD, "engine_card")
+    assert _route(ref, "Write") == base, "a version with no card of its own: today's read"
+
+
+def test_b4_the_card_the_screen_walk_draws_is_the_one_the_route_writes(j2, monkeypatch):
+    """test_website.js drew a card whose Coordination row the test wrote by hand, so it could not fail if the server never said the
+    question (found by a verifier 2026-10-27). The card of an engine that asked, as the route gives it, is the file the walk draws:
+    SUTRA_WRITE_VIEWS=1 pytest test_layer_board.py -k screen_walk writes it, then node test_website.js."""
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once(), usd=0.01)
+    _write_again(W, R, ref)
+    card = _route(ref, "Write")
+    if card["head"].get("at"):
+        card["head"]["at"] = CARD_AT
+    for row in card["five"]:
+        if row.get("at"):
+            row["at"] = CARD_AT
+    assert _coordination_row(card)["says"] == "gave it its slot; it ran; asked Plan about the page list (answered)"
+    if os.environ.get("SUTRA_WRITE_VIEWS"):
+        QUESTION_CARD.write_text(json.dumps(card, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    assert QUESTION_CARD.exists(), "no file: SUTRA_WRITE_VIEWS=1 pytest test_layer_board.py -k screen_walk writes it"
+    assert json.loads(QUESTION_CARD.read_text(encoding="utf-8")) == card, \
+        "the card the route gives is not test_fixtures/views/engine_card.question.json: SUTRA_WRITE_VIEWS=1 pytest test_layer_board.py -k screen_walk, then node test_website.js"
 
 
 @pytest.mark.parametrize("state,word", [("unanswered", "no answer"), ("refused", "said no"), ("open", "waiting"), ("answered", "answered")])

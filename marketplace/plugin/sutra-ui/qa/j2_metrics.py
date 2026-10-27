@@ -447,8 +447,9 @@ def sm11(depts):
             if r.get("slot") and slots[r["slot"]] > 1:
                 why.append("shares slot %s with another run" % r["slot"])
             for o in work[:i]:
-                if o.get("id") == r.get("for_run"):
-                    continue                           # it answers a question the run that is open asked, which gave it the turn (W3-BOARD)
+                if r.get("for_run") and o.get("id") == r["for_run"] and (
+                        o.get("ended") is None or (r.get("ended") is not None and str(r["ended"]) <= str(o["ended"]))):
+                    continue        # it answers a question the run that is open asked, which gave it the turn, and ends inside it (W3-BOARD, W3B-1)
                 if (o.get("ended") is None and o.get("status") == "running") or str(o.get("ended") or "") > str(r.get("started") or ""):
                     why.append("started while %s was open" % o.get("engine"))
                     break

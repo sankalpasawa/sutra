@@ -319,7 +319,7 @@ def engine(ref: str, name: str):
         raise HTTPException(404, detail="no such engine")
     out = owner_words.engine(e)
     # on the engine runtime the card carries the motor and the five functions beside it (PRD M4.7, S17)
-    card = functions_view.engine_card(ref, name)
+    card = functions_view.pinned_engine_card(ref, name)
     if card:
         out["card"] = card
     return out

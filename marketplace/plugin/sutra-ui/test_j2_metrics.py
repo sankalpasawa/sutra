@@ -526,6 +526,18 @@ def test_sm11_a_run_that_answers_a_question_inside_the_run_that_asked_it_is_no_c
     assert "r-2" not in " | ".join(m["gaps"])
 
 
+def test_sm11_an_answering_run_is_no_clash_only_inside_the_run_that_asked_it(tmp_path):
+    """Decision W3B-1: a run that names the run it answers for and ends after it, or is still open when it is over, is a clash."""
+    t = "2026-10-27T10:00:%02d+05:30"
+    make(tmp_path, dept={"envelopes": {"Plan": {"calls": 30, "usd": 6.0}}},
+         runs=[_run("Write", "r-1", slot="Write@plan.v1", started=t % 0, ended=t % 5),
+               _run("Plan", "r-2", slot="Plan@board.n3", started=t % 3, ended=t % 4, for_run="r-1", spend={"calls": 1, "usd": 0.01}),
+               _run("Plan", "r-3", slot="Plan@board.n4", started=t % 4, ended=t % 9, for_run="r-1", spend={"calls": 1, "usd": 0.01})])
+    m = M.sm11(_depts(tmp_path))
+    said = " | ".join(m["gaps"])
+    assert (m["runs"], m["flagged"]) == (3, 1) and "Plan (run r-3) started while Write was open" in said and "r-2" not in said
+
+
 # ---- SM-12 -----------------------------------------------------------------------------------------------------------
 def test_sm12_reads_the_marks_of_the_decision_log_once_each(tmp_path):
     log = tmp_path / "design"
