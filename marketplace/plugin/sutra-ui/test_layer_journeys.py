@@ -1276,6 +1276,20 @@ def test_static_mode_runs_without_a_test_run(folder, monkeypatch, capsys):
         JS.main([])
 
 
+def test_check_exits_zero_on_an_empty_folder(folder, monkeypatch, capsys):
+    """Q5's done check, held for good: `qa/journey_status.py --check` exits 0 on an empty journeys folder, in every mode that checks, with
+    the exact last line and no process started. It names its own empty folder, so it does not depend on what the repository's folder
+    holds (which is why it still runs now that the journeys ship), and it is the lane's behaviour for a release that carries none."""
+    def never(*args, **kw):
+        raise AssertionError("a process was started: %r" % (args,))
+    monkeypatch.setattr(JS.subprocess, "run", never)
+    assert journeys.load() == {}
+    for args in (["--check"], ["--check", "--no-run"], ["--write"]):
+        assert JS.main(args) == 0, args
+        assert capsys.readouterr().out == "journeys: 0 rows, 0 proven, 0 wanted, 0 faults\n", args
+    assert sorted(p.name for p in folder.rglob("*")) == ["functions"], "nothing was written for a folder with no journey"
+
+
 def test_check_and_write_the_whole_lane_with_injected_results(folder, monkeypatch, capsys):
     j = proven()
     j["steps"][0]["tests"] = [REAL_TEST]
@@ -1359,8 +1373,8 @@ def test_run_tests_runs_each_file_once_and_reads_what_it_printed(folder, monkeyp
 
 
 def test_the_command_line_on_the_journeys_of_the_repository():
-    """python qa/journey_status.py exits 0 on the folder the repository holds: with no journey it is the empty folder, and with
-    journeys their status files are fresh (--no-run) and their static cases pass (--static)."""
+    """python qa/journey_status.py exits 0 on the folder the repository holds: its status files are fresh (--no-run) and its static
+    cases pass (--static). The empty folder is test_check_exits_zero_on_an_empty_folder's."""
     def cli(*args):
         done = subprocess.run([sys.executable, str(HERE / "qa" / "journey_status.py")] + list(args), cwd=str(HERE), capture_output=True, text=True, timeout=600)
         return done.returncode, done.stdout.strip().splitlines()
@@ -1368,9 +1382,6 @@ def test_the_command_line_on_the_journeys_of_the_repository():
     assert (code, out[-1].startswith("journeys: ")) == (0, True), out
     code, out = cli("--check", "--no-run")
     assert code == 0 and out[-1].endswith(" 0 faults"), out
-    if not journeys.load():
-        code, out = cli("--check")
-        assert (code, out) == (0, ["journeys: 0 rows, 0 proven, 0 wanted, 0 faults"])
     code, out = cli("--no-such-mode")
     assert code == 2
 
@@ -1707,6 +1718,30 @@ def test_every_shipped_journey_reads_clean():
         assert found == [], (jid, found[:5])
         said = [t for t in owner_words(listed, one) if banned.search(t)]
         assert said == [], (jid, said[:5])
+
+
+def test_the_routes_the_readme_and_the_documents_say_what_the_read_model_does():
+    """The read model says three things (decision A3-20): it leaves out what names code, what it adds is clean, and the site's and the
+    author's prose is passed on as it was written, which a screen does not render raw. The two route docstrings, the README, the A3 text
+    and the decision log say the same, and the A3 text no longer says that no string contains an act id, a path or a banned word (it did,
+    and the shipped journeys' prose holds both: nothing checks it, and the log says so)."""
+    import website_api
+    for fn in (website_api.journey_list, website_api.journey_one):
+        said = " ".join(fn.__doc__.split())
+        assert "as written" in said and "does not render" in said, fn.__name__
+    readme = " ".join((HERE / "journeys" / "README.md").read_text(encoding="utf-8").split())
+    assert "A screen does not render that prose raw" in readme and "Nothing checks the author's prose" in readme
+    spec, log = HERE / "design" / "PRD-FIVE-FUNCTIONS-A3.md", HERE / "design" / "PRD-FIVE-FUNCTIONS-DECISIONS.md"
+    if not (spec.exists() and log.exists()):
+        pytest.skip("the design documents are not in this tree")
+    text = " ".join(spec.read_text(encoding="utf-8").split())
+    assert "no string contains an act id, a path or a banned word" not in text
+    for words in ("passed on as it was written", "does not render it raw", "decision A3-20", "nothing checks the author's prose"):
+        assert words in text, words
+    row = next((line for line in log.read_text(encoding="utf-8").splitlines() if line.startswith("| A3-20 |")), "")
+    assert row.count("|") == 5, "a row of the A3 table: id, decision, why, steps"
+    for words in ("read model", "as it was written", "does not render it raw", "Nothing checks the author's prose"):
+        assert words in row, words
 
 
 # ---- Q7: the README ----------------------------------------------------------------------------------------------------
