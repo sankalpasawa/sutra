@@ -1018,21 +1018,23 @@ def test_a8_the_make_shape_part_is_in_the_interface_with_its_contract_verbatim()
 
 
 # ---- A1.18 · engine_runtime's own copies of the layer's bodies (retired by W3-PROOF X1: see test_layer_retire.py) --------------
-def test_a3_the_fallback_prompt_builder_fills_every_slot_the_part_has_and_says_what_the_layers_does(j2):
-    """R.p_adapt_line is the copy a department runs when adaptation/v1 does not load. make.line gained its items slot in
-    M5.1, and the copy passed none, so every shaped line raised: 'the app fills no {{items}}'."""
+def test_a3_the_line_prompt_fills_every_slot_the_part_has_and_says_what_the_layers_does(j2):
+    """make.line gained its items slot in M5.1, and a body that passed none raised on every shaped line: 'the app fills no {{items}}'.
+    The layer's body fills every slot the part has (engine_runtime's copy of it, the fallback of a layer that does not load, is
+    deleted: W3-PROOF X1)."""
     W, R, _, _, _ = j2
+    assert not hasattr(R, "p_adapt_line") and "adapt_line" not in R.PROMPT
     ref = _dept(j2, "organic", ref="dref-fallback")
     ctx = {"ref": ref, "dept": W.dept(ref), "post": {"payload": {"word": "line", "words": "A guide to the night clinic", "faults": []}}, "bag": {}}
-    got = R.p_adapt_line(ctx, None, None)
+    got = v1().PROMPT["adapt_line"](ctx, None, None)
     for line in ("D1: The site is live", "D2: Every page names the phone line", "D3: A visitor can find the doctors"):
         assert line in got
-    assert got == v1().PROMPT["adapt_line"](ctx, None, None), "the copy and the layer's body say the same words"
+    assert "A guide to the night clinic" in got and "REFUSED BY ROOT'S CHECK" not in got
     ctx["post"]["payload"]["faults"] = ["reads_known: Site 2 reads Interviews"]
-    assert R.p_adapt_line(ctx, None, None) == v1().PROMPT["adapt_line"](ctx, None, None) and "REFUSED BY ROOT'S CHECK" in R.p_adapt_line(ctx, None, None)
+    assert "REFUSED BY ROOT'S CHECK" in v1().PROMPT["adapt_line"](ctx, None, None)
     bare = _dept(j2, "organic", ref="dref-fallback-bare", items=[])
     ctx = {"ref": bare, "dept": W.dept(bare), "post": {"payload": {"word": "line", "words": "w"}}, "bag": {}}
-    assert R.p_adapt_line(ctx, None, None) == v1().PROMPT["adapt_line"](ctx, None, None) and "none" in R.p_adapt_line(ctx, None, None)
+    assert "none" in v1().PROMPT["adapt_line"](ctx, None, None)
 
 
 # ---- A5 · Adaptation's view -------------------------------------------------------------------------------------------

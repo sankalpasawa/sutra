@@ -233,7 +233,7 @@ class TestByteForByte(Fixture):
 PAGES = {"identity": ["goal", "completeness", "take"], "adaptation": ["goal", "sense", "decide", "make"],
          "priority": ["goal", "bargain"], "coordination": ["goal", "tie"], "audit": ["goal", "judge"]}
 BUILDERS = ("p_identity_recognise", "p_identity_take", "p_identity_answer", "p_identity_rule", "p_identity_weigh", "p_identity_gate",
-            "p_identity_close", "p_adapt_shape", "p_adapt_line", "p_priority_bargain", "p_coord_tie", "p_audit_judge")
+            "p_identity_close", "p_adapt_shape", "p_coord_tie", "p_audit_judge")
 
 
 class TestTheWords(Fixture):
@@ -260,6 +260,10 @@ class TestTheWords(Fixture):
         import inspect
         for name in BUILDERS:
             self.assertNotIn("Return ONLY", inspect.getsource(getattr(R, name)), name + " still holds its words inline")
+        for fn in R.layer_schema.FUNCTION_LAYERS:            # and the builders a layer's version holds of its own (the ones it took over)
+            for name, body in layers.load(R.layer_schema.DEFAULT_PINS[fn]).PROMPT.items():
+                if not hasattr(body, "legacy"):
+                    self.assertNotIn("Return ONLY", inspect.getsource(body), "%s's %s still holds its words inline" % (fn, name))
         # the words held are the words sent: Identity holds all of its own (A1.16), so change one of them, and the next prompt
         # carries the change
         self.holds("identity", "take", "take", "task", "Judge one request from the owner.", "Judge one request from the owner, kindly.")

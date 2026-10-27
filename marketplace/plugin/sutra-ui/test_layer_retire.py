@@ -119,7 +119,7 @@ def test_x1_a_pinned_version_that_does_not_load_runs_the_default_versions_words_
 # ---- X1b · the dead copies ---------------------------------------------------------------------------------------------------
 KINDS = ("code", "prompt", "draft", "check")
 #: the registries cleared of dead copies so far, one commit each (the check below asks of these only)
-CLEARED = ("code",)
+CLEARED = ("code", "prompt", "draft")
 
 
 def _tables():
@@ -183,3 +183,18 @@ def test_x1_a_body_a_version_wraps_stays_where_it_is_and_the_copies_it_replaced_
         assert not hasattr(runtime, name) and name not in runtime.CODE, name
     for name in ("adapt_hearnext", "adapt_round", "adapt_round_granted", "adapt_round_refused"):
         assert name not in runtime.CODE, name
+
+
+def test_x1_the_prompt_builders_a_version_took_over_are_gone_and_the_ones_it_references_stay(runtime):
+    for name in ("p_adapt_line", "d_adapt_line", "p_priority_bargain", "d_priority_bargain", "p_adapt_fit", "d_adapt_fit", "p_adapt_next", "d_adapt_next"):
+        assert not hasattr(runtime, name), name
+    for name in ("adapt_line", "priority_bargain", "adapt_fit", "adapt_next"):
+        assert name not in runtime.PROMPT, name
+    for name in ("adapt_line_draft", "priority_bargain_draft", "adapt_fit_draft", "adapt_next_draft"):
+        assert name not in runtime.DRAFT, name
+    # every soft step of a function still finds its prompt and its draft: in its version, or in the registry for a name that is by reference
+    for engine in ("Identity", "Adaptation", "Priority", "Coordination", "Audit"):
+        for step in runtime.all_steps(engine):
+            for kind in ("prompt", "draft"):
+                if step.get(kind):
+                    assert callable(layers.resolve(None, engine, kind, step[kind], getattr(runtime, kind.upper()))), (engine, step["id"], kind)

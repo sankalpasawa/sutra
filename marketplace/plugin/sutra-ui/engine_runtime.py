@@ -6549,31 +6549,6 @@ def _offer_lines(pl):
             "usd": "%.2f" % float(t.get("usd", 6.0))}
 
 
-def p_priority_bargain(ctx, step, item):
-    got, pl = ctx["bag"]["priority.read"], ctx["post"]["payload"]
-    room = "yes" if got["facts"]["room"] else "no"
-    if pl.get("word") == "line":
-        lines = "\n".join("- %s: %s" % (e.get("name"), str(e.get("does") or "")) for e in pl.get("engines") or [] if isinstance(e, dict))
-        t = priority_template()
-        return _prompt("priority", "bargain", "line", ctx["ref"], source="from the Library" if pl.get("source") == "library" else "shaped for the goal",
-                       engines=lines, calls="%d" % (int(t.get("work_calls", 8)) * int(t.get("calls", 30))), usd="%.2f" % float(t.get("usd", 6.0)),
-                       room=room, limit=got.get("limit"))
-    if pl.get("word") == "engine":
-        return _prompt("priority", "bargain", "engine", ctx["ref"], room=room, **_offer_lines(pl))
-    return _prompt("priority", "bargain", "cost", ctx["ref"], word=pl.get("word"), step=pl.get("step"), cost=pl.get("cost"), room=room)
-
-
-def d_priority_bargain(ctx, step, item):
-    read = ctx["bag"]["priority.read"]
-    if read.get("word") == "line" and not read["facts"]["room"]:
-        keep = list(read.get("names") or [])[:int(read.get("limit") or 6)]
-        if keep:
-            return {"answer": "counter", "why": "the envelope has room for %d workflows" % len(keep), "keep": keep}
-        return {"answer": "reject", "why": "the plan names no workflow"}
-    room = ctx["bag"]["priority.read"]["facts"]["room"]
-    return {"answer": "accept" if room else "reject", "why": "the envelope has room" if room else "the envelope has no room today"}
-
-
 def p_audit_judge(ctx, step, item):
     ref = ctx["ref"]
     files = audit_files(ctx)
@@ -6696,43 +6671,17 @@ def _out_artifacts():
     return "; ".join("%s: %s" % (t["name"], t.get("use_case") or "") for t in artifacts.templates().values() if t.get("counts_after") == "stamp")
 
 
-def p_adapt_line(ctx, step, item):
-    d, pl = ctx["dept"], ctx["post"]["payload"]
-    rules = "; ".join(str(r.get("line")) for r in d.get("rules") or [] if r.get("line"))
-    taken = ", ".join(sorted(defs()["engines"]))
-    refused = ("\n\n" + _prompt("adaptation", "make", "refused", ctx["ref"], faults="; ".join(str(f) for f in pl["faults"]))) if pl.get("faults") else ""
-    # the done-when items, one a line ('D1: the site is live'): make.line names them (PRD M5.1), and a layer that does not load
-    # runs this body, which must fill every slot the part has (layers/adaptation/v1.item_lines says it the same way)
-    items = "\n".join("%s: %s" % (i["id"], " ".join(str(i.get("text") or "").split()))
-                      for i in d.get("done_items") or [] if isinstance(i, dict) and i.get("id"))
-    return _prompt("adaptation", "make", "line", ctx["ref"], dept=d.get("name"), words=pl.get("words") or d.get("goal"), items=items or "none",
-                   taken=taken, out=_out_artifacts() or "none", rules=rules or "none", refused=refused)
-
-
-def d_adapt_line(ctx, step, item):
-    # the draft, when no agent is there to judge: two engines, the facts from the internet and the site from the facts.
-    # Their names are ones the Library does not have yet: a second department shaped this way takes Facts 2 and Site 2
-    # (found 2026-10-07: it took Facts and Site again, its check refused the line, and nothing was said)
-    def line(n):
-        tag = "" if n == 1 else " %d" % n
-        return [{"name": "Facts" + tag, "does": "finds on the internet what the goal names, each fact with its source", "reads": "Brief",
-                 "writes": "Facts" + tag, "internet": True},
-                {"name": "Site" + tag, "does": "writes the site's pages from the facts, each with its source", "reads": "Facts" + tag,
-                 "writes": "Live site", "internet": False}]
-    return {"engines": next((line(n) for n in range(1, 50) if not _line_faults(line(n))), line(1))}
-
-
-PROMPT = {"identity_recognise": p_identity_recognise, "adapt_line": p_adapt_line, "do_pages": p_do_pages, "do_page": p_do_page, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
+PROMPT = {"identity_recognise": p_identity_recognise, "do_pages": p_do_pages, "do_page": p_do_page, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
           "identity_weigh": p_identity_weigh, "adapt_shape": p_adapt_shape, "plan_pages": p_plan_pages, "write_page": p_write_page, "identity_take": p_identity_take,
-          "identity_gate_soft": p_identity_gate, "priority_bargain": p_priority_bargain, "audit_judge": p_audit_judge,
+          "identity_gate_soft": p_identity_gate, "audit_judge": p_audit_judge,
           "coord_tie": p_coord_tie, "setup_shape": p_setup_shape, "setup_converse": p_setup_converse, "identity_close": p_identity_close, "check_rules": p_check_rules, "do_make": p_do_make, "do_need": p_do_need,
           "identity_enough": p_identity_enough}
-DRAFT = {"identity_recognise_draft": d_identity_recognise, "adapt_line_draft": d_adapt_line, "do_pages_draft": d_do_pages, "do_page_draft": d_do_page, "identity_answer_draft": d_identity_answer,
+DRAFT = {"identity_recognise_draft": d_identity_recognise, "do_pages_draft": d_do_pages, "do_page_draft": d_do_page, "identity_answer_draft": d_identity_answer,
          "coord_tie_draft": d_coord_tie, "setup_shape_draft": d_setup_shape, "setup_converse_draft": d_setup_converse,
          "identity_close_draft": d_identity_close, "check_rules_draft": d_check_rules,
          "identity_rule_draft": d_identity_rule, "identity_weigh_draft": d_identity_weigh, "adapt_shape_draft": d_adapt_shape,
          "plan_pages_draft": d_plan_pages, "write_page_draft": d_write_page, "identity_take_draft": d_identity_take,
-         "identity_gate_draft": d_identity_gate, "priority_bargain_draft": d_priority_bargain, "audit_judge_draft": d_audit_judge,
+         "identity_gate_draft": d_identity_gate, "audit_judge_draft": d_audit_judge,
          "do_make_draft": d_do_make, "do_need_draft": d_do_need, "identity_enough_draft": d_identity_enough}
 
 
@@ -7080,36 +7029,19 @@ def _fit_line(ctx):
     return [e["name"] for e in ((ctx.get("bag") or {}).get("adapt.source") or {}).get("engines") or [] if isinstance(e, dict) and e.get("name")]
 
 
-def p_adapt_fit(ctx, step, item):
-    return ("Keep the Library's line whole. Answer with one JSON object only: {\"engines\": [every engine of the line, in its order], "
-            "\"fit\": {}, \"why\": \"one line\"}.\nTHE LINE: " + ", ".join(_fit_line(ctx)))
-
-
-def d_adapt_fit(ctx, step, item):
-    return {"engines": _fit_line(ctx), "fit": {}, "why": "the Library's line stands as it is"}
-
-
 def c_line_is_fitted(ctx, step, item, out):
     ok = isinstance(out, dict) and out.get("engines") == _fit_line(ctx) and not out.get("fit")
     return _verdict(ok, "the Library's line, whole", "the Library's line is kept whole")
 
 
-PROMPT["adapt_fit"], DRAFT["adapt_fit_draft"], CHECK["line_is_fitted"] = p_adapt_fit, d_adapt_fit, c_line_is_fitted
-
-
-def p_adapt_next(ctx, step, item):
-    return "Say in one line what to correct. Answer with one JSON object only: {\"correction\": str, \"fixes\": [], \"covers\": [], \"why\": str}."
-
-
-def d_adapt_next(ctx, step, item):
-    return {"correction": "Put right what the reading found", "fixes": [], "covers": [], "why": "no agent was there to say it"}
+CHECK["line_is_fitted"] = c_line_is_fitted
 
 
 def c_round_is_new(ctx, step, item, out):
     return _verdict(isinstance(out, dict) and bool(str(out.get("correction") or "").strip()), "a round says what to correct", "a round says what to correct")
 
 
-PROMPT["adapt_next"], DRAFT["adapt_next_draft"], CHECK["round_is_new"] = p_adapt_next, d_adapt_next, c_round_is_new
+CHECK["round_is_new"] = c_round_is_new
 
 
 # ---- what the screens read -----------------------------------------------------------------------------------------
