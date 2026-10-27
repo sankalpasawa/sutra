@@ -3107,7 +3107,9 @@ test("M9.7: the rounds repaint when the ceiling is raised on the same round, and
    W9 (no count, no path) and W19 (the inside word) were written for the first cards; the cards since (S1 to S18) were each
    checked by their own test, a rule at a time. This is the one walk: every card of the classic panes is drawn from its own
    sample and held to the owner's rulings together. The words of the record itself -- the owner's, an ask's question -- are
-   shown whole and may hold what they hold, so the samples carry none; what is under test is what the screen adds.
+   shown whole and may hold what they hold, so the samples carry none; what is under test is what the screen adds. A card
+   the code writes in words of its own (the S10 limit card) is not hand-written: it is the file the producers' test writes
+   (test_fixtures/views/ask.limit.json), so its label, why and text are held to the rules as the code says them.
      never `charter` nor `internal system` on a card;
      the owner's words for a bargain are said yes, asked for less and said no, never GRANT, COUNTER, REFUSE or orders,
        and no act id (accept-proposal, ASK_REQUESTER) is printed;
@@ -3225,16 +3227,15 @@ walks("S10 a blocked plan's card", ["wbOptionsHtml"], async () => {
   view(c); await sleep(); await sleep();
   return view(c);
 });
-/* S10 form A, the limit for the goal (M5.4, M9.5): Priority's code builds the ways out and their cost lines as the layer says
-   them (layers/priority/v1.py ceiling_option, _say_cost, _more: 'about 7 calls and 0.30 USD more; the goal's ceiling becomes
-   8 rounds, 97 calls and 9.30 USD'); the labels are the PRD's own words, with no numeral (a number in a label is a count); the
-   record's words (title, who, why) hold none, as in every sample here. The cost lines carry their numbers: they are the price. */
-const LIMIT = Object.assign({}, NOCOUNT_BLOCKED, { id: "a-b-2", title: "This needs more than planned.", who: "Write, in the last round",
-  text: "Priority has no room in the goal's limit for another round: the size filter (D2) still fails Audit's reading.",
-  why: "the last round is used, and the size filter (D2) still fails Audit's reading", if_nothing: "Nothing more runs; the site stays as Live site v6.",
-  options: [{ id: "raise:ceiling", label: "Add budget for two more rounds", cost: "about 7 calls and 0.30 USD more; the goal's ceiling becomes 8 rounds, 97 calls and 9.30 USD" },
-            { id: "leave:D2", label: "Leave the size filter out", cost: "D2 is dropped from done-when (the size filter works); nothing more is spent" },
-            { id: "stop", label: "Stop here", cost: "the department stops where it is; you can start it again later" }] });
+/* S10 form A, the limit for the goal (M5.4, M9.5), drawn as the code writes it: test_fixtures/views/ask.limit.json is the card the
+   pursue scenario ends in at the goal's ceiling (test_layer_pursue.py P2d, the real Priority, Adaptation and Identity), written by
+   that test and held to it, so the walk draws the label (layers/priority/v1.py ceiling_option), the why (round_within_ceiling) and the
+   cost lines (_say_cost, _more) the producers print, and a change of their words reaches the walk. It was a hand-written sample
+   (2026-10-27, a verifier): the real label and why held counts at rest that the sample did not. The cost lines carry their numbers:
+   they are the price (W2S-2); every other line of the card is held to the rule. */
+const LIMIT_ASK = viewFile("ask.limit.json");
+const LIMIT = Object.assign({}, NOCOUNT_BLOCKED, LIMIT_ASK);
+const rx = t => new RegExp(String(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 async function limitCard(chosen){
   const m = rtMap(); m.root = "r2";
   const card = Object.assign({}, LIMIT, chosen ? { status: "chosen", chosen } : {});
@@ -3242,10 +3243,11 @@ async function limitCard(chosen){
   view(c); await sleep(); await sleep();
   return view(c);
 }
+const RAISE = LIMIT_ASK.options[0];
 walks("S10 a limit card, with its prices", ["wbOptionsHtml"], () => limitCard(), false,
-  [/about 7 calls and 0\.30 USD more; the goal(?:'|&#39;)s ceiling becomes 8 rounds, 97 calls and 9\.30 USD<\/span>/, /Add budget for two more rounds/]);
-walks("S10 a limit card, chosen", ["wbOptionsHtml"], () => limitCard({ id: "raise:ceiling", label: "Add budget for two more rounds", at: "2026-10-23T10:26:00+05:30", by: "the owner", words: null }), false,
-  /You chose: Add budget for two more rounds/);
+  [rx(RAISE.cost), rx(RAISE.label), rx(LIMIT_ASK.options[1].label), rx(LIMIT_ASK.why), rx(LIMIT_ASK.title)]);
+walks("S10 a limit card, chosen", ["wbOptionsHtml"], () => limitCard({ id: RAISE.id, label: RAISE.label, at: "2026-10-23T10:26:00+05:30", by: "the owner", words: null }), false,
+  rx("You chose: " + RAISE.label));
 /* Priority's chat when it has bargained: it counters (asks for less), says yes, says no -- and a turn with no words of its own is
    said in the owner's words, never by its act (Adaptation proposes; Priority's answers are accept-proposal, reject-proposal) */
 const BARGAIN_CHAT = { fn: "Priority", dept: "r3", name: DEPT, any: true, turns: [

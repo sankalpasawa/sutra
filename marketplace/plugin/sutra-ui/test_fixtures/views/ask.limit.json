@@ -1,0 +1,41 @@
+{
+ "chosen": null,
+ "created": "2026-10-27T10:00:00+05:30",
+ "cycle_id": "cycle-limit",
+ "engine": "Identity",
+ "id": "a-limit",
+ "if_nothing": "Nothing runs; the department waits for your words.",
+ "kind": "blocked",
+ "options": [
+  {
+   "cost": "about nothing more; the goal's ceiling becomes 2 rounds, 3 calls and 0.12 USD (the most allowed)",
+   "id": "raise:ceiling",
+   "kind": "raise",
+   "label": "Add budget for one more round",
+   "params": {
+    "calls": 3,
+    "rounds": 2,
+    "usd": 0.12,
+    "what": "ceiling"
+   }
+  },
+  {
+   "cost": "D2 is dropped from done-when (Every page names the phone line); nothing more is spent",
+   "id": "leave:D2",
+   "kind": "leave",
+   "label": "Leave D2 out"
+  },
+  {
+   "cost": "the department stops where it is; you can start it again later",
+   "id": "stop",
+   "kind": "stop",
+   "label": "Stop here"
+  }
+ ],
+ "status": "pending",
+ "text": "Priority said no to Round 2: no room in the ceiling: the goal's last round is used. Say how to put it right, or choose a way forward on this card.",
+ "thread": "x-limit",
+ "title": "The next round needs your word.",
+ "who": "Priority, pricing the round",
+ "why": "Priority said no to Round 2: no room in the ceiling: the goal's last round is used"
+}

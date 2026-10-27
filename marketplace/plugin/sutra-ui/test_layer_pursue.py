@@ -6,6 +6,9 @@ with options. Run end to end on a website department as a person makes one, with
   P1  not met, a round, Brief v3, Live site v2, a new reading, goal.reached; only registered engines run (SM-3)
   P2  a run that hits the ceiling ends in an options ask, never in silence (SM-6)
   P3  a reading with an item not met gives one round naming it, priced by Priority, filed as 'Correct this', and the line runs again
+  P2d the limit card the screen walk draws (test_website.js, M10.3) is the one P2 ends in: test_fixtures/views/ask.limit.json is what
+      the code writes, so the producer and the walk cannot drift (found by a verifier 2026-10-27: a hand-written sample passed the
+      owner's words rule that the label and the why the code printed broke)
 
 THE NEIGHBOURS. The loop is three layers'. Identity hears the reading and asks Adaptation for the next round, then files the round
 Priority said yes to (W2-IDENTITY, M8.4 and M9.3); Priority prices the round inside the goal's ceiling (W2-PRIORITY, M9.2);
@@ -16,6 +19,8 @@ and of the merged build.
 """
 import importlib
 import json
+import os
+import pathlib
 import re
 
 import pytest
@@ -294,6 +299,42 @@ def test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silenc
     assert not re.search(r"\bplan\b", " ".join((card["title"], card["who"])), re.I) and "Say what to correct" not in card["text"], card
     assert card["text"].startswith("Priority said no to Round 2:") and [o["id"] for o in card["options"]][-2:] == ["leave:D2", "stop"]
     _only_registered_engines_ran(W, R, ref)
+
+
+#: the view the words walk draws for the limit card (test_website.js: S10 form A), written from the card P2 ends in
+LIMIT_CARD = pathlib.Path(__file__).parent / "test_fixtures" / "views" / "ask.limit.json"
+#: what in an ask is new each run (its id, its clock, its thread and its cycle): the file holds one fixed value for each
+STABLE = {"id": "a-limit", "created": "2026-10-27T10:00:00+05:30", "cycle_id": "cycle-limit", "thread": "x-limit"}
+#: what the screen's words rule lets stand as a number at rest: a name (D2, Round 2, v3, Version 3), a clock time, a window in minutes
+NAME_OR_TIME = re.compile(r"\b(?:v|[A-Z]{1,3}|Round |[Vv]ersion )\d+\b|\b\d\d:\d\d\b|\b\d+ min\b")
+
+
+def test_p2d_the_limit_card_the_screen_walk_draws_is_the_one_the_code_writes_and_keeps_the_owners_words(j2, monkeypatch):
+    """The words walk passed a hand-written limit card (found by a verifier 2026-10-27): the card the code writes had 'Add 2 more rounds'
+    for a label and 'round 2 against a ceiling of 1 rounds' for a why, each a count at rest, which the sample did not have. The card P2
+    ends in, made by the real Priority, Adaptation and Identity, is the file the walk draws: the file is what the code writes now (a
+    change of words regenerates it with SUTRA_WRITE_VIEWS=1, and the walk is run on the new file), and its words hold no count outside
+    the cost line of a way out, which carries the price the owner chooses by (decision W2S-2)."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(S, "ROUNDS_DEFAULT", 1)
+    _reader(monkeypatch, R, [["D2"]])
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch, ceiling=1)
+    _pursue(j2, ref, neighbours, limit=16)
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    made = dict(card, **STABLE)
+    # the words the owner reads, held to the rule on the card as made: the cost line of a way out is the one place a figure stands
+    owned = [made[k] for k in ("title", "who", "why", "text", "if_nothing")] + [o["label"] for o in made["options"]] + \
+            [o.get("note") or "" for o in made["options"]]
+    figures = [t for t in owned if re.search(r"\d", NAME_OR_TIME.sub(" ", str(t)))]
+    assert not figures, "a count at rest on the limit card: %r" % figures
+    assert made["options"][0]["label"] == "Add budget for one more round"
+    assert made["why"].startswith("Priority said no to Round 2: no room in the ceiling: the goal's last round is used")
+    if os.environ.get("SUTRA_WRITE_VIEWS"):
+        LIMIT_CARD.write_text(json.dumps(made, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    assert LIMIT_CARD.exists(), "no file: SUTRA_WRITE_VIEWS=1 pytest test_layer_pursue.py -k limit_card writes it"
+    assert json.loads(LIMIT_CARD.read_text(encoding="utf-8")) == made, \
+        "the card the code writes is not test_fixtures/views/ask.limit.json: SUTRA_WRITE_VIEWS=1 pytest test_layer_pursue.py -k limit_card, then node test_website.js"
 
 
 def test_p2b_the_owner_adds_a_round_at_the_ceiling_and_the_refused_round_is_proposed_again_funded_and_run(j2, monkeypatch):
