@@ -744,10 +744,14 @@ def hears_doubt():
 
 def line_conflict(ref, thread, why, bound=None, src='Adaptation', options=None, engines=None, source=None, words=None, extra=None):
     """The bargain did not close (a refusal, or its bound), or no line can be made: it goes to Identity, never silently to
-    nothing (J2.2). _line_conflict as engine_runtime has it, with the ways out Adaptation can build (M6.4) or Priority priced (M5.4)."""
+    nothing (J2.2). _line_conflict as engine_runtime has it, with the ways out Adaptation can build (M6.4) or Priority priced (M5.4);
+    a conflict raised at a bound that is given none carries the ways Priority prices for a limit (R._limit_ways), as the one the
+    runtime raises where it closes the thread does."""
     offer = R._line_proposal(ref, thread) or {}
     if any((x.get('payload') or {}).get('word') == 'conflict' and (x.get('payload') or {}).get('for') == thread for x in R.board(ref)):
         return None
+    if bound and not options:
+        options = R._limit_ways(ref, thread) or None
     body = {'word': 'conflict', 'engines': engines if engines is not None else offer.get('engines') or [],
             'source': source or offer.get('source'), 'words': words if words is not None else offer.get('words'),
             'why': why, 'bound': bound, 'for': thread}
@@ -806,7 +810,11 @@ def adapt_line_counter(ctx, step, item):
         body['fit'] = notes
     row = R.post(ref, 'Adaptation', 'Priority', 'propose', body, thread=p['thread'])
     if row is None:
-        line_conflict(ref, p['thread'], 'the bargain reached its bound', bound='hops', src='Coordination', options=options)
+        # the thread reached its bound with this post. The runtime raised the conflict where it closed the thread, with the ways
+        # Priority prices for a limit (R._line_conflict), and this files it only where it did not (a department off J2), the same
+        # and once: line_conflict keeps to one conflict for a thread. Priority's ask for less is no limit, so it brings no ways
+        # of its own to a bound.
+        line_conflict(ref, p['thread'], 'the bargain reached its bound', bound='hops', src='Coordination')
         return {'said': 'the bargain reached its bound; it goes to Identity'}
     return {'said': "took Priority's ask for less and proposed again: " + ' -> '.join(e['name'] for e in engines)}
 

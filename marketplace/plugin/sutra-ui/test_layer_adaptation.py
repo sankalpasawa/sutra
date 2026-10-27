@@ -1556,15 +1556,18 @@ def test_f1_an_offline_department_proposes_and_registers_the_kinds_line_with_no_
     assert fit_rows and all(r["status"] == "ok" and r["by"] == "offline draft" for r in fit_rows), fit_rows
 
 
-def _born_site(j2, words=WEBSITE, org="Acme Learning", answers=None, monkeypatch=None):
+def _born_site(j2, words=WEBSITE, org="Acme Learning", answers=None, monkeypatch=None, items=None):
     """A website department as a person makes one: found the organisation, say the words, Root sets it up, and the motor
-    runs until idle. With `answers` a model that is a function stands in for each step id they name."""
+    runs until idle. With `answers` a model that is a function stands in for each step id they name; with `items` done-when
+    holds them before the department's own motor first runs."""
     W, R, J, founding, FV = j2
     seen = _stub(monkeypatch, R, answers) if answers is not None else None
     root = founding.found_structure(org, owner="Sankalp")["root"]
     W.owner_ask(root, words)
     W.run_until_idle(root, limit=300)
     ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    if items:
+        W.put_done_items(ref, items)
     W.run_until_idle(ref, limit=300)
     return (ref, seen) if answers is not None else ref
 
@@ -1729,6 +1732,51 @@ def test_f2_a_kept_engine_keeps_its_note_when_priority_asks_for_less_and_a_dropp
     reg = W.dept(ref)["workflows"][-1]
     assert reg["engines"] == ["Plan", "Write", "Check"] and reg["fit"] == {"Write": notes["Write"]} and reg["left_out"] == ["Publish"]
     assert S.validate("workflow.registration", reg) == []
+
+
+LIMIT_ITEMS = [{"id": "D1", "text": "Every page checked and live", "how": "code", "level": "outcome"},
+               {"id": "D2", "text": "The lessons for each topic are there", "how": "model", "level": "target"}]
+
+
+def _one_blocked_card(W, ref):
+    cards = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert [a["kind"] for a in cards] == ["blocked"], cards
+    return cards[0]
+
+
+def test_f2_a_bargain_that_reaches_its_hop_limit_as_adaptation_takes_an_ask_for_less_reaches_the_owner_once_with_priced_ways(j2, monkeypatch):
+    """M5.4 at its limit, through the branch of adapt_line_counter that used to carry options nothing could reach: the post that
+    takes Priority's ask for less is the one the bound stops (two hops, and it is the third). The conflict is raised once, with the
+    ways Priority prices for a limit, and Identity puts the owner one card that holds them."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(R, "BOUNDS", {"hops": 2, "seconds": 900, "usd": 0.5})
+    counter = {"answer": "counter", "why": "room for three today", "keep": ["Plan", "Write", "Check"]}
+    ref, _ = _born_site(j2, answers={"priority.bargain": counter}, monkeypatch=monkeypatch, items=LIMIT_ITEMS)
+    [conflict] = _conflicts(R, ref)
+    assert conflict["bound"] == "hops" and [o["id"] for o in conflict["options"]] == ["leave:D2", "stop"], conflict
+    assert S.validate("act.conflict", conflict) == [] and [e["name"] for e in conflict["engines"]] == LINE, "the line the bargain was about"
+    card = _one_blocked_card(W, ref)
+    assert [(o["id"], o["cost"]) for o in card["options"]] == [(o["id"], o["cost"]) for o in conflict["options"]], "the card has the priced ways"
+    assert W.dept(ref).get("workflows") in ([], None) and [r for r in W.runs(ref) if not r.get("system")] == [], "nothing was registered and nothing ran"
+    assert len([e for e in J.events(ref) if e["action"] == "conflict.raised"]) == 1
+
+
+def test_f2_the_conflict_adaptation_files_at_a_bound_carries_the_ways_priority_prices_and_is_filed_once(j2, monkeypatch):
+    """The fallback branch of adapt_line_counter (a department the runtime did not raise the conflict for) files the same conflict
+    the runtime would: ways priced by Priority, once. Its own ask for less brings none."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(R, "BOUNDS", {"hops": 1, "seconds": 900, "usd": 0.5})
+    monkeypatch.setattr(R, "_j2_live", lambda r: False)                    # the runtime raises no conflict where it closes the thread
+    ref, _ = _born_site(j2, answers={"priority.bargain": {"answer": "accept", "why": "fits"}}, monkeypatch=monkeypatch, items=LIMIT_ITEMS)
+    assert _conflicts(R, ref) == [], "the runtime raised none: the bound closed the thread in silence"
+    thread = next(p["thread"] for p in R.board(ref) if p["src"] == "Adaptation" and p["msg_type"] == "propose")
+    monkeypatch.setattr(R, "_j2_live", lambda r: True)
+    row = v1().line_conflict(ref, thread, "the bargain reached its bound", bound="hops", src="Coordination")
+    [conflict] = _conflicts(R, ref)
+    assert row and conflict["options"] == R._limit_ways(ref, thread) and [o["id"] for o in conflict["options"]] == ["leave:D2", "stop"]
+    assert v1().line_conflict(ref, thread, "the bargain reached its bound", bound="hops", src="Coordination") is None and len(_conflicts(R, ref)) == 1
+    own = v1().line_conflict(ref, "x-other", "Priority said no", options=[W.option(W.STOP_OPTION, "Stop here", "it stops")])
+    assert own["payload"]["options"][0]["id"] == "stop", "ways given are the ways carried; Priority's limit ways are asked for only when none are given"
 
 
 def test_f2_the_two_handlers_are_the_layers_own_now_and_the_runtimes_copies_stay_the_fallback(j2):
