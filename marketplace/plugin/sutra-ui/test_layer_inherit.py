@@ -589,9 +589,8 @@ def test_i3_case_9_a_words_part_or_a_layout_part_dropped(tmp_path):
     layout = {g: dict(parts) for g, parts in v1.LAYOUT.items()}
     del layout["goal"]["skills"]
     assert C.case_9(stub(tmp_path / "l", LAYOUT=layout)) == ["coordination/v2: it drops the layout goal.skills of its parent"]
-    assert C.case_9(stub(tmp_path / "g", WORDS={})) == ["coordination/v2: it drops the words goal.does of its parent",
-                                                        "coordination/v2: it drops the words goal.skills of its parent",
-                                                        "coordination/v2: it drops the words tie.tie of its parent"]
+    every = ["coordination/v2: it drops the words %s.%s of its parent" % (g, part) for g, parts in v1.WORDS.items() for part in parts]
+    assert len(every) > 2 and C.case_9(stub(tmp_path / "g", WORDS={})) == every      # every part v1 holds, as many as it holds
     extra = dict(copy.deepcopy(v1.WORDS), more={"part": {"x": "an added part"}})
     assert C.case_9(stub(tmp_path / "e", WORDS=extra)) == [], "a child may add what its parent has not"
 
