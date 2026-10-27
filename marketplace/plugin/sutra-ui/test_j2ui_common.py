@@ -15,7 +15,9 @@ Named claims:
         nothing under it ('/home', '/private', '/opt-in', '/root') and a route that is not under one of this machine's folders
         ('/home/about', '/private/members', 'Plan B:/pricing') are pages of the owner's site and reach the page as they were said;
         the owner's own words (a user message's text, the goal, a Said line) are never rewritten; the line a function waits on
-        the owner with (the Identity lane, the Map node) is made from the ask, not from functions_view's own scrubbed one
+        the owner with (the Identity lane, the Map node) is made from the ask, not from functions_view's own scrubbed one;
+        functions_view scrubs its read with this same rule (machine_paths), so the Audit tab, the lanes and the Map, which are
+        made of its read, say the owner's routes as the owner said them, and the two scrubs can never disagree
   C1-7  a department with no cycle is 'not_started'; a broken sub-read leaves its attribute empty, says why, and still gives a ctx
   C1-8  the W-k numbering, who/dest/fn_id and step_at, on a department Root set up
 """
@@ -30,7 +32,9 @@ from test_fixtures.j2ui import harness as H
 from test_fixtures.j2ui import proto
 from test_fixtures.j2ui.core_fixtures import *  # noqa: F401,F403
 
+import functions_view as FV
 import j2ui_common as C
+import machine_paths as MP
 
 KEYS56 = ["chat", "total", "status", "thinking", "step", "steps", "goal", "stamped", "workflows", "budget", "spent", "conflicts",
           "audits", "versions", "cycle", "calls", "error", "done", "atoms_v1", "turn", "cycle_turns", "max_turns", "paused",
@@ -315,6 +319,31 @@ def test_c16_a_drive_letter_is_a_drive_only_where_a_windows_path_follows(machine
     assert C.clean("C:/ProgramData/x/y.cfg and C:/Windows/System32/a.dll") == "y.cfg and a.dll"
 
 
+#: strings the two scrubs must say the same: pages of the owner's site, a relative file, a date, a URL, and paths of this machine (HOME is /Users/me)
+SAME_BOTH_WAYS = SITE_ROUTES + OWNER_ROUTES + (
+    "build/v1/index.html opens on 5/6/2026 and 24/7/365", "https://example.test/var/log/x", "wrote /Users/me/y/z.txt.", "C:\\Users\\me\\f.txt now",
+    "in ~/notes/a.md, ok", "/private/var/folders/ab/cd/ef.json", "(/Users/me/a) and \"/Users/me/b/c.md\"", "Plan B:/pricing and C:/Users/me/f.txt")
+
+
+@pytest.mark.parametrize("words", SAME_BOTH_WAYS)
+def test_c16_functions_view_and_the_adapter_scrub_with_one_rule(machine, words):
+    """Finding N1, third part. functions_view's own path rule cut any /a/b, so what the adapter read from it (the Audit tab, the lanes,
+    the Map) was already cut when the adapter's rule, which keeps the owner's pages, saw it. Both scrub by machine_paths now: a
+    string comes out of functions_view as it comes out of the adapter, and neither makes 'build/v1/index.html' into 'buildindex.html'."""
+    machine("/Users/me")
+    assert FV._clean(words) == C.clean(words) == MP.shorten(words)
+    assert FV._clean({"a": [words, {"b": words}], "token": "t"}) == {"a": [FV._clean(words), {"b": FV._clean(words)}]}
+
+
+def test_c16_the_path_rule_is_a_module_of_its_own_that_neither_reader_owns():
+    """functions_view cannot read j2ui_common (j2ui_common reads functions_view), so the rule is machine_paths': it reads neither."""
+    tree = ast.parse((UI / "machine_paths.py").read_text())
+    imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names} | \
+        {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+    assert not [m for m in imported if m == "functions_view" or m.startswith("j2ui_")], imported
+    assert C.ABS_PATH is MP.ABS_PATH and C.shorten is MP.shorten and FV.MP is MP
+
+
 def test_c16_the_owners_own_words_are_never_rewritten_even_when_they_name_a_path_shaped_page(machine):
     machine("/Users/me")
     mine = "keep /home/about, /private/area and /var/news; /Users/login is the sign-in"
@@ -349,7 +378,7 @@ def identity(mods, ref=REF):
 
 
 def test_c16_the_line_identity_waits_on_the_owner_with_keeps_the_owners_routes(mods, machine):
-    """Finding N1, second part. functions_view scrubs its read with a path rule of its own, to which any /a/b is a path, so the ask
+    """Finding N1, second part. functions_view used to scrub its read with a path rule of its own, to which any /a/b was a path, so the ask
     it quotes came out as 'Never link area from the menu and keep about first': the Identity lane and the Map node said a rule
     that was not the one the owner is asked to stamp. The line is made from the ask itself, as the pause says it."""
     machine("/Users/me")
@@ -391,6 +420,17 @@ def test_c16_the_ask_the_line_is_made_of_is_the_one_functions_view_picks(mods):
     ask(mods, "j2_identity", id="a-3", engine="Identity", text="What is the school called?")
     cycle(mods, "waiting", 1, open_ask="a-3")
     assert identity(mods)["line"] == said_by_fv() == "What is the school called?"
+
+
+def test_c16_functions_views_own_line_keeps_the_owners_routes_too(mods, machine):
+    """The line is made again here only to keep the owner's own words (a Said); the pages the owner quotes in an ask no longer
+    need it: functions_view's own line carries them, so a lane or a Map node that is not made again (a function's other lines)
+    would not cut them either."""
+    machine("/Users/me")
+    text = "A rule, as understood: Never link /private/area from the menu and keep /home/about first"
+    ask(mods, "rule", id="a-rule", engine="Identity", text=text)
+    by_fv = next(n for n in mods.F.functions(REF)["functions"] if n["fn"] == "identity")["line"]
+    assert by_fv == text == identity(mods)["line"]
 
 
 def test_c16_a_line_that_is_not_an_asks_is_left_as_functions_view_said_it(mods):

@@ -28,6 +28,7 @@ import engine_runtime as R
 import j2_runtime as J
 import layer_schema as S
 import layers
+import machine_paths as MP
 import owner_words
 import website_dept as W
 
@@ -36,6 +37,8 @@ STATES = ("working", "waiting", "waiting_on_you", "fault", "quiet")
 WORDS = {"working": "working", "waiting": "waiting", "waiting_on_you": "waits on you", "fault": "fault", "quiet": "quiet"}
 OPEN = ("submitted", "working")                 # a thread between functions that still waits on its decider
 FIRE_GRACE_S = 300                              # how long a start may lag its trigger before it is a fault: the motor ticks every 3 s
+#: anything that looks like a path, a page of the owner's site as much as a file of this machine: what a test reads a view with to
+#: see that it names no path at all. NOT what _clean scrubs with (that is machine_paths': a path of THIS machine only)
 PATHLIKE = re.compile(r"(?:~|\b[A-Za-z]:)?(?:/[\w.@-]+){2,}/?")
 
 # The cycle's state, read as who holds the turn and what that function is doing. checking is Root's (step 5): Root is
@@ -89,15 +92,19 @@ LIVE = {"complete": "done", "filed": "done", "recorded": "done", "done": "done",
 
 
 # ---- small readers -------------------------------------------------------------------------------------------------
-def _clean(value):
-    """No private key and no path ever leaves this read: a key in the ledger's private set is dropped, and a string
-    that names a file on this machine keeps the file's name only (names, never paths)."""
+def _clean(value, rule=None):
+    """No private key and no path of this machine ever leaves this read: a key in the ledger's private set is dropped, and a
+    string that names a file on this machine keeps the file's name only (names, never paths). A path is this machine's only
+    under a folder this machine has (machine_paths), so the pages the owner quotes in a rule or a done-when ('/home/about',
+    'Plan B:/pricing'), a relative file (build/v1/index.html) and a date (5/6/2026) leave as they were said. `rule` is the
+    path rule, taken once for the whole read."""
+    rule = rule or MP.rule()
     if isinstance(value, dict):
-        return {k: _clean(v) for k, v in value.items() if str(k).lower() not in J.PRIVATE_KEYS}
+        return {k: _clean(v, rule) for k, v in value.items() if str(k).lower() not in J.PRIVATE_KEYS}
     if isinstance(value, list):
-        return [_clean(v) for v in value]
+        return [_clean(v, rule) for v in value]
     if isinstance(value, str):
-        return PATHLIKE.sub(lambda m: m.group(0).rstrip("/").rsplit("/", 1)[-1], value)
+        return rule.sub(MP.short_path, value)
     return value
 
 

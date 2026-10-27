@@ -796,11 +796,13 @@ def test_p4_the_prices_are_the_newest_few_newest_first_and_a_row_with_no_answer_
     assert S.validate_view("priority", view) == []
 
 
-def test_p4_the_words_are_the_ones_the_pane_already_says_and_the_owners_not_the_insides(live, ctx):
+def test_p4_the_words_are_the_ones_the_pane_already_says_and_the_owners_not_the_insides(live, ctx, monkeypatch):
     """said yes, asked for less, said no: the words of the bargains beside the prices, and of owner_words' phrase table; and
     a why that carries an inside word is said again in the owner's."""
     import owner_words
     W, R, J, _ = live
+    monkeypatch.setenv("HOME", "/Users/someone")      # a path is this machine's only under a folder this machine has (machine_paths)
+    monkeypatch.setenv("USERPROFILE", "/Users/someone")
     assert V1.SAID == {"accept": "said yes", "counter": "asked for less", "reject": "said no"}
     table = dict(owner_words.BARGAIN_WORDS)
     assert table["Countered."].rstrip(".").lower() == V1.SAID["counter"] and table["Refused."].rstrip(".").lower() == V1.SAID["reject"]

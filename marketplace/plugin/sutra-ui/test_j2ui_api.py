@@ -12,6 +12,7 @@ Named claims:
         nothing answer 409 and the department's files do not change
 """
 import hashlib
+import json
 import os
 import re
 import sys
@@ -251,13 +252,15 @@ def test_c55_the_owners_words_reach_the_page_as_they_were_said(mods, client, bor
 
 #: the owner's rule, quoted routes and all: pages of the site (a route that is not a path of this machine, and 'Plan B:/pricing')
 ROUTES = "Never link /private/area from the menu, always keep /home/about first, and Plan B:/pricing stays; /private/members is for members"
+AUDITED = "Never link /private/area from the menu and always keep /home/about first"        # a done-when the owner stamped, as Audit reads it
 
 
 def test_c55_routes_the_owner_quoted_reach_the_page_unchanged_in_every_voice(mods, client, machine):
     """The verifier's finding N1. The owner says 'Never link /private/area from the menu and always keep /home/about first'; the
     stamp question Identity puts, Identity's and Adaptation's messages, the pause the page draws, and a condition all reach the
     page with the routes as they were said, so the owner stamps the rule that was recorded. ('clean' used to drop '/home' and
-    '/private' from them: 'A rule, as understood: Never link area from the menu and always keep about first'.)"""
+    '/private' from them: 'A rule, as understood: Never link area from the menu and always keep about first'.) So do the lanes, the
+    Map and the Audit tab (the done-when Audit read item by item, its evidence, `workable` and the line that waits on a fact)."""
     machine("/Users/me")
     rule = "A rule, as understood (it never does this, from now on): " + ROUTES
     stamp_ask(mods, "rule", text=rule, tag="refuse", line=ROUTES, words="the owner's words, said")
@@ -285,6 +288,27 @@ def test_c55_routes_the_owner_quoted_reach_the_page_unchanged_in_every_voice(mod
     assert (node["status"], node["detail"]) == ("waiting_on_you", cut)
     for text in (lane["doing"], node["detail"]):
         assert "link area from" not in text and "keep about first" not in text, text
+    # the Audit tab (finding N1, third part): Audit's reading of the version, item by item, is read through its pane, which
+    # functions_view scrubs; the done-when the owner stamped, Audit's evidence, `workable` and the line that waits on a fact are
+    # made of it. None of the earlier asserts read state.audits, so none of them proved the Audit tab says the rule as recorded.
+    cycle(mods, "running", 6)
+    post(mods, "Audit", "Identity", "inform", {"word": "finding", "claim": AUDITED, "severity": "high", "about_version": 1,
+                                               "findings": [{"page": "about.html", "claim": AUDITED, "severity": "high"}]},
+         thread="x-find1", about={"art": "Live site", "v": 1})
+    item = {"subject": "the menu", "severity": "high", "method": "code"}
+    mods.R.audit_record(REF, None, "Live site", 1, True, None, [
+        dict(item, id="D2", claim=AUDITED, verdict="not_met", evidence="the menu on /home/about links /private/area"),
+        dict(item, id="D3", claim="Plan B:/pricing stays", verdict="to_confirm", evidence="nobody said whether /private/members is first")], [])
+    C.touch(REF)
+    s = client.get(url("api/state")).json()
+    rows = {r["id"]: r for r in s["audits"][-1]["results"]}
+    assert (rows["D2"]["criterion"], rows["D2"]["note"]) == (AUDITED, "the menu on /home/about links /private/area")
+    assert rows["D3"]["needs_requester_fact"] == "Plan B:/pricing stays"
+    assert rows["D3"]["note"] == "to confirm with you: nobody said whether /private/members is first"
+    assert s["audits"][-1]["extra_issues"][0]["criterion"] == AUDITED, "the same tab says the one rule one way"
+    assert s["workable"] == [AUDITED, "to confirm with you: Plan B:/pricing stays"]
+    blob = json.dumps(s)
+    assert "link area from" not in blob and "keep about first" not in blob and "Plan pricing" not in blob, "no voice of the page says it differently"
 
 
 def test_c55_a_done_when_the_owner_is_asked_to_stamp_reads_the_same_on_the_pause_the_lane_and_the_map(mods, born, tick, client):
