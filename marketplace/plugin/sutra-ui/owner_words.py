@@ -19,10 +19,13 @@ always), a data value, is left as it is: the badge that prints it says 'never' f
 tags says 'never' too ('tagged go, ask, never or always'). One line is read whole: Coordination's who-may-post note, which
 carried the act's own id ('Identity may refuse to Owner'), is said again the way the runtime says it now (MAY_NOTE).
 
-One more kind of line is read word by word, and only where it is composed: a sentence a model wrote in its own words (said_plainly).
-The agent is taught accept, counter and reject, so its why may use them, or grant and refuse. That sentence is said once in the
-owner's words where its function composes it (Priority's, in priority_post), so the post, the record, the ledger's line and every
-read of them agree; a record written before that is said again on the way out by the same function, not by a table of a pane's own.
+One more kind of line is read word by word, and only where it is composed: a sentence a model wrote in its own words (plainly,
+said_plainly). The agent is taught accept, counter and reject, so its why may use them, or grant and refuse, as the verbs and as the
+nouns they are ('the full grant would go past the room'): each is said by what it is where it stands, and a sentence the pass cannot
+say with its grammar whole, or a word of the bargain that is left in it, is told not to be plain, so that its composer says the answer
+in words of its own and never posts the garble. That sentence is said once in the owner's words where its function composes it (Priority's, in priority_post),
+so the post, the record, the ledger's line and every read of them agree; a record written before that is said again on the way out by
+the same function, not by a table of a pane's own.
 """
 import functools
 import re
@@ -137,57 +140,207 @@ def plain(line):
 
 #: The bargain's inside words as a model uses them in a sentence of its own, and what the screen says in their place (said yes,
 #: asked for less, said no; never grant, counter or refuse). plain() says phrases and never a bare verb, so a sentence a model
-#: wrote is read again word by word; every form is spelt out, so the sentence keeps its grammar.
-INSIDE = types.MappingProxyType({
-    'grant': 'say yes to', 'grants': 'says yes to', 'granted': 'said yes to', 'granting': 'saying yes to',
-    'reject': 'say no to', 'rejects': 'says no to', 'rejected': 'said no to', 'rejecting': 'saying no to',
-    'refuse': 'say no to', 'refuses': 'says no to', 'refused': 'said no to', 'refusing': 'saying no to',
-    'counter': 'ask for less', 'counters': 'asks for less', 'countered': 'asked for less', 'countering': 'asking for less',
-    'refusal': 'no', 'rejection': 'no',
-    'counter-offer': 'ask for less', 'counter-offers': 'asks for less', 'counteroffer': 'ask for less', 'counteroffers': 'asks for less',
-    'counter-proposal': 'ask for less', 'counter-proposals': 'asks for less'})
-_INSIDE_RE = r'\b(?:%s)\b' % '|'.join(re.escape(w) for w in sorted(INSIDE, key=len, reverse=True))
+#: wrote is read again word by word, by family: grant (g), reject (r), refuse (f) and counter (c), each in its verb forms (the
+#: base, the third person, the past and the -ing) and its noun forms. Where a word stands says what it is (_is_noun): the verb is
+#: said as the act ('say yes to'), the noun as the answer ('yes', 'no', 'ask for less'), a participle before a noun as the answer it
+#: names ('the said-yes line'). Every form is spelt out, so the sentence keeps its grammar.
+_FORMS = ('base', 's', 'ed', 'ing')
+_VERBS = types.MappingProxyType({'g': ('say yes to', 'says yes to', 'said yes to', 'saying yes to'),
+                                 'r': ('say no to', 'says no to', 'said no to', 'saying no to'),
+                                 'f': ('say no to', 'says no to', 'said no to', 'saying no to'),
+                                 'c': ('ask for less', 'asks for less', 'asked for less', 'asking for less')})
+_NOUNS = types.MappingProxyType({'g': ('yes', 'yeses'), 'r': ('no', 'nos'), 'f': ('no', 'nos'), 'c': ('ask for less', 'asks for less')})
+_BEFORE_A_NOUN = types.MappingProxyType({'g': 'said-yes', 'r': 'said-no', 'f': 'said-no', 'c': 'asked-for-less'})
+#: a participle that nothing is done by or to ('the offer is rejected', 'Not granted', 'granted by Priority') is the answer it was given
+_GIVEN = types.MappingProxyType({'g': 'given a yes', 'r': 'given a no', 'f': 'given a no', 'c': 'met with an ask for less'})
+#: 'refuse to grant' is 'decline to say yes to': a refusal to do something, said without the word
+_DECLINES = ('decline', 'declines', 'declined', 'declining')
+_VERB_FORMS = types.MappingProxyType({'g': ('grant', 'grants', 'granted', 'granting'), 'r': ('reject', 'rejects', 'rejected', 'rejecting'),
+                                      'f': ('refuse', 'refuses', 'refused', 'refusing'), 'c': ('counter', 'counters', 'countered', 'countering')})
+#: the nouns of the same family, singular and plural: the answer a word names ('the refusal stands', 'a counter-offer of two')
+_NOUN_FORMS = types.MappingProxyType({'r': (('rejection', None),), 'f': (('refusal', None),),
+                                      'c': (('counter-offer', 'counter-offers'), ('counteroffer', 'counteroffers'), ('counter-proposal', 'counter-proposals'))})
+_FORM_OF = {w: (fam, form) for fam, ws in _VERB_FORMS.items() for w, form in zip(ws, _FORMS)}
+_FORM_OF.update({w: (fam, form) for fam, pairs in _NOUN_FORMS.items() for one, many in pairs for w, form in ((one, 'n'), (many, 'ns')) if w})
+INSIDE = types.MappingProxyType({**{w: _VERBS[fam][_FORMS.index(form)] for w, (fam, form) in _FORM_OF.items() if form in _FORMS},
+                                 **{w: _NOUNS[fam][form == 'ns'] for w, (fam, form) in _FORM_OF.items() if form in ('n', 'ns')}})
+_INSIDE_RE = re.compile(r'(?<![\w-])(?P<w>%s)(?![\w-])' % '|'.join(re.escape(w) for w in sorted(_FORM_OF, key=len, reverse=True)), re.I)
+#: 'the granting of' is 'the saying yes to': the gerund that is a noun takes its 'of' with it
+_GERUND_OF = re.compile(r"(?<![\w-])(?P<det>the|a|an|this|that|its|their|any|each|no|full|whole|partial)(?P<sp>\s+)(?P<w>granting|rejecting|refusing|countering)\s+of(?![\w-])", re.I)
+
+#: what stands before and after a word says whether it is a noun or a verb. A determiner, an adjective of size, a number or a
+#: possessive before it is a noun's; a pronoun, a name, 'to' or a modal before it is a verb's; 'of', 'is' and the like after it are a noun's,
+#: and a determiner, a name or a number after it are a verb's object.
+_DETERMINERS = frozenset('a an the this that these those its their his her my your our any each every no some another such all both either neither which whose what'.split())
+_ADJECTIVES = frozenset('full whole partial small smaller large larger big bigger first second third last next new final further extra single total half same other '
+                        'real clear simple blanket outright more less least most fewer many few several little part'.split())
+_NUMBERS = frozenset('zero one two three four five six seven eight nine ten eleven twelve dozen'.split())
+#: before 'grants' these make it the verb: one thing doing it (each grants, it grants, an offer that grants)
+_ONE_DOING = frozenset('a an each every another this that one either neither it he she which who'.split())
+_RELATIVE = frozenset(('that', 'which', 'who'))
+_DOERS = frozenset("i we you they who to will would can could shall should may might must not never cannot don't doesn't didn't won't wouldn't can't couldn't shouldn't "
+                   "also still then just always simply even instead priority adaptation identity root coordination audit owner".split())
+_NOUN_AFTER = frozenset('of is are was were would will for fits fit does did has have had can could should may might must left made stands stand exceeds exceed '
+                        'goes go went cost costs happen happens remain remains hold holds cover covers rise rises'.split())
+#: before a participle these make it the passive ('is granted', 'been refused', 'neither granted nor refused'): nothing did it that the sentence names
+_BE = frozenset('is are was were be been being am get gets got getting remain remains remained stay stays seem seems neither nor either'.split())
+_OBJECT_STARTS = frozenset('a an the this that these those its their his her my your our any each every all both some no none nothing anything everything '
+                           'something it them him me us you one another more less only half most much many few other'.split()) | _NUMBERS
+#: after 'say yes to' these make it 'say yes': a word that begins no object (a preposition, a conjunction, a verb that follows its
+#: subject, an adverb). 'by' is not one: 'said yes to by Priority' is the passive, with its 'to'.
+_NOT_AN_OBJECT = frozenset('in on at with within without from into under over after before until while once though although unless whereas because since as when '
+                           'if given so but and or nor yet then than also too again already anyway instead now today tomorrow here there earlier later twice '
+                           'fully completely entirely outright altogether partly partially for of is are was were be been being am would will can could '
+                           'should may might must shall has have had do does did'.split())
+_TO_DROPPED = re.compile(r'\b(say|says|said|saying)\s+(yes|no)\s+to(?=\s*(?:$|[.,;:!?)\]}\u2013\u2014]|-(?=\s)|(?:%s)(?![\w-])))' % '|'.join(sorted(_NOT_AN_OBJECT)), re.I)
+_PREV = re.compile(r"(?:(?P<w>[\w\x00'-]*[\w\x00'])|(?P<p>[^\w\s]))\s*$")
+_NEXT = re.compile(r"\s*(?:(?P<w>[\w\x00][\w\x00'-]*)|(?P<p>[^\w\s]))")
 
 #: 'order' as a verb, which the screen keeps off as it keeps off grant (Priority prices and holds and never orders), said as
-#: 'ask for'. Only where it is a verb for certain: after a subject that did the ordering, or a modal. 'order' as the word for
-#: a line's order ('in order', 'the order of the line', 'Priority order: Plan, Write', 'ordered by cost') is the ordinary word, and is left.
+#: 'ask for'. Only where it is a verb for certain: after a subject that did the ordering, or a modal. 'order' as the word for a
+#: line's order ('in order', 'the order of the line', 'Priority order: Plan, Write', 'ordered by cost') is the ordinary word, and is left.
 _ORDERS_AS = types.MappingProxyType({'order': 'ask for', 'orders': 'asks for', 'ordered': 'asked for'})
 _ORDER_RE = re.compile(
     r'\b(?:(?P<by>Priority|it|he|she|which|that)(?P<s1>\s+)(?P<v1>orders|ordered)'
     r'|(?P<mod>I|we|you|they|to|will|would|shall|should|must|can|could|may|might|not|never|cannot|don\'t|doesn\'t|didn\'t|won\'t)(?P<s2>\s+)(?P<v2>order))\b'
     r'(?![\w-])(?!\s+by\b)', re.I)
 
+#: what is left of the bargain's inside words after the pass is not plain: a form it does not know (grantee, counterpart)
+_LEFT_IN = re.compile(r"[\w'-]*(?:grant|counter|refus|reject)[\w'-]*|(?<![\w-])orders(?![\w-])", re.I)
 
-def said_plainly(text, keep=()):
-    """A sentence a model wrote, in the owner's words: the phrases of BARGAIN_WORDS, then the inside words (INSIDE) said again,
-    'I reject this; I would counter with two' as 'I say no to this; I would ask for less with two'. A noun after its article
-    (the grant) is a yes. 'Order' as a verb (Priority never orders) is 'ask for'. A capital stays a capital. Said twice it says
-    the same, so a sentence composed in the owner's words and read again on its way out is not changed by the second reading.
-    `keep`: the names in the sentence that are a workflow's or an engine's and stay as they are, though they are an inside word
-    (a workflow called Grant, or Order, is not said yes to). Only for a sentence a model wrote, or a line made of one: the owner's
-    own words, and any data value (a rule's tag, an answer's id), are not its."""
-    def said(m):
-        word, out = m.group(0), INSIDE[m.group(0).lower()]
-        return out.upper() if len(word) > 1 and word.isupper() else (out[:1].upper() + out[1:] if word[:1].isupper() else out)
 
-    def asked(m):
-        subject, gap, verb = (m.group('by'), m.group('s1'), m.group('v1')) if m.group('by') else (m.group('mod'), m.group('s2'), m.group('v2'))
-        out = _ORDERS_AS[verb.lower()]
-        return subject + gap + (out.upper() if verb.isupper() and len(verb) > 1 else out)
+def _around(text, m):
+    """The word before a match, the word before that, and the word after it, each as (lowercase, as written); (None, None) for the
+    edge of the text or a mark of punctuation, which says only that no word stands there."""
+    chunk = text[max(0, m.start() - 80):m.start()]
+    before = _PREV.search(chunk)
+    before2 = _PREV.search(chunk[:before.start()]) if before and before.group('w') else None
+    after = _NEXT.match(text, m.end())
+    pick = lambda g: ((g.group('w').lower(), g.group('w')) if g and g.group('w') else (None, None))   # noqa: E731
+    return pick(before), pick(before2), pick(after)
+
+
+def _starts_object(word):
+    """Whether the next word begins what a verb is done to: a determiner, a pronoun, a number, a name (a capital, or a workflow's name
+    kept apart) -- as against a preposition, an auxiliary, an adverb or the end."""
+    low, raw = word
+    return bool(low) and (raw[0] == '\x00' or raw[0].isupper() or raw[0].isdigit() or low in _OBJECT_STARTS)
+
+
+def _is_noun(form, before, after):
+    """Whether grant, grants (or reject, counter, order) is a noun here, from the word before and the word after: 'a partial grant
+    of two', 'no grants left' are nouns; 'I grant none', 'an offer that grants Plan', 'each grants one run' are verbs."""
+    (pw, praw), (nw, _) = before, after
+    obj = _starts_object(after)
+    if form == 's' and pw in _ONE_DOING:
+        return False
+    if pw in _RELATIVE and obj:
+        return False
+    if pw and (pw in _DETERMINERS or pw in _NUMBERS or pw[0].isdigit() or pw.endswith("'s") or pw.endswith("s'")):
+        return True
+    if pw in _ADJECTIVES:
+        return not obj
+    if pw in _DOERS or (praw and (praw[0] == '\x00' or praw[0].isupper())):
+        return False
+    if nw in _NOUN_AFTER:
+        return True
+    if obj:
+        return False
+    return form == 's' and pw is None and nw is None      # 'Grants: none' is the count; 'the agent refuses.' is the verb, and so is a base form
+
+
+def _before_a_noun(before, after):
+    """Whether a participle stands before the noun it describes ('the granted line'), not after what it was done to ('the line
+    was granted')."""
+    (pw, _), (nw, _) = before, after
+    return bool(pw) and bool(nw) and nw not in _NOT_AN_OBJECT and nw not in ('by', 'to') and (
+        (pw in _DETERMINERS and pw not in _RELATIVE) or pw in _NUMBERS or pw in _ADJECTIVES or pw.endswith("'s") or pw.endswith("s'"))
+
+
+def _passive(before, before2, after):
+    """Whether a participle is the passive with nothing named that did it, or only 'by' what did: 'is rejected', 'has not been
+    granted', 'Not granted', 'granted by Priority'."""
+    (pw, _), (p2, _), (nw, _) = before, before2, after
+    return nw == 'by' or pw in _BE or (pw == 'not' and (p2 is None or p2 in _BE))
+
+
+def _as(word, out):
+    """The replacement in the case of the word: a capital stays a capital, all capitals stay all capitals."""
+    return out.upper() if len(word) > 1 and word.isupper() else (out[:1].upper() + out[1:] if word[:1].isupper() else out)
+
+
+def _inside(m, text, faults):
+    """One inside word, said as the owner says it, by what it is where it stands. A form this cannot say plainly is said as near as
+    it can and noted in `faults`: the sentence is not plain."""
+    word = m.group(0)
+    fam, form = _FORM_OF[word.lower()]
+    before, before2, after = _around(text, m)
+    nw, kind = after[0], 'verb'
+    if form in ('n', 'ns'):
+        out, kind = _NOUNS[fam][form == 'ns'], 'noun'
+    elif form in ('base', 's') and _is_noun(form, before, after):
+        out, kind = _NOUNS[fam][form == 's'], 'noun'
+    elif form == 'ed' and _before_a_noun(before, after):
+        out, kind = _BEFORE_A_NOUN[fam], 'noun'                # the granted line
+    elif form == 'ed' and _passive(before, before2, after):
+        out, kind = _GIVEN[fam], 'passive'
+        if nw == 'to' and fam != 'c':
+            faults.append(word)                            # 'granted to Plan' gives, and is not 'given a yes to Plan'
+    else:
+        out = _VERBS[fam][_FORMS.index(form)]
+        if nw == 'to' and fam == 'f':
+            out = _DECLINES[_FORMS.index(form)]            # refused to grant: declined to say yes to
+        elif nw == 'to' and fam != 'c':
+            faults.append(word)
+            out = out[:-3]
+        elif fam == 'c' and _starts_object(after):
+            out += ' on'
+    return _as(word, out)
+
+
+def _asked(m):
+    """'order' as a verb after the subject that did the ordering, or a modal, said as 'ask for'."""
+    subject, gap, verb = (m.group('by'), m.group('s1'), m.group('v1')) if m.group('by') else (m.group('mod'), m.group('s2'), m.group('v2'))
+    out = _ORDERS_AS[verb.lower()]
+    return subject + gap + (out.upper() if verb.isupper() and len(verb) > 1 else out)
+
+
+def plainly(text, keep=()):
+    """A sentence a model wrote, in the owner's words, and whether it is plain: (the sentence, True) when the pass could say every
+    inside word in it as the owner does, (the sentence as near as it came, False) when a form is left that it cannot say with its
+    grammar whole (a grantee, 'granted to Plan', 'ungranted lines') or a word of the bargain is still in it. The one who composes
+    the sentence puts a sentence of its own in place of one that is not plain (Priority's, from the answer and the room), so a
+    garbled line is never posted.
+    `keep`: the names in the sentence that are a workflow's or an engine's and stay as they are, though they are an inside word (a
+    workflow called Grant, or Order, is not said yes to)."""
     held, text = {}, str(text or '')
     for name in sorted({str(n) for n in keep or () if n}, key=len, reverse=True):
         mark = '\x00%d\x00' % len(held)
         text, n = re.subn(r'(?<![\w-])%s(?![\w-])' % re.escape(name), mark, text)
         if n:
             held[mark] = name
-    text = re.sub(r'\b(a|an|the|this|that|its|their|any|each)\s+grants?\b', r'\1 yes', plain(text), flags=re.I)
-    text = re.sub(_INSIDE_RE, said, text, flags=re.I)
-    text = re.sub(r'\b(say|says|said|saying)\s+(yes|no)\s+to(?=\s*(?:$|[.,;:!?)]|(?:for|because|since|as|when|if|over|given)\b))', r'\1 \2', text, flags=re.I)
-    text = _ORDER_RE.sub(asked, text)
-    text = re.sub(r'\b([Aa])(?= ask for less\b)', r'\1n', text, flags=re.I)
+    faults = []
+    text = plain(text)
+    text = _GERUND_OF.sub(lambda m: m.group('det') + m.group('sp') + _VERBS[_FORM_OF[m.group('w').lower()][0]][3] + (' on' if m.group('w').lower() == 'countering' else ''), text)
+    text = _INSIDE_RE.sub(lambda m: _inside(m, text, faults), text)
+    text = _TO_DROPPED.sub(r'\1 \2', text)
+    text = _ORDER_RE.sub(_asked, text)
+    text = re.sub(r'\b([Aa])(?= ask(?:ed)?\b)', r'\1n', text)
+    plain_now = not faults and not _LEFT_IN.search(text)
     for mark, name in held.items():
         text = text.replace(mark, name)
-    return text
+    return text, plain_now
+
+
+def said_plainly(text, keep=()):
+    """A sentence a model wrote, in the owner's words: the phrases of BARGAIN_WORDS, then the inside words (INSIDE) said again by what
+    each is where it stands, 'I reject this; I would counter with two' as 'I say no to this; I would ask for less with two', 'a partial
+    grant of two' as 'a partial yes of two', 'no grants left' as 'no yeses left'. 'Order' as a verb (Priority never orders) is 'ask for'. A
+    capital stays a capital. Said twice it says the same, so a sentence composed in the owner's words and read again on its way
+    out is not changed by the second reading. Only for a sentence a model wrote, or a line made of one: the owner's own words, and any
+    data value (a rule's tag, an answer's id), are not its. What it cannot say plainly it says as near as it can (plainly says whether
+    that is plain); see there for `keep`."""
+    return plainly(text, keep)[0]
 
 
 def _keep(value):

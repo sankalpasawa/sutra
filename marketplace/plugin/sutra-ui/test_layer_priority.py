@@ -890,15 +890,17 @@ WHYS = {
     "accept": "Budget check: granted, I accept the whole line and need no counter; Priority orders nothing."}
 
 
-def _carrying(found, surface, thing):
-    """Every string inside `thing` that carries the agent's sentence, put under `surface`."""
+def _carrying(found, surface, thing, mark=None):
+    """Every string inside `thing` that carries the agent's sentence (or `mark`, the head of the sentence Priority put in its place),
+    put under `surface`."""
+    mark = mark or MARK
     if isinstance(thing, dict):
         for v in thing.values():
-            _carrying(found, surface, v)
+            _carrying(found, surface, v, mark)
     elif isinstance(thing, (list, tuple)):
         for v in thing:
-            _carrying(found, surface, v)
-    elif isinstance(thing, str) and MARK in thing:
+            _carrying(found, surface, v, mark)
+    elif isinstance(thing, str) and mark in thing:
         found.setdefault(surface, []).append(thing)
 
 
@@ -933,9 +935,10 @@ def test_p4_a_no_a_model_wrote_in_the_inside_words_leaves_none_in_priority_s_pan
     assert S.validate_view("priority", pane) == []
 
 
-def _every_read(live, ref):
+def _every_read(live, ref, mark=None):
     """What each way the owner reads the department says of the agent's sentence, {read: [string that carries it]}: the record
-    (the ledger, the board, the prices), Priority's pane and its step's card, every function's page, the Map and the owner's chat."""
+    (the ledger, the board, the prices), Priority's pane and its step's card, every function's page, the Map and the owner's chat.
+    `mark`: the head of the sentence to look for, when it is not the agent's (the one Priority says in its place)."""
     import functions_view as F
     import owner_words
     from fastapi import FastAPI
@@ -943,23 +946,23 @@ def _every_read(live, ref):
     import j2ui_api
     W, R, J, _ = live
     found = {}
-    _carrying(found, "the ledger", J.events(ref))
-    _carrying(found, "the board", R.board(ref))
-    _carrying(found, "the prices on record", _prices(W, ref))
-    _carrying(found, "the board as a line", [R._line(p) for p in R.board(ref)])
-    _carrying(found, "the board as a read says a post", [F._said(p) for p in R.board(ref) if p["src"] == "Priority"])
-    _carrying(found, "Priority's pane", V1.view(ref, W.dept(ref), J.events(ref), W.asks(ref)))
-    _carrying(found, "Priority's step card", owner_words.steps(R.steps_view(ref, "Priority")))
-    _carrying(found, "Priority's step rows", [r for r in R.step_rows(ref) if r["step"].startswith("priority")])
+    _carrying(found, "the ledger", J.events(ref), mark)
+    _carrying(found, "the board", R.board(ref), mark)
+    _carrying(found, "the prices on record", _prices(W, ref), mark)
+    _carrying(found, "the board as a line", [R._line(p) for p in R.board(ref)], mark)
+    _carrying(found, "the board as a read says a post", [F._said(p) for p in R.board(ref) if p["src"] == "Priority"], mark)
+    _carrying(found, "Priority's pane", V1.view(ref, W.dept(ref), J.events(ref), W.asks(ref)), mark)
+    _carrying(found, "Priority's step card", owner_words.steps(R.steps_view(ref, "Priority")), mark)
+    _carrying(found, "Priority's step rows", [r for r in R.step_rows(ref) if r["step"].startswith("priority")], mark)
     for fn in ("identity", "adaptation", "priority", "coordination", "audit"):
-        _carrying(found, "the page of a function", F.function(ref, fn))
+        _carrying(found, "the page of a function", F.function(ref, fn), mark)
     app = FastAPI()
     app.include_router(j2ui_api.router)
     client = TestClient(app)
     for route in ("api/state", "api/map", "api/board", "api/audits"):
         got = client.get("/j2ui/%s/%s" % (ref, route))
         assert got.status_code == 200, route
-        _carrying(found, "the page's " + route, got.json())
+        _carrying(found, "the page's " + route, got.json(), mark)
     return found
 
 
@@ -1117,6 +1120,198 @@ def test_p4_a_workflow_named_like_an_inside_word_keeps_its_name_in_an_older_reco
     pane = V1.view(ref, W.dept(ref), events, [])
     want = "I say no to the line: even Grant costs too much for a Counter Offer"
     assert [p["why"] for p in pane["prices"]] == [want] and [b["summary"] for b in pane["bargains"]] == [want]
+    assert S.validate_view("priority", pane) == []
+
+
+# ---- P4, closure round, gap 1: a noun is not a verb, and a sentence that cannot be said plainly is not posted -------------------------
+#: what a pass must not leave in a sentence it has said: a verb with no object ('say yes to is', 'said yes to of'), a doubled 'to', a noun in
+#: a verb's place ('each yes one run', 'I yes'); the first pass left all of them where the word was a noun or sat in a common phrase
+GARBLE = re.compile(r"\b(?:say|says|said|saying) (?:yes|no) to (?:is|are|was|were|of|in|would|will|for|and|but)\b|\bto to\b|"
+                    r"\b(?:i|we|you|they|he|she|it|each|that|which|who|to) (?:yes|no|yeses|nos)\b", re.I)
+#: any form of the bargain's inside words, by its stem (so 'ungranted' and 'refusals' are found), and 'orders'
+STEMS = re.compile(r"grant|counter|refus|reject|\borders\b", re.I)
+#: a word as a noun or as a verb by where it stands, as a model writes it, and what the owner reads
+NOUN_OR_VERB = {
+    "No grant: the room is short by 3 calls": "No yes: the room is short by 3 calls",
+    "A partial grant of two workflows fits; the full grant would go past the room": "A partial yes of two workflows fits; the full yes would go past the room",
+    "Granted in full": "Said yes in full",
+    "grant is too large": "yes is too large",
+    "Not granted": "Not given a yes",
+    "an offer that grants Plan": "an offer that says yes to Plan",
+    "each grants one run": "each says yes to one run",
+    "no grants left; two grants made": "no yeses left; two yeses made",
+    "I refuse to grant anything": "I decline to say yes to anything",
+    # the same words in the other places they stand
+    "reject: grant none": "say no: say yes to none",
+    "The grant exceeds the room; grants exceed it too": "The yes exceeds the room; yeses exceed it too",
+    "the line was granted by Priority": "the line was given a yes by Priority",
+    "the offer is rejected and this is refused": "the offer is given a no and this is given a no",
+    "Priority grants Plan and Write, not Check": "Priority says yes to Plan and Write, not Check",
+    "the granted line fits; a rejected offer": "the said-yes line fits; a said-no offer",
+    "the granting of two workflows would cost more": "the saying yes to two workflows would cost more",
+    "Granted, since it fits": "Said yes, since it fits",
+    "Refused because the room is short": "Said no because the room is short",
+    "it would grant the full line if the room held it": "it would say yes to the full line if the room held it",
+    "Priority refuses to counter": "Priority declines to ask for less",
+    "a counter that grants two": "an ask for less that says yes to two",
+    "Counter: grant Plan and Write only": "Ask for less: say yes to Plan and Write only",
+    "Priority countered the line and I counter it too": "Priority asked for less on the line and I ask for less on it too",
+    "I can grant two of the three; the rest I refuse.": "I can say yes to two of the three; the rest I say no.",
+    "rejected - over budget; granted \u2014 in full": "said no - over budget; said yes \u2014 in full"}
+
+
+def test_p4_a_noun_is_said_as_the_answer_and_a_verb_as_the_act_by_where_the_word_stands():
+    """The pass said every 'grant' as a verb, so a noun ('the full grant would go past the room') and a verb in a common phrase ('I refuse
+    to grant', 'granted in full') came out ungrammatical on the post, the price row, the ledger, the board and the chat. A pass that
+    picks the verb for a noun, leaves a dangling 'to', doubles one, or puts a noun where the verb stands must fail."""
+    import owner_words
+    for why, want in NOUN_OR_VERB.items():
+        said, plain = owner_words.plainly(why)
+        assert (said, plain) == (want, True), why
+        assert owner_words.said_plainly(why) == want and owner_words.said_plainly(said) == said, "said twice it says the same: " + why
+        assert not GARBLE.search(said) and not STEMS.search(said), said
+
+
+def test_p4_a_sentence_that_cannot_be_said_plainly_is_told_so_and_is_never_taken_for_plain():
+    """A form the pass has no grammar for (a grantee, 'granted to Plan', 'ungranted lines', a counterpart) is said as near as it can
+    and told not to be plain, so that whoever composes the sentence puts one of its own in its place. One it can say is plain, with the
+    figures and the names around it."""
+    import owner_words
+    for why in ("the grantee list is long", "an envelope granted to Plan", "ungranted lines stay", "non-granted lines", "a counterpart of Plan",
+                "an encounter with the room", "the line is counter-intuitive"):
+        assert owner_words.plainly(why)[1] is False, why
+    for why in ("fits today: about 11 calls and 0.40 USD of the 200 calls and 20.00 USD left", "room for 2 of 3 today", "", None, "Plan -> Write"):
+        assert owner_words.plainly(why)[1] is True, why
+    assert owner_words.plainly("Grantee: fits", keep=["Grantee"])[1] is True, "a name is not a sentence's fault"
+
+
+def _bad_why(R, W, J):
+    return None
+
+
+WHY_NOUNS = ("Budget check: No grant: the room is short by 3 calls. A partial grant of two workflows fits; the full grant would go past the room. "
+             "An offer that grants Plan is too large; each grants one run; no grants left, two grants made. Not granted in full. "
+             "I refuse to grant anything.")
+SAID_NOUNS = ("Budget check: No yes: the room is short by 3 calls. A partial yes of two workflows fits; the full yes would go past the room. "
+              "An offer that says yes to Plan is too large; each says yes to one run; no yeses left, two yeses made. Not given a yes in full. "
+              "I decline to say yes to anything.")
+
+
+def test_p4_a_no_a_model_wrote_with_nouns_and_common_phrases_is_whole_on_every_read_in_the_owners_words(live, monkeypatch):
+    """The sentence a model writes for a no is likelier to say 'no grant' and 'a partial grant' than 'I grant' (Priority's prompt teaches
+    'reject: grant none'), and it is now the post, the price row, the ledger's line, the board, the chat and the pane. Put such a no
+    through the whole department: every read carries it grammatical, and the same words on all of them. A pass that garbles it on one
+    must fail."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": WHY_NOUNS}})
+    ref = _priced(live, {n: (50, 5.0) for n in LINE})
+    assert "proposal.refused" in _actions(J, ref) and "conflict.raised" in _actions(J, ref)
+    found = _every_read(live, ref)
+    _held_to_the_owners_words(found, COMMON_READS)
+    garbled = {k: [s for s in v if GARBLE.search(s) or STEMS.search(s)] for k, v in found.items()}
+    assert not {k: v[:1] for k, v in garbled.items() if v}, "no read garbles the sentence or keeps a word of the bargain"
+    [post] = [p for p in R.board(ref) if p["src"] == "Priority" and p["msg_type"] == "reject-proposal"]
+    [row] = _prices(W, ref)
+    assert post["payload"]["why"] == row["why"] == SAID_NOUNS
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.refused")["summary"] == SAID_NOUNS
+    pane = _view(W, J, ref)
+    assert [p["why"] for p in pane["prices"]] == [SAID_NOUNS] and [b["summary"] for b in pane["bargains"]] == [SAID_NOUNS]
+    assert [s for s in found["the page's api/state"] if "Said no to the plan" in s and "No yes: the room is short" in s], "and Identity quotes it whole"
+    assert S.validate("priority.price", row) == [] and S.validate_view("priority", pane) == []
+    assert not R.plain_faults(SAID_NOUNS), "and Identity's net finds nothing to put right in it"
+
+
+#: a sentence no pass can say plainly: a grantee, an envelope 'granted to' a workflow, and lines that are 'ungranted'
+WHY_UNSAYABLE = "Budget check: the grantee list is long, so the envelope was granted to Plan before and ungranted lines stay."
+NO_ROOM = "no room today: about 11 calls and 0.40 USD against the 200 calls and 20.00 USD left"
+
+
+def test_p4_a_no_that_cannot_be_said_plainly_is_not_posted_priority_says_the_answer_in_money_and_room(live, monkeypatch):
+    """A sentence the pass cannot make plain must not reach the owner garbled: Priority puts in its place a sentence of its own, built by
+    code from the answer, what it keeps and the room (as Identity's net does with a template), and the post, the price row, the ledger's
+    line, the note on the step's card, the board, the chat and the pane carry that one. A Priority that posts the garble must fail."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": WHY_UNSAYABLE}})
+    ref = _priced(live, {n: (50, 5.0) for n in LINE})
+    assert "proposal.refused" in _actions(J, ref) and "conflict.raised" in _actions(J, ref)
+    found = _every_read(live, ref, mark="no room today: about 11 calls")
+    assert set(COMMON_READS) <= set(found), "reads the sentence never reached prove nothing: %s" % sorted(set(COMMON_READS) - set(found))
+    assert not {k: v[:1] for k, v in found.items() if [s for s in v if STEMS.search(s)]}
+    [post] = [p for p in R.board(ref) if p["src"] == "Priority" and p["msg_type"] == "reject-proposal"]
+    [row] = _prices(W, ref)
+    assert post["payload"]["why"] == row["why"] == NO_ROOM, "the answer is a no: the figures are the room's, and the garble is nowhere"
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.refused")["summary"] == NO_ROOM
+    [bargain] = [s for s in R.steps_view(ref, "Priority")["steps"] if s["id"] == "priority.bargain"]
+    assert bargain["last"]["notes"] == ["said no, with its price: " + NO_ROOM]
+    pane = _view(W, J, ref)
+    assert [p["why"] for p in pane["prices"]] == [NO_ROOM] and [b["summary"] for b in pane["bargains"]] == [NO_ROOM]
+    assert S.validate("priority.price", row) == [] and S.validate_view("priority", pane) == []
+    assert not R.plain_faults(NO_ROOM), "and it says nothing Identity's net would put right"
+
+
+def test_p4_an_ask_for_less_a_yes_a_trial_and_a_round_that_cannot_be_said_plainly_are_each_said_in_money_and_room(live, monkeypatch):
+    """The same for every answer Priority gives: an ask for less keeps what it keeps (the line cut short), a yes says what it costs, and
+    an engine offer, a trial and a round are composed apart from a line's and must fall back as it does, to the same words on the post,
+    the row and (a round's) the note on the card."""
+    W, R, J, _ = live
+    # an ask for less, then the yes that follows it
+    def bargain(prompt):
+        if "- Summary:" in prompt:
+            return {"answer": "counter", "keep": ["Facts", "Notes"], "why": WHY_UNSAYABLE}
+        return {"answer": "accept", "why": WHY_UNSAYABLE}
+    _model(monkeypatch, R, {"adapt.line": THREE, "priority.bargain": bargain})
+    ref = _priced(live, {"Facts": (3, 0.07), "Notes": (2, 0.04), "Summary": (0, 0.0)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
+    first, second = _prices(W, ref)
+    assert (first["answer"], first["keep"], second["answer"]) == ("counter", ["Facts", "Notes"], "accept")
+    assert first["why"] == "room for 2 of 3 today: about 5 calls and 0.11 USD for these of the 5 calls and 0.11 USD left", "the line cut short, in money and room"
+    assert second["why"] == "fits today: about 5 calls and 0.11 USD of the 5 calls and 0.11 USD left"
+    ask = next(p for p in R.board(ref) if p["src"] == "Priority" and p["msg_type"] == "propose")
+    assert ask["payload"]["why"] == first["why"] and next(e for e in J.events(ref) if e["action"] == "proposal.countered")["summary"] == first["why"]
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.granted")["summary"] == second["why"]
+    for row in (first, second):
+        assert not STEMS.search(row["why"]) and S.validate("priority.price", row) == []
+    # an engine offer said yes to and a trial said no to
+    ref = _born(live, org="Offer Co", settle=False)
+    _history(W, ref)
+    offer = {"word": "engine", "engine": "Booking", "offer": {"shape": {"name": "Booking", "does": "takes a booking", "needs": []}}}
+    _, [post], [yes] = _answered(live, ref, offer, {"answer": "accept", "why": WHY_UNSAYABLE}, 1)
+    assert post["payload"]["why"] == yes["why"] == "fits today: about 2 calls and 0.08 USD of the 240 calls and 6.00 USD left"
+    trial = {"word": "trial", "step": "write.page", "engine": "Write", "cost": "one more call a run, for 20 runs"}
+    _, [post], [no] = _answered(live, ref, trial, {"answer": "reject", "why": WHY_UNSAYABLE}, 2)
+    assert post["payload"]["why"] == no["why"] == "no room today: about 20 calls and 0.80 USD against the 240 calls and 6.00 USD left"
+    assert S.validate("priority.price", yes) == [] and S.validate("priority.price", no) == []
+
+
+def test_p4_a_round_that_cannot_be_said_plainly_is_said_in_the_ceiling_and_the_note_agrees(live, rounds_sendable, monkeypatch):
+    """A round's no (round 7 of 6 is said no to) whose sentence cannot be made plain: the post, the row and the note on the step's card
+    carry the ceiling's words, built by code, not the garble."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": WHY_UNSAYABLE}})
+    _propose_round(live, ref, 7)
+    [no] = _round_answers(R, ref)
+    [row] = [r for r in _prices(W, ref) if r["proposal"] == "round"]
+    want = no["payload"]["why"]
+    assert want.startswith("no room in the ceiling: round 7, about ") and " against the " in want and want.endswith(" left")
+    assert row["why"] == want and not STEMS.search(want) and S.validate("priority.price", row) == []
+    [step] = [r for r in R.step_rows(ref) if r["step"] == "priority.bargain" and r["facts"] == {"word": "round", "room": False}]
+    assert step["status"] == "ok" and step["check"]["notes"] == ["said no, with its price: " + want]
+
+
+def test_p4_an_older_record_that_cannot_be_said_plainly_reads_in_money_and_room_on_the_pane(live, ctx):
+    """A price row and a ledger line written before Priority composed its why, in a sentence no pass can say plainly, read on the pane as
+    the row's own money and room (and a ledger line that holds only the sentence, as what Priority said)."""
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    W.append_row(ref, "prices.jsonl", _price_row(answer="reject", why="the grantee list is long; granted to Plan before", engines=["Plan", "Write"]))
+    W.append_row(ref, "prices.jsonl", _price_row(at="2026-10-26T10:05:00+05:30", answer="counter", keep=["Plan"], engines=["Plan", "Write"],
+                                                 why="ungranted lines stay", estimate={"calls": 3, "usd": 0.12, "per_engine": {"Plan": {"calls": 1, "usd": 0.04}}}))
+    events = [{"action": a, "summary": "the grantee list is long", "occurred_at": "2026-10-26T10:%02d:00+05:30" % i}
+              for i, a in enumerate(("proposal.refused", "proposal.countered", "proposal.granted"))]
+    pane = V1.view(ref, W.dept(ref), events, [])
+    assert [p["why"] for p in pane["prices"]] == ["room for 1 of 2 today: about 1 call and 0.04 USD for these of the 10 calls and 1.00 USD left",
+                                                  "no room today: about 3 calls and 0.12 USD against the 10 calls and 1.00 USD left"]
+    assert [b["summary"] for b in pane["bargains"]] == ["Priority said no.", "Priority asked for less.", "Priority said yes."]
     assert S.validate_view("priority", pane) == []
 
 

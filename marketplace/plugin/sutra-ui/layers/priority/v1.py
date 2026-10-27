@@ -11,9 +11,10 @@ today; p_priority_bargain tells the agent both; d_priority_bargain, the offline 
 priority_post answers and keeps one price row per answer; price_is_observed holds the answer to the facts. WORDS and
 LAYOUT hold its words (goal, bargain), so no part of it is read from the .md bundle. The agent's why is its own sentence and
 may use the bargain's inside words (reject, counter, grant, refuse, order as a verb): priority_post says it once in the owner's
-words (owner_words.said_plainly, the one pass every read shares) before it posts, so the post, the price row, the ledger's line,
-the covering's note and the pane carry one sentence. view() builds the pane itself, the bargains and envelopes from
-functions_view's small readers and the prices from prices.jsonl; it never asks _j2_part, which reads the layers' views.
+words (owner_words.plainly, the one pass every read shares: a noun said as the answer and a verb as the act) before it posts, so the post, the price row, the ledger's line, the covering's note and the pane carry one sentence; a sentence
+the pass cannot say plainly is not posted, and Priority says the answer, its keep and the room in words of its own (_code_why).
+view() builds the pane itself, the bargains and envelopes from functions_view's small readers and the prices from prices.jsonl;
+it never asks _j2_part, which reads the layers' views.
 
 What moved with M5.4 (priced options): priority_envelope, the gate that holds an engine at its envelope, files its card with the
 limit, the use and the ways forward built by code (raise, leave, stop); a no to a line carries the same on its post;
@@ -296,14 +297,69 @@ def cut_short(names, asked, fits=None):
     return out if fits is None else out[:len(fits)]
 
 
-def _owners_why(why, read=None):
+def _kept(read, out):
+    """What an ask for less keeps, as priority_post posts it: the workflows the agent named from the first on (cut_short), else, when
+    it named none of the line, the longest prefix that fits."""
+    names, asked = list(read.get('names') or []), [str(k) for k in out.get('keep') or []]
+    return cut_short(names, asked, read.get('fits')) if [n for n in names if n in asked] else list(read.get('fits') or [])
+
+
+def _final(read, out):
+    """The answer as priority_post posts it, and the workflows it keeps: (accept, counter or reject, names). A line's ask for less
+    that keeps nothing is a no, and one that keeps the whole line is a yes; an engine, a trial and a round are yes or no."""
+    names, answer = list(read.get('names') or []), out.get('answer')
+    if read.get('word') == 'line' and answer == 'counter':
+        keep = _kept(read, out)
+        if keep and len(keep) < len(names):
+            return 'counter', keep
+        answer = 'reject' if not keep else 'accept'
+    return ('accept', names) if answer == 'accept' else ('reject', [])
+
+
+def _money_why(word, answer, est, room, names=(), keep=(), n=None):
+    """The why Priority's code says: only money and room, from the answer, what it keeps and the room, in the words the offline
+    answer uses (d_priority_bargain, round_within_ceiling). `word` is the proposal's (line, engine, trial, round)."""
+    est, room = est if isinstance(est, dict) else {}, room if isinstance(room, dict) else {}
+    left, whole = _say_cost(max(0, int(room.get('calls') or 0)), max(0.0, float(room.get('usd') or 0.0))), _say_cost(est.get('calls') or 0, est.get('usd') or 0.0)
+    ok = answer == 'accept'
+    if word == 'round':
+        return ('inside the ceiling: round %d, about %s of the %s left' if ok else 'no room in the ceiling: round %d, about %s against the %s left') % (int(n or 0), whole, left)
+    if word == 'line':
+        if not names:
+            return 'the plan names no workflow'
+        if answer == 'counter' and keep:
+            per = est.get('per_engine') or {}
+            if all(isinstance(per.get(k), dict) for k in keep):
+                part = _say_cost(sum(int(per[k].get('calls') or 0) for k in keep), sum(float(per[k].get('usd') or 0.0) for k in keep))
+                return 'room for %d of %d today: about %s for these of the %s left' % (len(keep), len(names), part, left)
+            return 'room for %d of %d today against the %s left' % (len(keep), len(names), left)
+    return ('fits today: about %s of the %s left' if ok else 'no room today: about %s against the %s left') % (whole, left)
+
+
+def _code_why(read, answer, keep=()):
+    """The why Priority puts in place of a sentence a model wrote that cannot be said plainly (owner_words.plainly): money and
+    room only, from the answer as it is posted, what it keeps and what Priority read. The net under the agent's sentence, as
+    Identity's is under what it says to the owner (PLAIN_TEMPLATE): a garbled line is never posted."""
+    return _money_why(read.get('word'), answer, read.get('estimate'), read.get('room'), read.get('names') or [], keep, read.get('round'))
+
+
+def _row_why(row):
+    """The same, from a price row on the record (an older record, or one written by hand, whose sentence cannot be said plainly)."""
+    return _money_why(row.get('proposal'), row.get('answer'), row.get('estimate'), row.get('room'), row.get('engines') or [], row.get('keep') or [], row.get('round'))
+
+
+def _owners_why(why, read=None, out=None):
     """The agent's why, said once in the owner's words where Priority composes it. The agent is taught accept, counter and
     reject and writes its why in its own sentence, so it may say reject, counter, grant, refuse, or order as a verb; the screen
     says said yes, asked for less and said no, and Priority never orders. The sentence is said here, before it is posted, so the
     post, the price row, the ledger's line, the chat and the board, the covering's note and the pane all carry the same words.
-    The names of the workflows in the proposal (`read`) stay as they are: a workflow may be called Grant, and Priority's own
-    line, 'no room today: even Grant costs about ...', is not said yes to."""
-    return owner_words.said_plainly(str(why or '').strip(), keep=read.get('names') if isinstance(read, dict) else None)
+    The names of the workflows in the proposal (`read`) stay as they are: a workflow may be called Grant. A sentence that cannot be
+    said plainly (a grantee, 'granted to Plan') is not posted: Priority says the answer `out` gives, its keep and the room in words of its own (_code_why)."""
+    names = read.get('names') if isinstance(read, dict) else None
+    said, plain = owner_words.plainly(str(why or '').strip(), keep=names)
+    if plain or not isinstance(out, dict) or not isinstance(read, dict) or not isinstance(read.get('estimate'), dict) or not isinstance(read.get('room'), dict):
+        return said
+    return _code_why(read, *_final(read, out))
 
 
 def priority_post(ctx, step, item):
@@ -313,13 +369,12 @@ def priority_post(ctx, step, item):
     engine_runtime.priority_post; the answers are the same, and the why is said in the owner's words (_owners_why)."""
     ref, pl, thread = ctx['ref'], ctx['post']['payload'], ctx['post']['thread']
     read, got = ctx['bag']['priority.read'], ctx['bag']['priority.bargain']
-    names, answer, why = list(read.get('names') or []), got.get('answer'), _owners_why(got.get('why'), read)
+    names, answer, why = list(read.get('names') or []), got.get('answer'), _owners_why(got.get('why'), read, got)
     if pl.get('word') == 'round':
         return _post_round(ctx, read, got)
     if pl.get('word') == 'line':
         if answer == 'counter':
-            asked = [str(k) for k in got.get('keep') or []]
-            keep = cut_short(names, asked, read.get('fits')) if [n for n in names if n in asked] else list(read.get('fits') or [])
+            keep = _kept(read, got)
             if keep and len(keep) < len(names):
                 why = why or 'the envelope has room for %d of them' % len(keep)
                 row = R.post(ref, 'Priority', 'Adaptation', 'propose', {'word': 'line', 'counter': True, 'keep': keep, 'why': why}, thread=thread)
@@ -400,7 +455,7 @@ def price_is_observed(ctx, step, item, out):
     if not notes:
         notes += _fact_notes(ctx, out)
     # the note is said on Priority's card, so it names the answer in the owner's words (said yes, asked for less, said no)
-    return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(out.get('answer'), out.get('answer')), _owners_why(out['why'], read))]}
+    return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(out.get('answer'), out.get('answer')), _owners_why(out['why'], read, out))]}
 
 
 # ---- the ways forward at a limit, priced by code (M5.4) ----------------------------------------------------------------------
@@ -847,7 +902,7 @@ def round_is_within(ctx, step, item, out):
         held = round_within_ceiling(read)
         if held['answer'] != 'accept':
             notes.append('said yes to a round the ceiling does not hold: %s' % '; '.join(held['over']))
-    return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(answer, answer), _owners_why(out['why'], read))]}
+    return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(answer, answer), _owners_why(out['why'], read, out))]}
 
 
 def _say_ceiling(read):
@@ -909,7 +964,7 @@ def _post_round(ctx, read, got):
     """Answer a round: yes, or no with the ways forward (M9.2). The answer is one price row, proposal 'round'."""
     ref, pl, thread = ctx['ref'], ctx['post']['payload'], ctx['post']['thread']
     ok = got.get('answer') == 'accept'
-    why = _owners_why(got.get('why'), read) or ('inside the ceiling' if ok else 'no room in the ceiling')
+    why = _owners_why(got.get('why'), read, got) or ('inside the ceiling' if ok else 'no room in the ceiling')
     body = {'word': 'round', 'round': read['round'], 'why': why}
     if not ok:
         body['options'] = round_options(ref, ctx.get('dept') or W.dept(ref) or {}, read, pl)
@@ -1097,17 +1152,18 @@ def _prices(rows, keep=()):
     yes, asked for less or said no, the estimate and the room as two amounts each, and the why. Priority says its why in the owner's
     words where it composes it (priority_post), so a row it wrote already does; a row written before that, or by hand, keeps the
     words it was given, and its inside ones (reject, counter, grant, refuse, and order as a verb) are said again here, by the one
-    pass every read shares (owner_words.said_plainly), the workflows' names (`keep`) left as they are. A row that holds no answer
-    is not shown."""
+    pass every read shares (owner_words.plainly), the workflows' names (`keep`) left as they are. A why that cannot be said plainly is
+    the row's own money and room, in words of Priority's (_row_why). A row that holds no answer is not shown."""
     out = []
     for r in reversed([r for r in rows if isinstance(r, dict)]):
         if r.get('answer') not in SAID:
             continue
         est, room = r.get('estimate') or {}, r.get('room') or {}
+        why, plain = owner_words.plainly(r.get('why'), keep)
         out.append({'at': r.get('at'), 'proposal': r.get('proposal'), 'answer': r['answer'], 'said': SAID[r['answer']],
                     'estimate': {'calls': int(est.get('calls') or 0), 'usd': float(est.get('usd') or 0.0)},
                     'room': {'calls': int(room.get('calls') or 0), 'usd': float(room.get('usd') or 0.0)},
-                    'why': owner_words.said_plainly(r.get('why'), keep)[:600]})
+                    'why': (why if plain else _row_why(r))[:600]})
     return FV._clean(out[:PRICES_SHOWN])
 
 
@@ -1115,6 +1171,13 @@ def _prices(rows, keep=()):
 BARGAINS = types.MappingProxyType({'proposal.granted': 'said yes', 'proposal.countered': 'asked for less', 'proposal.refused': 'said no'})
 #: the most bargains the pane carries: the newest few
 BARGAINS_SHOWN = 6
+
+
+def _bargain(event, named):
+    """One bargain on the record as the pane prints it: what was said, and the ledger's summary of it (the agent's why) in the
+    owner's words; a summary that cannot be said plainly is only what Priority said ('Priority said no.')."""
+    said, plain = owner_words.plainly(event.get('summary'), named)
+    return {'said': BARGAINS[event['action']], 'summary': said if plain else 'Priority %s.' % BARGAINS[event['action']], 'at': event.get('occurred_at')}
 
 
 def view(ref, d, events, asks):
@@ -1127,8 +1190,7 @@ def view(ref, d, events, asks):
     functions_view._j2_body's Priority branch, which stays until W3-PROOF deletes the dead copies."""
     rows = W.rows(ref, 'prices.jsonl')
     named = {x[0] for x in W.engines_of(d)} | {str(n) for r in rows if isinstance(r, dict) for n in r.get('engines') or []}
-    return {'bargains': [{'said': BARGAINS[e['action']], 'summary': owner_words.said_plainly(e.get('summary'), named), 'at': e.get('occurred_at')}
-                         for e in events if e.get('action') in BARGAINS][-BARGAINS_SHOWN:],
+    return {'bargains': [_bargain(e, named) for e in events if e.get('action') in BARGAINS][-BARGAINS_SHOWN:],
             'envelopes': [dict(FV._spend(ref, d, n), engine=n) for n in [x[0] for x in W.engines_of(d)] + list(FV.FUNCS)],
             'prices': _prices(rows, named),
             'ceiling': ceiling_of(d),
