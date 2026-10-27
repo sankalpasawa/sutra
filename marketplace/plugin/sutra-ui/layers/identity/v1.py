@@ -1280,7 +1280,8 @@ def identity_round(ctx, step, item):
         if not [a for a in W.asks(ref) if a.get('kind') == 'finding' and a.get('round') == n and a['status'] == 'pending']:
             _ask_finding(ctx, S.deliverable(d), correction, correction, [], rule=rule.get('line'), round=n, correction=correction)
         return {'said': 'put round %d to the owner first, as the rule "%s" says to ask: %s' % (n, rule.get('line'), correction), 'round': n}
-    row = R._file_brief(ref, d, 'Correct this: ' + correction, 'round %d, granted' % n, rnd=n)
+    # the note is the Brief version's check note, which the Versions pane and the work item's card print: said as the screen says it
+    row = R._file_brief(ref, d, 'Correct this: ' + correction, 'round %d, Priority said yes' % n, rnd=n)
     round_filed(ref, d, n, row['v'], correction)
     return {'said': 'filed round %d in the Brief as v%d, with no stamp: %s' % (n, row['v'], correction), 'round': n, 'filed': row['v']}
 

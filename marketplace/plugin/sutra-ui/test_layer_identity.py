@@ -1889,19 +1889,45 @@ def test_j5_the_words_the_owner_reads_in_the_pursuit_keep_the_screen_rules(j2, m
     """Every line Identity says to the owner in these flows, every card and every way out on it, in the owner's words: no grant,
     counter, refuse, orders, charter or internal system, no code of the machine, and no function addressing another."""
     W, R, J, _, _ = j2
-    seen = []
-    for what, ref in _end_states(j2, monkeypatch):
+    seen, notes = [], []
+    states = list(_end_states(j2, monkeypatch))
+    # and a department whose round was filed with no stamp: the Brief version that round makes carries a note the owner reads
+    ref = _a_running_department(j2, org="Filed Round Co")
+    _identity_hears(R, ref, _grant_round(R, W, J, monkeypatch, ref))
+    assert len(W.versions(ref, "Brief")) == 2
+    states.append(("a round filed with no stamp", ref))
+    for what, ref in states:
         for p in R.board(ref):
             if p["src"] == "Identity" and "Owner" in p["dst"]:
                 seen += [(what, str(p["payload"].get(k))) for k in ("done", "objective") if p["payload"].get(k)]
         for a in W.asks(ref):
             seen += [(what, str(a.get(k))) for k in ("text", "title", "why") if a.get(k)]
             seen += [(what, str(o.get(k))) for o in a.get("options") or [] for k in ("label", "cost")]
-    assert len(seen) > 40
+        # the Versions pane prints every version's note and every check note of it (22-website.js), and the artifact read returns them
+        for art in list(W.artifacts_of(W.dept(ref))) + ["Brief"]:
+            for v in W.versions(ref, art):
+                notes += [(what, str(x)) for x in [v.get("note")] + list((v.get("check") or {}).get("notes") or []) if x]
+    assert len(seen) > 40 and any("round 2" in text for _, text in notes), "the filed round's note was scanned"
+    for what, text in notes:
+        assert not SCREEN_BANNED.search(text), (what, "a version note", text)
     from engine_runtime import PLAIN_FAULTS
     for what, text in seen:
         assert not SCREEN_BANNED.search(text), (what, text)
         assert not [name for name, rx in PLAIN_FAULTS if rx.search(text)], (what, text)
+
+
+def test_j4_the_brief_version_a_filed_round_makes_names_who_said_yes_in_the_owners_words(j2, monkeypatch):
+    """The Versions pane and the work item's card print a version's note and its check notes. The version a filed round makes
+    says who agreed to it as the screen says it: Priority said yes, never 'granted'."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Note Co")
+    _identity_hears(R, ref, _grant_round(R, W, J, monkeypatch, ref))
+    made = W.versions(ref, "Brief")[-1]
+    assert made["made_from"][-1]["round"] == 2
+    assert made["check"]["notes"][0] == "round 2, Priority said yes"
+    import website_api
+    shown = next(v for v in website_api.artifact(ref, "brief")["versions"] if v["v"] == made["v"])
+    assert shown["check"]["notes"][0] == "round 2, Priority said yes" and not SCREEN_BANNED.search(" ".join(map(str, shown["check"]["notes"] + [shown.get("note") or ""])))
 
 
 def _end_states(j2, monkeypatch):
