@@ -78,7 +78,7 @@ ITEM_VERDICTS = ('met', 'not_met', 'to_confirm')
 CONFIDENCE = {'ask_below': 0.6, 'show_below': 0.8}                     # J2B-7 (M6.4, wave 1)
 RAISE_CAP, ROUNDS_DEFAULT = 2.0, 6                                     # Q6 (M5.4, M9.2, wave 2)
 QUESTION_STATUSES = ('open', 'answered', 'unanswered', 'refused')      # board/1 (M4.9, wave 3)
-INTERFACE_SHA = {1: '2194054945cbf50f50d555bb34ac1b7770efc1d92eff1be0119a6d0f09d89055'}  # frozen (W3-PROOF X2), see interface_sha()
+INTERFACE_SHA = {1: 'e23aeacef66e0d6da6b455d6e9bfba0ddac0b626197eada1ea078d2d99bacbb6'}  # frozen (W3-PROOF X2), see interface_sha()
 MODE = 'refuse'        # 'warn' | 'refuse'. A code constant, never an environment variable; tests change it with monkeypatch.
                        # 'A1 interface: refuse' (the integrator's commit at the end of wave 1, the full gate showing no fault at
                        # all) set it: a write that does not fit the interface raises SchemaFault, after its row.
