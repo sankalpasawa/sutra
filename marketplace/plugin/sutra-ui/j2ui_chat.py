@@ -1,7 +1,7 @@
 """j2ui_chat.py -- the chat the J2 page reads: one arrival-ordered list of messages, each with an id that never moves.
 
 The page asks `api/state?since=N` and gets `chat[N:]`, so a message's id is its place in the list and the list only
-grows. Four sources feed it, merged by (time, board, number); none of them is invented here:
+grows. Four sources feed it, merged by (second, place in the ledger, board, number); none of them is invented here:
 
     the owner's side     engine_runtime.chat_view(ref), the one reader that already merges Root's board (where every word
                          after the first arrives) with the department's own: the owner's words, the owner's stamps, and
@@ -12,6 +12,15 @@ grows. Four sources feed it, merged by (time, board, number); none of them is in
                          page builds its buttons from that text alone), linked to the post that said it
     the validator        only the ledger's workflow.validated / registered / blocked written by Root: Root's check is an event,
                          not a post (the same action by an engine that waits, or by Adaptation's own pre-check, is not Root's)
+
+Order. A record is stamped to the second and the runtime writes a dozen in one, so within a second the clock says nothing;
+the ledger's own seq does. Every message has a place (second, anchor, board, number): the anchor is where the ledger stood
+at that moment. A ledger event's anchor is its seq; a post that has an event (j2_runtime.on_post files one under its key
+'/post-<n>') takes that event's seq; a post with none (Identity's word that the plan is set, which no event records) is
+something that was said about what had just happened, so it takes the place just before the next post that has one, after the
+events between them (the plan is set after Root's check passed it and registered it), and at the end of the ledger when no
+later post has one. Root's board has no ledger of its own: a turn of its that has a twin on the department's board takes the
+twin's place, any other keeps the start of its second (Root's board is read first).
 
 The adapter speaks as no function: it never posts, and the only voice that reaches the owner is Identity's (`to_user`).
 Post numbers restart at 1 on every board, so a key carries its board: ('r', n) Root's, ('b', n) the department's,
@@ -36,7 +45,7 @@ STAMP_LABELS = ("Stamp", "Say no")
 VALIDATOR = {"workflow.validated": None, "workflow.registered": True, "workflow.blocked": False}
 CHECKER = "Root"                           # who writes the validator's events: j2_runtime also writes workflow.blocked for an engine that
                                            # waits (actor the engine) and for Adaptation's own check of the shaped line (actor Adaptation)
-RANK = {"r": 0, "b": 1, "e": 2}            # Root's board, then the department's, then the ledger, within one recorded second
+RANK = {"r": 0, "b": 1, "e": 2}            # Root's board, then the department's, then the ledger, within one place of the ledger
 LATE = 10 ** 9
 
 
@@ -81,8 +90,9 @@ def _flat(s):
 
 def _line(s):
     """One line of an ask: one line whatever the words hold, and never a numbered question (the page reads a line that
-    starts '1. ' as one), so words quoted in an ask cannot forge an option."""
-    return re.sub(r"^(\d+)\.", r"\1)", _flat(s))
+    starts '1. ' as one), so words quoted in an ask cannot forge an option. A Said line stays a Said."""
+    line = re.sub(r"^(\d+)\.", r"\1)", _flat(s))
+    return C.Said(line) if isinstance(s, C.Said) else line
 
 
 def _label(o):
@@ -90,24 +100,34 @@ def _label(o):
     return _flat(owner_words.plain(o.get("label"))) + (" (%s)" % cost if cost else "")
 
 
+def carries_words(a):
+    """The ask's text ends with the owner's own words (an outside-the-site ask: the lead, then the words)."""
+    w, t = a.get("words"), a.get("text")
+    return isinstance(w, str) and bool(w) and isinstance(t, str) and t.endswith(w)
+
+
 def ask_text(a, shown):
     """The ask as the page parses it: '@Requester <lead>', the question, and one '   Option k: <label>' line for each option
     offered (`shown`: option dicts, in the order the owner saw them). Identity's question has none; a stamp ask has Stamp
-    and Say no."""
-    question = _line(owner_words.kept(a.get("text") or "", a.get("words")))
+    and Say no. When the question ends with the owner's own words they reach the page as they were said (a Said line:
+    the lead and the rest of the ask, the machine's, have passed the path rule here, the words never do)."""
+    question = _line(C.said(a.get("text") or "", a.get("words")))
     form = form_of(a)
     if form == "words":
-        why = _line(owner_words.plain(a.get("why")))
-        return "@Requester " + (why + "\n" if why else "") + question
-    lead = _line(owner_words.plain(a.get("title"))) if form == "options" else ""
-    labels = [_label(o) for o in shown] if form == "options" else list(STAMP_LABELS)
-    return "@Requester " + (lead + "\n" if lead else "") + question + "".join("\n   Option %d: %s" % (i + 1, s) for i, s in enumerate(labels))
+        why = _line(C.shorten(owner_words.plain(a.get("why"))))
+        text = "@Requester " + (why + "\n" if why else "") + question
+    else:
+        lead = _line(C.shorten(owner_words.plain(a.get("title")))) if form == "options" else ""
+        labels = [C.shorten(_label(o)) for o in shown] if form == "options" else list(STAMP_LABELS)
+        text = "@Requester " + (lead + "\n" if lead else "") + question + "".join("\n   Option %d: %s" % (i + 1, s) for i, s in enumerate(labels))
+    return C.Said(text) if carries_words(a) else text
 
 
 def message(at, who, text, step, **more):
     """A message without its id: {t, who, text, step} and only the optional fields the record supports, in the prototype's
     order (to_user, act, pause, next, audience, register)."""
-    m = {"t": C.hhmmss(at), "who": who, "text": str(text if text is not None else ""), "step": step if isinstance(step, int) else None}
+    m = {"t": C.hhmmss(at), "who": who, "text": text if isinstance(text, C.Said) else str(text if text is not None else ""),
+         "step": step if isinstance(step, int) else None}
     for k in ("to_user", "act", "pause", "next", "audience", "register"):
         if more.get(k) is not None:
             m[k] = more[k]
@@ -115,7 +135,8 @@ def message(at, who, text, step, **more):
 
 
 def _entry(key, at, rank, n, msg, opts=None, sort=None):
-    return {"key": key, "sort": sort or (C.epoch(at), rank, n if isinstance(n, int) else 0), "msg": msg, "opts": opts}
+    """One message to place: `sort` is (second, anchor in the ledger, board rank, number), see rd.place."""
+    return {"key": key, "sort": sort or (C.epoch(at), 0, rank, n if isinstance(n, int) else 0), "msg": msg, "opts": opts}
 
 
 def _to_owner(p):
@@ -123,6 +144,11 @@ def _to_owner(p):
 
 
 # ---- what one build reads -----------------------------------------------------------------------------------------------
+def seq_of_event(e):
+    """The ledger's own position of an event (0 for a row from before the ledger numbered its events)."""
+    return e["seq"] if isinstance(e.get("seq"), int) else 0
+
+
 class _Read:
     """The owner-facing turns, the raw posts by board and number, and the step each post of the department's was made in."""
 
@@ -148,11 +174,15 @@ class _Read:
             if p.get("src") == R.OWNER and pl.get("ask"):
                 self.answer_of[pl["ask"]] = p
         self.twin = self._twins(c)
-        self.step_of = {}
+        self.step_of, seq_of = {}, {}
         for e in c.events:
             m = re.search(r"/post-(\d+)$", str(e.get("idempotency_key") or ""))
             if m:
                 self.step_of[int(m.group(1))] = e.get("step")
+                seq_of.setdefault(int(m.group(1)), seq_of_event(e))
+        self.last_seq = max([seq_of_event(e) for e in c.events] or [0])
+        self.anchor = self._anchors(c, seq_of)
+        self.newest = self.last_seq + 0.75                     # an answer that left no post is the newest thing of its second
 
     def _twins(self, c):
         """Identity's words to the owner that reached Root's board are posted twice: on the department's board, marked via Root, and
@@ -174,11 +204,30 @@ class _Read:
                 twin[t["_key"]] = q.pop(0)
         return twin
 
-    def sort_of(self, key, at, rank, n):
-        """Where a message is placed among the others: by time, then board, then number; a turn of Root's that has its twin on the
-        department's board takes the twin's place."""
+    def _anchors(self, c, seq_of):
+        """Post number -> where the ledger stood when the department's board took it: its event's seq for a post that has an
+        event, else just before the next post that has one (after the events between them), else the end of the ledger."""
+        out, nxt = {}, self.last_seq + 0.5
+        for p in sorted(c.posts, key=lambda p: p.get("n") or 0, reverse=True):
+            n = p.get("n")
+            if n in seq_of:
+                out[n], nxt = seq_of[n], seq_of[n] - 0.5
+            else:
+                out[n] = nxt
+        return out
+
+    def place(self, key, at, rank, n):
+        """Where a message is placed among the others: by the second, then by where the ledger stood, then board, then number;
+        a turn of Root's that has its twin on the department's board takes the twin's place."""
         p = self.twin.get(key)
-        return (C.epoch(p.get("at")), 1, p.get("n")) if p else (C.epoch(at), rank, n if isinstance(n, int) else 0)
+        if p:
+            return (C.epoch(p.get("at")), self.anchor.get(p.get("n"), 0), 1, p.get("n"))
+        return (C.epoch(at), self.anchor.get(key[1], 0) if key[0] == "b" else 0, rank, n if isinstance(n, int) else 0)
+
+    def place_of(self, p, rank=1):
+        """The place of a post of either board (the board it is on is known by identity)."""
+        key = ("b" if self.raw.get(("b", p.get("n"))) is p else "r", p.get("n"))
+        return self.place(key, p.get("at"), rank, p.get("n"))
 
     def step(self, key, at):
         return self.step_of[key[1]] if key[0] == "b" and key[1] in self.step_of else self.c.step_at(at)
@@ -232,7 +281,8 @@ def _ask_entries(c, rd, reg, claimed):
         shown, ids = _shown(c, reg, a)
         at = (rd.raw.get(key) or {}).get("at") or a.get("created")
         msg = message(at, "identity", ask_text(a, shown), rd.step(key, at), to_user=True, act="ASK_REQUESTER", pause=pause_of(a), next="user")
-        out.append(_entry(key, at, RANK.get(key[0], 1), key[1] if key[0] in RANK else 0, msg, ids))
+        n = key[1] if key[0] in RANK else 0
+        out.append(_entry(key, at, RANK.get(key[0], 1), n, msg, ids, sort=rd.place(key, at, RANK.get(key[0], 1), n)))
         out += _answer_entries(c, rd, reg, claimed, a, ids)
     return out
 
@@ -268,7 +318,8 @@ def _answer_entries(c, rd, reg, claimed, a, ids):
         return []                                                # a turn of the owner's own says it, and is the message
     claimed.update(twins)
     at = (posted or {}).get("at") or when
-    return [_entry(key, at, 1, (posted or {}).get("n") or LATE, message(at, "user", text, c.step_at(at), next="identity"))]
+    sort = rd.place_of(posted) if posted else (C.epoch(at), rd.newest, 1, LATE)
+    return [_entry(key, at, 1, (posted or {}).get("n") or LATE, message(at, "user", text, c.step_at(at), next="identity"), sort=sort)]
 
 
 # ---- the other sources --------------------------------------------------------------------------------------------------
@@ -288,8 +339,8 @@ def _turn_entries(rd, claimed):
             msg = None                                           # only the owner and Identity speak in the owner's chat
         if msg:
             # the words Root handed at the department's birth are the owner's own, said before anything that answers them
-            out.append(_entry(key, at, -1 if t.get("birth") else RANK[key[0]], key[1], msg, sort=rd.sort_of(key, at, RANK[key[0]], key[1])
-                              if not t.get("birth") else None))
+            out.append(_entry(key, at, -1 if t.get("birth") else RANK[key[0]], key[1], msg,
+                              sort=rd.place(key, at, RANK[key[0]], key[1]) if not t.get("birth") else (C.epoch(at), -1, -1, key[1])))
     return out
 
 
@@ -305,7 +356,8 @@ def _post_entries(c, rd):
         said = F._said(p)
         key = ("b", p.get("n"))
         text = F._cap(F._did(p)) + (": " + F._short(said) if said else "")
-        out.append(_entry(key, p.get("at"), 1, key[1], message(p.get("at"), who, text, rd.step(key, p.get("at")), next=nxt, audience=nxt)))
+        out.append(_entry(key, p.get("at"), 1, key[1], message(p.get("at"), who, text, rd.step(key, p.get("at")), next=nxt, audience=nxt),
+                          sort=rd.place(key, p.get("at"), 1, key[1])))
     return out
 
 
@@ -321,7 +373,8 @@ def _event_entries(c):
         key = ("e", e.get("seq") or e.get("event_id"))
         msg = message(e.get("occurred_at"), "validator", owner_words.plain(e.get("summary")), e.get("step"), next=nxt,
                       register=VALIDATOR[e["action"]])
-        out.append(_entry(key, e.get("occurred_at"), RANK["e"], e.get("seq"), msg))
+        out.append(_entry(key, e.get("occurred_at"), RANK["e"], e.get("seq"), msg,
+                          sort=(C.epoch(e.get("occurred_at")), seq_of_event(e), RANK["e"], seq_of_event(e))))
     return out
 
 

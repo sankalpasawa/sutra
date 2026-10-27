@@ -34,6 +34,7 @@ import pytest
 
 from test_j2ui_artifacts import (REF, FUNCS, add_ver, ago, make_ctx, mods, msg, page_render, plain_text, proto_consts,  # noqa: F401 -- mods is a fixture
                                  put_ask, put_post, put_run, put_step, router_client, seed_line, set_cycle)
+from test_fixtures.j2ui.core_fixtures import machine  # noqa: F401 -- a fixture: the machine whose paths the router shortens
 from test_j2ui_board import HOSTILE, hostile, put_questions, q
 
 WORK = ["work:brief", "work:site-plan", "work:pages", "work:build", "work:live-site"]
@@ -885,10 +886,11 @@ def hostile_scene(mods, state):
 
 
 @pytest.mark.parametrize("state", STATES)
-def test_m6_text_a_builder_or_a_function_wrote_is_clean_as_the_router_sends_it(mods, state):
+def test_m6_text_a_builder_or_a_function_wrote_is_clean_as_the_router_sends_it(mods, state, machine):
     """Rule 4(e) holds for what the record's own writers put in: through the router, in every state, no string of the Map, the
     Board or the Artifacts holds a machine path, a private key, GRANT, COUNTER, REFUSE or an act id. (Before, only scenes with
     no hostile text were checked, and the board passed a question through a phrase table that leaves bare tokens alone.)"""
+    machine("/Users/someone")                                  # the paths of HOSTILE are this machine's
     hostile_scene(mods, state)
     client = router_client()
     got = {}

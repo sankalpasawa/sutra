@@ -7,6 +7,7 @@ a department up, as a person does (the recipe of the UI port's reference probe).
     from test_fixtures.j2ui.core_fixtures import *      # noqa: F401,F403  (mods, born, tick)
 """
 import importlib
+import tempfile
 import time
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -16,7 +17,7 @@ import pytest
 REF = "dref-j2c0001"
 ROOT = "dref-j2root1"
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
-__all__ = ["REF", "ROOT", "WEBSITE", "mods", "born", "tick", "cycle", "ask", "thread", "run", "post", "event", "rewind", "with_root", "stamp_ask", "card_post", "blocked"]
+__all__ = ["REF", "ROOT", "WEBSITE", "mods", "born", "tick", "machine", "cycle", "ask", "thread", "run", "post", "event", "rewind", "with_root", "stamp_ask", "card_post", "blocked"]
 
 
 @pytest.fixture
@@ -80,6 +81,20 @@ def tick(mods, monkeypatch):
         return t[0].isoformat(timespec="seconds")
     monkeypatch.setattr(mods.W, "now", now)
     return now
+
+
+@pytest.fixture
+def machine(monkeypatch):
+    """The machine the path rule (j2ui_common.clean) sees: make(home, temp) binds the user's home and, when given, the temp
+    folder, so that a test can name 'a path of this machine' (/Users/x/y/z.txt) wherever it runs. Anything outside the
+    folders of the machine it binds, the records' home of `mods` and the app's own folder is the owner's page, not a path."""
+    def make(home="/Users/x", temp=None):
+        monkeypatch.setenv("HOME", home)
+        monkeypatch.setenv("USERPROFILE", home)
+        if temp:
+            monkeypatch.setattr(tempfile, "tempdir", temp)
+        return home
+    return make
 
 
 def cycle(m, state, step, ref=REF, **more):

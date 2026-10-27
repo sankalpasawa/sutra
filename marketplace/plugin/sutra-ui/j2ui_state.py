@@ -53,10 +53,15 @@ def pick_paused(c):
         labels = [CH._label(o) for o in shown]
     else:
         labels = list(CH.STAMP_LABELS) if form == "stamp" else []
-    text = a.get("why") or a.get("title") or CH._flat(a.get("text"))[:LABEL_CHARS]
-    label = CH._flat(owner_words.plain(text)) + (MORE % (len(order) - 1) if len(order) > 1 else "")
+    more = MORE % (len(order) - 1) if len(order) > 1 else ""
+    if not (a.get("why") or a.get("title")) and CH.carries_words(a):
+        # the label is the question itself and the question ends with the owner's own words: they reach the page as they were said
+        label = C.Said(CH._flat(C.said(a.get("text"), a.get("words")))[:LABEL_CHARS] + more)
+    else:
+        text = a.get("why") or a.get("title") or CH._flat(a.get("text"))[:LABEL_CHARS]
+        label = CH._flat(owner_words.plain(text)) + more
     return {"ask": a, "kind": CH.pause_of(a), "msg": msg, "form": form, "label": label, "more": len(order) - 1,
-            "question": CH._line(owner_words.kept(a.get("text") or "", a.get("words"))), "options": labels}
+            "question": CH._line(C.said(a.get("text") or "", a.get("words"))), "options": labels}
 
 
 def paused_of(c):
