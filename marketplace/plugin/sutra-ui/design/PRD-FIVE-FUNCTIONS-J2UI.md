@@ -84,7 +84,7 @@ Writes pass `app.py`'s origin guard unchanged: a POST that carries an `Origin` w
 | 11 | Deeds and sends | none | no Send nodes |
 | 12 | `site/vN`, the Preview tab | versions of the previewable artifact (`Build`) | `versions` is the count; scripts do not run in the preview |
 | 13 | The Documents tab | none | three entries with `asked` false |
-| 14 | Audit results, rubric, conditions | Audit's readings and the Check engine's recorded check | a clean reading is **one `read` line** and no per-item PASS; `workable` None until readings carry per-item verdicts; a reading that was not read is no entry; conditions are the Check engine's notes, named as such (the plan's rule; today the adapter also lists Root's check of the plan, named as that: **E1, open**); no rubric, no screenshots |
+| 14 | Audit results, rubric, conditions | Audit's readings and the Check engine's recorded check | a clean reading is **one `read` line** and no per-item PASS; `workable` None until readings carry per-item verdicts and code gave every one (method `code` on each item; a verdict the reader gave alone is a reading, not a code check); a reading that was not read is no entry; conditions are the Check engine's notes, named as such (the plan's rule; today the adapter also lists Root's check of the plan, named as that: **E1, open**); no rubric, no screenshots |
 | 15 | Conflicts (Adaptation against Priority, up to four attempts) | bargain threads where Priority asked for less or said no, plus `conflict` posts and Identity's rulings | one conflict for each; a straight yes is not one |
 | 16 | Message `id` and the `since` cursor | an arrival-ordered, in-memory registry of the owner-facing turns, internal posts, ask messages and ledger messages | ids are 1-based positions and never move while the process lives; the adapter writes no file of its own |
 | 17 | `status`, `outcome`, `paused`, `done` | the cycle state, `j2_runtime.open_question`, pending asks | `status` is `waiting` whenever something waits on the owner, so the composer and the option buttons stay live while an engine runs; `outcome` is only `Done` or `Done with open items` |
@@ -218,7 +218,7 @@ How to run: `./run-tests.sh test_j2ui_verbatim.py test_j2ui_contract.py test_j2u
 | D-CHAT | the owner's side of the chat from `chat_view`, internal posts from the department's board, the Validator from the ledger | the owner's follow-ups are on Root's board | registry keys carry the board |
 | D-CLEAN | an own `clean()` with `ABS_PATH`, not `functions_view._clean` | `_clean` rewrites relative paths and dates | tested |
 | D-SCHEMA | vendor `j2_schema.py` byte for byte | `atoms_v1` is then the prototype's code, not a copy of its logic | changes only with the sync |
-| D-HONEST | a clean Audit reading is one `read` line; `workable` None until per-item readings exist | no invented item-by-item results or code check | none |
+| D-HONEST | a clean Audit reading is one `read` line; `workable` None until per-item readings exist and every item's method is `code` | no invented item-by-item results or code check | none |
 | D-FIXES | `fixes` is 1 | the page prints one of two fixed strings | S4 hides the line on request |
 | D-DIALOG | link a message to a call only on an unambiguous time match | no guessing | none |
 | D-REG | the chat id registry is in memory | the adapter writes no file of its own | after a restart ids are rebuilt by the same sort; an open page may show option buttons as not live until reloaded |

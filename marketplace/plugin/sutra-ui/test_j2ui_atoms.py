@@ -3,10 +3,13 @@
 Named claims:
   W3b an atom's words are the same words as the call log's: a decision's bare answer is the act in the owner's words
   W3  one atom for each slot step of an engine (a gate or a rule is a decision, not an atom), in order, W-1.a1 on, with every
-      key the page's atom card reads; its check is a sentence in the owner's words, the check's id only in `target`; an
-      attempt is a run of the engine, so a step that works on each page in turn has one attempt and several results; a step
-      that has not run has no status, no notes and no output; atoms_v1 is the prototype's own run_views of these atoms (the
-      equality proof, against the pinned prototype's j2_schema.py), and without the vendored file there is none
+      key the page's atom card reads; its check is a sentence in the owner's words, the check's id only in `target`; a result's
+      attempt is the run of the engine its row is of, so a step that works on each page in turn has one attempt and several
+      results; the atom's `attempts`, which the page prints as 'attempt N of 3', is the tries in the latest run (the most rows
+      the step has for one item) and no more than the engine's retry bound, so a first-try pass reads 'attempt 1 of 3' in every
+      request, however many requests the department has had; a step that has not run has no status, no notes and no output;
+      atoms_v1 is the prototype's own run_views of these atoms (the equality proof, against the pinned prototype's j2_schema.py),
+      and without the vendored file there is none
 
 The helpers (the stand-in Ctx, the record's writers) are test_j2ui_work.py's.
 """
@@ -149,7 +152,7 @@ def test_w3_a_check_with_no_notes_says_what_it_found_in_words(mods):
     assert "status" not in atoms[2]
 
 
-def test_w3_an_attempt_is_a_run_of_the_engine_not_a_row(mods):
+def test_w3_a_results_attempt_is_a_run_of_the_engine_not_a_row(mods):
     W, R, J, F = mods
     for item in ("index", "about", "doctors"):                                    # one run of Write, a page at a time
         step_row(R, "Write", "write.page", notes=["has a title and a body"], run_id="r-w1", item=item)
@@ -161,10 +164,11 @@ def test_w3_an_attempt_is_a_run_of_the_engine_not_a_row(mods):
     step_row(R, "Write", "write.page", ok=False, notes=["no body"], run_id="r-w2", item="index")   # the next run
     atoms, ctx = atoms_of(mods, "Write")
     a = atoms[1]
-    assert a["attempts"] == 2 and [r["attempt"] for r in a["results"]] == [2, 1, 1, 1] and {r["of"] for r in a["results"]} == {2}
+    assert [r["attempt"] for r in a["results"]] == [2, 1, 1, 1] and {r["of"] for r in a["results"]} == {2}, "the results say which run each is of"
+    assert a["attempts"] == 1, "and the step has been tried once in the latest run"
     assert [r["evidence"] for r in a["results"]][1:] == ["%s: has a title and a body" % i for i in ("index", "about", "doctors")], "the latest run first, each run's rows in order"
     assert a["status"] == "failed", "the latest run decides: it failed"
-    assert a["human_output"]["attempt"] == 2
+    assert a["human_output"]["attempt"] == 1 and a["agent_output"]["attempt"] == 1, "the notes say the try the card heads with"
 
 
 def test_w3_the_latest_run_passing_makes_it_passed_though_an_earlier_one_failed(mods):
@@ -172,7 +176,8 @@ def test_w3_the_latest_run_passing_makes_it_passed_though_an_earlier_one_failed(
     step_row(R, "Plan", "plan.read", ok=False, notes=["the brief is empty"], run_id="r-1")
     step_row(R, "Plan", "plan.read", ok=True, notes=["the brief has words"], run_id="r-2")
     atoms, ctx = atoms_of(mods, "Plan")
-    assert atoms[0]["status"] == "passed" and atoms[0]["attempts"] == 2
+    assert atoms[0]["status"] == "passed" and atoms[0]["attempts"] == 1, "passed at the first try of the latest run"
+    assert [r["attempt"] for r in atoms[0]["results"]] == [2, 1] and {r["of"] for r in atoms[0]["results"]} == {2}
 
 
 def test_w3_the_notes_are_the_answer_line_when_the_row_has_one_cut_to_a_line(mods):
@@ -194,6 +199,16 @@ def test_w3_a_decisions_bare_answer_is_never_the_words_of_an_atom(mods):
     atoms, ctx = atoms_of(mods, "Plan")
     assert [a["human_output"]["text"] for a in atoms] == ["asked for less", "stopped", "every page is on the list", "File the plan"]
     assert not re.search(r"\b(accept|counter|reject|admit|wait|refuse)\b|accept-proposal", json.dumps(K.build(ctx)), re.I)
+
+
+def test_w3_identitys_bare_answers_are_the_act_in_the_owners_words_on_the_atom_too(mods):
+    """The same table as the call log (j2ui_atoms.acts): Identity's run, drop and ask are 'it runs', 'dropped' and 'asked you'."""
+    W, R, J, F = mods
+    step_row(R, "Plan", "plan.read", notes=["the brief has words"], run_id="r-1", answer="run")
+    step_row(R, "Plan", "plan.pages", notes=["6 pages proposed"], run_id="r-1", answer="drop")
+    step_row(R, "Plan", "plan.fit", notes=["every page is on the list"], run_id="r-1", answer="ask")
+    atoms, ctx = atoms_of(mods, "Plan")
+    assert [a["human_output"]["text"] for a in atoms[:3]] == ["it runs", "dropped", "asked you"]
 
 
 def test_w3_agent_output_names_the_files_of_the_version_the_engine_made(mods):
@@ -424,9 +439,45 @@ def test_w3_an_atom_carries_the_latest_rows_of_a_step_not_every_row_it_ever_had(
         step_row(R, "Plan", "plan.read", ok=n % 10 != 0, notes=["note %d" % n], run_id="r-%03d" % n)
     atoms, ctx = atoms_of(mods, "Plan")
     a = atoms[0]
-    assert a["attempts"] == 100 and len(a["results"]) == A.RESULTS_MAX == 30
-    assert [r["attempt"] for r in a["results"]] == list(range(100, 70, -1)) and {r["of"] for r in a["results"]} == {100}
-    assert a["status"] == "passed" and a["human_output"]["text"] == "note 99" and a["human_output"]["attempt"] == 100
+    assert len(a["results"]) == A.RESULTS_MAX == 30
+    assert [r["attempt"] for r in a["results"]] == list(range(100, 70, -1)) and {r["of"] for r in a["results"]} == {100}, "the run each is of"
+    assert a["attempts"] == 1, "a hundred requests are not a hundred tries: the latest run tried it once"
+    assert a["status"] == "passed" and a["human_output"]["text"] == "note 99" and a["human_output"]["attempt"] == 1
+
+
+def test_w3_a_first_try_pass_reads_attempt_1_of_3_in_every_request(mods):
+    """The page prints 'attempt N of 3' from `attempts`. Each request runs the engine again, so counting the engine's runs made every
+    first-try atom read 'attempt 2 of 3' after one follow-up and 'attempt 4 of 3' after a fourth. It is the tries in the latest run."""
+    W, R, J, F = mods
+    for request in range(1, 5):
+        for sid in ("plan.read", "plan.pages", "plan.fit", "plan.file"):
+            step_row(R, "Plan", sid, notes=["fine"], run_id="r-request-%d" % request)
+        got = K.build(standin(mods))
+        plan = got["workflows"][0]["atoms"]
+        assert [a["attempts"] for a in plan] == [1, 1, 1, 1], request
+        assert [(a["human_output"]["attempt"], a["agent_output"]["attempt"]) for a in plan] == [(1, 1)] * 4, request
+        assert {r["of"] for a in plan for r in a["results"]} == {request}, "a result still says which run it is of"
+        text = shown(render(page_state(got), "atomCards(s, s.workflows[0])"))
+        assert text.count("checks passed, attempt 1 of 3") == 4, (request, text[:600])
+        assert text.count("Check attempt 1 of 3") == 4 and text.count("Attempt 1.") == 4, request
+        assert set(re.findall(r"(?:checks passed|checks failing), attempt (\d+) of 3|Check attempt (\d+) of 3", text)) == {("1", ""), ("", "1")}, request
+
+
+def test_w3_the_tries_are_the_most_rows_one_item_has_in_the_latest_run_and_never_over_the_retry_bound(mods):
+    W, R, J, F = mods
+    bound = len(R.WAITS)
+    assert bound == 3, "the 3 the page prints"
+    for item in ("index", "about"):                                               # a page each: one try
+        step_row(R, "Write", "write.page", notes=["fine"], run_id="r-w1", item=item)
+    assert atoms_of(mods, "Write")[0][1]["attempts"] == 1
+    step_row(R, "Write", "write.page", ok=False, notes=["no body"], run_id="r-w1", item="index")     # one page tried again in the same run
+    assert atoms_of(mods, "Write")[0][1]["attempts"] == 2
+    for n in range(6):                                                            # and again and again: the bound
+        step_row(R, "Write", "write.page", ok=False, notes=["no body"], run_id="r-w1", item="index")
+    a = atoms_of(mods, "Write")[0][1]
+    assert a["attempts"] == bound == a["human_output"]["attempt"] and len(a["results"]) == 9
+    step_row(R, "Write", "write.page", notes=["fine"], run_id="r-w2", item="index")             # the next run: its own tries
+    assert atoms_of(mods, "Write")[0][1]["attempts"] == 1
 
 
 def test_w3_runs_are_grouped_in_one_pass(mods):
