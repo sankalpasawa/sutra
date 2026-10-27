@@ -163,7 +163,8 @@ def slot_clashes(rs):
     """SM-11's clash in a slot, read off the run rows (PRD M4.3): two runs that finished on one slot id, or a start while
     another run of the department was open. [{slot, why}]; empty when the timetable held. A run row with no slot is a
     function's note of what it did, never a start. A run that answers a question another engine's run asked (for_run, W3-BOARD)
-    starts inside that run by design: the asker gave it the turn."""
+    starts inside that run by design, the asker having given it the turn (decision W3B-1): it is no clash when it ends inside that run
+    too, and one that outlasts its asker is a clash like any other."""
     out, ended = [], {}
     starts = [r for r in rs if r.get("slot")]
     for r in starts:
@@ -174,10 +175,11 @@ def slot_clashes(rs):
     spans = sorted(((W._ts(r.get("started") or ""), W._ts(r.get("ended") or "") if r.get("ended") else float("inf"), r)
                     for r in starts), key=lambda x: x[0])
     for i, (a0, a1, a) in enumerate(spans):
-        for b0, _, b in spans[i + 1:]:
+        for b0, b1, b in spans[i + 1:]:
             if b0 >= a1:
                 break
-            if b0 > a0 and not (b.get("for_run") and b.get("for_run") == a.get("id")):
+            answers = bool(b.get("for_run")) and b.get("for_run") == a.get("id") and b1 <= a1
+            if b0 > a0 and not answers:
                 out.append({"slot": b["slot"], "why": "it started while %s was running" % a.get("engine")})
     return out
 
@@ -998,6 +1000,24 @@ def engine_card(ref, name):
                 _five_row("Audit", "off", "will read the %s it leads to" % final if final else "has nothing to read yet"))
     out = {"engine": name, "head": head, "motor": motor, "five": [{k: r[k] for k in ENGINE_FIVE_ROW} for r in five]}
     return _clean({k: out[k] for k in ENGINE_CARD_FIELDS})
+
+
+def pinned_engine_card(ref, name):
+    """The engine's card as the department's pinned Coordination version reads it (A1.17, K4; the surface function engine_card
+    of a version, A2): what its engine_card() returns when it fits the interface (VIEWS['engine_card']), which is how a question
+    this engine asked or answered (W3-BOARD, M4.9) reaches its Coordination row; else today's read (engine_card), and the read
+    never raises. The route of the engine's card (website_api.engine) asks for this one, never for engine_card, which is the body
+    a version starts from and calls."""
+    try:
+        with layers.reading():                       # a card is a read: a pin the registry cannot honour is told by the next tick
+            module = layers.impl(ref, "coordination")
+            fn = getattr(module, "engine_card", None) if module is not None else None
+            got = fn(ref, name) if callable(fn) else None
+    except Exception:  # noqa: BLE001 -- a version's card that breaks costs the card nothing but that version's rows
+        got = None
+    if isinstance(got, dict) and not S.validate_view("engine_card", got):
+        return got
+    return engine_card(ref, name)
 
 
 #: set while a layer's view() is being read: a view that returns today's body by reference (every layer's wave 0 stub calls

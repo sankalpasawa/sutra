@@ -3336,14 +3336,16 @@ walks("S17 the engine card, running", ["wbEngineHtml"], async () => {
   vm.runInContext("S.wb.pane['r3:Write'] = 'engine';", c);
   return view(c);
 });
-/* a question this engine asked shows in its Coordination row, as the server says it (PRD M4.9): 'asked Plan about the page list (answered)' */
+/* a question this engine asked shows in its Coordination row, as the server says it (PRD M4.9): 'asked Plan about the page list (answered)'.
+   test_fixtures/views/engine_card.question.json is the card of GET /api/native/{ref}/engine/Write after the question (test_layer_board.py
+   B4, through the app's real route), written by that test and held to it: the row was a string this walk wrote by hand, and the route
+   did not carry it (a verifier, 2026-10-27) */
 walks("S17 the engine card, a question asked", ["wbEngineHtml"], async () => {
-  const card = cardOf(); card.five[3].says = "gave it the turn; asked Plan about the page list (answered)";
-  const c = await opened({ map: rtMap(), engine: { card } });
+  const c = await opened({ map: rtMap(), engine: { card: viewFile("engine_card.question.json") } });
   click(c, { wbengine: "Write" }); view(c); await sleep(); await sleep();
   vm.runInContext("S.wb.pane['r3:Write'] = 'engine';", c);
   return view(c);
-}, false, /gave it the turn; asked Plan about the page list \(answered\) at 10:23/);
+}, false, /gave it its slot; it ran; asked Plan about the page list \(answered\) at 10:23/);
 walks("S17 the engine card, waiting", ["wbEngineHtml"], async () => {
   const c = await opened({ map: rtMap(), engine: { card: cardOf({ waits: true, held: true }) } });
   click(c, { wbengine: "Write" }); view(c); await sleep(); await sleep();
