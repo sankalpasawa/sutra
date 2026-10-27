@@ -1,0 +1,262 @@
+{
+ "journeys": [
+  {
+   "schema_version": 1,
+   "id": "FP1",
+   "title": "The envelope",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "priority",
+   "serves": [
+    "J2:6"
+   ],
+   "site_serves": "J2, every start",
+   "declared": true,
+   "goal": "The envelope.",
+   "lead": "The site marks it: built.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/priority.html#fp1",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "priority",
+     "label": "Priority",
+     "kind": "function",
+     "function": "priority"
+    },
+    {
+     "id": "engines",
+     "label": "Workflows",
+     "kind": "engine"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "engines",
+     "short": "wants to start",
+     "text": "Wants to start",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "priority",
+     "short": "over the day's envelope?",
+     "text": "Over the day's envelope?",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "3",
+     "lane": "engines",
+     "short": "runs",
+     "text": "Runs",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FP1.1",
+     "at": "2",
+     "short": "Over: held; an ask goes up",
+     "trigger": "over: held; an ask goes up",
+     "site": {
+      "status": "none",
+      "text": "over: held; an ask goes up"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true,
+     "same_as": "J2/edge/J2.5"
+    },
+    {
+     "id": "FP1.2",
+     "at": "2",
+     "short": "You set a new limit",
+     "trigger": "you set a new limit",
+     "site": {
+      "status": "none",
+      "text": "you set a new limit"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "edge:FP1.1",
+    "edge:FP1.2"
+   ]
+  },
+  {
+   "schema_version": 1,
+   "id": "FP2",
+   "title": "The bargain with Adaptation",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "priority",
+   "serves": [
+    "J2:3"
+   ],
+   "site_serves": "J2 step 3",
+   "declared": true,
+   "goal": "The bargain with Adaptation.",
+   "lead": "The site marks it: built for an idea; to build for the line.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/priority.html#fp2",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "priority",
+     "label": "Priority",
+     "kind": "function",
+     "function": "priority"
+    },
+    {
+     "id": "adaptation",
+     "label": "Adaptation",
+     "kind": "function",
+     "function": "adaptation"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "adaptation",
+     "short": "proposes",
+     "text": "Proposes",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "priority",
+     "short": "grant, refuse, counter",
+     "text": "Grant, refuse, counter",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J2/step/3"
+    },
+    {
+     "n": "3",
+     "lane": "adaptation",
+     "short": "accepts or changes",
+     "text": "Accepts or changes",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "priority",
+     "short": "grants",
+     "text": "Grants",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FP2.1",
+     "at": "2",
+     "short": "At the limit: to Identity",
+     "trigger": "at the limit: to Identity",
+     "site": {
+      "status": "none",
+      "text": "at the limit: to Identity"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true,
+     "same_as": "J2/edge/J2.2"
+    },
+    {
+     "id": "FP2.2",
+     "at": "2",
+     "short": "Refused: idea parked",
+     "trigger": "refused: idea parked",
+     "site": {
+      "status": "none",
+      "text": "refused: idea parked"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "edge:FP2.1",
+    "edge:FP2.2"
+   ]
+  }
+ ]
+}

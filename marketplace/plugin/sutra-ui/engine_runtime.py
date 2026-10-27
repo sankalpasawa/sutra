@@ -55,6 +55,7 @@ from pathlib import Path
 
 import layers                      # each layer's bodies and words, behind the interface (PRD A1): _resolve asks its registry
 import layers.prompts              # the typed prompt compiler, and the .md reader it falls back on (PRD A1.16)
+from layers.identity import tighten  # a department's rule can only tighten an inherited one (J4.4, S-08, BL-2): pure, no runtime import
 import layer_schema                # the interface of Root and the five layers (PRD A1)
 import owner_words                 # the bargain in the owner's words (PRD M1.7), for Identity's plain-words check (M3.6)
 import record                      # the platform product: rows, deployed into the department's own folder
@@ -2484,8 +2485,44 @@ def _j1_file_words(ref, d, words, note, message_id=None, thread=None):
     return row, record
 
 
+def _inherited_rules(ref, d):
+    """The rules an ancestor holds that bind this department: _effective_rules less the department's own and less the copy its
+    own charter keeps of them (M3.1), which says the same words under a charter's id."""
+    own = {x.get("id") for x in d.get("rules") or []}
+    try:
+        import placement_engine as E
+        mirror = tuple("%s:rule:" % c.get("id") for c in E.charters_for(ref))
+    except Exception:  # noqa: BLE001 -- no registry to read: nothing above this department is known, and nothing is inherited
+        mirror = ()
+    return [r for r in _effective_rules(ref, d) if r.get("id") not in own and not str(r.get("id") or "").startswith(mirror)]
+
+
+def _loosens(ref, d, line, tag):
+    """One sentence for each rule an ancestor holds that a rule asked for, or stamped, would loosen (J4.4, S-08, BL-2): the same
+    line, said more strictly above. Matching is by normalised line, not by meaning (BL-2b); [] when it loosens none."""
+    return tighten.rule_faults(_inherited_rules(ref, d), line, tag)
+
+
+def _said_no_to_looser(ref, d, faults, thread=None):
+    """Identity says a department's rules can only tighten an inherited one, and a row on the record says what stood. Nothing is
+    kept and nothing is asked. The words go where the owner's came from: onto Root's board too when Root handed them on."""
+    said = " ".join(faults)
+    opened = (_thread(ref, thread) or {}).get("opened_by") if thread else None
+    via = "Root" if opened == "Root" or (not thread and d.get("root")) else OWNER
+    _tell(ref, d, {"src": via}, "inform", {"word": "request", "done": "Root's rule stands: a department's rules can only tighten it. " + said},
+          thread=thread)
+    W.system_run(ref, "Identity", "said no to a rule that loosens one it inherits: " + said)
+
+
 def _rule_ask(ref, slot, line, tag, words, thread, lead, **more):
-    """A rule, restated, as an ask the owner stamps; `more` is kept on the ask (its scope, the question it answers)."""
+    """A rule, restated, as an ask the owner stamps; `more` is kept on the ask (its scope, the question it answers). A rule that
+    would loosen one an ancestor holds is not asked for (J4.4): Identity says so, and None comes back, so the owner is never
+    asked to stamp a rule that would be turned down."""
+    d = W.dept(ref)
+    faults = _loosens(ref, d, line, tag)
+    if faults:
+        _said_no_to_looser(ref, d, faults, thread)
+        return None
     text = "%s: %s" % (lead, line)
     W._put_ask(ref, dict({"id": "a-" + uuid.uuid4().hex[:8], "kind": "rule", "engine": "Identity", "slot": slot, "text": text, "tag": tag,
                           "line": line, "words": words, "status": "pending", "created": W.now(), "thread": thread}, **more))
@@ -2518,6 +2555,9 @@ def _rule_answered(ctx, got):
         return {"said": "the department already has this rule: " + line}
     text = _rule_ask(ref, ctx["slot"], line, tag, words, p["thread"], "A rule, as understood (%s, %s)" % (RULE_SAYS[tag], SCOPE_SAYS[scope]),
                      scope=scope, answers=aid)
+    if text is None:                                     # it would loosen a rule above (J4.4): said so, and the question is asked again
+        identity_next(ref)
+        return {"said": "said no to a rule that is looser than an inherited one: " + line}
     _tell(ref, d, p, "request", {"word": "rule", "objective": text, "output": "a stamp or a refusal", "may_read": [],
                                  "boundaries": "this department, until the owner says otherwise"}, thread=p["thread"])
     return {"said": "restated the owner's answer as a rule, tagged %s, and put it back: %s" % (tag, line)}
@@ -2811,6 +2851,8 @@ def identity_file(ctx, step, item):
             return {"said": "the department already has this rule: " + r["line"], "journey": journey}
         text = _rule_ask(ref, ctx["slot"], r["line"], r["tag"], words, p["thread"], "A new goal, as understood" if r["tag"] == "goal"
                          else "A rule, as understood")
+        if text is None:                                 # it would loosen a rule above (J4.4): said so, and nothing is asked
+            return {"said": "said no to a rule that is looser than an inherited one: " + r["line"], "journey": journey}
         _tell(ref, d, p, "request", {"word": "rule", "objective": text, "output": "a stamp or a refusal", "may_read": [],
                                      "boundaries": "this department, until the owner says otherwise"}, thread=p["thread"])
         return {"said": "restated the owner's words and put them back: " + r["line"], "journey": journey}
@@ -2877,6 +2919,8 @@ def identity_file(ctx, step, item):
             _tell(ref, d, p, "inform", {"word": "request", "done": "the department already has this rule"}, thread=p["thread"])
             return {"said": "the department already has this rule: " + line}
         text = _rule_ask(ref, ctx["slot"], line, str(rule["tag"]), words, p["thread"], "A rule, as understood")
+        if text is None:                                 # it would loosen a rule above (J4.4): said so, and nothing is asked
+            return {"said": "said no to a rule that is looser than an inherited one: " + line}
         _tell(ref, d, p, "request", {"word": "rule", "objective": text, "output": "a stamp or a refusal", "may_read": [],
                                      "boundaries": "this department, until the owner says otherwise"}, thread=p["thread"])
         return {"said": "restated the owner's words as a rule and put them back: " + line}
@@ -3399,6 +3443,13 @@ def identity_apply(ctx, step, item):
             return {"said": "took the owner's words, stamped; the plan is shaped afresh", "filed": row["v"]}
         return {"said": "took the owner's words, stamped", "filed": row["v"]}
     if a.get("kind") == "rule":
+        faults = _loosens(ref, ctx["dept"], a.get("line"), a.get("tag"))
+        if faults:
+            # an ancestor's rule may have changed between the ask and the stamp (J4.4): nothing is written
+            _said_no_to_looser(ref, ctx["dept"], faults)
+            if a.get("answers"):
+                identity_next(ref)                       # it answered Identity's question on the rules: asked again, as for a no
+            return {"said": "said no to a rule that is looser than an inherited one"}
         with W._lock(ref):
             d = W.dept(ref)
             if a.get("tag") == "goal":

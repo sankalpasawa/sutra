@@ -1,0 +1,252 @@
+{
+ "journeys": [
+  {
+   "schema_version": 1,
+   "id": "FC1",
+   "title": "Who goes first",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "coordination",
+   "serves": [
+    "J2:6"
+   ],
+   "site_serves": "J2 step 3",
+   "declared": true,
+   "goal": "Who goes first.",
+   "lead": "The site marks it: built.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/coordination.html#fc1",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "coordination",
+     "label": "Coordination",
+     "kind": "function",
+     "function": "coordination"
+    },
+    {
+     "id": "engines",
+     "label": "Workflows",
+     "kind": "engine"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "coordination",
+     "short": "tick: who is ready",
+     "text": "Tick: who is ready",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "coordination",
+     "short": "the table picks one",
+     "text": "The table picks one",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "3",
+     "lane": "engines",
+     "short": "it runs, files",
+     "text": "It runs, files",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "coordination",
+     "short": "the row; next tick",
+     "text": "The row; next tick",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FC1.1",
+     "at": "2",
+     "short": "A tie: one AI call",
+     "trigger": "a tie: one AI call",
+     "site": {
+      "status": "none",
+      "text": "a tie: one AI call"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     }
+    },
+    {
+     "id": "FC1.2",
+     "at": "2",
+     "short": "A held one holds the ones after it",
+     "trigger": "a held one holds the ones after it",
+     "site": {
+      "status": "none",
+      "text": "a held one holds the ones after it"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    },
+    {
+     "id": "FC1.3",
+     "at": "3",
+     "short": "Past its window: an alarm",
+     "trigger": "past its window: an alarm",
+     "site": {
+      "status": "none",
+      "text": "past its window: an alarm"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "edge:FC1.1",
+    "edge:FC1.2",
+    "edge:FC1.3"
+   ]
+  },
+  {
+   "schema_version": 1,
+   "id": "FC2",
+   "title": "A lost request",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "coordination",
+   "serves": [],
+   "site_serves": "J1 edge",
+   "declared": true,
+   "goal": "A lost request.",
+   "lead": "The site marks it: built.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/coordination.html#fc2",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "you",
+     "label": "You",
+     "kind": "person"
+    },
+    {
+     "id": "identity",
+     "label": "Identity",
+     "kind": "function",
+     "function": "identity"
+    },
+    {
+     "id": "coordination",
+     "label": "Coordination",
+     "kind": "function",
+     "function": "coordination"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "you",
+     "short": "your words",
+     "text": "Your words",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "coordination",
+     "short": "nobody answered in the bound",
+     "text": "Nobody answered in the bound",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "3",
+     "lane": "coordination",
+     "short": "closes it: lost",
+     "text": "Closes it: lost",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "identity",
+     "short": "says it back, asks again",
+     "text": "Says it back, asks again",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4"
+   ]
+  }
+ ]
+}

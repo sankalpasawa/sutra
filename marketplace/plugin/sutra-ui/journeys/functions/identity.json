@@ -1,0 +1,570 @@
+{
+ "journeys": [
+  {
+   "schema_version": 1,
+   "id": "FI1",
+   "title": "Enough to work?",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "identity",
+   "serves": [
+    "J2:1"
+   ],
+   "site_serves": "J2 step 1",
+   "declared": true,
+   "goal": "Enough to work?.",
+   "lead": "The site marks it: partly built.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/identity.html#fi1",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "you",
+     "label": "You",
+     "kind": "person"
+    },
+    {
+     "id": "root",
+     "label": "Root",
+     "kind": "root"
+    },
+    {
+     "id": "identity",
+     "label": "Identity",
+     "kind": "function",
+     "function": "identity"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "root",
+     "short": "words handed over",
+     "text": "Words handed over",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "identity",
+     "short": "enough to work?",
+     "text": "Enough to work?",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J2/step/1"
+    },
+    {
+     "n": "3",
+     "lane": "identity",
+     "short": "asks its own question",
+     "text": "Asks its own question",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "you",
+     "short": "you answer",
+     "text": "You answer",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "5",
+     "lane": "identity",
+     "short": "files the Brief",
+     "text": "Files the Brief",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FI1.1",
+     "at": "2",
+     "short": "Still too little: ask again",
+     "trigger": "still too little: ask again",
+     "site": {
+      "status": "none",
+      "text": "still too little: ask again"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true,
+     "same_as": "J2/edge/J2.1"
+    },
+    {
+     "id": "FI1.2",
+     "at": "2",
+     "short": "J1 answered it: no question",
+     "trigger": "J1 already answered it: no question",
+     "site": {
+      "status": "none",
+      "text": "J1 already answered it: no question"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "tests": [
+      "test_j2_identity.py::test_m3_3_a_question_j1_already_answered_is_not_asked"
+     ],
+     "truncated": true
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "step:5",
+    "edge:FI1.1",
+    "edge:FI1.2"
+   ]
+  },
+  {
+   "schema_version": 1,
+   "id": "FI2",
+   "title": "Words after go-live",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "identity",
+   "serves": [
+    "J3:1"
+   ],
+   "site_serves": "J3",
+   "declared": true,
+   "goal": "Words after go-live.",
+   "lead": "The site marks it: built.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/identity.html#fi2",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "you",
+     "label": "You",
+     "kind": "person"
+    },
+    {
+     "id": "identity",
+     "label": "Identity",
+     "kind": "function",
+     "function": "identity"
+    },
+    {
+     "id": "engines",
+     "label": "Workflows",
+     "kind": "engine"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "you",
+     "short": "you speak",
+     "text": "You speak",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J3/step/1"
+    },
+    {
+     "n": "2",
+     "lane": "identity",
+     "short": "recognise the journey",
+     "text": "Recognise the journey",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J3/step/3"
+    },
+    {
+     "n": "3",
+     "lane": "identity",
+     "short": "take / answer / rule / weigh",
+     "text": "Take / answer / rule / weigh",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "identity",
+     "short": "file; tell",
+     "text": "File; tell",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J3/step/4a"
+    },
+    {
+     "n": "5",
+     "lane": "engines",
+     "short": "the workflows run",
+     "text": "The workflows run",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FI2.1",
+     "at": "3",
+     "short": "Reaches outside: an ask",
+     "trigger": "reaches outside: an ask",
+     "site": {
+      "status": "none",
+      "text": "reaches outside: an ask"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true,
+     "same_as": "J3/edge/J3.1"
+    },
+    {
+     "id": "FI2.2",
+     "at": "3",
+     "short": "Refuse: told why",
+     "trigger": "refuse: told why",
+     "site": {
+      "status": "none",
+      "text": "refuse: told why"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "same_as": "J3/edge/J3.2"
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "step:5",
+    "edge:FI2.1",
+    "edge:FI2.2"
+   ]
+  },
+  {
+   "schema_version": 1,
+   "id": "FI3",
+   "title": "The gates",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "identity",
+   "serves": [
+    "J2:6"
+   ],
+   "site_serves": "J2 step 6",
+   "declared": true,
+   "goal": "The gates.",
+   "lead": "The site marks it: built; the default ask is your open call.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/identity.html#fi3",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "you",
+     "label": "You",
+     "kind": "person"
+    },
+    {
+     "id": "identity",
+     "label": "Identity",
+     "kind": "function",
+     "function": "identity"
+    },
+    {
+     "id": "engines",
+     "label": "Workflows",
+     "kind": "engine"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "engines",
+     "short": "wants to go outside",
+     "text": "Wants to go outside",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "identity",
+     "short": "a rule says ask?",
+     "text": "A rule says ask?",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "3",
+     "lane": "you",
+     "short": "Stamp",
+     "text": "Stamp",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "engines",
+     "short": "goes",
+     "text": "Goes",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FI3.1",
+     "at": "2",
+     "short": "No rule: goes and tells",
+     "trigger": "no rule: goes and tells",
+     "site": {
+      "status": "none",
+      "text": "no rule: goes and tells"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    },
+    {
+     "id": "FI3.2",
+     "at": "3",
+     "short": "Refused: never goes",
+     "trigger": "refused: never goes",
+     "site": {
+      "status": "none",
+      "text": "refused: never goes"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "edge:FI3.1",
+    "edge:FI3.2"
+   ]
+  },
+  {
+   "schema_version": 1,
+   "id": "FI4",
+   "title": "Closes a conflict",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "identity",
+   "serves": [
+    "J2:4"
+   ],
+   "site_serves": "J2 step 4",
+   "declared": true,
+   "goal": "Closes a conflict.",
+   "lead": "The site marks it: to build.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/identity.html#fi4",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "you",
+     "label": "You",
+     "kind": "person"
+    },
+    {
+     "id": "identity",
+     "label": "Identity",
+     "kind": "function",
+     "function": "identity"
+    },
+    {
+     "id": "priority",
+     "label": "Priority",
+     "kind": "function",
+     "function": "priority"
+    },
+    {
+     "id": "adaptation",
+     "label": "Adaptation",
+     "kind": "function",
+     "function": "adaptation"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "priority",
+     "short": "cannot agree with Adaptation",
+     "text": "Cannot agree with Adaptation",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "identity",
+     "short": "closes it by the goal, the rules",
+     "text": "Closes it by the goal, the rules",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J2/step/4"
+    },
+    {
+     "n": "3",
+     "lane": "you",
+     "short": "you decide",
+     "text": "You decide",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "adaptation",
+     "short": "goes on",
+     "text": "Goes on",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FI4.1",
+     "at": "2",
+     "short": "Settled: no ask",
+     "trigger": "settled: no ask",
+     "site": {
+      "status": "none",
+      "text": "settled: no ask"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     }
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "edge:FI4.1"
+   ]
+  }
+ ]
+}

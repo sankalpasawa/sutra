@@ -1,0 +1,756 @@
+{
+ "schema_version": 1,
+ "id": "J3",
+ "title": "Words after go-live: a change, a question, a correction, an idea",
+ "kind": "person",
+ "inside": null,
+ "bound_to": null,
+ "serves": [],
+ "declared": false,
+ "goal": "After go-live you speak, on Root's chat or inside the department; Identity recognises what kind of words they are and does the right thing: files a task, answers a question, restates a rule, weighs a correction, or hands an idea to Adaptation.",
+ "lead": "Words after go-live: a change, a question, a correction, an idea. One way in, and Identity recognises which of five journeys the words are (task, query, directive, feedback, new idea). A directive is J4; a new idea is J5.",
+ "ends_when": "The words have been answered, filed, asked about or handed on, and the function's chat keeps them and what came of them.",
+ "flag": null,
+ "site": {
+  "page": "native/system/department.html#j3",
+  "data_version": "2.4",
+  "as_of": "2026-10-01"
+ },
+ "helper": {
+  "site": "Sutra",
+  "screen": "Root",
+  "code": "Root"
+ },
+ "lanes": [
+  {
+   "id": "you",
+   "label": "You",
+   "kind": "person"
+  },
+  {
+   "id": "root",
+   "label": "Root",
+   "kind": "root"
+  },
+  {
+   "id": "identity",
+   "label": "Identity",
+   "kind": "function",
+   "function": "identity"
+  }
+ ],
+ "steps": [
+  {
+   "n": "1",
+   "lane": "you",
+   "short": "You speak",
+   "text": "You speak: on Root's chat with the department's chip, or inside the department, or in a function's chat.",
+   "site_function": "you",
+   "site_status": "none",
+   "act": "say",
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Owner",
+     "act": "request",
+     "word": "front",
+     "dst": "Identity",
+     "optional": true
+    },
+    {
+     "kind": "act",
+     "src": "Owner",
+     "act": "request",
+     "word": "request",
+     "dst": "Identity",
+     "optional": true
+    },
+    {
+     "kind": "api",
+     "method": "POST",
+     "path": "/api/native/{ref}/ask"
+    }
+   ],
+   "code": [
+    "engine_runtime.request",
+    "website_dept.owner_ask"
+   ],
+   "tests": [
+    "js:test_website.js#W25",
+    "js:test_website.js#W34",
+    "js:test_website.js#W40",
+    "test_engine_runtime.py::TestTheFrontDoor::test_81_the_persons_front_turn_carries_the_department_it_reached",
+    "test_engine_runtime.py::TestWhatTheOwnerSees::test_82_a_functions_chat_exists_from_birth_and_is_its_turns_and_thinking",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_task",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_through_roots_chat"
+   ],
+   "site_says": "none",
+   "site_code": "request: front / request / about.fn / about.dept"
+  },
+  {
+   "n": "2",
+   "lane": "root",
+   "short": "Root hands the words on",
+   "text": "On Root the words are handed on as a post from Root to the department's Identity; the answers come back onto Root's board, marked via Root.",
+   "site_function": "Root's Identity",
+   "site_status": "none",
+   "act": "post",
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Root",
+     "act": "request",
+     "word": "request",
+     "dst": "Identity"
+    }
+   ],
+   "code": [
+    "identity_route",
+    "identity_hand",
+    "_tell"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_63_the_person_speaks_with_root_and_root_hands_the_words_to_the_department",
+    "test_engine_runtime.py::TestTheFrontDoor::test_66_one_place_to_read_the_departments_own_asks_and_answers_sit_in_its_chat_beside_roots",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_through_roots_chat"
+   ],
+   "site_says": "none",
+   "site_code": "request, _tell"
+  },
+  {
+   "n": "3",
+   "lane": "identity",
+   "short": "Identity recognises",
+   "text": "The department's Identity reads (code) and recognises the journey: task, query, directive, feedback, new-idea.",
+   "site_function": "Identity",
+   "site_status": "none",
+   "act": "decide",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "identity.read"
+    },
+    {
+     "kind": "step",
+     "id": "identity.recognise"
+    }
+   ],
+   "code": [
+    "identity_read",
+    "p_identity_recognise",
+    "d_identity_recognise",
+    "c_journey_is_known"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_34_the_first_words_are_the_goal_and_need_no_recognising",
+    "test_engine_runtime.py::TestTheFiveJourneys::test_43_words_that_are_none_of_the_five_go_to_the_owner_as_one_question",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_task",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_through_roots_chat"
+   ],
+   "site_says": "none",
+   "site_code": "identity.read, identity.recognise"
+  },
+  {
+   "n": "4a",
+   "lane": "identity",
+   "short": "Task: go, ask or refuse",
+   "text": "Task: the take gives go / ask / refuse, what you are unsure of, a rule your words state, thin. Go files a Brief version and tells \"filed in the Brief\"; the line runs from Write on; Publish needs no second stamp.",
+   "site_function": "Identity",
+   "site_status": "none",
+   "act": "file",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "identity.take"
+    },
+    {
+     "kind": "step",
+     "id": "identity.file"
+    },
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "request",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "p_identity_take",
+    "identity_file"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_35_a_task_goes_to_the_line",
+    "test_engine_runtime.py::TestWhatTheOwnerSees::test_33_a_request_that_reaches_outside_the_site_is_put_back_to_the_owner",
+    "test_engine_runtime.py::TestWhatTheOwnerSees::test_91_what_the_person_is_not_sure_of_stays_out_and_is_asked_about_before_anything_is_built_from_it",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_task"
+   ],
+   "site_says": "none",
+   "site_code": "identity.take, identity_file"
+  },
+  {
+   "n": "4b",
+   "lane": "identity",
+   "short": "Query: answered",
+   "text": "Query: answered from the record's lines: the plan, the site, version counts, what waits, the latest text filed.",
+   "site_function": "Identity",
+   "site_status": "none",
+   "act": "tell",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "identity.answer"
+    },
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "answer",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "p_identity_answer",
+    "_record_lines"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_36_a_query_is_answered_with_its_source_and_changes_nothing",
+    "test_engine_runtime.py::TestRunThree::test_108_a_question_is_answered_from_what_the_department_filed_not_only_from_its_counts",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_query"
+   ],
+   "site_says": "none",
+   "site_code": "identity.answer, _record_lines"
+  },
+  {
+   "n": "4c",
+   "lane": "identity",
+   "short": "Directive: a rule",
+   "text": "Directive: restated as one rule with a tag and a scope: J4.",
+   "site_function": "Identity",
+   "site_status": "none",
+   "act": "ask",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "identity.rule"
+    },
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "request",
+     "word": "rule",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "p_identity_rule",
+    "d_identity_rule",
+    "identity_file",
+    "_rule_ask"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp",
+    "test_engine_runtime.py::TestTheFiveJourneys::test_38_a_directive_for_this_once_is_applied_and_not_kept",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_directive"
+   ],
+   "child": "J4",
+   "site_says": "none",
+   "site_code": "identity.rule"
+  },
+  {
+   "n": "4d",
+   "lane": "identity",
+   "short": "Feedback: weighed",
+   "text": "Feedback: the page, what changes now, a rule to carry; the correction filed to the line and marked against the step that made the page.",
+   "site_function": "Identity",
+   "site_status": "none",
+   "act": "file",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "identity.weigh"
+    }
+   ],
+   "code": [
+    "p_identity_weigh",
+    "_mark",
+    "identity_file"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_40_feedback_corrects_the_work_now_and_counts_against_the_step_that_made_it",
+    "test_engine_runtime.py::TestTheFiveJourneys::test_41_feedback_carried_forward_is_a_rule_only_if_the_owner_says_it_sticks",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_feedback"
+   ],
+   "site_says": "none",
+   "site_code": "identity.weigh, _mark"
+  },
+  {
+   "n": "4e",
+   "lane": "identity",
+   "short": "New idea: to Adaptation",
+   "text": "New idea: to Adaptation: J5.",
+   "site_function": "Identity, Adaptation",
+   "site_status": "none",
+   "act": "post",
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "request",
+     "word": "idea",
+     "dst": "Adaptation"
+    },
+    {
+     "kind": "act",
+     "src": "Adaptation",
+     "act": "inform",
+     "word": "idea",
+     "dst": "Identity"
+    },
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "idea",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "identity_file"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_42_a_new_idea_is_shaped_and_parked_never_built_and_never_lost",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_new_idea"
+   ],
+   "child": "J5",
+   "site_says": "none",
+   "site_code": "post word idea"
+  },
+  {
+   "n": "5",
+   "lane": "you",
+   "short": "The function's chat keeps it",
+   "text": "The function's chat keeps your words said to it, the tells of the line on the Brief versions they made, and its own thinking as quiet lines.",
+   "site_function": "the function",
+   "site_status": "none",
+   "act": "read",
+   "binds": [
+    {
+     "kind": "api",
+     "method": "GET",
+     "path": "/api/native/{ref}/chat"
+    }
+   ],
+   "code": [
+    "fn_chat_view"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestWhatTheOwnerSees::test_82_a_functions_chat_exists_from_birth_and_is_its_turns_and_thinking",
+    "test_engine_runtime.py::TestRunThree::test_100_what_came_of_words_said_to_a_function_lands_in_its_chat",
+    "test_engine_runtime.py::TestWhatTheOwnerSees::test_92_the_same_thought_twice_in_a_row_is_one_line_of_a_functions_chat",
+    "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_task"
+   ],
+   "site_says": "none",
+   "site_code": "fn_chat_view"
+  }
+ ],
+ "edges": [
+  {
+   "id": "J3.1",
+   "at": "4a",
+   "short": "Words reach outside",
+   "trigger": "Your words reach outside the site (a claim, a name, a price).",
+   "site": {
+    "status": "built",
+    "text": "An ask of kind request: \"Put them on the site as said?\"; a stamp files them as a Brief version, a refusal leaves them out (_reaches)."
+   },
+   "code_does": "identity_file asks (kind request) before filing words that _reaches outside the site; a stamp files them (identity_apply), a refusal leaves them out.",
+   "outcome": {
+    "kind": "ask",
+    "voice": "Identity",
+    "golden": "Your words reach outside the site"
+   },
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "request",
+     "word": "request",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "_reaches",
+    "identity_file",
+    "identity_apply"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestWhatTheOwnerSees::test_33_a_request_that_reaches_outside_the_site_is_put_back_to_the_owner",
+    "test_engine_runtime.py::TestWhatTheOwnerSees::test_93_an_ask_never_says_the_words_need_the_internet_and_the_stamp_files_them",
+    "test_engine_runtime.py::TestTheFrontDoor::test_76_what_reaches_outside_is_named_in_the_persons_words",
+    "test_engine_runtime.py::TestTheFrontDoor::test_73_a_stamp_on_an_ask_inside_the_department_is_a_turn_of_the_chat_inside_and_on_root"
+   ],
+   "rulings": [
+    "S-18"
+   ]
+  },
+  {
+   "id": "J3.2",
+   "at": "4a",
+   "short": "The take refuses",
+   "trigger": "The take refuses.",
+   "site": {
+    "status": "none",
+    "text": "You are told why; nothing filed."
+   },
+   "code_does": "identity_file posts a refuse from Identity to the owner with the reason, and files nothing.",
+   "outcome": {
+    "kind": "refuse",
+    "voice": "Identity",
+    "golden": null
+   },
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "refuse",
+     "word": "request",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "identity_file"
+   ],
+   "tests": [
+    "test_functions_view.py::test_m17_every_tab_of_every_functions_pane_says_the_owners_words",
+    "test_layer_journey_j3.py::TestJ3Edges::test_j3_2_a_refused_take_tells_the_owner_why_and_files_nothing"
+   ]
+  },
+  {
+   "id": "J3.3",
+   "at": "4a",
+   "short": "A rule inside a task",
+   "trigger": "Your words state a standing rule inside a task.",
+   "site": {
+    "status": "built",
+    "text": "The rule ask comes first (\"A rule, as understood\"), then the task (_rule_ask)."
+   },
+   "code_does": "identity_file asks for the rule first (_rule_ask), then files the task.",
+   "outcome": {
+    "kind": "ask",
+    "voice": "Identity",
+    "golden": "A rule, as understood"
+   },
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "request",
+     "word": "rule",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "_rule_ask",
+    "identity_file"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestRunThree::test_102_words_identitys_take_calls_a_rule_are_filed_as_a_rule_not_as_a_request"
+   ]
+  },
+  {
+   "id": "J3.4",
+   "at": "1",
+   "short": "The chip is off",
+   "trigger": "You take the chip off on Root's chat.",
+   "site": {
+    "status": "none",
+    "text": "The words go to Root itself: a new department, or a query Root answers."
+   },
+   "code_does": "With the chip off the words go to the department the words name, else to the only department; with two or more and none named, Root says \"Say which department: ...\"; a new department is made only for setup words, with no department yet, or while Root's own question is open. Root answers no query.",
+   "outcome": {
+    "kind": "tell",
+    "voice": "Identity",
+    "golden": "Say which department:"
+   },
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Root",
+     "act": "request",
+     "word": "request",
+     "dst": "Identity"
+    },
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "request",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "identity_route",
+    "identity_hand",
+    "_named"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_63_the_person_speaks_with_root_and_root_hands_the_words_to_the_department",
+    "test_engine_runtime.py::TestTheFrontDoor::test_95_a_second_department_takes_a_new_name_and_an_existing_name_is_said_back_with_the_words_handed_on",
+    "js:test_website.js#W25",
+    "test_layer_journey_j3.py::TestJ3Edges::test_j3_4_chip_off_goes_to_the_only_department",
+    "test_layer_journey_j3.py::TestJ3Edges::test_j3_4_chip_off_with_two_departments_says_which"
+   ],
+   "reword": "With the chip off, the words go to the department they name, or to the only department. With several departments and none named, Root asks which. A new department is made from words that ask for one. Root answers no question itself."
+  },
+  {
+   "id": "J3.5",
+   "at": "2",
+   "short": "You name a department",
+   "trigger": "You name a department in the words.",
+   "site": {
+    "status": "none",
+    "text": "Root's Identity finds it by the name and hands on."
+   },
+   "code_does": "_named finds the department by its name (or its name without 'website') in the words and the words go to it; the chip words are stripped.",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   },
+   "code": [
+    "_named",
+    "identity_route"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_63_the_person_speaks_with_root_and_root_hands_the_words_to_the_department"
+   ]
+  },
+  {
+   "id": "J3.6",
+   "at": "4a",
+   "short": "The words name nothing",
+   "trigger": "The words name nothing to build from.",
+   "site": {
+    "status": "none",
+    "text": "One question, nothing filed (thin)."
+   },
+   "code_does": "The take's thin branch asks one question and files nothing; inside a live cycle j2_runtime.questioned records it.",
+   "outcome": {
+    "kind": "ask",
+    "voice": "Identity",
+    "golden": null
+   },
+   "code": [
+    "identity_file",
+    "j2_runtime.questioned"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestRunThree::test_107_words_that_name_nothing_to_build_from_get_a_question_not_a_site",
+    "test_j2.py::test_j2_1_thin_first_words_are_asked_about_and_nothing_starts"
+   ]
+  },
+  {
+   "id": "J3.7",
+   "at": "4c",
+   "short": "Just this once",
+   "trigger": "A directive meant once (\"just this once\").",
+   "site": {
+    "status": "none",
+    "text": "Applied once, not kept (scope: one-time)."
+   },
+   "code_does": "A one-time directive is filed in the Brief as a line and no rule ask is made.",
+   "outcome": {
+    "kind": "file",
+    "voice": "Identity",
+    "golden": null
+   },
+   "code": [
+    "d_identity_rule",
+    "identity_file"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_38_a_directive_for_this_once_is_applied_and_not_kept"
+   ]
+  },
+  {
+   "id": "J3.8",
+   "at": "4a",
+   "short": "A born engine's words again",
+   "trigger": "A born engine's words again.",
+   "site": {
+    "status": "none",
+    "text": "Its need step decides whether the newest words ask for its work again; \"not needed\" files nothing and the line reads its last filing (do.need)."
+   },
+   "code_does": "do.need asks whether the newest words need this engine's work; not needed ends the run ok with nothing filed.",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": "not needed:"
+   },
+   "code": [
+    "do_read",
+    "p_do_need"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestRunThree::test_103_an_engine_that_reads_the_brief_runs_again_only_when_the_words_ask_for_its_work",
+    "test_engine_runtime.py::TestRunThree::test_104_a_search_that_runs_again_reads_what_it_filed_last_time",
+    "test_engine_runtime.py::TestTheFrontDoor::test_67_a_step_not_needed_this_time_never_fails_a_run"
+   ]
+  },
+  {
+   "id": "J3.9",
+   "at": "3",
+   "short": "An engine ask is pending",
+   "trigger": "An engine ask is pending when you speak.",
+   "site": {
+    "status": "none",
+    "text": "Every work engine waits; you are told once that the line waits for your stamp (identity_wait_engine); Root is never held."
+   },
+   "code_does": "identity_wait_engine holds the line's engines while an engine ask is pending and tells the owner once; Root is never held.",
+   "outcome": {
+    "kind": "hold",
+    "voice": "Identity",
+    "golden": null
+   },
+   "binds": [
+    {
+     "kind": "step",
+     "id": "identity.wait_engine"
+    }
+   ],
+   "code": [
+    "identity_wait_engine"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestRunThree::test_96_the_line_waits_while_an_engine_ask_the_goal_needs_is_pending_and_says_so"
+   ]
+  }
+ ],
+ "sub": [],
+ "children": [
+  "J4",
+  "J5"
+ ],
+ "directions": [],
+ "build_rows": [],
+ "rulings": [
+  {
+   "id": "S-07",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "Adaptation may change the wording inside model steps without an ask; the rest stays behind asks."
+  },
+  {
+   "id": "S-18",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "Authority: the AI has the whole authority to make things happen unless a person says something; no ask stops a run by default; a person narrows with a rule, a Stop, a refusal."
+  },
+  {
+   "id": "S-30",
+   "status": "RULED",
+   "date": "2026-10-01",
+   "text": "Verification as a product: Audit reads every outcome against a specification written from several angles."
+  }
+ ],
+ "decisions": [
+  "Q8"
+ ],
+ "quotes": [],
+ "scenarios": [
+  {
+   "id": "J3.task",
+   "lane": "the department's life",
+   "test": "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_task",
+   "walks": [
+    "1",
+    "3",
+    "4a",
+    "5"
+   ],
+   "says": "A live department is asked for a change; the task is filed in the Brief and the line runs it."
+  },
+  {
+   "id": "J3.root",
+   "lane": "the department's life",
+   "test": "test_layer_journey_j3.py::TestJ3Walks::test_walk_through_roots_chat",
+   "walks": [
+    "1",
+    "2",
+    "3"
+   ],
+   "says": "Words said on Root's chat are handed to the department's Identity and recognised; the answers come back onto Root's board."
+  },
+  {
+   "id": "J3.query",
+   "lane": "the department's life",
+   "test": "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_query",
+   "walks": [
+    "1",
+    "3",
+    "4b"
+   ],
+   "says": "A question is answered with its source and changes nothing."
+  },
+  {
+   "id": "J3.directive",
+   "lane": "the department's life",
+   "test": "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_directive",
+   "walks": [
+    "1",
+    "3",
+    "4c"
+   ],
+   "says": "A directive is restated as a rule and asked about; J4 takes over."
+  },
+  {
+   "id": "J3.feedback",
+   "lane": "the department's life",
+   "test": "test_layer_journey_j3.py::TestJ3Walks::test_walk_feedback",
+   "walks": [
+    "1",
+    "3",
+    "4d"
+   ],
+   "says": "A correction is weighed, filed and marked against the step that made the page."
+  },
+  {
+   "id": "J3.idea",
+   "lane": "the department's life",
+   "test": "test_layer_journey_j3.py::TestJ3Walks::test_walk_a_new_idea",
+   "walks": [
+    "1",
+    "3",
+    "4e"
+   ],
+   "says": "An idea is handed to Adaptation, shaped and parked; J5 takes over."
+  }
+ ],
+ "invariants": [
+  "only_identity_speaks_to_the_owner",
+  "no_stamp_unless_a_rule_says_ask",
+  "every_ask_names_its_answers"
+ ],
+ "backlog": [],
+ "site_ids": [
+  "step:1",
+  "step:2",
+  "step:3",
+  "step:4a",
+  "step:4b",
+  "step:4c",
+  "step:4d",
+  "step:4e",
+  "step:5",
+  "edge:J3.1",
+  "edge:J3.2",
+  "edge:J3.3",
+  "edge:J3.4",
+  "edge:J3.5",
+  "edge:J3.6",
+  "edge:J3.7",
+  "edge:J3.8",
+  "edge:J3.9"
+ ]
+}

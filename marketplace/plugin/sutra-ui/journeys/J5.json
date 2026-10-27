@@ -1,0 +1,361 @@
+{
+ "schema_version": 1,
+ "id": "J5",
+ "title": "An engine from an idea",
+ "kind": "system",
+ "inside": "J3",
+ "bound_to": null,
+ "serves": [],
+ "declared": true,
+ "goal": "An idea you float becomes an engine: Adaptation shapes it, Priority prices it, Identity puts it to you, and on your stamp the engine joins the line.",
+ "lead": "",
+ "ends_when": "The engine is on the record and the line, has filed its first version, and you have been told.",
+ "flag": null,
+ "site": {
+  "page": "native/system/department.html#j5",
+  "data_version": "2.4",
+  "as_of": "2026-10-01"
+ },
+ "helper": {
+  "site": "Sutra",
+  "screen": "Root",
+  "code": "Root"
+ },
+ "lanes": [
+  {
+   "id": "you",
+   "label": "You",
+   "kind": "person"
+  },
+  {
+   "id": "identity",
+   "label": "Identity",
+   "kind": "function",
+   "function": "identity"
+  },
+  {
+   "id": "priority",
+   "label": "Priority",
+   "kind": "function",
+   "function": "priority"
+  },
+  {
+   "id": "engines",
+   "label": "Engines",
+   "kind": "engine"
+  },
+  {
+   "id": "adaptation",
+   "label": "Adaptation",
+   "kind": "function",
+   "function": "adaptation"
+  }
+ ],
+ "steps": [
+  {
+   "n": "1",
+   "lane": "you",
+   "short": "You float an idea",
+   "text": "You float an idea (\"keep a list of our events and put the next one on the home page\").",
+   "site_function": "you",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "—"
+  },
+  {
+   "n": "2",
+   "lane": "identity",
+   "short": "Identity recognises new-idea",
+   "text": "Identity recognises new-idea and posts it to Adaptation.",
+   "site_function": "Identity",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "identity.recognise, word idea"
+  },
+  {
+   "n": "3",
+   "lane": "adaptation",
+   "short": "Adaptation shapes",
+   "text": "Adaptation hears (code), shapes (model): the idea reflected back; a Library engine picked if its use case fits, else an engine shaped with a name, what it does, what it needs.",
+   "site_function": "Adaptation",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "adapt.hear, adapt.shape, p_adapt_shape"
+  },
+  {
+   "n": "4",
+   "lane": "adaptation",
+   "short": "Parks the idea and offers",
+   "text": "Adaptation parks the idea and offers the engine to Priority.",
+   "site_function": "Adaptation",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "adapt.park (ideas.json), adapt.offer, engine_from_shape"
+  },
+  {
+   "n": "5",
+   "lane": "priority",
+   "short": "Priority prices",
+   "text": "Priority reads, bargains, posts: accept or reject, from what it does, needs and costs.",
+   "site_function": "Priority",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "priority.read, priority.bargain, priority.post, _offer_lines"
+  },
+  {
+   "n": "6",
+   "lane": "identity",
+   "short": "Identity puts it to you",
+   "text": "Priced, Identity puts it to you: \"Add the engine X to Y? What it does: … Stamp to add it, Refuse to leave the idea parked.\"",
+   "site_function": "Identity",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "identity_engine, kind engine"
+  },
+  {
+   "n": "7",
+   "lane": "identity",
+   "short": "Every work engine waits",
+   "text": "While the ask is pending every work engine waits; you are told once.",
+   "site_function": "Identity",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "identity_wait_engine"
+  },
+  {
+   "n": "8",
+   "lane": "identity",
+   "short": "You stamp; the line grows",
+   "text": "You stamp. The engine and its artifact go on the record with an envelope and a window; Coordination's line grows (before Plan when it reads the Brief); a shaped engine's template is born into the record home's Library with made_by, and web tools when it named a need.",
+   "site_function": "Identity, Coordination",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "identity_apply kind engine, W.add_engine, grow_line, born_template"
+  },
+  {
+   "n": "9",
+   "lane": "engines",
+   "short": "The engine runs",
+   "text": "The engine starts on its own trigger, a new Brief: read; need (only when it filed before); make; file. You are told \"X v1 is filed.\" with Open X.",
+   "site_function": "the engine",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "do.read, do.need, do.make, do.file, _tell word filed"
+  },
+  {
+   "n": "10",
+   "lane": "engines",
+   "short": "What it filed is handed on",
+   "text": "What it filed is handed to Plan, Write and Audit's judge as what the department's own engines filed.",
+   "site_function": "Plan, Write, Audit",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "_context_block"
+  }
+ ],
+ "edges": [
+  {
+   "id": "J5.1",
+   "at": "5",
+   "short": "Priority refuses the offer",
+   "trigger": "Priority refuses the offer.",
+   "site": {
+    "status": "none",
+    "text": "You are told; the idea is marked priced: refused and stays parked (adapt_priced)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J5.2",
+   "at": "7",
+   "short": "You refuse the engine ask",
+   "trigger": "You refuse the engine ask.",
+   "site": {
+    "status": "none",
+    "text": "The idea stays parked; the line goes on."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J5.3",
+   "at": "3",
+   "short": "A Library engine's use case fits",
+   "trigger": "A Library engine's use case fits the idea.",
+   "site": {
+    "status": "none",
+    "text": "That template is offered; nothing new is shaped."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J5.4",
+   "at": "8",
+   "short": "The born template fails validation",
+   "trigger": "The born template fails validation.",
+   "site": {
+    "status": "none",
+    "text": "It is unlinked (validate)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J5.5",
+   "at": "8",
+   "short": "The name is taken",
+   "trigger": "The engine's name is already taken in the Library.",
+   "site": {
+    "status": "none",
+    "text": "The load refuses it (engine_templates)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J5.6",
+   "at": "8",
+   "short": "The idea names a need",
+   "trigger": "The idea names a need (the internet).",
+   "site": {
+    "status": "none",
+    "text": "Its prompt steps get WebSearch and WebFetch; every agent step has them anyway (founder 2026-09-29, NEEDS, MODEL_TOOLS)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J5.7",
+   "at": "9",
+   "short": "A later Brief does not ask",
+   "trigger": "A later Brief does not ask for its work.",
+   "site": {
+    "status": "none",
+    "text": "Its need step ends the run ok, \"not needed: …\", files nothing (may_end)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J5.8",
+   "at": "9",
+   "short": "An update removes its template",
+   "trigger": "An update removes its template.",
+   "site": {
+    "status": "none",
+    "text": "The card says Missing; the health line says \"say its idea again to shape it anew\"; it has no trigger; the rest of the line runs (missing_engines)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J5.9",
+   "at": "3",
+   "short": "The same idea floated twice",
+   "trigger": "The same idea floated twice.",
+   "site": {
+    "status": "open",
+    "text": "Not read in the docs set: whether a parked idea is matched before a new shape. Open."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   },
+   "read": false
+  },
+  {
+   "id": "J5.10",
+   "at": "2",
+   "short": "From onboarding or repeats",
+   "trigger": "DIRECTED D-d: an engine from the onboarding answers or from what repeats.",
+   "site": {
+    "status": "directed",
+    "text": "Not built: only a floated idea reaches Adaptation's shape step; what repeats moves a rung."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  }
+ ],
+ "sub": [],
+ "children": [],
+ "directions": [],
+ "build_rows": [],
+ "rulings": [],
+ "decisions": [],
+ "quotes": [],
+ "scenarios": [],
+ "invariants": [],
+ "backlog": [],
+ "site_ids": [
+  "step:1",
+  "step:2",
+  "step:3",
+  "step:4",
+  "step:5",
+  "step:6",
+  "step:7",
+  "step:8",
+  "step:9",
+  "step:10",
+  "edge:J5.1",
+  "edge:J5.2",
+  "edge:J5.3",
+  "edge:J5.4",
+  "edge:J5.5",
+  "edge:J5.6",
+  "edge:J5.7",
+  "edge:J5.8",
+  "edge:J5.9",
+  "edge:J5.10"
+ ]
+}

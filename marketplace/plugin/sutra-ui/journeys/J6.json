@@ -1,0 +1,219 @@
+{
+ "schema_version": 1,
+ "id": "J6",
+ "title": "A second department",
+ "kind": "person",
+ "inside": null,
+ "bound_to": null,
+ "serves": [],
+ "declared": true,
+ "goal": "You ask Root for another department with the organisation row's chat; Root's Setup makes it as in J1 and the organisation row shows every department's turns and asks.",
+ "lead": "",
+ "ends_when": "The new department appears under Root and runs its own line; its tells reach Root's board with its chip.",
+ "flag": null,
+ "site": {
+  "page": "native/system/department.html#j6",
+  "data_version": "2.4",
+  "as_of": "2026-10-01"
+ },
+ "helper": {
+  "site": "Sutra",
+  "screen": "Root",
+  "code": "Root"
+ },
+ "lanes": [
+  {
+   "id": "you",
+   "label": "You",
+   "kind": "person"
+  },
+  {
+   "id": "root",
+   "label": "Root",
+   "kind": "root"
+  },
+  {
+   "id": "engines",
+   "label": "Engines",
+   "kind": "engine"
+  }
+ ],
+ "steps": [
+  {
+   "n": "1",
+   "lane": "you",
+   "short": "You speak to Root",
+   "text": "You speak to Root: the organisation row of the Org structure screen is Root's chat and nothing else, headed by the organisation's name with one Root settings button (what Root does, On/Off, rules, departments made). Say \"start a hiring department\", or any words with the chip off. Root is not a row of the tree; its departments sit under the organisation.",
+   "site_function": "you",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "19-org2.js (o2Data), FRONT, request; sutra 297f45bd, v2.306.20-desktop"
+  },
+  {
+   "n": "2",
+   "lane": "root",
+   "short": "Root asks; you stamp; Setup makes",
+   "text": "Root's Identity files a Request and asks \"Set up a department for: …\"; you stamp; Setup shapes and makes it as in J1.",
+   "site_function": "Root's Identity, Setup",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "identity_gate, setup_make"
+  },
+  {
+   "n": "3",
+   "lane": "root",
+   "short": "The new department appears",
+   "text": "The new department appears under Root; its own line runs on its own record; its tells reach Root's board with its chip.",
+   "site_function": "Root, the child's Identity",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "chat_view, _own_turns, _tell via Root"
+  },
+  {
+   "n": "4",
+   "lane": "root",
+   "short": "Root's chat shows all",
+   "text": "Root's chat, which is the organisation row, shows every department's owner-facing turns and every pending ask with the department it belongs to; a born department slides into the tree once, and a department's crumb names the organisation.",
+   "site_function": "Root",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "chat_view, asks; 19-org2.js (sutra 297f45bd)"
+  },
+  {
+   "n": "5",
+   "lane": "root",
+   "short": "Root settings",
+   "text": "Root settings is a pane, never a chat: what Root does (its goal), On or Off with one switch, its rules, the departments it has made (chips that open them), Back to the chat. The clicks and the box on the organisation row speak for Root: a stamp, Stop, Start and Send post to Root's routes.",
+   "site_function": "Root (the screen)",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "wbRootPaneHtml, dpSelect(root) in wbOrgHtml; sutra 297f45bd, released v2.306.20-desktop (065f4525)"
+  }
+ ],
+ "edges": [
+  {
+   "id": "J6.1",
+   "at": "3",
+   "short": "The name exists",
+   "trigger": "The name exists.",
+   "site": {
+    "status": "none",
+    "text": "Handed to the existing department; you are told (J1.2)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J6.2",
+   "at": "1",
+   "short": "A department's Adaptation wants a new one",
+   "trigger": "A department's Adaptation wants a new department.",
+   "site": {
+    "status": "none",
+    "text": "Its chat tools can file a department ask; it ends at your stamp and Root's Setup. No engine step of Adaptation does this on its own."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J6.3",
+   "at": "4",
+   "short": "A department with no Root",
+   "trigger": "A department with no Root.",
+   "site": {
+    "status": "none",
+    "text": "Its own board is its chat; nothing is relayed."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J6.4",
+   "at": "4",
+   "short": "Two departments' asks at once",
+   "trigger": "Two departments' asks pending at once.",
+   "site": {
+    "status": "none",
+    "text": "Root's chat lists both, each with its department."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J6.5",
+   "at": "1",
+   "short": "Anyone proposes",
+   "trigger": "DIRECTED D-f: anyone proposes.",
+   "site": {
+    "status": "directed",
+    "text": "Partly built (row D-f)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J6.6",
+   "at": "1",
+   "short": "No Root on the runtime",
+   "trigger": "An organisation without a Root on the runtime.",
+   "site": {
+    "status": "none",
+    "text": "The Org structure screen paints as before: no chat on the organisation row (wbOrgHtml answers null)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  }
+ ],
+ "sub": [],
+ "children": [],
+ "directions": [],
+ "build_rows": [],
+ "rulings": [],
+ "decisions": [],
+ "quotes": [],
+ "scenarios": [],
+ "invariants": [],
+ "backlog": [],
+ "site_ids": [
+  "step:1",
+  "step:2",
+  "step:3",
+  "step:4",
+  "step:5",
+  "edge:J6.1",
+  "edge:J6.2",
+  "edge:J6.3",
+  "edge:J6.4",
+  "edge:J6.5",
+  "edge:J6.6"
+ ]
+}
