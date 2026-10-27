@@ -1201,7 +1201,7 @@ def _priority_misses_a_word(monkeypatch):
     tested in test_layer_priority. The net is tested here as it was: a Priority that lets the model's own words through (its
     composition made to say nothing) leaves the card to the template."""
     import layers.priority.v1 as priority_v1
-    monkeypatch.setattr(priority_v1, "_owners_why", lambda why, read=None: str(why or "").strip())
+    monkeypatch.setattr(priority_v1, "_owners_why", lambda why, *used, **kw: str(why or "").strip())
 
 
 def _scenarios(j2, monkeypatch):
