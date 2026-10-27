@@ -130,7 +130,18 @@ def test_j2_walk_from_the_identity_to_the_goal(j2, monkeypatch):
     J2 = journeys.load()["J2"]
     _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}, "audit.items": _items_met})
     ref = _born(j2)
+
+    # J2.6, the edge out of step 6: the first publish is asked of the owner, once, in the golden lead of the row, and the ask is
+    # the act the edge names (Identity requests the owner's publish). The line has run up to it and goes no further without the stamp.
+    edge = next(e for e in J2["edges"] if e["id"] == "J2.6")
+    (first,) = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert first["kind"] == "publish" and first["text"].startswith("Publish: go live for the first time"), first
+    assert first["text"].startswith(edge["outcome"]["golden"]), "the row's golden lead is what the owner reads"
+    assert [(p["src"], p["dst"][0], p["msg_type"]) for p in R.board(ref) if (p["payload"] or {}).get("word") == "publish"] == \
+        [("Identity", "Owner", "request")], "and it is one request from Identity to the owner"
+    assert _work(W, ref) == LINE[:-1] and not W.versions(ref, "Live site"), "nothing goes outside before the stamp"
     _stamp_all(W, ref)                                           # the first publish: a born rule says ask
+    assert _work(W, ref) == LINE and len(W.versions(ref, "Live site")) == 1, "and the stamp lets it go, once"
 
     # the ledger, in order, each event stamped with the sub-journey of its step
     named = {"identity.assessed", "proposal.requested", "proposal.created", "proposal.granted", "workflow.validated",
