@@ -3027,6 +3027,82 @@ test("M10.2: a department of the first build and one the website knows nothing o
   REG_FN.forEach(f => assert.ok(readsOf(plain, new RegExp("^/api/dept/r9/" + f + "$")).length >= 1, "registry only: " + f + " is read"));
 });
 
+/* ── M9.7: the rounds on the progress line (S4; W2-SCREENS H3, fix round 1) ─────────────────────────────────────────────
+   functions().cycle carries `round` and `ceiling.rounds` (functions_view.py _cycle). The full form (top of All five) says
+   'Round 2 · Write is fixing the size filter' and, once the goal has a ceiling, draws a dot for each round it holds: the
+   rounds done are on, the round now is lit, the rest empty, the whole titled 'Round 2 of 6'. The compact form (the strip)
+   and the Map's NOW pill say the same words. Each state of S4 is pinned here: a round in progress, the first and the last,
+   no ceiling, no round, done, and not started / stopped (M1.8 holds those two on All five). */
+const ROUND_SAYS = "Write is fixing the size filter";
+const roundFv = (cycle) => fvOf({ cycle: Object.assign({ says: ROUND_SAYS, needs_you: true, asks: 1, round: 2, ceiling: { rounds: 6, calls: 90, usd: 9 } }, cycle || {}) });
+/* the dots as the screen draws them: the title and the state of each, left to right ('' is an empty dot) */
+const roundDots = html => {
+  const m = /<span class="fvrounds" title="([^"]*)">((?:<i class="[^"]*"><\/i>)*)<\/span>/.exec(html);
+  return m ? { title: m[1], dots: (m[2].match(/<i class="[^"]*"><\/i>/g) || []).map(x => /class="([^"]*)"/.exec(x)[1]) } : null;
+};
+test("M9.7: a round in progress is 'Round 2 · ...' with six dots against the ceiling, the first on, the second now, four empty", async () => {
+  const [c, html] = await allFive({ fv: roundFv() });
+  assert.deepStrictEqual(roundDots(html), { title: "Round 2 of 6", dots: ["on", "now", "", "", "", ""] }, "the title and the dots (v)(*)( )( )( )( )");
+  assert.ok(/<div class="fvsays"><i class="dpdot breath"[^>]*><\/i><b aria-live="polite">Round 2 · Write is fixing the size filter<\/b><span class="wbchip ask">needs you<\/span><\/div>/.test(html), "the words, then needs you");
+  assert.ok(html.indexOf('class="fvpills"') > 0 && html.indexOf('class="fvpills"') < html.indexOf('class="fvrounds"'), "the dots stand under the eight pills");
+  assert.strictEqual((html.match(/<span class="fvpill /g) || []).length, 8, "the eight pills beside them");
+  assert.ok(!/\d/.test(atRest(html.replace(/ title="[^"]*"/g, "").replace(/ aria-label="[^"]*"/g, "")).replace(/\bv\d+\b/g, "")), "no count at rest: the number is in the title, the dots are drawn");
+  /* the compact form, in the strip, and the Map's NOW pill say the same words */
+  assert.strictEqual(c.fvStripHtml("r3"), '<button type="button" class="fvline wb" data-wbtab="five"><i class="dpdot breath" aria-hidden="true"></i>' +
+    '<span>Round 2 · Write is fixing the size filter</span><span class="wbchip ask">needs you</span></button>', "the strip");
+  const [, map] = await mapWith({ fv: roundFv() });
+  assert.ok(/<span class="wb2pill ask" aria-live="polite">Round 2 · Write is fixing the size filter<\/span>/.test(map), "the NOW pill");
+});
+
+test("M9.7: the dots follow the round: the first round lights the first, the last lights the sixth with five on before it", async () => {
+  const want = { 1: ["now", "", "", "", "", ""], 3: ["on", "on", "now", "", "", ""], 6: ["on", "on", "on", "on", "on", "now"] };
+  for (const r of [1, 3, 6]){
+    const [, html] = await allFive({ fv: roundFv({ round: r }) });
+    assert.deepStrictEqual(roundDots(html), { title: "Round " + r + " of 6", dots: want[r] }, "round " + r);
+    assert.ok(new RegExp('<b aria-live="polite">Round ' + r + " · Write is fixing the size filter</b>").test(html), "and the words, round " + r);
+  }
+  const [, wide] = await allFive({ fv: roundFv({ round: 2, ceiling: { rounds: 8 } }) });
+  assert.deepStrictEqual(roundDots(wide), { title: "Round 2 of 8", dots: ["on", "now", "", "", "", "", "", ""] }, "a ceiling that was raised has more dots");
+});
+
+test("M9.7: with no ceiling there are no dots, with no round there are no dots and no 'Round', and both are words only", async () => {
+  let [c, html] = await allFive({ fv: roundFv({ ceiling: null }) });
+  assert.strictEqual(roundDots(html), null);
+  assert.ok(!/fvrounds/.test(html) && /<b aria-live="polite">Round 2 · Write is fixing the size filter<\/b>/.test(html), "the words, no dots");
+  assert.ok(/<span>Round 2 · Write is fixing the size filter<\/span>/.test(c.fvStripHtml("r3")), "and the strip");
+  for (const ceiling of [{}, { rounds: 0 }, { calls: 90 }]){
+    [, html] = await allFive({ fv: roundFv({ ceiling }) });
+    assert.ok(!/fvrounds/.test(html), "a ceiling that holds no rounds draws none: " + JSON.stringify(ceiling));
+  }
+  [c, html] = await allFive({ fv: roundFv({ round: null }) });
+  assert.ok(!/fvrounds/.test(html) && /<b aria-live="polite">Write is fixing the size filter<\/b>/.test(html) && !/Round \d/.test(html), "a ceiling and no round yet: no dots, no 'Round'");
+  assert.ok(/<span>Write is fixing the size filter<\/span>/.test(c.fvStripHtml("r3")) && !/Round/.test(c.fvStripHtml("r3")), "and the strip");
+});
+
+test("M9.7: done says Goal reached with an ok dot and every pill ticked, and the rounds it took stay titled", async () => {
+  const ticked = FV_STEPS.map((name, i) => ({ step: i + 1, name, state: "done", last: { summary: name + " happened", at: AT } }));
+  let [c, html] = await allFive({ fv: fvOf({ cycle: { state: "done", step: 8, says: "Goal reached", steps: ticked } }) });
+  assert.ok(/<div class="fvsays"><span class="dpdot ok"><\/span><b aria-live="polite">Goal reached<\/b><\/div>/.test(html), "an ok dot and Goal reached, nothing needing you");
+  assert.strictEqual((html.match(/<span class="fvpill done"[^>]*>✓ /g) || []).length, 8, "every pill ticked");
+  assert.ok(!/fvpill now|fvpill next|fvrounds/.test(html) && !/dpdot breath/.test(html.slice(0, html.indexOf('class="fvgrid"'))), "nothing now, nothing breathing, no dots");
+  assert.ok(/<span class="dpdot ok"><\/span><span>Goal reached<\/span>/.test(c.fvStripHtml("r3")), "the strip");
+  [c, html] = await allFive({ fv: roundFv({ state: "done", step: 8, says: "Goal reached", needs_you: false, asks: 0, round: 3, steps: ticked }) });
+  assert.ok(/<b aria-live="polite">Round 3 · Goal reached<\/b>/.test(html) && roundDots(html).title === "Round 3 of 6", "the round it took");
+  const [, map] = await mapWith({ map: rtMap({ live: true }), fv: fvOf({ cycle: { state: "done", step: 8, says: "Goal reached", steps: ticked } }) });
+  assert.ok(/<span class="wb2pill ok" aria-live="polite">Goal reached<\/span>/.test(map), "the NOW pill");
+});
+
+test("M9.7: the rounds repaint when the ceiling is raised on the same round, and the round's words and dots are escaped", async () => {
+  const c = fresh({ map: rtMap() });
+  const same = roundFv().cycle, raised = JSON.parse(JSON.stringify(same));
+  raised.ceiling.rounds = 8;
+  const sig = cy => c.wbFvSig(Object.assign(roundFv(), { cycle: cy }));
+  assert.notStrictEqual(sig(raised), sig(same), "a ceiling of eight rounds is not a ceiling of six: the five are painted again");
+  assert.strictEqual(sig(JSON.parse(JSON.stringify(same))), sig(same), "and the same read paints nothing");
+  const html = c.fvProgressHtml(Object.assign({}, same, { says: "<script>x</script>", round: "<b>2</b>", ceiling: { rounds: 2 } }));
+  assert.ok(html.indexOf("<script") < 0 && html.indexOf("<b>2</b>") < 0, "escaped: " + html);
+});
+
 /* ── M10.3: the words pass (PRD M10.3; W2-SCREENS H6) ────────────────────────────────────────────────────────────────
    W9 (no count, no path) and W19 (the inside word) were written for the first cards; the cards since (S1 to S18) were each
    checked by their own test, a rule at a time. This is the one walk: every card of the classic panes is drawn from its own
@@ -3039,7 +3115,10 @@ test("M10.2: a department of the first build and one the website knows nothing o
        minutes are not counts; the Map's NOW line, the record's version labels and a hover's numbers are the three
        places the rulings let a number stand: S4, M1.5);
      a status is never a colour alone: every state dot has its word beside it;
-     Root is shown as Root.
+     Root is shown as Root;
+     the cost line of a priced way out on a limit or blocked card (S10) may carry numbers: it is the price the owner is
+       choosing by, and the PRD's own S10 sample prints one at rest ('about 3.00 USD more; the limit becomes 12.00'). A
+       default taken without the owner's ruling (decision log, W2S-2). A number in a way out's label is still a count.
    WORD_WALK is the list. A card added to the classic panes is added to it, with the samples that put it in each of its
    states; the walk fails for a card that draws nothing, so an entry cannot pass for free. The panes of the J2 page
    (25-j2view.js, the prototype's own page) are the prototype's words and are not walked. */
@@ -3068,8 +3147,9 @@ function dotsWithoutWords(html){
    placeholder); `rest`: the text that stands on the card, without the three places a number may stand (the Map's NOW line,
    the record's version labels, a hover) */
 const plainText = h => h.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+const COST_LINE = /(<div class="wboptrow[^"]*">(?:(?!<\/div>)[\s\S])*?)<span class="dpchk">[^<]*<\/span>/g;
 function screenWords(h){
-  const rest = words(h.replace(/<div class="wb2now">[\s\S]*?<\/div>/g, " ").replace(/<text class="v"[^>]*>[^<]*<\/text>/g, " ").replace(/<title>[^<]*<\/title>/g, " "));
+  const rest = words(h.replace(COST_LINE, "$1").replace(/<div class="wb2now">[\s\S]*?<\/div>/g, " ").replace(/<text class="v"[^>]*>[^<]*<\/text>/g, " ").replace(/<title>[^<]*<\/title>/g, " "));
   const hover = (h.match(/\b(?:title|aria-label|placeholder)="[^"]*"/g) || []).map(a => a.replace(/^[a-z-]+="|"$/g, "")).join(" ");
   const all = plainText(words(h) + " " + hover);
   return { all, rest: plainText(rest) };
@@ -3087,15 +3167,33 @@ function wordsPass(label, html, authored){
 /* the samples carry no numeral in the record's words (see above): the blocked card's sentence, as the walk draws it */
 const NOCOUNT_BLOCKED = Object.assign({}, BLOCKED, { text: "Root's check sent the plan back more than once: the line reaches outside without a rule. Say what to change and I will have it shaped afresh." });
 const WORD_WALK = [];
-const walks = (label, renders, make, authored) => WORD_WALK.push({ label, renders, make, authored: !!authored });
+/* `proves`: what the sample must show for the entry to count (a round, a price, a refusal said in words): a sample that stops
+   drawing its point fails, so the walk cannot go on passing over a card that no longer has the state it was written for */
+const walks = (label, renders, make, authored, proves) => WORD_WALK.push({ label, renders, make, authored: !!authored, proves });
 const FV_STATES = { Identity: "waiting_on_you", Adaptation: "waiting", Priority: "fault", Coordination: "working", Audit: "quiet" };
-const FV_RICH = () => fvOf({ states: FV_STATES, waits: { Adaptation: "Priority" }, lines: { Identity: "May the reviews show first names?", Coordination: "Write's turn" },
-  last: { Priority: { what: "said yes to the round", at: AT } }, cycle: { says: "Write is working", needs_you: true, asks: 1 }, between: FV_BETWEEN });
+const FV_RICH = (cycle) => fvOf({ states: FV_STATES, waits: { Adaptation: "Priority" }, lines: { Identity: "May the reviews show first names?", Coordination: "Write's turn" },
+  last: { Priority: { what: "said yes to the round", at: AT } }, cycle: Object.assign({ says: "Write is working", needs_you: true, asks: 1 }, cycle || {}), between: FV_BETWEEN });
+/* the cycle in its second round of six: the title 'Round 2 of 6', the dots, 'Round 2 · Write is working' (S4) */
+const FV_ROUND = () => FV_RICH({ round: 2, ceiling: { rounds: 6, calls: 90, usd: 9 } });
 const rtOpen = (o) => opened(Object.assign({ map: rtMap(), fnpage: fnPageOf, fv: FV_RICH() }, o || {}));
-walks("S1 the Map", ["wb2MapHtml", "wbMapHtml"], async () => (await mapWith({ map: rtMap(), fv: FV_RICH() }))[1]);
+walks("S1 the Map", ["wb2MapHtml", "wbMapHtml"], async () => (await mapWith({ map: rtMap(), fv: FV_ROUND() }))[1], false, /Round 2 · Write is working/);
 walks("S1 the Map, the department off", ["wb2MapHtml"], async () => (await mapWith({ map: rtMap({ stopped: true }), fv: fvOf({ stopped: true }) }))[1]);
 walks("S2 All five, a department off", ["fvAllHtml"], async () => (await allFive({ map: rtMap({ stopped: true }), fv: fvOf({ stopped: true }) }))[1]);
-walks("S2 All five", ["fvAllHtml"], async () => (await allFive({ fv: FV_RICH(), chat: Object.assign(qChat({}), { asks: [Object.assign({}, QSTD), Object.assign({}, NOCOUNT_BLOCKED)] }) }))[1]);
+walks("S2 All five", ["fvAllHtml"], async () => (await allFive({ fv: FV_ROUND(), chat: Object.assign(qChat({}), { asks: [Object.assign({}, QSTD), Object.assign({}, NOCOUNT_BLOCKED)] }) }))[1],
+  false, /<span class="fvrounds" title="Round 2 of 6">/);
+/* S4, the progress words: the full form with its round dots and the compact form in the strip (a round in progress, done,
+   not started), and the Map's NOW pill (S1 above draws it in a round) */
+const TICKED = FV_STEPS.map((name, i) => ({ step: i + 1, name, state: "done", last: { summary: name + " happened", at: AT } }));
+walks("S4 the progress words, in a round", ["fvProgressHtml", "fvStripHtml"], async () => {
+  const [c, html] = await allFive({ fv: FV_ROUND() });
+  return html + c.fvStripHtml("r3");
+}, false, /class="fvline wb"[^]*Round 2 · Write is working/);
+walks("S4 the progress words, done", ["fvProgressHtml", "fvStripHtml"], async () => {
+  const [c, html] = await allFive({ fv: FV_RICH({ state: "done", step: 8, says: "Goal reached", needs_you: false, asks: 0, round: 3, ceiling: { rounds: 6 }, steps: TICKED }) });
+  return html + c.fvStripHtml("r3");
+}, false, /Round 3 · Goal reached/);
+walks("S4 the progress words, not started", ["fvAllHtml"], async () => (await allFive({ fv: fvOf({ cycle: { state: "not_started", says: "Not started", steps: [] } }) }))[1], false, /Not started/);
+walks("S4 the NOW pill, done", ["wb2NowHtml"], async () => (await mapWith({ map: rtMap({ live: true }), fv: FV_RICH({ state: "done", step: 8, says: "Goal reached", needs_you: false, asks: 0, steps: TICKED }) }))[1], false, /wb2pill ok" aria-live="polite">Goal reached/);
 walks("S3 the list", ["dpListHtml", "wbList"], async () => { const c = await rtOpen(); for (let i = 0; i < 4; i++) await settle(); return c.dpListHtml(WEB, {}, null, null); });
 walks("S5 Identity's pane", ["wbFnOwn", "wbIdentityHtml"], async () => {
   const page = fn => Object.assign(fnPageOf(fn), fn === "identity" ? { j2: JSON.parse(JSON.stringify(ID_J2)) } : {});
@@ -3109,6 +3207,10 @@ walks("S8 Adaptation's pane, a plan Root sent back", ["wbFnOwn", "wbRootChecksHt
 walks("S8 Adaptation's pane, a plan Root blocked", ["wbFnOwn", "wbRootChecksHtml"], async () => (await adaptationPane("blocked"))[1]);
 walks("S8 Adaptation's pane, a plan Root approved", ["wbFnOwn", "wbRootChecksHtml"], async () => (await adaptationPane("approved"))[1]);
 walks("S8 Adaptation's pane, no review yet", ["wbFnOwn", "wbRootChecksHtml"], async () => (await adaptationPane("none"))[1]);
+/* S11, Root's check row, alone in each state the review has (test_fixtures/views/adaptation.root_checks.json); S8 above draws it in the pane */
+[["sent_back", "a plan Root sent back", /wbrcv back">sent back/], ["blocked", "a plan Root blocked", /wbrcv blocked">blocked/],
+ ["approved", "a plan Root approved", /wbrcv approved">approved/], ["none", "no review yet", /Root has not checked a plan yet/]].forEach(([state, what, proves]) =>
+  walks("S11 Root's check row, " + what, ["wbRootChecksHtml"], async () => fresh({ map: rtMap() }).wbRootChecksHtml(RC()[state].root_checks), false, proves));
 walks("S9 Priority's pane", ["wbFnOwn"], async () => fnCard(await rtOpen(), "priority"));
 walks("S10 a blocked plan's card, chosen", ["wbOptionsHtml"], async () => {
   const m = rtMap(); m.root = "r2";
@@ -3123,6 +3225,27 @@ walks("S10 a blocked plan's card", ["wbOptionsHtml"], async () => {
   view(c); await sleep(); await sleep();
   return view(c);
 });
+/* S10 form A, the limit for the goal (M5.4, M9.5): Priority's code builds the ways out and their cost lines as the layer says
+   them (layers/priority/v1.py ceiling_option, _say_cost, _more: 'about 7 calls and 0.30 USD more; the goal's ceiling becomes
+   8 rounds, 97 calls and 9.30 USD'); the labels are the PRD's own words, with no numeral (a number in a label is a count); the
+   record's words (title, who, why) hold none, as in every sample here. The cost lines carry their numbers: they are the price. */
+const LIMIT = Object.assign({}, NOCOUNT_BLOCKED, { id: "a-b-2", title: "This needs more than planned.", who: "Write, in the last round",
+  text: "Priority has no room in the goal's limit for another round: the size filter (D2) still fails Audit's reading.",
+  why: "the last round is used, and the size filter (D2) still fails Audit's reading", if_nothing: "Nothing more runs; the site stays as Live site v6.",
+  options: [{ id: "raise:ceiling", label: "Add budget for two more rounds", cost: "about 7 calls and 0.30 USD more; the goal's ceiling becomes 8 rounds, 97 calls and 9.30 USD" },
+            { id: "leave:D2", label: "Leave the size filter out", cost: "D2 is dropped from done-when (the size filter works); nothing more is spent" },
+            { id: "stop", label: "Stop here", cost: "the department stops where it is; you can start it again later" }] });
+async function limitCard(chosen){
+  const m = rtMap(); m.root = "r2";
+  const card = Object.assign({}, LIMIT, chosen ? { status: "chosen", chosen } : {});
+  const c = await opened({ map: m, chat: Object.assign(qChat({ answered: "a site" }), { asks: chosen ? [] : [card], chosen: chosen ? [card] : [] }) });
+  view(c); await sleep(); await sleep();
+  return view(c);
+}
+walks("S10 a limit card, with its prices", ["wbOptionsHtml"], () => limitCard(), false,
+  [/about 7 calls and 0\.30 USD more; the goal(?:'|&#39;)s ceiling becomes 8 rounds, 97 calls and 9\.30 USD<\/span>/, /Add budget for two more rounds/]);
+walks("S10 a limit card, chosen", ["wbOptionsHtml"], () => limitCard({ id: "raise:ceiling", label: "Add budget for two more rounds", at: "2026-10-23T10:26:00+05:30", by: "the owner", words: null }), false,
+  /You chose: Add budget for two more rounds/);
 /* Priority's chat when it has bargained: it counters (asks for less), says yes, says no -- and a turn with no words of its own is
    said in the owner's words, never by its act (Adaptation proposes; Priority's answers are accept-proposal, reject-proposal) */
 const BARGAIN_CHAT = { fn: "Priority", dept: "r3", name: DEPT, any: true, turns: [
@@ -3130,16 +3253,59 @@ const BARGAIN_CHAT = { fn: "Priority", dept: "r3", name: DEPT, any: true, turns:
   { n: 2, src: "Priority", dst: ["Adaptation"], msg_type: "propose", at: AT, thread: "x-9", word: "line", line: "one round less than that", think: false, counter: true },
   { n: 3, src: "Priority", dst: ["Adaptation"], msg_type: "accept-proposal", at: AT, thread: "x-9", word: "line", line: "", think: false },
   { n: 4, src: "Priority", dst: ["Adaptation"], msg_type: "reject-proposal", at: AT, thread: "x-10", word: "line", line: "", think: false }] };
-async function bargainChat(){
-  const c = await opened({ map: rtMap(), fnchat: BARGAIN_CHAT });
-  await fnCard(c, "priority");
-  vm.runInContext("dpS().pane['r3:priority'] = 'chat';", c);
+async function fnChatOf(fn, chat, mutate){
+  const c = await opened({ map: rtMap(), fnchat: chat });
+  if (mutate) mutate(c);
+  await fnCard(c, fn);
+  vm.runInContext("dpS().pane['r3:" + fn + "'] = 'chat';", c);
   for (let k = 0; k < 3; k++){ c.dpViewerHtml(WEB, {}, null, null); for (let i = 0; i < 6; i++) await sleep(); }
   return c.dpViewerHtml(WEB, {}, null, null);
 }
+const bargainChat = () => fnChatOf("priority", BARGAIN_CHAT);
 walks("S9 Priority's chat, a bargain", ["wbFnChatHtml", "wbFnTurn"], bargainChat);
+/* Identity's chat when it has ruled on a start: the verdicts it posts to Coordination (agree, and refuse, which the screen says
+   as a no), a line it lets go, and a request it could not take (acts the bargain does not use) */
+const VERDICT_CHAT = { fn: "Identity", dept: "r3", name: DEPT, any: true, turns: [
+  { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: AT, thread: "x-1", word: "request", line: "A website for the hospital", think: false },
+  { n: 2, src: "Identity", dst: ["Coordination"], msg_type: "agree", at: AT, thread: "x-2", word: "verdict", line: "The verdict: let through", think: false },
+  { n: 3, src: "Identity", dst: ["Coordination"], msg_type: "refuse", at: AT, thread: "x-3", word: "verdict", line: "The verdict: stopped", think: false },
+  { n: 4, src: "Identity", dst: ["Adaptation"], msg_type: "cancel", at: AT, thread: "x-4", word: "line", line: "", think: false },
+  { n: 5, src: "Identity", dst: ["Owner"], msg_type: "failure", at: AT, thread: "x-5", word: "request", line: "", think: false }] };
+walks("S5 Identity's chat, its verdicts", ["wbFnChatHtml", "wbFnTurn"], () => fnChatOf("identity", VERDICT_CHAT), false,
+  [/The verdict: stopped<span class="dpchk">says no · /, /The verdict: let through<span class="dpchk">agrees · /, /<span class="dpchk">lets go · /, /<span class="dpchk">could not · /]);
 walks("S12 Audit's pane", ["wbFnOwn"], async () => fnCard(await rtOpen(), "audit"));
 walks("S13 the Board", ["wbBoardHtml"], async () => { const c = await rtOpen({ board: FV_BOARD }); click(c, { wbtab: "board" }); view(c); await sleep(); await sleep(); return view(c); });
+/* every act of the protocol once on the Board, so a word that changes (a no, an ask for less, a let go) is under the walk wherever
+   the Board prints it: the first design's list of threads with the open one as turns, and the second's one thread in time order */
+const ACT_THREAD = { id: "x-12", topic: "verdict", protocol: "request", state: "completed", decider: "Coordination", opened: AT, closed: AT, outcome: null,
+  bounds: {}, hops: 4, default: "failure", posts: [
+  { n: 21, src: "Identity", dst: ["Coordination"], msg_type: "request", at: AT, word: "verdict", line: "May Write start?" },
+  { n: 22, src: "Coordination", dst: ["Identity"], msg_type: "agree", at: AT, word: "verdict", line: "Write is next in the line" },
+  { n: 23, src: "Identity", dst: ["Coordination"], msg_type: "refuse", at: AT, word: "verdict", line: "The verdict: stopped" },
+  { n: 24, src: "Adaptation", dst: ["Priority"], msg_type: "propose", at: AT, word: "line", line: "the next round" },
+  { n: 25, src: "Priority", dst: ["Adaptation"], msg_type: "accept-proposal", at: AT, word: "line", line: "" },
+  { n: 26, src: "Priority", dst: ["Adaptation"], msg_type: "reject-proposal", at: AT, word: "line", line: "" },
+  { n: 27, src: "Audit", dst: ["Identity"], msg_type: "inform", at: AT, word: "finding", line: "Audit has not read Live site v1" },
+  { n: 28, src: "Write", dst: ["Check"], msg_type: "failure", at: AT, word: "page", line: "could not finish the page" },
+  { n: 29, src: "Check", dst: ["Write"], msg_type: "not-understood", at: AT, word: "page", line: "" },
+  { n: 30, src: "Identity", dst: ["Adaptation"], msg_type: "cancel", at: AT, word: "line", line: "" }] };
+const WALK_BOARD = Object.assign({}, FV_BOARD, { threads: [ACT_THREAD].concat(FV_BOARD.threads) });
+const EVERY_ACT = [/>asks · /, />agrees · /, /The verdict: stopped<span class="dpchk">says no · /, />proposes · /, /<span class="dpchk">says yes · /,
+  /Line<span class="dpchk">says no · /, />tells · /, /could not finish the page<span class="dpchk">could not · /, /<span class="dpchk">did not follow · /, /<span class="dpchk">lets go · /];
+async function boardEvery(mutate){
+  const c = await rtOpen({ board: WALK_BOARD });
+  if (mutate) mutate(c);
+  click(c, { wbtab: "board" }); view(c); await sleep(); await sleep();
+  return view(c);
+}
+async function boardEveryV2(mutate){
+  const c = await v2({ map: rtMap(), board: WALK_BOARD });
+  if (mutate) mutate(c);
+  click(c, { wbtab: "board" }); await sleep();
+  return paint(c);
+}
+walks("S13 the Board, every act", ["wbBoardHtml", "wbBoardTurn"], () => boardEvery(), false, EVERY_ACT);
+walks("S13 the Board, second design, every act", ["wb2BoardHtml", "wb2Turn"], () => boardEveryV2(), false, EVERY_ACT);
 walks("S15 Chat", ["wbChatHtml"], async () => view(await chatOpen({ publish: true })));
 walks("S16 Settings, the files", ["wbSettingsHtml"], async () => {
   const c = await rtOpen(); vm.runInContext("dpS().pane['r3:adaptation'] = 'settings';", c); return fnCard(c, "adaptation");
@@ -3169,12 +3335,17 @@ walks("the organisation's row: Root's chat", ["wbOrgHtml", "wbChatHtml"], async 
 
 test("M10.3: every card of the classic panes keeps the owner's words (W9 and W19, walked over S1 to S18)", async () => {
   const labels = WORD_WALK.map(w => w.label);
-  ["S1", "S2", "S3", "S5", "S6", "S7", "S8", "S9", "S10", "S12", "S13", "S15", "S16", "S17", "S18"].forEach(id =>
+  /* S14, the ready card, is the J2 page's own ("Your website is ready"): the classic panes draw none */
+  ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13", "S15", "S16", "S17", "S18"].forEach(id =>
     assert.ok(labels.some(l => l.indexOf(id + " ") === 0), "the walk has no card for " + id));
   const src = [dpSrc, wbSrc, sxSrc, fvSrc].join("\n");
   WORD_WALK.forEach(w => w.renders.forEach(fn =>
     assert.ok(new RegExp("^function " + fn + "\\(", "m").test(src), w.label + ": it names " + fn + ", which is no function of the screen's scripts")));
-  for (const w of WORD_WALK) wordsPass(w.label, await w.make(), w.authored);
+  for (const w of WORD_WALK){
+    const html = await w.make();
+    wordsPass(w.label, html, w.authored);
+    [].concat(w.proves || []).forEach(re => assert.ok(re.test(plainText(html)) || re.test(html), w.label + ": the sample no longer draws " + re));
+  }
 });
 
 test("M10.3: a bargain is said in the owner's words: asks for less, said yes, said no -- never the act or GRANT, COUNTER, REFUSE", async () => {
@@ -3196,6 +3367,26 @@ test("M10.3: the walk catches what it is for (a card that says GRANT, charter, a
   ].forEach(([what, html]) => assert.throws(() => wordsPass(what, html), what));
   /* what is not a count */
   wordsPass("names", ok.replace("today", "Round 2 of D2 on Site plan v3 at 10:21, a window of 15 min"));
+});
+
+test("M10.3: a priced way out may carry its price and nothing else a count; a refusal said as REFUSE is seen wherever the Board and the chats print it", async () => {
+  const card = (label, cost, after) => '<div class="dpask hard wbq wbopt wb"><div class="dpk">Identity asks</div><div class="dpasks">This needs more than planned.</div>' +
+    '<div class="wboptrow"><button type="button" class="btn wb">' + label + '</button><span class="dpchk">' + cost + '</span></div>' + (after || "") + '</div>';
+  wordsPass("a price", card("Add budget for two more rounds", "about 3.00 USD more; the limit becomes 12.00"));
+  assert.throws(() => wordsPass("a count in the label", card("Add 2 more rounds", "about 3.00 USD more")), /a count at rest/);
+  assert.throws(() => wordsPass("a count beside the cost line", card("Stop here", "about 3.00 USD more", '<div class="dpchk">3 pages are done</div>')), /a count at rest/);
+  assert.throws(() => wordsPass("a count in the card's note", card("Stop here", "about 3.00 USD more", '<div class="dpaskd">3 of 8 rounds are used</div>')), /a count at rest/);
+  assert.throws(() => wordsPass("a cost line that says GRANT", card("Stop here", "GRANT of 3.00 USD")), /GRANT/);
+  /* the screen's own table of acts, one word changed at a time, in each place it is printed (the sample puts every act on the board) */
+  const say = word => c => vm.runInContext("WB_ACTS.refuse = " + JSON.stringify(word), c);
+  const places = [["the Board", m => boardEvery(m)], ["the second design's Board", m => boardEveryV2(m)], ["Identity's chat", m => fnChatOf("identity", VERDICT_CHAT, m)]];
+  for (const [where, make] of places){
+    wordsPass(where + " as it is", await make());
+    for (const word of ["REFUSE", "refuse", "GRANT"]){
+      const html = await make(say(word));
+      assert.throws(() => wordsPass(where + " saying " + word, html), new RegExp(word), where + ": " + word + " is not seen");
+    }
+  }
 });
 
 Promise.all(pending).then(() => {

@@ -188,7 +188,7 @@ function wbFvSig(v){
   const c = v.cycle || {}, share = x => Math.round((Number(x) || 0) * 50), minute = at => String(at || "").slice(0, 16);
   const five = WB_FUNCS.map(wbCap), talk = (v.speaks || []).filter(p => five.indexOf(p.from) >= 0 && five.indexOf(p.to) >= 0);
   const most = talk.reduce((x, p) => Math.max(x, p.n || 0), 0) || 1;
-  return JSON.stringify([v.stopped, c.state, c.step, c.says, c.needs_you, c.asks, c.round, (c.steps || []).map(p => p.state),
+  return JSON.stringify([v.stopped, c.state, c.step, c.says, c.needs_you, c.asks, c.round, (c.ceiling || {}).rounds, (c.steps || []).map(p => p.state),
     (v.functions || []).map(f => [f.name, f.state, f.waits_on, f.line, share((f.spend || {}).share),
       f.last ? [f.last.what, f.last.detail, minute(f.last.at)] : null]),
     share((v.budget || {}).share), (v.made || []).map(a => [a.art, a.v, a.by, (a.readers || []).join(",")]),

@@ -113,7 +113,7 @@ Writes pass `app.py`'s origin guard unchanged: a POST that carries an `Origin` w
 | S9 Priority's pane | Superseded | Conflicts and the Workflows limits; envelope editing stays in records mode |
 | S10 Limit or blocked card | Superseded | a blocked or limit ask reaches the page as a paused question with option buttons |
 | S12 Audit's pane | Superseded | the Audit tab shows recorded readings and findings only |
-| S13 Internal messages and `GET /messages` | Superseded | the Detailed chat, the Timeline and the Map's speaks-to lines |
+| S13 Internal messages and `GET /messages` | Superseded (the screen); the read is built | the Detailed chat, the Timeline and the Map's speaks-to lines are the screen; `GET /{ref}/messages` exists as a read-only route the page does not use (decision W2S-1) |
 | S14 Ready card | Superseded | the page's "Your website is ready" card |
 | S15 Chat, the department's one voice | Superseded | the Simple view and the Detailed chat; the one-voice rule stays as an adapter rule with a test |
 | S16 Settings > Instructions as typed fields | **Kept** | reached through `Settings and records`, a function row, Settings |
