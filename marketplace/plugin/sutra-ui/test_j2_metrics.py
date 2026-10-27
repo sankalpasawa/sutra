@@ -599,11 +599,18 @@ def test_the_report_has_every_metric_in_order_says_what_stays_pending_and_ends_o
     assert text.splitlines()[-1].startswith("proof run: SM-1 0, SM-3 1, SM-4 0, SM-6 0, SM-13 0;") and "Pending under C2" in text
 
 
+REFUSED_ROW = "refused a write that does not fit the interface: asks: $.kind: is not one of publish, setup"
+KEPT_ROW = "kept a record that does not fit the interface: " + "department: $.control: is not one of granted"
+
+
 @pytest.mark.parametrize("make_it, check, strict", [
     (lambda root: make(root, readings=[], events=[_goal()]), 1, 1),                                  # a claim with no reading
     (lambda root: make(root, state={"state": "waiting"}, asks=[]), 0, 1),                            # a dead end: named, not the gate's
     (lambda root: make(root, board=[_post(1, "Audit", ["Owner"])]), 1, 1),                           # a post to the owner from Audit
     (lambda root: make(root, runs=[_run("Gone")], state={"state": "running"}), 1, 1),                # an engine on no line
+    (lambda root: make(root, runs=[_run("Identity", "r-1", True, what=REFUSED_ROW)]), 1, 1),         # SM-13: a write the interface refused
+    (lambda root: make(root, runs=[_run("Priority", "r-1", True, what=KEPT_ROW)]), 1, 1),            # SM-13: a record it kept with a fault
+    (lambda root: make(root, runs=[_run("Identity", "r-1", True, what="set its rules within the parent's")]), 0, 1),   # a clean row: only SM-7 gaps
 ])
 def test_check_fails_on_a_gap_in_sm_1_3_4_13_and_strict_on_any_gap(tmp_path, capsys, make_it, check, strict):
     make_it(tmp_path)
@@ -611,6 +618,45 @@ def test_check_fails_on_a_gap_in_sm_1_3_4_13_and_strict_on_any_gap(tmp_path, cap
     assert M.main(["--records", str(tmp_path), "--strict"]) == strict
     assert M.main(["--records", str(tmp_path)]) == 0, "without --check the report only reports"
     assert "proof run: SM-1" in capsys.readouterr().out
+
+
+def test_the_gates_line_is_sm_1_2_3_4_and_13_and_a_record_with_nothing_in_it_has_no_hard_gap():
+    assert set(M.HARD) == {"SM-1", "SM-2", "SM-3", "SM-4", "SM-13"}
+    rep = M.build(M.find_departments(Path("/nonexistent-records-home")), [], ui=HERE)
+    assert rep["hard_gaps"] == [] and rep["ok"]
+
+
+def test_sm13_alone_makes_the_report_not_ok_and_names_it_on_the_last_line(tmp_path):
+    make(tmp_path, runs=[_run("Identity", "r-1", True, what=REFUSED_ROW)])
+    rep = M.build(_depts(tmp_path), [], ui=HERE)
+    assert rep["hard_gaps"] == ["SM-13"] and "SM-13" in rep["gaps"] and rep["ok"] is False
+    assert M.render(rep).splitlines()[-1].endswith("NOT OK: SM-13")
+
+
+def _lane(name="test_j2.py", rc=0, tests=10, failed=0):
+    return {"lane": name, "rc": rc, "tests": tests, "failed": failed, "skipped": 0, "seconds": 1.0,
+            "summary": "%d failed, %d passed" % (failed, tests - failed) if failed else "%d passed" % tests,
+            "props": {}, "refused_entries": 0, "refused_rows": [], "mode": "refuse"}
+
+
+def test_a_lane_that_failed_makes_the_report_not_ok_though_it_ran_tests_and_no_metric_gaps(tmp_path):
+    """The one thing that can fail the gate with every metric at its target: a scenario lane that ran its tests and had some fail
+    (rc 1, tests above 0, so SM-2 has no gap). Without lane_faults in `ok` this passed."""
+    make(tmp_path, runs=[_run("Plan")], state={"state": "running"}, dept={"workflows": LINE})
+    ok = M.build(_depts(tmp_path), [_lane("test_j2.py"), _lane("test_j2_api.py")], ui=HERE)
+    assert ok["ok"] is True and ok["lane_faults"] == [] and ok["hard_gaps"] == []
+    rep = M.build(_depts(tmp_path), [_lane("test_j2.py", rc=1, tests=10, failed=2), _lane("test_j2_api.py")], ui=HERE)
+    by = {m["id"]: m["status"] for m in rep["metrics"]}
+    assert by["SM-2"] == "met" and all(by[i] != "gap" for i in M.HARD), "no metric is in gap: only the lane failed"
+    assert rep["hard_gaps"] == [] and rep["ok"] is False
+    assert rep["lane_faults"] == ["lane test_j2.py: 2 failed, 8 passed"]
+    last = M.render(rep).splitlines()[-1]
+    assert last.endswith("NOT OK: lane test_j2.py: 2 failed, 8 passed") and "FAILED lane test_j2.py: 2 failed, 8 passed" in M.render(rep)
+
+
+def test_a_lane_that_timed_out_is_a_failed_lane_too(tmp_path):
+    rep = M.build([], [dict(_lane("test_j2.py", rc=-1, tests=4), summary="timed out after 1500 s")], ui=HERE)
+    assert rep["ok"] is False and rep["lane_faults"] == ["lane test_j2.py: timed out after 1500 s"]
 
 
 def test_a_clean_record_of_the_three_kinds_passes_strict_and_the_json_and_out_file_agree(tmp_path, capsys):
