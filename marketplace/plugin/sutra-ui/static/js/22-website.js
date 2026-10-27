@@ -1536,7 +1536,7 @@ function wbInsFieldHtml(fn, g, p, f){
 function wbInsPartHtml(fn, g, p){
   const said = (words, list) => (list && list.length) ? `<div class="dpchk">${words}: ${list.map(wbEsc).join(", ")}</div>` : "";
   return `<div class="wbinsp"><div class="wbinsh"><b>${wbEsc(p.label || p.part)}</b>` +
-    (p.read === false ? `<span class="wbchip" title="${wbEsc(WB_INS_NOT_READ)}">a note: no run reads it yet</span>` : "") + `</div>` +
+    (p.read === false ? `<span class="wbchip" title="${wbEsc(p.note || WB_INS_NOT_READ)}">a note: no run reads it yet</span>` : "") + `</div>` +
     (p.fields || []).map(f => wbInsFieldHtml(fn, g, p, f)).join("") + said("filled by the app", p.inputs) + said("answers with", p.answers) + `</div>`;
 }
 function wbInsGroupHtml(fn, g){

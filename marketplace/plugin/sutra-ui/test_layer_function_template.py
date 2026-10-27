@@ -125,6 +125,46 @@ def test_the_instructions_view_lists_the_six_new_parts_in_the_goal_group(rt):
         assert block["fields"] == [] and len(block["inputs"]) == 8
 
 
+def test_a_part_a_page_shows_says_so_on_its_row_and_no_other_part_has_a_note(rt):
+    """A verifier's finding (F1/F6): the row of goal.done says on hover what is true of it, that no run reads it and the
+    function's page shows it, in the words its ask uses; the shared 'the code makes this choice' words stay with the notes the
+    code makes its choice for, and a part that is read has no note. The words reach the pane through owner_words."""
+    import owner_words
+    W, R, J, FV, ref = rt
+    for fn in FUNCTIONS:
+        title = S.TITLE[fn]
+        for rows in (R.instructions_view(ref, fn), owner_words.steps({"instructions": R.instructions_view(ref, fn)})["instructions"]):
+            parts = {(g["group"], p["part"]): p for g in rows for p in g["parts"]}
+            assert parts[("goal", "done")]["note"] == "No run reads these words, and %s's page shows them" % title, fn
+            assert parts[("goal", "done")]["read"] is False
+            assert [k for k, p in parts.items() if p["note"]] == [("goal", "done")], "%s: only a part a page shows has a note" % fn
+            assert all(p["note"] is None for p in parts.values() if p["read"] is True)
+    decide = next(p for g in R.instructions_view(ref, "adaptation") if g["group"] == "decide" for p in g["parts"])
+    assert decide["read"] is False and decide["note"] is None, "a note the code makes its choice for keeps the shared words"
+    assert R.NOT_READ not in R.SHOWN_ONLY_SAYS and "code makes" not in R.SHOWN_ONLY_SAYS
+
+
+#: the typed view the Settings screen's render tests (test_website.js) are given: the rows of Identity's instructions as the
+#: pane receives them (engine_runtime.instructions_view through owner_words.steps), on a department that has changed nothing.
+#: Rewrite it with INSTRUCTIONS_FIXTURE=write when the view changes; the next run without it compares.
+VIEW_FIXTURE = __import__("pathlib").Path(__file__).parent / "test_fixtures" / "views" / "instructions.identity.json"
+
+
+def test_the_identity_view_fixture_the_screen_tests_render_is_the_live_view(rt):
+    import json
+    import os
+    import owner_words
+    W, R, J, FV, ref = rt
+    live = owner_words.steps({"instructions": R.instructions_view(ref, "identity")})["instructions"]
+    if os.environ.get("INSTRUCTIONS_FIXTURE") == "write":
+        VIEW_FIXTURE.write_text(json.dumps(live, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    held = json.loads(VIEW_FIXTURE.read_text(encoding="utf-8"))
+    assert held == live, "test_fixtures/views/instructions.identity.json is not Identity's view now: rewrite it with INSTRUCTIONS_FIXTURE=write"
+    goal = next(g for g in live if g["group"] == "goal")
+    assert [p["part"] for p in goal["parts"]] == list(S.PROMPTS["identity"]["goal"]), "every part of the goal group, the added ones too"
+    assert [p["part"] for g in live for p in g["parts"]] == [p for g in S.PROMPTS["identity"].values() for p in g]
+
+
 # ---- F2: Adaptation's goal ---------------------------------------------------------------------------------------------
 HERE = __import__("pathlib").Path(__file__).parent
 SITE_GOAL = ("decides how the department reaches its goal and keeps changing how as it learns: it proposes the workflows the goal "
@@ -322,6 +362,68 @@ def test_an_owner_line_that_says_what_a_never_line_forbids_is_refused(rt):
     bad = stub_of("coordination", lambda w, l: w["goal"]["role_procedure"]["items"].append("start a run: the engine starts itself in its slot"))
     assert any("goal.role_procedure.items" in f and "Coordination never does this" in f for f in C.case_5(bad, {}))
     assert fault_of(C.case_14_function_template(bad), "goal.role_procedure line 8 says what Coordination never does")
+
+
+#: the act of each 'never' line that carries its reason after a colon ('act: reason'), one for each such line of the interface
+COLON_NEVER_ACTS = (("identity", "make anything itself"), ("identity", "loosen a rule"),
+                    ("adaptation", "ask the owner directly"), ("adaptation", "apply a change itself"),
+                    ("priority", "ask the owner directly"), ("coordination", "ask the owner directly"),
+                    ("coordination", "start a run"),
+                    ("audit", "approve a proposed workflow because it can picture auditing its output"))
+
+
+def test_every_never_line_with_a_reason_has_its_act_as_a_failing_example():
+    """The list above is the interface's: a 'never' line added with a colon and no example here fails this, so FT-9's head-clause
+    rule is never covered by the bare lines alone."""
+    colon = sorted((fn, n.split(":", 1)[0]) for fn in FUNCTIONS for n in S.FUNCTION_TEMPLATE[fn]["never"] if ":" in n)
+    assert colon == sorted(COLON_NEVER_ACTS)
+    assert all(len(act.split()) >= S.NEVER_HEAD_MIN_WORDS for _, act in COLON_NEVER_ACTS)
+
+
+@pytest.mark.parametrize("fn,act", COLON_NEVER_ACTS)
+def test_a_never_line_with_a_reason_is_said_by_its_act_alone(rt, fn, act):
+    """FT-9: 'ask the owner directly: only Identity does' is said by 'ask the owner directly', in role_may or in
+    role_procedure, however it is cased or punctuated, through the interface and through the ask; the answer names the whole
+    never line. A line that only shares a word with the act is no fault."""
+    W, R, J, FV, ref = rt
+    whole = next(n for n in S.FUNCTION_TEMPLATE[fn]["never"] if n.startswith(act + ":"))
+    title = S.TITLE[fn]
+    for part in ("role_may", "role_procedure"):
+        assert S.validate_field(fn, "goal", part, "items", [act]) == ["$[0]: %s never does this: %s" % (title, whole)], (fn, part)
+        assert S.validate_field(fn, "goal", part, "items", ["Fine.", "Then %s, quickly!" % act.upper()]) == \
+            ["$[1]: %s never does this: %s" % (title, whole)]
+    first = act.split()[0]
+    assert S.validate_field(fn, "goal", "role_may", "items", ["%s the draft, and note why" % first]) == [], "one word of the act is no fault"
+    fine = list(module_of(fn).WORDS["goal"]["role_may"]["items"])
+    with pytest.raises(ValueError) as e:
+        R.instructions_ask(ref, fn, "goal", "role_may", "items", fine + [act])
+    assert "these words cannot serve %s: items (item %d) %s never does this: %s" % (title, len(fine) + 1, title, whole) == str(e.value)
+    # a head of fewer than NEVER_HEAD_MIN_WORDS words is not compared on its own (it would match too much of what a function may do)
+    assert S._never_forms("stop it: because") == ["stop it because"]
+    assert S._never_forms("start a run: why") == ["start a run why", "start a run"]
+    # the other layers are not held to this layer's act
+    other = next(f for f in FUNCTIONS if all(not n.startswith(act) for n in S.FUNCTION_TEMPLATE[f]["never"]))
+    assert S.validate_field(other, "goal", "role_may", "items", [act]) == [], (other, act)
+
+
+def test_case_14_names_a_default_role_may_that_says_the_act_of_a_never_line_with_a_reason():
+    """FT-9 in case 14 for the default words: a version whose role_may holds 'ask the owner directly' (the act of the line that
+    carries its reason after a colon) is told in one sentence that names the version, the part, the line and the never line;
+    so is a role_procedure line that holds it; the version that is not at fault says nothing."""
+    def head_in_may(w, l):
+        w["goal"]["role_may"]["items"][0] = "Ask the owner directly when two functions disagree."
+
+    def head_in_procedure(w, l):
+        w["goal"]["role_procedure"]["items"][1] = "Then start a run in the slot."
+
+    for fn, change, pieces in (
+            ("adaptation", head_in_may, ("adaptation/v1: ", "goal.role_may line 1 says what Adaptation never does",
+                                         "ask the owner directly: only Identity does")),
+            ("coordination", head_in_procedure, ("coordination/v1: ", "goal.role_procedure line 2 says what Coordination never does",
+                                                 "start a run: the engine starts itself in its slot"))):
+        got = C.case_14_function_template(stub_of(fn, change))
+        assert len(fault_of(got, *pieces)) == 1 and len(got) == 1, (fn, got)
+        assert C.case_14_function_template(module_of(fn)) == []
 
 
 # ---- F5: the floor ------------------------------------------------------------------------------------------------------
@@ -917,3 +1019,74 @@ def test_the_comparison_script_runs_and_the_block_is_the_only_difference(home, c
     assert done.returncode == 0 and "the block adds" in done.stdout, done.stderr
     assert not [k for k in B.ENV if "ROLE" in k], "the environment the script sets holds nothing about the block"
     assert re.findall(r"environ[^\n]*ROLE|ROLE[^\n]*environ", (HERE / "qa" / "role_block_ab.py").read_text(encoding="utf-8").replace("never an environment", "")) == []
+
+
+def _comparison_script():
+    import sys
+    sys.path.insert(0, str(HERE / "qa"))
+    try:
+        import role_block_ab as B
+    finally:
+        sys.path.remove(str(HERE / "qa"))
+    return B
+
+
+def test_the_comparison_tally_counts_an_answer_that_fits_no_shape_as_outside_the_contract():
+    """A verifier's finding (F8): the engine writes an answer that fits no shape, on any rung, as a row with no check: ended failed
+    when nothing is left to try, or, when the model was called and the ladder reached the person, a row that asks the owner. The
+    tally that counted only failed checks lost both. A row that never got a verdict (waiting for the model, asked by hand, asked
+    with no call made) is still none of them."""
+    B = _comparison_script()
+    rows = [{"step": "a.one", "status": "ok", "check": {"ok": True, "notes": []}},
+            {"step": "a.two", "status": "failed", "check": {"ok": False, "notes": ["one", "two", "three"]}, "why": "Two: one"},
+            {"step": "a.three", "status": "failed", "why": "Three: no answer that fits, on any rung"},
+            {"step": "a.four", "status": "waiting", "why": "waits for the model", "calls": 0},
+            {"step": "a.five", "status": "asked", "why": "waits for the owner", "rung": "P", "asked_rung": "P", "calls": 0},
+            {"step": "a.six", "status": "ok", "check": {"ok": True, "notes": ["skipped"]}},
+            {"step": "a.seven", "status": "asked", "why": "waits for the owner", "rung": "P", "asked_rung": "C0", "calls": 2},
+            {"step": "a.eight", "status": "asked", "why": "waits for the owner", "rung": "P", "asked_rung": "C0", "calls": 0}]
+    got = B.tally(rows)
+    assert (got["checks"], got["passed"], got["unfit"]) == (3, 2, 2)
+    assert [(r["step"], r["kind"]) for r in got["outside"]] == [("a.two", "check failed"), ("a.three", "no answer that fits"), ("a.seven", "put to the owner")]
+    assert got["outside"][0]["notes"] == ["one", "two"] and got["outside"][1]["notes"] == ["Three: no answer that fits, on any rung"]
+    assert B.tally([])["outside"] == [] and B.tally([{"step": "x", "status": "failed"}])["outside"][0]["notes"] == ["no answer that fits, on any rung"]
+
+
+def test_the_comparison_reports_a_model_answer_outside_the_contract_in_each_arm(home, monkeypatch):
+    """A verifier's finding (F8): an arm where a model answer fits no shape must not read as a clean arm. Priority's bargain is
+    scripted to answer {'answer': 'banana'}, which no rung accepts, so the step goes to the owner (who says yes, and a draft
+    stands): each arm lists the step as outside the contract, counts it against the pass rate and in the asked column, and the
+    report names it and prints the failed and asked columns. A second scenario has the owner refuse that ask, which ends the
+    step failed with no check: that row is listed too, and counted in the failed column. An ordinary scenario shows none."""
+    import io
+    import json
+    B = _comparison_script()
+    monkeypatch.setitem(B.SCENARIOS, "garbage", ("Priority answers in a shape its contract does not ask for",
+                                                 {"priority.bargain": {"answer": "banana"}}, True))
+    monkeypatch.setitem(B.SCENARIOS, "garbage-no", ("the same, and the owner refuses the step Priority could not answer",
+                                                    {"priority.bargain": {"answer": "banana"}}, lambda a: a["kind"] != "step"))
+    results = B.run_arms(["garbage", "garbage-no", "refused"])
+    for arm in ("on", "off"):
+        a = results["garbage"][arm]
+        assert [(r["step"], r["kind"]) for r in a["outside_the_contract"]] == [("priority.bargain", "put to the owner")], (arm, a["outside_the_contract"])
+        assert a["unfit"] == 1 and a["asked"] == 1 and a["failed"] == 0 and a["steps"] == a["checks"] + 1
+        assert a["pass_rate"] == round(a["passed"] / (a["checks"] + a["unfit"]), 3) and a["pass_rate"] < 1.0, "it counts against the rate"
+        b = results["garbage-no"][arm]
+        assert [(r["step"], r["kind"]) for r in b["outside_the_contract"]] == [("priority.bargain", "put to the owner"), ("priority.bargain", "no answer that fits")], b["outside_the_contract"]
+        assert "no answer that fits, on any rung" in b["outside_the_contract"][1]["notes"][0]
+        assert b["failed"] == 1 and b["unfit"] == 2 and b["steps"] > b["checks"], "the failed row has no check, as the engine writes it"
+        clean = results["refused"][arm]
+        assert clean["outside_the_contract"] == [] and clean["unfit"] == 0 and clean["failed"] == 0 and clean["pass_rate"] == 1.0
+    text = "\n".join(B.report({"garbage": results["garbage"], "garbage-no": results["garbage-no"]}))
+    head = text.split("\n")[1].split()
+    assert head[head.index("outside"):head.index("outside") + 3] == ["outside", "failed", "asked"], "a failed and an asked column for each arm"
+    for arm in ("on", "off"):
+        assert re.search(r"\n\s+%s: an answer outside the contract at priority\.bargain: the model's answers fit no shape" % arm, text), text
+        assert re.search(r"\n\s+%s: an answer outside the contract at priority\.bargain: .*no answer that fits, on any rung" % arm, text), text
+    assert text.count("the arms differ in prompt size only") == 2, "both arms fail the same steps: the block is the only difference"
+    out = io.StringIO()
+    assert B.main(["garbage"], out) == 0 and "an answer outside the contract at priority.bargain" in out.getvalue()
+    out = io.StringIO()
+    assert B.main(["--json", "garbage-no"], out) == 0
+    doc = json.loads(out.getvalue())["garbage-no"]["on"]
+    assert doc["failed"] == 1 and doc["unfit"] == 2 and doc["asked"] == 1 and len(doc["outside_the_contract"]) == 2
