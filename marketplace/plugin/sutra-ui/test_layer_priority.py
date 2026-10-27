@@ -833,6 +833,76 @@ def test_q1_leave_gives_up_the_item_the_held_engine_was_for(live):
     assert W.dept(ref)["envelopes"]["Plan"]["calls"] == 0, "nothing is spent or raised by leaving something out"
 
 
+def test_q1_leave_shapes_the_plan_afresh_so_the_held_engine_does_not_wait_in_a_plan_that_no_longer_needs_it(live):
+    """A leave that drops the item and leaves the plan, the held engine and its slot as they were, so that 'nothing more is
+    spent' is untrue, must fail (found by a verifier 2026-10-27): the owner's leave on the limit card is applied by Identity's
+    code, as on a blocked plan's card, so the cycle goes back to shaping the plan from the done-when that is kept, Adaptation is
+    asked afresh, nothing runs on the old plan meanwhile (not even once the limit is restored), and the plan that is registered
+    after it is the one the work runs on; the engine, held again by the same limit, files a fresh card."""
+    W, R, J, _ = live
+    ref = _held(live)
+    ask = _envelope_ask(W, ref)
+    registered, seen = len(W.dept(ref)["workflows"]), len(R.board(ref))
+    W.choose_option(ref, ask["id"], "leave:D2")
+    assert (J._state(ref)["state"], J._state(ref)["step"]) == ("adapting", 2), "the plan is shaped afresh from step 2"
+    assert "cycle.reopened" in _actions(J, ref)
+    [asked] = [p for p in R.board(ref)[seen:] if p["src"] == "Identity" and p["dst"] == ["Adaptation"] and p["msg_type"] == "request"]
+    assert asked["payload"]["word"] == "line" and "algebra" in asked["payload"]["words"], "Adaptation is asked afresh, from the goal"
+    assert any("shaping the plan afresh from the done-when you kept" in s for s in _said(R, ref)), "and Identity says so"
+    assert J.holding(ref) == "waits for the workflow to be granted and registered"
+    assert W.due(ref)[0] == "Adaptation", "the old plan's engine is not due: only the new line is"
+    W.set_envelope(ref, "Plan", calls=240)                           # the limit is restored before the new plan is registered
+    assert W.due(ref)[0] == "Adaptation", "and a restored limit does not start it on the old plan"
+    W.set_envelope(ref, "Plan", calls=0)
+    W.run_until_idle(ref, limit=300)
+    d = W.dept(ref)
+    assert len(d["workflows"]) == registered + 1 and [i["id"] for i in d["done_items"]] == ["D1"], "a new plan is registered"
+    acts = _actions(J, ref)
+    assert acts.index("cycle.reopened") < len(acts) - 1 - acts[::-1].index("workflow.registered"), "after the cycle was reopened"
+    assert _work(W, ref) == [] and W.due(ref)[2] == "Plan is out of its envelope", "nothing was spent; the same limit holds it again"
+    fresh = _envelope_ask(W, ref)
+    assert fresh["id"] != ask["id"] and fresh["engine"] == "Plan", "a fresh card is filed for the plan that holds it now"
+    assert [o["id"] for o in fresh["options"]] == ["raise:Plan", "stop"], "D1 is the only item left, so nothing more can be left out"
+
+
+def test_q1_leave_and_stop_on_the_limit_card_are_applied_by_identitys_code_not_a_copy_of_it(live, monkeypatch):
+    """A second copy of Identity's leave and stop in Priority's module must fail (A1.15 gives them to Identity): the limit card's
+    choice of either reaches engine_runtime's leave_out and stop_department, the ones a blocked plan's card uses, and a raise
+    does not."""
+    W, R, J, _ = live
+    calls = []
+    monkeypatch.setattr(R, "leave_out", lambda ref, iid, why, words=None, answers=None: calls.append(("leave", iid, words)) or {"id": iid})
+    monkeypatch.setattr(R, "stop_department", lambda ref: calls.append(("stop",)))
+    ref = _held(live)
+    ask = dict(_envelope_ask(W, ref), chosen={"label": "Leave D2 out"})
+    assert V1.apply_choice(ref, ask, W.option("leave:D2", "Leave D2 out", "x")) == {"left_out": "D2"}
+    assert V1.apply_choice(ref, ask, W.option("stop", "Stop here", "x")) == {"stopped": True}
+    assert calls == [("leave", "D2", "Leave D2 out"), ("stop",)]
+    assert V1.apply_choice(ref, ask, W.option("raise:Plan", "Add budget for Plan", "x", {"what": "envelope", "engine": "Plan", "calls": 1, "usd": 6.0}))["raised"]
+    assert calls == [("leave", "D2", "Leave D2 out"), ("stop",)]
+    monkeypatch.setattr(R, "leave_out", lambda *a, **k: None)
+    assert V1.apply_choice(ref, ask, W.option("leave:D9", "Leave D9 out", "x")) == {"left_out": None}, "an item done-when no longer holds"
+
+
+def test_q1_leave_out_of_a_department_with_no_cycle_changes_done_when_and_shapes_nothing(live):
+    """Reopening a cycle that does not exist, or changing done-when for an item it does not hold, must fail: leave_out is the
+    one path for every card, so a department that never started a cycle has done-when changed and no line asked of Adaptation,
+    and an item done-when no longer holds changes nothing."""
+    W, R, J, _ = live
+    d, _ = W.create("dref-answers", "Answers", None, kind="default")
+    ref = d["ref"]
+    W.give_goal(ref, "Answer what the science team asks about the lab rota")
+    W.put_done_items(ref, ITEMS2)
+    assert J._state(ref) is None
+    seen = len(R.board(ref))
+    assert R.leave_out(ref, "D9", "x") is None and [i["id"] for i in W.dept(ref)["done_items"]] == ["D1", "D2"]
+    gone = R.leave_out(ref, "D2", "the engine was held at its limit, and you chose to leave it out", words="Leave D2 out")
+    assert gone["id"] == "D2" and [i["id"] for i in W.dept(ref)["done_items"]] == ["D1"]
+    assert len(R.board(ref)) == seen and J._state(ref) is None, "no cycle to reopen, and no line asked of Adaptation"
+    [stamped] = [a for a in W.asks(ref) if a["kind"] == "done_items"][-1:]
+    assert (stamped["status"], stamped["by"], stamped["words"]) == ("stamped", "the owner", "Leave D2 out")
+
+
 def test_q1_stop_stops_the_department_where_it_is(live):
     """A stop that leaves the department running must fail: it is the owner's Stop, so the cycle says stopped and no engine
     starts."""
