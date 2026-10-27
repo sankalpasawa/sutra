@@ -1885,6 +1885,115 @@ def test_q2_a_raise_past_the_cap_is_409_over_cap_and_the_ceiling_stays(live, rou
     assert W.dept(ref)["ceiling"]["rounds"] == 12
 
 
+def test_q1_q2_a_raise_past_the_cap_on_a_card_with_a_thread_is_refused_before_the_choice_is_recorded(live):
+    """check_raise guarded by nothing (found by a verifier 2026-10-27): the cards above carry no thread, and there apply_choice raises
+    OVER_CAP itself, so they pass with check_raise gone. A card with a thread (the blocked card of a bargain limit or of a refused
+    round) is Identity's to apply whole, and only check_raise, before the choice is recorded, stands between a stale raise and the
+    record: past twice where it started, in any one of calls, money or rounds, the choice is 409 OVER_CAP through POST /asks/{aid},
+    the card still waits, nothing was posted to its thread, and the limit and the ceiling are as they were."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    d = W.dept(ref)
+    c, env = d["ceiling"], d["envelopes"]["Plan"]
+    api = _client()
+    stop = W.option(W.STOP_OPTION, "Stop here", "the department stops where it is")
+    stale = [("Plan", {"what": "envelope", "engine": "Plan", "calls": 2 * env["calls"] + 1, "usd": env["usd"]}),
+             ("Plan", {"what": "envelope", "engine": "Plan", "calls": env["calls"], "usd": round(2 * env["usd"] + 0.01, 4)}),
+             ("ceiling", {"what": "ceiling", "rounds": 2 * c["start"]["rounds"] + 1, "calls": c["calls"], "usd": c["usd"]}),
+             ("ceiling", {"what": "ceiling", "rounds": c["rounds"], "calls": 2 * c["start"]["calls"] + 1, "usd": c["usd"]}),
+             ("ceiling", {"what": "ceiling", "rounds": c["rounds"], "calls": c["calls"], "usd": round(2 * c["start"]["usd"] + 0.01, 4)})]
+    for name, params in stale:
+        card = R._blocked(ref, W.dept(ref), {"src": R.OWNER}, "Priority said no.", "The plan needs your word.", "Identity, settling the bargain", "no room",
+                          options=[W.option("raise:" + name, "Add budget", "about a lot more", params), stop])
+        assert card["thread"], "a card with a thread: Identity applies the choice, and apply_choice leaves it alone"
+        posts = len(R.board(ref))
+        got = api.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "raise:" + name})
+        assert (got.status_code, got.json()["detail"]) == (409, {"code": "OVER_CAP"}), params
+        waiting = next(a for a in W.asks(ref) if a["id"] == card["id"])
+        assert (waiting["status"], waiting["chosen"]) == ("pending", None), "the card waits as it was"
+        assert len(R.board(ref)) == posts, "and nothing reached Identity"
+        assert (W.dept(ref)["envelopes"]["Plan"], W.dept(ref)["ceiling"]) == (env, c)
+    inside = R._blocked(ref, W.dept(ref), {"src": R.OWNER}, "Priority said no.", "The plan needs your word.", "Identity, settling the bargain", "no room",
+                        options=[W.option("raise:Plan", "Add budget", "to the most allowed",
+                                          {"what": "envelope", "engine": "Plan", "calls": 2 * env["calls"], "usd": round(2 * env["usd"], 4)}), stop])
+    ok = api.post("/api/native/%s/asks/%s" % (ref, inside["id"]), json={"option": "raise:Plan"})
+    assert ok.status_code == 200 and ok.json()["status"] == "chosen", "at the cap the choice is taken"
+
+
+def _given_a_stated_budget(live, within):
+    """A department whose owner stated a budget: its limits are cleared and Priority gives every engine a share of `within` USD a day
+    (Identity's budget point, R._priority_limits), each no more than the template's."""
+    W, R, J, _ = live
+    ref = _born(live)
+    d = W.dept(ref)
+    d["envelopes"] = {}
+    W.save_dept(ref, d, by="priority")
+    assert R._priority_limits(ref, within=within) is True
+    return ref
+
+
+def test_q1_the_cap_is_twice_the_limit_the_engine_was_given_when_the_owner_stated_a_budget(live):
+    """A cap of twice the template over a limit given at a fraction of it must fail (found by a verifier 2026-10-27: with 1 USD a day
+    said, each engine started at 0.16 USD and a raise to 12 USD, 75 times where it started, was taken): RAISE_CAP times where the
+    engine started is the share Priority gave it, for every engine, in calls and in money, whether the raise is offered, chosen on
+    a card with a thread, or set for an option."""
+    W, R, J, _ = live
+    ref = _given_a_stated_budget(live, 1.0)
+    d = W.dept(ref)
+    template = {n: R.engine_limit(n) for n in d["envelopes"]}
+    assert set(d["envelopes"]) >= set(W.SYSTEMS) | set(LINE)
+    shares = {n: d["envelopes"][n]["usd"] for n in d["envelopes"]}
+    assert all(0 < shares[n] < template[n]["usd"] for n in shares), shares
+    api = _client()
+    for n, env in d["envelopes"].items():
+        start = W.envelope_start(d, n)
+        assert start == {"calls": template[n]["calls"], "usd": shares[n]}, (n, start)
+        over = round(2 * shares[n] + 0.01, 4)
+        words = W.envelope_over(d, n, env["calls"], over)
+        assert words and words.startswith("%s may be raised to %d calls and %.2f USD a day" % (n, 2 * env["calls"], 2 * shares[n])), (n, words)
+        assert W.envelope_over(d, n, env["calls"], round(2 * shares[n], 4)) is None, "at twice the share the raise is allowed"
+        assert W.envelope_over(d, n, 2 * env["calls"] + 1, shares[n]) and W.envelope_over(d, n, 2 * env["calls"], shares[n]) is None
+        with pytest.raises(W.AskError) as exc:
+            W.set_envelope(ref, n, usd=over, by="option")
+        assert exc.value.code == "OVER_CAP" and W.dept(ref)["envelopes"][n] == env
+    # the stale raise to the template's cap, on the card of a bargain at its limit (a card with a thread): 409, and the share stays
+    stop = W.option(W.STOP_OPTION, "Stop here", "the department stops where it is")
+    old = {"what": "envelope", "engine": "Plan", "calls": d["envelopes"]["Plan"]["calls"], "usd": 12.0}
+    card = R._blocked(ref, d, {"src": R.OWNER}, "Priority said no.", "The plan needs your word.", "Identity, settling the bargain", "no room",
+                      options=[W.option("raise:Plan", "Add budget", "to the template's cap", old), stop])
+    got = api.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "raise:Plan"})
+    assert (got.status_code, got.json()["detail"]) == (409, {"code": "OVER_CAP"})
+    assert W.dept(ref)["envelopes"]["Plan"]["usd"] == shares["Plan"] and next(a for a in W.asks(ref) if a["id"] == card["id"])["status"] == "pending"
+    # twice the share is allowed, and a raise Priority offers is never past it
+    twice = round(2 * shares["Plan"], 4)
+    fine = W.option("raise:Plan", "Add budget", "to twice the share", dict(old, usd=twice))
+    W._put_ask(ref, dict(card, options=[fine, stop]))
+    assert api.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "raise:Plan"}).status_code == 200
+    W.run_until_idle(ref, limit=100)                      # Identity applies a choice on a card with a thread, as a step
+    assert W.dept(ref)["envelopes"]["Plan"]["usd"] == twice
+    env = d["envelopes"]["Write"]
+    held = V1.hold_options(ref, W.dept(ref), "Write", env["calls"], shares["Write"], env)
+    raised = [o for o in held if o["kind"] == "raise"]
+    assert [o["id"] for o in raised] == ["raise:Write"] and shares["Write"] < raised[0]["params"]["usd"] <= round(2 * shares["Write"], 4), held
+    way_past = V1.hold_options(ref, W.dept(ref), "Write", env["calls"], shares["Write"] + 1, env)
+    assert [o["kind"] for o in way_past] == ["stop"], "one run more would take it past twice the share, so no raise is offered"
+
+
+def test_q1_a_limit_the_template_gave_keeps_the_template_cap_and_a_limit_the_owner_set_does_not_move_the_start(live):
+    """A department that stated no budget starts where its template put it, twice that is its cap, and a limit the owner types in the
+    box on the card (by the owner) moves where the engine stands and not where it started."""
+    W, R, J, _ = live
+    ref = _born(live)
+    d = W.dept(ref)
+    assert W.envelope_start(d, "Plan") == {"calls": 240, "usd": 6.0} and W.envelope_over(d, "Plan", 480, 12.0) is None
+    assert W.envelope_over(d, "Plan", 480, 12.01)
+    W.set_envelope(ref, "Plan", calls=100, usd=1.0, by="the owner")
+    assert W.envelope_start(W.dept(ref), "Plan") == {"calls": 240, "usd": 6.0}, "the start is what Priority gave, not what the owner typed"
+    assert W.envelope_over(W.dept(ref), "Plan", 480, 12.0) is None and W.envelope_over(W.dept(ref), "Plan", 481, 1.0)
+    W.set_envelope(ref, "Plan", calls=9999, usd=99.0, by="the owner")
+    assert W.envelope_over(W.dept(ref), "Plan", 9999, 99.0) is None, "a limit no higher than it is now is never over"
+
+
 def test_q2_a_round_past_the_calls_or_the_money_is_said_no_to_in_money_and_the_raise_is_held_to_the_cap(live, rounds_sendable):
     """A round funded though the goal has spent what the ceiling holds must fail: with 12 calls and 0.60 USD spent, a line
     estimated at the same again, and a ceiling of 20 calls, round 2 is over by calls, and the raise offered is the most the cap
@@ -2313,6 +2422,92 @@ def test_q1_a_limit_reaches_the_owner_with_raise_leave_and_stop_priced_from_what
     W.run_until_idle(ref, limit=300)
     assert W.dept(ref)["envelopes"]["Plan"] == {"calls": 11, "usd": 0.395}, "the raise is applied, once the owner chose it"
     assert next(a for a in W.asks(ref) if a["id"] == card["id"])["chosen"]["id"] == "raise:Plan"
+
+
+def _never_blocked_without_a_question(W, J, ref):
+    """SM-6: an end that is not done has a pending ask with options. A cycle that says blocked while no ask waits is the dead end a
+    raise that pays for nothing left behind (found by a verifier 2026-10-27)."""
+    pending = [a for a in W.asks(ref) if a["status"] == "pending" and a.get("options")]
+    assert J.status(ref)["state"] != "blocked" or pending, "blocked, and no ask with options waits for the owner"
+
+
+def _the_world_as_usual(monkeypatch, R):
+    """What a scenario's device is not: the model answers (offline, from the drafts) and a bargain has the usual bounds."""
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: (None, 0.0, "offline"))
+    monkeypatch.setattr(R, "BOUNDS", {"hops": 4, "seconds": 900, "usd": 0.5})
+
+
+def _the_raise_paid_for_the_work(W, R, J, ref, card):
+    """The raise on `card` was applied and the department went on: the cycle left blocked, the plan was shaped afresh from the budget
+    the owner added, registered, and the funded work ran (Plan, which was raised, is the first engine of the line)."""
+    assert W.dept(ref)["envelopes"]["Plan"] == {"calls": 11, "usd": 0.395}
+    assert next(a for a in W.asks(ref) if a["id"] == card["id"])["chosen"]["id"] == "raise:Plan"
+    assert any("shaping the plan afresh from the budget you added" in s for s in _said(R, ref)), _said(R, ref)
+    assert "cycle.reopened" in _actions(J, ref) and "workflow.registered" in _actions(J, ref), _actions(J, ref)
+    assert J.status(ref)["state"] != "blocked" and _work(W, ref)[:1] == ["Plan"], (J.status(ref)["state"], _work(W, ref))
+    _never_blocked_without_a_question(W, J, ref)
+
+
+@pytest.mark.parametrize("bound", ("hops", "seconds", "usd"))
+def test_q1_the_raise_chosen_at_a_bargain_limit_sets_the_plan_going_again(live, monkeypatch, bound):
+    """A raise that is applied and then leaves the department blocked with no ask must fail (found by a verifier 2026-10-27: the
+    envelope was raised, the card said chosen, and the cycle stayed at step 4 with nothing pending and nothing to start): at hops,
+    time and spend, the owner's click on the first option has Adaptation shape the plan afresh, Priority price it against the room
+    the raise made, Root register it, and the funded work run."""
+    W, R, J, _ = live
+    ref = _short_limit(live, monkeypatch, bound)
+    card = _one_card(W, ref, "blocked")
+    assert card["options"][0]["id"] == "raise:Plan" and J.status(ref)["state"] == "blocked" and _work(W, ref) == []
+    _the_world_as_usual(monkeypatch, R)
+    W.choose_option(ref, card["id"], card["options"][0]["id"])
+    W.run_until_idle(ref, limit=300)
+    _the_raise_paid_for_the_work(W, R, J, ref, card)
+    assert [r["answer"] for r in _prices(W, ref)][-1:] == ["accept"], "Priority priced the plan against the room the raise made, and said yes"
+
+
+def test_q1_the_raise_chosen_after_a_priority_no_sets_the_plan_going_again(live):
+    """The same for the other way a plan is blocked on money: Priority's no (no room in any limit). The click on 'Add budget for
+    Plan' is the only thing the owner does."""
+    W, R, J, _ = live
+    ref = _rejected(live)
+    card = _one_card(W, ref, "blocked")
+    assert [o["id"] for o in card["options"]] == ["raise:Plan", "leave:D2", "stop"] and J.status(ref)["state"] == "blocked"
+    W.choose_option(ref, card["id"], "raise:Plan")
+    W.run_until_idle(ref, limit=300)
+    _the_raise_paid_for_the_work(W, R, J, ref, card)
+    assert [r["answer"] for r in _prices(W, ref)] == ["reject", "accept"], "Priority said no, and then yes against the room the raise made"
+
+
+def test_q1_a_raise_chosen_while_the_department_is_stopped_goes_on_when_it_starts(live):
+    """A stopped department's card can still be answered (S10): the raise is applied on Start, and the plan is shaped afresh then,
+    never left blocked with no question."""
+    W, R, J, _ = live
+    ref = _rejected(live)
+    card = _one_card(W, ref, "blocked")
+    J.stop(ref)
+    W.choose_option(ref, card["id"], "raise:Plan")
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "stopped" and _work(W, ref) == [], "nothing starts while it is stopped"
+    J.resume(ref)
+    W.run_until_idle(ref, limit=300)
+    _the_raise_paid_for_the_work(W, R, J, ref, card)
+
+
+def test_q1_a_raise_asks_nothing_afresh_of_a_cycle_that_is_not_blocked(live):
+    """A raise chosen after something else put the plan right (the cycle runs) is applied and leaves the cycle where it is: Adaptation
+    is not asked for the plan again over a line that is registered and running."""
+    import layers
+    W, R, J, _ = live
+    ref = _rejected(live)
+    card = _one_card(W, ref, "blocked")
+    W.choose_option(ref, card["id"], "raise:Plan")
+    W.run_until_idle(ref, limit=300)
+    state, reopened = J.status(ref)["state"], _actions(J, ref).count("cycle.reopened")
+    ident = layers.load("identity/v1")
+    got = {"applied": True, "said": "applied", "result": {"what": "envelope", "engine": "Plan", "raised": True}}
+    assert ident.resume_after_raise({"ref": ref, "dept": W.dept(ref)}, got) == got
+    assert (J.status(ref)["state"], _actions(J, ref).count("cycle.reopened")) == (state, reopened)
+    assert ident.resume_after_raise({"ref": ref, "dept": W.dept(ref)}, {"applied": False, "said": "waits"}) == {"applied": False, "said": "waits"}
 
 
 def test_q1_the_limit_conflict_asks_priority_for_its_ways_by_the_thread_and_the_call_is_declared(live, monkeypatch):
