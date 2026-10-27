@@ -1414,6 +1414,27 @@ def test_q2_the_interface_names_the_round_part_its_covering_and_the_ceiling_in_t
     assert all(n in R.INPUT_SAYS for n in part["inputs"])
 
 
+def test_q2_the_owners_screen_words_the_round_part_by_the_ceiling_and_the_other_parts_by_the_day(live):
+    """A round part whose instructions screen (S16) lists 'what remains of today's room' for what remains of the goal's ceiling,
+    or 'the room left' for a yes or no on whether the ceiling holds the round, must fail (found by a verifier 2026-10-27): the
+    slots the screen lists for priority.bargain.round say the ceiling; the parts that do mean today's room keep the words they
+    had, and no other part of any function reads differently."""
+    W, R, J, _ = live
+    ref = _born(live)
+    parts = {(layer, g["group"], p["part"]): p for layer in S.FUNCTION_LAYERS for g in R.instructions_view(ref, layer) for p in g["parts"]}
+    assert parts[("priority", "bargain", "round")]["inputs"] == [
+        "the round", "what the round puts right", "what it is likely to cost", "whether the goal's ceiling holds the round",
+        "the goal's ceiling", "what remains of the goal's ceiling after the round"]
+    line = parts[("priority", "bargain", "line")]["inputs"]
+    assert line[line.index("the room left")] == "the room left" and line[-1] == "what remains of today's room", "the line part is about the day"
+    assert not any(re.search(r"today|order", w) for w in parts[("priority", "bargain", "round")]["inputs"])
+    for key, p in parts.items():
+        if key != ("priority", "bargain", "round"):
+            assert p["inputs"] == [R.INPUT_SAYS.get(n, n.replace("_", " ")) for n in S.PROMPTS[key[0]][key[1]][key[2]]["inputs"]], key
+    assert R.input_says("priority", "bargain", "round", "ceiling") == "the goal's ceiling", "a slot the part does not reword keeps the common word"
+    assert R.input_says("priority", "bargain", "round", "unheard_of") == "unheard of"
+
+
 def test_q2_priority_never_orders_in_the_words_it_sends_or_says(live, rounds_sendable):
     """A word of ordering in Priority's round part, its answers or its options must fail (S-05): Priority prices and holds."""
     W, R, J, _ = live

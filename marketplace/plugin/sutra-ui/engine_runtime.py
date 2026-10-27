@@ -5791,6 +5791,20 @@ def _tell_kept_notes(ref, d, fn):
         pass
 
 
+#: What an input is called on the owner's screen in one part, where that part means it differently from INPUT_SAYS (S16), by
+#: (function, group, part). A round is held to the goal's ceiling, not to today's room: there `room` is a yes or no on whether
+#: the ceiling holds the round, and `remaining` what is left of the ceiling after it (found by a verifier 2026-10-27: the part
+#: listed 'what remains of today's room' for the ceiling).
+INPUT_SAYS_IN = {("priority", "bargain", "round"): {"room": "whether the goal's ceiling holds the round",
+                                                    "remaining": "what remains of the goal's ceiling after the round"}}
+
+
+def input_says(fn, group, part, name):
+    """An input of a part in the owner's words: the part's own word for it where it means it differently, else INPUT_SAYS' (a name
+    that is in neither is said as it is, with its underscores gone)."""
+    return (INPUT_SAYS_IN.get((fn, group, part)) or {}).get(name) or INPUT_SAYS.get(name, name.replace("_", " "))
+
+
 def instructions_view(ref, fn):
     """A function's instructions as its Settings shows them (S16): each group by name with the line that says what it is
     for, in it each part with whether a run reads it, the steps that do, what the app fills and what it answers with, and
@@ -5818,7 +5832,7 @@ def instructions_view(ref, fn):
                                "value": now.get(field), "as_shipped": now.get(field) == shipped.get(field),
                                "waits": {"ask": a["id"], "at": a.get("created")} if a else None})
             rows.append({"part": part, "read": _read_by_a_run(fn, group, part), "read_by": _read_by(fn, group, part),
-                         "inputs": [INPUT_SAYS.get(n, n.replace("_", " ")) for n in spec["inputs"]],
+                         "inputs": [input_says(fn, group, part, n) for n in spec["inputs"]],
                          "answers": layers.prompts.answer_keys(spec["returns"]), "fields": fields})
         out.append({"group": group, "lead": layer_schema.GROUPS[fn][group], "kept": layers.prompts.kept_note(ref, fn, group),
                     "parts": rows})
