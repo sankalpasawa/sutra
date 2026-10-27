@@ -3888,7 +3888,7 @@ def _audit_reading_findings(found, art):
         sev = "high" if sev == "critical" else sev if sev in ("high", "medium", "low") else "medium"
         item_id = f.get("item") if re.match(r"^D[1-9][0-9]?$", str(f.get("item") or "")) else None
         out.append({"id": "F%d" % n, "severity": sev, "claim": _clip(f.get("claim"), 600),
-                    "where": " ".join(str(f.get("page") or f.get("where") or art or "").split())[:200], "item": item_id,
+                    "where": " ".join(str(f.get("where") or f.get("page") or art or "").split())[:200], "item": item_id,
                     "went_to": "Identity"})
     return out
 
@@ -3930,6 +3930,7 @@ def audit_file(ctx, step, item):
     faults = mech.get("faults") if "faults" in mech else (mech.get("notes") if not mech.get("ok") else [])
     found = [{"page": None, "claim": n, "severity": "high"} for n in faults or []]
     found += list(mech.get("holes") or [])
+    found += list(mech.get("defects") or [])          # the page defects of audit/v1's mechanical step (M8.6), each naming where and what
     found += [f for f in judged.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
     found += [{"page": f.get("where"), "claim": f["claim"], "severity": f.get("severity"), "item": f.get("item")}
               for f in said.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
@@ -4384,10 +4385,18 @@ def born_template(name, shape, ref):
     """An engine shaped on the fly, born into the Library from Do: the same three steps (read, do, file) under its own
     ids, its use case and instruction from the idea, what it writes filed under the Default artifact template; made_by
     says which department it was born for and that Adaptation shaped it (PRD M4.1: engines come from Adaptation, never
-    from Root). Validated with the rest; refused, it leaves no file."""
+    from Root). Validated with the rest; refused, it leaves no file.
+
+    A shape may name a form (J2B-3, M7.5): the artifact whose form what the engine writes is filed in, because a Library
+    engine reads it. The template carries it as `form`; the engine's page step then writes the inside of each page (a
+    title and a body_html), and do_file holds the pages to the form where they are written."""
+    import artifacts
     slug = re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
     if not slug:
         raise ValueError("name the engine")
+    form = " ".join(str(shape.get("form") or "").split())
+    if form and not artifacts.form_of(form):
+        raise ValueError("the Library has no form named %s" % form)
     user = user_templates_dir()
     user.mkdir(parents=True, exist_ok=True)
     p = user / (slug + ".json")
@@ -4405,6 +4414,10 @@ def born_template(name, shape, ref):
     for s in t["steps"]:
         if s.get("only_if"):                                   # a condition on Do's own bag follows the ids
             s["only_if"] = re.sub(r"^do\.", slug + ".", str(s["only_if"]))
+    if form and not (_writes_pages(t) and t["writes"] == form):
+        raise ValueError("%s writes %s, which is not %s, so it cannot file in the form of %s" % (name, t["writes"], form, form))
+    if form:
+        t["form"] = form
     if _writes_pages(t):
         # an engine whose artifact is pages plans them in one small call and writes one page per call, four side by side, as
         # the website kind's Write does; one answer for every page trimmed a growing site (findings 60, 63)
@@ -4417,7 +4430,8 @@ def born_template(name, shape, ref):
                               "code": "do_pages_list", "check": "list_has_pages"})
                 steps.append({"id": slug + ".page", "name": "Write a page", "nature": "make", "born": "C0", "ceiling": "C1",
                               "each": slug + ".list.pages", "side_by_side": 4, "prompt": "do_page", "draft": "do_page_draft",
-                              "out": {"file": "str", "html": "str"}, "check": "page_is_html"})
+                              "out": {"file": "str", "body_html": "str"} if form else {"file": "str", "html": "str"},
+                              "check": "page_is_html"})
             else:
                 steps.append(s)
         t["steps"] = steps
@@ -4989,6 +5003,17 @@ def p_do_page(ctx, step, item):
     plan = ctx["bag"][_pre(step) + ".plan"]["pages"]
     item = _page_entry(ctx, step, item)
     rules = _owner_rules(ctx["dept"])
+    if ctx["def"].get("form"):
+        # the Library's Check reads the pages this engine writes (J2B-3, M7.5): each one the inside of <main>, as the Library's own
+        # Write files it; the layout, the nav and the footer are Check's
+        return ("Write the body of ONE page of this site, in the owner's own language, nothing invented; each fact with its source as a "
+                "link; where a fact is missing, say so on the page under 'Not sure'. body_html is the inside of <main> only: semantic "
+                "HTML (section, h1, h2, p, ul, a) with the page's own h1, no <html>, <head>, <script> or <style>, no nav, no external "
+                "images. Link to other pages as '<slug>.html' and only to the pages of this site. You can search the web and open "
+                "pages when a fact needs its source.%s\nTHE %s (what the page draws on):\n%s\n\nTHE SITE'S PAGES: %s\nTHIS PAGE: %s\n\n"
+                "Return ONLY a JSON object, no prose: {\"file\": str, \"title\": str, \"body_html\": str}."
+                % (("\nTHE OWNER'S RULES, EACH ONE MET HERE:\n- " + "\n- ".join(rules)) if rules else "", str(reads).upper(),
+                   got["brief"][:8000], json.dumps(plan), json.dumps(item)))
     return ("Write ONE whole page of this site, in the owner's own language, nothing invented; each fact with its source as a link; "
             "where a fact is missing, say so on the page under 'Not sure'. A complete HTML document (html, head with a title, body), "
             "a nav linking every page of the site by its file name, no script and no external images. You can search the web and "
@@ -5001,6 +5026,10 @@ def p_do_page(ctx, step, item):
 def d_do_page(ctx, step, item):
     p = _page_entry(ctx, step, item)
     title = str(p.get("title") or ctx["dept"].get("name") or "Page")
+    if ctx["def"].get("form"):
+        return {"file": str(p.get("file") or "index.html"), "title": title,
+                "body_html": "<section><h1>%s</h1><p>%s</p><p>To be written: no agent was there to write this page from the record, "
+                             "so it says only what the plan says of it.</p></section>" % (W._esc(title), W._esc(str(p.get("purpose") or "")))}
     return {"file": str(p.get("file") or "index.html"),
             "html": "<!doctype html><html><head><title>%s</title></head><body><h1>%s</h1><p>%s</p><p>To be written: no agent was there to write this page from the record.</p></body></html>"
                     % (title, title, str(p.get("purpose") or ""))}
@@ -5024,6 +5053,14 @@ def c_pages_are_named(ctx, step, item, out):
 
 
 def c_page_is_html(ctx, step, item, out):
+    if ((ctx or {}).get("def") or {}).get("form"):
+        # a writer that files in a form (J2B-3): the inside of a page, a body and not a whole document
+        import artifacts
+        f, b = (out.get("file"), out.get("body_html")) if isinstance(out, dict) else (None, None)
+        want = item if isinstance(item, str) else ((item or {}).get("file") if isinstance(item, dict) else None)
+        ok = (isinstance(f, str) and f.endswith(".html") and (want is None or f == want) and isinstance(b, str)
+              and not artifacts.WHOLE_PAGE.search(b) and len(re.sub(r"<[^>]+>", " ", b).split()) >= 20)
+        return _verdict(ok, "the inside of a page, under its planned name", "not the inside of a page under its planned name")
     f, h = (out.get("file"), out.get("html")) if isinstance(out, dict) else (None, None)
     want = item if isinstance(item, str) else ((item or {}).get("file") if isinstance(item, dict) else None)
     ok = (isinstance(f, str) and f.endswith(".html") and (want is None or f == want) and isinstance(h, str) and "<body" in h.lower()
@@ -5031,16 +5068,43 @@ def c_page_is_html(ctx, step, item, out):
     return _verdict(ok, "a whole page with a body, under its planned name", "not a whole page under its planned name")
 
 
+def _pages_in_form(ctx, step, pages):
+    """The pages of an engine that files in a form (J2B-3, M7.5), as the Library's own Write files them: each page a JSON
+    object {title, body_html} under its file, and a _plan.json of the pages the engine planned, in the order it planned
+    them. A page that came back as a whole HTML page is filed as it came, so the form refuses it here, where it is
+    written, and Check never meets it."""
+    planned = [p for p in (ctx["bag"].get(_pre(step) + ".plan") or {}).get("pages") or [] if isinstance(p, dict) and p.get("file")]
+    titles = {str(p["file"]).strip(): " ".join(str(p.get("title") or "").split()) for p in planned}
+    files = {}
+    for p in pages:
+        if not isinstance(p, dict) or not p.get("file"):
+            continue
+        name = str(p["file"]).strip()
+        if isinstance(p.get("body_html"), str):
+            title = " ".join(str(p.get("title") or titles.get(name) or name[:-5]).split())
+            files[name] = json.dumps({"title": title, "body_html": _link_addresses(p["body_html"])})
+        else:
+            files[name] = str(p.get("html") or "")
+    order = [str(p["file"]).strip() for p in planned] or [n for n in files if n.endswith(".html")]
+    files["_plan.json"] = json.dumps({"pages": [{"slug": n[:-5], "title": titles.get(n) or n[:-5]} for n in order if n.endswith(".html")]})
+    return files
+
+
 def do_file(ctx, step, item):
     """What the engine made, filed under what it writes: files when it answered with files, else one text. The artifact's
     own checks from the Library apply to whoever writes it (found live 2026-09-30: a text filed as Pages and as the Live
-    site passed as text, and the site had no page to serve); a site with its home page goes on the host, as Publish puts
-    a Build there, the gate having asked the owner before this run."""
+    site passed as text, and the site had no page to serve); so does its form, when the engine files in one because a
+    Library engine reads it (J2B-3, M7.5); a site with its home page goes on the host, as Publish puts a Build there, the
+    gate having asked the owner before this run."""
     import artifacts
     made = ctx["bag"].get(_pre(step) + ".make") or {}
     pages = ctx["bag"].get(_pre(step) + ".page")
     files = made.get("files") if isinstance(made.get("files"), dict) else None
-    if isinstance(pages, list) and pages:
+    form = ctx["def"].get("form")                  # the artifact whose form this engine files in (J2B-3), when a Library engine reads it
+    if isinstance(pages, list) and pages and form:
+        files = _pages_in_form(ctx, step, pages)
+        ok, notes = bool(files), ["%d pages" % sum(1 for k in files if k.endswith(".html"))]
+    elif isinstance(pages, list) and pages:
         # a pages engine: one page per call, gathered here
         files = {str(p.get("file")).strip(): str(p.get("html")) for p in pages if isinstance(p, dict) and p.get("file")}
         ok, notes = bool(files), ["%d pages" % len(files)]
@@ -5053,6 +5117,9 @@ def do_file(ctx, step, item):
     own = artifacts.check(ctx["def"].get("writes"), files, default=True)
     if own:
         ok, notes = ok and own["ok"], notes + list(own["notes"])
+    held = artifacts.form_check(form, files) if form else None
+    if held:                                       # pages in any other form fail here, where they are written, never at Check
+        ok, notes = ok and held["ok"], notes + list(held["notes"])
     out = {"files": files, "check": {"ok": ok, "notes": notes}}
     if ok and _writes_site(ctx["def"]):
         out["publish"] = True                     # on the host after the version row is written (run_engine)
@@ -5260,6 +5327,29 @@ def _broke(checks):
 SETTLED_BY = {"Priority's yes": "Priority said yes to it", "Identity's ruling": "I ruled it runs", "the owner's stamp": "You said yes to it"}
 
 
+def _form_for(ref, e, engines):
+    """The form a shaped writer is born with (J2B-3, M7.5): the artifact it writes, when the Library's template for that
+    artifact names a form and a level-1 engine of the plan, the Library's own, reads it. Code decides it; Adaptation never
+    names a form. With the make setting off (J2_ADAPT_MAKE, read by Adaptation's layer and nowhere else) a plan carries no
+    levels and no writer has a form, so a department is born as it always was. None when the writer has none."""
+    import artifacts
+    try:
+        if not layers.call(ref, "adaptation", "make_on"):
+            return None
+    except Exception:  # noqa: BLE001 -- a layer that cannot say whether the setting is on leaves the writer as it was
+        return None
+    writes = " ".join(str(e.get("writes") or "").split())
+    if not writes or not artifacts.form_of(writes):
+        return None
+    known = defs()["engines"]
+    for x in engines:
+        if x is e or not isinstance(x, dict) or x.get("level") != 1 or x.get("name") not in known:
+            continue
+        if " ".join(str(x.get("reads") or known[x["name"]].get("reads") or "").split()) == writes:
+            return writes
+    return None
+
+
 def _j2_settle(ref, d, engines, source, words, by):
     """A granted workflow goes to Root's check. Passed: it is registered on the department's record and its engines may
     run; the owner hears what was made. Refused: the reasons go back to Adaptation, twice at most; then the owner is told."""
@@ -5305,10 +5395,14 @@ def _j2_settle(ref, d, engines, source, words, by):
                     added.append(e["name"])
                     continue
                 does = str(e.get("does") or "").strip()
-                W.add_engine(ref, e["name"], shape={"name": e["name"], "use_case": does or e["name"], "does": does,
-                                                     "instruction": ("%s\n\nThe goal, in the owner's words: %s" % (does, words or "")).strip(),
-                                                     "needs": ["internet"] if e.get("internet") else [], "reads": e.get("reads") or "Brief",
-                                                     "writes": e.get("writes") or e["name"]}, by=by, registered=True)
+                shape = {"name": e["name"], "use_case": does or e["name"], "does": does,
+                         "instruction": ("%s\n\nThe goal, in the owner's words: %s" % (does, words or "")).strip(),
+                         "needs": ["internet"] if e.get("internet") else [], "reads": e.get("reads") or "Brief",
+                         "writes": e.get("writes") or e["name"]}
+                form = _form_for(ref, e, engines)       # a writer a Library engine reads files in the reader's form (J2B-3)
+                if form:
+                    shape["form"] = form
+                W.add_engine(ref, e["name"], shape=shape, by=by, registered=True)
                 added.append(e["name"])
             except Exception as exc:  # noqa: BLE001 -- one engine that cannot be born does not lose the rest; the owner hears which
                 lost.append("%s (%s)" % (e.get("name"), exc))
