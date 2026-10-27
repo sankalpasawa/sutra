@@ -163,14 +163,15 @@ def test_c6_a_value_equal_to_the_default_is_removed_and_a_later_default_reaches_
 
 def test_c6_store_refuses_in_plain_words_and_writes_nothing(home):
     ref = born(home)
+    # the whole sentence, so a clause the interface's own message leaves behind (said twice) fails here
     for field, value, why in (("task", "Judge {{words}}", "task cannot hold '{{' or '}}', which only the app writes"),
-                              ("task", "Judge }} it", "task cannot hold '{{' or '}}'"),
+                              ("task", "Judge }} it", "task cannot hold '{{' or '}}', which only the app writes"),
                               ("task", "Return ONLY yes", "task cannot hold 'Return ONLY': the shape of the answer belongs to the app"),
                               ("task", "", "task is empty"), ("task", "x" * 1201, "task is longer than 1200 characters"),
                               ("task", 7, "task has to be words"), ("task", None, "task has to be words")):
         with pytest.raises(ValueError) as cm:
             P.store(ref, *TAKE, field, value)
-        assert why in str(cm.value)
+        assert str(cm.value) == why
     with pytest.raises(ValueError, match="colour"):
         P.store(ref, *TAKE, "colour", "red")
     with pytest.raises(ValueError, match="has no part"):
@@ -189,6 +190,23 @@ def test_c6_plain_faults_say_what_the_interface_says_in_the_owners_words():
     assert got == ["task is empty", "task is longer than 20 characters", "task (item 3) is longer than 160 characters",
                    "task must be one line", "task holds a character that cannot be shown", "task needs at least 1 of them",
                    "task can hold at most 12 of them", "task has to be a list", "task something else the interface will one day say"]
+
+
+def test_c6_a_rewritten_fault_replaces_the_interfaces_whole_message_and_leaves_no_tail_of_it():
+    """The interface's message for a marker or a shape word carries a clause of its own after the part the owner's
+    words match; the owner's sentence replaces all of it, so no clause is said twice."""
+    from layer_schema import validate_field
+    for value, said in (("Judge {{words}}", "task cannot hold '{{' or '}}', which only the app writes"),
+                        ("Judge it }}", "task cannot hold '{{' or '}}', which only the app writes"),
+                        ("Judge it. Return ONLY yes", "task cannot hold 'Return ONLY': the shape of the answer belongs to the app")):
+        faults = validate_field(*TAKE[:2], TAKE[2], "task", value)
+        assert faults, value
+        assert P.plain_faults("task", faults) == [said], (value, faults)
+    # a fault the interface says in more words than the table knows is rewritten whole, never half
+    tails = P.plain_faults("task", ["$: holds '{{' or '}}', which only the app may write, said some other way",
+                                    "$: holds 'Return ONLY': said some other way"])
+    assert tails == ["task cannot hold '{{' or '}}', which only the app writes",
+                     "task cannot hold 'Return ONLY': the shape of the answer belongs to the app"]
 
 
 def test_c6_prompt_lays_the_owners_value_over_the_fallback_and_over_a_module_that_holds_words(home, monkeypatch):
@@ -391,12 +409,15 @@ def test_c7_the_errors_are_400_in_plain_words(api, home):
                       ({"group": "voice"}, "Identity has no instructions named voice"),
                       ({"part": "nowhere"}, "Identity's take instructions have no part nowhere"),
                       ({"field": "colour"}, "has no colour you may change"),
-                      ({"value": "Judge {{words}}"}, "task cannot hold '{{' or '}}'"),
-                      ({"value": "Judge it. Return ONLY yes"}, "task cannot hold 'Return ONLY'"),
                       ({"value": "x" * 1201}, "task is longer than 1200 characters"), ({"value": 5}, "task has to be words"),
                       ({"value": "   "}, "task is empty"), ({"value": P.defaults(ref, *TAKE)["task"]}, "these are the words Identity's take task holds now")):
         r = post_field(api, ref, **body)
         assert r.status_code == 400 and why in r.json()["detail"], (body, r.text)
+    # the two words the app keeps are said once, whole: the sentence is the owner's, with none of the interface's tail after it
+    for value, said in (("Judge {{words}}", "task cannot hold '{{' or '}}', which only the app writes"),
+                        ("Judge it. Return ONLY yes", "task cannot hold 'Return ONLY': the shape of the answer belongs to the app")):
+        r = post_field(api, ref, value=value)
+        assert r.status_code == 400 and r.json()["detail"] == "these words cannot serve Identity: " + said, (value, r.text)
     assert post_field(api, ref).status_code == 200
     r = post_field(api, ref, value="Judge it, twice.")
     assert r.status_code == 400 and "already waits for your stamp" in r.json()["detail"]

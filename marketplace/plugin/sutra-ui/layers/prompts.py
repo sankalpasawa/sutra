@@ -241,13 +241,15 @@ def owner_entry(ref, layer, group, part, field):
     return e if isinstance(e, dict) and "value" in e else None
 
 
-#: the interface's faults for a field, in words the owner reads (the path is '$' for the value, '$[2]' for the third item)
+#: the interface's faults for a field, in words the owner reads (the path is '$' for the value, '$[2]' for the third item).
+#: Each pattern takes the interface's whole message, so none of its own words stay behind the owner's sentence (the two
+#: markers' messages go on with a clause of their own, which the owner's sentence already says)
 _FAULT_SAYS = (
     (re.compile(r"^shorter than 1$"), "is empty"),
     (re.compile(r"^shorter than (\d+)$"), r"is shorter than \1 characters"),
     (re.compile(r"^longer than (\d+)$"), r"is longer than \1 characters"),
-    (re.compile(r"^holds '\{\{' or '\}\}'"), "cannot hold '{{' or '}}', which only the app writes"),
-    (re.compile(r"^holds 'Return ONLY'"), "cannot hold 'Return ONLY': the shape of the answer belongs to the app"),
+    (re.compile(r"^holds '\{\{' or '\}\}'.*$"), "cannot hold '{{' or '}}', which only the app writes"),
+    (re.compile(r"^holds 'Return ONLY'.*$"), "cannot hold 'Return ONLY': the shape of the answer belongs to the app"),
     (re.compile(r"^holds a control character$"), "holds a character that cannot be shown"),
     (re.compile(r"^holds a line break$"), "must be one line"),
     (re.compile(r"^fewer than (\d+) items?$"), r"needs at least \1 of them"),
