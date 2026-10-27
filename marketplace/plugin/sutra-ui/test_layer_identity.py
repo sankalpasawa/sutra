@@ -917,6 +917,37 @@ def test_j1_a_conflict_that_cannot_make_a_plan_carries_its_ways_out_on_the_block
     assert ask["options"][0]["params"] == {"words": "A bakery site, done our way"}
 
 
+def test_j1_a_conflict_about_a_round_is_a_card_about_the_next_round_and_never_about_a_plan(j2):
+    """A round's limit put to the owner under the title of a plan that cannot be made (found by a verifier 2026-10-27): the plan is
+    registered and runs, and what needs the owner's word is the next round. The card says so, and says whose it is: Priority's when
+    a round was proposed and did not go on, Adaptation's when it had no new way to put the work right."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    ways = _ways(W.items_of(W.dept(ref)))
+    assert S.validate("act.conflict", {"word": "conflict", "round": 2, "correction": "Put the phone line on the doctors page"}) == []
+    assert S.validate("act.conflict", {"word": "conflict", "round": 0}) and S.validate("act.conflict", {"word": "conflict", "round": "two"})
+    _conflict(R, ref, [], ways, why="Priority said no to round 2: no room in the ceiling", round=2, correction="Put the phone line on the doctors page",
+              **{"for": "x-r2"})
+    W.run_until_idle(ref, limit=300)
+    [ask] = _cards(W, ref)
+    assert (ask["title"], ask["who"]) == ("The next round needs your word.", "Priority, pricing the round")
+    assert ask["text"] == "Priority said no to round 2: no room in the ceiling. Say how to put it right, or choose a way forward on this card."
+    assert [o["id"] for o in ask["options"]] == [w["id"] for w in ways] and J.status(ref)["state"] == "blocked"
+    _conflict(R, ref, [], ways, why="Adaptation has no new way to put D2 right: its only idea is the approach that already failed in round 1",
+              round=2, **{"for": "x-r2b"})
+    W.run_until_idle(ref, limit=300)
+    [again] = _cards(W, ref)
+    assert (again["title"], again["who"]) == ("The next round needs your word.", "Adaptation, correcting the work")
+    for card in (ask, again):
+        assert not re.search(r"\bplan\b|Say what to correct|\b(?:grant|counter|refus)\w*", " ".join((card["title"], card["who"], card["text"])), re.I), card
+    # a conflict that is about no round keeps the words of a plan that cannot be made
+    _conflict(R, ref, [], ways, why="Check cannot serve D1: nothing it makes shows it", **{"for": "x-np"})
+    W.run_until_idle(ref, limit=300)
+    [plan] = _cards(W, ref)
+    assert (plan["title"], plan["who"]) == ("No plan can be made as it stands.", "Adaptation, shaping the plan")
+    assert V1.round_words({"word": "conflict", "round": True}) is None and V1.round_words({"word": "conflict"}) is None and V1.round_words(None) is None
+
+
 def test_j1_the_ways_out_are_checked_as_the_interface_types_them_and_are_at_most_three():
     good = [{"id": "raise", "label": "Raise it", "cost": "more", "kind": "raise", "params": {"what": "ceiling"}},
             {"id": "leave:D2", "label": "Leave D2 out", "cost": "less"}, {"id": "stop", "label": "Stop", "cost": "nothing"}]
@@ -1279,9 +1310,16 @@ def test_j2_g_a_reading_is_weighed_three_ways(j2, monkeypatch):
     assert (q["missing"], q["points"], q["standard"], q["reading"]) == ("fact", ["D2"], False, row["id"])
     assert "D2" in q["text"] and "Prices are on the page" in q["text"] and S.validate_record("identity", "ask", q) == []
     assert J.status(ref)["open_question"]["id"] == q["id"]
-    # (with Adaptation's own recipe the round for D3 is proposed, priced, filed and the line builds again while the question stays
-    # open, so the cycle waits on the owner only where nothing else is moving: the stub's)
-    assert J.waiting_on_owner(ref) or not stub
+    if stub:
+        assert J.waiting_on_owner(ref), "nothing else moves: the cycle waits on the owner"
+    else:
+        # With Adaptation's own recipe the round for D3 is proposed, priced and filed, and the line builds again while the question
+        # stays open: the cycle goes on and does not wait on the owner, whose question is still theirs to answer
+        folded = {r["round"]: r for r in W.rows(ref, "rounds.jsonl")}
+        assert [(n, r["status"], r["covers"]) for n, r in folded.items()] == [(1, "filed", ["D3"])], "one round, for D3, filed in the Brief"
+        assert W.latest(ref, "Live site")["v"] == 2, "and the line built again on it"
+        assert not J.waiting_on_owner(ref) and J.status(ref)["state"] != "waiting"
+        assert [a["id"] for a in _asks_of(W, ref, "j2_identity")] == [q["id"]], "while the question on D2 is still the owner's, open"
     # a finding the owner must say yes to (a rule says ask: it reaches outside the department): an ask, and its item goes no further
     (f,) = _asks_of(W, ref, "finding")
     assert f["claim"] == "The offer is not sent to subscribers by email" and f["reading"] == row["id"] and f["thread"] and "Stamp to have it put right" in f["text"]
@@ -1302,6 +1340,7 @@ def test_j2_g_an_item_to_confirm_is_one_question_whatever_their_number(j2):
     _hear(j2, ref, {"D1": "met", "D2": "to_confirm", "D3": "to_confirm", "D4": "met"})
     (q,) = _asks_of(W, ref, "j2_identity")
     assert q["points"] == ["D2", "D3"] and q["text"].count("D2") == 1 and q["text"].count("D3") == 1
+    assert J.waiting_on_owner(ref) and J.status(ref)["open_question"]["id"] == q["id"], "no round is moving, so the cycle waits on the owner"
     said = [p for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"] and p["payload"].get("card") == q["id"]]
     assert len(said) == 1, "the line names its card, so the chat says the question once, on the card"
     assert not re.search(r"\b(?:grant|counter|refuse|charter|Priority|Coordination)\b", q["text"], re.I)

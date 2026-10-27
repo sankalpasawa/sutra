@@ -668,7 +668,9 @@ DEFS.update({
     # why: text(2000), wider than A1's 600: a conflict quotes the counter's own why
     'act.conflict': obj({'word': const('conflict'), 'engines': items(any_of(ref('name'), ref('workflow.engine'))),
                          'source': nullable(enum(*SOURCES)), 'words': nullable(text(100000)), 'why': text(2000),
-                         'bound': nullable(text(40)), 'for': nullable(text(80)), 'options': items(ref('option'), 3)},
+                         'bound': nullable(text(40)), 'for': nullable(text(80)), 'options': items(ref('option'), 3),
+                         # a conflict about a round (M9.4, M9.5) names it; one about a round that was proposed carries its correction
+                         'round': integer(1, 99), 'correction': text(600)},
                         required=('word',)),
     # claim: text(2000), wider than A1's 600: a mechanical note is the claim when the judge found nothing
     'act.finding': obj({'word': const('finding'), 'claim': text(2000), 'severity': enum(*SEVERITIES), 'where': text(200),

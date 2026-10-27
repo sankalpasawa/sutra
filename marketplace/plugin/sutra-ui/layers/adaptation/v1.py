@@ -559,8 +559,10 @@ def failed_round(ref, ids):
 
 
 def next_number(ref, pl):
-    """The number of the round now asked for: one after the latest of this cycle, or the number Identity gave when that is later."""
-    n = max([r['round'] for r in rounds_of(ref)] or [0]) + 1
+    """The number of the round now asked for: one after the latest of this cycle that Priority did not refuse, or the number
+    Identity gave when that is later. A round Priority would not pay for never ran, so it keeps its number: asked for again once
+    the ceiling holds it, it is the same round and funded, not a round past the ceiling that is refused again (M9.1, M9.2)."""
+    n = max([r['round'] for r in rounds_of(ref) if r.get('status') != 'refused'] or [0]) + 1
     given = pl.get('round')
     if isinstance(given, int) and not isinstance(given, bool) and 1 <= given <= 99:
         n = max(n, given)
@@ -644,6 +646,10 @@ def d_adapt_next(ctx, step, item):
             'why': 'the reading found %s not met' % (', '.join(ids) or 'an item')}
 
 
+#: how the covering of a correction begins its reason when the correction repeats the approach that already failed; next_failed reads it back
+REPEATS = 'this is the approach that already failed in round '
+
+
 def c_round_is_new(ctx, step, item, out):
     """A round says what to correct, and says something new (M9.4): a correction equal, word for word, to the one that already
     failed for the same items is refused, naming the round it repeats. What a reading found that no correction answers is
@@ -654,8 +660,7 @@ def c_round_is_new(ctx, step, item, out):
         return R._verdict(False, '', 'a round says what to correct')
     last = heard.get('last') or {}
     if last and words_of(text) == words_of(last.get('correction')):
-        return R._verdict(False, '', 'this is the approach that already failed in round %s (%s); a round says something new'
-                          % (last.get('round'), clip(last.get('correction'), 120)))
+        return R._verdict(False, '', '%s%s (%s); a round says something new' % (REPEATS, last.get('round'), clip(last.get('correction'), 120)))
     named = ', '.join(i['id'] for i in heard.get('items') or []) or 'these items'
     return R._verdict(True, 'a correction that is new for %s' % named, '')
 
@@ -689,13 +694,38 @@ def adapt_round(ctx, step, item):
     body = {'word': 'round', 'round': row['round'], 'correction': row['correction'], 'fixes': fixes, 'covers': covers, 'estimate': row['estimate'],
             'why': clip(got.get('why')) or 'the reading found %s not met' % ', '.join(covers)}
     if R.post(ref, 'Adaptation', 'Priority', 'propose', body, thread=thread) is None:
-        W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', at=W.now()))
+        round_bound(ref, thread, 'hops')           # refused on the record, and told to Identity unless the runtime did when it closed the thread
         return {'said': 'round %d could not go to Priority: the bargain reached its bound' % row['round'], 'round': row['round']}
     return {'said': 'proposed round %d to Priority: %s' % (row['round'], row['correction']), 'round': row['round']}
 
 
 def round_of_thread(ref, thread):
     return next((r for r in reversed(all_rounds(ref)) if r.get('thread') == thread), None)
+
+
+#: how a round that reached a limit of its thread is put to the owner (the limit is rule 12's: hops, time or spend), by the limit
+BOUND_SAYS = {'seconds': 'Priority had not priced round %d in time', 'usd': 'pricing round %d cost more than it may',
+              'hops': 'Priority and Adaptation could not settle round %d between them'}
+
+
+def round_bound(ref, thread, which):
+    """A round's thread was closed at its bound (rule 12; M9.5): the round does not stay proposed for good and does not go quiet.
+    The row says refused, so the same reading asked again proposes again, and one conflict goes to Identity with the ways out
+    built by code (next_options), once its recipe hears a round. Coordination calls it where it closes the thread (engine_runtime)
+    and adapt_round where its own post is stopped. Idempotent: a thread's conflict is filed once. Never raises."""
+    try:
+        row = round_of_thread(ref, thread)
+        if not row:
+            return None
+        if row.get('status') == 'proposed':
+            row = W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', at=W.now()))
+        if not hears_round():
+            return None
+        why = BOUND_SAYS.get(which, 'round %d did not go on in time') % row['round']
+        return line_conflict(ref, thread, why, bound=which, src='Coordination', options=next_options(W.dept(ref) or {}, row.get('covers') or []),
+                             engines=[], extra={'round': row['round'], 'correction': row['correction']})
+    except Exception:  # noqa: BLE001 -- the thread is closed and the round is on the record whether or not the word reached Identity
+        return None
 
 
 def adapt_round_granted(ctx, step, item):
@@ -748,17 +778,27 @@ def next_options(d, ids):
     return opts
 
 
+def next_reason(ref, ids, note):
+    """Why there is no new round, in words the owner reads (M9.4): the approach that already failed, when that is what the
+    covering refused; otherwise that nothing Adaptation could say was new. Never the run's note, which starts with the name of the
+    step and holds the covering's inside words."""
+    last = failed_round(ref, ids)
+    if last and REPEATS in str(note):
+        return 'its only idea is the approach that already failed in round %s' % last['round']
+    return 'nothing it could say was new'
+
+
 def next_failed(ref, d, p, note):
     """The step that says what to correct failed (M9.4): its covering refused the correction because it is the approach that
     already failed, or no answer fitted. Nothing is proposed and nothing goes quiet: one conflict goes to Identity, with the ways
-    out built by code, once its recipe hears a round. engine_runtime calls it when the run of a request for the next round
-    fails. Never raises."""
+    out built by code, once its recipe hears a round. It names the round and carries no correction, which is how Identity knows no
+    round was proposed. engine_runtime calls it when the run of a request for the next round fails. Never raises."""
     try:
         if not hears_round():
             return None
         pl = p.get('payload') or {}
         ids = [i for i in pl.get('items') or [] if isinstance(i, str)]
-        why = 'Adaptation has no new way to put %s right: %s' % (', '.join(ids) or 'the items', clip(note, 600).rstrip('.') or 'nothing it could say was new')
+        why = 'Adaptation has no new way to put %s right: %s' % (', '.join(ids) or 'the items', next_reason(ref, ids, note))
         return line_conflict(ref, p['thread'], why[:2000], options=next_options(d, ids), engines=[], extra={'round': next_number(ref, pl)})
     except Exception:  # noqa: BLE001 -- the failed run is a row whether or not the word reached Identity
         return None
@@ -798,10 +838,14 @@ def hears_doubt():
 
 def line_conflict(ref, thread, why, bound=None, src='Adaptation', options=None, engines=None, source=None, words=None, extra=None):
     """The bargain did not close (a refusal, or its bound), or no line can be made: it goes to Identity, never silently to
-    nothing (J2.2). _line_conflict as engine_runtime has it, with the ways out Adaptation can build (M6.4) or Priority priced (M5.4)."""
+    nothing (J2.2). _line_conflict as engine_runtime has it, with the ways out Adaptation can build (M6.4) or Priority priced (M5.4);
+    a conflict raised at a bound that is given none carries the ways Priority prices for a limit (R._limit_ways), as the one the
+    runtime raises where it closes the thread does."""
     offer = R._line_proposal(ref, thread) or {}
     if any((x.get('payload') or {}).get('word') == 'conflict' and (x.get('payload') or {}).get('for') == thread for x in R.board(ref)):
         return None
+    if bound and not options:
+        options = R._limit_ways(ref, thread) or None
     body = {'word': 'conflict', 'engines': engines if engines is not None else offer.get('engines') or [],
             'source': source or offer.get('source'), 'words': words if words is not None else offer.get('words'),
             'why': why, 'bound': bound, 'for': thread}
@@ -860,7 +904,11 @@ def adapt_line_counter(ctx, step, item):
         body['fit'] = notes
     row = R.post(ref, 'Adaptation', 'Priority', 'propose', body, thread=p['thread'])
     if row is None:
-        line_conflict(ref, p['thread'], 'the bargain reached its bound', bound='hops', src='Coordination', options=options)
+        # the thread reached its bound with this post. The runtime raised the conflict where it closed the thread, with the ways
+        # Priority prices for a limit (R._line_conflict), and this files it only where it did not (a department off J2), the same
+        # and once: line_conflict keeps to one conflict for a thread. Priority's ask for less is no limit, so it brings no ways
+        # of its own to a bound.
+        line_conflict(ref, p['thread'], 'the bargain reached its bound', bound='hops', src='Coordination')
         return {'said': 'the bargain reached its bound; it goes to Identity'}
     return {'said': "took Priority's ask for less and proposed again: " + ' -> '.join(e['name'] for e in engines)}
 

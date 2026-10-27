@@ -288,7 +288,166 @@ def test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silenc
     for a in asks:
         assert 1 <= len(a["options"]) <= 3 and all(o["kind"] in S.OPTION_KINDS for o in a["options"]), a["options"]
         assert not re.search(r"\b(grant|counter|refus)", " ".join(str(a.get(k) or "") for k in ("text", "title", "why")), re.I), "the owner's words"
+    # the card is about the next round, not about a plan: the plan is registered and runs (found by a verifier 2026-10-27)
+    [card] = [a for a in asks if a["kind"] == "blocked"]
+    assert (card["title"], card["who"]) == ("The next round needs your word.", "Priority, pricing the round")
+    assert not re.search(r"\bplan\b", " ".join((card["title"], card["who"])), re.I) and "Say what to correct" not in card["text"], card
+    assert card["text"].startswith("Priority said no to round 2:") and [o["id"] for o in card["options"]][-2:] == ["leave:D2", "stop"]
     _only_registered_engines_ran(W, R, ref)
+
+
+def test_p2b_the_owner_adds_a_round_at_the_ceiling_and_the_refused_round_is_proposed_again_funded_and_run(j2, monkeypatch):
+    """A raise that pays for nothing (found by a verifier 2026-10-27): the owner chose 'Add 1 more round' and the department sat
+    blocked with no ask, or its retry counted the refused round as used, was round 3 against a ceiling of 2, and came back as the same
+    card. The refused round keeps its number, Identity asks for it again once the ceiling is raised, and it is funded and run."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(S, "ROUNDS_DEFAULT", 1)
+    _reader(monkeypatch, R, [["D2"], ["D2"], []])                       # D2 holds after the second round, not the first
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    assert not neighbours.identity and not neighbours.priority, "the scenario of the merged build: Identity and Priority are the real ones"
+    _pursue(j2, ref, neighbours, limit=16)
+    assert [(r["round"], r["status"] in v1().RAN) for r in v1().rounds_of(ref)] == [(1, True), (2, False)] and v1().rounds_of(ref)[1]["status"] == "refused"
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    assert [o["id"] for o in card["options"]][0] == "raise:ceiling" and J.status(ref)["state"] == "blocked"
+    assert (W.dept(ref)["ceiling"]["rounds"], W.latest(ref, "Live site")["v"]) == (1, 2)
+    # the owner adds a round
+    W.choose_option(ref, card["id"], "raise:ceiling")
+    _pursue(j2, ref, neighbours, limit=16)
+    d = W.dept(ref)
+    assert d["ceiling"]["rounds"] == 2 and len(d["workflows"]) == 1, "the ceiling was raised once; no line was registered"
+    rows = v1().rounds_of(ref)
+    assert [(r["round"], r["status"] in v1().RAN) for r in rows] == [(1, True), (2, True)], "round 2 kept its number and ran: " + str(rows)
+    proposals = [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "round"]
+    assert [p["payload"]["round"] for p in proposals] == [1, 2, 2], "round 2 was proposed, refused, and proposed again, and no round 3 was"
+    answers = [(p["payload"]["round"], p["msg_type"]) for p in R.board(ref) if p["src"] == "Priority" and p["payload"].get("word") == "round"]
+    assert answers == [(1, "accept-proposal"), (2, "reject-proposal"), (2, "accept-proposal")]
+    asked = [p["payload"] for p in R.board(ref) if p["src"] == "Identity" and p["dst"] == ["Adaptation"] and p["payload"].get("word") == "next"]
+    assert [(a.get("round"), a["items"]) for a in asked] == [(None, ["D2"]), (None, ["D2"]), (2, ["D2"])], "Identity asked again, naming the round"
+    assert all(S.validate("act.next", a) == [] for a in asked)
+    assert [r for r in W.rows(ref, "prices.jsonl") if r.get("round") == 2][-1]["answer"] == "accept"
+    assert _brief(W, ref)[1].count("Correct this") == 2 and W.latest(ref, "Live site")["v"] == 3 and _work(W, ref).count("Publish") == 3
+    assert not [a for a in W.asks(ref) if a["status"] == "pending" and a.get("options")], "the card the owner chose from did not come back"
+    acts = _events(J, ref)
+    assert acts.count("goal.reached") == 1 and acts[-1] == "goal.reached"
+    _only_registered_engines_ran(W, R, ref)
+
+
+def test_p2c_a_raise_asks_for_the_refused_round_once_and_only_where_one_was_refused(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(S, "ROUNDS_DEFAULT", 1)
+    _reader(monkeypatch, R, [["D2"]])
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    ident = layers.load("identity/v1")
+    d = W.dept(ref)
+    assert ident.ask_again(ref, d) is None, "no round was refused: a raise asks for nothing"
+    _pursue(j2, ref, neighbours, limit=16)
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    before = len([p for p in R.board(ref) if p["payload"].get("word") == "next"])
+    W.choose_option(ref, card["id"], "raise:ceiling")
+    W.run_until_idle(ref, limit=300)
+    after = [p for p in R.board(ref) if p["payload"].get("word") == "next"]
+    assert len(after) == before + 1 and after[-1]["payload"]["round"] == 2
+    assert ident.ask_again(ref, W.dept(ref)) is None, "the same refusal is asked about once, however often the choice is applied"
+    assert len([p for p in R.board(ref) if p["payload"].get("word") == "next"]) == before + 1
+    # a round refused again is asked about again, once; and one whose items are no longer in done-when is asked about no more
+    W.append_row(ref, "rounds.jsonl", dict(v1().rounds_of(ref)[-1], status="refused", thread="x-other", at=W.now()))
+    assert ident.ask_again(ref, W.dept(ref))["round"] == 2 and ident.ask_again(ref, W.dept(ref)) is None
+    W.append_row(ref, "rounds.jsonl", dict(v1().rounds_of(ref)[-1], status="refused", thread="x-another", covers=["D9"], at=W.now()))
+    assert ident.ask_again(ref, W.dept(ref)) is None
+
+
+def _priority_away(monkeypatch, R, cost=0.0, before=None):
+    """Priority's price for a round is a model step that never comes back (it costs `cost`), so the round's bargain stays open until
+    a limit of its thread closes it. `before(prompt)` runs when the round is asked, for a test that shapes the thread."""
+    inner = R.MODEL
+
+    def model(prompt, step):
+        if step["id"] == "priority.bargain" and "THE ROUND:" in prompt:
+            if before:
+                before(prompt)
+                return inner(prompt, step)
+            return None, cost, "away"
+        return inner(prompt, step)
+    monkeypatch.setattr(R, "MODEL", model)
+
+
+def _conflicts(R, ref):
+    return [p["payload"] for p in R.board(ref) if p["src"] in ("Adaptation", "Coordination") and p["dst"] == ["Identity"] and p["payload"].get("word") == "conflict"]
+
+
+def _round_thread(R, ref):
+    return next(t for t in R.threads(ref) if t["topic"] == "round")
+
+
+def _the_round_stopped_at_its_limit(W, R, ref, bound):
+    """The one conflict, the one card and the refused row a round's thread closed at `bound` must leave (rule 12, M9.5)."""
+    th = _round_thread(R, ref)
+    assert (th["state"], th["outcome"]["by"], th["outcome"]["which"]) == ("canceled", "bound", bound), th
+    [row] = v1().rounds_of(ref)
+    assert (row["round"], row["status"], row["thread"]) == (1, "refused", th["id"]), "the round does not stay proposed for good"
+    [conflict] = _conflicts(R, ref)
+    assert conflict["bound"] == bound and conflict["round"] == 1 and conflict["correction"] == row["correction"] and conflict["for"] == th["id"]
+    assert conflict["engines"] == [] and [o["id"] for o in conflict["options"]] == ["words", "leave:D2", "stop"] and S.validate("act.conflict", conflict) == []
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert card["kind"] == "blocked" and [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"]
+    assert (card["title"], card["who"]) == ("The next round needs your word.", "Priority, pricing the round")
+    assert not re.search(r"\bplan\b|\b(?:bound|hops|seconds|usd)\b|\b(?:grant|counter|refus)", " ".join((card["title"], card["who"], card["text"])), re.I), card
+    return row, conflict
+
+
+@pytest.mark.parametrize("bound", ("seconds", "usd"))
+def test_p6_a_round_whose_thread_reaches_its_time_or_spend_limit_goes_to_identity_and_the_reading_asked_again_proposes_again(j2, monkeypatch, bound):
+    """Rule 12 for the thread this package added (found by a verifier 2026-10-27): at its limit a round's bargain closed in silence,
+    no conflict reached Identity, the row stayed proposed for good, and 'the same reading asked twice' answered 'already with
+    Priority' for ever. Now the row says refused, Identity gets one conflict with the ways out, and the owner one card."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(R, "BOUNDS", {"hops": 4, "seconds": 5 if bound == "seconds" else 900, "usd": 0.5})
+    _reader(monkeypatch, R, [["D2"], []])
+    _priority_away(monkeypatch, R, cost=0.6 if bound == "usd" else 0.0)
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    _pursue(j2, ref, neighbours)
+    [row] = v1().rounds_of(ref)
+    assert (row["round"], row["status"]) == (1, "proposed") and _conflicts(R, ref) == [], "Priority has not answered, and the limit is not reached"
+    for _ in range(3):
+        R.sweep(ref)
+    W.run_until_idle(ref, limit=100)
+    row, conflict = _the_round_stopped_at_its_limit(W, R, ref, bound)
+    assert J.status(ref)["state"] == "blocked" and "goal.reached" not in _events(J, ref)
+    for _ in range(3):
+        R.sweep(ref)
+    W.run_until_idle(ref, limit=100)
+    assert len(_conflicts(R, ref)) == 1, "a thread's conflict is filed once"
+    # the same reading, asked again, is a round again (and the round keeps its number): the guard no longer counts the refused one
+    proposals = len([p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "round"])
+    R.post(ref, "Identity", "Adaptation", "request", {"word": "next", "items": ["D2"], "reading": row["reading"], "findings": row["fixes"], "round": 1})
+    W.run_until_idle(ref, limit=100)
+    again = [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "round"]
+    assert len(again) == proposals + 1 and again[-1]["payload"]["round"] == 1 and again[-1]["thread"] != row["thread"]
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "proposed")]
+    _only_registered_engines_ran(W, R, ref)
+
+
+def test_p6_a_round_whose_answer_is_past_its_hop_limit_goes_to_identity_too(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _reader(monkeypatch, R, [["D2"], []])
+    ref = _born(j2)
+
+    def shorten(prompt):                         # the round was proposed (one hop), and its thread may go back and forth no more
+        with W._lock(ref):
+            ths = R.threads(ref)
+            for t in ths:
+                if t["topic"] == "round" and t["state"] not in R.CLOSED:
+                    t["bounds"] = dict(t["bounds"], hops=1)
+            R._save_threads(ref, ths)
+    _priority_away(monkeypatch, R, before=shorten)
+    neighbours = Neighbours(j2, monkeypatch)
+    _pursue(j2, ref, neighbours)
+    row, conflict = _the_round_stopped_at_its_limit(W, R, ref, "hops")
+    assert not [p for p in R.board(ref) if p["src"] == "Priority" and p["payload"].get("word") == "round"], "Priority's answer was past the limit"
+    assert "goal.reached" not in _events(J, ref) and J.status(ref)["state"] == "blocked"
 
 
 def test_p3_the_same_item_not_met_twice_gets_a_different_correction_and_two_rounds_reach_the_goal(j2, monkeypatch):
@@ -318,3 +477,29 @@ def test_p4_nobody_asks_for_a_round_unless_a_reading_found_an_item_not_met(j2, m
     _pursue(j2, ref, neighbours)
     assert v1().rounds_of(ref) == [] and not [p for p in R.board(ref) if p["payload"].get("word") in ("next", "round")]
     assert _events(J, ref).count("goal.reached") == 1 and W.latest(ref, "Live site")["v"] == 1
+
+
+def test_p5_a_model_that_only_repeats_the_failed_correction_ends_in_one_card_about_the_next_round_in_the_owners_words(j2, monkeypatch):
+    """M9.4's limit question as the owner reads it (found by a verifier 2026-10-27): the card is titled for the next round, comes from
+    Adaptation, names no step, and holds the owner's own words, leaving the item out and stopping as the ways out."""
+    W, R, J, _, _ = j2
+    _reader(monkeypatch, R, [["D2"], ["D2"], ["D2"]])
+    inner = R.MODEL
+
+    def model(prompt, step):
+        if step["id"] == "adapt.next":
+            return {"correction": "Put right D2", "fixes": [], "covers": ["D2"], "why": "it is the one idea"}, 0.01, "model"
+        return inner(prompt, step)
+    monkeypatch.setattr(R, "MODEL", model)
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    _pursue(j2, ref, neighbours, limit=16)
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "read")], "round 1 ran; its approach, said again, is not a round"
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    assert (card["title"], card["who"]) == ("The next round needs your word.", "Adaptation, correcting the work")
+    assert card["text"] == ("Adaptation has no new way to put D2 right: its only idea is the approach that already failed in round 1. "
+                            "Say how to put it right, or choose a way forward on this card.")
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"]
+    assert not re.search(r"\bplan\b|Say what to correct|\brung\b", " ".join((card["title"], card["who"], card["text"], str(card.get("why")))), re.I), card
+    assert "goal.reached" not in _events(J, ref) and J.status(ref)["state"] == "blocked"
+    _only_registered_engines_ran(W, R, ref)

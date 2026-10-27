@@ -540,6 +540,17 @@ def conflict_options(payload):
     return out
 
 
+def round_words(pl):
+    """The title and the source of the card a conflict about a round puts to the owner (M9.4, M9.5), or None when the conflict is
+    not about a round. The plan is registered and runs; what needs the owner's word is the next round. A round that was proposed
+    carries its correction, and what stopped it is Priority's (it said no, or did not price it in time); one that was never made
+    carries none, and what stopped it is that Adaptation has no new way to put the work right."""
+    n = (pl or {}).get('round')
+    if not isinstance(n, int) or isinstance(n, bool):
+        return None
+    return 'The next round needs your word.', 'Priority, pricing the round' if pl.get('correction') else 'Adaptation, correcting the work'
+
+
 def identity_closed(ctx, step, item):
     """Identity's ruling on a bargain that did not close (step 4): run it, drop it, or one ask to the owner (J2.3). The body
     engine_runtime held, moved here to carry the conflict's own ways out: whenever the ruling puts the conflict to the owner,
@@ -555,10 +566,15 @@ def identity_closed(ctx, step, item):
         # no plan at all: Adaptation answered that an engine the kind requires cannot serve an item (J2B-4, M6.4), so there is
         # nothing to run, nothing to drop and no plan to stamp (a stamp would send Root a plan that names no engine, and the
         # same card would come back). The owner is put the reason in plain words, on the card every blocked plan has, with the
-        # ways out the conflict carries, or the usual three
+        # ways out the conflict carries, or the usual three. A conflict about a round is not that: the plan is registered and
+        # runs, and the question is the next round (M9.4, M9.5), so its card says so (round_words)
         reason = str(pl.get('why') or 'no plan can be made').strip().rstrip('.')
         if cj:
             cj.ruled(ref, 'ask', reason, engines)
+        rnd = round_words(pl)
+        if rnd:
+            R._blocked(ref, d, who, '%s. Say how to put it right, or choose a way forward on this card.' % reason, rnd[0], rnd[1], reason, options=ways)
+            return {'said': 'the next round cannot go on (%s); put to the owner, with the ways out' % reason}
         R._blocked(ref, d, who, '%s. Say what the department should do, or choose a way forward on this card.' % reason,
                    'No plan can be made as it stands.', 'Adaptation, shaping the plan', reason, options=ways)
         return {'said': 'no plan can be made (%s); put to the owner, with the ways out' % reason}
@@ -619,6 +635,60 @@ def apply_way(ctx, ask, pl):
                 {'word': 'request', 'done': '%s. Nothing changed; choose again on the card.' % str(exc).strip().rstrip('.')})
         return {'said': "could not apply the owner's choice (%s): %s; the card waits" % (oid, exc), 'applied': False}
     return {'said': "applied the owner's choice (%s) through %s" % (oid, S.TITLE[spec['layer']]), 'applied': True, 'result': got}
+
+
+def refused_round(ref, cycle):
+    """The latest round of this cycle whose last row says refused (rounds.jsonl), or None: a round Priority would not pay for."""
+    last = {}
+    for r in W.rows(ref, 'rounds.jsonl'):
+        if isinstance(r, dict) and isinstance(r.get('round'), int) and r.get('cycle_id') in (None, cycle):
+            last[r['round']] = r
+    gone = [r for _, r in sorted(last.items()) if r.get('status') == 'refused']
+    return gone[-1] if gone else None
+
+
+def ask_again(ref, d):
+    """The owner added room to the goal's ceiling (M9.2, M9.5), so the round it refused is asked for again: request/next to
+    Adaptation on the items that round covered still in done-when, from the reading that asked for it, naming the round so that it
+    keeps its number, and the cycle goes on pursuing. Once for each time that round was refused. None when no round was refused,
+    nothing it covered is left, the goal is reached, or Adaptation hears no next round."""
+    cj = R._j2()
+    if not (cj and cj.active(ref) and next_is_heard()) or cj.done(ref):
+        return None
+    cycle = (cj._state(ref) or {}).get('cycle_id')
+    row = refused_round(ref, cycle)
+    if not row:
+        return None
+    n, kept = row['round'], {i['id'] for i in W.items_of(d)}
+    left = [i for i in row.get('covers') or [] if i in kept]
+    read = [r for r in W.rows(ref, 'readings.jsonl') if r.get('read')]
+    reading = reading_of(ref, row.get('reading')) or (read[-1] if read else None)
+    if not left or not reading:
+        return None
+    refusals = {r.get('thread') for r in W.rows(ref, 'rounds.jsonl') if r.get('round') == n and r.get('status') == 'refused' and r.get('cycle_id') in (None, cycle)}
+    asked = [q for q in R.board(ref) if q['src'] == 'Identity' and q['dst'] == ['Adaptation'] and (q['payload'] or {}).get('word') == 'next'
+             and q['payload'].get('round') == n and q['payload'].get('reading') == reading['id']]
+    if len(asked) >= len(refusals):
+        return None
+    sent = R.post(ref, 'Identity', 'Adaptation', 'request',
+                  {'word': 'next', 'items': left, 'reading': reading['id'], 'findings': [f for f in row.get('fixes') or [] if isinstance(f, str)], 'round': n,
+                   'objective': 'propose the next correction for %s' % ', '.join(left), 'output': 'one priced correction on the registered line',
+                   'may_read': ['Brief'], 'boundaries': 'nothing new is registered; only the registered engines run'},
+                  about={'art': reading['artifact'], 'v': reading['v']})
+    if sent and (cj._state(ref) or {}).get('state') == 'blocked':
+        cj._move(ref, 'pursuing', step=8)
+    return {'round': n, 'items': left, 'n': sent and sent['n']}
+
+
+def resume_after_raise(ctx, got):
+    """What apply_way gave back, and when the choice added room to the goal's ceiling, the round the ceiling refused asked for again
+    (ask_again): the owner who pays for one more round gets it, and not the card they chose from."""
+    if not (got.get('applied') and (got.get('result') or {}).get('what') == 'ceiling'):
+        return got
+    again = ask_again(ctx['ref'], ctx['dept'])
+    if not again:
+        return got
+    return dict(got, said='%s; asked Adaptation for round %d again, on %s' % (got['said'], again['round'], ', '.join(again['items'])), round=again['round'])
 
 
 def _standing(d):
@@ -696,7 +766,7 @@ def identity_apply(ctx, step, item):
             return leave_rule_out(ctx, rule)
         got = apply_way(ctx, ask, pl)
         if got is not None:
-            return got
+            return resume_after_raise(ctx, got)
     out = R.identity_apply(ctx, step, item)
     if ask and ask.get('kind') == 'finding' and ask.get('round') and out.get('filed'):
         round_filed(ref, ctx['dept'], ask['round'], out['filed'], ask.get('correction') or ask.get('claim'))

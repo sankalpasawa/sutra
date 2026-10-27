@@ -400,6 +400,16 @@ def _readings(W, ref):
     return rows
 
 
+def _first_of_a_pursuit(W, ref):
+    """The first reading of a pursuit whose reader never changes its mind: Audit reads again after each round Identity files, and
+    Identity asks the line for another round only until NO_PROGRESS rounds in a row meet nothing new (M9.5), then puts the owner one
+    ask. So the readings are the first and one after each of those rounds, a count that does not vary."""
+    rows = _readings(W, ref)
+    stops = layers.load("identity/v1").NO_PROGRESS
+    assert len(rows) == 1 + stops, [(r["v"], [(i["id"], i["verdict"]) for i in r["items"]]) for r in rows]
+    return rows[0]
+
+
 def test_u5_the_step_audit_items_is_in_the_recipe_after_the_mechanical_check_and_the_interface_names_it(j2):
     W, R, J, _, _ = j2
     steps = [s["id"] for s in R.engine_def("Audit")["steps"]]
@@ -490,7 +500,7 @@ def test_u5_a_measure_that_found_the_record_whole_does_not_overrule_a_reader_who
     _model(monkeypatch, R, {"audit.items": _says("not_met"), "audit.judge": JUDGE_OK})
     ref = _born(j2)
     _stamp_all(W, ref, kind="publish")                              # a website's D1 is by code, and its record holds
-    [row, *later] = _readings(W, ref)                               # (the reader never changes its mind, so the pursuit reads again, and ends in one ask)
+    row = _first_of_a_pursuit(W, ref)                               # (the reader never changes its mind, so the pursuit reads again, and ends in one ask)
     assert [(r["id"], r["method"], r["verdict"]) for r in row["items"]] == [("D1", "code", "met"), ("D1", "model", "not_met")], \
         "both rows are kept"
     assert R.audit_verdicts(row["items"]) == {"D1": "not_met"}, "a reader's no stands over a measure that only found the record whole"
@@ -581,7 +591,7 @@ def test_u5_a_reader_that_says_not_met_leaves_the_owner_a_next_move_and_no_goal(
     W, R, J, _, _ = j2
     _model(monkeypatch, R, {"audit.items": _says("not_met"), "audit.judge": JUDGE_OK})
     ref = _default(j2)
-    [row, *later] = _readings(W, ref)                               # (the reader never changes its mind, so the pursuit reads again)
+    row = _first_of_a_pursuit(W, ref)                               # (the reader never changes its mind, so the pursuit reads again)
     assert [(r["id"], r["method"], r["verdict"], r["severity"]) for r in row["items"]] == [("D1", "model", "not_met", "high")]
     (f,) = row["findings"]
     assert (f["severity"], f["item"], f["where"]) == ("high", "D1", "Result") and "does not hold" in f["claim"]
