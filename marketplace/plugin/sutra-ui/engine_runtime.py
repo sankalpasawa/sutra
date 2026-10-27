@@ -4277,7 +4277,9 @@ def audit_file(ctx, step, item):
               for f in said.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
     seen_claims, once = {}, []
     for f in found:                                   # the reader and the judge may each find the one thing, on the one page
-        key = (str(f.get("page") or "").lower(), " ".join(str(f.get("claim")).split()).lower())
+        # a page defect is one element: its claim names no file, so two links of one name that go to two pages are told apart by where
+        key = (str(f.get("page") or "").lower(), " ".join(str(f.get("claim")).split()).lower(),
+               " ".join(str(f.get("where") or "").split()).lower() if f.get("kind") == "defect" else "")
         if key not in seen_claims:
             seen_claims[key] = len(once)
             once.append(f)

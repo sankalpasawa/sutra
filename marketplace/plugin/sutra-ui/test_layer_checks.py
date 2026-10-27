@@ -515,13 +515,13 @@ def test_g2_a_clean_site_has_no_defect():
 # one fixture a defect: the finding names where (the page and the element), what is wrong, and how serious
 @pytest.mark.parametrize("what, files, where, claim, severity", [
     ("a link to a page the site does not have", site("<h1>Welcome</h1><a href='fees.html'>Our fees</a>"),
-     "index.html: the link 'Our fees'", "the link 'Our fees' goes to fees.html, which is not a page of the site", "medium"),
+     "index.html: the link 'Our fees' (to fees.html)", "the link 'Our fees' goes to a page the site does not have", "medium"),
     ("a link to a page of a folder the site does not have", site("<h1>Welcome</h1><a href='docs/fees.html'>Fees</a>"),
-     "index.html: the link 'Fees'", "the link 'Fees' goes to docs/fees.html, which is not a page of the site", "medium"),
+     "index.html: the link 'Fees' (to docs/fees.html)", "the link 'Fees' goes to a page the site does not have", "medium"),
     ("a link to an anchor the page does not have", site("<h1>Welcome</h1><a href='#hours'>Opening hours</a>"),
-     "index.html: the link 'Opening hours'", "the link 'Opening hours' goes to #hours, and nothing on the page has that anchor", "low"),
+     "index.html: the link 'Opening hours' (to #hours)", "the link 'Opening hours' goes to a part of the page that is not there", "low"),
     ("a link to an anchor the other page does not have", site("<h1>Welcome</h1><a href='lessons.html#week9'>Week nine</a>"),
-     "index.html: the link 'Week nine'", "the link 'Week nine' goes to lessons.html#week9, and that page has no such anchor", "low"),
+     "index.html: the link 'Week nine' (to lessons.html#week9)", "the link 'Week nine' goes to a part of another page that is not there", "low"),
     ("a form with no submit", site("<h1>Welcome</h1><form action='send.php'><input type='text' name='q'></form>"),
      "index.html: the form", "the form has no submit button, so a visitor cannot send it", "medium"),
     ("a form whose only button is not a submit", site("<h1>Welcome</h1><form><input name='q'><button type='button'>Go</button></form>"),
@@ -558,7 +558,8 @@ def test_g2_a_link_is_read_from_the_page_it_is_on_so_a_folder_resolves_as_a_brow
                     "docs/index.html": PLAIN % "<h1>Docs</h1>"})
     assert defects(files) == []
     got = only(dict(files, **{"docs/guide.html": PLAIN % "<h1>Guide</h1><a href='lessons.html'>Lessons</a>"}))
-    assert got["where"] == "docs/guide.html: the link 'Lessons'" and "docs/lessons.html" in got["claim"]
+    assert got["where"] == "docs/guide.html: the link 'Lessons' (to docs/lessons.html)", "the target is in where, which the writer reads"
+    assert got["claim"] == "the link 'Lessons' goes to a page the site does not have", "and not in the claim, which the owner is quoted"
 
 
 def test_g2_a_link_to_a_page_whose_name_is_written_with_escapes_resolves():
@@ -567,7 +568,7 @@ def test_g2_a_link_to_a_page_whose_name_is_written_with_escapes_resolves():
 
 def test_g2_a_page_the_plan_names_is_a_page_to_link_to():
     files = dict(pages_in_form("index"), **{"index.html": page("Home", "<h1>Home</h1><p>%s</p><a href='lessons.html'>Lessons</a>" % ("word " * 30))})
-    assert [d["claim"] for d in defects(files)] == ["the link 'Lessons' goes to lessons.html, which is not a page of the site"]
+    assert [d["claim"] for d in defects(files)] == ["the link 'Lessons' goes to a page the site does not have"]
     files["_plan.json"] = json.dumps({"pages": [{"slug": "index"}, {"slug": "lessons"}]})
     assert defects(files) == [], "planned, even before its page is written: the writer's own form says so"
 
@@ -583,7 +584,7 @@ def test_g2_each_element_is_a_finding_once_and_one_defect_is_one_finding():
     main = ("<h1>Welcome</h1><a href='fees.html'>Fees</a><a href='fees.html'>Fees</a><img src='a.png'><img src='b.png'><img src='a.png'>"
             "<form><input name='q'></form><form><input name='r'></form>")
     got = defects(site(main))
-    assert [d["where"] for d in got] == ["index.html: the link 'Fees'", "index.html: the first form", "index.html: the second form",
+    assert [d["where"] for d in got] == ["index.html: the link 'Fees' (to fees.html)", "index.html: the first form", "index.html: the second form",
                                          "index.html: the image 'a.png'", "index.html: the image 'b.png'"]
     assert got[2]["claim"] == "the second form has no submit button, so a visitor cannot send it"
     assert len({(d["where"], d["claim"]) for d in got}) == len(got)
@@ -695,17 +696,19 @@ def test_g2_a_defect_that_weighs_medium_fails_the_measure_and_the_notes_say_wher
     ref = a_website(j2, monkeypatch)
     got = mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><img src='hero.png'><a href='fees.html'>Fees</a>"))
     assert got["ok"] is False and got["faults"] == [] and got["holes"] == []
-    assert got["notes"] == ["Home: the link 'Fees' goes to fees.html, which is not a page of the site",
+    assert got["notes"] == ["Home: the link 'Fees' goes to a page the site does not have",
                             "Home: the image 'hero.png' has no alt text for a reader who cannot see it"], "the page by its title (G2 fix)"
-    assert [d["where"] for d in got["defects"]] == ["index.html: the link 'Fees'", "index.html: the image 'hero.png'"], "the finding keeps the page's own name"
+    assert [d["where"] for d in got["defects"]] == ["index.html: the link 'Fees' (to fees.html)", "index.html: the image 'hero.png'"], \
+        "the finding keeps the page's own name"
     assert [d["severity"] for d in got["defects"]] == ["medium", "medium"]
+    assert [d["name"] for d in got["defects"]] == ["Home", "Home"], "and the owner's name for the page, beside its file"
 
 
 def test_g2_a_defect_that_weighs_low_is_filed_and_noted_but_does_not_fail_the_measure(j2, monkeypatch):
     ref = a_website(j2, monkeypatch)
     got = mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><a href='#hours'>Hours</a>"))
     assert got["ok"] is True and [d["severity"] for d in got["defects"]] == ["low"]
-    assert got["notes"] == ["noted, Home: the link 'Hours' goes to #hours, and nothing on the page has that anchor"]
+    assert got["notes"] == ["noted, Home: the link 'Hours' goes to a part of the page that is not there"]
 
 
 def test_g2_placeholder_text_is_a_finding_naming_the_page_and_what_it_says(j2, monkeypatch):
@@ -715,6 +718,7 @@ def test_g2_placeholder_text_is_a_finding_naming_the_page_and_what_it_says(j2, m
     (hole,) = got["holes"]
     assert (hole["page"], hole["kind"], hole["severity"]) == ("index.html", "hole", "high") and "to be confirmed" in hole["claim"]
     assert hole["where"] == "index.html: the text 'to be confirmed'", "where names the page and the words, page stays the page's name"
+    assert hole["name"] == "Home", "and the owner's name for the page"
     assert got["notes"] == ["the site says it does not know 1 thing"]
     assert [h["page"] for h in mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><p>Lorem ipsum.</p>", **{"lessons.html": LESSONS.replace("Week one.", "TBD")}))["holes"]] \
         == ["index.html", "lessons.html"], "one for each page that says it"
@@ -729,7 +733,8 @@ def test_g2_the_record_is_checked_as_it_always_was(j2, monkeypatch):
         monkeypatch.setattr(R, "audit_files", lambda c, files=files: files)
         old, new = R.audit_mechanical(ctx, None, None), audit_v1().audit_mechanical(ctx, None, None)
         assert new["faults"] == old["faults"] and new["ok"] == old["ok"]
-        assert [{k: v for k, v in h.items() if k != "where"} for h in new["holes"]] == old["holes"], "the same holes, each with a where besides"
+        assert [{k: v for k, v in h.items() if k not in ("where", "name")} for h in new["holes"]] == old["holes"], \
+            "the same holes, each with a where and a name besides"
     organic_less = W.create("dref-nothing", "Nothing", None, kind="organic")[0]["ref"]            # nothing delivered: the trace fault stays a fault
     monkeypatch.setattr(R, "audit_files", lambda c: {})
     bare = {"ref": organic_less, "dept": W.dept(organic_less), "inp": {"v": 1}, "bag": {"audit.pick": {"sample": True}}}
@@ -879,8 +884,8 @@ def code_row(j2, mech):
      {"ok": True, "notes": ["every version has its run and its check; the trace reaches the owner's words"], "faults": [], "holes": [], "defects": []},
      "the record holds: every version has its run and its check; the trace reaches the owner's words", "met"),
     ("a low defect is noted and the record holds",
-     {"ok": True, "notes": ["noted, Home: the link 'Hours' goes to #hours, and nothing on the page has that anchor"], "faults": [], "holes": [], "defects": []},
-     "the record holds: noted, Home: the link 'Hours' goes to #hours, and nothing on the page has that anchor", "met"),
+     {"ok": True, "notes": ["noted, Home: the link 'Hours' goes to a part of the page that is not there"], "faults": [], "holes": [], "defects": []},
+     "the record holds: noted, Home: the link 'Hours' goes to a part of the page that is not there", "met"),
     ("only a page defect fails: the pages need work, and the record is not said to fail",
      {"ok": False, "notes": ["About: " + ALT, "Contact: " + ALT], "faults": [], "holes": [], "defects": [{"page": "about.html"}, {"page": "contact.html"}]},
      "the pages need work: About: %s; Contact: %s" % (ALT, ALT), "not_met"),
@@ -931,6 +936,7 @@ def test_g2_fix_the_notes_name_a_page_by_its_title_and_never_by_its_file(j2, mon
     assert [d["page"] for d in got["defects"]] == ["about.html", "docs/guide.html", "index.html", "our-fees.html"], \
         "the findings keep the page's own name: it is what Identity maps to a title, and what a link names"
     assert got["defects"][0]["where"] == "about.html: the image 'a.png'"
+    assert [d["name"] for d in got["defects"]] == ["About", "A guide", "Home", "What we charge"], "each finding says its page as the notes do"
     bare = {"index.html": HOME % "<h1>Welcome</h1>", "lessons.html": LESSONS, "price_list.html": PLAIN.replace("<title>Page</title>", "") % (img % "Prices")}
     assert mechanical(j2, monkeypatch, ref, bare)["notes"] == ["price list: " + ALT]
     many = dict(files, **{"page%d.html" % n: PLAIN % (img % n) for n in range(3)})
@@ -942,7 +948,7 @@ def test_g2_fix_a_low_defect_is_noted_by_its_pages_title(j2, monkeypatch):
     ref = a_website(j2, monkeypatch)
     got = mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><a href='#hours'>Hours</a>"))
     assert got["ok"] is True
-    assert got["notes"] == ["noted, Home: the link 'Hours' goes to #hours, and nothing on the page has that anchor"]
+    assert got["notes"] == ["noted, Home: the link 'Hours' goes to a part of the page that is not there"]
 
 
 def test_g2_fix_a_department_with_no_site_plan_names_its_pages_by_what_they_carry(j2, monkeypatch):
@@ -968,4 +974,131 @@ def test_g2_fix_the_ask_Identity_files_for_a_page_defect_names_the_pages_and_wha
     text = asks[0]["text"]
     assert text.startswith("Audit found: D1 ") and "the pages need work: About: the image 'a.png' has no alt text" in text, text
     assert "the record does not hold" not in text and ".html" not in text, text
+    assert text.endswith("Stamp to have it put right.")
+
+
+# ---- G2 · fix round 2: no file and no path reaches the owner, and a page is named by its title -----------------------------------
+LINK_CLAIM = "the link 'Read more' goes to a page the site does not have"
+
+
+@pytest.mark.parametrize("what, files, target, claim", [
+    ("a page of the site's root", site("<h1>Welcome</h1><a href='fees.html'>Fees</a>"), "fees.html",
+     "the link 'Fees' goes to a page the site does not have"),
+    ("a page of a folder", site("<h1>Welcome</h1><a href='docs/fees.html'>Fees</a>"), "docs/fees.html",
+     "the link 'Fees' goes to a page the site does not have"),
+    ("a page by its path from the root", site("<h1>Welcome</h1><a href='/docs/fees.html'>Fees</a>"), "docs/fees.html",
+     "the link 'Fees' goes to a page the site does not have"),
+    ("a link with no words on it", site("<h1>Welcome</h1><a href='fees.html'><img src='f.png' alt='Fees'></a>"), "fees.html",
+     "a link goes to a page the site does not have"),
+    ("an anchor of this page", site("<h1>Welcome</h1><a href='#week9'>Fees</a>"), "#week9",
+     "the link 'Fees' goes to a part of the page that is not there"),
+    ("an anchor of another page", site("<h1>Welcome</h1><a href='lessons.html#week9'>Fees</a>"), "lessons.html#week9",
+     "the link 'Fees' goes to a part of another page that is not there"),
+])
+def test_g2_fix2_a_link_defect_names_its_target_in_where_and_never_in_the_claim(what, files, target, claim):
+    """The claim is quoted to the owner (the code row, the ask, the Audit tab): it names no file, no path and no anchor. The writer who puts
+    the link right reads `where`, and that holds the target."""
+    got = only(files)
+    assert got["claim"] == claim, what
+    assert not re.search(r"\.html?\b|/|#", got["claim"]) and target not in got["claim"], (what, got["claim"])
+    assert got["where"].endswith("(to %s)" % target) and got["where"].startswith("index.html: "), (what, got["where"])
+    assert S.validate("audit.finding", dict(got, id="F1")) == [], what
+
+
+def test_g2_fix2_two_links_of_one_name_to_two_missing_pages_are_two_findings(j2, monkeypatch):
+    """The claim no longer tells them apart, so where does: one finding for each element, in the step and in the reading Audit files."""
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    files = site("<h1>Welcome</h1><a href='a.html'>Read more</a><a href='b.html'>Read more</a><a href='a.html'>Read more</a>")
+    assert [(d["where"], d["claim"]) for d in defects(files)] == [("index.html: the link 'Read more' (to a.html)", LINK_CLAIM),
+                                                                  ("index.html: the link 'Read more' (to b.html)", LINK_CLAIM)]
+    out, row, _ = a_reading_of(j2, monkeypatch, ref, files)
+    assert [(f["where"], f["claim"]) for f in row["findings"]] == [("index.html: the link 'Read more' (to a.html)", LINK_CLAIM),
+                                                                   ("index.html: the link 'Read more' (to b.html)", LINK_CLAIM)], \
+        "the reading keeps both, as it kept two claims that differed by their targets before"
+    assert out["filed"] == 2
+
+
+def test_g2_fix2_the_reader_and_the_judge_who_find_one_thing_on_a_page_are_still_one_finding(j2, monkeypatch):
+    """The dedupe that tells two links apart is for page defects only: two sources saying the same words of one page stay one finding."""
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    said = {"page": "index.html", "claim": "states a fee nobody gave", "severity": "medium"}
+    _, row, _ = a_reading_of(j2, monkeypatch, ref, site(), [said, dict(said, where="somewhere else")])
+    assert [f["claim"] for f in row["findings"]] == ["states a fee nobody gave"]
+
+
+def test_g2_fix2_holes_and_defects_are_named_by_the_owners_name_for_the_page(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    files = {"index.html": HOME % "<h1>Welcome</h1><p>Phone: to be confirmed.</p><img src='a.png'>",
+             "about.html": PLAIN % "<h1>About us</h1><p>Opening hours: to be confirmed.</p><a href='gone.html'>Gone</a>",
+             "our-fees.html": "<html><head><title>What we charge</title></head><body><h1>Fees</h1><p>TBD</p></body></html>",
+             "price_list.html": PLAIN.replace("<title>Page</title>", "") % "<h1>Prices</h1><form><input name='q'></form>", "lessons.html": LESSONS}
+    got = mechanical(j2, monkeypatch, ref, files)
+    assert {h["page"]: h["name"] for h in got["holes"]} == {"index.html": "Home", "about.html": "About", "our-fees.html": "What we charge"}
+    assert {d["page"]: d["name"] for d in got["defects"]} == {"index.html": "Home", "about.html": "About", "price_list.html": "price list"}
+    assert all(h["page"].endswith(".html") and h["where"].startswith(h["page"] + ": ") for h in got["holes"] + got["defects"]), \
+        "the file stays in page and where, for the writer and for Identity"
+    assert not [n for n in got["notes"] if ".html" in n or "/" in n], got["notes"]
+    assert all(S.validate("audit.finding", dict(f, id="F1")) == [] for f in got["holes"] + got["defects"])
+
+
+def test_g2_fix2_the_post_to_identity_and_the_audit_tab_name_every_page_by_its_title(j2, monkeypatch):
+    """The probe that found the gap, through a real department: a page with an image with no alt, a bad link and a placeholder. Audit's
+    post carries the title beside each finding's file, and the Audit tab (j2ui_audit._finding_rows) shows the title, never the file,
+    in its note, and no file or path in the words of the finding."""
+    import j2ui_audit
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    files = {"index.html": HOME % "<h1>Welcome</h1><img src='a.png'><a href='gone.html'>Gone</a><a href='docs/lost.html#top2'>Lost</a>"
+                                  "<p>Phone: to be confirmed.</p>",
+             "about.html": PLAIN % "<h1>About us</h1><img src='b.png'><a href='#nope'>Up</a>",
+             "our-fees.html": "<html><head><title>What we charge</title></head><body><h1>Fees</h1><a href='lessons.html#week9'>Week</a></body></html>",
+             "lessons.html": LESSONS}
+    _, row, _ = a_reading_of(j2, monkeypatch, ref, files)
+    (post,) = [p for p in R.board(ref) if (p["payload"] or {}).get("word") == "finding" and p["payload"].get("reading") == row["id"]]
+    mine = [f for f in post["payload"]["findings"] if f.get("kind") in ("defect", "hole")]
+    assert {f["page"]: f["name"] for f in mine} == {"index.html": "Home", "about.html": "About", "our-fees.html": "What we charge"}
+    assert {f["kind"] for f in mine} == {"defect", "hole"} and len(mine) >= 7
+    rows = j2ui_audit._finding_rows(post)
+    assert len(rows) == len(post["payload"]["findings"]) and {r["note"] for r in rows} == {"Home", "About", "What we charge"}, [r["note"] for r in rows]
+    for r in rows:
+        assert not re.search(r"\.html?\b|/", r["criterion"] + " " + r["note"]), r
+    links = [r["criterion"] for r in rows if "link" in r["criterion"]]
+    assert sorted(links) == sorted(["the link 'Gone' goes to a page the site does not have", "the link 'Lost' goes to a page the site does not have",
+                                    "the link 'Up' goes to a part of the page that is not there",
+                                    "the link 'Week' goes to a part of another page that is not there"]), links
+    assert {f["where"] for f in mine if "link" in f["claim"]} >= {"index.html: the link 'Gone' (to gone.html)",
+                                                                  "index.html: the link 'Lost' (to docs/lost.html)",
+                                                                  "our-fees.html: the link 'Week' (to lessons.html#week9)"}, "the writer still has the target"
+
+
+def test_g2_fix2_the_measures_row_for_a_bad_link_names_the_pages_and_no_file(j2, monkeypatch):
+    """The code row is what Identity quotes to the owner and the Audit tab lists as the criterion. Through the mechanical step on a site
+    whose pages go to a page it does not have, to a part of one it has not, and to a part of its own page that is not there."""
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    mech = mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><a href='docs/fees.html'>Fees</a><a href='lessons.html#week9'>Week nine</a>"
+                                                  "<a href='#hours'>Hours</a>"))
+    claim = R.audit_code_claim(mech)
+    assert claim == ("the pages need work: Home: the link 'Fees' goes to a page the site does not have; "
+                     "noted, Home: the link 'Week nine' goes to a part of another page that is not there; "
+                     "noted, Home: the link 'Hours' goes to a part of the page that is not there"), claim
+    assert not re.search(r"\.html?\b|/|#", claim + " ".join(mech["notes"]))
+
+
+def test_g2_fix2_the_ask_Identity_files_for_a_form_and_a_link_names_the_pages_and_no_file(j2, monkeypatch):
+    """The earlier probe held for an image: a form, and the links the measure only notes, are quoted in the same words with no file in
+    them. (A link to a page the site lacks never reaches Audit through a real department: Check refuses that build first.)"""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(importlib.import_module("layers.identity.v1"), "next_is_heard", lambda: False)
+    ref = a_website(j2, monkeypatch, a_page_with("<form><input name='q'></form><a href='#nope'>Up</a><a href='contact.html#hours'>Hours</a>"))
+    asks = [a for a in W.asks(ref) if a["kind"] == "finding" and a["status"] == "pending"]
+    assert asks, [(a["kind"], a["status"]) for a in W.asks(ref)]
+    text = asks[0]["text"]
+    assert "the pages need work: About: the form has no submit button, so a visitor cannot send it" in text, text
+    assert "noted, About: the link 'Up' goes to a part of the page that is not there" in text, text
+    assert "noted, About: the link 'Hours' goes to a part of another page that is not there" in text, text
+    assert "the record does not hold" not in text and not re.search(r"\.html?\b|#", text), text
     assert text.endswith("Stamp to have it put right.")

@@ -14,8 +14,10 @@ deliverable besides, without a browser: a link that goes to no page or anchor of
 with no alt, a page with no h1 or with more than one, and a placeholder where a fact should be. Each defect is a finding
 that names where it is (the page and the element) and what is wrong, and how serious it is; at most one for each element.
 A defect of medium or high weight fails the measure, so a done-when item the measure covers does not hold; a low one is
-filed and noted. It is the engine_runtime body's superset: the legacy body stays there as the fallback a broken layer
-file leaves, and W3-PROOF deletes it.
+filed and noted. A finding keeps the page's file name in `page` and `where` (the writer who puts it right needs it, and a link's
+target is in `where`) and gives the owner's name for the page in `name`; its `claim` is quoted to the owner, so it names no file.
+It is the engine_runtime body's superset: the legacy body stays there as the fallback a broken layer file leaves, and W3-PROOF
+deletes it.
 """
 import json
 import posixpath
@@ -165,11 +167,12 @@ def _planned(files):
     return names
 
 
-def _defect(page, severity, element, claim):
-    """One finding: where it is (`where`: the page and the element), what is wrong (`claim`, which names the element too, so
-    it reads alone), and how serious. `page` is the page's own name, which the pane's notes and Identity's questions use."""
-    return {'where': _clip('%s: %s' % (page, element), 200), 'page': _clip(page, 200), 'claim': _clip(claim, 600), 'severity': severity,
-            'kind': 'defect'}
+def _defect(page, severity, element, claim, target=None):
+    """One finding: where it is (`where`: the page and the element, and for a link where it goes, which the writer who puts it right
+    needs), what is wrong (`claim`, which names the element too, so it reads alone, and names no file: it is quoted to the owner),
+    and how serious. `page` is the page's own file name, which Identity maps to a title; audit_mechanical adds `name`, the title."""
+    where = '%s: %s%s' % (page, element, (' (to %s)' % _clip(target, 80)) if target else '')
+    return {'where': _clip(where, 200), 'page': _clip(page, 200), 'claim': _clip(claim, 600), 'severity': severity, 'kind': 'defect'}
 
 
 def _link_defects(name, page, planned, parsed):
@@ -184,16 +187,17 @@ def _link_defects(name, page, planned, parsed):
         element = "the link '%s'" % label if label else 'a link'
         if not path:
             if frag not in ('', 'top') and frag not in page.ids:
-                out.append(_defect(name, 'low', element, '%s goes to #%s, and nothing on the page has that anchor' % (element, _clip(frag))))
+                out.append(_defect(name, 'low', element, '%s goes to a part of the page that is not there' % element, '#' + _clip(frag)))
             continue
         target = posixpath.normpath(path.lstrip('/') if path.startswith('/') else posixpath.join(posixpath.dirname(name), path))
         target = 'index.html' if target in ('.', '') else target
         if not target.lower().endswith(('.html', '.htm')):
             continue                                             # a file that is not a page (a style, a picture) is not this check's
         if target not in planned:
-            out.append(_defect(name, 'medium', element, '%s goes to %s, which is not a page of the site' % (element, _clip(target))))
+            out.append(_defect(name, 'medium', element, '%s goes to a page the site does not have' % element, target))
         elif frag not in ('', 'top') and target in parsed and frag not in parsed[target].ids:
-            out.append(_defect(name, 'low', element, '%s goes to %s#%s, and that page has no such anchor' % (element, _clip(target), _clip(frag))))
+            out.append(_defect(name, 'low', element, '%s goes to a part of another page that is not there' % element,
+                               '%s#%s' % (target, _clip(frag))))
     return out
 
 
@@ -249,17 +253,20 @@ def page_defects(files):
     return out
 
 
-def _hole(hole):
+def _hole(hole, names=None):
     """A placeholder where a fact should be, as the legacy body finds it (R.placeholders), with `where` added: the page and the
-    words that say it. `page` stays the page's name, which Identity's question to the owner is put by."""
+    words that say it, and `name`: what the owner calls the page (`names`, from _names). `page` stays the page's file name, which
+    Identity's question to the owner is put by."""
     phrase = R.PLACEHOLDER.search(str(hole.get('claim') or ''))
-    return dict(hole, where=_clip("%s: the text '%s'" % (hole.get('page'), phrase.group(0) if phrase else 'to be confirmed'), 200))
+    page = hole.get('page')
+    return dict(hole, where=_clip("%s: the text '%s'" % (page, phrase.group(0) if phrase else 'to be confirmed'), 200),
+                name=(names or {}).get(page, page))
 
 
 def _note(defect, names=None):
     """A defect as the mechanical step's notes say it: the page by the name the owner knows it by (`names`, from _names; its file
     name when it has none), then what is wrong (the claim names the element). The finding itself keeps the page's file name in
-    `page` and `where`, which is what Identity maps to a title and what a link names."""
+    `page` and `where`, which is what Identity maps to a title and what the writer who puts it right needs."""
     return '%s: %s' % ((names or {}).get(defect['page'], defect['page']), defect['claim'])
 
 
@@ -285,13 +292,13 @@ def audit_mechanical(ctx, step, item):
     if not any(c.get('kind') == 'ask' for c in (W.trace(ref, art, ctx['inp']['v']) if art else [])):
         notes.append("the %s does not trace back to the owner's words" % (art or 'deliverable').lower())
     files = R.audit_files(ctx)
+    names = _names(ref, files)
     # a page that says "to be confirmed" published what nobody knew (found live 2026-09-28: twelve such places on four
     # pages); Audit names each hole, Identity asks the owner for the facts instead of a stamp
-    holes = [_hole(h) for h in R.placeholders(files)]
-    defects = page_defects(files)
+    holes = [_hole(h, names) for h in R.placeholders(files)]
+    defects = [dict(d, name=names.get(d['page'], d['page'])) for d in page_defects(files)]      # each says which page in the owner's words
     failing = [d for d in defects if d['severity'] != 'low']
     said = notes + (['the site says it does not know %d thing%s' % (len(holes), '' if len(holes) == 1 else 's')] if holes else [])
-    names = _names(ref, files)
     said += [_note(d, names) for d in failing[:4]] + (['more is wrong on the pages'] if len(failing) > 4 else [])
     noted = ['noted, ' + _note(d, names) for d in defects if d['severity'] == 'low'][:2]
     clean = "every version has its run and its check; the trace reaches the owner's words"
