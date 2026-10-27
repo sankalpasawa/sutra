@@ -240,6 +240,22 @@ def test_m3b_the_detail_is_the_line_when_busy_else_the_last_thing_said(mods):
     assert "what Audit did (chat)" in m["not_recorded"] and "what Priority did (chat)" not in m["not_recorded"]
 
 
+def test_m3b_a_line_that_is_the_owners_words_stays_the_owners_in_the_detail(mods):
+    """The Identity node's line while a rule or done-when waits on the owner is a Said (j2ui_common._owner_lines): cut and re-spelled
+    into the detail, it is still the owner's words, and clean() sends it as it is."""
+    import j2ui_common as C
+    import j2ui_map as M
+    ctx = make_ctx(mods, paused={"id": "a-x", "kind": "rule"})
+    line = C.Said("Never link /private/area from the menu, keep /Users/me/site/index.html and /home/about first. " + "and more " * 30)
+    next(n for n in ctx.fv["functions"] if n["fn"] == "identity").update(state="waiting_on_you", line=line)
+    got = node(M.build(ctx), "fn:identity")
+    assert got["status"] == "waiting_on_you" and isinstance(got["detail"], C.Said) and got["detail"] == line[:140]
+    assert C.clean({"detail": got["detail"]}) == {"detail": got["detail"]}
+    plain = make_ctx(mods, paused={"id": "a-x", "kind": "rule"})
+    next(n for n in plain.fv["functions"] if n["fn"] == "identity").update(state="waiting_on_you", line="waits for your answer")
+    assert not isinstance(node(M.build(plain), "fn:identity")["detail"], C.Said), "a line that is the machine's stays a plain string"
+
+
 def test_m3b_the_person_counts_what_you_said(mods):
     import j2ui_map as M
     assert node(M.build(make_ctx(mods)), "person:requester")["detail"] == "not recorded"
