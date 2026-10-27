@@ -3333,7 +3333,7 @@ def identity_apply(ctx, step, item):
                                                      "writes": e.get("writes") or e["name"]}, by="the owner's stamp")
                 added.append(e["name"])
             except Exception as exc:  # noqa: BLE001 -- one engine that cannot be born does not lose the rest; the owner hears which
-                faults.append("%s (%s)" % (e.get("name"), exc))
+                faults.append("%s (%s)" % (e.get("name"), _not_added_reason(exc)))
         # a thread of its own: the ask's thread closed on the stamp, and a post into a closed thread is dropped
         _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
               {"word": "line", "engines": added,

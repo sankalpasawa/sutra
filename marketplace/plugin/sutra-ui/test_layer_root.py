@@ -648,6 +648,52 @@ def test_r5_grow_broken_says_a_name_that_does_not_fit_once_by_its_engine_and_nev
     assert rows[0][0] == "workflow_meets_standards" and "the name of Write #9" not in rows[0][2] and "its name" in rows[0][2], rows
 
 
+def _stamp_line(home, ref, engines):
+    """The stamped line, as the owner meets it: Adaptation's line reaches Identity, who puts it as one ask; the owner stamps
+    it (W.decide_ask). Returns what Identity said to the owner about the line after the stamp."""
+    W, R, _, _ = home
+    R.post(ref, "Adaptation", "Identity", "propose", {"word": "line", "engines": engines, "words": "gather the facts, then more", "why": "the goal needs it"})
+    W.run_until_idle(ref, limit=200)
+    ask = next(a for a in W.asks(ref) if a["kind"] == "line" and a["status"] == "pending")
+    seen = len(R.board(ref))
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=300)
+    return [p["payload"]["done"] for p in R.board(ref)[seen:] if p["src"] == "Identity" and "Owner" in p["dst"] and p["msg_type"] == "inform"
+            and p["payload"].get("word") == "line"]
+
+
+def test_r5_a_stamped_line_whose_engine_breaks_a_standard_tells_the_owner_in_the_standards_words_never_its_id(home):
+    """identity_apply's line branch adds each engine through add_engine, so a refusal there reaches the owner in the same
+    plain sentence as the stamped engine's: no standard id, no doubled name, no 'the line would break' of the raw message."""
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    said = _stamp_line(home, ref, [{"name": "Facts", "does": "gathers facts", "reads": "Brief", "writes": "Notes"},
+                                   {"name": "Site2", "does": "builds a second site", "reads": "Notes", "writes": "Pages"}])
+    assert len(said) == 1, said
+    _plain_to_owner(said[0])
+    assert said[0] == ("Added the line Facts; the first starts on your words now. Not added: Site2 (Root holds every line to its "
+                       "standards, and this engine would break one: %s (Site2 writes Pages, which is already written))" % WS.SAYS["one_output"]), said[0]
+    assert "Site2 is not added" not in said[0] and "the line would break" not in said[0]
+    assert W.dept(ref)["engines"] == ["Facts"] + LINE and "Site2" not in R.defs()["engines"]
+
+
+def test_r5_a_stamped_line_whose_engine_has_a_name_that_does_not_fit_says_so_in_plain_words(home, monkeypatch):
+    """The interface refuses such a line at Adaptation's post in refuse mode, so this is the line branch's own words for
+    the form of a name when the post got through (warn mode, or a line asked before): the same plain sentence."""
+    monkeypatch.setattr(S, "MODE", "warn")
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    with S.expect_refused("act"):
+        said = _stamp_line(home, ref, [{"name": "Facts", "does": "gathers facts", "reads": "Brief", "writes": "Notes"},
+                                       {"name": "Site #2", "does": "builds a second site", "reads": "Notes", "writes": "Second"}])
+    assert len(said) == 1, said
+    _plain_to_owner(said[0])
+    assert said[0].startswith("Added the line Facts; the first starts on your words now. Not added: Site #2 (Root holds every line to its standards, "
+                              "and this engine does not meet them: its name may only use letters"), said[0]
+    assert "would break" not in said[0]
+    assert W.dept(ref)["engines"] == ["Facts"] + LINE and "Site #2" not in R.defs()["engines"]
+
+
 def test_r5_the_reasons_count_only_standards_and_a_refusal_that_is_no_standard_keeps_its_own_words(home):
     W, R, J, _ = home
     import engine_runtime
