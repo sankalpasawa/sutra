@@ -1107,20 +1107,22 @@ LAYOUT = {
 # Parts of the goal group that S.ADDED_PARTS lists (they have no .md part), and the layout of the role block the card
 # carries (A3.4.3). What the function is not, what it never does and who it hands on to are S.FUNCTION_TEMPLATE's, not
 # words: no version drops one.
-# Pursue (W2-ADAPT F3, F5) is not on this branch, so three clauses that promise it are left out and go back with it:
-# "and again after each reading until the done-when holds" (role_is), "propose the next round when Audit's reading is
-# not done and the correction advances the goal" (role_may) and "When Audit's reading is not done, propose a
-# correction only if it moves the goal." (role_procedure).
+# Pursue (W2-ADAPT F3, F5: the handler "Propose the next round") is built, so three clauses promise it: "and again after
+# each reading until the done-when holds" (role_is), "propose the next round when Audit's reading is not done and the
+# correction advances the goal" (role_may) and "When Audit's reading is not done, propose a correction only if it moves
+# the goal." (role_procedure). The guard test test_adaptations_role_words_promise_pursue_only_when_it_is_built keeps the
+# three in step with the recipe.
 WORDS['goal']['done'] = {'text': "Identity's done-when holds on Audit's reading, and Adaptation has nothing more to propose"}
 WORDS['goal']['role_is'] = {'text': (
     "the department's intelligence for change; it reads where the department stands against its goal "
-    'and proposes the smallest useful workflow or change that closes the gap'
+    'and proposes the smallest useful workflow or change that closes the gap, and again after each reading until the done-when holds'
 )}
 WORDS['goal']['role_may'] = {'items': [
     'reuse a workflow of the Library when it fits the goal',
     'propose the smallest new workflow that can be tested, when none fits',
     'accept an ask for less from Priority, or revise the proposal, and say which',
     "correct only what Root's check named, and send the plan again",
+    "propose the next round when Audit's reading is not done and the correction advances the goal",
     'leave out an engine its template does not mark required',
     'shape a new idea the owner floats, and park it',
     "propose a step's move up or down the ladder",
@@ -1132,6 +1134,7 @@ WORDS['goal']['role_procedure'] = {'items': [
     'Send it to Priority for its limit and its price.',
     'When Priority asks for less, accept or revise, and say which.',
     "When Root's check names errors, correct only those and send the plan again.",
+    "When Audit's reading is not done, propose a correction only if it moves the goal.",
     'Look a fact up before you ask for it; what only the owner knows goes to Identity as a question.',
 ]}
 WORDS['goal']['role_patterns'] = {'items': [

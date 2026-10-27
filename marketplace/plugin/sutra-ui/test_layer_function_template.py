@@ -766,8 +766,8 @@ def test_every_rule_of_the_five_official_role_files_has_a_home():
     for layer, (prefix, tail) in expect.items():
         assert [r["id"] for r in rules if r["layer"] == layer] == ["%s-%s" % (prefix, t) for t in tail], layer
     homes = {h: sum(1 for r in rules if r["home"] == h) for h in HOMES}
-    assert homes["left"] == 2 and homes["derived"] == 4 and homes["word"] + homes["constant"] == 109, homes
-    assert {r["id"] for r in rules if r["home"] == "left"} == {"AD-P7", "CO-X1"}, "two rules are left, each with its reason"
+    assert homes["left"] == 1 and homes["derived"] == 4 and homes["word"] + homes["constant"] == 110, homes
+    assert {r["id"] for r in rules if r["home"] == "left"} == {"CO-X1"}, "one rule is left, with its reason (AD-P7 is a word since Pursue)"
     # the failing examples: delete a never line from a copy of the interface, and the rules that rest on it are named
     template = copy.deepcopy(S.FUNCTION_TEMPLATE)
     template["identity"]["never"] = tuple(x for i, x in enumerate(template["identity"]["never"], 1) if i != 3)

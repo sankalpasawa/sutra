@@ -451,18 +451,20 @@
    "id": "AD-P7",
    "layer": "adaptation",
    "text": "On an Audit finding, propose rework only when it advances the goal.",
-   "home": "left",
-   "line": "goal.role_procedure",
-   "phrase": null,
-   "held_by": [],
-   "reason": "the line is Pursue's (W2-ADAPT F3, F5: adapt.next, the check round_is_new), which is not on this branch; it goes back as procedure line 7 with Pursue, \"When Audit's reading is not done, propose a correction only if it moves the goal.\", and this rule becomes a word"
+   "home": "word",
+   "line": "goal.role_procedure 7",
+   "phrase": "Audit's reading is not done",
+   "held_by": [
+    "adapt.next",
+    "round_is_new"
+   ]
   },
   {
    "id": "AD-P8",
    "layer": "adaptation",
    "text": "Never ask the Requester for something you can look up. (the prototype's planning block)",
    "home": "word",
-   "line": "goal.role_procedure 7",
+   "line": "goal.role_procedure 8",
    "phrase": "Look a fact up before you ask for it",
    "held_by": [
     "adapt.shape"
