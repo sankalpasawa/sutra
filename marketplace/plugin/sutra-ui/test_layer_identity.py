@@ -1591,17 +1591,25 @@ def test_j5_saying_it_another_way_and_stopping_are_still_applied(j2, monkeypatch
     assert again["id"] == card["id"] and [o["id"] for o in again["options"]][0] == "words", "stopped, its way out stays open"
 
 
-def _stalled_department(j2, monkeypatch, rounds=2, org="Stall Co"):
-    """A department whose rounds met nothing new: a reading with D2 not met, then `rounds` rounds filed, each read with D2 still not met."""
+def _verdicts(W, ref, last):
+    """Every done-when item met but the last, which has the verdict `last`: D1 met and D2 not met for two items, D1 alone for one."""
+    ids = [i["id"] for i in W.items_of(W.dept(ref))]
+    return dict({i: "met" for i in ids[:-1]}, **{ids[-1]: last})
+
+
+def _stalled_department(j2, monkeypatch, rounds=2, org="Stall Co", items=2):
+    """A department whose rounds met nothing new: a reading with the last item not met, then `rounds` rounds filed, each read with
+    it still not met (D2 of two items, D1 of one)."""
     W, R, J, _, _ = j2
-    ref = _a_running_department(j2, org=org)
+    ref = _a_running_department(j2, org=org, items=items)
+    last = W.items_of(W.dept(ref))[-1]["id"]
     _adaptation_hears_next(monkeypatch, R)
-    finding = [{"id": "F1", "severity": "high", "claim": "Every page names its fees", "item": "D2"}]
-    _hear(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding)
+    finding = [{"id": "F1", "severity": "high", "claim": "Every page names its fees", "item": last}]
+    _hear(j2, ref, _verdicts(W, ref, "not_met"), findings=finding)
     for n in range(2, 2 + rounds):
         W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": J.status(ref)["cycle_id"], "correction": "Name the fees",
-                                           "fixes": ["F1"], "covers": ["D2"], "status": "filed", "brief_v": n + 1, "reading": "r-0a0a0a0a"})
-        _hear(j2, ref, {"D1": "met", "D2": "not_met"}, v=n, findings=finding)
+                                           "fixes": ["F1"], "covers": [last], "status": "filed", "brief_v": n + 1, "reading": "r-0a0a0a0a"})
+        _hear(j2, ref, _verdicts(W, ref, "not_met"), v=n, findings=finding)
     return ref
 
 
@@ -1730,6 +1738,12 @@ def test_j5_every_end_that_is_not_done_has_a_pending_ask_with_options(j2, monkey
         assert "stop" in [o["id"] for o in card["options"]], (what, "a way to stop is always there")
         assert S.validate_record("identity", "ask", card) == [], what
         assert card["thread"], "the card is on a thread, so a choice reaches Identity"
+        assert _leave_it_names(card) <= {o["id"] for o in card["options"]}, (what, "the card names a way out its buttons do not offer", card["text"])
+
+
+def _leave_it_names(card):
+    """The ways out that leave an item out which the words of a card name, as option ids: 'leave D2 out of done-when' is leave:D2."""
+    return {"leave:" + i for i in re.findall(r"leave (D\d+) out", card["text"])}
 
 
 def _the_card(W, ref):
@@ -1818,6 +1832,37 @@ def test_j5_a_no_while_the_department_is_stopped_is_taken_on_start_and_leaves_th
     J.resume(ref)
     W.run_until_idle(ref, limit=300)
     assert J.status(ref)["state"] == "blocked" and len(_asks_of(W, ref, "blocked")) == 1
+
+
+@pytest.mark.parametrize("items", [1, 2])
+def test_j3_j5_a_card_names_the_way_that_leaves_an_item_out_only_when_it_offers_it(j2, monkeypatch, items):
+    """done-when is never left empty, so with one item a card offers 'Change the plan in my words' and 'Stop here' and its text
+    says so (found by a verifier: it read 'leave D1 out of done-when' above buttons that did not leave anything out)."""
+    W, R, J, _, _ = j2
+    cards = {}
+    cards["two rounds that met nothing new"] = _the_card(W, ref := _stalled_department(j2, monkeypatch, org="Stall %d Co" % items, items=items))
+    ref = _a_running_department(j2, org="Fact %d Co" % items, items=items)
+    _hear(j2, ref, _verdicts(W, ref, "to_confirm"))
+    _owner_says(j2, ref, "chat", "just do it")
+    cards["a fact the owner does not give"] = _the_card(W, ref)
+    ref = _a_running_department(j2, org="Round %d Co" % items, items=items)
+    last = W.items_of(W.dept(ref))[-1]["id"]
+    _identity_hears(R, ref, _grant_round(R, W, J, monkeypatch, ref, correction="Email every subscriber the new fees", covers=(last,)))
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    cards["a correction the owner turned down"] = _the_card(W, ref)
+    ref = _a_running_department(j2, org="Finding %d Co" % items, items=items)
+    _high_finding_on_a_met_reading(R, W, j2, ref)
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    cards["a finding the owner turned down"] = _the_card(W, ref)
+    for what, card in cards.items():
+        ids = [o["id"] for o in card["options"]]
+        if items == 1:
+            assert ids == ["words", "stop"] and not _leave_it_names(card) and "leave" not in card["text"], (what, card["text"], ids)
+            assert card["text"].endswith(", or stop here."), (what, card["text"])
+        else:
+            assert ids == ["words", "leave:D2", "stop"] and _leave_it_names(card) == {"leave:D2"}, (what, card["text"], ids)
+            assert "leave D2 out of done-when, or stop here." in card["text"], (what, card["text"])
+        assert S.validate_record("identity", "ask", card) == [], what
 
 
 # ---- J6: a goal change reopens the cycle (M9.8) ------------------------------------------------------------------------------

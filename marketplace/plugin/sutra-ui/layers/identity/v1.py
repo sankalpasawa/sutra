@@ -912,9 +912,9 @@ def fact_answered(ctx, got):
                     'The owner answered: %s' % words[:200], 'answer-' + ask['id'], {'missing': 'fact'})
     cj._move(ref, 'pursuing', step=8, open_ask=None)
     if hurry:
-        R._blocked(ref, d, _who(d), '%s rests on a fact only you can give, and it stays to be confirmed, so the goal cannot be reached as it stands. '
-                   'Give the fact, leave %s out of done-when, or stop here.' % (', '.join(ids), ', '.join(ids[-1:])),
-                   'A fact is still missing.', 'Identity, reading the work', '%s still to be confirmed' % ', '.join(ids))
+        why = '%s still to be confirmed' % ', '.join(ids)
+        R._blocked(ref, d, _who(d), '%s rests on a fact only you can give, and it stays to be confirmed, so the goal cannot be reached as it stands. %s'
+                   % (', '.join(ids), ways_out(d, why, 'Give the fact')), 'A fact is still missing.', 'Identity, reading the work', why)
         return {'said': "took 'just do it' for a fact only the owner has; %s stays to be confirmed, and the owner has the ways out" % ', '.join(ids)}
     items = [dict(i, confirm='') if i['id'] in ids else i for i in W.items_of(W.dept(ref))]
     W.put_done_items(ref, items)
@@ -972,9 +972,9 @@ def identity_weigh_reading(ctx, step, item):
     if left and stalled(ref, row):
         # the line has tried and met nothing new: no further round is asked for, and the owner has the ways out (no silent end)
         if not any(a.get('kind') == 'blocked' and a['status'] == 'pending' and a.get('reading') == row['id'] for a in W.asks(ref)):
-            card = R._blocked(ref, d, _who(d), 'The last rounds did not get any closer: %s still not met. Say what to change, leave %s out of done-when, '
-                              'or stop here.' % (', '.join(left), left[-1]), 'The next rounds are not getting closer.',
-                              'Identity, reading the work', '%s not met' % ', '.join(left))
+            why = '%s not met' % ', '.join(left)
+            card = R._blocked(ref, d, _who(d), 'The last rounds did not get any closer: %s still not met. %s' % (', '.join(left), ways_out(d, why)),
+                              'The next rounds are not getting closer.', 'Identity, reading the work', why)
             W._put_ask(ref, dict(card, reading=row['id']))
             routes['card'] = card['id']
         said.append('asked the owner what to do: the rounds met nothing new')
