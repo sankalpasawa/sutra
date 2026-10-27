@@ -759,19 +759,43 @@ def test_r5_the_reasons_count_only_standards_and_a_refusal_that_is_no_standard_k
     assert "would break some:" in got and got.endswith(". It also does not meet them: its name may only use letters"), got
 
 
-def test_r5_the_organisation_sheet_path_reports_the_refusal_through_the_proposal_record(home, monkeypatch):
-    """org.engine is the other stamp that adds an engine: its caller is proposals.decide, which records a refused apply as
-    failed with the reason, never as approved, and the department is as it was."""
+def _org_engine_proposal(home, monkeypatch, shape, ref=None):
+    """An org.engine proposal for the department, decided yes through proposals.decide with org2_apply as the applier."""
     import org2_apply
     import proposals
     W, R, J, _ = home
-    ref = _born_dept(home)
+    ref = ref or _born_dept(home)
     monkeypatch.setattr(org2_apply.E, "load_domains", lambda: {ref: {"name": "Acme", "status": "live"}})
+    rec = proposals.create("org.engine", {"ref": ref, "engine": shape["name"], "shape": shape}, "Add the engine %s" % shape["name"])
+    return ref, proposals.decide(rec["id"], True, apply_fn=org2_apply.apply_request)
+
+
+def test_r5_the_organisation_sheet_path_reports_the_refusal_through_the_proposal_record(home, monkeypatch):
+    """org.engine is the other stamp that adds an engine: its caller is proposals.decide, which records a refused apply as
+    failed with the reason, never as approved, and the department is as it was. The reason is what the Organisation sheet's
+    Approvals show under the failed proposal, so it is in the owner's words: the standard's own, never its id, with no
+    doubled name and none of add_engine's own 'the line would break' (found by a verifier: the raw message reached the sheet)."""
+    W, R, J, _ = home
     shape = {"name": "Launch", "use_case": "launches the site", "does": "launches the site", "reads": "Nothing Files This", "writes": "Launch"}
-    rec = proposals.create("org.engine", {"ref": ref, "engine": "Launch", "shape": shape}, "Add the engine Launch")
-    out = proposals.decide(rec["id"], True, apply_fn=org2_apply.apply_request)
-    assert out["status"] == "failed" and "reads_known" in out["result"]["error"] and WS.SAYS["reads_known"] in out["result"]["error"]
-    assert W.dept(ref)["engines"] == LINE
+    ref, out = _org_engine_proposal(home, monkeypatch, shape)
+    error = out["result"]["error"]
+    assert out["status"] == "failed"
+    assert error == ("Launch was not added to Acme. Root holds every line to its standards, and this engine would break one: %s "
+                     "(Launch reads Nothing Files This, which nothing before it writes)." % WS.SAYS["reads_known"]), error
+    _plain_to_owner(error)
+    assert "is not added to" not in error and "the line would break" not in error, error
+    assert W.dept(ref)["engines"] == LINE and "Launch" not in R.defs()["engines"]
+
+
+def test_r5_the_organisation_sheet_path_says_a_name_that_does_not_fit_in_plain_words_and_a_repeat_as_it_always_did(home, monkeypatch):
+    W, R, J, _ = home
+    ref, out = _org_engine_proposal(home, monkeypatch, {"name": "Launch #1", "use_case": "launches", "does": "launches", "reads": "Pages", "writes": "Launch"})
+    error = out["result"]["error"]
+    assert out["status"] == "failed" and error.startswith("Launch #1 was not added to Acme. Root holds every line to its standards, and this engine does not meet them: its name may only use letters"), error
+    _plain_to_owner(error)
+    assert "would break" not in error and W.dept(ref)["engines"] == LINE
+    ref, out = _org_engine_proposal(home, monkeypatch, {"name": "Plan", "use_case": "plans", "does": "plans"}, ref=ref)
+    assert out["status"] == "failed" and out["result"]["error"] == "Acme already runs Plan", out["result"]
 
 
 def test_r5_a_born_template_is_typed_before_its_file_is_written(home, monkeypatch):
