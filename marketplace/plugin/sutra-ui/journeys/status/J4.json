@@ -3,20 +3,15 @@
   "dropped": 0,
   "failing": 0,
   "fault": 0,
-  "partly": 3,
-  "proven": 9,
+  "partly": 1,
+  "proven": 11,
   "unproven": 0,
   "wanted": 0
  },
- "definitions_sha": "4db3f2d899a4545c46a2df862485b2d40a6bf08838cffbe9d4105d555f085fb7",
+ "definitions_sha": "2259cec4216c86e184f9d8ef73ecc552fb4569d97038106c7f8e09d3de8a2d39",
  "drift": [
   {
    "row": "edge:J4.4",
-   "site": "built",
-   "state": "partly"
-  },
-  {
-   "row": "edge:J4.6",
    "site": "built",
    "state": "partly"
   }
@@ -71,13 +66,15 @@
    "state": "proven"
   },
   "edge:J4.6": {
-   "drift": true,
+   "drift": false,
    "failing": [],
    "proven_by": [
-    "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live"
+    "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
+    "test_layer_identity.py::test_j2_7_the_second_send_back_files_an_options_ask",
+    "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it"
    ],
    "site": "built",
-   "state": "partly"
+   "state": "proven"
   },
   "step:1": {
    "drift": false,
@@ -135,10 +132,12 @@
    "failing": [],
    "proven_by": [
     "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
-    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced",
+    "test_layer_identity.py::test_j2_7_the_second_send_back_files_an_options_ask",
+    "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it"
    ],
    "site": "none",
-   "state": "partly"
+   "state": "proven"
   }
  },
  "schema_version": 1,
@@ -151,6 +150,8 @@
   "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live": "passed",
   "test_j2_identity.py::test_m3_4_a_refused_rule_answer_asks_the_question_again": "passed",
   "test_j2_identity.py::test_m3_4_a_rule_given_as_an_answer_keeps_its_tag_through_the_rule_ask": "passed",
+  "test_layer_identity.py::test_j2_7_the_second_send_back_files_an_options_ask": "passed",
+  "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it": "passed",
   "test_layer_journey_j4.py::TestJ4Edges::test_j4_1_a_rule_the_department_already_has_is_said_back_and_not_added": "passed",
   "test_layer_journey_j4.py::TestJ4Edges::test_j4_4_a_looser_tag_on_an_inherited_line_is_refused": "passed",
   "test_layer_journey_j4.py::TestJ4Edges::test_j4_4_a_stricter_or_unrelated_rule_is_written": "passed",

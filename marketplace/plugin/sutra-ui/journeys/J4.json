@@ -222,13 +222,16 @@
     }
    ],
    "code": [
-    "_send_back"
+    "_send_back",
+    "_blocked",
+    "leave_rule_out"
    ],
    "tests": [
     "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
-    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced",
+    "test_layer_identity.py::test_j2_7_the_second_send_back_files_an_options_ask",
+    "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it"
    ],
-   "backlog": "BL-4",
    "site_says": "none",
    "site_code": "_send_back"
   }
@@ -388,9 +391,9 @@
     "status": "built",
     "text": "You are told; the build stays failed; nothing publishes (_send_back)."
    },
-   "code_does": "_send_back stops at two returns, tells the owner (\"two rewrites did not mend it. Say the rule another way, or drop it.\"), the build stays failed and nothing goes live. The end is a tell; M9.5 makes it an options ask.",
+   "code_does": "_send_back stops at two returns and tells the owner (\"two rewrites did not mend it. Say the rule another way, or drop it.\"), then files one ask through _blocked with the ways out (say the rule another way, leave this rule out, stop); the build stays failed and nothing goes live until the owner chooses, and leaving the rule out takes it off the department's rules (leave_rule_out) so the line builds again without it. The end is never a tell only.",
    "outcome": {
-    "kind": "block",
+    "kind": "ask",
     "voice": "Identity",
     "golden": "two rewrites did not mend it"
    },
@@ -404,12 +407,15 @@
     }
    ],
    "code": [
-    "_send_back"
+    "_send_back",
+    "_blocked",
+    "leave_rule_out"
    ],
    "tests": [
-    "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live"
-   ],
-   "backlog": "BL-4"
+    "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
+    "test_layer_identity.py::test_j2_7_the_second_send_back_files_an_options_ask",
+    "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it"
+   ]
   }
  ],
  "sub": [],
