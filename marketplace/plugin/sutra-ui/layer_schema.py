@@ -522,13 +522,16 @@ DEFS.update({
 DEFS.update({
     'root.pins': obj({layer: ref('impl') for layer in LAYER_NAMES}, open=False),
     # a born engine template, as R.born_template writes it to the records home's _library/<slug>.json (W1-ROOT checks it
-    # before the file is written). It is the child of engine.library (A3.5): that template with a required made_by
+    # before the file is written). It is the child of engine.library (A3.5): that template with a required made_by.
+    # form (W2-CHECKS, M7.5): the artifact whose form the engine files what it writes in, when a level-1 engine reads it
+    # (J2B-3); the Library's template for that artifact names the check that holds the form
     'engine.template': obj({'id': word(r'^engine/[a-z0-9][a-z0-9-]*$', 80), 'name': text(40, 1), 'version': integer(1),
                             'use_case': text(300, 1), 'description': text(300), 'instruction': text(4000), 'reads': text(200),
                             'writes': text(40),
                             'made_by': obj({'by': const('Adaptation'), 'dept': text(200), 'at': text(40), 'idea': nullable(text(300))},
                                            required=('by',)),
-                            'start': obj({}), 'steps': items(obj({})), 'needs': items(text(40)), 'kind': const('work')},
+                            'start': obj({}), 'steps': items(obj({})), 'needs': items(text(40)), 'kind': const('work'),
+                            'form': text(60, 1)},
                            required=('id', 'name', 'use_case', 'made_by')),
 })
 
@@ -1066,7 +1069,7 @@ CHECKS = {
                      'names_who_goes_first': 'it names an engine of the department',
                      'one_run_at_a_time': 'a start is let through only while no other run runs'},
     'audit': {'findings_name_where_and_what': 'each finding names where it is and what it claims',
-              'has_a_verdict': 'a mechanical check gives a verdict with its notes',
+              'has_a_verdict': 'a mechanical check gives a verdict with its notes, and each page defect it names says where it is, what is wrong and how serious',
               'picked_a_sample': 'it says whether it sampled, and which pages',
               'reading_is_s30': 'each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what'},
 }
