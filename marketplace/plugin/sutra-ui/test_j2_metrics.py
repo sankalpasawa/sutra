@@ -295,12 +295,31 @@ def _run(engine, rid="r-1", system=False, slot=None, **kw):
 LINE = [{"version": 1, "engines": ["Plan", "Write", "Check", "Publish"], "source": "library"}]
 
 
-def test_sm3_an_engine_on_the_registered_line_a_function_and_a_grown_engine_are_all_clean(tmp_path):
+def test_sm3_an_engine_on_the_registered_line_a_function_s_system_row_and_a_grown_engine_are_all_clean(tmp_path):
     make(tmp_path, dept={"workflows": LINE}, state={"state": "running"}, table={"grown": ["Do"]},
          runs=[_run("Plan"), _run("Publish", "r-2"), _run("Do", "r-3"), _run("Identity", "r-4", system=True), _run("Audit", "r-5", True),
-               _run("Setup", "r-6")])
+               _run("Root", "r-6", True, what="refused a write that does not fit the interface: asks: $.kind: is wrong")])
     m = M.sm3(_depts(tmp_path))
     assert (m["value"], m["runs"], m["departments"]) == (0, 6, 1)
+    assert M.FUNCTIONS == ("Identity", "Adaptation", "Priority", "Coordination", "Audit"), "the five functions, and no more"
+
+
+@pytest.mark.parametrize("name", ["Identity", "Adaptation", "Priority", "Coordination", "Audit", "Root", "Setup"])
+def test_sm3_a_work_run_named_like_a_function_or_root_is_on_no_line_only_a_system_row_may_carry_the_name(tmp_path, name):
+    """Rule 3 and S-10: Root never starts an engine. A run that is not a system row and is called Root (or Setup, or a
+    function) is an engine on no line, and the allowance for the functions' own rows must not hide it."""
+    make(tmp_path, dept={"workflows": LINE}, state={"state": "running"},
+         runs=[_run("Plan"), _run(name, "r-9", system=False, slot="%s@brief.v1" % name)])
+    m = M.sm3(_depts(tmp_path))
+    assert (m["value"], m["status"]) == (1, "gap") and ("ran %s (run r-9, %s@brief.v1)" % (name, name)) in m["gaps"][0]
+
+
+def test_sm3_setup_is_no_function_of_a_department_that_lives_a_cycle_even_as_a_system_row(tmp_path):
+    """'Setup' runs on a root department, which SM-3 does not read; in a J2 department it is no title a system row carries."""
+    make(tmp_path, kind="root", runs=[_run("Setup", "r-1")])
+    assert M.sm3(_depts(tmp_path))["value"] == 0
+    make(tmp_path / "j2", state={"state": "running"}, runs=[_run("Setup", "r-1", system=True)])
+    assert M.sm3(_depts(tmp_path / "j2"))["value"] == 1
 
 
 def test_sm3_an_engine_the_counter_cut_that_still_ran_is_a_gap_that_names_the_run(tmp_path):

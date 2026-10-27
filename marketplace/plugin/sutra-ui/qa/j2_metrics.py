@@ -65,7 +65,10 @@ FULL = ("test_j2_identity.py", "test_layer_identity.py", "test_layer_adaptation.
 #: the lanes the department suite must run (SM-2, M0.1): suites.sh names each on a pytest line
 DEPARTMENT_LANES = ("test_j2.py", "test_j2_api.py", "test_j1.py")
 KINDS_TO_PROVE = ("website", "default", "organic")                  # SM-7
-FUNCTIONS = ("Identity", "Adaptation", "Priority", "Coordination", "Audit", "Setup", "Root")
+#: the five functions, and Root, under which the interface writes the rows of a refusal (layer_schema.refused): the titles a
+#: *system* row of runs.json may carry (SM-3). A run that is not a system row is a work engine, whatever it is called
+FUNCTIONS = ("Identity", "Adaptation", "Priority", "Coordination", "Audit")
+SYSTEM_TITLES = FUNCTIONS + ("Root",)
 END_STATES = ("waiting", "blocked", "unread")                       # SM-6: the cycle stands and only the owner can move it
 JOURNEYS = ("J1", "J2", "J3", "J4")                                 # SM-14
 UNPROVEN = ("unproven", "failing", "fault")
@@ -292,14 +295,16 @@ def sm3(depts):
         if not d.lives_j2:
             continue
         scope += 1
-        ok = d.registered() | set(FUNCTIONS)
+        line = d.registered()
         for r in d.runs:
             runs += 1
-            if r.get("engine") not in ok:
+            # a function's own run is a system row; a work run (not a system row) named like a function or Root is on no line
+            if r.get("engine") not in line and not (r.get("system") and r.get("engine") in SYSTEM_TITLES):
                 gaps.append("%s: ran %s (run %s, %s), on no registered line and not added through J5" % (
                     d.label, r.get("engine"), r.get("id"), r.get("slot") or "no slot"))
     return _m("SM-3", "Runs of an engine on no registered line and not added through J5", "0", len(gaps), not gaps, gaps,
-              "runs.json against the union of dept.workflows, the engines added (grown) and the five functions",
+              "runs.json against the union of dept.workflows and the engines added (grown), and the system rows of the five "
+              "functions and of Root (which the interface writes its refusals under); a work run named like a function is a gap",
               departments=scope, runs=runs, read="%d runs of %d departments" % (runs, scope))
 
 
