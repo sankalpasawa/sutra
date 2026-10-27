@@ -131,11 +131,34 @@ test is a failing row. The documents are deterministic: sorted keys, indent 1, a
 
 ### The gate
 
-`qa/walks/suites.sh` has one line for the runner after the `test_layer_*` loop. Its cost: with the 21 journeys of the A3 specs (126
-listed tests, about 40 of them in `test_engine_runtime.py`) one full run took 167 seconds on a machine busy with other builds, and
-the static cases and the staleness check take a few seconds. The budget is three minutes added to the gate on the integrator's
-machine. If the lane goes over it, change the line to `--check --no-run` and run the full `--check` before each merge that touches
-`journeys/`.
+`qa/walks/suites.sh` has one line for the runner after the `test_layer_*` loop. It prints the runner's last line and the seconds the
+lane took (`journeys: 62 rows, 55 proven, 1 wanted, 0 faults (51 s)`), so every run of the gate shows what the lane costs. The budget
+is three minutes added to the gate on the integrator's machine.
+
+**Who codes against what.** The gate has a new lane. The content packages A3-J12 (J1, J2) and A3-J34 (J3 to J7 and the function
+journeys) write their journey files, their status files and their `test_layer_journey_j*.py` scenarios against the names of this
+folder: `load`, `rows`, `row_key`, `definitions_sha` and `view`; `status.resolve_code`, `resolve_test`, `row_state`,
+`journey_state` and `compute`; `contract.cases`; `walk.trace` and `walk.follows`; and the four modes of `qa/journey_status.py`.
+A journey file or a status file that the machinery refuses is a red lane.
+
+**What it costs** (measured 2026-10-27 on one machine with 12 cores that other builds were also using; the figures move with the
+load, which is why the gate line says its own seconds):
+
+| Tree | The lane | The whole gate |
+|---|---|---|
+| main as merged (`journeys/` holds no journey) | `--check` 0 s (`journeys: 0 rows ... (0 s)`) | 442 s without the line (load 5 to 6), 550 s with it (load 7 to 8) |
+| main with A3-J12 and A3-J34 merged (J1 to J7 and the 14 function journeys; 129 listed tests in 12 Python files and one node file) | in the gate 51 s; alone 66 s and 70 s (load 7); `--check --no-run` 2.3 s; `--static` 2.3 s | 558 s (load 3 to 6), the four new `test_layer_journey_j*.py` lanes included |
+
+On the empty folder the lane costs nothing: the 108 s between 442 s and 550 s is the machine's load (the `ledger and lanes`
+lane alone took 92 s in one run and 120 s in the other), not the line. With the data in, the lane is 51 to 70 s, a third of the
+budget. The 167 seconds that an earlier version of this file gave were taken with the specs' own data, before the packages had
+written their scenarios, on a machine under a load of ten and more; the figures above replace it.
+
+**The decision: the full `--check`, or `--check --no-run`.** The line is the full `--check`. The decision has to be measured
+again whenever the data grows (a journey that lists a slow test, a new file), because the lane runs every listed test once more
+and the figure follows the machine: if the `journeys:` line of the gate says more than 180 s, change the line to
+`--check --no-run` and run the full `--check` before each merge that touches `journeys/`. To measure it by hand:
+`SUTRA_NATIVE_HOME=$(mktemp -d) time .venv/bin/python qa/journey_status.py --check`.
 
 ### Who regenerates a status file
 
@@ -171,6 +194,28 @@ to-do.
 ## The API
 
 `GET /api/native/journeys` and `GET /api/native/journeys/{id}` (in `website_api.py`, before the routes that begin with `/{ref}`)
-give the list and one journey as data for a screen: the definition without its code and tests, and for each row its state, the
-tests that proved it by name, the site's word and the drift. A read writes nothing. A journey that is not one is
-404 `UNKNOWN_JOURNEY`. There is no screen for them and none in `static/`.
+give the list and one journey as data for a screen: the definition, and for each row its state, the tests that proved it by name,
+the site's word and the drift. A read writes nothing. A journey that is not one is 404 `UNKNOWN_JOURNEY`. There is no screen for
+them and none in `static/`.
+
+What the read model says, and what a screen may do with it:
+
+1. **Left out: everything that names code or a test.** A row's `binds`, `code`, `tests`, `site_code` and `code_does`, a build row's
+   `where`, a backlog entry's `package` and `smallest`, a direction's `built` and `gap`, and the page's address and switches
+   (`site`, `site_ids`, `helper`, `flag`, `invariants`). The cases and the walk read them from the files; the API does not give them.
+2. **Clean: what the model adds, and the lines an owner may read.** The list, the state of each row, the tests that proved it
+   (`proven_by`, `failing`, by name and never a path), the drift, `outcome.golden` and `reword` hold no path, no name of code, no act
+   id and none of the screen's banned words. The words of the interface's own vocabulary (a state, an outcome `kind` such as
+   `refuse`, a `site` status such as `to_build`) are keys, not text: a screen says its own words for them.
+3. **Passed on as written: the site's and the author's prose.** `goal`, `lead`, `ends_when`, a step's `text`, an edge's `short`,
+   `trigger` and `site.text`, `rulings`, `quotes`, `sub`, `today` and the rows of `was` are the words the site or the author wrote
+   (JC-9 holds the site's rows equal to the site's file). The site says "grant, refuse, counter" where it means it, and some of its
+   sentences name a function (`Built: ... (setup_make)`); JC-11 holds only `golden` and `reword`. **A screen does not render that
+   prose raw**: it is for a builder's page, and the screen says its own words (`{helper}` is already said as Root).
+
+`test_layer_journeys.py` holds this: `test_the_read_model_leaves_out_what_names_code_and_passes_the_sites_words_on` plants code in
+every place a journey has one and reads what comes back, `test_the_scan_reads_a_sentence_not_only_a_token` puts a function or a
+file into the middle of a sentence of each prose field and finds it, and `test_every_shipped_journey_reads_clean` reads every
+string of the read model of the journeys that are in this folder (the content packages add them) and lets through only the
+sentences the saved site file holds. A path is a file name with its extension (`tighten.py`) or a folder of the plugin (`layers/`);
+"no .md files" names a kind of file, and passes.
