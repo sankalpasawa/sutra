@@ -2058,3 +2058,91 @@ def test_j2_8_a_cycle_reopened_while_stopped_stays_stopped_and_begins_on_start(j
     J.resume(ref)
     W.run_until_idle(ref, limit=400)
     assert "proposal.requested" in [e["action"] for e in J.events(ref) if e["cycle_id"] == st["cycle_id"]]
+
+
+def _a_goal_stamped_while_questions_are_open(j2, monkeypatch, org):
+    """The owner's goal rule waits for the stamp; Audit's reading then leaves a fact only the owner has, and Identity asks about it;
+    the owner stamps the goal rule with that question open. Returns the department, the question, and the cycle it was asked in."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org=org)
+    _says_a_directive(R, monkeypatch, "goal", NEW_GOAL, audit=False)
+    W.owner_ask(ref, "From now on, the goal is " + NEW_GOAL)
+    W.run_until_idle(ref, limit=300)
+    _hear(j2, ref, {"D1": "met", "D2": "to_confirm"})
+    (q,) = _asks_of(W, ref, "j2_identity")
+    old = J.status(ref)["cycle_id"]
+    assert (q["missing"], q["cycle_id"], J.status(ref)["open_question"]["id"], len(_asks_of(W, ref, "rule"))) == ("fact", old, q["id"], 1)
+    _stamp_the_pending(W, ref, ("rule",))
+    assert J.status(ref)["cycle_id"] != old, "the stamped goal rule started a new cycle"
+    return ref, q, old
+
+
+def _cycle_now(J, ref):
+    st = J.status(ref)
+    return {k: st[k] for k in ("cycle_id", "step", "state", "round")}
+
+
+def test_j6_a_reopen_retires_the_question_of_the_cycle_it_ends(j2, monkeypatch):
+    """J6: what Identity asked under the old goal is moot under the new one. A question on a fact that was open when the goal rule
+    was stamped is closed as replaced, the new cycle does not wait on it, and an answer that comes later moves nothing."""
+    W, R, J, _, _ = j2
+    ref, q, old = _a_goal_stamped_while_questions_are_open(j2, monkeypatch, "Reopen Question Co")
+    assert next(a for a in W.asks(ref) if a["id"] == q["id"])["status"] == "replaced"
+    assert J.status(ref)["open_question"] is None and not J.waiting_on_owner(ref) and J.status(ref)["cycle_id"] != old
+    before, briefs = _cycle_now(J, ref), len(W.versions(ref, "Brief"))
+    R.request(ref, "The price list is 500 rupees a month", answers=q["id"])
+    W.run_until_idle(ref, limit=300)
+    assert _cycle_now(J, ref) == before and len(W.versions(ref, "Brief")) == briefs, "the old question's answer moves nothing and files nothing"
+    assert next(a for a in W.asks(ref) if a["id"] == q["id"])["status"] == "replaced"
+    assert any(s.startswith("That question belonged to the goal before it changed") for s in _said_by_identity(R, ref)), "and the owner is told"
+
+
+def test_j6_an_answer_to_a_question_of_an_earlier_cycle_moves_nothing_whatever_the_ask_says(j2, monkeypatch):
+    """Whatever left a question of the old cycle open (an ask written before this fix), fact_answered closes it and moves nothing:
+    it used to set the new cycle to 'pursuing', step 8, on the old goal's question."""
+    W, R, J, _, _ = j2
+    ref, q, old = _a_goal_stamped_while_questions_are_open(j2, monkeypatch, "Reopen Stale Co")
+    W._put_ask(ref, dict(next(a for a in W.asks(ref) if a["id"] == q["id"]), status="pending", decided=None))
+    before, briefs = _cycle_now(J, ref), len(W.versions(ref, "Brief"))
+    assert before["step"] != 8 or before["state"] != "pursuing", before
+    R.request(ref, "The price list is 500 rupees a month", answers=q["id"])
+    W.run_until_idle(ref, limit=300)
+    assert _cycle_now(J, ref) == before and len(W.versions(ref, "Brief")) == briefs
+    assert next(a for a in W.asks(ref) if a["id"] == q["id"])["status"] == "replaced"
+
+
+def test_j6_an_answer_to_a_doubt_of_an_earlier_cycle_asks_adaptation_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref, q, old = _a_goal_stamped_while_questions_are_open(j2, monkeypatch, "Reopen Doubt Co")
+    doubt = dict(W.j2_identity_ask("Where should the order go?", old, "plan", "the plan rests on something only you can say", ["plan"], False),
+                 doubt={"engine": "Site", "doubt": DOUBT, "shown": DOUBT, "fallback": FALLBACK_SAYS, "line": None})
+    W._put_ask(ref, doubt)
+    before, briefs, lines = _cycle_now(J, ref), len(W.versions(ref, "Brief")), len(_line_requests(R, ref))
+    R.request(ref, ANSWER, answers=doubt["id"])
+    W.run_until_idle(ref, limit=300)
+    assert _cycle_now(J, ref) == before and len(W.versions(ref, "Brief")) == briefs and len(_line_requests(R, ref)) == lines
+    assert next(a for a in W.asks(ref) if a["id"] == doubt["id"])["status"] == "replaced"
+
+
+def test_j6_a_finding_ask_and_a_blocked_card_of_the_old_cycle_are_retired_too(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Reopen Cards Co")
+    _high_finding_on_a_met_reading(R, W, j2, ref)
+    (finding,) = _asks_of(W, ref, "finding")
+    _owner_says_no(W, ref, finding)
+    (card,) = _asks_of(W, ref, "blocked")
+    _high_finding_on_a_met_reading(R, W, j2, ref, claim="A price is wrong")
+    (second,) = _asks_of(W, ref, "finding")
+    R.post(ref, "Adaptation", "Identity", "inform", {"word": "conflict", "engines": ENGINES, "source": "library", "words": "w", "why": "no room", "for": "x-old"})
+    W.run_until_idle(ref, limit=300)
+    (conflict,) = _asks_of(W, ref, "conflict")
+    old = J.status(ref)["cycle_id"]
+    _says_a_directive(R, monkeypatch, "goal", NEW_GOAL, audit=False)
+    W.owner_ask(ref, "From now on, the goal is " + NEW_GOAL)
+    W.run_until_idle(ref, limit=300)
+    _stamp_the_pending(W, ref, ("rule",))
+    assert J.status(ref)["cycle_id"] != old
+    status = {a["id"]: a["status"] for a in W.asks(ref)}
+    assert (status[finding["id"]], status[card["id"]], status[second["id"]], status[conflict["id"]]) == ("refused", "replaced", "replaced", "replaced")
+    # what is not Identity's question of the old cycle stands: a publish ask, and the new cycle's own asks
+    assert all(a["status"] != "replaced" for a in W.asks(ref) if a["kind"] in ("publish", "rule", "engine", "done_items"))
