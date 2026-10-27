@@ -572,6 +572,60 @@ def apply_way(ctx, ask, pl):
     return {'said': "applied the owner's choice (%s) through %s" % (oid, S.TITLE[spec['layer']]), 'applied': True, 'result': got}
 
 
+def refused_round(ref, cycle):
+    """The latest round of this cycle whose last row says refused (rounds.jsonl), or None: a round Priority would not pay for."""
+    last = {}
+    for r in W.rows(ref, 'rounds.jsonl'):
+        if isinstance(r, dict) and isinstance(r.get('round'), int) and r.get('cycle_id') in (None, cycle):
+            last[r['round']] = r
+    gone = [r for _, r in sorted(last.items()) if r.get('status') == 'refused']
+    return gone[-1] if gone else None
+
+
+def ask_again(ref, d):
+    """The owner added room to the goal's ceiling (M9.2, M9.5), so the round it refused is asked for again: request/next to
+    Adaptation on the items that round covered still in done-when, from the reading that asked for it, naming the round so that it
+    keeps its number, and the cycle goes on pursuing. Once for each time that round was refused. None when no round was refused,
+    nothing it covered is left, the goal is reached, or Adaptation hears no next round."""
+    cj = R._j2()
+    if not (cj and cj.active(ref) and next_is_heard()) or cj.done(ref):
+        return None
+    cycle = (cj._state(ref) or {}).get('cycle_id')
+    row = refused_round(ref, cycle)
+    if not row:
+        return None
+    n, kept = row['round'], {i['id'] for i in W.items_of(d)}
+    left = [i for i in row.get('covers') or [] if i in kept]
+    read = [r for r in W.rows(ref, 'readings.jsonl') if r.get('read')]
+    reading = reading_of(ref, row.get('reading')) or (read[-1] if read else None)
+    if not left or not reading:
+        return None
+    refusals = {r.get('thread') for r in W.rows(ref, 'rounds.jsonl') if r.get('round') == n and r.get('status') == 'refused' and r.get('cycle_id') in (None, cycle)}
+    asked = [q for q in R.board(ref) if q['src'] == 'Identity' and q['dst'] == ['Adaptation'] and (q['payload'] or {}).get('word') == 'next'
+             and q['payload'].get('round') == n and q['payload'].get('reading') == reading['id']]
+    if len(asked) >= len(refusals):
+        return None
+    sent = R.post(ref, 'Identity', 'Adaptation', 'request',
+                  {'word': 'next', 'items': left, 'reading': reading['id'], 'findings': [f for f in row.get('fixes') or [] if isinstance(f, str)], 'round': n,
+                   'objective': 'propose the next correction for %s' % ', '.join(left), 'output': 'one priced correction on the registered line',
+                   'may_read': ['Brief'], 'boundaries': 'nothing new is registered; only the registered engines run'},
+                  about={'art': reading['artifact'], 'v': reading['v']})
+    if sent and (cj._state(ref) or {}).get('state') == 'blocked':
+        cj._move(ref, 'pursuing', step=8)
+    return {'round': n, 'items': left, 'n': sent and sent['n']}
+
+
+def resume_after_raise(ctx, got):
+    """What apply_way gave back, and when the choice added room to the goal's ceiling, the round the ceiling refused asked for again
+    (ask_again): the owner who pays for one more round gets it, and not the card they chose from."""
+    if not (got.get('applied') and (got.get('result') or {}).get('what') == 'ceiling'):
+        return got
+    again = ask_again(ctx['ref'], ctx['dept'])
+    if not again:
+        return got
+    return dict(got, said='%s; asked Adaptation for round %d again, on %s' % (got['said'], again['round'], ', '.join(again['items'])), round=again['round'])
+
+
 def _standing(d):
     """Who the department is, as a change to it is read against what it was: the goal, done-when and the identity's revision."""
     return {'goal': (d or {}).get('goal'), 'done': (d or {}).get('done'), 'revision': int((d or {}).get('identity_revision') or 1)}
@@ -633,7 +687,7 @@ def identity_apply(ctx, step, item):
             return leave_rule_out(ctx, rule)
         got = apply_way(ctx, ask, pl)
         if got is not None:
-            return got
+            return resume_after_raise(ctx, got)
     out = R.identity_apply(ctx, step, item)
     if ask and ask.get('kind') == 'finding' and ask.get('round') and out.get('filed'):
         round_filed(ref, ctx['dept'], ask['round'], out['filed'], ask.get('correction') or ask.get('claim'))

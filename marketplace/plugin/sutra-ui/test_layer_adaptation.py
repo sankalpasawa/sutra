@@ -1975,6 +1975,24 @@ def test_f3_the_numbers_of_the_rounds_follow_each_other_and_start_again_with_a_c
         "a number outside 1 to 99 is not one Identity gave"
 
 
+def test_f3_a_round_priority_would_not_pay_for_keeps_its_number_and_is_proposed_again_as_the_same_round(j2, monkeypatch):
+    """M9.1, M9.2 (found by a verifier 2026-10-27): the number counted the refused round as used, so asking again after the owner added
+    room was round 3 against a ceiling of 2, refused again. The fold by (cycle, round) already lets the latest row win."""
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    base = {"schema_version": 1, "at": W.now(), "correction": "x", "covers": ["D2"], "cycle_id": "c-one"}
+    monkeypatch.setattr(v1(), "cycle_of", lambda r: "c-one")
+    W.append_row(ref, "rounds.jsonl", dict(base, round=1, status="granted"))
+    W.append_row(ref, "rounds.jsonl", dict(base, round=2, status="refused", thread="x-two"))
+    assert v1().next_number(ref, {}) == 2, "round 2 never ran: it is still the next round"
+    assert v1().next_number(ref, {"round": 2}) == 2 and v1().next_number(ref, {"round": 4}) == 4, "the number Identity gives is kept when later"
+    W.append_row(ref, "rounds.jsonl", dict(base, round=2, status="proposed", thread="x-two-again"))
+    assert v1().next_number(ref, {}) == 3, "proposed again, it is used"
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted"), (2, "proposed")], "one row for the round, the latest"
+    W.append_row(ref, "rounds.jsonl", dict(base, round=2, status="refused", thread="x-two-again"))
+    assert v1().next_number(ref, {}) == 2, "and refused again, it is the next round again"
+
+
 @pytest.mark.parametrize("text, says", [
     ("Put the phone line on the doctors page", "already failed in round 1"),                      # the one that failed, as it was
     ("put the phone line on the doctors page.", "already failed in round 1"),                     # in lower case and with a full stop

@@ -296,6 +296,68 @@ def test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silenc
     _only_registered_engines_ran(W, R, ref)
 
 
+def test_p2b_the_owner_adds_a_round_at_the_ceiling_and_the_refused_round_is_proposed_again_funded_and_run(j2, monkeypatch):
+    """A raise that pays for nothing (found by a verifier 2026-10-27): the owner chose 'Add 1 more round' and the department sat
+    blocked with no ask, or its retry counted the refused round as used, was round 3 against a ceiling of 2, and came back as the same
+    card. The refused round keeps its number, Identity asks for it again once the ceiling is raised, and it is funded and run."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(S, "ROUNDS_DEFAULT", 1)
+    _reader(monkeypatch, R, [["D2"], ["D2"], []])                       # D2 holds after the second round, not the first
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    assert not neighbours.identity and not neighbours.priority, "the scenario of the merged build: Identity and Priority are the real ones"
+    _pursue(j2, ref, neighbours, limit=16)
+    assert [(r["round"], r["status"] in v1().RAN) for r in v1().rounds_of(ref)] == [(1, True), (2, False)] and v1().rounds_of(ref)[1]["status"] == "refused"
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    assert [o["id"] for o in card["options"]][0] == "raise:ceiling" and J.status(ref)["state"] == "blocked"
+    assert (W.dept(ref)["ceiling"]["rounds"], W.latest(ref, "Live site")["v"]) == (1, 2)
+    # the owner adds a round
+    W.choose_option(ref, card["id"], "raise:ceiling")
+    _pursue(j2, ref, neighbours, limit=16)
+    d = W.dept(ref)
+    assert d["ceiling"]["rounds"] == 2 and len(d["workflows"]) == 1, "the ceiling was raised once; no line was registered"
+    rows = v1().rounds_of(ref)
+    assert [(r["round"], r["status"] in v1().RAN) for r in rows] == [(1, True), (2, True)], "round 2 kept its number and ran: " + str(rows)
+    proposals = [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "round"]
+    assert [p["payload"]["round"] for p in proposals] == [1, 2, 2], "round 2 was proposed, refused, and proposed again, and no round 3 was"
+    answers = [(p["payload"]["round"], p["msg_type"]) for p in R.board(ref) if p["src"] == "Priority" and p["payload"].get("word") == "round"]
+    assert answers == [(1, "accept-proposal"), (2, "reject-proposal"), (2, "accept-proposal")]
+    asked = [p["payload"] for p in R.board(ref) if p["src"] == "Identity" and p["dst"] == ["Adaptation"] and p["payload"].get("word") == "next"]
+    assert [(a.get("round"), a["items"]) for a in asked] == [(None, ["D2"]), (None, ["D2"]), (2, ["D2"])], "Identity asked again, naming the round"
+    assert all(S.validate("act.next", a) == [] for a in asked)
+    assert [r for r in W.rows(ref, "prices.jsonl") if r.get("round") == 2][-1]["answer"] == "accept"
+    assert _brief(W, ref)[1].count("Correct this") == 2 and W.latest(ref, "Live site")["v"] == 3 and _work(W, ref).count("Publish") == 3
+    assert not [a for a in W.asks(ref) if a["status"] == "pending" and a.get("options")], "the card the owner chose from did not come back"
+    acts = _events(J, ref)
+    assert acts.count("goal.reached") == 1 and acts[-1] == "goal.reached"
+    _only_registered_engines_ran(W, R, ref)
+
+
+def test_p2c_a_raise_asks_for_the_refused_round_once_and_only_where_one_was_refused(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(S, "ROUNDS_DEFAULT", 1)
+    _reader(monkeypatch, R, [["D2"]])
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    ident = layers.load("identity/v1")
+    d = W.dept(ref)
+    assert ident.ask_again(ref, d) is None, "no round was refused: a raise asks for nothing"
+    _pursue(j2, ref, neighbours, limit=16)
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    before = len([p for p in R.board(ref) if p["payload"].get("word") == "next"])
+    W.choose_option(ref, card["id"], "raise:ceiling")
+    W.run_until_idle(ref, limit=300)
+    after = [p for p in R.board(ref) if p["payload"].get("word") == "next"]
+    assert len(after) == before + 1 and after[-1]["payload"]["round"] == 2
+    assert ident.ask_again(ref, W.dept(ref)) is None, "the same refusal is asked about once, however often the choice is applied"
+    assert len([p for p in R.board(ref) if p["payload"].get("word") == "next"]) == before + 1
+    # a round refused again is asked about again, once; and one whose items are no longer in done-when is asked about no more
+    W.append_row(ref, "rounds.jsonl", dict(v1().rounds_of(ref)[-1], status="refused", thread="x-other", at=W.now()))
+    assert ident.ask_again(ref, W.dept(ref))["round"] == 2 and ident.ask_again(ref, W.dept(ref)) is None
+    W.append_row(ref, "rounds.jsonl", dict(v1().rounds_of(ref)[-1], status="refused", thread="x-another", covers=["D9"], at=W.now()))
+    assert ident.ask_again(ref, W.dept(ref)) is None
+
+
 def test_p3_the_same_item_not_met_twice_gets_a_different_correction_and_two_rounds_reach_the_goal(j2, monkeypatch):
     """The acceptance of M9: a department with a failing item reaches done in two or more rounds."""
     W, R, J, _, _ = j2

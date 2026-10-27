@@ -505,8 +505,10 @@ def failed_round(ref, ids):
 
 
 def next_number(ref, pl):
-    """The number of the round now asked for: one after the latest of this cycle, or the number Identity gave when that is later."""
-    n = max([r['round'] for r in rounds_of(ref)] or [0]) + 1
+    """The number of the round now asked for: one after the latest of this cycle that Priority did not refuse, or the number
+    Identity gave when that is later. A round Priority would not pay for never ran, so it keeps its number: asked for again once
+    the ceiling holds it, it is the same round and funded, not a round past the ceiling that is refused again (M9.1, M9.2)."""
+    n = max([r['round'] for r in rounds_of(ref) if r.get('status') != 'refused'] or [0]) + 1
     given = pl.get('round')
     if isinstance(given, int) and not isinstance(given, bool) and 1 <= given <= 99:
         n = max(n, given)
