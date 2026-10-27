@@ -1188,6 +1188,15 @@ def _no_ways_out(monkeypatch, R):
     return real
 
 
+def _priority_misses_a_word(monkeypatch):
+    """Priority says its why in the owner's words where it composes it (A1-PW-1, layers/priority/v1._owners_why), so the line the
+    conflict card quotes is plain already and the net under it, the plain-words check (M3.6), has nothing to catch: that path is
+    tested in test_layer_priority. The net is tested here as it was: a Priority that lets the model's own words through (its
+    composition made to say nothing) leaves the card to the template."""
+    import layers.priority.v1 as priority_v1
+    monkeypatch.setattr(priority_v1, "_owners_why", lambda why, read=None: str(why or "").strip())
+
+
 def _scenarios(j2, monkeypatch):
     """The J2 scenarios, each a department: born and run offline; Priority says no and Identity rules it runs; Priority
     says no and Identity puts the plan to the owner; Root's check refuses the plan until it is blocked; Identity's
@@ -1284,6 +1293,7 @@ def test_m3_6_a_cards_words_are_plain_as_the_line_it_stands_for(j2, monkeypatch)
         {"text": "Priority said yes to the line", "title": "Priority's yes", "why": "Priority asked for less (no room)"}
     # the conflict card Identity puts to the owner quotes Priority's no: in the bargain's words, the card is the template,
     # its line says the same, and the Chat's 'Waiting for you' never shows grant or counter (found by a verifier 2026-10-26)
+    _priority_misses_a_word(monkeypatch)
     real_post = _no_ways_out(monkeypatch, R)
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY}})
     ref = _born(j2, org="Asked Grant Co")
@@ -1375,6 +1385,7 @@ def test_m3_7_a_conflict_closed_is_said_in_plain_words(j2, monkeypatch):
     """S5's Conflicts closed showing a ruling's why, or the split it closed, as the model wrote it (grant, counter), while
     every card and line the owner reads is plain, must fail."""
     W, R, J, _, F = j2
+    _priority_misses_a_word(monkeypatch)
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY},
                             "identity.close": {"ruling": "run", "why": DROP_WHY}})
     ref = _born(j2)

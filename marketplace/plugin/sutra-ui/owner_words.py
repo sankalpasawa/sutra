@@ -18,9 +18,15 @@ turn the record marks quoted, the words an ask's or a run's line ends with: kept
 always), a data value, is left as it is: the badge that prints it says 'never' for refuse, and a sentence that lists the
 tags says 'never' too ('tagged go, ask, never or always'). One line is read whole: Coordination's who-may-post note, which
 carried the act's own id ('Identity may refuse to Owner'), is said again the way the runtime says it now (MAY_NOTE).
+
+One more kind of line is read word by word, and only where it is composed: a sentence a model wrote in its own words (said_plainly).
+The agent is taught accept, counter and reject, so its why may use them, or grant and refuse. That sentence is said once in the
+owner's words where its function composes it (Priority's, in priority_post), so the post, the record, the ledger's line and every
+read of them agree; a record written before that is said again on the way out by the same function, not by a table of a pane's own.
 """
 import functools
 import re
+import types
 
 # The bargain in the owner's words wherever a definition's name, a run's line or a ledger row's summary carries the inside
 # word. A step's name, the default summaries j2_runtime writes (J.on_post, J.refused, the owner's answer), the lines the
@@ -127,6 +133,61 @@ def plain(line):
     for inside, said in BARGAIN_WORDS:
         line = line.replace(inside, said)
     return standard_lead().sub("", line)
+
+
+#: The bargain's inside words as a model uses them in a sentence of its own, and what the screen says in their place (said yes,
+#: asked for less, said no; never grant, counter or refuse). plain() says phrases and never a bare verb, so a sentence a model
+#: wrote is read again word by word; every form is spelt out, so the sentence keeps its grammar.
+INSIDE = types.MappingProxyType({
+    'grant': 'say yes to', 'grants': 'says yes to', 'granted': 'said yes to', 'granting': 'saying yes to',
+    'reject': 'say no to', 'rejects': 'says no to', 'rejected': 'said no to', 'rejecting': 'saying no to',
+    'refuse': 'say no to', 'refuses': 'says no to', 'refused': 'said no to', 'refusing': 'saying no to',
+    'counter': 'ask for less', 'counters': 'asks for less', 'countered': 'asked for less', 'countering': 'asking for less',
+    'refusal': 'no', 'rejection': 'no',
+    'counter-offer': 'ask for less', 'counter-offers': 'asks for less', 'counteroffer': 'ask for less', 'counteroffers': 'asks for less',
+    'counter-proposal': 'ask for less', 'counter-proposals': 'asks for less'})
+_INSIDE_RE = r'\b(?:%s)\b' % '|'.join(re.escape(w) for w in sorted(INSIDE, key=len, reverse=True))
+
+#: 'order' as a verb, which the screen keeps off as it keeps off grant (Priority prices and holds and never orders), said as
+#: 'ask for'. Only where it is a verb for certain: after a subject that did the ordering, or a modal. 'order' as the word for
+#: a line's order ('in order', 'the order of the line', 'Priority order: Plan, Write', 'ordered by cost') is the ordinary word, and is left.
+_ORDERS_AS = types.MappingProxyType({'order': 'ask for', 'orders': 'asks for', 'ordered': 'asked for'})
+_ORDER_RE = re.compile(
+    r'\b(?:(?P<by>Priority|it|he|she|which|that)(?P<s1>\s+)(?P<v1>orders|ordered)'
+    r'|(?P<mod>I|we|you|they|to|will|would|shall|should|must|can|could|may|might|not|never|cannot|don\'t|doesn\'t|didn\'t|won\'t)(?P<s2>\s+)(?P<v2>order))\b'
+    r'(?![\w-])(?!\s+by\b)', re.I)
+
+
+def said_plainly(text, keep=()):
+    """A sentence a model wrote, in the owner's words: the phrases of BARGAIN_WORDS, then the inside words (INSIDE) said again,
+    'I reject this; I would counter with two' as 'I say no to this; I would ask for less with two'. A noun after its article
+    (the grant) is a yes. 'Order' as a verb (Priority never orders) is 'ask for'. A capital stays a capital. Said twice it says
+    the same, so a sentence composed in the owner's words and read again on its way out is not changed by the second reading.
+    `keep`: the names in the sentence that are a workflow's or an engine's and stay as they are, though they are an inside word
+    (a workflow called Grant, or Order, is not said yes to). Only for a sentence a model wrote, or a line made of one: the owner's
+    own words, and any data value (a rule's tag, an answer's id), are not its."""
+    def said(m):
+        word, out = m.group(0), INSIDE[m.group(0).lower()]
+        return out.upper() if len(word) > 1 and word.isupper() else (out[:1].upper() + out[1:] if word[:1].isupper() else out)
+
+    def asked(m):
+        subject, gap, verb = (m.group('by'), m.group('s1'), m.group('v1')) if m.group('by') else (m.group('mod'), m.group('s2'), m.group('v2'))
+        out = _ORDERS_AS[verb.lower()]
+        return subject + gap + (out.upper() if verb.isupper() and len(verb) > 1 else out)
+    held, text = {}, str(text or '')
+    for name in sorted({str(n) for n in keep or () if n}, key=len, reverse=True):
+        mark = '\x00%d\x00' % len(held)
+        text, n = re.subn(r'(?<![\w-])%s(?![\w-])' % re.escape(name), mark, text)
+        if n:
+            held[mark] = name
+    text = re.sub(r'\b(a|an|the|this|that|its|their|any|each)\s+grants?\b', r'\1 yes', plain(text), flags=re.I)
+    text = re.sub(_INSIDE_RE, said, text, flags=re.I)
+    text = re.sub(r'\b(say|says|said|saying)\s+(yes|no)\s+to(?=\s*(?:$|[.,;:!?)]|(?:for|because|since|as|when|if|over|given)\b))', r'\1 \2', text, flags=re.I)
+    text = _ORDER_RE.sub(asked, text)
+    text = re.sub(r'\b([Aa])(?= ask for less\b)', r'\1n', text, flags=re.I)
+    for mark, name in held.items():
+        text = text.replace(mark, name)
+    return text
 
 
 def _keep(value):
