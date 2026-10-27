@@ -1687,11 +1687,28 @@ def test_q1_a_limit_is_filed_with_no_options_when_priority_cannot_give_them(live
     [conflict] = _conflicts(R, ref)
     assert conflict["bound"] == "hops" and "options" not in conflict
     assert "conflict.raised" in _actions(J, ref) and _one_conflict_ask(W, ref)["kind"] == "conflict"
-    stop = W.option(W.STOP_OPTION, "Stop here", "the department stops where it is")
-    monkeypatch.setattr(V1, "limit_options", lambda ref, thread=None: [{"id": "stop"}, "no", None, stop], raising=False)
-    assert R._limit_ways(ref, "x-none") == [stop], "what the interface does not type as an option is not carried"
+    stop, leave = W.option(W.STOP_OPTION, "Stop here", "the department stops where it is"), W.option("leave:D2", "Leave D2 out", "D2 is dropped")
+    monkeypatch.setattr(V1, "limit_options", lambda ref, thread=None: [{"id": "stop"}, "no", None, leave, stop], raising=False)
+    assert R._limit_ways(ref, "x-none") == [leave, stop], "what the interface does not type as an option is not carried"
+    monkeypatch.setattr(V1, "limit_options", lambda ref, thread=None: [stop], raising=False)
+    assert R._limit_ways(ref, "x-none") == [], "Stop alone is no way forward: the owner keeps the plan to stamp or drop"
     monkeypatch.setattr(V1, "limit_options", lambda ref, thread=None: 1 / 0)
     assert R._limit_ways(ref, "x-none") == []
+
+
+def test_q1_a_limit_with_no_way_forward_but_stop_leaves_the_owner_the_plan_to_stamp_or_drop(live, monkeypatch):
+    """A card whose only way is Stop, put in the place of the plan the owner may run as proposed, must fail: a department with
+    one done-when item and room to spare has nothing to leave out and nothing to raise, so the conflict at its bound carries no
+    options and the owner is asked as the owner always was (test_j2's bound case)."""
+    W, R, J, _ = live
+    _scenario(monkeypatch, R, "website", bounds={"hops": 1})
+    ref = _born(live, settle=False)
+    assert len(W.items_of(W.dept(ref))) == 1
+    W.run_until_idle(ref, limit=300)
+    [conflict] = _conflicts(R, ref)
+    assert conflict["bound"] == "hops" and "options" not in conflict
+    assert layers.call(ref, "priority", "limit_options", ref, _line_thread(R, ref)) == [W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later")]
+    assert "options" not in _one_conflict_ask(W, ref)
 
 
 @pytest.mark.parametrize("kind", KINDS3)

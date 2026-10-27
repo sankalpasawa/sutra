@@ -5271,12 +5271,14 @@ def _line_proposal(ref, thread):
 def _limit_ways(ref, thread):
     """The ways forward for a bargain that reached a limit of its thread (hops, time or spend): the options Priority prices for
     the line proposed in it (priority.limit_options, PRD M5.4), built by code, at most OPTIONS_MAX, each one the interface types
-    as an option. [] when Priority has none to give or its version cannot: the conflict is filed all the same."""
+    as an option. [] when Priority has none to give or its version cannot, and when Stop is all it has: that is no way forward
+    to put in the place of the plan the owner may stamp or drop, so the conflict is filed as it always was."""
     try:
         got = layers.call(ref, "priority", "limit_options", ref, thread)
-        return [o for o in got or [] if isinstance(o, dict) and not layer_schema.validate("option", o)][:W.OPTIONS_MAX]
+        ways = [o for o in got or [] if isinstance(o, dict) and not layer_schema.validate("option", o)][:W.OPTIONS_MAX]
     except Exception:  # noqa: BLE001 -- a limit conflict is filed whether or not its ways forward could be priced
         return []
+    return ways if any(o.get("kind") != "stop" and o.get("id") != W.STOP_OPTION for o in ways) else []
 
 
 def _line_conflict(ref, thread, why, bound=None, src="Adaptation"):
