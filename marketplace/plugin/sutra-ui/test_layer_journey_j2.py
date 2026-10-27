@@ -156,6 +156,15 @@ def test_j2_walk_from_the_identity_to_the_goal(j2, monkeypatch):
     # the board holds the acts the steps name, on the department's one board and in this order
     acts = [(p["src"], p["dst"][0], p["msg_type"]) for p in R.board(ref) if (p["payload"] or {}).get("word") == "line"]
     assert acts[:3] == [("Identity", "Adaptation", "request"), ("Adaptation", "Priority", "propose"), ("Priority", "Adaptation", "accept-proposal")]
+    # step 7's hand-over: A3.7.2 names Audit's inform/finding, which is the act of a reading with something to put right; this
+    # run has nothing to put right, so Audit hands Identity the reading (audit_tell) and files no finding. Both are binds of step 7
+    board = [(p["src"], p["dst"][0], p["msg_type"], (p["payload"] or {}).get("word")) for p in R.board(ref)]
+    said = [a for a in board if a[0] == "Audit"]
+    assert said == [("Audit", "Identity", "inform", "reading")], "Audit tells Identity the reading, once, and files no finding when there is none"
+    assert board.index(said[0]) < board.index(("Identity", "Owner", "inform", "goal")), "the goal is said after Identity was handed the reading"
+    (post,) = [p for p in R.board(ref) if p["src"] == "Audit"]
+    assert post["payload"]["reading"] == reading["id"] and post["payload"]["read"] is True and post["payload"]["findings"] == [], \
+        "it is the reading Audit filed, read item by item, with no finding in it"
     st = J.status(ref)
     assert (st["state"], st["step"], st["goal_reached"], st["workflow"]) == ("done", 8, True, LINE)
 
@@ -183,6 +192,15 @@ def test_j2_the_walk_fails_when_a_bind_is_not_what_the_run_did(j2, monkeypatch):
     faults = walk.follows(broken, record, walks=["6"])
     assert any(f.startswith("J2 step 6:") and "run.finished" in f for f in faults), faults
     assert walk.follows(J2, record, walks=["5", "3"]) != [], "step 3 happened before step 5, and the journey puts step 3 first"
+
+    # step 7's hand-over is required, not optional: a word that is not the one Audit posted fails the walk and names it
+    renamed = copy.deepcopy(J2)
+    for step in renamed["steps"]:
+        for bind in step["binds"] if step["n"] == "7" else []:
+            if bind.get("kind") == "act" and bind.get("word") == "reading":
+                bind["word"] = "readings"
+    faults = walk.follows(renamed, record, walks=["7"])
+    assert any(f.startswith("J2 step 7:") and "readings" in f for f in faults), faults
 
 
 # ---- J2.2: the bounds -------------------------------------------------------------------------------------------------
@@ -287,3 +305,44 @@ def test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger(j2, monkeypatch
     assert [v["check"]["ok"] for v in W.versions(ref, "Build")] == [False, False, False, True]
     W.run_until_idle(ref, limit=100)
     assert len([e for e in J.events(ref) if e["action"] == "run.failed"]) == 3, "more turns of the motor add nothing"
+
+
+def test_j2_7_after_the_goal_a_failed_run_is_not_yet_a_run_failed_event(j2, monkeypatch):
+    """J2.7 after the goal is reached (BL-4b). The ledger writes a run only while the cycle is active (`j2_runtime.on_run`), and
+    a cycle that reached its goal is done. A build that breaks a rule stamped after that is still filed failed, sent back
+    twice and then asked about: that is the line's own record and it holds. But the ledger holds fewer `run.failed` events
+    than the department had failed runs: the sends-back of a done cycle are not on it, and the one that is, is there only
+    because the options ask moved the cycle out of done. This states the gap and does not endorse it: when the ledger
+    records the failed runs of a done cycle, the last assertion fails, and J2.7 is bound to a test that asserts all three."""
+    W, R, J, _ = j2
+    holds = {"broken": False}
+
+    def check_rules(prompt):
+        return {"broken": [{"rule": RULE, "pages": ["about"], "why": "no 108"}] if holds["broken"] else []}
+
+    _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}, "audit.items": _items_met, "check.rules": check_rules})
+    ref = _born(j2)
+    _stamp_all(W, ref)                                           # the first publish: the goal is reached, the cycle is done
+    assert J.status(ref)["state"] == "done" and [e["action"] for e in J.events(ref)][-1] == "goal.reached"
+    assert [r for r in W.runs(ref) if r["status"] == "failed"] == [] and [e for e in J.events(ref) if e["action"] == "run.failed"] == []
+
+    # the owner states a rule after the goal and stamps it: the department builds again, and the build breaks the rule
+    holds["broken"] = True
+    W.owner_ask(ref, "From now on, every page ends with: Call 108.")
+    W.run_until_idle(ref, limit=300)
+    _stamp_all(W, ref, kind="rule")
+    assert [r["line"] for r in W.dept(ref)["rules"]][-1] == RULE
+
+    # what the line keeps holds after the goal as it does before it: three failed builds, sent back twice, then the owner is asked
+    failed_runs = [r for r in W.runs(ref) if not r.get("system") and r["status"] == "failed"]
+    assert [v["check"]["ok"] for v in W.versions(ref, "Build")][-3:] == [False, False, False] and len(failed_runs) == 3
+    said = [t["line"] for t in R.chat_view(ref)["turns"] if t["word"] == "broken"]
+    assert len(said) == 3 and all(s.endswith("Sent back to be rewritten.") for s in said[:2])
+    assert "two rewrites did not mend it. Say the rule another way, or drop it." in said[2]
+    assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"] == ["blocked"], "one ask, with the ways out"
+    assert len([e for e in J.events(ref) if e["action"] == "goal.reached"]) == 1, "the goal was reached once, and a failed build does not undo it"
+
+    # what the ledger keeps does not: a run.failed event is a failed run, but not every failed run is one (BL-4b)
+    on_ledger = [e for e in J.events(ref) if e["action"] == "run.failed"]
+    assert {e["run_ref"] for e in on_ledger} <= {r["id"] for r in failed_runs}, "an event is never written for a run that did not fail"
+    assert len(on_ledger) < len(failed_runs), "BL-4b: the ledger misses the failed runs of a cycle that is done"
