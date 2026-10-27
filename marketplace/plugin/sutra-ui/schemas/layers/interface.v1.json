@@ -173,6 +173,12 @@
       "site": "_priority_limits",
       "to": "Priority",
       "what": "priority.grant"
+    },
+    {
+      "from": "Coordination",
+      "site": "_line_conflict",
+      "to": "Priority",
+      "what": "limit_options"
     }
   ],
   "checks": {

@@ -1483,8 +1483,13 @@ def _line_thread(R, ref):
 
 
 def _one_conflict_ask(W, ref):
+    return _one_card(W, ref, "conflict")
+
+
+def _one_card(W, ref, kind):
+    """The one ask that waits for the owner, of the kind named."""
     asks = [a for a in W.asks(ref) if a["status"] == "pending"]
-    assert [a["kind"] for a in asks] == ["conflict"], asks
+    assert [a["kind"] for a in asks] == [kind], asks
     return asks[0]
 
 
@@ -1506,6 +1511,12 @@ def _no_ways_out(monkeypatch, R):
             payload = {k: v for k, v in payload.items() if k != "options"}
         return real(ref, src, dst, msg_type, payload, *a, **kw)
     monkeypatch.setattr(R, "post", post)
+
+
+def _conflicts(R, ref):
+    """The conflicts Adaptation or Coordination put to Identity, as the board holds them."""
+    return [p["payload"] for p in R.board(ref) if p["src"] in ("Adaptation", "Coordination") and p["dst"] == ["Identity"]
+            and (p["payload"] or {}).get("word") == "conflict"]
 
 
 @pytest.mark.parametrize("kind", KINDS3)
@@ -1575,12 +1586,13 @@ def _limit_scenario(live, monkeypatch, kind, bound):
 def test_q3_a_bargain_that_reaches_its_limit_goes_to_identity_and_priority_has_the_ways_forward(live, monkeypatch, kind, bound, label):
     """A limit that stops the bargain in silence, a conflict raised twice, or a limit with no way forward, must fail (J2.2): the
     bargain stops where it is, Coordination raises the conflict, Identity asks once, nothing runs, and Priority gives the options
-    for the line the bargain was about."""
+    for the line the bargain was about, which reach the owner on that one card (M5.4)."""
     W, R, J, _ = live
     ref = _limit_scenario(live, monkeypatch, kind, bound)
     raised = [e for e in J.events(ref) if e["action"] == "conflict.raised"]
     assert len(raised) == 1 and raised[0]["actor"] == "Coordination" and raised[0]["payload"]["bound"] == bound
-    _one_conflict_ask(W, ref)
+    card = _one_card(W, ref, "blocked")
+    assert [o["id"] for o in card["options"]] == ["leave:D2", "stop"], "the owner is given the ways forward, not a stamp that runs or drops"
     assert _work(W, ref) == [] and [e for e in J.events(ref) if e["action"] == "workflow.registered"] == []
     th = next(t for t in R.threads(ref) if t["id"] == _line_thread(R, ref))
     assert (th["state"], th["outcome"]["which"]) == ("canceled", bound)
@@ -1592,6 +1604,94 @@ def test_q3_a_bargain_that_reaches_its_limit_goes_to_identity_and_priority_has_t
     opts = layers.call(ref, "priority", "limit_options", ref, th["id"])
     assert [o["id"] for o in opts] == ["leave:D2", "stop"] and all(S.validate("option", o) == [] for o in opts)
     assert opts[0]["cost"].startswith("D2 is dropped from done-when") and opts[1]["cost"].startswith("the department stops")
+    [conflict] = _conflicts(R, ref)
+    assert conflict["options"] == opts and conflict["bound"] == bound and S.validate("act.conflict", conflict) == [], "the conflict carries them"
+    assert [(o["id"], o["label"], o["cost"]) for o in card["options"]] == [(o["id"], o["label"], o["cost"]) for o in opts], "and the card has them"
+
+
+def _short_limit(live, monkeypatch, bound):
+    """A website whose limits hold nothing (the fixture's medians put the line at 11 calls and 0.40 USD), with the bargain
+    reaching `bound` before Priority's answer."""
+    W, R, J, _ = live
+    if bound == "hops":
+        _scenario(monkeypatch, R, "website", bounds={"hops": 1})
+    else:
+        _scenario(monkeypatch, R, "website", away=True, cost=0.6 if bound == "usd" else 0.0, bounds={"seconds": 5} if bound == "seconds" else {})
+    ref = _born(live, settle=False)
+    W.put_done_items(ref, ITEMS2)
+    _envelopes(W, ref, **{n: (0, 0.0) for n in LINE})
+    _history(W, ref)
+    W.run_until_idle(ref, limit=300)
+    if bound != "hops":
+        for _ in range(3):
+            R.sweep(ref)
+        W.run_until_idle(ref, limit=100)
+    return ref
+
+
+@pytest.mark.parametrize("bound", ("hops", "seconds", "usd"))
+def test_q1_a_limit_reaches_the_owner_with_raise_leave_and_stop_priced_from_what_the_line_costs(live, monkeypatch, bound):
+    """Priced options that never leave Priority at a bargain limit must fail (found by a verifier 2026-10-27: limit_options
+    was called by nothing, and the conflict's ask carried none): at hops, time and spend, with no room, the conflict carries
+    [raise, leave, stop] priced from the medians, and the one card the owner is given has them; the raise the owner chooses is
+    applied, held to the cap, and the done-when item leaves out when chosen."""
+    W, R, J, _ = live
+    ref = _short_limit(live, monkeypatch, bound)
+    [conflict] = _conflicts(R, ref)
+    assert conflict["bound"] == bound and [o["id"] for o in conflict["options"]] == ["raise:Plan", "leave:D2", "stop"]
+    assert [o["kind"] for o in conflict["options"]] == ["raise", "leave", "stop"] and S.validate("act.conflict", conflict) == []
+    assert conflict["options"][0]["params"] == {"what": "envelope", "engine": "Plan", "calls": 11, "usd": 0.395}
+    assert conflict["options"][0]["cost"] == "about 11 calls and 0.40 USD more a day; Plan's limit becomes 11 calls and 0.40 USD a day"
+    card = _one_card(W, ref, "blocked")
+    assert [o["id"] for o in card["options"]] == ["raise:Plan", "leave:D2", "stop"] and _work(W, ref) == []
+    assert all(S.validate("option", o) == [] for o in card["options"]) and S.validate("identity.ask", card) == []
+    W.choose_option(ref, card["id"], "raise:Plan")
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["envelopes"]["Plan"] == {"calls": 11, "usd": 0.395}, "the raise is applied, once the owner chose it"
+    assert next(a for a in W.asks(ref) if a["id"] == card["id"])["chosen"]["id"] == "raise:Plan"
+
+
+def test_q1_the_limit_conflict_asks_priority_for_its_ways_by_the_thread_and_the_call_is_declared(live, monkeypatch):
+    """A conflict that never asks Priority at a limit, or asks for another thread's line, must fail: _line_conflict calls
+    Priority's limit_options for the thread whose bound was reached, and the call is declared in S.CALLS."""
+    W, R, J, _ = live
+    asked = []
+    inner = R._limit_ways
+    monkeypatch.setattr(R, "_limit_ways", lambda ref, thread: asked.append(thread) or inner(ref, thread))
+    ref = _short_limit(live, monkeypatch, "hops")
+    assert asked == [_line_thread(R, ref)], "a limit asks Priority for the line in its thread, once"
+    assert {"from": "Coordination", "to": "Priority", "what": "limit_options", "site": "_line_conflict"} in S.CALLS
+    assert layers.call(ref, "priority", "limit_options", ref, asked[0]) == _conflicts(R, ref)[0]["options"]
+
+
+def test_q1_a_refusal_asks_priority_for_no_limit_options(live, monkeypatch):
+    """A conflict that prices a limit that was not reached must fail: a no from Priority is a refusal, with no bound, and
+    Adaptation copies its ways from the no itself; _line_conflict asks Priority for limit options only when given a bound."""
+    W, R, J, _ = live
+    asked = []
+    inner = R._limit_ways
+    monkeypatch.setattr(R, "_limit_ways", lambda ref, thread: asked.append(thread) or inner(ref, thread))
+    ref = _rejected(live)
+    assert [c["bound"] for c in _conflicts(R, ref)] == [None] and asked == [], "a no is no limit"
+    thread = _line_thread(R, ref)
+    assert R._line_conflict(ref, thread, "again") is None and asked == [], "and one conflict is filed for a thread"
+
+
+def test_q1_a_limit_is_filed_with_no_options_when_priority_cannot_give_them(live, monkeypatch):
+    """A limit that is lost because Priority's version holds no limit_options, or one that fails, must fail: the conflict is filed
+    all the same, once, without options, and the owner is asked as the owner always was."""
+    W, R, J, _ = live
+    monkeypatch.delattr(V1, "limit_options")
+    _scenario(monkeypatch, R, "website", bounds={"hops": 1})
+    ref = _scenario_dept(live, "website")
+    [conflict] = _conflicts(R, ref)
+    assert conflict["bound"] == "hops" and "options" not in conflict
+    assert "conflict.raised" in _actions(J, ref) and _one_conflict_ask(W, ref)["kind"] == "conflict"
+    stop = W.option(W.STOP_OPTION, "Stop here", "the department stops where it is")
+    monkeypatch.setattr(V1, "limit_options", lambda ref, thread=None: [{"id": "stop"}, "no", None, stop], raising=False)
+    assert R._limit_ways(ref, "x-none") == [stop], "what the interface does not type as an option is not carried"
+    monkeypatch.setattr(V1, "limit_options", lambda ref, thread=None: 1 / 0)
+    assert R._limit_ways(ref, "x-none") == []
 
 
 @pytest.mark.parametrize("kind", KINDS3)

@@ -1033,6 +1033,8 @@ CALLS = (
     {'from': 'Root', 'to': 'Identity', 'what': '_blocked', 'site': '_j2_settle'},
     # beyond A1.13's table, from the M3 fix wave: Identity's budget point asks Priority to give the five their limits
     {'from': 'Identity', 'to': 'Priority', 'what': 'priority.grant', 'site': '_priority_limits'},
+    # W2-PRIORITY fix (M5.4): the conflict a bargain's limit raises (hops, time or spend) carries the ways forward Priority prices
+    {'from': 'Coordination', 'to': 'Priority', 'what': 'limit_options', 'site': '_line_conflict'},
 )
 
 #: each layer's verdict enums (A1.7 to A1.12)
