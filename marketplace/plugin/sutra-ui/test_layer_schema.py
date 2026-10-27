@@ -8,7 +8,8 @@ import copy
 import hashlib
 import json
 import re
-from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -1061,7 +1062,9 @@ def test_x2_the_interface_is_frozen_at_schema_version_1():
     of the bytes of schemas/layers/interface.v1.json. A change to anything describe() holds fails here; the way out is not a new hash for
     this version but schema version 2 and a migration (A1.21)."""
     assert set(S.INTERFACE_SHA) == {S.SCHEMA_VERSION} == {1}
-    assert S.INTERFACE_SHA[1] == S.interface_sha(), "the interface changed after the freeze: it needs schema version 2 and a migration"
+    assert S.INTERFACE_SHA[1] == S.interface_sha(), "the interface changed after the freeze: it needs schema version 2 and a migration (python layer_schema.py --sha)"
+    out = subprocess.run([sys.executable, str(S.HERE / "layer_schema.py"), "--sha"], capture_output=True, text=True, cwd=str(S.HERE))
+    assert out.returncode == 0 and out.stdout.strip() == S.INTERFACE_SHA[1], out.stderr
     assert S.interface_sha() == hashlib.sha256((S.SCHEMA_FOLDER / "interface.v1.json").read_bytes()).hexdigest()
     assert S.interface_sha() == hashlib.sha256(S._dump(S.describe()).encode("utf-8")).hexdigest() == S.interface_sha(), "and it is stable"
     assert re.fullmatch(r"[0-9a-f]{64}", S.INTERFACE_SHA[1])

@@ -2495,6 +2495,9 @@ if __name__ == '__main__':
     if sys.argv[1:] == ['--write']:
         for path in write_json_schemas():
             print(path)
+    elif sys.argv[1:] == ['--sha']:
+        print(interface_sha())
     else:
-        print('usage: python layer_schema.py --write    (regenerates schemas/layers/*.json from this file)')
+        print('usage: python layer_schema.py --write    (regenerates schemas/layers/*.json from this file)\n'
+              '       python layer_schema.py --sha      (prints interface_sha(), which INTERFACE_SHA[1] is frozen to)')
         sys.exit(2)
