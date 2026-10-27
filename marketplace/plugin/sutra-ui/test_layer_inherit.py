@@ -14,6 +14,7 @@ the name layers.coordination.v2 and puts it in layers._LOADED, and the monkeypat
 """
 import ast
 import copy
+import importlib
 import importlib.util
 import json
 import os
@@ -297,6 +298,70 @@ def test_i1_a_module_with_no_recipe_is_a_model_fault(tmp_path):
         layers.recipe("coordination/v2")
     with pytest.raises(L.ModelFault, match="there is no folder to read the recipe from"):
         V.recipe_of_module(types.SimpleNamespace(LAYER="coordination", VERSION=2, RECIPE="v2.json"))
+
+
+# ---- I1 . a lineage that goes round --------------------------------------------------------------------------------------
+LOOPS = ("pair", "self", "self_patch", "tail")
+
+
+def a_loop(tmp_path, monkeypatch, shape):
+    """Versions of Coordination whose PARENTs go round, in the registry, with no recipe of their own (a patch of its own for
+    self_patch). pair: v2 and v3 name each other. self: v2 names itself. self_patch: v2 names itself and lays a patch over it.
+    tail: v4 extends v2, and v2 and v3 name each other. Returns the module to ask about, always registered as coordination/v2
+    (v4 for tail)."""
+    def put(impl_id, module):
+        monkeypatch.setitem(layers._LOADED, impl_id, module)
+        return module
+
+    where = {"__file__": str(tmp_path / "coordination" / "v3.py")}
+    if shape == "pair":
+        put("coordination/v3", stub(tmp_path, VERSION=3, PARENT="coordination/v2", **where))
+        return put("coordination/v2", stub(tmp_path, PARENT="coordination/v3"))
+    if shape == "self":
+        return put("coordination/v2", stub(tmp_path, PARENT="coordination/v2"))
+    if shape == "self_patch":
+        patch = dict(patch_of(code_step("coord.probe", after="coord.table")), parent="coordination/v2")
+        return put("coordination/v2", stub(tmp_path, patch=patch, PARENT="coordination/v2"))
+    put("coordination/v3", stub(tmp_path, VERSION=3, PARENT="coordination/v2", **where))
+    put("coordination/v2", stub(tmp_path, PARENT="coordination/v3"))
+    return put("coordination/v4", stub(tmp_path, VERSION=4, PARENT="coordination/v2", __file__=str(tmp_path / "coordination" / "v4.py")))
+
+
+@pytest.mark.parametrize("shape", LOOPS)
+def test_i1_a_parent_loop_is_a_model_fault_in_recipe_and_an_answer_to_everything_that_asks(tmp_path, monkeypatch, shape):
+    module = a_loop(tmp_path, monkeypatch, shape)
+    me = C.impl_id(module)
+    with pytest.raises(L.ModelFault, match="repeats in its own lineage"):
+        V.recipe_of_module(module)
+    with pytest.raises(L.ModelFault, match="repeats in its own lineage"):
+        layers.recipe(me)
+    faults = layers.definition_faults(me)
+    assert len(faults) == 1 and "repeats in its own lineage" in faults[0], faults
+    assert layers.definition_faults(module) == faults
+    assert layers.unchanged_steps(me) == set(), "when in doubt a step is not unchanged"
+    assert C.recipe_of(module) is None
+    assert C.case_1(module)[-1].startswith("%s: its recipe" % me) and C.case_1(module)[-1].endswith("is not there")
+    for n, _, case in C.cases():
+        assert isinstance(case(module, {}), list), "case %d answers and does not raise" % n
+    assert C.case_11(module) == [] and C.case_12(module) == [], "an unread recipe is case 1's to report"
+    got = C.case_13(module)
+    assert len(got) == 1 and got[0].startswith("%s: " % me) and "repeats in its own lineage" in got[0], got
+
+
+def test_i1_recipes_names_a_parent_loop_instead_of_running_out_of_stack(tmp_path, monkeypatch):
+    a_tree_with_a_child(tmp_path, monkeypatch, stub(tmp_path, PARENT="coordination/v2"))
+    with pytest.raises(ValueError) as got:
+        layers.recipes()
+    assert str(got.value) == ("the engine definitions are refused: Coordination's recipe (coordination/v2) does not merge "
+                              "(coordination/v2 repeats in its own lineage)")
+    assert not isinstance(got.value, (L.ModelFault, RecursionError))
+
+
+def test_i1_the_definitions_refuse_a_parent_loop_by_name(tmp_path, monkeypatch):
+    a_tree_with_a_child(tmp_path, monkeypatch, stub(tmp_path, PARENT="coordination/v2"))
+    monkeypatch.setattr(importlib.import_module("engine_runtime"), "_DEFS", {})      # no definitions cached: defs() assembles them
+    with pytest.raises(ValueError, match="the engine definitions are refused: Coordination's recipe .coordination/v2. does not merge"):
+        R.defs()
 
 
 def test_i1_roots_recipe_is_the_librarys_template_as_a_copy():
