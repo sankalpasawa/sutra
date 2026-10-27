@@ -8,7 +8,9 @@ sporadic, unannounced look at the engines' state.
   B2  the answer is a run of the target engine in its own slot, charged to its own envelope and gated like any start; "not mine" or
       none, or a gate that holds it, is no answer and the asker takes its normal path; otherwise the asker's step is run once more
       with the answer; later engines read the answered entries, and a run that names one is in its used_by and its step row reads
-      it; Coordination posts request/question to the target and inform/answer to the asker, inside the thread's bounds
+      it; Coordination posts request/question to the target and inform/answer to the asker, inside the thread's bounds: the answering
+      run is not started once the thread has reached its spend or time bound, and an answer that ended past one is not used, the thread
+      is closed at its bound and Identity is told
   B3  Audit's timer start, held by its gate until a minute in the period that a hash of the ref and the period gives: one spot check
       for a cadence at a minute that is not fixed, reading the engines' state only, one audit.spot_check row each, its findings
       to Identity, and a check that wrote outside Audit's rows fails and files nothing
@@ -368,6 +370,186 @@ def test_b2_the_exchange_is_three_posts_in_one_thread_inside_its_bounds(j2, monk
         assert S.validate_act(p["src"], p["dst"], p["msg_type"], p["payload"]) == []
     assert posts[0]["payload"]["what"] == "Write asks Plan about the page list" and posts[2]["payload"]["what"] == "Plan answers Write"
     assert R._line(posts[2]) == "Plan answers Write"
+
+
+def _alarms(R, tid=None):
+    """What Coordination told Identity as an alarm, on the board: [post]."""
+    return [p for p in R.board(R_REF[0]) if p["src"] == "Coordination" and p["dst"] == ["Identity"] and (p.get("payload") or {}).get("word") == "alarm"
+            and (tid is None or p["payload"].get("thread") == tid)]
+
+
+#: the department the test is about, for _alarms (a test sets it once)
+R_REF = [None]
+
+
+def _exchange_thread(R, ref):
+    return next(t for t in R.threads(ref) if t["topic"] == "question")
+
+
+def _no_digits(text):
+    return not __import__("re").search(r"\d", text)
+
+
+def test_b2_an_answer_that_cost_more_than_the_thread_may_spend_closes_it_at_its_bound_and_goes_to_identity(j2, monkeypatch):
+    """Rule 12: a thread between functions is bounded by hops, time and a spend limit, and at a limit it goes to Identity. The spend was
+    recorded and never judged (found by a verifier 2026-10-27): a run that cost 0.7 against a bound of 0.5 closed the thread 'completed'."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    calls = _model(monkeypatch, R, _asks_once(), usd=0.7)
+    assert _write_again(W, R, ref)["status"] == "ok", "the asker takes its normal path"
+    th = _exchange_thread(R, ref)
+    assert th["state"] == "canceled" and th["outcome"] == {"by": "bound", "which": "usd", "holds": "failure"}, th
+    assert th["spent"] > th["bounds"]["usd"] == R.BOUNDS["usd"]
+    e = COORD.entries(ref)[0]
+    assert (e["status"], e["answer"], e["answered_by"], e.get("answered_from")) == ("unanswered", None, None, None)
+    assert e["reason"] == COORD.BOUND_PASSED["usd"] and e["run"], "the owner's words, and the run that was charged"
+    run = next(r for r in W.runs(ref) if r.get("answers"))
+    assert run["engine"] == "Plan" and run["status"] == "ok" and run["spend"]["usd"] > 0.5 and run["what"].endswith("; not used, for " + e["reason"])
+    pages = [c for c in calls if c[0] == "write.page"]
+    plan = json.loads(W.read_files(ref, "Site plan", W.latest(ref, "Site plan")["v"])["site-plan.json"])
+    assert len(pages) == len(plan["pages"]), "no rerun for an answer that was not used: one call for each page"
+    told = _alarms(R)
+    assert len(told) == 1 and told[0]["thread"] != th["id"], "Identity is told once, in a thread of its own (the exchange's is closed)"
+    pl = told[0]["payload"]
+    assert (pl["engine"], pl["thread"], pl["which"]) == ("Plan", th["id"], "usd") and pl["what"] == \
+        "Plan's answer to Write was not used: the answer cost more than the exchange between the engines may spend" and _no_digits(pl["what"])
+    assert S.validate_act("Coordination", ["Identity"], "inform", pl) == []
+    assert [r for r in W.runs(ref) if r["engine"] == "Coordination" and r["what"] == "closed a thread at its bound; what holds: failure"]
+    assert not [p for p in R.board(ref) if (p.get("payload") or {}).get("word") == "answer" and p["thread"] == th["id"]], "a closed thread carries no more"
+    W.run_until_idle(ref, limit=50)
+    heard = [r for r in R.step_rows(ref) if r["step"] == "identity.alarm"]
+    assert heard and heard[-1]["status"] == "ok" and heard[-1]["engine"] == "Identity", "Identity's handler took it"
+    assert [r for r in W.runs(ref) if r["engine"] == "Identity" and r["what"].startswith("heard an alarm: Plan's answer to Write was not used")]
+    assert not [a for a in W.asks(ref) if a["kind"] == "alarm"], "Identity is told; the owner is asked nothing (nothing waits on it)"
+
+
+def test_b2_an_answer_inside_the_bounds_is_told_to_nobody(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once(), usd=0.4)                     # under the 0.5 the thread may spend
+    _write_again(W, R, ref)
+    assert COORD.entries(ref)[0]["status"] == "answered" and _exchange_thread(R, ref)["state"] == "completed" and _alarms(R) == []
+
+
+def test_b2_the_departments_own_bound_is_the_threads(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    d = W.dept(ref)
+    d["bounds"] = {"hops": 4, "seconds": 900, "usd": 0.02}
+    W.save_dept(ref, d)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once(), usd=0.03)                    # inside the default 0.5, past this department's 0.02
+    _write_again(W, R, ref)
+    th = _exchange_thread(R, ref)
+    assert th["bounds"]["usd"] == 0.02 and th["outcome"]["which"] == "usd" and COORD.entries(ref)[0]["status"] == "unanswered" and len(_alarms(R)) == 1
+
+
+def test_b2_an_answer_that_took_longer_than_the_thread_may_goes_the_same_way(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    clock = _clock(monkeypatch, time.time())
+    once = _asks_once()
+
+    def say(step, prompt):
+        if step == "coord.answer":
+            clock.t += R.BOUNDS["seconds"] + 60                       # the model took a quarter of an hour and a minute
+            return {"answer": "Home, About and Timetable"}
+        return once(step, prompt)
+    calls = _model(monkeypatch, R, say)
+    assert _write_again(W, R, ref)["status"] == "ok"
+    th = _exchange_thread(R, ref)
+    assert th["state"] == "canceled" and th["outcome"] == {"by": "bound", "which": "seconds", "holds": "failure"}, th
+    e = COORD.entries(ref)[0]
+    assert e["status"] == "unanswered" and e["reason"] == COORD.BOUND_PASSED["seconds"] and e["answer"] is None
+    pl = _alarms(R)[0]["payload"]
+    assert pl["which"] == "seconds" and pl["what"] == "Plan's answer to Write was not used: the answer took longer than the exchange between the engines may"
+    assert len([c for c in calls if c[0] == "write.page"]) == len(json.loads(W.read_files(ref, "Site plan", W.latest(ref, "Site plan")["v"])["site-plan.json"])["pages"])
+
+
+def test_b2_a_thread_the_sweep_closed_at_its_time_while_the_answer_ran_is_told_to_identity_too(j2, monkeypatch):
+    """The system clock closes a thread past its time at every tick, and for an engine's question it says nothing to Identity: the
+    exchange does, and the answer that came after the closing is not used."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    once = _asks_once()
+
+    def say(step, prompt):
+        if step == "coord.answer":
+            ths = R.threads(ref)
+            next(t for t in ths if t["topic"] == "question")["age_s"] = R.BOUNDS["seconds"] - 1.0
+            R._save_threads(ref, ths)
+            assert R.sweep(ref), "one tick of the system clock closes it"
+            return {"answer": "Home, About and Timetable"}
+        return once(step, prompt)
+    _model(monkeypatch, R, say)
+    assert _write_again(W, R, ref)["status"] == "ok"
+    th = _exchange_thread(R, ref)
+    assert th["state"] == "canceled" and th["outcome"]["which"] == "seconds"
+    assert COORD.entries(ref)[0]["status"] == "unanswered" and COORD.entries(ref)[0]["reason"] == COORD.BOUND_PASSED["seconds"]
+    assert len(_alarms(R)) == 1
+    closings = [r for r in W.runs(ref) if r["engine"] == "Coordination" and r["what"].startswith("closed a thread at its bound")]
+    assert len(closings) == 1, "the sweep's row, and not a second one for the same thread"
+
+
+def _exchange(R, ref):
+    """A question and its going on to Plan, posted as the exchange posts them, and not yet answered: (the entry, the post to Plan)."""
+    e = dict(COORD._draft(ref, {"engine": "Write", "slot": "Write@site-plan.v9"}, ASK, 1), id="Q-1")
+    p1 = R.post(ref, "Write", ["Coordination"], "request", {"word": "question", "entry": e, "what": COORD._said(e)})
+    p2 = R.post(ref, "Coordination", ["Plan"], "request", {"word": "question", "entry": e, "what": COORD._said(e)}, thread=p1["thread"])
+    return e, p2
+
+
+@pytest.mark.parametrize("field,which", [("spent", "usd"), ("age_s", "seconds")])
+def test_b2_an_exchange_that_has_already_reached_a_bound_does_not_start_the_answering_run(j2, monkeypatch, field, which):
+    """Refused before it starts, with the reason in the owner's words: nothing is run, nothing is spent, the thread is closed at its bound
+    and Identity is told. A bound that is met is enough (the run would spend past it)."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R_REF[0] = ref
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    calls = _model(monkeypatch, R, _asks_once())
+    e, p2 = _exchange(R, ref)
+    ths = R.threads(ref)
+    th = next(t for t in ths if t["id"] == p2["thread"])
+    below = dict(th, **{field: th["bounds"]["usd" if field == "spent" else "seconds"] - 0.1})
+    th[field] = th["bounds"]["usd" if field == "spent" else "seconds"]
+    R._save_threads(ref, ths)
+    assert COORD.thread_bound(below, reached=True) is None and COORD.thread_bound(R._thread(ref, th["id"]), reached=True) == which
+    runs = len(W.runs(ref))
+    answer, why, row = COORD.answer_run(ref, W.dept(ref), e, p2, None)
+    assert (answer, row) == (None, None) and why == COORD.BOUND_REACHED[which]
+    assert [c for c in calls if c[0] == "coord.answer"] == [] and not [r for r in W.runs(ref) if r.get("answers")], "it was not asked"
+    closed = R._thread(ref, th["id"])
+    assert closed["state"] == "canceled" and closed["outcome"] == {"by": "bound", "which": which, "holds": "failure"}
+    told = _alarms(R, th["id"])
+    assert len(told) == 1 and told[0]["payload"]["what"] == "Plan was not asked to answer Write: " + COORD.BOUND_REACHED[which]
+    assert len(W.runs(ref)) == runs + 1, "the row that says the thread was closed at its bound, and no run of Plan's"
+    COORD.answer_run(ref, W.dept(ref), e, p2, None)                   # asked again, it is told once
+    assert len(_alarms(R, th["id"])) == 1
+
+
+def test_b2_the_bound_reads_as_the_sweep_reads_it():
+    """A bound that is 0 or not set is no bound (coord_bounds says `or 1e12`); the age is the sweep's or the time since it opened."""
+    th = {"state": "working", "bounds": {"hops": 4, "seconds": 900, "usd": 0.5}, "spent": 0.5, "age_s": 0.0, "opened": "2026-10-27T10:00:00+05:30"}
+    at = COORD.W._ts(th["opened"])
+    assert COORD.thread_bound(th, now=at + 10) is None and COORD.thread_bound(th, reached=True, now=at + 10) == "usd"
+    assert COORD.thread_bound(dict(th, spent=0.51), now=at + 10) == "usd"
+    assert COORD.thread_bound(th, now=at + 901) == "seconds" and COORD.thread_bound(th, now=at + 900) is None
+    assert COORD.thread_bound(th, reached=True, now=at + 900) == "seconds"
+    assert COORD.thread_bound(dict(th, age_s=901.0, opened=""), now=at) == "seconds", "the sweep's count, when it has no start to count from"
+    assert COORD.thread_bound(dict(th, bounds={"seconds": 0, "usd": None}, spent=99), now=at + 99999) is None
+    assert COORD.thread_bound(dict(th, state="canceled", outcome={"by": "bound", "which": "seconds"}), now=at) == "seconds"
+    assert COORD.thread_bound(dict(th, state="canceled", outcome={"by": "bound", "which": "hops"}), now=at) is None, "the hops are post()'s"
+    assert COORD.thread_bound(None) is None
 
 
 @pytest.mark.parametrize("said", ["Not mine.", "not mine", "", "None", "n/a"])
