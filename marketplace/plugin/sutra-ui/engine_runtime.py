@@ -7157,5 +7157,8 @@ def board_view(ref):
                     "opened": th["opened"], "closed": th.get("closed"), "outcome": th.get("outcome"), "bounds": th["bounds"],
                     "hops": th["hops"], "default": th["default"],
                     "posts": [{"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"],
-                               "word": (p.get("payload") or {}).get("word"), "line": _line(p)} for p in mine]})
+                               "word": (p.get("payload") or {}).get("word"), "line": _line(p),
+                               # what a post is beyond its act, for a read that says it in words (website_api messages): a
+                               # proposal of Priority's that asks for less, and a line that is the owner's own words
+                               "asks_less": bool((p.get("payload") or {}).get("counter")), "quoted": _quoted(p)} for p in mine]})
     return {"threads": out[:60], "any": bool(posts)}

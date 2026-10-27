@@ -353,6 +353,40 @@ def board(ref: str):
     return out
 
 
+#: Priority's proposal that asks for less is a proposal on the board (a post with `counter`); every row says it as what it is
+COUNTER_SAYS = "asks for less"
+MESSAGE_FNS = {f.lower(): f for f in functions_view.FUNCS}
+
+
+@router.get("/{ref}/messages")
+def messages(ref: str, fn: str = "", after: int = 0):
+    """What the functions say to each other, read only (PRD M10.1; screen S13): [{n, from, to, act_words, summary, at}],
+    oldest first, from the board's own read (engine_runtime.board_view). `fn` keeps the rows where that function (or, with
+    `engines`, an engine) is the sender or a recipient; `after` keeps the rows after that `n`, so a client reads only
+    what is new. The act is said in the owner's words (said yes, asked for less, said no), the summary as the board's line
+    in them, the owner's own words as they said them; the owner's own posts are not repeated (Chat holds them), the
+    person is `You` where a function speaks to them; no payload and no private key (j2_runtime.PRIVATE_KEYS) leaves it."""
+    rt = _rt(ref)
+    want = (fn or "").strip().lower()
+    if want and want != "engines" and want not in MESSAGE_FNS:
+        raise HTTPException(400, detail="say which function: " + ", ".join(MESSAGE_FNS.values()) + " or engines")
+    posts = sorted((p for th in rt.board_view(ref)["threads"] for p in th["posts"]), key=lambda p: p["n"])
+    out = []
+    for p in posts:
+        names = [p["src"]] + list(p["dst"])
+        if p["src"] == rt.OWNER or p["n"] <= after:
+            continue
+        if want == "engines" and not [x for x in names if x not in rt.FUNCTIONS and x not in (rt.OWNER, "Root")]:
+            continue
+        if want in MESSAGE_FNS and MESSAGE_FNS[want] not in names:
+            continue
+        line = p["line"] if p["quoted"] else owner_words.plain(p["line"])
+        out.append({"n": p["n"], "from": p["src"], "to": ["You" if x == rt.OWNER else x for x in p["dst"]],
+                    "act_words": COUNTER_SAYS if p["asks_less"] else rt.ACT_SAYS.get(p["msg_type"], (p["msg_type"],))[0],
+                    "summary": line, "at": p["at"]})
+    return functions_view._clean(out)
+
+
 @router.post("/{ref}/hold")
 async def hold(ref: str, request: Request):
     """The owner pins a step on its rung, or lets it go."""

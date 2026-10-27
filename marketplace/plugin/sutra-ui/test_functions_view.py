@@ -40,6 +40,11 @@ Named claims:
       before Root's check no timetable at all, so the pane says 'No plan yet' (S7, Empty)
   F13 the engine card's read (PRD M4.7, S17): its place in the timetable, the motor's facts and one row for each of
       the five, the function that holds it saying so; served with the engine route
+  F14 the messages between the functions (PRD M10.1, S13): GET /{ref}/messages?fn=&after= is the board in the owner's
+      words, read only: a filter keeps only the rows where that function is the sender or a recipient, `after` only
+      what is newer, the owner's own posts are not repeated, an act is said yes, asked for less or said no, never by its
+      id, no payload and no private key leaves it, a department that is not there or not on the runtime is a 404, and
+      the route does not take /api/native/journeys
 
 Each department is born the way the app makes one (website_dept.create), then its record is set to the state under
 test, so what is read is the record a real department keeps.
@@ -1499,3 +1504,130 @@ def test_f13_the_engine_card_names_its_slot_and_what_each_of_the_five_is_doing(m
     old, _ = W.create("dref-old01", "Old", None, kind="website")
     if W.dept(old["ref"]).get("runtime") != 2:
         assert F.engine_card(old["ref"], "Write") is None
+
+
+# ---- F14 (PRD M10.1): the messages between the functions, read only ------------------------------------------------------
+def _say(W, R, src, dst, act, payload, tid):
+    """One post on the board and its thread, as engine_runtime.post writes them (the first post of a thread opens it)."""
+    n = len(R.board(REF)) + 1
+    R._append(REF, "board.jsonl", {"n": n, "src": src, "dst": [dst], "msg_type": act, "thread": tid, "hop": 1, "about": None,
+                                   "payload": payload, "ack_id": None, "by": None, "at": W.now()})
+    ths = R.threads(REF)
+    if not [t for t in ths if t["id"] == tid]:
+        ths.append({"id": tid, "opened_by": src, "with": [dst], "topic": payload.get("word") or act, "protocol": "propose",
+                    "decider": dst, "bounds": dict(R.BOUNDS), "default": "cancel", "state": "working", "hops": 1, "spent": 0.0,
+                    "age_s": 0.0, "opened": W.now(), "closed": None, "outcome": None})
+        R._save_threads(REF, ths)
+    return n
+
+
+OWNERS_WORDS = "Add a page for the careers; Priority's counter is the deal we want"
+SECRET = "SECRET-THOUGHT-do-not-ship"
+
+
+def _spoken(W, R):
+    """The board of a department in which every kind of row has been said once: a bargain (propose, ask for less, say yes),
+    the owner's words handed on whole, the owner's own post, Audit's finding with private keys on its payload, a no of
+    Identity's (refuse), a line with a path, and what Identity tells the owner."""
+    return {
+        "propose": _say(W, R, "Adaptation", "Priority", "propose", {"word": "line", "line": "Plan, Write, Check, Publish"}, "x-m1"),
+        "less": _say(W, R, "Priority", "Adaptation", "propose", {"word": "line", "counter": True, "why": "the room today fits three"}, "x-m1"),
+        "yes": _say(W, R, "Priority", "Adaptation", "accept-proposal", {"word": "line"}, "x-m1"),
+        "handed": _say(W, R, "Identity", "Adaptation", "request", {"word": "line", "words": OWNERS_WORDS}, "x-m2"),
+        "owner": _say(W, R, "Owner", "Identity", "request", {"word": "request", "words": "and one more thing"}, "x-m3"),
+        "found": _say(W, R, "Audit", "Identity", "inform", {"word": "finding", "claim": "the size filter does nothing in /Users/x/site/index.html",
+                                                          "private_reasoning": SECRET, "scratchpad": SECRET, "token": SECRET}, "x-m4"),
+        "no": _say(W, R, "Identity", "Coordination", "refuse", {"word": "verdict", "answer": "refuse"}, "x-m5"),
+        "told": _say(W, R, "Identity", "Owner", "inform", {"word": "request", "done": "handed to Adaptation"}, "x-m6"),
+    }
+
+
+def test_f14_the_messages_are_the_boards_posts_in_the_owners_words_oldest_first_and_not_the_owners_own(mods):
+    W, R, J, F = mods
+    n = _spoken(W, R)
+    got = _client().get("/api/native/%s/messages" % REF)
+    assert got.status_code == 200
+    rows = got.json()
+    assert isinstance(rows, list)
+    assert all(set(r) == {"n", "from", "to", "act_words", "summary", "at"} for r in rows), "the five fields and the cursor, no payload"
+    assert [r["n"] for r in rows] == sorted(r["n"] for r in rows) and n["owner"] not in [r["n"] for r in rows], "oldest first; the owner's post is Chat's"
+    row = {r["n"]: r for r in rows}
+    assert (row[n["propose"]]["from"], row[n["propose"]]["to"], row[n["propose"]]["act_words"]) == ("Adaptation", ["Priority"], "proposes")
+    assert row[n["propose"]]["summary"] == "Plan, Write, Check, Publish"
+    assert (row[n["less"]]["act_words"], row[n["less"]]["summary"]) == ("asks for less", "the room today fits three"), "a counter is an ask for less"
+    assert (row[n["yes"]]["act_words"], row[n["yes"]]["summary"]) == ("says yes", ""), "a yes says nothing more than its act"
+    assert row[n["handed"]]["summary"] == OWNERS_WORDS, "the owner's own words a function carries on stand as they said them"
+    assert (row[n["no"]]["act_words"], row[n["told"]]["to"]) == ("says no", ["You"]), "refuse is said no; the person is You"
+    assert re.match(r"\d{4}-\d\d-\d\dT", row[n["propose"]]["at"])
+
+
+def test_f14_a_filter_keeps_only_the_rows_where_the_function_is_the_sender_or_a_recipient(mods):
+    W, R, J, F = mods
+    n = _spoken(W, R)
+    c = _client()
+    every = c.get("/api/native/%s/messages" % REF).json()
+    for fn in FUNCS:
+        rows = c.get("/api/native/%s/messages?fn=%s" % (REF, fn.lower())).json()
+        assert rows and all(fn in [r["from"]] + r["to"] for r in rows), fn
+        assert {r["n"] for r in rows} == {r["n"] for r in every if fn in [r["from"]] + r["to"]}, "and every such row: " + fn
+    assert c.get("/api/native/%s/messages?fn=Priority" % REF).json() == c.get("/api/native/%s/messages?fn=priority" % REF).json(), "a name, in either case"
+    prio = {r["n"] for r in c.get("/api/native/%s/messages?fn=priority" % REF).json()}
+    assert prio == {n["propose"], n["less"], n["yes"]} and n["found"] not in prio, "Audit's finding is Audit's and Identity's, not Priority's"
+    assert {r["n"] for r in c.get("/api/native/%s/messages?fn=audit" % REF).json()} == {n["found"]}
+    assert c.get("/api/native/%s/messages?fn=engines" % REF).json() == [], "no engine has spoken"
+    _say(W, R, "Write", "Check", "inform", {"word": "page", "what": "the Careers page is ready"}, "x-m7")
+    engines = c.get("/api/native/%s/messages?fn=engines" % REF).json()
+    assert [(r["from"], r["to"], r["act_words"]) for r in engines] == [("Write", ["Check"], "tells")]
+    bad = c.get("/api/native/%s/messages?fn=marketing" % REF)
+    assert bad.status_code == 400 and "say which function" in bad.json()["detail"]
+
+
+def test_f14_after_keeps_only_what_is_newer(mods):
+    W, R, J, F = mods
+    n = _spoken(W, R)
+    c = _client()
+    rows = c.get("/api/native/%s/messages?after=%d" % (REF, n["handed"])).json()
+    assert [r["n"] for r in rows] == [n["found"], n["no"], n["told"]], "after the owner's post, the rest, and not the owner's own"
+    assert c.get("/api/native/%s/messages?after=%d" % (REF, n["told"])).json() == []
+    assert [r["n"] for r in c.get("/api/native/%s/messages?fn=identity&after=%d" % (REF, n["yes"])).json()] == [n["handed"], n["found"], n["no"], n["told"]]
+    assert len(c.get("/api/native/%s/messages?after=-5" % REF).json()) == len(c.get("/api/native/%s/messages" % REF).json()), "before the first is all"
+    assert c.get("/api/native/%s/messages?after=soon" % REF).status_code == 422
+
+
+def test_f14_no_payload_no_private_key_no_act_id_no_path_and_nothing_written(mods):
+    W, R, J, F = mods
+    n = _spoken(W, R)
+    c = _client()
+    home = str(W.ddir(REF))
+    snap = {p: os.path.getmtime(os.path.join(home, p)) for p in os.listdir(home)}
+    got = c.get("/api/native/%s/messages" % REF)
+    text = got.text
+    assert SECRET not in text and "payload" not in text, "a post's payload does not leave"
+
+    def keys(v):
+        return {str(k).lower() for k, x in v.items()} | set().union(*[keys(y) for y in v.values() if isinstance(y, dict)]) if isinstance(v, dict) else \
+            set().union(set(), *[keys(y) for y in v]) if isinstance(v, list) else set()
+    assert not keys(got.json()) & J.PRIVATE_KEYS
+    assert "/Users/x" not in text and "index.html" in text, "names, never paths"
+    functions_say = [r for r in got.json() if r["n"] != n["handed"]]       # the owner's own words stand as they said them
+    assert not _banned(functions_say), "the owner's words, never grant, counter or refuse"
+    assert not re.search(r"accept-proposal|reject-proposal|\brefuse\b|\bGRANT|\bCOUNTER", json.dumps(functions_say)), "and never an act by its id"
+    assert {p: os.path.getmtime(os.path.join(home, p)) for p in os.listdir(home)} == snap, "a read writes nothing"
+    for verb in ("post", "put", "delete", "patch"):
+        assert getattr(c, verb)("/api/native/%s/messages" % REF).status_code == 405, "no composer: " + verb
+
+
+def test_f14_a_department_that_is_not_there_or_not_on_the_runtime_is_a_404_and_journeys_stay_theirs(mods, monkeypatch):
+    W, R, J, F = mods
+    c = _client()
+    assert c.get("/api/native/dref-nothing/messages").status_code == 404
+    monkeypatch.setenv("SUTRA_ENGINE_RUNTIME", "1")
+    W.create("dref-old0001", "The first build", None)
+    assert c.get("/api/native/dref-old0001/messages").status_code == 404, "a department not on the engine runtime"
+    monkeypatch.delenv("SUTRA_ENGINE_RUNTIME")
+    assert c.get("/api/native/%s/messages" % REF).json() == [], "a department that has not spoken: an empty list"
+    got = c.get("/api/native/journeys")
+    assert got.status_code == 200 and "journeys" in got.json(), "the route is not read as a department's ref"
+    one = c.get("/api/native/journeys/J1")
+    assert one.status_code == 404 and one.json()["detail"] == {"code": "UNKNOWN_JOURNEY"}, "the one-journey route is still the journeys'"
+    assert c.get("/api/native/journeys/messages").json()["detail"] == "no website department here", "and `journeys` is no department's ref"
