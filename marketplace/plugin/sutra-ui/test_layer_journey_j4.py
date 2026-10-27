@@ -106,7 +106,7 @@ class TestJ4Walks(Ruling):
     def test_walk_a_rule_is_born_kept_read_and_enforced(self):
         """Steps 1 to 6: 'every page ends with: Call 108.' is restated and put back (1, 2), kept on the owner's stamp (3), shown to
         every agent's card (4), read against every page by Check (5), and a build that breaks it is sent back twice, never goes
-        live, and the owner is told (6). The end of step 6 is a tell: M9.5 makes it an options ask (BL-4)."""
+        live, and the owner is told (6), and given the ways out as one ask (M9.5, J2.7)."""
         W, R = self.W, self.R
         self.live()
         mark = self.mark(REF)
@@ -148,6 +148,8 @@ class TestJ4Walks(Ruling):
         self.assertEqual(len(said), 3, said)
         self.assertEqual(len([s for s in said if s.endswith("Sent back to be rewritten.")]), 2)
         self.assertIn("two rewrites did not mend it. Say the rule another way, or drop it.", said[-1])
+        (card,) = [a for a in W.asks(REF) if a["kind"] == "blocked" and a["status"] == "pending"]
+        self.assertEqual([o["id"] for o in card["options"]], ["words", "leave:" + kept["id"], "stop"], "the end is an ask with the ways out")
         self.assertFollowed("J4", mark, ["1", "2", "3", "4", "5", "6"])
 
 
