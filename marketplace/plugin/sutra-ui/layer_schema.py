@@ -629,7 +629,9 @@ DEFS.update({
     'adaptation.round': obj({'schema_version': integer(1), 'round': integer(1, 99), 'at': text(40), 'cycle_id': nullable(text(80)),
                              'correction': text(600), 'fixes': items(ref('id.finding')), 'covers': items(ref('id.item')),
                              'estimate': ref('priority.estimate'), 'status': enum('proposed', 'granted', 'refused', 'filed', 'read'),
-                             'reading': text(40), 'brief_v': integer(1), 'thread': text(80)}, required=('round', 'correction', 'covers', 'status')),
+                             'reading': text(40), 'brief_v': integer(1), 'thread': text(80),
+                             # a round a limit of its thread closed (rule 12; seconds, usd or hops) says which: Priority never answered it
+                             'bound': nullable(text(40))}, required=('round', 'correction', 'covers', 'status')),
     'coordination.question': obj({'schema': const('board/1'), 'id': word(r'^Q-[1-9][0-9]*$', 8), 'asked_by': ref('name'), 'to': ref('name'),
                                   'about': text(120), 'question': text(600), 'answer': nullable(text(2000)),
                                   'answered_by': nullable(ref('name')), 'status': enum(*QUESTION_STATUSES), 'reason': nullable(text(300)),

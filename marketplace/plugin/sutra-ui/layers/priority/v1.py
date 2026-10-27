@@ -819,13 +819,16 @@ def _read_round(ctx, pl):
 def round_within_ceiling(read):
     """The goal's ceiling holds a round or it does not, by code (M9.2): the round, the calls and the money all inside it.
     {answer: accept or reject, why: in money and room, over: what is past}. The offline answer of the bargain, and the measure
-    its covering holds a model's yes to."""
+    its covering holds a model's yes to. A no is said with no figure in it ('the goal's last round is used'): it reaches the
+    owner as the why of a card, where a count at rest is never printed (the price is on the row, and on the ways out's cost lines)."""
     c, n, est, room = read['ceiling'], int(read['round']), read['estimate'], read['room']
     over = []
-    if n < 1 or n > int(c['rounds']):
-        over.append('round %d against a ceiling of %d rounds' % (n, int(c['rounds'])))
+    if n < 1:
+        over.append('there is no such round')
+    elif n > int(c['rounds']):
+        over.append("the goal's last round is used")
     if int(est['calls']) > int(room['calls']) or round(float(est['usd']), 4) > round(float(room['usd']), 4):
-        over.append('about %s against the %s left' % (_say_cost(est['calls'], est['usd']), _say_cost(max(0, room['calls']), max(0.0, room['usd']))))
+        over.append('the round would cost more than the goal has left to spend')
     if over:
         return {'answer': 'reject', 'why': 'no room in the ceiling: ' + '; '.join(over), 'over': over}
     return {'answer': 'accept', 'over': [],
@@ -881,11 +884,25 @@ def ceiling_raise(c, n, est, spent):
     return to, to != want
 
 
+#: the numbers a label spells out; past the last, the label says 'more rounds' and no figure
+NUMBER_WORDS = ('no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve')
+
+
+def _more_rounds(n):
+    """The rounds a raise adds, as a label says them: 'two more rounds'. A label is the owner's choice and a figure in a label is a
+    count at rest (the screen's words rule), so the number is spelled; the cost line beside it carries the figures, as the price
+    the owner chooses by."""
+    if isinstance(n, int) and 0 < n < len(NUMBER_WORDS):
+        return '%s more round%s' % (NUMBER_WORDS[n], '' if n == 1 else 's')
+    return 'more rounds'
+
+
 def ceiling_option(c, to, held):
-    """The option to raise the goal's ceiling to `to` (option.raise, what 'ceiling'): the params carry what it becomes."""
+    """The option to raise the goal's ceiling to `to` (option.raise, what 'ceiling'): the params carry what it becomes. The label
+    spells the rounds it adds ('Add budget for two more rounds'); the cost line says the figures."""
     more_rounds = to['rounds'] - int(c['rounds'])
     more_calls, more_usd = to['calls'] - int(c['calls']), round(to['usd'] - float(c['usd']), 4)
-    return W.option('raise:ceiling', ('Add %d more round%s' % (more_rounds, '' if more_rounds == 1 else 's')) if more_rounds else 'Add budget for the goal',
+    return W.option('raise:ceiling', ('Add budget for ' + _more_rounds(more_rounds)) if more_rounds else 'Add budget for the goal',
                     "about %s more; the goal's ceiling becomes %d rounds, %s%s" % (_more(more_calls, more_usd), to['rounds'], _say_cost(to['calls'], to['usd']),
                                                                                      ' (the most allowed)' if held else ''),
                     {'what': 'ceiling', 'rounds': to['rounds'], 'calls': to['calls'], 'usd': to['usd']})

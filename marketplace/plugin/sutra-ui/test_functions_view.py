@@ -43,8 +43,9 @@ Named claims:
   F14 the messages between the functions (PRD M10.1, S13): GET /{ref}/messages?fn=&after= is the board in the owner's
       words, read only: a filter keeps only the rows where that function is the sender or a recipient, `after` only
       what is newer, the owner's own posts are not repeated, an act is said yes, asked for less or said no, never by its
-      id, no payload and no private key leaves it, a department that is not there or not on the runtime is a 404, and
-      the route does not take /api/native/journeys
+      id, no payload and no private key leaves it, Audit's reading is said in words ('reading of Live site v1: D2 not
+      met, D6 to confirm') and a line a function wrote is said in the owner's words, a department that is not there or
+      not on the runtime is a 404, and the route does not take /api/native/journeys
 
 Each department is born the way the app makes one (website_dept.create), then its record is set to the state under
 test, so what is read is the record a real department keeps.
@@ -1616,6 +1617,55 @@ def test_f14_no_payload_no_private_key_no_act_id_no_path_and_nothing_written(mod
     assert {p: os.path.getmtime(os.path.join(home, p)) for p in os.listdir(home)} == snap, "a read writes nothing"
     for verb in ("post", "put", "delete", "patch"):
         assert getattr(c, verb)("/api/native/%s/messages" % REF).status_code == 405, "no composer: " + verb
+
+
+def _reading(**more):
+    """What Audit tells Identity of a version it read (engine_runtime.audit_tell, act.reading): the ids of the items by verdict, the
+    ids of its findings, and the reading's own id, none of which is a word a person reads."""
+    return dict({"word": "reading", "reading": "r-1a2b3c4d", "artifact": "Live site", "v": 1, "read": True, "met": ["D1", "D3"], "not_met": ["D2"],
+                 "to_confirm": ["D6"], "findings": ["F1"], "high": False}, **more)
+
+
+def test_f14_audits_reading_says_what_it_read_and_what_it_found_in_words_and_never_in_its_payload_keys(mods):
+    """The PRD's own S13 row (found by a verifier 2026-10-27): 'Audit to Identity, tells: reading of Live site v1, D2 not met, D6 to
+    confirm'. A reading carries met, not_met and to_confirm and no line of its own, so its summary was empty."""
+    W, R, J, F = mods
+    c = _client()
+    yes = _say(W, R, "Audit", "Identity", "inform", _reading(), "x-r1")
+    clean = _say(W, R, "Audit", "Identity", "inform", _reading(not_met=[], to_confirm=[], findings=[], v=2), "x-r2")
+    several = _say(W, R, "Audit", "Identity", "inform", _reading(not_met=["D2", "D4"], to_confirm=[], v=3), "x-r3")
+    unread = _say(W, R, "Audit", "Identity", "inform", _reading(read=False, met=[], not_met=[], to_confirm=[], findings=[], v=4), "x-r4")
+    rows = c.get("/api/native/%s/messages" % REF).json()
+    row = {r["n"]: r for r in rows}
+    assert [(row[n]["from"], row[n]["to"], row[n]["act_words"]) for n in (yes, clean, several, unread)] == [("Audit", ["Identity"], "tells")] * 4
+    assert row[yes]["summary"] == "reading of Live site v1: D2 not met, D6 to confirm"
+    assert row[clean]["summary"] == "reading of Live site v2: every item met", "a reading with nothing against it says so"
+    assert row[several]["summary"] == "reading of Live site v3: D2, D4 not met", "each item that is not met, by its name"
+    assert row[unread]["summary"] == "reading of Live site v4: not read", "a version that was not read says so, never a blank"
+    shown = json.dumps([row[n]["summary"] for n in (yes, clean, several, unread)])
+    assert not re.search(r"not_met|to_confirm|\bmet\b.*\[|r-1a2b3c4d|\bF1\b|\bread\b\s*:|true|false", shown), "no payload key, no id, no flag: " + shown
+    assert not _banned(rows), "and the owner's words"
+    board = {p["n"]: p for th in R.board_view(REF)["threads"] for p in th["posts"]}
+    assert board[yes]["line"] == row[yes]["summary"], "the board says the reading too, where it printed an act with nothing after it"
+
+
+def test_f14_a_line_that_carries_an_inside_phrase_is_said_in_the_owners_words_and_the_owners_own_words_are_not(mods):
+    """The route's own-words step (found by a verifier 2026-10-27): the sample board had no line with an inside phrase in it, so the
+    step could be removed and every F14 test stayed green. A line a function wrote is said in the owner's words; words the owner
+    said, which a function carries on whole, are left as they were said."""
+    W, R, J, F = mods
+    import owner_words
+    inside = [(a, b) for a, b in owner_words.BARGAIN_WORDS if a == "Take the counter, or take it to Identity"]
+    assert inside, "the phrase is one of the bargain's inside phrases"
+    said = _say(W, R, "Adaptation", "Identity", "propose", {"word": "line", "line": "Take the counter, or take it to Identity"}, "x-p1")
+    own = _say(W, R, "Identity", "Adaptation", "request", {"word": "line", "words": "Take the counter, or take it to Identity"}, "x-p2")
+    rows = _client().get("/api/native/%s/messages" % REF).json()
+    row = {r["n"]: r for r in rows}
+    assert row[said]["summary"] == "Take Priority's ask for less, or take it to Identity", row[said]["summary"]
+    assert "ask for less" in row[said]["summary"] and "counter" not in row[said]["summary"].lower()
+    assert [r for r in rows if _banned(r) and r["n"] != own] == [], "none of the functions' lines holds grant, counter or refuse"
+    assert _banned(row[own]), "(and the owner's, which is theirs, is the one that does)"
+    assert row[own]["summary"] == "Take the counter, or take it to Identity", "the owner's own words stand as they were said"
 
 
 def test_f14_a_department_that_is_not_there_or_not_on_the_runtime_is_a_404_and_journeys_stay_theirs(mods, monkeypatch):

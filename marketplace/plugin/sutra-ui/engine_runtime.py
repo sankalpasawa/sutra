@@ -7048,12 +7048,32 @@ def _decided(mine):
     return {"runs": len(mine), "differing": 0, "shape_drift": 0, "pass": round(ok / len(mine), 3), "marked": 0, "misses": 0, "usd": 0.0}
 
 
+def _reading_line(pl):
+    """What Audit's reading of a version says, in words (PRD S13: 'reading of Live site v1: D2 not met, D6 to confirm'), from the
+    ids of the items by verdict that the post carries (act.reading): the items not met and the items to confirm by their names, and
+    'every item met' when nothing is against the version. A version that was not read says so. The ids of the reading and of its
+    findings, and the payload's keys, are not words and are not printed."""
+    head = "reading of %s v%d" % (pl["artifact"], pl["v"])
+    if pl.get("read") is False:
+        return head + ": not read"
+    said = []
+    for key, tail in (("not_met", "not met"), ("to_confirm", "to confirm")):
+        ids = [str(i) for i in pl.get(key) or [] if str(i).strip()] if isinstance(pl.get(key), list) else []
+        if ids:
+            said.append("%s %s" % (", ".join(ids), tail))
+    if not said and pl.get("met"):
+        said.append("every item met")
+    return (head + (": " + ", ".join(said) if said else ""))[:220]
+
+
 def _line(p):
     """What a post said, in words. A post that carries only an id or a topic said nothing more than its act, and the
     screen shows the act: an id or a bare topic word is never printed as if it were speech."""
     pl = p.get("payload") or {}
     if pl.get("word") == "verdict" and pl.get("answer") in GATE_SAYS and not pl.get("why"):
         return "The verdict: " + GATE_SAYS[pl["answer"]]      # a gate's verdict in the owner's words, never admit or refuse
+    if pl.get("word") == "reading" and pl.get("artifact") and isinstance(pl.get("v"), int):
+        return _reading_line(pl)
     for k in ("words", "objective", "claim", "done", "reflected", "line", "what", "why", "cost", "answer"):
         if pl.get(k):
             # the person's own words are shown whole; a function's line is cut short (found live 2026-09-28: a
