@@ -1048,8 +1048,7 @@ PRICES_SHOWN = 12
 #: the bargain's inside words, and what the screen says in their place (said yes, asked for less, said no; never grant,
 #: counter or refuse). The agent is taught accept, counter and reject, and writes its why in its own sentence, so a why may
 #: use them or grant and refuse. owner_words.plain says phrases and never a bare verb, so the why is read again word by word;
-#: every form is spelt out, so the sentence keeps its grammar. 'order', which the rules also keep off the screen as a verb,
-#: is the ordinary word for the order of a line, and is left.
+#: every form is spelt out, so the sentence keeps its grammar.
 INSIDE = types.MappingProxyType({
     'grant': 'say yes to', 'grants': 'says yes to', 'granted': 'said yes to', 'granting': 'saying yes to',
     'reject': 'say no to', 'rejects': 'says no to', 'rejected': 'said no to', 'rejecting': 'saying no to',
@@ -1061,22 +1060,39 @@ INSIDE = types.MappingProxyType({
 _INSIDE_RE = r'\b(?:%s)\b' % '|'.join(re.escape(w) for w in sorted(INSIDE, key=len, reverse=True))
 
 
+#: 'order' as a verb, which the screen keeps off as it keeps off grant (Priority prices and holds and never orders), said as
+#: 'ask for'. Only where it is a verb for certain: after a subject that did the ordering, or a modal. 'order' as the word for
+#: a line's order ('in order', 'the order of the line', 'Priority order: Plan, Write', 'ordered by cost') is the ordinary word, and is left.
+_ORDERS_AS = types.MappingProxyType({'order': 'ask for', 'orders': 'asks for', 'ordered': 'asked for'})
+_ORDER_RE = re.compile(
+    r'\b(?:(?P<by>Priority|it|he|she|which|that)(?P<s1>\s+)(?P<v1>orders|ordered)'
+    r'|(?P<mod>I|we|you|they|to|will|would|shall|should|must|can|could|may|might|not|never|cannot|don\'t|doesn\'t|didn\'t|won\'t)(?P<s2>\s+)(?P<v2>order))\b'
+    r'(?![\w-])(?!\s+by\b)', re.I)
+
+
 def _said_plainly(text):
     """A why in the owner's words, the inside ones (INSIDE) said again: 'I reject this; I would counter with two' is 'I say
-    no to this; I would ask for less with two'. A noun after its article (the grant) is a yes. A capital stays a capital."""
+    no to this; I would ask for less with two'. A noun after its article (the grant) is a yes. 'Order' as a verb (Priority
+    never orders) is 'ask for'. A capital stays a capital."""
     def said(m):
         word, out = m.group(0), INSIDE[m.group(0).lower()]
         return out.upper() if len(word) > 1 and word.isupper() else (out[:1].upper() + out[1:] if word[:1].isupper() else out)
+
+    def asked(m):
+        subject, gap, verb = (m.group('by'), m.group('s1'), m.group('v1')) if m.group('by') else (m.group('mod'), m.group('s2'), m.group('v2'))
+        out = _ORDERS_AS[verb.lower()]
+        return subject + gap + (out.upper() if verb.isupper() and len(verb) > 1 else out)
     text = re.sub(r'\b(a|an|the|this|that|its|their|any|each)\s+grants?\b', r'\1 yes', str(text or ''), flags=re.I)
     text = re.sub(_INSIDE_RE, said, text, flags=re.I)
     text = re.sub(r'\b(say|says|said|saying)\s+(yes|no)\s+to(?=\s*(?:$|[.,;:!?)]|(?:for|because|since|as|when|if|over|given)\b))', r'\1 \2', text, flags=re.I)
+    text = _ORDER_RE.sub(asked, text)
     return re.sub(r'\b([Aa])(?= ask for less\b)', r'\1n', text, flags=re.I)
 
 
 def _prices(ref):
     """What Priority priced and answered, newest first, from prices.jsonl and in the owner's words: the answer as said yes,
     asked for less or said no, the estimate and the room as two amounts each, and the why as Priority gave it, its inside
-    words (reject, counter, grant, refuse) said again as the owner says them. The row keeps the why as it was given. A row
+    words (reject, counter, grant, refuse, and order as a verb) said again as the owner says them. The row keeps the why as it was given. A row
     that holds no answer is not shown."""
     out = []
     for r in reversed([r for r in W.rows(ref, 'prices.jsonl') if isinstance(r, dict)]):

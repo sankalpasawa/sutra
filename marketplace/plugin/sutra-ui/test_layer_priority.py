@@ -780,6 +780,25 @@ def test_p4_a_why_written_in_the_inside_words_reaches_the_pane_in_the_owners(liv
     assert all(not inside.search(w) for w in V1.INSIDE.values()), "and the words put in their place are the owner's"
 
 
+def test_p4_order_as_a_verb_is_said_again_and_order_as_the_lines_order_is_left(live, ctx):
+    """Priority prices and holds and never orders, and the screen keeps the verb off as it keeps off grant. The word for a line's
+    order is the ordinary word and stays: a why that loses it, or keeps 'orders' as a verb, must fail."""
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    said = {
+        "Priority orders Write to run first": "Priority asks for Write to run first",
+        "I would order Plan and not order Check": "I would ask for Plan and not ask for Check",
+        "It ordered the rest": "It asked for the rest",
+        "The order of the line holds; Priority order: Plan, Write, ordered by cost, in order to fit, order-dependent":
+            "The order of the line holds; Priority order: Plan, Write, ordered by cost, in order to fit, order-dependent"}
+    for i, why in enumerate(said):
+        W.append_row(ref, "prices.jsonl", _price_row(at="2026-10-26T10:%02d:00+05:30" % i, why=why))
+    shown = {p["at"]: p["why"] for p in V1.view(ref, W.dept(ref), [], [])["prices"]}
+    for i, (why, want) in enumerate(said.items()):
+        assert shown["2026-10-26T10:%02d:00+05:30" % i] == want, why
+    assert [r["why"] for r in W.rows(ref, "prices.jsonl")] == list(said), "the record keeps its own words"
+
+
 def test_p4_the_view_does_not_come_back_through_the_part_that_reads_the_views(live, ctx, monkeypatch):
     """A view that builds its pane by calling functions_view._j2_part must fail once _j2_part hands the pane to layers.view
     (A1.17, K2's C9): the two would call each other without end. _j2_part is made to do exactly that here, with no guard
