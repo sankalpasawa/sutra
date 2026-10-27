@@ -657,7 +657,7 @@ SHOWS_THE_INSIDE = [
     ("I am only 45% sure the shop wants 3 pages, and the charter says Priority must refuse orders over the engine limit (confidence 0.45)",
      "Priority holds the envelope at 70 percent"),
     ("Should the page say who the baker is? My confidence is low.", "the workflow goes on without it")]
-INSIDE_WORDS = re.compile(r"confiden|\b0?\.\d+\b|\d+\s*(?:%|per ?cent)|Adaptation|Priority|Coordination|Audit|engine|envelope|workflow|charter|refus", re.I)
+INSIDE_WORDS = re.compile(r"confiden|\b0?\.\d+\b|%|per ?cent|Adaptation|Priority|Coordination|Audit|engine|envelope|workflow|charter|refus", re.I)
 
 
 def _the_card_the_owner_reads(R, ref, ask):
@@ -717,6 +717,57 @@ def test_i5_figures_and_words_of_the_owners_own_work_are_not_taken_for_the_insid
     ask = _plan_asks(W, ref)[0]
     assert doubt in ask["text"] and "Unless you say, %s." % fallback in ask["text"] and ask["doubt"]["shown"] == doubt
     assert V1.inside("Class 8.5, v2.1, 12 pm, 3 pages, a search engine") == [] and V1.inside("at .45") == [".45"]
+
+
+#: the confidence in the shapes a verifier found past the guard (2026-10-27): a decimal that ends a sentence, a percentage in
+#: words, and odds said as a ratio
+ENDS_ON_A_FIGURE = [
+    "I give this 0.6.",
+    "Which pages does the shop want? 0.45.",
+    "Which pages does the shop want? I put it at 0.45.",
+    "Is it 0.45? Is it (0.45)! Is it 0.45...",
+    "I am about sixty percent sure",
+    "Call it sixty per cent.",
+    "It is a 1 in 3 chance.",
+    "Maybe a one in three chance the shop wants it.",
+    "I put it at 2 out of 5.",
+    "Call it zero point four five."]
+#: a figure or a word of the owner's own work, which is theirs: a time, a class, a version, a layout, a count of what they sell
+THE_OWNERS_OWN = [
+    "Open from 9.30.", "Class 8.5.", "It needs v2.1.3.", "Version 0.45.3 of the font.", "Show 3 in 4 columns.",
+    "Do 2 out of 3 customers want it on a phone?", "A search engine finds it.",
+    "Show 12 pages in 3 rows."]
+
+
+@pytest.mark.parametrize("text", ENDS_ON_A_FIGURE)
+def test_i5_inside_finds_the_confidence_when_it_ends_a_sentence_or_is_spelled_out(text):
+    assert V1.inside(text), text
+
+
+@pytest.mark.parametrize("text", THE_OWNERS_OWN)
+def test_i5_inside_leaves_the_owners_own_figures_alone(text):
+    assert V1.inside(text) == [], text
+
+
+def test_i5_inside_names_the_figure_it_found():
+    assert V1.inside("I give this 0.6.") == ["0.6"] and V1.inside("(0.45)") == ["0.45"] and V1.inside("about 45 percent") == ["45 percent"]
+    assert V1.inside("Call it sixty per cent.") == ["per cent"] and V1.inside("a 1 in 3 chance") == ["1 in 3"]
+
+
+@pytest.mark.parametrize("doubt", ["Which pages does the shop want? " + said for said in (
+    "I put it at 0.45.", "0.45.", "I am about sixty percent sure.", "Call it sixty per cent.", "It is a 1 in 3 chance.", "I put it at one in three.")])
+def test_i5_a_doubt_that_ends_on_a_figure_or_spells_it_out_is_put_in_the_stock_words(j2, doubt):
+    """Found by a verifier: 'Which pages does the shop want? I put it at 0.45.' reached the card and the chat line as written."""
+    W, R, J, _, _ = j2
+    ref = _born(j2, BAKERY)
+    _doubts(R, ref, doubt=doubt, fallback="the page shows one size")
+    W.run_until_idle(ref, limit=300)
+    ask = _plan_asks(W, ref)[0]
+    name = W.dept(ref)["name"]
+    assert ask["text"] == 'Before I set up the work for %s: %s Unless you say, the page shows one size. Answer in your own words, or say "just do it".' % (name, V1.SOMETHING)
+    seen = _the_card_the_owner_reads(R, ref, ask)
+    assert len(seen) == 3 and all(not re.search(r"\d|per ?cent|sixty|in three|zero point", s.replace(name, ""), re.I) for s in seen), seen
+    assert ask["doubt"]["doubt"] == V1._said(doubt, 600) and ask["doubt"]["shown"] == V1.SOMETHING and S.validate_record("identity", "ask", ask) == []
 
 
 def test_i5_the_default_fallback_says_the_department_unless_it_is_a_website(j2):
