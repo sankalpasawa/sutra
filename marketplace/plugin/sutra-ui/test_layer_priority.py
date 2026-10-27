@@ -933,6 +933,101 @@ def test_p4_a_no_a_model_wrote_in_the_inside_words_leaves_none_in_priority_s_pan
     assert S.validate_view("priority", pane) == []
 
 
+def _every_read(live, ref):
+    """What each way the owner reads the department says of the agent's sentence, {read: [string that carries it]}: the record
+    (the ledger, the board, the prices), Priority's pane and its step's card, every function's page, the Map and the owner's chat."""
+    import functions_view as F
+    import owner_words
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import j2ui_api
+    W, R, J, _ = live
+    found = {}
+    _carrying(found, "the ledger", J.events(ref))
+    _carrying(found, "the board", R.board(ref))
+    _carrying(found, "the prices on record", _prices(W, ref))
+    _carrying(found, "the board as a line", [R._line(p) for p in R.board(ref)])
+    _carrying(found, "the board as a read says a post", [F._said(p) for p in R.board(ref) if p["src"] == "Priority"])
+    _carrying(found, "Priority's pane", V1.view(ref, W.dept(ref), J.events(ref), W.asks(ref)))
+    _carrying(found, "Priority's step card", owner_words.steps(R.steps_view(ref, "Priority")))
+    _carrying(found, "Priority's step rows", [r for r in R.step_rows(ref) if r["step"].startswith("priority")])
+    for fn in ("identity", "adaptation", "priority", "coordination", "audit"):
+        _carrying(found, "the page of a function", F.function(ref, fn))
+    app = FastAPI()
+    app.include_router(j2ui_api.router)
+    client = TestClient(app)
+    for route in ("api/state", "api/map", "api/board", "api/audits"):
+        got = client.get("/j2ui/%s/%s" % (ref, route))
+        assert got.status_code == 200, route
+        _carrying(found, "the page's " + route, got.json())
+    return found
+
+
+COMMON_READS = ("the ledger", "the board", "the prices on record", "the board as a line", "the board as a read says a post", "Priority's pane",
+                "Priority's step card", "Priority's step rows", "the page of a function", "the page's api/state", "the page's api/map")
+
+
+def test_p4_a_no_a_model_wrote_in_the_inside_words_reaches_every_read_in_the_owners(live, monkeypatch):
+    """The agent is taught accept, counter and reject, so a model's why will say them, and grant and refuse: one word table that only
+    the prices read cannot hold it. Put a model's no through the whole department, and no read of it says grant, counter, refuse or
+    order: not the post and the ledger, not the board, the chat and the conflict's attempts, not Priority's bargains, prices or
+    the note on its step's card, not any function's page or the Map. A Priority that says its why in its own words anywhere must fail."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": WHYS["reject"]}})
+    ref = _priced(live, {n: (50, 5.0) for n in LINE})
+    assert "proposal.refused" in _actions(J, ref) and "conflict.raised" in _actions(J, ref)
+    found = _every_read(live, ref)
+    _held_to_the_owners_words(found, COMMON_READS)
+    assert [s for s in found["the page's api/state"] if "Said no to the plan" in s], "the chat and the conflict's attempts say Priority's no, in the owner's words"
+    [post] = [p for p in R.board(ref) if p["src"] == "Priority" and p["msg_type"] == "reject-proposal"]
+    assert post["payload"]["why"] == ("Budget check: I say no to this line; I would ask for less with two but the yes is too big, so said no for lack of "
+                                      "room. Priority asks for nothing.")
+    [row] = _prices(W, ref)
+    assert row["why"] == post["payload"]["why"], "the post, the price row and the ledger's line are one sentence"
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.refused")["summary"] == post["payload"]["why"]
+    assert S.validate("priority.price", row) == []
+
+
+def test_p4_an_ask_for_less_and_a_yes_a_model_wrote_in_the_inside_words_reach_every_read_in_the_owners(live, monkeypatch):
+    """The same for the other two answers: an ask for less (a counter, with its keep) and the yes that follows it, each worded with
+    the inside words, are said as asked for less and said yes on every read, and the keep is still the keep."""
+    W, R, J, _ = live
+    counter = ("Budget check: I counter with Plan, Write and Check, grant those three and refuse Publish for lack of room; the counter fits.")
+
+    def bargain(prompt):
+        if "- Publish:" in prompt:
+            return {"answer": "counter", "keep": ["Plan", "Write", "Check"], "why": counter}
+        return {"answer": "accept", "why": WHYS["accept"]}
+    _scenario(monkeypatch, R, "website", bargain)
+    ref = _scenario_dept(live, "website")
+    acts = _actions(J, ref)
+    i = acts.index("proposal.countered")
+    assert acts[i:i + 4] == ["proposal.countered", "proposal.created", "proposal.granted", "workflow.validated"]
+    found = _every_read(live, ref)
+    _held_to_the_owners_words(found, COMMON_READS)
+    ledger = {e["action"]: e["summary"] for e in J.events(ref) if e["action"] in ("proposal.countered", "proposal.granted")}
+    assert ledger == {
+        "proposal.countered": "Budget check: I ask for less with Plan, Write and Check, say yes to those three and say no to Publish for lack of room; the ask for less fits.",
+        "proposal.granted": "Budget check: said yes, I accept the whole line and need no ask for less; Priority asks for nothing."}
+    first, second = _prices(W, ref)
+    assert (first["answer"], first["keep"], second["answer"], second["keep"]) == ("counter", KEEP3["website"], "accept", KEEP3["website"])
+    assert [first["why"], second["why"]] == [ledger["proposal.countered"], ledger["proposal.granted"]]
+    assert S.validate("priority.price", first) == [] and S.validate("priority.price", second) == []
+    assert W.dept(ref)["workflows"][-1]["engines"] == KEEP3["website"], "and the words said again change nothing Adaptation was answered"
+
+
+def test_p4_a_yes_a_model_wrote_in_the_inside_words_reaches_every_read_in_the_owners(live, monkeypatch):
+    """A yes with room for the whole line, worded with the inside words ('granted', 'no counter needed')."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "accept", "why": WHYS["accept"]}})
+    ref = _priced(live, {n: (50, 5.0) for n in LINE})
+    assert "proposal.granted" in _actions(J, ref)
+    _held_to_the_owners_words(_every_read(live, ref), ("the ledger", "the board", "the prices on record", "Priority's pane", "Priority's step card",
+                                                       "the page of a function"))
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.granted")["summary"] == (
+        "Budget check: said yes, I accept the whole line and need no ask for less; Priority asks for nothing.")
+
+
 def test_p4_the_note_on_priority_s_card_says_the_why_in_the_owners_words_and_a_round_does_too(live):
     """The covering's note is said on Priority's card; the why in it is the agent's, in the owner's words, for a line and for a round."""
     W, R, J, _ = live
