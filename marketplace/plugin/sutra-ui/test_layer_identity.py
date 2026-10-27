@@ -56,8 +56,11 @@ def ctx(home):
 
 
 @pytest.fixture
-def j2(home):
-    """test_j2's fixture: the modules reloaded on a home of their own, the organisation's Root minted; the pane's module too."""
+def j2(home, monkeypatch):
+    """test_j2's fixture: the modules reloaded on a home of their own, the organisation's Root minted; the pane's module too.
+    No test here may reach the live model (website_dept.model_json runs the `claude` CLI on the owner's plan: slow, billed, and
+    different every time): it answers as offline and the test fails at its end if it was asked. A test that unsets
+    SUTRA_WEBSITE_OFFLINE (_model) gives R.MODEL an answer for every step; one that sets R.MODEL to None turns it back on."""
     import website_dept as W
     import founding
     import placement_engine as E
@@ -70,7 +73,10 @@ def j2(home):
         importlib.reload(module)
     if not E.active_roots(E.load_domains()):
         E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
-    return W, R, J, founding, FV
+    live = []
+    monkeypatch.setattr(W, "model_json", lambda prompt, *a, **k: live.append(str(prompt)[:80]) or (None, 0.0, "offline"))
+    yield W, R, J, founding, FV
+    assert not live, "this test reached the live model %d time(s), first with: %s" % (len(live), live[0])
 
 
 def _model(monkeypatch, R, answers):
@@ -1563,6 +1569,7 @@ def test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it(j
     rule = next(r for r in W.dept(ref)["rules"] if r["line"] == RULE)
     live, revision = len(W.versions(ref, "Live site")), W.dept(ref)["identity_revision"]
     monkeypatch.setattr(R, "MODEL", None)                                # the owner's words are still what the line is held to
+    monkeypatch.setenv("SUTRA_WEBSITE_OFFLINE", "1")                     # and no model is there: the drafts build the pages (as in test_j2_the_goal_is_reached_by_the_real_flow)
     W.choose_option(ref, card["id"], "leave:" + rule["id"])
     W.run_until_idle(ref, limit=600)
     d = W.dept(ref)
