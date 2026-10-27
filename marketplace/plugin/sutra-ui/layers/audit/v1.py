@@ -335,6 +335,17 @@ def has_a_verdict(ctx, step, item, out):
 # held by a gate of Audit's until its minute in the period. Its run is the steps of a reading with the reading left out: the
 # steps that read a version are not needed, and the last one files the check. It reads runs and versions; it writes its own row
 # of spot_checks.jsonl and tells Identity what it found, and nothing else (spot_check_reads_only).
+#
+# WHO IT VISITS (decision W3B-2). A department that has settled: its J2 cycle is done, stopped or not begun, it is not Root, and it was
+# there when the period began. A department in the middle of its cycle is looked in on once it settles, however long that takes (one
+# waiting days for the owner's publish stamp is mid-cycle), because what a spot check finds goes to Identity as Audit's findings do and
+# the cycle's ledger cannot tell it from a reading's: it would record it as the reading's finding and send the cycle to Pursue (step 8).
+# A department made in the period is first looked in on in the next.
+#
+# THE THIRD READING. 'nothing is stuck past its window' is Audit's own look at Coordination's rule of one run at a time, not a second
+# finder of a stuck run: while a run is open the motor starts no run (Audit's timer included), and Coordination's alarm raises the
+# stuck one, live and to the owner. So the reading holds whenever a spot check can start, and it fails only when that rule was broken
+# and a run was left open past its window beside the check: Audit does not take Coordination's word for it.
 SPOT_SEVERITY = 'medium'         # what a spot check's finding weighs: the record is wrong, and no reader has been misled by it
 SPOT_SAYS = {True: 'looked in on the engines: every version has its run and its check, each run traces back, nothing is stuck',
              False: 'looked in on the engines and found something to put right'}
@@ -360,8 +371,9 @@ def spot_jitter_s(ref, period, every_s):
 def audit_when(ctx, step, item):
     """Audit's gate on its own starts (M8.7): a start on a version of the deliverable is let through; a timer start is let through
     at its minute in the period, and only for a department that was there when the period began (one made today is first looked
-    in on in the next period), that is not Root, and that is not in the middle of a cycle (a spot check in the middle of its work
-    would not be unannounced, it would be a second reading). Reads the record and the clock, and says no more than 'not yet'."""
+    in on in the next period), that is not Root, and that is not in the middle of a cycle (a finding of a spot check there would be
+    taken for a reading's and send the cycle to Pursue; it is looked in on once it settles: decision W3B-2). Reads the record and the
+    clock, and says no more than 'not yet'."""
     inp = ctx.get('inp') or {}
     if inp.get('timer') is None:
         return 'admit', None
@@ -409,8 +421,8 @@ def spot_state(ref):
 def spot_checks(ref, d, now=None, skip=None):
     """What a spot check reads of the engines' state, and nothing else: every version has a run and a check, each artifact's
     latest version traces back to the owner's words, and no run has been going past its window (its own run, `skip`, is the one
-    that is looking). [{check, ok, why}], one for each, and a finding for each that does not hold, which names where it is. Reads
-    runs and versions only."""
+    that is looking; that reading is Audit's look at the rule of one run at a time, see THE THIRD READING above). [{check, ok,
+    why}], one for each, and a finding for each that does not hold, which names where it is. Reads runs and versions only."""
     now = time.time() if now is None else now
     arts = list(W.artifacts_of(d))[1:]
     no_run = sorted({a for a in arts for v in W.versions(ref, a) if not v.get('run') or 'check' not in v})

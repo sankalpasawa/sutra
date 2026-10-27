@@ -13,7 +13,8 @@ sporadic, unannounced look at the engines' state.
       is closed at its bound and Identity is told
   B3  Audit's timer start, held by its gate until a minute in the period that a hash of the ref and the period gives: one spot check
       for a cadence at a minute that is not fixed, reading the engines' state only, one audit.spot_check row each, its findings
-      to Identity, and a check that wrote outside Audit's rows fails and files nothing
+      to Identity, and a check that wrote outside Audit's rows fails and files nothing; it looks in on settled departments only
+      (decision W3B-2), and its covering judges the whole run and fails a filing that measured nothing
   B4  view.coordination.questions, the engine card's Coordination row ('asked Plan about the page list (answered)'),
       view.audit.spot_checks, and S13's words: a question asks, its answer answers (the render walks are in test_website.js)
 """
@@ -821,6 +822,60 @@ def test_b3_a_department_in_the_middle_of_its_cycle_or_root_is_not_looked_in_on(
     ctx["inp"], ctx["def"] = {"timer": int(time.time()) // DAY, "v": 1}, R.engine_def("Audit")
     assert AUDIT.audit_when(ctx, None, None) == ("wait", "Audit does not look in on the organisation")
     assert AUDIT.audit_when(dict(ctx, inp={"v": 3}), None, None) == ("admit", None), "a version of the deliverable is let through as it was"
+
+
+def test_b3_the_reason_the_middle_of_a_cycle_is_not_looked_in_on_a_finding_there_is_taken_for_a_readings(j2):
+    """Decision W3B-2: the gate keeps a spot check out of a department in the middle of its cycle because the cycle's ledger takes
+    what Audit tells Identity for a reading's finding. This pins that fact: when j2_runtime tells a spot finding from a reading's, this
+    fails and the gate can go. In a settled department the same word leaves the cycle where it was."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    assert J.active(ref) and J.status(ref)["state"] != "pursuing"
+    found = [{"id": "F1", "severity": "medium", "claim": "Pages has a version with no run or no check", "where": "Pages", "item": None,
+              "went_to": "Identity", "ask": None, "at": W.now()}]
+    say = lambda claim: {"word": "finding", "claim": claim, "severity": "medium", "where": "Pages", "findings": found, "spot": True}  # noqa: E731
+    R.post(ref, "Audit", "Identity", "inform", say("Pages has a version with no run or no check"))
+    assert (J.status(ref)["state"], J.status(ref)["step"]) == ("pursuing", 8), "the cycle took it for a reading's and went to Pursue"
+    assert "audit.finding_filed" in [e["action"] for e in J.events(ref)]
+    J._set(ref, state="done")
+    R.post(ref, "Audit", "Identity", "inform", say("Pages has a version with no run or no check, still"))
+    assert J.status(ref)["state"] == "done", "settled, the cycle is not driven by it"
+
+
+def test_b3_an_untraced_version_is_found_by_the_start_the_motor_takes(j2, monkeypatch):
+    """The second reading, through W.due and W.run_slot as the first is: a version whose trace stops short of the owner's words."""
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    W.add_version(ref, "Pages", {"index.html": "<h1>x</h1>"}, [], "r-made", {"ok": True, "notes": []})        # made from nothing
+    W.run_until_idle(ref, limit=100)
+    J._set(ref, state="done")
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    row = W.rows(ref, "spot_checks.jsonl")[-1]
+    assert [c["ok"] for c in row["checks"]][:2] == [True, False] and "does not trace back to the owner's words" in row["checks"][1]["why"]
+    assert row["findings"] and row["findings"][0]["went_to"] == "Identity" and "Pages" in row["findings"][0]["where"]
+    assert [p for p in R.board(ref) if p["src"] == "Audit" and (p.get("payload") or {}).get("spot")]
+
+
+def test_b3_the_stuck_reading_holds_while_the_rule_does_and_finds_a_run_the_rule_let_stand(j2, monkeypatch):
+    """The third reading cannot fail in the motor's flow while one run at a time holds: a run left open keeps the motor from starting
+    Audit at all, and Coordination's alarm is the live finder (found by a verifier 2026-10-27). It is Audit's own look at that rule:
+    with the rule broken on purpose, so that the check starts beside a run left open long ago, it finds the run, through the motor."""
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    W._put_run(ref, R._run_row("Write", False, "Write@site-plan.v77", "running", "writing", started="2020-01-01T00:00:00+00:00"))
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    assert W.due(ref) == (None, None, "running"), "one run at a time: no spot check starts beside an open run"
+    monkeypatch.setitem(COORD.CODE, "coord_busy", lambda ctx, step, item: ("admit", None))
+    monkeypatch.setitem(R.CHECK, "one_run_at_a_time", lambda ctx, step, item, out: {"ok": True, "notes": ["broken on purpose"]})
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    row = W.rows(ref, "spot_checks.jsonl")[-1]
+    assert [c["ok"] for c in row["checks"]] == [True, True, False]
+    assert row["checks"][2]["why"] == "Write has been running past its window" and row["findings"][0]["claim"] == "Write has been running past its window"
+    assert [p for p in R.board(ref) if p["src"] == "Audit" and (p.get("payload") or {}).get("spot")], "and it goes to Identity"
+    assert _spot_runs(W, ref)[0]["status"] == "ok"
 
 
 def test_b3_a_spot_check_reads_state_only_and_writes_only_audits_own_rows(j2, monkeypatch):
