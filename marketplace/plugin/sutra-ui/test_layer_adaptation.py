@@ -2026,7 +2026,7 @@ def test_f3_priority_saying_no_moves_the_round_to_refused_and_it_becomes_a_confl
     assert [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"]
     [conflict] = _conflicts(R, ref)
     assert conflict["options"] == opts and conflict["round"] == 1 and conflict["for"] == row["thread"] and conflict["engines"] == []
-    assert conflict["why"] == "Priority said no to round 1: round 7 of 6 is past the ceiling"
+    assert conflict["why"] == "Priority said no to Round 1: round 7 of 6 is past the ceiling", "the round is a name on the card, as on the progress line"
     assert S.validate("act.conflict", conflict) == []
     again = _answer(j2, ref, row["thread"], "reject-proposal", {"word": "round", "why": "again", "options": opts})
     assert len(_conflicts(R, ref)) == 1 and [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"], "a second no is the same no"

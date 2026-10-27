@@ -292,7 +292,7 @@ def test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silenc
     [card] = [a for a in asks if a["kind"] == "blocked"]
     assert (card["title"], card["who"]) == ("The next round needs your word.", "Priority, pricing the round")
     assert not re.search(r"\bplan\b", " ".join((card["title"], card["who"])), re.I) and "Say what to correct" not in card["text"], card
-    assert card["text"].startswith("Priority said no to round 2:") and [o["id"] for o in card["options"]][-2:] == ["leave:D2", "stop"]
+    assert card["text"].startswith("Priority said no to Round 2:") and [o["id"] for o in card["options"]][-2:] == ["leave:D2", "stop"]
     _only_registered_engines_ran(W, R, ref)
 
 

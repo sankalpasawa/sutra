@@ -760,7 +760,8 @@ def adapt_round_refused(ctx, step, item):
         row = W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', at=W.now()))
     if not hears_round():
         return {'said': 'Priority said no to round %d (%s); Identity does not take rounds yet, so it stays on the record' % (row['round'], why), 'round': row['round']}
-    line_conflict(ref, p['thread'], 'Priority said no to round %d: %s' % (row['round'], why), options=options_of(pl), engines=[],
+    # this is the why of the owner's card (Identity, round_words): the round is a name there, 'Round 2', as on the progress line
+    line_conflict(ref, p['thread'], 'Priority said no to Round %d: %s' % (row['round'], why), options=options_of(pl), engines=[],
                   extra={'round': row['round'], 'correction': row['correction']})
     return {'said': 'Priority said no to round %d (%s); the conflict goes to Identity, with the ways out' % (row['round'], why), 'round': row['round']}
 
