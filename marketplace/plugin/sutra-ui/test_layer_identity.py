@@ -56,8 +56,11 @@ def ctx(home):
 
 
 @pytest.fixture
-def j2(home):
-    """test_j2's fixture: the modules reloaded on a home of their own, the organisation's Root minted; the pane's module too."""
+def j2(home, monkeypatch):
+    """test_j2's fixture: the modules reloaded on a home of their own, the organisation's Root minted; the pane's module too.
+    No test here may reach the live model (website_dept.model_json runs the `claude` CLI on the owner's plan: slow, billed, and
+    different every time): it answers as offline and the test fails at its end if it was asked. A test that unsets
+    SUTRA_WEBSITE_OFFLINE (_model) gives R.MODEL an answer for every step; one that sets R.MODEL to None turns it back on."""
     import website_dept as W
     import founding
     import placement_engine as E
@@ -70,7 +73,10 @@ def j2(home):
         importlib.reload(module)
     if not E.active_roots(E.load_domains()):
         E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
-    return W, R, J, founding, FV
+    live = []
+    monkeypatch.setattr(W, "model_json", lambda prompt, *a, **k: live.append(str(prompt)[:80]) or (None, 0.0, "offline"))
+    yield W, R, J, founding, FV
+    assert not live, "this test reached the live model %d time(s), first with: %s" % (len(live), live[0])
 
 
 def _model(monkeypatch, R, answers):
@@ -1441,14 +1447,16 @@ def _adaptation_may_tell_a_round(monkeypatch):
                             [{"act": "inform", "words": ("round",), "to": ("Identity",), "payload": "act.round"}])
 
 
-def _grant_round(R, W, J, monkeypatch, ref, n=2, correction="Name the fees on every page", covers=("D2",), **more):
+def _grant_round(R, W, J, monkeypatch, ref, n=2, correction="Name the fees on every page", covers=("D2",), rows=("proposed", "granted"),
+                 cycle=None, **more):
     """A stub Adaptation: it proposed round n, Priority priced it inside the ceiling, and it tells Identity the round is granted
-    (inform/round). Its rounds.jsonl rows are its own (W2-ADAPT); the stub writes the ones it would."""
+    (inform/round). Its rounds.jsonl rows are its own (W2-ADAPT); the stub writes the ones it would: the statuses in `rows`, in the
+    cycle now at work unless `cycle` names another. A test of a round nobody granted gives fewer rows and still tells Identity."""
     _adaptation_may_tell_a_round(monkeypatch)
-    base = {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": J.status(ref)["cycle_id"], "correction": correction, "fixes": ["F1"],
+    base = {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": cycle or J.status(ref)["cycle_id"], "correction": correction, "fixes": ["F1"],
             "covers": list(covers), "estimate": {"calls": 4, "usd": 0.08}, "reading": "r-0a0a0a0a"}
-    W.append_row(ref, "rounds.jsonl", dict(base, status="proposed"))
-    W.append_row(ref, "rounds.jsonl", dict(base, status="granted"))
+    for status in rows:
+        W.append_row(ref, "rounds.jsonl", dict(base, status=status, **({"brief_v": 3} if status in ("filed", "read") else {})))
     return R.post(ref, "Adaptation", "Identity", "inform",
                   dict({"word": "round", "round": n, "correction": correction, "fixes": ["F1"], "covers": list(covers),
                         "estimate": {"calls": 4, "usd": 0.08}, "why": "it fits the room"}, **more))
@@ -1509,6 +1517,45 @@ def test_j4_a_status_change_is_a_row_appended_never_a_row_rewritten(j2, monkeypa
     assert [r["status"] for r in rows] == ["proposed", "granted", "filed"] and rows[-1]["brief_v"] == len(W.versions(ref, "Brief"))
     assert all(S.validate_record("adaptation", "round", r) == [] for r in rows)
     assert (rows[-1]["round"], rows[-1]["correction"], rows[-1]["covers"], rows[-1]["reading"]) == (2, "Name the fees on every page", ["D2"], "r-0a0a0a0a")
+
+
+@pytest.mark.parametrize("rows,cycle,why", [
+    (("proposed",), None, "Priority has not answered: the last row is proposed"),
+    ((), None, "no row at all: nobody proposed it"),
+    (("proposed", "granted"), "cycle-before", "granted in an earlier cycle, not this one"),
+    (("proposed", "granted", "filed", "read"), "cycle-before", "filed and read in an earlier cycle: rounds are numbered again in each cycle"),
+])
+def test_j4_a_round_priority_did_not_grant_is_not_filed(j2, monkeypatch, rows, cycle, why):
+    """Every proposal passes Priority first (rule 10): Identity files 'Correct this' only for a round whose last row, in the cycle
+    now at work, says granted. The sender (Adaptation) is no proof of it."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    before, state = _versions(W, ref), {k: J.status(ref)[k] for k in ("state", "step", "round", "cycle_id")}
+    told = len([p for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]])
+    for correction in ("Name the fees on every page", "Email every subscriber the new fees"):      # and the one a rule says to ask about
+        post = _grant_round(R, W, J, monkeypatch, ref, correction=correction, rows=rows, cycle=cycle)
+        written = (W.ddir(ref) / "rounds.jsonl").read_text(encoding="utf-8") if (W.ddir(ref) / "rounds.jsonl").exists() else ""
+        row = _identity_hears(R, ref, post)
+        assert row["status"] == "ok", (why, row)
+        assert "round 2 has no yes from Priority; nothing is filed" in json.dumps(row), (why, row)
+        assert _versions(W, ref) == before, (why, "no version of the Brief or of anything else")
+        now = (W.ddir(ref) / "rounds.jsonl").read_text(encoding="utf-8") if (W.ddir(ref) / "rounds.jsonl").exists() else ""
+        assert now == written, (why, "no row of the round is written")
+        assert _asks_of(W, ref, "finding") == [], (why, "and nothing is asked of the owner")
+        assert {k: J.status(ref)[k] for k in state} == state and len([p for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]]) == told
+
+
+def test_j4_a_round_numbered_again_in_a_new_cycle_is_filed_on_its_own_yes(j2, monkeypatch):
+    """Rounds are numbered again in each cycle: round 2 filed and read in an earlier cycle is no word on round 2 of this one."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _grant_round(R, W, J, monkeypatch, ref, rows=("proposed", "granted", "filed", "read"), cycle="cycle-before")
+    post = _grant_round(R, W, J, monkeypatch, ref)
+    briefs = len(W.versions(ref, "Brief"))
+    _identity_hears(R, ref, post)
+    assert len(W.versions(ref, "Brief")) == briefs + 1 and J.status(ref)["round"] == 2
+    mine = [r["status"] for r in W.rows(ref, "rounds.jsonl") if r["cycle_id"] == J.status(ref)["cycle_id"]]
+    assert mine == ["proposed", "granted", "filed"]
 
 
 def test_j4_a_round_heard_twice_is_filed_once(j2, monkeypatch):
@@ -1635,6 +1682,7 @@ def test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it(j
     rule = next(r for r in W.dept(ref)["rules"] if r["line"] == RULE)
     live, revision = len(W.versions(ref, "Live site")), W.dept(ref)["identity_revision"]
     monkeypatch.setattr(R, "MODEL", None)                                # the owner's words are still what the line is held to
+    monkeypatch.setenv("SUTRA_WEBSITE_OFFLINE", "1")                     # and no model is there: the drafts build the pages (as in test_j2_the_goal_is_reached_by_the_real_flow)
     W.choose_option(ref, card["id"], "leave:" + rule["id"])
     W.run_until_idle(ref, limit=600)
     d = W.dept(ref)
@@ -1656,17 +1704,25 @@ def test_j5_saying_it_another_way_and_stopping_are_still_applied(j2, monkeypatch
     assert again["id"] == card["id"] and [o["id"] for o in again["options"]][0] == "words", "stopped, its way out stays open"
 
 
-def _stalled_department(j2, monkeypatch, rounds=2, org="Stall Co"):
-    """A department whose rounds met nothing new: a reading with D2 not met, then `rounds` rounds filed, each read with D2 still not met."""
+def _verdicts(W, ref, last):
+    """Every done-when item met but the last, which has the verdict `last`: D1 met and D2 not met for two items, D1 alone for one."""
+    ids = [i["id"] for i in W.items_of(W.dept(ref))]
+    return dict({i: "met" for i in ids[:-1]}, **{ids[-1]: last})
+
+
+def _stalled_department(j2, monkeypatch, rounds=2, org="Stall Co", items=2):
+    """A department whose rounds met nothing new: a reading with the last item not met, then `rounds` rounds filed, each read with
+    it still not met (D2 of two items, D1 of one)."""
     W, R, J, _, _ = j2
-    ref = _a_running_department(j2, org=org)
+    ref = _a_running_department(j2, org=org, items=items)
+    last = W.items_of(W.dept(ref))[-1]["id"]
     _adaptation_hears_next(monkeypatch, R)
-    finding = [{"id": "F1", "severity": "high", "claim": "Every page names its fees", "item": "D2"}]
-    _hear(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding)
+    finding = [{"id": "F1", "severity": "high", "claim": "Every page names its fees", "item": last}]
+    _hear(j2, ref, _verdicts(W, ref, "not_met"), findings=finding)
     for n in range(2, 2 + rounds):
         W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": J.status(ref)["cycle_id"], "correction": "Name the fees",
-                                           "fixes": ["F1"], "covers": ["D2"], "status": "filed", "brief_v": n + 1, "reading": "r-0a0a0a0a"})
-        _hear(j2, ref, {"D1": "met", "D2": "not_met"}, v=n, findings=finding)
+                                           "fixes": ["F1"], "covers": [last], "status": "filed", "brief_v": n + 1, "reading": "r-0a0a0a0a"})
+        _hear(j2, ref, _verdicts(W, ref, "not_met"), v=n, findings=finding)
     return ref
 
 
@@ -1745,7 +1801,40 @@ def _end_states(j2, monkeypatch):
     W.decide_ask(ref, _asks_of(W, ref, "finding")[0]["id"], False)
     W.run_until_idle(ref, limit=1)
     out.append(("a correction the owner turned down", ref))
+    # a finding that is not a round's, turned down: a high finding on a reading that met every item, a finding a rule says to ask
+    # about, and a not-met item's finding ask while nobody takes a next round (the owner's no must never end in silence)
+    ref = _a_running_department(j2, org="High Co")
+    _high_finding_on_a_met_reading(R, W, j2, ref)
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    out.append(("a high finding on a reading that met every item, turned down", ref))
+    ref = _a_running_department(j2, org="Ask Co")
+    _tell_reading(j2, ref, _file_reading(j2, ref, {"D1": "met", "D2": "not_met"},
+                                         findings=[{"id": "F1", "severity": "medium", "claim": "Send the offer by email to every subscriber", "item": "D2"}]))
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    out.append(("a finding a rule says to ask about, turned down", ref))
+    ref = _a_running_department(j2, org="Interim Co")
+    with monkeypatch.context() as m:
+        real = R._handler
+        m.setattr(R, "_handler", lambda e, p: None if (p.get("payload") or {}).get("word") == "next" else real(e, p))
+        _hear(j2, ref, {"D1": "met", "D2": "not_met"}, findings=[{"id": "F1", "severity": "low", "claim": "Every page names its fees", "item": "D2"}])
+        _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    out.append(("a not-met item's finding turned down", ref))
     return out
+
+
+def _high_finding_on_a_met_reading(R, W, j2, ref, claim="The fees are invented"):
+    """Audit read the version, found every item met and one high finding, and said both: the finding is put to the owner."""
+    row = _file_reading(j2, ref, {"D1": "met", "D2": "met"}, findings=[{"id": "F1", "severity": "high", "claim": claim, "item": None}])
+    R.post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high", "reading": row["id"],
+                                               "findings": [{"page": "index.html", "claim": claim, "severity": "high"}]})
+    R.audit_tell(ref, row)
+    W.run_until_idle(ref, limit=300)
+    return row
+
+
+def _owner_says_no(W, ref, ask):
+    W.decide_ask(ref, ask["id"], False)
+    W.run_until_idle(ref, limit=300)
 
 
 def test_j5_every_end_that_is_not_done_has_a_pending_ask_with_options(j2, monkeypatch):
@@ -1762,6 +1851,131 @@ def test_j5_every_end_that_is_not_done_has_a_pending_ask_with_options(j2, monkey
         assert "stop" in [o["id"] for o in card["options"]], (what, "a way to stop is always there")
         assert S.validate_record("identity", "ask", card) == [], what
         assert card["thread"], "the card is on a thread, so a choice reaches Identity"
+        assert _leave_it_names(card) <= {o["id"] for o in card["options"]}, (what, "the card names a way out its buttons do not offer", card["text"])
+
+
+def _leave_it_names(card):
+    """The ways out that leave an item out which the words of a card name, as option ids: 'leave D2 out of done-when' is leave:D2."""
+    return {"leave:" + i for i in re.findall(r"leave (D\d+) out", card["text"])}
+
+
+def _the_card(W, ref):
+    (card,) = _asks_of(W, ref, "blocked")
+    return card
+
+
+def test_j5_a_no_to_a_finding_that_is_not_a_rounds_leaves_the_ways_out_never_a_silent_end(j2, monkeypatch):
+    """M9.5: the owner's no to a finding ask ends that correction, and what follows is one card with the ways out: whatever put the
+    finding to the owner (a high finding on a reading that met every item, a not-met item's finding while nobody takes a next
+    round, a finding a rule says to ask about) and not only a round's correction."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="High No Co")
+    row = _high_finding_on_a_met_reading(R, W, j2, ref)
+    (ask,) = _asks_of(W, ref, "finding")
+    assert J.status(ref)["state"] != "blocked" and not _asks_of(W, ref, "blocked")
+    briefs, rounds = len(W.versions(ref, "Brief")), len(W.rows(ref, "rounds.jsonl"))
+    _owner_says_no(W, ref, ask)
+    card = _the_card(W, ref)
+    assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == "refused"
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"] and J.status(ref)["state"] == "blocked"
+    assert card["text"].startswith("You said no to the correction: ") and "fees are invented" in card["text"] and S.validate_record("identity", "ask", card) == []
+    assert len(W.versions(ref, "Brief")) == briefs and len(W.rows(ref, "rounds.jsonl")) == rounds, "nothing is filed, and no round is refused: it is no round's"
+    assert not _reached(W, J, ref) and row["id"]
+    # the same flow with an item not met, while nobody takes a next round: the item the finding names is the one that can be left out
+    ref = _a_running_department(j2, org="Interim No Co")
+    _four_items(W, ref)
+    real = R._handler
+    monkeypatch.setattr(R, "_handler", lambda e, p: None if (p.get("payload") or {}).get("word") == "next" else real(e, p))
+    _hear(j2, ref, {"D1": "met", "D2": "met", "D3": "not_met", "D4": "met"}, findings=[{"id": "F1", "severity": "low", "claim": "Every page names its fees", "item": "D3"}])
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    card = _the_card(W, ref)
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D3", "stop"] and "leave D3 out of done-when" in card["text"] and "D3 not met" in card["why"]
+    # a finding a rule says to ask about, with no item named: the reading's last item that is not met
+    monkeypatch.setattr(R, "_handler", real)
+    ref = _a_running_department(j2, org="Rule No Co")
+    _four_items(W, ref)
+    _tell_reading(j2, ref, _file_reading(j2, ref, {"D1": "met", "D2": "not_met", "D3": "met", "D4": "not_met"},
+                                         findings=[{"id": "F1", "severity": "medium", "claim": "Send the offer by email to every subscriber", "item": None}]))
+    (ask,) = _asks_of(W, ref, "finding")
+    _owner_says_no(W, ref, ask)
+    card = _the_card(W, ref)
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D4", "stop"] and "D2, D4 not met" in card["why"]
+
+
+def test_j5_the_real_flow_a_reader_that_says_every_item_is_met_but_one_high_finding_and_a_no_ends_with_the_ways_out(j2, monkeypatch):
+    """The reader says every done-when item is met and reports one high finding: the goal is not reached (M8.4), the finding is
+    put to the owner, and their no leaves the department with a card, not a pursuit that stands still with nothing pending."""
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.judge": {"ok": False, "findings": [{"page": "index.html", "claim": "The fees are invented", "severity": "high"}]},
+                            "audit.items": _items_met})
+    ref = _born(j2, org="Real No Co")
+    _stamp_the_pending(W, ref, ("publish",))
+    (ask,) = _asks_of(W, ref, "finding")
+    assert not _reached(W, J, ref) and J.status(ref)["state"] != "done"
+    _owner_says_no(W, ref, ask)
+    card = _the_card(W, ref)
+    assert J.status(ref)["state"] == "blocked" and "stop" in [o["id"] for o in card["options"]] and S.validate_record("identity", "ask", card) == []
+    assert not [a for a in W.asks(ref) if a["status"] == "pending" and a["id"] != card["id"]], "the card is all that waits for the owner"
+    W.choose_option(ref, card["id"], "stop")                      # and the way out can be taken
+    W.run_until_idle(ref, limit=100)
+    assert W.dept(ref)["stopped"] is True
+
+
+def test_j5_a_no_to_a_finding_after_the_goal_is_reached_asks_nothing_more(j2):
+    """After done a finding is a task for the Brief (J3 4a): a no to it ends it, and the department stays done."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Done No Co")
+    _hear(j2, ref, {"D1": "met", "D2": "met"})
+    assert J.status(ref)["state"] == "done"
+    R.post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": "The fees are invented", "severity": "high", "findings": [{"page": "index.html", "claim": "The fees are invented", "severity": "high"}]})
+    W.run_until_idle(ref, limit=300)
+    (ask,) = _asks_of(W, ref, "finding")
+    _owner_says_no(W, ref, ask)
+    assert J.status(ref)["state"] == "done" and _asks_of(W, ref, "blocked") == []
+
+
+def test_j5_a_no_while_the_department_is_stopped_is_taken_on_start_and_leaves_the_card(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Stop No Co")
+    _high_finding_on_a_met_reading(R, W, j2, ref)
+    (ask,) = _asks_of(W, ref, "finding")
+    J.stop(ref)
+    _owner_says_no(W, ref, ask)
+    assert J.status(ref)["state"] == "stopped" and _asks_of(W, ref, "blocked") == [], "Identity applies the no on Start"
+    J.resume(ref)
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "blocked" and len(_asks_of(W, ref, "blocked")) == 1
+
+
+@pytest.mark.parametrize("items", [1, 2])
+def test_j3_j5_a_card_names_the_way_that_leaves_an_item_out_only_when_it_offers_it(j2, monkeypatch, items):
+    """done-when is never left empty, so with one item a card offers 'Change the plan in my words' and 'Stop here' and its text
+    says so (found by a verifier: it read 'leave D1 out of done-when' above buttons that did not leave anything out)."""
+    W, R, J, _, _ = j2
+    cards = {}
+    cards["two rounds that met nothing new"] = _the_card(W, ref := _stalled_department(j2, monkeypatch, org="Stall %d Co" % items, items=items))
+    ref = _a_running_department(j2, org="Fact %d Co" % items, items=items)
+    _hear(j2, ref, _verdicts(W, ref, "to_confirm"))
+    _owner_says(j2, ref, "chat", "just do it")
+    cards["a fact the owner does not give"] = _the_card(W, ref)
+    ref = _a_running_department(j2, org="Round %d Co" % items, items=items)
+    last = W.items_of(W.dept(ref))[-1]["id"]
+    _identity_hears(R, ref, _grant_round(R, W, J, monkeypatch, ref, correction="Email every subscriber the new fees", covers=(last,)))
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    cards["a correction the owner turned down"] = _the_card(W, ref)
+    ref = _a_running_department(j2, org="Finding %d Co" % items, items=items)
+    _high_finding_on_a_met_reading(R, W, j2, ref)
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    cards["a finding the owner turned down"] = _the_card(W, ref)
+    for what, card in cards.items():
+        ids = [o["id"] for o in card["options"]]
+        if items == 1:
+            assert ids == ["words", "stop"] and not _leave_it_names(card) and "leave" not in card["text"], (what, card["text"], ids)
+            assert card["text"].endswith(", or stop here."), (what, card["text"])
+        else:
+            assert ids == ["words", "leave:D2", "stop"] and _leave_it_names(card) == {"leave:D2"}, (what, card["text"], ids)
+            assert "leave D2 out of done-when, or stop here." in card["text"], (what, card["text"])
+        assert S.validate_record("identity", "ask", card) == [], what
 
 
 # ---- J6: a goal change reopens the cycle (M9.8) ------------------------------------------------------------------------------
@@ -1916,3 +2130,91 @@ def test_j2_8_a_cycle_reopened_while_stopped_stays_stopped_and_begins_on_start(j
     J.resume(ref)
     W.run_until_idle(ref, limit=400)
     assert "proposal.requested" in [e["action"] for e in J.events(ref) if e["cycle_id"] == st["cycle_id"]]
+
+
+def _a_goal_stamped_while_questions_are_open(j2, monkeypatch, org):
+    """The owner's goal rule waits for the stamp; Audit's reading then leaves a fact only the owner has, and Identity asks about it;
+    the owner stamps the goal rule with that question open. Returns the department, the question, and the cycle it was asked in."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org=org)
+    _says_a_directive(R, monkeypatch, "goal", NEW_GOAL, audit=False)
+    W.owner_ask(ref, "From now on, the goal is " + NEW_GOAL)
+    W.run_until_idle(ref, limit=300)
+    _hear(j2, ref, {"D1": "met", "D2": "to_confirm"})
+    (q,) = _asks_of(W, ref, "j2_identity")
+    old = J.status(ref)["cycle_id"]
+    assert (q["missing"], q["cycle_id"], J.status(ref)["open_question"]["id"], len(_asks_of(W, ref, "rule"))) == ("fact", old, q["id"], 1)
+    _stamp_the_pending(W, ref, ("rule",))
+    assert J.status(ref)["cycle_id"] != old, "the stamped goal rule started a new cycle"
+    return ref, q, old
+
+
+def _cycle_now(J, ref):
+    st = J.status(ref)
+    return {k: st[k] for k in ("cycle_id", "step", "state", "round")}
+
+
+def test_j6_a_reopen_retires_the_question_of_the_cycle_it_ends(j2, monkeypatch):
+    """J6: what Identity asked under the old goal is moot under the new one. A question on a fact that was open when the goal rule
+    was stamped is closed as replaced, the new cycle does not wait on it, and an answer that comes later moves nothing."""
+    W, R, J, _, _ = j2
+    ref, q, old = _a_goal_stamped_while_questions_are_open(j2, monkeypatch, "Reopen Question Co")
+    assert next(a for a in W.asks(ref) if a["id"] == q["id"])["status"] == "replaced"
+    assert J.status(ref)["open_question"] is None and not J.waiting_on_owner(ref) and J.status(ref)["cycle_id"] != old
+    before, briefs = _cycle_now(J, ref), len(W.versions(ref, "Brief"))
+    R.request(ref, "The price list is 500 rupees a month", answers=q["id"])
+    W.run_until_idle(ref, limit=300)
+    assert _cycle_now(J, ref) == before and len(W.versions(ref, "Brief")) == briefs, "the old question's answer moves nothing and files nothing"
+    assert next(a for a in W.asks(ref) if a["id"] == q["id"])["status"] == "replaced"
+    assert any(s.startswith("That question belonged to the goal before it changed") for s in _said_by_identity(R, ref)), "and the owner is told"
+
+
+def test_j6_an_answer_to_a_question_of_an_earlier_cycle_moves_nothing_whatever_the_ask_says(j2, monkeypatch):
+    """Whatever left a question of the old cycle open (an ask written before this fix), fact_answered closes it and moves nothing:
+    it used to set the new cycle to 'pursuing', step 8, on the old goal's question."""
+    W, R, J, _, _ = j2
+    ref, q, old = _a_goal_stamped_while_questions_are_open(j2, monkeypatch, "Reopen Stale Co")
+    W._put_ask(ref, dict(next(a for a in W.asks(ref) if a["id"] == q["id"]), status="pending", decided=None))
+    before, briefs = _cycle_now(J, ref), len(W.versions(ref, "Brief"))
+    assert before["step"] != 8 or before["state"] != "pursuing", before
+    R.request(ref, "The price list is 500 rupees a month", answers=q["id"])
+    W.run_until_idle(ref, limit=300)
+    assert _cycle_now(J, ref) == before and len(W.versions(ref, "Brief")) == briefs
+    assert next(a for a in W.asks(ref) if a["id"] == q["id"])["status"] == "replaced"
+
+
+def test_j6_an_answer_to_a_doubt_of_an_earlier_cycle_asks_adaptation_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref, q, old = _a_goal_stamped_while_questions_are_open(j2, monkeypatch, "Reopen Doubt Co")
+    doubt = dict(W.j2_identity_ask("Where should the order go?", old, "plan", "the plan rests on something only you can say", ["plan"], False),
+                 doubt={"engine": "Site", "doubt": DOUBT, "shown": DOUBT, "fallback": FALLBACK_SAYS, "line": None})
+    W._put_ask(ref, doubt)
+    before, briefs, lines = _cycle_now(J, ref), len(W.versions(ref, "Brief")), len(_line_requests(R, ref))
+    R.request(ref, ANSWER, answers=doubt["id"])
+    W.run_until_idle(ref, limit=300)
+    assert _cycle_now(J, ref) == before and len(W.versions(ref, "Brief")) == briefs and len(_line_requests(R, ref)) == lines
+    assert next(a for a in W.asks(ref) if a["id"] == doubt["id"])["status"] == "replaced"
+
+
+def test_j6_a_finding_ask_and_a_blocked_card_of_the_old_cycle_are_retired_too(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Reopen Cards Co")
+    _high_finding_on_a_met_reading(R, W, j2, ref)
+    (finding,) = _asks_of(W, ref, "finding")
+    _owner_says_no(W, ref, finding)
+    (card,) = _asks_of(W, ref, "blocked")
+    _high_finding_on_a_met_reading(R, W, j2, ref, claim="A price is wrong")
+    (second,) = _asks_of(W, ref, "finding")
+    R.post(ref, "Adaptation", "Identity", "inform", {"word": "conflict", "engines": ENGINES, "source": "library", "words": "w", "why": "no room", "for": "x-old"})
+    W.run_until_idle(ref, limit=300)
+    (conflict,) = _asks_of(W, ref, "conflict")
+    old = J.status(ref)["cycle_id"]
+    _says_a_directive(R, monkeypatch, "goal", NEW_GOAL, audit=False)
+    W.owner_ask(ref, "From now on, the goal is " + NEW_GOAL)
+    W.run_until_idle(ref, limit=300)
+    _stamp_the_pending(W, ref, ("rule",))
+    assert J.status(ref)["cycle_id"] != old
+    status = {a["id"]: a["status"] for a in W.asks(ref)}
+    assert (status[finding["id"]], status[card["id"]], status[second["id"]], status[conflict["id"]]) == ("refused", "replaced", "replaced", "replaced")
+    # what is not Identity's question of the old cycle stands: a publish ask, and the new cycle's own asks
+    assert all(a["status"] != "replaced" for a in W.asks(ref) if a["kind"] in ("publish", "rule", "engine", "done_items"))

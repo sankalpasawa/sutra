@@ -427,11 +427,33 @@ def identity_file(ctx, step, item):
     return R.identity_file(ctx, step, item)
 
 
+def earlier_cycle(ref, ask):
+    """Whether Identity asked this question under a cycle that has ended: a changed goal starts another (M9.8), and a question of
+    the old one is not answered in the new."""
+    cj = R._j2()
+    now = (cj._state(ref) or {}).get('cycle_id') if cj else None
+    return bool(ask and ask.get('cycle_id') and now and ask['cycle_id'] != now)
+
+
+def set_aside(ctx, ask):
+    """The owner's words answer a question of a cycle that has ended: it is closed as replaced if it still waits, nothing in the
+    cycle now at work moves, and the owner is told, in plain words, that it was set aside."""
+    ref, d, p = ctx['ref'], ctx['dept'], ctx['post']
+    if ask['status'] == 'pending':
+        W._put_ask(ref, dict(ask, status='replaced', decided=W.now()))
+    R._tell(ref, d, p, 'inform', {'word': 'request', 'done': 'That question belonged to the goal before it changed, so I have set it aside. '
+                                                            'Say it again if it still matters.'}, thread=p['thread'])
+    return {'said': "set aside the owner's words: the question belonged to an earlier cycle; nothing moves"}
+
+
 def doubt_answered(ctx, got):
     """The owner's answer to Adaptation's doubt, or 'just do it', which takes the fallback: it joins the Brief with the
     question it answers and goes to Adaptation as a new line request that carries it (the cycle goes back to step 2)."""
     ref, d, p = ctx["ref"], ctx["dept"], ctx["post"]
     words, hurry = got["words"], bool(got.get("hurry"))
+    old = next((a for a in W.asks(ref) if a["id"] == got["doubt"]), None)
+    if earlier_cycle(ref, old):
+        return set_aside(ctx, old)
     ask = R._j2().took(ref, got["doubt"], words, at=R._words_at(ref, p)) or {}
     meta = ask.get("doubt") or {}
     if meta.get("answered"):
@@ -561,12 +583,25 @@ def _standing(d):
     return {'goal': (d or {}).get('goal'), 'done': (d or {}).get('done'), 'revision': int((d or {}).get('identity_revision') or 1)}
 
 
+def retire_asks(ref, cycle):
+    """What Identity asked under the cycle that has just ended is moot under the new one (M9.8): its question on a fact or on
+    Adaptation's doubt, a finding put to the owner, a blocked plan's card, a conflict it could not settle. Each still waiting is
+    closed as replaced, so none is answered later against a goal that has changed; the new cycle asks its own. The asks of the
+    new cycle, and every other kind (a publish, an engine offered, a rule or done-when still to be stamped), stand."""
+    with W._lock(ref):
+        for a in W.asks(ref):
+            owned = a.get('kind') in ('finding', 'blocked', 'conflict') or (a.get('kind') == 'j2_identity' and a.get('missing') in ('fact', 'plan'))
+            if a['status'] == 'pending' and owned and a.get('cycle_id') != cycle:
+                W._put_ask(ref, dict(a, status='replaced', decided=W.now()))
+
+
 def reopen_on_change(ctx, ask, before):
     """A stamped change to the goal (a rule tagged goal) or to done-when (a done_items ask) starts the department's cycle again
     (M9.8; Q7: Identity takes the owner's words as a goal rule they stamp): j2_runtime.reopen, then Identity says old to new in
-    one line and reads its standard on the new cycle as it does where a cycle starts. Not when the stamp answers Identity's own
-    question (the cycle is still on its first step, asking), when nothing it changed is the goal or done-when, or when the
-    department has no cycle that has started. After done, a task is the Brief's (J3 4a, Q8) and starts no cycle."""
+    one line and reads its standard on the new cycle as it does where a cycle starts. What Identity asked under the old cycle is
+    retired first (retire_asks), so the new cycle starts with no question of the old goal open. Not when the stamp answers
+    Identity's own question (the cycle is still on its first step, asking), when nothing it changed is the goal or done-when,
+    or when the department has no cycle that has started. After done, a task is the Brief's (J3 4a, Q8) and starts no cycle."""
     ref = ctx['ref']
     cj = R._j2()
     cur = (cj._state(ref) or {}) if cj else {}
@@ -577,6 +612,7 @@ def reopen_on_change(ctx, ask, before):
         return None
     if not cj.reopen(ref, was=before):
         return None
+    retire_asks(ref, (cj._state(ref) or {}).get('cycle_id'))
     goal = before['goal'] != after.get('goal')
     old, new = (before['goal'], after.get('goal')) if goal else (before['done'], after.get('done'))
     R._tell(ref, after, _who(after), 'inform',
@@ -626,21 +662,59 @@ def identity_apply(ctx, step, item):
     return out
 
 
+def last_reading(ref, cycle=None):
+    """The last reading that was read, of this cycle (any, when none is named), as readings.jsonl holds it, or None."""
+    return next((r for r in reversed(W.rows(ref, 'readings.jsonl')) if r.get('read') and cycle in (None, r.get('cycle_id'))), None)
+
+
+def ways_out(d, why, lead='Say what to change'):
+    """The closing words of a card whose ways out R._blocked builds: they name the way that leaves an item out of done-when only
+    when the card offers it (never with one item, since done-when is never left empty), so what the card says and what its
+    buttons do are the same (M9.5)."""
+    item = R._left_out(d, why)
+    return '%s, leave %s out of done-when, or stop here.' % (lead, item['id']) if item else '%s, or stop here.' % lead
+
+
+def open_items(ref, ask, base=None):
+    """The done-when items a finding the owner turned down leaves open, in the order done-when lists them: the ones its round
+    covers; else the ones its findings name; else the items not met in the reading it came from (the cycle's last reading, when
+    the ask does not name one). [] when it names none and every item is met."""
+    ids = [i['id'] for i in W.items_of(W.dept(ref))]
+    named = [i for i in (base or {}).get('covers') or [] if isinstance(i, str)]
+    named = named or [f['item'] for f in ask.get('findings') or [] if isinstance(f, dict) and f.get('item') in ids]
+    if named:
+        return [i for i in ids if i in named] or named
+    cj = R._j2()
+    row = reading_of(ref, ask.get('reading')) or last_reading(ref, (cj._state(ref) or {}).get('cycle_id') if cj else None)
+    verdicts = R.audit_verdicts((row or {}).get('items'))
+    return [i for i in ids if verdicts.get(i) == 'not_met']
+
+
 def identity_drop(ctx, step, item):
-    """Take the owner's no (the body engine_runtime holds). A no to the correction a round asked ends that round, and the
-    pursuit does not end with it in silence: the owner is given the ways out (M9.5)."""
+    """Take the owner's no (the body engine_runtime holds). A no to a finding the owner was asked to stamp ends that correction
+    (a round's is a round refused), and the pursuit does not end with it in silence: while the department is not done, the owner
+    is given the ways out as one card (M9.5), whatever put the finding to them: a round, a reading's item that is not met, a
+    finding a rule says to ask about, or a high finding on a reading that met every item."""
     ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
     ask = next((x for x in W.asks(ref) if x['id'] == pl.get('ask')), None)
     out = R.identity_drop(ctx, step, item)
-    if ask and ask.get('kind') == 'finding' and ask.get('round'):
-        n, rows = ask['round'], round_rows(ref, ask['round'])
+    if not (ask and ask.get('kind') == 'finding'):
+        return out
+    n, base = ask.get('round'), None
+    what = _said(ask.get('correction') or ask.get('found') or ask.get('claim'), 300).rstrip('.')
+    if n:
+        rows = round_rows(ref, n)
         base = rows[-1] if rows else None
         if not base or base.get('status') not in ('refused', 'filed', 'read'):
             round_row(ref, base or {'round': n, 'correction': ask.get('correction') or ask.get('claim') or '', 'covers': []}, 'refused')
-        covers = list((base or {}).get('covers') or [])
-        R._blocked(ref, d, _who(d), 'You said no to the correction for round %d: %s. Say what to change, leave %s out of done-when, or stop here.'
-                   % (n, str(ask.get('correction') or ask.get('claim') or '').rstrip('.'), (covers or ['an item'])[-1]), 'The correction was turned down.',
-                   'You, on the correction Identity put to you', '%s not met' % ', '.join(covers) if covers else 'an item not met')
+    cj = R._j2()
+    cur = (cj._state(ref) or {}) if cj else {}
+    if not (cur.get('cycle_id') and not cj.done(ref)):
+        return out
+    left = open_items(ref, ask, base)
+    why = '%s not met' % ', '.join(left) if left else 'a finding is still open'
+    R._blocked(ref, d, _who(d), 'You said no to the correction%s: %s. %s' % (' for round %d' % n if n else '', what, ways_out(d, why)),
+               'The correction was turned down.', 'You, on the correction Identity put to you', why)
     return out
 
 
@@ -876,6 +950,8 @@ def fact_answered(ctx, got):
     cj = R._j2()
     words, hurry = got['words'], bool(got.get('hurry'))
     ask = next(a for a in W.asks(ref) if a['id'] == got['fact'])
+    if earlier_cycle(ref, ask):
+        return set_aside(ctx, ask)
     ids = [i for i in ask.get('points') or []]
     if ask['status'] == 'pending':
         with W._lock(ref):
@@ -884,9 +960,9 @@ def fact_answered(ctx, got):
                     'The owner answered: %s' % words[:200], 'answer-' + ask['id'], {'missing': 'fact'})
     cj._move(ref, 'pursuing', step=8, open_ask=None)
     if hurry:
-        R._blocked(ref, d, _who(d), '%s rests on a fact only you can give, and it stays to be confirmed, so the goal cannot be reached as it stands. '
-                   'Give the fact, leave %s out of done-when, or stop here.' % (', '.join(ids), ', '.join(ids[-1:])),
-                   'A fact is still missing.', 'Identity, reading the work', '%s still to be confirmed' % ', '.join(ids))
+        why = '%s still to be confirmed' % ', '.join(ids)
+        R._blocked(ref, d, _who(d), '%s rests on a fact only you can give, and it stays to be confirmed, so the goal cannot be reached as it stands. %s'
+                   % (', '.join(ids), ways_out(d, why, 'Give the fact')), 'A fact is still missing.', 'Identity, reading the work', why)
         return {'said': "took 'just do it' for a fact only the owner has; %s stays to be confirmed, and the owner has the ways out" % ', '.join(ids)}
     items = [dict(i, confirm='') if i['id'] in ids else i for i in W.items_of(W.dept(ref))]
     W.put_done_items(ref, items)
@@ -944,9 +1020,9 @@ def identity_weigh_reading(ctx, step, item):
     if left and stalled(ref, row):
         # the line has tried and met nothing new: no further round is asked for, and the owner has the ways out (no silent end)
         if not any(a.get('kind') == 'blocked' and a['status'] == 'pending' and a.get('reading') == row['id'] for a in W.asks(ref)):
-            card = R._blocked(ref, d, _who(d), 'The last rounds did not get any closer: %s still not met. Say what to change, leave %s out of done-when, '
-                              'or stop here.' % (', '.join(left), left[-1]), 'The next rounds are not getting closer.',
-                              'Identity, reading the work', '%s not met' % ', '.join(left))
+            why = '%s not met' % ', '.join(left)
+            card = R._blocked(ref, d, _who(d), 'The last rounds did not get any closer: %s still not met. %s' % (', '.join(left), ways_out(d, why)),
+                              'The next rounds are not getting closer.', 'Identity, reading the work', why)
             W._put_ask(ref, dict(card, reading=row['id']))
             routes['card'] = card['id']
         said.append('asked the owner what to do: the rounds met nothing new')
@@ -1015,12 +1091,17 @@ def identity_finding(ctx, step, item):
 # Adaptation proposed a correction round, Priority priced it inside the goal's ceiling, and Adaptation tells Identity it was
 # granted (inform/round, act.round). Identity files the correction in the Brief as 'Correct this: ...' with no stamp, unless a rule
 # says ask (S-18), and records the round's next status as a row of rounds.jsonl: a status change is a row appended, never one
-# rewritten (W.append_row). The line, which only runs what Root registered (SM-3), runs again on the new Brief.
+# rewritten (W.append_row). The line, which only runs what Root registered (SM-3), runs again on the new Brief. Identity files a
+# round only when the round's own last row, in this cycle, says granted: every proposal passes Priority first (rule 10), and who
+# sends the word is no proof of it.
 
 
 def round_rows(ref, n):
-    """The rows rounds.jsonl holds of round n, oldest first."""
-    return [r for r in W.rows(ref, 'rounds.jsonl') if r.get('round') == n]
+    """The rows rounds.jsonl holds of round n in the cycle now at work, oldest first: rounds are numbered again in each cycle, so a
+    row of an earlier cycle says nothing of this one's round n."""
+    cj = R._j2()
+    cycle = (cj._state(ref) or {}).get('cycle_id') if cj else None
+    return [r for r in W.rows(ref, 'rounds.jsonl') if r.get('round') == n and r.get('cycle_id') in (None, cycle)]
 
 
 def round_row(ref, base, status, **more):
@@ -1059,6 +1140,10 @@ def identity_round(ctx, step, item):
         return {'said': 'round %d is %s already; nothing is filed again' % (n, rows[-1]['status']), 'round': n}
     if not cj or cj.done(ref):
         return {'said': 'the goal is reached already; round %d is not filed' % n, 'round': n}
+    if not rows or rows[-1].get('status') != 'granted':
+        # every proposal passes Priority first (rule 10): the round is filed on its last row saying granted, in this cycle, and
+        # not on the word of the one who sent it
+        return {'said': 'round %d has no yes from Priority; nothing is filed' % n, 'round': n}
     rule = rule_asking_first(ref, d, correction)
     if rule:
         if not [a for a in W.asks(ref) if a.get('kind') == 'finding' and a.get('round') == n and a['status'] == 'pending']:
