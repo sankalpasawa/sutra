@@ -11,7 +11,7 @@ test_layer_contracts.py runs on every implementation it discovers (layers/<layer
        every good sample and refuses every bad one
     5  every WORDS value passes S.validate_field, every part with WORDS has a LAYOUT, and each such part compiles with
        sample inputs: its returns verbatim, no marker left, no field unread (layers.prompts.layout_faults); a part with
-       no WORDS is reported as on the .md fallback
+       no WORDS is a fault: it is on the .md fallback (reported only until 'A1 interface: refuse')
     6  view() on the contract fixture department validates as VIEWS[layer]
     7  no ref_to points at an engine_runtime attribute that is itself a delegate
     8  every OUTPUTS step the recipe provides declares or returns those keys
@@ -148,7 +148,8 @@ def case_4(module, ctx=None):
 
 
 def case_5(module, ctx=None):
-    """Every WORDS value passes validate_field, every part with WORDS has a LAYOUT, and each compiles with sample inputs."""
+    """Every WORDS value passes validate_field, every part with WORDS has a LAYOUT, each compiles with sample inputs, and no
+    part is left on the .md fallback (strict since 'A1 interface: refuse')."""
     out, words, layout = [], getattr(module, 'WORDS', {}) or {}, getattr(module, 'LAYOUT', {}) or {}
     for group, parts in words.items():
         for part, fields in (parts or {}).items():
@@ -163,12 +164,13 @@ def case_5(module, ctx=None):
     for group, parts in layout.items():
         out += ['%s: %s.%s has a LAYOUT and no WORDS' % (impl_id(module), group, part) for part in parts
                 if part not in ((words.get(group) or {}))]
-    return out
+    return out + ['%s: %s is on the .md fallback: the version holds no WORDS for it' % (impl_id(module), part)
+                  for part in on_the_md_fallback(module)]
 
 
 def on_the_md_fallback(module):
-    """The parts of the layer's PROMPTS this version holds no WORDS for: still read from the .md bundle (reported; from
-    the integrator's refuse commit at the end of wave 1, a fault)."""
+    """The parts of the layer's PROMPTS this version holds no WORDS for: still read from the .md bundle. Reported until the
+    integrator's refuse commit at the end of wave 1; from 'A1 interface: refuse', case 5 makes each one a fault."""
     words = getattr(module, 'WORDS', {}) or {}
     return ['%s.%s' % (group, part) for group, parts in (S.PROMPTS.get(module.LAYER) or {}).items() for part in parts
             if part not in (words.get(group) or {})]

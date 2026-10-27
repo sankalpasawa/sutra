@@ -21,7 +21,7 @@ import website_api
 from j2ui_artifacts import inline_css, previewable
 
 SAFE_HEADERS = dict(website_api.SAFE)
-NOT_YET = "<p style='font:14px system-ui;color:#667;padding:24px'>Your website will appear here once it's built.</p>"
+NOT_YET = "<p style='font:15px system-ui;color:#667;padding:24px'>Your website will appear here once it's built.</p>"
 _KEY = re.compile(r"v?(\d+)")
 
 

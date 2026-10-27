@@ -5,11 +5,16 @@ Every code, prompt, draft and check name the recipe uses is provided here: by re
 to the body engine_runtime holds today, so the behaviour is exactly what ran before, or as a body of its own where this
 version adds to it (A1.19: a name a layer changes is copied here and changed here): the handler Hear a doubt (identity_doubt,
 PRD M3.9) and the two steps that tell it the owner's answer (identity_read and identity_file, which hand every other
-word on to the body engine_runtime holds). WORDS and LAYOUT hold the words of every part of Identity's prompts (I2), so none
+word on to the body engine_runtime holds). Wave 2 adds to it (A1 W2-IDENTITY): the conflict's own ways out reach the owner as one
+card, applied by the layer that owns each (identity_closed, identity_apply; M5.4); Hear a reading, where done is read from
+Audit's reading and what it leaves open is weighed three ways (identity_done, identity_weigh_reading; M8.4, M8.5); File a
+granted round (identity_round; M9.3); and no end of the pursuit is silent (M9.5). WORDS and LAYOUT hold the words of every part of Identity's prompts (I2), so none
 is read from the .md bundle. view() returns the pane's read model by reference (I3).
 """
 import re
+import uuid
 
+import layers
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
 LAYER = 'identity'
@@ -387,21 +392,28 @@ def _doubt_asked(ctx):
 
 
 def identity_read(ctx, step, item):
-    """Read what was said (the body engine_runtime holds), and mark the words that answer Adaptation's doubt: they are no
-    new request to recognise and no word on the identity's standard, which was met before the plan was shaped."""
+    """Read what was said (the body engine_runtime holds), and mark the words that answer Adaptation's doubt, or Identity's
+    question on a fact only the owner has (fact_answered): they are no new request to recognise and no word on the identity's
+    standard, which was met before the plan was shaped."""
     got = R.identity_read(ctx, step, item)
     ask = _doubt_asked(ctx)
     if ask:
         got.update({"doubt": ask["id"], "answers": None, "assess": False, "later": False, "filled": []})
+        return got
+    ask = _fact_asked(ctx)
+    if ask:
+        got.update({"fact": ask["id"], "answers": None, "assess": False, "later": False, "filled": []})
     return got
 
 
 def identity_file(ctx, step, item):
-    """File what was decided: the answer to a doubt goes back to Adaptation (doubt_answered); any other word, to the body
-    engine_runtime holds."""
+    """File what was decided: the answer to a doubt goes back to Adaptation (doubt_answered), the answer to a question on a
+    fact goes into the Brief (fact_answered); any other word, to the body engine_runtime holds."""
     got = ctx["bag"]["identity.read"]
     if got.get("doubt"):
         return doubt_answered(ctx, got)
+    if got.get("fact"):
+        return fact_answered(ctx, got)
     return R.identity_file(ctx, step, item)
 
 
@@ -432,8 +444,627 @@ def doubt_answered(ctx, got):
         "'just do it'" if hurry else "answer", answer[:160]), "filed": row["v"]}
 
 
+# ---- The ways out of a conflict (PRD M5.4) ------------------------------------------------------------------------------
+# A conflict Identity cannot settle goes to the owner as one ask. When the one who raised it knew the ways out (Priority at a
+# limit: raise it, leave an item out, stop; Adaptation when no plan can be made: set it up again, leave an item out, stop), the
+# conflict carries them as options (act.conflict), and the ask carries those: each checked as the interface types an option, at
+# most three, each applied by the layer OPTION_KINDS names. A conflict that carries none is put to the owner as it was.
+
+
+def conflict_options(payload):
+    """The ways out a conflict carries, as the ask will hold them (W.option): the ones the interface types as an option, and no
+    more than it allows; [] when the conflict carries none."""
+    out = []
+    for o in (payload or {}).get('options') or []:
+        try:
+            built = W.option(o['id'], o['label'], o['cost'], o.get('params'))
+        except (KeyError, TypeError, AttributeError):
+            continue
+        if not S.validate('option', built) and len(out) < S.OPTIONS_MAX:
+            out.append(built)
+    return out
+
+
+def identity_closed(ctx, step, item):
+    """Identity's ruling on a bargain that did not close (step 4): run it, drop it, or one ask to the owner (J2.3). The body
+    engine_runtime held, moved here to carry the conflict's own ways out: whenever the ruling puts the conflict to the owner,
+    what the owner gets is one card with those ways out when the conflict carries them (conflict_options)."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    got = ctx['bag']['identity.close']
+    ruling, why = got.get('ruling'), str(got.get('why') or '').strip().rstrip('.')
+    engines, cj = [e for e in pl.get('engines') or [] if isinstance(e, dict) and e.get('name')], R._j2()
+    names = ' -> '.join(e['name'] for e in engines)
+    who = {'src': 'Root' if d.get('root') else R.OWNER}
+    ways = conflict_options(pl)
+    if not engines:
+        # no plan at all: Adaptation answered that an engine the kind requires cannot serve an item (J2B-4, M6.4), so there is
+        # nothing to run, nothing to drop and no plan to stamp (a stamp would send Root a plan that names no engine, and the
+        # same card would come back). The owner is put the reason in plain words, on the card every blocked plan has, with the
+        # ways out the conflict carries, or the usual three
+        reason = str(pl.get('why') or 'no plan can be made').strip().rstrip('.')
+        if cj:
+            cj.ruled(ref, 'ask', reason, engines)
+        R._blocked(ref, d, who, '%s. Say what the department should do, or choose a way forward on this card.' % reason,
+                   'No plan can be made as it stands.', 'Adaptation, shaping the plan', reason, options=ways)
+        return {'said': 'no plan can be made (%s); put to the owner, with the ways out' % reason}
+    if cj:
+        cj.ruled(ref, ruling, why, engines)
+    if ruling == 'run':
+        R._tell(ref, d, who, 'inform', {'word': 'line', 'done': 'Priority did not say yes to the plan %s; I ruled it runs: %s.' % (names, why)})
+        return R._j2_settle(ref, d, engines, pl.get('source') or 'shaped', pl.get('words'), "Identity's ruling")
+    if ruling == 'drop':
+        R._blocked(ref, d, who, "The plan %s is dropped: %s. Say what to change, or raise Priority's limit on its card."
+                   % (names, why or str(pl.get('why') or '')), 'The plan is dropped.', "Identity, settling Priority's no",
+                   why or str(pl.get('why') or ''), options=ways)
+        return {'said': 'dropped the plan: ' + (why or "Priority's no stands")}
+    if ways:
+        # the conflict says how it can go on, so the owner chooses between those: one card, never a stamp that can only run or drop
+        if not any(a.get('kind') == 'blocked' and a.get('status') == 'pending' and a.get('for') == pl.get('for') for a in W.asks(ref)):
+            text = ('Adaptation proposes the plan %s. %s. The goal and the rules do not settle it. Choose a way forward on this card.'
+                    % (names, str(pl.get('why') or 'Priority did not say yes to it').rstrip('.')))
+            ask = R._blocked(ref, d, who, text, 'The plan needs your word.', 'Identity, settling the bargain',
+                             why or str(pl.get('why') or ''), options=ways)
+            W._put_ask(ref, dict(ask, **{'for': pl.get('for')}))
+        return {'said': 'could not close the conflict from the goal and the rules; put it to the owner, with its ways out'}
+    text = ('Adaptation proposes the plan %s. %s. The goal and the rules do not settle it. %s'
+            % (names, str(pl.get('why') or 'Priority did not say yes to it').rstrip('.'), R._answers('run it as proposed', 'to drop it')))
+    # the card quotes Priority's why, which a model may say in the bargain's inside words: it passes the check every card
+    # passes (plain_card, M3.6), so the card says what the line it stands for may (found by a verifier 2026-10-26: the
+    # Chat's 'Waiting for you' card said grant and counter while its line was plain)
+    text = R.plain_card(ref, {'text': text}, 'conflict')['text']
+    if not any(a.get('kind') == 'conflict' and a.get('for') == pl.get('for') for a in W.asks(ref)):
+        p = R.post(ref, 'Identity', R.OWNER, 'request', {'word': 'conflict', 'objective': text, 'output': 'a stamp or a refusal', 'may_read': ['Brief'],
+                                                          'boundaries': 'this one plan'})
+        W._put_ask(ref, {'id': 'a-' + uuid.uuid4().hex[:8], 'kind': 'conflict', 'engine': 'Identity', 'engines': engines,
+                         'source': pl.get('source') or 'shaped', 'words': pl.get('words'), 'for': pl.get('for'), 'text': text,
+                         'status': 'pending', 'created': W.now(), 'thread': p['thread'] if p else None})
+    return {'said': 'could not close the conflict from the goal and the rules; put it to the owner'}
+
+
+def apply_way(ctx, ask, pl):
+    """The way out the owner chose on a card, when another layer owns it (S.OPTION_KINDS says which, A1.15): that layer's
+    apply_option(ref, ask, option) applies it. Words, leave and stop are Identity's own, applied by the body engine_runtime
+    holds. A layer that cannot apply it yet, or refuses it (raise past its cap, a set-up with no words), leaves the card
+    waiting as it was, and the owner is told why: a choice nothing applied is no choice. None for a way Identity applies."""
+    ref, d = ctx['ref'], ctx['dept']
+    oid = str(pl.get('option') or '')
+    spec = S.OPTION_KINDS.get(oid.split(':', 1)[0])
+    if not spec or spec['layer'] == 'identity':
+        return None
+    option = next((o for o in ask.get('options') or [] if o.get('id') == oid), None) or {'id': oid}
+    module = layers.impl(ref, spec['layer'], d)
+    fn = getattr(module, 'apply_option', None)
+    try:
+        if not callable(fn):
+            raise ValueError('%s cannot do that yet' % S.TITLE[spec['layer']])
+        got = fn(ref, ask, option)
+    except ValueError as exc:
+        R._card_waits(ref, d, ask)
+        R._tell(ref, d, {'src': 'Root' if d.get('root') else R.OWNER}, 'inform',
+                {'word': 'request', 'done': '%s. Nothing changed; choose again on the card.' % str(exc).strip().rstrip('.')})
+        return {'said': "could not apply the owner's choice (%s): %s; the card waits" % (oid, exc), 'applied': False}
+    return {'said': "applied the owner's choice (%s) through %s" % (oid, S.TITLE[spec['layer']]), 'applied': True, 'result': got}
+
+
+def _standing(d):
+    """Who the department is, as a change to it is read against what it was: the goal, done-when and the identity's revision."""
+    return {'goal': (d or {}).get('goal'), 'done': (d or {}).get('done'), 'revision': int((d or {}).get('identity_revision') or 1)}
+
+
+def reopen_on_change(ctx, ask, before):
+    """A stamped change to the goal (a rule tagged goal) or to done-when (a done_items ask) starts the department's cycle again
+    (M9.8; Q7: Identity takes the owner's words as a goal rule they stamp): j2_runtime.reopen, then Identity says old to new in
+    one line and reads its standard on the new cycle as it does where a cycle starts. Not when the stamp answers Identity's own
+    question (the cycle is still on its first step, asking), when nothing it changed is the goal or done-when, or when the
+    department has no cycle that has started. After done, a task is the Brief's (J3 4a, Q8) and starts no cycle."""
+    ref = ctx['ref']
+    cj = R._j2()
+    cur = (cj._state(ref) or {}) if cj else {}
+    after = W.dept(ref) or {}
+    if (ask.get('answers') or (ask['kind'] == 'rule' and ask.get('tag') != 'goal') or not cur.get('cycle_id')
+            or (int(cur.get('step') or 1) <= 1 and cur.get('state') != 'done')
+            or (after.get('goal'), after.get('done')) == (before['goal'], before['done'])):
+        return None
+    if not cj.reopen(ref, was=before):
+        return None
+    goal = before['goal'] != after.get('goal')
+    old, new = (before['goal'], after.get('goal')) if goal else (before['done'], after.get('done'))
+    R._tell(ref, after, _who(after), 'inform',
+            {'word': 'goal', 'done': '%s changed from \u201c%s\u201d to \u201c%s\u201d. The department starts its work again from the top.'
+             % ('The goal' if goal else 'Done-when', str(old or 'nothing').rstrip('.'), str(new or 'nothing').rstrip('.'))})
+    R._j2_went_on(ref, ask['id'])
+    return cj._state(ref)
+
+
+def leave_rule_out(ctx, rule):
+    """The owner chose to leave a rule out (M9.5, J2.7: a build still breaks it after two rewrites): the rule comes off the
+    department's rules, the identity moves a revision, the Brief says so, and the line builds again without it. A rule the
+    owner stamped is the owner's to drop; no rule of a parent's is offered here."""
+    ref, d = ctx['ref'], ctx['dept']
+    line = str(rule.get('line') or '').rstrip('.')
+    with W._lock(ref):
+        cur = W.dept(ref)
+        cur['rules'] = [r for r in cur.get('rules') or [] if r.get('id') != rule.get('id')]
+        W.bump_identity(ref, cur)
+    cj = R._j2()
+    if cj and cj.active(ref):
+        cj._move(ref, 'running')
+    row = R._file_words(ref, W.dept(ref), 'A rule is left out: %s. Build again without it.' % line, 'a rule the owner left out')
+    R._tell(ref, d, _who(d), 'inform', {'word': 'request', 'done': 'The rule is left out: %s. The line builds again without it.' % line, 'v': row['v']})
+    return {'said': "left the rule out on the owner's choice: %s" % line, 'filed': row['v']}
+
+
+def identity_apply(ctx, step, item):
+    """Apply what the owner stamped (the body engine_runtime holds), once the ways out another layer owns have been applied
+    by it (apply_way, M5.4); a stamp on the correction a round asked (identity_round) files the round (M9.3)."""
+    ref, pl = ctx['ref'], ctx['post']['payload']
+    ask = next((x for x in W.asks(ref) if x['id'] == pl.get('ask')), None)
+    before = _standing(W.dept(ref))
+    if ask and ask.get('kind') == 'blocked' and pl.get('option'):
+        oid = str(pl['option'])
+        rule = next((r for r in ctx['dept'].get('rules') or [] if oid.startswith('leave:') and r.get('id') == oid.split(':', 1)[1]), None)
+        if rule:
+            return leave_rule_out(ctx, rule)
+        got = apply_way(ctx, ask, pl)
+        if got is not None:
+            return got
+    out = R.identity_apply(ctx, step, item)
+    if ask and ask.get('kind') == 'finding' and ask.get('round') and out.get('filed'):
+        round_filed(ref, ctx['dept'], ask['round'], out['filed'], ask.get('correction') or ask.get('claim'))
+    if ask and ask.get('kind') in ('rule', 'done_items'):
+        reopen_on_change(ctx, ask, before)
+    return out
+
+
+def identity_drop(ctx, step, item):
+    """Take the owner's no (the body engine_runtime holds). A no to the correction a round asked ends that round, and the
+    pursuit does not end with it in silence: the owner is given the ways out (M9.5)."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    ask = next((x for x in W.asks(ref) if x['id'] == pl.get('ask')), None)
+    out = R.identity_drop(ctx, step, item)
+    if ask and ask.get('kind') == 'finding' and ask.get('round'):
+        n, rows = ask['round'], round_rows(ref, ask['round'])
+        base = rows[-1] if rows else None
+        if not base or base.get('status') not in ('refused', 'filed', 'read'):
+            round_row(ref, base or {'round': n, 'correction': ask.get('correction') or ask.get('claim') or '', 'covers': []}, 'refused')
+        covers = list((base or {}).get('covers') or [])
+        R._blocked(ref, d, _who(d), 'You said no to the correction for round %d: %s. Say what to change, leave %s out of done-when, or stop here.'
+                   % (n, str(ask.get('correction') or ask.get('claim') or '').rstrip('.'), (covers or ['an item'])[-1]), 'The correction was turned down.',
+                   'You, on the correction Identity put to you', '%s not met' % ', '.join(covers) if covers else 'an item not met')
+    return out
+
+
+# ---- Hear a reading (PRD M8.4) -------------------------------------------------------------------------------------------
+# Audit files a reading of one version (readings.jsonl, audit.reading) and tells Identity (inform/reading, act.reading; Audit posts
+# it once this handler is in Identity's recipe, A1-14). Identity reads the reading by its id: the goal is reached only when the
+# reading says so, which identity_done holds to done_is_read before j2_runtime records it (j2_runtime records and projects and
+# never rules, rule 14). 'Found nothing' is no reading of an item (S-30).
+
+
+def reading_of(ref, rid):
+    """The reading a post names, as readings.jsonl holds it, or None."""
+    return next((r for r in W.rows(ref, 'readings.jsonl') if rid and r.get('id') == rid), None)
+
+
+def done_claim(d, row):
+    """What a reading says of the goal, as Identity reads it: the department's done-when items by their verdict in the reading,
+    and whether the goal holds. Done means the version was read, every item has a verdict and it is met, none is to confirm,
+    none is a fact still to be confirmed on the record, and no finding is high."""
+    ids = [i['id'] for i in W.items_of(d)]
+    verdicts = R.audit_verdicts((row or {}).get('items'))
+    out = {'reading': (row or {}).get('id'), 'artifact': (row or {}).get('artifact'), 'v': (row or {}).get('v'),
+           'read': bool(row) and row.get('read') is True,
+           'met': [i for i in ids if verdicts.get(i) == 'met'], 'not_met': [i for i in ids if verdicts.get(i) == 'not_met'],
+           'to_confirm': [i for i in ids if verdicts.get(i) == 'to_confirm'], 'unread': [i for i in ids if i not in verdicts],
+           'high': any(f.get('severity') == 'high' for f in (row or {}).get('findings') or [])}
+    owed = [c.get('item') for c in d.get('to_be_confirmed') or [] if isinstance(c, dict)]
+    why = None
+    if not row:
+        why = 'no reading by that name is on the record'
+    elif not out['read']:
+        why = 'the version was not read'
+    elif not ids:
+        why = 'the department has no done-when items to read'
+    elif out['not_met']:
+        why = '%s not met' % ', '.join(out['not_met'])
+    elif out['to_confirm'] or owed:
+        why = '%s still to be confirmed' % ', '.join(out['to_confirm'] or owed)
+    elif out['unread']:
+        why = '%s not read' % ', '.join(out['unread'])
+    elif out['high']:
+        why = 'a high finding is open'
+    out.update({'done': why is None, 'why': why or 'every done-when item is met, none is to confirm and no high finding is open'})
+    return out
+
+
+def c_done_is_read(ctx, step, item, out):
+    """Done is read from a reading, never from no findings (PRD M8.4): a claim that the goal is reached cites the reading, says
+    it was read, and has every item met, none to confirm, none unread and no high finding; against the record, the items it
+    meets are all the department's. A claim that it is not reached says why."""
+    notes, done = [], out.get('done')
+    if not isinstance(done, bool):
+        notes.append('it does not say whether the goal is reached')
+    elif done:
+        if not out.get('reading'):
+            notes.append('done, and no reading is cited')
+        if out.get('read') is not True:
+            notes.append('done, on a version that was not read')
+        if not out.get('met'):
+            notes.append('done, with no item met')
+        for key, said in (('not_met', 'an item is not met'), ('to_confirm', 'an item is to be confirmed'), ('unread', 'an item is not read')):
+            if out.get(key):
+                notes.append('done, but %s: %s' % (said, ', '.join(map(str, out[key]))))
+        if out.get('high'):
+            notes.append('done, with a high finding open')
+        if ctx and ctx.get('dept'):
+            # against the record: the claim is read again off the reading it cites, and the items it meets are all the department's
+            owed = {i['id'] for i in W.items_of(ctx['dept'])} - set(out.get('met') or [])
+            if owed:
+                notes.append('done, but %s is not met' % ', '.join(sorted(owed)))
+            again = done_claim(ctx['dept'], reading_of(ctx['ref'], out.get('reading'))) if ctx.get('ref') and out.get('reading') else None
+            if again and not again['done']:
+                notes.append('done, but the reading it cites says otherwise: %s' % again['why'])
+    elif not str(out.get('why') or '').strip():
+        notes.append('not done, and it does not say why')
+    return {'ok': not notes, 'notes': notes or ['done is read from the reading' if done else 'not done: %s' % out.get('why')]}
+
+
+def identity_done(ctx, step, item):
+    """Identity says the goal is reached, from a reading and from nothing else (M8.4): the reading is read by its id, the claim
+    is held to done_is_read before anything is written, then j2_runtime records goal.reached citing the reading and the owner
+    is told, once. Only a cycle with a plan at work (step 6 on) can be done, and only on a reading of its own cycle and of the
+    version now out."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    cj = R._j2()
+    row = reading_of(ref, pl.get('reading'))
+    got = done_claim(d, row)
+    cur = (cj._state(ref) or {}) if cj else {}
+    if cj and cj.done(ref):
+        return dict(got, said='the goal was reached already; nothing more is declared')
+    if got['done']:
+        newer = W.latest(ref, got['artifact'], passed=True) if got['artifact'] else None
+        if not (cj and cj.active(ref) and int(cur.get('step') or 1) >= 6):
+            got.update({'done': False, 'why': 'the department is not in its cycle with a plan at work'})
+        elif row.get('cycle_id') not in (None, cur.get('cycle_id')):
+            got.update({'done': False, 'why': 'the reading belongs to an earlier cycle'})
+        elif newer and int(newer['v']) > int(got['v'] or 0):
+            got.update({'done': False, 'why': 'a newer version is out, and its reading decides'})
+        else:
+            held = c_done_is_read(ctx, step, item, got)
+            if not held['ok']:
+                got.update({'done': False, 'why': '; '.join(held['notes'])})
+    if not got['done']:
+        return dict(got, said='the reading does not say the goal holds: %s' % got['why'])
+    cj.reached(ref, got['v'], artifact=got['artifact'], reading=got['reading'], findings=len(row.get('findings') or []))
+    found = 'noted something that does not block' if row.get('findings') else 'found nothing to put right'
+    try:
+        R._tell(ref, d, {'src': 'Root' if d.get('root') else R.OWNER}, 'inform',
+                {'word': 'goal', 'done': 'The goal is reached: %s. Audit read %s v%s and %s.'
+                 % (str(d.get('done') or 'done').rstrip('.'), got['artifact'], got['v'], found), 'link': got['artifact'], 'v': got['v']})
+    except Exception:  # noqa: BLE001 -- the goal is reached on the record whether or not the word reached the chat
+        pass
+    return dict(got, said='declared the goal reached on reading %s: %s' % (got['reading'], got['why']))
+
+
+# ---- Weigh a reading three ways (PRD M8.5) -------------------------------------------------------------------------------
+# What a reading leaves open is routed in code from its verdicts and findings, each piece one way. An item to confirm rests on a
+# fact only the owner has: one question. A finding the owner must say yes to is an ask (S-18: only when a rule says ask, or it
+# reaches outside what the department makes). Every other item not met is the next thing to correct: a request to Adaptation
+# (request/next), posted only once Adaptation's recipe has the handler (A1-14). Until it has, the item goes the way it went before
+# rounds, the finding ask that puts it right on the owner's stamp, so a not-met item always leaves a next move (SM-6).
+#: the words that say nothing of what a rule is about, so a rule that asks first applies to a finding by what it names
+ASK_WORDS = frozenset('about after again ahead always anything before could every first from have into never other outside owner '
+                      'reaches should their there these they this those through under until what when where which will with without '
+                      'would your page pages site'.split())
+#: rounds in a row that meet no new item, after which Identity stops asking the line for another and asks the owner (M9.5)
+NO_PROGRESS = 2
+
+
+def next_is_heard():
+    """Whether Adaptation's recipe has a handler for a request of the next round (A1-14: an act is posted only to a receiver
+    that hears it)."""
+    return R._handler(R.engine_def('Adaptation'), {'msg_type': 'request', 'payload': {'word': 'next'}}) is not None
+
+
+def rule_asking_first(ref, d, text):
+    """The rule that says to ask the owner before this, or None (S-18: Identity asks only when a rule says ask): a rule tagged
+    ask applies to words that reach outside what the department makes (R.LEAVES), or that name what the rule is about."""
+    ruled = [r for r in R._effective_rules(ref, d) if r.get('tag') == 'ask' and str(r.get('line') or '').strip()]
+    if not ruled:
+        return None
+    if R.LEAVES.search(str(text or '')):
+        return ruled[0]
+    named = set(re.findall(r'[a-z]{4,}', str(text or '').lower())) - ASK_WORDS
+    return next((r for r in ruled if named & (set(re.findall(r'[a-z]{4,}', r['line'].lower())) - ASK_WORDS)), None)
+
+
+def _met_in(row):
+    return {i for i, v in R.audit_verdicts((row or {}).get('items')).items() if v == 'met'}
+
+
+def stalled(ref, row):
+    """Whether the last NO_PROGRESS rounds in a row met no item the reading before them had not met (M9.5), this reading being
+    the one after the last of them: counted from the cycle's readings, a version at a time, and the rounds Identity filed."""
+    filed = {r['round'] for r in W.rows(ref, 'rounds.jsonl') if r.get('status') in ('filed', 'read')
+             and r.get('cycle_id') in (None, row.get('cycle_id'))}
+    mine = []
+    for r in W.rows(ref, 'readings.jsonl'):
+        if r.get('read') and r.get('cycle_id') == row.get('cycle_id'):
+            mine = [x for x in mine if (x.get('artifact'), x.get('v')) != (r.get('artifact'), r.get('v'))] + [r]
+    n = 0
+    for before, after in reversed(list(zip(mine, mine[1:]))):
+        if _met_in(after) - _met_in(before):
+            break
+        n += 1
+    return bool(mine) and mine[-1].get('id') == row.get('id') and len(filed) >= NO_PROGRESS and n >= NO_PROGRESS
+
+
+def mark_rounds_read(ref, row):
+    """A reading made after a round was filed is that round read (M9.3): its next status, a row appended to rounds.jsonl
+    (granted, filed, read), once, for each round of this cycle that was filed and not yet read."""
+    last = {}
+    for r in W.rows(ref, 'rounds.jsonl'):
+        last[r['round']] = r
+    for r in last.values():
+        if r.get('status') == 'filed' and r.get('cycle_id') in (None, row.get('cycle_id')) and str(r.get('at') or '') <= str(row.get('at') or ''):
+            round_row(ref, r, 'read')
+
+
+def _claims(row, ids):
+    """What the reading says of these items, one line each: 'D2 Every page names its fees: the fees are not on the page'."""
+    by = {}
+    for r in (row or {}).get('items') or []:
+        if r.get('id') in ids and R.VERDICT_RANK.get(r.get('verdict'), -1) >= R.VERDICT_RANK.get((by.get(r['id']) or {}).get('verdict'), -1):
+            by[r['id']] = r
+    return ['%s %s: %s' % (i, str(by[i].get('subject') or '').rstrip('.'), str(by[i].get('claim') or '').rstrip('.')) for i in ids if i in by]
+
+
+def _who(d):
+    return {'src': 'Root' if d.get('root') else R.OWNER}
+
+
+def _ask_fact(ctx, row, ids):
+    """One question to the owner for the items a reading could not confirm (they rest on a fact only the owner can give): an ask
+    that takes words, missing 'fact', one open at a time. None when the same question is open already, or another is open."""
+    ref, d = ctx['ref'], ctx['dept']
+    cj = R._j2()
+    cur = cj._state(ref) or {}
+    if any(a.get('kind') == 'j2_identity' and a.get('missing') == 'fact' and a['status'] == 'pending' and set(ids) <= set(a.get('points') or [])
+           for a in W.asks(ref)) or cj.waiting_on_owner(ref):
+        return None
+    said = R.plain_card(ref, {'text': 'I cannot confirm yet: %s. Tell me the facts here and I will put them in.' % '; '.join(_claims(row, ids)),
+                              'why': 'it rests on a fact only you can give'}, 'question')
+    step = max(6, int(cur.get('step') or 8))
+    with W._lock(ref):
+        ask = dict(W.j2_identity_ask(said['text'], cur.get('cycle_id'), 'fact', said['why'], list(ids), False), reading=row['id'])
+        W._put_ask(ref, ask)
+        cj.note(ref, step, 'Identity', 'User', 'identity.questioned', 'waiting', said['text'], 'identity-fact-' + ask['id'],
+                {'missing': ['fact'], 'why': said['why'], 'standard': False})
+        cj._move(ref, 'waiting', step=step, open_ask=ask['id'])
+    R._tell(ref, d, _who(d), 'inform', {'word': 'question', 'done': said['text'], 'card': ask['id']})
+    return ask
+
+
+def _fact_asked(ctx):
+    """The question on a fact that the words in this post answer, as the ask holds it: the one a box answer names, else the one
+    the cycle waits on when they were said in the chat. None for any other words."""
+    ref, aid = ctx['ref'], (ctx['post'].get('payload') or {}).get('answers')
+    cj = R._j2()
+    if not cj or not cj.enabled():
+        return None
+    if not aid:
+        q = cj.open_question(ref) or {}
+        aid = q.get('id') if q.get('missing') == 'fact' else None
+    return next((a for a in W.asks(ref) if aid and a['id'] == aid and a.get('kind') == 'j2_identity' and a.get('missing') == 'fact'), None)
+
+
+def fact_answered(ctx, got):
+    """The owner's answer to the question on a fact (M8.5): the question is closed, the answer joins the Brief under it so the
+    line builds again with the fact, and the items it was about no longer wait on it. 'Just do it' gives no fact: those items
+    stay to be confirmed, so the goal cannot be reached as it stands, and the owner is given the ways out."""
+    ref, d, p = ctx['ref'], ctx['dept'], ctx['post']
+    cj = R._j2()
+    words, hurry = got['words'], bool(got.get('hurry'))
+    ask = next(a for a in W.asks(ref) if a['id'] == got['fact'])
+    ids = [i for i in ask.get('points') or []]
+    if ask['status'] == 'pending':
+        with W._lock(ref):
+            W._put_ask(ref, dict(ask, status='stamped', decided=W.now(), by='the owner', answered=words, words_at=R._words_at(ref, p)))
+            cj.note(ref, max(6, int((cj._state(ref) or {}).get('step') or 8)), 'User', 'Identity', 'ask.answered', 'complete',
+                    'The owner answered: %s' % words[:200], 'answer-' + ask['id'], {'missing': 'fact'})
+    cj._move(ref, 'pursuing', step=8, open_ask=None)
+    if hurry:
+        R._blocked(ref, d, _who(d), '%s rests on a fact only you can give, and it stays to be confirmed, so the goal cannot be reached as it stands. '
+                   'Give the fact, leave %s out of done-when, or stop here.' % (', '.join(ids), ', '.join(ids[-1:])),
+                   'A fact is still missing.', 'Identity, reading the work', '%s still to be confirmed' % ', '.join(ids))
+        return {'said': "took 'just do it' for a fact only the owner has; %s stays to be confirmed, and the owner has the ways out" % ', '.join(ids)}
+    items = [dict(i, confirm='') if i['id'] in ids else i for i in W.items_of(W.dept(ref))]
+    W.put_done_items(ref, items)
+    row = R._file_words(ref, d, "To Identity's question (%s): %s" % (str(ask.get('text') or '').rstrip('?.'), words), "the owner's answer")
+    R._tell(ref, d, p, 'inform', {'word': 'request', 'done': 'Thank you. I put it in the Brief, and the line builds again with it.'}, thread=p['thread'])
+    return {'said': "took the owner's answer on %s and filed it in the Brief: %s" % (', '.join(ids), words[:160]), 'filed': row['v']}
+
+
+def _ask_finding(ctx, art, claim, found, findings, rule=None, **more):
+    """A finding put to the owner for the stamp that puts it right (the shape identity_finding files): the stamp files 'Correct
+    this' in the Brief (identity_apply). `more` is kept on the ask: the reading it came from, or the round it is."""
+    ref = ctx['ref']
+    text = 'Audit found: %s. Stamp to have it put right.' % found
+    p = R.post(ref, 'Identity', R.OWNER, 'request', {'word': 'finding', 'objective': text, 'output': 'a stamp or a refusal',
+                                                      'may_read': [art] if art else [], 'boundaries': claim, 'claim': claim})
+    return W._put_ask(ref, dict({'id': 'a-' + uuid.uuid4().hex[:8], 'kind': 'finding', 'engine': 'Audit', 'slot': ctx['slot'], 'text': text,
+                                  'claim': claim, 'found': found, 'findings': findings, 'status': 'pending', 'created': W.now(),
+                                  'thread': p['thread'] if p else None}, **dict(more, **({'rule': rule} if rule else {}))))
+
+
+def _asked_about(ref, claim):
+    """Whether the owner was asked (or has answered) about a finding with this claim already."""
+    want = ' '.join(str(claim).lower().split())
+    return any(a.get('kind') == 'finding' and (' '.join(str(a.get('claim') or '').lower().split()) == want or
+                                               any(' '.join(str(f.get('claim') or '').lower().split()) == want for f in a.get('findings') or [] if isinstance(f, dict)))
+               for a in W.asks(ref))
+
+
+def identity_weigh_reading(ctx, step, item):
+    """Weigh what a reading leaves open, three ways (M8.5), in code from its verdicts and findings: an item to confirm is one
+    question; a finding that needs the owner's yes is an ask; every other item not met is the next move, to Adaptation, once it
+    hears one. Two rounds with no new item met end in an options ask instead (stalled, M9.5)."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    cj = R._j2()
+    got = ctx['bag']['identity.done']
+    row = reading_of(ref, pl.get('reading'))
+    routes = {'question': None, 'asks': [], 'next': None, 'card': None}
+    if row and row.get('read'):
+        mark_rounds_read(ref, row)
+    if got['done']:
+        return {'said': 'the goal holds on this reading; nothing is left open', 'routes': routes}
+    if not row or not row.get('read'):
+        return {'said': 'the version was not read; nothing is weighed and nothing is cleared', 'routes': routes}
+    if not (cj and cj.active(ref)):
+        return {'said': 'the department is not in its cycle; the reading is kept and nothing is weighed', 'routes': routes}
+    if row.get('cycle_id') not in (None, (cj._state(ref) or {}).get('cycle_id')):
+        return {'said': 'the reading belongs to an earlier cycle; it is kept and nothing is weighed', 'routes': routes}
+    said = []
+    if got['to_confirm']:
+        ask = _ask_fact(ctx, row, got['to_confirm'])
+        routes['question'] = ask and ask['id']
+        said.append(('put %s, which it could not confirm, to the owner as one question' if ask else
+                     'left %s, which it could not confirm, to the question the owner has open') % ', '.join(got['to_confirm']))
+    left = list(got['not_met'])
+    if left and stalled(ref, row):
+        # the line has tried and met nothing new: no further round is asked for, and the owner has the ways out (no silent end)
+        if not any(a.get('kind') == 'blocked' and a['status'] == 'pending' and a.get('reading') == row['id'] for a in W.asks(ref)):
+            card = R._blocked(ref, d, _who(d), 'The last rounds did not get any closer: %s still not met. Say what to change, leave %s out of done-when, '
+                              'or stop here.' % (', '.join(left), left[-1]), 'The next rounds are not getting closer.',
+                              'Identity, reading the work', '%s not met' % ', '.join(left))
+            W._put_ask(ref, dict(card, reading=row['id']))
+            routes['card'] = card['id']
+        said.append('asked the owner what to do: the rounds met nothing new')
+        return {'said': '; '.join(said), 'routes': routes}
+    findings = [f for f in row.get('findings') or [] if isinstance(f, dict) and f.get('claim')]
+    covered = set()
+    if any(q['src'] == 'Identity' and R.OWNER in q['dst'] and (q['payload'] or {}).get('word') == 'facts'
+           and q['payload'].get('about_version') == row.get('v') for q in R.board(ref)):
+        # the site said it does not know some facts and the owner was asked for them (identity_finding): what code measured as
+        # not holding waits on those facts, which are never made up, and the question is its next move
+        covered |= {r['id'] for r in row.get('items') or [] if r.get('method') == 'code' and r.get('verdict') == 'not_met'}
+        left = [i for i in left if i not in covered]
+    for f in findings:
+        rule = rule_asking_first(ref, d, f['claim'])
+        if not rule:
+            continue
+        if not _asked_about(ref, f['claim']):
+            routes['asks'].append(_ask_finding(ctx, row['artifact'], f['claim'], f['claim'], [f], rule=rule.get('line'), reading=row['id'])['id'])
+        covered.add(f.get('item'))
+    left = [i for i in left if i not in covered]
+    if routes['asks']:
+        said.append("put what needs the owner's yes to the owner as an ask")
+    if left and next_is_heard():
+        if not any(q['src'] == 'Identity' and q['dst'] == ['Adaptation'] and (q['payload'] or {}).get('word') == 'next'
+                   and q['payload'].get('reading') == row['id'] for q in R.board(ref)):
+            ids = set(left)
+            sent = R.post(ref, 'Identity', 'Adaptation', 'request',
+                          {'word': 'next', 'items': left, 'reading': row['id'], 'findings': [f['id'] for f in findings if f.get('item') in ids or not f.get('item')],
+                           'objective': 'propose the next correction for %s' % ', '.join(left), 'output': 'one priced correction on the registered line',
+                           'may_read': ['Brief'], 'boundaries': 'nothing new is registered; only the registered engines run'},
+                          about={'art': row['artifact'], 'v': row['v']})
+            routes['next'] = sent and sent['n']
+        if (cj._state(ref) or {}).get('state') not in ('waiting', 'blocked'):
+            cj._move(ref, 'pursuing', step=8)
+        said.append('asked Adaptation for the next move on %s' % ', '.join(left))
+    elif left:
+        # nobody hears a next round yet: the item goes the way it went before rounds, to the owner, to be put right on a stamp
+        if not [a for a in W.asks(ref) if a['kind'] == 'finding' and a['status'] == 'pending']:
+            lines = _claims(row, left)
+            routes['asks'].append(_ask_finding(ctx, row['artifact'], '; '.join(lines), '; '.join(lines), [f for f in findings if f.get('item') in set(left)],
+                                                reading=row['id'])['id'])
+        said.append('put %s to the owner to be put right: nobody takes a next round yet' % ', '.join(left))
+    return {'said': '; '.join(said) or 'weighed the reading; nothing is left to route', 'routes': routes}
+
+
+def identity_finding(ctx, step, item):
+    """Weigh a finding (the body engine_runtime holds), except the high one a reading's next round carries (M8.5): once Adaptation
+    hears a next round, a finding of a reading that has an item not met is carried by that round, which Identity asks of
+    Adaptation when it weighs the reading, so the owner is not also asked to stamp the same correction. A fact only the owner has,
+    and a finding a rule says to ask about, are put to the owner as before."""
+    ref, pl = ctx['ref'], ctx['post']['payload'] or {}
+    row, cj = reading_of(ref, pl.get('reading')), R._j2()
+    if not (row and row.get('read') and cj and cj.active(ref) and next_is_heard()
+            and 'not_met' in R.audit_verdicts(row.get('items')).values()):
+        return R.identity_finding(ctx, step, item)
+    finds = [f for f in pl.get('findings') or [] if isinstance(f, dict) and f.get('claim')]
+    keep = [f for f in finds if f.get('kind') == 'hole' or str(f.get('severity') or '').lower() != 'high'
+            or rule_asking_first(ref, ctx['dept'], f['claim'])]
+    if len(keep) == len(finds):
+        return R.identity_finding(ctx, step, item)
+    got = R.identity_finding(dict(ctx, post=dict(ctx['post'], payload=dict(pl, findings=keep))), step, item)
+    return {'said': 'left %d high finding%s to the reading\'s next round; %s' % (len(finds) - len(keep), '' if len(finds) - len(keep) == 1 else 's', got['said'])}
+
+
+# ---- File a granted round (PRD M9.3) -------------------------------------------------------------------------------------
+# Adaptation proposed a correction round, Priority priced it inside the goal's ceiling, and Adaptation tells Identity it was
+# granted (inform/round, act.round). Identity files the correction in the Brief as 'Correct this: ...' with no stamp, unless a rule
+# says ask (S-18), and records the round's next status as a row of rounds.jsonl: a status change is a row appended, never one
+# rewritten (W.append_row). The line, which only runs what Root registered (SM-3), runs again on the new Brief.
+
+
+def round_rows(ref, n):
+    """The rows rounds.jsonl holds of round n, oldest first."""
+    return [r for r in W.rows(ref, 'rounds.jsonl') if r.get('round') == n]
+
+
+def round_row(ref, base, status, **more):
+    """Round `base`'s next status, as a row of its own: what the round's last row held, with the new status and its time."""
+    row = {k: v for k, v in base.items() if k not in ('status', 'at')}
+    row.update(more)
+    row.update({'schema_version': 1, 'status': status, 'at': W.now()})
+    return W.append_row(ref, 'rounds.jsonl', row)
+
+
+def round_filed(ref, d, n, v, correction):
+    """The round's correction is in the Brief as version v: the round is filed (with brief_v), the cycle runs the line again at
+    step 6 with the round it stands on, and the owner is told what was sent back."""
+    rows = round_rows(ref, n)
+    cj = R._j2()
+    if not rows or rows[-1].get('status') not in ('filed', 'read'):
+        cycle = (cj._state(ref) or {}).get('cycle_id') if cj else None
+        round_row(ref, rows[-1] if rows else {'round': n, 'cycle_id': cycle, 'correction': correction[:600], 'covers': []}, 'filed', brief_v=v)
+    if cj:
+        cj._move(ref, 'running', step=6, round=n)
+    R._tell(ref, d, _who(d), 'inform', {'word': 'filed', 'link': 'Brief', 'v': v,
+                                        'done': 'Round %d: I sent the line back to put right: %s. It is filed in the Brief as v%d.'
+                                        % (n, str(correction).rstrip('.'), v)})
+
+
+def identity_round(ctx, step, item):
+    """File a round Priority priced and Adaptation tells Identity of: 'Correct this: <correction>' in the Brief, with no stamp
+    unless a rule says ask (S-18: then the correction is an ask the owner stamps, and the stamp files the round)."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    cj = R._j2()
+    n, correction = pl.get('round'), ' '.join(str(pl.get('correction') or '').split())
+    if not n or not correction:
+        return {'said': 'heard a round with nothing to correct; nothing is filed'}
+    rows = round_rows(ref, n)
+    if rows and rows[-1].get('status') in ('filed', 'read', 'refused'):
+        return {'said': 'round %d is %s already; nothing is filed again' % (n, rows[-1]['status']), 'round': n}
+    if not cj or cj.done(ref):
+        return {'said': 'the goal is reached already; round %d is not filed' % n, 'round': n}
+    rule = rule_asking_first(ref, d, correction)
+    if rule:
+        if not [a for a in W.asks(ref) if a.get('kind') == 'finding' and a.get('round') == n and a['status'] == 'pending']:
+            _ask_finding(ctx, S.deliverable(d), correction, correction, [], rule=rule.get('line'), round=n, correction=correction)
+        return {'said': 'put round %d to the owner first, as the rule "%s" says to ask: %s' % (n, rule.get('line'), correction), 'round': n}
+    row = R._file_brief(ref, d, 'Correct this: ' + correction, 'round %d, granted' % n, rnd=n)
+    round_filed(ref, d, n, row['v'], correction)
+    return {'said': 'filed round %d in the Brief as v%d, with no stamp: %s' % (n, row['v'], correction), 'round': n, 'filed': row['v']}
+
+
 #: the bodies of this version's own, in the table beside the references
-CODE.update({'identity_read': identity_read, 'identity_file': identity_file, 'identity_doubt': identity_doubt})
+CODE.update({'identity_read': identity_read, 'identity_file': identity_file, 'identity_doubt': identity_doubt,
+             'identity_closed': identity_closed, 'identity_apply': identity_apply, 'identity_done': identity_done,
+             'identity_weigh_reading': identity_weigh_reading, 'identity_finding': identity_finding, 'identity_round': identity_round,
+             'identity_drop': identity_drop})
+CHECK.update({'done_is_read': c_done_is_read})
 
 
 def view(ref, d, events, asks):

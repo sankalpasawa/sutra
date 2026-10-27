@@ -16,6 +16,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
+from starlette.convertors import Convertor, register_url_convertor
 
 _LIB_DIR = str(Path(__file__).resolve().parents[1] / "lib")
 if _LIB_DIR not in sys.path:
@@ -25,6 +26,7 @@ import placement_engine as E  # noqa: E402
 import founding  # noqa: E402
 import functions_view  # noqa: E402
 from interface_http import InterfaceRoute  # noqa: E402
+import journeys  # noqa: E402
 import layers  # noqa: E402
 import layer_schema as S  # noqa: E402
 import owner_words  # noqa: E402
@@ -32,6 +34,21 @@ import website_dept as W  # noqa: E402
 
 
 router = APIRouter(prefix="/api/native", tags=["native"], route_class=InterfaceRoute)
+
+
+class _JourneyId(Convertor):
+    """A path part shaped like a journey's id (J1, FI2 ...). The one-journey route claims nothing else, so a department whose ref
+    is `journeys` keeps every route of its own."""
+    regex = S.JOURNEY_ID.strip("^$")
+
+    def convert(self, value: str) -> str:
+        return value
+
+    def to_string(self, value: str) -> str:
+        return str(value)
+
+
+register_url_convertor("journey_id", _JourneyId())
 
 
 @router.get("/ping")
@@ -65,6 +82,25 @@ async def found(request: Request):
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     return out
+
+
+# The user journeys (PRD A3.6): data for the screens, global (a journey is not a department's record), read only. Registered before
+# every route that begins with /{ref}, so that `journeys` is never read as a department's ref.
+@router.get("/journeys")
+def journey_list():
+    """Every user journey with the state its rows have earned from the last run of their tests: {schema_version, journeys: [{id,
+    title, kind, inside, bound_to, declared, state, stale, counts}]}. Nothing is read from a department and nothing is written."""
+    return journeys.view()
+
+
+@router.get("/journeys/{jid:journey_id}")
+def journey_one(jid: str):
+    """One journey as the site draws it, without its code and tests, with `status`: its state, whether the file the state
+    was computed for is stale, each row's state with the tests that proved it, and where the site's word and the state differ."""
+    try:
+        return journeys.view(jid)
+    except journeys.UnknownJourney:
+        raise HTTPException(404, detail={"code": "UNKNOWN_JOURNEY"})
 
 
 def _need(ref):

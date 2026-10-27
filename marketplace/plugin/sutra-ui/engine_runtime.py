@@ -1942,9 +1942,23 @@ def check_rules_of(ctx, step, item):
 SEND_BACK = "Correct this: the rule is broken"
 
 
+def _broken_rule(d, broken):
+    """The owner's own rule (stamped, so its id begins u-) that a build breaks, by its line; with one rule of the owner's and no
+    line that matches, that one; None when none is to be found."""
+    mine = [r for r in d.get("rules") or [] if str(r.get("id") or "").startswith("u-") and r.get("line")]
+    for b in broken:
+        want = " ".join(str(b.get("rule") or "").lower().split())
+        hit = next((r for r in mine if " ".join(str(r["line"]).lower().split()) == want), None)
+        if hit:
+            return hit
+    return mine[0] if len(mine) == 1 else None
+
+
 def _send_back(ref, d, art, v, broken):
     """A build that breaks a stamped rule goes back to the line with the finding, twice at most, and the person is told
-    each time (finding 12: two versions broke a stamped rule and nothing said so)."""
+    each time (finding 12: two versions broke a stamped rule and nothing said so). When two rewrites did not mend it, the
+    person is told so and given the ways out as one ask, never left with a tell only (PRD M9.5, J2.7): say the rule another
+    way, leave it out, or stop."""
     try:
         lines = ["'%s' on %s" % (b.get("rule"), ", ".join(b.get("pages") or [])) for b in broken]
         cur = W.latest(ref, "Brief")
@@ -1953,6 +1967,14 @@ def _send_back(ref, d, art, v, broken):
         if tries >= 2:
             _tell(ref, d, src, "inform", {"word": "broken", "done": "%s v%d breaks your rule %s, and two rewrites did not mend it. Say the rule another way, or drop it."
                                           % (art, v, "; ".join(lines))})
+            rule = _broken_rule(d, broken)
+            ways = [W.option(W.WORDS_OPTION, "Say the rule another way", "your words go to Identity; the line builds again once the rule is stamped")]
+            if rule:
+                ways.append(W.option("leave:" + rule["id"], "Leave this rule out",
+                                     "the rule is dropped (%s); the line builds again without it" % str(rule["line"]).rstrip(".")))
+            ways.append(W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later"))
+            _blocked(ref, d, src, "Nothing goes live while your rule %s is broken. Choose how to go on." % "; ".join(lines),
+                     "Your rule is still broken.", "Check, holding the build to your rule", "; ".join(lines), options=ways)
             return
         _file_words(ref, d, "%s %s" % (SEND_BACK, "; ".join(lines)), "the check's finding")
         _tell(ref, d, src, "inform", {"word": "broken", "done": "%s v%d breaks your rule %s. Sent back to be rewritten." % (art, v, "; ".join(lines))})
@@ -2099,6 +2121,8 @@ def identity_gate(ctx, step, item):
     with W._lock(ref):
         a = next((x for x in W.asks(ref) if x.get("slot") == slot and x.get("kind") == kind), None)
         if a is None:
+            if ctx.get("peek"):
+                return "wait", "waits for the stamp"       # a panel read asking: it says what the tick will, and the tick files the ask
             p = post(ref, "Identity", OWNER, "request",
                      {"word": kind, "objective": objective, "output": "a stamp or a refusal", "may_read": may_read,
                       "boundaries": "this one %s" % kind}, about=about)
@@ -2163,7 +2187,7 @@ def priority_envelope(ctx, step, item):
     calls, usd = W._today_spend(ref, name)
     env = W.limit_of(ctx["dept"], name)
     if calls >= env.get("calls", 0) or usd >= env.get("usd", 0):
-        if not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
+        if not ctx.get("peek") and not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
             W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "envelope", "engine": name, "slot": slot,
                              "text": "%s is out of today's envelope" % name, "status": "pending", "created": W.now(), "escalated": True})
         if not ctx.get("peek"):
@@ -2299,15 +2323,24 @@ def identity_read(ctx, step, item):
                       "cue": cue if rule else ("task" if first else cue), "names_work": bool(about)}}
 
 
-def _file_brief(ref, d, words, note):
+def _file_brief(ref, d, words, note, rnd=None):
+    """The owner's words, or a correction, as the Brief's next version. `rnd` is the correction round the words are (PRD M9.3):
+    the version says which round and cycle it answers, and a round already filed in the cycle is that version again, so a
+    handler that runs twice files the round once."""
     cur = W.latest(ref, "Brief")
+    J = _j2()
+    mark = {"ask": words, "at": W.now()}
+    if rnd is not None:
+        mark.update({"round": rnd, "cycle": (J._state(ref) or {}).get("cycle_id") if J else None})
+        again = next((v for v in W.versions(ref, "Brief") for m in v.get("made_from") or []
+                      if isinstance(m, dict) and (m.get("round"), m.get("cycle"), m.get("ask")) == (rnd, mark["cycle"], words)), None)
+        if again:
+            return again
     if not cur:
-        return W.add_version(ref, "Brief", {"brief.md": "# " + d["name"] + "\n\n" + words + "\n"},
-                             [{"ask": words, "at": W.now()}], "owner", {"ok": True, "notes": [note]})
+        return W.add_version(ref, "Brief", {"brief.md": "# " + d["name"] + "\n\n" + words + "\n"}, [mark], "owner", {"ok": True, "notes": [note]})
     base = W.read_files(ref, "Brief", cur["v"]).get("brief.md", "")
     body = base.rstrip() + ("\n\n## Asked since\n" if "## Asked since" not in base else "\n") + "- " + words + "\n"
-    return W.add_version(ref, "Brief", {"brief.md": body}, [{"art": "Brief", "v": cur["v"]}, {"ask": words, "at": W.now()}],
-                         "owner", {"ok": True, "notes": [note]})
+    return W.add_version(ref, "Brief", {"brief.md": body}, [{"art": "Brief", "v": cur["v"]}, mark], "owner", {"ok": True, "notes": [note]})
 
 
 def _file_words(ref, d, words, note):
@@ -5310,11 +5343,13 @@ def _left_out(d, why):
     return (named or items)[-1]
 
 
-def _blocked(ref, d, who, said, title, by, why):
+def _blocked(ref, d, who, said, title, by, why, options=None):
     """The plan is blocked, and there is always a way out (PRD M3.5, screen S10): the cycle says blocked, and what
     Identity says is an ask with options, the first the one it recommends, each applied by code when the owner chooses
     it: change the plan in my words; leave an item out (a done_items ask, stamped by that choice); stop. The line names
-    its card, so the chat says it once, on the card; an older card for the same plan goes quiet."""
+    its card, so the chat says it once, on the card; an older card for the same plan goes quiet. `options`, when given,
+    are the ways out the card offers instead of those three (at most OPTIONS_MAX, each built by W.option): a conflict's own
+    (Priority's raise, Adaptation's set-up-again; M5.4), or leaving a rule out (M9.5)."""
     J = _j2()
     if J:
         J._set(ref, state="blocked")
@@ -5327,6 +5362,7 @@ def _blocked(ref, d, who, said, title, by, why):
         opts.append(W.option("leave:" + item["id"], "Leave %s out" % item["id"],
                              "%s is dropped from done-when (%s); nothing more is spent" % (item["id"], str(item["text"]).rstrip("."))))
     opts.append(W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later"))
+    opts = [o for o in options or []][:W.OPTIONS_MAX] or opts
     for old in W.asks(ref):
         if old.get("kind") == "blocked" and old["status"] == "pending":
             W._put_ask(ref, dict(old, status="replaced", decided=W.now()))
@@ -5671,7 +5707,8 @@ INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done m
               "existing": "what exists", "conversation": "the conversation so far", "org": "the organisation", "named": "what was named",
               "kinds": "the kinds of department", "use_cases": "the use cases", "practices": "the practices in place",
               "deliverable": "what was made", "measured": "what code measured", "estimate": "what it is likely to cost",
-              "remaining": "what remains of today's room"}
+              "remaining": "what remains of today's room", "round": "the round", "correction": "what the round puts right",
+              "ceiling": "the goal's ceiling"}
 
 
 def _what(fn, group, part, field):
@@ -6680,6 +6717,18 @@ CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_na
          "enough_is_shaped": c_enough_is_shaped}
 # audit/v1's step audit.items (A1 W1-AUDIT, M8.3): registered beside the literals, which are not edited before W3-PROOF
 PROMPT["audit_items"], DRAFT["audit_items_draft"], CHECK["reading_is_s30"] = p_audit_items, d_audit_items, c_reading_is_s30
+
+
+def c_done_is_read(ctx, step, item, out):
+    """The name of identity/v1's covering of the goal reached (A1 W2-IDENTITY, M8.4), registered beside the literals as
+    reading_is_s30 is: the body is the version's, and without the version there is no claim of done to let through."""
+    got = layers.load("identity/v1")
+    if got is None:
+        return {"ok": False, "notes": ["Identity's version is not there to read a claim of done"]}
+    return got.c_done_is_read(ctx, step, item, out)
+
+
+CHECK["done_is_read"] = c_done_is_read
 
 
 # ---- what the screens read -----------------------------------------------------------------------------------------

@@ -462,15 +462,16 @@ def functions(ref):
              "steps": _steps(cur, events, state) if cur.get("cycle_id") else [],
              "needs_you": needs and state not in ("stopped", "done"), "asks": len(pending),
              "running": [r["engine"] for r in work_running],
-             "ceiling": ((d.get("envelopes") or {}).get("_goal") or None), "round": cur.get("round")}
+             "ceiling": (d.get("ceiling") or None), "round": cur.get("round")}
     return _clean({"ref": ref, "name": d.get("name"), "kind": d.get("kind"), "stopped": stopped,
                    "functions": nodes, "cycle": cycle, "speaks": pairs, "made": mades, "between": _between(posts),
                    "budget": _budget(ref, d), "not_recorded": nr})
 
 
 def _budget(ref, d):
-    """The whole goal's spend against its ceiling, for the Map's Budget bar: today's spend of every engine against the
-    sum of their limits until Priority holds a ceiling for the goal (M9.2)."""
+    """The whole goal's spend against its ceiling, for the Map's Budget bar: what the goal has spent in all against the
+    ceiling Priority holds for it (dept.ceiling, M9.2); until it holds one, today's spend of every engine against the sum of
+    their limits."""
     envs = {k: v for k, v in (d.get("envelopes") or {}).items() if not str(k).startswith("_")}
     calls = usd = cap_c = cap_u = 0
     for name, env in envs.items():
@@ -478,14 +479,21 @@ def _budget(ref, d):
         calls, usd = calls + c, usd + u
         cap_c += int((env or {}).get("calls") or 0)
         cap_u += float((env or {}).get("usd") or 0.0)
-    goal = (d.get("envelopes") or {}).get("_goal") or {}
+    goal = d.get("ceiling") or {}
+    held = bool(goal.get("calls") or goal.get("usd"))
+    if held:
+        try:
+            spent = layers.call(ref, "priority", "spent_of", ref)        # the goal's, not the day's
+            calls, usd = spent["calls"], spent["usd"]
+        except Exception:  # noqa: BLE001 -- a layer that does not load: the bar reads the day's spend, as it did before the ceiling
+            pass
     if goal.get("calls"):
         cap_c = int(goal["calls"])
     if goal.get("usd"):
         cap_u = float(goal["usd"])
     share = max(calls / cap_c if cap_c else 0.0, usd / cap_u if cap_u else 0.0)
     return {"calls": calls, "usd": round(usd, 3), "calls_limit": cap_c, "usd_limit": round(cap_u, 3), "share": round(min(1.0, share), 3),
-            "of": "the goal" if goal else "today's limits"}
+            "of": "the goal" if held else "today's limits"}
 
 
 # ---- M1.7: one function, as its site page holds it -----------------------------------------------------------------

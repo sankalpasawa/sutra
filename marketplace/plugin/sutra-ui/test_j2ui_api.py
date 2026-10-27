@@ -224,7 +224,8 @@ def test_c54_a_name_that_climbs_out_never_reaches_the_module(client, monkeypatch
 
 
 # ---- C5-5: cleaned, no-store, sliced, and the three that mean nothing ----------------------------------------------------------------
-def test_c55_json_is_cleaned_on_the_way_out(client, monkeypatch):
+def test_c55_json_is_cleaned_on_the_way_out(client, monkeypatch, machine):
+    machine("/Users/x")
     fake(monkeypatch, j2ui_board={"build": lambda c: {"schema": "board/1", "entries": [{"id": "B-1", "token": "t", "question": "see /Users/x/y/z.txt, due 5/6/2026",
                                                                                       "file": "build/v1/index.html"}]}})
     e = client.get(url("api/board")).json()["entries"][0]
@@ -246,6 +247,47 @@ def test_c55_the_owners_words_reach_the_page_as_they_were_said(mods, client, bor
     assert [m["text"] for m in s["chat"] if m["who"] == "user"][-1] == words
     assert s["goal"]["statement"] == "A site whose /home is the landing page" and s["goal"]["rules"] == ["never: never link /private from /home"]
     assert s["goal"]["done_when"] == ["/opt-in works and /root redirects"]
+
+
+#: the owner's rule, quoted routes and all: pages of the site (a route that is not a path of this machine, and 'Plan B:/pricing')
+ROUTES = "Never link /private/area from the menu, always keep /home/about first, and Plan B:/pricing stays; /private/members is for members"
+
+
+def test_c55_routes_the_owner_quoted_reach_the_page_unchanged_in_every_voice(mods, client, machine):
+    """The verifier's finding N1. The owner says 'Never link /private/area from the menu and always keep /home/about first'; the
+    stamp question Identity puts, Identity's and Adaptation's messages, the pause the page draws, and a condition all reach the
+    page with the routes as they were said, so the owner stamps the rule that was recorded. ('clean' used to drop '/home' and
+    '/private' from them: 'A rule, as understood: Never link area from the menu and always keep about first'.)"""
+    machine("/Users/me")
+    rule = "A rule, as understood (it never does this, from now on): " + ROUTES
+    stamp_ask(mods, "rule", text=rule, tag="refuse", line=ROUTES, words="the owner's words, said")
+    thread(mods, "Identity", "Adaptation", "request", "line", tid="x-i", words=ROUTES)
+    thread(mods, "Adaptation", "Priority", "propose", "line", tid="x-p", words=ROUTES)
+    mods.W.VERS.add(mods.W._abase(REF, "Build"), {"index.html": "<p>x</p>"}, [], "r-x", {"ok": True, "notes": [ROUTES]}, mods.W.now())
+    C.touch(REF)
+    s = client.get(url("api/state")).json()
+    said = [m["text"] for m in s["chat"]]
+    assert any(t.startswith("@Requester " + rule + "\n") for t in said), "\n".join(said)
+    assert "Asked Adaptation for the plan: " + ROUTES in said and "Proposed the plan to Priority: " + ROUTES in said, said
+    assert s["paused"]["questions"][0]["question"] == rule
+    assert rule.startswith(s["paused"]["label"]) and "/private/area" in s["paused"]["label"], "the label is the question, cut to a line"
+    assert [c["text"] for c in s["conditions"]] == [ROUTES]
+    assert client.get(url("api/refs")).json()["conditions"] == {"N1": ROUTES}
+    for route in ("/private/area", "/home/about", "Plan B:/pricing", "/private/members"):
+        assert route in "\n".join(said), route
+
+
+def test_c55_the_owners_own_words_in_an_ask_are_never_rewritten_even_under_this_machines_home(mods, client, machine):
+    """An ask that ends with the owner's own words (an outside-the-site ask) says them as the owner said them, even a path under
+    this machine's home; the lead the machine wrote passes the path rule."""
+    machine("/Users/me")
+    words = "keep /Users/me/site/index.html as it is, and /home/about too"
+    ask(mods, "step", id="a-out", engine="Write", text="Write the page at /Users/me/work/out.txt: " + words, words=words)
+    C.touch(REF)
+    s = client.get(url("api/state")).json()
+    q = s["paused"]["questions"][0]["question"]
+    assert q == "Write the page at out.txt: " + words and s["paused"]["label"] == q
+    assert [m["text"] for m in s["chat"] if m.get("act") == "ASK_REQUESTER"][0].startswith("@Requester Write the page at out.txt: " + words)
 
 
 def test_c55_since_slices_the_chat(mods, client, absent):

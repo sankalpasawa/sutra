@@ -28,6 +28,7 @@ import re
 # identity_closed, identity_drop), the text of the ask it puts to the owner and a step's check notes all pass through
 # here. Phrases first, longest first, then the plain verbs.
 BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priority said yes to, to Root's check"),
+                 ("File a granted round", "File a round Priority said yes to"),
                  ("Take the refusal to Identity", "Take Priority's no to Identity"),
                  ("Take the counter, or take it to Identity", "Take Priority's ask for less, or take it to Identity"),
                  ("Grant, refuse or counter", "Say yes, ask for less, or say no"),

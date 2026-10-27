@@ -349,6 +349,35 @@ def reopened(ref):
         return _move(ref, "adapting", step=2, repairs=0)
 
 
+def reopen(ref, was=None):
+    """A change to the goal or to done-when starts the department's cycle again (J2.8, PRD M9.8; Q7: the owner's words reach
+    Identity as a goal rule they stamp). A new cycle at step 1, the record kept: its first event is goal.revised, with the
+    identity's revision before and after and what changed, so the ledger reads old to new in one line. The line already
+    running finishes what is in flight, and nothing new is admitted until the new cycle has a plan registered (holding).
+    `was` is what stood before the change: {goal, done, revision}. A stopped department keeps its stop: the new cycle begins
+    on Start (resume). This records; that the goal changed is Identity's to say (rule 14). Returns the new cycle's state, or
+    None when the department has no cycle to start again."""
+    with W._lock(ref):
+        cur, dept = _state(ref), W.dept(ref)
+        if not enabled() or not cur or not cur.get("cycle_id") or not dept:
+            return None
+        was = dict(was or {})
+        new = int(dept.get("identity_revision") or 1)
+        old = int(was.get("revision") or cur.get("revision") or max(1, new - 1))
+        fresh = {"cycle_id": "cycle-" + uuid.uuid4().hex[:10], "step": 1, "journey": JOURNEY[1], "state": "assessing", "open_ask": None,
+                 "workflow": list(cur.get("workflow") or []), "repairs": 0, "revision": new, "previous": cur["cycle_id"], "updated_at": W.now()}
+        if cur.get("state") == "stopped":
+            fresh.update({"state": "stopped", "was": "assessing"})
+        _save_state(ref, fresh)
+        moved = [k for k in ("goal", "done") if was.get(k) is not None and was.get(k) != dept.get(k)]
+        said = " and ".join({"goal": "The goal changed", "done": "Done-when changed"}[k] for k in moved) or "Who the department is changed"
+        note(ref, 1, "Identity", "User", "goal.revised", "revised", "%s: the cycle starts again from the top." % said,
+             "goal-revised-" + fresh["cycle_id"],
+             {"identity_revision": {"from": old, "to": new}, "previous_cycle": cur["cycle_id"],
+              **{k: {"from": was.get(k), "to": dept.get(k)} for k in moved}})
+        return _state(ref)
+
+
 def begin(ref):
     """Start the department's cycle, once. Called when J1 hands over (D1: J2 is the department's own life, and nobody
     presses a button for it), and by Start for a department born before that. A stopped cycle starts again."""
@@ -360,7 +389,8 @@ def begin(ref):
         if cur:
             return resume(ref)
         cur = _save_state(ref, {"cycle_id": "cycle-" + uuid.uuid4().hex[:10], "step": 1, "journey": "J2.a",
-                                "state": "assessing", "open_ask": None, "workflow": [], "repairs": 0, "updated_at": W.now()})
+                                "state": "assessing", "open_ask": None, "workflow": [], "repairs": 0,
+                                "revision": int(dept.get("identity_revision") or 1), "updated_at": W.now()})
         return _ask_gap(ref, dept, cur) or cur
 
 
@@ -554,7 +584,7 @@ def status(ref):
                             "state": "not_started" if _ready(dept) else "not_ready", "updated_at": None}
     count = state.get("event_count")
     return dict(state, department_ref=ref, enabled=enabled(), event_count=int(count) if count is not None else event_count(ref),
-                done_when=dept.get("done"), goal_reached=state.get("state") == "done",
+                done_when=dept.get("done"), goal_reached=state.get("state") == "done", round=state.get("round"),
                 open_question=open_question(ref), answered_question=answered_question(ref))
 
 
@@ -570,7 +600,8 @@ def stop(ref):
             return cur
         if not cur:
             cur = _save_state(ref, {"cycle_id": "cycle-" + uuid.uuid4().hex[:10], "step": 1, "journey": "J2.a",
-                                    "state": "assessing", "open_ask": None, "workflow": [], "repairs": 0, "updated_at": W.now()})
+                                    "state": "assessing", "open_ask": None, "workflow": [], "repairs": 0,
+                                    "revision": int(dept.get("identity_revision") or 1), "updated_at": W.now()})
         note(ref, int(cur.get("step") or 1), "User", "Identity", "cycle.stopped", "stopped", "The owner stopped the department.",
              "cycle-stopped-" + uuid.uuid4().hex[:6])
         cur = _set(ref, state="stopped", was=cur.get("state"))
@@ -590,6 +621,8 @@ def resume(ref):
         cur = _set(ref, state=back, was=None)
     if (W.dept(ref) or {}).get("stopped"):
         W.set_stopped(ref, False)
+    if cur.get("previous") and int(cur.get("step") or 1) == 1:
+        R._j2_went_on(ref, "resumed-" + str(cur.get("cycle_id")))      # a goal change came while it was stopped: its new cycle begins now
     return _state(ref)
 
 
@@ -832,26 +865,44 @@ def not_read(ref, version, why, artifact=None):
         return
 
 
+def _read_clean(ref, version, art):
+    """The ledger's line for a version Audit read and found nothing to put right in (step 7): written once for the version,
+    by whichever of audited and reached comes first, so it always stands before the goal it led to."""
+    note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded",
+         "Audit read %s v%s and found nothing to put right." % (art or "what the plan delivers", version),
+         "audit-clean-v%s" % version, {"severity": "none", "findings": 0}, evidence_refs=[{"artifact": art, "version": version}] if art else [])
+
+
 def audited(ref, version, findings, artifact=None, reading=None):
-    """Audit read what went out. Done-when holds only when its reading says so (step 8): the version was read item by item,
-    every done-when item is met, none is to confirm and no high finding is open. 'Found nothing' is no reading: a version
-    nobody read, or one that read no item, clears nothing (PRD M8.3). `reading` is what Audit filed of it: {read, met,
-    not_met, to_confirm, high}. Returns True when the goal is reached now, so Identity says so once. (Interim: from
-    wave 2 Identity's covering declares done from Audit's reading, M8.4, and this only records.)"""
+    """Audit read what went out, and the ledger records that (step 7): a version read item by item, every item met, none to
+    confirm and no high finding open, with nothing to put right, is one event that says so. 'Found nothing' is no reading: a
+    version nobody read, or one that read no item, records nothing here. Whether the goal is reached is not decided here, nor
+    written: this module records and projects and never rules (rule 14). Identity's covering decides it from the reading
+    (identity_done, PRD M8.4) and records it through reached(). Returns False, since nothing is reached by recording."""
     r = reading or {}
     if not active(ref) or not (r.get("read") and r.get("met") and not r.get("not_met") and not r.get("to_confirm") and not r.get("high")):
         return False
-    dept = W.dept(ref) or {}
-    art = _deliverable(ref, artifact)
-    ev = [{"artifact": art, "version": version}] if art else []
     if not findings:
         # with findings, Audit's own post to Identity is the event; "found nothing" is said only when that is true
         # (found live 2026-10-08: twelve findings filed, and the next line of the ledger said nothing was found)
-        note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded",
-             "Audit read %s v%s and found nothing to put right." % (art or "what the plan delivers", version),
-             "audit-clean-v%s" % version, {"severity": "none", "findings": 0}, evidence_refs=ev)
+        _read_clean(ref, version, _deliverable(ref, artifact))
+    return False
+
+
+def reached(ref, version, artifact=None, reading=None, findings=0):
+    """Identity says the goal is reached (identity_done, PRD M8.4), and the ledger records it: one goal.reached event, citing
+    the reading it rests on and the version it read, and the cycle is done. The decision is Identity's, made from the reading
+    and held to done_is_read before this is called; this records it, once. A version that was read clean has its line first.
+    Returns True when it was recorded now, False when the cycle is not in step to be done or it was recorded already."""
+    if not active(ref):
+        return False
+    dept = W.dept(ref) or {}
+    art = _deliverable(ref, artifact)
+    if not findings:
+        _read_clean(ref, version, art)
+    ev = [dict({"artifact": art, "version": version}, **({"reading": reading} if reading else {}))] if art else ([{"reading": reading}] if reading else [])
     note(ref, 8, "Identity", "User", "goal.reached", "done", "Done-when holds: %s." % str(dept.get("done") or "").rstrip("."),
-         "goal-reached-v%s" % version, {"done_when": dept.get("done")}, evidence_refs=ev)
+         "goal-reached-v%s" % version, {"done_when": dept.get("done"), "reading": reading}, evidence_refs=ev)
     _set(ref, step=8, state="done")
     return True
 

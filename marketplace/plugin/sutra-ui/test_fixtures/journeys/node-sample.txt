@@ -1,0 +1,19 @@
+ok   W1: no global of 22-website.js is a global of any other script
+ok   W10: the Edit menu carries the command, and panel.html loads the script before the tail
+ok   W10b: the command founds the organisation with its Root, hands Root the first department's words, and opens Root
+ok   W41: the New organisation sheet asks what the first department is for, naming no website
+ok   W45: J1 shows Root's one question and final department tell without renaming Root
+FAIL W46: J1.5 the second department is offered as one chip that carries its own words; a turn with no offer has none
+     AssertionError [ERR_ASSERTION]: the chip carries the words
+         at Object.<anonymous> (test_website.js:1990:10)
+ok   W47: where the asks are listed outside the chat, Identity's question points to its card and is never stamped
+ok   W47: a waiting department shows Identity's question as a card in Chat, with its answer box, never a stamp
+FAIL W47: EMPTY_ANSWER shows its snack and the words stay; Cmd+Enter sends
+     Error: the snack did not show
+ok   W47: Send posts {text}, says Sending... while it goes, and the answered card keeps 'You: ...'
+ok   W48: a question on Identity's standard offers Just do it, which sends 'just do it'; thin words offer none
+ok   W4 the id alone, then a space, is a test of W4
+ok   W490: a longer id is not W49
+ok   M1: the Map, the list, All five and each pane print the same word for each function in every J2 state
+------------------------------------------------------------
+ 1 failed (14 tests)

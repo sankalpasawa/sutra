@@ -17,6 +17,9 @@ Every tool takes its paths as arguments. None names a session's scratchpad.
 | `walk-front.sh` | says words on a Root and prints each turn as Root hands them on and the department answers | `walk-front.sh "<words>" [root-name] [base-url] [seconds]` |
 | `shot-chat.js` | headless Chrome captures: Root's chat, a department's chat, the Board, Priority's Settings | `node shot-chat.js <out-dir> [base-url]`; env `WALK_ROOT`, `SHOT_PORT`, `CHROME` |
 | `suites.sh` | every suite of the department and its screen, one process each | `suites.sh` |
+| `shot-j2.js` | headless Chrome over the DevTools protocol: the J2 page in the app, looking, clicking, counting its claims, writing the screenshots; or the page's DOM outline | `node shot-j2.js <out-dir> <base-url> <dept-ref> [kind]`; env `CHROME` |
+| `j2ui-e2e.sh` | the five seeded departments (start, question, building, ready, hostile) on a record of its own, `shot-j2.js` on each, and the page's structure against the prototype's own; says so and exits 0 without Chrome | `j2ui-e2e.sh [record-dir] [port] [out-dir]` (port 8362) |
+| `j2ui-against.sh` | does the J2 page still hold against a branch about to merge: the contract, render, chat and audit tests on a temporary merge, then the worktree is removed | `j2ui-against.sh <branch> [base]` |
 
 A walk, end to end:
 

@@ -17,11 +17,16 @@ runtime or j2_runtime is imported inside the function that needs it).
 THE MODES (A1.20). In warn mode a fault is a row on the department's record and an entry in REFUSED, and the write goes
 through. In refuse mode the write is refused with SchemaFault after the row is written. The mode is a code constant;
 tests change it with monkeypatch, and no environment variable reads it. The conftest fixture fails any test that met a
-fault outside expect_refused(), so the app warns while the tests are strict.
+fault outside expect_refused(). Waves 0 and 1 ran in warn mode for the app and strictly for the tests; since 'A1 interface:
+refuse' MODE is 'refuse', and a test that is about warn mode pins it with monkeypatch.
 
 Packages import it as `import layer_schema as S` and use exactly A1's names. After wave 0 every change is additive
 ('A1 interface:' commits); the JSON Schema files under schemas/layers/ are generated from here (`python layer_schema.py
 --write`) and never edited by hand.
+
+THE TEMPLATES (amendment A3). A template is an interface is a base class, at seven levels: the user journey, the department
+kind, the function, the engine and workflow, the step, the artifact and the ask. The section "A3: the templates at every
+level" types the ones A1 and A2 left as prose; template_checks.py holds the rules a type cannot say.
 """
 import contextlib
 import copy
@@ -68,9 +73,9 @@ CONFIDENCE = {'ask_below': 0.6, 'show_below': 0.8}                     # J2B-7 (
 RAISE_CAP, ROUNDS_DEFAULT = 2.0, 6                                     # Q6 (M5.4, M9.2, wave 2)
 QUESTION_STATUSES = ('open', 'answered', 'unanswered', 'refused')      # board/1 (M4.9, wave 3)
 INTERFACE_SHA = {}                                                     # W3-PROOF sets {1: sha256 of describe()} once nothing else changes it
-MODE = 'warn'          # 'warn' | 'refuse'. A code constant, never an environment variable; tests change it with monkeypatch.
-                       # The integrator's 'A1 interface: refuse' commit sets 'refuse' at the end of wave 1, once the full gate
-                       # shows no fault at all.
+MODE = 'refuse'        # 'warn' | 'refuse'. A code constant, never an environment variable; tests change it with monkeypatch.
+                       # 'A1 interface: refuse' (the integrator's commit at the end of wave 1, the full gate showing no fault at
+                       # all) set it: a write that does not fit the interface raises SchemaFault, after its row.
 OWNERSHIP_MODE = 'warn'          # a key written by a layer that does not own it: a row only, until W3-PROOF (wave 3) makes it 'refuse'
 NEVER_REFUSE = ('stopped', 'control')   # department keys whose writes always land (the owner's Stop); a fault is a row only
 REFUSED = {'count': 0, 'rows': []}      # every fault this process met: the conftest fixture and SM-13 read it
@@ -517,7 +522,7 @@ DEFS.update({
 DEFS.update({
     'root.pins': obj({layer: ref('impl') for layer in LAYER_NAMES}, open=False),
     # a born engine template, as R.born_template writes it to the records home's _library/<slug>.json (W1-ROOT checks it
-    # before the file is written)
+    # before the file is written). It is the child of engine.library (A3.5): that template with a required made_by
     'engine.template': obj({'id': word(r'^engine/[a-z0-9][a-z0-9-]*$', 80), 'name': text(40, 1), 'version': integer(1),
                             'use_case': text(300, 1), 'description': text(300), 'instruction': text(4000), 'reads': text(200),
                             'writes': text(40),
@@ -745,7 +750,12 @@ DEFS.update({
                              'answer': enum('accept', 'counter', 'reject'), 'said': enum('said yes', 'asked for less', 'said no'),
                              'estimate': obj({'calls': integer(0), 'usd': number(0)}, required=('calls', 'usd')),
                              'room': obj({'calls': integer(), 'usd': number()}, required=('calls', 'usd')), 'why': text(600)},
-                            required=('at', 'proposal', 'answer', 'said', 'estimate', 'room', 'why')))},
+                            required=('at', 'proposal', 'answer', 'said', 'estimate', 'room', 'why'))),
+        # from W2-PRIORITY (M9.2): the goal's ceiling, as the record keeps it, or null before the first registration; not required
+        'ceiling': nullable(ref('priority.ceiling')),
+        # from W2-PRIORITY (M9.6): what each round of the goal has spent, oldest first, from the runs the ledger links by run_ref;
+        # not required
+        'spend_by_round': items(obj({'round': integer(1), 'calls': integer(0), 'usd': number(0)}, required=('round', 'calls', 'usd')))},
         required=('bargains', 'envelopes')),
     'view.coordination': obj({
         'line': items(text(80)), 'registered': nullable(integer(0)),
@@ -900,6 +910,8 @@ HEARS = {
         {'act': 'propose', 'word': 'line', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.line', 'handler': 'a line proposed'},
         {'act': 'inform', 'word': 'conflict', 'from': ('Adaptation', 'Coordination'), 'via': 'board', 'payload': 'act.conflict', 'handler': 'Close a conflict'},
         {'act': 'inform', 'word': 'doubt', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.doubt', 'handler': 'Hear a doubt'},
+        {'act': 'inform', 'word': 'reading', 'from': ('Audit',), 'via': 'board', 'payload': 'act.reading', 'handler': 'Hear a reading'},
+        {'act': 'inform', 'word': 'round', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.round', 'handler': 'File a granted round'},
     ],
     'adaptation': [
         {'act': 'accept-proposal', 'word': 'trial', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Start a trial'},
@@ -955,6 +967,7 @@ SENDS = {
         {'act': 'request', 'words': _IDENTITY_ASKS, 'to': ('Owner',), 'payload': 'act.ask'},
         {'act': 'request', 'words': ('line',), 'to': ('Adaptation',), 'payload': 'act.line_request'},
         {'act': 'request', 'words': ('idea',), 'to': ('Adaptation',), 'payload': 'act.any'},
+        {'act': 'request', 'words': ('next',), 'to': ('Adaptation',), 'payload': 'act.next'},      # W2-IDENTITY, M8.5
         {'act': 'inform', 'words': _IDENTITY_TELLS, 'to': ('Owner',), 'payload': 'act.tell'},
         {'act': 'inform', 'words': ANY, 'to': ('Owner',), 'payload': 'act.tell'},    # _reconcile_j1_tells posts the tell Setup stored
         {'act': 'inform', 'words': ('rung',), 'to': ('Adaptation',), 'payload': 'act.any'},
@@ -1038,6 +1051,7 @@ CHECKS = {
                  'journey_is_known': "the words are one of canon's five journeys",
                  'rule_is_tagged': 'a rule is one line, tagged, with its scope',
                  'ruling_is_known': 'a ruling is run, drop or ask',
+                 'done_is_read': 'the goal is reached only from a reading: the version was read, every item is met, none is to confirm and no high finding is open',
                  'verdict_is_known': 'a verdict is go, ask or refuse, and an ask or a no says why'},
     'adaptation': {'counted_the_rows': 'every step is counted from its own rows',
                    'idea_has_shapes': 'an idea is reflected back with the shapes it could take',
@@ -1045,7 +1059,9 @@ CHECKS = {
                    'moves_name_their_rows': 'each move is of a known kind and names the rows it rests on'},
     'priority': {'answer_has_its_price': 'said yes, asked for less or said no, each with its price; an ask for less names what it keeps',
                  'price_is_observed': 'a yes, or an ask for less, is held to the facts Priority read: what it keeps costs no more than '
-                                      'the room left; a no, or a smaller yes, always stands'},
+                                      'the room left; a no, or a smaller yes, always stands',
+                 'round_within_ceiling': "a yes to a round is held to the goal's ceiling: the round, the calls and the money all inside "
+                                         'it; a no always stands'},
     'coordination': {'chain_under_its_limit': 'a start is let through only while the chain is under its limit',
                      'names_who_goes_first': 'it names an engine of the department',
                      'one_run_at_a_time': 'a start is let through only while no other run runs'},
@@ -1061,6 +1077,19 @@ CONTRACT_SAMPLES = {
     'verdict_is_known': {'good': [{'verdict': 'go', 'why': 'inside the goal'}, {'verdict': 'ask', 'why': 'it reaches outside'}],
                          'bad': [{'verdict': 'maybe', 'why': 'x'}]},
     'ruling_is_known': {'good': [{'ruling': 'drop', 'why': 'the goal does not need it'}], 'bad': [{'ruling': 'perhaps', 'why': 'x'}]},
+    'done_is_read': {'good': [{'done': False, 'why': 'D2 is not met'},
+                              {'done': True, 'reading': 'r-1a2b3c4d', 'read': True, 'met': ['D1', 'D2'], 'not_met': [], 'to_confirm': [],
+                               'unread': [], 'high': False, 'why': 'every done-when item is met'}],
+                      'bad': [{'done': 'yes'}, {'done': False, 'why': ''},
+                              {'done': True, 'read': True, 'met': ['D1'], 'not_met': [], 'to_confirm': [], 'unread': [], 'high': False, 'why': 'x'},
+                              {'done': True, 'reading': 'r-1a2b3c4d', 'read': False, 'met': ['D1'], 'not_met': [], 'to_confirm': [], 'unread': [],
+                               'high': False, 'why': 'x'},
+                              {'done': True, 'reading': 'r-1a2b3c4d', 'read': True, 'met': ['D1'], 'not_met': ['D2'], 'to_confirm': [],
+                               'unread': [], 'high': False, 'why': 'x'},
+                              {'done': True, 'reading': 'r-1a2b3c4d', 'read': True, 'met': ['D1'], 'not_met': [], 'to_confirm': ['D2'],
+                               'unread': [], 'high': False, 'why': 'x'},
+                              {'done': True, 'reading': 'r-1a2b3c4d', 'read': True, 'met': ['D1', 'D2'], 'not_met': [], 'to_confirm': [],
+                               'unread': [], 'high': True, 'why': 'x'}]},
     'answer_has_its_price': {'good': [{'answer': 'accept', 'why': 'fits today: 9 calls of 30'}],
                              'bad': [{'answer': 'accept', 'why': ''}, {'answer': 'grant', 'why': 'x'}]},
     'price_is_observed': {'good': [{'answer': 'counter', 'why': 'room for two today: 0.08 USD for these of the 0.30 USD left',
@@ -1068,6 +1097,11 @@ CONTRACT_SAMPLES = {
                                    {'answer': 'reject', 'why': 'no room today: the first costs 0.08 USD against 0.00 USD left'}],
                           'bad': [{'answer': 'counter', 'why': 'room for two today', 'keep': []}, {'answer': 'accept', 'why': ''},
                                   {'answer': 'grant', 'why': 'x'}]},
+    'round_within_ceiling': {'good': [{'answer': 'accept', 'why': 'inside the ceiling: round 3 of 6, about 11 calls and 0.40 USD of the 44 '
+                                                                 'calls and 1.58 USD left'},
+                                      {'answer': 'reject', 'why': 'no room in the ceiling: round 7 against a ceiling of 6 rounds'}],
+                             'bad': [{'answer': 'counter', 'why': 'room for two rounds'}, {'answer': 'accept', 'why': ''},
+                                     {'answer': 'grant', 'why': 'x'}]},
     'findings_name_where_and_what': {'good': [{'ok': True, 'findings': []}],
                                      'bad': [{'ok': False, 'findings': [{'claim': 'x'}]}, {'ok': False, 'findings': 'none'}]},
     'reading_is_s30': {'good': [{'items': [{'id': 'D1', 'verdict': 'met', 'claim': 'every page is checked and live',
@@ -1227,6 +1261,10 @@ PROMPTS = {
             'cost': {'fields': {'task': 'field.task'}, 'inputs': ('word', 'step', 'cost', 'room'),
                      'returns': 'Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line"}.',
                      'read_by': 'priority.bargain'},
+            # added by W2-PRIORITY (M9.2, A1-ROUND): a round Adaptation proposes on the line, held to the goal's ceiling
+            'round': {'fields': {'task': 'field.task'}, 'inputs': ('round', 'correction', 'estimate', 'room', 'ceiling', 'remaining'),
+                      'returns': 'Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line, in money and room only"}.',
+                      'read_by': 'priority.bargain'},
         },
     },
     'coordination': {
@@ -1263,7 +1301,7 @@ PROMPTS = {
 
 #: the prompt parts later steps added to PROMPTS (A1.16, 'Parts added by later steps'): a layer's WORDS and LAYOUT hold
 #: them, and no .md file of the bundle does, so the extractor and the bundle's tests leave them out. A package adds its own.
-ADDED_PARTS = (('adaptation', 'make', 'shape'),)
+ADDED_PARTS = (('adaptation', 'make', 'shape'), ('priority', 'bargain', 'round'))
 
 #: each layer's pane view (A1.17), plus the engine card
 VIEWS = {'identity': 'view.identity', 'adaptation': 'view.adaptation', 'priority': 'view.priority',
@@ -1359,6 +1397,463 @@ LAYERS = {
     })
     for layer in LAYER_NAMES
 }
+
+
+# ---- A3: the templates at every level (PRD amendment A3) --------------------------------------------------------------
+# A template is an interface is a base class, at every level: fixed, never run by itself, written only in code. What fills
+# it is a child: a module or a data file that conforms. This section types the levels A1 and A2 left as prose. Every name
+# here is additive ('A3 interface:' commits): nothing above is renamed, and nothing in the runtime reads a definition
+# below, so the definitions describe what the runtime already enforces and a test keeps the two equal. A bound is written
+# against the shipped files and never narrower than one of them.
+
+# the step (L4, A3.3): the shape law. engine_runtime.validate stays the definition law (names that ship, ids used once,
+# a unit that starts and ends with code); this one says what a step may hold, and has no registry in it
+NATURES = ('transform', 'check', 'decide', 'make')                     # == engine_runtime.NATURES
+GATE_ANSWERS = ('admit', 'wait', 'refuse')                             # == VERDICTS['identity']['gate'], and what a gate's check accepts
+MODEL_TOOLS = ('WebSearch', 'WebFetch')                                # == website_dept.MODEL_TOOLS
+STEP_KINDS = ('code', 'ai', 'person', 'gate', 'rule')
+#: every key a step's body is handed in its context, as a recorded run saw them: peek is on Coordination's rule context and
+#: on every gate's; table, rs and done are Coordination's; ready is the tie's; run and spend are an engine run's. item is the
+#: fan-out item (the body's third argument on main; reserved here as A3.3 names it)
+STEP_CTX = ('ref', 'dept', 'engine', 'def', 'slot', 'inp', 'post', 'run', 'bag', 'how', 'spend', 'table', 'rs', 'done', 'ready',
+            'item', 'peek')
+#: every key of a line of steps.jsonl, from the three writers (run_step, a gate's decision, the owner's mark): ask is on the
+#: row of a step that waits for the owner
+STEP_ROW = ('id', 'run', 'engine', 'step', 'item', 'mode', 'slot', 'impl', 'asked_rung', 'rung', 'miss', 'by', 'agent', 'applied',
+            'read', 'facts', 'in_sig', 'usd', 'calls', 'def_version', 'started', 'status', 'why', 'ask', 'answer', 'out_hash',
+            'out_shape', 'check', 'trial', 'ended', 'ms')
+
+
+def _law(law, schema):
+    """A step field's place in the law of inheritance (A2): fixed, a child version keeps the parent's value; free, a child
+    may change it. The classification is read from DEFS['step'] by template_checks.step_law, so the law has one source."""
+    return dict(schema, **{'x-law': law})
+
+
+def step_kind(step, group='steps'):
+    """The one kind a step has (ST-3): 'gate' or 'rule' by the list the recipe holds it in ('gates', 'rules'); else 'person'
+    when it is born on the person's rung, 'ai' when it has a prompt, and 'code' when it has neither. `group` is 'steps' for
+    a handler's steps too."""
+    if group == 'gates':
+        return 'gate'
+    if group == 'rules':
+        return 'rule'
+    if group != 'steps':
+        raise ValueError("a recipe holds a step in gates, rules or steps, not in %s" % group)
+    step = step if isinstance(step, dict) else {}
+    return 'person' if step.get('born') == 'P' else 'ai' if step.get('prompt') else 'code'
+
+
+DEFS['step'] = obj({
+    'id': _law('fixed', word(r'^[a-z][a-z0-9]*\.[a-z0-9_.]+$', 60)),            # '<engine prefix>.<name>', unique across all engines
+    'name': _law('free', say(160, 1)),
+    'nature': _law('fixed', enum(*NATURES)),
+    'born': _law('free', enum(*RUNGS)),
+    'ceiling': _law('free', enum('C0', 'C1', 'C2')),
+    'below': _law('free', enum('P', 'C0', 'C1')),
+    'check': _law('fixed', text(60, 1)),                                        # a name in CHECKS[layer], SHARED_CHECKS, or the legacy CHECK
+    'code': _law('free', text(60, 1)),
+    'prompt': _law('free', text(60, 1)),
+    'draft': _law('free', text(60, 1)),                                         # the answer when no model is there
+    'out': _law('fixed', map_of(any_of(text(20), items(text(40), 12, 1)))),     # {key: 'str'|'list'|'bool'|'dict'} or {key: [enum values]}
+    'answer': _law('fixed', text(40, 1)),                                       # the key whose value a table can answer (rung C2 as a table)
+    'facts': _law('free', items(text(40), 12)),
+    'stringency': _law('fixed', enum('high', 'low')),
+    'only_if': _law('fixed', text(120, 1)),                                     # '<step id>.<key>' or '<step id>.<key>=<value>'
+    'each': _law('fixed', text(60, 1)),                                         # fan out over the items another step listed
+    'side_by_side': _law('free', integer(1, 16)),
+    'files': _law('fixed', boolean()),
+    'may_end': _law('fixed', boolean()),                                        # 'not needed' ends the run ok
+    'by_hand': _law('fixed', text(600, 1)),                                     # the ask's text when the step falls to the person
+    'tools': _law('free', items(enum(*MODEL_TOOLS))),
+    'timeout_s': _law('free', number(0)),
+    'or': _law('fixed', ANYTHING),                                              # the alternative answers a step may give (cannot)
+}, required=('id', 'name', 'nature', 'born', 'check'), open=False)
+
+# the row a run writes (R.step_rows): mode is slot for an ordinary step, gate for a gate's decision (Coordination's rules are
+# written that way too, never as a mode of their own) and mark for the owner's mark. Open: every other key of STEP_ROW passes,
+# and a mark row has run None
+DEFS['step.row'] = obj({'id': text(40, 1), 'engine': text(80, 1), 'step': text(60, 1), 'mode': enum('slot', 'gate', 'mark'),
+                        'rung': nullable(enum(*RUNGS)), 'status': text(20, 1), 'check': nullable(ref('check.verdict')),
+                        'impl': nullable(ref('impl')), 'usd': number(0), 'calls': integer(0), 'started': text(40), 'ended': text(40)},
+                       required=('id', 'engine', 'step', 'status'))
+
+# an engine's start: what makes it run. $deliverable is the department's last artifact, whatever its kind (Adaptation's and
+# Audit's start); engine_runtime.start_faults stays the law (a version trigger names what it is a version of, a post trigger
+# needs a handler, a timer names its period, a blocker is a gate)
+DEFS['engine.start'] = obj({
+    'on': items(obj({'kind': enum('version', 'post', 'timer'), 'of': any_of(ref('name'), const('$deliverable')), 'checked': boolean(),
+                     'every_s': number(1)}, required=('kind',)), min_items=1),
+    'unless': items(text(60)),                                                  # gate ids
+}, required=('on',), open=False)
+
+# the department kind (L1, A3.5): a department made of a kind is an instance of it, not a child. required is inside line, which
+# a type cannot say: template_checks.kind_faults reads the two fields together, as engine_runtime.validate does
+DEFS['kind'] = obj({
+    'line': items(ref('name')), 'required': items(ref('name')), 'artifacts': items(ref('name'), 32, 1),
+    'goal': text(2000, 1), 'done': text(200), 'done_words': items(text(80), 2, 2),
+    'rules': items(obj({'tag': enum(*RULE_TAGS), 'line': text(2000, 1)}, required=('tag', 'line'))),
+    'say': text(200), 'use_case': text(400, 1), 'functions_template': word(r'^[a-z][a-z-]*$', 40),
+}, required=('line', 'artifacts', 'goal', 'rules', 'use_case', 'functions_template'), open=False)
+
+# the engine and workflow (L3, A3.5): a shipped Library template. engine.template (A1.7) is its born child, the same with a
+# required made_by (the engine Adaptation made on the owner's stamp), and is not changed. Open: Setup's converse_instruction
+# and clarification_questions pass
+DEFS['engine.library'] = obj({
+    'id': word(r'^engine/[a-z0-9][a-z0-9-]*$', 80), 'name': text(40, 1), 'version': integer(1), 'use_case': text(400, 1),
+    'description': text(400), 'skills': items(text(200)), 'reads': ref('name'), 'writes': ref('name'),
+    'start': ref('engine.start'), 'steps': items(ref('step')), 'kind': const('work'),
+    'instruction': text(4000), 'needs': items(text(40)),
+}, required=('id', 'name', 'version', 'use_case', 'kind', 'description', 'reads', 'writes', 'start', 'steps'))
+
+# the artifact (L5, A3.5): the Default template and the ten shipped ones are the base and its children; a template an app
+# brings is a child of kind app (which also names its screen and what it reads). Open: a key a later template adds passes
+DEFS['artifact.template'] = obj({
+    'id': word(r'^artifact/[a-z0-9-]+$', 60), 'name': ref('name'),
+    'kind': enum('text', 'plan', 'pages', 'build', 'site', 'record', 'app'), 'use_case': text(400, 1), 'files': items(text(80), 16),
+    'checks': items(text(60)), 'written_by': items(text(60)), 'counts_after': enum('filing', 'stamp'), 'put_back': boolean(),
+    'operations': items(ref('name')), 'made_from': items(text(80)), 'version': integer(1),
+    'screen': text(200), 'reads': items(ref('name')), 'form': text(60),         # an app template brings screen and reads; W2-CHECKS adds form
+}, required=('id', 'name', 'kind', 'use_case', 'files', 'counts_after'))
+
+# the user journey (L0, A3.6): a journey is a JSON file under journeys/ that conforms to DEFS['journey']. It carries everything
+# the site's own data file lists (the tag, today, the earlier rows kept as was, the site's status words and Code column), and
+# no row leaves it but by the owner's mark. A state is never in a definition: ROW_STATES and READ_STATES exist for the status
+# document and the read model only, and the site's claim is kept as site_status and site_says so a drift can be seen, never to
+# decide a state
+JOURNEY_KINDS = ('person', 'system', 'function')
+LANE_KINDS = ('person', 'root', 'function', 'engine')
+STEP_ACTS = ('say', 'ask', 'tell', 'stamp', 'file', 'read', 'run', 'check', 'post', 'decide')
+BIND_KINDS = ('act', 'step', 'event', 'api', 'ui', 'person')
+OUTCOME_KINDS = ('tell', 'ask', 'file', 'hold', 'refuse', 'block', 'retry', 'none')
+OUTCOME_VOICES = ('Identity', 'Root', 'Coordination', 'none')
+SITE_STATUS = ('built', 'wanted', 'today', 'open', 'directed', 'partly', 'not_built', 'to_build', 'none')
+DISPOSITIONS = ('keep', 'change', 'drop')
+ROW_STATES = ('proven', 'partly', 'failing', 'unproven', 'wanted', 'dropped', 'fault')     # derived, never in a definition
+READ_STATES = ROW_STATES + ('unknown',)                                                     # what the read model says before a run
+JOURNEY_STATES = ROW_STATES + ('declared',)                                                 # a declared journey has no computed state
+RULING_STATUS = ('RULED', 'OPEN', 'PARKED')
+JOURNEY_ID = r'^(J[1-9][0-9]?|S[1-9]|U[1-9]|F(?:I|A|P|C|AU)[1-9])$'
+SUB_ID = r'^J[1-9][0-9]?\.[a-z]$'
+STEP_N = r'^([0-9]|[1-9][0-9])[a-e]?$'                       # 0a and 0b are the earlier rows of J2; 4a to 4e are J3's branches
+EDGE_ID = r'^(J[1-9][0-9]?|F(?:I|A|P|C|AU)[1-9])\.[1-9][0-9]?$'
+LANE_ID = r'^[a-z][a-z0-9_]{0,15}$'
+BACKLOG_ID = r'^BL-[1-9][0-9]?[a-z]?$'                       # BL-2b
+SAME_AS = r'^J[1-9][0-9]?/(step/[1-9][0-9]?[a-e]?|edge/J[1-9][0-9]?\.[1-9][0-9]?)$'
+SYMBOL = r'^([A-Za-z_][A-Za-z0-9_]*\.)?[A-Za-z_$][A-Za-z0-9_$]*$'              # a name, or module.name
+TEST_REF = (r'^(js:[A-Za-z0-9_.-]+\.js#[A-Za-z0-9_.-]+|'
+            r'[A-Za-z0-9_.-]+\.py::([A-Za-z_][A-Za-z0-9_]*::)?[A-Za-z_][A-Za-z0-9_]*)$')   # file.py::test, file.py::Class::test, js:file.js#W45
+STEP_REF = r'^J[1-9][0-9]?:[1-9][0-9]?[a-e]?$'                                  # 'J2:6' = step 6 of J2
+RULING_ID = r'^(S|Q|MK|D|A1|A2|A3)-?[A-Za-z0-9]{1,4}$'
+
+DEFS['journey.lane'] = obj({'id': word(LANE_ID, 16), 'label': say(40, 1), 'kind': enum(*LANE_KINDS),
+                            'function': nullable(enum(*FUNCTION_LAYERS))}, required=('id', 'label', 'kind'), open=False)
+DEFS['journey.bind'] = obj({'kind': enum(*BIND_KINDS), 'src': enum(*ACTORS), 'act': enum(*ACTS), 'word': text(40), 'dst': enum(*ACTORS),
+                            'id': text(60), 'action': text(60), 'method': enum('GET', 'POST'), 'path': text(120), 'symbol': text(80),
+                            'what': text(200), 'optional': boolean()}, required=('kind',), open=False)
+DEFS['journey.branch'] = obj({'label': say(40, 1), 'to': text(20, 1)}, required=('label', 'to'), open=False)
+DEFS['journey.step'] = obj({'n': word(STEP_N, 3), 'lane': word(LANE_ID, 16), 'short': say(60, 1), 'text': say(1500, 1),
+                            'site_function': say(200), 'site_status': enum(*SITE_STATUS), 'site_says': say(120), 'site_code': say(600),
+                            'act': enum(*STEP_ACTS), 'binds': items(ref('journey.bind'), 8), 'code': items(word(SYMBOL, 80), 12),
+                            'tests': items(word(TEST_REF, 200), 12), 'branches': items(ref('journey.branch'), 6),
+                            'child': nullable(word(JOURNEY_ID, 6)), 'read': boolean(), 'backlog': nullable(word(BACKLOG_ID, 6)),
+                            'same_as': nullable(word(SAME_AS, 24))},
+                           required=('n', 'lane', 'short', 'text'), open=False)
+DEFS['journey.outcome'] = obj({'kind': enum(*OUTCOME_KINDS), 'voice': enum(*OUTCOME_VOICES), 'golden': nullable(text(200))},
+                              required=('kind',), open=False)
+DEFS['journey.edge'] = obj({'id': word(EDGE_ID, 8), 'at': text(20, 1), 'short': say(60, 1), 'trigger': say(400, 1),
+                            'site': obj({'status': enum(*SITE_STATUS), 'text': say(1500)}, required=('status',), open=False),
+                            'code_does': say(1500), 'outcome': ref('journey.outcome'), 'binds': items(ref('journey.bind'), 8),
+                            'code': items(word(SYMBOL, 80), 12), 'tests': items(word(TEST_REF, 200), 12),
+                            'backlog': nullable(word(BACKLOG_ID, 6)), 'disposition': nullable(enum(*DISPOSITIONS)),
+                            'rulings': items(word(RULING_ID, 8), 8), 'read': boolean(), 'truncated': boolean(),
+                            'reword': nullable(say(700)), 'same_as': nullable(word(SAME_AS, 24))},
+                           required=('id', 'at', 'short', 'trigger', 'site'), open=False)
+DEFS['journey.sub'] = obj({'id': word(SUB_ID, 6), 'title': say(80, 1), 'owner': say(80), 'step': word(STEP_N, 3), 'text': say(800),
+                           'drawn': say(120)}, required=('id', 'title', 'step'), open=False)
+DEFS['journey.ruling'] = obj({'id': word(RULING_ID, 8), 'status': enum(*RULING_STATUS), 'date': nullable(iso()), 'text': say(700)},
+                             required=('id', 'status', 'text'), open=False)
+DEFS['journey.quote'] = obj({'date': nullable(iso()), 'on': text(20), 'text': say(1500, 1)}, required=('text',), open=False)
+DEFS['journey.scenario'] = obj({'id': text(40, 1), 'lane': text(40, 1), 'test': word(TEST_REF, 200), 'walks': items(word(STEP_N, 3), 20),
+                                'says': say(300)}, required=('id', 'lane', 'test'), open=False)
+DEFS['journey.backlog'] = obj({'id': word(BACKLOG_ID, 6), 'row': text(20, 1), 'smallest': say(700, 1), 'decision': text(40),
+                               'package': text(160, 1)}, required=('id', 'row', 'smallest', 'package'), open=False)
+DEFS['journey.direction'] = obj({'id': text(8, 1), 'direction': say(500, 1), 'built': say(800), 'gap': say(500),
+                                 'mark': nullable(enum(*DISPOSITIONS))}, required=('id', 'direction'), open=False)
+DEFS['journey.build_row'] = obj({'id': text(8, 1), 'when': enum('v1', 'later'), 'change': say(800, 1), 'where': say(300),
+                                 'owner': text(40), 'size': enum('S', 'M', 'L'), 'tests': items(word(TEST_REF, 200), 6),
+                                 'backlog': nullable(word(BACKLOG_ID, 6))}, required=('id', 'change'), open=False)
+# the site's earlier rows of a journey (J2's thirteen steps and twenty edges): history, kept in the site's words, with no state
+DEFS['journey.was'] = obj({'title': say(120, 1), 'lanes': items(word(LANE_ID, 16), 10), 'steps': items(ref('journey.step'), 24),
+                           'edges': items(ref('journey.edge'), 30)}, required=('title', 'steps', 'edges'), open=False)
+DEFS['journey'] = obj({'schema_version': integer(1), 'id': word(JOURNEY_ID, 6), 'title': say(120, 1), 'kind': enum(*JOURNEY_KINDS),
+                       'inside': nullable(word(JOURNEY_ID, 6)), 'bound_to': nullable(enum(*FUNCTION_LAYERS)),
+                       'serves': items(word(STEP_REF, 8), 6), 'site_serves': nullable(say(40)), 'declared': boolean(),
+                       'goal': say(300, 1), 'lead': say(1500), 'ends_when': say(400), 'flag': nullable(text(40)), 'tag': say(200),
+                       'today': obj({'text': say(1500, 1), 'sources': text(200)}, required=('text',), open=False), 'was': ref('journey.was'),
+                       'site': obj({'page': text(200), 'data_version': text(8), 'as_of': iso()}, open=False),
+                       'helper': obj({'site': text(20), 'screen': text(20), 'code': text(20)}, open=False),
+                       'lanes': items(ref('journey.lane'), 10), 'steps': items(ref('journey.step'), 24),
+                       'edges': items(ref('journey.edge'), 24), 'sub': items(ref('journey.sub'), 10),
+                       'children': items(word(JOURNEY_ID, 6), 10), 'directions': items(ref('journey.direction'), 12),
+                       'build_rows': items(ref('journey.build_row'), 12), 'rulings': items(ref('journey.ruling'), 24),
+                       'decisions': items(text(12), 24), 'quotes': items(ref('journey.quote'), 12),
+                       'scenarios': items(ref('journey.scenario'), 12), 'invariants': items(text(60), 8),
+                       'backlog': items(ref('journey.backlog'), 24), 'site_ids': items(text(32, 1), 100, unique=True)},
+                      required=('schema_version', 'id', 'title', 'kind', 'goal', 'lanes', 'steps', 'edges', 'site_ids'), open=False)
+DEFS['journey.file'] = obj({'journeys': items(ref('journey'), 8, 1)}, required=('journeys',), open=False)   # a function's file holds a list
+
+# a row's computed state and a journey's, as the status document and the read model say them: one document per journey
+# (journeys/status/<id>.json) with the hash of its own definition, so two packages never conflict on one file
+DEFS['journey.row_status'] = obj({'state': enum(*(READ_STATES + ('declared',))), 'proven_by': items(text(200)), 'failing': items(text(200)),
+                                  'site': nullable(enum(*SITE_STATUS)), 'drift': boolean()}, required=('state',), open=False)
+DEFS['journey.status'] = obj({'schema_version': integer(1), 'id': word(JOURNEY_ID, 6), 'definitions_sha': text(64, 1),
+                              'state': enum(*(JOURNEY_STATES + ('unknown',))), 'counts': map_of(integer(0)),
+                              'tests': map_of(enum('passed', 'failed', 'missing')), 'rows': map_of(ref('journey.row_status')),
+                              'drift': items(obj({'row': text(40, 1), 'site': enum(*SITE_STATUS), 'state': enum(*(READ_STATES + ('declared',)))},
+                                                 required=('row', 'site', 'state'), open=False))},
+                             required=('schema_version', 'id', 'definitions_sha', 'state', 'counts', 'tests', 'rows'), open=False)
+
+#: the ledger's actions: the dotted words j2_runtime writes on a row of the cycle's ledger (an action of note(...) or of the
+#: activity feed, and the reason code check.failed that run.failed and workflow.blocked carry). The interface names them,
+#: j2_runtime owns them (A1.22): a journey's event bind names one of these, and a test keeps the list equal to j2_runtime's
+#: literals, so a package that adds a ledger action adds it here in the same commit
+LEDGER_ACTIONS = ('proposal.requested', 'proposal.created', 'proposal.granted', 'proposal.countered', 'proposal.refused',
+                  'proposal.accepted', 'workflow.validated', 'workflow.registered', 'workflow.blocked', 'timetable.written',
+                  'envelope.granted', 'envelope.held', 'slot.assigned', 'run.started', 'run.completed', 'run.failed',
+                  'artifact.filed', 'audit.finding_filed', 'audit.not_read', 'identity.assessed', 'identity.questioned',
+                  'identity.ruled', 'conflict.raised', 'ask.created', 'ask.answered', 'goal.reached', 'cycle.stopped',
+                  'cycle.resumed', 'cycle.reopened', 'goal.revised', 'check.failed')
+#: Identity's five recognitions of a request (task, query, directive, feedback, new idea): a verdict of its covering, not the
+#: user journeys. The key `journeys` of engine_defs/website.json and the check journey_is_known name them and are not renamed
+RECOGNITIONS = VERDICTS['identity']['journey']
+
+# the levels (A3.1) as data, so the generated JSON Schema, describe() and a screen can read them: each level's name, the base
+# class that is its template (a DEFS name, or a table of this module), where its children are, the one sentence a child keeps
+# and the ids of the rules that hold it (A3.1 lists each rule with its case and its failing example). L2's base is the layer
+# interface extended by the function template (FUNCTION_TEMPLATE, below)
+TEMPLATE_LEVELS = (
+    {'level': 'L0', 'name': 'user journey', 'base': 'journey', 'children': 'journeys/*.json',
+     'keeps': 'A journey may add steps, edges, sub-journeys, tests, rulings and quotes. It may not drop, move or re-word a row the '
+              "site lists (a row leaves only by the owner's mark drop), and it carries no status, which is computed. Every row either "
+              'binds to code and passing tests, or says it is wanted and names its smallest behaviour.',
+     'rules': ('JC-1', 'JC-2', 'JC-3', 'JC-4', 'JC-5', 'JC-6', 'JC-7', 'JC-8', 'JC-9', 'JC-10', 'JC-11', 'JC-12')},
+    {'level': 'L1', 'name': 'department kind', 'base': 'kind', 'children': 'engine_defs/website.json kinds',
+     'keeps': 'A kind names its line of work engines, the ones required inside the line, its artifacts, a goal, rules (each tagged), '
+              'a use case, and a functions_template that every function has.',
+     'rules': ('K-1', 'K-2')},
+    {'level': 'L2', 'name': 'function', 'base': 'FUNCTION_TEMPLATE', 'children': 'layers/<layer>/v<N>.py; function-templates/<function>/*.json',
+     'keeps': "A version places the interface's role phrase, its 'is not' and 'never' lines and the working agreement (its layout "
+              'holds all eight inputs), supplies every typed word within its limits and uses no banned word. A use-case template adds '
+              "floor lines and keeps the Default's checks.",
+     'rules': ('FT-1', 'FT-2', 'FT-3', 'FT-4', 'FT-5', 'FT-6', 'FT-7', 'FT-8', 'FT-9', 'FT-10')},
+    {'level': 'L3', 'name': 'engine and workflow', 'base': 'engine.library', 'children': 'engine-templates/*.json; the _library of born templates',
+     'keeps': 'A template names an id, a name, a use case, what it reads and writes (artifacts that have templates), a start (trigger '
+              'kinds that exist, blockers that are gates) and steps that conform to the step template. A born template adds made_by.',
+     'rules': ('E-1', 'E-2', 'E-3', 'E-4')},
+    {'level': 'L4', 'name': 'step', 'base': 'step', 'children': 'layers/<layer>/v<N>.json; engine-templates/*.json',
+     'keeps': 'A step has an identity (id, name), a nature, a born rung, a registered check and a body: code, or a prompt with its '
+              'plain draft and the shape of its answer, or by_hand. A unit starts and ends with a step by code. Ids are unique. Only the '
+              'free fields change between versions.',
+     'rules': ('ST-1', 'ST-2', 'ST-3', 'ST-4', 'ST-5', 'ST-6', 'ST-7', 'ST-8', 'ST-9')},
+    {'level': 'L5', 'name': 'artifact', 'base': 'artifact.template', 'children': 'artifact-templates/*.json',
+     'keeps': 'A template names an id, a name, a kind, a use case, files, checks that exist in artifacts.CHECKS, counts_after (filing '
+              'or stamp) and operations that are engines.',
+     'rules': ('AR-1', 'AR-2')},
+    {'level': 'L6', 'name': 'ask', 'base': 'identity.ask', 'children': 'ASK_FORMS: one form for each kind of ask',
+     'keeps': 'An ask has a kind from the list, at most three options each of a known kind, is filed only by Identity to the owner, '
+              'and has a status from the list.',
+     'rules': ('AS-1', 'AS-2')},
+)
+
+#: the form of each kind of ask (L6, A3.5): who files it (always Identity: only Identity speaks to the owner), the kinds of way
+#: out its writers attach to it (OPTION_KINDS; an ask carries at most OPTIONS_MAX of them, and an ask whose options are empty is
+#: stamped yes or no), and the lead it says first, in the writer's own words (None for the rest). Checked against the writers
+#: (website_dept.options_ask, _put_ask, decide_ask; engine_runtime._blocked; adaptation's cannot_options): widened to what they
+#: attach, never narrowed. blocked is the plan's card (words, leave, stop); conflict also carries root_setup, which adaptation's
+#: cannot_options attaches to the conflict it files, and raise, which W2-IDENTITY's options ask adds (M5.4); envelope is M5.4's
+_ASK_OPTIONS = {'blocked': ('words', 'leave', 'stop'), 'conflict': ('words', 'root_setup', 'leave', 'stop', 'raise'),
+                'envelope': ('raise', 'leave', 'stop')}
+_ASK_LEADS = {'publish': 'Publish: go live for the first time', 'rule': 'A rule, as understood',
+              'request': 'Your words reach outside the site'}
+ASK_FORMS = {kind: {'by': 'identity', 'options': _ASK_OPTIONS.get(kind, ()), 'lead': _ASK_LEADS.get(kind)} for kind in ASK_KINDS}
+
+# the function template (L2, A3.4.2). Each part of a function is one of three things. A constant is a boundary no field changes:
+# what the function is not, what it never does, who it hands on to, and the working agreement all five keep; a tighter boundary
+# is a rule, never a field, and an owner cannot loosen one (approvals only tighten, S-08). A word is behaviour, typed in the
+# `goal` group of S.PROMPTS (A3-FUNCTIONS adds the parts goal.done and goal.role_*, and the layout of the compiled role block).
+# What is derived is written once, in the tables above, so it cannot drift. These constants are addressed to the agent: the owner
+# is "the owner", never "You", and where a word sits beside an answer shape it is the contract's (accept, counter, reject; go,
+# ask, refuse); the one thing the owner reads, goal.done, keeps the screen's list of banned words
+ROLE_INPUTS = ('agreement', 'is', 'is_not', 'may', 'never', 'procedure', 'patterns', 'hands_on')   # the inputs of goal.role_block
+ROLE_BLOCK_MAX = 3600                              # characters of the compiled block
+TEMPLATE_BANNED = r"\b(charters?|ceo|requesters?|grant(?:s|ed)?|counter(?:s|ed)?|refus\w*|internal systems?)\b"     # re.I; the screen's words
+TEMPLATE_BANNED_AGENT = r"\b(charters?|ceo|requesters?|internal systems?)\b"                                       # re.I; the words only the agent reads
+TEMPLATE_NEVER_SAY = {'priority': r"order|what runs next"}       # re.I; a substring, as test_priority_never_orders has it (S-05)
+
+#: what team.md's working rules say that the interface cannot: the base text every function keeps. Its first line is true of
+#: Identity too, which is the one function that speaks to the owner
+DEPARTMENT_AGREEMENT = (
+    'Only Identity speaks to the owner; any other function that needs something from the owner tells Identity.',
+    "The department's goal and its done-when are the reference for every decision you make.",
+    'Disagree with a reason tied to the goal, the limits or the rules, and move when someone gives a better reason.',
+    'If two functions cannot settle a disagreement in four exchanges, it goes to Identity with both positions.',
+    (
+        "A fact only the owner knows is Identity's question to the owner; until it is answered the item is to be "
+        'confirmed, and it is not met.'
+    ),
+    (
+        'The work is finished only when Audit has read every done-when item and none is unmet or to be confirmed; a limit '
+        'reached ends in an ask to the owner through Identity, never in silence.'
+    ),
+)
+
+#: per layer (the five functions and Root): role (a label), is_not, never (the lines no version drops), hands_on (who it hands
+#: on to, FT-10), in_card (whether the role block is sent in its card; Root's Setup prompts use no card, so its template is
+#: interface-only) and, for Adaptation, reserved (the site's parts that are placeholders: recorded, not built)
+FUNCTION_TEMPLATE = {
+    'identity': {
+        'role': 'keeps the goal, the done-when and the rules, and closes conflicts',
+        'is_not': (
+            'It does not design workflows, give out limits, schedule work, do the work or read results. It rules only '
+            'when a proposal touches a rule, when Priority and Adaptation cannot agree, when Audit reports something that '
+            'matters, or when the department may be done.'
+        ),
+        'never': (
+            'invent a new goal or a new rule',
+            'choose tools or the steps of the work',
+            'raise a limit',
+            'say which workflow runs first',
+            'rewrite a proposal to make it acceptable',
+            'ask the owner only because functions disagree',
+            'make anything itself: the maker is an engine',
+            'loosen a rule: approvals only tighten',
+        ),
+        'hands_on': (
+            'Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. The owner: '
+            'questions, tells and asks, since Identity is the only function that speaks to the owner.'
+        ),
+        'in_card': True,
+    },
+    'adaptation': {
+        'role': 'senses the gap to the goal and proposes how to close it',
+        'is_not': (
+            'It designs; it does not approve its own proposal. Priority gives the limits, Identity holds the rules, '
+            'Coordination keeps the order and Audit judges the results.'
+        ),
+        'never': (
+            'give itself resources',
+            "say a plan passed Root's check",
+            'schedule a run',
+            'say its own result is right',
+            'ask the owner directly: only Identity does',
+            'hide a capability or a permission a plan depends on',
+            'widen the scope to make a proposal look more valuable',
+            'apply a change itself: every proposal passes Priority first',
+        ),
+        'hands_on': (
+            'Priority: every proposal and every round. Identity: conflicts, and a round Priority accepted, to file. Root: '
+            'the line Priority accepted, for its check.'
+        ),
+        'in_card': True,
+        'reserved': ('crystallize', 'grow', 'learn', 'compass'),     # the site's parts that are placeholders: recorded, not built
+    },
+    'priority': {
+        'role': 'the budget bargain and the limit of each engine',
+        'is_not': (
+            'It does not choose strategy, design workflows, decide who goes first, judge the quality of content or read '
+            'the rules. A proposal can be attractive and still not affordable, or cheap and still beside the goal; '
+            'whether it fits the goal is for Identity and Adaptation.'
+        ),
+        'never': (
+            'say which accepted workflow runs first',
+            'reject a proposal because it dislikes a method that fits the limit',
+            'give a limit that is not declared, or no limit at all',
+            "change the department's goal",
+            'ask the owner directly: only Identity does',
+            'turn a question of money into a question of policy',
+            'start a run',
+        ),
+        'hands_on': (
+            "Adaptation: accept, counter or reject, with the price. Identity: through Adaptation's conflict, when a limit "
+            'is hit.'
+        ),
+        'in_card': True,
+    },
+    'coordination': {
+        'role': 'order, dependencies, hand-offs and keeping work apart',
+        'is_not': 'It does not give limits, decide the goal, design workflows or judge the quality of results.',
+        'never': (
+            'raise a limit',
+            'decide that an expensive workflow is not worth it',
+            'settle a question of rules',
+            'change the steps of a workflow',
+            'say a result is right',
+            'ask the owner directly: only Identity does',
+            'start a run: the engine starts itself in its slot',
+        ),
+        'hands_on': 'Identity: alarms, lost requests and verdict asks. Priority: verdict asks.',
+        'in_card': True,
+    },
+    'audit': {
+        'role': 'an independent check on the evidence',
+        'is_not': (
+            'It does not design the workflow, repair the result, give limits, schedule rework or decide policy. Its job '
+            'is to make a difference visible, with the evidence.'
+        ),
+        'never': (
+            'touch a workflow or a version',
+            "approve a proposed workflow because it can picture auditing its output: Root's check registers it",
+            'turn a check into a score',
+        ),
+        'hands_on': 'Identity only: readings and findings.',
+        'in_card': True,
+    },
+    'root': {
+        'role': 'makes departments and checks plans',
+        'is_not': (
+            "It never creates or starts an engine: engines come from Adaptation. It does not do a department's work or "
+            'speak for its functions.'
+        ),
+        'never': (
+            'create or start an engine: engines come from Adaptation',
+            'register a plan that does not meet the standards',
+            "let a department's rules loosen its own",
+        ),
+        'hands_on': (
+            "Identity: the owner's words for a department, and a plan it could not register. Coordination and Priority: a "
+            'registered plan.'
+        ),
+        'in_card': False,                  # Root's Setup prompts use no card: its template is interface-only
+    },
+}
+
+#: every part of a function the site lists or the prototype's role file has, and its home: (part, the site's field when it
+#: has a literal name, else None; kind, 'word' (behaviour, typed in S.PROMPTS), 'constant' (here), 'derived' (written once in
+#: another table) or 'version' (the layer's recipe); home). A word's home is (group, part) in S.PROMPTS[layer]; a constant's
+#: is (table, key) here; a derived part's is the table of this module, or, in lower case, the folder that holds it
+TEMPLATE_PARTS = (
+    ('goal', 'goal', 'word', ('goal', 'does')),
+    ('skills', None, 'word', ('goal', 'skills')),
+    ('done', 'done', 'word', ('goal', 'done')),
+    ('role', None, 'constant', ('FUNCTION_TEMPLATE', 'role')),
+    ('is', None, 'word', ('goal', 'role_is')),
+    ('is_not', None, 'constant', ('FUNCTION_TEMPLATE', 'is_not')),
+    ('may', 'choices', 'word', ('goal', 'role_may')),
+    ('never', 'keeps', 'constant', ('FUNCTION_TEMPLATE', 'never')),
+    ('procedure', None, 'word', ('goal', 'role_procedure')),
+    ('patterns', None, 'word', ('goal', 'role_patterns')),
+    ('hands_on', 'hands_to', 'constant', ('FUNCTION_TEMPLATE', 'hands_on')),
+    ('agreement', None, 'constant', ('DEPARTMENT_AGREEMENT', None)),
+    ('hears', 'hears', 'derived', ('HEARS', None)),
+    ('writes', 'writes', 'derived', ('SENDS', None)),
+    ('checks', 'checks', 'derived', ('CHECKS', None)),
+    ('envelope', 'envelope', 'derived', ('SETTINGS', 'envelope')),
+    ('settings', 'settings', 'derived', ('SETTINGS', None)),
+    ('formats', None, 'derived', ('RECORDS', None)),
+    ('recipe', None, 'version', ('LAYERS', 'recipe')),
+    ('journeys', None, 'derived', ('journeys', 'functions')),
+)
 
 
 # ---- reading the tables ----------------------------------------------------------------------------------------------
@@ -1706,6 +2201,13 @@ def describe():
         'groups': GROUPS, 'prompts': PROMPTS, 'option_kinds': OPTION_KINDS,
         'workflow_standards': [{'id': i, 'says': s, 'sources': src, 'stages': st} for i, s, src, st in WORKFLOW_STANDARDS],
         'views': VIEWS, 'sink': SINK, 'sink_journals': SINK_JOURNALS, 'defs': DEFS,
+        # the templates at every level (A3): the levels, the ask forms, the step's constants, the ledger's words and Identity's five
+        'template_levels': TEMPLATE_LEVELS, 'ask_forms': ASK_FORMS, 'ledger_actions': LEDGER_ACTIONS, 'recognitions': RECOGNITIONS,
+        'steps': {'kinds': STEP_KINDS, 'natures': NATURES, 'rungs': RUNGS, 'gate_answers': GATE_ANSWERS, 'model_tools': MODEL_TOOLS,
+                  'ctx': STEP_CTX, 'row': STEP_ROW},
+        'function_template': {'by_layer': FUNCTION_TEMPLATE, 'agreement': DEPARTMENT_AGREEMENT, 'parts': TEMPLATE_PARTS,
+                              'role_inputs': ROLE_INPUTS, 'role_block_max': ROLE_BLOCK_MAX, 'banned': TEMPLATE_BANNED,
+                              'banned_agent': TEMPLATE_BANNED_AGENT, 'never_say': TEMPLATE_NEVER_SAY},
     }
     return json.loads(json.dumps(out, ensure_ascii=False))
 
@@ -1821,6 +2323,22 @@ def json_schemas():
             'views.schema.json', "The panes' read models",
             'What each pane renders, as the screens read it: Identity, Adaptation, Priority, Coordination and Audit, and the '
             'engine card (PRD A1.17).', sorted(VIEWS.values()), **{'x-views': VIEWS}),
+        'templates.schema.json': _file(
+            'templates.schema.json', 'The templates of the levels below the journey',
+            "The step with its row and its start, the department kind, the Library's engine template and the artifact template, "
+            'the base classes of levels L1, L3, L4 and L5 (x-levels holds all seven levels, x-steps the constants of the step and '
+            'x-ask-forms the form of each kind of ask) (PRD A3.1, A3.3, A3.5).',
+            ['step', 'step.row', 'engine.start', 'engine.library', 'kind', 'artifact.template'],
+            **{'x-levels': TEMPLATE_LEVELS, 'x-ask-forms': ASK_FORMS,
+               'x-steps': {'kinds': STEP_KINDS, 'natures': NATURES, 'rungs': RUNGS, 'gate_answers': GATE_ANSWERS,
+                           'model_tools': MODEL_TOOLS, 'ctx': STEP_CTX, 'row': STEP_ROW}}),
+        'journeys.schema.json': _file(
+            'journeys.schema.json', 'A user journey',
+            'The user-journey template (level L0): a journey file under journeys/, its parts (lane, step, edge, bind, outcome, '
+            'sub-journey, ruling, quote, scenario, backlog entry, direction, build row, the earlier rows kept as was) and the status '
+            'document that is computed for each journey; x-ledger-actions are the ledger words an event bind may name (PRD A3.6).',
+            sorted(n for n in DEFS if n == 'journey' or n.startswith('journey.')), 'journey',
+            **{'x-ledger-actions': LEDGER_ACTIONS, 'x-recognitions': RECOGNITIONS}),
         'interface.v1.json': describe(),
     }
 

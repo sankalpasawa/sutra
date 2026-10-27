@@ -1,0 +1,29 @@
+{
+ "parent": "identity/v1",
+ "set": {
+  "description": "holds the goal and the rules, judges every effect, notes each request before it judges it, and is the one the owner speaks with"
+ },
+ "on": [
+  {
+   "when": {
+    "msg_type": "request",
+    "word": "request"
+   },
+   "steps": [
+    {
+     "id": "identity.note",
+     "name": "Note the request",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_read",
+     "check": "facts_are_closed",
+     "after": "identity.read"
+    },
+    {
+     "id": "identity.take",
+     "name": "Judge it against the goal and the rules"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,1437 @@
+{
+  "$defs": {
+    "journey": {
+      "additionalProperties": false,
+      "properties": {
+        "backlog": {
+          "items": {
+            "$ref": "#/$defs/journey.backlog"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "bound_to": {
+          "anyOf": [
+            {
+              "enum": [
+                "identity",
+                "adaptation",
+                "priority",
+                "coordination",
+                "audit"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "build_rows": {
+          "items": {
+            "$ref": "#/$defs/journey.build_row"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "children": {
+          "items": {
+            "maxLength": 6,
+            "pattern": "^(J[1-9][0-9]?|S[1-9]|U[1-9]|F(?:I|A|P|C|AU)[1-9])$",
+            "type": "string"
+          },
+          "maxItems": 10,
+          "minItems": 0,
+          "type": "array"
+        },
+        "decisions": {
+          "items": {
+            "maxLength": 12,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "declared": {
+          "type": "boolean"
+        },
+        "directions": {
+          "items": {
+            "$ref": "#/$defs/journey.direction"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/journey.edge"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "ends_when": {
+          "maxLength": 400,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "flag": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "goal": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "helper": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "maxLength": 20,
+              "minLength": 0,
+              "type": "string"
+            },
+            "screen": {
+              "maxLength": 20,
+              "minLength": 0,
+              "type": "string"
+            },
+            "site": {
+              "maxLength": 20,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "id": {
+          "maxLength": 6,
+          "pattern": "^(J[1-9][0-9]?|S[1-9]|U[1-9]|F(?:I|A|P|C|AU)[1-9])$",
+          "type": "string"
+        },
+        "inside": {
+          "anyOf": [
+            {
+              "maxLength": 6,
+              "pattern": "^(J[1-9][0-9]?|S[1-9]|U[1-9]|F(?:I|A|P|C|AU)[1-9])$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "invariants": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "person",
+            "system",
+            "function"
+          ]
+        },
+        "lanes": {
+          "items": {
+            "$ref": "#/$defs/journey.lane"
+          },
+          "maxItems": 10,
+          "minItems": 0,
+          "type": "array"
+        },
+        "lead": {
+          "maxLength": 1500,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "quotes": {
+          "items": {
+            "$ref": "#/$defs/journey.quote"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "rulings": {
+          "items": {
+            "$ref": "#/$defs/journey.ruling"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "scenarios": {
+          "items": {
+            "$ref": "#/$defs/journey.scenario"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "serves": {
+          "items": {
+            "maxLength": 8,
+            "pattern": "^J[1-9][0-9]?:[1-9][0-9]?[a-e]?$",
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 0,
+          "type": "array"
+        },
+        "site": {
+          "additionalProperties": false,
+          "properties": {
+            "as_of": {
+              "maxLength": 40,
+              "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+              "type": "string"
+            },
+            "data_version": {
+              "maxLength": 8,
+              "minLength": 0,
+              "type": "string"
+            },
+            "page": {
+              "maxLength": 200,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "site_ids": {
+          "items": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "site_serves": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string",
+              "x-say": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/journey.step"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "sub": {
+          "items": {
+            "$ref": "#/$defs/journey.sub"
+          },
+          "maxItems": 10,
+          "minItems": 0,
+          "type": "array"
+        },
+        "tag": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "today": {
+          "additionalProperties": false,
+          "properties": {
+            "sources": {
+              "maxLength": 200,
+              "minLength": 0,
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 1500,
+              "minLength": 1,
+              "type": "string",
+              "x-say": true
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "type": "object"
+        },
+        "was": {
+          "$ref": "#/$defs/journey.was"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "title",
+        "kind",
+        "goal",
+        "lanes",
+        "steps",
+        "edges",
+        "site_ids"
+      ],
+      "type": "object"
+    },
+    "journey.backlog": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 6,
+          "pattern": "^BL-[1-9][0-9]?[a-z]?$",
+          "type": "string"
+        },
+        "package": {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string"
+        },
+        "row": {
+          "maxLength": 20,
+          "minLength": 1,
+          "type": "string"
+        },
+        "smallest": {
+          "maxLength": 700,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        }
+      },
+      "required": [
+        "id",
+        "row",
+        "smallest",
+        "package"
+      ],
+      "type": "object"
+    },
+    "journey.bind": {
+      "additionalProperties": false,
+      "properties": {
+        "act": {
+          "enum": [
+            "request",
+            "agree",
+            "refuse",
+            "propose",
+            "accept-proposal",
+            "reject-proposal",
+            "inform",
+            "failure",
+            "not-understood",
+            "cancel"
+          ]
+        },
+        "action": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string"
+        },
+        "dst": {
+          "enum": [
+            "Owner",
+            "Root",
+            "Identity",
+            "Adaptation",
+            "Priority",
+            "Coordination",
+            "Audit",
+            "Engine"
+          ]
+        },
+        "id": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "act",
+            "step",
+            "event",
+            "api",
+            "ui",
+            "person"
+          ]
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ]
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "path": {
+          "maxLength": 120,
+          "minLength": 0,
+          "type": "string"
+        },
+        "src": {
+          "enum": [
+            "Owner",
+            "Root",
+            "Identity",
+            "Adaptation",
+            "Priority",
+            "Coordination",
+            "Audit",
+            "Engine"
+          ]
+        },
+        "symbol": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
+        },
+        "what": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "journey.branch": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "to": {
+          "maxLength": 20,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "to"
+      ],
+      "type": "object"
+    },
+    "journey.build_row": {
+      "additionalProperties": false,
+      "properties": {
+        "backlog": {
+          "anyOf": [
+            {
+              "maxLength": 6,
+              "pattern": "^BL-[1-9][0-9]?[a-z]?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "change": {
+          "maxLength": 800,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "id": {
+          "maxLength": 8,
+          "minLength": 1,
+          "type": "string"
+        },
+        "owner": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "size": {
+          "enum": [
+            "S",
+            "M",
+            "L"
+          ]
+        },
+        "tests": {
+          "items": {
+            "maxLength": 200,
+            "pattern": "^(js:[A-Za-z0-9_.-]+\\.js#[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\\.py::([A-Za-z_][A-Za-z0-9_]*::)?[A-Za-z_][A-Za-z0-9_]*)$",
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 0,
+          "type": "array"
+        },
+        "when": {
+          "enum": [
+            "v1",
+            "later"
+          ]
+        },
+        "where": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        }
+      },
+      "required": [
+        "id",
+        "change"
+      ],
+      "type": "object"
+    },
+    "journey.direction": {
+      "additionalProperties": false,
+      "properties": {
+        "built": {
+          "maxLength": 800,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "direction": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "gap": {
+          "maxLength": 500,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "id": {
+          "maxLength": 8,
+          "minLength": 1,
+          "type": "string"
+        },
+        "mark": {
+          "anyOf": [
+            {
+              "enum": [
+                "keep",
+                "change",
+                "drop"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "direction"
+      ],
+      "type": "object"
+    },
+    "journey.edge": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "maxLength": 20,
+          "minLength": 1,
+          "type": "string"
+        },
+        "backlog": {
+          "anyOf": [
+            {
+              "maxLength": 6,
+              "pattern": "^BL-[1-9][0-9]?[a-z]?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "binds": {
+          "items": {
+            "$ref": "#/$defs/journey.bind"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array"
+        },
+        "code": {
+          "items": {
+            "maxLength": 80,
+            "pattern": "^([A-Za-z_][A-Za-z0-9_]*\\.)?[A-Za-z_$][A-Za-z0-9_$]*$",
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "code_does": {
+          "maxLength": 1500,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "disposition": {
+          "anyOf": [
+            {
+              "enum": [
+                "keep",
+                "change",
+                "drop"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 8,
+          "pattern": "^(J[1-9][0-9]?|F(?:I|A|P|C|AU)[1-9])\\.[1-9][0-9]?$",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/journey.outcome"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "reword": {
+          "anyOf": [
+            {
+              "maxLength": 700,
+              "minLength": 0,
+              "type": "string",
+              "x-say": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rulings": {
+          "items": {
+            "maxLength": 8,
+            "pattern": "^(S|Q|MK|D|A1|A2|A3)-?[A-Za-z0-9]{1,4}$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array"
+        },
+        "same_as": {
+          "anyOf": [
+            {
+              "maxLength": 24,
+              "pattern": "^J[1-9][0-9]?/(step/[1-9][0-9]?[a-e]?|edge/J[1-9][0-9]?\\.[1-9][0-9]?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "short": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "site": {
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "built",
+                "wanted",
+                "today",
+                "open",
+                "directed",
+                "partly",
+                "not_built",
+                "to_build",
+                "none"
+              ]
+            },
+            "text": {
+              "maxLength": 1500,
+              "minLength": 0,
+              "type": "string",
+              "x-say": true
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "tests": {
+          "items": {
+            "maxLength": 200,
+            "pattern": "^(js:[A-Za-z0-9_.-]+\\.js#[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\\.py::([A-Za-z_][A-Za-z0-9_]*::)?[A-Za-z_][A-Za-z0-9_]*)$",
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "trigger": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "short",
+        "trigger",
+        "site"
+      ],
+      "type": "object"
+    },
+    "journey.file": {
+      "additionalProperties": false,
+      "properties": {
+        "journeys": {
+          "items": {
+            "$ref": "#/$defs/journey"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "journeys"
+      ],
+      "type": "object"
+    },
+    "journey.lane": {
+      "additionalProperties": false,
+      "properties": {
+        "function": {
+          "anyOf": [
+            {
+              "enum": [
+                "identity",
+                "adaptation",
+                "priority",
+                "coordination",
+                "audit"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 16,
+          "pattern": "^[a-z][a-z0-9_]{0,15}$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "person",
+            "root",
+            "function",
+            "engine"
+          ]
+        },
+        "label": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "journey.outcome": {
+      "additionalProperties": false,
+      "properties": {
+        "golden": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "enum": [
+            "tell",
+            "ask",
+            "file",
+            "hold",
+            "refuse",
+            "block",
+            "retry",
+            "none"
+          ]
+        },
+        "voice": {
+          "enum": [
+            "Identity",
+            "Root",
+            "Coordination",
+            "none"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "journey.quote": {
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "on": {
+          "maxLength": 20,
+          "minLength": 0,
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "journey.row_status": {
+      "additionalProperties": false,
+      "properties": {
+        "drift": {
+          "type": "boolean"
+        },
+        "failing": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "proven_by": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "site": {
+          "anyOf": [
+            {
+              "enum": [
+                "built",
+                "wanted",
+                "today",
+                "open",
+                "directed",
+                "partly",
+                "not_built",
+                "to_build",
+                "none"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "proven",
+            "partly",
+            "failing",
+            "unproven",
+            "wanted",
+            "dropped",
+            "fault",
+            "unknown",
+            "declared"
+          ]
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "journey.ruling": {
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 8,
+          "pattern": "^(S|Q|MK|D|A1|A2|A3)-?[A-Za-z0-9]{1,4}$",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "RULED",
+            "OPEN",
+            "PARKED"
+          ]
+        },
+        "text": {
+          "maxLength": 700,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "text"
+      ],
+      "type": "object"
+    },
+    "journey.scenario": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "lane": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "says": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "test": {
+          "maxLength": 200,
+          "pattern": "^(js:[A-Za-z0-9_.-]+\\.js#[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\\.py::([A-Za-z_][A-Za-z0-9_]*::)?[A-Za-z_][A-Za-z0-9_]*)$",
+          "type": "string"
+        },
+        "walks": {
+          "items": {
+            "maxLength": 3,
+            "pattern": "^([0-9]|[1-9][0-9])[a-e]?$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "lane",
+        "test"
+      ],
+      "type": "object"
+    },
+    "journey.status": {
+      "additionalProperties": false,
+      "properties": {
+        "counts": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "definitions_sha": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "drift": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "row": {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              "site": {
+                "enum": [
+                  "built",
+                  "wanted",
+                  "today",
+                  "open",
+                  "directed",
+                  "partly",
+                  "not_built",
+                  "to_build",
+                  "none"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "proven",
+                  "partly",
+                  "failing",
+                  "unproven",
+                  "wanted",
+                  "dropped",
+                  "fault",
+                  "unknown",
+                  "declared"
+                ]
+              }
+            },
+            "required": [
+              "row",
+              "site",
+              "state"
+            ],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 6,
+          "pattern": "^(J[1-9][0-9]?|S[1-9]|U[1-9]|F(?:I|A|P|C|AU)[1-9])$",
+          "type": "string"
+        },
+        "rows": {
+          "additionalProperties": {
+            "$ref": "#/$defs/journey.row_status"
+          },
+          "type": "object"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "proven",
+            "partly",
+            "failing",
+            "unproven",
+            "wanted",
+            "dropped",
+            "fault",
+            "declared",
+            "unknown"
+          ]
+        },
+        "tests": {
+          "additionalProperties": {
+            "enum": [
+              "passed",
+              "failed",
+              "missing"
+            ]
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "definitions_sha",
+        "state",
+        "counts",
+        "tests",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "journey.step": {
+      "additionalProperties": false,
+      "properties": {
+        "act": {
+          "enum": [
+            "say",
+            "ask",
+            "tell",
+            "stamp",
+            "file",
+            "read",
+            "run",
+            "check",
+            "post",
+            "decide"
+          ]
+        },
+        "backlog": {
+          "anyOf": [
+            {
+              "maxLength": 6,
+              "pattern": "^BL-[1-9][0-9]?[a-z]?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "binds": {
+          "items": {
+            "$ref": "#/$defs/journey.bind"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array"
+        },
+        "branches": {
+          "items": {
+            "$ref": "#/$defs/journey.branch"
+          },
+          "maxItems": 6,
+          "minItems": 0,
+          "type": "array"
+        },
+        "child": {
+          "anyOf": [
+            {
+              "maxLength": 6,
+              "pattern": "^(J[1-9][0-9]?|S[1-9]|U[1-9]|F(?:I|A|P|C|AU)[1-9])$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "code": {
+          "items": {
+            "maxLength": 80,
+            "pattern": "^([A-Za-z_][A-Za-z0-9_]*\\.)?[A-Za-z_$][A-Za-z0-9_$]*$",
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "lane": {
+          "maxLength": 16,
+          "pattern": "^[a-z][a-z0-9_]{0,15}$",
+          "type": "string"
+        },
+        "n": {
+          "maxLength": 3,
+          "pattern": "^([0-9]|[1-9][0-9])[a-e]?$",
+          "type": "string"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "same_as": {
+          "anyOf": [
+            {
+              "maxLength": 24,
+              "pattern": "^J[1-9][0-9]?/(step/[1-9][0-9]?[a-e]?|edge/J[1-9][0-9]?\\.[1-9][0-9]?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "short": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "site_code": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "site_function": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "site_says": {
+          "maxLength": 120,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "site_status": {
+          "enum": [
+            "built",
+            "wanted",
+            "today",
+            "open",
+            "directed",
+            "partly",
+            "not_built",
+            "to_build",
+            "none"
+          ]
+        },
+        "tests": {
+          "items": {
+            "maxLength": 200,
+            "pattern": "^(js:[A-Za-z0-9_.-]+\\.js#[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\\.py::([A-Za-z_][A-Za-z0-9_]*::)?[A-Za-z_][A-Za-z0-9_]*)$",
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        }
+      },
+      "required": [
+        "n",
+        "lane",
+        "short",
+        "text"
+      ],
+      "type": "object"
+    },
+    "journey.sub": {
+      "additionalProperties": false,
+      "properties": {
+        "drawn": {
+          "maxLength": 120,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "id": {
+          "maxLength": 6,
+          "pattern": "^J[1-9][0-9]?\\.[a-z]$",
+          "type": "string"
+        },
+        "owner": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "step": {
+          "maxLength": 3,
+          "pattern": "^([0-9]|[1-9][0-9])[a-e]?$",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 800,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "title": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "step"
+      ],
+      "type": "object"
+    },
+    "journey.was": {
+      "additionalProperties": false,
+      "properties": {
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/journey.edge"
+          },
+          "maxItems": 30,
+          "minItems": 0,
+          "type": "array"
+        },
+        "lanes": {
+          "items": {
+            "maxLength": 16,
+            "pattern": "^[a-z][a-z0-9_]{0,15}$",
+            "type": "string"
+          },
+          "maxItems": 10,
+          "minItems": 0,
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/journey.step"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        }
+      },
+      "required": [
+        "title",
+        "steps",
+        "edges"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://sutra.asawa.co/schemas/layers/journeys.schema.json",
+  "$ref": "#/$defs/journey",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The user-journey template (level L0): a journey file under journeys/, its parts (lane, step, edge, bind, outcome, sub-journey, ruling, quote, scenario, backlog entry, direction, build row, the earlier rows kept as was) and the status document that is computed for each journey; x-ledger-actions are the ledger words an event bind may name (PRD A3.6). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "title": "A user journey",
+  "x-ledger-actions": [
+    "proposal.requested",
+    "proposal.created",
+    "proposal.granted",
+    "proposal.countered",
+    "proposal.refused",
+    "proposal.accepted",
+    "workflow.validated",
+    "workflow.registered",
+    "workflow.blocked",
+    "timetable.written",
+    "envelope.granted",
+    "envelope.held",
+    "slot.assigned",
+    "run.started",
+    "run.completed",
+    "run.failed",
+    "artifact.filed",
+    "audit.finding_filed",
+    "audit.not_read",
+    "identity.assessed",
+    "identity.questioned",
+    "identity.ruled",
+    "conflict.raised",
+    "ask.created",
+    "ask.answered",
+    "goal.reached",
+    "cycle.stopped",
+    "cycle.resumed",
+    "cycle.reopened",
+    "goal.revised",
+    "check.failed"
+  ],
+  "x-recognitions": [
+    "task",
+    "query",
+    "directive",
+    "feedback",
+    "new-idea"
+  ]
+}

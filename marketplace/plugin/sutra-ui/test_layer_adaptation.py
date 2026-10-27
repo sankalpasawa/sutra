@@ -1181,7 +1181,8 @@ def test_a9_a_cannot_reaches_the_owner_as_one_card_that_says_it_in_plain_words_w
     assert "Say what the department should do" in card["text"] and "the plan ." not in card["text"]
     assert not re.search(r"run it as proposed|Stamp|stamp|drop it", card["text"]), card["text"]
     assert not STANDARD_IDS.search(card["text"] + card["title"] + card["why"])
-    assert [o["id"] for o in card["options"]] == ["words", "leave:D3", "stop"], "the ways out a blocked plan always has"
+    assert [o["id"] for o in card["options"]] == ["root_setup", "leave:D3", "stop"], "the ways out the conflict carries (J2B-7): Identity files them (M5.4)"
+    assert [o["kind"] for o in card["options"]] == ["root_setup", "leave", "stop"] and card["options"][0]["params"]["words"]
     assert J.status(ref)["state"] == "blocked"
     told = [str(p["payload"].get("done") or "") for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]]
     assert not [t for t in told if "the plan ." in t or "run it as proposed" in t], told

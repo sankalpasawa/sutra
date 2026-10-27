@@ -129,9 +129,10 @@ def test_c6_store_writes_whole_and_atomically_through_the_sink(home):
     bad = copy.deepcopy(doc)
     bad["values"]["identity"]["take"]["take"]["task"]["value"] = "x" * 1201
     with S.expect_refused("instructions") as met:
-        W._write(P.values_path(ref), bad)
+        with pytest.raises(S.SchemaFault):                           # refuse mode: the write is refused after its row
+            W._write(P.values_path(ref), bad)
     assert met and "longer than 1200" in met[0]
-    P.store(ref, *TAKE, "task", "Judge one request, kindly.")        # leave the file as the owner stamped it
+    assert stored(ref) == doc, "nothing was written"
 
 
 def test_c6_a_value_equal_to_the_default_is_removed_and_a_later_default_reaches_the_department(home, monkeypatch):
@@ -427,7 +428,8 @@ def test_c7_get_layers_describes_the_interface_the_department_runs_under(api, ho
     assert got["describe"]["default_pins"] == S.DEFAULT_PINS and got["describe"]["workflow_standards"][0]["id"] == "names_an_engine"
 
 
-def test_c7_get_layers_names_a_pin_it_cannot_honour_once(api, home):
+def test_c7_get_layers_names_a_pin_it_cannot_honour_once(api, home, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # a record that holds a pin the registry cannot find is kept (warn mode), as an older record may be
     ref = born(home)
     W, _ = modules()
     d = W.dept(ref)
@@ -836,7 +838,8 @@ def test_c10_the_ask_rows_pass_the_sink_and_a_way_out_the_interface_lacks_does_n
     odd = W.options_ask("blocked", "Stuck", [W.option("sideways:1", "A", "a")])
     assert any("kind" in f for f in S.validate("identity.ask", odd)), "a kind that is not a way out of the interface is a fault"
     with S.expect_refused() as met:
-        W._put_ask(ref, odd)
+        with pytest.raises(S.SchemaFault):
+            W._put_ask(ref, odd)
     assert any("kind" in str(r) for r in met.rows), "the sink met it"
 
 
@@ -885,7 +888,8 @@ def test_c10_a_line_request_that_does_not_fit_is_a_fault_of_the_interface(home):
     ref = born(home)
     _, R = modules()
     with S.expect_refused():
-        R.post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": 7, "objective": "x", "faults": "none"})
+        with pytest.raises(S.SchemaFault):
+            R.post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": 7, "objective": "x", "faults": "none"})
 
 
 # ---- C11 · K2 end to end ----------------------------------------------------------------------------------------------

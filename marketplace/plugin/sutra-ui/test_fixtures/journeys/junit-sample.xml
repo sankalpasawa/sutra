@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests">
+<testsuite name="pytest" errors="1" failures="3" skipped="1" tests="13" time="0.142" timestamp="2026-10-27T00:00:00+00:00" hostname="host">
+<testcase classname="test_j1" name="test_j1_a_passes" time="0.004" />
+<testcase classname="test_j1" name="test_j1_b_is_parametrised_and_passes" time="0.000" />
+<testcase classname="test_j1" name="test_j1_c_runs_for_each[root]" time="0.000" />
+<testcase classname="test_j1" name="test_j1_c_runs_for_each[child]" time="0.000" />
+<testcase classname="test_j1" name="test_j1_d_has_one_bad_case[1]" time="0.000" />
+<testcase classname="test_j1" name="test_j1_d_has_one_bad_case[2]" time="0.000"><failure message="assert 2 != 2">n = 2
+
+    @pytest.mark.parametrize("n", [1, 2, 3])
+    def test_j1_d_has_one_bad_case(n):
+&gt;       assert n != 2
+E       assert 2 != 2
+
+test_j1.py:15: AssertionError</failure></testcase>
+<testcase classname="test_j1" name="test_j1_d_has_one_bad_case[3]" time="0.000" />
+<testcase classname="test_j1" name="test_j1_e_fails" time="0.000"><failure message="assert 1 == 2">def test_j1_e_fails():
+&gt;       assert 1 == 2
+E       assert 1 == 2
+
+test_j1.py:18: AssertionError</failure></testcase>
+<testcase classname="test_j1" name="test_j1_f_is_skipped" time="0.000"><skipped type="pytest.skip" message="not today">test_j1.py:21: not today</skipped></testcase>
+<testcase classname="test_j1" name="test_j1_g_errors_in_its_fixture" time="0.004"><error message="failed on setup with &quot;RuntimeError: setup failed&quot;">@pytest.fixture
+    def broken():
+&gt;       raise RuntimeError("setup failed")
+E       RuntimeError: setup failed
+
+test_j1.py:25: RuntimeError</error></testcase>
+<testcase classname="test_engine_runtime.TestTheFiveJourneys" name="test_37_a_directive_is_restated" time="0.005" />
+<testcase classname="test_engine_runtime.TestTheFiveJourneys" name="test_38_another" time="0.001"><failure message="AssertionError: no">self = &lt;test_j1.TestTheFiveJourneys testMethod=test_38_another&gt;
+
+    def test_38_another(self):
+&gt;       self.fail("no")
+E       AssertionError: no
+
+test_j1.py:34: AssertionError</failure></testcase>
+<testcase classname="test_j1.TestPlain" name="test_p_one" time="0.000" />
+</testsuite></testsuites>
