@@ -90,10 +90,7 @@ def _apply_pin(ref, ask, option):
     function template), is UNKNOWN_OPTION and changes nothing; so is a pin of Root's own version anywhere but on Root, which
     names it for the whole organisation. Returns {layer, impl, was}."""
     params = option.get('params')
-    if not isinstance(params, dict):                                   # the id may carry it: pin:<layer>/v<N>
-        impl = str(option.get('id') or '').split(':', 1)[1] if ':' in str(option.get('id') or '') else ''
-        params = {'layer': impl.split('/', 1)[0], 'impl': impl}
-    if S.validate('option.pin', params):
+    if not isinstance(params, dict) or S.validate('option.pin', params):
         raise _unknown('say which version of which function to run')
     layer, impl = params['layer'], params['impl']
     if not impl.startswith(layer + '/'):

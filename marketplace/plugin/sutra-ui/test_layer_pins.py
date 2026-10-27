@@ -723,8 +723,10 @@ def on_disk(monkeypatch, *impls):
     monkeypatch.setattr(layers, "available", available)
 
 
-def pin_option(layer, impl, params=True):
-    return W.option("pin:%s" % impl, "Run another version of %s" % S.TITLE[layer], "nothing", {"layer": layer, "impl": impl} if params else None)
+def pin_option(layer, impl):
+    """The option as a card offers it: the id is the kind and the version's name (an id has no '/', the ask's schema says), the
+    layer and the version are its params."""
+    return W.option("pin:%s" % impl.replace("/", "."), "Run another version of %s" % S.TITLE[layer], "nothing", {"layer": layer, "impl": impl})
 
 
 def apply_pin(ref, option, ask=None):
@@ -769,13 +771,6 @@ def test_n4_the_write_is_roots_the_interface_asks_who_wrote_a_key(home, child, m
     assert seen == ["root"]
 
 
-def test_n4_the_id_may_carry_the_pin_when_the_option_has_no_params(home, child, monkeypatch):
-    on_disk(monkeypatch, CHILD)
-    ref = department(home, "dref-x")
-    apply_pin(ref, pin_option("coordination", CHILD, params=False))
-    assert pins_in_record(ref)["coordination"] == CHILD
-
-
 def _refused(ref, option, says, monkeypatch=None):
     before = copy.deepcopy(W.dept(ref))
     with pytest.raises(W.AskError) as caught:
@@ -797,8 +792,9 @@ def test_n4_a_version_of_another_function_is_unknown_option(home):
 
 def test_n4_a_pin_with_no_layer_or_version_is_unknown_option(home):
     ref = department(home, "dref-x")
-    _refused(ref, W.option("pin:", "Run another version", "nothing", {"layer": "audit"}), "say which version of which function to run")
+    _refused(ref, W.option("pin", "Run another version", "nothing", {"layer": "audit"}), "say which version of which function to run")
     _refused(ref, W.option("pin", "Run another version", "nothing"), "say which version of which function to run")
+    _refused(ref, W.option("pin:audit.v1", "Run another version", "nothing", {"layer": "audit", "impl": "audit/1"}), "say which version of which function to run")
 
 
 def test_n4_a_version_that_loads_but_cannot_run_is_unknown_option(home, monkeypatch, tmp_path):
@@ -847,3 +843,32 @@ def test_n4_the_layers_route_shows_the_pin_the_record_holds(home, child, monkeyp
     apply_pin(ref, pin_option("coordination", CHILD))
     got = api.get("/api/native/%s/layers" % ref).json()
     assert got["pins"] == dict(S.DEFAULT_PINS, coordination=CHILD) and got["describe"]["per_department"] is True
+
+
+def card(ref, *options, said="Another version of one function can run."):
+    """A card the owner answers (a blocked plan's, the one place a way out is chosen and applied by code), with these ways out."""
+    return RT()._blocked(ref, W.dept(ref), {"src": RT().OWNER}, said, "Another version", "Identity", "a test", options=list(options))
+
+
+def test_n4_the_owner_chooses_a_pin_on_a_card_and_identity_applies_it_through_root(home, child, monkeypatch):
+    on_disk(monkeypatch, CHILD)
+    ref = department(home, "dref-x")
+    ask = card(ref, pin_option("coordination", CHILD), W.option("stop", "Stop here", "the department stops"))
+    W.choose_option(ref, ask["id"], "pin:coordination.v2")
+    W.run_until_idle(ref, limit=30)
+    assert pins_in_record(ref)["coordination"] == CHILD
+    assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == "chosen"
+    said = [r["what"] for r in W.runs(ref)]
+    assert "applied the owner's choice (pin:coordination.v2) through Root" in said and "runs version 2 from now on" in said
+
+
+def test_n4_a_pin_that_is_refused_leaves_the_card_waiting_and_says_why_in_plain_words(home, monkeypatch):
+    ref = department(home, "dref-x")
+    ask = card(ref, pin_option("identity", "identity/v9"), W.option("stop", "Stop here", "the department stops"))
+    W.choose_option(ref, ask["id"], "pin:identity.v9")
+    W.run_until_idle(ref, limit=30)
+    assert pins_in_record(ref) == S.DEFAULT_PINS, "nothing changed"
+    told = [p["payload"].get("done") for p in RT().board(ref) if p["src"] == "Identity" and p["dst"] == ["Owner"] and p["msg_type"] == "inform"]
+    assert "this app has no version 9 of Identity. Nothing changed; choose again on the card." in told
+    assert not [t for t in told if "UNKNOWN_OPTION" in str(t)], "the code is the API's, never the owner's"
+    assert any("could not apply the owner's choice (pin:identity.v9)" in r["what"] for r in W.runs(ref))
