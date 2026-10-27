@@ -30,6 +30,7 @@ level" types the ones A1 and A2 left as prose; template_checks.py holds the rule
 """
 import contextlib
 import copy
+import hashlib
 import json
 import re
 import sys
@@ -77,11 +78,11 @@ ITEM_VERDICTS = ('met', 'not_met', 'to_confirm')
 CONFIDENCE = {'ask_below': 0.6, 'show_below': 0.8}                     # J2B-7 (M6.4, wave 1)
 RAISE_CAP, ROUNDS_DEFAULT = 2.0, 6                                     # Q6 (M5.4, M9.2, wave 2)
 QUESTION_STATUSES = ('open', 'answered', 'unanswered', 'refused')      # board/1 (M4.9, wave 3)
-INTERFACE_SHA = {}                                                     # W3-PROOF sets {1: sha256 of describe()} once nothing else changes it
+INTERFACE_SHA = {1: '2194054945cbf50f50d555bb34ac1b7770efc1d92eff1be0119a6d0f09d89055'}  # frozen (W3-PROOF X2), see interface_sha()
 MODE = 'refuse'        # 'warn' | 'refuse'. A code constant, never an environment variable; tests change it with monkeypatch.
                        # 'A1 interface: refuse' (the integrator's commit at the end of wave 1, the full gate showing no fault at
                        # all) set it: a write that does not fit the interface raises SchemaFault, after its row.
-OWNERSHIP_MODE = 'warn'          # a key written by a layer that does not own it: a row only, until W3-PROOF (wave 3) makes it 'refuse'
+OWNERSHIP_MODE = 'refuse'        # a key written by a layer that does not own it is refused, after its row (W3-PROOF X2; it was a row only)
 NEVER_REFUSE = ('stopped', 'control')   # department keys whose writes always land (the owner's Stop); a fault is a row only
 REFUSED = {'count': 0, 'rows': []}      # every fault this process met: the conftest fixture and SM-13 read it
 ANY = '(any)'                           # a SENDS or HEARS row that takes any word (a site whose word is not a literal)
@@ -2065,7 +2066,8 @@ def check_department(d, ref=None, before=None, by=None):
     """A department record about to be saved, checked against the interface (A1.6, A1.20): only the keys whose value
     changed against `before` (the stored record), so one legacy fault never blocks a later save; the semantic rules of
     a key run only when it changed. Stamps schema_version. A fault on a NEVER_REFUSE key (the owner's Stop) is a row
-    only; with `by`, a changed key another layer owns is a row (OWNERSHIP_MODE warn). Returns the record."""
+    only; with `by`, a changed key another layer owns is a row, and in OWNERSHIP_MODE 'refuse' (the mode since the freeze) a refusal after
+    it. Returns the record."""
     if not isinstance(d, dict):
         report('department', ['$: is not an object'], ref=ref, owner='root')
         return d
@@ -2465,6 +2467,14 @@ def json_schemas():
 
 def _dump(doc):
     return json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + '\n'
+
+
+def interface_sha():
+    """The sha256 of describe() as sorted JSON: the hash of the very bytes of schemas/layers/interface.v1.json (`shasum -a 256` of that
+    file gives it). INTERFACE_SHA[SCHEMA_VERSION] is this, frozen when the interface was (W3-PROOF X2): a change to anything describe()
+    holds changes the hash and fails the test that pins it, and what the interface then needs is a new schema version and a migration
+    (A1.21), never a new hash for the same version."""
+    return hashlib.sha256(_dump(describe()).encode('utf-8')).hexdigest()
 
 
 def write_json_schemas(folder=None):

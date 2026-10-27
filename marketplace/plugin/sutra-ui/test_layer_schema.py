@@ -4,8 +4,11 @@ they are bound to, its rulings, its public functions, and the JSON Schema files 
 A test here that meets a fault on purpose does so inside S.expect_refused(); any other fault fails the test through
 the conftest fixture, which is the rule every test of the app now keeps (A1.20).
 """
+import copy
+import hashlib
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -186,7 +189,7 @@ def test_s1_refused_never_raises_and_a_ref_with_no_department_writes_no_row(home
 
 def test_s1_mode_is_a_code_constant_never_an_environment_variable():
     src = (S.HERE / "layer_schema.py").read_text(encoding="utf-8")
-    assert S.MODE == "refuse" and S.OWNERSHIP_MODE == "warn"        # 'A1 interface: refuse'; ownership refuses at W3-PROOF
+    assert S.MODE == "refuse" and S.OWNERSHIP_MODE == "refuse"      # 'A1 interface: refuse', and the ownership of a key (W3-PROOF X2)
     assert "os.environ" not in src and "getenv" not in src
 
 
@@ -1050,3 +1053,162 @@ def test_s7_nothing_in_the_layer_package_imports_the_runtime_at_import_time():
         assert all(callable(v) for x in (m.CODE, m.PROMPT, m.DRAFT, m.CHECK) for v in x.values())
         assert getattr(m, "RECIPE_TEMPLATE" if layer == "root" else "RECIPE") == ("Setup" if layer == "root" else "v1.json")
         assert (S.HERE / "layers" / layer / "__init__.py").read_text(encoding="utf-8") == ""
+
+
+# ---- X2: strict and frozen (W3-PROOF, PRD M2.10 and M10.5) -------------------------------------------------------------------------
+def test_x2_the_interface_is_frozen_at_schema_version_1():
+    """interface_sha() is the sha256 of describe() as sorted JSON, INTERFACE_SHA[1] is that, and nothing about it is a guess: it is the hash
+    of the bytes of schemas/layers/interface.v1.json. A change to anything describe() holds fails here; the way out is not a new hash for
+    this version but schema version 2 and a migration (A1.21)."""
+    assert set(S.INTERFACE_SHA) == {S.SCHEMA_VERSION} == {1}
+    assert S.INTERFACE_SHA[1] == S.interface_sha(), "the interface changed after the freeze: it needs schema version 2 and a migration"
+    assert S.interface_sha() == hashlib.sha256((S.SCHEMA_FOLDER / "interface.v1.json").read_bytes()).hexdigest()
+    assert S.interface_sha() == hashlib.sha256(S._dump(S.describe()).encode("utf-8")).hexdigest() == S.interface_sha(), "and it is stable"
+    assert re.fullmatch(r"[0-9a-f]{64}", S.INTERFACE_SHA[1])
+
+
+def test_x2_the_hash_moves_with_the_interface_and_with_nothing_else(monkeypatch):
+    """A frozen hash that no change could move would freeze nothing. A constant, a definition or a table of the interface moves it; the
+    modes (which are the app's, not the interface's) do not."""
+    frozen = S.interface_sha()
+    monkeypatch.setitem(S.DEFS, "test.flag", S.boolean())
+    assert S.interface_sha() != frozen, "a definition added"
+    monkeypatch.delitem(S.DEFS, "test.flag")
+    assert S.interface_sha() == frozen
+    monkeypatch.setattr(S, "ROUNDS_DEFAULT", S.ROUNDS_DEFAULT + 1)
+    assert S.interface_sha() != frozen, "a constant changed"
+    monkeypatch.undo()
+    monkeypatch.setattr(S, "MODE", "warn")
+    monkeypatch.setattr(S, "OWNERSHIP_MODE", "warn")
+    assert S.interface_sha() == frozen, "the modes are not the interface"
+
+
+def test_x2_the_generated_files_equal_json_schemas_and_each_is_a_json_schema():
+    got = S.json_schemas()
+    assert sorted(p.name for p in S.SCHEMA_FOLDER.glob("*.json")) == sorted(got), "no file is missing and none is left over"
+    for name, doc in got.items():
+        assert (S.SCHEMA_FOLDER / name).read_text(encoding="utf-8") == S._dump(doc), "%s is what the interface generates (python layer_schema.py --write)" % name
+    jsonschema = pytest.importorskip("jsonschema")
+    schemas = [name for name in got if name.endswith(".schema.json")]
+    assert len(schemas) == len(got) - 1 and "interface.v1.json" not in schemas, "every file but describe() itself is a JSON Schema"
+    for name in schemas:
+        jsonschema.Draft202012Validator.check_schema(got[name])
+
+
+def test_x2_a_save_that_changes_a_key_another_layer_owns_is_refused_with_one_row(home):
+    """OWNERSHIP_MODE is 'refuse': Priority saving the goal, which is Identity's, is refused after one row (REFUSED and the department's
+    runs), and the record is as it was; the same save of a key Priority owns, and a save that names no layer, go through."""
+    W = home
+    ref = "dref-ownership01"
+    W.create(ref, "Ownership Website", None)
+    before = copy.deepcopy(W.dept(ref))
+    d = W.dept(ref)
+    d["goal"] = "a goal Priority has no business writing"
+    rows, runs = len(S.REFUSED["rows"]), len(W.runs(ref))
+    with S.expect_refused("department") as met:
+        with pytest.raises(S.SchemaFault) as cm:
+            W.save_dept(ref, d, by="priority")
+    assert met == ["$.goal: is Identity's, and Priority wrote it"] and cm.value.faults == met
+    assert len(met.rows) == 1 and met.rows[0]["owner"] == "priority" and met.rows[0]["kept"] is False, "one row, and the write was refused, not kept"
+    new = W.runs(ref)[runs:]
+    assert len(new) == 1 and new[0]["what"] == "refused a write that does not fit the interface: department: $.goal: is Identity's, and Priority wrote it"
+    assert W.dept(ref).get("goal") == before.get("goal"), "nothing was written"
+    # a key the layer owns, and a save that names no layer, are not refused
+    d = W.dept(ref)
+    d["envelopes"]["Plan"] = {"calls": 3, "usd": 0.5}
+    W.save_dept(ref, d, by="priority")
+    d = W.dept(ref)
+    d["goal"] = "a goal the owner changed"
+    W.save_dept(ref, d)
+    assert W.dept(ref)["goal"] == "a goal the owner changed" and W.dept(ref)["envelopes"]["Plan"] == {"calls": 3, "usd": 0.5}
+
+
+def test_x2_the_owners_stop_and_control_still_land_whoever_saves_them(home):
+    """NEVER_REFUSE keys are never refused for a fault of their own; ownership is refused for the keys that have an owner, and Stop has none
+    to fight over (the department saves it as the owner's)."""
+    W = home
+    ref = "dref-ownership02"
+    W.create(ref, "Ownership Website Two", None)
+    d = W.dept(ref)
+    d["stopped"] = True
+    W.save_dept(ref, d)
+    assert W.dept(ref)["stopped"] is True
+
+
+# ---- X2: the validator against jsonschema, on 40 cases ---------------------------------------------------------------------------
+def _real_cases():
+    """Real values of the interface's definitions, from the app's own data, each with one thing broken as a second case: a kind, a step, an
+    artifact template and a journey's status document (A3)."""
+    import engine_runtime as R
+    kind = R.defs()["kinds"]["website"]
+    step = R.engine_def("Plan")["steps"][0]
+    template = json.loads((S.HERE / "artifact-templates" / "brief.json").read_text(encoding="utf-8"))
+    status = json.loads((S.HERE / "journeys" / "status" / "J1.json").read_text(encoding="utf-8"))
+    out = [("kind", kind), ("step", step), ("artifact.template", template), ("journey.status", status)]
+    out += [("kind", {k: v for k, v in kind.items() if k != "artifacts"}), ("step", dict(step, nature="dream")),
+            ("artifact.template", dict(template, counts_after="never")), ("journey.status", dict(status, state="astonishing"))]
+    return out
+
+
+def _cases():
+    """40 cases (name of a definition, a value): good and bad, over every keyword the validator supports -- type, enum, const, lengths, pattern,
+    bounds, items, required, additionalProperties, propertyNames and anyOf -- each on a definition the interface really has."""
+    ok = {"id": "D1", "text": "The site is live"}
+    est = {"calls": 4, "usd": 0.2}
+    return [
+        ("impl", "identity/v1"), ("impl", "audit/v12"), ("impl", "identity/v0"), ("impl", "nobody/v1"), ("impl", "identity/v1 "), ("impl", 7),
+        ("id.item", "D1"), ("id.item", "D12"), ("id.item", "D0"), ("id.item", "d1"), ("id.item", "D123"), ("id.item", ["D1"]),
+        ("name", "Booking"), ("name", "Facts 2"), ("name", "-x"), ("name", ""), ("name", "x" * 41), ("name", None),
+        ("identity.done_item", ok), ("identity.done_item", dict(ok, how="code")), ("identity.done_item", {"id": "D1"}),
+        ("identity.done_item", dict(ok, colour="red")), ("identity.done_item", dict(ok, text="")), ("identity.done_item", dict(ok, text="x" * 301)),
+        ("envelope", {"calls": 3, "usd": 0.5}), ("envelope", {"calls": 3, "usd": 0}), ("envelope", {"calls": 3}), ("envelope", {"calls": 3.5, "usd": 1}),
+        ("envelope", {"calls": True, "usd": 1}), ("envelope", {"calls": -1, "usd": 1}), ("envelope", {"calls": 3, "usd": 1, "note": "extra keys pass"}),
+        ("priority.estimate", est), ("priority.estimate", dict(est, basis="median", runs=3)), ("priority.estimate", dict(est, basis="guess")),
+        ("priority.estimate", dict(est, per_engine={"Plan": {"calls": 1, "usd": 0.1, "basis": "prior"}})),
+        ("priority.estimate", dict(est, per_engine={"Plan": {"calls": 1, "usd": 0.1, "basis": "line"}})),
+        ("coordination.slot", {"engine": "Plan", "on": "version"}), ("coordination.slot", {"engine": "Plan", "on": "version", "window_min": 2000}),
+        ("coordination.slot", {"engine": "Plan", "on": "version", "colour": "red"}), ("coordination.slot", {"engine": "Plan"}),
+        ("audit.finding", {"id": "F1", "severity": "high", "claim": "x", "where": "index"}), ("audit.finding", {"id": "F1", "severity": "grave", "claim": "x", "where": "index"}),
+        ("audit.finding", {"id": "F1", "severity": "low", "claim": "x", "where": "index", "went_to": None}),
+        ("audit.finding", {"id": "F1", "severity": "low", "claim": "x", "where": "index", "went_to": "Priority"}),
+        ("audit.finding", {"id": "F1", "severity": "low", "claim": "x", "where": "index", "item": "D2"}),
+        ("setting.windows", {"Plan": 30}), ("setting.windows", {"Plan": 2000}), ("setting.windows", {"Plan": "soon"}),
+        ("check.verdict", {"ok": True, "notes": []}), ("check.verdict", {"ok": "yes", "notes": []}), ("check.verdict", {"ok": True, "notes": ["x" * 2001]}),
+    ] + _real_cases()
+
+
+def test_x2_the_validator_agrees_with_jsonschema_on_40_cases():
+    """The built-in validator (no third-party import: A1-D2) and jsonschema agree on whether a value fits a definition, over forty cases, with
+    the schema taken from the generated files other tools read. (jsonschema is an optional import: the test is for where it is there.)"""
+    jsonschema = pytest.importorskip("jsonschema")
+    docs = {name: json.loads((S.SCHEMA_FOLDER / name).read_text(encoding="utf-8")) for name in S.json_schemas()}
+
+    def held_in(name):
+        return next(doc["$defs"] for doc in docs.values() if name in doc.get("$defs", {}))
+
+    cases = _cases()
+    assert len(cases) >= 40
+    seen = {"fits": 0, "fails": 0}
+    for name, value in cases:
+        schema = {"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "#/$defs/" + name, "$defs": held_in(name)}
+        theirs = jsonschema.Draft202012Validator(schema).is_valid(value)
+        mine = S.validate(name, value) == []
+        assert mine == theirs, "%s %s: the validator says %s and jsonschema says %s (%s)" % (
+            name, json.dumps(value, default=str)[:120], mine, theirs, S.validate(name, value)[:1])
+        seen["fits" if mine else "fails"] += 1
+    assert seen["fits"] >= 15 and seen["fails"] >= 15, seen
+
+
+def test_x2_the_validator_is_stricter_than_jsonschema_only_where_the_interface_has_a_keyword_of_its_own():
+    """x-say and x-field are the interface's (A1.4, A1.16): a control character in words the owner reads, a '{{' in a prompt field. Plain
+    JSON Schema cannot say them, so jsonschema passes what the validator refuses; these are the only places the two differ."""
+    jsonschema = pytest.importorskip("jsonschema")
+    docs = {name: json.loads((S.SCHEMA_FOLDER / name).read_text(encoding="utf-8")) for name in S.json_schemas()}
+    differ = []
+    for name, value in (("field.task", "Judge {{words}} kindly"), ("field.task", "Return ONLY yes"), ("option", {"id": "words", "label": "Say\x07 it", "cost": "free"})):
+        defs = next(doc["$defs"] for doc in docs.values() if name in doc.get("$defs", {}))
+        theirs = jsonschema.Draft202012Validator({"$ref": "#/$defs/" + name, "$defs": defs}).is_valid(value)
+        mine = S.validate(name, value) == []
+        if mine != theirs:
+            differ.append((name, mine, theirs))
+    assert differ == [("field.task", False, True), ("field.task", False, True), ("option", False, True)], differ

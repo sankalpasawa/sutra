@@ -1204,15 +1204,17 @@ def test_p5_priority_grant_says_it_is_priority_who_writes_and_every_envelope_it_
 
 
 def test_p5_a_save_that_names_its_layer_is_held_to_the_keys_that_layer_owns(live, ctx):
-    """The point of saying who writes: with `by`, a key another layer owns is reported (a row), so a silent pass over the
-    envelopes is a pass on the key's owner, not a check that was never made."""
+    """The point of saying who writes: with `by`, a key another layer owns is refused (W3-PROOF X2; it was a row), so a silent pass over
+    the envelopes is a pass on the key's owner, not a check that was never made."""
     W, R, J, _ = live
     ref = ctx["ref"]
     d = W.dept(ref)
     d["envelopes"]["Plan"] = {"calls": 3, "usd": 0.5}
     with S.expect_refused() as met:
-        W.save_dept(ref, dict(d, goal="a goal Priority has no business writing"), by="priority")
+        with pytest.raises(S.SchemaFault):
+            W.save_dept(ref, dict(d, goal="a goal Priority has no business writing"), by="priority")
     assert met == ["$.goal: is Identity's, and Priority wrote it"]
+    assert W.dept(ref)["envelopes"]["Plan"] != {"calls": 3, "usd": 0.5} and W.dept(ref).get("goal") != "a goal Priority has no business writing", "nothing was written"
     d2 = W.dept(ref)
     d2["envelopes"]["Plan"] = {"calls": 4, "usd": 0.5}
     before = S.REFUSED["count"]

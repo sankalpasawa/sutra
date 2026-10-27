@@ -369,15 +369,17 @@ def test_i4_every_save_of_identitys_keys_names_identity_and_no_row_says_otherwis
     assert _ownership_rows() == []                       # no row says a layer wrote what another's key holds
 
 
-def test_i4_a_save_that_does_name_identity_for_a_key_another_owns_is_a_row(j2):
-    """The detection is real: the same save, changing Root's name, is one row, which only this test may meet."""
+def test_i4_a_save_that_does_name_identity_for_a_key_another_owns_is_refused_with_a_row(j2):
+    """The detection is real: the same save, changing Root's name, is refused (W3-PROOF X2) after one row, which only this test may meet."""
     W, _, _, _, _ = j2
     ref = _born(j2)
     d = W.dept(ref)
     d["name"] = "Another name"
     with S.expect_refused("department") as met:
-        W.save_dept(ref, d, by="identity")
+        with pytest.raises(S.SchemaFault):
+            W.save_dept(ref, d, by="identity")
     assert met == ["$.name: is Root's, and Identity wrote it"]
+    assert W.dept(ref)["name"] != "Another name", "and nothing was written"
 
 
 def test_i4_every_ask_identity_files_validates_as_identity_ask(j2, monkeypatch):
