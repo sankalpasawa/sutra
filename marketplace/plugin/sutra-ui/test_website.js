@@ -3027,6 +3027,82 @@ test("M10.2: a department of the first build and one the website knows nothing o
   REG_FN.forEach(f => assert.ok(readsOf(plain, new RegExp("^/api/dept/r9/" + f + "$")).length >= 1, "registry only: " + f + " is read"));
 });
 
+/* ── M9.7: the rounds on the progress line (S4; W2-SCREENS H3, fix round 1) ─────────────────────────────────────────────
+   functions().cycle carries `round` and `ceiling.rounds` (functions_view.py _cycle). The full form (top of All five) says
+   'Round 2 · Write is fixing the size filter' and, once the goal has a ceiling, draws a dot for each round it holds: the
+   rounds done are on, the round now is lit, the rest empty, the whole titled 'Round 2 of 6'. The compact form (the strip)
+   and the Map's NOW pill say the same words. Each state of S4 is pinned here: a round in progress, the first and the last,
+   no ceiling, no round, done, and not started / stopped (M1.8 holds those two on All five). */
+const ROUND_SAYS = "Write is fixing the size filter";
+const roundFv = (cycle) => fvOf({ cycle: Object.assign({ says: ROUND_SAYS, needs_you: true, asks: 1, round: 2, ceiling: { rounds: 6, calls: 90, usd: 9 } }, cycle || {}) });
+/* the dots as the screen draws them: the title and the state of each, left to right ('' is an empty dot) */
+const roundDots = html => {
+  const m = /<span class="fvrounds" title="([^"]*)">((?:<i class="[^"]*"><\/i>)*)<\/span>/.exec(html);
+  return m ? { title: m[1], dots: (m[2].match(/<i class="[^"]*"><\/i>/g) || []).map(x => /class="([^"]*)"/.exec(x)[1]) } : null;
+};
+test("M9.7: a round in progress is 'Round 2 · ...' with six dots against the ceiling, the first on, the second now, four empty", async () => {
+  const [c, html] = await allFive({ fv: roundFv() });
+  assert.deepStrictEqual(roundDots(html), { title: "Round 2 of 6", dots: ["on", "now", "", "", "", ""] }, "the title and the dots (v)(*)( )( )( )( )");
+  assert.ok(/<div class="fvsays"><i class="dpdot breath"[^>]*><\/i><b aria-live="polite">Round 2 · Write is fixing the size filter<\/b><span class="wbchip ask">needs you<\/span><\/div>/.test(html), "the words, then needs you");
+  assert.ok(html.indexOf('class="fvpills"') > 0 && html.indexOf('class="fvpills"') < html.indexOf('class="fvrounds"'), "the dots stand under the eight pills");
+  assert.strictEqual((html.match(/<span class="fvpill /g) || []).length, 8, "the eight pills beside them");
+  assert.ok(!/\d/.test(atRest(html.replace(/ title="[^"]*"/g, "").replace(/ aria-label="[^"]*"/g, "")).replace(/\bv\d+\b/g, "")), "no count at rest: the number is in the title, the dots are drawn");
+  /* the compact form, in the strip, and the Map's NOW pill say the same words */
+  assert.strictEqual(c.fvStripHtml("r3"), '<button type="button" class="fvline wb" data-wbtab="five"><i class="dpdot breath" aria-hidden="true"></i>' +
+    '<span>Round 2 · Write is fixing the size filter</span><span class="wbchip ask">needs you</span></button>', "the strip");
+  const [, map] = await mapWith({ fv: roundFv() });
+  assert.ok(/<span class="wb2pill ask" aria-live="polite">Round 2 · Write is fixing the size filter<\/span>/.test(map), "the NOW pill");
+});
+
+test("M9.7: the dots follow the round: the first round lights the first, the last lights the sixth with five on before it", async () => {
+  const want = { 1: ["now", "", "", "", "", ""], 3: ["on", "on", "now", "", "", ""], 6: ["on", "on", "on", "on", "on", "now"] };
+  for (const r of [1, 3, 6]){
+    const [, html] = await allFive({ fv: roundFv({ round: r }) });
+    assert.deepStrictEqual(roundDots(html), { title: "Round " + r + " of 6", dots: want[r] }, "round " + r);
+    assert.ok(new RegExp('<b aria-live="polite">Round ' + r + " · Write is fixing the size filter</b>").test(html), "and the words, round " + r);
+  }
+  const [, wide] = await allFive({ fv: roundFv({ round: 2, ceiling: { rounds: 8 } }) });
+  assert.deepStrictEqual(roundDots(wide), { title: "Round 2 of 8", dots: ["on", "now", "", "", "", "", "", ""] }, "a ceiling that was raised has more dots");
+});
+
+test("M9.7: with no ceiling there are no dots, with no round there are no dots and no 'Round', and both are words only", async () => {
+  let [c, html] = await allFive({ fv: roundFv({ ceiling: null }) });
+  assert.strictEqual(roundDots(html), null);
+  assert.ok(!/fvrounds/.test(html) && /<b aria-live="polite">Round 2 · Write is fixing the size filter<\/b>/.test(html), "the words, no dots");
+  assert.ok(/<span>Round 2 · Write is fixing the size filter<\/span>/.test(c.fvStripHtml("r3")), "and the strip");
+  for (const ceiling of [{}, { rounds: 0 }, { calls: 90 }]){
+    [, html] = await allFive({ fv: roundFv({ ceiling }) });
+    assert.ok(!/fvrounds/.test(html), "a ceiling that holds no rounds draws none: " + JSON.stringify(ceiling));
+  }
+  [c, html] = await allFive({ fv: roundFv({ round: null }) });
+  assert.ok(!/fvrounds/.test(html) && /<b aria-live="polite">Write is fixing the size filter<\/b>/.test(html) && !/Round \d/.test(html), "a ceiling and no round yet: no dots, no 'Round'");
+  assert.ok(/<span>Write is fixing the size filter<\/span>/.test(c.fvStripHtml("r3")) && !/Round/.test(c.fvStripHtml("r3")), "and the strip");
+});
+
+test("M9.7: done says Goal reached with an ok dot and every pill ticked, and the rounds it took stay titled", async () => {
+  const ticked = FV_STEPS.map((name, i) => ({ step: i + 1, name, state: "done", last: { summary: name + " happened", at: AT } }));
+  let [c, html] = await allFive({ fv: fvOf({ cycle: { state: "done", step: 8, says: "Goal reached", steps: ticked } }) });
+  assert.ok(/<div class="fvsays"><span class="dpdot ok"><\/span><b aria-live="polite">Goal reached<\/b><\/div>/.test(html), "an ok dot and Goal reached, nothing needing you");
+  assert.strictEqual((html.match(/<span class="fvpill done"[^>]*>✓ /g) || []).length, 8, "every pill ticked");
+  assert.ok(!/fvpill now|fvpill next|fvrounds/.test(html) && !/dpdot breath/.test(html.slice(0, html.indexOf('class="fvgrid"'))), "nothing now, nothing breathing, no dots");
+  assert.ok(/<span class="dpdot ok"><\/span><span>Goal reached<\/span>/.test(c.fvStripHtml("r3")), "the strip");
+  [c, html] = await allFive({ fv: roundFv({ state: "done", step: 8, says: "Goal reached", needs_you: false, asks: 0, round: 3, steps: ticked }) });
+  assert.ok(/<b aria-live="polite">Round 3 · Goal reached<\/b>/.test(html) && roundDots(html).title === "Round 3 of 6", "the round it took");
+  const [, map] = await mapWith({ map: rtMap({ live: true }), fv: fvOf({ cycle: { state: "done", step: 8, says: "Goal reached", steps: ticked } }) });
+  assert.ok(/<span class="wb2pill ok" aria-live="polite">Goal reached<\/span>/.test(map), "the NOW pill");
+});
+
+test("M9.7: the rounds repaint when the ceiling is raised on the same round, and the round's words and dots are escaped", async () => {
+  const c = fresh({ map: rtMap() });
+  const same = roundFv().cycle, raised = JSON.parse(JSON.stringify(same));
+  raised.ceiling.rounds = 8;
+  const sig = cy => c.wbFvSig(Object.assign(roundFv(), { cycle: cy }));
+  assert.notStrictEqual(sig(raised), sig(same), "a ceiling of eight rounds is not a ceiling of six: the five are painted again");
+  assert.strictEqual(sig(JSON.parse(JSON.stringify(same))), sig(same), "and the same read paints nothing");
+  const html = c.fvProgressHtml(Object.assign({}, same, { says: "<script>x</script>", round: "<b>2</b>", ceiling: { rounds: 2 } }));
+  assert.ok(html.indexOf("<script") < 0 && html.indexOf("<b>2</b>") < 0, "escaped: " + html);
+});
+
 /* ── M10.3: the words pass (PRD M10.3; W2-SCREENS H6) ────────────────────────────────────────────────────────────────
    W9 (no count, no path) and W19 (the inside word) were written for the first cards; the cards since (S1 to S18) were each
    checked by their own test, a rule at a time. This is the one walk: every card of the classic panes is drawn from its own
