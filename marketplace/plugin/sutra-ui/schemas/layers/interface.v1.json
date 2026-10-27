@@ -9254,7 +9254,7 @@
       "why"
     ]
   },
-  "per_department": false,
+  "per_department": true,
   "prompts": {
     "adaptation": {
       "decide": {

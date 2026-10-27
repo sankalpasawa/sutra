@@ -96,7 +96,7 @@ def test_c1_pins_are_the_default_pins_and_a_record_naming_another_gets_one_row(h
     for _ in range(3):
         assert layers.pins(ref, d) == S.DEFAULT_PINS
     rows = [r for r in W.runs(ref) if "per-department" in str(r.get("what"))]
-    assert [(r["engine"], r["what"]) for r in rows] == [("Identity", "runs the default: per-department versions are not on")]
+    assert [(r["engine"], r["what"]) for r in rows] == [("Identity", "runs the default: its per-department version cannot run here (it does not load)")]
     layers.pins(ref, dict(d, layers=dict(d["layers"], priority="priority/v7")))
     assert [r["engine"] for r in W.runs(ref) if "per-department" in str(r.get("what"))] == ["Identity", "Priority"]
 

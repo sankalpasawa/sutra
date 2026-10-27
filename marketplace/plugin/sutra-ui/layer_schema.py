@@ -53,7 +53,7 @@ DEFAULT_PINS = {'root': 'root/v1', 'identity': 'identity/v1', 'adaptation': 'ada
                 'priority': 'priority/v1', 'coordination': 'coordination/v1', 'audit': 'audit/v1'}
 #   the release's choice of implementation per layer; changing it is not a schema change, but it
 #   needs the contract and the gate (A1.21)
-PER_DEPARTMENT = False   # wave 3 (W3-PINS) makes recipes and bodies per department; until then every department runs DEFAULT_PINS
+PER_DEPARTMENT = True    # W3-PINS: a department runs the versions its record pins (recipes and bodies together); False runs DEFAULT_PINS for all
 IMPL_RE = r'^(root|identity|adaptation|priority|coordination|audit)/v[1-9][0-9]*$'
 ITEM_RE, FINDING_RE = r'^D[1-9][0-9]?$', r'^F[1-9][0-9]{0,2}$'
 NAME_RE = r"^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$"                      # an engine or artifact name
