@@ -101,6 +101,40 @@ def test_c1_pins_are_the_default_pins_and_a_record_naming_another_gets_one_row(h
     assert [r["engine"] for r in W.runs(ref) if "per-department" in str(r.get("what"))] == ["Identity", "Priority"]
 
 
+def test_c1_a_read_names_no_pin_the_registry_cannot_honour_and_the_tick_names_it_once(home):
+    """Hard rule 4(g): a record that names a pin the registry cannot find (written before the interface refused it) is told in the
+    record once, by the tick. A read of the department, which peeks, asks the same question and writes nothing: no row, and the
+    pin is not marked told, so the tick still tells it."""
+    import hashlib
+    import os
+    import record
+    W, R = modules()
+    ref = C.fixture_department(home)
+    d = dict(W.dept(ref), layers=dict(S.DEFAULT_PINS, audit="audit/v2"))
+    record.write(W.ddir(ref) / "dept.json", d)                  # as an older record holds it: save_dept refuses this now
+
+    def files():
+        out = {}
+        for root, _dirs, names in os.walk(home):
+            for f in names:
+                with open(os.path.join(root, f), "rb") as fh:
+                    out[os.path.relpath(os.path.join(root, f), home)] = hashlib.sha256(fh.read()).hexdigest()
+        return out
+    told = lambda: [r["engine"] for r in W.runs(ref) if "per-department" in str(r.get("what"))]  # noqa: E731
+    before = files()
+    with layers.reading():
+        assert layers.pins(ref, d) == S.DEFAULT_PINS and layers.impl(ref, "audit") is layers.load("audit/v1")
+    R.next_due(ref, peek=True)
+    W.status(ref)
+    W.map_view(ref)
+    assert files() == before and told() == [] and layers._TOLD == set(), "the reads wrote, or marked the pin told"
+    R.next_due(ref)
+    assert told() == ["Audit"], "the tick names it"
+    R.next_due(ref)
+    W.status(ref)
+    assert told() == ["Audit"], "once"
+
+
 def test_c1_pins_with_no_department_to_write_to_say_nothing(home):
     assert layers.pins("dref-nobody", {"layers": {"identity": "identity/v9"}}) == S.DEFAULT_PINS
 

@@ -389,6 +389,153 @@ def test_t31_a_read_writes_nothing_at_any_slot_of_a_run_nor_after_the_stamp(clie
     assert seen["slots"] >= 10 and seen["reads"] >= seen["slots"] - 2, seen
 
 
+def read_to_rest(client, m, ref, what, limit=60):
+    """The department run one slot at a time until nothing is due, and read, from a fresh read, in the window before the first slot and
+    after every slot: the records home is hashed before each round of reads and must be what it was after it. Returns the slots run."""
+    def read():
+        m.C.touch(ref)
+        before = files_of(m.home)
+        assert read_everything(client, ref) > 5
+        assert changed(before, m.home) == [], "a read %s wrote" % what
+    read()
+    slots = 0
+    while m.W.run_until_idle(ref, limit=1):
+        slots += 1
+        assert slots < limit, "the line never rests"
+        read()
+    read()                                                    # and once more at rest, after the last tick has filed whatever it files
+    return slots
+
+
+@pytest.mark.parametrize("how", ["decide_ask", "api_say"])
+def test_t31_a_read_writes_nothing_at_any_slot_after_the_owner_said_no_to_the_publish_question(client, plant, how):
+    """Hard rule 4(g) on the refused branch of the publish gate (found by a verifier 2026-10-27: the page's next poll after the owner's
+    no filed the skipped run). The line is taken to the question, the owner says no (the writer, or POST api/say 'Option 2', which
+    is what the page sends), and the department is run a slot at a time with the whole page read between the slots."""
+    ref, m = plant("question")
+    pending = [a for a in m.W.asks(ref) if a["kind"] == "publish" and a["status"] == "pending"]
+    assert len(pending) == 1, "the line ran to its question"
+    if how == "decide_ask":
+        m.W.decide_ask(ref, pending[0]["id"], False)
+    else:
+        r = client.post(url(ref, "api/say"), json={"text": "Option 2"})
+        assert (r.status_code, r.json()) == (200, {"ok": True})
+    assert [a["status"] for a in m.W.asks(ref) if a["kind"] == "publish"] == ["refused"]
+    skipped = lambda: [r for r in m.W.runs(ref) if r.get("status") == "skipped" and r.get("what") == "refused by the owner"]  # noqa: E731
+    assert skipped() == [], "the window: the owner said no and no tick has run"
+    slots = read_to_rest(client, m, ref, "after the owner said no (%s)" % how)
+    assert slots >= 1 and len(skipped()) == 1, "the tick filed the skipped run, once (%d slots)" % slots
+    assert m.W.versions(ref, "Live site") == [], "refused by the owner: never published"
+
+
+def test_t31_a_read_writes_nothing_at_any_slot_while_an_engine_is_held_at_its_limit(client, plant):
+    """Hard rule 4(g) on Priority's gate (the module's own body since M5.4 files the card): Publish has no budget left, the owner stamps
+    the publish question from the page, and the department is run a slot at a time with the whole page read between the slots. The
+    card that says Publish is out of its envelope is the tick's, once."""
+    ref, m = plant("question")
+    m.W.set_envelope(ref, "Publish", calls=0)
+    r = client.post(url(ref, "api/say"), json={"text": "Option 1"})
+    assert (r.status_code, r.json()) == (200, {"ok": True})
+    held = lambda: [a for a in m.W.asks(ref) if a["kind"] == "envelope"]  # noqa: E731
+    assert held() == [], "the window: the owner stamped and no tick has run"
+    slots = read_to_rest(client, m, ref, "while Publish is held at its limit")
+    assert slots >= 1 and [(a["engine"], a["status"]) for a in held()] == [("Publish", "pending")], "the tick filed the card, once"
+    s = client.get(url(ref, "api/state?since=0")).json()
+    assert s["paused"] and "out of today's envelope" in json.dumps(s["paused"]), "and the page asks the owner"
+
+
+def test_t31_a_record_that_names_a_pin_the_registry_cannot_find_is_read_without_telling_it_and_the_tick_tells_it_once(client, plant):
+    """Hard rule 4(g) on the last write the audit found on the stack of a read: layers.pins() puts one row in the record when a department
+    names an implementation the registry cannot honour (a record from before the interface refused such a pin on save). The page's reads
+    and a peek of the runtime leave it, and the pin unmarked; the next tick tells it, once."""
+    import layers
+    import record
+    ref, m = plant("filed")
+    d = dict(m.W.dept(ref), layers=dict(m.R.layer_schema.DEFAULT_PINS, audit="audit/v2"))
+    record.write(m.W.ddir(ref) / "dept.json", d)
+    layers._TOLD.clear()
+    told = lambda: [r["engine"] for r in m.W.runs(ref) if "per-department" in str(r.get("what"))]  # noqa: E731
+    m.C.touch(ref)
+    before = files_of(m.home)
+    assert read_everything(client, ref) > 5
+    m.R.next_due(ref, peek=True)
+    assert changed(before, m.home) == [] and told() == [] and layers._TOLD == set(), "the reads told the pin"
+    m.R.next_due(ref)
+    assert told() == ["Audit"], "the tick tells it"
+    m.C.touch(ref)
+    read_everything(client, ref)
+    m.R.next_due(ref)
+    assert told() == ["Audit"], "once"
+
+
+#: what the owner does in the fuzz below, and how often (the line is stepped far more than it is spoken to)
+FUZZ_ACTIONS = ["step"] * 14 + ["say", "option", "option", "stamp", "refuse", "budget", "stop", "start", "root_words"]
+FUZZ_WORDS = ("Add a page about pricing plans", "Make the logo bigger", "Remove the contact page", "Hello?", "Yes please",
+              "It is for Class 8 students in Pune")
+#: seeds whose walks, before the fixes of 2026-10-27, met a read of the page in the window after the owner's no
+FUZZ_SEEDS = (1, 2)
+FUZZ_STEPS = 60
+
+
+@pytest.mark.parametrize("seed", FUZZ_SEEDS)
+def test_t31_a_read_writes_nothing_whatever_the_owner_does_and_whichever_slot_is_next(client, tmp_path, monkeypatch, seed):
+    """Hard rule 4(g) over a walk nobody planned. A department as a person makes one is driven for FUZZ_STEPS steps by a seeded owner: a slot of
+    the line (Root's or the department's), words said on the page, an option or a stamp or a no on the page's one box (POST api/say), a
+    stamp or a no by the writer, a budget taken away from an engine, Stop and Start. Before the step and after it, the whole page is read
+    from a fresh read, with the classic reads of the department and its Root (the status, the map, what is due next) beside it, and
+    the records home is compared with what it was before the reads."""
+    import random
+    rnd = random.Random(seed)
+    m = SEED.boot(tmp_path / "homes", monkeypatch)
+    root = SEED.founded(m, SEED.WEBSITE, "Fuzz%d Learning" % seed)
+    m.root = root
+    walk, reads = [], [0]
+
+    def child():
+        return next((d["ref"] for d in m.W.list_depts() if d.get("parent") == root), None)
+
+    def read():
+        ref = child()
+        if ref is None:
+            return
+        m.C.touch(ref)
+        before = files_of(m.home)
+        read_everything(client, ref)
+        for r in (ref, root):
+            m.R.next_due(r, peek=True)
+            m.W.status(r)
+            m.W.map_view(r)
+        reads[0] += 1
+        assert changed(before, m.home) == [], "a read wrote; the walk so far: %s" % walk[-8:]
+
+    for i in range(FUZZ_STEPS):
+        read()
+        ref = child()
+        act = rnd.choice(FUZZ_ACTIONS)
+        walk.append((i, act))
+        if act == "step":
+            m.W.run_until_idle(rnd.choice([root] + [ref] * 3) if ref else root, limit=1)
+        elif act == "root_words":
+            m.W.owner_ask(root, rnd.choice(FUZZ_WORDS), about=ref)
+        elif not ref:
+            continue
+        elif act == "say":
+            client.post(url(ref, "api/say"), json={"text": rnd.choice(FUZZ_WORDS)})
+        elif act == "option":
+            client.post(url(ref, "api/say"), json={"text": "Option %d" % rnd.choice([1, 1, 2, 3])})
+        elif act in ("stamp", "refuse"):
+            where = rnd.choice([root, ref])
+            pending = [a for a in m.W.asks(where) if a.get("status") == "pending" and not a.get("options")]
+            if pending:
+                m.W.decide_ask(where, rnd.choice(pending)["id"], act == "stamp")
+        elif act == "budget":
+            m.W.set_envelope(ref, rnd.choice(("Plan", "Write", "Check", "Publish")), calls=0)
+        elif act in ("stop", "start"):
+            m.W.set_stopped(ref, act == "stop")
+        read()
+    assert reads[0] >= 100 and len({a for _, a in walk}) >= 6, (reads, walk[:20])
+
+
 def test_t32_every_act_between_functions_is_worded_for_the_owner_and_no_id_is_printed(client, plant):
     ref, m = plant("running")
     for i, act in enumerate(m.R.ACTS):

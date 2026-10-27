@@ -19,6 +19,8 @@ engine_runtime body is used, so a broken layer file never stops a department.
 
 Nothing here imports engine_runtime at import time.
 """
+import contextlib
+import contextvars
 import importlib
 import json
 import re
@@ -84,6 +86,20 @@ _LOADED = {}
 #: the (department, layer, implementation) triples already told in the record, so a pin the registry cannot honour is
 #: one row, never one for every lookup
 _TOLD = set()
+#: set while a read of the department asks (reading()): a read writes nothing (the J2 view's hard rule 4(g)), so a pin the registry
+#: cannot honour is left for the next tick to tell
+_READING = contextvars.ContextVar('layers_reading', default=False)
+
+
+@contextlib.contextmanager
+def reading():
+    """A read of the department, not a tick: pins() tells no unhonourable pin in the record inside it, and does not mark it told,
+    so the tick that asks next writes the row, once."""
+    token = _READING.set(True)
+    try:
+        yield
+    finally:
+        _READING.reset(token)
 
 
 def available():
@@ -130,7 +146,7 @@ def pins(ref=None, d=None):
         except Exception:  # noqa: BLE001 -- no records home to read it from: every layer runs its default
             d = None
     for layer, named in ((d or {}).get('layers') or {}).items():
-        if layer in out and named != out[layer] and (ref, layer, named) not in _TOLD:
+        if layer in out and named != out[layer] and not _READING.get() and (ref, layer, named) not in _TOLD:
             _TOLD.add((ref, layer, named))
             try:
                 if ref and (W.ddir(ref) / 'dept.json').exists():

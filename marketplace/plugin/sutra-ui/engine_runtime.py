@@ -41,6 +41,7 @@ THE BOARD
     for and wakes only them. A thread is bounded and names the outcome that
     holds when a bound is hit. Acts are FIPA's; thread states are A2A's.
 """
+import contextlib
 import hashlib
 import json
 import math
@@ -1082,7 +1083,8 @@ def next_due(ref, peek=False):
         return None, None, "stopped"
     ctx = _coord_ctx(ref, d)
     ctx["peek"] = bool(peek)
-    name, inp, slot = _run_rule(ctx, "coord.pick")
+    with (layers.reading() if peek else contextlib.nullcontext()):         # a read tells no pin in the record either: the tick does
+        name, inp, slot = _run_rule(ctx, "coord.pick")
     if name and not peek:
         _, s = step_def("coord.pick")
         _gate_row(ref, slot, "Coordination", s, rung_of(ref, s), name, "ready by its own start; first by Coordination's table")
@@ -2141,6 +2143,8 @@ def identity_gate(ctx, step, item):
     if a["status"] == "pending":
         return "wait", "waits for the stamp"
     if a["status"] == "refused":
+        if ctx.get("peek"):
+            return "refuse", "refused by the owner"       # a panel read asking: the tick closes Setup's request and files the skipped row, once
         if name == "Setup":
             _j1_close(ref, "refused")
         if not any(r.get("slot") == slot and r.get("status") == "skipped" for r in W.runs(ref)):
