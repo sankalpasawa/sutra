@@ -5147,13 +5147,30 @@ def _line_proposal(ref, thread):
     return (mine[-1].get("payload") or {}) if mine else None
 
 
+def _limit_ways(ref, thread):
+    """The ways forward for a bargain that reached a limit of its thread (hops, time or spend): the options Priority prices for
+    the line proposed in it (priority.limit_options, PRD M5.4), built by code, at most OPTIONS_MAX, each one the interface types
+    as an option. [] when Priority has none to give or its version cannot: the conflict is filed all the same."""
+    try:
+        got = layers.call(ref, "priority", "limit_options", ref, thread)
+        return [o for o in got or [] if isinstance(o, dict) and not layer_schema.validate("option", o)][:W.OPTIONS_MAX]
+    except Exception:  # noqa: BLE001 -- a limit conflict is filed whether or not its ways forward could be priced
+        return []
+
+
 def _line_conflict(ref, thread, why, bound=None, src="Adaptation"):
-    """The bargain did not close (a refusal, or its bound): it goes to Identity, never silently to nothing (J2.2)."""
+    """The bargain did not close (a refusal, or its bound): it goes to Identity, never silently to nothing (J2.2). At a bound
+    (hops, time or spend; `bound` names it) the conflict carries the ways forward Priority prices for the line (M5.4), so that
+    Identity puts the owner one card with them; a refusal's own ways are Adaptation's to copy from Priority's no."""
     offer = _line_proposal(ref, thread) or {}
     if any((x.get("payload") or {}).get("word") == "conflict" and (x.get("payload") or {}).get("for") == thread for x in board(ref)):
         return None
-    return post(ref, src, "Identity", "inform", {"word": "conflict", "engines": offer.get("engines") or [], "source": offer.get("source"),
-                                                 "words": offer.get("words"), "why": why, "bound": bound, "for": thread})
+    body = {"word": "conflict", "engines": offer.get("engines") or [], "source": offer.get("source"),
+            "words": offer.get("words"), "why": why, "bound": bound, "for": thread}
+    ways = _limit_ways(ref, thread) if bound else []
+    if ways:
+        body["options"] = ways
+    return post(ref, src, "Identity", "inform", body)
 
 
 def required_engines(d):
