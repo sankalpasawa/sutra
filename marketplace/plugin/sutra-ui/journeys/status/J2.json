@@ -3,12 +3,12 @@
   "dropped": 0,
   "failing": 0,
   "fault": 0,
-  "partly": 0,
-  "proven": 16,
+  "partly": 1,
+  "proven": 15,
   "unproven": 0,
   "wanted": 0
  },
- "definitions_sha": "48f0a17298c3cb3d39dcdfaabfd58a33787bdd5eb9f66682e792760cf75f9036",
+ "definitions_sha": "6fff31eac7647f5b1fd18018f703d39e25fb13b6a10c91d02528789217c70b78",
  "drift": [
   {
    "row": "step:1",
@@ -49,6 +49,11 @@
    "row": "edge:J2.4",
    "site": "wanted",
    "state": "proven"
+  },
+  {
+   "row": "edge:J2.7",
+   "site": "built",
+   "state": "partly"
   }
  ],
  "id": "J2",
@@ -124,16 +129,17 @@
    "state": "proven"
   },
   "edge:J2.7": {
-   "drift": false,
+   "drift": true,
    "failing": [],
    "proven_by": [
     "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
     "test_layer_journey_j2.py::test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger",
     "test_layer_identity.py::test_j2_7_the_second_send_back_files_an_options_ask",
-    "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it"
+    "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it",
+    "test_layer_journey_j2.py::test_j2_7_after_the_goal_a_failed_run_is_not_yet_a_run_failed_event"
    ],
    "site": "built",
-   "state": "proven"
+   "state": "partly"
   },
   "edge:J2.8": {
    "drift": false,
@@ -259,7 +265,7 @@
   }
  },
  "schema_version": 1,
- "state": "proven",
+ "state": "partly",
  "tests": {
   "js:test_website.js#W47": "passed",
   "js:test_website.js#W48": "passed",
@@ -315,6 +321,7 @@
   "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it": "passed",
   "test_layer_journey_j2.py::test_j2_2_the_clock_and_the_spend_bounds_also_go_to_identity": "passed",
   "test_layer_journey_j2.py::test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger": "passed",
+  "test_layer_journey_j2.py::test_j2_7_after_the_goal_a_failed_run_is_not_yet_a_run_failed_event": "passed",
   "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal": "passed",
   "test_layer_priority.py::test_j2_5_the_envelope_ask_names_the_limit_the_use_and_the_options": "passed",
   "test_layer_pursue.py::test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silence": "passed",

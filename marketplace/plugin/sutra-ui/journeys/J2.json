@@ -755,7 +755,7 @@
     "status": "built",
     "text": "Built: sent back, twice at most, then you are told (_send_back)."
    },
-   "code_does": "_send_back returns the build to Write with the finding, twice at most; past the second Identity still tells the owner and files one ask through _blocked with the ways out (say the rule another way, leave this rule out, stop), and choosing to leave the rule out takes it off the department's rules (leave_rule_out) so the line builds again without it; the ledger records run.failed. A failed run never ends in a tell only.",
+   "code_does": "_send_back returns the build to Write with the finding, twice at most; past the second Identity still tells the owner and files one ask through _blocked with the ways out (say the rule another way, leave this rule out, stop), and choosing to leave the rule out takes it off the department's rules (leave_rule_out) so the line builds again without it. While the cycle is active, before its goal is reached, the ledger records each failed run as one run.failed event; once the goal is reached (the cycle is done) j2_runtime.on_run writes nothing, so a build that fails after that is sent back and asked about, but its failed runs are not all on the ledger (BL-4b). A failed run never ends in a tell only.",
    "outcome": {
     "kind": "ask",
     "voice": "Identity",
@@ -777,8 +777,10 @@
     "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
     "test_layer_journey_j2.py::test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger",
     "test_layer_identity.py::test_j2_7_the_second_send_back_files_an_options_ask",
-    "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it"
-   ]
+    "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it",
+    "test_layer_journey_j2.py::test_j2_7_after_the_goal_a_failed_run_is_not_yet_a_run_failed_event"
+   ],
+   "backlog": "BL-4b"
   },
   {
    "id": "J2.8",
@@ -1025,7 +1027,14 @@
   "approvals_only_tighten",
   "a_goal_is_never_reached_unread"
  ],
- "backlog": [],
+ "backlog": [
+  {
+   "id": "BL-4b",
+   "row": "edge:J2.7",
+   "smallest": "A failed run is one run.failed event on the ledger whether the cycle is active or done: j2_runtime.on_run, which returns early when active() is false, also records the failed runs of a cycle that has reached its goal, and moves no state.",
+   "package": "the j2_runtime package (on_run)"
+  }
+ ],
  "site_ids": [
   "step:1",
   "step:2",
