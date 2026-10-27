@@ -652,9 +652,10 @@ def test_u5_low_findings_do_not_block_done_but_a_high_one_does(j2, monkeypatch):
     assert "goal.reached" not in _actions(J, ref2) and J.status(ref2)["state"] == "pursuing"
 
 
-def _told_identity(R, ref):
-    """What Audit put to Identity as a finding: the one post of the word finding."""
-    (post,) = [p for p in R.board(ref) if p["src"] == "Audit" and (p["payload"] or {}).get("word") == "finding"]
+def _told_identity(R, ref, reading=None):
+    """What Audit put to Identity as a finding: the one post of the word finding (about one reading, when a pursuit read more than once)."""
+    (post,) = [p for p in R.board(ref) if p["src"] == "Audit" and (p["payload"] or {}).get("word") == "finding"
+               and (reading is None or p["payload"].get("reading") == reading)]
     return post["payload"]
 
 
@@ -748,15 +749,22 @@ def test_u5_a_reader_that_files_its_own_lesser_finding_on_the_item_does_not_hide
     own = {"where": "result.md", "claim": "the tone is stiff", "severity": severity, "item": "D1"}
     _model(monkeypatch, R, {"audit.items": _says(verdict, findings=[own]), "audit.judge": JUDGE_OK})
     ref = _default(j2)
-    (row,) = _readings(W, ref)
+    [row, *later] = _readings(W, ref)                               # (a reader that says not_met never changes its mind, so the pursuit reads again)
     assert R.audit_verdicts(row["items"]) == {"D1": verdict}
     kept = [(f["severity"], f["item"], f["claim"]) for f in row["findings"]]
     want = R.ITEM_SEVERITY[verdict]
     assert (want, "D1") in [(s, i) for s, i, _ in kept], "the item has a finding as serious as its verdict"
     assert "the tone is stiff" in [c for _, _, c in kept], "and the reader's own finding is kept, as the reader said it"
     assert next(f for f in row["findings"] if f["claim"] == "the tone is stiff")["severity"] == severity
-    assert bool(_pending(W, ref)) is ask and (_told_identity(R, ref)["severity"] == "high") is ask
-    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == ("pursuing" if ask else "waiting")
+    assert (_told_identity(R, ref, row["id"])["severity"] == "high") is ask, "Identity is told the item fails, not only the reader's lesser word"
+    if ask:
+        # the next move is a round (S-18: the finding is not also put to the owner), and a pursuit that gets no closer ends in
+        # one ask with its ways out, never in silence (M9.5)
+        [card] = [a for a in W.asks(ref) if a["status"] == "pending"]
+        assert card["kind"] == "blocked" and later
+    else:
+        assert not _pending(W, ref), "a doubt that is only noted is not a finding put to the owner"
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == ("blocked" if ask else "waiting")
 
 
 @pytest.mark.parametrize("verdict, severity", [("not_met", "high"), ("to_confirm", "medium"), ("to_confirm", "high")])
@@ -765,7 +773,7 @@ def test_u5_a_reader_finding_as_serious_as_the_item_is_the_items_own_and_none_is
     own = {"where": "result.md", "claim": "the rota is not on the page", "severity": severity, "item": "D1"}
     _model(monkeypatch, R, {"audit.items": _says(verdict, findings=[own]), "audit.judge": JUDGE_OK})
     ref = _default(j2)
-    (row,) = _readings(W, ref)
+    [row, *later] = _readings(W, ref)                               # (a reader that says not_met never changes its mind, so the pursuit reads again)
     assert [(f["severity"], f["item"], f["claim"]) for f in row["findings"]] == [(severity, "D1", "the rota is not on the page")]
     assert "goal.reached" not in _actions(J, ref)
 
