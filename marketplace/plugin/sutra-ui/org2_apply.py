@@ -111,7 +111,15 @@ def apply_request(kind, args):
         import website_dept as W
         domains = E.load_domains()
         _live(args.get("ref"), domains)
-        out = W.add_engine(args["ref"], str(args.get("engine") or "").strip(), shape=args.get("shape"))
+        try:
+            out = W.add_engine(args["ref"], str(args.get("engine") or "").strip(), shape=args.get("shape"))
+        except W.GrowRefused as exc:
+            # proposals.decide keeps str(exc) as the failed proposal's reason, and the Approvals sheet shows it to the owner:
+            # the grow stage's own message names the standard by its id, so what is kept is the owner's words (Root's standards
+            # as the stamped engine's refusal says them, engine_runtime._not_added_reason); any other refusal already reads plainly
+            import engine_runtime
+            name = " ".join(str(args.get("engine") or "").split())[:40]
+            raise ValueError("%s was not added to %s. %s." % (name, (W.dept(args["ref"]) or {}).get("name"), engine_runtime._not_added_reason(exc)))
         return {"applied": True, "ref": args["ref"], "engine": out["engine"], "engines": out["engines"], "born": out.get("born")}
     raise ValueError("no way to apply %r" % kind)
 

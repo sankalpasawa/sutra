@@ -862,7 +862,7 @@ def grow_broken(d, name, e=None, shape=None, before=None):
         if name in line:
             rows[line.index(name)] = {"name": name, "reads": reads, "writes": writes}
         wf = S.as_workflow(rows, source, d)
-        got = [(r["check"], r["why"]) for r in S.validate_workflow(wf, "grow", d, {}) if not r["passed"]]
+        got = [(r["check"], r["why"]) for r in S.validate_workflow(wf, "grow", d, {"joining": name}) if not r["passed"]]
         return [x for x in got if x[0] != SHAPE_ROW], _shape_words(S.validate("workflow", wf), wf, name, line)
     was, was_shape = broken(now)
     standards, shape_said = broken(after)

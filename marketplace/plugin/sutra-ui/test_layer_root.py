@@ -481,6 +481,24 @@ def test_r5_an_engine_that_writes_what_is_written_is_refused_naming_one_output(h
     assert W.dept(ref)["engines"] == LINE
 
 
+def test_r5_the_engine_that_joins_is_the_one_named_at_fault_wherever_the_line_places_it(home):
+    """An engine that reads the Brief goes first, so the walk meets the department's own Write second: the fault is still the
+    joining engine's, named so (found by a verifier: 'Write writes Pages, which is already written' for Site2's refusal)."""
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    shape = {"name": "Site2", "use_case": "builds a second site", "reads": "Brief", "writes": "Pages"}
+    assert W.grow_broken(W.dept(ref), "Site2", None, shape) == [("one_output", WS.SAYS["one_output"], "Site2 writes Pages, which is already written")]
+    # placed last (it reads what the line files), the same engine is named as it always was
+    late = dict(shape, reads="Pages")
+    assert W.grow_broken(W.dept(ref), "Site2", None, late) == [("one_output", WS.SAYS["one_output"], "Site2 writes Pages, which is already written")]
+    # the standard run on a line with no engine joining reads as it did: the later writer is the one at fault
+    wf = S.as_workflow([{"name": "Site2", "reads": "Brief", "writes": "Pages"}, {"name": "Write", "reads": "Brief", "writes": "Pages"}], "shaped", None)
+    assert [r["why"] for r in WS.run(wf, "grow", None, {}) if r["check"] == "one_output"] == ["Write writes Pages, which is already written"]
+    with pytest.raises(ValueError, match=r"Site2 writes Pages, which is already written"):
+        W.add_engine(ref, "Site2", shape=shape)
+    assert W.dept(ref)["engines"] == LINE
+
+
 def test_r5_a_library_engine_joins_where_it_always_did_and_a_function_or_a_repeat_is_refused_as_before(home):
     W, R, J, _ = home
     ref = _born_dept(home)
@@ -694,6 +712,59 @@ def test_r5_a_stamped_line_whose_engine_has_a_name_that_does_not_fit_says_so_in_
     assert W.dept(ref)["engines"] == ["Facts"] + LINE and "Site #2" not in R.defs()["engines"]
 
 
+def test_r5_a_stamped_line_in_which_every_engine_is_refused_is_not_told_as_added_and_its_ask_says_it_was_not_applied(home):
+    """The line passes the line's own standards (_line_faults reads it against itself) and is refused whole at the grow stage,
+    one engine writing what the department already files. Nothing was added, so the owner is not told 'Added the line', the
+    line is as it was, and the ask, stamped as the owner made it, is marked not applied with the words on it (as a stamped
+    engine's is). Found by a verifier: 'Added the line ; the first starts on your words now.'"""
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    before = W.dept(ref)
+    said = _stamp_line(home, ref, [{"name": "Site2", "does": "builds a second site", "reads": "Brief", "writes": "Pages"}])
+    assert len(said) == 1, said
+    _plain_to_owner(said[0])
+    assert "Added the line" not in said[0] and "starts on your words" not in said[0], said[0]
+    assert said[0] == ("The line was not added to Acme, and nothing was changed. Not added: Site2 (Root holds every line to its "
+                       "standards, and this engine would break one: %s (Site2 writes Pages, which is already written))." % WS.SAYS["one_output"]), said[0]
+    after = W.dept(ref)
+    assert after["engines"] == before["engines"] == LINE and after["artifacts"] == before["artifacts"]
+    assert "Site2" not in R.defs()["engines"] and not list(R.user_templates_dir().glob("*.json")), "nothing was born"
+    ask = next(a for a in W.asks(ref) if a["kind"] == "line")
+    assert ask["status"] == "stamped" and ask["applied"] is False and ask["not_added"] == said[0]
+    assert any(t["line"] == said[0] for t in R.chat_view(ref)["turns"]), "and the owner's chat carries it"
+    runs = [r for r in W.runs(ref) if r["engine"] == "Identity"]
+    assert not [r for r in runs if r["status"] == "failed"], runs
+    assert not [r for r in runs if "added the line on the owner's stamp" in str(r["what"])], "the run log does not say it was added"
+    assert any("did not add the line" in r["what"] for r in runs), runs
+
+
+def test_r5_a_stamped_line_with_a_fault_of_its_own_is_refused_whole_and_its_ask_says_it_was_not_applied(home, monkeypatch):
+    """The line the stamp meets with a fault of its own (a name twice; refuse mode stops it at Adaptation's post, so warn
+    mode here) adds nothing, and the ask says so as the line whose engines the department refused does."""
+    monkeypatch.setattr(S, "MODE", "warn")
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    with S.expect_refused("act"):
+        said = _stamp_line(home, ref, [{"name": "Facts", "does": "gathers facts", "reads": "Brief", "writes": "Notes"},
+                                       {"name": "Facts", "does": "gathers more", "reads": "Notes", "writes": "More"}])
+    assert len(said) == 1 and said[0].startswith("The line could not be set up: "), said
+    _plain_to_owner(said[0])
+    assert W.dept(ref)["engines"] == LINE and "Facts" not in R.defs()["engines"]
+    ask = next(a for a in W.asks(ref) if a["kind"] == "line")
+    assert ask["status"] == "stamped" and ask["applied"] is False and ask["not_added"] == said[0]
+
+
+def test_r5_a_stamped_line_some_of_whose_engines_are_added_keeps_its_ask_as_applied_and_names_the_rest(home):
+    """The half that already held: one engine added, one refused, is an added line with a note of what was not."""
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    said = _stamp_line(home, ref, [{"name": "Facts", "does": "gathers facts", "reads": "Brief", "writes": "Notes"},
+                                   {"name": "Site2", "does": "builds a second site", "reads": "Notes", "writes": "Pages"}])
+    assert len(said) == 1 and said[0].startswith("Added the line Facts; the first starts on your words now. Not added: Site2"), said
+    ask = next(a for a in W.asks(ref) if a["kind"] == "line")
+    assert ask["status"] == "stamped" and "applied" not in ask and "not_added" not in ask
+
+
 def test_r5_the_reasons_count_only_standards_and_a_refusal_that_is_no_standard_keeps_its_own_words(home):
     W, R, J, _ = home
     import engine_runtime
@@ -706,19 +777,43 @@ def test_r5_the_reasons_count_only_standards_and_a_refusal_that_is_no_standard_k
     assert "would break some:" in got and got.endswith(". It also does not meet them: its name may only use letters"), got
 
 
-def test_r5_the_organisation_sheet_path_reports_the_refusal_through_the_proposal_record(home, monkeypatch):
-    """org.engine is the other stamp that adds an engine: its caller is proposals.decide, which records a refused apply as
-    failed with the reason, never as approved, and the department is as it was."""
+def _org_engine_proposal(home, monkeypatch, shape, ref=None):
+    """An org.engine proposal for the department, decided yes through proposals.decide with org2_apply as the applier."""
     import org2_apply
     import proposals
     W, R, J, _ = home
-    ref = _born_dept(home)
+    ref = ref or _born_dept(home)
     monkeypatch.setattr(org2_apply.E, "load_domains", lambda: {ref: {"name": "Acme", "status": "live"}})
+    rec = proposals.create("org.engine", {"ref": ref, "engine": shape["name"], "shape": shape}, "Add the engine %s" % shape["name"])
+    return ref, proposals.decide(rec["id"], True, apply_fn=org2_apply.apply_request)
+
+
+def test_r5_the_organisation_sheet_path_reports_the_refusal_through_the_proposal_record(home, monkeypatch):
+    """org.engine is the other stamp that adds an engine: its caller is proposals.decide, which records a refused apply as
+    failed with the reason, never as approved, and the department is as it was. The reason is what the Organisation sheet's
+    Approvals show under the failed proposal, so it is in the owner's words: the standard's own, never its id, with no
+    doubled name and none of add_engine's own 'the line would break' (found by a verifier: the raw message reached the sheet)."""
+    W, R, J, _ = home
     shape = {"name": "Launch", "use_case": "launches the site", "does": "launches the site", "reads": "Nothing Files This", "writes": "Launch"}
-    rec = proposals.create("org.engine", {"ref": ref, "engine": "Launch", "shape": shape}, "Add the engine Launch")
-    out = proposals.decide(rec["id"], True, apply_fn=org2_apply.apply_request)
-    assert out["status"] == "failed" and "reads_known" in out["result"]["error"] and WS.SAYS["reads_known"] in out["result"]["error"]
-    assert W.dept(ref)["engines"] == LINE
+    ref, out = _org_engine_proposal(home, monkeypatch, shape)
+    error = out["result"]["error"]
+    assert out["status"] == "failed"
+    assert error == ("Launch was not added to Acme. Root holds every line to its standards, and this engine would break one: %s "
+                     "(Launch reads Nothing Files This, which nothing before it writes)." % WS.SAYS["reads_known"]), error
+    _plain_to_owner(error)
+    assert "is not added to" not in error and "the line would break" not in error, error
+    assert W.dept(ref)["engines"] == LINE and "Launch" not in R.defs()["engines"]
+
+
+def test_r5_the_organisation_sheet_path_says_a_name_that_does_not_fit_in_plain_words_and_a_repeat_as_it_always_did(home, monkeypatch):
+    W, R, J, _ = home
+    ref, out = _org_engine_proposal(home, monkeypatch, {"name": "Launch #1", "use_case": "launches", "does": "launches", "reads": "Pages", "writes": "Launch"})
+    error = out["result"]["error"]
+    assert out["status"] == "failed" and error.startswith("Launch #1 was not added to Acme. Root holds every line to its standards, and this engine does not meet them: its name may only use letters"), error
+    _plain_to_owner(error)
+    assert "would break" not in error and W.dept(ref)["engines"] == LINE
+    ref, out = _org_engine_proposal(home, monkeypatch, {"name": "Plan", "use_case": "plans", "does": "plans"}, ref=ref)
+    assert out["status"] == "failed" and out["result"]["error"] == "Acme already runs Plan", out["result"]
 
 
 def test_r5_a_born_template_is_typed_before_its_file_is_written(home, monkeypatch):
