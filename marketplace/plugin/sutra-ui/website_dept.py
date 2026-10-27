@@ -803,11 +803,53 @@ class GrowRefused(ValueError):
         self.broken = list(broken)
 
 
+#: the row of a workflow's own shape (layer_schema.validate_workflow's first): no standard, so it has no words of one
+SHAPE_ROW = "workflow_meets_standards"
+#: how an engine's name, or an artifact's, may be written (layer_schema.NAME_RE), in the owner's words
+NAME_RULE = "may only use letters (without accents), digits, spaces and & ' . -, must start with a letter or digit, and can be 40 characters at most"
+
+
+def _shape_words(found, wf, name, line):
+    """The faults of a workflow's own shape (the row no standard names) in plain words for the owner (PRD A1.14, J5): whose
+    name, or what it reads or writes, does not fit, and how a name may be written; never the schema's path or its pattern.
+    `found` is S.validate('workflow', wf), `name` the engine that would join, `line` the engines in order. One sentence for
+    each place, said once however many fields of the workflow it spoiled (the line's deliverable is its last engine's
+    output); a place is named by its engine, never by its index, so the same fault is the same sentence as the line grows."""
+    def subject(who, field):
+        if who == name:
+            return {"name": "its name", "reads": "what it reads", "writes": "what it writes"}[field]
+        return {"name": "the name of %s", "reads": "what %s reads", "writes": "what %s writes"}[field] % who
+
+    out = []
+    for f in found:
+        path, _, said = str(f).partition(": ")
+        who, field = None, None
+        place = re.match(r"^\$\.engines\[(\d+)\]\.(name|reads|writes)$", path)
+        covered = re.match(r"^\$\.covers\.([^.\[\]]+)\[(\d+)\]$", path)
+        if place and int(place.group(1)) < len(line):
+            who, field = line[int(place.group(1))], place.group(2)
+        elif path == "$.deliverable" and line:
+            who, field = line[-1], "writes"
+        elif covered:
+            named = (wf.get("covers") or {}).get(covered.group(1)) or []
+            who, field = (named[int(covered.group(2))] if int(covered.group(2)) < len(named) else None), "name"
+        if not who:
+            words = "something in the line is not in a form Root accepts"
+        elif said.startswith(("does not match", "fits none of its shapes", "longer than", "shorter than")):
+            words = "%s %s" % (subject(who, field), NAME_RULE)
+        else:
+            words = "%s is not in a form Root accepts" % subject(who, field)
+        if words not in out:
+            out.append(words)
+    return out
+
+
 def grow_broken(d, name, e=None, shape=None, before=None):
     """The line `name` would make, held to Root's standards at the grow stage (PRD A1.14, J5): what the line would break
     that it did not break before, as (standard id, the standard's words, what is wrong); [] when it breaks none. `e` is the
     engine's definition when the Library has it, else `shape` says what a new one reads and writes. A fault the line
-    already had is not the new engine's, so it never stops one joining."""
+    already had is not the new engine's, so it never stops one joining. The workflow's own shape (a name outside NAME_RE)
+    is no standard: its row has no words of a standard (None) and says what is wrong in plain words, with no path."""
     reads = (e or {}).get("reads") or str((shape or {}).get("reads") or "Brief")
     writes = (e or {}).get("writes") or str((shape or {}).get("writes") or name)[:40]
     now = [x[0] for x in engines_of(d)]
@@ -819,9 +861,14 @@ def grow_broken(d, name, e=None, shape=None, before=None):
         rows = [{"name": n} for n in line]
         if name in line:
             rows[line.index(name)] = {"name": name, "reads": reads, "writes": writes}
-        return [(r["check"], r["why"]) for r in S.validate_workflow(S.as_workflow(rows, source, d), "grow", d, {}) if not r["passed"]]
-    was = broken(now)
-    return [(c, says.get(c), why) for c, why in broken(after) if (c, why) not in was]
+        wf = S.as_workflow(rows, source, d)
+        got = [(r["check"], r["why"]) for r in S.validate_workflow(wf, "grow", d, {}) if not r["passed"]]
+        return [x for x in got if x[0] != SHAPE_ROW], _shape_words(S.validate("workflow", wf), wf, name, line)
+    was, was_shape = broken(now)
+    standards, shape_said = broken(after)
+    out = [(c, says.get(c), why) for c, why in standards if (c, why) not in was]
+    new = [w for w in shape_said if w not in was_shape]
+    return ([(SHAPE_ROW, None, "; ".join(new))] if new else []) + out
 
 
 def _broken_lines(broken):

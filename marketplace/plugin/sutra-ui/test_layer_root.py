@@ -581,6 +581,85 @@ def test_r5_an_engine_the_line_already_runs_is_told_to_the_owner_in_the_refusals
     assert next(a for a in W.asks(ref) if a["id"] == aid)["applied"] is False
 
 
+RAW = ("None", "$.", "^[", "does not match", "fits none of its shapes", "workflow_meets_standards", "\\")
+
+
+def _plain_to_owner(words):
+    """What the owner reads of a refusal holds no placeholder, no schema path or pattern, and no standard's id."""
+    assert not [x for x in RAW if x in words], words
+    assert not [sid for sid in WS.STANDARD_CHECKS if sid in words], words
+
+
+@pytest.mark.parametrize("name", ["Launch #1", "Café", "a/b"])
+def test_r5_an_engine_whose_name_is_outside_the_names_rule_is_not_added_and_the_owner_reads_what_is_wrong_in_plain_words(home, name):
+    """The row a standard does not name (the workflow's own shape) has no words of a standard: it says what is wrong and no
+    more, and it is no standard to count in 'break one'. Found by a verifier: 'break one: None ($.engines[4].name: ...)'."""
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    before = W.dept(ref)
+    shape = {"name": name, "use_case": "launches the site", "does": "launches the site", "reads": "Pages", "writes": name}
+    aid, after_stamp = _put_and_stamp_engine(home, ref, name, shape)
+    after = W.dept(ref)
+    assert after["engines"] == before["engines"] and after["artifacts"] == before["artifacts"] and name[:40] not in after["windows"]
+    assert not list(R.user_templates_dir().glob("*.json")) and name[:40] not in R.defs()["engines"], "nothing was born"
+    said = _said_to_owner(after_stamp)
+    assert len(said) == 1, said
+    _plain_to_owner(said[0])
+    assert said[0].startswith("The engine %s was not added to Acme, and nothing was changed." % name)
+    assert "its name may only use letters (without accents), digits, spaces and & ' . -" in said[0], said[0]
+    assert "would break" not in said[0], "a name that does not fit is no standard broken, and no count says so: " + said[0]
+    assert "Say the idea again, under a name that fits, to have it offered again." in said[0]
+    ask = next(a for a in W.asks(ref) if a["id"] == aid)
+    assert ask["status"] == "stamped" and ask["applied"] is False and ask["not_added"] == said[0]
+    assert any(t["line"] == said[0] for t in R.chat_view(ref)["turns"]), "and the owner's chat carries it"
+
+
+def test_r5_a_standard_and_a_name_that_does_not_fit_are_told_apart_and_only_the_standard_is_counted(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    shape = {"name": "Launch", "use_case": "launches the site", "does": "launches the site", "reads": "Pages #2", "writes": "Launch"}
+    _, after_stamp = _put_and_stamp_engine(home, ref, "Launch", shape)
+    said = _said_to_owner(after_stamp)
+    assert len(said) == 1, said
+    _plain_to_owner(said[0])
+    assert ("would break one: %s (Launch reads Pages #2, which nothing before it writes). It also does not meet them: "
+            "what it reads may only use letters (without accents)" % WS.SAYS["reads_known"]) in said[0], said[0]
+    assert "Say the idea again, with what it should read" in said[0]
+    assert W.dept(ref)["engines"] == LINE and "Launch" not in R.defs()["engines"]
+
+
+def test_r5_grow_broken_says_a_name_that_does_not_fit_once_by_its_engine_and_never_a_fault_the_line_already_had(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    shape = {"name": "Launch #1", "reads": "Pages", "writes": "Launch #1"}
+    rows = W.grow_broken(W.dept(ref), "Launch #1", None, shape)
+    assert [(c, says) for c, says, _ in rows] == [("workflow_meets_standards", None)], rows
+    _plain_to_owner(rows[0][2])
+    assert rows[0][2].count("its name") == 1 and rows[0][2].count("what it writes") == 1, "the deliverable is its writes, said once: " + rows[0][2]
+    # the message add_engine raises says the same plain words
+    with pytest.raises(W.GrowRefused) as e:
+        W.add_engine(ref, "Launch #1", shape=dict(shape, use_case="launches"))
+    _plain_to_owner(str(e.value))
+    # a line's own bad name (a record the department schema refuses to save now, so the department is built, not saved) is
+    # not the new engine's fault, wherever the new engine goes; its sentence names the engine, never an index
+    legacy = dict(W.dept(ref), engines=["Plan", "Write #9", "Publish"])
+    assert [r for r in W.grow_broken(legacy, "Do", R.defs()["engines"]["Do"]) if r[0] == "workflow_meets_standards"] == []
+    rows = W.grow_broken(legacy, "Launch #1", None, shape)
+    assert rows[0][0] == "workflow_meets_standards" and "the name of Write #9" not in rows[0][2] and "its name" in rows[0][2], rows
+
+
+def test_r5_the_reasons_count_only_standards_and_a_refusal_that_is_no_standard_keeps_its_own_words(home):
+    W, R, J, _ = home
+    import engine_runtime
+    assert engine_runtime._not_added_reason(ValueError("Acme already runs Plan.")) == "Acme already runs Plan"
+    assert engine_runtime._not_added_reason(W.GrowRefused("x", [("one_output", WS.SAYS["one_output"], "Site2 writes Pages, which is already written")])) == (
+        "Root holds every line to its standards, and this engine would break one: %s (Site2 writes Pages, which is already written)" % WS.SAYS["one_output"])
+    two = [("reads_known", WS.SAYS["reads_known"], "A reads X"), ("one_output", WS.SAYS["one_output"], "B writes Y"),
+           ("workflow_meets_standards", None, "its name may only use letters")]
+    got = engine_runtime._not_added_reason(W.GrowRefused("x", two))
+    assert "would break some:" in got and got.endswith(". It also does not meet them: its name may only use letters"), got
+
+
 def test_r5_the_organisation_sheet_path_reports_the_refusal_through_the_proposal_record(home, monkeypatch):
     """org.engine is the other stamp that adds an engine: its caller is proposals.decide, which records a refused apply as
     failed with the reason, never as approved, and the department is as it was."""

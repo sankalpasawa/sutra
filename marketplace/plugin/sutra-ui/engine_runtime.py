@@ -3256,21 +3256,35 @@ def identity_rung(ctx, step, item):
     return {"said": "put a move to the owner: " + text}
 
 
+def _not_added_reason(exc):
+    """Why add_engine refused an engine, in the owner's words, no full stop (PRD A1.14, J5): for a line that would break
+    Root's standards, each standard's own words and what is wrong, never its id, and a fault in the form of a name (a row
+    no standard names) said as what is wrong and no more, with no schema path; the count 'one' or 'some' counts standards.
+    Any other refusal (the line already runs it, the Library has no such engine) says what it said."""
+    broken = getattr(exc, "broken", None)
+    if not broken:
+        return str(exc).strip().rstrip(".")
+    standards = ["%s (%s)" % (says, str(why).strip().rstrip(".")) for _, says, why in broken if says]
+    forms = [str(why).strip().rstrip(".") for _, says, why in broken if not says]
+    lead = "Root holds every line to its standards, and this engine "
+    if not standards:
+        return lead + "does not meet them: " + "; ".join(forms)
+    reason = lead + "would break %s: %s" % ("one" if len(standards) == 1 else "some", "; ".join(standards))
+    return reason + (". It also does not meet them: " + "; ".join(forms) if forms else "")
+
+
 def _engine_not_added(ref, d, a, exc):
     """The owner stamped an engine and could not have it added (PRD A1.14, J5: when the grow stage refuses, the engine is
     not added and the owner is told why). Identity says so in plain words, in a thread of its own (the ask's thread closed
-    on the stamp): for a line that would break Root's standards, each standard's own words and what is wrong, never its id.
-    The line, the artifacts and the Library are as they were; the ask stays what the owner made it, stamped, but is marked
-    not applied, with the words on it; the idea stays parked."""
+    on the stamp): for a line that would break Root's standards, each standard's own words and what is wrong, never its id
+    (_not_added_reason, which the stamped line says too). The line, the artifacts and the Library are as they were; the ask
+    stays what the owner made it, stamped, but is marked not applied, with the words on it; the idea stays parked."""
     name = a.get("engine")
-    broken = getattr(exc, "broken", None)
-    if broken:
-        lines = ["%s (%s)" % (says, str(why).strip().rstrip(".")) for _, says, why in broken]
-        reason = "Root holds every line to its standards, and this engine would break %s: %s." % (
-            "one" if len(lines) == 1 else "some", "; ".join(lines))
-        advice = " Say the idea again, with what it should read, to have it offered again."
-    else:
-        reason, advice = str(exc).strip().rstrip(".") + ".", ""
+    reason = _not_added_reason(exc) + "."
+    advice = ""
+    if getattr(exc, "broken", None):
+        advice = (" Say the idea again, with what it should read, to have it offered again." if any(says for _, says, _ in exc.broken)
+                  else " Say the idea again, under a name that fits, to have it offered again.")
     words = "The engine %s was not added to %s, and nothing was changed. %s%s" % (name, d.get("name"), reason, advice)
     W._put_ask(ref, dict(a, applied=False, not_added=words))
     _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform", {"word": "engine", "engine": name, "done": words})
