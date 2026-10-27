@@ -1680,7 +1680,40 @@ def _end_states(j2, monkeypatch):
     W.decide_ask(ref, _asks_of(W, ref, "finding")[0]["id"], False)
     W.run_until_idle(ref, limit=1)
     out.append(("a correction the owner turned down", ref))
+    # a finding that is not a round's, turned down: a high finding on a reading that met every item, a finding a rule says to ask
+    # about, and a not-met item's finding ask while nobody takes a next round (the owner's no must never end in silence)
+    ref = _a_running_department(j2, org="High Co")
+    _high_finding_on_a_met_reading(R, W, j2, ref)
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    out.append(("a high finding on a reading that met every item, turned down", ref))
+    ref = _a_running_department(j2, org="Ask Co")
+    _tell_reading(j2, ref, _file_reading(j2, ref, {"D1": "met", "D2": "not_met"},
+                                         findings=[{"id": "F1", "severity": "medium", "claim": "Send the offer by email to every subscriber", "item": "D2"}]))
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    out.append(("a finding a rule says to ask about, turned down", ref))
+    ref = _a_running_department(j2, org="Interim Co")
+    with monkeypatch.context() as m:
+        real = R._handler
+        m.setattr(R, "_handler", lambda e, p: None if (p.get("payload") or {}).get("word") == "next" else real(e, p))
+        _hear(j2, ref, {"D1": "met", "D2": "not_met"}, findings=[{"id": "F1", "severity": "low", "claim": "Every page names its fees", "item": "D2"}])
+        _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    out.append(("a not-met item's finding turned down", ref))
     return out
+
+
+def _high_finding_on_a_met_reading(R, W, j2, ref, claim="The fees are invented"):
+    """Audit read the version, found every item met and one high finding, and said both: the finding is put to the owner."""
+    row = _file_reading(j2, ref, {"D1": "met", "D2": "met"}, findings=[{"id": "F1", "severity": "high", "claim": claim, "item": None}])
+    R.post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high", "reading": row["id"],
+                                               "findings": [{"page": "index.html", "claim": claim, "severity": "high"}]})
+    R.audit_tell(ref, row)
+    W.run_until_idle(ref, limit=300)
+    return row
+
+
+def _owner_says_no(W, ref, ask):
+    W.decide_ask(ref, ask["id"], False)
+    W.run_until_idle(ref, limit=300)
 
 
 def test_j5_every_end_that_is_not_done_has_a_pending_ask_with_options(j2, monkeypatch):
@@ -1697,6 +1730,94 @@ def test_j5_every_end_that_is_not_done_has_a_pending_ask_with_options(j2, monkey
         assert "stop" in [o["id"] for o in card["options"]], (what, "a way to stop is always there")
         assert S.validate_record("identity", "ask", card) == [], what
         assert card["thread"], "the card is on a thread, so a choice reaches Identity"
+
+
+def _the_card(W, ref):
+    (card,) = _asks_of(W, ref, "blocked")
+    return card
+
+
+def test_j5_a_no_to_a_finding_that_is_not_a_rounds_leaves_the_ways_out_never_a_silent_end(j2, monkeypatch):
+    """M9.5: the owner's no to a finding ask ends that correction, and what follows is one card with the ways out: whatever put the
+    finding to the owner (a high finding on a reading that met every item, a not-met item's finding while nobody takes a next
+    round, a finding a rule says to ask about) and not only a round's correction."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="High No Co")
+    row = _high_finding_on_a_met_reading(R, W, j2, ref)
+    (ask,) = _asks_of(W, ref, "finding")
+    assert J.status(ref)["state"] != "blocked" and not _asks_of(W, ref, "blocked")
+    briefs, rounds = len(W.versions(ref, "Brief")), len(W.rows(ref, "rounds.jsonl"))
+    _owner_says_no(W, ref, ask)
+    card = _the_card(W, ref)
+    assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == "refused"
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"] and J.status(ref)["state"] == "blocked"
+    assert card["text"].startswith("You said no to the correction: ") and "fees are invented" in card["text"] and S.validate_record("identity", "ask", card) == []
+    assert len(W.versions(ref, "Brief")) == briefs and len(W.rows(ref, "rounds.jsonl")) == rounds, "nothing is filed, and no round is refused: it is no round's"
+    assert not _reached(W, J, ref) and row["id"]
+    # the same flow with an item not met, while nobody takes a next round: the item the finding names is the one that can be left out
+    ref = _a_running_department(j2, org="Interim No Co")
+    _four_items(W, ref)
+    real = R._handler
+    monkeypatch.setattr(R, "_handler", lambda e, p: None if (p.get("payload") or {}).get("word") == "next" else real(e, p))
+    _hear(j2, ref, {"D1": "met", "D2": "met", "D3": "not_met", "D4": "met"}, findings=[{"id": "F1", "severity": "low", "claim": "Every page names its fees", "item": "D3"}])
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    card = _the_card(W, ref)
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D3", "stop"] and "leave D3 out of done-when" in card["text"] and "D3 not met" in card["why"]
+    # a finding a rule says to ask about, with no item named: the reading's last item that is not met
+    monkeypatch.setattr(R, "_handler", real)
+    ref = _a_running_department(j2, org="Rule No Co")
+    _four_items(W, ref)
+    _tell_reading(j2, ref, _file_reading(j2, ref, {"D1": "met", "D2": "not_met", "D3": "met", "D4": "not_met"},
+                                         findings=[{"id": "F1", "severity": "medium", "claim": "Send the offer by email to every subscriber", "item": None}]))
+    (ask,) = _asks_of(W, ref, "finding")
+    _owner_says_no(W, ref, ask)
+    card = _the_card(W, ref)
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D4", "stop"] and "D2, D4 not met" in card["why"]
+
+
+def test_j5_the_real_flow_a_reader_that_says_every_item_is_met_but_one_high_finding_and_a_no_ends_with_the_ways_out(j2, monkeypatch):
+    """The reader says every done-when item is met and reports one high finding: the goal is not reached (M8.4), the finding is
+    put to the owner, and their no leaves the department with a card, not a pursuit that stands still with nothing pending."""
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.judge": {"ok": False, "findings": [{"page": "index.html", "claim": "The fees are invented", "severity": "high"}]},
+                            "audit.items": _items_met})
+    ref = _born(j2, org="Real No Co")
+    _stamp_the_pending(W, ref, ("publish",))
+    (ask,) = _asks_of(W, ref, "finding")
+    assert not _reached(W, J, ref) and J.status(ref)["state"] != "done"
+    _owner_says_no(W, ref, ask)
+    card = _the_card(W, ref)
+    assert J.status(ref)["state"] == "blocked" and "stop" in [o["id"] for o in card["options"]] and S.validate_record("identity", "ask", card) == []
+    assert not [a for a in W.asks(ref) if a["status"] == "pending" and a["id"] != card["id"]], "the card is all that waits for the owner"
+    W.choose_option(ref, card["id"], "stop")                      # and the way out can be taken
+    W.run_until_idle(ref, limit=100)
+    assert W.dept(ref)["stopped"] is True
+
+
+def test_j5_a_no_to_a_finding_after_the_goal_is_reached_asks_nothing_more(j2):
+    """After done a finding is a task for the Brief (J3 4a): a no to it ends it, and the department stays done."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Done No Co")
+    _hear(j2, ref, {"D1": "met", "D2": "met"})
+    assert J.status(ref)["state"] == "done"
+    R.post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": "The fees are invented", "severity": "high", "findings": [{"page": "index.html", "claim": "The fees are invented", "severity": "high"}]})
+    W.run_until_idle(ref, limit=300)
+    (ask,) = _asks_of(W, ref, "finding")
+    _owner_says_no(W, ref, ask)
+    assert J.status(ref)["state"] == "done" and _asks_of(W, ref, "blocked") == []
+
+
+def test_j5_a_no_while_the_department_is_stopped_is_taken_on_start_and_leaves_the_card(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Stop No Co")
+    _high_finding_on_a_met_reading(R, W, j2, ref)
+    (ask,) = _asks_of(W, ref, "finding")
+    J.stop(ref)
+    _owner_says_no(W, ref, ask)
+    assert J.status(ref)["state"] == "stopped" and _asks_of(W, ref, "blocked") == [], "Identity applies the no on Start"
+    J.resume(ref)
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "blocked" and len(_asks_of(W, ref, "blocked")) == 1
 
 
 # ---- J6: a goal change reopens the cycle (M9.8) ------------------------------------------------------------------------------

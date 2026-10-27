@@ -616,21 +616,59 @@ def identity_apply(ctx, step, item):
     return out
 
 
+def last_reading(ref, cycle=None):
+    """The last reading that was read, of this cycle (any, when none is named), as readings.jsonl holds it, or None."""
+    return next((r for r in reversed(W.rows(ref, 'readings.jsonl')) if r.get('read') and cycle in (None, r.get('cycle_id'))), None)
+
+
+def ways_out(d, why, lead='Say what to change'):
+    """The closing words of a card whose ways out R._blocked builds: they name the way that leaves an item out of done-when only
+    when the card offers it (never with one item, since done-when is never left empty), so what the card says and what its
+    buttons do are the same (M9.5)."""
+    item = R._left_out(d, why)
+    return '%s, leave %s out of done-when, or stop here.' % (lead, item['id']) if item else '%s, or stop here.' % lead
+
+
+def open_items(ref, ask, base=None):
+    """The done-when items a finding the owner turned down leaves open, in the order done-when lists them: the ones its round
+    covers; else the ones its findings name; else the items not met in the reading it came from (the cycle's last reading, when
+    the ask does not name one). [] when it names none and every item is met."""
+    ids = [i['id'] for i in W.items_of(W.dept(ref))]
+    named = [i for i in (base or {}).get('covers') or [] if isinstance(i, str)]
+    named = named or [f['item'] for f in ask.get('findings') or [] if isinstance(f, dict) and f.get('item') in ids]
+    if named:
+        return [i for i in ids if i in named] or named
+    cj = R._j2()
+    row = reading_of(ref, ask.get('reading')) or last_reading(ref, (cj._state(ref) or {}).get('cycle_id') if cj else None)
+    verdicts = R.audit_verdicts((row or {}).get('items'))
+    return [i for i in ids if verdicts.get(i) == 'not_met']
+
+
 def identity_drop(ctx, step, item):
-    """Take the owner's no (the body engine_runtime holds). A no to the correction a round asked ends that round, and the
-    pursuit does not end with it in silence: the owner is given the ways out (M9.5)."""
+    """Take the owner's no (the body engine_runtime holds). A no to a finding the owner was asked to stamp ends that correction
+    (a round's is a round refused), and the pursuit does not end with it in silence: while the department is not done, the owner
+    is given the ways out as one card (M9.5), whatever put the finding to them: a round, a reading's item that is not met, a
+    finding a rule says to ask about, or a high finding on a reading that met every item."""
     ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
     ask = next((x for x in W.asks(ref) if x['id'] == pl.get('ask')), None)
     out = R.identity_drop(ctx, step, item)
-    if ask and ask.get('kind') == 'finding' and ask.get('round'):
-        n, rows = ask['round'], round_rows(ref, ask['round'])
+    if not (ask and ask.get('kind') == 'finding'):
+        return out
+    n, base = ask.get('round'), None
+    what = _said(ask.get('correction') or ask.get('found') or ask.get('claim'), 300).rstrip('.')
+    if n:
+        rows = round_rows(ref, n)
         base = rows[-1] if rows else None
         if not base or base.get('status') not in ('refused', 'filed', 'read'):
             round_row(ref, base or {'round': n, 'correction': ask.get('correction') or ask.get('claim') or '', 'covers': []}, 'refused')
-        covers = list((base or {}).get('covers') or [])
-        R._blocked(ref, d, _who(d), 'You said no to the correction for round %d: %s. Say what to change, leave %s out of done-when, or stop here.'
-                   % (n, str(ask.get('correction') or ask.get('claim') or '').rstrip('.'), (covers or ['an item'])[-1]), 'The correction was turned down.',
-                   'You, on the correction Identity put to you', '%s not met' % ', '.join(covers) if covers else 'an item not met')
+    cj = R._j2()
+    cur = (cj._state(ref) or {}) if cj else {}
+    if not (cur.get('cycle_id') and not cj.done(ref)):
+        return out
+    left = open_items(ref, ask, base)
+    why = '%s not met' % ', '.join(left) if left else 'a finding is still open'
+    R._blocked(ref, d, _who(d), 'You said no to the correction%s: %s. %s' % (' for round %d' % n if n else '', what, ways_out(d, why)),
+               'The correction was turned down.', 'You, on the correction Identity put to you', why)
     return out
 
 
