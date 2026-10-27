@@ -394,7 +394,8 @@ def test_a4_a_name_or_a_text_that_does_not_fit_the_schema_is_cut_to_fit_before_i
     ctx = _line_ctx(j2)
     long = dict(GOOD[0], name="Facts about the night clinic and all of its rooms and doors", does="x" * 500)
     row = v1().norm_engines([long])[0]
-    assert len(row["name"]) == 40 and len(row["does"]) == 200
+    assert len(row["name"]) <= 40 and row["name"] == row["name"].strip() and len(row["does"]) == 200
+    assert row["name"] == "Facts about the night clinic and all of", "cut at forty, and the space the cut leaves is not kept"
     got = v1().CHECK["line_is_engines"](ctx, None, None, {"engines": [long, dict(GOOD[1], reads=row["writes"])]})
     assert got["ok"] is True, got
 
@@ -408,12 +409,19 @@ WEB = [dict(GOOD[0], name="Facts (web)", writes="Facts (web)"), dict(GOOD[1], re
 @pytest.mark.parametrize("said, fits", [
     ("Facts (web)", "Facts web"), ("Site: 2", "Site 2"), ("Facts/Notes", "Facts Notes"), ("Facts_web", "Facts web"),
     ("Café notes", "Cafe notes"), ("(web) facts", "web facts"), ("--Facts", "Facts"), ("Facts   about\tit", "Facts about it"),
-    ("Q&A of Dr. O'Neil-Smith", "Q&A of Dr. O'Neil-Smith"), ("Facts 2", "Facts 2"), ("", ""), ("***", ""), ("你好", "")])
+    ("Q&A of Dr. O'Neil-Smith", "Q&A of Dr. O'Neil-Smith"), ("Facts 2", "Facts 2"), ("", ""), ("***", ""), ("你好", ""),
+    # the cut at forty falls on a space: no name ends in one (found by a verifier: the interface took it, Root's own run-together did not)
+    ("x" * 39 + " y", "x" * 39), ("Facts web " * 5, "Facts web Facts web Facts web Facts web"),
+    ("Facts (web) " * 5, "Facts web Facts web Facts web Facts web"), ("a" * 39 + " bc", "a" * 39),
+    ("Facts about the night clinic and all of its rooms and doors", "Facts about the night clinic and all of"),
+    ("x" * 40, "x" * 40), ("x" * 38 + " y", "x" * 38 + " y"), ("x" * 40 + " y", "x" * 40), ("x" * 38 + "  y z", "x" * 38 + " y")])
 def test_a4_a_name_is_made_to_fit_the_characters_the_interface_allows_and_a_name_that_fits_is_left_alone(said, fits):
     """The words are the model's and the characters are the interface's: a character NAME_RE refuses becomes a space (an
     accent is dropped), the first character is a letter or a number, and a name that already fits is not touched."""
     assert v1().fit_name(said) == fits
     assert re.search(S.NAME_RE, fits) or fits == ""
+    assert fits == fits.strip() and v1().fit_name(fits) == fits, "a name never ends in a space, and fitting it again changes nothing"
+    assert " ".join(fits.split())[:40] == fits, "so Root's own run-together of a name is the name"
 
 
 def test_a4_whatever_a_model_names_an_engine_it_fits_the_interface_or_is_nothing_and_fitting_twice_changes_nothing():
@@ -422,11 +430,26 @@ def test_a4_whatever_a_model_names_an_engine_it_fits_the_interface_or_is_nothing
     import random
     rng = random.Random(7)
     marks = [chr(c) for c in range(32, 0x2fff, 7)] + list("abcXYZ019 &'.-_/:()\u00e9\t\n\u00a0\ufb01")
-    for _ in range(500):
-        said = "".join(rng.choice(marks) for _ in range(rng.randint(0, 70)))
+    words = ["Facts", "web", "Site", "2", "a", "night", "clinic", "(web)", "Q&A", "x" * 12]
+    samples = ["".join(rng.choice(marks) for _ in range(rng.randint(0, 70))) for _ in range(500)]
+    # 500 random strings almost never put a space at index 39, where the cut falls: make them. 39 characters that fit with
+    # the first and the last a letter, then what the interface turns into a space (or a run of them) and a tail
+    for _ in range(300):
+        inner = "".join(rng.choice("abc XYZ019&'.-") for _ in range(37))
+        samples.append(rng.choice("abXY") + inner + rng.choice("cZ9") + rng.choice([" ", "  ", " _", "_", "/", ":", "(", "\t", "\u00a0"])
+                       + " ".join(rng.choice(words) for _ in range(rng.randint(1, 4))))
+    for _ in range(200):
+        samples.append(" ".join(rng.choice(words) for _ in range(rng.randint(6, 14))))
+        samples.append((rng.choice(words) + " ") * rng.randint(4, 9))
+    samples += ["x" * 39 + " y", "Facts web " * 5, "Facts (web) " * 5, "a" * 39 + " bc", " " * 39 + "x y"]
+    plain = [t for t in samples if re.fullmatch(r"[A-Za-z0-9 &'.-]*", t)]
+    assert sum(" ".join(t.split())[:40].endswith(" ") for t in plain) >= 30, "the samples reach the case: a cut that falls on a space"
+    for said in samples:
         fit = v1().fit_name(said)
         assert fit == "" or re.search(S.NAME_RE, fit), repr(said)
+        assert fit == fit.strip() and len(fit) <= 40, repr(said)
         assert v1().fit_name(fit) == fit, repr(said)
+        assert " ".join(fit.split())[:40] == fit, "Root's run-together of the name is the name: " + repr(said)
 
 
 def test_a4_norm_engines_fits_the_name_what_it_reads_and_what_it_writes_before_it_cuts(j2):
@@ -495,6 +518,71 @@ def test_a4_a_name_with_a_character_the_interface_refuses_is_proposed_and_regist
     assert "workflow.registered" in acts and "workflow.blocked" not in acts
     assert W.dept(ref)["workflows"][-1]["engines"] == ["Facts web", "Site 2"]
     assert not [a for a in W.asks(ref) if a["kind"] == "blocked"]
+
+
+def _organic_cycle(j2, monkeypatch, plan, make=False, items=None):
+    """An organic department born the way a person makes one, a stub for every model it calls, and the motor run until idle:
+    what the cycle did, in the department's own words (events, asks, the registered plan)."""
+    W, R, J, founding, FV = j2
+    if make:
+        monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    stubs = {"adapt.line": plan, "priority.bargain": {"answer": "accept", "why": "the envelope has room"}}
+    if items:
+        stubs["setup.shape"] = {"name": "Lab Co Department", "kind": "organic", "goal": ORGANIC, "done_items": items}
+    _stub(monkeypatch, R, stubs)
+    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
+    W.owner_ask(root, ORGANIC)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    return ref, [e["action"] for e in J.events(ref)]
+
+
+def _never_silent(W, ref, acts):
+    """A plan a department cannot register ends in a card the owner can read; it never ends in nothing (found by a verifier:
+    a long name stalled at step 3, with no event, no card and no tell)."""
+    pending = [a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending"]
+    assert "workflow.registered" in acts or pending, acts
+
+
+FACTS_40 = "Facts web Facts web Facts web Facts web"
+CLINIC = "Facts about the night clinic and all of its rooms and doors"
+
+
+@pytest.mark.parametrize("name, writes, fit", [
+    ("Facts (web) " * 5, "Facts (web) " * 5, FACTS_40),            # the gap's own characters, made long
+    ("Facts web " * 5, "Facts web " * 5, FACTS_40),
+    ("a" * 39 + " bc", "a" * 39 + " bc", "a" * 39),
+    (CLINIC, CLINIC, "Facts about the night clinic and all of"),
+    ("Facts (web) " * 5, "Facts 2", FACTS_40),                     # a long name that writes something short
+    ("Facts 2", "Facts (web) " * 5, "Facts 2")])                   # a short name that writes something long
+def test_a4_a_name_cut_at_forty_where_the_cut_falls_on_a_space_is_proposed_and_registered_as_it_fits(j2, monkeypatch, name, writes, fit):
+    """Found by two verifiers: a model name over forty characters whose fortieth is a space was cut to forty with the space
+    kept, which the interface takes and Root's own run-together of a name drops, so the registered engines no longer matched the
+    Library and the department stopped at step 3 with nothing said. The name is cut to fit and ends in no space, so it is the
+    same name wherever it is run together again: the plan registers, as it fits."""
+    W, R, J, founding, FV = j2
+    assert v1().fit_name(name) == fit and re.search(S.NAME_RE, fit)
+    plan = {"engines": [dict(GOOD[0], name=name, writes=writes), dict(GOOD[1], reads=writes)]}
+    ref, acts = _organic_cycle(j2, monkeypatch, plan)
+    _never_silent(W, ref, acts)
+    assert "workflow.registered" in acts and "workflow.blocked" not in acts, acts
+    assert W.dept(ref)["workflows"][-1]["engines"] == [fit, "Site 2"]
+    assert not [a for a in W.asks(ref) if a["kind"] == "blocked"]
+    assert J.status(ref)["step"] > 3, J.status(ref)
+
+
+def test_a4_a_made_engine_whose_name_is_cut_at_a_space_registers_as_it_fits_with_the_setting_on(j2, monkeypatch):
+    """The same stall with J2_ADAPT_MAKE on: a made engine named 'aaa...a bc' (the fortieth character a space) is made to fit
+    and registers, the next engine reading what it writes."""
+    W, R, J, founding, FV = j2
+    long = "a" * 39 + " bc"
+    plan = {"engines": [_made(long, "Brief", long, ["D1", "D2"], confidence=0.9), _made("Stock page", long, "Live site", ["D3"], confidence=0.85)]}
+    ref, acts = _organic_cycle(j2, monkeypatch, plan, make=True, items=LAB)
+    _never_silent(W, ref, acts)
+    assert "workflow.registered" in acts and "workflow.blocked" not in acts, acts
+    assert W.dept(ref)["workflows"][-1]["engines"] == ["a" * 39, "Stock page"]
+    assert J.status(ref)["step"] > 3, J.status(ref)
 
 
 def test_a4_a_plan_no_name_can_be_made_of_blocks_with_a_card_that_has_no_path_and_no_pattern(j2, monkeypatch):
