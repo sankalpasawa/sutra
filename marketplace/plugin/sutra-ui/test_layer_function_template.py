@@ -856,7 +856,7 @@ def test_the_keeps_and_the_journey_ids_of_the_pages_equal_the_interface(capsys):
     for fn in FUNCTIONS:
         filed = json.loads((folder / (fn + ".json")).read_text(encoding="utf-8"))
         ids = [j["id"] for j in (filed.get("journeys") if isinstance(filed, dict) and "journeys" in filed else [filed])]
-        assert [j[0] for j in FV.PAGES[fn]["journeys"]] == ids, fn
+        assert [j[0] for j in FV.JOURNEYS[fn.title()]] == ids, fn
 
 
 def test_function_templates_read_the_interface_banned_words():

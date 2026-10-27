@@ -1,0 +1,788 @@
+{
+ "journeys": [
+  {
+   "schema_version": 1,
+   "id": "FA1",
+   "title": "The first workflows",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "adaptation",
+   "serves": [
+    "J2:2",
+    "J2:3",
+    "J2:4",
+    "J2:5"
+   ],
+   "site_serves": "J2 steps 2 to 5",
+   "declared": true,
+   "goal": "The first workflows.",
+   "lead": "The site marks it: built for the organic kind; the module a placeholder; the call to Root to build.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/adaptation.html#fa1",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "root",
+     "label": "Root",
+     "kind": "root"
+    },
+    {
+     "id": "identity",
+     "label": "Identity",
+     "kind": "function",
+     "function": "identity"
+    },
+    {
+     "id": "priority",
+     "label": "Priority",
+     "kind": "function",
+     "function": "priority"
+    },
+    {
+     "id": "coordination",
+     "label": "Coordination",
+     "kind": "function",
+     "function": "coordination"
+    },
+    {
+     "id": "engines",
+     "label": "Workflows",
+     "kind": "engine"
+    },
+    {
+     "id": "adaptation",
+     "label": "Adaptation",
+     "kind": "function",
+     "function": "adaptation"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "identity",
+     "short": "identity good enough",
+     "text": "Identity good enough",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J2/step/1"
+    },
+    {
+     "n": "2",
+     "lane": "adaptation",
+     "short": "proposes the workflows",
+     "text": "Proposes the workflows",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J2/step/2"
+    },
+    {
+     "n": "3",
+     "lane": "priority",
+     "short": "grant, refuse, counter",
+     "text": "Grant, refuse, counter",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J2/step/3"
+    },
+    {
+     "n": "4",
+     "lane": "root",
+     "short": "Root checks, registers",
+     "text": "Root checks, registers",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J2/step/5"
+    },
+    {
+     "n": "5",
+     "lane": "coordination",
+     "short": "the line is set",
+     "text": "The line is set",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "6",
+     "lane": "engines",
+     "short": "the first one runs",
+     "text": "The first one runs",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say",
+     "same_as": "J2/step/6"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FA1.1",
+     "at": "3",
+     "short": "Refused: reshape",
+     "trigger": "refused: reshape",
+     "site": {
+      "status": "none",
+      "text": "refused: reshape"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "same_as": "J2/edge/J2.4"
+    },
+    {
+     "id": "FA1.2",
+     "at": "3",
+     "short": "No agreement: to Identity",
+     "trigger": "no agreement: to Identity",
+     "site": {
+      "status": "none",
+      "text": "no agreement: to Identity"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true,
+     "same_as": "J2/edge/J2.2"
+    },
+    {
+     "id": "FA1.3",
+     "at": "2",
+     "short": "Not confident: ask",
+     "trigger": "not confident: ask",
+     "site": {
+      "status": "none",
+      "text": "not confident: ask"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "step:5",
+    "step:6",
+    "edge:FA1.1",
+    "edge:FA1.2",
+    "edge:FA1.3"
+   ]
+  },
+  {
+   "schema_version": 1,
+   "id": "FA2",
+   "title": "Pursue until done",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "adaptation",
+   "serves": [
+    "J2:8"
+   ],
+   "site_serves": "the J2 loop",
+   "declared": true,
+   "goal": "Pursue until done.",
+   "lead": "The site marks it: to build (the name Pursue: your call).",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/adaptation.html#fa2",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "identity",
+     "label": "Identity",
+     "kind": "function",
+     "function": "identity"
+    },
+    {
+     "id": "engines",
+     "label": "Workflows",
+     "kind": "engine"
+    },
+    {
+     "id": "adaptation",
+     "label": "Adaptation",
+     "kind": "function",
+     "function": "adaptation"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "identity",
+     "short": "a result filed",
+     "text": "A result filed",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "adaptation",
+     "short": "sense the gap",
+     "text": "Sense the gap",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "3",
+     "lane": "adaptation",
+     "short": "decide the next move",
+     "text": "Decide the next move",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "adaptation",
+     "short": "make the next workflow",
+     "text": "Make the next workflow",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "5",
+     "lane": "engines",
+     "short": "it runs",
+     "text": "It runs",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "6",
+     "lane": "identity",
+     "short": "done line holds: done",
+     "text": "Done line holds: done",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FA2.1",
+     "at": "4",
+     "short": "Budget out: waits",
+     "trigger": "budget out: waits",
+     "site": {
+      "status": "none",
+      "text": "budget out: waits"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     }
+    },
+    {
+     "id": "FA2.2",
+     "at": "4",
+     "short": "Chain at 12: stops",
+     "trigger": "chain at 12: stops",
+     "site": {
+      "status": "none",
+      "text": "chain at 12: stops"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     }
+    },
+    {
+     "id": "FA2.3",
+     "at": "3",
+     "short": "No move left: an ask",
+     "trigger": "no move left: an ask",
+     "site": {
+      "status": "none",
+      "text": "no move left: an ask"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    },
+    {
+     "id": "FA2.4",
+     "at": "any",
+     "short": "You say Stop",
+     "trigger": "you say Stop",
+     "site": {
+      "status": "none",
+      "text": "you say Stop"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     }
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "step:5",
+    "step:6",
+    "edge:FA2.1",
+    "edge:FA2.2",
+    "edge:FA2.3",
+    "edge:FA2.4"
+   ]
+  },
+  {
+   "schema_version": 1,
+   "id": "FA3",
+   "title": "Crystallize a step",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "adaptation",
+   "serves": [],
+   "site_serves": "J2, the ladder",
+   "declared": true,
+   "goal": "Crystallize a step.",
+   "lead": "The site marks it: built as the rung proposal you stamp.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/adaptation.html#fa3",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "you",
+     "label": "You",
+     "kind": "person"
+    },
+    {
+     "id": "engines",
+     "label": "Workflows",
+     "kind": "engine"
+    },
+    {
+     "id": "adaptation",
+     "label": "Adaptation",
+     "kind": "function",
+     "function": "adaptation"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "engines",
+     "short": "rows earned",
+     "text": "Rows earned",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "adaptation",
+     "short": "propose the move",
+     "text": "Propose the move",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "3",
+     "lane": "you",
+     "short": "Stamp",
+     "text": "Stamp",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "engines",
+     "short": "the step runs as code",
+     "text": "The step runs as code",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FA3.1",
+     "at": "4",
+     "short": "Fails its check",
+     "trigger": "fails its check:",
+     "site": {
+      "status": "none",
+      "text": "fails its check:"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "edge:FA3.1"
+   ]
+  },
+  {
+   "schema_version": 1,
+   "id": "FA4",
+   "title": "Grow the department out",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "adaptation",
+   "serves": [],
+   "site_serves": "J6",
+   "declared": true,
+   "goal": "Grow the department out.",
+   "lead": "The site marks it: in its chat tools; not a move of its own.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/adaptation.html#fa4",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "you",
+     "label": "You",
+     "kind": "person"
+    },
+    {
+     "id": "root",
+     "label": "Root",
+     "kind": "root"
+    },
+    {
+     "id": "identity",
+     "label": "Identity",
+     "kind": "function",
+     "function": "identity"
+    },
+    {
+     "id": "adaptation",
+     "label": "Adaptation",
+     "kind": "function",
+     "function": "adaptation"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "adaptation",
+     "short": "decide: too big for one",
+     "text": "Decide: too big for one",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "identity",
+     "short": "asks you",
+     "text": "Asks you",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "3",
+     "lane": "you",
+     "short": "Stamp",
+     "text": "Stamp",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "root",
+     "short": "{helper} makes it",
+     "text": "{helper} makes it",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FA4.1",
+     "at": "3",
+     "short": "Refused: stays parked",
+     "trigger": "refused: stays parked",
+     "site": {
+      "status": "none",
+      "text": "refused: stays parked"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "edge:FA4.1"
+   ]
+  },
+  {
+   "schema_version": 1,
+   "id": "FA5",
+   "title": "Learn",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "adaptation",
+   "serves": [
+    "J3:4d"
+   ],
+   "site_serves": "J3 feedback",
+   "declared": true,
+   "goal": "Learn.",
+   "lead": "The site marks it: to build.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/adaptation.html#fa5",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "you",
+     "label": "You",
+     "kind": "person"
+    },
+    {
+     "id": "root",
+     "label": "Root",
+     "kind": "root"
+    },
+    {
+     "id": "engines",
+     "label": "Workflows",
+     "kind": "engine"
+    },
+    {
+     "id": "adaptation",
+     "label": "Adaptation",
+     "kind": "function",
+     "function": "adaptation"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "you",
+     "short": "feedback, or a failure",
+     "text": "Feedback, or a failure",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "adaptation",
+     "short": "what must change",
+     "text": "What must change",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "3",
+     "lane": "adaptation",
+     "short": "change the step",
+     "text": "Change the step",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "root",
+     "short": "Root checks (steps)",
+     "text": "Root checks (steps)",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "5",
+     "lane": "engines",
+     "short": "runs changed",
+     "text": "Runs changed",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FA5.1",
+     "at": "3",
+     "short": "Wording only: free",
+     "trigger": "wording only: free",
+     "site": {
+      "status": "none",
+      "text": "wording only: free"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    },
+    {
+     "id": "FA5.2",
+     "at": "4",
+     "short": "Refused: told why",
+     "trigger": "refused: told why",
+     "site": {
+      "status": "none",
+      "text": "refused: told why"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     }
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "step:5",
+    "edge:FA5.1",
+    "edge:FA5.2"
+   ]
+  }
+ ]
+}

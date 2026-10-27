@@ -1,0 +1,152 @@
+{
+ "journeys": [
+  {
+   "schema_version": 1,
+   "id": "FAU1",
+   "title": "Read the result",
+   "kind": "function",
+   "inside": null,
+   "bound_to": "audit",
+   "serves": [
+    "J2:7"
+   ],
+   "site_serves": "J2 step 7",
+   "declared": true,
+   "goal": "Read the result.",
+   "lead": "The site marks it: built.",
+   "ends_when": "",
+   "flag": null,
+   "site": {
+    "page": "native/functions/audit.html#fau1",
+    "data_version": "1.5",
+    "as_of": "2026-10-01"
+   },
+   "helper": {
+    "site": "Sutra",
+    "screen": "Root",
+    "code": "Root"
+   },
+   "lanes": [
+    {
+     "id": "identity",
+     "label": "Identity",
+     "kind": "function",
+     "function": "identity"
+    },
+    {
+     "id": "engines",
+     "label": "Workflows",
+     "kind": "engine"
+    },
+    {
+     "id": "audit",
+     "label": "Audit",
+     "kind": "function",
+     "function": "audit"
+    }
+   ],
+   "steps": [
+    {
+     "n": "1",
+     "lane": "engines",
+     "short": "a checked result",
+     "text": "A checked result",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "2",
+     "lane": "audit",
+     "short": "pick, mechanical checks",
+     "text": "Pick, mechanical checks",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "3",
+     "lane": "audit",
+     "short": "judge against the Brief",
+     "text": "Judge against the Brief",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "4",
+     "lane": "audit",
+     "short": "file a finding",
+     "text": "File a finding",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    },
+    {
+     "n": "5",
+     "lane": "identity",
+     "short": "a question, or an ask",
+     "text": "A question, or an ask",
+     "site_function": "",
+     "site_status": "none",
+     "act": "say"
+    }
+   ],
+   "edges": [
+    {
+     "id": "FAU1.1",
+     "at": "4",
+     "short": "A hole: asks you",
+     "trigger": "a hole: asks you",
+     "site": {
+      "status": "none",
+      "text": "a hole: asks you"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    },
+    {
+     "id": "FAU1.2",
+     "at": "3",
+     "short": "A workflow with web tools looks it up",
+     "trigger": "a workflow with web tools looks it up",
+     "site": {
+      "status": "none",
+      "text": "a workflow with web tools looks it up"
+     },
+     "code_does": "",
+     "outcome": {
+      "kind": "none",
+      "voice": "none",
+      "golden": null
+     },
+     "truncated": true
+    }
+   ],
+   "sub": [],
+   "children": [],
+   "directions": [],
+   "build_rows": [],
+   "rulings": [],
+   "decisions": [],
+   "quotes": [],
+   "scenarios": [],
+   "invariants": [],
+   "backlog": [],
+   "site_ids": [
+    "step:1",
+    "step:2",
+    "step:3",
+    "step:4",
+    "step:5",
+    "edge:FAU1.1",
+    "edge:FAU1.2"
+   ]
+  }
+ ]
+}
