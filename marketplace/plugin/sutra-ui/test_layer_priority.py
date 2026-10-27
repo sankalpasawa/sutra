@@ -7,6 +7,7 @@ department born the way a person makes one, a model that is a function of the st
 """
 import importlib
 import math
+import re
 import statistics
 from datetime import datetime, timedelta
 
@@ -702,6 +703,35 @@ def test_p4_the_words_are_the_ones_the_pane_already_says_and_the_owners_not_the_
     assert [b["said"] for b in pane["bargains"]] == list(V1.SAID.values()), "the pane's own bargains say the three words"
     W.append_row(ref, "prices.jsonl", _price_row(why="Priority countered (no room) and kept /Users/someone/secret/plan.md out"))
     assert V1.view(ref, W.dept(ref), [], [])["prices"][0]["why"] == "Priority asked for less (no room) and kept plan.md out", "names, never paths"
+
+
+def test_p4_a_why_written_in_the_inside_words_reaches_the_pane_in_the_owners(live, ctx):
+    """The agent is taught accept, counter and reject and writes its why in its own sentence. A why that reaches the pane with
+    a bare grant, counter, reject or refuse in it must fail: the screen says said yes, asked for less and said no. The record
+    keeps the why as it was given; only what the pane reads is said again."""
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    said = {
+        "I reject this; I would counter with two, grant none: refused for lack of room":
+            "I say no to this; I would ask for less with two, say yes to none: said no for lack of room",
+        "Rejected: no room for the line.": "Said no: no room for the line.",
+        "Granted. It fits.": "Said yes. It fits.",
+        "This is a counter to the line, and the grant is too big": "This is an ask for less to the line, and the yes is too big",
+        "A counter-offer of two; the refusal stands": "An ask for less of two; the no stands",
+        "COUNTER with two": "ASK FOR LESS with two",
+        "I granted the first and refused the second": "I said yes to the first and said no to the second",
+        "fits today: about 11 calls and 0.40 USD of the 200 calls and 20.00 USD left": "fits today: about 11 calls and 0.40 USD of the 200 calls and 20.00 USD left",
+        "The line goes in order, and it does not accept the rest": "The line goes in order, and it does not accept the rest"}
+    for i, why in enumerate(said):
+        W.append_row(ref, "prices.jsonl", _price_row(at="2026-10-26T10:%02d:00+05:30" % i, why=why))
+    shown = {p["at"]: p["why"] for p in V1.view(ref, W.dept(ref), [], [])["prices"]}
+    for i, (why, want) in enumerate(said.items()):
+        assert shown["2026-10-26T10:%02d:00+05:30" % i] == want, why
+    inside = re.compile(r"\b(?:grant\w*|counter\w*|reject\w*|refus\w*)\b", re.I)
+    assert not [w for w in shown.values() if inside.search(w)], "no inside word is left on the pane"
+    assert [r["why"] for r in W.rows(ref, "prices.jsonl")] == list(said), "the record keeps its own words"
+    assert S.validate_view("priority", V1.view(ref, W.dept(ref), [], [])) == []
+    assert all(not inside.search(w) for w in V1.INSIDE.values()), "and the words put in their place are the owner's"
 
 
 def test_p4_the_view_does_not_come_back_through_the_part_that_reads_the_views(live, ctx, monkeypatch):

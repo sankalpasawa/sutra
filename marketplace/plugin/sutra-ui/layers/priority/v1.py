@@ -437,12 +437,39 @@ LAYOUT = {
 
 #: the most prices the pane carries: the newest, as the bargains it sits beside are the newest few
 PRICES_SHOWN = 12
+#: the bargain's inside words, and what the screen says in their place (said yes, asked for less, said no; never grant,
+#: counter or refuse). The agent is taught accept, counter and reject, and writes its why in its own sentence, so a why may
+#: use them or grant and refuse. owner_words.plain says phrases and never a bare verb, so the why is read again word by word;
+#: every form is spelt out, so the sentence keeps its grammar. 'order', which the rules also keep off the screen as a verb,
+#: is the ordinary word for the order of a line, and is left.
+INSIDE = types.MappingProxyType({
+    'grant': 'say yes to', 'grants': 'says yes to', 'granted': 'said yes to', 'granting': 'saying yes to',
+    'reject': 'say no to', 'rejects': 'says no to', 'rejected': 'said no to', 'rejecting': 'saying no to',
+    'refuse': 'say no to', 'refuses': 'says no to', 'refused': 'said no to', 'refusing': 'saying no to',
+    'counter': 'ask for less', 'counters': 'asks for less', 'countered': 'asked for less', 'countering': 'asking for less',
+    'refusal': 'no', 'rejection': 'no',
+    'counter-offer': 'ask for less', 'counter-offers': 'asks for less', 'counteroffer': 'ask for less', 'counteroffers': 'asks for less',
+    'counter-proposal': 'ask for less', 'counter-proposals': 'asks for less'})
+_INSIDE_RE = r'\b(?:%s)\b' % '|'.join(re.escape(w) for w in sorted(INSIDE, key=len, reverse=True))
+
+
+def _said_plainly(text):
+    """A why in the owner's words, the inside ones (INSIDE) said again: 'I reject this; I would counter with two' is 'I say
+    no to this; I would ask for less with two'. A noun after its article (the grant) is a yes. A capital stays a capital."""
+    def said(m):
+        word, out = m.group(0), INSIDE[m.group(0).lower()]
+        return out.upper() if len(word) > 1 and word.isupper() else (out[:1].upper() + out[1:] if word[:1].isupper() else out)
+    text = re.sub(r'\b(a|an|the|this|that|its|their|any|each)\s+grants?\b', r'\1 yes', str(text or ''), flags=re.I)
+    text = re.sub(_INSIDE_RE, said, text, flags=re.I)
+    text = re.sub(r'\b(say|says|said|saying)\s+(yes|no)\s+to(?=\s*(?:$|[.,;:!?)]|(?:for|because|since|as|when|if|over|given)\b))', r'\1 \2', text, flags=re.I)
+    return re.sub(r'\b([Aa])(?= ask for less\b)', r'\1n', text, flags=re.I)
 
 
 def _prices(ref):
     """What Priority priced and answered, newest first, from prices.jsonl and in the owner's words: the answer as said yes,
-    asked for less or said no, the estimate and the room as two amounts each, and the why as Priority gave it. A row that
-    holds no answer is not shown."""
+    asked for less or said no, the estimate and the room as two amounts each, and the why as Priority gave it, its inside
+    words (reject, counter, grant, refuse) said again as the owner says them. The row keeps the why as it was given. A row
+    that holds no answer is not shown."""
     out = []
     for r in reversed([r for r in W.rows(ref, 'prices.jsonl') if isinstance(r, dict)]):
         if r.get('answer') not in SAID:
@@ -451,7 +478,7 @@ def _prices(ref):
         out.append({'at': r.get('at'), 'proposal': r.get('proposal'), 'answer': r['answer'], 'said': SAID[r['answer']],
                     'estimate': {'calls': int(est.get('calls') or 0), 'usd': float(est.get('usd') or 0.0)},
                     'room': {'calls': int(room.get('calls') or 0), 'usd': float(room.get('usd') or 0.0)},
-                    'why': str(FV._plain(r.get('why')) or '')[:600]})
+                    'why': _said_plainly(FV._plain(r.get('why')))[:600]})
     return FV._clean(out[:PRICES_SHOWN])
 
 
