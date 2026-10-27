@@ -824,7 +824,8 @@ def test_p4_a_why_written_in_the_inside_words_reaches_the_pane_in_the_owners(liv
     assert not [w for w in shown.values() if inside.search(w)], "no inside word is left on the pane"
     assert [r["why"] for r in W.rows(ref, "prices.jsonl")] == list(said), "the record keeps its own words"
     assert S.validate_view("priority", V1.view(ref, W.dept(ref), [], [])) == []
-    assert all(not inside.search(w) for w in V1.INSIDE.values()), "and the words put in their place are the owner's"
+    import owner_words
+    assert all(not inside.search(w) for w in owner_words.INSIDE.values()), "and the words put in their place are the owner's"
 
 
 def test_p4_order_as_a_verb_is_said_again_and_order_as_the_lines_order_is_left(live, ctx):
@@ -844,6 +845,24 @@ def test_p4_order_as_a_verb_is_said_again_and_order_as_the_lines_order_is_left(l
     for i, (why, want) in enumerate(said.items()):
         assert shown["2026-10-26T10:%02d:00+05:30" % i] == want, why
     assert [r["why"] for r in W.rows(ref, "prices.jsonl")] == list(said), "the record keeps its own words"
+
+
+def test_p4_a_bargains_summary_is_in_the_owners_words_as_a_price_is(live, ctx):
+    """The bargain's summary is the agent's why on the ledger, and it reaches the pane beside the prices as bargains[].summary: it
+    must say it as the owner does, as the price's why does, or the pane says grant, counter and refuse on one list and not the other.
+    A summary of the bargain that keeps the agent's inside words must fail."""
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    why = "I reject this line; I would counter with two but the grant is too big, so refused for lack of room. Priority orders nothing."
+    want = "I say no to this line; I would ask for less with two but the yes is too big, so said no for lack of room. Priority asks for nothing."
+    events = [{"action": a, "summary": why, "occurred_at": "2026-10-26T10:%02d:00+05:30" % i}
+              for i, a in enumerate(("proposal.granted", "proposal.countered", "proposal.refused"))]
+    pane = V1.view(ref, W.dept(ref), events, [])
+    assert [b["summary"] for b in pane["bargains"]] == [want] * 3, "and the three bargains are the ones the ledger holds, said as the owner says them"
+    assert [b["said"] for b in pane["bargains"]] == ["said yes", "asked for less", "said no"]
+    assert not re.search(r"\b(?:grant\w*|counter\w*|reject\w*|refus\w*|orders?)\b", " ".join(b["summary"] for b in pane["bargains"]), re.I)
+    assert [e["summary"] for e in events] == [why] * 3, "the ledger's own line is not changed by reading it"
+    assert S.validate_view("priority", pane) == []
 
 
 def test_p4_the_view_does_not_come_back_through_the_part_that_reads_the_views(live, ctx, monkeypatch):
