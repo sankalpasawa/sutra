@@ -243,6 +243,32 @@ class TestJ4Edges(Ruling):
         self.assertEqual(len([r for r in W.runs(child)[runs:] if "loosens one it inherits" in r["what"]]), 1)
         self.assertEqual(self.kept(child), kept)
 
+    def test_j4_4_the_owner_hears_a_prohibition_an_ancestor_tagged_always_as_one_that_never_does_it(self):
+        """J4.4 as the owner hears it: an ancestor's `always: Never publish prices` is compared as a refusal (a prohibition tagged
+        always ranks 2), so the tell on the board says 'it never does this', never 'it always does this'. And an ancestor's `ask`
+        rule on a line is said as 'it asks you first'. Read off the board, where the words the owner sees are."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        self.reads_as(LINE, "ask")
+        self.inherit(root, {"tag": "always", "line": LINE})
+        posts = len(R.board(child))
+        self.say(child, WORDS)
+        told = self.told_tighten(child, posts)
+        self.assertEqual(len(told), 1, told)
+        done = told[0]["payload"]["done"]
+        self.assertEqual(done, "Root's rule stands: %s. The rule above says: %s (it never does this)." % (SAID, LINE), done)
+        self.assertNotIn("it always does this", done)
+        self.assertEqual(self.rule_asks(child), [], "and no ask is filed")
+        # an ancestor's `ask` rule, on a line a `go` rule would loosen
+        line = "Check the opening hours with the clinic"
+        self.inherit(root, {"tag": "ask", "line": line})
+        self.reads_as(line, "go")
+        posts = len(R.board(child))
+        self.assertIsNone(R._rule_ask(child, "slot", line, "go", "From now on, " + line.lower(), None, "A rule, as understood"))
+        told = self.told_tighten(child, posts)
+        self.assertEqual(len(told), 1, told)
+        self.assertIn("The rule above says: %s (it asks you first)." % line, told[0]["payload"]["done"])
+
     def test_j4_4_a_rule_identitys_take_reads_out_of_a_task_is_turned_down_when_it_loosens_an_inherited_one(self):
         """J4.5 meets J4.4: words that are a task and carry a rule on a line an ancestor holds more strictly (Identity's take reads
         `ask: Never publish prices` out of them) are turned down at the third place a rule is asked for. Identity says a
@@ -432,3 +458,19 @@ class TestTighten:
             for sentence in tighten.rule_faults([{"tag": tag, "line": "Never publish prices"}], "Never publish prices", "go"):
                 assert not re.search(S.TEMPLATE_BANNED, sentence, re.I), sentence
                 assert "(%s)" % tag not in sentence, "the owner is never shown a tag: " + sentence
+                if tag == "always":                  # a prohibition tagged always ranks as refuse, and is glossed as it
+                    assert "it never does this" in sentence and "it always does this" not in sentence, sentence
+
+    def test_a_prohibition_tagged_always_is_glossed_as_the_refusal_it_ranks_as(self):
+        """The gloss follows the rank. An inherited `always: Never publish prices` is compared as `refuse` (rank 2), so the owner
+        hears 'it never does this'; 'it always does this' beside a line that says never is a sentence that contradicts itself."""
+        always = tighten.rule_faults([{"tag": "always", "line": "Never publish prices"}], "Never publish prices", "go")
+        assert always == ["The rule above says: Never publish prices (it never does this)."], always
+        assert all("it always does this" not in s for s in always)
+        for line in ("Do not publish prices.", "Don't publish prices"):
+            got = tighten.rule_faults([{"tag": "always", "line": line}], "Never publish prices", "ask")
+            assert len(got) == 1 and "it never does this" in got[0] and "it always does this" not in got[0], got
+        refuse = tighten.rule_faults([{"tag": "refuse", "line": "Never publish prices"}], "Never publish prices", "go")
+        assert refuse == always, "a refuse rule and a prohibition tagged always are said the same way"
+        asks = tighten.rule_faults([{"tag": "ask", "line": "Publish prices"}], "Publish prices", "go")
+        assert asks == ["The rule above says: Publish prices (it asks you first)."], asks

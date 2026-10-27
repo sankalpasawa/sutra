@@ -59,9 +59,13 @@ def rank(tag, line):
 
 
 def _quoted(rule):
-    """An inherited rule as a sentence names it: its line, and what it makes the department do."""
+    """An inherited rule as a sentence names it: its line, and what it makes the department do. The words follow the rank the
+    rule was compared at, not its raw tag: a prohibition tagged `always` ranks as `refuse`, so it is glossed as one ('it never
+    does this'), never as 'it always does this' beside a line that says never."""
     line = ' '.join(str(rule.get('line') or '').split()).rstrip('.')
-    return '%s (%s)' % (line, SAYS.get(rule.get('tag'), 'it holds'))
+    tag = rule.get('tag')
+    says = SAYS['refuse'] if rank(tag, rule.get('line')) == RANKS['refuse'] else SAYS.get(tag, 'it holds')
+    return '%s (%s)' % (line, says)
 
 
 def rule_faults(inherited, line, tag):
