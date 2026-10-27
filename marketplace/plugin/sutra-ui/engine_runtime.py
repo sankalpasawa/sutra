@@ -401,7 +401,13 @@ def defs():
     layers' recipes (layers/<layer>/v1.json, PRD A1.18), and the Library's engine templates assembled in as engines,
     validated as one. For the department in hand (pinned): the default set is assembled once, and any other set of
     versions, a copy of it with those versions' recipes in their layers' places, once for each tuple of implementation ids."""
-    ids, base = current_ids(), _base_defs()
+    return defs_of(current_ids())
+
+
+def defs_of(ids):
+    """The definitions of one set of versions, `ids` in layers.RECIPE_ORDER: the default set's are the file's, any other set's
+    are assembled once and kept under its tuple. ValueError, as defs() raises it, when the set is refused."""
+    base = _base_defs()
     if ids == default_ids():
         return base
     got = _DEFS.get(ids)
