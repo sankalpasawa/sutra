@@ -864,7 +864,11 @@ def test_j1_a_way_out_is_applied_by_the_layer_the_interface_names(j2, monkeypatc
     ask = _cards(W, ref)[0]
     assert S.OPTION_KINDS["raise"]["layer"] == "priority"
     seen = []
-    monkeypatch.setattr(layers.load("priority/v1"), "apply_option", lambda r, a, o: seen.append((r, a["id"], o["id"], o.get("params"))) or {"raised": True}, raising=False)
+    prio = layers.load("priority/v1")
+    # choose_option has Priority apply a raise on the click (apply_choice, M5.4); stood in for here, so that what is seen is
+    # Identity's own step reaching the layer the interface names (the pair together is the next test)
+    monkeypatch.setattr(prio, "apply_choice", lambda r, a, o: {}, raising=False)
+    monkeypatch.setattr(prio, "apply_option", lambda r, a, o: seen.append((r, a["id"], o["id"], o.get("params"))) or {"raised": True}, raising=False)
     W.choose_option(ref, ask["id"], "raise")
     W.run_until_idle(ref, limit=300)
     assert seen == [(ref, ask["id"], "raise", {"what": "ceiling", "rounds": 12})], "Priority applied it, with the option as the card held it"
@@ -878,7 +882,9 @@ def test_j1_a_way_out_no_layer_can_apply_leaves_the_card_waiting_and_says_why(j2
     _conflict(R, ref, ENGINES, _ways(W.items_of(W.dept(ref))))
     W.run_until_idle(ref, limit=300)
     ask = _cards(W, ref)[0]
-    monkeypatch.delattr(layers.load("priority/v1"), "apply_option", raising=False)
+    prio = layers.load("priority/v1")
+    monkeypatch.setattr(prio, "apply_choice", lambda r, a, o: {}, raising=False)     # Identity's step is what is tried here, not the click's
+    monkeypatch.delattr(prio, "apply_option", raising=False)
     W.choose_option(ref, ask["id"], "raise")
     W.run_until_idle(ref, limit=300)
     again = _cards(W, ref)
@@ -891,6 +897,25 @@ def test_j1_a_way_out_no_layer_can_apply_leaves_the_card_waiting_and_says_why(j2
     W.choose_option(ref, ask["id"], "raise")
     W.run_until_idle(ref, limit=300)
     assert _cards(W, ref)[0]["id"] == ask["id"] and any("That is more than twice where it started. Nothing changed" in s for s in _said_by_identity(R, ref))
+
+
+def test_j1_a_raise_chosen_on_the_card_is_made_once_and_identitys_step_after_it_changes_nothing(j2):
+    """Priority applies a raise on the click (apply_choice) and Identity's stamp step applies it again through apply_option: the
+    second finds the limit already as high (a raise already made is not made again), so the ceiling is raised once."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    _conflict(R, ref, ENGINES, _ways(W.items_of(W.dept(ref))))
+    W.run_until_idle(ref, limit=300)
+    ask = _cards(W, ref)[0]
+    prio = layers.load("priority/v1")
+    before = (W.dept(ref).get("ceiling") or {}).get("raised") or []
+    W.choose_option(ref, ask["id"], "raise")
+    W.run_until_idle(ref, limit=300)
+    ceiling = W.dept(ref)["ceiling"]
+    assert ceiling["rounds"] == 12 and len(ceiling["raised"]) == len(before) + 1, "raised once, though two paths applied it"
+    assert prio.apply_option(ref, ask, {"id": "raise", "kind": "raise", "params": {"what": "ceiling", "rounds": 12}})["raised"] is False
+    done = next(a for a in W.asks(ref) if a["id"] == ask["id"])
+    assert done["status"] == "chosen" and done["chosen"]["id"] == "raise"
 
 
 def test_j1_set_it_up_again_is_applied_by_root_as_one_request_for_the_owners_stamp(j2):
