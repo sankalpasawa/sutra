@@ -262,6 +262,25 @@ def test_sm1_the_reading_that_stands_is_the_last_one_of_that_version_before_the_
     assert _sm1(tmp_path / "c", readings=[_reading(), just_after], events=[_goal()])["value"] == 1       # the last one before the claim says no
 
 
+def test_sm1_a_claim_made_before_any_reading_of_its_version_is_not_backed_by_a_reading_made_after_it(tmp_path):
+    """A reading written after the claim cannot have been what the claim stood on, even when it says every item is met."""
+    late = _reading(at="2026-10-27T11:00:00+05:30")                                  # the claim is at 10:00:05
+    m = _sm1(tmp_path / "one", readings=[late], events=[_goal()])
+    assert (m["value"], m["status"]) == (1, "gap") and "its only reading came after the claim" in m["gaps"][0]
+    later = [late, _reading(rid="r-00000002", at="2026-10-27T12:00:00+05:30")]
+    m = _sm1(tmp_path / "two", readings=later, events=[_goal(refs=["r-00000001", "r-00000002"])])
+    assert m["value"] == 1 and "every reading it cites came after the claim" in m["gaps"][0]
+    same_second = _reading(at="2026-10-27T10:00:05+05:30")                           # the app writes the claim and its reading together
+    assert _sm1(tmp_path / "three", readings=[same_second], events=[_goal()])["value"] == 0
+    assert _sm1(tmp_path / "four", readings=[late, _reading(rid="r-00000003")], events=[_goal(refs=["r-00000001", "r-00000003"])])["value"] == 0, \
+        "one reading before the claim stands behind it, whatever came after"
+
+
+def test_sm7_a_done_whose_only_reading_came_after_its_claim_is_not_a_real_done(tmp_path):
+    make(tmp_path, kind="website", state={"state": "done"}, readings=[_reading(at="2026-10-27T11:00:00+05:30")], events=[_goal()])
+    assert M.sm7(_depts(tmp_path))["value"] == 0
+
+
 def test_sm1_a_department_with_no_done_item_has_nothing_to_have_read(tmp_path):
     m = _sm1(tmp_path, dept={"done_items": []}, readings=[_reading(rows=[])], events=[_goal()])
     assert m["value"] == 1 and "no done-when item" in m["gaps"][0]
@@ -276,12 +295,31 @@ def _run(engine, rid="r-1", system=False, slot=None, **kw):
 LINE = [{"version": 1, "engines": ["Plan", "Write", "Check", "Publish"], "source": "library"}]
 
 
-def test_sm3_an_engine_on_the_registered_line_a_function_and_a_grown_engine_are_all_clean(tmp_path):
+def test_sm3_an_engine_on_the_registered_line_a_function_s_system_row_and_a_grown_engine_are_all_clean(tmp_path):
     make(tmp_path, dept={"workflows": LINE}, state={"state": "running"}, table={"grown": ["Do"]},
          runs=[_run("Plan"), _run("Publish", "r-2"), _run("Do", "r-3"), _run("Identity", "r-4", system=True), _run("Audit", "r-5", True),
-               _run("Setup", "r-6")])
+               _run("Root", "r-6", True, what="refused a write that does not fit the interface: asks: $.kind: is wrong")])
     m = M.sm3(_depts(tmp_path))
     assert (m["value"], m["runs"], m["departments"]) == (0, 6, 1)
+    assert M.FUNCTIONS == ("Identity", "Adaptation", "Priority", "Coordination", "Audit"), "the five functions, and no more"
+
+
+@pytest.mark.parametrize("name", ["Identity", "Adaptation", "Priority", "Coordination", "Audit", "Root", "Setup"])
+def test_sm3_a_work_run_named_like_a_function_or_root_is_on_no_line_only_a_system_row_may_carry_the_name(tmp_path, name):
+    """Rule 3 and S-10: Root never starts an engine. A run that is not a system row and is called Root (or Setup, or a
+    function) is an engine on no line, and the allowance for the functions' own rows must not hide it."""
+    make(tmp_path, dept={"workflows": LINE}, state={"state": "running"},
+         runs=[_run("Plan"), _run(name, "r-9", system=False, slot="%s@brief.v1" % name)])
+    m = M.sm3(_depts(tmp_path))
+    assert (m["value"], m["status"]) == (1, "gap") and ("ran %s (run r-9, %s@brief.v1)" % (name, name)) in m["gaps"][0]
+
+
+def test_sm3_setup_is_no_function_of_a_department_that_lives_a_cycle_even_as_a_system_row(tmp_path):
+    """'Setup' runs on a root department, which SM-3 does not read; in a J2 department it is no title a system row carries."""
+    make(tmp_path, kind="root", runs=[_run("Setup", "r-1")])
+    assert M.sm3(_depts(tmp_path))["value"] == 0
+    make(tmp_path / "j2", state={"state": "running"}, runs=[_run("Setup", "r-1", system=True)])
+    assert M.sm3(_depts(tmp_path / "j2"))["value"] == 1
 
 
 def test_sm3_an_engine_the_counter_cut_that_still_ran_is_a_gap_that_names_the_run(tmp_path):
@@ -561,11 +599,18 @@ def test_the_report_has_every_metric_in_order_says_what_stays_pending_and_ends_o
     assert text.splitlines()[-1].startswith("proof run: SM-1 0, SM-3 1, SM-4 0, SM-6 0, SM-13 0;") and "Pending under C2" in text
 
 
+REFUSED_ROW = "refused a write that does not fit the interface: asks: $.kind: is not one of publish, setup"
+KEPT_ROW = "kept a record that does not fit the interface: " + "department: $.control: is not one of granted"
+
+
 @pytest.mark.parametrize("make_it, check, strict", [
     (lambda root: make(root, readings=[], events=[_goal()]), 1, 1),                                  # a claim with no reading
     (lambda root: make(root, state={"state": "waiting"}, asks=[]), 0, 1),                            # a dead end: named, not the gate's
     (lambda root: make(root, board=[_post(1, "Audit", ["Owner"])]), 1, 1),                           # a post to the owner from Audit
     (lambda root: make(root, runs=[_run("Gone")], state={"state": "running"}), 1, 1),                # an engine on no line
+    (lambda root: make(root, runs=[_run("Identity", "r-1", True, what=REFUSED_ROW)]), 1, 1),         # SM-13: a write the interface refused
+    (lambda root: make(root, runs=[_run("Priority", "r-1", True, what=KEPT_ROW)]), 1, 1),            # SM-13: a record it kept with a fault
+    (lambda root: make(root, runs=[_run("Identity", "r-1", True, what="set its rules within the parent's")]), 0, 1),   # a clean row: only SM-7 gaps
 ])
 def test_check_fails_on_a_gap_in_sm_1_3_4_13_and_strict_on_any_gap(tmp_path, capsys, make_it, check, strict):
     make_it(tmp_path)
@@ -573,6 +618,45 @@ def test_check_fails_on_a_gap_in_sm_1_3_4_13_and_strict_on_any_gap(tmp_path, cap
     assert M.main(["--records", str(tmp_path), "--strict"]) == strict
     assert M.main(["--records", str(tmp_path)]) == 0, "without --check the report only reports"
     assert "proof run: SM-1" in capsys.readouterr().out
+
+
+def test_the_gates_line_is_sm_1_2_3_4_and_13_and_a_record_with_nothing_in_it_has_no_hard_gap():
+    assert set(M.HARD) == {"SM-1", "SM-2", "SM-3", "SM-4", "SM-13"}
+    rep = M.build(M.find_departments(Path("/nonexistent-records-home")), [], ui=HERE)
+    assert rep["hard_gaps"] == [] and rep["ok"]
+
+
+def test_sm13_alone_makes_the_report_not_ok_and_names_it_on_the_last_line(tmp_path):
+    make(tmp_path, runs=[_run("Identity", "r-1", True, what=REFUSED_ROW)])
+    rep = M.build(_depts(tmp_path), [], ui=HERE)
+    assert rep["hard_gaps"] == ["SM-13"] and "SM-13" in rep["gaps"] and rep["ok"] is False
+    assert M.render(rep).splitlines()[-1].endswith("NOT OK: SM-13")
+
+
+def _lane(name="test_j2.py", rc=0, tests=10, failed=0):
+    return {"lane": name, "rc": rc, "tests": tests, "failed": failed, "skipped": 0, "seconds": 1.0,
+            "summary": "%d failed, %d passed" % (failed, tests - failed) if failed else "%d passed" % tests,
+            "props": {}, "refused_entries": 0, "refused_rows": [], "mode": "refuse"}
+
+
+def test_a_lane_that_failed_makes_the_report_not_ok_though_it_ran_tests_and_no_metric_gaps(tmp_path):
+    """The one thing that can fail the gate with every metric at its target: a scenario lane that ran its tests and had some fail
+    (rc 1, tests above 0, so SM-2 has no gap). Without lane_faults in `ok` this passed."""
+    make(tmp_path, runs=[_run("Plan")], state={"state": "running"}, dept={"workflows": LINE})
+    ok = M.build(_depts(tmp_path), [_lane("test_j2.py"), _lane("test_j2_api.py")], ui=HERE)
+    assert ok["ok"] is True and ok["lane_faults"] == [] and ok["hard_gaps"] == []
+    rep = M.build(_depts(tmp_path), [_lane("test_j2.py", rc=1, tests=10, failed=2), _lane("test_j2_api.py")], ui=HERE)
+    by = {m["id"]: m["status"] for m in rep["metrics"]}
+    assert by["SM-2"] == "met" and all(by[i] != "gap" for i in M.HARD), "no metric is in gap: only the lane failed"
+    assert rep["hard_gaps"] == [] and rep["ok"] is False
+    assert rep["lane_faults"] == ["lane test_j2.py: 2 failed, 8 passed"]
+    last = M.render(rep).splitlines()[-1]
+    assert last.endswith("NOT OK: lane test_j2.py: 2 failed, 8 passed") and "FAILED lane test_j2.py: 2 failed, 8 passed" in M.render(rep)
+
+
+def test_a_lane_that_timed_out_is_a_failed_lane_too(tmp_path):
+    rep = M.build([], [dict(_lane("test_j2.py", rc=-1, tests=4), summary="timed out after 1500 s")], ui=HERE)
+    assert rep["ok"] is False and rep["lane_faults"] == ["lane test_j2.py: timed out after 1500 s"]
 
 
 def test_a_clean_record_of_the_three_kinds_passes_strict_and_the_json_and_out_file_agree(tmp_path, capsys):
@@ -608,6 +692,36 @@ def test_the_text_report_says_how_each_metric_was_read_and_lists_the_waiting_jou
     assert "how: matches each goal.reached to the reading of the version it cites" in text
     assert "waits: J1 step:1 is partly (BL-2b)" in text
     assert "SM-5  pending" in text and "SM-14 met" in text
+
+
+def test_the_text_report_names_every_dead_end_not_a_count_of_them_and_says_what_is_carried_to_w3_proof(tmp_path, capsys):
+    """Nine departments stand unread with no ask (the proof run's own finding). 'And 1 more' hid one of them, and the gate
+    shows only the last line, so the text report lists every gap of a metric that counts departments; the runs of SM-3 can
+    run to hundreds and keep their cap, and --out names them all."""
+    for i in range(9):
+        make(tmp_path, "dref-%d" % i, group="t%d" % i, state={"state": "unread"}, asks=[])
+    make(tmp_path, "dref-live", group="live", state={"state": "running"}, runs=[_run("Gone", "r-%d" % i) for i in range(12)])
+    out = tmp_path / "report.json"
+    assert M.main(["--records", str(tmp_path), "--out", str(out)]) == 0
+    text = capsys.readouterr().out
+    sm6 = [ln for ln in text.splitlines() if ln.startswith("        gap: ") and "stands unread" in ln]
+    assert len(sm6) == 9 and len({ln.split(" / ")[0] for ln in sm6}) == 9, "each of the nine is a line of its own"
+    assert "more" not in text.split("SM-7")[0].split("SM-6")[1], "no 'and N more' under SM-6"
+    assert text.count("ran Gone (run") == 8 and "and 4 more (the report file, --out, names every one)" in text, "a long list keeps its cap"
+    assert "carried to W3-PROOF: 9 of these stand unread" in text and "no ask is filed" in text
+    assert text.splitlines()[-1].startswith("proof run: SM-1 0, SM-3 12, SM-4 0, SM-6 9, SM-13 0;")
+    rep = json.loads(out.read_text())
+    by = {m["id"]: m for m in rep["metrics"]}
+    assert len(by["SM-6"]["gaps"]) == 9 and by["SM-6"]["unread"] == 9 and len(by["SM-3"]["gaps"]) == 12, "the file names them all"
+    make(tmp_path / "other", "dref-w", state={"state": "waiting"}, asks=[])
+    assert M.sm6(_depts(tmp_path / "other"))["carried"] == [], "a dead end that is not an unread cycle carries nothing"
+
+
+def test_the_gate_writes_the_whole_report_to_a_file_and_points_at_it_when_a_gap_is_named():
+    gate = (HERE / "qa" / "walks" / "suites.sh").read_text()
+    line = next(ln for ln in gate.splitlines() if "qa/j2_metrics.py --check" in ln)
+    assert "--out /tmp/sutra-suite-metrics.json" in line and "/tmp/sutra-suite-metrics.txt" in line
+    assert 'grep -q "gaps named"' in gate and "whole report is /tmp/sutra-suite-metrics.json" in gate
 
 
 def test_the_suite_runs_on_a_kept_home_or_a_temporary_one_that_is_removed_after(tmp_path, monkeypatch, capsys):

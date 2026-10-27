@@ -65,7 +65,10 @@ FULL = ("test_j2_identity.py", "test_layer_identity.py", "test_layer_adaptation.
 #: the lanes the department suite must run (SM-2, M0.1): suites.sh names each on a pytest line
 DEPARTMENT_LANES = ("test_j2.py", "test_j2_api.py", "test_j1.py")
 KINDS_TO_PROVE = ("website", "default", "organic")                  # SM-7
-FUNCTIONS = ("Identity", "Adaptation", "Priority", "Coordination", "Audit", "Setup", "Root")
+#: the five functions, and Root, under which the interface writes the rows of a refusal (layer_schema.refused): the titles a
+#: *system* row of runs.json may carry (SM-3). A run that is not a system row is a work engine, whatever it is called
+FUNCTIONS = ("Identity", "Adaptation", "Priority", "Coordination", "Audit")
+SYSTEM_TITLES = FUNCTIONS + ("Root",)
 END_STATES = ("waiting", "blocked", "unread")                       # SM-6: the cycle stands and only the owner can move it
 JOURNEYS = ("J1", "J2", "J3", "J4")                                 # SM-14
 UNPROVEN = ("unproven", "failing", "fault")
@@ -74,6 +77,10 @@ RANK = {"met": 0, "to_confirm": 1, "not_met": 2}                    # the worse 
 TARGET = {"effort": 3, "calls": 40, "usd": 3.0, "share": 0.2}       # SM-8, SM-9 (Q15, proposed), SM-11
 #: the metrics the gate's line fails on (--check): the ones the build already holds at 0
 HARD = ("SM-1", "SM-2", "SM-3", "SM-4", "SM-13")
+#: the metrics whose gaps are runs, posts or rows, which can run to hundreds: the text report lists the first few and a count,
+#: and the report file (--out) names them all. Every other metric names each of its gaps in the text: "and 1 more" would hide the
+#: one a person looks for (SM-6, one gap for each department that stands with no next move for the owner, was cut so)
+LONG_LISTS = ("SM-3", "SM-4", "SM-11", "SM-14")
 #: what stays pending under C2: the live runs spend the owner's subscription and need Sutra Beta installed
 PENDING = (
     ("nine live Beta runs", "three briefs for each of website, default and organic, each inside its ceiling: they put "
@@ -263,7 +270,9 @@ def claim_fault(d, event):
     if not cited:
         return "no reading of %s is on the record" % (", ".join(ids) or " / ".join("%s v%s" % p for p in pairs))
     at = str(event.get("occurred_at") or "")
-    before = [r for r in cited if not at or str(r.get("at") or "") <= at] or cited
+    before = [r for r in cited if not at or str(r.get("at") or "") <= at]
+    if not before:                                                  # a reading made after the claim is not behind it
+        return "%s came after the claim" % ("its only reading" if len(cited) == 1 else "every reading it cites")
     return _reading_fault(d, before[-1])
 
 
@@ -277,7 +286,7 @@ def sm1(depts):
                 if why:
                     gaps.append("%s: goal reached (event %s) and %s" % (d.label, e.get("event_id") or e.get("seq"), why))
     return _m("SM-1", "'Goal reached' claimed without a reading of every done-when item", "0", len(gaps), not gaps, gaps,
-              "matches each goal.reached to the reading of the version it cites", claims=claims, read="%d claims" % claims)
+              "matches each goal.reached to the reading of the version it cites, made at or before the claim", claims=claims, read="%d claims" % claims)
 
 
 def sm3(depts):
@@ -286,14 +295,16 @@ def sm3(depts):
         if not d.lives_j2:
             continue
         scope += 1
-        ok = d.registered() | set(FUNCTIONS)
+        line = d.registered()
         for r in d.runs:
             runs += 1
-            if r.get("engine") not in ok:
+            # a function's own run is a system row; a work run (not a system row) named like a function or Root is on no line
+            if r.get("engine") not in line and not (r.get("system") and r.get("engine") in SYSTEM_TITLES):
                 gaps.append("%s: ran %s (run %s, %s), on no registered line and not added through J5" % (
                     d.label, r.get("engine"), r.get("id"), r.get("slot") or "no slot"))
     return _m("SM-3", "Runs of an engine on no registered line and not added through J5", "0", len(gaps), not gaps, gaps,
-              "runs.json against the union of dept.workflows, the engines added (grown) and the five functions",
+              "runs.json against the union of dept.workflows and the engines added (grown), and the system rows of the five "
+              "functions and of Root (which the interface writes its refusals under); a work run named like a function is a gap",
               departments=scope, runs=runs, read="%d runs of %d departments" % (runs, scope))
 
 
@@ -310,7 +321,7 @@ def sm4(depts):
 
 
 def sm6(depts):
-    seen, gaps = 0, []
+    seen, gaps, unread = 0, [], 0
     for d in depts:
         st = d.state.get("state")
         if st not in END_STATES:
@@ -320,12 +331,19 @@ def sm6(depts):
         if st == "blocked":
             pending = [a for a in pending if a.get("options")]
         if not pending:
+            unread += st == "unread"
             gaps.append("%s: stands %s and holds no pending ask%s: the owner has no next move" % (
                 d.label, st, " with options" if st == "blocked" else ""))
+    # an unread cycle is a product gap, not this report's: J.not_read leaves the cycle unread and files no ask. It is carried
+    # to W3-PROOF in the report itself, so the gap does not sit in a number alone
+    carried = ["%d of these stand unread: Audit could not read the version (the stubbed suite has no model to read it), so J.not_read "
+               "leaves the cycle unread and no ask is filed. Either Identity files an ask for an unread cycle (a product change "
+               "outside this package), or W3-PROOF rules that a cycle that is retried is not a dead end; until one of them, "
+               "--strict fails on SM-6" % unread] if unread else []
     return _m("SM-6", "Dead-end states: the owner has no next move", "0", len(gaps), not gaps, gaps,
               "an end state that is not done (waiting, blocked or unread; stopped has Start) holds a pending ask; a "
               "question the owner answers in words counts as a next move, a blocked cycle needs options", end_states=seen,
-              read="%d end states" % seen)
+              unread=unread, carried=carried, read="%d end states" % seen)
 
 
 def real_done(d):
@@ -728,10 +746,13 @@ def render(rep, width=8):
         out.append("%-5s %-8s %s: %s%s  [target %s]" % (m["id"], m["status"], m["name"], "-" if v is None else v,
                                                          " (%s)" % m["read"] if m.get("read") else "", m["target"]))
         out += textwrap.wrap(m["note"], 120, initial_indent="        how: ", subsequent_indent="             ") if m["note"] else []
-        for g in m["gaps"][:width]:
+        shown = m["gaps"][:width] if m["id"] in LONG_LISTS else m["gaps"]
+        for g in shown:
             out.append("        gap: %s" % g)
-        if len(m["gaps"]) > width:
-            out.append("        and %d more" % (len(m["gaps"]) - width))
+        if len(shown) < len(m["gaps"]):
+            out.append("        and %d more (the report file, --out, names every one)" % (len(m["gaps"]) - len(shown)))
+        for c in m.get("carried") or []:
+            out += textwrap.wrap(c, 120, initial_indent="        carried to W3-PROOF: ", subsequent_indent=" " * 29)
         for w in (m.get("waiting") or [])[:width]:
             out.append("        waits: %s" % w)
     out += ["", "Pending under C2 (live runs spend the owner's subscription):"] + ["  %s: %s" % (p["what"], p["why"]) for p in rep["pending"]]
