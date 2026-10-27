@@ -16,6 +16,12 @@ that names where it is (the page and the element) and what is wrong, and how ser
 A defect of medium or high weight fails the measure, so a done-when item the measure covers does not hold; a low one is
 filed and noted. It is the engine_runtime body's superset: the legacy body stays there as the fallback a broken layer
 file leaves, and W3-PROOF deletes it.
+
+Audit has a start of its own besides the version it reads (W3-BOARD, M8.7): a timer, every spot_every_s, held by its gate
+audit.when until a minute in the period that a hash of the department's ref and the period gives. That run is the same steps with
+the reading left out, and audit_file files a spot check: the state of the engines read, one audit.spot_check row, what it found
+told to Identity. audit_pick, audit_file and audit_when are the layer's own for that; a start on a version goes to engine_runtime's
+bodies as it always did.
 """
 import hashlib
 import json
@@ -410,7 +416,7 @@ def spot_checks(ref, d, now=None, skip=None):
     checks, found = [], []
     for name, bad, claim in rows:
         what = claim % ' and '.join(bad) if bad else None
-        checks.append({'check': name, 'ok': not bad, 'why': what or 'it holds'})
+        checks.append({'check': name, 'ok': not bad, 'why': (what or 'it holds')[:300]})
         if bad:
             found.append({'id': 'F%d' % (len(found) + 1), 'severity': SPOT_SEVERITY, 'claim': what[:600], 'where': ', '.join(bad)[:200],
                           'item': None, 'went_to': 'Identity', 'ask': None, 'at': W.now()})

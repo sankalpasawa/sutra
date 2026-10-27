@@ -6,7 +6,12 @@ the body in engine_runtime's Coordination region (ref_to), so the module names w
 changes. A body moves into this module when this layer changes it (move on touch); engine_runtime's copy stays until W3-PROOF.
 WORDS and LAYOUT hold Coordination's two prompt files, goal (does, skills) and tie (tie), so layers.prompt serves them from here
 and the .md bundle is read for none of its parts (K2). view() and engine_card() return the pane's and the card's read
-models by reference (K4).
+models (K4), the card with the questions the engine asked and answered.
+
+Questions between engines (W3-BOARD, PRD M4.9, behind SUTRA_BOARD_QUESTIONS): coord_question is Coordination's handler for a
+work engine's question, question_is_bounded its covering, and board_on, board_step and board_turn what engine_runtime's one hook in
+run_step calls. A question is an entry of questions.json (board/1); the engine it names answers in a run of its own, in its own
+slot, under its own envelope and gates, and the asker's step is run once more with the answer.
 """
 import json
 import os
