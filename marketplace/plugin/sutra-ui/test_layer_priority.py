@@ -429,24 +429,49 @@ def test_p3_room_for_two_engines_gives_a_counter_keeping_two(live, monkeypatch):
     assert S.validate("priority.price", first) == [] and S.validate("priority.price", second) == []
 
 
-def test_p3_an_ask_for_less_that_leaves_out_a_workflow_in_the_middle_of_the_line_fails_its_covering(live, monkeypatch):
-    """A covering that lets through an ask for less that is not the line cut short must fail: Summary reads Notes, so keeping
-    Facts and Summary and not Notes would be a line that does not work, and the department would end in a conflict for the
-    owner over an answer Priority should never have given. The room holds Facts and Summary (5 calls, 0.15 USD of 6 calls,
-    0.18 USD), so only the shape of the ask is wrong: the step fails, Adaptation is answered nothing, no price is written."""
+def _asks_then_says_yes(keep):
+    """Priority's agent asks for `keep` on the line that names Summary, and says yes to any line that does not."""
+    def bargain(prompt):
+        if "- Summary:" in prompt:
+            return {"answer": "counter", "keep": list(keep), "why": "room for two"}
+        return {"answer": "accept", "why": "the envelope has room"}
+    return bargain
+
+
+def test_p3_an_ask_for_less_that_leaves_out_a_workflow_in_the_middle_is_posted_as_the_line_cut_short(live, monkeypatch):
+    """A Priority that posts the agent's keep as it stands must fail: Summary reads Notes, so keeping Facts and Summary and not
+    Notes would be a line that does not work, and the department would end in a conflict for the owner over an ask Priority
+    should never have posted. The room holds Facts and Summary (5 calls, 0.15 USD of 6 calls, 0.18 USD), so only the shape of
+    the ask is wrong: what is posted is the line cut where it breaks, Facts, which is less than the agent asked for (approvals
+    only tighten) and a line that works; Adaptation takes it, and it is answered once, whole."""
     W, R, J, _ = live
-    _model(monkeypatch, R, {"adapt.line": THREE, "priority.bargain": {"answer": "counter", "keep": ["Facts", "Summary"], "why": "room for two"}})
+    _model(monkeypatch, R, {"adapt.line": THREE, "priority.bargain": _asks_then_says_yes(["Facts", "Summary"])})
     ref = _priced(live, {"Facts": (3, 0.07), "Notes": (1, 0.03), "Summary": (2, 0.08)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
-    [step] = [r for r in R.step_rows(ref) if r["step"] == "priority.bargain"]
-    assert step["status"] == "failed" and step["by"] == "model"
-    assert "asked to keep Facts, Summary, which is not the line from its first workflow on (from the start, that is Facts, Notes)" in step["why"]
+    assert all(r["status"] == "ok" for r in R.step_rows(ref) if r["step"].startswith("priority"))
     acts = _actions(J, ref)
-    assert acts[2:] == ["proposal.created"], "no ask for less was given, so no conflict is raised for the owner"
-    assert _prices(W, ref) == [] and W.dept(ref)["engines"] == [] and not [a for a in W.asks(ref) if a["kind"] == "conflict"]
+    assert acts[2:8] == ["proposal.created", "proposal.countered", "proposal.created", "proposal.granted", "workflow.validated", "workflow.registered"]
+    assert "conflict.raised" not in acts and not [a for a in W.asks(ref) if a["kind"] == "conflict"]
+    first, second = _prices(W, ref)
+    assert (first["answer"], first["keep"], first["engines"]) == ("counter", ["Facts"], ["Facts", "Notes", "Summary"]), "what was posted, not what was asked"
+    assert (second["answer"], second["keep"]) == ("accept", ["Facts"]) and W.dept(ref)["engines"] == ["Facts"]
+    assert S.validate("priority.price", first) == [] and S.validate("priority.price", second) == []
+
+
+def test_p3_an_ask_that_names_no_workflow_from_the_first_on_is_a_no_and_never_a_line_the_agent_did_not_ask_for(live, monkeypatch):
+    """An ask for Notes and Summary alone is a line that cannot start; the longest prefix of it is nothing, and nothing is a no
+    (approvals only tighten): not the draft's longer line in its place. The no carries the conflict to Identity, once."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"adapt.line": THREE, "priority.bargain": _asks_then_says_yes(["Notes", "Summary"])})
+    ref = _priced(live, {"Facts": (3, 0.07), "Notes": (1, 0.03), "Summary": (2, 0.08)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
+    acts = _actions(J, ref)
+    assert acts[2:7] == ["proposal.created", "proposal.refused", "conflict.raised", "identity.ruled", "ask.created"]
+    [price] = _prices(W, ref)
+    assert (price["answer"], price["keep"]) == ("reject", []) and W.dept(ref)["engines"] == []
+    assert len([a for a in W.asks(ref) if a["kind"] == "conflict"]) == 1
 
 
 def test_p3_an_ask_for_less_that_is_the_line_cut_short_stands_in_whatever_order_the_agent_names_it(live, monkeypatch):
-    """A covering stricter than the line (a shorter prefix refused, or the same names in another order) would turn a good
+    """A Priority stricter than the line (a shorter prefix refused, or the same names in another order) would turn a good
     answer into a stalled bargain: a smaller ask is allowed (approvals only tighten), and what is kept is posted in the
     line's order."""
     W, R, J, _ = live
@@ -457,8 +482,24 @@ def test_p3_an_ask_for_less_that_is_the_line_cut_short_stands_in_whatever_order_
     assert W.dept(ref)["engines"] == ["Facts", "Notes"] and "conflict.raised" not in _actions(J, ref)
 
 
-def test_p3_the_covering_holds_an_ask_for_less_to_the_line_cut_short_and_to_nothing_else(j2):
-    """Every shape of keep against a line of Facts, Notes, Summary with room for all of it (so only the shape is tested)."""
+def test_p3_cut_short_is_the_workflows_from_the_first_on_as_far_as_the_ask_names_them_and_as_far_as_the_room_fits():
+    """Every shape of keep against a line of Facts, Notes, Summary."""
+    line = ["Facts", "Notes", "Summary"]
+    cut = lambda *asked, fits=None: V1.cut_short(line, list(asked), fits)
+    assert cut("Facts") == ["Facts"] and cut("Facts", "Notes") == ["Facts", "Notes"] and cut("Facts", "Notes", "Summary") == line
+    assert cut("Notes", "Facts") == ["Facts", "Notes"], "the line's order, not the agent's"
+    assert cut("Facts", "Summary") == ["Facts"] and cut("Summary", "Facts") == ["Facts"], "a gap cuts the line where it breaks"
+    assert cut("Facts", "Facts") == ["Facts"], "a name twice is once"
+    for nothing in (("Notes",), ("Notes", "Summary"), ("Summary",), ()):
+        assert cut(*nothing) == [], nothing
+    assert cut("Facts", "Notes", "Summary", fits=["Facts", "Notes"]) == ["Facts", "Notes"], "no further than the room fits"
+    assert cut("Facts", fits=["Facts", "Notes"]) == ["Facts"], "and no further than the agent asked"
+
+
+def test_p3_the_covering_holds_an_ask_for_less_to_the_proposal_and_the_room_and_leaves_its_shape_to_the_post(j2):
+    """The covering is code's verdict on money and names: a keep with a workflow left out of the middle is not its to refuse
+    (priority_post cuts it, and the department's own M4.4 case needs a Priority that can ask to drop Check, for Adaptation to
+    close); a name the proposal does not hold, or a keep the room cannot hold, still fails."""
     W, R, J, _ = j2
     ref = _born(j2, settle=False)
     line = {"word": "line", "engines": [{"name": n} for n in ("Facts", "Notes", "Summary")]}
@@ -466,11 +507,8 @@ def test_p3_the_covering_holds_an_ask_for_less_to_the_line_cut_short_and_to_noth
     c["bag"]["priority.read"] = V1.priority_read(c, None, None)
     assert c["bag"]["priority.read"]["fits"] == ["Facts", "Notes", "Summary"]
     check = lambda *keep: V1.CHECK["price_is_observed"](c, None, None, {"answer": "counter", "keep": list(keep), "why": "room for them"})
-    for stands in (("Facts",), ("Facts", "Notes"), ("Notes", "Facts"), ("Facts", "Notes", "Summary")):
+    for stands in (("Facts",), ("Facts", "Notes"), ("Notes", "Facts"), ("Facts", "Summary"), ("Summary",), ("Facts", "Notes", "Summary")):
         assert check(*stands)["ok"], stands
-    for skips in (("Facts", "Summary"), ("Summary", "Facts"), ("Notes",), ("Notes", "Summary"), ("Summary",), ("Facts", "Facts")):
-        got = check(*skips)
-        assert not got["ok"] and "is not the line from its first workflow on" in got["notes"][0], skips
     assert "which the proposal does not name" in check("Facts", "Booking")["notes"][0]
     # the offline draft keeps the longest prefix that fits, so it is always one the covering lets through
     c["bag"]["priority.read"]["fits"] = ["Facts", "Notes"]

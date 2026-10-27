@@ -279,9 +279,24 @@ def _price_row(ctx, read, answer, keep, why):
         return None                      # the fault is a row and a count already (A1.20); a price never costs Adaptation its answer
 
 
+def cut_short(names, asked, fits=None):
+    """What an ask for less keeps, as the line cut short: the workflows from the first on, as far as the ask names them with
+    no gap, and no further than the longest prefix that fits (`fits`, when given). The line works from its first workflow on,
+    each reading what the one before it filed, so a workflow left out of the middle takes every later one with it (Summary
+    reads Notes: keeping Facts and Summary is a line that does not work, and keeping Facts is). It is never more than the
+    agent asked for, so approvals only tighten (S-08); nothing named from the first on is a no."""
+    named, out = {str(k) for k in asked or []}, []
+    for n in names:
+        if n not in named:
+            break
+        out.append(n)
+    return out if fits is None else out[:len(fits)]
+
+
 def priority_post(ctx, step, item):
     """Post the answer, and keep its price: one priority.price row per answer given. A line is answered as a whole: yes, no,
-    or an ask for less that keeps the workflows the agent named, else the longest prefix that fits. Moved from
+    or an ask for less that keeps the workflows the agent named from the first on, with no gap (cut_short), else, when the
+    agent named none of the line, the longest prefix that fits; an ask that names none from the first on is a no. Moved from
     engine_runtime.priority_post; the answers and the words are the same."""
     ref, pl, thread = ctx['ref'], ctx['post']['payload'], ctx['post']['thread']
     read, got = ctx['bag']['priority.read'], ctx['bag']['priority.bargain']
@@ -291,7 +306,7 @@ def priority_post(ctx, step, item):
     if pl.get('word') == 'line':
         if answer == 'counter':
             asked = [str(k) for k in got.get('keep') or []]
-            keep = [n for n in names if n in asked] or list(read.get('fits') or [])
+            keep = cut_short(names, asked, read.get('fits')) if [n for n in names if n in asked] else list(read.get('fits') or [])
             if keep and len(keep) < len(names):
                 why = why or 'the envelope has room for %d of them' % len(keep)
                 row = R.post(ref, 'Priority', 'Adaptation', 'propose', {'word': 'line', 'counter': True, 'keep': keep, 'why': why}, thread=thread)
@@ -320,9 +335,10 @@ def priority_post(ctx, step, item):
 
 def _fact_notes(ctx, out):
     """What the facts Priority read say against the answer (M5.3): a yes, or an ask for less, never spends what the room
-    does not hold, and an ask for less keeps the line from its first workflow on, cut short. A no, or a smaller yes or ask,
-    always stands: approvals only tighten (S-08). Empty when the step has no facts to hold the answer to (the contract's
-    samples, a department's older read)."""
+    does not hold. A no, or a smaller yes or ask, always stands: approvals only tighten (S-08). The shape of an ask for less
+    is not held here: priority_post posts what it names as the line cut short (cut_short), so an ask that leaves out a
+    workflow in the middle is cut where it breaks and goes no further than the agent asked. Empty when the step has no
+    facts to hold the answer to (the contract's samples, a department's older read)."""
     read = ((ctx or {}).get('bag') or {}).get('priority.read')
     if not isinstance(read, dict) or not isinstance(read.get('estimate'), dict) or not isinstance(read.get('room'), dict):
         return []
@@ -336,14 +352,6 @@ def _fact_notes(ctx, out):
         strange = [k for k in keep if k not in names]
         if strange:
             return ['an ask for less keeps %s, which the proposal does not name' % ', '.join(strange)]
-        # the line works from its first workflow on, each reading what the one before it filed: what an ask for less keeps is
-        # that line cut short, never one with a workflow left out of the middle (the draft keeps the longest prefix that
-        # fits, fits_of; a shorter prefix still stands, a smaller yes being allowed). priority_post puts what is kept in the
-        # line's order, so the order the agent names them in is not held.
-        first = names[:len(keep)]
-        if sorted(keep) != sorted(first):
-            return ['asked to keep %s, which is not the line from its first workflow on (from the start, that is %s)' % (
-                ', '.join(keep), ', '.join(first))]
     else:
         return []
     calls = sum(int((per.get(n) or {}).get('calls') or 0) for n in keep)
@@ -364,8 +372,7 @@ def price_is_observed(ctx, step, item, out):
     """Priority's covering (M2.4, M5.3): yes, less or no, each with its price, and the price held to the facts. The answer
     names its price: the line that says what it costs against the room left; an ask for less names what it keeps. Then the
     facts Priority read stand over it: what a yes or an ask for less keeps costs no more than the room left, and no more
-    workflows than the limit, and an ask for less keeps the line from its first workflow on. An answer that fails them
-    fails the step; nothing is taken in its place. The body of
+    workflows than the limit. An answer that fails them fails the step; nothing is taken in its place. The body of
     engine_runtime's answer_has_its_price, with the facts added."""
     read = ((ctx or {}).get('bag') or {}).get('priority.read')
     if isinstance(read, dict) and read.get('word') == 'round':
