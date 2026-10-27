@@ -960,14 +960,37 @@ def limit_of(d, name):
     return ENVELOPE
 
 
+def envelope_given(ref, name):
+    """The limit Priority last gave an engine of its own, as the ledger holds it ({calls, usd}; envelope.granted, which
+    j2_runtime.on_granted writes when Priority gives an engine its limit), or None: the department has no ledger, or the ledger
+    holds no grant of this engine (born with its limit, or given it while stopped). A grant that kept the limit the engine already
+    held says nothing of where it started, so it is passed over; the last grant stands, since a limit that was lost and given
+    again started again. What the owner stated as a budget is in it: each engine is given a share of it (priority_grant)."""
+    if not ref:
+        return None
+    try:
+        import j2_runtime
+        if not j2_runtime.enabled():
+            return None
+        got = [e["payload"] for e in j2_runtime.events(ref)
+               if e.get("action") == "envelope.granted" and isinstance(e.get("payload"), dict)
+               and e["payload"].get("engine") == name and not e["payload"].get("kept")]
+    except Exception:  # noqa: BLE001 -- a cap is judged from the template when the ledger cannot be read
+        return None
+    return {k: got[-1][k] for k in ("calls", "usd") if got and got[-1].get(k) is not None} or None
+
+
 def envelope_start(d, name):
     """Where an engine's limit started: the one Priority gave it at birth, from its template (the first build's constant
-    for a department off the engine runtime). A raise the owner chooses on an ask may reach S.RAISE_CAP times this and
-    no more (PRD M5.4)."""
-    if (d or {}).get("runtime") == 2:
-        import engine_runtime
-        return engine_runtime.engine_limit(name)
-    return dict(ENVELOPE)
+    for a department off the engine runtime), or, when the owner stated a budget and Priority gave it a share of it, that share
+    when it is less (envelope_given): a cap of twice the template over a limit given at a fraction of it is no cap. A raise the
+    owner chooses on an ask may reach S.RAISE_CAP times this and no more (PRD M5.4)."""
+    if (d or {}).get("runtime") != 2:
+        return dict(ENVELOPE)
+    import engine_runtime
+    start, given = engine_runtime.engine_limit(name), envelope_given((d or {}).get("ref"), name) or {}
+    return {"calls": min(int(start["calls"]), int(given.get("calls", start["calls"]))),
+            "usd": min(float(start["usd"]), float(given.get("usd", start["usd"])))}
 
 
 def envelope_over(d, name, calls, usd):

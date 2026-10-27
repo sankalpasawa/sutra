@@ -523,10 +523,17 @@ def test_m3_3_what_the_owner_says_it_may_spend_is_the_most_its_limits_come_to(j2
         assert "Priority's limits within the 1 USD a day you said" in tell
         given = [e for e in J.events(ref) if e["action"] == "envelope.granted" and not e["payload"]["kept"]]
         assert {e["actor"] for e in given} == {"Priority"}                             # Priority's write, never Identity's
+        # and that share is where each limit started: a raise is held to twice it, not to twice the template's (M5.4, found by a
+        # verifier 2026-10-27: a raise to 12 USD was taken over a limit given at a fraction of a dollar)
+        for n, e in envs.items():
+            assert W.envelope_start(d, n)["usd"] == e["usd"], n
+            assert W.envelope_over(d, n, e["calls"], round(2 * e["usd"] + 0.01, 4)), n
+            assert W.envelope_over(d, n, e["calls"], round(2 * e["usd"], 4)) is None, n
     else:
         assert {s: envs[s]["usd"] for s in W.SYSTEMS} == {s: float(t["usd"]) for s in W.SYSTEMS}
         assert ("500 rupees a day is not in US dollars" in tell) == ("rupees" in said)
         assert "Priority's limits from its template" in tell
+        assert all(W.envelope_start(d, n) == R.engine_limit(n) for n in envs), "no budget was stated: the engines start at the template"
 
 
 def test_m3_3_with_a_model_the_answer_is_on_the_record_before_identity_reads_it(j2, monkeypatch):

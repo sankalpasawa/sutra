@@ -1899,6 +1899,80 @@ def test_q1_q2_a_raise_past_the_cap_on_a_card_with_a_thread_is_refused_before_th
     assert ok.status_code == 200 and ok.json()["status"] == "chosen", "at the cap the choice is taken"
 
 
+def _given_a_stated_budget(live, within):
+    """A department whose owner stated a budget: its limits are cleared and Priority gives every engine a share of `within` USD a day
+    (Identity's budget point, R._priority_limits), each no more than the template's."""
+    W, R, J, _ = live
+    ref = _born(live)
+    d = W.dept(ref)
+    d["envelopes"] = {}
+    W.save_dept(ref, d, by="priority")
+    assert R._priority_limits(ref, within=within) is True
+    return ref
+
+
+def test_q1_the_cap_is_twice_the_limit_the_engine_was_given_when_the_owner_stated_a_budget(live):
+    """A cap of twice the template over a limit given at a fraction of it must fail (found by a verifier 2026-10-27: with 1 USD a day
+    said, each engine started at 0.16 USD and a raise to 12 USD, 75 times where it started, was taken): RAISE_CAP times where the
+    engine started is the share Priority gave it, for every engine, in calls and in money, whether the raise is offered, chosen on
+    a card with a thread, or set for an option."""
+    W, R, J, _ = live
+    ref = _given_a_stated_budget(live, 1.0)
+    d = W.dept(ref)
+    template = {n: R.engine_limit(n) for n in d["envelopes"]}
+    assert set(d["envelopes"]) >= set(W.SYSTEMS) | set(LINE)
+    shares = {n: d["envelopes"][n]["usd"] for n in d["envelopes"]}
+    assert all(0 < shares[n] < template[n]["usd"] for n in shares), shares
+    api = _client()
+    for n, env in d["envelopes"].items():
+        start = W.envelope_start(d, n)
+        assert start == {"calls": template[n]["calls"], "usd": shares[n]}, (n, start)
+        over = round(2 * shares[n] + 0.01, 4)
+        words = W.envelope_over(d, n, env["calls"], over)
+        assert words and words.startswith("%s may be raised to %d calls and %.2f USD a day" % (n, 2 * env["calls"], 2 * shares[n])), (n, words)
+        assert W.envelope_over(d, n, env["calls"], round(2 * shares[n], 4)) is None, "at twice the share the raise is allowed"
+        assert W.envelope_over(d, n, 2 * env["calls"] + 1, shares[n]) and W.envelope_over(d, n, 2 * env["calls"], shares[n]) is None
+        with pytest.raises(W.AskError) as exc:
+            W.set_envelope(ref, n, usd=over, by="option")
+        assert exc.value.code == "OVER_CAP" and W.dept(ref)["envelopes"][n] == env
+    # the stale raise to the template's cap, on the card of a bargain at its limit (a card with a thread): 409, and the share stays
+    stop = W.option(W.STOP_OPTION, "Stop here", "the department stops where it is")
+    old = {"what": "envelope", "engine": "Plan", "calls": d["envelopes"]["Plan"]["calls"], "usd": 12.0}
+    card = R._blocked(ref, d, {"src": R.OWNER}, "Priority said no.", "The plan needs your word.", "Identity, settling the bargain", "no room",
+                      options=[W.option("raise:Plan", "Add budget", "to the template's cap", old), stop])
+    got = api.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "raise:Plan"})
+    assert (got.status_code, got.json()["detail"]) == (409, {"code": "OVER_CAP"})
+    assert W.dept(ref)["envelopes"]["Plan"]["usd"] == shares["Plan"] and next(a for a in W.asks(ref) if a["id"] == card["id"])["status"] == "pending"
+    # twice the share is allowed, and a raise Priority offers is never past it
+    twice = round(2 * shares["Plan"], 4)
+    fine = W.option("raise:Plan", "Add budget", "to twice the share", dict(old, usd=twice))
+    W._put_ask(ref, dict(card, options=[fine, stop]))
+    assert api.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "raise:Plan"}).status_code == 200
+    W.run_until_idle(ref, limit=100)                      # Identity applies a choice on a card with a thread, as a step
+    assert W.dept(ref)["envelopes"]["Plan"]["usd"] == twice
+    env = d["envelopes"]["Write"]
+    held = V1.hold_options(ref, W.dept(ref), "Write", env["calls"], shares["Write"], env)
+    raised = [o for o in held if o["kind"] == "raise"]
+    assert [o["id"] for o in raised] == ["raise:Write"] and shares["Write"] < raised[0]["params"]["usd"] <= round(2 * shares["Write"], 4), held
+    way_past = V1.hold_options(ref, W.dept(ref), "Write", env["calls"], shares["Write"] + 1, env)
+    assert [o["kind"] for o in way_past] == ["stop"], "one run more would take it past twice the share, so no raise is offered"
+
+
+def test_q1_a_limit_the_template_gave_keeps_the_template_cap_and_a_limit_the_owner_set_does_not_move_the_start(live):
+    """A department that stated no budget starts where its template put it, twice that is its cap, and a limit the owner types in the
+    box on the card (by the owner) moves where the engine stands and not where it started."""
+    W, R, J, _ = live
+    ref = _born(live)
+    d = W.dept(ref)
+    assert W.envelope_start(d, "Plan") == {"calls": 240, "usd": 6.0} and W.envelope_over(d, "Plan", 480, 12.0) is None
+    assert W.envelope_over(d, "Plan", 480, 12.01)
+    W.set_envelope(ref, "Plan", calls=100, usd=1.0, by="the owner")
+    assert W.envelope_start(W.dept(ref), "Plan") == {"calls": 240, "usd": 6.0}, "the start is what Priority gave, not what the owner typed"
+    assert W.envelope_over(W.dept(ref), "Plan", 480, 12.0) is None and W.envelope_over(W.dept(ref), "Plan", 481, 1.0)
+    W.set_envelope(ref, "Plan", calls=9999, usd=99.0, by="the owner")
+    assert W.envelope_over(W.dept(ref), "Plan", 9999, 99.0) is None, "a limit no higher than it is now is never over"
+
+
 def test_q2_a_round_past_the_calls_or_the_money_is_said_no_to_in_money_and_the_raise_is_held_to_the_cap(live, rounds_sendable):
     """A round funded though the goal has spent what the ceiling holds must fail: with 12 calls and 0.60 USD spent, a line
     estimated at the same again, and a ceiling of 20 calls, round 2 is over by calls, and the raise offered is the most the cap
