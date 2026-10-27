@@ -3884,13 +3884,31 @@ def audit_rows(dept_items, mech, said, sampled):
     return rows
 
 
+#: the most findings one reading carries, and the most one post to Identity names
+FINDINGS_MAX = 12
+#: how serious a finding is, the worse first (audit.finding's severities): the order a reading keeps its findings in
+SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def _finding_severity(f):
+    """A finding's weight as the interface types it (audit.finding): critical is high, and one with no weight, or one that is
+    not high, medium or low, is medium."""
+    sev = str(f.get("severity") or "").strip().lower()
+    return "high" if sev == "critical" else sev if sev in SEVERITY_ORDER else "medium"
+
+
+def _worst_first(found):
+    """The findings of a reading, the worse first and each weight in the order it was found (a stable sort), so the cap on what a
+    reading carries cuts the lightest and never the worst: a page with many small defects does not push a high finding out."""
+    return sorted(found, key=lambda f: SEVERITY_ORDER[_finding_severity(f)])
+
+
 def _audit_reading_findings(found, art):
     """The findings of a reading as the interface types them (audit.finding): numbered F1, F2, ... within the reading, each
     with where it is and what, how serious, the item it belongs to, and that Identity was told."""
     out = []
-    for n, f in enumerate(found[:12], 1):
-        sev = str(f.get("severity") or "").strip().lower()
-        sev = "high" if sev == "critical" else sev if sev in ("high", "medium", "low") else "medium"
+    for n, f in enumerate(found[:FINDINGS_MAX], 1):
+        sev = _finding_severity(f)
         item_id = f.get("item") if re.match(r"^D[1-9][0-9]?$", str(f.get("item") or "")) else None
         out.append({"id": "F%d" % n, "severity": sev, "claim": _clip(f.get("claim"), 600),
                     "where": " ".join(str(f.get("where") or f.get("page") or art or "").split())[:200], "item": item_id,
@@ -3972,6 +3990,7 @@ def audit_file(ctx, step, item):
                       "claim": "“%s” %s: %s" % (_clip(it.get("text"), 120).rstrip("."),
                                                 "does not hold" if verdicts[it["id"]] == "not_met" else "cannot be confirmed yet",
                                                 row["claim"].rstrip("."))})
+    found = _worst_first(found)                       # the reading and the post to Identity cut at FINDINGS_MAX: the lightest go, never the worst
     findings = _audit_reading_findings(found, art)
     reading = audit_record(ref, ctx.get("slot"), art, v, read, why_not, rows, findings) if art else None
     met = [i for i, x in verdicts.items() if x == "met"]
@@ -3987,7 +4006,7 @@ def audit_file(ctx, step, item):
     high = [f for f in found if str(f.get("severity") or "").lower() == "high"]
     claim = str((high or found)[0]["claim"])
     post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high" if high else "low",
-                                              "findings": found[:12], "about_version": v, "artifact": art,
+                                              "findings": found[:FINDINGS_MAX], "about_version": v, "artifact": art,
                                               "reading": reading and reading["id"]},
          about={"art": art, "v": v})
     if reading:

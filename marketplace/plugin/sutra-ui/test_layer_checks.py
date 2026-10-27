@@ -613,11 +613,12 @@ def test_g2_long_words_are_cut_to_the_findings_bounds():
 
 
 # ---- G2 · the mechanical step: the record as it always was, and the pages ---------------------------------------------------
-def a_website(j2, monkeypatch, write_page=None):
+def a_website(j2, monkeypatch, write_page=None, judge=None):
     """A website department as a person makes one (founded, asked for, set up by Root), its Live site stamped. `write_page` is
-    what the Write step's agent says of a page (a callable of the prompt); Audit's reader says every item is met."""
+    what the Write step's agent says of a page (a callable of the prompt), `judge` what Audit's judge says of the pages (its
+    findings, a list; none by default); Audit's reader says every item is met."""
     W, R, J, founding, FV = j2
-    answers = {"audit.items": says("met"), "audit.judge": {"ok": True, "findings": []}}
+    answers = {"audit.items": says("met"), "audit.judge": {"ok": not judge, "findings": judge or []}}
     if write_page:
         answers["write.page"] = write_page
     stub(monkeypatch, R, answers)
@@ -782,3 +783,78 @@ def test_g2_a_placeholder_reaches_the_reading_as_a_finding_that_names_the_page_a
     holes = [f for f in row["findings"] if "to be confirmed" in f["claim"]]
     assert holes and all(S.validate("audit.finding", f) == [] and f["severity"] == "high" for f in holes)
     assert all(re.match(r"^[a-z0-9-]+\.html: the text 'to be confirmed'$", f["where"]) for f in holes), [f["where"] for f in holes]
+
+
+# ---- G2 · fix round 1: the worst findings stay in the reading, and the words are the owner's -------------------------------------
+MANY = "<h1>Welcome</h1>" + "".join("<img src='photo%d.png'>" % n for n in range(14))     # more defects than a reading carries
+HIGH = {"page": "index.html", "claim": "states a fee nobody gave", "severity": "high"}
+RANK = {"high": 0, "medium": 1, "low": 2}
+
+
+def a_reading_of(j2, monkeypatch, ref, files, judged=(), slot="Audit@probe.v1"):
+    """Audit's filing step (R.audit_file) on a department that exists: the v1 mechanical step's own result over `files`, the
+    judge's findings (`judged`), and a reader who says every item is met. Returns what it said and the reading it wrote."""
+    W, R, J, _, _ = j2
+    mech = mechanical(j2, monkeypatch, ref, files)
+    items = json.dumps(W.items_of(W.dept(ref)))
+    ctx = {"ref": ref, "dept": W.dept(ref), "inp": {"v": 1}, "slot": slot, "how": {"audit.items": "model"},
+           "bag": {"audit.pick": {"sample": True, "pages": []}, "audit.mechanical": mech,
+                   "audit.judge": {"ok": not judged, "findings": list(judged)},
+                   "audit.items": says("met")("THE DONE-WHEN ITEMS:\n%s\n\nWHAT CODE MEASURED:" % items)}}
+    out = R.audit_file(ctx, None, None)
+    return out, next(r for r in W.rows(ref, "readings.jsonl") if r["id"] == out["reading"]["id"]), ctx
+
+
+def test_g2_fix_a_site_with_more_defects_than_a_reading_carries_keeps_the_judges_high_finding(j2, monkeypatch):
+    """A reading carries at most twelve findings; the worst are the ones it keeps. Fourteen images with no alt come before the judge's
+    one high finding in the order Audit finds them, and the high finding is still the first the reading holds and the first Identity is told."""
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    assert len(defects(site(MANY))) == 14
+    out, row, _ = a_reading_of(j2, monkeypatch, ref, site(MANY), [HIGH])
+    assert len(row["findings"]) == 12 and [f["id"] for f in row["findings"]] == ["F%d" % n for n in range(1, 13)]
+    assert (row["findings"][0]["severity"], row["findings"][0]["claim"]) == ("high", HIGH["claim"])
+    assert all(S.validate("audit.finding", f) == [] for f in row["findings"])
+    assert out["reading"]["high"] is True and "states a fee nobody gave" in out["said"], "the reading says a high finding exists, and which"
+    (post,) = [p for p in R.board(ref) if (p["payload"] or {}).get("word") == "finding" and p["payload"].get("reading") == row["id"]]
+    assert post["payload"]["severity"] == "high" and len(post["payload"]["findings"]) == 12
+    assert post["payload"]["findings"][0]["claim"] == HIGH["claim"], "Identity is told the high finding, not only the twelve defects before it"
+    tell = [p for p in R.board(ref) if (p["payload"] or {}).get("word") == "reading" and p["payload"].get("reading") == row["id"]]
+    assert tell and tell[-1]["payload"]["high"] is True
+
+
+def test_g2_fix_findings_are_ranked_high_then_medium_then_low_and_keep_their_order_within_a_weight(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    judged = [{"page": "index.html", "claim": "the tone is stiff", "severity": "low"}, {"page": "index.html", "claim": "no weight given"},
+              {"page": "lessons.html", "claim": "a reader could be harmed", "severity": "critical"}, HIGH]
+    files = site("<h1>Welcome</h1><a href='#hours'>Hours</a><img src='a.png'><img src='b.png'><p>Phone: to be confirmed.</p>")
+    _, row, _ = a_reading_of(j2, monkeypatch, ref, files, judged)
+    assert [(f["severity"], f["claim"][:14]) for f in row["findings"]] == [
+        ("high", "the page says "), ("high", "a reader could"), ("high", "states a fee n"),
+        ("medium", "the image 'a.p"), ("medium", "the image 'b.p"), ("medium", "no weight give"),
+        ("low", "the link 'Hour"), ("low", "the tone is st")], "by weight, and as found within one (critical is high)"
+    assert [f["id"] for f in row["findings"]] == ["F%d" % n for n in range(1, 9)]
+
+
+def test_g2_fix_a_reading_that_finds_few_things_is_as_it_was(j2, monkeypatch):
+    """Nothing is cut under twelve and a list of one weight keeps the order it was found in."""
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    _, row, _ = a_reading_of(j2, monkeypatch, ref, site("<h1>Welcome</h1><img src='z.png'><img src='a.png'><img src='m.png'>"))
+    assert [f["where"] for f in row["findings"]] == ["index.html: the image 'z.png'", "index.html: the image 'a.png'", "index.html: the image 'm.png'"]
+
+
+def test_g2_fix_through_a_real_department_the_judges_high_finding_is_in_the_reading_though_every_page_has_defects(j2, monkeypatch):
+    """The probe that found the gap: a department whose six pages each carry two images with no alt (twelve defects), and a judge that
+    finds one high thing. The reading holds it, says a high finding exists, and Identity was told it."""
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch, a_page_with("<img src='a.png'><img src='b.png'>"), judge=[HIGH])
+    rows = W.rows(ref, "readings.jsonl")
+    assert rows and all(r["read"] for r in rows)
+    for row in rows:
+        assert len(row["findings"]) <= 12
+        assert HIGH["claim"] in [f["claim"] for f in row["findings"]], [f["claim"][:30] for f in row["findings"]]
+        assert row["findings"][0]["severity"] == "high"
+    told = [p for p in R.board(ref) if (p["payload"] or {}).get("word") == "reading"]
+    assert told and all(p["payload"]["high"] is True for p in told)
