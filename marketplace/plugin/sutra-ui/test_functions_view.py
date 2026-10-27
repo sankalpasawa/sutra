@@ -1649,6 +1649,25 @@ def test_f14_audits_reading_says_what_it_read_and_what_it_found_in_words_and_nev
     assert board[yes]["line"] == row[yes]["summary"], "the board says the reading too, where it printed an act with nothing after it"
 
 
+def test_f14_a_line_that_carries_an_inside_phrase_is_said_in_the_owners_words_and_the_owners_own_words_are_not(mods):
+    """The route's own-words step (found by a verifier 2026-10-27): the sample board had no line with an inside phrase in it, so the
+    step could be removed and every F14 test stayed green. A line a function wrote is said in the owner's words; words the owner
+    said, which a function carries on whole, are left as they were said."""
+    W, R, J, F = mods
+    import owner_words
+    inside = [(a, b) for a, b in owner_words.BARGAIN_WORDS if a == "Take the counter, or take it to Identity"]
+    assert inside, "the phrase is one of the bargain's inside phrases"
+    said = _say(W, R, "Adaptation", "Identity", "propose", {"word": "line", "line": "Take the counter, or take it to Identity"}, "x-p1")
+    own = _say(W, R, "Identity", "Adaptation", "request", {"word": "line", "words": "Take the counter, or take it to Identity"}, "x-p2")
+    rows = _client().get("/api/native/%s/messages" % REF).json()
+    row = {r["n"]: r for r in rows}
+    assert row[said]["summary"] == "Take Priority's ask for less, or take it to Identity", row[said]["summary"]
+    assert "ask for less" in row[said]["summary"] and "counter" not in row[said]["summary"].lower()
+    assert [r for r in rows if _banned(r) and r["n"] != own] == [], "none of the functions' lines holds grant, counter or refuse"
+    assert _banned(row[own]), "(and the owner's, which is theirs, is the one that does)"
+    assert row[own]["summary"] == "Take the counter, or take it to Identity", "the owner's own words stand as they were said"
+
+
 def test_f14_a_department_that_is_not_there_or_not_on_the_runtime_is_a_404_and_journeys_stay_theirs(mods, monkeypatch):
     W, R, J, F = mods
     c = _client()
