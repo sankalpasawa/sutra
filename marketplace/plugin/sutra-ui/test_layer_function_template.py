@@ -485,7 +485,10 @@ def test_a_child_version_overlay_changes_one_field_and_keeps_the_boundaries(rt, 
     assert C.case_14_function_template(child) == []
     base = card_of(rt, "Identity")
     monkeypatch.setitem(layers._LOADED, "identity/v2", child)
-    monkeypatch.setitem(S.DEFAULT_PINS, "identity", "identity/v2")
+    listed = layers.available                                                  # the interface lists layers/ only; the child is a stub
+    monkeypatch.setattr(layers, "available", lambda: dict(listed(), identity=listed()["identity"] + ["identity/v2"]))
+    d = W.dept(ref)                                                            # W3-PINS: a department runs the version its record pins
+    W.save_dept(ref, dict(d, layers=dict(d["layers"], identity="identity/v2")), by="root")
     got = card_of(rt, "Identity")
     assert got != base and "1) Name the goal item or the rule that applies, and say which. 2) Separate what is known" in got
     changed = [(a, b) for a, b in zip(base.split("\n"), got.split("\n")) if a != b]
