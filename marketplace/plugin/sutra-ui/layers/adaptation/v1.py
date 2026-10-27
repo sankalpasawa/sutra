@@ -126,10 +126,14 @@ def fit_name(text):
     """A name as the interface's NAME_RE has it: letters, numbers, spaces and & ' . - only, the first a letter or a number,
     forty at most. A model names an engine 'Facts (web)' or 'Site: 2': the words are its and the characters are the
     interface's, so a character the interface refuses is a space and an accent is dropped ('Cafe' for 'Café'), before the
-    line is judged and as it is posted. A name that fits is left as it is, its spaces run together as they always were."""
+    line is judged and as it is posted. A name that fits is left as it is, its spaces run together as they always were.
+    The cut at forty can fall on a space ('Facts web Facts web Facts web Facts web Facts web'): the space the cut leaves is
+    not kept, because the interface takes a name that ends in one and everything downstream runs a name's spaces together
+    again, which drops it, so the name would no longer be the name the line was judged with. Fitting a name twice is
+    fitting it once."""
     kept = ''.join(' ' if not (ch.isascii() and (ch.isalnum() or ch in " &'.-")) else ch
                    for ch in unicodedata.normalize('NFKD', str(text or '')) if not unicodedata.combining(ch))
-    return re.sub(r'^[^A-Za-z0-9]+', '', ' '.join(kept.split()))[:40]
+    return re.sub(r'^[^A-Za-z0-9]+', '', ' '.join(kept.split()))[:40].rstrip()
 
 
 def fit_engines(engs):
