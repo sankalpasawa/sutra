@@ -219,7 +219,6 @@ def test_p1_not_met_a_round_the_brief_corrected_the_line_run_again_and_the_goal_
     # not met: Audit read Live site v1 and found D2 does not hold
     first = W.rows(ref, "readings.jsonl")[0]
     assert first["v"] == 1 and {i["id"]: i["verdict"] for i in first["items"]} == {"D1": "met", "D2": "not_met", "D3": "met"}
-    brief_before, _ = _brief(W, ref)
     _pursue(j2, ref, neighbours)
     d = W.dept(ref)
     # a round, named D2 and priced: one proposal to Priority, Priority's answer in its thread, and a price row for it
@@ -228,10 +227,15 @@ def test_p1_not_met_a_round_the_brief_corrected_the_line_run_again_and_the_goal_
     yes = [p for p in R.board(ref) if p["src"] == "Priority" and p["thread"] == sent["thread"] and p["msg_type"] == "accept-proposal"]
     assert yes and yes[0]["payload"]["word"] == "round", "Priority said yes to the round"
     assert [r for r in W.rows(ref, "prices.jsonl") if r.get("thread") == sent["thread"]], "and priced it"
-    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)][0] == (1, "granted")
+    first_round = v1().rounds_of(ref)[0]                    # Priority granted it; Identity then filed it and Audit read after it, each moving it on
+    assert first_round["round"] == 1 and first_round["status"] in v1().RAN
     # the Brief has the correction, as a new version, filed as 'Correct this' with no stamp
+    # (the version before it is read from the record, not taken before the round: a build whose Identity files rounds runs the
+    # whole loop inside the motor, so there is no moment between the reading and the filing for the test to stand in)
     brief_after, text = _brief(W, ref)
-    assert brief_after == brief_before + 1 and "Correct this" in text and "Every page names the phone line" in text, text
+    before = W.read_files(ref, "Brief", brief_after - 1).get("brief.md", "") if brief_after > 1 else ""
+    assert brief_after > 1 and "Correct this" not in before, "the correction is a new version of the Brief"
+    assert "Correct this" in text and "Every page names the phone line" in text, text
     assert not [a for a in W.asks(ref) if a["kind"] in ("line", "j2_identity", "conflict") and a["status"] == "pending"], "no stamp was asked for a round"
     # the registered line ran again: Live site v2, read again, and every item holds
     assert W.latest(ref, "Live site")["v"] == 2 and {n: _work(W, ref).count(n) for n in LINE} == {n: 2 for n in LINE}
@@ -272,7 +276,7 @@ def test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silenc
     ceiling = ((W.dept(ref).get("ceiling") or {}).get("rounds")) or neighbours.ceiling
     rows = v1().rounds_of(ref)
     assert [r["round"] for r in rows] == list(range(1, ceiling + 2)), "one round past the ceiling was proposed, and no more"
-    assert [r["status"] for r in rows][:-1] == ["granted"] * ceiling and rows[-1]["status"] == "refused", "the last was not funded"
+    assert len(rows[:-1]) == ceiling and all(r["status"] in v1().RAN for r in rows[:-1]) and rows[-1]["status"] == "refused", "the last was not funded"
     acts = _events(J, ref)
     assert "goal.reached" not in acts and J.status(ref)["goal_reached"] is False, "it did not finish"
     # the end is a conflict to Identity with the ways out Priority priced, and Identity's one ask with options
@@ -295,7 +299,7 @@ def test_p3_the_same_item_not_met_twice_gets_a_different_correction_and_two_roun
     neighbours = Neighbours(j2, monkeypatch)
     _pursue(j2, ref, neighbours)
     rows = v1().rounds_of(ref)
-    assert [(r["round"], r["status"], r["covers"]) for r in rows] == [(1, "granted", ["D2"]), (2, "granted", ["D2"])]
+    assert [(r["round"], r["covers"]) for r in rows] == [(1, ["D2"]), (2, ["D2"])] and all(r["status"] in v1().RAN for r in rows)
     one, two = rows[0]["correction"], rows[1]["correction"]
     assert v1().words_of(one) != v1().words_of(two) and two.startswith("Try another way, attempt 2."), (one, two)
     text = _brief(W, ref)[1]

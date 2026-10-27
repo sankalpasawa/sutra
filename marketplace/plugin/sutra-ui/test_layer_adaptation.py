@@ -1687,8 +1687,20 @@ def test_f2_an_ask_for_less_that_cannot_be_taken_reaches_identity_with_the_optio
     assert S.validate("act.conflict", conflict) == []
 
 
+def _priority_sends_no_options(monkeypatch, R):
+    """Priority as it was before it priced ways out: its answers carry none (the real handler of W2-PRIORITY sends them)."""
+    real = R.post
+
+    def post(ref, src, dst, msg_type, payload=None, *a, **kw):
+        if src == "Priority" and isinstance(payload, dict) and "options" in payload:
+            payload = {k: v for k, v in payload.items() if k != "options"}
+        return real(ref, src, dst, msg_type, payload, *a, **kw)
+    monkeypatch.setattr(R, "post", post)
+
+
 def test_f2_no_options_from_priority_is_a_conflict_with_none_as_it_always_was(j2, monkeypatch):
     W, R, J, _, _ = j2
+    _priority_sends_no_options(monkeypatch, R)
     ref, _ = _born_site(j2, answers={"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}}, monkeypatch=monkeypatch)
     [conflict] = _conflicts(R, ref)
     assert "options" not in conflict and conflict["why"].startswith("Priority said no to the plan")
@@ -1801,8 +1813,9 @@ def test_f3_priority_saying_yes_moves_the_round_to_granted_and_the_fold_keeps_th
     _ask_next(R, ref)
     W.run_until_idle(ref, limit=100)
     rows = _rows(W, ref)
-    assert [r["status"] for r in rows] == ["proposed", "granted"] and rows[0]["thread"] == rows[1]["thread"]
-    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted")], "folded by round, the latest status winning"
+    filed = ["filed"] if v1().hears_round() else []                                   # Identity files a granted round once its recipe hears one (W2-IDENTITY, M9.3)
+    assert [r["status"] for r in rows] == ["proposed", "granted"] + filed and rows[0]["thread"] == rows[1]["thread"]
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, (filed or ["granted"])[0])], "folded by round, the latest status winning"
     assert [r for r in R.board(ref) if r["src"] == "Priority" and r["msg_type"] == "accept-proposal" and r["payload"].get("word") == "round"]
     told = [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Identity"] and p["payload"].get("word") == "round"]
     assert bool(told) == v1().hears_round(), "Identity is told to file it once its recipe hears a round, and not before (A1-14)"
@@ -1959,7 +1972,7 @@ def test_f3_the_same_failure_twice_gives_a_different_correction_and_the_agent_is
     assert sent["payload"]["round"] == 2 and sent["payload"]["correction"] == different
     prompt = next(p for sid, p in seen if sid == "adapt.next")
     assert "THE LAST ROUND: the last approach failed: " + FIRST_TRY in prompt and "D2: Every page names the phone line" in prompt
-    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted"), (2, "granted")]
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted"), (2, "filed" if v1().hears_round() else "granted")]
 
 
 def test_f3_offline_the_draft_is_a_numbered_other_try_so_it_is_never_the_approach_that_failed(j2):

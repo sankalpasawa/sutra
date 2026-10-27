@@ -1194,7 +1194,7 @@ def test_j2_g_a_reading_is_weighed_three_ways(j2, monkeypatch):
     W, R, J, _, _ = j2
     ref = _a_running_department(j2, items=1)
     assert len(_four_items(W, ref)) == 4
-    _adaptation_hears_next(monkeypatch, R)
+    stub = _adaptation_hears_next(monkeypatch, R)
     row = _file_reading(j2, ref, {"D1": "met", "D2": "to_confirm", "D3": "not_met", "D4": "not_met"},
                         findings=[{"id": "F1", "severity": "high", "claim": "The fees are not on any page", "item": "D3"},
                                   {"id": "F2", "severity": "medium", "claim": "The offer is not sent to subscribers by email", "item": "D4"}])
@@ -1203,7 +1203,10 @@ def test_j2_g_a_reading_is_weighed_three_ways(j2, monkeypatch):
     (q,) = _asks_of(W, ref, "j2_identity")
     assert (q["missing"], q["points"], q["standard"], q["reading"]) == ("fact", ["D2"], False, row["id"])
     assert "D2" in q["text"] and "Prices are on the page" in q["text"] and S.validate_record("identity", "ask", q) == []
-    assert J.status(ref)["open_question"]["id"] == q["id"] and J.waiting_on_owner(ref)
+    assert J.status(ref)["open_question"]["id"] == q["id"]
+    # (with Adaptation's own recipe the round for D3 is proposed, priced, filed and the line builds again while the question stays
+    # open, so the cycle waits on the owner only where nothing else is moving: the stub's)
+    assert J.waiting_on_owner(ref) or not stub
     # a finding the owner must say yes to (a rule says ask: it reaches outside the department): an ask, and its item goes no further
     (f,) = _asks_of(W, ref, "finding")
     assert f["claim"] == "The offer is not sent to subscribers by email" and f["reading"] == row["id"] and f["thread"] and "Stamp to have it put right" in f["text"]
@@ -1316,7 +1319,9 @@ def test_j2_g_a_high_finding_the_next_round_carries_is_not_also_put_to_the_owner
                                                "findings": [{"page": "index", "claim": "Every page names its fees", "severity": "high", "item": "D2"}]})
     R.audit_tell(ref, row)
     W.run_until_idle(ref, limit=300)
-    assert _asks_of(W, ref, "finding") == [] and len(_next_requests(R, ref)) == 1
+    # (with Adaptation's own recipe the round reaches Identity, and a correction that reaches outside is put to the owner once, as
+    # the round's own ask; the finding itself is not put as well)
+    assert [a for a in _asks_of(W, ref, "finding") if not a.get("round")] == [] and len(_next_requests(R, ref)) == 1
     # a hole is the owner's to fill in, rounds or not
     R.post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": "opening hours", "severity": "low", "reading": row["id"],
                                                "findings": [{"kind": "hole", "claim": "opening hours"}]})
