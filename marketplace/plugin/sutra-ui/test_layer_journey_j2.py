@@ -156,6 +156,15 @@ def test_j2_walk_from_the_identity_to_the_goal(j2, monkeypatch):
     # the board holds the acts the steps name, on the department's one board and in this order
     acts = [(p["src"], p["dst"][0], p["msg_type"]) for p in R.board(ref) if (p["payload"] or {}).get("word") == "line"]
     assert acts[:3] == [("Identity", "Adaptation", "request"), ("Adaptation", "Priority", "propose"), ("Priority", "Adaptation", "accept-proposal")]
+    # step 7's hand-over: A3.7.2 names Audit's inform/finding, which is the act of a reading with something to put right; this
+    # run has nothing to put right, so Audit hands Identity the reading (audit_tell) and files no finding. Both are binds of step 7
+    board = [(p["src"], p["dst"][0], p["msg_type"], (p["payload"] or {}).get("word")) for p in R.board(ref)]
+    said = [a for a in board if a[0] == "Audit"]
+    assert said == [("Audit", "Identity", "inform", "reading")], "Audit tells Identity the reading, once, and files no finding when there is none"
+    assert board.index(said[0]) < board.index(("Identity", "Owner", "inform", "goal")), "the goal is said after Identity was handed the reading"
+    (post,) = [p for p in R.board(ref) if p["src"] == "Audit"]
+    assert post["payload"]["reading"] == reading["id"] and post["payload"]["read"] is True and post["payload"]["findings"] == [], \
+        "it is the reading Audit filed, read item by item, with no finding in it"
     st = J.status(ref)
     assert (st["state"], st["step"], st["goal_reached"], st["workflow"]) == ("done", 8, True, LINE)
 
@@ -183,6 +192,15 @@ def test_j2_the_walk_fails_when_a_bind_is_not_what_the_run_did(j2, monkeypatch):
     faults = walk.follows(broken, record, walks=["6"])
     assert any(f.startswith("J2 step 6:") and "run.finished" in f for f in faults), faults
     assert walk.follows(J2, record, walks=["5", "3"]) != [], "step 3 happened before step 5, and the journey puts step 3 first"
+
+    # step 7's hand-over is required, not optional: a word that is not the one Audit posted fails the walk and names it
+    renamed = copy.deepcopy(J2)
+    for step in renamed["steps"]:
+        for bind in step["binds"] if step["n"] == "7" else []:
+            if bind.get("kind") == "act" and bind.get("word") == "reading":
+                bind["word"] = "readings"
+    faults = walk.follows(renamed, record, walks=["7"])
+    assert any(f.startswith("J2 step 7:") and "readings" in f for f in faults), faults
 
 
 # ---- J2.2: the bounds -------------------------------------------------------------------------------------------------

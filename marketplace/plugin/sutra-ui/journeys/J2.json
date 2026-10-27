@@ -400,6 +400,13 @@
      "kind": "act",
      "src": "Audit",
      "act": "inform",
+     "word": "reading",
+     "dst": "Identity"
+    },
+    {
+     "kind": "act",
+     "src": "Audit",
+     "act": "inform",
      "word": "finding",
      "dst": "Identity",
      "optional": true
