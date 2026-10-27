@@ -106,8 +106,8 @@ SKIPPED = "not needed this time"
 MODEL = None
 _DEFS = {}
 #: the versions the department in hand runs: (its ref, the implementation ids of layers.RECIPE_ORDER, every layer's pin), or None for
-#: DEFAULT_PINS. Set at each entry point from the department's pins (the motor's slot, a board delivery, the sweep, an API handler;
-#: pinned, use_pins), it chooses which definitions defs() serves, and so what engine_def, all_steps and step_def read (PRD A1.18,
+#: DEFAULT_PINS. Set at each entry point from the department's pins (the motor's slot, a board delivery, the sweep, an API route;
+#: pinned), it chooses which definitions defs() serves, and so what engine_def, all_steps and step_def read (PRD A1.18,
 #: W3-PINS). A call with no department runs the default set.
 _PINS = contextvars.ContextVar("engine_pins", default=None)
 _GATE_SEEN = {}
@@ -374,12 +374,6 @@ def pinned(ref=None, d=None):
         yield
     finally:
         _PINS.reset(token)
-
-
-def use_pins(ref, d=None):
-    """pinned() for a handler that has a context of its own and nowhere to put the end of a `with`, an API request: the
-    department's set stays in hand until the handler returns."""
-    _PINS.set(_pin_value(ref, d))
 
 
 def in_dept(fn):

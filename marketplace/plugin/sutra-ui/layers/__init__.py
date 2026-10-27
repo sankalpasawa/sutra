@@ -10,11 +10,13 @@ WAVE 0 writes the skeleton: the lazy proxies R, W, J, S and FV (tests reload eng
 holds a module object), ref_to (a late-bound delegate to a body that has not moved yet) and recipes() (the five
 function engines, which engine_runtime.defs() assembles before the Library's templates). W1-CORE adds the registry
 (available, load, pins, impl, layer_of, resolve, names, call, view) and layers/prompts.py (the typed prompt compiler);
-W3-PINS the pin sets per department.
+W3-PINS the pin sets per department: recipes() for a pin set, pins() honouring a department's record, cannot_run().
 
 THE REGISTRY (A1.18): engine_runtime asks it, for every step and gate, which function runs a name: the one the layer's
 pinned implementation provides in its CODE, PROMPT, DRAFT or CHECK dict, else engine_runtime's own, which is the fallback
-until a body has moved. Until W3-PINS every department runs DEFAULT_PINS. A module that does not load runs nothing: the
+until a body has moved. A department runs the versions its record pins while S.PER_DEPARTMENT (W3-PINS), by the rule that keeps
+old pins working: a pin names a whole version, its recipe and its bodies together; Root's version is the organisation's Root's;
+a pin that cannot run (cannot_run) runs the layer's default, with one row. A module that does not load runs nothing: the
 engine_runtime body is used, so a broken layer file never stops a department.
 
 A VERSION THAT EXTENDS A VERSION (PRD amendment A2): a version above 1 names the one it extends (PARENT) and writes only what

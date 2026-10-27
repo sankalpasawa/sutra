@@ -542,6 +542,19 @@ def test_n2_a_read_of_the_department_tells_no_pin_and_the_tick_tells_it_once(hom
     assert told(ref) == [("Identity", "runs the default: its per-department version cannot run here (it does not load)")]
 
 
+def test_n2_a_department_pinned_to_a_child_gets_the_childs_role_words_and_one_on_the_parent_does_not(home, monkeypatch, tmp_path):
+    """The role words are part of a version (A3): the card of the function's agent reads them through the version the department pins."""
+    words = copy.deepcopy(layers.load("coordination/v1").WORDS)
+    words["goal"]["role_is"]["text"] = "keeps the table, version two, and says who goes first"
+    hold(monkeypatch, CHILD, stub(tmp_path, patch={"parent": "coordination/v1"}, WORDS=words))
+    assert layers.cannot_run(CHILD) is None and C.case_14_function_template(CHILD) == []
+    on_child, on_parent = department(home, "dref-v2", coordination=CHILD), department(home, "dref-v1")
+    blocks = {ref: R._role_block(ref, "Coordination", R.engine_def("Coordination")) for ref in (on_child, on_parent)}
+    assert "keeps the table, version two, and says who goes first" in blocks[on_child]
+    assert blocks[on_parent] and "version two" not in blocks[on_parent]
+    assert layers.words(on_child, "coordination", "goal", "role_is")["text"] != layers.words(on_parent, "coordination", "goal", "role_is")["text"]
+
+
 # ---- N3 . ladders per version -----------------------------------------------------------------------------------------------
 def ladder_file(ref):
     return json.loads((W.ddir(ref) / "ladder.json").read_text(encoding="utf-8"))
