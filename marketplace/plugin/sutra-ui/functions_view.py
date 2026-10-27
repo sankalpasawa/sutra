@@ -1000,6 +1000,24 @@ def engine_card(ref, name):
     return _clean({k: out[k] for k in ENGINE_CARD_FIELDS})
 
 
+def pinned_engine_card(ref, name):
+    """The engine's card as the department's pinned Coordination version reads it (A1.17, K4; the surface function engine_card
+    of a version, A2): what its engine_card() returns when it fits the interface (VIEWS['engine_card']), which is how a question
+    this engine asked or answered (W3-BOARD, M4.9) reaches its Coordination row; else today's read (engine_card), and the read
+    never raises. The route of the engine's card (website_api.engine) asks for this one, never for engine_card, which is the body
+    a version starts from and calls."""
+    try:
+        with layers.reading():                       # a card is a read: a pin the registry cannot honour is told by the next tick
+            module = layers.impl(ref, "coordination")
+            fn = getattr(module, "engine_card", None) if module is not None else None
+            got = fn(ref, name) if callable(fn) else None
+    except Exception:  # noqa: BLE001 -- a version's card that breaks costs the card nothing but that version's rows
+        got = None
+    if isinstance(got, dict) and not S.validate_view("engine_card", got):
+        return got
+    return engine_card(ref, name)
+
+
 #: set while a layer's view() is being read: a view that returns today's body by reference (every layer's wave 0 stub calls
 #: _j2_part) finds the body, not the dispatch again
 _VIEWING = contextvars.ContextVar("functions_view_viewing", default=False)

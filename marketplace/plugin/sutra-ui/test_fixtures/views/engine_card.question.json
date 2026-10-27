@@ -1,0 +1,55 @@
+{
+ "engine": "Write",
+ "five": [
+  {
+   "at": null,
+   "fn": "Identity",
+   "says": "lets it start: no rule holds it",
+   "share": null,
+   "state": "ok"
+  },
+  {
+   "at": null,
+   "fn": "Adaptation",
+   "says": "proposed it in the plan Root registered",
+   "share": null,
+   "state": "ok"
+  },
+  {
+   "at": null,
+   "fn": "Priority",
+   "says": "let the run start inside today's limit",
+   "share": 0.029,
+   "state": "ok"
+  },
+  {
+   "at": "2026-10-26T10:23:00+05:30",
+   "fn": "Coordination",
+   "says": "gave it its slot; it ran; asked Plan about the page list (answered)",
+   "share": 0.417,
+   "state": "ok"
+  },
+  {
+   "at": null,
+   "fn": "Audit",
+   "says": "will read the Live site it leads to",
+   "share": null,
+   "state": "off"
+  }
+ ],
+ "head": {
+  "at": "2026-10-26T10:23:00+05:30",
+  "round": null,
+  "state": "ran",
+  "why": null,
+  "word": "ran"
+ },
+ "motor": {
+  "once": true,
+  "says": "ran once per slot",
+  "slot": "after Site plan v2",
+  "starts": "after a new Site plan",
+  "today": 0.029,
+  "window_min": 30
+ }
+}

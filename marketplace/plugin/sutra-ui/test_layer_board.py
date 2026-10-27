@@ -17,6 +17,8 @@ sporadic, unannounced look at the engines' state.
 """
 import importlib
 import json
+import os
+import pathlib
 import time
 
 import pytest
@@ -789,6 +791,92 @@ def test_b4_the_engine_card_says_what_an_engine_asked_and_what_it_answered(j2, m
     check = next(r for r in COORD.engine_card(ref, "Check")["five"] if r["fn"] == "Coordination")
     assert "asked" not in check["says"] and "answered" not in check["says"], "an engine that put and was put no question"
     assert FV.engine_card(ref, "Write") != card and S.validate_view("engine_card", FV.engine_card(ref, "Write")) == []
+
+
+def _route(ref, name):
+    """An engine's card as the app's real route gives it (GET /api/native/{ref}/engine/{name}), through the HTTP client."""
+    import website_api
+    importlib.reload(website_api)
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(website_api.router)
+    got = TestClient(app).get("/api/native/%s/engine/%s" % (ref, name))
+    assert got.status_code == 200, got.text
+    return got.json()["card"]
+
+
+def _coordination_row(card):
+    return next(r for r in card["five"] if r["fn"] == "Coordination")
+
+
+#: the card the screen walk draws for an engine that asked a question (test_website.js: S17), written from the route's own answer
+QUESTION_CARD = pathlib.Path(__file__).parent / "test_fixtures" / "views" / "engine_card.question.json"
+#: the clock of the card in that file: what the record stamps is new each run, the file holds one value (the walk's T("10:23"))
+CARD_AT = "2026-10-26T10:23:00+05:30"
+
+
+def test_b4_the_route_of_the_engine_card_carries_the_question_rows(j2, monkeypatch):
+    """The rows were in COORD.engine_card and nothing in the app called it (found by a verifier 2026-10-27): the route read
+    functions_view.engine_card, which has the other four rows and no question. The route asks the pinned Coordination version's card."""
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    assert _route(ref, "Write") == FV.engine_card(ref, "Write"), "no question asked: the route's card is as it was"
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once())
+    _write_again(W, R, ref)
+    write, plan, check = _route(ref, "Write"), _route(ref, "Plan"), _route(ref, "Check")
+    assert _coordination_row(write)["says"].endswith("; asked Plan about the page list (answered)")
+    assert _coordination_row(plan)["says"].endswith("; answered Write about the page list")
+    assert "asked" not in _coordination_row(check)["says"] and "answered" not in _coordination_row(check)["says"]
+    assert write == COORD.engine_card(ref, "Write") and plan == COORD.engine_card(ref, "Plan"), "the route serves the version's card"
+    assert write != FV.engine_card(ref, "Write")
+    assert all(S.validate_view("engine_card", c) == [] for c in (write, plan, check))
+    # the same over the engine route's whole answer: the card sits beside the engine's own read
+    import website_api
+    assert website_api.engine(ref, "Write")["card"] == write
+
+
+def test_b4_a_version_whose_card_breaks_or_does_not_fit_leaves_the_route_on_todays_card(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once())
+    _write_again(W, R, ref)
+    base = FV.engine_card(ref, "Write")
+    assert _coordination_row(_route(ref, "Write"))["says"].endswith("(answered)")
+
+    def breaks(ref_, name):
+        raise RuntimeError("a card that cannot be read")
+    monkeypatch.setattr(COORD, "engine_card", breaks)
+    assert _route(ref, "Write") == base, "a card that raises: today's read"
+    monkeypatch.setattr(COORD, "engine_card", lambda ref_, name: {"engine": name})
+    assert _route(ref, "Write") == base, "a card that does not fit the interface: today's read"
+    monkeypatch.delattr(COORD, "engine_card")
+    assert _route(ref, "Write") == base, "a version with no card of its own: today's read"
+
+
+def test_b4_the_card_the_screen_walk_draws_is_the_one_the_route_writes(j2, monkeypatch):
+    """test_website.js drew a card whose Coordination row the test wrote by hand, so it could not fail if the server never said the
+    question (found by a verifier 2026-10-27). The card of an engine that asked, as the route gives it, is the file the walk draws:
+    SUTRA_WRITE_VIEWS=1 pytest test_layer_board.py -k screen_walk writes it, then node test_website.js."""
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once(), usd=0.01)
+    _write_again(W, R, ref)
+    card = _route(ref, "Write")
+    if card["head"].get("at"):
+        card["head"]["at"] = CARD_AT
+    for row in card["five"]:
+        if row.get("at"):
+            row["at"] = CARD_AT
+    assert _coordination_row(card)["says"] == "gave it its slot; it ran; asked Plan about the page list (answered)"
+    if os.environ.get("SUTRA_WRITE_VIEWS"):
+        QUESTION_CARD.write_text(json.dumps(card, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    assert QUESTION_CARD.exists(), "no file: SUTRA_WRITE_VIEWS=1 pytest test_layer_board.py -k screen_walk writes it"
+    assert json.loads(QUESTION_CARD.read_text(encoding="utf-8")) == card, \
+        "the card the route gives is not test_fixtures/views/engine_card.question.json: SUTRA_WRITE_VIEWS=1 pytest test_layer_board.py -k screen_walk, then node test_website.js"
 
 
 @pytest.mark.parametrize("state,word", [("unanswered", "no answer"), ("refused", "said no"), ("open", "waiting"), ("answered", "answered")])

@@ -550,7 +550,8 @@ def engine_card(ref, name):
     """One engine's card (S.VIEWS['engine_card'], screen S17): its place in the timetable, the motor's facts and one row for
     each of the five, by reference (A1.17). None for a department not on the engine runtime. Coordination's row also says the
     question this engine asked last, 'asked Plan about the page list (answered)', and the last it answered for another engine,
-    from the board (M4.9); an engine that put and was put no question has its row as it was."""
+    from the board (M4.9); an engine that put and was put no question has its row as it was. The app reaches this card through
+    functions_view.pinned_engine_card, the route of an engine's card (website_api.engine)."""
     card = FV.engine_card(ref, name)
     rows = entries(ref) if card else []
     asked = next((e for e in reversed(rows) if e.get('asked_by') == name), None)
