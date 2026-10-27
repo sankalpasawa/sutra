@@ -9,6 +9,8 @@ with options. Run end to end on a website department as a person makes one, with
   P2d the limit card the screen walk draws (test_website.js, M10.3) is the one P2 ends in: test_fixtures/views/ask.limit.json is what
       the code writes, so the producer and the walk cannot drift (found by a verifier 2026-10-27: a hand-written sample passed the
       owner's words rule that the label and the why the code printed broke)
+  P7  the card for the next round: the owner's words correct the Brief and the registered line runs again, with no new line and no
+      round (a rule that says ask puts them back first); leaving the item out and stopping are the other ways out
 
 THE NEIGHBOURS. The loop is three layers'. Identity hears the reading and asks Adaptation for the next round, then files the round
 Priority said yes to (W2-IDENTITY, M8.4 and M9.3); Priority prices the round inside the goal's ceiling (W2-PRIORITY, M9.2);
@@ -435,6 +437,13 @@ def _the_round_stopped_at_its_limit(W, R, ref, bound):
     assert card["kind"] == "blocked" and [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"]
     assert (card["title"], card["who"]) == ("The next round needs your word.", "Priority, pricing the round")
     assert not re.search(r"\bplan\b|\b(?:bound|hops|seconds|usd)\b|\b(?:grant|counter|refus)", " ".join((card["title"], card["who"], card["text"])), re.I), card
+    # the rounds view says why the round stopped in the owner's words: Priority never answered it, so it did not say no (found by a verifier 2026-10-27)
+    assert row["bound"] == bound
+    pane = v1().view(ref, W.dept(ref), [], W.asks(ref))
+    assert S.validate_view("adaptation", pane) == []
+    assert [(r["round"], r["status"], r["said"]) for r in pane["rounds"]] == [(1, "refused", {"seconds": "Priority did not answer in time",
+                                                                                              "usd": "Pricing it cost more than it may",
+                                                                                              "hops": "Priority and Adaptation could not settle it"}[bound])]
     return row, conflict
 
 
@@ -544,3 +553,165 @@ def test_p5_a_model_that_only_repeats_the_failed_correction_ends_in_one_card_abo
     assert not re.search(r"\bplan\b|Say what to correct|\brung\b", " ".join((card["title"], card["who"], card["text"], str(card.get("why")))), re.I), card
     assert "goal.reached" not in _events(J, ref) and J.status(ref)["state"] == "blocked"
     _only_registered_engines_ran(W, R, ref)
+
+
+# ---- the card for the next round: the owner's ways out, as it promises them (M9.4; found by a verifier 2026-10-27) -----------------
+OWNER_WORDS = "Put the phone line in the footer of every page"
+REPEATS_ONLY = {"correction": "Put right D2", "fixes": [], "covers": ["D2"], "why": "it is the one idea"}
+
+
+def _stuck_on_the_next_round(j2, monkeypatch, verdicts=(["D2"], ["D2"], [])):
+    """The scenario of P5 up to the card: round 1 ran and D2 still does not hold, the model has only the approach that failed, and the
+    owner is put the card for the next round. Returns (ref, neighbours, card)."""
+    W, R, J, _, _ = j2
+    _reader(monkeypatch, R, list(verdicts))
+    inner = R.MODEL
+
+    def model(prompt, step):
+        if step["id"] == "adapt.next":
+            return dict(REPEATS_ONLY), 0.01, "model"
+        return inner(prompt, step)
+    monkeypatch.setattr(R, "MODEL", model)
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    _pursue(j2, ref, neighbours, limit=16)
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"] and card["round"] == 2, "the card knows which round it is about"
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "read")] and J.status(ref)["state"] == "blocked"
+    return ref, neighbours, card
+
+
+def _after(J, ref, mark):
+    return [e["action"] for e in J.events(ref)][mark:]
+
+
+def test_p7_the_owners_words_on_the_card_for_the_next_round_correct_the_brief_and_the_registered_line_runs_again(j2, monkeypatch):
+    """The first way out of the card for the next round promised 'your words go into the Brief and the line runs again; no round is
+    paid for'. Choosing it re-planned the department instead: the cycle reopened, Adaptation proposed a whole line again, Root
+    registered a second one, and the owner was told the plan was being shaped afresh. Now the words are a correction of the Brief and
+    the registered line runs again, with no new line and no round."""
+    W, R, J, _, _ = j2
+    ref, neighbours, card = _stuck_on_the_next_round(j2, monkeypatch)
+    briefs, mark, said_before = _brief(W, ref)[0], len(J.events(ref)), len(R.board(ref))
+    assert len(W.dept(ref)["workflows"]) == 1 and W.latest(ref, "Live site")["v"] == 2
+    W.choose_option(ref, card["id"], "words", text=OWNER_WORDS)
+    _pursue(j2, ref, neighbours, limit=16)
+    d = W.dept(ref)
+    # no new line: nothing was reopened, asked of Adaptation, priced or registered
+    assert len(d["workflows"]) == 1 and d["workflows"][0]["engines"] == LINE
+    went = _after(J, ref, mark)
+    assert not {"cycle.reopened", "proposal.requested", "proposal.created", "proposal.granted", "workflow.validated", "workflow.registered"} & set(went), went
+    # the Brief gains the owner's words, as a correction, as one new version
+    version, text = _brief(W, ref)
+    assert version == briefs + 1 and text.rstrip().endswith("- Correct this: " + OWNER_WORDS), text
+    # the registered line ran again, was read again, and the goal is reached
+    assert W.latest(ref, "Live site")["v"] == 3 and {n: _work(W, ref).count(n) for n in LINE} == {n: 3 for n in LINE}
+    assert went.count("run.started") == len(LINE) and went[-1] == "goal.reached" and J.status(ref)["goal_reached"] is True
+    # no round was made for the words, and none was paid for
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "read")]
+    sent = [p["payload"] for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"]]
+    assert [(x["word"], x.get("round")) for x in sent] == [("line", None), ("round", 1)], "the line once, and round 1: nothing else went to Priority"
+    # the card went quiet with the owner's choice, and Identity said what it did, not that the plan is shaped afresh
+    [done] = [a for a in W.asks(ref) if a["id"] == card["id"]]
+    assert (done["status"], done["chosen"]["id"], done["chosen"]["words"]) == ("chosen", "words", OWNER_WORDS)
+    assert not [a for a in W.asks(ref) if a["status"] == "pending"]
+    told = [p["payload"]["done"] for p in R.board(ref)[said_before:] if p["src"] == "Identity" and R.OWNER in p["dst"] and p["payload"].get("done")]
+    assert any("in the Brief as v%d" % version in t and "the line runs again" in t for t in told), told
+    assert not [t for t in told if re.search(r"afresh|shaping|Root check", t, re.I)], told
+    _only_registered_engines_ran(W, R, ref)
+
+
+def test_p7_words_that_do_not_put_it_right_leave_the_owner_where_they_were_with_the_next_round_still_to_ask_for(j2, monkeypatch):
+    """The words are a correction, not a way round the loop: when the line, run again, still does not hold D2, the next reading asks for
+    the next round as any reading does, and the model that only repeats puts the owner the card again."""
+    W, R, J, _, _ = j2
+    ref, neighbours, card = _stuck_on_the_next_round(j2, monkeypatch, verdicts=(["D2"], ["D2"], ["D2"]))
+    W.choose_option(ref, card["id"], "words", text=OWNER_WORDS)
+    _pursue(j2, ref, neighbours, limit=16)
+    assert W.latest(ref, "Live site")["v"] == 3 and len(W.dept(ref)["workflows"]) == 1 and "goal.reached" not in _events(J, ref)
+    [again] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    assert again["id"] != card["id"] and again["round"] == 2 and [o["id"] for o in again["options"]] == ["words", "leave:D2", "stop"]
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "read")]
+
+
+def test_p7_stop_on_the_same_card_stops_the_cycle_and_the_card_waits_again_for_the_next_rounds_word(j2, monkeypatch):
+    """Stop on the card for the next round: the Brief takes no words, the registered line stays as it is, the cycle stops where it is,
+    and the card waits again, still the next round's."""
+    W, R, J, _, _ = j2
+    ref, neighbours, card = _stuck_on_the_next_round(j2, monkeypatch)
+    briefs = _brief(W, ref)[0]
+    W.choose_option(ref, card["id"], "stop")
+    W.run_until_idle(ref, limit=100)
+    assert J.status(ref)["state"] == "stopped" and _brief(W, ref)[0] == briefs and len(W.dept(ref)["workflows"]) == 1
+    [waits] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    assert waits["round"] == 2 and [o["id"] for o in waits["options"]] == ["words", "leave:D2", "stop"], "the card waits again, still the next round's"
+
+
+def test_p7_leave_on_the_same_card_leaves_the_item_out_on_the_owners_one_click_and_files_no_words(j2, monkeypatch):
+    """Leave on the card for the next round: D2 comes out of done-when on a done_items ask the owner's choice stamps (the goal stays
+    as it was), and the Brief takes no words; the plan is shaped afresh from the done-when that was kept, which is what leaving an
+    item out does on every card that offers it (leave_out)."""
+    W, R, J, _, _ = j2
+    ref, neighbours, card = _stuck_on_the_next_round(j2, monkeypatch)
+    briefs, goal = _brief(W, ref)[0], W.dept(ref)["goal"]
+    W.choose_option(ref, card["id"], "leave:D2")
+    W.run_until_idle(ref, limit=100)
+    assert [i["text"] for i in W.items_of(W.dept(ref))] == [ITEMS[0]["text"], ITEMS[2]["text"]], "the item that did not hold is out, the others are kept"
+    assert W.dept(ref)["goal"] == goal and _brief(W, ref)[0] == briefs
+    assert [a["status"] for a in W.asks(ref) if a["kind"] == "done_items"] == ["stamped"], "the owner's click is the stamp"
+    assert not [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+
+
+def test_p7_words_a_rule_says_to_ask_about_are_put_back_first_and_the_stamp_files_them_and_the_line_runs_again(j2, monkeypatch):
+    """S-18: Identity asks only when a rule says ask. The owner's words on the card reach outside what the department makes, and a rule
+    of the department says to ask first: one ask, no Brief change yet; the stamp files the correction and the registered line runs."""
+    W, R, J, _, _ = j2
+    ref, neighbours, card = _stuck_on_the_next_round(j2, monkeypatch)
+    rule = next(r for r in R._effective_rules(ref, W.dept(ref)) if r.get("tag") == "ask")
+    briefs, mark = _brief(W, ref)[0], len(J.events(ref))
+    outside = "Send the offer by email to every subscriber"
+    W.choose_option(ref, card["id"], "words", text=outside)
+    W.run_until_idle(ref, limit=100)
+    [ask] = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert ask["kind"] == "finding" and ask["rule"] == rule["line"] and outside in ask["text"] and not ask.get("round"), ask
+    assert _brief(W, ref)[0] == briefs and J.status(ref)["state"] == "blocked", "nothing is filed and nothing runs before the stamp"
+    W.decide_ask(ref, ask["id"], True)
+    _pursue(j2, ref, neighbours, limit=16)
+    assert _brief(W, ref)[0] == briefs + 1 and _brief(W, ref)[1].rstrip().endswith("- Correct this: " + outside)
+    went = _after(J, ref, mark)
+    assert len(W.dept(ref)["workflows"]) == 1 and "workflow.registered" not in went and "cycle.reopened" not in went
+    assert W.latest(ref, "Live site")["v"] == 3 and went[-1] == "goal.reached"
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "read")], "the stamp filed the owner's words and made no round"
+    _only_registered_engines_ran(W, R, ref)
+
+
+def test_p7_a_no_to_the_owners_words_a_rule_asked_about_files_nothing_and_gives_the_ways_out_again(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref, neighbours, card = _stuck_on_the_next_round(j2, monkeypatch)
+    briefs, mark = _brief(W, ref)[0], len(J.events(ref))
+    W.choose_option(ref, card["id"], "words", text="Send the offer by email to every subscriber")
+    W.run_until_idle(ref, limit=100)
+    [ask] = [a for a in W.asks(ref) if a["status"] == "pending"]
+    W.decide_ask(ref, ask["id"], False)
+    W.run_until_idle(ref, limit=100)
+    assert _brief(W, ref)[0] == briefs and len(W.dept(ref)["workflows"]) == 1 and "workflow.registered" not in _after(J, ref, mark)
+    [ways] = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert ways["kind"] == "blocked" and ways["title"] == "The correction was turned down." and J.status(ref)["state"] == "blocked"
+
+
+def test_p7_words_on_a_card_that_is_not_the_next_rounds_still_shape_the_plan_afresh(j2, monkeypatch):
+    """The card for a plan that is blocked keeps its first way: 'Change the plan in my words' shapes the plan afresh. Only the card for
+    the next round, whose plan is registered and runs, files the words as a correction."""
+    W, R, J, _, _ = j2
+    _reader(monkeypatch, R, [[]])
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    _pursue(j2, ref, neighbours)
+    d = W.dept(ref)
+    R._blocked(ref, d, {"src": R.OWNER}, "The plan cannot go on.", "The plan is blocked.", "Root, checking the plan", "a check failed")
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    assert not card.get("round") and v1().__name__ and not layers.load("identity/v1").round_card(card)
+    mark = len(J.events(ref))
+    W.choose_option(ref, card["id"], "words", text=OWNER_WORDS)
+    W.run_until_idle(ref, limit=300)
+    assert "cycle.reopened" in _after(J, ref, mark) and "proposal.requested" in _after(J, ref, mark)

@@ -613,7 +613,8 @@ def identity_closed(ctx, step, item):
             cj.ruled(ref, 'ask', reason, engines)
         rnd = round_words(pl)
         if rnd:
-            R._blocked(ref, d, who, '%s. Say how to put it right, or choose a way forward on this card.' % reason, rnd[0], rnd[1], reason, options=ways)
+            card = R._blocked(ref, d, who, '%s. Say how to put it right, or choose a way forward on this card.' % reason, rnd[0], rnd[1], reason, options=ways)
+            W._put_ask(ref, dict(card, round=pl['round']))        # the card knows it is the next round's: its words are a correction (round_words_chosen)
             return {'said': 'the next round cannot go on (%s); put to the owner, with the ways out' % reason}
         R._blocked(ref, d, who, '%s. Say what the department should do, or choose a way forward on this card.' % reason,
                    'No plan can be made as it stands.', 'Adaptation, shaping the plan', reason, options=ways)
@@ -675,6 +676,47 @@ def apply_way(ctx, ask, pl):
                 {'word': 'request', 'done': '%s. Nothing changed; choose again on the card.' % str(exc).strip().rstrip('.')})
         return {'said': "could not apply the owner's choice (%s): %s; the card waits" % (oid, exc), 'applied': False}
     return {'said': "applied the owner's choice (%s) through %s" % (oid, S.TITLE[spec['layer']]), 'applied': True, 'result': got}
+
+
+def round_card(ask):
+    """Whether a card is the one for the next round (identity_closed tags it with the round the conflict names): the plan it stands
+    beside is registered and runs, and what the card asks for is the next correction."""
+    n = (ask or {}).get('round')
+    return (ask or {}).get('kind') == 'blocked' and isinstance(n, int) and not isinstance(n, bool)
+
+
+def words_filed(ref, d, v):
+    """The owner's words for the next round are in the Brief as version v: the registered line runs again on them (step 6, as it does
+    for a round filed), and the owner is told so. Nothing is shaped afresh, registered or paid for as a round. A department the owner
+    stopped keeps its stop: the move waits for Start (j2_runtime._move)."""
+    cj = R._j2()
+    if cj and cj.active(ref) and not cj.done(ref):
+        cj._move(ref, 'running', step=6)
+    R._tell(ref, d, _who(d), 'inform', {'word': 'filed', 'link': 'Brief', 'v': v,
+                                        'done': 'Thank you. Your words are in the Brief as v%d, and the line runs again with them.' % v})
+
+
+def round_words_chosen(ctx, ask):
+    """The owner chose to say how to put it right on the card for the next round (M9.4): the card says their words go into the Brief and
+    the line runs again, and that is all it does. The words are filed as 'Correct this: <words>' with no stamp, unless a rule says
+    ask (S-18: then they are put back to the owner first, and the stamp files them, words_filed); the registered line runs again.
+    No round is made for them, so none is paid for, and the plan is not shaped afresh (the reopening that is for a plan that is
+    blocked, which this plan is not: the registered line is whole)."""
+    ref, d = ctx['ref'], ctx['dept']
+    words = ' '.join(str((ask.get('chosen') or {}).get('words') or '').split())[:2000]
+    rule = rule_asking_first(ref, d, words)
+    if rule:
+        text = 'Your words for the next round: %s. The rule "%s" says I ask you first. Stamp to have the line put it right.' % (words, str(rule['line']).rstrip('.'))
+        p = R.post(ref, 'Identity', R.OWNER, 'request', {'word': 'finding', 'objective': text, 'output': 'a stamp or a refusal', 'may_read': ['Brief'],
+                                                         'boundaries': words, 'claim': words})
+        W._put_ask(ref, {'id': 'a-' + uuid.uuid4().hex[:8], 'kind': 'finding', 'engine': 'Identity', 'slot': ctx['slot'], 'text': text, 'claim': words,
+                         'found': words, 'findings': [], 'rule': rule['line'], 'words_for_round': ask['round'], 'status': 'pending', 'created': W.now(),
+                         'thread': p['thread'] if p else None})
+        return {'said': 'put the owner\'s words for the next round back to the owner first, as the rule "%s" says to ask' % rule['line']}
+    row = R._file_brief(ref, d, 'Correct this: ' + words, "the owner's words on the card for the next round")
+    words_filed(ref, d, row['v'])
+    return {'said': "filed the owner's words in the Brief as v%d with no stamp; the registered line runs again, and nothing is shaped afresh" % row['v'],
+            'filed': row['v']}
 
 
 def refused_round(ref, cycle):
@@ -804,12 +846,16 @@ def identity_apply(ctx, step, item):
         rule = next((r for r in ctx['dept'].get('rules') or [] if oid.startswith('leave:') and r.get('id') == oid.split(':', 1)[1]), None)
         if rule:
             return leave_rule_out(ctx, rule)
+        if oid == W.WORDS_OPTION and round_card(ask):
+            return round_words_chosen(ctx, ask)
         got = apply_way(ctx, ask, pl)
         if got is not None:
             return resume_after_raise(ctx, got)
     out = R.identity_apply(ctx, step, item)
     if ask and ask.get('kind') == 'finding' and ask.get('round') and out.get('filed'):
         round_filed(ref, ctx['dept'], ask['round'], out['filed'], ask.get('correction') or ask.get('claim'))
+    if ask and ask.get('kind') == 'finding' and ask.get('words_for_round') and out.get('filed'):
+        words_filed(ref, ctx['dept'], out['filed'])             # the owner's words a rule said to ask about, stamped
     if ask and ask.get('kind') in ('rule', 'done_items'):
         reopen_on_change(ctx, ask, before)
     return out

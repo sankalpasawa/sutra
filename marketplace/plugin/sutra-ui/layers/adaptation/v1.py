@@ -687,7 +687,8 @@ def adapt_round(ctx, step, item):
     fixes = [f for f in dict.fromkeys(got.get('fixes') or []) if f in known]
     thread = 'x-' + uuid.uuid4().hex[:8]
     row = {'schema_version': 1, 'round': heard['round'], 'at': W.now(), 'cycle_id': cycle_of(ref), 'correction': clip(got['correction']),
-           'fixes': fixes, 'covers': covers, 'estimate': line_estimate(ref), 'status': 'proposed', 'thread': thread}
+           'fixes': fixes, 'covers': covers, 'estimate': line_estimate(ref), 'status': 'proposed', 'thread': thread,
+           'bound': None}                          # the round is folded by number: an earlier try's limit must not outlive it
     if reading:
         row['reading'] = str(reading)[:40]
     W.append_row(ref, 'rounds.jsonl', row)
@@ -710,15 +711,17 @@ BOUND_SAYS = {'seconds': 'Priority had not priced round %d in time', 'usd': 'pri
 
 def round_bound(ref, thread, which):
     """A round's thread was closed at its bound (rule 12; M9.5): the round does not stay proposed for good and does not go quiet.
-    The row says refused, so the same reading asked again proposes again, and one conflict goes to Identity with the ways out
-    built by code (next_options), once its recipe hears a round. Coordination calls it where it closes the thread (engine_runtime)
+    The row says refused and which limit closed it (bound), so the same reading asked again proposes again and the pane says the
+    round was not answered, not that Priority said no; one conflict goes to Identity with the ways out built by code
+    (next_options), once its recipe hears a round. Coordination calls it where it closes the thread (engine_runtime)
     and adapt_round where its own post is stopped. Idempotent: a thread's conflict is filed once. Never raises."""
     try:
         row = round_of_thread(ref, thread)
         if not row:
             return None
         if row.get('status') == 'proposed':
-            row = W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', at=W.now()))
+            # the row keeps what closed it (bound), so the pane does not say Priority said no to a round Priority never answered
+            row = W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', bound=str(which or 'limit')[:40], at=W.now()))
         if not hears_round():
             return None
         why = BOUND_SAYS.get(which, 'round %d did not go on in time') % row['round']
@@ -1279,10 +1282,23 @@ ROUND_SAID = types.MappingProxyType({'proposed': 'asked Priority', 'granted': 'P
                                      'filed': 'filed in the Brief', 'read': 'read by Audit'})
 
 
+#: what a round a limit closed is called to the owner, by the limit (BOUND_SAYS has them): Priority never answered it, so it did not say no
+BOUND_ROUND_SAID = types.MappingProxyType({'seconds': 'Priority did not answer in time', 'usd': 'Pricing it cost more than it may',
+                                           'hops': 'Priority and Adaptation could not settle it'})
+
+
+def round_said(r):
+    """A round's status in the owner's words (ROUND_SAID). A refused round that carries the limit which closed it was never
+    answered by Priority, so it says that, not that Priority said no; only a refusal that came from Priority says no."""
+    if r.get('status') == 'refused' and r.get('bound'):
+        return BOUND_ROUND_SAID.get(r['bound'], 'Priority and Adaptation could not settle it')
+    return ROUND_SAID.get(r.get('status'), '')
+
+
 def round_view(r):
     """One round as the pane has it (view.adaptation.round): the folded row, with its status in the owner's words."""
     return {'round': r['round'], 'correction': clip(r.get('correction')), 'covers': list(r.get('covers') or []), 'fixes': list(r.get('fixes') or []),
-            'status': r.get('status'), 'said': ROUND_SAID.get(r.get('status'), ''), 'estimate': r.get('estimate') if isinstance(r.get('estimate'), dict) else None,
+            'status': r.get('status'), 'said': round_said(r), 'estimate': r.get('estimate') if isinstance(r.get('estimate'), dict) else None,
             'at': r.get('at'), 'reading': r.get('reading'), 'brief_v': r.get('brief_v')}
 
 
