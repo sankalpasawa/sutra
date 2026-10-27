@@ -9,15 +9,20 @@ sporadic, unannounced look at the engines' state.
       none, or a gate that holds it, is no answer and the asker takes its normal path; otherwise the asker's step is run once more
       with the answer; later engines read the answered entries, and a run that names one is in its used_by and its step row reads
       it; Coordination posts request/question to the target and inform/answer to the asker, inside the thread's bounds
+  B3  Audit's timer start, held by its gate until a minute in the period that a hash of the ref and the period gives: one spot check
+      for a cadence at a minute that is not fixed, reading the engines' state only, one audit.spot_check row each, its findings
+      to Identity, and a check that wrote outside Audit's rows fails and files nothing
 """
 import importlib
 import json
+import time
 
 import pytest
 
 import layer_schema as S
 import layers
 import layers.contract as C
+from layers.audit import v1 as AUDIT
 from layers.coordination import v1 as COORD
 
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
@@ -447,3 +452,255 @@ def test_b2_a_later_engine_reads_the_answer_and_a_run_that_uses_it_is_in_used_by
     assert {"board": "Q-1", "art": "Site plan", "v": W.latest(ref, "Site plan")["v"]} in row["read"], "the step depends on the answer's artifact"
     assert [x for x in row["read"] if "board" not in x], "and still reads what it read"
     assert "board_used" not in json.dumps(W._read(R._out_path(ref, "Check@pages.v9", "check.rules", None), {})), "the board's fields are not the work"
+
+
+# ---- B3: spot checks -------------------------------------------------------------------------------------------------------
+DAY = 86400
+
+
+class Clock:
+    """time.time() as a test sets it."""
+
+    def __init__(self, t):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+def _clock(monkeypatch, t):
+    c = Clock(t)
+    monkeypatch.setattr(time, "time", c)
+    return c
+
+
+def _done(j2):
+    """A settled department whose cycle is over: nothing is in the middle of its work, so Audit may look in on it."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    J._set(ref, state="done")
+    return ref
+
+
+def _next_period(n=1):
+    """The start of a period after the one the department was made in: it was there for all of it."""
+    return (int(time.time()) // DAY + n) * DAY
+
+
+def _spot_runs(W, ref):
+    return [r for r in W.runs(ref) if r["engine"] == "Audit" and "@timer." in str(r.get("slot"))]
+
+
+def _timer_due(W, ref):
+    """The spot check due now, as the motor would take it: (engine, input, slot), or None."""
+    got = W.due(ref)
+    return got if got[0] == "Audit" and "@timer." in str(got[2]) else None
+
+
+def test_b3_the_recipe_has_a_timer_start_with_the_settings_cadence_and_a_gate_of_its_own():
+    e = json.loads((layers.HERE / "audit" / "v1.json").read_text(encoding="utf-8"))
+    assert [t for t in e["start"]["on"] if t["kind"] == "timer"] == [{"kind": "timer", "every_s": S.SETTINGS["audit"]["spot_every_s"]["default"]}]
+    assert e["start"]["on"][0]["kind"] == "version", "the version start stays first: the timetable and the Map read it"
+    assert [g["id"] for g in e["gates"]] == e["start"]["unless"] == ["audit.when"]
+    assert e["gates"][0]["check"] == "gate_answer_is_known" and e["gates"][0]["code"] == "audit_when"
+    assert AUDIT.spot_every_s(e) == DAY and AUDIT.spot_every_s({}) == DAY
+
+
+def test_b3_the_jitter_is_seeded_by_the_ref_and_the_period():
+    a = [AUDIT.spot_jitter_s("dept-a", n, DAY) for n in range(60)]
+    b = [AUDIT.spot_jitter_s("dept-b", n, DAY) for n in range(60)]
+    assert a == [AUDIT.spot_jitter_s("dept-a", n, DAY) for n in range(60)], "a replay says it again"
+    assert a != b and len(set(a)) > 30 and all(x % 60 == 0 and 0 <= x < DAY for x in a)
+    assert all(0 <= AUDIT.spot_jitter_s("d", n, 3600) < 3600 for n in range(20)), "the hour is the shortest cadence"
+
+
+def test_b3_one_spot_check_for_a_cadence_at_a_minute_that_is_not_fixed(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    base, minutes = _next_period(), []
+    for k in range(5):
+        began = base + k * DAY
+        n = began // DAY
+        at = began + AUDIT.spot_jitter_s(ref, n, DAY)
+        c = _clock(monkeypatch, began)
+        if at > began:
+            assert _timer_due(W, ref) is None, "not before its minute"
+            c.t = at - 1
+            assert _timer_due(W, ref) is None
+        c.t = at + 30
+        name, inp, slot = _timer_due(W, ref)
+        assert (name, slot) == ("Audit", "Audit@timer.%d" % n) and inp["timer"] == n
+        W.run_slot(ref, name, inp, slot)
+        assert _timer_due(W, ref) is None, "once for the cadence"
+        c.t = began + DAY - 1
+        assert _timer_due(W, ref) is None, "and not again before the next"
+        minutes.append((at % DAY) // 60)
+    rows = W.rows(ref, "spot_checks.jsonl")
+    assert len(rows) == 5 and [r["minute"] for r in rows] == minutes and len({r["id"] for r in rows}) == 5
+    assert len(set(minutes)) > 1, "a minute that is not fixed"
+    for r in rows:
+        assert S.validate("audit.spot_check", r) == []
+        assert [c["check"] for c in r["checks"]] == ["every version has its run and its check", "each run traces back to the owner's words",
+                                                    "nothing is stuck past its window"] and r["findings"] == [] and all(c["ok"] for c in r["checks"])
+    assert [r["status"] for r in _spot_runs(W, ref)] == ["ok"] * 5
+
+
+def test_b3_a_missed_slot_runs_once_when_the_app_is_back_in_the_period(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    began = _next_period()
+    _clock(monkeypatch, began + DAY - 1)                          # the app was closed at its minute, and is open again at the period's end
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    assert _timer_due(W, ref) is None and len(W.rows(ref, "spot_checks.jsonl")) == 1, "once"
+    assert W.rows(ref, "spot_checks.jsonl")[0]["minute"] == ((began + AUDIT.spot_jitter_s(ref, began // DAY, DAY)) % DAY) // 60, \
+        "and it says the minute it was for"
+    _clock(monkeypatch, began + DAY + 1)
+    assert _timer_due(W, ref) is None or _timer_due(W, ref)[2] != slot, "the next period has a slot of its own"
+
+
+def test_b3_a_department_made_in_the_period_is_first_looked_in_on_in_the_next(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    n = int(time.time()) // DAY
+    _clock(monkeypatch, (n + 1) * DAY - 1)                       # the end of the period it was made in
+    assert _timer_due(W, ref) is None
+    ctx = R._coord_ctx(ref, W.dept(ref))
+    ctx["inp"], ctx["def"] = {"timer": n, "v": n}, R.engine_def("Audit")
+    assert AUDIT.audit_when(ctx, None, None) == ("wait", "the department was not there when this period began")
+
+
+def test_b3_a_department_in_the_middle_of_its_cycle_or_root_is_not_looked_in_on(j2, monkeypatch):
+    W, R, J, founding, _ = j2
+    ref = _born(j2)                                                # the cycle is not over
+    assert J.active(ref)
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    assert _timer_due(W, ref) is None
+    ctx = R._coord_ctx(ref, W.dept(ref))
+    ctx["inp"], ctx["def"] = {"timer": int(time.time()) // DAY, "v": 1}, R.engine_def("Audit")
+    assert AUDIT.audit_when(ctx, None, None) == ("wait", "the department is in the middle of its work")
+    root = W.dept(ref)["root"]
+    ctx = R._coord_ctx(root, W.dept(root))
+    ctx["inp"], ctx["def"] = {"timer": int(time.time()) // DAY, "v": 1}, R.engine_def("Audit")
+    assert AUDIT.audit_when(ctx, None, None) == ("wait", "Audit does not look in on the organisation")
+    assert AUDIT.audit_when(dict(ctx, inp={"v": 3}), None, None) == ("admit", None), "a version of the deliverable is let through as it was"
+
+
+def test_b3_a_spot_check_reads_state_only_and_writes_only_audits_own_rows(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    n = _next_period() // DAY
+    _clock(monkeypatch, (n + 1) * DAY - 1)
+    snap = lambda: {p.relative_to(W.ddir(ref)).as_posix(): p.read_bytes() for p in sorted(W.ddir(ref).rglob("*")) if p.is_file()}
+    before, runs_before, steps_before = snap(), W.runs(ref), R.step_rows(ref)
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    after = snap()
+    changed = {k for k in set(before) | set(after) if before.get(k) != after.get(k)}
+    assert changed == {"runs.json", "steps.jsonl", "spot_checks.jsonl"} | {k for k in changed if k.startswith("steps/Audit@")}, changed
+    assert [r for r in W.runs(ref) if r not in runs_before] == _spot_runs(W, ref), "the only new run is Audit's"
+    new = R.step_rows(ref)[len(steps_before):]
+    assert {r["engine"] for r in new} == {"Audit", "Coordination"} and {r["step"] for r in new if r["engine"] == "Coordination"} == {"coord.pick"}, \
+        "and the only new steps: Audit's, and the row of Coordination's turn that started it"
+    run = _spot_runs(W, ref)[0]
+    assert run["status"] == "ok" and run["system"] is True and run["what"].startswith("looked in on the engines")
+    mine = [r for r in R.step_rows(ref) if r.get("run") == run["id"]]
+    assert [r["step"] for r in mine] == ["audit.pick", "audit.mechanical", "audit.items", "audit.judge", "audit.file"]
+    assert [r["by"] for r in mine if r["step"] in ("audit.items", "audit.judge")] == [R.SKIPPED] * 2, "no version is read"
+    assert all(r["usd"] == 0 and r["calls"] == 0 for r in mine), "a spot check makes no model call"
+    gates = [r for r in R.step_rows(ref) if r.get("mode") == "gate" and r.get("slot") == slot]
+    assert [(r["step"], r["answer"]) for r in gates if r["step"] == "audit.when"] == [("audit.when", "admit")]
+    assert not [e for e in J.events(ref) if e["action"] in ("audit.not_read", "audit.finding_filed")], "a spot check is no reading"
+    assert J.status(ref)["state"] == "done" and not [r for r in W.rows(ref, "readings.jsonl") if r["v"] > 1000], "the cycle is as it was"
+
+
+def test_b3_the_state_it_compares_leaves_out_audits_own_rows_and_nothing_else(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    state = AUDIT.spot_state(ref)
+    assert state == AUDIT.spot_state(ref)
+    W._put_run(ref, R._run_row("Audit", True, "Audit@timer.1", "ok", "looked in"))
+    R._append(ref, "steps.jsonl", {"id": "s-x", "engine": "Audit", "step": "audit.pick"})
+    W.append_row(ref, "spot_checks.jsonl", {"schema_version": 1, "id": "sc-x", "at": W.now(), "checks": [], "findings": []})
+    assert AUDIT.spot_state(ref) == state, "Audit's rows are not outside Audit's rows"
+    for name in ("dept.json", "asks.json", "coordination.json"):
+        raw = (W.ddir(ref) / name).read_bytes()
+        (W.ddir(ref) / name).write_bytes(raw + b" ")
+        assert AUDIT.spot_state(ref) != state, name
+        (W.ddir(ref) / name).write_bytes(raw)
+    W._put_run(ref, R._run_row("Plan", False, "Plan@x.v9", "ok", "ran"))
+    assert AUDIT.spot_state(ref) != state, "another engine's run is outside Audit's rows"
+
+
+def test_b3_what_a_spot_check_finds_goes_to_identity_and_into_its_row(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    W.add_version(ref, "Pages", {"index.html": "<h1>x</h1>"}, [{"art": "Site plan", "v": 1}], None, {"ok": True, "notes": []})
+    W.run_until_idle(ref, limit=100)                              # Check reads the new Pages; the department settles again
+    J._set(ref, state="done")
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    row = W.rows(ref, "spot_checks.jsonl")[-1]
+    assert row["checks"][0]["ok"] is False and row["checks"][0]["why"] == "Pages has a version with no run or no check"
+    f = row["findings"][0]
+    assert (f["went_to"], f["severity"], f["where"], f["id"]) == ("Identity", "medium", "Pages", "F1") and S.validate("audit.finding", f) == []
+    posts = [p for p in R.board(ref) if p["src"] == "Audit" and (p.get("payload") or {}).get("spot")]
+    assert len(posts) == 1 and posts[0]["dst"] == ["Identity"] and posts[0]["payload"]["word"] == "finding"
+    assert S.validate_act("Audit", "Identity", "inform", posts[0]["payload"]) == []
+    assert _spot_runs(W, ref)[0]["what"].endswith("Pages has a version with no run or no check")
+    W.run_until_idle(ref, limit=50)
+    heard = [r for r in R.step_rows(ref) if r["step"] == "identity.finding"]
+    assert heard and heard[-1]["status"] == "ok", "Identity heard it"
+    assert not [a for a in W.asks(ref) if a["kind"] == "finding"], "a finding of medium weight asks the owner nothing"
+    assert (J.status(ref)["state"]) == "done", "and the cycle is where it was"
+
+
+def test_b3_a_run_past_its_window_and_a_trace_that_stops_short_are_found_too(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    d = W.dept(ref)
+    W._put_run(ref, R._run_row("Write", False, "Write@site-plan.v77", "running", "writing", started="2020-01-01T00:00:00+00:00"))
+    v = W.latest(ref, "Pages")
+    W.add_version(ref, "Pages", {"index.html": "<h1>x</h1>"}, [{"art": "Site plan", "v": 1}], v["run"], {"ok": True, "notes": []})
+    clock = _clock(monkeypatch, time.time())
+    checks, found = AUDIT.spot_checks(ref, d, now=clock.t)
+    assert [c["ok"] for c in checks] == [True, True, False] and found[0]["claim"] == "Write has been running past its window"
+    rows = dict((c["check"], c["why"]) for c in checks)
+    assert rows["nothing is stuck past its window"] == "Write has been running past its window"
+
+
+def test_b3_a_check_that_wrote_outside_audits_rows_fails_and_files_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    real = AUDIT.spot_checks
+
+    def writes(ref_, d, now=None, skip=None):
+        (W.ddir(ref_) / "stray.json").write_text("{}", encoding="utf-8")
+        return real(ref_, d, now, skip)
+    monkeypatch.setattr(AUDIT, "spot_checks", writes)
+    readings = len(W.rows(ref, "readings.jsonl"))
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    run = _spot_runs(W, ref)[0]
+    assert run["status"] == "failed" and "wrote outside Audit's rows" in run["what"]
+    assert W.rows(ref, "spot_checks.jsonl") == [] and [p for p in R.board(ref) if (p.get("payload") or {}).get("spot")] == []
+    assert len(W.rows(ref, "readings.jsonl")) == readings, "no reading is made of it, as a reading that failed its check would be"
+    assert not [e for e in J.events(ref) if e["action"] == "audit.not_read"] and J.status(ref)["state"] == "done"
+
+
+def test_b3_the_covering_judges_a_spot_check_and_still_judges_a_filing_as_it_did():
+    check = AUDIT.CHECK["spot_check_reads_only"]
+    assert check(None, None, None, {"spot": True, "before": "a", "after": "a", "said": "looked in"})["ok"] is True
+    assert check(None, None, None, {"spot": True, "before": "a", "after": "b", "said": "looked in"})["ok"] is False
+    assert check(None, None, None, {"spot": True, "before": "a", "after": "a", "said": ""})["ok"] is False
+    assert check(None, None, None, {"said": "read it"})["ok"] is True and check(None, None, None, {"said": ""})["ok"] is False
+    assert S.CHECKS["audit"]["spot_check_reads_only"] and "spot_check_reads_only" in layers.names("check")
+
+
+def test_b3_the_contract_passes_for_audit_v1_whole(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    for number, what, case in C.cases():
+        assert case(AUDIT, {"ref": ref}) == [], "case %d: %s" % (number, what)

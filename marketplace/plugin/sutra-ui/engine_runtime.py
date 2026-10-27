@@ -1867,7 +1867,10 @@ def run_engine(ref, name, inp, slot):
     row = W._put_run(ref, row)
     if J:
         J.on_run(ref, row, "ended")
-        if name == "Audit" and row.get("status") == "ok" and not p and isinstance(ctx["bag"].get("audit.file"), dict):
+        # an Audit run started by its timer is a spot check (M8.7): it reads no version, so the cycle's reading of one is not its to move
+        if name == "Audit" and (inp or {}).get("timer") is not None:
+            pass
+        elif name == "Audit" and row.get("status") == "ok" and not p and isinstance(ctx["bag"].get("audit.file"), dict):
             filed = ctx["bag"]["audit.file"]
             if filed.get("read") is False and not filed.get("filed"):
                 J.not_read(ref, inp.get("v"), filed.get("why_not_read"), artifact=filed.get("artifact"))      # never 'clean': the cycle stays at step 7

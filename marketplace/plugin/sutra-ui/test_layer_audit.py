@@ -125,10 +125,10 @@ def test_u1_every_name_the_recipe_uses_is_provided_by_reference_not_by_the_legac
     for kind, names in used.items():
         assert names <= set(mine[kind]), "%s: %s are not provided by audit/v1" % (kind, sorted(names - set(mine[kind])))
     counts = C.by_reference(m)
-    # audit_mechanical and the covering of its step moved into the layer (W2-CHECKS, M8.6), and the covering of its filing is the
-    # layer's own (W3-BOARD, M8.7); every other name is still by reference. said_what_it_did, which the filing step named before
-    # its covering became the layer's, stays in the table, by reference, though no step names it now
-    moved = {"audit_mechanical", "has_a_verdict", "spot_check_reads_only"}
+    # audit_mechanical and the covering of its step moved into the layer (W2-CHECKS, M8.6), and its pick, its filing, its gate and the
+    # covering of its filing are the layer's own (W3-BOARD, M8.7); every other name is still by reference. said_what_it_did, which the
+    # filing step named before its covering became the layer's, stays in the table, by reference, though no step names it now
+    moved = {"audit_mechanical", "has_a_verdict", "spot_check_reads_only", "audit_pick", "audit_file", "audit_when"}
     unused = {"said_what_it_did"}
     assert {n for d in C._dicts(m).values() for n, v in d.items() if not hasattr(v, "legacy")} == moved
     assert counts["by_reference"] == sum(len(v) for v in used.values()) - len(moved) + len(unused) and counts["own"] == len(moved)
@@ -206,12 +206,14 @@ def test_u3_no_live_site_literal_is_left_on_audits_path(j2):
 
 # ---- U4 · Audit reads any kind's deliverable (M8.2) -----------------------------------------------------------------
 def _audit_rows(R, ref, step=None):
-    return [r for r in R.step_rows(ref) if r["engine"] == "Audit" and (step is None or r["step"] == step)]
+    """The step rows of Audit's runs. Its gate's rows (audit.when, W3-BOARD) are rows of the decision to start, not of a run's steps."""
+    return [r for r in R.step_rows(ref) if r["engine"] == "Audit" and r.get("mode") != "gate" and (step is None or r["step"] == step)]
 
 
 def test_u4_audit_starts_on_a_checked_version_of_the_deliverable_not_of_an_artifact(j2):
     W, R, J, _, _ = j2
-    want = {"on": [{"kind": "version", "of": "$deliverable", "checked": True}], "unless": []}
+    # the version it reads, first; and its own timer, held by its own gate (W3-BOARD, M8.7: spot checks)
+    want = {"on": [{"kind": "version", "of": "$deliverable", "checked": True}, {"kind": "timer", "every_s": 86400}], "unless": ["audit.when"]}
     assert R.engine_def("Audit")["start"] == want
     assert json.loads((S.HERE / "layers" / "audit" / "v1.json").read_text(encoding="utf-8"))["start"] == want
     assert R.validate(R.defs()) == [], "the definitions are clean with the trigger"
@@ -260,7 +262,7 @@ def test_u4_an_organic_department_not_yet_planned_has_nothing_for_audit_to_start
     ref = _born(j2, ORGANIC, "Lab Co", settle=False)
     assert S.deliverable(W.dept(ref)) is None
     ctx = R._coord_ctx(ref, W.dept(ref))
-    assert R.ready(ctx, "Audit") is None, "no deliverable: no trigger is live"
+    assert R.ready(ctx, "Audit", ("version",)) is None, "no deliverable: no version trigger is live"
 
 
 def test_u4_root_has_no_deliverable_audit_reads_so_its_scenarios_are_as_they_were(j2, monkeypatch):
@@ -302,9 +304,10 @@ def test_u4_a_deliverable_that_is_not_html_is_read_as_text_at_most_40000_charact
 def test_u4_the_start_is_said_in_words_by_the_departments_own_deliverable(j2, monkeypatch):
     W, R, J, _, _ = j2
     web, default = _born(j2), _default(j2)
-    assert R.steps_view(web, "Audit")["start"]["on"] == ["a new Live site that passed its check"]
-    assert R.steps_view(default, "Audit")["start"]["on"] == ["a new Result that passed its check"]
-    assert R.start_view(R.engine_def("Audit"))["on"] == ["a new deliverable that passed its check"], "with no department"
+    clock = "the clock, in every period it names"                      # Audit's own timer start (W3-BOARD, M8.7)
+    assert R.steps_view(web, "Audit")["start"]["on"] == ["a new Live site that passed its check", clock]
+    assert R.steps_view(default, "Audit")["start"]["on"] == ["a new Result that passed its check", clock]
+    assert R.start_view(R.engine_def("Audit"))["on"] == ["a new deliverable that passed its check", clock], "with no department"
     assert R.slot_of(default, "Audit")["on"].startswith("after Result v")
 
 
@@ -975,8 +978,9 @@ def test_u6_the_contract_passes_for_audit_v1_with_no_part_of_it_on_the_md_fallba
     for number, case in enumerate((C.case_1, C.case_2, C.case_3, C.case_4, C.case_5, C.case_6, C.case_7, C.case_8), 1):
         assert case(m, contract_ctx) == [], "contract case %d" % number
     counts = C.by_reference(m)
-    assert counts == {"by_reference": 10, "own": 3}, \
-        "every name audit/v1 provides is by reference, but the two bodies that moved (W2-CHECKS, M8.6) and the covering of its filing (W3-BOARD, M8.7)"
+    assert counts == {"by_reference": 9, "own": 6}, \
+        "audit/v1 holds as its own the two bodies that moved (W2-CHECKS, M8.6) and what spot checks added (W3-BOARD, M8.7): its pick, its " \
+        "filing, its gate and the covering of its filing"
 
 
 # ---- U2 · Audit's words (M2.5) --------------------------------------------------------------------------------------

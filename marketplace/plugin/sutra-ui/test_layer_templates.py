@@ -475,7 +475,7 @@ def test_e2_a_start_with_a_cron_trigger_is_refused():
     # a blocker is a gate: the shape names a gate's id, and start_faults looks the gate up
     engines = R.defs()["engines"]
     gates = {g["id"] for e in engines.values() for g in e.get("gates") or []}
-    assert gates == {"identity.gate", "identity.wait_engine", "coord.chain", "priority.envelope"}
+    assert gates == {"identity.gate", "identity.wait_engine", "coord.chain", "priority.envelope", "audit.when"}, "Audit's own is its spot check's (W3-BOARD)"
     for path, shipped in _engine_templates():
         assert set(shipped["start"].get("unless") or []) <= gates, path
     nowhere = dict(t["start"], unless=["identity.no_such_gate"])
