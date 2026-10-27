@@ -1795,10 +1795,10 @@ def test_q2_a_stub_round_7_of_6_is_refused_with_three_typed_options(live, rounds
     _propose_round(live, ref, 7)
     [no] = _round_answers(R, ref)
     assert no["msg_type"] == "reject-proposal" and no["payload"]["round"] == 7
-    assert no["payload"]["why"] == "no room in the ceiling: round 7 against a ceiling of 6 rounds"
+    assert no["payload"]["why"] == "no room in the ceiling: the goal's last round is used", "said with no figure: it is the why of a card"
     opts = no["payload"]["options"]
     assert [o["id"] for o in opts] == ["raise:ceiling", "leave:D2", "stop"] and [o["kind"] for o in opts] == ["raise", "leave", "stop"]
-    assert opts[0]["label"] == "Add 2 more rounds"
+    assert opts[0]["label"] == "Add budget for two more rounds", "the number is spelled: a figure in a label is a count at rest"
     assert opts[0]["params"] == {"what": "ceiling", "rounds": 8, "calls": c["calls"], "usd": c["usd"]}
     assert opts[0]["cost"].endswith("the goal's ceiling becomes 8 rounds, %s" % V1._say_cost(c["calls"], c["usd"]))
     assert opts[1]["cost"] == "D2 is dropped from done-when (The lessons for each topic are there); nothing more is spent"
@@ -1807,6 +1807,27 @@ def test_q2_a_stub_round_7_of_6_is_refused_with_three_typed_options(live, rounds
     assert (row["answer"], row["round"], row["keep"]) == ("reject", 7, []) and row["why"] == no["payload"]["why"]
     assert S.validate("priority.price", row) == []
     assert W.dept(ref)["ceiling"] == c, "a no changes nothing"
+
+
+def test_q2_the_label_of_a_raise_spells_the_rounds_it_adds_and_the_cost_line_says_the_figures(live):
+    """A figure in a label must fail (found by a verifier 2026-10-27: 'Add 2 more rounds' printed a count at rest on the limit
+    card): the label says 'two more rounds', 'one more round', and past what it can spell 'more rounds'; the figures are on the cost
+    line, which is the price the owner chooses by."""
+    W, R, J, _ = live
+    c = {"rounds": 6, "calls": 90, "usd": 9.0}
+
+    def made(rounds, calls=97, usd=9.3, held=False):
+        return V1.ceiling_option(c, {"rounds": rounds, "calls": calls, "usd": usd}, held)
+    assert made(8)["label"] == "Add budget for two more rounds"
+    assert made(7)["label"] == "Add budget for one more round"
+    assert made(12)["label"] == "Add budget for six more rounds" and made(18)["label"] == "Add budget for twelve more rounds"
+    assert made(19)["label"] == "Add budget for more rounds", "past what it spells, a word and no figure"
+    assert made(6, calls=99, usd=9.5)["label"] == "Add budget for the goal", "no round added: the calls and the money only"
+    for rounds in (6, 7, 8, 12, 19, 40):
+        o = made(rounds)
+        assert not re.search(r"\d", o["label"]) and S.validate("option", o) == [], o["label"]
+    assert made(8)["cost"] == "about 7 calls and 0.30 USD more; the goal's ceiling becomes 8 rounds, 97 calls and 9.30 USD", "the price keeps its figures"
+    assert made(8, held=True)["cost"].endswith("(the most allowed)")
 
 
 def test_q2_a_raise_of_the_ceiling_is_applied_by_code_two_rounds_at_a_time_up_to_the_cap(live, rounds_sendable):
@@ -1850,14 +1871,14 @@ def test_q2_a_raise_past_the_cap_is_409_over_cap_and_the_ceiling_stays(live, rou
     api = _client()
     for params in ({"rounds": 13, "calls": c["calls"], "usd": c["usd"]}, {"rounds": 8, "calls": 2 * c["calls"] + 1, "usd": c["usd"]},
                    {"rounds": 8, "calls": c["calls"], "usd": 2 * c["usd"] + 0.01}):
-        stale = W.option("raise:ceiling", "Add 2 more rounds", "about a lot more", dict(params, what="ceiling"))
+        stale = W.option("raise:ceiling", "Add budget for two more rounds", "about a lot more", dict(params, what="ceiling"))
         ask = W.options_ask("blocked", "The round is past the ceiling.", [stale, W.option("stop", "Stop here", "x")])
         W._put_ask(ref, ask)
         got = api.post("/api/native/%s/asks/%s" % (ref, ask["id"]), json={"option": "raise:ceiling"})
         assert (got.status_code, got.json()["detail"]) == (409, {"code": "OVER_CAP"}), params
         assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == "pending"
         assert W.dept(ref)["ceiling"] == c
-    ok = W.option("raise:ceiling", "Add 2 more rounds", "x", {"what": "ceiling", "rounds": 12, "calls": 2 * c["calls"], "usd": round(2 * c["usd"], 4)})
+    ok = W.option("raise:ceiling", "Add budget for two more rounds", "x", {"what": "ceiling", "rounds": 12, "calls": 2 * c["calls"], "usd": round(2 * c["usd"], 4)})
     ask = W.options_ask("blocked", "The round is past the ceiling.", [ok])
     W._put_ask(ref, ask)
     assert api.post("/api/native/%s/asks/%s" % (ref, ask["id"]), json={"option": "raise:ceiling"}).status_code == 200
@@ -1877,7 +1898,8 @@ def test_q2_a_round_past_the_calls_or_the_money_is_said_no_to_in_money_and_the_r
     assert V1.spent_of(ref) == {"calls": 12, "usd": 0.6} and V1.estimate_of(ref, LINE, "line")["calls"] == 12
     _propose_round(live, ref, 2)
     [no] = _round_answers(R, ref)
-    assert no["payload"]["why"] == "no room in the ceiling: about 12 calls and 0.60 USD against the 8 calls and 4.40 USD left"
+    assert no["payload"]["why"] == "no room in the ceiling: the round would cost more than the goal has left to spend"
+    assert not re.search(r"\d", no["payload"]["why"]), "the price is on the row and on the ways out, not counted in the why of the card"
     raise_ = no["payload"]["options"][0]
     assert raise_["params"] == {"what": "ceiling", "rounds": 8, "calls": 40, "usd": 5.0 + 2 * 0.6}, "twice the 20 calls it started at, no more"
     assert raise_["cost"] == "about 20 calls and 1.20 USD more; the goal's ceiling becomes 8 rounds, 40 calls and 6.20 USD (the most allowed)"
@@ -1905,7 +1927,7 @@ def test_q2_a_model_cannot_fund_a_round_the_ceiling_does_not_hold_and_its_no_sta
     assert asked.rstrip().endswith('Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line, in money and room only"}.')
     [step] = [r for r in R.step_rows(ref) if r["step"] == "priority.bargain" and r["facts"] == {"word": "round", "room": False}]
     assert step["status"] == "failed" and step["by"] == "model"
-    assert "said yes to a round the ceiling does not hold: round 7 against a ceiling of 6 rounds" in step["why"]
+    assert "said yes to a round the ceiling does not hold: the goal's last round is used" in step["why"]
     assert _round_answers(R, ref) == [] and [r for r in _prices(W, ref) if r["proposal"] == "round"] == []
     _propose_round(live, ref, 2)
     [no] = _round_answers(R, ref)
@@ -1957,10 +1979,12 @@ def test_q2_the_round_is_held_to_the_ceiling_at_its_edges(live):
     assert V1.round_within_ceiling(read(6, 60, 2.7))["answer"] == "accept", "the room is exactly enough, and so is round 6 of 6"
     assert V1.round_within_ceiling(read(6, 61, 2.7))["answer"] == "reject"
     assert V1.round_within_ceiling(read(6, 60, 2.71))["answer"] == "reject"
-    assert V1.round_within_ceiling(read(7, 0, 0.0))["over"] == ["round 7 against a ceiling of 6 rounds"]
+    assert V1.round_within_ceiling(read(7, 0, 0.0))["over"] == ["the goal's last round is used"]
     assert V1.round_within_ceiling(read(0, 0, 0.0))["answer"] == "reject"
+    assert V1.round_within_ceiling(read(0, 0, 0.0))["over"] == ["there is no such round"]
     both = V1.round_within_ceiling(read(7, 66, 3.0))
-    assert both["why"] == "no room in the ceiling: round 7 against a ceiling of 6 rounds; about 6 calls and 0.30 USD against the 0 calls and 0.00 USD left"
+    assert both["why"] == "no room in the ceiling: the goal's last round is used; the round would cost more than the goal has left to spend"
+    assert not re.search(r"\d", both["why"]), "no figure in the why of a no to a round"
     ok = V1.CHECK["round_within_ceiling"]
     ctx = {"bag": {"priority.read": read(7, 0, 0.0)}}
     assert ok(ctx, None, None, {"answer": "reject", "why": "no room"})["ok"] and not ok(ctx, None, None, {"answer": "accept", "why": "fits"})["ok"]
