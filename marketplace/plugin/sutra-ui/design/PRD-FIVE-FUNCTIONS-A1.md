@@ -9,7 +9,7 @@
 | Build | four waves of parallel developer packages, merged one at a time on a green gate (A1.26): wave 0, one package, the schema core (about 75 min); wave 1, eight packages (about 110 min); wave 2, six (about 80 min, M9 and M10); wave 3, four (about 50 min). Waves 0 and 1 end at about 3 h 05 min, wave 2 at about 4 h 25 min, wave 3 at about 5 h 15 min. Nothing is left to a later session |
 | Decision log | the A1 rows of [PRD-FIVE-FUNCTIONS-DECISIONS.md](PRD-FIVE-FUNCTIONS-DECISIONS.md) |
 | Pointer for code | `schemas/layers/README.md` (written in wave 0) lists, per layer, the `layer_schema` names that hold it |
-| Amended by | [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md), 2026-10-26: the class model of the interface layer (the interface is the base class, a layer version is a child class that may extend an earlier version, the workflow sources are a family). A2 changes no interface table; A1 stands as written except the lines marked 'Amended by A2' under A1.18 and A1.19. Also [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), 2026-10-26: a template at every level and the user-journey template. A3 adds interface rows only and changes no existing row; the lines marked 'Amended by A3' under A1.16 and A1.22 |
+| Amended by | [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md), 2026-10-26: the class model of the interface layer (the interface is the base class, a layer version is a child class that may extend an earlier version, the workflow sources are a family). A2 changes no interface table; A1 stands as written except the lines marked 'Amended by A2' under A1.18 and A1.19. Also [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), 2026-10-26: a template at every level and the user-journey template. A3 adds interface rows only and changes no existing row; the lines marked 'Amended by A3' under A1.16 and A1.22. Also [PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md), 2026-10-27: the interface layer in pydantic, owner-defined models and the Models editor. A4 changes no interface table or rule; the lines marked 'Amended by A4' are under A1.4 and A1.21 |
 | UI port | [PRD-FIVE-FUNCTIONS-J2UI.md](PRD-FIVE-FUNCTIONS-J2UI.md), 2026-10-26: the department's UI is the J2 prototype's page, fed by an adapter on the records. Its section 6 gives the disposition of the A1 screen steps (A1.28 and the W1-UI rows); the page's pin stays at the prototype commit `f9ceba1` of the A1.28 table. |
 
 ## A1.0 The direction, and how this reads it
@@ -232,6 +232,8 @@ WORKFLOW_STANDARDS = ((id, says, sources, stages), ...)
 VIEWS = {layer: DEFS name}            # plus 'engine_card': 'view.engine_card'
 MIGRATIONS = {0: _m0_to_1}
 ```
+
+*Amended by A4 ([PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md), A4.3): the types and the validator above are now pydantic. Each constructor is an annotation object in `layer_models/types.py` that carries the check and the JSON Schema, each definition is a class in `layer_models/`, `layer_schema.DEFS` is the export of the classes (the same dicts, key for key) and `validate` asks them; the sentences, their order and the generated files are as written here. The walker is kept, frozen, as the oracle the port is proved against.*
 
 ## A1.5 Common definitions
 
@@ -879,6 +881,8 @@ The review found that 'every write validates' did not hold by construction: some
 ```
 
 W0-SCHEMA checks each sample against the check body on main, and keeps only the samples whose verdict does not need a department in the context.
+
+*Amended by A4 ([PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md), A4.3.8): the freeze of W3-PROOF is on the contract: `CORPUS_SHA` (the corpus of inputs with the sentences the oracle gives, which the port never changes) and `INTERFACE_SHA`, with a tested ledger of any re-pin, `INTERFACE_REPINS`. Until the owner ships the department to stable, A4's additions keep `SCHEMA_VERSION = 1`.*
 
 ## A1.22 How the existing typed layers fit (reused, not duplicated)
 

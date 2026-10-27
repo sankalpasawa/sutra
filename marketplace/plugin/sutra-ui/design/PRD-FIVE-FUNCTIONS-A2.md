@@ -9,7 +9,7 @@
 | Build | two developer packages, about 105 minutes of work in all (A2.12): A2-LAW, new files only, merges any time; A2-INHERIT, merges between wave 2 and wave 3. No wave waits for A2, and A2 touches no file a wave-1 package owns |
 | Decision log | the A2 rows of [PRD-FIVE-FUNCTIONS-DECISIONS.md](PRD-FIVE-FUNCTIONS-DECISIONS.md) |
 | Pointer for code | `layers/lineage.py` (the law, A2-LAW), `layers/versions.py` (inherit and resolve, A2-INHERIT), `layers/contract.py` cases 9 to 13 |
-| Amended by | [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), 2026-10-26: the levels beyond the layers (the step, the function template, the engine and artifact templates, the kind, the ask) and the user journey are built and numbered there (L0 to L6). A3 changes no rule of A2; the lines marked 'Amended by A3' are under A2.2, A2.9 and A2.15 |
+| Amended by | [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), 2026-10-26: the levels beyond the layers (the step, the function template, the engine and artifact templates, the kind, the ask) and the user journey are built and numbered there (L0 to L6). A3 changes no rule of A2; the lines marked 'Amended by A3' are under A2.2, A2.9 and A2.15. Also [PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md), 2026-10-27: the owner's own models are a second base-and-child pair; A4 changes no rule of A2, and the lines marked 'Amended by A4' are under A2.2 and A2.7 |
 
 ## A2.0 The direction, and how this reads it
 
@@ -72,6 +72,8 @@ Each row is a template (a base class) and what implements it (a child class). A3
 **The pattern that adds a level.** A level is added the same way each time, and this is what A3 builds on: (1) the base is a typed definition in the interface (a DEFS name and its tables, or a data schema); (2) its children are modules or data files that conform; (3) one sentence states what a child may do (add or tighten) and may not (drop or loosen); (4) one contract case or test enforces that sentence; (5) the child declares what it extends (`PARENT`, `derives_from`, `WORKFLOW_FAMILY`) so the sentence can be measured.
 
 *Amended by A3 ([PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), A3.1): the levels of the table are built and numbered there: the user journey L0, the department kind L1, the function L2, the engine and workflow L3, the step L4, the artifact L5, the ask L6. At L2 the base is the layer interface extended by `S.FUNCTION_TEMPLATE` and the typed `goal` parts, and its children are the versions (`PARENT`); the Default and use-case pair of this table is a separate data line, called by those names and never 'function template'. The user journey is held by `journeys/contract.py` cases JC-1 to JC-12.*
+
+*Amended by A4 ([PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md), A4.4): the owner's own models are a second pair, in data: a core base (`OwnerRecord`, or a template that A4.5.7 names) and the children the owner makes, compiled to pydantic classes and held to the same sentence (add or tighten, never drop or loosen), checked on the classes themselves.*
 
 ## A2.3 The class diagram
 
@@ -284,6 +286,8 @@ flowchart TD
 | A2-R12 | **Templates.** A use-case template derives from its function's Default in one level, adds floor lines and keeps the Default's checks. | `test_function_templates.py::test_narrowing_only` (built) |
 
 The contract's new cases return [] for a version with no parent where they have nothing to compare (all six v1 modules pass them unchanged), never raise on a stub, and name the impl id and the row in every fault, as cases 1 to 8 do. Case 9 is the only one that requires a `PARENT` of a version above 1; without it a whole-file v2 would escape the step law.
+
+*Amended by A4 ([PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md), A4.4.2): rules R1 to R3 and R10 of A4 are A2-R2's sentence checked on classes, for the versions of a model, where `parent` names the previous version as `PARENT` does here.*
 
 ## A2.8 The workflow classes
 

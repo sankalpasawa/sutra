@@ -9,7 +9,7 @@
 | Build | five developer packages, about 8 hours of work in all (A3.12): A3-CORE (types, merges first), A3-JOURNEYS (the machinery), A3-FUNCTIONS (the function template, after wave 2), A3-J12 and A3-J34 (the journeys). Nothing in wave 2 waits for A3; W3-PINS and W3-PROOF X2 wait for the packages A3.12 names |
 | Decision log | the A3 rows of [PRD-FIVE-FUNCTIONS-DECISIONS.md](PRD-FIVE-FUNCTIONS-DECISIONS.md) |
 | Pointer for code | `layer_schema.py` (its A3 section: the step, kind, engine, artifact and journey definitions, the function template's constants), `template_checks.py`, `journeys/` (the loader, the cases, the state, the walk helper, the data), `qa/journey_status.py`, `layers/contract.py` case 14 |
-| Amended by | nothing yet |
+| Amended by | [PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md), 2026-10-27: the interface layer in pydantic, owner-defined models and the Models editor. A4 changes no rule or case of A3; the one line marked 'Amended by A4' is under A3.1 |
 
 ## A3 at a glance
 
@@ -48,6 +48,8 @@ The owner's earlier directions stand and A3 keeps them at every new level: the s
 So in this PRD, at every level: **a template is an interface is a base class.** It is fixed, never run by itself, and written only in code. What fills it is a **child class** (also subclass, derived class, implementation): a module or a data file that conforms. The words follow A2.1: "base class" always means the interface or template; `PARENT`, `derives_from` and `WORKFLOW_FAMILY` name what a child extends, and are called "extends" or "predecessor" in prose.
 
 **The pattern that adds a level (A2.2), applied seven times.** (1) The base is a typed definition in the interface: a `DEFS` name and its tables in `layer_schema.py`. (2) Its children are modules or data files that conform. (3) One sentence says what a child may add or tighten and may not drop or loosen. (4) One contract case or test enforces that sentence, and has a failing example. (5) The child declares what it extends, so the sentence can be measured. A3 adds levels and cases. It adds no mechanism.
+
+*Amended by A4 ([PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md), A4.5.7): four of the levels accept an owner-defined child: the artifact (L5), the engine and workflow (L3), the department kind (L1) and the user journey (L0). A template file that names `"model": "x.<name>"` is checked as that child as well as its base. The step (L4), the function (L2) and the ask (L6) stay fixed. The definitions are pydantic classes in `layer_models/`; the rules and cases of this section are unchanged.*
 
 ### The table of levels
 

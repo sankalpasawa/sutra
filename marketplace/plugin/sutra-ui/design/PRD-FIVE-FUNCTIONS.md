@@ -1,8 +1,8 @@
 # PRD: The department and its five functions, in the Sutra app
 
-_Status: Final for team review · Version 1.2 (1.0 of 2026-10-22, amended by A1, A2 and A3 on 2026-10-26) · Written by: solution architect · Rulings and marks by: the owner (founder) · Built, 2026-10-27 (W3-PROOF): function-prompts/ and its reader are deleted, and 37 dead copies leave engine_runtime's registries (165 entries to 128); the interface is frozen at schema version 1 (INTERFACE_SHA[1] = e23aeacef66e..., the sha256 of schemas/layers/interface.v1.json) and a key another layer owns is refused; the journeys' status lane reads 62 rows, 60 proven, 2 partly (J2.7 on BL-4b, J4.4 on BL-2b), 0 wanted, 0 faults (J1 16 proven; J2 15 proven, 1 partly; J3 18 proven; J4 11 proven, 1 partly). The proof run reads SM-1 0, SM-3 0, SM-4 0, SM-6 0, SM-13 0 on the scenario suite (212 departments, 97 tests in 4 lanes, models stubbed, C2, the interface in refuse mode), and SM-14 0 journey rows unproven. SM-6 is 0 by a ruling (W3-PROOF): 9 cycles stand unread for want of a live reader (no model in the stubbed suite, or the old sampler a test puts back), are listed in the report and not counted, and a live read decides; Identity files no ask for a cycle Audit could not read, which stays a product gap outside this build. The J2 prototype and the site are untouched; the nine live Beta runs, the Human Simulation walk and SM-5 on a Beta walk stay pending under C2_  
+_Status: Final for team review · Version 1.3 (1.0 of 2026-10-22, amended by A1, A2 and A3 on 2026-10-26 and by A4 on 2026-10-27) · Written by: solution architect · Rulings and marks by: the owner (founder) · Built, 2026-10-27 (W3-PROOF): function-prompts/ and its reader are deleted, and 37 dead copies leave engine_runtime's registries (165 entries to 128); the interface is frozen at schema version 1 (INTERFACE_SHA[1] = e23aeacef66e..., the sha256 of schemas/layers/interface.v1.json) and a key another layer owns is refused; the journeys' status lane reads 62 rows, 60 proven, 2 partly (J2.7 on BL-4b, J4.4 on BL-2b), 0 wanted, 0 faults (J1 16 proven; J2 15 proven, 1 partly; J3 18 proven; J4 11 proven, 1 partly). The proof run reads SM-1 0, SM-3 0, SM-4 0, SM-6 0, SM-13 0 on the scenario suite (212 departments, 97 tests in 4 lanes, models stubbed, C2, the interface in refuse mode), and SM-14 0 journey rows unproven. SM-6 is 0 by a ruling (W3-PROOF): 9 cycles stand unread for want of a live reader (no model in the stubbed suite, or the old sampler a test puts back), are listed in the report and not counted, and a live read decides; Identity files no ask for a cycle Audit could not read, which stays a product gap outside this build. The J2 prototype and the site are untouched; the nine live Beta runs, the Human Simulation walk and SM-5 on a Beta walk stay pending under C2_  
 _Based on: the Native site (department page, journeys.json v2.4; the five function pages, functions.json 1.5); Sutra `6bb38ec6` (2.306.25); the J2 prototype `564e3a7`._  
-_Amended: A1, 2026-10-26 (the interface schema layer), on Sutra main `d24a467d` and the J2 prototype `3d8d2e8`; A2, 2026-10-26 (the class model of the interface layer), on Sutra main `827fe38f`; A3, 2026-10-26 (a template at every level, and the user-journey template), on Sutra main `a660b5a2` and the J2 prototype `f9ceba1`. See [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md), [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md) and [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md)._
+_Amended: A1, 2026-10-26 (the interface schema layer), on Sutra main `d24a467d` and the J2 prototype `3d8d2e8`; A2, 2026-10-26 (the class model of the interface layer), on Sutra main `827fe38f`; A3, 2026-10-26 (a template at every level, and the user-journey template), on Sutra main `a660b5a2` and the J2 prototype `f9ceba1`; A4, 2026-10-27 (the interface layer in pydantic, owner-defined models and the Models editor), on Sutra main `371ca4b1`. See [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md), [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md), [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md) and [PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md)._
 
 > **Amendment A1 (2026-10-26).** The owner directed that Root and the five layers (Identity, Adaptation, Priority, Coordination, Audit) be one hard-coded interface schema in code, that every department workflow conform to it from a coding perspective, that nothing about a layer's structure be managed through .md files, and that each layer's behaviour be a module that can change version by version behind the fixed interface. A1 does this: `layer_schema.py` holds the interface, from which JSON Schema files are generated; `layers/<layer>/v<N>.py` and `v<N>.json` hold each layer's recipe and bodies, pinned per department by a rule that keeps old pins working; `workflow_schema.py` holds Root's standards; typed instruction fields replace the .md files. It overrides the '.md files' wording of S-28 and G3 and the decision MK-7, rewrites M2, and folds M7 into the workflow schema. Section 10 below is revised for A1 and for what is built on main (M0, M1, M2.1 to M2.4, M3.1 to M3.7, M4.1 to M4.7, M6.1); every step says which wave builds it. Wave 0 is one package (the schema core), waves 1 to 3 run packages in parallel, and nothing is left to a later session (A1.26). Screens S11 and S16 change and S18 is new. Everything else in this page stands.
 
@@ -10,13 +10,15 @@ _Amended: A1, 2026-10-26 (the interface schema layer), on Sutra main `d24a467d` 
 
 > **Amendment A3 (2026-10-26).** The owner said that a template is the structured way of working anything, that is, the interface, the base class and its implementations; that every step has one; that each of the five functions has a template of its own in the J2 prototype, with a goal in it, which this PRD lacked; and that J1, J2, J3 and J4 are part of another template, the user journey, to be written into the PRD first and built after. A3 does it. A template is an interface is a base class at every level: the user journey (L0), the department kind (L1), the function (L2), the engine and workflow (L3), the step (L4), the artifact (L5) and the ask (L6), each with its children, the one sentence a child keeps, and a case that fails when it does not (A3.1). The step and the journey are typed in `layer_schema.py`. A function's template carries its own goal and done, its role words and the boundaries of the five official role files, sent in every function's card (A3.4). The journeys J1 to J4 are written out in full, every step and every IF IT GOES WRONG edge of the site and the earlier rows it keeps, each bound to the code and the tests that prove it, and their status is computed from passing tests and never typed: of 62 rows, 49 are proven today, 11 are built with a named gap or unproven, and 2 are wanted (J2.8 is wave 2's; J4.4 is built by A3 and stays partly built). J5 to J7 and the functions' own journeys are declared, not built. The journeys reach the UI port as data only. A3 changes no rule of A1 or A2 and amends them by one line each. See [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), M2.13, M11, section 9.5 and the glossary (section 16).
 
+> **Amendment A4 (2026-10-27).** The owner directed that all of the interface layer be pydantic, that the owner be able to add and change some of those pydantic layers from the Sutra UI (enable and disable them, link and nest them, with the concept of object-oriented design), and that this must not affect streaming. A4 does it. The 130 definitions of `layer_schema.py` become pydantic v2 classes in a new package, `layer_models/`; `layer_schema.py` stays the one public facade, so nothing that calls it changes; the hand-written validator stays as a frozen oracle, and the port is proved equal to it (the same verdicts, the same sentences in the same order, the same JSON Schema) over the samples, every writer's output and a seeded fuzz, so the W3-PROOF freeze holds on the contract. The owner's models are data in the records home, compiled with `create_model` on a core base and held to twelve rules (a child may add or tighten, never drop or loosen; nest without a circle; link by id; polymorphism by tag; on and off with a defined meaning; versions with `PARENT`). A Models screen on Root's pane (S19 to S26, in the app's own style) edits them: a change that tightens is the owner's own act, with an undo, and a change that lets in more waits for the stamp. The existing streams are not made to validate and their frames stay byte for byte; a model's streamed answer is validated as it arrives and once whole. A4 changes no rule of A1, A2 or A3 and amends them by one line each. See [PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md), M12, section 9.1 and the glossary (section 16).
+
 > **The J2 page in the app (2026-10-26).** The owner directed that the department's UI be the J2 prototype's page, in the exact same fashion, with no change. The screen steps of this PRD (S1 to S18 and the panes they name) are carried by that page or kept in records mode; [PRD-FIVE-FUNCTIONS-J2UI.md](PRD-FIVE-FUNCTIONS-J2UI.md) is the design of record, and its section 6 gives the disposition of each step. The decision rows it settles are listed at the end of [PRD-FIVE-FUNCTIONS-DECISIONS.md](PRD-FIVE-FUNCTIONS-DECISIONS.md).
 
 > Build the department's five functions (Identity, Adaptation, Priority, Coordination, Audit) into the Sutra desktop app. Each one does its J2 job honestly for every kind of department, the owner sees the five working as one system, and the owner hears one voice: Identity's.
 
 > **How to read this page**
-> - **Milestones** are `M0` to `M10`, in dependency order. Every step has an id such as `M3.2`, with What, How, Where and a testable Done check.
-> - **Screens** are `S1` to `S18`. Each has sample data from one department (Thread & Loom Website, 10:24, round 2) and a wireframe.
+> - **Milestones** are `M0` to `M12`, in dependency order. Every step has an id such as `M3.2`, with What, How, Where and a testable Done check.
+> - **Screens** are `S1` to `S26`. Each has sample data from one department (Thread & Loom Website, 10:24, round 2) and a wireframe.
 > - **Marks (`MK-n`)** are proposals for things the owner marked 'needs to be filled', 'marks owed' or 'placeholder'. A step that depends on a mark ships to stable only after the owner marks it. **Questions (`Qn`)** have defaults; the build may go ahead on a default behind the milestone's flag, in Beta only.
 > - **Code short names:** R = `engine_runtime.py`, W = `website_dept.py`, J = `j2_runtime.py`, P = `J2_Prototype/j2.py`; all Sutra paths are under `sutra/marketplace/plugin/sutra-ui/`. `Lnnn` is a line of the department page text.
 > - **Sizes:** S = up to 1 day · M = 2 to 4 days · L = 5 days or more. VSM labels are written 'VSM S5' so they are not confused with screen ids.
@@ -234,6 +236,8 @@ The screenshot shows the site's menu: _A department > The five functions > Ident
 | A template is an interface is a base class, at every level; a child keeps one stated sentence, and a case fails when it does not. | A3 (owner, 2026-10-26); A2.2 |
 | A journey's status is computed from passing tests; a row either binds to code and tests or says it is wanted. | A3 (owner, 2026-10-26) |
 | A function's boundaries are the interface's; its behaviour is its version's words. | A3.4 |
+| The interface is pydantic, in code; the owner builds only on the places the code declares, tightening by their own act, and a change that lets in more waits for the stamp. | A4 (owner, 2026-10-27); A4-7, A4-10 |
+| A stream is never slowed or reshaped by validation: nothing is built or validated per frame in an existing stream, and its frames stay byte for byte. | A4 (owner, 2026-10-27); STR-1 to STR-10 |
 
 ## 8. Where things stand today
 
@@ -315,6 +319,9 @@ flowchart LR
 | Template interface (A3) | New | sutra-ui/layer_schema.py (its A3 section), template_checks.py, test_layer_templates.py | `DEFS` for the step, its row, the engine start, the Library engine template, the kind and the artifact template; `S.TEMPLATE_LEVELS`, `S.ASK_FORMS`. The shape law beside `engine_runtime.validate`'s definition law. |
 | Function template (A3) | New | layer_schema.py (`FUNCTION_TEMPLATE`, `DEPARTMENT_AGREEMENT`, the parts of the `goal` group), layers/<fn>/v1.py, layers/contract.py (case 14), engine_runtime.card | A function's own goal and done, its role words and the boundaries of the official role files, sent in the card of every function step. |
 | Journey template (A3) | New | layer_schema.py (`journey` and its parts), journeys/ (the loader, the cases, the state, the walk helper, the data), qa/journey_status.py | J1 to J4 as typed children, J5 to J7 and the function journeys declared; the status computed from tests. |
+| Pydantic interface (A4) | New | sutra-ui/layer_models/ (one module per layer), layer_consts.py; layer_schema.py kept as the facade; qa/a4_equiv.py | The 130 definitions as pydantic classes: annotation objects that carry the check and its JSON Schema, a translator that gives today's sentences in today's order, the old walker frozen as the oracle, the equivalence proof, the freeze on the contract. |
+| Owner-defined models and the Models editor (A4) | New | layer_models/{spec,compile,store,owner_rules,hooks}.py, models_api.py, static/js/26-models.js | Models the owner makes in Root > Settings > Models (S19 to S26): compiled with `create_model` on a core base, held to twelve rules, kept with history in the records home, accepted at the extension points; a change that lets in more waits for the stamp. |
+| Streaming guards (A4) | New | layer_models/{frames,stream}.py, qa/stream_bench.py | The streams stay as they are; frames as models; partial validation of a streamed answer; the `models` event on the sessions stream; the benchmark. |
 | Function instructions | Built, reworked by A1 | function-prompts/<fn>/<file>.md (the fallback until each layer holds its words in wave 1; deleted in wave 3); owner values in {records}/{ref}/instructions.json | Typed fields that code compiles into prompts, byte for byte as the .md parts were. |
 | JSON Schema files (A1) | New, generated | sutra-ui/schemas/layers/*.schema.json, interface.v1.json | Generated from layer_schema.py by `python layer_schema.py --write`; never edited by hand. |
 | Function templates | Existing, wording changed | sutra-ui/function-templates/priority/*.json | Priority's floor, choices and chat_brief stop saying it orders. The 13 keys are unchanged. The card reads a picked template's whole floor (A3.4.6). |
@@ -480,6 +487,7 @@ _Revised for amendment A1 (2026-10-26) and for what is on main `d24a467d`. Each 
 | M9 | Pursue: keep going until done | to build | Adaptation, with Priority and Identity · FA2, J2.h · S-31: department × LIFE | M5, M8 | L · wave 2: W2-IDENTITY, W2-ADAPT, W2-PRIORITY and W2-SCREENS (about 80 min) |
 | M10 | Internal messages, one API, the proof run | to build | All five · ruled screens 3.1 to 3.4 · S-31: department × MEETINGS | M1, M2, M9 | M · wave 2: W2-SCREENS and W2-PROOF; wave 3: W3-PROOF reruns the proof |
 | M11 | Templates at every level, and the journeys as a template (A3) | to build | Every level of the department; the user journeys J1 to J4 · S-31: department × MEETINGS and function × PARTS | M2.12, M4 to M9 for the rows it binds | L · five packages (A3.12); A3-CORE first, the rest alongside and after wave 2 |
+| M12 | The pydantic interface and the Models editor (A4) | to build | The interface layer; the owner's own models · S-31: organisation × PARTS | M2, M11 (A3-CORE); the closure round and W3-BOARD merged | L · six packages (A4.9), about 1,010 minutes of developer time, about 640 on the critical path |
 
 **How it is built (A1.26).** Parallel developer agents, each in its own git worktree with its own files, merged into main one at a time by an integrator on a green gate, then verified.
 - **Wave 0** (about 75 min): W0-SCHEMA alone, the schema core: layer_schema.py bound to the writers on main, warn mode at every write point and on every post, the generated JSON Schema files, the recipes in `layers/<layer>/v1.json`, the contract helpers, and a conftest fixture that fails any test meeting a fault.
@@ -487,6 +495,7 @@ _Revised for amendment A1 (2026-10-26) and for what is on main `d24a467d`. Each 
 - **Wave 2** (about 80 min): W2-PRIORITY, W2-IDENTITY, W2-CHECKS, W2-ADAPT, W2-SCREENS and W2-PROOF build M9 and M10, and M5.2, M5.4 to M5.6, M7.5, M8.4 to M8.6 and M8.8.
 - **Wave 3** (about 50 min): W3-PINS, W3-BOARD, W3-MAP and W3-PROOF build per-department versions (M2.11), board/1 (M4.9), spot checks (M8.7), the metro WORK row (M1.11), and the freeze (M2.10).
 - **A3** (about 8 hours of developer time over five packages, beside waves 2 and 3): A3-CORE (types, about 75 minutes) merges first, before wave 2's first merge; A3-JOURNEYS (the machinery, about 100 minutes) after it; A3-FUNCTIONS (about 130 minutes) after the last wave-2 layer package and A2-INHERIT and before W3-PINS; A3-J12 and A3-J34 (about 90 and 100 minutes) after wave 2, J34 after J12. No wave-2 package waits for A3; W3-PINS and the freeze in W3-PROOF wait for A3-FUNCTIONS (A3.12).
+- **A4** (about 17 hours of developer time over six packages, after the closure round and W3-BOARD): A4-CORE (about 130 minutes) first; A4-PORT (about 270) and A4-OWN (about 210) beside each other, A4-PORT merging after W3-PROOF X2 or first; A4-STREAM (about 150) any time after A4-CORE; A4-UI (about 190) after A4-OWN; A4-DOCS (about 60) last (A4.9). Nothing in waves 2 and 3 waits for A4.
 
 Waves 0 and 1 end at about 3 h 05 min, wave 2 at about 4 h 25 min, wave 3 at about 5 h 15 min; the owner's 3-to-4-hour window closes inside wave 2, and waves 2 and 3 run straight after in the same build.
 
@@ -508,6 +517,8 @@ flowchart LR
   M9 --> M10["M10 Messages, one API, proof (wave 2; frozen wave 3)"]
   M2 --> M11["M11 Templates and the journeys as a template (A3)"]
   M9 --> M11
+  M11 --> M12["M12 The pydantic interface and the Models editor (A4)"]
+  M2 --> M12
 ```
 
 **Working agreement:** one branch per package (`a1/<package>`, `a2/<package>`, `a3/<package>`), one commit per step named after it ('A1 <step id>: <title>'), the gate green before each merge, and never a push. Each package owns the files and engine_runtime regions its spec lists; nobody edits the four registry literals or def_version (the integrator bumps it); a package adds its own layer's interface rows in 'A1 interface:' commits, and the integrator makes the shared ones. At a wave's cut-off the integrator merges whole steps, and a step not merged opens the same layer's package in the next wave. Every milestone still ships to Beta (:8331) first, then a Human Simulation walk, then the owner's review, then stable.
@@ -1388,6 +1399,78 @@ flowchart LR
 
 ---
 
+### M12 · The pydantic interface and the Models editor
+
+| | |
+|---|---|
+| **Centres on** | The interface layer (all of `layer_schema.py`); the owner's own models · S-31: organisation × PARTS |
+| **Goal** | All of the interface is pydantic, behind the unchanged `layer_schema.py` facade and proved equal to the hand-written validator; the owner can make and change models of their own from the Models screen, turn them on and off, link and nest them, under twelve rules; streaming is neither slowed nor reshaped. |
+| **At the end, the owner sees** | On Root's pane, a Models card and the Models screens (S19 to S26). Nothing else on screen changes; the J2 page is untouched. |
+| **Status** | to build |
+| **Ships screens** | S19 to S26 |
+| **Depends on** | M2 (the interface), M11 (A3-CORE's templates); the closure round and W3-BOARD merged |
+| **Size** | L · six packages (A4.9), about 1,010 minutes of developer time, about 640 on the critical path |
+
+**M12.1 · The base of the pydantic interface (A4-CORE)**
+- **What:** The base classes (`Closed`, `Open`, abstract bases, mixins), the annotation objects that carry a check and its JSON Schema, the translator from pydantic's errors to today's sentences in today's order, the JSON Schema export, the class rules R1 to R6, the revision bus, and the equivalence harness.
+- **How:** A4.3.2 to A4.3.7 and A4.4; the scratch proofs in `waves/A4-specs/proof/`.
+- **Where:** `layer_models/{base,types,faults,schema,rules,registry,bus}.py; qa/a4_equiv.py; requirements.txt (pydantic==2.13.5)`
+- **Done check:** Six real definitions equal the hand-written validator over their inputs (same verdict, same sentences in the same order) and export the same JSON Schema; one failing example for every kind of loosening; no warning on import.
+
+**M12.2 · The 130 definitions (A4-PORT P0 to P6)**
+- **What:** Every definition of `layer_schema.py` as a class, one module per layer; the constants in `layer_consts.py`; the old walker and the 130 literal definitions frozen as the oracle; the old picture (the facade's names, the writers' recorded values, the golden corpus) taken first.
+- **How:** The cookbook of the A4-PORT spec; required fields first in the interface's order; a keyword or `BaseModel` name as an underscore name with an alias.
+- **Where:** `layer_models/{common,identity,root,workflow,coordination,adaptation,priority,audit,options,acts,fields,settings,views,department,templates,journey,unions,legacy,defs}.py; layer_consts.py; test_fixtures/models/`
+- **Done check:** For every definition: the same verdicts, the same sentences in the same order, the same JSON Schema entry as the oracle; every keyword of every definition hit by a rejecting input.
+
+**M12.3 · The swap and the proof at scale (A4-PORT P7 to P8)**
+- **What:** `DEFS` becomes the export of the classes and `validate` asks them, in one commit that reverts alone; the proof over the recorded writers, the mutants and a seeded fuzz; the benchmark and the import budget.
+- **How:** A4.3.5, A4.3.7, A4.3.8. `VALIDATOR` is the code constant that runs the old path.
+- **Where:** `layer_schema.py; layer_consts.py; schemas/layers/ (regenerated, unchanged); qa/a4_equiv.py; test_layer_models_port.py; test_layer_models_equiv.py`
+- **Done check:** Zero differences on 130 definitions; the generated files and `describe()` do not change, and W3-PROOF's freeze test passes unchanged; every existing test passes unchanged; the port is not slower than the walker; `import layer_schema` takes at most 250 ms.
+
+**M12.4 · Owner-defined models: the spec, compile, rules and store (A4-OWN O1 to O4)**
+- **What:** The spec models and their vocabulary; `create_model` on a core base; the rules at save and load; the records-home store with append-only history, undo, revert and the stale check.
+- **How:** A4.5.
+- **Where:** `layer_models/{spec,compile,owner_rules,store}.py; layer_models/registry.py`
+- **Done check:** A compiled model is a pydantic class on a core base; a child that loosens is refused with its sentence; a nest circle is found; on and off, retire and rename behave as R9; a change that tightens is applied, a change that lets in more waits for the stamp; nothing is deleted.
+
+**M12.5 · The routes, the hooks and the interface commit (A4-OWN O5 to O8)**
+- **What:** The Models routes under `/api/native/_models`, the preview with its bounded scan, the pending route that stamps a change that lets in more; the hooks at the artifact, engine, kind and journey definitions and the artifact check `fits_model`; the documents beside the interface (`schemas/models/`).
+- **How:** A4.5.7, A4.6.3 to A4.6.5.
+- **Where:** `models_api.py; layer_models/{hooks,impact,graph}.py; app.py (one line); artifacts.py (check); schemas/models/`
+- **Done check:** Every route with its success and each error (404 `UNKNOWN_MODEL`, 409 with a code, 422 `NOT_IN_SCHEMA`, 413, 429); a department ref is never shadowed; a filing that does not fit its template's model fails the check; a model that is off passes with a note; creating an owner model changes no byte of `describe()` (`test_x2_*` and `test_a4_changes_no_byte_of_the_interface`).
+
+**M12.6 · The Models screens (A4-UI)**
+- **What:** S19 to S26 on Root's pane, in the app's own style.
+- **How:** A4.6.2; the pattern of S16 and S18; tokens only; no counts at rest; status never by colour alone.
+- **Where:** `static/js/26-models.js; static/js/22-website.js (the card and the tab); static/js/09-tail.js; static/panel.css; static/panel.html; test_models.js`
+- **Done check:** Fourteen named claims (`test_models.js` M1 to M14): every state of every screen, the three live lines of a change, the circle shown before Save, the structure's words equal its edges, no banned word, hostile strings as text.
+
+**M12.7 · Streaming must not break (A4-STREAM)**
+- **What:** Goldens of the existing streams taken first; the guards; the frames as models; the partial-validation readers; the `models` event on the sessions stream; the opt-in streaming call for agent steps; the benchmark.
+- **How:** A4.7.
+- **Where:** `layer_models/{frames,stream}.py; app.py (api_sessions_stream); website_dept.py (model_json); qa/stream_bench.py; test_layer_models_stream.py; test_layer_models_guard.py`
+- **Done check:** The sessions stream, the log tail and the chat's frames are byte for byte as before; no stream body builds or validates anything; the bench thresholds hold; a streamed object is checked as it arrives and once whole.
+
+**M12.8 · Docs, contract case 15 and the status lines (A4-DOCS)**
+- **What:** The READMEs; contract case 15; the staged copy imports the package; the status lines.
+- **How:** A4.9.
+- **Where:** `layer_models/README.md; schemas/layers/README.md; layers/contract.py (case 15); design/`
+- **Done check:** Every version's views validate the same through both engines; the whole gate is green; the numbers are in the merge message.
+
+**Acceptance:**
+- Nothing the owner reads changes: the same sentences, in the same order, for the same writes; the same files under `schemas/layers/`.
+- The owner makes a model, builds a second on it, nests a third, points to a fourth by its id, turns one off and on, and undoes a change, all on the Models screen; a change that lets in more waits for the stamp.
+- The existing streams emit the same bytes; the benchmark's thresholds hold.
+
+**Ported from the prototype:** nothing. A4 is Sutra's own.
+
+**Risks:** A sentence or its order differs on a rare composition. Mitigation: the harness, with no allow-list of differences. Two sources of truth while the port is staged. Mitigation: the oracle is frozen and the swap is one commit. A streaming regression. Mitigation: the goldens are taken first and ten guards are in the gate. An owner's spec is hostile input. Mitigation: a closed vocabulary, limits, no code.
+
+---
+
+
 ## 11. Screens: how it looks in the Sutra app
 
 The shell stays as it is: **rail** (Now, Focus, Chats, Market, Org) > **tree** (organisation, then departments; the organisation row is Root's chat) > **list column** > **viewer**. Window 1440×940 by default (900×600 minimum); the viewer is about 815px wide at default size. Wireframes show the light theme.
@@ -2090,6 +2173,27 @@ Full, top of All five (proposal, MK-8):
 +-------------------------------------------------------------------------------------------+
 ```
 
+### S19 to S26 · The Models editor (A4)
+
+| | |
+|---|---|
+| **Milestone** | M12 (M12.6, A4, A4-UI) |
+| **Where** | Root > Settings > Models, next to S18 |
+| **Purpose** | The owner makes and changes models of their own: what they are built on, their fields, what they hold and point to, on and off, with an undo. Sutra-only, so in the app's own style (as S16 and S18), not the J2 page's. |
+
+| Id | Screen | Purpose |
+|---|---|---|
+| S19 | Models: the list | Yours (a model built on another is indented), what can be built on, a stamp that waits |
+| S20 | A model's page | Fields (inherited ones locked), links, built on it, where it is used |
+| S21 | Add a model | Choose a base, name it, give it fields |
+| S22 | Change a field | Constraints inside the narrowing rule; rename keeping the old name; retire; a live line: tightens, no change, or lets in more |
+| S23 | Turn on or off | What turns off with it and what stays, before it happens |
+| S24 | Link or nest | Hold another model inside, or point to it by its id; the circle is shown before Save |
+| S25 | Try a sample, and the shape | A value checked in the app's own words; the JSON Schema; an example |
+| S26 | Structure and history | A drawing and the same in words; every change with a way back |
+
+The wireframes, the sample data (Thread & Loom: Client, VIP client, Order, Line), the states and the interactions of each are in [PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md) A4.6.2. The owner's words (a model's label, a field's name, a choice) are shown as written, always as text. No count at rest; never "charter", "grant", "counter" or "refuse".
+
 ## 12. Design tokens
 
 Use panel.css as it ships, in both themes: the app follows the system until the owner picks a theme (Q10). A function's colour says who; a state colour says how. A function colour never fills a state dot, and a state colour never marks a function. Amber means 'needs you' only; waiting on another function is a hollow muted ring. Status is never shown by colour alone: a word or a badge ('?', '!') always goes with it. The five function colours pass WCAG AA (4.5:1 or better) on --card, --surface, --acc-bg and their own -bg in both themes: light 4.90 to 5.63, dark 4.76 to 6.24 (recomputed from the hex values). They do not change with the owner's accent. New CSS uses tokens only (test V12).
@@ -2283,6 +2387,12 @@ _The review of amendment A1 (2026-10-26) is resolved in [PRD-FIVE-FUNCTIONS-A1.m
 | Role block | The text a function's agent is sent after its skills: what it is and is not, may and never does, how it decides, what it avoids, who it hands on to, and the working agreement. |
 | Working agreement | The six lines every function keeps (only Identity speaks to the owner; the goal and done-when are the reference; disagree with a reason; four exchanges then Identity; a fact only the owner knows is Identity's question; finished only on Audit's reading). The part of the prototype's `team.md` that the interface cannot say. |
 | Step kind | Code, AI, person, gate or rule: what a step's body is. A person step is the person's rung. |
+| Pydantic model | A definition of the interface written as a pydantic v2 class (`Closed` or `Open`), in `layer_models/`, with its fields typed by annotation objects that carry both the check and the JSON Schema. `layer_schema.DEFS` is the export of these classes (A4.3). |
+| Owner-defined model | A model the owner makes in the Models screen: a record in the records home, compiled with `create_model` on a core base, so it is a pydantic class that inherits the base's validation. It may add and tighten, never drop or loosen (A4.4, A4.5). |
+| Discriminated union | A family of models told apart by a tag field: an abstract base, a discriminator every child holds with one value, and the children; a value with another tag reads 'is not one of ...' (R8). The core has `AskForm`, one child for each ask kind. |
+| Partial validation | Checking a model's answer while it is still arriving. Pydantic's `experimental_allow_partial` works for an array root; for an object, a reader checks only the parts that are whole and the answer is checked once whole at the end, which decides (A4.7.5). |
+| Oracle | The hand-written validator and the 130 literal definitions, kept frozen: the port is proved equal to it, and a test that replaces a `DEFS` entry runs on it (A4.3.5, A4.3.7). |
+| Extension point | A place the code declares that an owner-defined model may be built on or accepted: records (`OwnerRecord`), artifact templates, engine templates, department kinds and journeys. Everything else in the interface is fixed (A4.5.7). |
 
 ## 17. Sources
 
@@ -2292,4 +2402,5 @@ _The review of amendment A1 (2026-10-26) is resolved in [PRD-FIVE-FUNCTIONS-A1.m
 - **Amendment A1:** [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md), on Sutra main `d24a467d`.
 - **Amendment A2:** [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md), on Sutra main `827fe38f`.
 - **Amendment A3:** [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), on Sutra main `a660b5a2`. **Site (A3):** `system/journeys.json` version 2.4, saved in full as the reference of contract case JC-9, and the five function pages (`functions.json` 1.5). **J2 prototype at `f9ceba1` (A3):** `agents/j2/*.md`, `stages.json`, `rates.json`, `j2.py` (`system_prompt`, `realization_on`), `docs/j2-test-plan.md`.
+- **Amendment A4:** [PRD-FIVE-FUNCTIONS-A4.md](PRD-FIVE-FUNCTIONS-A4.md), on Sutra main `371ca4b1`. **pydantic 2.13.5** (python 3.11.14), tried in scratch proofs kept with the package specs (`waves/A4-specs/proof/`): the annotation objects and the translator, six real definitions against the hand-written validator (20,941 inputs, 0 differences), the JSON Schema export (12 definitions identical), partial validation of a streamed JSON sample, owner models and the class rules. The pydantic documentation on partial validation (`experimental_allow_partial`: from 2.10; `BaseModel` not supported).
 - **Working notes in this folder:** `gap-matrix.md`, `prd-draft.md` (superseded by this page), `screens.md` (folded into section 11).
