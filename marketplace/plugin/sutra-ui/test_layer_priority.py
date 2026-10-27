@@ -824,6 +824,22 @@ def test_p4_the_view_does_not_come_back_through_the_part_that_reads_the_views(li
     assert served == pane and S.validate_view("priority", served) == [] and asked == []
 
 
+def test_p4_the_pane_the_app_serves_for_priority_carries_the_prices_beside_the_bargains_and_the_envelopes(live, ctx):
+    """The function's page is what the app serves; its j2 part is the pinned view, not today's body. A page that still
+    carries the bargains and the envelopes alone, with no prices, or one that comes back with an inside word in a why, must fail."""
+    import functions_view
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    W.append_row(ref, "prices.jsonl", _price_row(why="I reject this; I would counter with two"))
+    page = functions_view.function(ref, "priority")
+    assert page and page["fn"] == "priority"
+    part = page["j2"]
+    assert "j2_faults" not in part, "the pinned view fits its interface"
+    assert [p["said"] for p in part["prices"]] == ["said yes"] and part["prices"][0]["why"] == "I say no to this; I would ask for less with two"
+    assert {"bargains", "envelopes", "prices"} <= set(part) and [e["engine"] for e in part["envelopes"]][:4] == LINE
+    assert S.validate_view("priority", part) == []
+
+
 # ---- P5: Priority's writers say who they are --------------------------------------------------------------------------------
 def _saves(monkeypatch, W):
     """Every save_dept call, with the function that made it and the `by` it passed; the real save still runs."""
