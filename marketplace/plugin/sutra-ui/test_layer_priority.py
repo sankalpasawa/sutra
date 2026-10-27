@@ -1315,6 +1315,94 @@ def test_p4_an_older_record_that_cannot_be_said_plainly_reads_in_money_and_room_
     assert S.validate_view("priority", pane) == []
 
 
+# ---- P4, closure round, gap 2: a word the owner said is the owner's ---------------------------------------------------------------
+#: a department for a science fund's grants: the owner's own words are grant, counter and refuse, and a model's why for it says them
+GRANT_DESK = "Run the science fund grants desk: grant proposals, the front counter rota and refuse collection day"
+WHY_DESK = ("Budget check: the grant proposal line costs about 5 calls of the 250 left; the counter staff rota is free; "
+            "room for the science fund grants: 4 calls; the front counter rota is free; refuse collection day is Monday.")
+#: the words of the desk, as the owner said them: a read may hold these and nothing else of the bargain
+DESK_WORDS = re.compile(r"grant proposals?|science fund grants|counter staff|front counter|refuse collection", re.I)
+
+
+def test_p4_a_word_the_owner_said_is_kept_as_they_said_it_where_the_pass_says_a_sentence():
+    """The owner's own vocabulary (a department for grant proposals, a shop counter, refuse collection) is not the bargain's, and the
+    pass said it yes, ask for less and no, for good, in every read. A pass that rewrites a word the owner said, or leaves one of the
+    bargain's that they did not, must fail: as Identity's net, it keeps what the owner said and nothing else."""
+    import owner_words
+    assert owner_words.plainly(WHY_DESK, owners=GRANT_DESK) == (WHY_DESK, True)
+    assert owner_words.plainly("the grantee list is long")[1] is False and owner_words.plainly("the grantee list is long", owners="the grantee list")[1] is True
+    assert owner_words.said_plainly(WHY_DESK, owners=owner_words.owner_tokens(GRANT_DESK)) == WHY_DESK, "a set of words works as the text does"
+    said = owner_words.said_plainly(WHY_DESK)
+    assert said != WHY_DESK and "grant proposal" not in said, "and with no owner's words the pass is what it was"
+    assert owner_words.said_plainly("two grants and a grant", owners="grant proposals") == "two grants and a grant", "the plural and the singular are one word"
+    assert owner_words.said_plainly("the counters", owners="the front counter") == "the counters"
+    # only what they said: a word of the bargain that the owner did not say is still the bargain's
+    want = "I say no to the grant proposal line, and Priority said yes to the counter, and asked for less on the rota"
+    assert owner_words.said_plainly("I reject the grant proposal line, and Priority granted the counter, and countered the rota",
+                                    owners="grant proposals and the front counter") == want
+    assert owner_words.owner_tokens(None) == frozenset() and owner_words.owner_tokens(["Grant it", "the Counter"]) == {"grant", "it", "the", "counter"}
+
+
+def _desk(live, monkeypatch, why, answer="reject"):
+    """A department whose owner said grants, grant proposals, the counter and refuse collection, with a model that answers `why`."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"priority.bargain": {"answer": answer, "why": why}})
+    ref = _born(live, org="Fund Co", settle=False)
+    d = W.dept(ref)
+    d["goal"] = GRANT_DESK
+    W.save_dept(ref, d)
+    _envelopes(W, ref, **{n: (50, 5.0) for n in LINE})
+    _history(W, ref)
+    W.run_until_idle(ref, limit=300)
+    return ref
+
+
+def test_p4_a_department_for_grant_proposals_reads_back_its_own_words_on_every_read(live, monkeypatch):
+    """The first pass said a department's own domain words yes, no and ask for less, on the post, the price row, the ledger, the board,
+    the pane and the chat, for good (found: 'the yes proposal line', 'the ask for less staff rota'). Put a no through a department whose
+    owner said grants, the counter and refuse collection: every read keeps them, the bargain's own words that the owner did not say are
+    still said, and Identity's net, which keeps the owner's words too, finds nothing to put right in the card it quotes it on."""
+    W, R, J, _ = live
+    why = WHY_DESK + " I reject the line anyway."
+    want = WHY_DESK + " I say no to the line anyway."
+    ref = _desk(live, monkeypatch, why)
+    owners = R._owners_words(ref, {})
+    assert "grants" in owners and "counter" in owners and "refuse" in owners
+    assert "proposal.refused" in _actions(J, ref) and "conflict.raised" in _actions(J, ref)
+    found = _every_read(live, ref)
+    assert set(COMMON_READS) <= set(found), "reads the sentence never reached prove nothing: %s" % sorted(set(COMMON_READS) - set(found))
+    assert not {k: v[:1] for k, v in found.items() if [s for s in v if STEMS.search(DESK_WORDS.sub("", s))]}, "only the owner's words remain"
+    [post] = [p for p in R.board(ref) if p["src"] == "Priority" and p["msg_type"] == "reject-proposal"]
+    [row] = _prices(W, ref)
+    assert post["payload"]["why"] == row["why"] == want
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.refused")["summary"] == want
+    pane = _view(W, J, ref)
+    assert [p["why"] for p in pane["prices"]] == [want] and [b["summary"] for b in pane["bargains"]] == [want]
+    card = _one_way_out_card(W, ref)
+    assert want.rstrip(".") in card["text"] and card["text"] != R.PLAIN_TEMPLATE["blocked"], "Identity quotes it whole, not as a template"
+    assert R.plain_faults(card["text"], owners) == [] and R.plain_faults(want) == ["grant or counter"], "and the net is the owner's, as the pass is"
+    assert S.validate("priority.price", row) == [] and S.validate_view("priority", pane) == []
+
+
+def test_p4_the_pane_keeps_the_owners_words_in_an_older_record_and_says_the_rest(live, ctx):
+    """An older price row and ledger line, read for the pane, keep the owner's words and are said in the owner's words for the rest."""
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    d = W.dept(ref)
+    d["goal"] = GRANT_DESK
+    W.save_dept(ref, d)
+    why = "I reject the grant proposal line; the counter staff rota is free, and Priority countered the science fund grants"
+    want = "I say no to the grant proposal line; the counter staff rota is free, and Priority asked for less on the science fund grants"
+    W.append_row(ref, "prices.jsonl", _price_row(why=why))
+    events = [{"action": "proposal.refused", "summary": why, "occurred_at": "2026-10-26T10:00:00+05:30"}]
+    pane = V1.view(ref, W.dept(ref), events, [])
+    assert [p["why"] for p in pane["prices"]] == [want] and [b["summary"] for b in pane["bargains"]] == [want]
+    d["goal"] = "Build a website that teaches algebra"
+    W.save_dept(ref, d)
+    pane = V1.view(ref, W.dept(ref), events, [])
+    assert pane["prices"][0]["why"] != want and "grant proposal" not in pane["prices"][0]["why"], "and a department that did not say them has them said"
+
+
 def test_p4_the_view_does_not_come_back_through_the_part_that_reads_the_views(live, ctx, monkeypatch):
     """A view that builds its pane by calling functions_view._j2_part must fail once _j2_part hands the pane to layers.view
     (A1.17, K2's C9): the two would call each other without end. _j2_part is made to do exactly that here, with no guard

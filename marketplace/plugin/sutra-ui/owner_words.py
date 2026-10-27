@@ -21,9 +21,10 @@ carried the act's own id ('Identity may refuse to Owner'), is said again the way
 
 One more kind of line is read word by word, and only where it is composed: a sentence a model wrote in its own words (plainly,
 said_plainly). The agent is taught accept, counter and reject, so its why may use them, or grant and refuse, as the verbs and as the
-nouns they are ('the full grant would go past the room'): each is said by what it is where it stands, and a sentence the pass cannot
-say with its grammar whole, or a word of the bargain that is left in it, is told not to be plain, so that its composer says the answer
-in words of its own and never posts the garble. That sentence is said once in the owner's words where its function composes it (Priority's, in priority_post),
+nouns they are ('the full grant would go past the room'): each is said by what it is where it stands, a word the owner said (a department
+for grant proposals, a shop's counter, refuse collection) stays as they said it, and a sentence the pass cannot say with its grammar
+whole, or a word of the bargain that is left in it, is told not to be plain, so that its composer says the answer in words of its own and
+never posts the garble. That sentence is said once in the owner's words where its function composes it (Priority's, in priority_post),
 so the post, the record, the ledger's line and every read of them agree; a record written before that is said again on the way out by
 the same function, not by a table of a pane's own.
 """
@@ -209,6 +210,23 @@ _ORDER_RE = re.compile(
 _LEFT_IN = re.compile(r"[\w'-]*(?:grant|counter|refus|reject)[\w'-]*|(?<![\w-])orders(?![\w-])", re.I)
 
 
+def owner_tokens(owners):
+    """The words the owner said, as a set to look a word up in: the text lowercased and split into its words. `owners` is a text
+    (engine_runtime._owners_words), a set of words already, or a list of texts; nothing is nothing."""
+    if isinstance(owners, (set, frozenset)):
+        return frozenset(owners)
+    if isinstance(owners, str):
+        owners = (owners,)
+    return frozenset(w for text in owners or () for w in re.findall(r"[a-z][a-z'-]*", str(text or '').lower()))
+
+
+def _owners_own(word, owners):
+    """A word the owner said is theirs (the grant of a grant proposal, a shop's counter, refuse collection), whether the sentence
+    has it in the singular or the plural, and is never said again, as Identity's net leaves it (engine_runtime.plain_faults)."""
+    w = word.lower()
+    return bool(owners) and (w in owners or w + 's' in owners or (w.endswith('s') and w[:-1] in owners))
+
+
 def _around(text, m):
     """The word before a match, the word before that, and the word after it, each as (lowercase, as written); (None, None) for the
     edge of the text or a mark of punctuation, which says only that no word stands there."""
@@ -269,10 +287,12 @@ def _as(word, out):
     return out.upper() if len(word) > 1 and word.isupper() else (out[:1].upper() + out[1:] if word[:1].isupper() else out)
 
 
-def _inside(m, text, faults):
+def _inside(m, text, owners, faults):
     """One inside word, said as the owner says it, by what it is where it stands. A form this cannot say plainly is said as near as
     it can and noted in `faults`: the sentence is not plain."""
     word = m.group(0)
+    if _owners_own(word, owners):
+        return word
     fam, form = _FORM_OF[word.lower()]
     before, before2, after = _around(text, m)
     nw, kind = after[0], 'verb'
@@ -305,15 +325,17 @@ def _asked(m):
     return subject + gap + (out.upper() if verb.isupper() and len(verb) > 1 else out)
 
 
-def plainly(text, keep=()):
+def plainly(text, keep=(), owners=()):
     """A sentence a model wrote, in the owner's words, and whether it is plain: (the sentence, True) when the pass could say every
     inside word in it as the owner does, (the sentence as near as it came, False) when a form is left that it cannot say with its
     grammar whole (a grantee, 'granted to Plan', 'ungranted lines') or a word of the bargain is still in it. The one who composes
     the sentence puts a sentence of its own in place of one that is not plain (Priority's, from the answer and the room), so a
     garbled line is never posted.
     `keep`: the names in the sentence that are a workflow's or an engine's and stay as they are, though they are an inside word (a
-    workflow called Grant, or Order, is not said yes to)."""
-    held, text = {}, str(text or '')
+    workflow called Grant, or Order, is not said yes to). `owners`: the words the owner said (owner_tokens), kept as they said them,
+    as Identity's net keeps them: a department for grant proposals reads back 'grant proposal', a shop its counter, a council its
+    refuse collection."""
+    owners, held, text = owner_tokens(owners), {}, str(text or '')
     for name in sorted({str(n) for n in keep or () if n}, key=len, reverse=True):
         mark = '\x00%d\x00' % len(held)
         text, n = re.subn(r'(?<![\w-])%s(?![\w-])' % re.escape(name), mark, text)
@@ -322,25 +344,25 @@ def plainly(text, keep=()):
     faults = []
     text = plain(text)
     text = _GERUND_OF.sub(lambda m: m.group('det') + m.group('sp') + _VERBS[_FORM_OF[m.group('w').lower()][0]][3] + (' on' if m.group('w').lower() == 'countering' else ''), text)
-    text = _INSIDE_RE.sub(lambda m: _inside(m, text, faults), text)
+    text = _INSIDE_RE.sub(lambda m: _inside(m, text, owners, faults), text)
     text = _TO_DROPPED.sub(r'\1 \2', text)
     text = _ORDER_RE.sub(_asked, text)
     text = re.sub(r'\b([Aa])(?= ask(?:ed)?\b)', r'\1n', text)
-    plain_now = not faults and not _LEFT_IN.search(text)
+    plain_now = not faults and not [w for w in _LEFT_IN.findall(text) if not _owners_own(w, owners)]
     for mark, name in held.items():
         text = text.replace(mark, name)
     return text, plain_now
 
 
-def said_plainly(text, keep=()):
+def said_plainly(text, keep=(), owners=()):
     """A sentence a model wrote, in the owner's words: the phrases of BARGAIN_WORDS, then the inside words (INSIDE) said again by what
     each is where it stands, 'I reject this; I would counter with two' as 'I say no to this; I would ask for less with two', 'a partial
     grant of two' as 'a partial yes of two', 'no grants left' as 'no yeses left'. 'Order' as a verb (Priority never orders) is 'ask for'. A
     capital stays a capital. Said twice it says the same, so a sentence composed in the owner's words and read again on its way
     out is not changed by the second reading. Only for a sentence a model wrote, or a line made of one: the owner's own words, and any
     data value (a rule's tag, an answer's id), are not its. What it cannot say plainly it says as near as it can (plainly says whether
-    that is plain); see there for `keep`."""
-    return plainly(text, keep)[0]
+    that is plain); see there for `keep` and `owners`."""
+    return plainly(text, keep, owners)[0]
 
 
 def _keep(value):
