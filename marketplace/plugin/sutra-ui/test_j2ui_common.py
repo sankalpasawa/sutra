@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from test_fixtures.j2ui import harness as H
 from test_fixtures.j2ui import proto
 from test_fixtures.j2ui.core_fixtures import *  # noqa: F401,F403
 
@@ -73,28 +74,15 @@ def test_c11_the_keys_are_the_prototypes_own_snapshot():
 
 
 def test_c11_the_captured_state_when_there_is_one():
-    """The prototype's own states, captured by j2ui-verify (plain or gzipped JSON, a state or a bundle that holds one)."""
-    import gzip
-    d = UI / "test_fixtures" / "j2ui" / "captured"
-    files = sorted(list(d.glob("*.json")) + list(d.glob("*.json.gz"))) if d.is_dir() else []
-    found = []
-
-    def states(x, depth=0):
-        if isinstance(x, dict) and {"chat", "total", "status"} <= set(x):
-            found.append(x)
-        elif isinstance(x, (dict, list)) and depth < 3:
-            for v in (x.values() if isinstance(x, dict) else x):
-                states(v, depth + 1)
-    for f in files:
-        try:
-            raw = gzip.open(f, "rt", encoding="utf-8").read() if f.suffix == ".gz" else f.read_text(encoding="utf-8")
-            states(json.loads(raw))
-        except (OSError, ValueError):
-            continue
-    if not found:
+    """The prototype's own states, captured by j2ui-verify (captured/<run>/state.json.gz, read through the harness): each has
+    exactly STATE_KEYS. The order is not asserted: j2_server puts 'saved' first in a saved run, and the page reads by name."""
+    runs = [r for r in H.captured_runs() if H.captured(r, "state") is not None]
+    if not runs:
         pytest.skip("test_fixtures/j2ui/captured holds no captured state yet (j2ui-verify T1)")
-    for st in found:
-        assert set(st) == set(KEYS56) and list(st) == KEYS56
+    for run in runs:
+        st = H.captured(run, "state")
+        assert isinstance(st, dict) and len(st) == 56, (run, len(st))
+        assert set(st) == set(KEYS56) == set(C.STATE_KEYS), (run, sorted(set(st) ^ set(KEYS56)))
 
 
 def test_c11_the_other_empty_shapes_are_the_prototypes():
