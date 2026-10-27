@@ -32,6 +32,7 @@
    "label": "Stop here"
   }
  ],
+ "round": 2,
  "status": "pending",
  "text": "Priority said no to Round 2: no room in the ceiling: the goal's last round is used. Say how to put it right, or choose a way forward on this card.",
  "thread": "x-limit",
