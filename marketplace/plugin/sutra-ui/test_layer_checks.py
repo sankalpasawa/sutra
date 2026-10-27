@@ -1,0 +1,784 @@
+"""The artifact form on every write and the measurable website checks (PRD amendment A1: W2-CHECKS; M7.5, M8.6), one section a step.
+
+  G1  a writer a Library engine reads files in the reader's form, and holds to it where it writes (J2B-3)
+  G2  Audit's mechanical step finds the page defects a browser is not needed for, one finding for each
+
+The departments in G1 are born the way a person makes them (found, say the words, Root sets up) with J2_ADAPT_MAKE on and a
+stub in place of every model; a test that meets a fault of the interface fails through conftest.py, so a deliberate one is
+wrapped in S.expect_refused().
+"""
+import importlib
+import json
+import re
+
+import pytest
+
+import layer_schema as S
+import layers
+import layers.contract as C
+
+WEBSITE = "Build a website that teaches algebra to Class 8 students"
+ITEMS = [{"text": "The site has a home page and a page of lessons", "how": "model", "level": "target"},
+         {"text": "Every page reads clearly for Class 8", "how": "model", "level": "outcome"},
+         {"text": "The site is live", "how": "code", "level": "target"}]
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    monkeypatch.setenv("SUTRA_NATIVE_DEPT_HOME", str(tmp_path / "departments"))
+    monkeypatch.setenv("SUTRA_NATIVE_HOME", str(tmp_path / "registry"))
+    monkeypatch.setenv("SUTRA_UI_PROPOSALS", str(tmp_path / "proposals"))
+    monkeypatch.setenv("SUTRA_WEBSITE_OFFLINE", "1")
+    monkeypatch.setenv("J1_FLOW_V1", "1")
+    monkeypatch.setenv("J2_FLOW_V1", "1")
+    monkeypatch.delenv("SUTRA_ENGINE_RUNTIME", raising=False)
+    monkeypatch.delenv("J2_ADAPT_MAKE", raising=False)
+    return tmp_path
+
+
+@pytest.fixture
+def j2(home):
+    import website_dept as W
+    import founding
+    import placement_engine as E
+    import org2_apply
+    import engine_runtime as R
+    import j2_runtime as J
+    import functions_view as FV
+
+    for module in (E, W, org2_apply, founding, R, J, FV):
+        importlib.reload(module)
+    if not E.active_roots(E.load_domains()):
+        E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
+    return W, R, J, founding, FV
+
+
+@pytest.fixture
+def ref(j2, home):
+    """A website department on a records home of its own, with no model, for the tests of one function."""
+    W, R, J, founding, FV = j2
+    W.create("dref-checks", "Checks Dept", "A site that teaches algebra", kind="website", goal="A site that teaches algebra")
+    return "dref-checks"
+
+
+def audit_v1():
+    return importlib.import_module("layers.audit.v1")
+
+
+# ---- G1 · the form a writer files in (M7.5, J2B-3) -----------------------------------------------------------------------
+def page(title="Home", body="<section><h1>Home</h1><p>%s</p></section>" % ("Algebra for Class 8, one step at a time. " * 3)):
+    return json.dumps({"title": title, "body_html": body})
+
+
+def pages_in_form(*slugs):
+    """The files of a Pages version in the form Check reads: _plan.json, and each planned page as {title, body_html}."""
+    files = {"_plan.json": json.dumps({"pages": [{"slug": s, "title": s.title()} for s in slugs]})}
+    files.update({s + ".html": page(s.title()) for s in slugs})
+    return files
+
+
+def test_g1_pages_in_the_form_pass_and_say_what_they_hold():
+    import artifacts
+    got = artifacts.pages_are_checkable(pages_in_form("index", "lessons"))
+    assert got["ok"] is True and got["notes"] == ["the plan names the home page, and every page is a title and a body"]
+    assert artifacts.form_check("Pages", pages_in_form("index"))["ok"] is True
+
+
+@pytest.mark.parametrize("what, files, said", [
+    ("no plan at all", {"index.html": page()}, "no plan Check can read"),
+    ("a plan that is not JSON", dict(pages_in_form("index"), **{"_plan.json": "pages: index"}), "no plan Check can read"),
+    ("a plan that lists no page", dict(pages_in_form("index"), **{"_plan.json": json.dumps({"pages": []})}), "no plan Check can read"),
+    ("a plan whose page has no slug", dict(pages_in_form("index"), **{"_plan.json": json.dumps({"pages": [{"title": "Home"}]})}),
+     "no plan Check can read"),
+    ("a plan with no home page", pages_in_form("lessons"), "does not name the home page"),
+    ("a plan that names a page twice", dict(pages_in_form("index"), **{"_plan.json": json.dumps({"pages": [{"slug": "index"}, {"slug": "index"}]})}),
+     "names a page twice"),
+    ("a planned page that was not written", {k: v for k, v in pages_in_form("index", "lessons").items() if k != "lessons.html"},
+     "lessons is planned and was not written"),
+    ("a whole HTML page", dict(pages_in_form("index", "lessons"), **{"lessons.html": "<!doctype html><html><body><h1>Lessons</h1></body></html>"}),
+     "lessons is a whole HTML page, not a title and a body"),
+    ("a page that is not an object", dict(pages_in_form("index"), **{"index.html": json.dumps(["Home"])}), "index is not a page Check can read"),
+    ("a page with no body", dict(pages_in_form("index"), **{"index.html": json.dumps({"title": "Home"})}), "index is not a page Check can read"),
+    ("a page with a body that is not text", dict(pages_in_form("index"), **{"index.html": json.dumps({"title": "Home", "body_html": ["x"]})}),
+     "index is not a page Check can read"),
+    ("a body that is a whole page", dict(pages_in_form("index"), **{"index.html": page("Home", "<html><head></head><body><h1>Home</h1></body></html>")}),
+     "index holds a whole page, not the inside of main"),
+])
+def test_g1_a_version_not_in_the_form_fails_and_names_what_is_wrong(what, files, said):
+    import artifacts
+    got = artifacts.pages_are_checkable(files)
+    assert got["ok"] is False, what
+    assert any(said in n for n in got["notes"]), (what, got["notes"])
+
+
+def test_g1_scripts_text_and_links_stay_checks_verdicts_not_the_forms():
+    """The form asks only whether Check can read what was filed (J2B-3): a script, almost no text and a link to no page are all in form."""
+    import artifacts
+    files = dict(pages_in_form("index"), **{"index.html": page("Home", '<p>Hi</p><script>x()</script><a href="nowhere.html">there</a>')})
+    assert artifacts.pages_are_checkable(files)["ok"] is True
+
+
+def test_g1_the_form_is_a_pure_function_over_the_files():
+    import artifacts
+    files = pages_in_form("index", "lessons")
+    before = json.dumps(files, sort_keys=True)
+    assert artifacts.pages_are_checkable(files) == artifacts.pages_are_checkable(dict(files))
+    assert json.dumps(files, sort_keys=True) == before
+    assert artifacts.pages_are_checkable(None)["ok"] is False and artifacts.pages_are_checkable({})["ok"] is False
+
+
+def test_g1_the_pages_template_names_its_form_and_the_definitions_stay_clean(j2):
+    W, R, J, _, _ = j2
+    import artifacts
+    t = artifacts.get("Pages")
+    assert t["form"] == "pages_are_checkable" and t["form"] in artifacts.FORMS and len(t["form"]) <= 60
+    assert artifacts.form_of("Pages") == "pages_are_checkable" and artifacts.view("Pages")["form"] == "pages_are_checkable"
+    assert [n for n, x in artifacts.templates().items() if x.get("form")] == ["Pages"], "Pages is the one artifact with a form"
+    assert artifacts.form_of("Build") is None and artifacts.form_check("Build", {"index.html": "x"}) is None
+    assert artifacts.view("Build")["form"] == ""
+    assert artifacts.faults(R.defs()) == [] and R.validate(R.defs()) == []
+
+
+def test_g1_a_form_the_app_does_not_ship_is_a_fault_of_the_definitions_and_a_version_that_does_not_hold(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    import artifacts
+    defs = R.defs()
+    t = dict(artifacts.get("Pages"), form="pages_are_pretty")
+    monkeypatch.setitem(artifacts.templates(), "Pages", t)
+    assert "artifact Pages: no form named pages_are_pretty ships with the app" in artifacts.faults(defs)
+    assert "no form named pages_are_pretty" in " ".join(R.validate(defs)), "and the definitions are refused where they load"
+    got = artifacts.form_check("Pages", pages_in_form("index"))
+    assert got == {"ok": False, "notes": ["no form named pages_are_pretty ships with the app"]}
+
+
+def test_g1_the_librarys_own_write_files_pages_in_the_form(j2):
+    """The form is what the Library's Write files today, so Check reads it: the form changes nothing for the Library's engines."""
+    W, R, J, _, _ = j2
+    import artifacts
+    plan = W._fallback_plan("Checks Dept", "A site that teaches algebra to Class 8 students")
+    ctx = {"bag": {"write.list": {"plan": plan, "pages": [p["slug"] for p in plan["pages"]]},
+                   "write.page": [{"title": p["title"], "body_html": W._fallback_body(p, plan)} for p in plan["pages"]]}, "how": {}}
+    files = R.write_file(ctx, None, None)["files"]
+    assert artifacts.pages_are_checkable(files) == {"ok": True, "notes": ["the plan names the home page, and every page is a title and a body"]}
+
+
+def shape(**more):
+    return dict({"name": "Page maker", "use_case": "writes the pages", "does": "writes the pages", "instruction": "write the pages of the site",
+                 "needs": [], "reads": "Brief", "writes": "Pages"}, **more)
+
+
+def born(R, ref, name="Page maker", **more):
+    path = R.born_template(name, shape(name=name, **more), ref)
+    return json.loads(path.read_text(encoding="utf-8")), path
+
+
+def test_g1_born_template_takes_the_form_from_the_shape_and_the_template_validates_as_the_interface_types_it(ref, j2):
+    W, R, J, _, _ = j2
+    t, path = born(R, ref, form="Pages")
+    assert t["form"] == "Pages" and S.validate("engine.template", t) == []
+    page_step = next(s for s in t["steps"] if s["id"] == "page-maker.page")
+    assert page_step["out"] == {"file": "str", "body_html": "str"}, "the page step writes the inside of each page"
+    assert R.engine_def("Page maker")["form"] == "Pages", "the definitions carry the form to the step functions"
+    assert R.validate(R.defs()) == []
+
+
+def test_g1_without_a_form_a_born_engine_is_what_it_always_was(ref, j2):
+    W, R, J, _, _ = j2
+    t, _ = born(R, ref)
+    assert "form" not in t and S.validate("engine.template", t) == []
+    assert next(s for s in t["steps"] if s["id"] == "page-maker.page")["out"] == {"file": "str", "html": "str"}
+
+
+@pytest.mark.parametrize("what, more, said", [
+    ("a form the Library has none of", {"form": "Result"}, "the Library has no form named Result"),
+    ("a form on an engine that writes no pages", {"form": "Pages", "writes": "Facts"}, "so it cannot file in the form of Pages"),
+])
+def test_g1_a_form_that_cannot_hold_refuses_the_engine_and_leaves_no_file(ref, j2, what, more, said):
+    W, R, J, _, _ = j2
+    with pytest.raises(ValueError, match=said):
+        R.born_template("Page maker", shape(**more), ref)
+    assert not (R.user_templates_dir() / "page-maker.json").exists(), what
+    assert "Page maker" not in R.defs()["engines"]
+
+
+def test_g1_a_bad_form_value_is_the_interfaces_to_refuse_before_the_file_is_written(ref, j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(S, "MODE", "refuse")
+    t = json.loads(json.dumps(born(R, ref, form="Pages")[0]))
+    assert S.validate("engine.template", dict(t, form="")) and S.validate("engine.template", dict(t, form="x" * 61))
+    with S.expect_refused("engine.template") as met, pytest.raises(S.SchemaFault):
+        S.check("engine.template", dict(t, form=7), ref=ref)
+    assert met and any("form" in f for f in met)
+
+
+# a writer's answers, as the stubbed model gives them for a born pages engine (one plan, then a page for each planned file)
+PLAN = {"pages": [{"file": "index.html", "title": "Home", "purpose": "the home page"},
+                  {"file": "lessons.html", "title": "Lessons", "purpose": "the lessons for Class 8"}]}
+BODY = "<section><h1>%s</h1><p>" + "Class 8 algebra, taught one small step at a time with worked examples. " * 3 + '</p><a href="index.html">Home</a></section>'
+
+
+def do_ctx(R, pages, plan=PLAN, name="page-maker"):
+    return {"def": R.engine_def("Page maker"), "ref": "dref-checks", "bag": {name + ".plan": plan, name + ".page": pages}, "how": {}}
+
+
+def a_page(file, title, body=None):
+    return {"file": file, "title": title, "body_html": body or BODY % title}
+
+
+def test_g1_do_file_files_pages_in_the_form_with_the_plan_and_they_hold(ref, j2):
+    W, R, J, _, _ = j2
+    import artifacts
+    born(R, ref, form="Pages")
+    out = R.do_file(do_ctx(R, [a_page("index.html", "Home"), a_page("lessons.html", "Lessons")]), {"id": "page-maker.file"}, None)
+    assert sorted(out["files"]) == ["_plan.json", "index.html", "lessons.html"]
+    assert json.loads(out["files"]["_plan.json"]) == {"pages": [{"slug": "index", "title": "Home"}, {"slug": "lessons", "title": "Lessons"}]}
+    assert json.loads(out["files"]["lessons.html"]) == {"title": "Lessons", "body_html": BODY % "Lessons"}
+    assert out["check"]["ok"] is True, out["check"]
+    assert artifacts.form_check("Pages", out["files"])["ok"] is True
+    assert "2 pages" in out["check"]["notes"]
+
+
+def test_g1_do_file_takes_a_pages_title_from_the_plan_when_the_agent_gave_none(ref, j2):
+    W, R, J, _, _ = j2
+    born(R, ref, form="Pages")
+    no_title = {"file": "lessons.html", "body_html": BODY % "Lessons"}
+    out = R.do_file(do_ctx(R, [a_page("index.html", "Home"), no_title]), {"id": "page-maker.file"}, None)
+    assert json.loads(out["files"]["lessons.html"])["title"] == "Lessons" and out["check"]["ok"] is True
+
+
+def test_g1_whole_html_pages_fail_where_they_are_written(ref, j2):
+    W, R, J, _, _ = j2
+    born(R, ref, form="Pages")
+    whole = "<!doctype html><html><head><title>%s</title></head><body><h1>%s</h1><p>" + "Class 8 algebra, one step at a time. " * 6 + "</p></body></html>"
+    pages = [{"file": "index.html", "html": whole % ("Home", "Home")}, {"file": "lessons.html", "html": whole % ("Lessons", "Lessons")}]
+    out = R.do_file(do_ctx(R, pages), {"id": "page-maker.file"}, None)
+    assert out["check"]["ok"] is False
+    assert any("index is a whole HTML page, not a title and a body" in n for n in out["check"]["notes"]), out["check"]
+    assert any("lessons is a whole HTML page" in n for n in out["check"]["notes"])
+    assert out["files"]["index.html"] == pages[0]["html"], "filed as it came: the form refuses it, the writer does not repair it"
+    assert "publish" not in out
+
+
+def test_g1_a_body_that_is_a_whole_page_fails_where_it_is_written(ref, j2):
+    W, R, J, _, _ = j2
+    born(R, ref, form="Pages")
+    nested = a_page("index.html", "Home", "<html><body>" + BODY % "Home" + "</body></html>")
+    out = R.do_file(do_ctx(R, [nested, a_page("lessons.html", "Lessons")]), {"id": "page-maker.file"}, None)
+    assert out["check"]["ok"] is False and any("index holds a whole page, not the inside of main" in n for n in out["check"]["notes"])
+
+
+def test_g1_an_engine_that_planned_pages_and_wrote_text_fails_at_the_form(ref, j2):
+    W, R, J, _, _ = j2
+    born(R, ref, form="Pages")
+    ctx = do_ctx(R, [])
+    ctx["bag"]["page-maker.make"] = {"text": "Home page, lessons page. Written by hand."}
+    out = R.do_file(ctx, {"id": "page-maker.file"}, None)
+    assert out["check"]["ok"] is False and any("no plan Check can read" in n for n in out["check"]["notes"])
+
+
+def test_g1_with_no_form_do_file_files_whole_pages_exactly_as_it_did(ref, j2):
+    """Flag off, or an engine no Library engine reads: nothing changes (the suites' own proof is the gate staying green)."""
+    W, R, J, _, _ = j2
+    born(R, ref)
+    whole = "<!doctype html><html><head><title>Home</title></head><body><h1>Home</h1><p>" + "Class 8 algebra. " * 8 + "</p></body></html>"
+    out = R.do_file(do_ctx(R, [{"file": "index.html", "html": whole}]), {"id": "page-maker.file"}, None)
+    assert out == {"files": {"index.html": whole}, "check": {"ok": True, "notes": ["1 pages", "every page has a body"]}}
+
+
+def test_g1_the_page_step_of_a_form_engine_asks_for_the_inside_of_a_page_and_its_check_holds_it(ref, j2):
+    W, R, J, _, _ = j2
+    born(R, ref, form="Pages")
+    ctx = {"def": R.engine_def("Page maker"), "ref": "dref-checks", "dept": W.dept("dref-checks"),
+           "bag": {"page-maker.read": {"brief": "Teach algebra to Class 8", "previous": None}, "page-maker.plan": PLAN}}
+    step = {"id": "page-maker.page"}
+    prompt = R.p_do_page(ctx, step, "index.html")
+    assert '{"file": str, "title": str, "body_html": str}' in prompt and "inside of <main> only" in prompt and "no <html>, <head>" in prompt
+    assert "THIS PAGE: " + json.dumps(PLAN["pages"][0]) in prompt
+    draft = R.d_do_page(ctx, step, "lessons.html")
+    assert set(draft) == {"file", "title", "body_html"} and draft["file"] == "lessons.html" and "<html" not in draft["body_html"].lower()
+    good = {"file": "index.html", "title": "Home", "body_html": BODY % "Home"}
+    assert R.c_page_is_html(ctx, step, "index.html", good)["ok"] is True
+    assert R.c_page_is_html(ctx, step, "lessons.html", draft)["ok"] is True, "the offline draft is itself in the form its step checks"
+    for what, out in (("a whole page", {"file": "index.html", "html": "<html><body>" + "words " * 30 + "</body></html>"}),
+                      ("another page's file", dict(good, file="lessons.html")),
+                      ("a body that is a document", dict(good, body_html="<!doctype html><html><body>" + "words " * 30 + "</body></html>")),
+                      ("almost no text", dict(good, body_html="<p>Hi</p>"))):
+        assert R.c_page_is_html(ctx, step, "index.html", out)["ok"] is False, what
+    plain = {"def": {"writes": "Pages"}}
+    assert R.c_page_is_html(plain, step, "index.html", {"file": "index.html", "html": "<body>" + "words " * 30 + "</body>"})["ok"] is True
+
+
+# ---- G1 · _j2_settle births a writer a Library engine reads with the reader's form ---------------------------------------
+def made(name, reads, writes, covers, level=2, **more):
+    return dict({"name": name, "does": "does " + name, "reads": reads, "writes": writes, "covers": covers, "level": level,
+                 "confidence": 0.9, "internet": False}, **more)
+
+
+MAKER = made("Page maker", "Brief", "Pages", ["D1", "D2"])
+CHECK = made("Check", "Pages", "Build", [], level=1)
+PUBLISH = made("Publish", "Build", "Live site", ["D3"], level=1)
+
+
+def test_g1_a_writer_a_level_1_engine_reads_is_born_with_the_readers_form_when_the_make_setting_is_on(ref, j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    assert R._form_for(ref, MAKER, [MAKER, CHECK, PUBLISH]) == "Pages"
+
+
+def test_g1_with_the_make_setting_off_no_writer_has_a_form(ref, j2, monkeypatch):
+    W, R, J, _, _ = j2
+    for off in (None, "", "0", "off"):
+        monkeypatch.delenv("J2_ADAPT_MAKE", raising=False)
+        if off is not None:
+            monkeypatch.setenv("J2_ADAPT_MAKE", off)
+        assert R._form_for(ref, MAKER, [MAKER, CHECK, PUBLISH]) is None, off
+
+
+@pytest.mark.parametrize("what, engine, line", [
+    ("no level-1 engine reads what it writes", MAKER, [MAKER, made("Site 2", "Pages", "Live site", ["D3"])]),
+    ("the engine that reads it is another shaped one", MAKER, [MAKER, made("Checker", "Pages", "Build", ["D3"], level=2)]),
+    ("what it writes has no form", made("Facts 2", "Brief", "Facts 2", ["D1"]),
+     [made("Facts 2", "Brief", "Facts 2", ["D1"]), made("Check", "Facts 2", "Build", [], level=1)]),
+    ("a level-1 engine reads it but is not the Library's", MAKER, [MAKER, made("Reader", "Pages", "Build", [], level=1)]),
+    ("it writes nothing", dict(MAKER, writes=""), [MAKER, CHECK]),
+])
+def test_g1_a_writer_nobody_in_the_library_reads_has_no_form(ref, j2, monkeypatch, what, engine, line):
+    W, R, J, _, _ = j2
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    assert R._form_for(ref, engine, line) is None, what
+
+
+def test_g1_settling_a_shaped_plan_hands_the_form_to_the_engine_born_for_the_writer_and_to_no_other(ref, j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    d = W.dept(ref)
+    d["done_items"] = [dict(i, id="D%d" % n) for n, i in enumerate(ITEMS, 1)]
+    W.save_dept(ref, d)
+    seen, real = {}, W.add_engine
+
+    def spy(r, name, shape=None, **kw):
+        seen[name] = dict(shape or {})
+        return real(r, name, shape=shape, **kw)
+    monkeypatch.setattr(W, "add_engine", spy)
+    facts = made("Facts 2", "Brief", "Facts 2", ["D1"])
+    pages = made("Page maker", "Facts 2", "Pages", ["D2"])
+    R._j2_settle(ref, W.dept(ref), [facts, pages, CHECK, PUBLISH], "shaped", "teach algebra", "Priority's yes")
+    assert seen["Page maker"]["form"] == "Pages", "the writer Check reads"
+    assert "form" not in seen["Facts 2"], "Facts 2 is read by no Library engine"
+    assert "Check" not in seen and "Publish" not in seen, "the Library's own engines are not born"
+    born_for = json.loads((R.user_templates_dir() / "page-maker.json").read_text(encoding="utf-8"))
+    assert born_for["form"] == "Pages" and "form" not in json.loads((R.user_templates_dir() / "facts-2.json").read_text(encoding="utf-8"))
+
+
+# ---- G1 · a department end to end: a shaped writer's pages reach Check and Publish in the form --------------------------
+LINE = {"engines": [made("Page maker", "Brief", "Pages", ["D1", "D2"]), made("Check", "Pages", "Build", [], level=1),
+                    made("Publish", "Build", "Live site", ["D3"], level=1)]}
+
+
+def stub(monkeypatch, R, answers):
+    """A model that is a function: a step id maps to what it says (a dict, or a callable taking the prompt and the step);
+    every other step falls to its draft, as it does offline. Returns the calls it met, [(step id, prompt)]."""
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    seen = []
+
+    def model(prompt, step):
+        if step["id"] not in answers:
+            return None, 0.0, "offline"
+        seen.append((step["id"], prompt))
+        got = answers[step["id"]]
+        return (got(prompt) if callable(got) else got), 0.01, "model"
+    monkeypatch.setattr(R, "MODEL", model)
+    return seen
+
+
+def the_page_asked_for(prompt):
+    return json.loads(re.search(r"THIS PAGE: (\{.*\})", prompt).group(1))
+
+
+def writes_the_inside(prompt):
+    p = the_page_asked_for(prompt)
+    return {"file": p["file"], "title": p["title"], "body_html": BODY % p["title"]}
+
+
+def writes_whole_pages(prompt):
+    p = the_page_asked_for(prompt)
+    return {"file": p["file"], "html": "<!doctype html><html><head><title>%s</title></head><body>%s</body></html>" % (p["title"], BODY % p["title"])}
+
+
+def a_department(j2, monkeypatch, writer, make=True, line=LINE):
+    """A website department as a person makes one, its line shaped around a writer of Pages that Check reads, with J2_ADAPT_MAKE
+    on (or off) and a stub in place of every model; the motor runs until idle and the owner's one stamp on what goes out is given."""
+    W, R, J, founding, FV = j2
+    if make:
+        monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    else:
+        monkeypatch.delenv("J2_ADAPT_MAKE", raising=False)
+    stub(monkeypatch, R, {"setup.converse": {"verdict": "clear", "question": ""},
+                          "setup.shape": {"name": "Algebra Co Department", "kind": "organic", "goal": WEBSITE, "done_items": ITEMS},
+                          "adapt.line": line, "priority.bargain": {"answer": "accept", "why": "the envelope has room"},
+                          "audit.judge": {"ok": True, "findings": []}, "page-maker.plan": PLAN, "page-maker.page": writer})
+    root = founding.found_structure("Algebra Co", owner="Sankalp")["root"]
+    W.owner_ask(root, WEBSITE)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "publish"]:
+        W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+    return ref
+
+
+def test_g1_with_the_setting_on_a_shaped_writers_pages_in_the_form_pass_check_and_reach_publish(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    import artifacts
+    ref = a_department(j2, monkeypatch, writes_the_inside)
+    d = W.dept(ref)
+    assert d["workflows"][-1]["engines"] == ["Page maker", "Check", "Publish"] and d["workflows"][-1]["source"] == "shaped"
+    assert R.engine_def("Page maker")["form"] == "Pages", "born with the form of the Pages Check reads"
+    pages = W.latest(ref, "Pages")
+    assert pages and pages["check"]["ok"] is True, pages
+    assert artifacts.form_check("Pages", W.read_files(ref, "Pages", pages["v"]))["ok"] is True
+    build = W.latest(ref, "Build")
+    assert build and build["check"]["ok"] is True, build
+    live = W.latest(ref, "Live site")
+    assert live and live["check"]["ok"] is True, "the pages reached Publish"
+    assert "Lessons" in W.read_files(ref, "Live site", live["v"])["lessons.html"]
+
+
+def test_g1_whole_html_pages_from_a_writer_with_the_form_stop_at_the_writer_and_check_never_meets_them(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = a_department(j2, monkeypatch, writes_whole_pages)
+    assert R.engine_def("Page maker")["form"] == "Pages"
+    for art in ("Pages", "Build", "Live site"):
+        assert W.versions(ref, art) == [], "%s: nothing was filed, so nothing reached Check or Publish" % art
+    rows = [r for r in R.step_rows(ref) if r["engine"] == "Page maker" and r["step"] == "page-maker.page"]
+    assert rows and all(r["status"] != "ok" for r in rows), "the page step could not give a page in the form: the writer stopped"
+    assert not [r for r in R.step_rows(ref) if r["step"] == "page-maker.file"]
+    assert not [r for r in R.step_rows(ref) if r["engine"] in ("Check", "Publish")]
+
+
+def test_g1_without_the_form_the_same_pages_pass_the_writer_and_fail_later_at_check(j2, monkeypatch):
+    """What the form prevents (J2B-3): the artifact's own check asks only that each page is non-empty, so whole HTML pages
+    were filed as Pages and Check could not find a plan in them."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(R, "_form_for", lambda *a: None)
+    ref = a_department(j2, monkeypatch, writes_whole_pages)
+    assert "form" not in R.engine_def("Page maker")
+    pages = W.latest(ref, "Pages")
+    assert pages and pages["check"]["ok"] is True and "_plan.json" not in W.read_files(ref, "Pages", pages["v"])
+    build = W.latest(ref, "Build")
+    assert build and build["check"]["ok"] is False and "no home page" in build["check"]["notes"]
+    assert W.versions(ref, "Live site") == []
+
+
+def test_g1_with_the_setting_off_the_department_is_born_as_it_always_was(j2, monkeypatch):
+    """No writer has a form, so no engine carries one and a plan the Library gave is untouched (the gate's suites are the rest)."""
+    W, R, J, _, _ = j2
+    monkeypatch.delenv("J2_ADAPT_MAKE", raising=False)
+    monkeypatch.setattr(W, "model_json", lambda *a, **k: (None, 0.0, "offline"))
+    monkeypatch.setenv("SUTRA_WEBSITE_OFFLINE", "1")
+    d, _ = W.create("dref-library", "Library Dept", None, kind="website")
+    assert d["engines"] == ["Plan", "Write", "Check", "Publish"] and not [n for n, e in R.defs()["engines"].items() if e.get("form")]
+    assert R._form_for("dref-library", MAKER, [MAKER, CHECK, PUBLISH]) is None
+
+
+# ---- G2 · the mechanical step finds the page defects a browser is not needed for (M8.6) -------------------------------------
+HOME = ("<!doctype html><html lang='en'><head><title>Home</title></head><body><header><a href='index.html'>Home</a> "
+        "<a href='lessons.html'>Lessons</a></header><main>%s</main></body></html>")
+LESSONS = HOME.replace("Home</title>", "Lessons</title>") % "<h1>Lessons</h1><p id='week1'>Week one.</p>"
+
+
+PLAIN = "<!doctype html><html lang='en'><head><title>Page</title></head><body><main>%s</main></body></html>"
+
+
+def site(index_main="<h1>Welcome</h1><p>Algebra for Class 8.</p>", **pages):
+    """The files of a built site: index.html around `index_main`, a lessons page, and any page by file name."""
+    return dict({"index.html": HOME % index_main, "lessons.html": LESSONS}, **pages)
+
+
+def defects(files):
+    return audit_v1().page_defects(files)
+
+
+def only(files, kind=None):
+    got = defects(files)
+    assert len(got) == 1, got
+    assert set(got[0]) == {"where", "page", "claim", "severity", "kind"} and got[0]["kind"] == "defect"
+    return got[0]
+
+
+def test_g2_a_clean_site_has_no_defect():
+    assert defects(site()) == []
+    assert defects({}) == [] and defects({"result.md": "# An answer\n\nNo pages here."}) == [], "a deliverable with no page has none"
+
+
+# one fixture a defect: the finding names where (the page and the element), what is wrong, and how serious
+@pytest.mark.parametrize("what, files, where, claim, severity", [
+    ("a link to a page the site does not have", site("<h1>Welcome</h1><a href='fees.html'>Our fees</a>"),
+     "index.html: the link 'Our fees'", "the link 'Our fees' goes to fees.html, which is not a page of the site", "medium"),
+    ("a link to a page of a folder the site does not have", site("<h1>Welcome</h1><a href='docs/fees.html'>Fees</a>"),
+     "index.html: the link 'Fees'", "the link 'Fees' goes to docs/fees.html, which is not a page of the site", "medium"),
+    ("a link to an anchor the page does not have", site("<h1>Welcome</h1><a href='#hours'>Opening hours</a>"),
+     "index.html: the link 'Opening hours'", "the link 'Opening hours' goes to #hours, and nothing on the page has that anchor", "low"),
+    ("a link to an anchor the other page does not have", site("<h1>Welcome</h1><a href='lessons.html#week9'>Week nine</a>"),
+     "index.html: the link 'Week nine'", "the link 'Week nine' goes to lessons.html#week9, and that page has no such anchor", "low"),
+    ("a form with no submit", site("<h1>Welcome</h1><form action='send.php'><input type='text' name='q'></form>"),
+     "index.html: the form", "the form has no submit button, so a visitor cannot send it", "medium"),
+    ("a form whose only button is not a submit", site("<h1>Welcome</h1><form><input name='q'><button type='button'>Go</button></form>"),
+     "index.html: the form", "the form has no submit button, so a visitor cannot send it", "medium"),
+    ("an image with no alt", site("<h1>Welcome</h1><img src='img/hero.png'>"),
+     "index.html: the image 'hero.png'", "the image 'hero.png' has no alt text for a reader who cannot see it", "medium"),
+    ("a page with no h1", site("<h2>Welcome</h2><p>Algebra.</p>"),
+     "index.html: the main heading (h1)", "the page has no h1 heading", "medium"),
+    ("a page with two h1", site("<h1>Welcome</h1><h1>Also welcome</h1>"),
+     "index.html: the main heading (h1)", "the page has more than one h1 heading, and should have one: 'Welcome', 'Also welcome'", "low"),
+])
+def test_g2_a_fixture_for_each_defect_gives_one_finding_naming_where_and_what(what, files, where, claim, severity):
+    got = only(files)
+    assert (got["where"], got["claim"], got["severity"]) == (where, claim, severity), what
+    assert got["page"] == "index.html" and got["where"].startswith("index.html: "), "the page's own name apart from where: the page and the element"
+    assert S.validate("audit.finding", dict(got, id="F1")) == [], what
+
+
+def test_g2_what_resolves_is_not_a_defect():
+    main = ("<h1>Welcome</h1><a href='lessons.html'>Lessons</a> <a href='./lessons.html#week1'>Week one</a> <a href='/index.html'>Home</a> "
+            "<a href='/'>Start</a> <a href='#'>Top</a> <a href='#top'>Up</a> <a href='#intro'>Intro</a><p id='intro'>Hello.</p>"
+            "<a name='old'></a><a href='#old'>Old</a> <a href='https://example.org/x'>Out</a> <a href='mailto:a@b.in'>Mail</a> "
+            "<a href='tel:+911234'>Call</a> <a href='//cdn.example.org/x'>CDN</a> <a href='style.css'>Style</a> <a href='fees.pdf'>Fees</a> "
+            "<a href='lessons.html?x=1'>Lessons again</a> <a>No href</a> <a href=''>Empty</a>"
+            "<form><input name='q'><button>Send</button></form><form><input type='submit' value='Go'></form>"
+            "<form id='f3'><input name='z'></form><button type='submit' form='f3'>Send three</button>"
+            "<form><input type='image' src='go.png' alt='Go'></form>"
+            "<img src='a.png' alt='A picture of a class'><img src='b.png' alt=''>")
+    assert defects(site(main)) == []
+
+
+def test_g2_a_link_is_read_from_the_page_it_is_on_so_a_folder_resolves_as_a_browser_does():
+    files = site(**{"docs/guide.html": PLAIN % "<h1>Guide</h1><a href='../index.html'>Home</a><a href='index.html'>Docs home</a>",
+                    "docs/index.html": PLAIN % "<h1>Docs</h1>"})
+    assert defects(files) == []
+    got = only(dict(files, **{"docs/guide.html": PLAIN % "<h1>Guide</h1><a href='lessons.html'>Lessons</a>"}))
+    assert got["where"] == "docs/guide.html: the link 'Lessons'" and "docs/lessons.html" in got["claim"]
+
+
+def test_g2_a_link_to_a_page_whose_name_is_written_with_escapes_resolves():
+    assert defects(site("<h1>Welcome</h1><a href='our%20fees.html'>Fees</a>", **{"our fees.html": PLAIN % "<h1>Fees</h1>"})) == []
+
+
+def test_g2_a_page_the_plan_names_is_a_page_to_link_to():
+    files = dict(pages_in_form("index"), **{"index.html": page("Home", "<h1>Home</h1><p>%s</p><a href='lessons.html'>Lessons</a>" % ("word " * 30))})
+    assert [d["claim"] for d in defects(files)] == ["the link 'Lessons' goes to lessons.html, which is not a page of the site"]
+    files["_plan.json"] = json.dumps({"pages": [{"slug": "index"}, {"slug": "lessons"}]})
+    assert defects(files) == [], "planned, even before its page is written: the writer's own form says so"
+
+
+def test_g2_pages_filed_as_a_title_and_a_body_are_read_by_their_body():
+    files = dict(pages_in_form("index", "lessons"), **{"lessons.html": page("Lessons", "<h2>Lessons</h2><img src='w.png'>")})
+    got = defects(files)
+    assert [(d["where"], d["claim"]) for d in got] == [("lessons.html: the image 'w.png'", "the image 'w.png' has no alt text for a reader who cannot see it"),
+                                                       ("lessons.html: the main heading (h1)", "the page has no h1 heading")]
+
+
+def test_g2_each_element_is_a_finding_once_and_one_defect_is_one_finding():
+    main = ("<h1>Welcome</h1><a href='fees.html'>Fees</a><a href='fees.html'>Fees</a><img src='a.png'><img src='b.png'><img src='a.png'>"
+            "<form><input name='q'></form><form><input name='r'></form>")
+    got = defects(site(main))
+    assert [d["where"] for d in got] == ["index.html: the link 'Fees'", "index.html: the first form", "index.html: the second form",
+                                         "index.html: the image 'a.png'", "index.html: the image 'b.png'"]
+    assert got[2]["claim"] == "the second form has no submit button, so a visitor cannot send it"
+    assert len({(d["where"], d["claim"]) for d in got}) == len(got)
+
+
+def test_g2_a_form_is_named_by_its_own_words_when_it_has_them():
+    got = defects(site("<h1>Welcome</h1><form id='visit' action='x'><input name='q'></form><form aria-label='Book a visit'><input name='q'></form>"))
+    assert [d["where"] for d in got] == ["index.html: the form 'visit'", "index.html: the form 'Book a visit'"]
+
+
+def test_g2_the_findings_follow_the_pages_in_name_order_and_each_page_in_its_own_order():
+    files = {"b.html": PLAIN % "<h2>B</h2><img src='b.png'>", "a.html": PLAIN % "<h1>A</h1><a href='nowhere.html'>X</a>"}
+    got = defects(files)
+    assert [d["where"].split(":")[0] for d in got] == ["a.html", "b.html", "b.html"]
+    assert [d["claim"] for d in got][1:] == ["the image 'b.png' has no alt text for a reader who cannot see it", "the page has no h1 heading"]
+
+
+def test_g2_a_page_that_is_not_html_at_all_is_no_fault_of_this_check():
+    assert defects({"index.html": "{not json", "about.html": "", "x.html": "<<<>>><a href"}) is not None
+    assert defects({"index.html": "\x00\x01"}) is not None
+
+
+def test_g2_long_words_are_cut_to_the_findings_bounds():
+    long = "x" * 400
+    got = only(site("<h1>Welcome</h1><a href='%s.html'>%s</a>" % (long, long)))
+    assert len(got["where"]) <= 200 and len(got["claim"]) <= 600 and S.validate("audit.finding", dict(got, id="F1")) == []
+
+
+# ---- G2 · the mechanical step: the record as it always was, and the pages ---------------------------------------------------
+def a_website(j2, monkeypatch, write_page=None):
+    """A website department as a person makes one (founded, asked for, set up by Root), its Live site stamped. `write_page` is
+    what the Write step's agent says of a page (a callable of the prompt); Audit's reader says every item is met."""
+    W, R, J, founding, FV = j2
+    answers = {"audit.items": says("met"), "audit.judge": {"ok": True, "findings": []}}
+    if write_page:
+        answers["write.page"] = write_page
+    stub(monkeypatch, R, answers)
+    root = founding.found_structure("Acme Learning", owner="Sankalp")["root"]
+    W.owner_ask(root, WEBSITE)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "publish"]:
+        W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+    return ref
+
+
+def says(verdict):
+    """Audit's reader, a function: every done-when item in the prompt is `verdict`."""
+    def say(prompt):
+        items = json.loads(prompt.split("THE DONE-WHEN ITEMS:\n", 1)[1].split("\n\nWHAT CODE MEASURED:", 1)[0])
+        return {"items": [{"id": i["id"], "verdict": verdict, "claim": "what is so of %s" % i["id"], "evidence": "what shows it for %s" % i["id"]}
+                          for i in items], "findings": []}
+    return say
+
+
+def the_page(prompt):
+    return json.JSONDecoder().raw_decode(prompt.split("THIS PAGE:\n", 1)[1])[0]
+
+
+def a_page_with(extra):
+    """What the Write step's agent says of a page: a heading, text, and `extra` markup (a defect, or none)."""
+    def write(prompt):
+        p = the_page(prompt)
+        return {"title": p["title"], "body_html": "<section><h1>%s</h1><p>%s</p>%s</section>" % (p["title"], "What a student needs to know. " * 3, extra)}
+    return write
+
+
+def mechanical(j2, monkeypatch, ref, files, sample=True):
+    """The v1 mechanical step on a department that exists, reading `files` as the deliverable."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(R, "audit_files", lambda ctx: files)
+    return audit_v1().CODE["audit_mechanical"]({"ref": ref, "dept": W.dept(ref), "inp": {"v": 1}, "bag": {"audit.pick": {"sample": sample}}}, None, None)
+
+
+CLEAN_NOTE = ("every version has its run and its check; the trace reaches the owner's words; "
+              "the pages' links, forms, images and headings are in order")
+
+
+def test_g2_audit_mechanical_moved_into_audit_v1_and_the_recipe_still_names_it():
+    m = audit_v1()
+    assert not hasattr(m.CODE["audit_mechanical"], "legacy"), "a body of the layer's own, no longer a reference to engine_runtime"
+    assert not hasattr(m.CHECK["has_a_verdict"], "legacy")
+    steps = [s for s in json.loads((S.HERE / "layers" / "audit" / "v1.json").read_text(encoding="utf-8"))["steps"] if s["id"] == "audit.mechanical"]
+    assert [(s["code"], s["check"]) for s in steps] == [("audit_mechanical", "has_a_verdict")], "the step id, its code and its covering are as they were"
+    assert C.case_3(m) == [] and C.case_4(m) == [] and C.case_7(m) == []
+
+
+def test_g2_a_clean_site_is_in_order_and_says_the_pages_were_read(j2, monkeypatch):
+    ref = a_website(j2, monkeypatch)
+    got = mechanical(j2, monkeypatch, ref, site())
+    assert got == {"ok": True, "notes": [CLEAN_NOTE], "faults": [], "holes": [], "defects": []}
+
+
+def test_g2_a_deliverable_that_is_not_html_keeps_the_notes_it_always_had(j2, monkeypatch):
+    ref = a_website(j2, monkeypatch)
+    got = mechanical(j2, monkeypatch, ref, {"result.md": "An answer."})
+    assert got["ok"] is True and got["notes"] == ["every version has its run and its check; the trace reaches the owner's words"]
+
+
+def test_g2_a_site_not_sampled_is_not_read_for_defects_either(j2, monkeypatch):
+    ref = a_website(j2, monkeypatch)
+    assert mechanical(j2, monkeypatch, ref, site("<h2>no h1</h2>"), sample=False) == {"ok": True, "notes": ["not sampled"]}
+
+
+def test_g2_a_defect_that_weighs_medium_fails_the_measure_and_the_notes_say_where_and_what(j2, monkeypatch):
+    ref = a_website(j2, monkeypatch)
+    got = mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><img src='hero.png'><a href='fees.html'>Fees</a>"))
+    assert got["ok"] is False and got["faults"] == [] and got["holes"] == []
+    assert got["notes"] == ["index.html: the link 'Fees' goes to fees.html, which is not a page of the site",
+                            "index.html: the image 'hero.png' has no alt text for a reader who cannot see it"]
+    assert [d["severity"] for d in got["defects"]] == ["medium", "medium"]
+
+
+def test_g2_a_defect_that_weighs_low_is_filed_and_noted_but_does_not_fail_the_measure(j2, monkeypatch):
+    ref = a_website(j2, monkeypatch)
+    got = mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><a href='#hours'>Hours</a>"))
+    assert got["ok"] is True and [d["severity"] for d in got["defects"]] == ["low"]
+    assert got["notes"] == ["noted, index.html: the link 'Hours' goes to #hours, and nothing on the page has that anchor"]
+
+
+def test_g2_placeholder_text_is_a_finding_naming_the_page_and_what_it_says(j2, monkeypatch):
+    ref = a_website(j2, monkeypatch)
+    got = mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><p>Opening hours: to be confirmed.</p>"))
+    assert got["ok"] is False and got["defects"] == []
+    (hole,) = got["holes"]
+    assert (hole["page"], hole["kind"], hole["severity"]) == ("index.html", "hole", "high") and "to be confirmed" in hole["claim"]
+    assert hole["where"] == "index.html: the text 'to be confirmed'", "where names the page and the words, page stays the page's name"
+    assert got["notes"] == ["the site says it does not know 1 thing"]
+    assert [h["page"] for h in mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><p>Lorem ipsum.</p>", **{"lessons.html": LESSONS.replace("Week one.", "TBD")}))["holes"]] \
+        == ["index.html", "lessons.html"], "one for each page that says it"
+
+
+def test_g2_the_record_is_checked_as_it_always_was(j2, monkeypatch):
+    """The part of the body that moved is the legacy body's: same faults, same holes, same notes without the page checks."""
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    ctx = {"ref": ref, "dept": W.dept(ref), "inp": {"v": 1}, "bag": {"audit.pick": {"sample": True}}}
+    for files in (site(), site("<h1>Welcome</h1><p>Phone: to be confirmed.</p>"), {"result.md": "An answer."}):
+        monkeypatch.setattr(R, "audit_files", lambda c, files=files: files)
+        old, new = R.audit_mechanical(ctx, None, None), audit_v1().audit_mechanical(ctx, None, None)
+        assert new["faults"] == old["faults"] and new["ok"] == old["ok"]
+        assert [{k: v for k, v in h.items() if k != "where"} for h in new["holes"]] == old["holes"], "the same holes, each with a where besides"
+    organic_less = W.create("dref-nothing", "Nothing", None, kind="organic")[0]["ref"]            # nothing delivered: the trace fault stays a fault
+    monkeypatch.setattr(R, "audit_files", lambda c: {})
+    bare = {"ref": organic_less, "dept": W.dept(organic_less), "inp": {"v": 1}, "bag": {"audit.pick": {"sample": True}}}
+    assert audit_v1().audit_mechanical(bare, None, None)["faults"] == R.audit_mechanical(bare, None, None)["faults"] != []
+
+
+def test_g2_the_covering_wants_every_defect_to_name_where_what_and_how_serious(j2):
+    W, R, J, _, _ = j2
+    good = {"where": "index.html: the form", "claim": "it has no submit button", "severity": "medium"}
+    check = audit_v1().CHECK["has_a_verdict"]
+    assert check(None, None, None, {"ok": False, "notes": ["x"], "defects": [good]})["ok"] is True
+    assert check(None, None, None, {"ok": True, "notes": ["x"]})["ok"] is True, "a step that found no defect and says nothing of them"
+    assert check(None, None, None, {"ok": True, "notes": []})["ok"] is False and check(None, None, None, {"notes": ["x"]})["ok"] is False
+    for what, bad, said in (("no where", dict(good, where=""), "defect 1 names no where"), ("no what", {k: v for k, v in good.items() if k != "claim"}, "defect 1 names no claim"),
+                            ("no weight", dict(good, severity="grave"), "defect 1 has no weight"), ("not a finding", "index.html", "defect 1 has no weight")):
+        got = check(None, None, None, {"ok": False, "notes": ["x"], "defects": [good, bad]})
+        assert got["ok"] is False and said.replace("defect 1", "defect 2") in got["notes"][0], what
+
+
+def test_g2_a_defect_reaches_the_reading_as_a_finding_that_names_where_and_what(j2, monkeypatch):
+    """Through Audit's real run: a site whose pages carry an image with no alt is read, the measure fails, and the reading files a finding
+    for each image, each with the page and the element and what is wrong (the S-30 reading, as the interface types it)."""
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch, a_page_with("<img src='photos/class.png'>"))
+    (row, *_) = W.rows(ref, "readings.jsonl")
+    assert S.validate_record("audit", "reading", row) == [] and row["read"] is True
+    found = [f for f in row["findings"] if "has no alt text" in f["claim"]]
+    assert found, row["findings"]
+    assert all(S.validate("audit.finding", f) == [] and f["severity"] == "medium" and f["went_to"] == "Identity" for f in found)
+    assert {f["where"] for f in found} >= {"index.html: the image 'class.png'"}
+    assert all(re.match(r"^[a-z0-9-]+\.html: the image 'class\.png'$", f["where"]) for f in found), "the page and the element, in each"
+    code = [r for r in row["items"] if r["method"] == "code"]
+    assert code and all(r["verdict"] == "not_met" for r in code), "a measured failure stands over the reader's yes (Q4)"
+    assert "the image 'class.png' has no alt text for a reader who cannot see it" in code[0]["claim"]
+    assert "goal.reached" not in [e["action"] for e in J.events(ref)]
+
+
+def test_g2_a_site_with_nothing_wrong_is_read_and_files_no_defect(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch, a_page_with("<img src='photos/class.png' alt='A class at work'>"))
+    (row, *_) = W.rows(ref, "readings.jsonl")
+    assert row["read"] is True and row["findings"] == []
+    assert [(r["method"], r["verdict"]) for r in row["items"]] == [("code", "met")]
+    assert "the pages' links, forms, images and headings are in order" in row["items"][0]["claim"]
+    assert "goal.reached" in [e["action"] for e in J.events(ref)]
+
+
+def test_g2_a_placeholder_reaches_the_reading_as_a_finding_that_names_the_page_and_the_words(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch, a_page_with("<p>Phone: to be confirmed.</p>"))
+    (row, *_) = W.rows(ref, "readings.jsonl")
+    holes = [f for f in row["findings"] if "to be confirmed" in f["claim"]]
+    assert holes and all(S.validate("audit.finding", f) == [] and f["severity"] == "high" for f in holes)
+    assert all(re.match(r"^[a-z0-9-]+\.html: the text 'to be confirmed'$", f["where"]) for f in holes), [f["where"] for f in holes]

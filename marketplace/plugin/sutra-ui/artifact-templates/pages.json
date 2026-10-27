@@ -4,11 +4,13 @@
  "kind": "pages",
  "use_case": "the body of every page the plan names",
  "files": [
-  "*.html"
+  "*.html",
+  "_plan.json"
  ],
  "checks": [
   "pages_have_html"
  ],
+ "form": "pages_are_checkable",
  "written_by": [
   "Write"
  ],
