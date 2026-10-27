@@ -188,7 +188,9 @@ def test_steps_6_to_8_the_runs_the_audit_and_the_goal_are_on_the_ledger(j2, monk
     assert acts[-2:] == ["audit.finding_filed", "goal.reached"]
     assert acts.count("goal.reached") == 1
     reached = J.events(ref)[-1]
-    assert reached["actor"] == "Identity" and reached["evidence_refs"] == [{"artifact": "Live site", "version": 1}]
+    (reading,) = W.rows(ref, "readings.jsonl")
+    assert reached["actor"] == "Identity" and reached["evidence_refs"] == [{"artifact": "Live site", "version": 1, "reading": reading["id"]}], \
+        "Identity says it from the reading, and cites it (M8.4)"
     st = J.status(ref)
     assert (st["state"], st["step"], st["goal_reached"]) == ("done", 8, True)
     assert len([s for s in _said(R, ref) if s.startswith("The goal is reached:")]) == 1

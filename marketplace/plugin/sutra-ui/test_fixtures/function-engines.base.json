@@ -504,6 +504,64 @@
       "check": "said_what_it_did"
      }
     ]
+   },
+   {
+    "name": "Hear a reading",
+    "when": {
+     "msg_type": "inform",
+     "word": "reading"
+    },
+    "steps": [
+     {
+      "id": "identity.hear_reading",
+      "name": "Read what Audit reports",
+      "nature": "transform",
+      "born": "C2",
+      "code": "hear",
+      "check": "facts_are_closed"
+     },
+     {
+      "id": "identity.done",
+      "name": "Say whether the goal is reached",
+      "nature": "decide",
+      "born": "C2",
+      "code": "identity_done",
+      "check": "done_is_read"
+     },
+     {
+      "id": "identity.weigh_reading",
+      "name": "Weigh what the reading leaves open",
+      "nature": "decide",
+      "born": "C2",
+      "code": "identity_weigh_reading",
+      "check": "said_what_it_did"
+     }
+    ]
+   },
+   {
+    "name": "File a granted round",
+    "when": {
+     "msg_type": "inform",
+     "word": "round"
+    },
+    "steps": [
+     {
+      "id": "identity.hear_round",
+      "name": "Read the round",
+      "nature": "transform",
+      "born": "C2",
+      "code": "hear",
+      "check": "facts_are_closed"
+     },
+     {
+      "id": "identity.round",
+      "name": "File the correction in the Brief",
+      "nature": "transform",
+      "born": "C2",
+      "code": "identity_round",
+      "check": "said_what_it_did"
+     }
+    ]
    }
   ]
  },

@@ -910,6 +910,8 @@ HEARS = {
         {'act': 'propose', 'word': 'line', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.line', 'handler': 'a line proposed'},
         {'act': 'inform', 'word': 'conflict', 'from': ('Adaptation', 'Coordination'), 'via': 'board', 'payload': 'act.conflict', 'handler': 'Close a conflict'},
         {'act': 'inform', 'word': 'doubt', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.doubt', 'handler': 'Hear a doubt'},
+        {'act': 'inform', 'word': 'reading', 'from': ('Audit',), 'via': 'board', 'payload': 'act.reading', 'handler': 'Hear a reading'},
+        {'act': 'inform', 'word': 'round', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.round', 'handler': 'File a granted round'},
     ],
     'adaptation': [
         {'act': 'accept-proposal', 'word': 'trial', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Start a trial'},
@@ -965,6 +967,7 @@ SENDS = {
         {'act': 'request', 'words': _IDENTITY_ASKS, 'to': ('Owner',), 'payload': 'act.ask'},
         {'act': 'request', 'words': ('line',), 'to': ('Adaptation',), 'payload': 'act.line_request'},
         {'act': 'request', 'words': ('idea',), 'to': ('Adaptation',), 'payload': 'act.any'},
+        {'act': 'request', 'words': ('next',), 'to': ('Adaptation',), 'payload': 'act.next'},      # W2-IDENTITY, M8.5
         {'act': 'inform', 'words': _IDENTITY_TELLS, 'to': ('Owner',), 'payload': 'act.tell'},
         {'act': 'inform', 'words': ANY, 'to': ('Owner',), 'payload': 'act.tell'},    # _reconcile_j1_tells posts the tell Setup stored
         {'act': 'inform', 'words': ('rung',), 'to': ('Adaptation',), 'payload': 'act.any'},
@@ -1048,6 +1051,7 @@ CHECKS = {
                  'journey_is_known': "the words are one of canon's five journeys",
                  'rule_is_tagged': 'a rule is one line, tagged, with its scope',
                  'ruling_is_known': 'a ruling is run, drop or ask',
+                 'done_is_read': 'the goal is reached only from a reading: the version was read, every item is met, none is to confirm and no high finding is open',
                  'verdict_is_known': 'a verdict is go, ask or refuse, and an ask or a no says why'},
     'adaptation': {'counted_the_rows': 'every step is counted from its own rows',
                    'idea_has_shapes': 'an idea is reflected back with the shapes it could take',
@@ -1073,6 +1077,19 @@ CONTRACT_SAMPLES = {
     'verdict_is_known': {'good': [{'verdict': 'go', 'why': 'inside the goal'}, {'verdict': 'ask', 'why': 'it reaches outside'}],
                          'bad': [{'verdict': 'maybe', 'why': 'x'}]},
     'ruling_is_known': {'good': [{'ruling': 'drop', 'why': 'the goal does not need it'}], 'bad': [{'ruling': 'perhaps', 'why': 'x'}]},
+    'done_is_read': {'good': [{'done': False, 'why': 'D2 is not met'},
+                              {'done': True, 'reading': 'r-1a2b3c4d', 'read': True, 'met': ['D1', 'D2'], 'not_met': [], 'to_confirm': [],
+                               'unread': [], 'high': False, 'why': 'every done-when item is met'}],
+                      'bad': [{'done': 'yes'}, {'done': False, 'why': ''},
+                              {'done': True, 'read': True, 'met': ['D1'], 'not_met': [], 'to_confirm': [], 'unread': [], 'high': False, 'why': 'x'},
+                              {'done': True, 'reading': 'r-1a2b3c4d', 'read': False, 'met': ['D1'], 'not_met': [], 'to_confirm': [], 'unread': [],
+                               'high': False, 'why': 'x'},
+                              {'done': True, 'reading': 'r-1a2b3c4d', 'read': True, 'met': ['D1'], 'not_met': ['D2'], 'to_confirm': [],
+                               'unread': [], 'high': False, 'why': 'x'},
+                              {'done': True, 'reading': 'r-1a2b3c4d', 'read': True, 'met': ['D1'], 'not_met': [], 'to_confirm': ['D2'],
+                               'unread': [], 'high': False, 'why': 'x'},
+                              {'done': True, 'reading': 'r-1a2b3c4d', 'read': True, 'met': ['D1', 'D2'], 'not_met': [], 'to_confirm': [],
+                               'unread': [], 'high': True, 'why': 'x'}]},
     'answer_has_its_price': {'good': [{'answer': 'accept', 'why': 'fits today: 9 calls of 30'}],
                              'bad': [{'answer': 'accept', 'why': ''}, {'answer': 'grant', 'why': 'x'}]},
     'price_is_observed': {'good': [{'answer': 'counter', 'why': 'room for two today: 0.08 USD for these of the 0.30 USD left',
@@ -1606,7 +1623,7 @@ LEDGER_ACTIONS = ('proposal.requested', 'proposal.created', 'proposal.granted', 
                   'envelope.granted', 'envelope.held', 'slot.assigned', 'run.started', 'run.completed', 'run.failed',
                   'artifact.filed', 'audit.finding_filed', 'audit.not_read', 'identity.assessed', 'identity.questioned',
                   'identity.ruled', 'conflict.raised', 'ask.created', 'ask.answered', 'goal.reached', 'cycle.stopped',
-                  'cycle.resumed', 'cycle.reopened', 'check.failed')
+                  'cycle.resumed', 'cycle.reopened', 'goal.revised', 'check.failed')
 #: Identity's five recognitions of a request (task, query, directive, feedback, new idea): a verdict of its covering, not the
 #: user journeys. The key `journeys` of engine_defs/website.json and the check journey_is_known name them and are not renamed
 RECOGNITIONS = VERDICTS['identity']['journey']
