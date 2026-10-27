@@ -730,7 +730,8 @@ def test_i5_figures_and_words_of_the_owners_own_work_are_not_taken_for_the_insid
 
 
 #: the confidence in the shapes a verifier found past the guard (2026-10-27): a decimal that ends a sentence, a percentage in
-#: words, and odds said as a ratio
+#: words, and odds said as a ratio; and the sibling shapes it found after that: a rating, a slash ratio, a percent sign or 'pct'
+#: after a spelled number, a decimal comma, 'chance in', 'fifty-fifty'
 ENDS_ON_A_FIGURE = [
     "I give this 0.6.",
     "Which pages does the shop want? 0.45.",
@@ -741,12 +742,16 @@ ENDS_ON_A_FIGURE = [
     "It is a 1 in 3 chance.",
     "Maybe a one in three chance the shop wants it.",
     "I put it at 2 out of 5.",
-    "Call it zero point four five."]
+    "Call it zero point four five.",
+    "I'd rate it 6 out of 10.", "About 6/10.", "I am at sixty %.", "I am at sixty-five % on it.", "There is one chance in three.",
+    "I put it at 0,45.", "I am 60 pct sure.", "About fifty-fifty.", "It is 50/50.", "I'd call it 60/100.", "Rated 7 out of ten.",
+    "Six in ten, I would say.", "A 1-in-3 chance.", "4,5 out of 10.", "I'd rate it a 6.", "My score is 6.", "It scored seven.", "That is .6."]
 #: a figure or a word of the owner's own work, which is theirs: a time, a class, a version, a layout, a count of what they sell
 THE_OWNERS_OWN = [
     "Open from 9.30.", "Class 8.5.", "It needs v2.1.3.", "Version 0.45.3 of the font.", "Show 3 in 4 columns.",
     "Do 2 out of 3 customers want it on a phone?", "The workflow for the cake page lists the sizes.", "A search engine finds it.",
-    "Show 12 pages in 3 rows."]
+    "Show 12 pages in 3 rows.", "Open 9/10 July.", "Sale from 9/10/2026.", "Closed 12/10.", "It costs 1,5 euros.", "Show 1,450 cakes at 10,30 pm.",
+    "Open from 10.45.", "The rate card lists the sizes.", "Rate the cakes with stars.", "Show 3 of 10 cakes per row."]
 
 
 @pytest.mark.parametrize("text", ENDS_ON_A_FIGURE)
@@ -762,12 +767,21 @@ def test_i5_inside_leaves_the_owners_own_figures_and_the_word_workflow_alone(tex
 def test_i5_inside_names_the_figure_it_found():
     assert V1.inside("I give this 0.6.") == ["0.6"] and V1.inside("(0.45)") == ["0.45"] and V1.inside("about 45 percent") == ["45 percent"]
     assert V1.inside("Call it sixty per cent.") == ["per cent"] and V1.inside("a 1 in 3 chance") == ["1 in 3"]
+    assert V1.inside("About 6/10.") == ["6/10"] and V1.inside("I put it at 0,45.") == ["0,45"] and V1.inside("I am 60 pct sure.") == ["60 pct"]
+    assert V1.inside("I'd rate it 6 out of 10.") == ["rate it 6 out of 10"] and V1.inside("one chance in three") == ["chance in three"]
+    assert V1.inside("About fifty-fifty.") == ["fifty-fifty"] and V1.inside("I am at sixty %.") == ["%"]
 
 
-@pytest.mark.parametrize("doubt", ["Which pages does the shop want? " + said for said in (
-    "I put it at 0.45.", "0.45.", "I am about sixty percent sure.", "Call it sixty per cent.", "It is a 1 in 3 chance.", "I put it at one in three.")])
+#: the figure, said the way a model says it: the shapes found one after another by the verifiers
+SAID_AS_A_FIGURE = ("I put it at 0.45.", "0.45.", "I am about sixty percent sure.", "Call it sixty per cent.", "It is a 1 in 3 chance.",
+                    "I put it at one in three.", "I'd rate it 6 out of 10.", "About 6/10.", "I am at sixty %.", "There is one chance in three.",
+                    "I put it at 0,45.", "I am 60 pct sure.", "About fifty-fifty.")
+
+
+@pytest.mark.parametrize("doubt", ["Which pages does the shop want? " + said for said in SAID_AS_A_FIGURE])
 def test_i5_a_doubt_that_ends_on_a_figure_or_spells_it_out_is_put_in_the_stock_words(j2, doubt):
-    """Found by a verifier: 'Which pages does the shop want? I put it at 0.45.' reached the card and the chat line as written."""
+    """Found by a verifier: 'Which pages does the shop want? I put it at 0.45.' reached the card and the chat line as written;
+    and then 'I'd rate it 6 out of 10.', 'About 6/10.', 'I am at sixty %.', 'one chance in three', '0,45', '60 pct', 'fifty-fifty'."""
     W, R, J, _, _ = j2
     ref = _born(j2, BAKERY)
     _doubts(R, ref, doubt=doubt, fallback="the page shows one size")
@@ -776,8 +790,73 @@ def test_i5_a_doubt_that_ends_on_a_figure_or_spells_it_out_is_put_in_the_stock_w
     name = W.dept(ref)["name"]
     assert ask["text"] == 'Before I set up the work for %s: %s Unless you say, the page shows one size. Answer in your own words, or say "just do it".' % (name, V1.SOMETHING)
     seen = _the_card_the_owner_reads(R, ref, ask)
-    assert len(seen) == 3 and all(not re.search(r"\d|per ?cent|sixty|in three|zero point", s.replace(name, ""), re.I) for s in seen), seen
+    assert len(seen) == 3 and all(not re.search(r"\d|%|per ?cent|pct|sixty|in three|zero point|rate|chance|fifty|out of", s.replace(name, ""), re.I) for s in seen), seen
+    assert seen[2] == ask["text"], "the chat line says what the card says"
     assert ask["doubt"]["doubt"] == V1._said(doubt, 600) and ask["doubt"]["shown"] == V1.SOMETHING and S.validate_record("identity", "ask", ask) == []
+
+
+@pytest.mark.parametrize("shape", ["I'd rate it 6 out of 10.", "About 6/10.", "I put it at 0,45."])
+def test_i5_a_figure_in_any_shape_reaches_the_owner_by_no_way_a_doubt_has_to_speak(j2, shape):
+    """The same figure by the fallback ('Unless you say, ...'), by the line that tells the owner the plan goes on, and by the card of
+    a blocked plan: the one guard (V1._plain_or) stands at all three."""
+    W, R, J, _, _ = j2
+    ref = _doubting(j2)
+    stock = V1.fallback_default(W.dept(ref))
+    ask = _plan_asks(W, ref)[0]
+    assert V1.fallback_of(ref, {"fallback": "the page shows one size, " + shape}) == stock
+    for said in ("A first answer", "A second answer"):
+        _owner_says(j2, ref, "chat", said)
+        _doubts(R, ref, doubt="Which pages does the shop want? " + shape, fallback="the page shows one size. " + shape)
+        W.run_until_idle(ref, limit=300)
+    asks = _plan_asks(W, ref)
+    assert len(asks) == 2 and asks[1]["text"].endswith('Unless you say, %s. Answer in your own words, or say "just do it".' % stock), asks[1]["text"]
+    assert asks[1]["doubt"]["fallback"] == stock and asks[1]["doubt"]["shown"] == V1.SOMETHING
+    told = [x for x in _said_by_identity(R, ref) if "the plan goes on as it stands" in x]
+    assert len(told) == 1 and V1.SOMETHING in told[0] and "Unless you say otherwise, %s." % stock in told[0], told
+    went_on = [q for q in _line_requests(R, ref) if q["payload"].get("go_on")]
+    assert went_on[-1]["payload"]["fallback"] == stock and shape in went_on[-1]["payload"]["doubt"], "Adaptation is sent the doubt as it was"
+    _doubts(R, ref, doubt="Which pages does the shop want? " + shape, fallback="")
+    W.run_until_idle(ref, limit=300)
+    card = next(a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending")
+    assert V1.SOMETHING in card["text"] and card["why"] == V1.SOMETHING
+    owner_sees = json.dumps([x for x in _the_card_the_owner_reads(R, ref, ask)] + [told[0], card["text"], card["why"], asks[1]["text"]])
+    assert not re.search(r"\d|%|rate|out of", owner_sees.replace(W.dept(ref)["name"], "")), owner_sees
+
+
+def test_i5_the_figure_of_the_confidence_the_post_carries_is_never_shown_in_any_shape(j2):
+    """The confidence is Identity's to hold (the post carries it as a number), so the figure itself is what the guard looks for, not
+    only the phrasings a model puts it in: a bare '45' is the confidence 0.45 when that is what the post says, and the owner's
+    own 45 (45 cakes in the bakery they described) is theirs."""
+    W, R, J, _, _ = j2
+    assert V1.inside("Which pages does the shop want? I would say 45.") == [], "no confidence in the post: a bare 45 is the owner's own"
+    assert V1.inside("I would say 45.", 0.45) == ["45"] and V1.inside("I would say 45", 0.45) == ["45"] and V1.inside("(45)", 0.45) == ["45"]
+    assert V1.inside("I would say 0.450.", 0.45) == ["0.450"] and V1.inside("I would say .45", 0.45) == [".45"] and V1.inside("0,45!", 0.45) == ["0,45"]
+    assert V1.inside("I would say 45.", 0.8) == [] and V1.inside("I would say 45.", 0.449) == [], "another confidence: another figure"
+    assert V1.inside("I think 29, maybe.", 0.29) == ["29"], "0.29 * 100 is 28.999999999999996 in a float: it is 29"
+    assert V1.inside("Show 45,000 cakes, v45, 9.45, the 45th and 0.45.3", 0.45) == [], "a thousand, a version, a time, an ordinal are not it"
+    assert V1.inside("I would say 45.", 0.45, owners="show 45 cakes") == [] and V1.inside("0.45", 0.45, owners="v0.45") == ["0.45"]
+    assert V1.inside("Show 6 cakes", 0.6) == [], "a single digit is the confidence 0.6 only as 0.6; its 6 is the owner's"
+    for off in (None, True, "0.45", "high", 0, 1.5, -0.2, [0.45]):
+        assert V1.inside("I would say 45.", off) == [], off
+    assert V1.inside("I would say 100.", 1) == ["100"] and V1.inside("Page 1.", 1) == [], "1.0 is not 'page 1', only 100 is its percentage"
+    # on the live path: the confidence 0.45 of the post, and the figure alone
+    ref = _born(j2, BAKERY)
+    _doubts(R, ref, doubt="Which pages does the shop want? I would say 45.", fallback="the page shows 45 sizes", confidence=0.45)
+    W.run_until_idle(ref, limit=300)
+    ask = _plan_asks(W, ref)[0]
+    assert ask["text"] == 'Before I set up the work for %s: %s Unless you say, %s. Answer in your own words, or say "just do it".' % (
+        W.dept(ref)["name"], V1.SOMETHING, V1.fallback_default(W.dept(ref)))
+    assert not re.search(r"\d", ask["text"].replace(W.dept(ref)["name"], "")) and ask["doubt"]["doubt"].endswith("I would say 45.")
+    # the same words under another confidence are the owner's figures, asked as they are
+    other = _born(j2, BAKERY, "Other Co")
+    _doubts(R, other, doubt="Which pages does the shop want? I would say 45.", fallback="the page shows 45 sizes", confidence=0.8)
+    W.run_until_idle(other, limit=300)
+    assert "I would say 45." in _plan_asks(W, other)[0]["text"] and "Unless you say, the page shows 45 sizes." in _plan_asks(W, other)[0]["text"]
+    # and the figure the owner said is theirs even when it is the confidence
+    own = _born(j2, "a site for my bakery in Pune that sells 45 cakes", "Own Co")
+    _doubts(R, own, doubt="Should the page list all 45 cakes?", fallback="the page lists the first 12", confidence=0.45)
+    W.run_until_idle(own, limit=300)
+    assert "Should the page list all 45 cakes?" in _plan_asks(W, own)[0]["text"] and _plan_asks(W, own)[0]["doubt"]["shown"] == "Should the page list all 45 cakes?"
 
 
 def test_i5_a_doubt_that_names_a_workflow_keeps_its_words(j2):
