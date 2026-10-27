@@ -451,7 +451,7 @@ def test_p3_an_ask_for_less_that_leaves_out_a_workflow_in_the_middle_is_posted_a
     assert all(r["status"] == "ok" for r in R.step_rows(ref) if r["step"].startswith("priority"))
     acts = _actions(J, ref)
     assert acts[2:8] == ["proposal.created", "proposal.countered", "proposal.created", "proposal.granted", "workflow.validated", "workflow.registered"]
-    assert "conflict.raised" not in acts and not [a for a in W.asks(ref) if a["kind"] == "conflict"]
+    assert "conflict.raised" not in acts and not [a for a in W.asks(ref) if a["kind"] in ("blocked", "conflict")]
     first, second = _prices(W, ref)
     assert (first["answer"], first["keep"], first["engines"]) == ("counter", ["Facts"], ["Facts", "Notes", "Summary"]), "what was posted, not what was asked"
     assert (second["answer"], second["keep"]) == ("accept", ["Facts"]) and W.dept(ref)["engines"] == ["Facts"]
@@ -468,7 +468,10 @@ def test_p3_an_ask_that_names_no_workflow_from_the_first_on_is_a_no_and_never_a_
     assert acts[2:7] == ["proposal.created", "proposal.refused", "conflict.raised", "identity.ruled", "ask.created"]
     [price] = _prices(W, ref)
     assert (price["answer"], price["keep"]) == ("reject", []) and W.dept(ref)["engines"] == []
-    assert len([a for a in W.asks(ref) if a["kind"] == "conflict"]) == 1
+    # Priority's no carries the ways out it priced and Identity puts the owner one card that holds them (M5.4, W2-IDENTITY),
+    # so the conflict reaches the owner as the one blocked card, asked once
+    assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"] == ["blocked"]
+    assert len([a for a in W.asks(ref) if a["kind"] in ("blocked", "conflict")]) == 1
 
 
 def test_p3_an_ask_for_less_that_is_the_line_cut_short_stands_in_whatever_order_the_agent_names_it(live, monkeypatch):
