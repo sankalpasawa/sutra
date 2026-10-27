@@ -122,7 +122,13 @@ def test_j1_walk_found_ask_decide_build_tell(j1, monkeypatch):
     W.run_until_idle(root, limit=200)
     [child] = _children(W, root)                                    # steps 5 and 6: Root decides and builds
     assert child["kind"] == "website" and child["template_ref"] == {"id": "department/website", "version": 1}
-    assert {s["name"] for s in W.map_view(child["ref"])["systems"]} == {"Identity", "Priority", "Coordination", "Adaptation", "Audit"}
+    five = ["Identity", "Priority", "Coordination", "Adaptation", "Audit"]
+    assert {s["name"] for s in W.map_view(child["ref"])["systems"]} == set(five)
+    born = W.dept(child["ref"])                                     # step 6: its born rules and its limits, as the record keeps them
+    assert [(r["tag"], r["line"]) for r in born["rules"]] == [
+        ("go", "Plan, write and check inside the record"), ("ask", "Ask the owner before the first publish"),
+        ("refuse", "Never publish a build whose check failed")], "the born rules: one that goes, one that asks, one that refuses"
+    assert born["envelopes"] == {f: {"calls": 30, "usd": 6.0} for f in five}, "a limit for each of the five functions, and for no engine yet"
     assert [m["text"] for m in child["initial_goal_context"]["messages"] if m["actor"] == "user"] == [OPENING, ANSWER]
     assert not [a for a in W.asks(root) if a["kind"] == "setup"], "no stamp at birth (S-18)"
     assert _said(R, root, "request") == ["That is clear. I am shaping the department now."]
