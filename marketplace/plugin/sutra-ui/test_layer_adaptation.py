@@ -399,6 +399,129 @@ def test_a4_a_name_or_a_text_that_does_not_fit_the_schema_is_cut_to_fit_before_i
     assert got["ok"] is True, got
 
 
+#: what the owner must never read on a card, a tell or the pane: the interface's own path and pattern, or the shape row's id
+RAW_SCHEMA = re.compile(r"\$\.|\^\[|workflow_meets_standards|\{0,39\}")
+
+WEB = [dict(GOOD[0], name="Facts (web)", writes="Facts (web)"), dict(GOOD[1], reads="Facts (web)")]
+
+
+@pytest.mark.parametrize("said, fits", [
+    ("Facts (web)", "Facts web"), ("Site: 2", "Site 2"), ("Facts/Notes", "Facts Notes"), ("Facts_web", "Facts web"),
+    ("Café notes", "Cafe notes"), ("(web) facts", "web facts"), ("--Facts", "Facts"), ("Facts   about\tit", "Facts about it"),
+    ("Q&A of Dr. O'Neil-Smith", "Q&A of Dr. O'Neil-Smith"), ("Facts 2", "Facts 2"), ("", ""), ("***", ""), ("你好", "")])
+def test_a4_a_name_is_made_to_fit_the_characters_the_interface_allows_and_a_name_that_fits_is_left_alone(said, fits):
+    """The words are the model's and the characters are the interface's: a character NAME_RE refuses becomes a space (an
+    accent is dropped), the first character is a letter or a number, and a name that already fits is not touched."""
+    assert v1().fit_name(said) == fits
+    assert re.search(S.NAME_RE, fits) or fits == ""
+
+
+def test_a4_whatever_a_model_names_an_engine_it_fits_the_interface_or_is_nothing_and_fitting_twice_changes_nothing():
+    """The property the cases above are samples of: a sample of strings from every part of the character range, none of them
+    reaching the interface as a name it refuses."""
+    import random
+    rng = random.Random(7)
+    marks = [chr(c) for c in range(32, 0x2fff, 7)] + list("abcXYZ019 &'.-_/:()\u00e9\t\n\u00a0\ufb01")
+    for _ in range(500):
+        said = "".join(rng.choice(marks) for _ in range(rng.randint(0, 70)))
+        fit = v1().fit_name(said)
+        assert fit == "" or re.search(S.NAME_RE, fit), repr(said)
+        assert v1().fit_name(fit) == fit, repr(said)
+
+
+def test_a4_norm_engines_fits_the_name_what_it_reads_and_what_it_writes_before_it_cuts(j2):
+    row = v1().norm_engines([{"name": "Facts (web)", "does": "x", "reads": "The Brief (owner's)", "internet": True}])[0]
+    assert row["name"] == "Facts web" and row["writes"] == "Facts web", "a missing writes is the name as it now is"
+    assert row["reads"] == "The Brief owner's"
+    long = v1().norm_engines([{"name": "(" + "Facts about the night clinic " * 4}])[0]
+    assert len(long["name"]) == 40 and re.search(S.NAME_RE, long["name"]) and long["name"].startswith("Facts")
+    for engines in (GOOD, [{"name": n, "reads": "Brief", "writes": n} for n in LINE]):
+        assert [r["name"] for r in v1().norm_engines(engines)] == [e["name"] for e in engines], "a name that fits is not changed"
+
+
+def test_a4_a_name_with_a_character_the_interface_refuses_is_judged_as_the_name_it_will_be_posted_with(j2):
+    """Found by a verifier: 'Facts (web)' failed the proposal stage with the interface's path and pattern on the owner's card.
+    Now the characters are made to fit before the line is judged, so the line is sound and its notes are as they were."""
+    ctx = _line_ctx(j2)
+    for said in ("Facts (web)", "Facts: web", "Facts/web", "Facts_web", "Fäcts web"):
+        engines = [dict(WEB[0], name=said, writes=said), dict(WEB[1], reads=said)]
+        got = v1().CHECK["line_is_engines"](ctx, None, None, {"engines": engines})
+        assert got == {"ok": True, "notes": ["2 engines, each reading what one before it wrote"]}, (said, got)
+    # two names that differ only in the characters the interface refuses are one name once they fit
+    twice = v1().CHECK["line_is_engines"](ctx, None, None, {"engines": [WEB[0], dict(WEB[1], name="Facts web", reads="Facts (web)")]})
+    assert twice["ok"] is False and twice["notes"] == ["names_unique: Facts web is named twice"], twice
+
+
+@pytest.mark.parametrize("engines, note", [
+    ([dict(GOOD[0], name="***", writes="***"), GOOD[1]], "engine 1's name may use only letters, numbers, spaces and & ' . - (at most 40 characters)"),
+    ([GOOD[0], dict(GOOD[1], reads="***")], "Site 2 names what it reads with only letters, numbers, spaces and & ' . - (at most 40 characters)"),
+    ([GOOD[0], dict(GOOD[1], writes="***")], "Site 2 names what it writes with only letters, numbers, spaces and & ' . - (at most 40 characters)")])
+def test_a4_what_the_name_pattern_still_refuses_is_said_in_the_owners_words_with_no_path_and_no_pattern(j2, engines, note):
+    """A name nothing is left of once its characters are made to fit cannot be judged as a name: the line fails, and the shape
+    row (the interface's, which is not one of Root's standards) is said as a sentence, naming no path, no pattern and no id."""
+    got = v1().CHECK["line_is_engines"](_line_ctx(j2), None, None, {"engines": engines})
+    assert got["ok"] is False and note in got["notes"], got
+    assert not RAW_SCHEMA.search(" ".join(got["notes"])), got["notes"]
+
+
+@pytest.mark.parametrize("covers, note", [
+    (["D2", "D3", "D3"], "Game names an item twice"),
+    (["D2", "D3", "tomorrow"], "Game names an item in a form done-when does not use"),
+    (["D2", "D3"] + ["D%d" % n for n in range(4, 16)], "Game names more than 12 items")])
+def test_a4_what_the_shape_row_finds_in_a_made_line_is_said_by_the_engines_name_and_never_by_its_path(j2, monkeypatch, covers, note):
+    """The shape row stops at three faults and each is the interface's own (a path, then what is wrong): a note says it by the
+    engine's name."""
+    engines = json.loads(json.dumps(PLAY))
+    engines[1]["covers"] = covers
+    got = _verdict_of(j2, monkeypatch, "organic", {"engines": engines})
+    assert got["ok"] is False and note in got["notes"], got
+    assert not RAW_SCHEMA.search(" ".join(got["notes"])), got["notes"]
+
+
+def test_a4_a_name_with_a_character_the_interface_refuses_is_proposed_and_registered_as_it_fits(j2, monkeypatch):
+    """The finding's probe end to end: an organic department, the make setting off, a model that names 'Facts (web)'. No card
+    is blocked; the plan that is registered, and the line Coordination keeps, carry the name as it fits."""
+    W, R, J, founding, FV = j2
+    asked = []
+    _stub(monkeypatch, R, {"adapt.line": lambda prompt: asked.append(prompt) or {"engines": WEB},
+                           "priority.bargain": {"answer": "accept", "why": "the envelope has room"}})
+    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
+    W.owner_ask(root, ORGANIC)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    assert len(asked) == 1, "shaped once: nothing was sent back"
+    acts = [e["action"] for e in J.events(ref)]
+    assert "workflow.registered" in acts and "workflow.blocked" not in acts
+    assert W.dept(ref)["workflows"][-1]["engines"] == ["Facts web", "Site 2"]
+    assert not [a for a in W.asks(ref) if a["kind"] == "blocked"]
+
+
+def test_a4_a_plan_no_name_can_be_made_of_blocks_with_a_card_that_has_no_path_and_no_pattern(j2, monkeypatch):
+    """When nothing is left of a name to judge, the reasons go back twice and then the owner is told: the card, the tell and
+    the pane say it in words. The record keeps the check that failed."""
+    W, R, J, founding, FV = j2
+    bad = {"engines": [dict(GOOD[0], name="***", writes="***"), dict(GOOD[1], reads="***")]}
+    asked = []
+    _stub(monkeypatch, R, {"adapt.line": lambda prompt: asked.append(prompt) or bad,
+                           "priority.bargain": {"answer": "accept", "why": "the envelope has room"}})
+    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
+    W.owner_ask(root, ORGANIC)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    assert len(asked) == 3 and "may use only letters, numbers, spaces" in asked[1], "the model is told what a name may use, in words"
+    assert not [p for p in asked[1:] if RAW_SCHEMA.search(p)], "nothing of the interface's path or pattern goes back to the model either"
+    card = next(a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending")
+    assert "could not shape a plan that passes its check" in card["text"]
+    for field in ("text", "title", "why"):
+        assert not RAW_SCHEMA.search(card[field]) and not STANDARD_IDS.search(card[field]), "%s: %s" % (field, card[field])
+    told = [str(p["payload"].get("done") or p["payload"].get("objective") or "") for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]]
+    assert not [t for t in told if RAW_SCHEMA.search(t)], told
+    pane = FV.function(ref, "Adaptation")["j2"]
+    assert not [r["summary"] for r in pane["root_checks"] if RAW_SCHEMA.search(r["summary"])], pane["root_checks"]
+
+
 def test_a4_a_shaped_line_whose_second_engine_reads_nothing_filed_fails_naming_reads_known_and_is_shaped_again(j2, monkeypatch):
     """The step fails through the covering, and the existing reshape path runs: the reasons go back to Adaptation, which
     shapes the line again, and the second line registers."""
