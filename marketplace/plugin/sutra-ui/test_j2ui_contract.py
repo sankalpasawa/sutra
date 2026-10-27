@@ -468,6 +468,64 @@ def test_t31_a_record_that_names_a_pin_the_registry_cannot_find_is_read_without_
     assert told() == ["Audit"], "once"
 
 
+#: every department the contract seeds: the cycle table, the extras, and the two that have homes of their own (an attacker's strings, a line
+#: that is building). Not default_kind, which the page is not for
+PIN_STATES = tuple(row[0] for row in STATE_TABLE) + EXTRA_STATES + ("hostile", "building")
+
+
+def name_a_pin_the_registry_cannot_find(m, ref):
+    """The record of a department from before the interface refused such a pin on save: its `layers` names audit/v2, which is not on disk
+    (the registry runs the default and tells it once). The told set is emptied, so the first caller that is allowed to tell is the one that does."""
+    import layers
+    import record
+    d = dict(m.W.dept(ref), layers=dict(m.R.layer_schema.DEFAULT_PINS, audit="audit/v2"))
+    record.write(m.W.ddir(ref) / "dept.json", d)
+    layers._TOLD.clear()
+
+
+@pytest.mark.parametrize("name", PIN_STATES)
+def test_t31_a_record_that_names_a_pin_is_read_without_telling_it_on_every_route_in_every_state(client, plant, name):
+    """Hard rule 4(g), the pin row of design section 8, over every department the contract seeds and every GET of READS, each from a fresh
+    read (found by a verifier 2026-10-27: the guard stood around the department's read only, and the builders a route runs after it, the
+    lazy state, the audits, the conditions, reached layers.pins() through the budget and filed a row in question, ready, build_filed and
+    root_follow_up). The records home is hashed after the pin is planted and before the first read; no route moves a file, files a row or marks the pin told;
+    the tick then tells it, once, whatever it does with the rest."""
+    import layers
+    ref, m = plant(name)
+    name_a_pin_the_registry_cannot_find(m, ref)
+    told = lambda: [r["engine"] for r in m.W.runs(ref) if "per-department" in str(r.get("what"))]  # noqa: E731
+    before = files_of(m.home)
+    m.C.touch(ref)
+    m.C.get_ctx(ref)                                          # the read of the department by itself, outside any route: its own guard
+    assert changed(before, m.home) == [] and told() == [] and layers._TOLD == set(), "the read of the department told the pin in %s" % name
+    answered = 0
+    for path in READS:
+        m.C.touch(ref)                                        # a fresh read for every route: the one that builds is the one that is caught
+        answered += client.get(url(ref, path), follow_redirects=False).status_code in (200, 302)
+        assert changed(before, m.home) == [] and told() == [] and layers._TOLD == set(), "%s of %s told the pin" % (path, name)
+    assert answered > 5
+    m.R.next_due(ref, peek=True)
+    assert changed(before, m.home) == [] and layers._TOLD == set(), "a peek of the runtime told the pin"
+    layers.pins(ref)                                          # what the tick asks first: it tells the pin
+    assert told() == ["Audit"], "the tick tells it"
+    m.C.touch(ref)
+    for path in READS:
+        client.get(url(ref, path), follow_redirects=False)
+    layers.pins(ref)
+    assert told() == ["Audit"], "once"
+
+
+def test_t31_every_get_route_of_the_adapter_is_read_by_the_reads_above_and_is_held_as_a_read():
+    """The pin test above is as wide as READS: a GET route added to the adapter that READS does not name would go unread by it. Every GET
+    route of the router is matched by a path of READS, and every one is a _ReadRoute (the class that holds layers.reading() around the handler)."""
+    import j2ui_api
+    gets = [r for r in j2ui_api.router.routes if "GET" in r.methods]
+    assert len(gets) >= 15
+    for route in gets:
+        assert isinstance(route, j2ui_api._ReadRoute), route.path
+        assert [p for p in READS if route.path_regex.match(url("dref-x", p.split("?")[0]))], "READS never reads %s" % route.path
+
+
 #: what the owner does in the fuzz below, and how often (the line is stepped far more than it is spoken to)
 FUZZ_ACTIONS = ["step"] * 14 + ["say", "option", "option", "stamp", "refuse", "budget", "stop", "start", "root_words"]
 FUZZ_WORDS = ("Add a page about pricing plans", "Make the logo bigger", "Remove the contact page", "Hello?", "Yes please",
