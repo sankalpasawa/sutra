@@ -234,8 +234,9 @@ class TestTheDefinitions(Base):
         self.assertEqual(R.validate(R.defs()), [], "the definitions that ship are clean")
         steps = [s for name in R.defs()["engines"] for s in R.all_steps(name)]
         self.assertGreaterEqual(len(steps), 30)
+        have = set(R.CHECK) | R.layers.names("check")                          # a check is the registry's, or a version's
         for s in steps:
-            self.assertIn(s["check"], R.CHECK, s["id"])
+            self.assertIn(s["check"], have, s["id"])
         bad = copy.deepcopy(R.defs())
         del bad["engines"]["Write"]["steps"][1]["check"]
         self.assertIn("Write, write.page: the step names no check", R.validate(bad))
@@ -2597,8 +2598,10 @@ class TestRunFive(Base):
     def test_111_the_line_check_refuses_a_broken_line_and_a_library_name(self):
         R = self.R
 
+        check = R.layers.load("adaptation/v1").CHECK["line_is_engines"]                   # Adaptation's version holds the check (W3-PROOF X1)
+
         def ok(engs):
-            return R.c_line_is_engines(None, None, None, {"engines": engs})
+            return check(None, None, None, {"engines": engs})
         good = [{"name": "Facts", "reads": "Brief", "writes": "Facts"}, {"name": "Site", "reads": "Facts", "writes": "Live site"}]
         self.assertTrue(ok(good)["ok"], ok(good))
         self.assertFalse(ok([{"name": "Write", "reads": "Brief", "writes": "Pages"}])["ok"], "a name the Library uses")

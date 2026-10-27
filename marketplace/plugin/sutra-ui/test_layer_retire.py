@@ -118,8 +118,8 @@ def test_x1_a_pinned_version_that_does_not_load_runs_the_default_versions_words_
 
 # ---- X1b · the dead copies ---------------------------------------------------------------------------------------------------
 KINDS = ("code", "prompt", "draft", "check")
-#: the registries cleared of dead copies so far, one commit each (the check below asks of these only)
-CLEARED = ("code", "prompt", "draft")
+#: the registries cleared of dead copies (the check below asks of each)
+CLEARED = KINDS
 
 
 def _tables():
@@ -161,10 +161,10 @@ def test_x1_no_version_reaches_a_body_that_is_not_there_or_is_a_delegate(runtime
 
 
 def test_x1_the_registries_shrank_by_the_copies_and_the_by_reference_counts_did_not_change(runtime):
-    """What the retirement removed from the legacy registries (the entry count before, 69 + 25 + 25 + 46 = 165, and after) and what it
-    left: the live bodies are still reached by reference, so the layers' counts are as they were."""
+    """What the retirement removed from the legacy registries (69 + 25 + 25 + 46 = 165 entries before, 128 after) and what it left: the
+    live bodies are still reached by reference, so the layers' counts are as they were."""
     sizes = {k: len(getattr(runtime, k.upper())) for k in KINDS}
-    assert sum(sizes.values()) <= 165 - 17, sizes
+    assert sizes == {"code": 48, "prompt": 21, "draft": 21, "check": 38}, sizes                    # 69, 25, 25 and 46 before: 37 entries fewer
     counts = {C.impl_id(m): C.by_reference(m) for m in C.discover()}
     assert counts["root/v1"] == {"by_reference": 14, "own": 0} and counts["coordination/v1"] == {"by_reference": 19, "own": 2}
     assert counts["audit/v1"] == {"by_reference": 9, "own": 6}
@@ -198,3 +198,19 @@ def test_x1_the_prompt_builders_a_version_took_over_are_gone_and_the_ones_it_ref
             for kind in ("prompt", "draft"):
                 if step.get(kind):
                     assert callable(layers.resolve(None, engine, kind, step[kind], getattr(runtime, kind.upper()))), (engine, step["id"], kind)
+
+
+def test_x1_the_checks_a_version_took_over_are_gone_and_the_ones_it_wraps_or_references_stay(runtime):
+    for name in ("c_line_is_engines", "c_answer_has_its_price", "c_done_is_read", "c_question_is_bounded", "c_spot_check_reads_only", "c_line_is_fitted",
+                 "c_round_is_new", "_fit_line"):
+        assert not hasattr(runtime, name), name
+    for name in ("line_is_engines", "answer_has_its_price", "has_a_verdict", "done_is_read", "question_is_bounded", "spot_check_reads_only",
+                 "line_is_fitted", "round_is_new"):
+        assert name not in runtime.CHECK, name
+    assert callable(runtime.c_has_a_verdict), "audit/v1 wraps the body engine_runtime holds, and gives it no entry of its own"
+    # every check a function's step names is found: in its version, or in the registry for a name that is by reference
+    for engine in ("Identity", "Adaptation", "Priority", "Coordination", "Audit", "Setup"):
+        for step in runtime.all_steps(engine):
+            assert callable(layers.resolve(None, engine, "check", step["check"], runtime.CHECK)), (engine, step["id"], step["check"])
+            if step.get("code"):
+                assert callable(layers.resolve(None, engine, "code", step["code"], runtime.CODE)), (engine, step["id"], step["code"])

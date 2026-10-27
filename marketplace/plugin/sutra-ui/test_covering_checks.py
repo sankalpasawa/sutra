@@ -132,8 +132,8 @@ def test_m2_4b_a_bargain_that_names_no_price_fails_and_nothing_is_granted(j2, mo
 
 def test_m2_4b_an_ask_for_less_names_what_it_keeps(j2):
     _, R, _, _, _ = j2
-    _, s = R.step_def("priority.bargain")
-    check = R.CHECK[s["check"]]
+    engine, s = R.step_def("priority.bargain")
+    check = R.layers.resolve(None, engine, "check", s["check"], R.CHECK)            # the covering is Priority's version's (W3-PROOF X1)
     assert check(None, s, None, {"answer": "counter", "why": "room for two today", "keep": ["Plan", "Write"]})["ok"]
     got = check(None, s, None, {"answer": "counter", "why": "room for two today", "keep": []})
     assert not got["ok"] and got["notes"] == ["an ask for less names nothing to keep"]
@@ -233,5 +233,5 @@ def test_m2_4_every_function_step_names_a_covering_that_ships(j2):
             "identity.take": "verdict_is_known", "identity.recognise": "journey_is_known"}
     for sid, check in want.items():
         assert R.step_def(sid)[1]["check"] == check, sid
-        assert check in R.CHECK
+        assert check in R.CHECK or check in R.layers.names("check")
     assert R.validate(R.defs()) == []

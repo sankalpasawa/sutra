@@ -6774,21 +6774,6 @@ def c_answer_is_known(ctx, step, item, out):
     return _verdict(out.get("answer") in ("accept", "reject", "counter"), "the answer is accept, reject or counter", "not an answer: %r" % (out.get("answer"),))
 
 
-def c_answer_has_its_price(ctx, step, item, out):
-    """Priority's covering (M2.4): yes, less or no, each with its price: the line that says what it costs against the
-    room left; an ask for less names what it keeps. An answer without them fails the step; nothing is taken in its place."""
-    notes = []
-    if out.get("answer") not in ("accept", "reject", "counter"):
-        notes.append("not an answer: %r" % (out.get("answer"),))
-    if not str(out.get("why") or "").strip():
-        notes.append("the answer names no price: nothing says what it costs against the room left")
-    if out.get("answer") == "counter" and not [k for k in out.get("keep") or [] if str(k).strip()]:
-        notes.append("an ask for less names nothing to keep")
-    # the note is said on Priority's card, so it names the answer in the owner's words (said yes, asked for less, said no)
-    said = {"accept": "said yes", "reject": "said no", "counter": "asked for less"}.get(out.get("answer"), out.get("answer"))
-    return {"ok": not notes, "notes": notes or ["%s, with its price: %s" % (said, str(out["why"]).strip())]}
-
-
 def c_facts_are_closed(ctx, step, item, out):
     f = out.get("facts")
     ok = isinstance(f, dict) and bool(f) and all(isinstance(v, (str, bool)) or v is None for v in f.values())
@@ -6949,22 +6934,13 @@ def _line_faults(engs):
     return [note for _, note in _line_notes(engs)]
 
 
-def c_line_is_engines(ctx, step, item, out):
-    """One to six engines that _line_faults finds nothing wrong with: the shape is the agent's, the check is code."""
-    engs = out.get("engines") if isinstance(out, dict) else None
-    if not isinstance(engs, list) or not 1 <= len(engs) <= 6:
-        return _verdict(False, "", "one to six engines")
-    notes = _line_faults(engs)
-    return {"ok": not notes, "notes": notes or ["%d engines, each reading what one before it wrote" % len(engs)]}
-
-
 def c_idea_has_shapes(ctx, step, item, out):
     shapes = [x for x in out.get("shapes") or [] if str(x).strip()]
     ok = bool(str(out.get("reflected") or "").strip()) and 2 <= len(shapes) <= 3
     return _verdict(ok, "reflected back, in %d shapes" % len(shapes), "the idea was not reflected back in two or three shapes")
 
 
-CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_named, "page_is_html": c_page_is_html, "journey_is_known": c_journey_is_known, "answer_names_its_source": c_answer_names_its_source, "result_is_text": c_result_is_text,
+CHECK = {"pages_are_named": c_pages_are_named, "page_is_html": c_page_is_html, "journey_is_known": c_journey_is_known, "answer_names_its_source": c_answer_names_its_source, "result_is_text": c_result_is_text,
          "need_is_answer": c_need_is_answer,
          "rule_is_tagged": c_rule_is_tagged, "feedback_says_what_changes": c_feedback_says_what_changes,
          "idea_has_shapes": c_idea_has_shapes, "brief_is_text": c_brief_is_text, "plan_has_pages": c_plan_has_pages, "plan_is_fit": c_plan_is_fit,
@@ -6974,74 +6950,17 @@ CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_na
          "gate_answer_is_known": c_gate_answer_is_known, "answer_is_known": c_answer_is_known,
          "names_who_goes_first": c_names_who_goes_first,
          "facts_are_closed": c_facts_are_closed, "said_what_it_did": c_said_what_it_did, "counted_the_rows": c_counted_the_rows,
-         "moves_are_known": c_moves_are_known, "picked_a_sample": c_picked_a_sample, "has_a_verdict": c_has_a_verdict,
+         "moves_are_known": c_moves_are_known, "picked_a_sample": c_picked_a_sample,
          "findings_are_rows": c_findings_are_rows,
          # each function's covering (M2.4): code, and a step that fails one fails; no draft is taken in its place
-         "findings_name_where_and_what": c_findings_name_where_and_what, "answer_has_its_price": c_answer_has_its_price,
+         "findings_name_where_and_what": c_findings_name_where_and_what,
          "moves_name_their_rows": c_moves_name_their_rows, "one_run_at_a_time": c_one_run_at_a_time,
          "chain_under_its_limit": c_chain_under_its_limit,
          "department_is_shaped": c_department_is_shaped, "department_is_made": c_department_is_made,
          "setup_converse_is_valid": c_setup_converse_is_valid, "ruling_is_known": c_ruling_is_known,
          "enough_is_shaped": c_enough_is_shaped}
-# audit/v1's step audit.items (A1 W1-AUDIT, M8.3): registered beside the literals, which are not edited before W3-PROOF
+# audit/v1's step audit.items (A1 W1-AUDIT, M8.3): its prompt, draft and covering are these bodies, which the version holds by reference
 PROMPT["audit_items"], DRAFT["audit_items_draft"], CHECK["reading_is_s30"] = p_audit_items, d_audit_items, c_reading_is_s30
-
-
-def c_done_is_read(ctx, step, item, out):
-    """The name of identity/v1's covering of the goal reached (A1 W2-IDENTITY, M8.4), registered beside the literals as
-    reading_is_s30 is: the body is the version's, and without the version there is no claim of done to let through."""
-    got = layers.load("identity/v1")
-    if got is None:
-        return {"ok": False, "notes": ["Identity's version is not there to read a claim of done"]}
-    return got.c_done_is_read(ctx, step, item, out)
-
-
-CHECK["done_is_read"] = c_done_is_read
-
-
-def c_question_is_bounded(ctx, step, item, out):
-    """The name of coordination/v1's covering of a question between engines (W3-BOARD, M4.9), registered beside the literals as
-    done_is_read is: the body is the version's, and without the version there is no board to take a question."""
-    got = layers.load("coordination/v1")
-    if got is None:
-        return {"ok": False, "notes": ["Coordination's version is not there to judge a question"]}
-    return got.question_is_bounded(ctx, step, item, out)
-
-
-CHECK["question_is_bounded"] = c_question_is_bounded
-
-
-def c_spot_check_reads_only(ctx, step, item, out):
-    """The name of audit/v1's covering of its filing (W3-BOARD, M8.7), registered beside the literals as done_is_read is: the
-    body is the version's, and a version that is not there files nothing a covering could let through."""
-    got = layers.load("audit/v1")
-    if got is None:
-        return {"ok": False, "notes": ["Audit's version is not there to judge a filing"]}
-    return got.spot_check_reads_only(ctx, step, item, out)
-
-
-CHECK["spot_check_reads_only"] = c_spot_check_reads_only
-
-
-# adaptation/v1's step adapt.fit (W2-ADAPT, M5.2): the copy a department runs when the layer does not load. It fits nothing: the
-# Library's line stays whole, which is also what the layer's own draft answers, and the check takes that answer and no other
-def _fit_line(ctx):
-    return [e["name"] for e in ((ctx.get("bag") or {}).get("adapt.source") or {}).get("engines") or [] if isinstance(e, dict) and e.get("name")]
-
-
-def c_line_is_fitted(ctx, step, item, out):
-    ok = isinstance(out, dict) and out.get("engines") == _fit_line(ctx) and not out.get("fit")
-    return _verdict(ok, "the Library's line, whole", "the Library's line is kept whole")
-
-
-CHECK["line_is_fitted"] = c_line_is_fitted
-
-
-def c_round_is_new(ctx, step, item, out):
-    return _verdict(isinstance(out, dict) and bool(str(out.get("correction") or "").strip()), "a round says what to correct", "a round says what to correct")
-
-
-CHECK["round_is_new"] = c_round_is_new
 
 
 # ---- what the screens read -----------------------------------------------------------------------------------------

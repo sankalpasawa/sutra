@@ -352,12 +352,25 @@ def _line_ctx(j2, source="shaped"):
     return {"ref": "dref-line", "dept": W.dept("dref-line"), "bag": {"adapt.source": {"shape": True, "source": source}}}
 
 
+#: what engine_runtime's check of a line (c_line_is_engines, deleted by W3-PROOF X1 with the other copies of bodies a version took over) said
+#: for the five outputs below, taken from it on the tree before that commit
+LEGACY_LINE_SAYS = [
+    {"ok": True, "notes": ["2 engines, each reading what one before it wrote"]},
+    {"ok": False, "notes": ["the Library already has an engine named Plan"]},
+    {"ok": False, "notes": ["one to six engines"]},
+    {"ok": False, "notes": ["one to six engines"]},
+    {"ok": False, "notes": ["Site 2 writes Facts 2, which is already written"]},
+]
+
+
 def test_a4_a_sound_line_says_what_it_always_said_and_the_legacy_check_agrees(j2):
     R = j2[1]
+    assert not hasattr(R, "c_line_is_engines") and "line_is_engines" not in R.CHECK, "the legacy check is gone; its answers are LEGACY_LINE_SAYS"
     ctx = _line_ctx(j2)
-    for out in ({"engines": GOOD}, {"engines": [dict(GOOD[0], name="Plan")] + GOOD[1:]}, {"engines": []}, {"engines": "none"},
-                {"engines": [GOOD[0], dict(GOOD[1], reads="Brief", writes="Facts 2")]}):
-        mine, theirs = v1().CHECK["line_is_engines"](ctx, None, None, out), R.c_line_is_engines(ctx, None, None, out)
+    outs = ({"engines": GOOD}, {"engines": [dict(GOOD[0], name="Plan")] + GOOD[1:]}, {"engines": []}, {"engines": "none"},
+            {"engines": [GOOD[0], dict(GOOD[1], reads="Brief", writes="Facts 2")]})
+    for out, theirs in zip(outs, LEGACY_LINE_SAYS):
+        mine = v1().CHECK["line_is_engines"](ctx, None, None, out)
         assert mine["ok"] == theirs["ok"], out
         # today's wording, each fault now naming the standard it breaks when Root has one for it
         assert [re.sub(r"^[a-z_]+: ", "", n) for n in mine["notes"]] == theirs["notes"], out

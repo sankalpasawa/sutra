@@ -214,14 +214,25 @@ def test_p3_the_interface_names_the_estimate_and_what_remains_the_covering_and_t
     assert S.validate("view.priority", {"bargains": [], "envelopes": []}) == []
 
 
+#: what engine_runtime's answer_has_its_price (deleted by W3-PROOF X1 with the other copies of bodies a version took over) said for the five
+#: answers below, taken from it on the tree before that commit
+LEGACY_PRICE_SAYS = [
+    ({"answer": "counter", "why": "room for two today", "keep": []}, {"ok": False, "notes": ["an ask for less names nothing to keep"]}),
+    ({"answer": "maybe", "why": "unsure"}, {"ok": False, "notes": ["not an answer: 'maybe'"]}),
+    ({"answer": "accept", "why": " "}, {"ok": False, "notes": ["the answer names no price: nothing says what it costs against the room left"]}),
+    ({"answer": "accept", "why": "fits today"}, {"ok": True, "notes": ["said yes, with its price: fits today"]}),
+    ({"answer": "counter", "why": "room for two today", "keep": ["Plan", "Write"]}, {"ok": True, "notes": ["asked for less, with its price: room for two today"]}),
+]
+
+
 def test_p3_the_covering_keeps_the_notes_of_the_covering_it_replaces_when_there_are_no_facts_to_hold_it_to():
-    """With no facts the answer is held to its price alone, as engine_runtime's answer_has_its_price holds it (the notes are
-    the same words), so the step keeps its name and the checks that pin it stay as they were."""
+    """With no facts the answer is held to its price alone, as engine_runtime's answer_has_its_price held it (the notes are
+    the same words; the body is deleted, LEGACY_PRICE_SAYS keeps what it said), so the step keeps its name and the checks that pin
+    it stay as they were."""
     import engine_runtime as R
-    for out in ({"answer": "counter", "why": "room for two today", "keep": []}, {"answer": "maybe", "why": "unsure"},
-                {"answer": "accept", "why": " "}, {"answer": "accept", "why": "fits today"},
-                {"answer": "counter", "why": "room for two today", "keep": ["Plan", "Write"]}):
-        assert V1.CHECK["answer_has_its_price"](None, None, None, out) == R.CHECK["answer_has_its_price"](None, None, None, out), out
+    assert not hasattr(R, "c_answer_has_its_price") and "answer_has_its_price" not in R.CHECK
+    for out, said in LEGACY_PRICE_SAYS:
+        assert V1.CHECK["answer_has_its_price"](None, None, None, out) == said, out
     assert V1.CHECK["answer_has_its_price"] is V1.CHECK["price_is_observed"]
 
 
