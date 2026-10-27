@@ -125,6 +125,46 @@ def test_the_instructions_view_lists_the_six_new_parts_in_the_goal_group(rt):
         assert block["fields"] == [] and len(block["inputs"]) == 8
 
 
+def test_a_part_a_page_shows_says_so_on_its_row_and_no_other_part_has_a_note(rt):
+    """A verifier's finding (F1/F6): the row of goal.done says on hover what is true of it, that no run reads it and the
+    function's page shows it, in the words its ask uses; the shared 'the code makes this choice' words stay with the notes the
+    code makes its choice for, and a part that is read has no note. The words reach the pane through owner_words."""
+    import owner_words
+    W, R, J, FV, ref = rt
+    for fn in FUNCTIONS:
+        title = S.TITLE[fn]
+        for rows in (R.instructions_view(ref, fn), owner_words.steps({"instructions": R.instructions_view(ref, fn)})["instructions"]):
+            parts = {(g["group"], p["part"]): p for g in rows for p in g["parts"]}
+            assert parts[("goal", "done")]["note"] == "No run reads these words, and %s's page shows them" % title, fn
+            assert parts[("goal", "done")]["read"] is False
+            assert [k for k, p in parts.items() if p["note"]] == [("goal", "done")], "%s: only a part a page shows has a note" % fn
+            assert all(p["note"] is None for p in parts.values() if p["read"] is True)
+    decide = next(p for g in R.instructions_view(ref, "adaptation") if g["group"] == "decide" for p in g["parts"])
+    assert decide["read"] is False and decide["note"] is None, "a note the code makes its choice for keeps the shared words"
+    assert R.NOT_READ not in R.SHOWN_ONLY_SAYS and "code makes" not in R.SHOWN_ONLY_SAYS
+
+
+#: the typed view the Settings screen's render tests (test_website.js) are given: the rows of Identity's instructions as the
+#: pane receives them (engine_runtime.instructions_view through owner_words.steps), on a department that has changed nothing.
+#: Rewrite it with INSTRUCTIONS_FIXTURE=write when the view changes; the next run without it compares.
+VIEW_FIXTURE = __import__("pathlib").Path(__file__).parent / "test_fixtures" / "views" / "instructions.identity.json"
+
+
+def test_the_identity_view_fixture_the_screen_tests_render_is_the_live_view(rt):
+    import json
+    import os
+    import owner_words
+    W, R, J, FV, ref = rt
+    live = owner_words.steps({"instructions": R.instructions_view(ref, "identity")})["instructions"]
+    if os.environ.get("INSTRUCTIONS_FIXTURE") == "write":
+        VIEW_FIXTURE.write_text(json.dumps(live, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    held = json.loads(VIEW_FIXTURE.read_text(encoding="utf-8"))
+    assert held == live, "test_fixtures/views/instructions.identity.json is not Identity's view now: rewrite it with INSTRUCTIONS_FIXTURE=write"
+    goal = next(g for g in live if g["group"] == "goal")
+    assert [p["part"] for p in goal["parts"]] == list(S.PROMPTS["identity"]["goal"]), "every part of the goal group, the added ones too"
+    assert [p["part"] for g in live for p in g["parts"]] == [p for g in S.PROMPTS["identity"].values() for p in g]
+
+
 # ---- F2: Adaptation's goal ---------------------------------------------------------------------------------------------
 HERE = __import__("pathlib").Path(__file__).parent
 SITE_GOAL = ("decides how the department reaches its goal and keeps changing how as it learns: it proposes the workflows the goal "

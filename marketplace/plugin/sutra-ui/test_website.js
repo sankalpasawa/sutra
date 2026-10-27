@@ -2098,7 +2098,7 @@ test("X1: Settings draws a card for each group of the typed view, in its order; 
     const i = section.indexOf("<h3>" + c.wbEsc(g.lead) + "</h3>");
     assert.ok(i > at, g.group + ": its card, after the one before it"); at = i;
     g.parts.forEach(p => {
-      assert.ok(section.indexOf("<b>" + p.part + "</b>") >= 0, g.group + "/" + p.part + " is listed");
+      assert.ok(section.indexOf("<b>" + c.wbEsc(p.label || p.part) + "</b>") >= 0, g.group + "/" + p.part + " is listed, by its label when it has one");
       p.fields.forEach(f => {
         const open = 'data-wbins="change" data-wbinsfn="identity" data-wbinsgroup="' + g.group + '" data-wbinspart="' + p.part + '" data-wbinsfield="' + f.field + '"';
         assert.ok(section.indexOf(open) >= 0, g.group + "/" + p.part + "/" + f.field + " has its Change");
@@ -2129,7 +2129,7 @@ test("X1: a part no run reads says so; a field that waits says so beside the amb
   take.kept = { at: "2026-10-26T09:00:00+05:30" };
   const [c, html] = await typedCard({}, v);
   assert.ok(/<b>recognise<\/b><span class="wbchip" title="In this version the code makes this choice, so no run reads these words yet">a note: no run reads it yet<\/span>/.test(html), "a part no run reads");
-  assert.strictEqual((html.match(/>a note: no run reads it yet</g) || []).length, 1, "only that one");
+  assert.strictEqual((html.match(/>a note: no run reads it yet</g) || []).length, 2, "only that one and the function's own done, which only its page reads");
   assert.ok(/<span class="wbinsf">the task<\/span><span class="wbinslead">[^<]*<\/span><span class="wbinsnote"><i class="wbinsq">\?<\/i>your change waits for your stamp · \d\d:\d\d<\/span>/.test(html), "the waiting field");
   assert.ok(html.indexOf('data-wbinspart="take" data-wbinsfield="task"') < 0, "no second change while one waits");
   assert.ok(html.indexOf('data-wbinspart="take" data-wbinsfield="guidance"') >= 0);
@@ -2143,6 +2143,7 @@ test("X1: a part no run reads says so; a field that waits says so beside the amb
 
 test("X1: the words are escaped, a list reads as its items, and a part with no fields still shows its notes", async () => {
   const v = TYPED();
+  v.forEach(g => g.parts.forEach(p => p.fields.forEach(f => { delete f.shown; })));   /* a read that does not say the words again: the row prints the value */
   v[0].parts[0].fields[0].value = "<img src=x onerror=alert(1)> & \"quoted\"";
   const [c, html] = await typedCard({}, v);
   assert.ok(html.indexOf("<img src=x") < 0 && html.indexOf("&lt;img src=x onerror=alert(1)") >= 0 && html.indexOf("&amp; &quot;quoted&quot;") >= 0, "escaped");
@@ -2164,6 +2165,44 @@ test("X1: a row prints the words the read says in the owner's words (shown) and 
   assert.ok(html.indexOf('data-wbinspart="take" data-wbinsfield="guidance"') >= 0, "a change still names the part, not the label");
   assert.ok(click(c, OPEN("take", "take", "guidance")));
   assert.ok(c.wbInsSheetHtml().indexOf("go: do it. refuse: it breaks a rule.") >= 0, "the sheet holds the words as the department reads them");
+});
+
+test("X1 (A3-FUNCTIONS): the goal group lists the function's own done and its role words by what they are; done's hover says its page shows it, and the role block has no Change", async () => {
+  const [c, html] = await typedCard();      /* the real view of Identity (test_layer_function_template.py holds the fixture equal to it) */
+  const goal = TYPED().filter(g => g.group === "goal")[0], by = {};
+  goal.parts.forEach(p => { by[p.part] = p; });
+  assert.deepStrictEqual(goal.parts.map(p => p.part), ["does", "skills", "close", "done", "role_is", "role_may", "role_procedure", "role_patterns", "role_block"], "the six added parts are in the view");
+  /* the labels the row prints, and a Change for each field of the words, and no other */
+  const labels = { done: "when it is done", role_is: "what it is", role_may: "what it may do", role_procedure: "how it decides", role_patterns: "what it avoids",
+                   role_block: "its role, as the agent is sent it" };
+  Object.keys(labels).forEach(part => {
+    assert.strictEqual(by[part].label, labels[part], part + ": the view says what the part is, in words");
+    assert.ok(html.indexOf("<b>" + labels[part] + "</b>") >= 0, part + ": the row prints " + labels[part]);
+    assert.ok(html.indexOf("<b>" + part + "</b>") < 0, part + ": and never its name in the code");
+  });
+  ["done:text", "role_is:text", "role_may:items", "role_procedure:items", "role_patterns:items"].forEach(k => {
+    const [part, field] = k.split(":");
+    assert.ok(html.indexOf('data-wbinsgroup="goal" data-wbinspart="' + part + '" data-wbinsfield="' + field + '"') >= 0, part + " has its Change");
+  });
+  assert.ok(html.indexOf('data-wbinspart="role_block"') < 0 && by.role_block.fields.length === 0, "the role block is made by the app: no Change");
+  assert.ok(/<b>its role, as the agent is sent it<\/b><\/div>(?:<div class="dpchk">filled by the app: [^<]*<\/div>)/.test(html), "it shows what it is made of");
+  /* the function's own done is read by no run and shown on its page: the chip and its hover say so, and not that the code makes the choice */
+  assert.strictEqual(by.done.read, false);
+  assert.strictEqual(by.done.note, "No run reads these words, and Identity's page shows them");
+  assert.ok(html.indexOf('<b>when it is done</b><span class="wbchip" title="' + c.wbEsc(by.done.note) + '">a note: no run reads it yet</span>') >= 0, "done: the hover is the view's note");
+  assert.strictEqual((html.match(/>a note: no run reads it yet</g) || []).length, 1, "and the chip is on no other part");
+  assert.ok(html.indexOf("the code makes this choice") < 0, "the shared hover is not on a part a page shows");
+  /* a part that has no note of its own keeps the shared hover */
+  const v = TYPED();
+  v[0].parts.filter(p => p.part === "close")[0].read = false;
+  const [, other] = await typedCard({}, v);
+  assert.ok(other.indexOf('<b>close</b><span class="wbchip" title="In this version the code makes this choice, so no run reads these words yet">') >= 0, "a note the code makes its choice for keeps its words");
+  /* Change on a role word opens the sheet on its words, as the department reads them */
+  assert.ok(click(c, OPEN("goal", "role_may", "items")));
+  const sheet = c.wbInsSheetHtml();
+  by.role_may.fields[0].value.forEach(line => assert.ok(sheet.indexOf(c.wbEsc(line)) >= 0, "the sheet holds: " + line));
+  assert.strictEqual(c.calls.apiPost.length, 0, "opening the sheet changes nothing");
+  assert.ok(!/charter|internal\s+system/i.test(words(html)), "the screen's words");
 });
 
 test("X1: before the typed fields arrive the files are listed as the first design had them", async () => {
