@@ -856,6 +856,11 @@
             }
           ]
         },
+        "correction": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
         "engines": {
           "items": {
             "anyOf": [
@@ -889,6 +894,11 @@
           "maxItems": 3,
           "minItems": 0,
           "type": "array"
+        },
+        "round": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
         },
         "source": {
           "anyOf": [

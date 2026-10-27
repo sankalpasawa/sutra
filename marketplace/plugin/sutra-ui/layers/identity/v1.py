@@ -475,6 +475,17 @@ def conflict_options(payload):
     return out
 
 
+def round_words(pl):
+    """The title and the source of the card a conflict about a round puts to the owner (M9.4, M9.5), or None when the conflict is
+    not about a round. The plan is registered and runs; what needs the owner's word is the next round. A round that was proposed
+    carries its correction, and what stopped it is Priority's (it said no, or did not price it in time); one that was never made
+    carries none, and what stopped it is that Adaptation has no new way to put the work right."""
+    n = (pl or {}).get('round')
+    if not isinstance(n, int) or isinstance(n, bool):
+        return None
+    return 'The next round needs your word.', 'Priority, pricing the round' if pl.get('correction') else 'Adaptation, correcting the work'
+
+
 def identity_closed(ctx, step, item):
     """Identity's ruling on a bargain that did not close (step 4): run it, drop it, or one ask to the owner (J2.3). The body
     engine_runtime held, moved here to carry the conflict's own ways out: whenever the ruling puts the conflict to the owner,
@@ -490,10 +501,15 @@ def identity_closed(ctx, step, item):
         # no plan at all: Adaptation answered that an engine the kind requires cannot serve an item (J2B-4, M6.4), so there is
         # nothing to run, nothing to drop and no plan to stamp (a stamp would send Root a plan that names no engine, and the
         # same card would come back). The owner is put the reason in plain words, on the card every blocked plan has, with the
-        # ways out the conflict carries, or the usual three
+        # ways out the conflict carries, or the usual three. A conflict about a round is not that: the plan is registered and
+        # runs, and the question is the next round (M9.4, M9.5), so its card says so (round_words)
         reason = str(pl.get('why') or 'no plan can be made').strip().rstrip('.')
         if cj:
             cj.ruled(ref, 'ask', reason, engines)
+        rnd = round_words(pl)
+        if rnd:
+            R._blocked(ref, d, who, '%s. Say how to put it right, or choose a way forward on this card.' % reason, rnd[0], rnd[1], reason, options=ways)
+            return {'said': 'the next round cannot go on (%s); put to the owner, with the ways out' % reason}
         R._blocked(ref, d, who, '%s. Say what the department should do, or choose a way forward on this card.' % reason,
                    'No plan can be made as it stands.', 'Adaptation, shaping the plan', reason, options=ways)
         return {'said': 'no plan can be made (%s); put to the owner, with the ways out' % reason}

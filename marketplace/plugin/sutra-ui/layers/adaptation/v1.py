@@ -590,6 +590,10 @@ def d_adapt_next(ctx, step, item):
             'why': 'the reading found %s not met' % (', '.join(ids) or 'an item')}
 
 
+#: how the covering of a correction begins its reason when the correction repeats the approach that already failed; next_failed reads it back
+REPEATS = 'this is the approach that already failed in round '
+
+
 def c_round_is_new(ctx, step, item, out):
     """A round says what to correct, and says something new (M9.4): a correction equal, word for word, to the one that already
     failed for the same items is refused, naming the round it repeats. What a reading found that no correction answers is
@@ -600,8 +604,7 @@ def c_round_is_new(ctx, step, item, out):
         return R._verdict(False, '', 'a round says what to correct')
     last = heard.get('last') or {}
     if last and words_of(text) == words_of(last.get('correction')):
-        return R._verdict(False, '', 'this is the approach that already failed in round %s (%s); a round says something new'
-                          % (last.get('round'), clip(last.get('correction'), 120)))
+        return R._verdict(False, '', '%s%s (%s); a round says something new' % (REPEATS, last.get('round'), clip(last.get('correction'), 120)))
     named = ', '.join(i['id'] for i in heard.get('items') or []) or 'these items'
     return R._verdict(True, 'a correction that is new for %s' % named, '')
 
@@ -694,17 +697,27 @@ def next_options(d, ids):
     return opts
 
 
+def next_reason(ref, ids, note):
+    """Why there is no new round, in words the owner reads (M9.4): the approach that already failed, when that is what the
+    covering refused; otherwise that nothing Adaptation could say was new. Never the run's note, which starts with the name of the
+    step and holds the covering's inside words."""
+    last = failed_round(ref, ids)
+    if last and REPEATS in str(note):
+        return 'its only idea is the approach that already failed in round %s' % last['round']
+    return 'nothing it could say was new'
+
+
 def next_failed(ref, d, p, note):
     """The step that says what to correct failed (M9.4): its covering refused the correction because it is the approach that
     already failed, or no answer fitted. Nothing is proposed and nothing goes quiet: one conflict goes to Identity, with the ways
-    out built by code, once its recipe hears a round. engine_runtime calls it when the run of a request for the next round
-    fails. Never raises."""
+    out built by code, once its recipe hears a round. It names the round and carries no correction, which is how Identity knows no
+    round was proposed. engine_runtime calls it when the run of a request for the next round fails. Never raises."""
     try:
         if not hears_round():
             return None
         pl = p.get('payload') or {}
         ids = [i for i in pl.get('items') or [] if isinstance(i, str)]
-        why = 'Adaptation has no new way to put %s right: %s' % (', '.join(ids) or 'the items', clip(note, 600).rstrip('.') or 'nothing it could say was new')
+        why = 'Adaptation has no new way to put %s right: %s' % (', '.join(ids) or 'the items', next_reason(ref, ids, note))
         return line_conflict(ref, p['thread'], why[:2000], options=next_options(d, ids), engines=[], extra={'round': next_number(ref, pl)})
     except Exception:  # noqa: BLE001 -- the failed run is a row whether or not the word reached Identity
         return None

@@ -909,6 +909,37 @@ def test_j1_a_conflict_that_cannot_make_a_plan_carries_its_ways_out_on_the_block
     assert ask["options"][0]["params"] == {"words": "A bakery site, done our way"}
 
 
+def test_j1_a_conflict_about_a_round_is_a_card_about_the_next_round_and_never_about_a_plan(j2):
+    """A round's limit put to the owner under the title of a plan that cannot be made (found by a verifier 2026-10-27): the plan is
+    registered and runs, and what needs the owner's word is the next round. The card says so, and says whose it is: Priority's when
+    a round was proposed and did not go on, Adaptation's when it had no new way to put the work right."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    ways = _ways(W.items_of(W.dept(ref)))
+    assert S.validate("act.conflict", {"word": "conflict", "round": 2, "correction": "Put the phone line on the doctors page"}) == []
+    assert S.validate("act.conflict", {"word": "conflict", "round": 0}) and S.validate("act.conflict", {"word": "conflict", "round": "two"})
+    _conflict(R, ref, [], ways, why="Priority said no to round 2: no room in the ceiling", round=2, correction="Put the phone line on the doctors page",
+              **{"for": "x-r2"})
+    W.run_until_idle(ref, limit=300)
+    [ask] = _cards(W, ref)
+    assert (ask["title"], ask["who"]) == ("The next round needs your word.", "Priority, pricing the round")
+    assert ask["text"] == "Priority said no to round 2: no room in the ceiling. Say how to put it right, or choose a way forward on this card."
+    assert [o["id"] for o in ask["options"]] == [w["id"] for w in ways] and J.status(ref)["state"] == "blocked"
+    _conflict(R, ref, [], ways, why="Adaptation has no new way to put D2 right: its only idea is the approach that already failed in round 1",
+              round=2, **{"for": "x-r2b"})
+    W.run_until_idle(ref, limit=300)
+    [again] = _cards(W, ref)
+    assert (again["title"], again["who"]) == ("The next round needs your word.", "Adaptation, correcting the work")
+    for card in (ask, again):
+        assert not re.search(r"\bplan\b|Say what to correct|\b(?:grant|counter|refus)\w*", " ".join((card["title"], card["who"], card["text"])), re.I), card
+    # a conflict that is about no round keeps the words of a plan that cannot be made
+    _conflict(R, ref, [], ways, why="Check cannot serve D1: nothing it makes shows it", **{"for": "x-np"})
+    W.run_until_idle(ref, limit=300)
+    [plan] = _cards(W, ref)
+    assert (plan["title"], plan["who"]) == ("No plan can be made as it stands.", "Adaptation, shaping the plan")
+    assert V1.round_words({"word": "conflict", "round": True}) is None and V1.round_words({"word": "conflict"}) is None and V1.round_words(None) is None
+
+
 def test_j1_the_ways_out_are_checked_as_the_interface_types_them_and_are_at_most_three():
     good = [{"id": "raise", "label": "Raise it", "cost": "more", "kind": "raise", "params": {"what": "ceiling"}},
             {"id": "leave:D2", "label": "Leave D2 out", "cost": "less"}, {"id": "stop", "label": "Stop", "cost": "nothing"}]

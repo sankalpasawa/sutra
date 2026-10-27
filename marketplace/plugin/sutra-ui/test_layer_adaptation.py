@@ -2074,8 +2074,23 @@ def test_f3_a_model_that_says_the_failed_correction_again_ends_in_one_question_t
     [conflict] = _conflicts(R, ref)
     assert [o["id"] for o in conflict["options"]] == ["words", "leave:D2", "stop"] and [o["kind"] for o in conflict["options"]] == ["words", "leave", "stop"]
     assert conflict["round"] == 2 and "Adaptation has no new way to put D2 right" in conflict["why"] and "already failed in round 1" in conflict["why"]
+    assert conflict["why"] == "Adaptation has no new way to put D2 right: its only idea is the approach that already failed in round 1", \
+        "the owner reads the reason, not the step's name nor the covering's note"
+    assert "Say what to correct" not in conflict["why"] and "correction" not in conflict, "no step's name in it; no correction, for none was proposed"
     assert S.validate("act.conflict", conflict) == [] and conflict["engines"] == []
     assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted")], "nothing was written for a round that was not proposed"
+
+
+def test_f3_the_reason_there_is_no_new_round_is_said_in_the_owners_words_whatever_the_run_noted(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    repeat = "Say what to correct: %s1 (Put the phone line on the doctors page); a round says something new" % v1().REPEATS
+    assert v1().next_reason(ref, ["D2"], repeat) == "nothing it could say was new", "no round failed yet, so none is repeated"
+    _granted_round(W, ref, FIRST_TRY)
+    assert v1().next_reason(ref, ["D2"], repeat) == "its only idea is the approach that already failed in round 1"
+    for note in ("Say what to correct: no answer that fits, on any rung", "failed: boom", "", None):
+        assert v1().next_reason(ref, ["D2"], note) == "nothing it could say was new", note
+    assert v1().next_reason(ref, ["D3"], repeat) == "nothing it could say was new", "the round that failed was for another item"
 
 
 def test_f3_one_item_left_in_done_when_cannot_be_left_out_so_the_limit_question_has_two_ways_out(j2, monkeypatch):

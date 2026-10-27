@@ -288,6 +288,11 @@ def test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silenc
     for a in asks:
         assert 1 <= len(a["options"]) <= 3 and all(o["kind"] in S.OPTION_KINDS for o in a["options"]), a["options"]
         assert not re.search(r"\b(grant|counter|refus)", " ".join(str(a.get(k) or "") for k in ("text", "title", "why")), re.I), "the owner's words"
+    # the card is about the next round, not about a plan: the plan is registered and runs (found by a verifier 2026-10-27)
+    [card] = [a for a in asks if a["kind"] == "blocked"]
+    assert (card["title"], card["who"]) == ("The next round needs your word.", "Priority, pricing the round")
+    assert not re.search(r"\bplan\b", " ".join((card["title"], card["who"])), re.I) and "Say what to correct" not in card["text"], card
+    assert card["text"].startswith("Priority said no to round 2:") and [o["id"] for o in card["options"]][-2:] == ["leave:D2", "stop"]
     _only_registered_engines_ran(W, R, ref)
 
 
@@ -318,3 +323,29 @@ def test_p4_nobody_asks_for_a_round_unless_a_reading_found_an_item_not_met(j2, m
     _pursue(j2, ref, neighbours)
     assert v1().rounds_of(ref) == [] and not [p for p in R.board(ref) if p["payload"].get("word") in ("next", "round")]
     assert _events(J, ref).count("goal.reached") == 1 and W.latest(ref, "Live site")["v"] == 1
+
+
+def test_p5_a_model_that_only_repeats_the_failed_correction_ends_in_one_card_about_the_next_round_in_the_owners_words(j2, monkeypatch):
+    """M9.4's limit question as the owner reads it (found by a verifier 2026-10-27): the card is titled for the next round, comes from
+    Adaptation, names no step, and holds the owner's own words, leaving the item out and stopping as the ways out."""
+    W, R, J, _, _ = j2
+    _reader(monkeypatch, R, [["D2"], ["D2"], ["D2"]])
+    inner = R.MODEL
+
+    def model(prompt, step):
+        if step["id"] == "adapt.next":
+            return {"correction": "Put right D2", "fixes": [], "covers": ["D2"], "why": "it is the one idea"}, 0.01, "model"
+        return inner(prompt, step)
+    monkeypatch.setattr(R, "MODEL", model)
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    _pursue(j2, ref, neighbours, limit=16)
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "read")], "round 1 ran; its approach, said again, is not a round"
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    assert (card["title"], card["who"]) == ("The next round needs your word.", "Adaptation, correcting the work")
+    assert card["text"] == ("Adaptation has no new way to put D2 right: its only idea is the approach that already failed in round 1. "
+                            "Say how to put it right, or choose a way forward on this card.")
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"]
+    assert not re.search(r"\bplan\b|Say what to correct|\brung\b", " ".join((card["title"], card["who"], card["text"], str(card.get("why")))), re.I), card
+    assert "goal.reached" not in _events(J, ref) and J.status(ref)["state"] == "blocked"
+    _only_registered_engines_ran(W, R, ref)
