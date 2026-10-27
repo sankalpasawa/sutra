@@ -683,6 +683,21 @@ def test_p3_an_engine_offer_and_a_trial_each_leave_one_price_row_when_they_are_a
     assert bare["why"] == "the envelope has room" and bare["answer"] == "accept" and post["payload"]["why"] is None
 
 
+def test_p4_a_why_in_the_inside_words_on_an_engine_offer_or_a_trial_is_said_in_the_owners_words_in_the_post_and_the_row(j2):
+    """An answer that is no line is composed apart from a line's, and its why must not slip past the owner's words to the post
+    Adaptation reads or the price row: an offer said yes to with 'granted', a trial said no to with 'reject', 'grant' and 'orders'."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    _history(W, ref)
+    offer = {"word": "engine", "engine": "Booking", "offer": {"shape": {"name": "Booking", "does": "takes a booking", "needs": []}}}
+    _, [post], [yes] = _answered(j2, ref, offer, {"answer": "accept", "why": "Granted: I accept the offer, no counter needed"}, 1)
+    assert post["payload"]["why"] == yes["why"] == "Said yes: I accept the offer, no ask for less needed"
+    trial = {"word": "trial", "step": "write.page", "engine": "Write", "cost": "one more call a run, for 20 runs"}
+    _, [post], [no] = _answered(j2, ref, trial, {"answer": "reject", "why": "I reject the trial: the grant is too big. Priority orders nothing."}, 2)
+    assert post["payload"]["why"] == no["why"] == "I say no to the trial: the yes is too big. Priority asks for nothing."
+    assert S.validate("priority.price", yes) == [] and S.validate("priority.price", no) == []
+
+
 def test_p3_an_offer_the_engines_room_cannot_hold_is_said_no_to_in_money_and_room(j2):
     """The offline answer to an engine offer when the engine's room is gone: no, and the why is only money and room."""
     W, R, J, _ = j2
@@ -863,6 +878,86 @@ def test_p4_a_bargains_summary_is_in_the_owners_words_as_a_price_is(live, ctx):
     assert not re.search(r"\b(?:grant\w*|counter\w*|reject\w*|refus\w*|orders?)\b", " ".join(b["summary"] for b in pane["bargains"]), re.I)
     assert [e["summary"] for e in events] == [why] * 3, "the ledger's own line is not changed by reading it"
     assert S.validate_view("priority", pane) == []
+
+
+#: what the owner's screen keeps off a line Priority said (the screen word rules): the bargain's inside words, and 'order' as a verb
+LEFT_IN = re.compile(r"\b(?:grant\w*|counter\w*|reject\w*|refus\w*|orders?)\b", re.I)
+#: the head of each why below: a string that carries it carries the agent's sentence, however a read cuts or wraps it
+MARK = "Budget check"
+WHYS = {
+    "reject": "Budget check: I reject this line; I would counter with two but the grant is too big, so refused for lack of room. Priority orders nothing.",
+    "counter": "Budget check: I counter with Facts and Notes, grant those two and refuse Summary for lack of room; the counter fits.",
+    "accept": "Budget check: granted, I accept the whole line and need no counter; Priority orders nothing."}
+
+
+def _carrying(found, surface, thing):
+    """Every string inside `thing` that carries the agent's sentence, put under `surface`."""
+    if isinstance(thing, dict):
+        for v in thing.values():
+            _carrying(found, surface, v)
+    elif isinstance(thing, (list, tuple)):
+        for v in thing:
+            _carrying(found, surface, v)
+    elif isinstance(thing, str) and MARK in thing:
+        found.setdefault(surface, []).append(thing)
+
+
+def _held_to_the_owners_words(found, must):
+    """Every read that carries the sentence carries it in the owner's words, and the reads in `must` carry it at all."""
+    assert set(must) <= set(found), "reads the sentence never reached prove nothing: %s" % sorted(set(must) - set(found))
+    left = {k: [s for s in v if LEFT_IN.search(s)] for k, v in found.items()}
+    assert not {k: v for k, v in left.items() if v}, "the bargain's inside words reached the owner: %s" % {k: v[:1] for k, v in left.items() if v}
+
+
+def test_p4_a_no_a_model_wrote_in_the_inside_words_leaves_none_in_priority_s_pane_or_on_its_step_card(live, monkeypatch):
+    """A model's no goes through the whole department, not a price row written by hand: Priority's pane (the bargains and the prices)
+    and the note on the step's card, which the app serves to the owner, must say it in the owner's words. A Priority that posts the
+    agent's sentence as it was written, or a pane that reads the ledger's line raw, must fail."""
+    import owner_words
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": WHYS["reject"]}})
+    ref = _priced(live, {n: (50, 5.0) for n in LINE})
+    pane = V1.view(ref, W.dept(ref), J.events(ref), W.asks(ref))
+    card = owner_words.steps(R.steps_view(ref, "Priority"))
+    found = {}
+    _carrying(found, "the bargains", pane["bargains"])
+    _carrying(found, "the prices", pane["prices"])
+    _carrying(found, "the step's card", card)
+    _carrying(found, "the step's rows", [r for r in R.step_rows(ref) if r["step"].startswith("priority")])
+    _held_to_the_owners_words(found, ("the bargains", "the prices", "the step's card", "the step's rows"))
+    want = ("Budget check: I say no to this line; I would ask for less with two but the yes is too big, so said no for lack of room. "
+            "Priority asks for nothing.")
+    assert [b["summary"] for b in pane["bargains"]] == [want] and [p["why"] for p in pane["prices"]] == [want]
+    [bargain] = [s for s in card["steps"] if s["id"] == "priority.bargain"]
+    assert bargain["last"]["notes"] == ["said no, with its price: " + want]
+    assert S.validate_view("priority", pane) == []
+
+
+def test_p4_the_note_on_priority_s_card_says_the_why_in_the_owners_words_and_a_round_does_too(live):
+    """The covering's note is said on Priority's card; the why in it is the agent's, in the owner's words, for a line and for a round."""
+    W, R, J, _ = live
+    why = "I reject this; the grant is too big. Priority orders nothing."
+    want = "I say no to this; the yes is too big. Priority asks for nothing."
+    note = V1.CHECK["price_is_observed"](None, None, None, {"answer": "reject", "why": why})
+    assert note == {"ok": True, "notes": ["said no, with its price: " + want]}
+    assert V1.CHECK["round_within_ceiling"](None, None, None, {"answer": "reject", "why": why})["notes"] == ["said no, with its price: " + want]
+    assert V1.CHECK["answer_has_its_price"](None, None, None, {"answer": "accept", "why": "granted"})["notes"] == ["said yes, with its price: said yes"]
+    # a note that is a fault names no why, and the fault is in the owner's words already
+    bad = V1.CHECK["price_is_observed"](None, None, None, {"answer": "reject", "why": ""})
+    assert not bad["ok"] and not LEFT_IN.search(" ".join(bad["notes"]))
+
+
+def test_p4_said_plainly_says_a_sentence_once_and_a_second_reading_changes_nothing():
+    """A sentence composed in the owner's words and read again on its way out (a record the new Priority wrote, read by the pane) must
+    come back as it was: the pass is the same read twice."""
+    import owner_words
+    for why in (WHYS["reject"], WHYS["counter"], WHYS["accept"], "Granted. It fits.", "A counter-offer of two; the refusal stands",
+                "COUNTER with two", "I granted the first and refused the second", "Priority countered the line", "Priority orders Write to run first",
+                "The order of the line holds; Priority order: Plan, Write, ordered by cost, in order to fit", "", None):
+        once = owner_words.said_plainly(why)
+        assert owner_words.said_plainly(once) == once, why
+        assert not LEFT_IN.search(once.replace("Priority order: Plan", "").replace("ordered by cost", "").replace("The order of", "").replace("in order to", "")), once
+    assert owner_words.said_plainly(None) == "" and owner_words.said_plainly("fits today: about 3 calls") == "fits today: about 3 calls"
 
 
 def test_p4_the_view_does_not_come_back_through_the_part_that_reads_the_views(live, ctx, monkeypatch):
@@ -1668,6 +1763,25 @@ def test_q2_a_round_has_no_ask_for_less(live, rounds_sendable, monkeypatch):
     [step] = [r for r in R.step_rows(ref) if r["step"] == "priority.bargain" and r["facts"] == {"word": "round", "room": True}]
     assert step["status"] == "failed" and "not an answer to a round: 'counter'" in step["why"]
     assert _round_answers(R, ref) == []
+
+
+def test_q2_a_models_no_about_a_round_is_said_in_the_owners_words_in_the_post_the_row_and_the_note(live, rounds_sendable, monkeypatch):
+    """The round's answer is composed apart from the line's (_post_round), and a why with the inside words must not slip through it
+    to the post, the row or the note on the step's card (the no of a model always stands, so round 7 of 6 is said no to)."""
+    import owner_words
+    W, R, J, _ = live
+    ref = _settled(live)
+    why = "I reject round 7: the grant is too big for the ceiling, so refused. Priority orders nothing."
+    want = "I say no to round 7: the yes is too big for the ceiling, so said no. Priority asks for nothing."
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": why}})
+    _propose_round(live, ref, 7)
+    [no] = _round_answers(R, ref)
+    assert no["payload"]["why"] == want
+    [row] = [r for r in _prices(W, ref) if r["proposal"] == "round"]
+    assert row["why"] == want and S.validate("priority.price", row) == []
+    [step] = [r for r in R.step_rows(ref) if r["step"] == "priority.bargain" and r["facts"] == {"word": "round", "room": False}]
+    assert step["status"] == "ok" and step["check"]["notes"] == ["said no, with its price: " + want]
+    assert owner_words.steps(R.steps_view(ref, "Priority"))["steps"][2]["last"]["notes"] == ["said no, with its price: " + want]
 
 
 def test_q2_the_round_is_held_to_the_ceiling_at_its_edges(live):

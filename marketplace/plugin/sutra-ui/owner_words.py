@@ -19,9 +19,10 @@ always), a data value, is left as it is: the badge that prints it says 'never' f
 tags says 'never' too ('tagged go, ask, never or always'). One line is read whole: Coordination's who-may-post note, which
 carried the act's own id ('Identity may refuse to Owner'), is said again the way the runtime says it now (MAY_NOTE).
 
-One more kind of line is read word by word: a sentence a model wrote in its own words (said_plainly). The agent is taught
-accept, counter and reject, so its why may use them, or grant and refuse; plain() says phrases and never a bare verb. The
-pass is here, once, for every read that carries such a sentence: a pane keeps no table of its own.
+One more kind of line is read word by word, and only where it is composed: a sentence a model wrote in its own words (said_plainly).
+The agent is taught accept, counter and reject, so its why may use them, or grant and refuse. That sentence is said once in the
+owner's words where its function composes it (Priority's, in priority_post), so the post, the record, the ledger's line and every
+read of them agree; a record written before that is said again on the way out by the same function, not by a table of a pane's own.
 """
 import functools
 import re
