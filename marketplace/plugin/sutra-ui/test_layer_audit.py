@@ -646,6 +646,93 @@ def test_u5_low_findings_do_not_block_done_but_a_high_one_does(j2, monkeypatch):
     assert "goal.reached" not in _actions(J, ref2) and J.status(ref2)["state"] == "pursuing"
 
 
+def _told_identity(R, ref):
+    """What Audit put to Identity as a finding: the one post of the word finding."""
+    (post,) = [p for p in R.board(ref) if p["src"] == "Audit" and (p["payload"] or {}).get("word") == "finding"]
+    return post["payload"]
+
+
+def _pending(W, ref, kind="finding"):
+    return [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == kind]
+
+
+def test_u5_a_high_finding_past_the_twelfth_is_never_the_one_dropped_so_the_goal_is_not_reached_and_the_owner_is_asked(j2, monkeypatch):
+    """Found 2026-10-26: 13 findings, the one high among them last: the reading held twelve lows, Identity read 'no high
+    finding is open' and the goal was reached, while the post to Identity said high. One list, worst first, then the cut."""
+    W, R, J, _, _ = j2
+    lows = lambda n, tag: [{"page": "result.md", "claim": "%s %d" % (tag, k), "severity": "low"} for k in range(n)]      # noqa: E731
+    late = {"where": "result.md", "claim": "the fees are invented", "severity": "high", "item": None}
+    reader = _says("met", findings=[{"where": "result.md", "claim": "reader low %d" % k, "severity": "low", "item": None} for k in range(4)] + [late])
+    _model(monkeypatch, R, {"audit.items": reader, "audit.judge": {"ok": True, "findings": lows(8, "judge low")}})
+    ref = _default(j2)
+    (row,) = _readings(W, ref)
+    assert len(row["findings"]) == 12 and row["findings"][0]["severity"] == "high" and row["findings"][0]["claim"] == "the fees are invented"
+    assert [f["severity"] for f in row["findings"]] == ["high"] + ["low"] * 11, "worst first, then the cut"
+    assert [f["id"] for f in row["findings"]] == ["F%d" % n for n in range(1, 13)]
+    told = _told_identity(R, ref)
+    assert told["severity"] == "high" and told["claim"] == "the fees are invented" and len(told["findings"]) == 12
+    assert [f["severity"] for f in told["findings"]] == [f["severity"] for f in row["findings"]], "the post and the reading say the same"
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "pursuing" and J.status(ref)["goal_reached"] is not True
+    (ask,) = _pending(W, ref)
+    assert "the fees are invented" in ask["found"]
+    pl = next(p["payload"] for p in R.board(ref) if (p["payload"] or {}).get("word") == "reading")
+    assert pl["high"] is True and S.validate("act.reading", pl) == []
+
+
+def test_u5_findings_are_ordered_high_then_medium_then_low_each_kept_in_the_order_it_was_found(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    said = [{"where": "result.md", "claim": "%s %d" % (sev, k), "severity": sev, "item": None}
+            for k, sev in enumerate(["low", "medium", "low", "high", "medium", "high"])]
+    _model(monkeypatch, R, {"audit.items": _says("met", findings=said), "audit.judge": JUDGE_OK})
+    ref = _default(j2)
+    (row,) = _readings(W, ref)
+    assert [f["claim"] for f in row["findings"]] == ["high 3", "high 5", "medium 1", "medium 4", "low 0", "low 2"]
+    assert [f["id"] for f in row["findings"]] == ["F%d" % n for n in range(1, 7)]
+    assert [f["claim"] for f in _told_identity(R, ref)["findings"]] == [f["claim"] for f in row["findings"]]
+
+
+def test_u5_when_the_judge_and_the_reader_find_the_one_thing_the_worse_severity_stands(j2, monkeypatch):
+    """The same thing found twice, on the one page, is one finding; its severity is the worse of the two, so a reader's high
+    is not lost behind a judge's low that happened to come first."""
+    W, R, J, _, _ = j2
+    low = {"page": "result.md", "claim": "The fees are invented", "severity": "low"}
+    high = {"where": "result.md", "claim": "the fees are  invented", "severity": "critical", "item": None}
+    _model(monkeypatch, R, {"audit.items": _says("met", findings=[high]), "audit.judge": {"ok": True, "findings": [low]}})
+    ref = _default(j2)
+    (row,) = _readings(W, ref)
+    assert [(f["severity"], f["claim"]) for f in row["findings"]] == [("high", "The fees are invented")], "one finding, the worse word"
+    assert _told_identity(R, ref)["severity"] == "high" and len(_pending(W, ref)) == 1
+    assert "goal.reached" not in _actions(J, ref)
+
+
+@pytest.mark.parametrize("who", ["reader", "judge"])
+def test_u5_a_critical_finding_is_high_in_the_reading_the_post_and_the_ask(j2, monkeypatch, who):
+    """Found 2026-10-26: a 'critical' finding was high in the reading, so the department was held, but low in the post to
+    Identity, which made no ask: the owner had no next move. One word for it everywhere."""
+    W, R, J, _, _ = j2
+    crit = {"where": "result.md", "page": "result.md", "claim": "the fees are invented", "severity": "critical", "item": None}
+    answers = {"audit.items": _says("met", findings=[crit] if who == "reader" else []),
+               "audit.judge": {"ok": True, "findings": [crit] if who == "judge" else []}}
+    _model(monkeypatch, R, answers)
+    ref = _default(j2)
+    (row,) = _readings(W, ref)
+    assert [f["severity"] for f in row["findings"]] == ["high"]
+    told = _told_identity(R, ref)
+    assert told["severity"] == "high" and [f["severity"] for f in told["findings"]] == ["high"], "the post reads the reading's word"
+    assert len(_pending(W, ref)) == 1, "a high finding is put to the owner as an ask"
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "pursuing"
+
+
+def test_u5_a_finding_with_no_severity_the_interface_knows_is_medium_in_the_post_as_in_the_reading(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    odd = {"where": "result.md", "claim": "the tone is stiff", "severity": "severe!", "item": None}
+    _model(monkeypatch, R, {"audit.items": _says("met", findings=[odd]), "audit.judge": JUDGE_OK})
+    ref = _default(j2)
+    (row,) = _readings(W, ref)
+    assert [f["severity"] for f in row["findings"]] == ["medium"]
+    assert [f["severity"] for f in _told_identity(R, ref)["findings"]] == ["medium"] and not _pending(W, ref)
+
+
 def _goal_says(R, ref):
     """What Identity told the owner when the goal was reached: the one post of the word goal."""
     (post,) = [p for p in R.board(ref) if p["src"] == "Identity" and R.OWNER in p["dst"] and (p["payload"] or {}).get("word") == "goal"]

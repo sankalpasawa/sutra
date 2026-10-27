@@ -3759,6 +3759,10 @@ READ_BY = ("model", "checklist", "stamped by the owner")
 VERDICT_RANK = {"met": 0, "to_confirm": 1, "not_met": 2}
 #: how serious an item's verdict is, the S-30 reading's severity
 ITEM_SEVERITY = {"met": "low", "to_confirm": "medium", "not_met": "high"}
+#: how serious a finding is, the worse the higher, and how many a reading keeps (the worst first, so a high one is never the
+#: one the cut drops)
+FINDING_RANK = {"low": 0, "medium": 1, "high": 2}
+READING_FINDINGS = 12
 
 
 def audit_text(files):
@@ -3879,13 +3883,26 @@ def audit_rows(dept_items, mech, said, sampled):
     return rows
 
 
+def _finding_severity(f):
+    """A finding's severity as the interface types it (high, medium or low): a reader's or a judge's 'critical' is high, and a
+    word that is none of them is medium. The reading, the post to Identity and the ask all read this one word."""
+    sev = str((f or {}).get("severity") or "").strip().lower()
+    return "high" if sev == "critical" else sev if sev in FINDING_RANK else "medium"
+
+
+def _ranked(found):
+    """The findings of a reading with their severity as the interface types it, the worst first and each kept in the order it
+    was found: one list for the reading's cut, the post to Identity and whether a high finding is open."""
+    return sorted(({**f, "severity": _finding_severity(f)} for f in found), key=lambda f: -FINDING_RANK[f["severity"]])
+
+
 def _audit_reading_findings(found, art):
     """The findings of a reading as the interface types them (audit.finding): numbered F1, F2, ... within the reading, each
-    with where it is and what, how serious, the item it belongs to, and that Identity was told."""
+    with where it is and what, how serious, the item it belongs to, and that Identity was told. `found` is ranked (_ranked),
+    so the cut keeps the worst."""
     out = []
-    for n, f in enumerate(found[:12], 1):
-        sev = str(f.get("severity") or "").strip().lower()
-        sev = "high" if sev == "critical" else sev if sev in ("high", "medium", "low") else "medium"
+    for n, f in enumerate(found[:READING_FINDINGS], 1):
+        sev = _finding_severity(f)
         item_id = f.get("item") if re.match(r"^D[1-9][0-9]?$", str(f.get("item") or "")) else None
         out.append({"id": "F%d" % n, "severity": sev, "claim": _clip(f.get("claim"), 600),
                     "where": " ".join(str(f.get("page") or f.get("where") or art or "").split())[:200], "item": item_id,
@@ -3933,12 +3950,14 @@ def audit_file(ctx, step, item):
     found += [f for f in judged.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
     found += [{"page": f.get("where"), "claim": f["claim"], "severity": f.get("severity"), "item": f.get("item")}
               for f in said.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
-    seen_claims, once = set(), []
+    seen_claims, once = {}, []
     for f in found:                                   # the reader and the judge may each find the one thing, on the one page
         key = (str(f.get("page") or "").lower(), " ".join(str(f.get("claim")).split()).lower())
         if key not in seen_claims:
-            seen_claims.add(key)
+            seen_claims[key] = len(once)
             once.append(f)
+        elif FINDING_RANK[_finding_severity(f)] > FINDING_RANK[_finding_severity(once[seen_claims[key]])]:
+            once[seen_claims[key]] = dict(once[seen_claims[key]], severity=_finding_severity(f))      # the worse of the two stands
     found = once
     # 'found nothing' is a reading only when the version was read item by item: a reader skipped (not sampled) or answered
     # by its offline draft read nothing, and its empty list is no evidence (M0.3; found 2026-10-23: an offline department
@@ -3966,11 +3985,13 @@ def audit_file(ctx, step, item):
                       "claim": "“%s” %s: %s" % (_clip(it.get("text"), 120).rstrip("."),
                                                 "does not hold" if verdicts[it["id"]] == "not_met" else "cannot be confirmed yet",
                                                 row["claim"].rstrip("."))})
+    found = _ranked(found)                            # one list, worst first: the reading, the post and 'a high finding is open' read it
+    high = [f for f in found if f["severity"] == "high"]
     findings = _audit_reading_findings(found, art)
     reading = audit_record(ref, ctx.get("slot"), art, v, read, why_not, rows, findings) if art else None
     met = [i for i, x in verdicts.items() if x == "met"]
     summary = {"id": reading and reading["id"], "read": read, "met": met, "not_met": [i for i, x in verdicts.items() if x == "not_met"],
-               "to_confirm": [i for i, x in verdicts.items() if x == "to_confirm"], "high": any(f["severity"] == "high" for f in findings)}
+               "to_confirm": [i for i, x in verdicts.items() if x == "to_confirm"], "high": bool(high)}
     if not found:
         if not read:
             return {"said": "did not read what went live (%s); nothing is said of it" % why_not, "filed": 0, "read": False,
@@ -3978,10 +3999,9 @@ def audit_file(ctx, step, item):
         if reading:
             audit_tell(ref, reading)
         return {"said": "read what went live item by item; every item holds", "filed": 0, "read": True, "artifact": art, "reading": summary}
-    high = [f for f in found if str(f.get("severity") or "").lower() == "high"]
     claim = str((high or found)[0]["claim"])
     post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high" if high else "low",
-                                              "findings": found[:12], "about_version": v, "artifact": art,
+                                              "findings": found[:READING_FINDINGS], "about_version": v, "artifact": art,
                                               "reading": reading and reading["id"]},
          about={"art": art, "v": v})
     if reading:
