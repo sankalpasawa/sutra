@@ -642,6 +642,47 @@ def test_p3_an_engine_offer_is_priced_as_one_run_and_a_trial_as_what_it_adds(j2)
         assert V1.d_priority_bargain(c, None, None)["answer"] == "accept"
 
 
+def _answered(j2, ref, payload, bargain, n):
+    """What Priority does with a proposal that is no line, answered through priority_post as the step does it: its read, the
+    agent's answer in the bag, the post. Returns (what it said, the post it made, the price rows it left)."""
+    W, R, J, _ = j2
+    c = {"ref": ref, "dept": W.dept(ref), "bag": {}, "post": {"thread": "off-%d" % n, "payload": payload}}
+    c["bag"]["priority.read"] = V1.priority_read(c, None, None)
+    c["bag"]["priority.bargain"] = bargain
+    before = len(_prices(W, ref))
+    said = V1.priority_post(c, None, None)
+    posts = [p for p in R.board(ref) if p["src"] == "Priority" and p["thread"] == "off-%d" % n]
+    return said, posts, _prices(W, ref)[before:]
+
+
+def test_p3_an_engine_offer_and_a_trial_each_leave_one_price_row_when_they_are_answered(j2):
+    """The done-check of P3 is one price row per answer, and an answer to something that is no line is still an answer: an engine
+    offered is answered yes, a trial no, and each leaves its row, proposal 'engine' and 'cost', that validates, with what was priced,
+    the room, and what the answer keeps. A priority_post that keeps the price of a line alone must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    _history(W, ref)
+    offer = {"word": "engine", "engine": "Booking", "offer": {"shape": {"name": "Booking", "does": "takes a booking", "needs": []}}}
+    said, [post], [yes] = _answered(j2, ref, offer, {"answer": "accept", "why": "fits today: about 2 calls and 0.08 USD of the 240 calls left"}, 1)
+    assert said == {"said": "said yes to a trial of None"} and post["msg_type"] == "accept-proposal" and post["payload"]["word"] == "engine"
+    assert (yes["proposal"], yes["answer"], yes["engines"], yes["keep"], yes["round"]) == ("engine", "accept", ["Booking"], ["Booking"], None)
+    assert (yes["estimate"]["calls"], yes["estimate"]["usd"], yes["room"]) == (2, 0.08, {"calls": 240, "usd": 6.0}) and yes["thread"] == "off-1"
+    assert yes["why"] == "fits today: about 2 calls and 0.08 USD of the 240 calls left" == post["payload"]["why"]
+    assert yes["indices"] == {"spend_per_run": {"Booking": 0.08}, "checks": {"Booking": "none"}}
+    trial = {"word": "trial", "step": "write.page", "engine": "Write", "cost": "one more call a run, for 20 runs"}
+    said, [post], [no] = _answered(j2, ref, trial, {"answer": "reject", "why": "no room for the trial today: 20 calls and 0.80 USD"}, 2)
+    assert said == {"said": "said no to a trial of write.page"} and post["msg_type"] == "reject-proposal" and post["payload"]["word"] == "trial"
+    assert (no["proposal"], no["answer"], no["engines"], no["keep"]) == ("cost", "reject", ["Write"], [])
+    assert (no["estimate"]["calls"], no["estimate"]["usd"]) == (20, 0.8) and no["remaining"] == {"calls": 220, "usd": 5.2}
+    assert no["why"] == "no room for the trial today: 20 calls and 0.80 USD" == post["payload"]["why"], "the post and the row are one sentence"
+    assert no["indices"]["spend_per_run"] == {"Write": 0.8} and no["indices"]["checks"] == {"Write": "failed"}, "Write's last run, in the history, failed its check"
+    assert len(_prices(W, ref)) == 2 and yes["id"] != no["id"]
+    assert S.validate("priority.price", yes) == [] and S.validate("priority.price", no) == []
+    # and an answer that comes with no why is still priced, with the words the line's answer has
+    _, [post], [bare] = _answered(j2, ref, trial, {"answer": "accept"}, 3)
+    assert bare["why"] == "the envelope has room" and bare["answer"] == "accept" and post["payload"]["why"] is None
+
+
 def test_p3_an_offer_the_engines_room_cannot_hold_is_said_no_to_in_money_and_room(j2):
     """The offline answer to an engine offer when the engine's room is gone: no, and the why is only money and room."""
     W, R, J, _ = j2
