@@ -158,12 +158,14 @@ _ORDER_RE = re.compile(
     r'(?![\w-])(?!\s+by\b)', re.I)
 
 
-def said_plainly(text):
+def said_plainly(text, keep=()):
     """A sentence a model wrote, in the owner's words: the phrases of BARGAIN_WORDS, then the inside words (INSIDE) said again,
     'I reject this; I would counter with two' as 'I say no to this; I would ask for less with two'. A noun after its article
     (the grant) is a yes. 'Order' as a verb (Priority never orders) is 'ask for'. A capital stays a capital. Said twice it says
     the same, so a sentence composed in the owner's words and read again on its way out is not changed by the second reading.
-    Only for a sentence a model wrote: the owner's own words, and any data value (a rule's tag, an answer's id), are not its."""
+    `keep`: the names in the sentence that are a workflow's or an engine's and stay as they are, though they are an inside word
+    (a workflow called Grant, or Order, is not said yes to). Only for a sentence a model wrote, or a line made of one: the owner's
+    own words, and any data value (a rule's tag, an answer's id), are not its."""
     def said(m):
         word, out = m.group(0), INSIDE[m.group(0).lower()]
         return out.upper() if len(word) > 1 and word.isupper() else (out[:1].upper() + out[1:] if word[:1].isupper() else out)
@@ -172,11 +174,20 @@ def said_plainly(text):
         subject, gap, verb = (m.group('by'), m.group('s1'), m.group('v1')) if m.group('by') else (m.group('mod'), m.group('s2'), m.group('v2'))
         out = _ORDERS_AS[verb.lower()]
         return subject + gap + (out.upper() if verb.isupper() and len(verb) > 1 else out)
+    held, text = {}, str(text or '')
+    for name in sorted({str(n) for n in keep or () if n}, key=len, reverse=True):
+        mark = '\x00%d\x00' % len(held)
+        text, n = re.subn(r'(?<![\w-])%s(?![\w-])' % re.escape(name), mark, text)
+        if n:
+            held[mark] = name
     text = re.sub(r'\b(a|an|the|this|that|its|their|any|each)\s+grants?\b', r'\1 yes', plain(text), flags=re.I)
     text = re.sub(_INSIDE_RE, said, text, flags=re.I)
     text = re.sub(r'\b(say|says|said|saying)\s+(yes|no)\s+to(?=\s*(?:$|[.,;:!?)]|(?:for|because|since|as|when|if|over|given)\b))', r'\1 \2', text, flags=re.I)
     text = _ORDER_RE.sub(asked, text)
-    return re.sub(r'\b([Aa])(?= ask for less\b)', r'\1n', text, flags=re.I)
+    text = re.sub(r'\b([Aa])(?= ask for less\b)', r'\1n', text, flags=re.I)
+    for mark, name in held.items():
+        text = text.replace(mark, name)
+    return text
 
 
 def _keep(value):

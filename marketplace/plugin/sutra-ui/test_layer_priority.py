@@ -1055,6 +1055,45 @@ def test_p4_said_plainly_says_a_sentence_once_and_a_second_reading_changes_nothi
     assert owner_words.said_plainly(None) == "" and owner_words.said_plainly("fits today: about 3 calls") == "fits today: about 3 calls"
 
 
+GRANTS = {"engines": [{"name": "Grant", "does": "finds the funding", "reads": "Brief", "writes": "Funding", "internet": True},
+                      {"name": "Counter Offer", "does": "drafts the offer", "reads": "Funding", "writes": "Offer", "internet": False}]}
+
+
+def test_p4_a_workflow_named_like_an_inside_word_keeps_its_name_in_priority_s_own_line(live, monkeypatch):
+    """A department for grant applications has a workflow called Grant, and one called Counter Offer. Priority's own line, 'no room
+    today: even Grant costs about ...', is made by code and is not the agent's sentence: the pass that says the agent's inside words
+    must not say the name yes (found in review: 'even Say yes to costs ...' on the post, the row, the ledger and the pane)."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"adapt.line": GRANTS})
+    ref = _priced(live, {"Grant": (0, 0.0), "Counter Offer": (0, 0.0)}, {}, ORGANIC, "Lab Co", shaped=True)
+    line = "no room today: even Grant costs about 2 calls and 0.08 USD against the 0 calls and 0.00 USD left"
+    [row] = _prices(W, ref)
+    assert (row["answer"], row["engines"], row["why"]) == ("reject", ["Grant", "Counter Offer"], line)
+    [post] = [p for p in R.board(ref) if p["src"] == "Priority" and p["msg_type"] == "reject-proposal"]
+    assert post["payload"]["why"] == line and next(e for e in J.events(ref) if e["action"] == "proposal.refused")["summary"] == line
+    pane = _view(W, J, ref)
+    assert [p["why"] for p in pane["prices"]] == [line] and [b["summary"] for b in pane["bargains"]] == [line]
+    # the agent's sentence about it is said in the owner's words, the names left alone
+    import owner_words
+    said = owner_words.said_plainly("I reject Counter Offer and grant Grant: the Grant line is a counter", keep=["Grant", "Counter Offer"])
+    assert said == "I say no to Counter Offer and say yes to Grant: the Grant line is an ask for less"
+    assert owner_words.said_plainly(said, keep=["Grant", "Counter Offer"]) == said
+    assert owner_words.said_plainly("Grant", keep=["Grant"]) == "Grant" and owner_words.said_plainly("Grant") != "Grant", "a name is kept only when it is named"
+
+
+def test_p4_a_workflow_named_like_an_inside_word_keeps_its_name_in_an_older_record_the_pane_says_again(live, ctx):
+    """A row written before Priority composed its why in the owner's words, and a ledger line with it, are said again on the way
+    out; the name of a workflow that row prices is left as it is."""
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    W.append_row(ref, "prices.jsonl", _price_row(engines=["Grant", "Counter Offer"], why="I reject the line: even Grant costs too much for a Counter Offer"))
+    events = [{"action": "proposal.refused", "summary": "I reject the line: even Grant costs too much for a Counter Offer", "occurred_at": "2026-10-26T10:00:00+05:30"}]
+    pane = V1.view(ref, W.dept(ref), events, [])
+    want = "I say no to the line: even Grant costs too much for a Counter Offer"
+    assert [p["why"] for p in pane["prices"]] == [want] and [b["summary"] for b in pane["bargains"]] == [want]
+    assert S.validate_view("priority", pane) == []
+
+
 def test_p4_the_view_does_not_come_back_through_the_part_that_reads_the_views(live, ctx, monkeypatch):
     """A view that builds its pane by calling functions_view._j2_part must fail once _j2_part hands the pane to layers.view
     (A1.17, K2's C9): the two would call each other without end. _j2_part is made to do exactly that here, with no guard

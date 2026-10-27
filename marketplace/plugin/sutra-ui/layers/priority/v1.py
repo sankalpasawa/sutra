@@ -296,12 +296,14 @@ def cut_short(names, asked, fits=None):
     return out if fits is None else out[:len(fits)]
 
 
-def _owners_why(why):
+def _owners_why(why, read=None):
     """The agent's why, said once in the owner's words where Priority composes it. The agent is taught accept, counter and
     reject and writes its why in its own sentence, so it may say reject, counter, grant, refuse, or order as a verb; the screen
     says said yes, asked for less and said no, and Priority never orders. The sentence is said here, before it is posted, so the
-    post, the price row, the ledger's line, the chat and the board, the covering's note and the pane all carry the same words."""
-    return owner_words.said_plainly(str(why or '').strip())
+    post, the price row, the ledger's line, the chat and the board, the covering's note and the pane all carry the same words.
+    The names of the workflows in the proposal (`read`) stay as they are: a workflow may be called Grant, and Priority's own
+    line, 'no room today: even Grant costs about ...', is not said yes to."""
+    return owner_words.said_plainly(str(why or '').strip(), keep=read.get('names') if isinstance(read, dict) else None)
 
 
 def priority_post(ctx, step, item):
@@ -311,7 +313,7 @@ def priority_post(ctx, step, item):
     engine_runtime.priority_post; the answers are the same, and the why is said in the owner's words (_owners_why)."""
     ref, pl, thread = ctx['ref'], ctx['post']['payload'], ctx['post']['thread']
     read, got = ctx['bag']['priority.read'], ctx['bag']['priority.bargain']
-    names, answer, why = list(read.get('names') or []), got.get('answer'), _owners_why(got.get('why'))
+    names, answer, why = list(read.get('names') or []), got.get('answer'), _owners_why(got.get('why'), read)
     if pl.get('word') == 'round':
         return _post_round(ctx, read, got)
     if pl.get('word') == 'line':
@@ -398,7 +400,7 @@ def price_is_observed(ctx, step, item, out):
     if not notes:
         notes += _fact_notes(ctx, out)
     # the note is said on Priority's card, so it names the answer in the owner's words (said yes, asked for less, said no)
-    return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(out.get('answer'), out.get('answer')), _owners_why(out['why']))]}
+    return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(out.get('answer'), out.get('answer')), _owners_why(out['why'], read))]}
 
 
 # ---- the ways forward at a limit, priced by code (M5.4) ----------------------------------------------------------------------
@@ -845,7 +847,7 @@ def round_is_within(ctx, step, item, out):
         held = round_within_ceiling(read)
         if held['answer'] != 'accept':
             notes.append('said yes to a round the ceiling does not hold: %s' % '; '.join(held['over']))
-    return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(answer, answer), _owners_why(out['why']))]}
+    return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(answer, answer), _owners_why(out['why'], read))]}
 
 
 def _say_ceiling(read):
@@ -907,7 +909,7 @@ def _post_round(ctx, read, got):
     """Answer a round: yes, or no with the ways forward (M9.2). The answer is one price row, proposal 'round'."""
     ref, pl, thread = ctx['ref'], ctx['post']['payload'], ctx['post']['thread']
     ok = got.get('answer') == 'accept'
-    why = _owners_why(got.get('why')) or ('inside the ceiling' if ok else 'no room in the ceiling')
+    why = _owners_why(got.get('why'), read) or ('inside the ceiling' if ok else 'no room in the ceiling')
     body = {'word': 'round', 'round': read['round'], 'why': why}
     if not ok:
         body['options'] = round_options(ref, ctx.get('dept') or W.dept(ref) or {}, read, pl)
@@ -1090,21 +1092,22 @@ LAYOUT['goal'].update({'done': '{text}', 'role_is': '{text}', 'role_may': '{item
 PRICES_SHOWN = 12
 
 
-def _prices(ref):
-    """What Priority priced and answered, newest first, from prices.jsonl and in the owner's words: the answer as said yes,
-    asked for less or said no, the estimate and the room as two amounts each, and the why. Priority says its why in the owner's
+def _prices(rows, keep=()):
+    """What Priority priced and answered, newest first, from prices.jsonl (`rows`) and in the owner's words: the answer as said
+    yes, asked for less or said no, the estimate and the room as two amounts each, and the why. Priority says its why in the owner's
     words where it composes it (priority_post), so a row it wrote already does; a row written before that, or by hand, keeps the
     words it was given, and its inside ones (reject, counter, grant, refuse, and order as a verb) are said again here, by the one
-    pass every read shares (owner_words.said_plainly). A row that holds no answer is not shown."""
+    pass every read shares (owner_words.said_plainly), the workflows' names (`keep`) left as they are. A row that holds no answer
+    is not shown."""
     out = []
-    for r in reversed([r for r in W.rows(ref, 'prices.jsonl') if isinstance(r, dict)]):
+    for r in reversed([r for r in rows if isinstance(r, dict)]):
         if r.get('answer') not in SAID:
             continue
         est, room = r.get('estimate') or {}, r.get('room') or {}
         out.append({'at': r.get('at'), 'proposal': r.get('proposal'), 'answer': r['answer'], 'said': SAID[r['answer']],
                     'estimate': {'calls': int(est.get('calls') or 0), 'usd': float(est.get('usd') or 0.0)},
                     'room': {'calls': int(room.get('calls') or 0), 'usd': float(room.get('usd') or 0.0)},
-                    'why': owner_words.said_plainly(r.get('why'))[:600]})
+                    'why': owner_words.said_plainly(r.get('why'), keep)[:600]})
     return FV._clean(out[:PRICES_SHOWN])
 
 
@@ -1122,9 +1125,11 @@ def view(ref, d, events, asks):
     a summary is the agent's why), and not through FV._j2_part: that part reads the layers' views (A1.17,
     K2) and would come back here, and the guard it keeps is functions_view's to keep, not a view's to lean on. Moved from
     functions_view._j2_body's Priority branch, which stays until W3-PROOF deletes the dead copies."""
-    return {'bargains': [{'said': BARGAINS[e['action']], 'summary': owner_words.said_plainly(e.get('summary')), 'at': e.get('occurred_at')}
+    rows = W.rows(ref, 'prices.jsonl')
+    named = {x[0] for x in W.engines_of(d)} | {str(n) for r in rows if isinstance(r, dict) for n in r.get('engines') or []}
+    return {'bargains': [{'said': BARGAINS[e['action']], 'summary': owner_words.said_plainly(e.get('summary'), named), 'at': e.get('occurred_at')}
                          for e in events if e.get('action') in BARGAINS][-BARGAINS_SHOWN:],
             'envelopes': [dict(FV._spend(ref, d, n), engine=n) for n in [x[0] for x in W.engines_of(d)] + list(FV.FUNCS)],
-            'prices': _prices(ref),
+            'prices': _prices(rows, named),
             'ceiling': ceiling_of(d),
             'spend_by_round': spend_by_round(ref, d)}
