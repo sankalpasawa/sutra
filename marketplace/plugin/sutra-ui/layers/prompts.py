@@ -24,7 +24,7 @@ M2.2 ({ref}/prompts/<fn>/<file>.md) is kept as the owner's note: no run reads it
 import copy
 import re
 
-from layers import R, W, S  # noqa: F401 -- lazy proxies: tests reload the runtime
+from layers import W, S  # lazy proxies: tests reload the runtime
 
 #: a marker of a layout: {{name}} (an input code fills) or one of the five field markers
 MARKER = re.compile(r"\{\{([a-z_]+)\}\}|\{(task|guidance|text|items|returns)\}")

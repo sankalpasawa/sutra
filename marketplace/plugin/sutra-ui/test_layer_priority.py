@@ -1214,7 +1214,7 @@ def test_p5_a_save_that_names_its_layer_is_held_to_the_keys_that_layer_owns(live
         with pytest.raises(S.SchemaFault):
             W.save_dept(ref, dict(d, goal="a goal Priority has no business writing"), by="priority")
     assert met == ["$.goal: is Identity's, and Priority wrote it"]
-    assert W.dept(ref)["envelopes"]["Plan"] != {"calls": 3, "usd": 0.5} and W.dept(ref).get("goal") != "a goal Priority has no business writing", "nothing was written"
+    assert (W.dept(ref)["envelopes"].get("Plan") != {"calls": 3, "usd": 0.5} and W.dept(ref).get("goal") != "a goal Priority has no business writing"), "nothing was written"
     d2 = W.dept(ref)
     d2["envelopes"]["Plan"] = {"calls": 4, "usd": 0.5}
     before = S.REFUSED["count"]

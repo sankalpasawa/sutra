@@ -14,7 +14,6 @@ A test that meets a fault of the interface fails (conftest.py); a deliberate one
 """
 import ast
 import os
-import re
 from pathlib import Path
 
 import pytest
