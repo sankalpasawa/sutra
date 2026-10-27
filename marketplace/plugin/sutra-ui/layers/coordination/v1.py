@@ -12,6 +12,7 @@ import json
 import os
 import re
 
+import owner_words
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
 LAYER = 'coordination'
@@ -536,7 +537,26 @@ def view(ref, d, events, asks):
     return FV.coordination(ref, d, ak=asks)
 
 
+#: what became of a question, in the owner's words, after "asked <engine> about <about>" (screens S13 and S17)
+QUESTION_ENDS = {'answered': 'answered', 'unanswered': 'no answer', 'refused': 'said no', 'open': 'waiting'}
+
+
 def engine_card(ref, name):
     """One engine's card (S.VIEWS['engine_card'], screen S17): its place in the timetable, the motor's facts and one row for
-    each of the five, by reference (A1.17). None for a department not on the engine runtime."""
-    return FV.engine_card(ref, name)
+    each of the five, by reference (A1.17). None for a department not on the engine runtime. Coordination's row also says the
+    question this engine asked last, 'asked Plan about the page list (answered)', and the last it answered for another engine,
+    from the board (M4.9); an engine that put and was put no question has its row as it was."""
+    card = FV.engine_card(ref, name)
+    rows = entries(ref) if card else []
+    asked = next((e for e in reversed(rows) if e.get('asked_by') == name), None)
+    answered = next((e for e in reversed(rows) if e.get('to') == name and e.get('status') == 'answered'), None)
+    if not asked and not answered:
+        return card
+    keep = set(R.defs()['engines']) | set((W.dept(ref) or {}).get('engines') or [])       # an engine called Grant is not said yes to
+    plain = lambda text: owner_words.said_plainly(text, keep=keep)                       # noqa: E731 -- about is a model's words
+    said = ([plain('asked %s about %s (%s)' % (asked['to'], asked['about'], QUESTION_ENDS.get(asked['status'], asked['status'])))] if asked else []) + \
+        ([plain('answered %s about %s' % (answered['asked_by'], answered['about']))] if answered else [])
+    for row in card['five']:
+        if row['fn'] == 'Coordination':
+            row['says'] = _clip('; '.join([row['says']] + said), 300)
+    return card

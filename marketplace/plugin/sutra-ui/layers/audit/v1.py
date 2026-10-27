@@ -650,13 +650,23 @@ def _latest(rows):
             'findings': [dict(f) for f in r.get('findings') or []]}
 
 
+def _spot_entry(r):
+    """One spot check of spot_checks.jsonl as the pane lists it: what it says, when, whether every check held, the checks and the
+    findings it filed. Not the minute it fell on: Audit drops in unannounced."""
+    found = [dict(f) for f in r.get('findings') or []]
+    return {'summary': SPOT_SAYS[not found] + ('' if not found else ': ' + str(found[0].get('claim'))), 'at': r.get('at'), 'ok': not found,
+            'checks': [dict(c) for c in r.get('checks') or []], 'findings': found}
+
+
 def view(ref, d, events, asks):
     """Audit's pane (S.VIEWS['audit']): today's part, by reference, with the readings of readings.jsonl in place of the
     ledger's lines once any exists, each with its artifact, version, whether it was read and the verdict of each item, and
-    `latest`: the newest version read, item by item, with the findings it filed (M8.3)."""
+    `latest`: the newest version read, item by item, with the findings it filed (M8.3); and its spot checks, the last few of
+    spot_checks.jsonl, oldest first (M8.7)."""
     part = dict(FV._j2_part(ref, d, 'Audit', events, asks))
     rows = W.rows(ref, 'readings.jsonl')
     if rows:
         part['readings'] = [_entry(r) for r in rows[-6:]]
     part['latest'] = _latest(rows)
+    part['spot_checks'] = [_spot_entry(r) for r in W.rows(ref, 'spot_checks.jsonl')[-6:]]
     return FV._clean(part)

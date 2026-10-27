@@ -343,7 +343,7 @@ function wb2RootHtml(n, m){
 /* ── Board: one thread, the department talking to itself ──────────────────── */
 function wb2Turn(p){
   const said = p.line ? wbEsc(p.line) : wbEsc(wbCap(p.word || ""));
-  const act = `<span class="dpchk">${wbEsc(WB_ACTS[p.msg_type] || p.msg_type)} · ${wbEsc(wbWhen(p.at))}</span>`;
+  const act = `<span class="dpchk">${wbEsc(wbActWord(p))} · ${wbEsc(wbWhen(p.at))}</span>`;
   if (p.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">You</div><div class="u md">${said}${act}</div></div>`;
   return `<div class="turn wbturn"><div class="who who-ai">${wbEsc(p.src)}</div><div class="a">${said}${act}</div></div>`;
 }

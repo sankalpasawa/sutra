@@ -12,6 +12,8 @@ sporadic, unannounced look at the engines' state.
   B3  Audit's timer start, held by its gate until a minute in the period that a hash of the ref and the period gives: one spot check
       for a cadence at a minute that is not fixed, reading the engines' state only, one audit.spot_check row each, its findings
       to Identity, and a check that wrote outside Audit's rows fails and files nothing
+  B4  view.coordination.questions, the engine card's Coordination row ('asked Plan about the page list (answered)'),
+      view.audit.spot_checks, and S13's words: a question asks, its answer answers (the render walks are in test_website.js)
 """
 import importlib
 import json
@@ -704,3 +706,116 @@ def test_b3_the_contract_passes_for_audit_v1_whole(j2):
     ref = _born(j2)
     for number, what, case in C.cases():
         assert case(AUDIT, {"ref": ref}) == [], "case %d: %s" % (number, what)
+
+
+# ---- B4: the rows on screen ------------------------------------------------------------------------------------------------
+def test_b4_the_coordination_view_carries_the_questions_and_validates_before_and_after_one_is_asked(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    d = W.dept(ref)
+    v = COORD.view(ref, d, [], W.asks(ref))
+    assert v["questions"] == [] and S.validate_view("coordination", v) == [], "[] until a question is asked"
+    assert FV.coordination(ref)["questions"] == [] and list(S.DEFS["view.coordination"]["properties"]) == list(FV.COORDINATION_FIELDS)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once())
+    _write_again(W, R, ref)
+    v = COORD.view(ref, d, [], W.asks(ref))
+    assert [q["id"] for q in v["questions"]] == ["Q-1"] and S.validate_view("coordination", v) == []
+    q = v["questions"][0]
+    assert (q["asked_by"], q["to"], q["status"], q["answer"]) == ("Write", "Plan", "answered", "Home, About and Timetable")
+    assert S.validate("coordination.question", q) == [] and q["schema"] == "board/1"
+
+
+def test_b4_a_question_is_said_in_the_owners_words_on_the_view(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, lambda s, p: {"answer": "Priority will GRANT it"} if s == "coord.answer" else (
+        dict(_page(p), question=dict(ASK, text="Did Priority REFUSE the colours, or COUNTER?")) if s == "write.page" else None))
+    _write_again(W, R, ref)
+    q = COORD.view(ref, W.dept(ref), [], W.asks(ref))["questions"][0]
+    text = json.dumps(q).lower()
+    assert "grant" not in text and "refus" not in text and "counter" not in text, q
+
+
+def test_b4_the_engine_card_says_what_an_engine_asked_and_what_it_answered(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    assert COORD.engine_card(ref, "Write") == FV.engine_card(ref, "Write"), "no question asked: the card is as it was"
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once())
+    _write_again(W, R, ref)
+    card = COORD.engine_card(ref, "Write")
+    co = next(r for r in card["five"] if r["fn"] == "Coordination")
+    assert co["says"].endswith("; asked Plan about the page list (answered)") and len(co["says"]) <= 300
+    assert [r["fn"] for r in card["five"]] == ["Identity", "Adaptation", "Priority", "Coordination", "Audit"] and S.validate_view("engine_card", card) == []
+    plan = next(r for r in COORD.engine_card(ref, "Plan")["five"] if r["fn"] == "Coordination")
+    assert plan["says"].endswith("; answered Write about the page list")
+    check = next(r for r in COORD.engine_card(ref, "Check")["five"] if r["fn"] == "Coordination")
+    assert "asked" not in check["says"] and "answered" not in check["says"], "an engine that put and was put no question"
+    assert FV.engine_card(ref, "Write") != card and S.validate_view("engine_card", FV.engine_card(ref, "Write")) == []
+
+
+@pytest.mark.parametrize("state,word", [("unanswered", "no answer"), ("refused", "said no"), ("open", "waiting"), ("answered", "answered")])
+def test_b4_each_end_of_a_question_has_its_word_and_none_a_count_or_an_inside_word(j2, state, word):
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    COORD._save(ref, [_row(status=state, answer=None, answered_by=None, used_by=[], schema="board/1", question="Which?", cycle=None, attempt=1,
+                           run=None, artifact_update=None, reason="because" if state in ("unanswered", "refused") else None)])
+    co = next(r for r in COORD.engine_card(ref, "Write")["five"] if r["fn"] == "Coordination")
+    assert "asked Plan about the page list (%s)" % word in co["says"]
+    assert not __import__("re").search(r"\d|refus|grant|counter|charter|internal system", co["says"].lower().replace("write", ""))
+
+
+def test_b4_a_spot_check_is_on_audits_view_in_the_owners_words_and_validates(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _done(j2)
+    d = W.dept(ref)
+    v = AUDIT.view(ref, d, [], W.asks(ref))
+    assert v["spot_checks"] == [] and S.validate_view("audit", v) == []
+    _clock(monkeypatch, _next_period() + DAY - 1)
+    name, inp, slot = _timer_due(W, ref)
+    W.run_slot(ref, name, inp, slot)
+    v = AUDIT.view(ref, d, [], W.asks(ref))
+    assert len(v["spot_checks"]) == 1 and S.validate_view("audit", v) == []
+    got = v["spot_checks"][0]
+    assert got["ok"] is True and got["findings"] == [] and got["summary"].startswith("looked in on the engines: every version has its run")
+    assert "minute" not in got and [c["ok"] for c in got["checks"]] == [True, True, True], "unannounced: not the minute it fell on"
+    row = dict(W.rows(ref, "spot_checks.jsonl")[0], id="sc-2", findings=[{"id": "F1", "severity": "medium", "claim": "Pages has a version with no run or no check",
+                                                                       "where": "Pages", "item": None, "went_to": "Identity", "ask": None, "at": W.now()}])
+    W.append_row(ref, "spot_checks.jsonl", row)
+    v = AUDIT.view(ref, d, [], W.asks(ref))
+    assert [s["ok"] for s in v["spot_checks"]] == [True, False] and S.validate_view("audit", v) == []
+    assert v["spot_checks"][1]["summary"] == "looked in on the engines and found something to put right: Pages has a version with no run or no check"
+    for i in range(8):
+        W.append_row(ref, "spot_checks.jsonl", dict(row, id="sc-x%d" % i))
+    assert len(AUDIT.view(ref, d, [], W.asks(ref))["spot_checks"]) == 6, "the last six"
+
+
+def test_b4_the_functions_page_of_coordination_and_audit_carry_them_through_the_route(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _done(j2)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once())
+    _write_again(W, R, ref)
+    page = FV.function(ref, "coordination")
+    assert [q["id"] for q in page["j2"]["questions"]] == ["Q-1"] and not page["j2"].get("j2_faults")
+    assert FV.function(ref, "audit")["j2"]["spot_checks"] == [] and not FV.function(ref, "audit")["j2"].get("j2_faults")
+
+
+def test_b4_the_page_reads_what_the_board_files(j2, monkeypatch):
+    """The J2 page's Board tab (j2ui_board) is built on questions.json: an entry as Coordination files it is an entry of the page."""
+    import types
+    import j2ui_board as B
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once())
+    _write_again(W, R, ref)
+    ctx = types.SimpleNamespace(ref=ref, memo={}, reasons=[], who=lambda name: None)
+    board = B.build(ctx)
+    assert board["schema"] == "board/1" and ctx.reasons == [] and len(board["entries"]) == 1
+    e = board["entries"][0]
+    assert (e["id"], e["asked_by"], e["to"], e["status"], e["answer"], e["answered_by"]) == ("Q-1", "Write", "Plan", "answered", "Home, About and Timetable", "Plan")
+    assert e["answered_from"] == {"workflow": "Plan", "version": W.latest(ref, "Site plan")["v"]}
+    assert e["about"] == "the page list" and e["asked_by_role"] == "builder"

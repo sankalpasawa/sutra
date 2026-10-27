@@ -854,14 +854,16 @@ QUESTIONS_SHOWN = 12
 
 def _questions(ref):
     """The questions engines have put to each other (W3-BOARD, M4.9), the last QUESTIONS_SHOWN, oldest first, each as questions.json
-    holds it with the words a model wrote said in the owner's words. [] when none was asked: the file exists only once a question
-    was put with SUTRA_BOARD_QUESTIONS on."""
+    holds it with the words a model wrote said in the owner's words (said_plainly). [] when none was asked: the file exists only once
+    a question was put with SUTRA_BOARD_QUESTIONS on."""
     raw = W._read(W.ddir(ref) / "questions.json", None)
     rows = raw.get("entries") if isinstance(raw, dict) else raw
-    out = []
-    for e in [x for x in rows or [] if isinstance(x, dict)][-QUESTIONS_SHOWN:]:
-        out.append({k: (_plain(v) if k in ("about", "question", "answer", "reason") and isinstance(v, str) else v) for k, v in e.items()})
-    return out
+    mine = [x for x in rows or [] if isinstance(x, dict)][-QUESTIONS_SHOWN:]
+    if not mine:
+        return []
+    keep = set(R.defs()["engines"]) | set((W.dept(ref) or {}).get("engines") or [])       # an engine called Grant is not said yes to
+    return [{k: (owner_words.said_plainly(v, keep=keep) if k in ("about", "question", "answer", "reason") and isinstance(v, str) else v)
+             for k, v in e.items()} for e in mine]
 
 
 def no_plan(ref, d=None, t=None, cur=None):
