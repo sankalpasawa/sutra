@@ -3972,11 +3972,14 @@ def audit_file(ctx, step, item):
     sampled = bool(ctx["bag"]["audit.pick"].get("sample"))
     rows = audit_rows(dept_items, mech, said, sampled) if read else []
     verdicts = audit_verdicts(rows)
-    # an item that does not hold, or cannot be said to, and that no finding names, is a finding of its own: it reaches
-    # Identity by the way every finding does, so no reading leaves the owner without a next move (interim until
-    # Identity weighs readings, M8.5)
+    # an item that does not hold, or cannot be said to, and that no finding as serious as its verdict names, is a finding of its
+    # own: it reaches Identity by the way every finding does, so no reading leaves the owner without a next move (interim until
+    # Identity weighs readings, M8.5). A lesser finding the reader filed on the item stays as it said it, and the item's own is
+    # added beside it: a reader's low note on D1 does not make 'D1 is not met' a low matter (found 2026-10-26)
     for it in dept_items:
-        if not read or verdicts.get(it["id"]) not in ("not_met", "to_confirm") or any(f.get("item") == it["id"] for f in found):
+        if not read or verdicts.get(it["id"]) not in ("not_met", "to_confirm"):
+            continue
+        if any(f.get("item") == it["id"] and FINDING_RANK[_finding_severity(f)] >= FINDING_RANK[ITEM_SEVERITY[verdicts[it["id"]]]] for f in found):
             continue
         if any(r["id"] == it["id"] and r["method"] == "code" and r["verdict"] == "not_met" for r in rows):
             continue                                  # what the measure found is already a finding of its own

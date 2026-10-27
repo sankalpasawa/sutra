@@ -733,6 +733,37 @@ def test_u5_a_finding_with_no_severity_the_interface_knows_is_medium_in_the_post
     assert [f["severity"] for f in _told_identity(R, ref)["findings"]] == ["medium"] and not _pending(W, ref)
 
 
+@pytest.mark.parametrize("verdict, severity, ask", [("not_met", "low", True), ("not_met", "medium", True), ("to_confirm", "low", False)])
+def test_u5_a_reader_that_files_its_own_lesser_finding_on_the_item_does_not_hide_that_the_item_fails(j2, monkeypatch, verdict, severity, ask):
+    """Found 2026-10-26: the reader said D1 is not met and filed a low finding on D1; the item's own finding was suppressed
+    because a finding named it, the post said low, and the owner had nothing to answer. A finding on the item stands in for the
+    item's own only when it is at least as serious as the item's verdict."""
+    W, R, J, _, _ = j2
+    own = {"where": "result.md", "claim": "the tone is stiff", "severity": severity, "item": "D1"}
+    _model(monkeypatch, R, {"audit.items": _says(verdict, findings=[own]), "audit.judge": JUDGE_OK})
+    ref = _default(j2)
+    (row,) = _readings(W, ref)
+    assert R.audit_verdicts(row["items"]) == {"D1": verdict}
+    kept = [(f["severity"], f["item"], f["claim"]) for f in row["findings"]]
+    want = R.ITEM_SEVERITY[verdict]
+    assert (want, "D1") in [(s, i) for s, i, _ in kept], "the item has a finding as serious as its verdict"
+    assert "the tone is stiff" in [c for _, _, c in kept], "and the reader's own finding is kept, as the reader said it"
+    assert next(f for f in row["findings"] if f["claim"] == "the tone is stiff")["severity"] == severity
+    assert bool(_pending(W, ref)) is ask and (_told_identity(R, ref)["severity"] == "high") is ask
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == ("pursuing" if ask else "waiting")
+
+
+@pytest.mark.parametrize("verdict, severity", [("not_met", "high"), ("to_confirm", "medium"), ("to_confirm", "high")])
+def test_u5_a_reader_finding_as_serious_as_the_item_is_the_items_own_and_none_is_added(j2, monkeypatch, verdict, severity):
+    W, R, J, _, _ = j2
+    own = {"where": "result.md", "claim": "the rota is not on the page", "severity": severity, "item": "D1"}
+    _model(monkeypatch, R, {"audit.items": _says(verdict, findings=[own]), "audit.judge": JUDGE_OK})
+    ref = _default(j2)
+    (row,) = _readings(W, ref)
+    assert [(f["severity"], f["item"], f["claim"]) for f in row["findings"]] == [(severity, "D1", "the rota is not on the page")]
+    assert "goal.reached" not in _actions(J, ref)
+
+
 def _goal_says(R, ref):
     """What Identity told the owner when the goal was reached: the one post of the word goal."""
     (post,) = [p for p in R.board(ref) if p["src"] == "Identity" and R.OWNER in p["dst"] and (p["payload"] or {}).get("word") == "goal"]
