@@ -97,7 +97,8 @@ def _read(path, what):
 def recipe_of_module(module, folder=None):
     """The engine object a version brings, resolved: Root's Library template (RECIPE_TEMPLATE), else its whole file (RECIPE), else
     its patch (RECIPE_PATCH) laid over its PARENT's recipe and held to the substitutability law, else its PARENT's recipe. The file
-    is read from the module's folder, or from `folder`. ModelFault in a sentence that names what is wrong; a fresh object each time."""
+    is read from the module's folder, or from `folder`. ModelFault in a sentence that names what is wrong, a PARENT lineage that
+    repeats or runs deeper than DEPTH included (chain is asked before each step up); a fresh object each time."""
     template = getattr(module, 'RECIPE_TEMPLATE', None)
     if template:
         found = R.engine_templates().get(template)
@@ -118,6 +119,7 @@ def recipe_of_module(module, folder=None):
         doc = _read(base / str(patch), 'the recipe patch')
         if 'parent' in doc and doc['parent'] != parent_id:
             raise L.ModelFault('the patch is for %s, not for %s' % (doc['parent'], parent_id))
+        chain(parent_id)        # a PARENT that goes round, or too deep, is a ModelFault here, not a recursion without end
         parent_recipe = recipe(parent_id)
         merged = L.merge_recipe(parent_recipe, doc, getattr(module, 'LAYER', None))
         faults = L.recipe_faults(parent_recipe, merged, getattr(module, 'LAYER', None))
@@ -125,6 +127,7 @@ def recipe_of_module(module, folder=None):
             raise L.ModelFault('; '.join(faults[:3]))
         return merged
     if parent_id:
+        chain(parent_id)
         return recipe(parent_id)
     raise L.ModelFault('%s/v%s names no recipe' % (getattr(module, 'LAYER', '?'), getattr(module, 'VERSION', '?')))
 
