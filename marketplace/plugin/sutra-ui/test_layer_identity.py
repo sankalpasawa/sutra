@@ -1918,8 +1918,11 @@ def test_j5_a_no_to_a_finding_that_is_not_a_rounds_leaves_the_ways_out_never_a_s
     _owner_says_no(W, ref, ask)
     card = _the_card(W, ref)
     assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == "refused"
-    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"] and J.status(ref)["state"] == "blocked"
+    # D1 and D2 are both met and the finding names no item: there is no item to leave out of done-when, so the card offers the two ways
+    # that lead somewhere (dropping a met item would not lift a high finding, and the same finding would come back: a loop)
+    assert [o["id"] for o in card["options"]] == ["words", "stop"] and J.status(ref)["state"] == "blocked"
     assert card["text"].startswith("You said no to the correction: ") and "fees are invented" in card["text"] and S.validate_record("identity", "ask", card) == []
+    assert card["text"].endswith("Say what to change, or stop here.") and "leave" not in card["text"] and not _leave_it_names(card)
     assert len(W.versions(ref, "Brief")) == briefs and len(W.rows(ref, "rounds.jsonl")) == rounds, "nothing is filed, and no round is refused: it is no round's"
     assert not _reached(W, J, ref) and row["id"]
     # the same flow with an item not met, while nobody takes a next round: the item the finding names is the one that can be left out
@@ -1941,6 +1944,28 @@ def test_j5_a_no_to_a_finding_that_is_not_a_rounds_leaves_the_ways_out_never_a_s
     _owner_says_no(W, ref, ask)
     card = _the_card(W, ref)
     assert [o["id"] for o in card["options"]] == ["words", "leave:D4", "stop"] and "D2, D4 not met" in card["why"]
+
+
+def test_j5_a_met_item_is_no_way_out_of_a_high_finding_it_has_nothing_to_do_with(j2):
+    """A high finding on a reading that met D1 and D2 names no item. Leaving D2 out would not lift it (done_claim keeps a high finding
+    open whatever the items say) and the same finding would come back as a new ask on the next reading: a way out that loops. So the
+    card offers no such button, a choice of it is refused, and the owner's goal keeps both items."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Met Item Co")
+    _high_finding_on_a_met_reading(R, W, j2, ref)
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    card = _the_card(W, ref)
+    assert [o["id"] for o in card["options"]] == ["words", "stop"] and [o["label"] for o in card["options"]] == ["Change the plan in my words", "Stop here"]
+    assert "D2" not in card["text"] and "D2" not in card["why"] and card["why"] == "a finding is still open"
+    with pytest.raises(W.AskError) as refused:
+        W.choose_option(ref, card["id"], "leave:D2")
+    assert refused.value.code == "UNKNOWN_OPTION"
+    assert [i["id"] for i in W.items_of(W.dept(ref))] == ["D1", "D2"], "no met item was dropped from the owner's goal"
+    assert _the_card(W, ref)["id"] == card["id"] and J.status(ref)["state"] == "blocked", "the card waits as it was"
+    # the two ways that are there are applied as ever: stop stops the department where it is
+    W.choose_option(ref, card["id"], "stop")
+    W.run_until_idle(ref, limit=100)
+    assert W.dept(ref)["stopped"] is True
 
 
 def test_j5_the_real_flow_a_reader_that_says_every_item_is_met_but_one_high_finding_and_a_no_ends_with_the_ways_out(j2, monkeypatch):
@@ -2013,6 +2038,10 @@ def test_j3_j5_a_card_names_the_way_that_leaves_an_item_out_only_when_it_offers_
         if items == 1:
             assert ids == ["words", "stop"] and not _leave_it_names(card) and "leave" not in card["text"], (what, card["text"], ids)
             assert card["text"].endswith(", or stop here."), (what, card["text"])
+        elif what == "a finding the owner turned down":
+            # a high finding on a reading that met every item names no item: nothing is left out for it, with two items as with one
+            assert ids == ["words", "stop"] and not _leave_it_names(card) and "leave" not in card["text"], (what, card["text"], ids)
+            assert card["text"].endswith("Say what to change, or stop here."), (what, card["text"])
         else:
             assert ids == ["words", "leave:D2", "stop"] and _leave_it_names(card) == {"leave:D2"}, (what, card["text"], ids)
             assert "leave D2 out of done-when, or stop here." in card["text"], (what, card["text"])

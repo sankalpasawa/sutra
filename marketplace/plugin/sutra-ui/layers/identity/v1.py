@@ -780,12 +780,21 @@ def last_reading(ref, cycle=None):
     return next((r for r in reversed(W.rows(ref, 'readings.jsonl')) if r.get('read') and cycle in (None, r.get('cycle_id'))), None)
 
 
-def ways_out(d, why, lead='Say what to change'):
+def ways_out(d, why, lead='Say what to change', leave=True):
     """The closing words of a card whose ways out R._blocked builds: they name the way that leaves an item out of done-when only
-    when the card offers it (never with one item, since done-when is never left empty), so what the card says and what its
-    buttons do are the same (M9.5)."""
-    item = R._left_out(d, why)
+    when the card offers it (never with one item, since done-when is never left empty, and never when `leave` is False: the card
+    was given the ways without it, see ways_without_leave), so what the card says and what its buttons do are the same (M9.5)."""
+    item = R._left_out(d, why) if leave else None
     return '%s, leave %s out of done-when, or stop here.' % (lead, item['id']) if item else '%s, or stop here.' % lead
+
+
+def ways_without_leave():
+    """The ways out of a card that has no item to leave out (M9.5): change the plan in the owner's words, or stop, the two
+    R._blocked builds with a leave way between them. For a finding the owner turned down that names no item, on a reading that met
+    every item: done_claim keeps a high finding open whatever the items say, so dropping a met item from done-when would lift
+    nothing, and the same finding would come back as a new ask on the next reading."""
+    return [W.option(W.WORDS_OPTION, 'Change the plan in my words', "Adaptation shapes it afresh from what you say; nothing runs before Root's review"),
+            W.option(W.STOP_OPTION, 'Stop here', 'the department stops where it is; you can start it again later')]
 
 
 def open_items(ref, ask, base=None):
@@ -826,8 +835,11 @@ def identity_drop(ctx, step, item):
         return out
     left = open_items(ref, ask, base)
     why = '%s not met' % ', '.join(left) if left else 'a finding is still open'
-    R._blocked(ref, d, _who(d), 'You said no to the correction%s: %s. %s' % (' for round %d' % n if n else '', what, ways_out(d, why)),
-               'The correction was turned down.', 'You, on the correction Identity put to you', why)
+    # an item can be left out only for a finding that names one, or a reading's item that is not met: with none (a finding on a
+    # reading that met every item) the card offers the words and stop, and says so (the fallback R._left_out has, the last item,
+    # would offer to drop a met item that has nothing to do with the finding, and the finding would come back)
+    R._blocked(ref, d, _who(d), 'You said no to the correction%s: %s. %s' % (' for round %d' % n if n else '', what, ways_out(d, why, leave=bool(left))),
+               'The correction was turned down.', 'You, on the correction Identity put to you', why, options=None if left else ways_without_leave())
     return out
 
 
