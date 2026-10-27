@@ -67,13 +67,15 @@ def _is_clean(e):
 
 
 def _finding_rows(p):
-    """A reading's findings as the page's extra issues: F-1 on, each with the page it is on and how serious Audit called it."""
+    """A reading's findings as the page's extra issues: F-1 on, each with the page it is on and how serious Audit called it. The page
+    is the name the owner knows it by (a finding that carries one, `name`, as the mechanical step's do), else the page as the finding
+    names it: a page's file name is the writer's, not the owner's."""
     pl = p.get("payload") or {}
     found = [f for f in pl.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
     if not found and pl.get("claim"):
         found = [{"claim": pl.get("claim"), "severity": pl.get("severity")}]
     return [{"id": "F-%d" % n, "criterion": A.plain(f["claim"]), "verdict": "NEEDS_REVISION", "pass": False,
-             "note": A.plain(f.get("page")), "severity": str(f.get("severity") or "low")} for n, f in enumerate(found, 1)]
+             "note": A.plain(f.get("name") or f.get("page")), "severity": str(f.get("severity") or "low")} for n, f in enumerate(found, 1)]
 
 
 def _entry(n, version, all_pass, extra, read):

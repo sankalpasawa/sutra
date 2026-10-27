@@ -169,6 +169,29 @@ def test_w5_a_reading_with_findings_has_a_row_for_each_finding_and_none_for_any_
     assert text.count("NEEDS_REVISION") == 3
 
 
+def test_w5_a_finding_that_carries_the_owners_name_for_its_page_is_shown_by_it(mods):
+    """The mechanical step's findings keep the page's file for the writer (page, where) and carry the title the owner knows it by (name):
+    the tab's note is the title. A finding with no name (a reader's or a judge's) is shown as it names its page."""
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    post(W, R, "Audit", "Identity", "inform",
+         {"word": "finding", "claim": "the page says 'to be confirmed'", "severity": "high", "about_version": 2,
+          "findings": [{"page": "index.html", "name": "Home", "where": "index.html: the text 'to be confirmed'", "kind": "hole",
+                        "claim": "the page says 'to be confirmed'", "severity": "high"},
+                       {"page": "our-fees.html", "name": "What we charge", "where": "our-fees.html: the link 'Fees' (to fee.html)", "kind": "defect",
+                        "claim": "the link 'Fees' goes to a page the site does not have", "severity": "medium"},
+                       {"page": "the lessons page", "claim": "a reader may be misled", "severity": "high"},
+                       {"claim": "a note of the record", "severity": "high"}]},
+         thread="x-find2", about={"art": "Live site", "v": 2})
+    got, ctx = audit_of(mods)
+    rows = got["audits"][0]["extra_issues"]
+    assert [(r["id"], r["note"], r["severity"]) for r in rows] == [("F-1", "Home", "high"), ("F-2", "What we charge", "medium"),
+                                                                    ("F-3", "the lessons page", "high"), ("F-4", "", "high")]
+    assert rows[1]["criterion"] == "the link 'Fees' goes to a page the site does not have"
+    text = shown(render(page_state(got), "renderAudit(s)"))
+    assert "What we charge" in text and "our-fees" not in text and "fee.html" not in text
+
+
 def test_w5_the_ledgers_event_beside_a_finding_post_does_not_make_a_second_entry(mods):
     W, R, J, F = mods
     cycle(W, "running", 6)
