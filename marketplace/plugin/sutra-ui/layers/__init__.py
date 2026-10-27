@@ -66,19 +66,22 @@ def ref_to(name, module='engine_runtime'):
     return delegate
 
 
-def recipes():
-    """The five function engines, keyed by engine title, each read from the recipe of the version DEFAULT_PINS names
-    (layers/<layer>/v1.json), in RECIPE_ORDER; a default pin that is a child with a patch and no whole file of its own is
-    resolved by recipe() (A2). A recipe that is not there, or is not JSON, or does not merge, refuses the definitions load
-    with a named fault, as a template that is not one does."""
+def recipes(pins=None):
+    """The five function engines, keyed by engine title, each read from the recipe of the version `pins` names for its layer
+    ({layer: impl id}; DEFAULT_PINS for a layer it leaves out, or for all of them with no `pins`), in RECIPE_ORDER. A default pin
+    reads layers/<layer>/v1.json as it always has, or, when it is a child with a patch and no whole file of its own, is resolved
+    by recipe() (A2); any other pin is resolved by recipe() too, never by reading a file here (W3-PINS). A recipe that is not
+    there, or is not JSON, or does not merge, refuses the definitions load with a named fault, as a template that is not one
+    does."""
     import layer_schema
     out = {}
     for layer in RECIPE_ORDER:
-        impl = layer_schema.DEFAULT_PINS[layer]
+        default = layer_schema.DEFAULT_PINS[layer]
+        impl = (pins or {}).get(layer) or default
         title = layer_schema.TITLE[layer]
         v = impl.split('/', 1)[1]
         p = HERE / layer / (v + '.json')
-        if not p.exists() and (HERE / layer / (v + '.py')).is_file():
+        if impl != default or (not p.exists() and (HERE / layer / (v + '.py')).is_file()):
             from layers import lineage, versions
             try:
                 out[title] = versions.recipe(impl)
@@ -149,26 +152,39 @@ def load(impl_id):
     return module
 
 
+def _tell(ref, layer, named, what):
+    """One row in the department's record that a pin it names does not run, once for each (department, layer, pin): the
+    tick tells it, a read of the department does not (reading()), and a department with no record to write to says nothing."""
+    if _READING.get() or (ref, layer, named) in _TOLD:
+        return
+    _TOLD.add((ref, layer, named))
+    try:
+        if ref and (W.ddir(ref) / 'dept.json').exists():
+            W.system_run(ref, S.TITLE[layer], what)
+    except Exception:  # noqa: BLE001 -- the row is a note of the pin, never a second fault
+        pass
+
+
 def pins(ref=None, d=None):
-    """The implementation each layer runs for a department, {layer: impl id}: DEFAULT_PINS while S.PER_DEPARTMENT is
-    False. A record whose `layers` names another implementation runs the default all the same, and the record says so,
-    once (per-department versions come in wave 3)."""
+    """The implementation each layer runs for a department, {layer: impl id}: DEFAULT_PINS, and while S.PER_DEPARTMENT the
+    department's own record laid over them (W3-PINS): each version its `layers` names that the registry can load. A pin it
+    cannot honour runs that layer's default, and the record says so, once."""
     out = dict(S.DEFAULT_PINS)
-    if S.PER_DEPARTMENT:
-        return out
     if d is None and ref:
         try:
             d = W.dept(ref)
         except Exception:  # noqa: BLE001 -- no records home to read it from: every layer runs its default
             d = None
-    for layer, named in ((d or {}).get('layers') or {}).items():
-        if layer in out and named != out[layer] and not _READING.get() and (ref, layer, named) not in _TOLD:
-            _TOLD.add((ref, layer, named))
-            try:
-                if ref and (W.ddir(ref) / 'dept.json').exists():
-                    W.system_run(ref, S.TITLE[layer], 'runs the default: per-department versions come in wave 3')
-            except Exception:  # noqa: BLE001 -- the row is a note of the pin, never a second fault
-                pass
+    named = (d or {}).get('layers') if isinstance((d or {}).get('layers'), dict) else {}
+    for layer, want in named.items():
+        if layer not in out or want is None or want == out[layer]:
+            continue
+        if not S.PER_DEPARTMENT:
+            _tell(ref, layer, want, 'runs the default: per-department versions are not on')
+        elif isinstance(want, str) and want.startswith(layer + '/') and load(want) is not None:
+            out[layer] = want
+        else:
+            _tell(ref, layer, want, 'runs the default: its per-department version cannot run here')
     return out
 
 
