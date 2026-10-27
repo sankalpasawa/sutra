@@ -16,6 +16,11 @@ is sent. While a pinned implementation holds no WORDS for a part, prompt() and w
 below applies, so the two ways give one text. faults() is the covering check of both. The bundle is read-only history
 from here on: W3-PROOF deletes it.
 
+THE BUNDLE IS THE REFERENCE for what the .md files hold (A1.16, 'Parts added by later steps'). A part a later step adds to
+the interface has its words in its layer and no .md part: the extractor and the bundle check ask of the .md only the parts
+the layer's default implementation does not hold as words (from_the_bundle()), and leave the rest to the words, which the
+contract's case 5 holds to the interface. A part that neither holds is a fault.
+
 THE OWNER'S VALUES (A1.16, W1-CORE K2): a field the owner changed is a typed value in {ref}/instructions.json, written on a
 stamp. words() and prompt() overlay those values on the implementation's defaults, so a stamped value is the next run's
 words and a value equal to the default is not kept (a later default reaches the department). A whole-file copy made under
@@ -47,6 +52,20 @@ RETURNS = "Return ONLY a JSON object: "
 def who(layer, group, part):
     """A part as the errors name it: Identity's take instructions, gate."""
     return "%s's %s instructions, %s" % (S.TITLE.get(layer) or str(layer).title(), group, part)
+
+
+def held(layer, group, part):
+    """Whether the layer's default implementation holds the part as WORDS and LAYOUT: the part its words serve, with no .md."""
+    import layers
+    module = layers.load(S.DEFAULT_PINS.get(layer))
+    return part in ((getattr(module, "WORDS", None) or {}).get(group) or {}) and \
+        part in ((getattr(module, "LAYOUT", None) or {}).get(group) or {})
+
+
+def from_the_bundle(layer, group, part):
+    """Whether the .md bundle must hold the part: it is the bundle's to serve when the layer's default implementation does
+    not hold it, unless a later step added it (S.ADDED_PARTS), which no .md ever held."""
+    return (layer, group, part) not in S.ADDED_PARTS and not held(layer, group, part)
 
 
 # ---- the compiler ----------------------------------------------------------------------------------------------------
@@ -374,11 +393,13 @@ def instruction(fn, file, ref=None):
 
 def file_parts(fn, file, ref=None):
     """The parts of one instruction file as the app names them: its headed parts, or, for a file that has none and whose
-    group the interface gives only a note (Adaptation's decide), the words after its lead as the part `note`."""
+    group the interface gives a note (Adaptation's decide, with any part a later step adds beside it), the words after its
+    lead as the part `note`."""
     text = instruction(fn, file, ref)
     lead, parts = parts_of(text)
-    if not parts and list(((S.PROMPTS.get(fn) or {}).get(file) or {})) == ["note"]:
-        parts = {"note": lead.split("\n\n", 1)[1].strip("\n") if "\n\n" in lead else ""}
+    note = next((p for p, spec in ((S.PROMPTS.get(fn) or {}).get(file) or {}).items() if "field.note" in spec["fields"].values()), None)
+    if not parts and note:
+        parts = {note: lead.split("\n\n", 1)[1].strip("\n") if "\n\n" in lead else ""}
     return parts
 
 
@@ -394,38 +415,37 @@ def md_part(fn, file, part, ref=None):
 
 
 def instruction_faults(fn, file, text):
-    """What keeps one instruction file from serving its function: no line that says what it is for, a part a step
-    reads gone, a part no step reads, or a slot the code does not fill. [] when it serves. The covering check of every
-    file an agent's words come from: the bundle's at the definitions load."""
-    want = (R.INSTRUCTIONS.get(fn) or {}).get(file)
-    if want is None:
+    """What keeps one instruction file from serving its function: no line that says what it is for, a part the bundle must
+    hold gone, a part no step reads, or a slot the code does not fill in a part it serves. [] when it serves. The covering
+    check of every file an agent's words come from: the bundle's at the definitions load. Only the parts the bundle must hold
+    are asked of the text (from_the_bundle): a part the layer's words hold, or a later step added, is not."""
+    named = (R.INSTRUCTIONS.get(fn) or {}).get(file)
+    if named is None:
         return ["%s has no instructions named %s" % (str(fn).title(), file)]
-    want = {part: slots for part, slots in want.items() if (fn, file, part) not in S.ADDED_PARTS}      # an added part has no .md part
     try:
         lead, parts = parts_of(text)
     except ValueError as exc:
         return [str(exc)]
     faults = [] if lead else ["%s does not say first, in a line, what it is for" % file]
-    for part, slots in want.items():
+    for part, slots in named.items():
         if part not in parts:
-            faults.append("%s has no part %s" % (file, part))
+            if from_the_bundle(fn, file, part):
+                faults.append("%s has no part %s" % (file, part))
             continue
-        unknown = sorted(set(SLOT.findall(parts[part])) - set(slots))
+        unknown = sorted(set(SLOT.findall(parts[part])) - set(slots)) if from_the_bundle(fn, file, part) else []
         if unknown:
             faults.append("%s, %s: the app fills no %s" % (file, part, ", ".join("{{%s}}" % s for s in unknown)))
-    return faults + ["%s, %s: no step reads this part" % (file, p) for p in parts if p not in want]
+    return faults + ["%s, %s: no step reads this part" % (file, p) for p in parts if p not in named]
 
 
 def bundle_faults():
-    """The bundle's files against the list: each one there, each serving. A file every part of which the default
-    implementation holds as words needs none. [] when every function has its files."""
-    import layers
+    """The bundle's files against the list: each one there, each serving. A file none of whose parts the bundle must hold
+    (the default implementation holds each as words, or a later step added it) needs none, and a file with some such parts
+    is asked for the others only. [] when every function has its files."""
     out = []
     for fn, files in R.INSTRUCTIONS.items():
-        module = layers.load(S.DEFAULT_PINS.get(fn))
         for file, parts in files.items():
-            if parts and all(p in ((getattr(module, "WORDS", None) or {}).get(file) or {}) and
-                             p in ((getattr(module, "LAYOUT", None) or {}).get(file) or {}) for p in parts):
+            if parts and not any(from_the_bundle(fn, file, p) for p in parts):
                 continue
             p = R.PROMPTS_DIR / fn / (file + ".md")
             if not p.is_file():
@@ -495,9 +515,11 @@ def inputs_of(text):
 
 
 def extract(layer):
-    """What the split rule makes of one function layer's .md files: (WORDS, LAYOUT, faults). Each part's fields,
-    returns and inputs are checked against the interface (S.PROMPTS), each group's lead against S.GROUPS, and the part
-    compiled back from its words is checked to be the .md part, byte for byte. The faults are [] when the split holds."""
+    """What the split rule makes of one function layer's .md files: (WORDS, LAYOUT, faults). Each part the .md holds has its
+    fields, returns and inputs checked against the interface (S.PROMPTS), each group's lead against S.GROUPS, and the part
+    compiled back from its words is checked to be the .md part, byte for byte. A part the interface names that no .md holds
+    (one a later step added) is printed from nothing and is no fault while the layer holds its words (from_the_bundle). The
+    faults are [] when the split holds."""
     out_words, out_layout, bad = {}, {}, []
     for group, parts in (S.PROMPTS.get(layer) or {}).items():
         path = R.PROMPTS_DIR / layer / (group + ".md")
@@ -509,9 +531,12 @@ def extract(layer):
         if lead.split("\n\n")[0] != S.GROUPS[layer][group]:
             bad.append("%s: the lead of %s is not the interface's" % (S.TITLE[layer], group))
         found = file_parts(layer, group)
-        bundled = [part for part in parts if (layer, group, part) not in S.ADDED_PARTS]      # an added part has no .md file
-        if list(found) != bundled:
-            bad.append("%s: %s holds the parts %s, and the interface %s" % (S.TITLE[layer], group, list(found), bundled))
+        # the bundle is the reference: it holds the parts it holds, the interface's, in the interface's order. A part the
+        # interface names that it lacks (one a later step added) is the layer's words to serve, and a fault when they do not
+        if list(found) != [part for part in parts if part in found]:
+            bad.append("%s: %s holds the parts %s, and the interface %s" % (S.TITLE[layer], group, list(found), list(parts)))
+        bad += ["%s: the bundle has no such part and the layer holds no words for it" % who(layer, group, part)
+                for part in parts if part not in found and from_the_bundle(layer, group, part)]
         for part, spec in parts.items():
             if part not in found:
                 continue
