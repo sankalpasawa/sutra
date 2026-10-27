@@ -610,6 +610,36 @@ def test_the_text_report_says_how_each_metric_was_read_and_lists_the_waiting_jou
     assert "SM-5  pending" in text and "SM-14 met" in text
 
 
+def test_the_text_report_names_every_dead_end_not_a_count_of_them_and_says_what_is_carried_to_w3_proof(tmp_path, capsys):
+    """Nine departments stand unread with no ask (the proof run's own finding). 'And 1 more' hid one of them, and the gate
+    shows only the last line, so the text report lists every gap of a metric that counts departments; the runs of SM-3 can
+    run to hundreds and keep their cap, and --out names them all."""
+    for i in range(9):
+        make(tmp_path, "dref-%d" % i, group="t%d" % i, state={"state": "unread"}, asks=[])
+    make(tmp_path, "dref-live", group="live", state={"state": "running"}, runs=[_run("Gone", "r-%d" % i) for i in range(12)])
+    out = tmp_path / "report.json"
+    assert M.main(["--records", str(tmp_path), "--out", str(out)]) == 0
+    text = capsys.readouterr().out
+    sm6 = [ln for ln in text.splitlines() if ln.startswith("        gap: ") and "stands unread" in ln]
+    assert len(sm6) == 9 and len({ln.split(" / ")[0] for ln in sm6}) == 9, "each of the nine is a line of its own"
+    assert "more" not in text.split("SM-7")[0].split("SM-6")[1], "no 'and N more' under SM-6"
+    assert text.count("ran Gone (run") == 8 and "and 4 more (the report file, --out, names every one)" in text, "a long list keeps its cap"
+    assert "carried to W3-PROOF: 9 of these stand unread" in text and "no ask is filed" in text
+    assert text.splitlines()[-1].startswith("proof run: SM-1 0, SM-3 12, SM-4 0, SM-6 9, SM-13 0;")
+    rep = json.loads(out.read_text())
+    by = {m["id"]: m for m in rep["metrics"]}
+    assert len(by["SM-6"]["gaps"]) == 9 and by["SM-6"]["unread"] == 9 and len(by["SM-3"]["gaps"]) == 12, "the file names them all"
+    make(tmp_path / "other", "dref-w", state={"state": "waiting"}, asks=[])
+    assert M.sm6(_depts(tmp_path / "other"))["carried"] == [], "a dead end that is not an unread cycle carries nothing"
+
+
+def test_the_gate_writes_the_whole_report_to_a_file_and_points_at_it_when_a_gap_is_named():
+    gate = (HERE / "qa" / "walks" / "suites.sh").read_text()
+    line = next(ln for ln in gate.splitlines() if "qa/j2_metrics.py --check" in ln)
+    assert "--out /tmp/sutra-suite-metrics.json" in line and "/tmp/sutra-suite-metrics.txt" in line
+    assert 'grep -q "gaps named"' in gate and "whole report is /tmp/sutra-suite-metrics.json" in gate
+
+
 def test_the_suite_runs_on_a_kept_home_or_a_temporary_one_that_is_removed_after(tmp_path, monkeypatch, capsys):
     made, real = [], M.tempfile.mkdtemp
     monkeypatch.setattr(M.tempfile, "mkdtemp", lambda **kw: made.append(real(dir=str(tmp_path), **kw)) or made[-1])

@@ -54,11 +54,15 @@ tail -1 /tmp/sutra-suite-a1.txt | sed "s/^/characterization, templates and PRD d
 # the proof run (PRD M10.4, M10.5): the metrics' own tests, then SM-1 to SM-14 read from the record the scenario suite leaves
 # (test_j1, test_j2, test_j2_api and one department of each kind to done, models stubbed, the interface in refuse mode); about a
 # minute. The gate fails on a gap in SM-1, SM-3, SM-4 or SM-13, a lane that failed or ran no test; SM-6, SM-7 and the rest are
-# named in the report and become the gate's with --strict (W3-PROOF)
+# named in the report and become the gate's with --strict (W3-PROOF). The gate shows the report's last line; the text report beside
+# it names every gap of a metric that counts departments, and --out writes the whole report (JSON) to a file that is kept
 lane $PY -m pytest -q -p no:cacheprovider test_j2_metrics.py > /tmp/sutra-suite-metrics-tests.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-metrics-tests.txt | sed "s/^/proof run, its tests: /"
-lane $PY qa/j2_metrics.py --check > /tmp/sutra-suite-metrics.txt 2>&1 || RC=1
+lane $PY qa/j2_metrics.py --check --out /tmp/sutra-suite-metrics.json > /tmp/sutra-suite-metrics.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-metrics.txt
+if tail -1 /tmp/sutra-suite-metrics.txt | grep -q "gaps named"; then
+  echo "proof run: each gap is named in /tmp/sutra-suite-metrics.txt, and the whole report is /tmp/sutra-suite-metrics.json"
+fi
 # the J2 page inside the app (the UI port: the prototype's own page, fed by an adapter built on the department's records), a lane each:
 # the adapter's core (scope, the one read, the chat, the state, the owner's words, the routes), what the work and the audits say,
 # what the Map, the board, the artifacts and a built site say, the copy of the page and the route that serves it, and last the page
