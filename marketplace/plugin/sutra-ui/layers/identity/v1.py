@@ -820,12 +820,21 @@ def last_reading(ref, cycle=None):
     return next((r for r in reversed(W.rows(ref, 'readings.jsonl')) if r.get('read') and cycle in (None, r.get('cycle_id'))), None)
 
 
-def ways_out(d, why, lead='Say what to change'):
+def ways_out(d, why, lead='Say what to change', leave=True):
     """The closing words of a card whose ways out R._blocked builds: they name the way that leaves an item out of done-when only
-    when the card offers it (never with one item, since done-when is never left empty), so what the card says and what its
-    buttons do are the same (M9.5)."""
-    item = R._left_out(d, why)
+    when the card offers it (never with one item, since done-when is never left empty, and never when `leave` is False: the card
+    was given the ways without it, see ways_without_leave), so what the card says and what its buttons do are the same (M9.5)."""
+    item = R._left_out(d, why) if leave else None
     return '%s, leave %s out of done-when, or stop here.' % (lead, item['id']) if item else '%s, or stop here.' % lead
+
+
+def ways_without_leave():
+    """The ways out of a card that has no item to leave out (M9.5): change the plan in the owner's words, or stop, the two
+    R._blocked builds with a leave way between them. For a finding the owner turned down that names no item, on a reading that met
+    every item: done_claim keeps a high finding open whatever the items say, so dropping a met item from done-when would lift
+    nothing, and the same finding would come back as a new ask on the next reading."""
+    return [W.option(W.WORDS_OPTION, 'Change the plan in my words', "Adaptation shapes it afresh from what you say; nothing runs before Root's review"),
+            W.option(W.STOP_OPTION, 'Stop here', 'the department stops where it is; you can start it again later')]
 
 
 def open_items(ref, ask, base=None):
@@ -866,8 +875,11 @@ def identity_drop(ctx, step, item):
         return out
     left = open_items(ref, ask, base)
     why = '%s not met' % ', '.join(left) if left else 'a finding is still open'
-    R._blocked(ref, d, _who(d), 'You said no to the correction%s: %s. %s' % (' for round %d' % n if n else '', what, ways_out(d, why)),
-               'The correction was turned down.', 'You, on the correction Identity put to you', why)
+    # an item can be left out only for a finding that names one, or a reading's item that is not met: with none (a finding on a
+    # reading that met every item) the card offers the words and stop, and says so (the fallback R._left_out has, the last item,
+    # would offer to drop a met item that has nothing to do with the finding, and the finding would come back)
+    R._blocked(ref, d, _who(d), 'You said no to the correction%s: %s. %s' % (' for round %d' % n if n else '', what, ways_out(d, why, leave=bool(left))),
+               'The correction was turned down.', 'You, on the correction Identity put to you', why, options=None if left else ways_without_leave())
     return out
 
 
@@ -1136,11 +1148,13 @@ def _ask_finding(ctx, art, claim, found, findings, rule=None, **more):
                                   'thread': p['thread'] if p else None}, **dict(more, **({'rule': rule} if rule else {}))))
 
 
-def _asked_about(ref, claim):
-    """Whether the owner was asked (or has answered) about a finding with this claim already."""
+def _asked_about(ref, claim, waiting=False):
+    """Whether the owner was asked (or has answered) about a finding with this claim already; with `waiting`, whether that ask is
+    still waiting for them."""
     want = ' '.join(str(claim).lower().split())
-    return any(a.get('kind') == 'finding' and (' '.join(str(a.get('claim') or '').lower().split()) == want or
-                                               any(' '.join(str(f.get('claim') or '').lower().split()) == want for f in a.get('findings') or [] if isinstance(f, dict)))
+    return any(a.get('kind') == 'finding' and (not waiting or a['status'] == 'pending')
+               and (' '.join(str(a.get('claim') or '').lower().split()) == want or
+                    any(' '.join(str(f.get('claim') or '').lower().split()) == want for f in a.get('findings') or [] if isinstance(f, dict)))
                for a in W.asks(ref))
 
 
@@ -1194,7 +1208,11 @@ def identity_weigh_reading(ctx, step, item):
             continue
         if not _asked_about(ref, f['claim']):
             routes['asks'].append(_ask_finding(ctx, row['artifact'], f['claim'], f['claim'], [f], rule=rule.get('line'), reading=row['id'])['id'])
-        covered.add(f.get('item'))
+            covered.add(f.get('item'))
+        elif _asked_about(ref, f['claim'], waiting=True):
+            covered.add(f.get('item'))
+        # else the owner answered it already (stamped, or turned it down) and the line was built again, and the item is still not
+        # met: the ask is not asked a second time, and it is no move for the item now: the item goes on to the next round (M8.5, SM-6)
     left = [i for i in left if i not in covered]
     if routes['asks']:
         said.append("put what needs the owner's yes to the owner as an ask")
@@ -1302,7 +1320,8 @@ def identity_round(ctx, step, item):
         if not [a for a in W.asks(ref) if a.get('kind') == 'finding' and a.get('round') == n and a['status'] == 'pending']:
             _ask_finding(ctx, S.deliverable(d), correction, correction, [], rule=rule.get('line'), round=n, correction=correction)
         return {'said': 'put round %d to the owner first, as the rule "%s" says to ask: %s' % (n, rule.get('line'), correction), 'round': n}
-    row = R._file_brief(ref, d, 'Correct this: ' + correction, 'round %d, granted' % n, rnd=n)
+    # the note is the Brief version's check note, which the Versions pane and the work item's card print: said as the screen says it
+    row = R._file_brief(ref, d, 'Correct this: ' + correction, 'round %d, Priority said yes' % n, rnd=n)
     round_filed(ref, d, n, row['v'], correction)
     return {'said': 'filed round %d in the Brief as v%d, with no stamp: %s' % (n, row['v'], correction), 'round': n, 'filed': row['v']}
 

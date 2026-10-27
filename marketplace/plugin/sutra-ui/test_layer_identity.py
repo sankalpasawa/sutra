@@ -1501,6 +1501,88 @@ def test_j2_g_a_not_met_item_always_leaves_a_next_move_even_before_anyone_takes_
     assert "D2" in ask["found"] and ask["reading"] and S.validate_record("identity", "ask", ask) == []
 
 
+#: the finding a rule says to ask about, which comes back on the reading after the owner answered it (found by a verifier: the
+#: department then sat in 'pursuing' with nothing pending and no next move)
+AGAIN = "Send the offer by email to every subscriber"
+
+
+def _a_next_move_for(R, W, ref, reading):
+    """SM-6: what a not-met item leaves after a reading: a next round asked of Adaptation about that reading, or a question waiting
+    on the owner. Returns what it is, or None for a silent end."""
+    if [q for q in _next_requests(R, ref) if q["payload"].get("reading") == reading]:
+        return "next"
+    pending = [a for a in W.asks(ref) if a["status"] == "pending"]
+    return pending[0]["kind"] if pending else None
+
+
+def _the_same_finding_comes_back(j2, monkeypatch, org, answer, heard=True):
+    """A reading with D2 not met and a finding a rule says to ask about: the owner answers the ask it makes (yes: stamped; no: refused,
+    and then 'Change the plan in my words'), the line is built again, and the next reading finds D2 still not met with the same
+    finding. Returns (department, the reading that came back)."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org=org)
+    if heard:
+        _adaptation_hears_next(monkeypatch, R)
+    else:
+        real = R._handler
+        monkeypatch.setattr(R, "_handler", lambda e, p: None if (p.get("payload") or {}).get("word") == "next" else real(e, p))
+    finding = [{"id": "F1", "severity": "medium", "claim": AGAIN, "item": "D2"}]
+    first = _file_reading(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding)
+    _tell_reading(j2, ref, first)
+    (ask,) = [a for a in _asks_of(W, ref, "finding") if not a.get("round")]
+    assert ask["claim"] == AGAIN and ask["reading"] == first["id"], "the rule's ask is the first reading's move"
+    if answer == "yes":
+        W.decide_ask(ref, ask["id"], True)
+    else:
+        W.decide_ask(ref, ask["id"], False)
+        W.run_until_idle(ref, limit=300)
+        W.choose_option(ref, _the_card(W, ref)["id"], "words", "Tell people about the offer on the page instead")
+    W.run_until_idle(ref, limit=300)
+    assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == ("stamped" if answer == "yes" else "refused")
+    assert J.status(ref)["state"] != "done" and W.latest(ref, "Live site")["v"] >= 2, "the line was built again"
+    again = _file_reading(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding)
+    assert again["id"] != first["id"] and again["v"] == W.latest(ref, "Live site")["v"]
+    _tell_reading(j2, ref, again)
+    return ref, again
+
+
+@pytest.mark.parametrize("heard", [True, False], ids=["adaptation hears next", "nobody hears next"])
+@pytest.mark.parametrize("answer", ["yes", "no"])
+def test_j2_g_a_finding_the_owner_already_answered_that_comes_back_leaves_a_next_move(j2, monkeypatch, answer, heard):
+    """SM-6 on the repeat: the owner answered the ask for a finding (said yes, or said no and changed the plan), the line was built
+    again, and the next reading has the same item not met with the same finding. The answered ask covers nothing now: the item goes
+    on as every other item not met, the next round asked of Adaptation, or, when nobody takes one, a question for the owner. It is
+    never 'pursuing' with nothing pending and no next move, and the finding is not put to the owner a second time as it was."""
+    W, R, J, _, _ = j2
+    ref, again = _the_same_finding_comes_back(j2, monkeypatch, "Again %s %s Co" % (answer, "Heard" if heard else "Silent"), answer, heard)
+    move = _a_next_move_for(R, W, ref, again["id"])
+    assert move is not None, ("a silent end", J.status(ref)["state"], [(a["kind"], a["status"]) for a in W.asks(ref)])
+    assert [a for a in _asks_of(W, ref, "finding") if a["claim"] == AGAIN] == [], "the answered finding is not asked a second time"
+    if heard:
+        assert move == "next", "Adaptation hears a next round, so the item is its next move"
+        (nxt,) = [q for q in _next_requests(R, ref) if q["payload"].get("reading") == again["id"]]
+        assert nxt["payload"]["items"] == ["D2"] and S.validate("act.next", nxt["payload"]) == []
+    else:
+        (ask,) = _asks_of(W, ref, "finding")
+        assert "D2" in ask["found"] and ask["reading"] == again["id"] and S.validate_record("identity", "ask", ask) == []
+
+
+def test_j2_g_a_finding_whose_ask_is_still_waiting_covers_its_item_on_the_next_reading_too(j2, monkeypatch):
+    """The ask is the item's move only while the owner has not answered it: a second reading that comes while it waits files
+    nothing more (not the ask again, not a next round beside it)."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Waiting Again Co")
+    _adaptation_hears_next(monkeypatch, R)
+    finding = [{"id": "F1", "severity": "medium", "claim": AGAIN, "item": "D2"}]
+    _tell_reading(j2, ref, _file_reading(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding))
+    (ask,) = _asks_of(W, ref, "finding")
+    nexts = len(_next_requests(R, ref))
+    again = _file_reading(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding)
+    _tell_reading(j2, ref, again)
+    assert [a["id"] for a in _asks_of(W, ref, "finding")] == [ask["id"]] and len(_next_requests(R, ref)) == nexts
+    assert _a_next_move_for(R, W, ref, again["id"]) == "finding", "the waiting ask is the move"
+
+
 def test_j2_g_a_high_finding_the_next_round_carries_is_not_also_put_to_the_owner(j2, monkeypatch):
     """Once Adaptation hears a next round the finding ask is swapped for the round (PRD risk P1): a high finding of a reading
     with an item not met reaches Adaptation as the next move, and the owner is not also asked to stamp the same correction."""
@@ -1886,25 +1968,59 @@ def test_j5_the_words_the_owner_reads_in_the_pursuit_keep_the_screen_rules(j2, m
     """Every line Identity says to the owner in these flows, every card and every way out on it, in the owner's words: no grant,
     counter, refuse, orders, charter or internal system, no code of the machine, and no function addressing another."""
     W, R, J, _, _ = j2
-    seen = []
-    for what, ref in _end_states(j2, monkeypatch):
+    seen, notes = [], []
+    states = list(_end_states(j2, monkeypatch))
+    # and a department whose round was filed with no stamp: the Brief version that round makes carries a note the owner reads
+    ref = _a_running_department(j2, org="Filed Round Co")
+    _identity_hears(R, ref, _grant_round(R, W, J, monkeypatch, ref))
+    assert len(W.versions(ref, "Brief")) == 2
+    states.append(("a round filed with no stamp", ref))
+    for what, ref in states:
         for p in R.board(ref):
             if p["src"] == "Identity" and "Owner" in p["dst"]:
                 seen += [(what, str(p["payload"].get(k))) for k in ("done", "objective") if p["payload"].get(k)]
         for a in W.asks(ref):
             seen += [(what, str(a.get(k))) for k in ("text", "title", "why") if a.get(k)]
             seen += [(what, str(o.get(k))) for o in a.get("options") or [] for k in ("label", "cost")]
-    assert len(seen) > 40
+        # the Versions pane prints every version's note and every check note of it (22-website.js), and the artifact read returns them
+        for art in list(W.artifacts_of(W.dept(ref))) + ["Brief"]:
+            for v in W.versions(ref, art):
+                notes += [(what, str(x)) for x in [v.get("note")] + list((v.get("check") or {}).get("notes") or []) if x]
+    assert len(seen) > 40 and any("round 2" in text for _, text in notes), "the filed round's note was scanned"
+    for what, text in notes:
+        assert not SCREEN_BANNED.search(text), (what, "a version note", text)
     from engine_runtime import PLAIN_FAULTS
     for what, text in seen:
         assert not SCREEN_BANNED.search(text), (what, text)
         assert not [name for name, rx in PLAIN_FAULTS if rx.search(text)], (what, text)
 
 
+def test_j4_the_brief_version_a_filed_round_makes_names_who_said_yes_in_the_owners_words(j2, monkeypatch):
+    """The Versions pane and the work item's card print a version's note and its check notes. The version a filed round makes
+    says who agreed to it as the screen says it: Priority said yes, never 'granted'."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Note Co")
+    _identity_hears(R, ref, _grant_round(R, W, J, monkeypatch, ref))
+    made = W.versions(ref, "Brief")[-1]
+    assert made["made_from"][-1]["round"] == 2
+    assert made["check"]["notes"][0] == "round 2, Priority said yes"
+    import website_api
+    shown = next(v for v in website_api.artifact(ref, "brief")["versions"] if v["v"] == made["v"])
+    assert shown["check"]["notes"][0] == "round 2, Priority said yes" and not SCREEN_BANNED.search(" ".join(map(str, shown["check"]["notes"] + [shown.get("note") or ""])))
+
+
 def _end_states(j2, monkeypatch):
     """Every end the pursuit can come to that is not done, each in a department of its own: (what it is, the department)."""
     W, R, J, _, _ = j2
     out = []
+    # (first: a model that reads every word as a rule, which the next state installs, would read the owner's words so)
+    # the same finding comes back on the next reading after the owner turned it down and changed the plan: the item is the next move
+    # again (a round asked of Adaptation, or a question for the owner when nobody takes one), and the owner's second no ends in the card
+    for org, heard in (("Again No Co", True), ("Again Silent Co", False)):
+        with monkeypatch.context() as m:
+            ref, _ = _the_same_finding_comes_back(j2, m, org, "no", heard)
+            _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+        out.append(("a finding that came back after it was turned down, turned down again" + ("" if heard else " (nobody takes a next round)"), ref))
     ref = _born(j2, WEBSITE, "Conflict Co")
     _two_items(W, ref)
     _conflict(R, ref, ENGINES, _ways(W.items_of(W.dept(ref))))
@@ -1997,8 +2113,11 @@ def test_j5_a_no_to_a_finding_that_is_not_a_rounds_leaves_the_ways_out_never_a_s
     _owner_says_no(W, ref, ask)
     card = _the_card(W, ref)
     assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == "refused"
-    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"] and J.status(ref)["state"] == "blocked"
+    # D1 and D2 are both met and the finding names no item: there is no item to leave out of done-when, so the card offers the two ways
+    # that lead somewhere (dropping a met item would not lift a high finding, and the same finding would come back: a loop)
+    assert [o["id"] for o in card["options"]] == ["words", "stop"] and J.status(ref)["state"] == "blocked"
     assert card["text"].startswith("You said no to the correction: ") and "fees are invented" in card["text"] and S.validate_record("identity", "ask", card) == []
+    assert card["text"].endswith("Say what to change, or stop here.") and "leave" not in card["text"] and not _leave_it_names(card)
     assert len(W.versions(ref, "Brief")) == briefs and len(W.rows(ref, "rounds.jsonl")) == rounds, "nothing is filed, and no round is refused: it is no round's"
     assert not _reached(W, J, ref) and row["id"]
     # the same flow with an item not met, while nobody takes a next round: the item the finding names is the one that can be left out
@@ -2020,6 +2139,28 @@ def test_j5_a_no_to_a_finding_that_is_not_a_rounds_leaves_the_ways_out_never_a_s
     _owner_says_no(W, ref, ask)
     card = _the_card(W, ref)
     assert [o["id"] for o in card["options"]] == ["words", "leave:D4", "stop"] and "D2, D4 not met" in card["why"]
+
+
+def test_j5_a_met_item_is_no_way_out_of_a_high_finding_it_has_nothing_to_do_with(j2):
+    """A high finding on a reading that met D1 and D2 names no item. Leaving D2 out would not lift it (done_claim keeps a high finding
+    open whatever the items say) and the same finding would come back as a new ask on the next reading: a way out that loops. So the
+    card offers no such button, a choice of it is refused, and the owner's goal keeps both items."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Met Item Co")
+    _high_finding_on_a_met_reading(R, W, j2, ref)
+    _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+    card = _the_card(W, ref)
+    assert [o["id"] for o in card["options"]] == ["words", "stop"] and [o["label"] for o in card["options"]] == ["Change the plan in my words", "Stop here"]
+    assert "D2" not in card["text"] and "D2" not in card["why"] and card["why"] == "a finding is still open"
+    with pytest.raises(W.AskError) as refused:
+        W.choose_option(ref, card["id"], "leave:D2")
+    assert refused.value.code == "UNKNOWN_OPTION"
+    assert [i["id"] for i in W.items_of(W.dept(ref))] == ["D1", "D2"], "no met item was dropped from the owner's goal"
+    assert _the_card(W, ref)["id"] == card["id"] and J.status(ref)["state"] == "blocked", "the card waits as it was"
+    # the two ways that are there are applied as ever: stop stops the department where it is
+    W.choose_option(ref, card["id"], "stop")
+    W.run_until_idle(ref, limit=100)
+    assert W.dept(ref)["stopped"] is True
 
 
 def test_j5_the_real_flow_a_reader_that_says_every_item_is_met_but_one_high_finding_and_a_no_ends_with_the_ways_out(j2, monkeypatch):
@@ -2092,6 +2233,10 @@ def test_j3_j5_a_card_names_the_way_that_leaves_an_item_out_only_when_it_offers_
         if items == 1:
             assert ids == ["words", "stop"] and not _leave_it_names(card) and "leave" not in card["text"], (what, card["text"], ids)
             assert card["text"].endswith(", or stop here."), (what, card["text"])
+        elif what == "a finding the owner turned down":
+            # a high finding on a reading that met every item names no item: nothing is left out for it, with two items as with one
+            assert ids == ["words", "stop"] and not _leave_it_names(card) and "leave" not in card["text"], (what, card["text"], ids)
+            assert card["text"].endswith("Say what to change, or stop here."), (what, card["text"])
         else:
             assert ids == ["words", "leave:D2", "stop"] and _leave_it_names(card) == {"leave:D2"}, (what, card["text"], ids)
             assert "leave D2 out of done-when, or stop here." in card["text"], (what, card["text"])
