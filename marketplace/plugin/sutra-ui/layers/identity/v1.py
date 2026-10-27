@@ -1108,11 +1108,13 @@ def _ask_finding(ctx, art, claim, found, findings, rule=None, **more):
                                   'thread': p['thread'] if p else None}, **dict(more, **({'rule': rule} if rule else {}))))
 
 
-def _asked_about(ref, claim):
-    """Whether the owner was asked (or has answered) about a finding with this claim already."""
+def _asked_about(ref, claim, waiting=False):
+    """Whether the owner was asked (or has answered) about a finding with this claim already; with `waiting`, whether that ask is
+    still waiting for them."""
     want = ' '.join(str(claim).lower().split())
-    return any(a.get('kind') == 'finding' and (' '.join(str(a.get('claim') or '').lower().split()) == want or
-                                               any(' '.join(str(f.get('claim') or '').lower().split()) == want for f in a.get('findings') or [] if isinstance(f, dict)))
+    return any(a.get('kind') == 'finding' and (not waiting or a['status'] == 'pending')
+               and (' '.join(str(a.get('claim') or '').lower().split()) == want or
+                    any(' '.join(str(f.get('claim') or '').lower().split()) == want for f in a.get('findings') or [] if isinstance(f, dict)))
                for a in W.asks(ref))
 
 
@@ -1166,7 +1168,11 @@ def identity_weigh_reading(ctx, step, item):
             continue
         if not _asked_about(ref, f['claim']):
             routes['asks'].append(_ask_finding(ctx, row['artifact'], f['claim'], f['claim'], [f], rule=rule.get('line'), reading=row['id'])['id'])
-        covered.add(f.get('item'))
+            covered.add(f.get('item'))
+        elif _asked_about(ref, f['claim'], waiting=True):
+            covered.add(f.get('item'))
+        # else the owner answered it already (stamped, or turned it down) and the line was built again, and the item is still not
+        # met: the ask is not asked a second time, and it is no move for the item now: the item goes on to the next round (M8.5, SM-6)
     left = [i for i in left if i not in covered]
     if routes['asks']:
         said.append("put what needs the owner's yes to the owner as an ask")

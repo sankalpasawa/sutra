@@ -1422,6 +1422,88 @@ def test_j2_g_a_not_met_item_always_leaves_a_next_move_even_before_anyone_takes_
     assert "D2" in ask["found"] and ask["reading"] and S.validate_record("identity", "ask", ask) == []
 
 
+#: the finding a rule says to ask about, which comes back on the reading after the owner answered it (found by a verifier: the
+#: department then sat in 'pursuing' with nothing pending and no next move)
+AGAIN = "Send the offer by email to every subscriber"
+
+
+def _a_next_move_for(R, W, ref, reading):
+    """SM-6: what a not-met item leaves after a reading: a next round asked of Adaptation about that reading, or a question waiting
+    on the owner. Returns what it is, or None for a silent end."""
+    if [q for q in _next_requests(R, ref) if q["payload"].get("reading") == reading]:
+        return "next"
+    pending = [a for a in W.asks(ref) if a["status"] == "pending"]
+    return pending[0]["kind"] if pending else None
+
+
+def _the_same_finding_comes_back(j2, monkeypatch, org, answer, heard=True):
+    """A reading with D2 not met and a finding a rule says to ask about: the owner answers the ask it makes (yes: stamped; no: refused,
+    and then 'Change the plan in my words'), the line is built again, and the next reading finds D2 still not met with the same
+    finding. Returns (department, the reading that came back)."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org=org)
+    if heard:
+        _adaptation_hears_next(monkeypatch, R)
+    else:
+        real = R._handler
+        monkeypatch.setattr(R, "_handler", lambda e, p: None if (p.get("payload") or {}).get("word") == "next" else real(e, p))
+    finding = [{"id": "F1", "severity": "medium", "claim": AGAIN, "item": "D2"}]
+    first = _file_reading(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding)
+    _tell_reading(j2, ref, first)
+    (ask,) = [a for a in _asks_of(W, ref, "finding") if not a.get("round")]
+    assert ask["claim"] == AGAIN and ask["reading"] == first["id"], "the rule's ask is the first reading's move"
+    if answer == "yes":
+        W.decide_ask(ref, ask["id"], True)
+    else:
+        W.decide_ask(ref, ask["id"], False)
+        W.run_until_idle(ref, limit=300)
+        W.choose_option(ref, _the_card(W, ref)["id"], "words", "Tell people about the offer on the page instead")
+    W.run_until_idle(ref, limit=300)
+    assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == ("stamped" if answer == "yes" else "refused")
+    assert J.status(ref)["state"] != "done" and W.latest(ref, "Live site")["v"] >= 2, "the line was built again"
+    again = _file_reading(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding)
+    assert again["id"] != first["id"] and again["v"] == W.latest(ref, "Live site")["v"]
+    _tell_reading(j2, ref, again)
+    return ref, again
+
+
+@pytest.mark.parametrize("heard", [True, False], ids=["adaptation hears next", "nobody hears next"])
+@pytest.mark.parametrize("answer", ["yes", "no"])
+def test_j2_g_a_finding_the_owner_already_answered_that_comes_back_leaves_a_next_move(j2, monkeypatch, answer, heard):
+    """SM-6 on the repeat: the owner answered the ask for a finding (said yes, or said no and changed the plan), the line was built
+    again, and the next reading has the same item not met with the same finding. The answered ask covers nothing now: the item goes
+    on as every other item not met, the next round asked of Adaptation, or, when nobody takes one, a question for the owner. It is
+    never 'pursuing' with nothing pending and no next move, and the finding is not put to the owner a second time as it was."""
+    W, R, J, _, _ = j2
+    ref, again = _the_same_finding_comes_back(j2, monkeypatch, "Again %s %s Co" % (answer, "Heard" if heard else "Silent"), answer, heard)
+    move = _a_next_move_for(R, W, ref, again["id"])
+    assert move is not None, ("a silent end", J.status(ref)["state"], [(a["kind"], a["status"]) for a in W.asks(ref)])
+    assert [a for a in _asks_of(W, ref, "finding") if a["claim"] == AGAIN] == [], "the answered finding is not asked a second time"
+    if heard:
+        assert move == "next", "Adaptation hears a next round, so the item is its next move"
+        (nxt,) = [q for q in _next_requests(R, ref) if q["payload"].get("reading") == again["id"]]
+        assert nxt["payload"]["items"] == ["D2"] and S.validate("act.next", nxt["payload"]) == []
+    else:
+        (ask,) = _asks_of(W, ref, "finding")
+        assert "D2" in ask["found"] and ask["reading"] == again["id"] and S.validate_record("identity", "ask", ask) == []
+
+
+def test_j2_g_a_finding_whose_ask_is_still_waiting_covers_its_item_on_the_next_reading_too(j2, monkeypatch):
+    """The ask is the item's move only while the owner has not answered it: a second reading that comes while it waits files
+    nothing more (not the ask again, not a next round beside it)."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Waiting Again Co")
+    _adaptation_hears_next(monkeypatch, R)
+    finding = [{"id": "F1", "severity": "medium", "claim": AGAIN, "item": "D2"}]
+    _tell_reading(j2, ref, _file_reading(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding))
+    (ask,) = _asks_of(W, ref, "finding")
+    nexts = len(_next_requests(R, ref))
+    again = _file_reading(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding)
+    _tell_reading(j2, ref, again)
+    assert [a["id"] for a in _asks_of(W, ref, "finding")] == [ask["id"]] and len(_next_requests(R, ref)) == nexts
+    assert _a_next_move_for(R, W, ref, again["id"]) == "finding", "the waiting ask is the move"
+
+
 def test_j2_g_a_high_finding_the_next_round_carries_is_not_also_put_to_the_owner(j2, monkeypatch):
     """Once Adaptation hears a next round the finding ask is swapped for the round (PRD risk P1): a high finding of a reading
     with an item not met reaches Adaptation as the next move, and the owner is not also asked to stamp the same correction."""
@@ -1826,6 +1908,14 @@ def _end_states(j2, monkeypatch):
     """Every end the pursuit can come to that is not done, each in a department of its own: (what it is, the department)."""
     W, R, J, _, _ = j2
     out = []
+    # (first: a model that reads every word as a rule, which the next state installs, would read the owner's words so)
+    # the same finding comes back on the next reading after the owner turned it down and changed the plan: the item is the next move
+    # again (a round asked of Adaptation, or a question for the owner when nobody takes one), and the owner's second no ends in the card
+    for org, heard in (("Again No Co", True), ("Again Silent Co", False)):
+        with monkeypatch.context() as m:
+            ref, _ = _the_same_finding_comes_back(j2, m, org, "no", heard)
+            _owner_says_no(W, ref, _asks_of(W, ref, "finding")[0])
+        out.append(("a finding that came back after it was turned down, turned down again" + ("" if heard else " (nobody takes a next round)"), ref))
     ref = _born(j2, WEBSITE, "Conflict Co")
     _two_items(W, ref)
     _conflict(R, ref, ENGINES, _ways(W.items_of(W.dept(ref))))
