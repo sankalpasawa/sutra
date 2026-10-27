@@ -73,6 +73,171 @@
       ],
       "type": "object"
     },
+    "coordination.question": {
+      "additionalProperties": true,
+      "properties": {
+        "about": {
+          "maxLength": 120,
+          "minLength": 0,
+          "type": "string"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answered_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answered_from": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "version": {
+                  "anyOf": [
+                    {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflow": {
+                  "$ref": "#/$defs/name"
+                }
+              },
+              "required": [
+                "workflow"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifact_update": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {},
+              "required": [],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "asked_by": {
+          "$ref": "#/$defs/name"
+        },
+        "attempt": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "cycle": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 8,
+          "pattern": "^Q-[1-9][0-9]*$",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema": {
+          "const": "board/1"
+        },
+        "slot": {
+          "maxLength": 160,
+          "minLength": 0,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "unanswered",
+            "refused"
+          ]
+        },
+        "to": {
+          "$ref": "#/$defs/name"
+        },
+        "used_by": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema",
+        "id",
+        "asked_by",
+        "to",
+        "about",
+        "question",
+        "status",
+        "used_by"
+      ],
+      "type": "object"
+    },
     "id.finding": {
       "maxLength": 4,
       "pattern": "^F[1-9][0-9]{0,2}$",
@@ -926,6 +1091,13 @@
           "minItems": 0,
           "type": "array"
         },
+        "questions": {
+          "items": {
+            "$ref": "#/$defs/coordination.question"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
         "registered": {
           "anyOf": [
             {
@@ -1143,7 +1315,8 @@
         "handoffs",
         "chain",
         "alarms",
-        "ties"
+        "ties",
+        "questions"
       ],
       "type": "object"
     },

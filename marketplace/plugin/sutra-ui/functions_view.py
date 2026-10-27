@@ -698,7 +698,7 @@ def _identity_part(ref, d, events):
 #: timetable, one row per engine of the line (TIMETABLE_ROW); the engines the plan left out; why each waiting engine
 #: waits (holds); who makes and who reads each thing (handoffs); the chain against its limit; alarms past a window; and
 #: the ties Coordination's AI broke
-COORDINATION_FIELDS = ("line", "registered", "timetable", "left_out", "holds", "handoffs", "chain", "alarms", "ties")
+COORDINATION_FIELDS = ("line", "registered", "timetable", "left_out", "holds", "handoffs", "chain", "alarms", "ties", "questions")
 #: one engine in the timetable: its slot as Coordination wrote it (on, window_min, since), what starts it in words
 #: (starts), where it stands now (state, its word, why it waits, and since when), and its last run (last)
 TIMETABLE_ROW = ("engine", "on", "starts", "window_min", "since", "state", "word", "why", "at", "last")
@@ -848,6 +848,21 @@ def _ties(ref, rows, today):
     return out
 
 
+QUESTIONS_SHOWN = 12
+
+
+def _questions(ref):
+    """The questions engines have put to each other (W3-BOARD, M4.9), the last QUESTIONS_SHOWN, oldest first, each as questions.json
+    holds it with the words a model wrote said in the owner's words. [] when none was asked: the file exists only once a question
+    was put with SUTRA_BOARD_QUESTIONS on."""
+    raw = W._read(W.ddir(ref) / "questions.json", None)
+    rows = raw.get("entries") if isinstance(raw, dict) else raw
+    out = []
+    for e in [x for x in rows or [] if isinstance(x, dict)][-QUESTIONS_SHOWN:]:
+        out.append({k: (_plain(v) if k in ("about", "question", "answer", "reason") and isinstance(v, str) else v) for k, v in e.items()})
+    return out
+
+
 def no_plan(ref, d=None, t=None, cur=None):
     """Before Root's check (S1 and S7, Empty: 'No plan yet'): the department lives a J2 cycle and no plan is registered
     yet, so the line it was born with is not a plan, and Coordination keeps no slot for it. A department with no cycle
@@ -880,7 +895,7 @@ def coordination(ref, d=None, rs=None, ak=None, rows=None):
            "handoffs": _handoffs(ref, d), "chain": _chain(ref, rs),
            "alarms": [{"engine": a.get("engine"), "text": _plain(a.get("text")), "at": a.get("created")}
                       for a in ak if a.get("kind") == "alarm" and a.get("status") == "pending"],
-           "ties": _ties(ref, rows, today)}
+           "ties": _ties(ref, rows, today), "questions": _questions(ref)}
     return {k: out[k] for k in COORDINATION_FIELDS}
 
 

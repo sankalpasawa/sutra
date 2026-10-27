@@ -782,6 +782,23 @@
     ]
    },
    {
+    "name": "Take a question",
+    "when": {
+     "msg_type": "request",
+     "word": "question"
+    },
+    "steps": [
+     {
+      "id": "coord.question",
+      "name": "File the question and have it answered",
+      "nature": "decide",
+      "born": "C2",
+      "code": "coord_question",
+      "check": "question_is_bounded"
+     }
+    ]
+   },
+   {
     "name": "An engine is born",
     "when": {
      "msg_type": "inform",

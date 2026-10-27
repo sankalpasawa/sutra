@@ -199,7 +199,8 @@
     "coordination": {
       "chain_under_its_limit": "a start is let through only while the chain is under its limit",
       "names_who_goes_first": "it names an engine of the department",
-      "one_run_at_a_time": "a start is let through only while no other run runs"
+      "one_run_at_a_time": "a start is let through only while no other run runs",
+      "question_is_bounded": "a question between engines was taken only within its bounds: one for the engine in a slot, of an engine earlier in the line that has filed, and not about what is answered; a no gives its reason"
     },
     "identity": {
       "answer_names_its_source": "an answer, its source, and how sure it is",
@@ -281,7 +282,8 @@
       "handoffs",
       "chain",
       "alarms",
-      "ties"
+      "ties",
+      "questions"
     ],
     "done_how": [
       "code",
@@ -2353,6 +2355,36 @@
           "anyOf": [
             {
               "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answered_from": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "version": {
+                  "anyOf": [
+                    {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflow": {
+                  "$ref": "#/$defs/name"
+                }
+              },
+              "required": [
+                "workflow"
+              ],
+              "type": "object"
             },
             {
               "type": "null"
@@ -6691,6 +6723,13 @@
           "minItems": 0,
           "type": "array"
         },
+        "questions": {
+          "items": {
+            "$ref": "#/$defs/coordination.question"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
         "registered": {
           "anyOf": [
             {
@@ -6908,7 +6947,8 @@
         "handoffs",
         "chain",
         "alarms",
-        "ties"
+        "ties",
+        "questions"
       ],
       "type": "object"
     },
@@ -8118,11 +8158,18 @@
     },
     "Coordination": {
       "inform": [
-        "Identity"
+        "Identity",
+        "Engine"
       ],
       "request": [
         "Identity",
-        "Priority"
+        "Priority",
+        "Engine"
+      ]
+    },
+    "Engine": {
+      "request": [
+        "Coordination"
       ]
     },
     "Identity": {
@@ -8692,6 +8739,16 @@
         "payload": "act.born",
         "via": "call",
         "word": "born"
+      },
+      {
+        "act": "request",
+        "from": [
+          "Engine"
+        ],
+        "handler": "Take a question",
+        "payload": "act.question",
+        "via": "board",
+        "word": "question"
       }
     ],
     "identity": [
@@ -8975,7 +9032,8 @@
       "checks": [
         "chain_under_its_limit",
         "names_who_goes_first",
-        "one_run_at_a_time"
+        "one_run_at_a_time",
+        "question_is_bounded"
       ],
       "hands_to": "Identity: alarms, lost requests and verdict asks. Priority: verdict asks.",
       "holds": "Its table: the order, the line and who may post to whom; the run rows and each thread's bounds.",
@@ -10224,6 +10282,16 @@
         ]
       },
       {
+        "act": "request",
+        "payload": "act.question",
+        "to": [
+          "Engine"
+        ],
+        "words": [
+          "question"
+        ]
+      },
+      {
         "act": "inform",
         "payload": "act.any",
         "to": [
@@ -10243,9 +10311,30 @@
         "words": [
           "conflict"
         ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.answer",
+        "to": [
+          "Engine"
+        ],
+        "words": [
+          "answer"
+        ]
       }
     ],
-    "Engine": [],
+    "Engine": [
+      {
+        "act": "request",
+        "payload": "act.question",
+        "to": [
+          "Coordination"
+        ],
+        "words": [
+          "question"
+        ]
+      }
+    ],
     "Identity": [
       {
         "act": "agree",

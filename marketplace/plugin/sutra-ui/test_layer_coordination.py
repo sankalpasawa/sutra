@@ -81,13 +81,20 @@ def test_k1_each_name_is_a_late_bound_delegate_to_the_body_the_runtime_holds_now
     registry = {"code": R.CODE, "prompt": R.PROMPT, "draft": R.DRAFT, "check": R.CHECK}
     for kind in registry:
         for name, fn in getattr(V1, kind.upper()).items():
+            if name in OWN:                       # a body the layer holds itself (W3-BOARD): no delegate to follow
+                assert not hasattr(fn, "legacy"), (kind, name)
+                continue
             module, attr = fn.legacy
             assert module == "engine_runtime"
             assert getattr(R, attr) is registry[kind][name], (kind, name, attr)
 
 
-def test_k1_nineteen_by_reference_and_none_of_its_own():
-    assert C.by_reference(V1) == {"by_reference": 19, "own": 0}
+#: the bodies coordination/v1 holds as its own: W3-BOARD's handler for a question between engines and its covering (M4.9)
+OWN = {"coord_question", "question_is_bounded"}
+
+
+def test_k1_nineteen_by_reference_and_two_of_its_own():
+    assert C.by_reference(V1) == {"by_reference": 19, "own": 2}
 
 
 @pytest.mark.parametrize("case", [c for c in C.cases() if c[0] in (1, 2, 3, 4, 7)], ids=lambda c: "case %d" % c[0])
@@ -562,4 +569,4 @@ def test_k5_the_contract_passes_for_coordination_v1_whole_with_no_part_on_the_fa
     ref = _born(j2)
     for number, what, case in C.cases():
         assert case(V1, {"ref": ref}) == [], "case %d: %s" % (number, what)
-    assert C.on_the_md_fallback(V1) == [] and C.by_reference(V1) == {"by_reference": 19, "own": 0}
+    assert C.on_the_md_fallback(V1) == [] and C.by_reference(V1) == {"by_reference": 19, "own": 2}

@@ -7268,6 +7268,18 @@ def c_done_is_read(ctx, step, item, out):
 CHECK["done_is_read"] = c_done_is_read
 
 
+def c_question_is_bounded(ctx, step, item, out):
+    """The name of coordination/v1's covering of a question between engines (W3-BOARD, M4.9), registered beside the literals as
+    done_is_read is: the body is the version's, and without the version there is no board to take a question."""
+    got = layers.load("coordination/v1")
+    if got is None:
+        return {"ok": False, "notes": ["Coordination's version is not there to judge a question"]}
+    return got.question_is_bounded(ctx, step, item, out)
+
+
+CHECK["question_is_bounded"] = c_question_is_bounded
+
+
 # adaptation/v1's step adapt.fit (W2-ADAPT, M5.2): the copy a department runs when the layer does not load. It fits nothing: the
 # Library's line stays whole, which is also what the layer's own draft answers, and the check takes that answer and no other
 def _fit_line(ctx):
