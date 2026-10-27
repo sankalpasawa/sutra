@@ -89,14 +89,19 @@ async def found(request: Request):
 @router.get("/journeys")
 def journey_list():
     """Every user journey with the state its rows have earned from the last run of their tests: {schema_version, journeys: [{id,
-    title, kind, inside, bound_to, declared, state, stale, counts}]}. Nothing is read from a department and nothing is written."""
+    title, kind, inside, bound_to, declared, state, stale, counts}]}. Nothing is read from a department and nothing is written. The title
+    is the author's words as written: a screen says its own words and does not render it raw."""
     return journeys.view()
 
 
 @router.get("/journeys/{jid:journey_id}")
 def journey_one(jid: str):
     """One journey as the site draws it, without its code and tests, with `status`: its state, whether the file the state
-    was computed for is stale, each row's state with the tests that proved it, and where the site's word and the state differ."""
+    was computed for is stale, each row's state with the tests that proved it, and where the site's word and the state differ.
+    The prose fields (goal, lead, ends_when, a step's text and short, an edge's short, trigger and site text, rulings, quotes, sub, today
+    and was) are the site's and the author's words as written, with {helper} said as Root: they may say "refuse" and name a function.
+    A screen says its own words and does not render them raw. Clean are what the model adds (the state, the tests by name, the drift)
+    and the golden and reword lines."""
     try:
         return journeys.view(jid)
     except journeys.UnknownJourney:

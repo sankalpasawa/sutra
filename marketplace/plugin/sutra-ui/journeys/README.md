@@ -211,7 +211,9 @@ What the read model says, and what a screen may do with it:
    `trigger` and `site.text`, `rulings`, `quotes`, `sub`, `today` and the rows of `was` are the words the site or the author wrote
    (JC-9 holds the site's rows equal to the site's file). The site says "grant, refuse, counter" where it means it, and some of its
    sentences name a function (`Built: ... (setup_make)`); JC-11 holds only `golden` and `reword`. **A screen does not render that
-   prose raw**: it is for a builder's page, and the screen says its own words (`{helper}` is already said as Root).
+   prose raw**: it is for a builder's page, and the screen says its own words (`{helper}` is already said as Root). Nothing checks
+   the author's prose for the banned words: some of it says "refuse" where the site does, and a check would be red on it (decision
+   A3-20 in the decision log). The route docstrings in `website_api.py` carry the same warning.
 
 `test_layer_journeys.py` holds this: `test_the_read_model_leaves_out_what_names_code_and_passes_the_sites_words_on` plants code in
 every place a journey has one and reads what comes back, `test_the_scan_reads_a_sentence_not_only_a_token` puts a function or a

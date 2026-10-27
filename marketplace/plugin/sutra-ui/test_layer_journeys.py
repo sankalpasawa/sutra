@@ -1720,6 +1720,30 @@ def test_every_shipped_journey_reads_clean():
         assert said == [], (jid, said[:5])
 
 
+def test_the_routes_the_readme_and_the_documents_say_what_the_read_model_does():
+    """The read model says three things (decision A3-20): it leaves out what names code, what it adds is clean, and the site's and the
+    author's prose is passed on as it was written, which a screen does not render raw. The two route docstrings, the README, the A3 text
+    and the decision log say the same, and the A3 text no longer says that no string contains an act id, a path or a banned word (it did,
+    and the shipped journeys' prose holds both: nothing checks it, and the log says so)."""
+    import website_api
+    for fn in (website_api.journey_list, website_api.journey_one):
+        said = " ".join(fn.__doc__.split())
+        assert "as written" in said and "does not render" in said, fn.__name__
+    readme = " ".join((HERE / "journeys" / "README.md").read_text(encoding="utf-8").split())
+    assert "A screen does not render that prose raw" in readme and "Nothing checks the author's prose" in readme
+    spec, log = HERE / "design" / "PRD-FIVE-FUNCTIONS-A3.md", HERE / "design" / "PRD-FIVE-FUNCTIONS-DECISIONS.md"
+    if not (spec.exists() and log.exists()):
+        pytest.skip("the design documents are not in this tree")
+    text = " ".join(spec.read_text(encoding="utf-8").split())
+    assert "no string contains an act id, a path or a banned word" not in text
+    for words in ("passed on as it was written", "does not render it raw", "decision A3-20", "nothing checks the author's prose"):
+        assert words in text, words
+    row = next((line for line in log.read_text(encoding="utf-8").splitlines() if line.startswith("| A3-20 |")), "")
+    assert row.count("|") == 5, "a row of the A3 table: id, decision, why, steps"
+    for words in ("read model", "as it was written", "does not render it raw", "Nothing checks the author's prose"):
+        assert words in row, words
+
+
 # ---- Q7: the README ----------------------------------------------------------------------------------------------------
 def test_readme_names_the_modes_and_the_cases():
     text = (HERE / "journeys" / "README.md").read_text(encoding="utf-8")
