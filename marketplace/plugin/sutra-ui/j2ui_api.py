@@ -12,6 +12,11 @@ on every route. This module owns the state, runs and say routes; the rest are an
 (j2ui_work, j2ui_audit, j2ui_map, j2ui_board, j2ui_artifacts, j2ui_site), imported when a request needs them: a module that is
 not there, or fails, answers the page's own empty shape, because a wrong shape blanks the page.
 
+Every GET of the router is a read of the department and runs under layers.reading() from the first line of its handler to the last
+(_ReadRoute): the department's read, the state's lazy parts, the audits and conditions, the Map, everything a route builds. A read
+writes nothing (hard rule 4(g)), and a builder that reaches the layer registry (the budget does) would otherwise tell a pin the
+registry cannot honour in the record; the tick tells it, once.
+
 Every JSON body passes j2ui_common.clean (no private key, no path of this machine; the owner's own words stay as said) and is sent
 no-store. Everything a model or an engine wrote (a built site, an artifact, a preview) is sent with website_api.SAFE, here, so that
 does not depend on a delegate remembering: the page's preview frames carry no sandbox of their own, and a built site that ran
@@ -22,13 +27,32 @@ import importlib
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
+from fastapi.routing import APIRoute
 
+import layers
 import website_api
 import j2ui_common as C
 import j2ui_say as SAY
 import j2ui_state as S
 
-router = APIRouter(prefix="/j2ui", tags=["j2ui"])
+
+class _ReadRoute(APIRoute):
+    """A route whose GET handler runs under layers.reading(): the one place that makes every read of the J2 view peek-safe, so a route
+    added later is held too and no builder has to remember it. The sync handlers run in the thread pool with a copy of this context, so the
+    switch reaches them; a POST is a write and is left as it is."""
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+        if "GET" not in self.methods:
+            return handler
+
+        async def reading(request):
+            with layers.reading():
+                return await handler(request)
+        return reading
+
+
+router = APIRouter(prefix="/j2ui", tags=["j2ui"], route_class=_ReadRoute)
 NOSTORE = {"Cache-Control": "no-store"}
 NO_DEPARTMENT = {"error": "no such department"}
 NOT_FOUND = "not found"
