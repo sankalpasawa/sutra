@@ -51,8 +51,9 @@ ACTS = ('request', 'agree', 'refuse', 'propose', 'accept-proposal', 'reject-prop
         'failure', 'not-understood', 'cancel')                               # == engine_runtime.ACTS
 DEFAULT_PINS = {'root': 'root/v1', 'identity': 'identity/v1', 'adaptation': 'adaptation/v1',
                 'priority': 'priority/v1', 'coordination': 'coordination/v1', 'audit': 'audit/v1'}
-#   the release's choice of implementation per layer; changing it is not a schema change, but it
-#   needs the contract and the gate (A1.21)
+#   the release's choice of implementation per layer: what a department is born with, and what a pin of its record that cannot
+#   run falls back to (W3-PINS: a record's own pin wins over it, so a department born earlier keeps the version it was born
+#   with until it is re-pinned); changing it is not a schema change, but it needs the contract and the gate (A1.21)
 PER_DEPARTMENT = True    # W3-PINS: a department runs the versions its record pins (recipes and bodies together); False runs DEFAULT_PINS for all
 IMPL_RE = r'^(root|identity|adaptation|priority|coordination|audit)/v[1-9][0-9]*$'
 ITEM_RE, FINDING_RE = r'^D[1-9][0-9]?$', r'^F[1-9][0-9]{0,2}$'
