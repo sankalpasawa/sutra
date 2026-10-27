@@ -324,6 +324,68 @@ def test_an_owner_line_that_says_what_a_never_line_forbids_is_refused(rt):
     assert fault_of(C.case_14_function_template(bad), "goal.role_procedure line 8 says what Coordination never does")
 
 
+#: the act of each 'never' line that carries its reason after a colon ('act: reason'), one for each such line of the interface
+COLON_NEVER_ACTS = (("identity", "make anything itself"), ("identity", "loosen a rule"),
+                    ("adaptation", "ask the owner directly"), ("adaptation", "apply a change itself"),
+                    ("priority", "ask the owner directly"), ("coordination", "ask the owner directly"),
+                    ("coordination", "start a run"),
+                    ("audit", "approve a proposed workflow because it can picture auditing its output"))
+
+
+def test_every_never_line_with_a_reason_has_its_act_as_a_failing_example():
+    """The list above is the interface's: a 'never' line added with a colon and no example here fails this, so FT-9's head-clause
+    rule is never covered by the bare lines alone."""
+    colon = sorted((fn, n.split(":", 1)[0]) for fn in FUNCTIONS for n in S.FUNCTION_TEMPLATE[fn]["never"] if ":" in n)
+    assert colon == sorted(COLON_NEVER_ACTS)
+    assert all(len(act.split()) >= S.NEVER_HEAD_MIN_WORDS for _, act in COLON_NEVER_ACTS)
+
+
+@pytest.mark.parametrize("fn,act", COLON_NEVER_ACTS)
+def test_a_never_line_with_a_reason_is_said_by_its_act_alone(rt, fn, act):
+    """FT-9: 'ask the owner directly: only Identity does' is said by 'ask the owner directly', in role_may or in
+    role_procedure, however it is cased or punctuated, through the interface and through the ask; the answer names the whole
+    never line. A line that only shares a word with the act is no fault."""
+    W, R, J, FV, ref = rt
+    whole = next(n for n in S.FUNCTION_TEMPLATE[fn]["never"] if n.startswith(act + ":"))
+    title = S.TITLE[fn]
+    for part in ("role_may", "role_procedure"):
+        assert S.validate_field(fn, "goal", part, "items", [act]) == ["$[0]: %s never does this: %s" % (title, whole)], (fn, part)
+        assert S.validate_field(fn, "goal", part, "items", ["Fine.", "Then %s, quickly!" % act.upper()]) == \
+            ["$[1]: %s never does this: %s" % (title, whole)]
+    first = act.split()[0]
+    assert S.validate_field(fn, "goal", "role_may", "items", ["%s the draft, and note why" % first]) == [], "one word of the act is no fault"
+    fine = list(module_of(fn).WORDS["goal"]["role_may"]["items"])
+    with pytest.raises(ValueError) as e:
+        R.instructions_ask(ref, fn, "goal", "role_may", "items", fine + [act])
+    assert "these words cannot serve %s: items (item %d) %s never does this: %s" % (title, len(fine) + 1, title, whole) == str(e.value)
+    # a head of fewer than NEVER_HEAD_MIN_WORDS words is not compared on its own (it would match too much of what a function may do)
+    assert S._never_forms("stop it: because") == ["stop it because"]
+    assert S._never_forms("start a run: why") == ["start a run why", "start a run"]
+    # the other layers are not held to this layer's act
+    other = next(f for f in FUNCTIONS if all(not n.startswith(act) for n in S.FUNCTION_TEMPLATE[f]["never"]))
+    assert S.validate_field(other, "goal", "role_may", "items", [act]) == [], (other, act)
+
+
+def test_case_14_names_a_default_role_may_that_says_the_act_of_a_never_line_with_a_reason():
+    """FT-9 in case 14 for the default words: a version whose role_may holds 'ask the owner directly' (the act of the line that
+    carries its reason after a colon) is told in one sentence that names the version, the part, the line and the never line;
+    so is a role_procedure line that holds it; the version that is not at fault says nothing."""
+    def head_in_may(w, l):
+        w["goal"]["role_may"]["items"][0] = "Ask the owner directly when two functions disagree."
+
+    def head_in_procedure(w, l):
+        w["goal"]["role_procedure"]["items"][1] = "Then start a run in the slot."
+
+    for fn, change, pieces in (
+            ("adaptation", head_in_may, ("adaptation/v1: ", "goal.role_may line 1 says what Adaptation never does",
+                                         "ask the owner directly: only Identity does")),
+            ("coordination", head_in_procedure, ("coordination/v1: ", "goal.role_procedure line 2 says what Coordination never does",
+                                                 "start a run: the engine starts itself in its slot"))):
+        got = C.case_14_function_template(stub_of(fn, change))
+        assert len(fault_of(got, *pieces)) == 1 and len(got) == 1, (fn, got)
+        assert C.case_14_function_template(module_of(fn)) == []
+
+
 # ---- F5: the floor ------------------------------------------------------------------------------------------------------
 def card_of(rt, engine):
     """The card of one engine of the fixture department, as a step is sent it."""
