@@ -394,7 +394,8 @@ def test_a4_a_name_or_a_text_that_does_not_fit_the_schema_is_cut_to_fit_before_i
     ctx = _line_ctx(j2)
     long = dict(GOOD[0], name="Facts about the night clinic and all of its rooms and doors", does="x" * 500)
     row = v1().norm_engines([long])[0]
-    assert len(row["name"]) == 40 and len(row["does"]) == 200
+    assert len(row["name"]) <= 40 and row["name"] == row["name"].strip() and len(row["does"]) == 200
+    assert row["name"] == "Facts about the night clinic and all of", "cut at forty, and the space the cut leaves is not kept"
     got = v1().CHECK["line_is_engines"](ctx, None, None, {"engines": [long, dict(GOOD[1], reads=row["writes"])]})
     assert got["ok"] is True, got
 
@@ -408,12 +409,19 @@ WEB = [dict(GOOD[0], name="Facts (web)", writes="Facts (web)"), dict(GOOD[1], re
 @pytest.mark.parametrize("said, fits", [
     ("Facts (web)", "Facts web"), ("Site: 2", "Site 2"), ("Facts/Notes", "Facts Notes"), ("Facts_web", "Facts web"),
     ("Café notes", "Cafe notes"), ("(web) facts", "web facts"), ("--Facts", "Facts"), ("Facts   about\tit", "Facts about it"),
-    ("Q&A of Dr. O'Neil-Smith", "Q&A of Dr. O'Neil-Smith"), ("Facts 2", "Facts 2"), ("", ""), ("***", ""), ("你好", "")])
+    ("Q&A of Dr. O'Neil-Smith", "Q&A of Dr. O'Neil-Smith"), ("Facts 2", "Facts 2"), ("", ""), ("***", ""), ("你好", ""),
+    # the cut at forty falls on a space: no name ends in one (found by a verifier: the interface took it, Root's own run-together did not)
+    ("x" * 39 + " y", "x" * 39), ("Facts web " * 5, "Facts web Facts web Facts web Facts web"),
+    ("Facts (web) " * 5, "Facts web Facts web Facts web Facts web"), ("a" * 39 + " bc", "a" * 39),
+    ("Facts about the night clinic and all of its rooms and doors", "Facts about the night clinic and all of"),
+    ("x" * 40, "x" * 40), ("x" * 38 + " y", "x" * 38 + " y"), ("x" * 40 + " y", "x" * 40), ("x" * 38 + "  y z", "x" * 38 + " y")])
 def test_a4_a_name_is_made_to_fit_the_characters_the_interface_allows_and_a_name_that_fits_is_left_alone(said, fits):
     """The words are the model's and the characters are the interface's: a character NAME_RE refuses becomes a space (an
     accent is dropped), the first character is a letter or a number, and a name that already fits is not touched."""
     assert v1().fit_name(said) == fits
     assert re.search(S.NAME_RE, fits) or fits == ""
+    assert fits == fits.strip() and v1().fit_name(fits) == fits, "a name never ends in a space, and fitting it again changes nothing"
+    assert " ".join(fits.split())[:40] == fits, "so Root's own run-together of a name is the name"
 
 
 def test_a4_whatever_a_model_names_an_engine_it_fits_the_interface_or_is_nothing_and_fitting_twice_changes_nothing():
@@ -422,11 +430,26 @@ def test_a4_whatever_a_model_names_an_engine_it_fits_the_interface_or_is_nothing
     import random
     rng = random.Random(7)
     marks = [chr(c) for c in range(32, 0x2fff, 7)] + list("abcXYZ019 &'.-_/:()\u00e9\t\n\u00a0\ufb01")
-    for _ in range(500):
-        said = "".join(rng.choice(marks) for _ in range(rng.randint(0, 70)))
+    words = ["Facts", "web", "Site", "2", "a", "night", "clinic", "(web)", "Q&A", "x" * 12]
+    samples = ["".join(rng.choice(marks) for _ in range(rng.randint(0, 70))) for _ in range(500)]
+    # 500 random strings almost never put a space at index 39, where the cut falls: make them. 39 characters that fit with
+    # the first and the last a letter, then what the interface turns into a space (or a run of them) and a tail
+    for _ in range(300):
+        inner = "".join(rng.choice("abc XYZ019&'.-") for _ in range(37))
+        samples.append(rng.choice("abXY") + inner + rng.choice("cZ9") + rng.choice([" ", "  ", " _", "_", "/", ":", "(", "\t", "\u00a0"])
+                       + " ".join(rng.choice(words) for _ in range(rng.randint(1, 4))))
+    for _ in range(200):
+        samples.append(" ".join(rng.choice(words) for _ in range(rng.randint(6, 14))))
+        samples.append((rng.choice(words) + " ") * rng.randint(4, 9))
+    samples += ["x" * 39 + " y", "Facts web " * 5, "Facts (web) " * 5, "a" * 39 + " bc", " " * 39 + "x y"]
+    plain = [t for t in samples if re.fullmatch(r"[A-Za-z0-9 &'.-]*", t)]
+    assert sum(" ".join(t.split())[:40].endswith(" ") for t in plain) >= 30, "the samples reach the case: a cut that falls on a space"
+    for said in samples:
         fit = v1().fit_name(said)
         assert fit == "" or re.search(S.NAME_RE, fit), repr(said)
+        assert fit == fit.strip() and len(fit) <= 40, repr(said)
         assert v1().fit_name(fit) == fit, repr(said)
+        assert " ".join(fit.split())[:40] == fit, "Root's run-together of the name is the name: " + repr(said)
 
 
 def test_a4_norm_engines_fits_the_name_what_it_reads_and_what_it_writes_before_it_cuts(j2):
