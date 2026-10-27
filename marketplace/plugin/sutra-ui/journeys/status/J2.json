@@ -8,7 +8,7 @@
   "unproven": 0,
   "wanted": 0
  },
- "definitions_sha": "a2be6c1bf01c8ff021af4d6afcbfeee9ae7f766378f18a4db47e0d1d52a4df78",
+ "definitions_sha": "faaf15293dd5364f56d99080c7ab7fb7259274c393f39a1a06b874b713623982",
  "drift": [
   {
    "row": "step:1",
@@ -149,7 +149,10 @@
     "test_layer_identity.py::test_j2_8_a_stamped_goal_rule_reopens_the_cycle_at_step_1",
     "test_layer_identity.py::test_j2_8_a_stamped_change_to_done_when_reopens_it_too",
     "test_layer_identity.py::test_j2_8_after_done_a_task_is_the_briefs_and_starts_no_cycle",
-    "test_layer_identity.py::test_j2_8_a_rule_that_is_not_about_the_goal_and_an_answer_to_a_question_reopen_nothing"
+    "test_layer_identity.py::test_j2_8_a_rule_that_is_not_about_the_goal_and_an_answer_to_a_question_reopen_nothing",
+    "test_layer_identity.py::test_j6_a_reopen_retires_the_question_of_the_cycle_it_ends",
+    "test_layer_identity.py::test_j6_a_finding_ask_and_a_blocked_card_of_the_old_cycle_are_retired_too",
+    "test_layer_journey_j2.py::test_j2_8_work_in_flight_finishes_and_the_record_of_the_old_cycle_is_kept"
    ],
    "site": "open",
    "state": "proven"
@@ -320,9 +323,12 @@
   "test_layer_identity.py::test_j2_g_a_reading_is_weighed_three_ways": "passed",
   "test_layer_identity.py::test_j2_g_an_item_to_confirm_is_one_question_whatever_their_number": "passed",
   "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it": "passed",
+  "test_layer_identity.py::test_j6_a_finding_ask_and_a_blocked_card_of_the_old_cycle_are_retired_too": "passed",
+  "test_layer_identity.py::test_j6_a_reopen_retires_the_question_of_the_cycle_it_ends": "passed",
   "test_layer_journey_j2.py::test_j2_2_the_clock_and_the_spend_bounds_also_go_to_identity": "passed",
   "test_layer_journey_j2.py::test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger": "passed",
   "test_layer_journey_j2.py::test_j2_7_after_the_goal_a_failed_run_is_not_yet_a_run_failed_event": "passed",
+  "test_layer_journey_j2.py::test_j2_8_work_in_flight_finishes_and_the_record_of_the_old_cycle_is_kept": "passed",
   "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal": "passed",
   "test_layer_priority.py::test_j2_5_the_envelope_ask_names_the_limit_the_use_and_the_options": "passed",
   "test_layer_pursue.py::test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silence": "passed",
