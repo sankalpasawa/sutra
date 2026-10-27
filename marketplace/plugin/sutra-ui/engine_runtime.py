@@ -5322,13 +5322,32 @@ def _line_proposal(ref, thread):
     return (mine[-1].get("payload") or {}) if mine else None
 
 
+def _limit_ways(ref, thread):
+    """The ways forward for a bargain that reached a limit of its thread (hops, time or spend): the options Priority prices for
+    the line proposed in it (priority.limit_options, PRD M5.4), built by code, at most OPTIONS_MAX, each one the interface types
+    as an option. [] when Priority has none to give or its version cannot, and when Stop is all it has: that is no way forward
+    to put in the place of the plan the owner may stamp or drop, so the conflict is filed as it always was."""
+    try:
+        got = layers.call(ref, "priority", "limit_options", ref, thread)
+        ways = [o for o in got or [] if isinstance(o, dict) and not layer_schema.validate("option", o)][:W.OPTIONS_MAX]
+    except Exception:  # noqa: BLE001 -- a limit conflict is filed whether or not its ways forward could be priced
+        return []
+    return ways if any(o.get("kind") != "stop" and o.get("id") != W.STOP_OPTION for o in ways) else []
+
+
 def _line_conflict(ref, thread, why, bound=None, src="Adaptation"):
-    """The bargain did not close (a refusal, or its bound): it goes to Identity, never silently to nothing (J2.2)."""
+    """The bargain did not close (a refusal, or its bound): it goes to Identity, never silently to nothing (J2.2). At a bound
+    (hops, time or spend; `bound` names it) the conflict carries the ways forward Priority prices for the line (M5.4), so that
+    Identity puts the owner one card with them; a refusal's own ways are Adaptation's to copy from Priority's no."""
     offer = _line_proposal(ref, thread) or {}
     if any((x.get("payload") or {}).get("word") == "conflict" and (x.get("payload") or {}).get("for") == thread for x in board(ref)):
         return None
-    return post(ref, src, "Identity", "inform", {"word": "conflict", "engines": offer.get("engines") or [], "source": offer.get("source"),
-                                                 "words": offer.get("words"), "why": why, "bound": bound, "for": thread})
+    body = {"word": "conflict", "engines": offer.get("engines") or [], "source": offer.get("source"),
+            "words": offer.get("words"), "why": why, "bound": bound, "for": thread}
+    ways = _limit_ways(ref, thread) if bound else []
+    if ways:
+        body["options"] = ways
+    return post(ref, src, "Identity", "inform", body)
 
 
 def required_engines(d):
@@ -5612,6 +5631,39 @@ def _reopen(ref, d, words, by="your words"):
           {"word": "line", "done": "Adaptation is shaping the plan afresh from %s; Priority and Root check it before anything runs." % by})
 
 
+def leave_out(ref, iid, why, words=None, answers=None):
+    """The owner chose to leave an item out of done-when (the leave way out, A1.15: Identity's to apply, whichever card offered
+    it): a done_items ask the owner's one click stamps, done-when keeps the other items and the goal stays as it was, and the
+    plan is shaped afresh from what is kept (_reopen), so the work that was for the item leaves the line and nothing runs until
+    the new plan is registered. One path for a blocked plan's card (_blocked_chosen) and for the limit card of an engine held at
+    its envelope (Priority's apply_choice), so neither says 'nothing more is spent' over a plan that still holds the work (found
+    by a verifier 2026-10-27: the limit card left the item out and the held engine in the line). Returns the item left out, or
+    None when done-when no longer holds it; nothing is changed then."""
+    items = W.items_of(W.dept(ref))
+    gone = next((i for i in items if i["id"] == iid), None)
+    if not gone:
+        return None
+    ask = W.done_items_ask("Leave %s out of done-when: %s. The goal stays as it is" % (iid, str(gone["text"]).rstrip(".")),
+                           [i for i in items if i["id"] != iid], why, words=words, **({"answers": answers} if answers else {}))
+    ask.update({"status": "stamped", "decided": W.now(), "by": "the owner"})   # the owner's one click is its stamp
+    W._put_ask(ref, ask)
+    d = W.apply_done_items(ref, ask)
+    J = _j2()
+    if J and (J._state(ref) or {}).get("cycle_id"):         # a stopped cycle too: it is shaped afresh and goes on from there on Start
+        _reopen(ref, d, d.get("done") or "", by="the done-when you kept")
+    return gone                                               # a department with no cycle has no plan to shape afresh
+
+
+def stop_department(ref):
+    """The owner chose Stop on a card (the stop way out, A1.15: Identity's to apply): the department stops where it is, in its
+    cycle when it has one, so that Start goes on from the step it stood on."""
+    J = _j2()
+    if J and J._state(ref):
+        J.stop(ref)
+    else:
+        W.set_stopped(ref, True)
+
+
 def _blocked_chosen(ctx, a, pl):
     """The owner chose a way out of a blocked plan (M3.5), applied here by code: the words option takes the owner's
     words to Identity, which reads them as words said in the chat (its take: go reopens step 2); leave an item out
@@ -5631,24 +5683,11 @@ def _blocked_chosen(ctx, a, pl):
         return {"said": "took the owner's words for the plan to Identity, to read as said in the chat: " + words}
     if oid.startswith("leave:"):
         iid = oid.split(":", 1)[1]
-        items = W.items_of(W.dept(ref))
-        gone = next((i for i in items if i["id"] == iid), None)
-        if not gone:
+        if not leave_out(ref, iid, "the plan was blocked, and you chose to leave it out", words=chosen.get("label"), answers=a["id"]):
             return {"said": "the item %s is no longer in done-when" % iid}
-        ask = W.done_items_ask("Leave %s out of done-when: %s. The goal stays as it is" % (iid, str(gone["text"]).rstrip(".")),
-                               [i for i in items if i["id"] != iid], "the plan was blocked, and you chose to leave it out",
-                               words=chosen.get("label"), answers=a["id"])
-        ask.update({"status": "stamped", "decided": W.now(), "by": "the owner"})   # the owner's one click is its stamp
-        W._put_ask(ref, ask)
-        d = W.apply_done_items(ref, ask)
-        _reopen(ref, d, d.get("done") or "", by="the done-when you kept")
         return {"said": "left %s out of done-when on the owner's choice; Adaptation is asked afresh" % iid}
     if oid == W.STOP_OPTION:
-        J = _j2()
-        if J and J._state(ref):
-            J.stop(ref)
-        else:
-            W.set_stopped(ref, True)
+        stop_department(ref)
         # the plan is still blocked, so its way out stays open: the card waits again, answerable while the department is
         # stopped and after Start (S10: 'Stopped: the card can still be answered'); the stop is the owner's act, on the
         # ledger and the board (found by a verifier 2026-10-23: Start went back to blocked with no card to answer). While
@@ -5969,6 +6008,20 @@ def _tell_kept_notes(ref, d, fn):
         pass
 
 
+#: What an input is called on the owner's screen in one part, where that part means it differently from INPUT_SAYS (S16), by
+#: (function, group, part). A round is held to the goal's ceiling, not to today's room: there `room` is a yes or no on whether
+#: the ceiling holds the round, and `remaining` what is left of the ceiling after it (found by a verifier 2026-10-27: the part
+#: listed 'what remains of today's room' for the ceiling).
+INPUT_SAYS_IN = {("priority", "bargain", "round"): {"room": "whether the goal's ceiling holds the round",
+                                                    "remaining": "what remains of the goal's ceiling after the round"}}
+
+
+def input_says(fn, group, part, name):
+    """An input of a part in the owner's words: the part's own word for it where it means it differently, else INPUT_SAYS' (a name
+    that is in neither is said as it is, with its underscores gone)."""
+    return (INPUT_SAYS_IN.get((fn, group, part)) or {}).get(name) or INPUT_SAYS.get(name, name.replace("_", " "))
+
+
 def instructions_view(ref, fn):
     """A function's instructions as its Settings shows them (S16): each group by name with the line that says what it is
     for, in it each part with whether a run reads it, the steps that do, what the app fills and what it answers with, and
@@ -5996,7 +6049,7 @@ def instructions_view(ref, fn):
                                "value": now.get(field), "as_shipped": now.get(field) == shipped.get(field),
                                "waits": {"ask": a["id"], "at": a.get("created")} if a else None})
             rows.append({"part": part, "read": _read_by_a_run(fn, group, part), "read_by": _read_by(fn, group, part),
-                         "inputs": [INPUT_SAYS.get(n, n.replace("_", " ")) for n in spec["inputs"]],
+                         "inputs": [input_says(fn, group, part, n) for n in spec["inputs"]],
                          "answers": layers.prompts.answer_keys(spec["returns"]), "fields": fields})
         out.append({"group": group, "lead": layer_schema.GROUPS[fn][group], "kept": layers.prompts.kept_note(ref, fn, group),
                     "parts": rows})
