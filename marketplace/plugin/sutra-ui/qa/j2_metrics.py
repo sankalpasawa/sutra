@@ -267,7 +267,9 @@ def claim_fault(d, event):
     if not cited:
         return "no reading of %s is on the record" % (", ".join(ids) or " / ".join("%s v%s" % p for p in pairs))
     at = str(event.get("occurred_at") or "")
-    before = [r for r in cited if not at or str(r.get("at") or "") <= at] or cited
+    before = [r for r in cited if not at or str(r.get("at") or "") <= at]
+    if not before:                                                  # a reading made after the claim is not behind it
+        return "%s came after the claim" % ("its only reading" if len(cited) == 1 else "every reading it cites")
     return _reading_fault(d, before[-1])
 
 
@@ -281,7 +283,7 @@ def sm1(depts):
                 if why:
                     gaps.append("%s: goal reached (event %s) and %s" % (d.label, e.get("event_id") or e.get("seq"), why))
     return _m("SM-1", "'Goal reached' claimed without a reading of every done-when item", "0", len(gaps), not gaps, gaps,
-              "matches each goal.reached to the reading of the version it cites", claims=claims, read="%d claims" % claims)
+              "matches each goal.reached to the reading of the version it cites, made at or before the claim", claims=claims, read="%d claims" % claims)
 
 
 def sm3(depts):

@@ -262,6 +262,25 @@ def test_sm1_the_reading_that_stands_is_the_last_one_of_that_version_before_the_
     assert _sm1(tmp_path / "c", readings=[_reading(), just_after], events=[_goal()])["value"] == 1       # the last one before the claim says no
 
 
+def test_sm1_a_claim_made_before_any_reading_of_its_version_is_not_backed_by_a_reading_made_after_it(tmp_path):
+    """A reading written after the claim cannot have been what the claim stood on, even when it says every item is met."""
+    late = _reading(at="2026-10-27T11:00:00+05:30")                                  # the claim is at 10:00:05
+    m = _sm1(tmp_path / "one", readings=[late], events=[_goal()])
+    assert (m["value"], m["status"]) == (1, "gap") and "its only reading came after the claim" in m["gaps"][0]
+    later = [late, _reading(rid="r-00000002", at="2026-10-27T12:00:00+05:30")]
+    m = _sm1(tmp_path / "two", readings=later, events=[_goal(refs=["r-00000001", "r-00000002"])])
+    assert m["value"] == 1 and "every reading it cites came after the claim" in m["gaps"][0]
+    same_second = _reading(at="2026-10-27T10:00:05+05:30")                           # the app writes the claim and its reading together
+    assert _sm1(tmp_path / "three", readings=[same_second], events=[_goal()])["value"] == 0
+    assert _sm1(tmp_path / "four", readings=[late, _reading(rid="r-00000003")], events=[_goal(refs=["r-00000001", "r-00000003"])])["value"] == 0, \
+        "one reading before the claim stands behind it, whatever came after"
+
+
+def test_sm7_a_done_whose_only_reading_came_after_its_claim_is_not_a_real_done(tmp_path):
+    make(tmp_path, kind="website", state={"state": "done"}, readings=[_reading(at="2026-10-27T11:00:00+05:30")], events=[_goal()])
+    assert M.sm7(_depts(tmp_path))["value"] == 0
+
+
 def test_sm1_a_department_with_no_done_item_has_nothing_to_have_read(tmp_path):
     m = _sm1(tmp_path, dept={"done_items": []}, readings=[_reading(rows=[])], events=[_goal()])
     assert m["value"] == 1 and "no done-when item" in m["gaps"][0]
