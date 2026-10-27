@@ -145,7 +145,9 @@ def test_j2_walk_from_the_identity_to_the_goal(j2, monkeypatch):
     assert all(J.JOURNEY[e["step"]] == e["journey"] for e in J.events(ref)), "an event is stamped with the sub-journey of its step"
     assert {e["journey"] for e in J.events(ref)} <= {s["id"] for s in J2["sub"]}
     reached = [e for e in J.events(ref) if e["action"] == "goal.reached"]
-    assert len(reached) == 1 and reached[0]["actor"] == "Identity" and reached[0]["evidence_refs"] == [{"artifact": "Live site", "version": 1}]
+    (reading,) = W.rows(ref, "readings.jsonl")
+    assert len(reached) == 1 and reached[0]["actor"] == "Identity" and \
+        reached[0]["evidence_refs"] == [{"artifact": "Live site", "version": 1, "reading": reading["id"]}], "Identity says it from the reading, and cites it (M8.4)"
     read = next(e for e in J.events(ref) if e["action"] == "audit.finding_filed")
     assert read["seq"] < reached[0]["seq"], "a goal is never reached unread"
     assert [(s, a) for s, a in [(p["step"], p["status"]) for p in R.step_rows(ref)] if s == "audit.items"] == [("audit.items", "ok")], \
