@@ -3,12 +3,12 @@
   "dropped": 0,
   "failing": 0,
   "fault": 0,
-  "partly": 3,
-  "proven": 12,
+  "partly": 0,
+  "proven": 16,
   "unproven": 0,
-  "wanted": 1
+  "wanted": 0
  },
- "definitions_sha": "85786dc78fba05d90676904a36a788650189b74dfc75bd986857733635fc28be",
+ "definitions_sha": "1a09a0c6d7f6238e32548cd386a6d6e5d7cf4cf10b6101f950f26e590ebb6816",
  "drift": [
   {
    "row": "step:1",
@@ -31,14 +31,9 @@
    "state": "proven"
   },
   {
-   "row": "step:7",
-   "site": "built",
-   "state": "partly"
-  },
-  {
    "row": "step:8",
    "site": "to_build",
-   "state": "partly"
+   "state": "proven"
   },
   {
    "row": "edge:J2.1",
@@ -54,11 +49,6 @@
    "row": "edge:J2.4",
    "site": "wanted",
    "state": "proven"
-  },
-  {
-   "row": "edge:J2.7",
-   "site": "built",
-   "state": "partly"
   }
  ],
  "id": "J2",
@@ -134,21 +124,28 @@
    "state": "proven"
   },
   "edge:J2.7": {
-   "drift": true,
+   "drift": false,
    "failing": [],
    "proven_by": [
     "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
-    "test_layer_journey_j2.py::test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger"
+    "test_layer_journey_j2.py::test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger",
+    "test_layer_identity.py::test_j2_7_the_second_send_back_files_an_options_ask",
+    "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it"
    ],
    "site": "built",
-   "state": "partly"
+   "state": "proven"
   },
   "edge:J2.8": {
    "drift": false,
    "failing": [],
-   "proven_by": [],
+   "proven_by": [
+    "test_layer_identity.py::test_j2_8_a_stamped_goal_rule_reopens_the_cycle_at_step_1",
+    "test_layer_identity.py::test_j2_8_a_stamped_change_to_done_when_reopens_it_too",
+    "test_layer_identity.py::test_j2_8_after_done_a_task_is_the_briefs_and_starts_no_cycle",
+    "test_layer_identity.py::test_j2_8_a_rule_that_is_not_about_the_goal_and_an_answer_to_a_question_reopen_nothing"
+   ],
    "site": "open",
-   "state": "wanted"
+   "state": "proven"
   },
   "step:1": {
    "drift": true,
@@ -233,17 +230,19 @@
    "state": "proven"
   },
   "step:7": {
-   "drift": true,
+   "drift": false,
    "failing": [],
    "proven_by": [
     "test_j2.py::test_steps_6_to_8_the_runs_the_audit_and_the_goal_are_on_the_ledger",
     "test_j2.py::test_step_7_a_finding_keeps_the_loop_open",
     "test_j2.py::test_m0_3_an_offline_department_never_reaches_its_goal",
     "test_j2.py::test_m0_3_every_version_is_read_in_a_cycle_and_an_unsampled_v4_is_never_clean",
-    "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal"
+    "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal",
+    "test_layer_identity.py::test_j2_g_a_reading_is_weighed_three_ways",
+    "test_layer_identity.py::test_j2_g_an_item_to_confirm_is_one_question_whatever_their_number"
    ],
    "site": "built",
-   "state": "partly"
+   "state": "proven"
   },
   "step:8": {
    "drift": true,
@@ -251,14 +250,16 @@
    "proven_by": [
     "test_j2.py::test_steps_6_to_8_the_runs_the_audit_and_the_goal_are_on_the_ledger",
     "test_j2.py::test_step_7_a_finding_keeps_the_loop_open",
-    "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal"
+    "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal",
+    "test_layer_pursue.py::test_pursue_a_not_met_item_gets_a_priced_round",
+    "test_layer_pursue.py::test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silence"
    ],
    "site": "to_build",
-   "state": "partly"
+   "state": "proven"
   }
  },
  "schema_version": 1,
- "state": "partly",
+ "state": "proven",
  "tests": {
   "js:test_website.js#W47": "passed",
   "js:test_website.js#W48": "passed",
@@ -304,9 +305,19 @@
   "test_j2_identity.py::test_m3_3_still_too_little_is_asked_again_through_the_answer_box": "passed",
   "test_j2_identity.py::test_m3_3_words_the_standard_finds_thin_get_a_question_and_the_answer_is_read_again": "passed",
   "test_j2_identity.py::test_m3_5_a_blocked_plan_is_an_ask_with_options": "passed",
+  "test_layer_identity.py::test_j2_7_the_second_send_back_files_an_options_ask": "passed",
+  "test_layer_identity.py::test_j2_8_a_rule_that_is_not_about_the_goal_and_an_answer_to_a_question_reopen_nothing": "passed",
+  "test_layer_identity.py::test_j2_8_a_stamped_change_to_done_when_reopens_it_too": "passed",
+  "test_layer_identity.py::test_j2_8_a_stamped_goal_rule_reopens_the_cycle_at_step_1": "passed",
+  "test_layer_identity.py::test_j2_8_after_done_a_task_is_the_briefs_and_starts_no_cycle": "passed",
+  "test_layer_identity.py::test_j2_g_a_reading_is_weighed_three_ways": "passed",
+  "test_layer_identity.py::test_j2_g_an_item_to_confirm_is_one_question_whatever_their_number": "passed",
+  "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it": "passed",
   "test_layer_journey_j2.py::test_j2_2_the_clock_and_the_spend_bounds_also_go_to_identity": "passed",
   "test_layer_journey_j2.py::test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger": "passed",
   "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal": "passed",
-  "test_layer_priority.py::test_j2_5_the_envelope_ask_names_the_limit_the_use_and_the_options": "passed"
+  "test_layer_priority.py::test_j2_5_the_envelope_ask_names_the_limit_the_use_and_the_options": "passed",
+  "test_layer_pursue.py::test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silence": "passed",
+  "test_layer_pursue.py::test_pursue_a_not_met_item_gets_a_priced_round": "passed"
  }
 }

@@ -625,7 +625,9 @@
    "where": "engine_runtime.py adapt.line, website_dept.create",
    "owner": "session 0c",
    "size": "M",
-   "backlog": "BL-9"
+   "tests": [
+    "test_layer_adaptation.py::test_j1_b4_adaptation_fits_the_templates_line_before_the_first_run"
+   ]
   },
   {
    "id": "B5",
@@ -738,15 +740,7 @@
   "approvals_only_tighten",
   "every_ask_names_its_answers"
  ],
- "backlog": [
-  {
-   "id": "BL-9",
-   "row": "build:B4",
-   "smallest": "Between birth and the first run, an Adaptation step may only narrow the template's engines to fit the use case; the engines the kind marks required stay (Check). One path for every kind.",
-   "decision": "MK-9",
-   "package": "W2-ADAPT F1 (M5.2)"
-  }
- ],
+ "backlog": [],
  "site_ids": [
   "step:1",
   "step:2",

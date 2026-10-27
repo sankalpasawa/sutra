@@ -407,6 +407,19 @@
     {
      "kind": "step",
      "id": "audit.judge"
+    },
+    {
+     "kind": "step",
+     "id": "identity.weigh_reading",
+     "optional": true
+    },
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "request",
+     "word": "next",
+     "dst": "Adaptation",
+     "optional": true
     }
    ],
    "code": [
@@ -416,16 +429,18 @@
     "audit_file",
     "identity_finding",
     "j2_runtime.audited",
-    "j2_runtime.not_read"
+    "j2_runtime.not_read",
+    "identity_weigh_reading"
    ],
    "tests": [
     "test_j2.py::test_steps_6_to_8_the_runs_the_audit_and_the_goal_are_on_the_ledger",
     "test_j2.py::test_step_7_a_finding_keeps_the_loop_open",
     "test_j2.py::test_m0_3_an_offline_department_never_reaches_its_goal",
     "test_j2.py::test_m0_3_every_version_is_read_in_a_cycle_and_an_unsampled_v4_is_never_clean",
-    "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal"
+    "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal",
+    "test_layer_identity.py::test_j2_g_a_reading_is_weighed_three_ways",
+    "test_layer_identity.py::test_j2_g_an_item_to_confirm_is_one_question_whatever_their_number"
    ],
-   "backlog": "BL-10",
    "site_says": "built",
    "site_code": "audit_pick, audit_mechanical, audit.judge, audit_file"
   },
@@ -441,16 +456,48 @@
     {
      "kind": "event",
      "action": "goal.reached"
+    },
+    {
+     "kind": "act",
+     "src": "Adaptation",
+     "act": "propose",
+     "word": "round",
+     "dst": "Priority",
+     "optional": true
+    },
+    {
+     "kind": "act",
+     "src": "Priority",
+     "act": "accept-proposal",
+     "word": "round",
+     "dst": "Adaptation",
+     "optional": true
+    },
+    {
+     "kind": "act",
+     "src": "Adaptation",
+     "act": "inform",
+     "word": "round",
+     "dst": "Identity",
+     "optional": true
     }
    ],
    "code": [
     "j2_runtime.audited",
-    "_j2_audit_read"
+    "_j2_audit_read",
+    "identity_done",
+    "identity_round",
+    "adapt_hearnext",
+    "adapt_round",
+    "round_is_within",
+    "j2_runtime.reached"
    ],
    "tests": [
     "test_j2.py::test_steps_6_to_8_the_runs_the_audit_and_the_goal_are_on_the_ledger",
     "test_j2.py::test_step_7_a_finding_keeps_the_loop_open",
-    "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal"
+    "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal",
+    "test_layer_pursue.py::test_pursue_a_not_met_item_gets_a_priced_round",
+    "test_layer_pursue.py::test_p2_a_run_that_hits_the_ceiling_ends_in_an_options_ask_and_not_in_silence"
    ],
    "branches": [
     {
@@ -462,7 +509,6 @@
      "to": "2"
     }
    ],
-   "backlog": "BL-5",
    "site_says": "to build",
    "site_code": "the loop (name: placeholder); today Adaptation wakes only on a checked last artifact or an idea"
   }
@@ -702,11 +748,11 @@
     "status": "built",
     "text": "Built: sent back, twice at most, then you are told (_send_back)."
    },
-   "code_does": "_send_back returns the build to Write with the finding, twice at most, then Identity tells the owner; the ledger records run.failed. The end is a tell only; M9.5 makes it an options ask.",
+   "code_does": "_send_back returns the build to Write with the finding, twice at most; past the second Identity still tells the owner and files one ask through _blocked with the ways out (say the rule another way, leave this rule out, stop), and choosing to leave the rule out takes it off the department's rules (leave_rule_out) so the line builds again without it; the ledger records run.failed. A failed run never ends in a tell only.",
    "outcome": {
-    "kind": "retry",
+    "kind": "ask",
     "voice": "Identity",
-    "golden": null
+    "golden": "two rewrites did not mend it"
    },
    "binds": [
     {
@@ -716,13 +762,16 @@
    ],
    "code": [
     "_send_back",
-    "j2_runtime.on_run"
+    "j2_runtime.on_run",
+    "_blocked",
+    "leave_rule_out"
    ],
    "tests": [
     "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
-    "test_layer_journey_j2.py::test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger"
-   ],
-   "backlog": "BL-4"
+    "test_layer_journey_j2.py::test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger",
+    "test_layer_identity.py::test_j2_7_the_second_send_back_files_an_options_ask",
+    "test_layer_identity.py::test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it"
+   ]
   },
   {
    "id": "J2.8",
@@ -733,15 +782,31 @@
     "status": "open",
     "text": "Open: through Root again (a new stamp on the identity), or Identity takes your words directly."
    },
-   "code_does": "No reopen. A goal-tagged directive replaces the goal, keeps goals[], bumps identity_revision and re-arms the publish ask; the cycle is untouched. (The directive half is J4.2's.)",
+   "code_does": "reopen_on_change: a stamped goal rule, or a stamped change to done-when, on a department whose cycle has started calls j2_runtime.reopen, which starts a new cycle at step 1 with the record kept; its first event is goal.revised, carrying the identity's revision before and after and what changed; what the old cycle asked of the owner is retired, work in flight finishes, and Identity says the old goal and the new in one line. After done a task is the Brief's and starts no cycle; a rule that is not about the goal reopens nothing.",
    "outcome": {
-    "kind": "none",
-    "voice": "none",
-    "golden": null
+    "kind": "tell",
+    "voice": "Identity",
+    "golden": "The department starts its work again from the top"
    },
-   "backlog": "BL-1",
    "rulings": [
     "Q7"
+   ],
+   "binds": [
+    {
+     "kind": "event",
+     "action": "goal.revised"
+    }
+   ],
+   "code": [
+    "reopen_on_change",
+    "retire_asks",
+    "j2_runtime.reopen"
+   ],
+   "tests": [
+    "test_layer_identity.py::test_j2_8_a_stamped_goal_rule_reopens_the_cycle_at_step_1",
+    "test_layer_identity.py::test_j2_8_a_stamped_change_to_done_when_reopens_it_too",
+    "test_layer_identity.py::test_j2_8_after_done_a_task_is_the_briefs_and_starts_no_cycle",
+    "test_layer_identity.py::test_j2_8_a_rule_that_is_not_about_the_goal_and_an_answer_to_a_question_reopen_nothing"
    ]
   }
  ],
@@ -953,36 +1018,7 @@
   "approvals_only_tighten",
   "a_goal_is_never_reached_unread"
  ],
- "backlog": [
-  {
-   "id": "BL-1",
-   "row": "edge:J2.8",
-   "smallest": "On a stamped goal-tagged rule or a done_items change, j2_runtime.reopen(ref) starts a new cycle at step 1 with a goal.revised event carrying the old and new identity_revision; in-flight work finishes; Identity says old goal to new goal in one line.",
-   "decision": "Q7",
-   "package": "W2-IDENTITY J6 (M9.8)"
-  },
-  {
-   "id": "BL-4",
-   "row": "edge:J2.7",
-   "smallest": "At the second send-back, Identity files an options ask through _blocked (say it another way; leave this rule out; stop); 'leave out' removes the rule from the department's rules. A failed run never ends only in a tell.",
-   "decision": "Q6",
-   "package": "W2-IDENTITY J5 (M9.5)"
-  },
-  {
-   "id": "BL-5",
-   "row": "step:8",
-   "smallest": "Identity posts request/next; Adaptation proposes a priced correction round; Priority prices it inside the ceiling (default six rounds); Identity files it as Correct this with no stamp unless a rule says ask. A not-done reading never ends silently.",
-   "decision": "Q6",
-   "package": "W2-IDENTITY J3 and J4, W2-ADAPT F3, W2-PRIORITY (M9.1 to M9.4)"
-  },
-  {
-   "id": "BL-10",
-   "row": "step:7",
-   "smallest": "Identity weighs a reading three ways: a missing fact only the owner knows becomes a question; a wrong that needs the owner's yes becomes an ask; every other not-met item goes back to Adaptation as the next thing to correct (request/next).",
-   "decision": "M8.5",
-   "package": "W2-IDENTITY J3 (M8.5)"
-  }
- ],
+ "backlog": [],
  "site_ids": [
   "step:1",
   "step:2",
