@@ -147,9 +147,8 @@ def test_c6_a_value_equal_to_the_default_is_removed_and_a_later_default_reaches_
     assert P.store(ref, *TAKE, "guidance", shipped["guidance"]) == "removed"
     assert stored(ref) is None, "a document with nothing in it goes"
     # an update ships other words: a department with no value reads them, one with a value keeps its own
-    words, layout = {}, {}
-    for g, p in (("take", "take"),):
-        words.setdefault(g, {})[p], layout.setdefault(g, {})[p] = P.split(g, p, P.md_part("identity", g, p))
+    words = copy.deepcopy(layers.load("identity/v1").WORDS)
+    layout = copy.deepcopy(layers.load("identity/v1").LAYOUT)
     monkeypatch.setattr(layers.load("identity/v1"), "WORDS", words)
     monkeypatch.setattr(layers.load("identity/v1"), "LAYOUT", layout)
     P.store(ref, *TAKE, "task", "Judge it kindly.")
@@ -209,7 +208,7 @@ def test_c6_a_rewritten_fault_replaces_the_interfaces_whole_message_and_leaves_n
                      "task cannot hold 'Return ONLY': the shape of the answer belongs to the app"]
 
 
-def test_c6_prompt_lays_the_owners_value_over_the_fallback_and_over_a_module_that_holds_words(home, monkeypatch):
+def test_c6_prompt_lays_the_owners_value_over_the_shipped_words_and_over_a_module_that_holds_words(home, monkeypatch):
     ref = born(home)
     inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"]["take"]["recognise"]["inputs"]}
     shipped = P.prompt(ref, *RECOGNISE, **inputs)

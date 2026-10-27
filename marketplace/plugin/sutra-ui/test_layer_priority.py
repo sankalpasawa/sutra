@@ -248,41 +248,38 @@ def test_p3_a_yes_or_an_ask_for_less_is_held_to_the_room_and_a_no_always_stands(
 
 # ---- P2: Priority's words (M2.5) --------------------------------------------------------------------------------------------
 import json  # noqa: E402
-import shutil  # noqa: E402
-import tempfile  # noqa: E402
-from pathlib import Path  # noqa: E402
 
 import layers.prompts as P  # noqa: E402
 import test_function_prompts as TFP  # noqa: E402 -- the fixture department the M2.1a snapshot is rendered for
 
 
-def test_p2_priority_holds_every_part_as_words_and_none_is_on_the_md_fallback(ctx):
-    """A part of Priority still read from the .md bundle, or words that do not pass their field's type or compile, must fail
-    (contract case 5): goal (does, skills) and bargain (line, engine, cost)."""
+def test_p2_priority_holds_every_part_as_words_and_none_is_left_without(ctx):
+    """A part of Priority with no words, or words that do not pass their field's type or compile, must fail (contract case 5):
+    goal (does, skills) and bargain (line, engine, cost)."""
     parts = [(g, p) for g, ps in S.PROMPTS["priority"].items() for p in ps]
     assert [part for part in parts if part[0] != "goal" or part[1] not in S._ROLE_PARTS] == \
         [("goal", "does"), ("goal", "skills"), ("bargain", "line"), ("bargain", "engine"), ("bargain", "cost"),
          ("bargain", "round")], "the round part was added by W2-PRIORITY (M9.2); the role parts of the goal group by A3-FUNCTIONS"
-    assert C.on_the_md_fallback(V1) == [] and C.case_5(V1, ctx) == []
+    assert C.parts_without_words(V1) == [] and C.case_5(V1, ctx) == []
     assert all(P._module(None, "priority", g, p) is V1 for g, p in parts), "the registry takes the WORDS path for every part"
     assert V1.WORDS["bargain"]["line"] == {} and set(V1.WORDS["bargain"]["engine"]) == {"task"}, "the line part has no field the owner may change"
     assert P.faults() == [], "and the definitions load holds the typed words to their interface"
 
 
-def test_p2_each_part_compiled_from_its_words_is_the_md_part_byte_for_byte(ctx):
-    """The migration changes no word: the words and the layout, with the sample inputs, are the bundle's part. (The estimate
+def test_p2_each_part_compiled_from_its_words_is_the_retired_files_part_byte_for_byte(ctx):
+    """The migration changes no word: the words and the layout, with the sample inputs, are the retired file's part. (The estimate
     and remaining lines are the bundle's too since the snapshot commit before it.)"""
     for layer_group, ps in S.PROMPTS["priority"].items():
         for part in ps:
             if ("priority", layer_group, part) in S.ADDED_PARTS:
-                continue                                  # an added part has no .md part to be the same as
+                continue                                  # an added part has no retired text to be the same as
             sample = P.sample_inputs("priority", layer_group, part)
-            fallback = P.SLOT.sub(lambda m: sample[m.group(1)], P.md_part("priority", layer_group, part))
+            fallback = P.SLOT.sub(lambda m: sample[m.group(1)], TFP.retired("priority", layer_group, part))
             assert P.prompt(None, "priority", layer_group, part, **sample) == fallback, "%s.%s" % (layer_group, part)
 
 
-def test_p2_the_words_are_the_ones_the_prompt_is_built_from_not_the_bundle(ctx, monkeypatch):
-    """A prompt still read from the bundle, or a change of a word that does not reach the agent, must fail."""
+def test_p2_the_words_are_the_ones_the_prompt_is_built_from(ctx, monkeypatch):
+    """A change of a word that does not reach the agent must fail."""
     import engine_runtime as R
     monkeypatch.setitem(V1.WORDS["bargain"]["engine"], "task", "Adaptation offers an engine; say what it costs against what is left.")
     got = R._prompt("priority", "bargain", "engine", ctx["ref"], engine="Booking", does="d", needs="n", calls="240", usd="6.00", room="yes")
@@ -291,21 +288,14 @@ def test_p2_the_words_are_the_ones_the_prompt_is_built_from_not_the_bundle(ctx, 
 
 
 class TestPriorityIsServedFromItsWords(TFP.Fixture):
-    def test_p2_the_snapshot_of_the_bargain_renders_unchanged_with_the_bundles_priority_files_gone(self):
-        """The M2.1a snapshot, for Priority's prompts, from the registry's words alone: with the bundle's priority files
-        emptied of every part, the same text is sent, and the definitions still load (a file whose every part a layer holds
-        needs none)."""
+    def test_p2_the_snapshot_of_the_bargain_renders_unchanged_from_the_registrys_words_alone(self):
+        """The M2.1a snapshot, for Priority's prompts, from the registry's words alone (the .md files they came from are retired):
+        the same text is sent, and the definitions load."""
         want = {k: v for k, v in json.loads(TFP.SNAP.read_text(encoding="utf-8")).items() if k.startswith("priority.")}
         assert sorted(want) == ["priority.bargain:engine:picked", "priority.bargain:engine:shaped", "priority.bargain:line:library",
                                 "priority.bargain:line:over", "priority.bargain:line:shaped", "priority.bargain:rung"]
-        tmp = Path(tempfile.mkdtemp(prefix="priority-bundle-"))
-        self.addCleanup(shutil.rmtree, tmp, True)
-        shutil.copytree(self.bundled, tmp / "b")
-        for name in ("goal", "bargain"):
-            (tmp / "b" / "priority" / (name + ".md")).write_text("Gone.\n", encoding="utf-8")
-        self.R.PROMPTS_DIR = tmp / "b"
         self.R._DEFS.clear()
-        self.assertEqual(self.R.bundle_faults(), [])
+        self.assertEqual(self.R.prompt_faults(), [])
         got = {k: v for k, v in self.prompts().items() if k.startswith("priority.")}
         self.assertEqual(got, want)
         for text in got.values():
@@ -1224,7 +1214,7 @@ def test_p6_the_contract_passes_for_priority_v1_with_no_part_on_the_fallback(ctx
     """Any of the contract's eight cases failing for priority/v1, or a part read from the bundle, must fail."""
     for number, what, case in C.cases():
         assert case(V1, ctx) == [], "case %d: %s" % (number, what)
-    assert C.on_the_md_fallback(V1) == []
+    assert C.parts_without_words(V1) == []
     assert C.by_reference(V1) == {"by_reference": 3, "own": 9}, \
         "the three shared checks still delegate; the rest are this module's (priority_envelope moved in M5.4, priority_grant in M9.2)"
 

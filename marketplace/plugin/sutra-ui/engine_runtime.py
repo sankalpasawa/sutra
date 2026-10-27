@@ -449,9 +449,9 @@ def _base_defs():
             e = {k: v for k, v in t.items() if k not in ("id", "version")}
             e["from_template"] = t["id"]
             d["engines"][name] = e
-        # each function's version 1 is one agent and its files (S-28): a file gone from the bundle refuses the load, as
-        # a step with no check does, so no function runs on words that are not there (PRD M2.1)
-        faults = validate(d) + bundle_faults()
+        # each function's version 1 is one agent and its words (S-28): a part with no words refuses the load, as a step
+        # with no check does, so no function runs on words that are not there (PRD M2.1)
+        faults = validate(d) + prompt_faults()
         if faults:
             raise ValueError("the engine definitions are refused: " + "; ".join(faults[:6]))
         _DEFS["d"] = d
@@ -6188,40 +6188,23 @@ CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "w
 # ---- each function's version 1: one agent, its instructions as typed fields (S-28, A1.16) ------------------------------
 #: Version 1 of each function is one agent with its instructions inside its covering (PRD M2, rewritten by A1). The words
 #: its agent is sent are the layer's WORDS and LAYOUT, compiled by layers/prompts.py from fields the interface types
-#: (layer_schema.PROMPTS); the code around them only fills their inputs and checks what comes back. Until a layer holds
-#: its words, the bundle's .md files (function-prompts/, which an update of the app replaces) are read through the same
-#: split. The bundle sits beside the code and is read-only from here on.
-PROMPTS_DIR = Path(__file__).parent / "function-prompts"
-#: Each function's files, in its page's order, and in each the parts its steps read, with the inputs the code fills in
-#: each, derived from the interface. A file no step reads (Adaptation's decide, whose only part is the note) is the
+#: (layer_schema.PROMPTS); the code around them only fills their inputs and checks what comes back. There is no other source:
+#: the .md files that held them before they moved into the layers are deleted (W3-PROOF X1, M2.10).
+#: Each function's groups of instructions, in its page's order, and in each the parts its steps read, with the inputs the code
+#: fills in each, derived from the interface. A group no step reads (Adaptation's decide, whose only part is the note) is the
 #: owner's to read, and holds no part.
 INSTRUCTIONS = {fn: {group: {part: tuple(spec["inputs"]) for part, spec in parts.items() if "field.note" not in spec["fields"].values()}
                      for group, parts in layer_schema.PROMPTS[fn].items()} for fn in layer_schema.FUNCTION_LAYERS}
 
 
-# the .md reader and the compiler moved into layers/prompts.py (PRD A1.16); these keep their names for their callers
-def _parts(text):
-    return layers.prompts.parts_of(text)
-
-
-def instruction_faults(fn, file, text):
-    """What keeps one instruction file from serving its function: layers.prompts.instruction_faults."""
-    return layers.prompts.instruction_faults(fn, file, text)
-
-
-def bundle_faults():
-    """Every function's words against the list, at the definitions load: layers.prompts.faults. [] when all serve."""
+def prompt_faults():
+    """Every function's words against the interface, at the definitions load: layers.prompts.faults. [] when all serve."""
     return layers.prompts.faults()
 
 
 def _own(ref, fn, file):
     """Where a department keeps its own copy of one instruction file (PRD M2.2): layers.prompts.own."""
     return layers.prompts.own(ref, fn, file)
-
-
-def _instruction(fn, file, ref=None):
-    """The text of one of a function's instruction files, the department's own copy or the bundle's: layers.prompts.instruction."""
-    return layers.prompts.instruction(fn, file, ref)
 
 
 def _prompt(fn, file, part, ref=None, **slots):

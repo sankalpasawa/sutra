@@ -616,21 +616,25 @@ def test_s3_every_soft_steps_out_keys_are_named_in_its_parts_returns():
                 assert '"%s"' % key in p["returns"], "%s: %s is not in its part's returns" % (s["id"], key)
 
 
-def test_s3_prompts_are_the_bundles_parts_and_the_returns_byte_for_byte():
+def test_s3_prompts_are_the_retired_files_parts_and_the_returns_byte_for_byte():
+    """The interface's prompts are the parts of the .md files the words came from (their text is kept in
+    test_fixtures/retired-prompt-parts.json since the files were retired, W3-PROOF X1), with each part's returns, inputs and
+    fields; a part a later step added (S.ADDED_PARTS) is in none of them."""
+    retired = __import__("test_function_prompts").RETIRED
     for fn, files in R.INSTRUCTIONS.items():
-        assert list(S.PROMPTS[fn]) == list(files) and list(S.GROUPS[fn]) == list(files)
+        assert list(S.PROMPTS[fn]) == list(files) and list(S.GROUPS[fn]) == list(files) == list(retired["leads"][fn])
         for file, parts in files.items():
-            text = (R.PROMPTS_DIR / fn / (file + ".md")).read_text(encoding="utf-8")
-            lead, got = R._parts(text)
-            assert S.GROUPS[fn][file] == lead.split("\n\n")[0]
+            assert S.GROUPS[fn][file] == retired["leads"][fn][file]
+            got = retired["parts"][fn].get(file, {})
             if not [p for p in parts if (fn, file, p) not in S.ADDED_PARTS]:
                 assert [p for p in S.PROMPTS[fn][file] if (fn, file, p) not in S.ADDED_PARTS] == ["note"], \
                     "a file no step reads is its note (A1.16 rule 7)"
                 continue
-            # a part a later step added to the interface (A1.16, 'Parts added by later steps') is in no file of the bundle
+            # a part a later step added to the interface (A1.16, 'Parts added by later steps') is in no file of the retired bundle
             assert [p for p in S.PROMPTS[fn][file] if (fn, file, p) not in S.ADDED_PARTS] == [p for p in parts if (fn, file, p) not in S.ADDED_PARTS]
             for part, slots in parts.items():
                 if (fn, file, part) in S.ADDED_PARTS:
+                    assert part not in got
                     continue
                 p = S.PROMPTS[fn][file][part]
                 assert p["inputs"] == tuple(slots)

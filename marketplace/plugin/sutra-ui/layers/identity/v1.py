@@ -8,8 +8,7 @@ PRD M3.9) and the two steps that tell it the owner's answer (identity_read and i
 word on to the body engine_runtime holds). Wave 2 adds to it (A1 W2-IDENTITY): the conflict's own ways out reach the owner as one
 card, applied by the layer that owns each (identity_closed, identity_apply; M5.4); Hear a reading, where done is read from
 Audit's reading and what it leaves open is weighed three ways (identity_done, identity_weigh_reading; M8.4, M8.5); File a
-granted round (identity_round; M9.3); and no end of the pursuit is silent (M9.5). WORDS and LAYOUT hold the words of every part of Identity's prompts (I2), so none
-is read from the .md bundle. view() returns the pane's read model by reference (I3).
+granted round (identity_round; M9.3); and no end of the pursuit is silent (M9.5). WORDS and LAYOUT hold the words of every part of Identity's prompts (I2). view() returns the pane's read model by reference (I3).
 """
 import re
 import uuid
@@ -78,8 +77,8 @@ CHECK = {
 }
 
 # ---- Identity's words (I2, A1.16): the default value of every field of its prompt parts, and the layout that arranges them,
-# as `python -m layers.prompts --extract identity` splits them from the .md files by the rule of A1.16 -- the proof, in
-# test_layer_prompts and test_layer_identity, is that each part compiles back to the .md part byte for byte. The answer
+# the words of the .md files they came from, byte for byte (retired, W3-PROOF X1: test_fixtures/retired-prompt-parts.json holds
+# them, and test_layer_identity proves each part compiles back to its text). The answer
 # contract (S.PROMPTS[...]['returns']) is the interface's and is not here; an owner's change is a typed value over these.
 WORDS = {
     'goal': {

@@ -1203,8 +1203,8 @@ GROUPS = {
 }
 
 #: each layer's prompt slots (A1.16): {layer: {group: {part: {fields, inputs, returns, read_by}}}}. The split rule was run
-#: once over function-prompts/*.md and over p_setup_converse and p_setup_shape, and its result is written here as
-#: literals; no .md file is read at runtime. fields: the owner's fields and their DEFS; inputs: the names code fills;
+#: once over the .md files the words came from (retired, W3-PROOF X1) and over p_setup_converse and p_setup_shape, and its result is
+#: written here as literals; no .md file is read at runtime. fields: the owner's fields and their DEFS; inputs: the names code fills;
 #: returns: the answer contract, byte for byte, or None; read_by: the step id that reads the part (a tuple when several
 #: do), or None. A part whose first line holds an input, and whose words before its contract hold inputs too, has no
 #: owner field by the split rule (close, shape, make.line, bargain.line, refused, setup.shape): its words stay in LAYOUT.

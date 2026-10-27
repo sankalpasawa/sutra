@@ -17,7 +17,7 @@ lane $PY test_website_motor.py > /tmp/sutra-suite-motor.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-motor.txt
 lane $PY -m pytest -q test_website_dept.py test_channel_isolation.py > /tmp/sutra-suite-pytest.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-pytest.txt
-# each function's instruction files (PRD M2): byte for byte as the inline prompts were, a stamp-only change, a refused
+# each function's words (PRD M2, A1.16): every prompt byte for byte as the snapshot has it, a stamp-only change, a refused
 # change leaving nothing, a change surviving an update; a lane of its own, since its fixture reloads the runtime
 lane $PY -m pytest -q -p no:cacheprovider test_function_prompts.py > /tmp/sutra-suite-prompts.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-prompts.txt | sed "s/^/function prompts: /"

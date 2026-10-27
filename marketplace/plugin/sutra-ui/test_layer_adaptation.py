@@ -94,23 +94,24 @@ def test_a1_what_it_holds_by_reference_is_counted_for_the_hand_in(capsys):
 
 
 # ---- A2 · Adaptation's words (M2.5) -----------------------------------------------------------------------------------
-def test_a2_every_part_of_adaptations_interface_is_served_from_its_words_and_none_is_on_the_fallback(home):
+def test_a2_every_part_of_adaptations_interface_is_served_from_its_words_and_none_is_left_without(home):
     import layers.prompts as P
     for group, parts in S.PROMPTS["adaptation"].items():
         for part in parts:
-            assert P._module(home["ref"], "adaptation", group, part) is v1(), "%s.%s is read from the .md bundle" % (group, part)
-    assert C.on_the_md_fallback(v1()) == []
+            assert P._module(home["ref"], "adaptation", group, part) is v1(), "%s.%s is served by adaptation/v1's words" % (group, part)
+    assert C.parts_without_words(v1()) == []
     assert P.faults() == [] and sorted(v1().WORDS) == sorted(v1().LAYOUT) == ["decide", "goal", "make", "sense"]
 
 
 @pytest.mark.parametrize("case", C.cases(), ids=lambda c: "case %d" % c[0])
-def test_a2_the_whole_contract_passes_for_adaptation_v1_with_no_part_on_the_fallback(case, home):
+def test_a2_the_whole_contract_passes_for_adaptation_v1_with_no_part_left_without_words(case, home):
     _, what, fn = case
     assert fn(v1(), home) == [], what
 
 
-def test_a2_each_part_compiles_to_the_md_part_it_came_from_byte_for_byte(home):
+def test_a2_each_part_compiles_to_the_retired_files_part_it_came_from_byte_for_byte(home):
     import layers.prompts as P
+    from test_function_prompts import retired
     seen = 0
     for group, parts in S.PROMPTS["adaptation"].items():
         for part, spec in parts.items():
@@ -118,7 +119,7 @@ def test_a2_each_part_compiles_to_the_md_part_it_came_from_byte_for_byte(home):
                 continue
             sample = {n: "<<%s>>" % n for n in spec["inputs"]}
             got = P.prompt(home["ref"], "adaptation", group, part, **sample)
-            assert got == P.SLOT.sub(lambda m: sample[m.group(1)], P.md_part("adaptation", group, part)), "%s.%s" % (group, part)
+            assert got == P.SLOT.sub(lambda m: sample[m.group(1)], retired("adaptation", group, part)), "%s.%s" % (group, part)
             seen += 1
     assert seen == 6
 
@@ -1016,7 +1017,7 @@ def test_a8_the_make_shape_part_is_in_the_interface_with_its_contract_verbatim()
     assert {"act": "inform", "words": ("doubt",), "to": ("Identity",), "payload": "act.doubt"} in S.SENDS["Adaptation"]
 
 
-# ---- A1.18 · a layer that does not load runs engine_runtime's own bodies, and never stops a department -----------------
+# ---- A1.18 · engine_runtime's own copies of the layer's bodies (retired by W3-PROOF X1: see test_layer_retire.py) --------------
 def test_a3_the_fallback_prompt_builder_fills_every_slot_the_part_has_and_says_what_the_layers_does(j2):
     """R.p_adapt_line is the copy a department runs when adaptation/v1 does not load. make.line gained its items slot in
     M5.1, and the copy passed none, so every shaped line raised: 'the app fills no {{items}}'."""
@@ -1032,25 +1033,6 @@ def test_a3_the_fallback_prompt_builder_fills_every_slot_the_part_has_and_says_w
     bare = _dept(j2, "organic", ref="dref-fallback-bare", items=[])
     ctx = {"ref": bare, "dept": W.dept(bare), "post": {"payload": {"word": "line", "words": "w"}}, "bag": {}}
     assert R.p_adapt_line(ctx, None, None) == v1().PROMPT["adapt_line"](ctx, None, None) and "none" in R.p_adapt_line(ctx, None, None)
-
-
-def test_a3_a_department_whose_adaptation_layer_does_not_load_still_has_its_line_shaped(j2, monkeypatch):
-    """The fallback end to end: with adaptation/v1 unable to load, the prompt that shapes the line is built (it raised) and the
-    step runs on engine_runtime's own bodies."""
-    import layers
-    W, R, J, founding, FV = j2
-    real = layers.load
-    monkeypatch.setattr(layers, "load", lambda impl_id: None if str(impl_id).startswith("adaptation/") else real(impl_id))
-    asked = []
-    _stub(monkeypatch, R, {"adapt.line": lambda prompt: asked.append(prompt) or {"engines": GOOD},
-                           "priority.bargain": {"answer": "accept", "why": "the envelope has room"}})
-    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
-    W.owner_ask(root, ORGANIC)
-    W.run_until_idle(root, limit=300)
-    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
-    W.run_until_idle(ref, limit=300)
-    assert asked and "WHAT DONE MEANS, ITEM BY ITEM" in asked[0] and "D1: " in asked[0], "the shape step was asked, with the items"
-    assert not [r for r in W.runs(ref) if r.get("engine") == "Adaptation" and r.get("status") == "failed" and "items" in str(r.get("what"))]
 
 
 # ---- A5 · Adaptation's view -------------------------------------------------------------------------------------------
@@ -2312,19 +2294,6 @@ def test_f3_the_interface_hears_and_sends_the_round_and_the_recipe_has_the_handl
     nxt = handler["steps"][1]
     assert (nxt["prompt"], nxt["draft"], nxt["check"]) == ("adapt_next", "adapt_next_draft", "round_is_new")
     assert nxt["out"] == {"correction": "str", "fixes": "list", "covers": "list", "why": "str"}
-
-
-def test_f3_a_department_whose_adaptation_layer_does_not_load_hears_a_request_for_a_round_and_proposes_none(j2, monkeypatch):
-    W, R, J, _, _ = j2
-    real = layers.load
-    monkeypatch.setattr(layers, "load", lambda impl_id: None if str(impl_id).startswith("adaptation/") else real(impl_id))
-    ref = _pursuing(j2)
-    _stub(monkeypatch, R, {"adapt.next": {"correction": "Put right D2", "fixes": [], "covers": ["D2"], "why": "x"}})
-    _ask_next(R, ref)
-    W.run_until_idle(ref, limit=100)
-    assert _round_posts(R, ref) == [] and _rows(W, ref) == []
-    ran = [r for r in W.runs(ref) if r.get("engine") == "Adaptation" and "round" in str(r.get("what"))]
-    assert ran and ran[-1]["status"] == "ok" and "not loaded" in ran[-1]["what"], [(r.get("what"), r["status"]) for r in W.runs(ref)]
 
 
 # ---- F4 · the rounds in the view (W2-ADAPT, M9.6) --------------------------------------------------------------------

@@ -1,23 +1,17 @@
-"""The typed prompt compiler (PRD amendment A1.16; W1-CORE K1, steps C3, C4 and C5).
+"""The typed prompt compiler (PRD amendment A1.16; W1-CORE K1, steps C3, C4 and C5; the .md bundle retired by W3-PROOF X1).
 
-C3  layers/prompts.py: compile_layout, words, prompt and faults, with the .md reader as the fallback. A stub module holding
-    WORDS and LAYOUT for a part compiles to exactly the .md text; a marker with no value raises with the part named; a value
-    is never scanned again; the M2.1 and M2.2 tests (test_function_prompts.py) pass unchanged on the fallback.
-C4  `python -m layers.prompts --extract <layer>` prints WORDS and LAYOUT by the split rule, checks each part's returns,
-    inputs and fields against the interface, and the words compiled back are the .md part byte for byte, for every part of
-    the five function layers. No part needed a hand fix.
+C3  layers/prompts.py: compile_layout, words, prompt and faults. A part is served by the words and the layout of the version a
+    department pins, else of the layer's default version; a part no version holds words for is an error that names it, never a
+    blank; a marker with no value raises with the part named; a value is never scanned again.
+C4  the words of every layer are the text of the .md files they came from, byte for byte (test_fixtures/retired-prompt-parts.json
+    keeps that text since the files were retired), and a part a later step adds is served by its layer's words alone.
 C5  the snapshot renders what runs: a stub overriding a prompt through the registry changes the rendered text, and the stubs
     still pass the contract, whose case 5 compiles each part with sample inputs.
 
 A test that meets a fault of the interface fails (conftest.py); a deliberate one is wrapped in S.expect_refused().
 """
-import ast
 import copy
-import io
 import os
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 from unittest import mock
 
@@ -27,6 +21,7 @@ import layers
 import layers.contract as C
 import layers.prompts as P
 import layer_schema as S
+import test_function_prompts as TFP  # the fixture department the M2.1a snapshot is rendered for, and the retired parts' text
 
 HERE = Path(__file__).resolve().parent
 
@@ -50,23 +45,22 @@ def holding(monkeypatch, layer, words, layout):
 
 
 def md_part(layer, group, part, **inputs):
-    """What the .md bundle says for a part, its inputs filled: the text the compiler must give back."""
-    return P.SLOT.sub(lambda m: str(inputs[m.group(1)]), P.md_part(layer, group, part))
+    """What the retired .md file said for a part, its inputs filled: the text the compiler must give back."""
+    return P.SLOT.sub(lambda m: str(inputs[m.group(1)]), TFP.retired(layer, group, part))
 
 
 def split_of(layer, *groups):
-    """WORDS and LAYOUT for the groups of a layer, by the split rule over its .md files (the C4 extractor prints the same)."""
-    words, layout = {}, {}
-    for group in groups or S.PROMPTS[layer]:
-        for part in P.file_parts(layer, group):              # what the bundle holds: a part a later step added has no .md part
-            words.setdefault(group, {})[part], layout.setdefault(group, {})[part] = P.split(group, part, P.md_part(layer, group, part))
-    return words, layout
+    """WORDS and LAYOUT for the groups of a layer: copies of its default version's own, to hand to a stub."""
+    module = layers.load(S.DEFAULT_PINS[layer])
+    names = groups or tuple(S.PROMPTS[layer])
+    return ({g: copy.deepcopy(module.WORDS[g]) for g in names}, {g: copy.deepcopy(module.LAYOUT[g]) for g in names})
 
 
 def all_parts():
-    """The parts the .md bundle holds, read from the bundle (the reference), so a part a later step adds to the interface
-    without an .md part changes nothing here."""
-    return [(layer, group, part) for layer in S.FUNCTION_LAYERS for group in S.PROMPTS[layer] for part in P.file_parts(layer, group)]
+    """The parts the retired .md bundle held, from the fixture that keeps their text (the reference), so a part a later step adds
+    to the interface changes nothing here."""
+    return [(layer, group, part) for layer in S.FUNCTION_LAYERS for group in S.PROMPTS[layer]
+            for part in TFP.RETIRED["parts"][layer].get(group, {})]
 
 
 def later_part(monkeypatch, runtime, layer, group, part, inputs=("brief",)):
@@ -110,7 +104,7 @@ def test_c3_a_marker_with_no_value_is_an_error_never_a_blank():
         P.compile_layout("{returns}", {}, None, {}, P.who(*GATE))
 
 
-def test_c3_the_part_is_named_in_the_error_on_the_fallback_too(runtime):
+def test_c3_the_part_is_named_in_the_error_when_the_words_serve_it_too(runtime):
     with pytest.raises(ValueError, match=r"^Identity's take instructions, gate: the app fills no \{\{engine\}\}$"):
         P.prompt(None, *GATE, rules="r")
     with pytest.raises(ValueError, match=r"^Identity's take instructions have no part nothing$"):
@@ -119,23 +113,40 @@ def test_c3_the_part_is_named_in_the_error_on_the_fallback_too(runtime):
         P.words(None, "audit", "judge", "gate")
 
 
-def test_c3_a_stub_holding_words_and_layout_for_identity_take_gate_renders_exactly_the_md_text(runtime, monkeypatch):
+def test_c3_a_stub_holding_words_and_layout_for_identity_take_gate_renders_exactly_the_retired_files_text(runtime, monkeypatch):
     want = md_part(*GATE, rules="the rules", engine="the engine")
     assert want.startswith("An engine asks whether it may start.\nTHE RULES: the rules\nTHE ENGINE: the engine\n\nReturn ONLY")
-    assert P.prompt(None, *GATE, rules="the rules", engine="the engine") == want, "on the fallback"
+    assert P.prompt(None, *GATE, rules="the rules", engine="the engine") == want, "from the version's own words"
     words, layout = split_of("identity", "take")
-    holding(monkeypatch, "identity", {"take": {"gate": words["take"]["gate"]}}, {"take": {"gate": layout["take"]["gate"]}})
-    assert P._module(None, "identity", "take", "gate") is not None, "the pinned module holds the part now"
-    assert P.prompt(None, *GATE, rules="the rules", engine="the engine") == want, "from the stub"
+    everything = split_of("identity")
+    holding(monkeypatch, "identity", everything[0], everything[1])
+    assert P._module(None, "identity", "take", "gate") is not None, "the pinned module holds the part"
+    assert P.prompt(None, *GATE, rules="the rules", engine="the engine") == want, "from a stub that holds the same"
     assert layers.prompt(None, *GATE, rules="the rules", engine="the engine") == want
     # the stub's words are what is sent: change one and the text changes
     words["take"]["gate"]["task"] = "A step asks whether it may run."
-    holding(monkeypatch, "identity", {"take": {"gate": words["take"]["gate"]}}, {"take": {"gate": layout["take"]["gate"]}})
+    everything[0]["take"]["gate"] = words["take"]["gate"]
     assert P.prompt(None, *GATE, rules="the rules", engine="the engine") == want.replace("An engine asks whether it may start.", "A step asks whether it may run.")
-    # a part the stub does not hold is still read from the bundle
-    assert P.prompt(None, "identity", "take", "rule", goal="g", rules="r", words="w") == md_part("identity", "take", "rule", goal="g", rules="r", words="w")
+    # a part the stub does not hold is not read from anywhere else: it is an error that names it, never a blank
+    del everything[0]["take"]["rule"], everything[1]["take"]["rule"]
+    with pytest.raises(ValueError, match=r"^Identity's take instructions, rule: no version holds words for this part$"):
+        P.prompt(None, "identity", "take", "rule", goal="g", rules="r", words="w")
     # the compiler is reached by the runtime's own name for it
     assert runtime._prompt(*GATE, ref=None, rules="the rules", engine="the engine").startswith("A step asks whether it may run.")
+
+
+def test_c3_a_pinned_version_with_no_words_of_its_own_is_served_the_default_versions(runtime, monkeypatch):
+    """The pinned version serves a part when it holds words and a layout for it; else the layer's default version does."""
+    inputs = {"rules": "the rules", "engine": "the engine"}
+    stub = type("Stub", (), {"WORDS": {}, "LAYOUT": {}})
+    monkeypatch.setattr(layers, "impl", lambda ref, layer, d=None: stub)
+    assert P._module("dref-x", "identity", "take", "gate") is layers.load("identity/v1")
+    assert P.prompt("dref-x", *GATE, **inputs) == md_part(*GATE, **inputs)
+    stub.WORDS = {"take": {"gate": {"task": "A pinned version asks."}}}
+    stub.LAYOUT = {"take": {"gate": "{task}\nTHE RULES: {{rules}}\nTHE ENGINE: {{engine}}\n\n{returns}"}}
+    assert P._module("dref-x", *GATE[:2], "gate") is stub
+    assert P.prompt("dref-x", *GATE, **inputs).startswith("A pinned version asks.\nTHE RULES: the rules\n"), "its own words win"
+    assert P.prompt("dref-x", "identity", "take", "rule", goal="g", rules="r", words="w") == md_part("identity", "take", "rule", goal="g", rules="r", words="w")
 
 
 def test_c3_a_stub_missing_an_input_raises_with_the_part_named(runtime, monkeypatch):
@@ -145,21 +156,22 @@ def test_c3_a_stub_missing_an_input_raises_with_the_part_named(runtime, monkeypa
         P.prompt(None, *GATE, rules="the rules")
 
 
-def test_c3_words_are_the_stubs_defaults_or_the_md_parts_fields(runtime, monkeypatch):
+def test_c3_words_are_the_versions_defaults(runtime, monkeypatch):
     got = P.words(None, "identity", "take", "take")
     assert sorted(got) == ["guidance", "task"] and got["task"] == "Judge one request from the owner."
     assert P.words(None, "identity", "goal", "skills")["items"][0] == "recognise a task, a query, a directive, feedback or a new idea"
     assert P.words(None, "identity", "goal", "close") == {} and layers.words(None, "identity", "goal", "close") == {}
     note = P.words(None, "adaptation", "decide", "note")["text"]
     assert note.startswith("In this version the choice is made by code") and note.endswith("never applies one itself.")
-    # a copy: the stub's own words are never handed out to be changed
-    mine = {"take": {"gate": {"task": "Mine."}}}
-    holding(monkeypatch, "identity", mine, {"take": {"gate": "{task}"}})
+    # a copy: the version's own words are never handed out to be changed
+    words, layout = split_of("identity")
+    words["take"]["gate"] = {"task": "Mine."}
+    layout["take"]["gate"] = "{task}\n\n{returns}"
+    holding(monkeypatch, "identity", words, layout)
     P.words(None, *GATE)["task"] = "changed"
-    assert mine["take"]["gate"]["task"] == "Mine."
-    # a layer's module that holds the words is read before the bundle, for what an agent is told it is
-    holding(monkeypatch, "identity", {"goal": {"does": {"text": "does it differently"}, "skills": {"items": ["x", "y"]}}},
-            {"goal": {"does": "{text}", "skills": "{items}"}})
+    assert words["take"]["gate"]["task"] == "Mine."
+    # what an agent is told it is comes from the words its layer's version holds
+    words["goal"]["does"], words["goal"]["skills"] = {"text": "does it differently"}, {"items": ["x", "y"]}
     assert runtime._goal_of(None, "Identity") == ("does it differently", ["x", "y"])
     assert runtime._goal_of(None, "Audit")[0] == "drops in on what went live and checks claims against the record"
 
@@ -175,7 +187,7 @@ def test_c3_the_goal_of_a_function_is_what_its_definition_says_and_a_work_engine
 
 def test_c3_instructions_are_the_interfaces_parts_with_the_inputs_code_fills(runtime):
     R = runtime
-    # the parts the bundle shipped with, as the floor: a part a later step adds to the interface stands beside them
+    # the parts the retired files shipped with, as the floor: a part a later step adds to the interface stands beside them
     shipped = {"identity": {"goal": ["does", "skills", "close"], "completeness": ["thin", "enough"],
                                        "take": ["recognise", "take", "answer", "rule", "weigh", "gate"]},
                           "adaptation": {"goal": ["does", "skills"], "sense": ["shape"], "decide": [], "make": ["line", "refused"]},
@@ -185,9 +197,9 @@ def test_c3_instructions_are_the_interfaces_parts_with_the_inputs_code_fills(run
     assert list(R.INSTRUCTIONS) == list(shipped) and all([g for g in R.INSTRUCTIONS[fn] if g in files] == list(files) for fn, files in shipped.items())
     for fn, files in shipped.items():
         for group, parts in files.items():
-            # the bundle's parts, in the bundle's order: a part a later step adds stands beside them and changes none of this
+            # the retired files' parts, in their order: a part a later step adds stands beside them and changes none of this
             assert [p for p in R.INSTRUCTIONS[fn][group] if p in parts] == parts, (fn, group)
-            assert [p for p in parts if p in P.file_parts(fn, group)] == parts, "the bundle still holds them"
+            assert [p for p in parts if p in TFP.RETIRED["parts"][fn][group]] == parts, "the fixture still holds them"
     assert R.INSTRUCTIONS["identity"]["completeness"]["enough"] == ("words", "asked", "goal", "items", "rules", "owner", "budget", "confirm")
     for layer, group, part in all_parts():
         if layer == "adaptation" and group == "decide":
@@ -197,19 +209,18 @@ def test_c3_instructions_are_the_interfaces_parts_with_the_inputs_code_fills(run
 
 def test_c3_the_old_names_are_thin_aliases_of_the_compiler(runtime):
     R = runtime
-    assert R._parts("Lead.\n\n## a\n\nx") == P.parts_of("Lead.\n\n## a\n\nx") == ("Lead.", {"a": "x"})
-    assert R._instruction("audit", "judge") == P.instruction("audit", "judge")
     assert R._prompt("coordination", "tie", "tie", None, ready="a", what="b", order="c", waiting="d") == \
         P.prompt(None, "coordination", "tie", "tie", ready="a", what="b", order="c", waiting="d")
-    assert R.bundle_faults() == P.faults() == []
-    assert R.instruction_faults("audit", "judge", "") == P.instruction_faults("audit", "judge", "") != []
+    assert R.prompt_faults() == P.faults() == []
+    for gone in ("_parts", "_instruction", "instruction_faults", "bundle_faults", "PROMPTS_DIR"):
+        assert not hasattr(R, gone), "%s went with the .md bundle" % gone
+    for gone in ("parts_of", "instruction", "file_parts", "md_part", "instruction_faults", "bundle_faults", "extract", "split", "main"):
+        assert not hasattr(P, gone), "layers.prompts.%s went with the .md bundle" % gone
 
 
 def test_c3_faults_name_what_keeps_a_typed_part_from_serving(runtime, monkeypatch):
     R = runtime
-    words, layout = split_of("identity", "take")
-    good = ({"take": {"gate": words["take"]["gate"]}}, {"take": {"gate": layout["take"]["gate"]}})
-    holding(monkeypatch, "identity", *good)
+    words, layout = split_of("identity")
     assert P.faults() == []
     for edit, fault in (
             (lambda w, l: l["take"].update(gate=l["take"]["gate"].replace("{{engine}}", "{{engine}} {{budget}}")),
@@ -223,26 +234,29 @@ def test_c3_faults_name_what_keeps_a_typed_part_from_serving(runtime, monkeypatc
             (lambda w, l: w["take"]["gate"].update(task="Say {{engine}} first."),
              "task: holds '{{' or '}}', which only the app may write"),
             (lambda w, l: w["take"]["gate"].update(task="x" * 1201), "task: longer than 1200")):
-        w, l = {"take": {"gate": dict(words["take"]["gate"])}}, {"take": {"gate": layout["take"]["gate"]}}
+        w, l = copy.deepcopy(words), copy.deepcopy(layout)
         edit(w, l)
         holding(monkeypatch, "identity", w, l)
         assert [f for f in P.faults() if fault in f] == ["Identity's take instructions, gate: " + fault], fault
-    holding(monkeypatch, "identity", {"take": {"nothing": {"task": "x"}}}, {"take": {"nothing": "{task}"}})
+    w, l = copy.deepcopy(words), copy.deepcopy(layout)
+    w["take"]["nothing"], l["take"]["nothing"] = {"task": "x"}, "{task}"
+    holding(monkeypatch, "identity", w, l)
     assert "Identity's take instructions, nothing: Identity has no part take.nothing" in P.faults()
 
 
-def test_c3_a_file_every_part_of_which_is_typed_needs_no_bundle_file(runtime, monkeypatch, tmp_path):
-    holding(monkeypatch, "audit", {}, {})                     # as a layer that holds no words yet: the layer's real words are not the test's
+def test_c3_a_part_the_version_holds_no_words_for_is_a_fault_that_names_it_and_nothing_else_serves_it(runtime, monkeypatch):
+    """The covering check of the words: with the bundle gone a part without words is not read from anywhere, so the check
+    names it (the definitions load refuses, test_function_prompts), where the bundle once covered it."""
     words, layout = split_of("audit", "judge")
-    bundle = tmp_path / "bundle"
-    shutil.copytree(runtime.PROMPTS_DIR, bundle)
-    (bundle / "audit" / "judge.md").unlink()
-    monkeypatch.setattr(runtime, "PROMPTS_DIR", bundle)
-    assert P.faults() == ["Audit's judge instructions are missing from the bundle"]
-    holding(monkeypatch, "audit", {"judge": words["judge"]}, {"judge": layout["judge"]})
-    assert P.faults() == [], "the words are the module's now"
-    (bundle / "audit" / "goal.md").unlink()
-    assert P.faults() == ["Audit's goal instructions are missing from the bundle"], "a file with a part still on the fallback is needed"
+    holding(monkeypatch, "audit", words, layout)                 # a layer whose goal group has no words at all
+    goal_parts = list(S.PROMPTS["audit"]["goal"])
+    assert goal_parts[:2] == ["does", "skills"] and len(goal_parts) == 8, goal_parts
+    assert P.faults() == ["Audit's goal instructions, %s: the version holds no words for it" % part for part in goal_parts]
+    assert P.unserved("audit", layers.load("audit/v1")) == ["goal.%s" % part for part in goal_parts]
+    with pytest.raises(ValueError, match=r"^Audit's goal instructions, does: no version holds words for this part$"):
+        P.words(None, "audit", "goal", "does")
+    # an added part (S.ADDED_PARTS) has no other source either: it is asked for like the rest
+    assert all(("audit", "goal", part) in S.ADDED_PARTS for part in goal_parts[2:])
 
 
 #: a part of a layer that holds its words (Identity's, Coordination's and Priority's), and the file the owner changes whole
@@ -262,8 +276,7 @@ def test_c3_a_file_the_owner_changed_whole_is_no_run_s_words_the_typed_values_to
     inputs = {n: "<%s>" % n for n in S.PROMPTS[layer][group][part]["inputs"]}
     shipped = P.prompt(ref, layer, group, part, **inputs)
     assert P._module(ref, layer, group, part) is module and P.words(ref, layer, group, part) == module.WORDS[group][part]
-    mine_part = "The owner's own words.\n" + P.file_parts(layer, group)[part]
-    mine = P.instruction(layer, group).replace(P.file_parts(layer, group)[part], mine_part, 1)
+    mine = "What the owner's file is for.\n\n## %s\n\nThe owner's own words.\n%s\n" % (part, TFP.retired(layer, group, part))
     path = P.own(ref, layer, group)
     path.parent.mkdir(parents=True)
     path.write_text(mine, encoding="utf-8")
@@ -281,155 +294,66 @@ def test_c3_a_ref_that_is_no_department_is_served_the_words_all_the_same(runtime
     assert P.own_files("../not-a-ref", "identity") == [] and P.owner_values("../not-a-ref", "identity", "take", "gate") == {}
 
 
-# ---- C4 · the extractor and the split proof -----------------------------------------------------------------------------
-RETURNS = 'Return ONLY a JSON object: {"ok": bool, "rows": [{"a": str}]}.'
+# ---- C4 · the words are the retired files' text -----------------------------------------------------------------------------
+def inputs_of(text):
+    """The names a part's text asks code to fill, in the order they first appear."""
+    return list(dict.fromkeys(P.SLOT.findall(text)))
 
 
-def test_c4_returns_is_the_json_sentence_wherever_it_stands():
-    text = "before. " + RETURNS + " after."
-    assert text[slice(*P.returns_span(text))] == RETURNS
-    assert P.returns_span("Return ONLY a JSON object: {\"a\": 1}{{refused}}") == (0, len('Return ONLY a JSON object: {"a": 1}')), "no full stop to take"
-    assert P.returns_span("no contract here") is None and P.returns_span("Return ONLY a JSON object: {\"a\": ") is None
-    assert P.returns_span("Return ONLY a list") is None, "only the JSON object sentence is a contract"
+def test_c4_the_interfaces_parts_are_the_retired_files_parts_and_the_added_ones_and_no_other():
+    """S.ADDED_PARTS is exactly the parts that have no retired text: a part is in one list or the other, never both, never
+    neither. (So a part added after the files, and only such a part, is exempt from being the files' text.)"""
+    retired = set(all_parts())
+    interface = {(layer, group, part) for layer in S.FUNCTION_LAYERS for group, parts in S.PROMPTS[layer].items() for part in parts}
+    added = set(S.ADDED_PARTS)
+    assert retired & added == set(), "a part the files held is not an added part"
+    assert interface - retired - added == set(), "every part of the interface is one or the other"
+    assert added <= interface and len(retired) == 29, "and every added part is the interface's"
 
 
-def test_c4_the_split_rule_on_small_parts():
-    # rule 3 and 5: the task is the text before the first line holding an input; labels and inputs stay in the layout
-    f, l = P.split("g", "p", "Say it.\nTHE GOAL: {{goal}}\nTHE WORDS:\n{{words}}\n\n" + RETURNS)
-    assert f == {"task": "Say it."} and l == "{task}\nTHE GOAL: {{goal}}\nTHE WORDS:\n{{words}}\n\n{returns}"
-    # rule 4: the guidance is the run of lines after returns that hold no input, up to a blank line; the rest stays
-    f, l = P.split("g", "p", "Say it.\nIN: {{x}}\n\n" + RETURNS + "\nfirst.\nsecond.\n\nTHE END:\n{{y}}")
-    assert f == {"task": "Say it.", "guidance": "first.\nsecond."} and l == "{task}\nIN: {{x}}\n\n{returns}\n{guidance}\n\nTHE END:\n{{y}}"
-    f, l = P.split("g", "p", "Say it.\nIN: {{x}}\n\n" + RETURNS + "\nfirst.\n{{completeness}}")
-    assert f == {"task": "Say it.", "guidance": "first."} and l == "{task}\nIN: {{x}}\n\n{returns}\n{guidance}\n{{completeness}}"
-    # the guidance may stand on the line of the returns, and the contract may stand in the middle of a paragraph
-    f, l = P.split("g", "p", "Say it.\nIN: {{x}}\n\n" + RETURNS + " But gently.")
-    assert f == {"task": "Say it.", "guidance": "But gently."} and l == "{task}\nIN: {{x}}\n\n{returns} {guidance}"
-    f, l = P.split("g", "p", "Read it. " + RETURNS + " Be brief.\n\nTHE PAGES:\n{{pages}}")
-    assert f == {"task": "Read it.", "guidance": "Be brief."} and l == "{task} {returns} {guidance}\n\nTHE PAGES:\n{{pages}}"
-    # an input on the first line leaves no task, and an input glued to the returns is not its guidance
-    f, l = P.split("g", "p", "You are {{who}}.\nIN: {{x}}\n" + RETURNS + "{{refused}}")
-    assert f == {} and l == "You are {{who}}.\nIN: {{x}}\n{returns}{{refused}}"
-    # rule 6: a part with no returns is its task, and its input lines
-    assert P.split("g", "thin", "thin: true when nothing is named.") == ({"task": "thin: true when nothing is named."}, "{task}")
-    assert P.split("g", "refused", "REFUSED: {{faults}}. Again.") == ({}, "REFUSED: {{faults}}. Again.")
-    assert P.split("g", "p", "Say it.\nIN: {{x}}") == ({"task": "Say it."}, "{task}\nIN: {{x}}")
-    # rule 6 and 7: does, skills and the note
-    assert P.split("goal", "does", "holds it all") == ({"text": "holds it all"}, "{text}")
-    assert P.split("goal", "skills", "- one\n- two words\n  - three") == ({"items": ["one", "two words", "three"]}, "{items}")
-    assert P.split("decide", "note", "Code makes this choice.") == ({"text": "Code makes this choice."}, "{text}")
-
-
-def test_c4_the_extractor_exits_0_for_all_five_and_prints_literals_that_are_the_split(runtime):
-    for layer in S.FUNCTION_LAYERS:
-        out, err = io.StringIO(), io.StringIO()
-        assert P.main(["--extract", layer], out, err) == 0 and err.getvalue() == "", layer
-        tree = ast.parse(out.getvalue())
-        got = {n.targets[0].id: ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)}
-        words, layout, bad = P.extract(layer)
-        assert bad == [] and got == {"WORDS": words, "LAYOUT": layout}, layer
-        assert list(got["WORDS"]) == list(S.PROMPTS[layer]), "the interface's groups, in its order"
-        assert out.getvalue().startswith("# %s: WORDS and LAYOUT by the split rule" % S.TITLE[layer])
-
-
-def test_c4_the_command_line_is_python_m_layers_prompts(runtime, tmp_path):
-    env = {"PATH": "/usr/bin:/bin", "SUTRA_NATIVE_HOME": str(tmp_path)}
-    ok = subprocess.run([sys.executable, "-m", "layers.prompts", "--extract", "audit"], cwd=str(HERE), capture_output=True, text=True, env=env)
-    assert ok.returncode == 0 and "LAYOUT = {" in ok.stdout and ok.stderr == "", ok.stderr
-    for argv in (["--extract"], ["--extract", "root"], ["--extract", "marketing"], ["audit"]):
-        bad = subprocess.run([sys.executable, "-m", "layers.prompts"] + argv, cwd=str(HERE), capture_output=True, text=True, env=env)
-        assert bad.returncode == 2 and bad.stdout == "" and "usage: python -m layers.prompts --extract" in bad.stderr, argv
-
-
-def test_c4_the_extractor_exits_1_and_names_the_part_when_the_split_does_not_match_the_interface(runtime, monkeypatch, tmp_path):
-    def run(layer):
-        out, err = io.StringIO(), io.StringIO()
-        return P.main(["--extract", layer], out, err), err.getvalue().strip().split("\n")
-    # returns, inputs and fields are the interface's
-    monkeypatch.setitem(S.PROMPTS["identity"]["take"]["gate"], "returns", 'Return ONLY a JSON object: {"verdict": "yes"}.')
-    code, said = run("identity")
-    assert code == 1 and said == ["Identity's take instructions, gate: the split finds returns "
-                                  "'Return ONLY a JSON object: {\"verdict\": \"admit\" | \"wait\" | \"refuse\", \"why\": \"one line\"}.', and the interface "
-                                  "'Return ONLY a JSON object: {\"verdict\": \"yes\"}.'"]
-    monkeypatch.undo()
-    monkeypatch.setitem(S.PROMPTS["audit"]["judge"]["judge"], "inputs", ("brief", "pages"))
-    code, said = run("audit")
-    assert code == 1 and said == ["Audit's judge instructions, judge: the part asks for the inputs ['brief', 'filed', 'pages'], and the interface ['brief', 'pages']"]
-    monkeypatch.undo()
-    monkeypatch.setitem(S.PROMPTS["priority"]["bargain"]["cost"], "fields", {"task": "field.task", "guidance": "field.guidance"})
-    code, said = run("priority")
-    assert code == 1 and said == ["Priority's bargain instructions, cost: the split finds the fields ['task'], and the interface ['guidance', 'task']"]
-    monkeypatch.undo()
-    # the group's lead and the parts of the file are the interface's
-    bundle = tmp_path / "bundle"
-    shutil.copytree(runtime.PROMPTS_DIR, bundle)
-    monkeypatch.setattr(runtime, "PROMPTS_DIR", bundle)
-    text = (bundle / "coordination" / "tie.md").read_text(encoding="utf-8")
-    (bundle / "coordination" / "tie.md").write_text(text.replace("How Coordination says", "How Coordination might say"), encoding="utf-8")
-    code, said = run("coordination")
-    assert code == 1 and said == ["Coordination: the lead of tie is not the interface's"]
-    (bundle / "coordination" / "tie.md").write_text(text.replace("## tie", "## ties"), encoding="utf-8")
-    code, said = run("coordination")
-    assert code == 1 and "Coordination: tie holds the parts ['ties'], and the interface ['tie']" in said
-    (bundle / "coordination" / "tie.md").unlink()
-    code, said = run("coordination")
-    assert code == 1 and said == ["Coordination: the bundle has no file tie"]
-
-
-def test_c4_compiled_from_its_extracted_words_every_part_is_the_md_part_byte_for_byte(runtime):
+def test_c4_the_words_of_every_layer_are_the_retired_files_text_byte_for_byte():
     seen = 0
     for layer in S.FUNCTION_LAYERS:
-        words, layout, bad = P.extract(layer)
-        assert bad == [], bad
+        module = layers.load(S.DEFAULT_PINS[layer])
+        assert list(TFP.RETIRED["leads"][layer]) == list(S.PROMPTS[layer]) == list(S.GROUPS[layer]), "the interface's groups, in its order"
+        for group, lead in TFP.RETIRED["leads"][layer].items():
+            assert S.GROUPS[layer][group] == lead, "%s/%s: the lead of a group is the interface's" % (layer, group)
         for group, parts in S.PROMPTS[layer].items():
             for part, spec in parts.items():
-                if part not in P.file_parts(layer, group):
-                    continue                                   # a part a later step added has no .md part to be the same as
-                md = P.md_part(layer, group, part)
+                if (layer, group, part) in S.ADDED_PARTS:
+                    continue                                   # a part a later step added has no retired text to be the same as
+                md = TFP.retired(layer, group, part)
                 sample = {n: "<<%s>>" % n for n in spec["inputs"]}
-                got = P.compile_layout(layout[group][part], words[group][part], spec["returns"], sample, P.who(layer, group, part))
+                got = P.compile_layout(module.LAYOUT[group][part], module.WORDS[group][part], spec["returns"], sample, P.who(layer, group, part))
                 assert got == P.SLOT.sub(lambda m: sample[m.group(1)], md), "%s.%s.%s" % (layer, group, part)
                 assert spec["returns"] is None or spec["returns"] in md, "returns is the part's own, byte for byte"
-                assert set(words[group][part]) == set(spec["fields"]), (layer, group, part)
+                assert spec["returns"] is not None or "Return ONLY" not in md
+                assert inputs_of(md) == list(spec["inputs"]), "the part asks for the inputs the interface names"
+                assert set(module.WORDS[group][part]) == set(spec["fields"]), (layer, group, part)
                 seen += 1
-    assert seen == len(all_parts()) >= 29, "every part the bundle holds, and at least the 29 it shipped with"
+    assert seen == len(all_parts()) == 29, "every part the files held"
 
 
-def test_c4_the_extracted_words_pass_the_interface_and_the_layouts_serve(runtime):
+def test_c4_the_layers_words_pass_the_interface_and_the_layouts_serve(runtime):
     for layer in S.FUNCTION_LAYERS:
-        words, layout, _ = P.extract(layer)
-        for group, parts in words.items():
+        module = layers.load(S.DEFAULT_PINS[layer])
+        for group, parts in module.WORDS.items():
             for part, values in parts.items():
-                assert P.part_faults(layer, group, part, values, layout[group][part]) == [], (layer, group, part)
+                assert P.part_faults(layer, group, part, values, module.LAYOUT[group][part]) == [], (layer, group, part)
                 for field, value in values.items():
                     assert S.validate_field(layer, group, part, field, value) == [], (layer, group, part, field)
+        assert P.unserved(layer, module) == [], "and every part of the interface has its words"
 
 
-def test_c4_the_split_keeps_the_words_the_md_files_had_for_the_fallback_to_read(runtime):
-    """Whatever the owner's whole-file M2.2 copy says, the fallback gives the fields the same split gives."""
-    mine = "How to judge.\n\n## gate\n\nA step asks.\nTHE RULES: {{rules}}\nTHE ENGINE: {{engine}}\n\n" + RETURNS + " Go on."
-    assert P.parts_of(mine)[1]["gate"].startswith("A step asks.")
-    assert P.split("take", "gate", P.parts_of(mine)[1]["gate"])[0] == {"task": "A step asks.", "guidance": "Go on."}
-
-
-# ---- C4 · a part a later step adds has no .md part (A1.16, 'Parts added by later steps') --------------------------------
-# The bundle is read-only history and the reference for what the .md files hold: a package that adds a part to the interface
-# adds its words to its layer and no .md part, and needs no line in this file, in S.ADDED_PARTS or in the extractor.
-def typing(monkeypatch, layer, group, part, words, layout, only=False):
-    """The layer's default implementation made to type the part: beside everything it holds, or (only) as a layer whose other
-    parts are still read from the .md bundle."""
+# ---- C4 · a part a later step adds has its words in its layer and nowhere else (A1.16, 'Parts added by later steps') -----------
+# A package that adds a part to the interface adds its words to its layer's version, and needs no line in this file or in
+# S.ADDED_PARTS: nothing else can serve it (the .md files are retired).
+def typing(monkeypatch, layer, group, part, words, layout):
+    """The layer's default implementation made to type the part, beside everything it holds."""
     module = layers.load(S.DEFAULT_PINS[layer])
-    if only:
-        return holding(monkeypatch, layer, {group: {part: words}}, {group: {part: layout}})
     w, l = copy.deepcopy(module.WORDS), copy.deepcopy(module.LAYOUT)
     w.setdefault(group, {})[part], l.setdefault(group, {})[part] = words, layout
     return holding(monkeypatch, layer, w, l)
-
-
-def extracted(layer):
-    """(exit code, what the extractor said on stderr) for one layer."""
-    out, err = io.StringIO(), io.StringIO()
-    return P.main(["--extract", layer], out, err), err.getvalue().strip()
 
 
 @pytest.fixture
@@ -440,71 +364,42 @@ def fresh_defs(runtime):
     runtime._DEFS.clear()
 
 
-def test_c4_a_part_a_later_step_adds_is_served_by_the_layers_words_and_the_extractor_still_exits_0(fresh_defs, monkeypatch):
+def test_c4_a_part_a_later_step_adds_is_served_by_the_layers_words(fresh_defs, monkeypatch):
     R = fresh_defs
     words, layout = later_part(monkeypatch, R, "audit", "judge", "extra")
     typing(monkeypatch, "audit", "judge", "extra", words, layout)
-    assert extracted("audit") == (0, ""), "the .md holds what it holds: the interface's other parts are the layer's words"
-    ex_words, _, bad = P.extract("audit")
-    assert bad == [] and list(ex_words["judge"]) == ["judge", "items"], "the new part is not printed from a bundle that lacks it"
-    assert P.faults() == R.bundle_faults() == [] and R.validate(R.defs()) == [], "and the definitions load"
+    assert P.faults() == R.prompt_faults() == [] and R.validate(R.defs()) == [], "and the definitions load"
     assert P.prompt(None, "audit", "judge", "extra", brief="B") == "Read it.\nTHE BRIEF: B\n\n" + \
         S.PROMPTS["audit"]["judge"]["extra"]["returns"] + "\nBe brief."
     assert ("audit", "judge", "extra") not in all_parts() and ("audit", "judge", "items") in all_parts()
-    for layer in S.FUNCTION_LAYERS:
-        if layer != "audit":
-            assert extracted(layer) == (0, ""), layer
 
 
-def test_c4_a_layer_that_types_only_the_new_part_reads_the_rest_from_the_bundle_and_the_definitions_load(fresh_defs, monkeypatch, tmp_path):
-    R = fresh_defs
-    words, layout = later_part(monkeypatch, R, "audit", "judge", "extra")
-    typing(monkeypatch, "audit", "judge", "extra", words, layout, only=True)
-    assert extracted("audit") == (0, "")
-    assert R.bundle_faults() == [] and R.validate(R.defs()) == [], "the parts the layer does not type are asked of the .md, and it holds them"
-    inputs = dict(brief="B", filed="F", pages="P")
-    assert P.prompt(None, "audit", "judge", "judge", **inputs) == md_part("audit", "judge", "judge", **inputs), "the rest is the bundle's"
-    # the bundle is still held to what it holds: a part of it gone is a fault of the file, new part or none
-    bundle = tmp_path / "bundle"
-    shutil.copytree(R.PROMPTS_DIR, bundle)
-    monkeypatch.setattr(R, "PROMPTS_DIR", bundle)
-    text = (bundle / "audit" / "judge.md").read_text(encoding="utf-8")
-    (bundle / "audit" / "judge.md").write_text(text.replace("## items", "## itemz"), encoding="utf-8")
-    assert R.bundle_faults() == ["Audit's instructions: judge has no part items", "Audit's instructions: judge, itemz: no step reads this part"]
-    code, said = extracted("audit")
-    assert code == 1 and "Audit: judge holds the parts ['judge', 'itemz'], and the interface ['judge', 'items', 'extra']" in said
-    R._DEFS.clear()
-    with pytest.raises(ValueError, match=r"the engine definitions are refused: Audit's instructions: judge has no part items"):
-        R.defs()
-
-
-def test_c4_a_part_neither_the_bundle_nor_the_layers_words_hold_is_still_a_fault(fresh_defs, monkeypatch):
+def test_c4_a_part_no_version_holds_words_for_is_still_a_fault_listed_as_added_or_not(fresh_defs, monkeypatch):
     R = fresh_defs
     later_part(monkeypatch, R, "audit", "judge", "extra")
-    assert R.bundle_faults() == ["Audit's instructions: judge has no part extra"], "a step reads it and nothing serves it"
-    assert extracted("audit") == (1, "Audit's judge instructions, extra: the bundle has no such part and the layer holds no words for it")
-    with pytest.raises(ValueError, match=r"Audit's instructions: judge has no part extra"):
+    assert R.prompt_faults() == ["Audit's judge instructions, extra: the version holds no words for it"], "a step reads it and nothing serves it"
+    with pytest.raises(ValueError, match=r"Audit's judge instructions, extra: the version holds no words for it"):
         R.defs()
-    # S.ADDED_PARTS keeps its meaning: a part listed there is not asked of a bundle that never held it
+    # S.ADDED_PARTS exempts nothing from having words: an added part has no other source either
     monkeypatch.setattr(S, "ADDED_PARTS", S.ADDED_PARTS + (("audit", "judge", "extra"),))
-    assert R.bundle_faults() == [] and extracted("audit") == (0, "")
+    assert R.prompt_faults() == ["Audit's judge instructions, extra: the version holds no words for it"]
+    with pytest.raises(ValueError, match=r"Audit's judge instructions, extra: no version holds words for this part"):
+        P.prompt(None, "audit", "judge", "extra", brief="B")
 
 
-def test_c4_a_part_added_beside_adaptations_decide_note_leaves_the_note_on_the_fallback(fresh_defs, monkeypatch):
-    """Adaptation's decide file has no headed part (rule 7): its words after the lead are the part `note`. A later step adds
-    decide.next; the file is the same file, and the note is still its note."""
+def test_c4_a_part_added_beside_adaptations_decide_note_leaves_the_note_as_it_is(fresh_defs, monkeypatch):
+    """Adaptation's decide group has no headed part (its words are the part `note`). A later step adds decide.next; the group is
+    the same group, and the note is still its note."""
     R = fresh_defs
     note = P.words(None, "adaptation", "decide", "note")["text"]
     words, layout = later_part(monkeypatch, R, "adaptation", "decide", "next")
-    typing(monkeypatch, "adaptation", "decide", "next", words, layout, only=True)
-    assert P.file_parts("adaptation", "decide") == {"note": note}
-    assert P.words(None, "adaptation", "decide", "note") == {"text": note}, "read from the bundle, as a layer that does not type it"
-    assert extracted("adaptation") == (0, "") and R.bundle_faults() == [] and R.validate(R.defs()) == []
+    typing(monkeypatch, "adaptation", "decide", "next", words, layout)
+    assert P.words(None, "adaptation", "decide", "note") == {"text": note}
+    assert R.prompt_faults() == [] and R.validate(R.defs()) == []
     assert R.INSTRUCTIONS["adaptation"]["decide"] == {"next": ("brief",)}, "the note is no part a step reads; the new one is"
 
 
 # ---- C5 · the snapshot renders what runs; the compiling contract case ---------------------------------------------------
-import test_function_prompts as TFP  # noqa: E402 -- the fixture department the M2.1a snapshot is rendered for
 
 
 class TestTheSnapshotRendersWhatRuns(TFP.Fixture):
@@ -557,10 +452,7 @@ class TestTheSnapshotRendersWhatRuns(TFP.Fixture):
 
     def test_c5_the_stubs_that_hold_the_words_still_pass_the_contract(self):
         module = layers.load("identity/v1")
-        words, layout, bad = P.extract("identity")
-        assert bad == []
-        for table, mine in ((words, module.WORDS), (layout, module.LAYOUT)):          # the parts later steps added have no .md part
-            table["goal"].update({part: mine["goal"][part] for (fn, group, part) in S.ADDED_PARTS if fn == "identity" and group == "goal"})
+        words, layout = split_of("identity")                                       # a stub that holds the same words, every part
         stub_take = lambda ctx, step, item: "THE STUB'S TAKE"
         for patch in (mock.patch.object(module, "WORDS", words), mock.patch.object(module, "LAYOUT", layout),
                       mock.patch.dict(module.PROMPT, {"identity_take": stub_take})):
@@ -569,7 +461,7 @@ class TestTheSnapshotRendersWhatRuns(TFP.Fixture):
         ref = C.fixture_department(os.environ["SUTRA_NATIVE_DEPT_HOME"], TFP.REF)
         got = {n: fn(module, {"ref": ref}) for n, _, fn in C.cases()}
         assert got == {n: [] for n, _, _ in C.cases()} and set(got) >= set(range(1, 14)), got      # every case the contract has: 13 from A2, 14 from A3
-        assert C.on_the_md_fallback(module) == [], "every part of Identity is typed in the stub"
+        assert C.parts_without_words(module) == [], "every part of Identity is typed in the stub"
         # and the snapshot, rendered through the registry from the typed words, is the snapshot still
         del module.PROMPT["identity_take"]
         assert self.prompts() == TFP.json.loads(TFP.SNAP.read_text(encoding="utf-8")), "a words-migration commit passes the snapshot unchanged"
@@ -585,12 +477,8 @@ def _stub(layer, words, layout, tmp_path):
 
 
 def test_c5_case_5_compiles_each_part_with_sample_inputs(tmp_path):
-    words, layout, _ = P.extract("priority")
-    real = layers.load(S.DEFAULT_PINS["priority"])
-    for _layer, group, part in (a for a in S.ADDED_PARTS if a[0] == "priority"):
-        # an added part has no .md part to extract: the version's own words, which no part of Priority may be without
-        words.setdefault(group, {})[part], layout.setdefault(group, {})[part] = real.WORDS[group][part], real.LAYOUT[group][part]
-    assert C.case_5(_stub("priority", words, layout, tmp_path)) == [], "the extracted words serve"
+    words, layout = split_of("priority")                  # the version's own words, which no part of Priority may be without
+    assert C.case_5(_stub("priority", words, layout, tmp_path)) == [], "the words serve"
 
     def broken(edit):
         w, l = {g: {p: dict(v) for p, v in parts.items()} for g, parts in words.items()}, {g: dict(parts) for g, parts in layout.items()}
@@ -612,7 +500,7 @@ def test_c5_case_5_compiles_each_part_with_sample_inputs(tmp_path):
 
 
 def test_c5_case_5_finds_the_returns_in_the_compiled_part_and_no_marker_left(tmp_path, monkeypatch):
-    words, layout, _ = P.extract("audit")
+    words, layout = split_of("audit")
     fake = _stub("audit", words, layout, tmp_path)
     assert C.case_5(fake) == []
     # a layout that holds {returns} but whose part's contract was changed under it: the compile no longer holds it verbatim
