@@ -24,7 +24,8 @@ What the read model says, in three parts (the API gives it to a screen as data; 
      file). The site says "grant, refuse, counter" where it means it (JC-11 holds only the lines an owner may read), and some
      of its sentences name a function ("Built: ... (setup_make)"). That prose is for a builder's page: a screen does not render
      it raw, it says its own words. test_every_shipped_journey_reads_clean reads every string of the shipped journeys for a path
-     or a name of code, in a sentence as well as bare, and lets through only the sentences the saved site file holds.
+     or a name of code, in a sentence as well as bare, and lets through only the sentences the saved site file holds. Nothing reads
+     the author's prose for the banned words (decision A3-20): a check would be red on the shipped data.
 
 Nothing here imports the runtime at import time: the interface comes through the lazy proxy of `layers`.
 """
