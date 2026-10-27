@@ -695,8 +695,9 @@ def test_g2_a_defect_that_weighs_medium_fails_the_measure_and_the_notes_say_wher
     ref = a_website(j2, monkeypatch)
     got = mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><img src='hero.png'><a href='fees.html'>Fees</a>"))
     assert got["ok"] is False and got["faults"] == [] and got["holes"] == []
-    assert got["notes"] == ["index.html: the link 'Fees' goes to fees.html, which is not a page of the site",
-                            "index.html: the image 'hero.png' has no alt text for a reader who cannot see it"]
+    assert got["notes"] == ["Home: the link 'Fees' goes to fees.html, which is not a page of the site",
+                            "Home: the image 'hero.png' has no alt text for a reader who cannot see it"], "the page by its title (G2 fix)"
+    assert [d["where"] for d in got["defects"]] == ["index.html: the link 'Fees'", "index.html: the image 'hero.png'"], "the finding keeps the page's own name"
     assert [d["severity"] for d in got["defects"]] == ["medium", "medium"]
 
 
@@ -704,7 +705,7 @@ def test_g2_a_defect_that_weighs_low_is_filed_and_noted_but_does_not_fail_the_me
     ref = a_website(j2, monkeypatch)
     got = mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><a href='#hours'>Hours</a>"))
     assert got["ok"] is True and [d["severity"] for d in got["defects"]] == ["low"]
-    assert got["notes"] == ["noted, index.html: the link 'Hours' goes to #hours, and nothing on the page has that anchor"]
+    assert got["notes"] == ["noted, Home: the link 'Hours' goes to #hours, and nothing on the page has that anchor"]
 
 
 def test_g2_placeholder_text_is_a_finding_naming_the_page_and_what_it_says(j2, monkeypatch):
@@ -858,3 +859,113 @@ def test_g2_fix_through_a_real_department_the_judges_high_finding_is_in_the_read
         assert row["findings"][0]["severity"] == "high"
     told = [p for p in R.board(ref) if (p["payload"] or {}).get("word") == "reading"]
     assert told and all(p["payload"]["high"] is True for p in told)
+
+
+CODE_ITEM = [{"id": "D1", "text": "Every page is checked and live", "how": "code", "level": "target"}]
+ALT = "the image 'a.png' has no alt text for a reader who cannot see it"
+
+
+def code_row(j2, mech):
+    """The row audit_rows gives a done-when item that code measures, for a measure that said `mech`."""
+    W, R, J, _, _ = j2
+    said = {"items": [{"id": "D1", "verdict": "met", "claim": "what is so of D1", "evidence": "what shows it"}], "findings": []}
+    (row,) = [r for r in R.audit_rows(CODE_ITEM, mech, said, True) if r["method"] == "code"]
+    assert S.validate("audit.reading_item", row) == []
+    return row
+
+
+@pytest.mark.parametrize("what, mech, claim, verdict", [
+    ("the record and the pages are in order",
+     {"ok": True, "notes": ["every version has its run and its check; the trace reaches the owner's words"], "faults": [], "holes": [], "defects": []},
+     "the record holds: every version has its run and its check; the trace reaches the owner's words", "met"),
+    ("a low defect is noted and the record holds",
+     {"ok": True, "notes": ["noted, Home: the link 'Hours' goes to #hours, and nothing on the page has that anchor"], "faults": [], "holes": [], "defects": []},
+     "the record holds: noted, Home: the link 'Hours' goes to #hours, and nothing on the page has that anchor", "met"),
+    ("only a page defect fails: the pages need work, and the record is not said to fail",
+     {"ok": False, "notes": ["About: " + ALT, "Contact: " + ALT], "faults": [], "holes": [], "defects": [{"page": "about.html"}, {"page": "contact.html"}]},
+     "the pages need work: About: %s; Contact: %s" % (ALT, ALT), "not_met"),
+    ("a page that says it does not know is a page that needs work",
+     {"ok": False, "notes": ["the site says it does not know 2 things"], "faults": [], "holes": [{"page": "index.html"}, {"page": "about.html"}]},
+     "the pages need work: the site says it does not know 2 things", "not_met"),
+    ("only a fault of the record fails: the record does not hold",
+     {"ok": False, "notes": ["Plan has a version with no run or no check"], "faults": ["Plan has a version with no run or no check"], "holes": [], "defects": []},
+     "the record does not hold: Plan has a version with no run or no check", "not_met"),
+    ("both fail: each is named by what it is",
+     {"ok": False, "notes": ["the live site does not trace back to the owner's words", "Home: " + ALT],
+      "faults": ["the live site does not trace back to the owner's words"], "holes": [], "defects": [{"page": "index.html"}]},
+     "the record does not hold: the live site does not trace back to the owner's words; the pages need work: Home: %s" % ALT, "not_met"),
+    ("a result that does not say which notes are the record's keeps the words it always had",
+     {"ok": False, "notes": ["the site says it does not know 1 thing"]},
+     "the record does not hold: the site says it does not know 1 thing", "not_met"),
+])
+def test_g2_fix_the_measures_row_is_worded_by_what_failed(j2, what, mech, claim, verdict):
+    row = code_row(j2, mech)
+    assert (row["claim"], row["verdict"]) == (claim, verdict), what
+    assert row["evidence"] == "; ".join(mech["notes"]), "the evidence is the notes, as it was"
+
+
+def test_g2_fix_a_measure_with_nothing_to_say_still_gets_a_claim(j2):
+    assert code_row(j2, {"ok": True, "notes": []})["claim"].startswith("the record holds")
+    assert code_row(j2, {"ok": False, "notes": []})["claim"].startswith("the record does not hold")
+
+
+def test_g2_fix_a_long_set_of_notes_is_cut_to_the_claims_bound(j2):
+    notes = ["About: " + ALT.replace("a.png", "x%d.png" % n) for n in range(30)]
+    row = code_row(j2, {"ok": False, "notes": notes, "faults": [], "holes": [], "defects": [{}] * 30})
+    assert len(row["claim"]) <= 600 and row["claim"].startswith("the pages need work: About: ") and len(row["evidence"]) <= 1000
+
+
+def test_g2_fix_the_notes_name_a_page_by_its_title_and_never_by_its_file(j2, monkeypatch):
+    """The site plan names its pages (index is Home, about is About), as Identity's questions to the owner name them; a page the plan does
+    not name is called by the title it carries, and one that carries none by its file name read as words."""
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    assert {p["slug"]: p["title"] for p in R._pages(ref)}["about"] == "About"
+    img = "<h1>%s</h1><img src='a.png'>"
+    files = {"index.html": HOME % (img % "Welcome"), "about.html": PLAIN % (img % "About us"), "lessons.html": LESSONS,
+             "our-fees.html": "<html><head><title>What we charge</title></head><body>%s</body></html>" % (img % "Fees"),
+             "docs/guide.html": json.dumps({"title": "A guide", "body_html": img % "Guide"})}
+    got = mechanical(j2, monkeypatch, ref, files)
+    assert got["ok"] is False and got["faults"] == []
+    assert got["notes"] == ["About: " + ALT, "A guide: " + ALT, "Home: " + ALT, "What we charge: " + ALT], got["notes"]
+    assert [d["page"] for d in got["defects"]] == ["about.html", "docs/guide.html", "index.html", "our-fees.html"], \
+        "the findings keep the page's own name: it is what Identity maps to a title, and what a link names"
+    assert got["defects"][0]["where"] == "about.html: the image 'a.png'"
+    bare = {"index.html": HOME % "<h1>Welcome</h1>", "lessons.html": LESSONS, "price_list.html": PLAIN.replace("<title>Page</title>", "") % (img % "Prices")}
+    assert mechanical(j2, monkeypatch, ref, bare)["notes"] == ["price list: " + ALT]
+    many = dict(files, **{"page%d.html" % n: PLAIN % (img % n) for n in range(3)})
+    assert mechanical(j2, monkeypatch, ref, many)["notes"][-1] == "more is wrong on the pages"
+
+
+def test_g2_fix_a_low_defect_is_noted_by_its_pages_title(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = a_website(j2, monkeypatch)
+    got = mechanical(j2, monkeypatch, ref, site("<h1>Welcome</h1><a href='#hours'>Hours</a>"))
+    assert got["ok"] is True
+    assert got["notes"] == ["noted, Home: the link 'Hours' goes to #hours, and nothing on the page has that anchor"]
+
+
+def test_g2_fix_a_department_with_no_site_plan_names_its_pages_by_what_they_carry(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = W.create("dref-noplan", "No plan", None, kind="organic")[0]["ref"]
+    assert R._pages(ref) == []
+    files = {"index.html": HOME % "<h1>Welcome</h1><img src='a.png'>", "contact-us.html": PLAIN.replace("<title>Page", "<title>") % "<h1>Contact</h1><img src='a.png'>"}
+    monkeypatch.setattr(R, "audit_files", lambda ctx: files)
+    ctx = {"ref": ref, "dept": W.dept(ref), "inp": {"v": 1}, "bag": {"audit.pick": {"sample": True}}}
+    got = audit_v1().audit_mechanical(ctx, None, None)
+    assert [n for n in got["notes"] if ALT in n] == ["contact us: " + ALT, "Home: " + ALT]
+
+
+def test_g2_fix_the_ask_Identity_files_for_a_page_defect_names_the_pages_and_what_needs_work(j2, monkeypatch):
+    """The probe that found the gap: Identity is not yet heard by a next round (as at the commit it was found on), so the item that code
+    measures as not met goes to the owner as a finding to stamp, and it quotes the measure's claim. A missing alt text is not a record
+    that does not hold, and the pages are named as the owner knows them."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(importlib.import_module("layers.identity.v1"), "next_is_heard", lambda: False)
+    ref = a_website(j2, monkeypatch, a_page_with("<img src='a.png'><img src='b.png'>"))
+    asks = [a for a in W.asks(ref) if a["kind"] == "finding" and a["status"] == "pending"]
+    assert asks, [(a["kind"], a["status"]) for a in W.asks(ref)]
+    text = asks[0]["text"]
+    assert text.startswith("Audit found: D1 ") and "the pages need work: About: the image 'a.png' has no alt text" in text, text
+    assert "the record does not hold" not in text and ".html" not in text, text
+    assert text.endswith("Stamp to have it put right.")

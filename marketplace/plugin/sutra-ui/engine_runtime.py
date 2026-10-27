@@ -3848,6 +3848,22 @@ def audit_verdicts(rows):
     return out
 
 
+def audit_code_claim(mech):
+    """What a code row of a reading says, worded by what the measure found failing: 'the record holds' when nothing is wrong,
+    'the record does not hold' for a fault of the record (a version with no run or no check, a deliverable that does not trace
+    back to the owner's words), and 'the pages need work' for what it found on the pages (a placeholder where a fact should be, a
+    broken link, a form with no submit, an image with no alt, a heading), each followed by its notes. The owner is quoted this: a
+    missing alt text is not a record that does not hold. A result that does not say which notes are the record's (no `faults`) is
+    taken as a failure of the record, as audit_file takes it."""
+    notes = [str(n) for n in mech.get("notes") or []]
+    if mech.get("ok"):
+        return "the record holds: " + ("; ".join(notes) or "the record holds")
+    faults = [str(n) for n in (mech["faults"] if "faults" in mech else notes) or []]
+    pages = [n for n in notes if n not in faults]
+    said = (["the record does not hold: " + ("; ".join(faults) or "the record does not hold")] if faults or not pages else [])
+    return "; ".join(said + (["the pages need work: " + "; ".join(pages)] if pages else []))
+
+
 def audit_rows(dept_items, mech, said, sampled):
     """One reading row per done-when item, in the S-30 shape (subject, claim, evidence, method, verdict, severity). An item
     whose how is code gets a row from the mechanical step's result when it measured anything; every item gets the reader's
@@ -3875,7 +3891,7 @@ def audit_rows(dept_items, mech, said, sampled):
         if it.get("how") == "code" and sampled:
             ok = bool(mech.get("ok"))
             said_what = "; ".join(str(n) for n in mech.get("notes") or []) or ("the record holds" if ok else "the record does not hold")
-            code = {"id": it["id"], "subject": subject, "claim": ("the record holds: " if ok else "the record does not hold: ") + said_what[:560],
+            code = {"id": it["id"], "subject": subject, "claim": audit_code_claim(mech)[:600],
                     "evidence": said_what[:1000], "method": "code", "verdict": "met" if ok else "not_met",
                     "severity": ITEM_SEVERITY["met" if ok else "not_met"]}
             rows += [code] if code["verdict"] == model["verdict"] else [code, model]
