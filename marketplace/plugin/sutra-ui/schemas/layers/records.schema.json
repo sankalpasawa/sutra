@@ -518,6 +518,11 @@
             "filed",
             "read"
           ]
+        },
+        "thread": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
         }
       },
       "required": [

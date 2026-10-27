@@ -5,6 +5,10 @@
   A7  the practices in place ride on the line request (J2_ADAPT_MAKE)
   A8  a shape with a confidence: J2B-4 in the covering, J2B-7 in the offer
   A9  organic and default kinds end to end, with stubbed models
+  F1  the Library's line fitted to the goal (W2-ADAPT, M5.2): the check, the draft, the notes and the prompts that hold them
+  F2  a conflict carries the options Priority sent (M5.4)
+  F3  the next round after a reading that is not done: priced, never the same twice, a limit question when none is new (M9.1, M9.4)
+  F4  the rounds in the view (M9.6)
 
 The departments here are born the way a person makes them (found, say the words, Root sets up), on a records home of
 their own, with no model but the ones a test installs; a test that meets a fault of the interface fails through
@@ -72,7 +76,7 @@ def test_a1_the_module_provides_every_name_its_recipe_uses():
         for kind in used:
             if s.get(kind):
                 used[kind].add(s[kind])
-    assert {k: len(v) for k, v in used.items()} == {"code": 15, "prompt": 2, "draft": 2, "check": 6}
+    assert {k: len(v) for k, v in used.items()} == {"code": 19, "prompt": 4, "draft": 4, "check": 8}
     for kind, names in used.items():
         assert names <= set(getattr(module, kind.upper())), "%s names the recipe uses that the module leaves to the legacy registry" % kind
 
@@ -86,7 +90,7 @@ def test_a1_the_contract_cases_pass_for_adaptation_v1(case, home):
 def test_a1_what_it_holds_by_reference_is_counted_for_the_hand_in(capsys):
     counts = C.by_reference(v1())
     print("adaptation/v1: %(by_reference)d by reference, %(own)d own" % counts)
-    assert counts["by_reference"] + counts["own"] == 25
+    assert counts["by_reference"] + counts["own"] == 35
 
 
 # ---- A2 · Adaptation's words (M2.5) -----------------------------------------------------------------------------------
@@ -1416,3 +1420,734 @@ def test_a1_the_two_records_are_no_longer_open_and_the_rungs_are_the_runtimes():
     assert S.validate_record("adaptation", "idea", "a page in Hindi") and S.validate_record("adaptation", "ladder", ["C0"])
     assert S.validate_record("adaptation", "ladder", {"engine": "Write", "step": "write.page", "rung": "C0", "held": False, "history": [],
                                                       "something_a_later_writer_adds": 1}) == [], "an unknown key passes and is kept"
+
+
+# ---- F1 · fit a Library line to the use case (W2-ADAPT, M5.2) ---------------------------------------------------------
+def _fit_ctx(j2, ref="dref-fit", payload=None, kind="website"):
+    """The context adapt.fit's check and offer read: a department of `kind` and the source adapt.source took for it."""
+    out, ctx = _source(j2, kind, payload, name="Fit Dept", ref=ref)
+    ctx["bag"]["adapt.source"] = out
+    return ctx
+
+
+def _fitted(ctx, engines, fit=None):
+    return v1().CHECK["line_is_fitted"](ctx, None, None, {"engines": engines, "fit": fit if fit is not None else {}, "why": "x"})
+
+
+@pytest.mark.parametrize("engines, fit", [
+    (LINE, {}),                                                                       # the line whole
+    (LINE, {"Plan": "one page only", "Write": "write that one page"}),                # whole, with notes
+    (["Plan", "Write", "Check"], {"Write": "no gallery"}),                            # a tail left out
+    (["Check"], {"Check": "one page only"}),                                          # 'One page only' keeps Check and leaves the rest
+    (["Write", "Check", "Publish"], {}),                                              # in order, and Check is there
+])
+def test_f1_a_fitted_line_is_an_in_order_subsequence_that_keeps_every_required_engine(j2, engines, fit):
+    got = _fitted(_fit_ctx(j2), engines, fit)
+    assert got["ok"] is True, got
+    assert re.match(r"\d of 4 engines, in the Library's order", got["notes"][0])
+
+
+@pytest.mark.parametrize("engines, fit, note", [
+    (["Plan", "Write", "Check", "Gallery"], {}, "Gallery is not in the kind's line (Plan -> Write -> Check -> Publish)"),
+    (["Plan", "Gallery", "Map"], {}, "Gallery and Map are not in the kind's line"),
+    (["Write", "Plan", "Check"], {}, "the Library's order is changed: it runs Plan -> Write -> Check -> Publish"),
+    (["Check", "Plan"], {}, "the Library's order is changed"),
+    (["Plan", "Write", "Publish"], {}, "the line leaves out Check, which this kind of department requires"),
+    (["Plan", "Plan", "Write", "Check"], {}, "Plan named more than once"),
+    (["Plan", "Write", "Check"], {"Publish": "put it live"}, "fit has a note for Publish, which is no engine of the line"),
+    (["Plan", "Write", "Check"], {"Gallery": "no gallery"}, "fit has a note for Gallery, which is no engine of the line"),
+    (["Plan", "Write", "Check"], {"Plan": "x" * 301}, "the note for Plan is 301 characters; at most 300"),
+    (["Plan", "Write", "Check"], {"Plan": ["not words"]}, "the note for Plan is not words"),
+    (["Plan", "Write", "Check"], "no notes", "fit is a note for each engine that needs one, as an object"),
+    ([], {}, "the engines to run are named, as a list of names"),
+    ("Plan", {}, "the engines to run are named, as a list of names"),
+    ([3], {}, "the engines to run are named, as a list of names"),
+])
+def test_f1_a_fit_that_adds_reorders_drops_a_required_engine_or_notes_wrongly_is_refused_naming_what_is_wrong(j2, engines, fit, note):
+    got = _fitted(_fit_ctx(j2), engines, fit)
+    assert got["ok"] is False and any(note in n for n in got["notes"]), got
+
+
+def test_f1_a_note_of_three_hundred_characters_passes_and_the_check_needs_no_department_to_say_no_line(j2):
+    assert _fitted(_fit_ctx(j2), LINE, {"Write": "x" * 300})["ok"] is True
+    bare = v1().CHECK["line_is_fitted"]({"dept": None, "bag": {}}, None, None, {"engines": LINE, "fit": {}})
+    assert bare == {"ok": False, "notes": ["there is no line of the kind's to fit"]}
+
+
+def test_f1_the_draft_is_the_kinds_line_unchanged_and_a_skipped_step_fits_nothing(j2):
+    ctx = _fit_ctx(j2)
+    draft = v1().DRAFT["adapt_fit_draft"](ctx, None, None)
+    assert draft["engines"] == LINE and draft["fit"] == {} and draft["why"]
+    assert v1().CHECK["line_is_fitted"](ctx, None, None, draft)["ok"] is True, "the draft passes the check it stands behind"
+    assert S.validate_field("adaptation", "make", "fit", "task", "Fit it.") == []
+    shaped = _fit_ctx(j2, ref="dref-fit-shaped", kind="organic")
+    assert v1().DRAFT["adapt_fit_draft"](shaped, None, None)["engines"] == [], "a shaped source has no line of the Library's to fit"
+
+
+def test_f1_the_check_is_held_by_the_interface_and_the_part_is_in_it_with_its_contract_verbatim():
+    assert "line_is_fitted" in S.CHECKS["adaptation"] and ("adaptation", "make", "fit") in S.ADDED_PARTS
+    part = S.PROMPTS["adaptation"]["make"]["fit"]
+    assert part["read_by"] == "adapt.fit" and part["inputs"] == ("dept", "words", "items", "engines", "rules")
+    assert part["returns"] == ('Return ONLY a JSON object: {"engines": ["the Library engines to run, in their order"], "fit": '
+                               '{"<engine>": "one line: what this engine does differently for this goal"}, "why": "one line"}.')
+    assert set(part["fields"]) == {"task", "guidance"}
+    step = next(x for x in C._steps(C.recipe_of(v1())) if x["id"] == "adapt.fit")
+    assert (step["nature"], step["born"], step["prompt"], step["draft"], step["check"], step["only_if"]) == \
+        ("decide", "C0", "adapt_fit", "adapt_fit_draft", "line_is_fitted", "adapt.source.source=library")
+    assert step["out"] == {"engines": "list", "fit": "dict", "why": "str"}
+
+
+def test_f1_the_step_comes_after_the_source_and_before_the_line_it_does_not_replace():
+    handler = next(h for h in layers.recipes()["Adaptation"]["on"] if h["name"] == "Shape the line")
+    assert [s["id"] for s in handler["steps"]] == ["adapt.hearline", "adapt.source", "adapt.fit", "adapt.line", "adapt.lineoffer"]
+
+
+def _fit_offer(j2, monkeypatch, ctx, fit, payload=None):
+    """adapt_line_offer with adapt.fit's answer in the bag, and what it posted."""
+    W, R, _, _, _ = j2
+    monkeypatch.setattr(R, "_j2_live", lambda r: True)
+    ref, before = ctx["ref"], len(R.board(ctx["ref"]))
+    ctx = dict(ctx, post={"n": 1, "thread": "x-req", "src": "Identity", "msg_type": "request",
+                          "payload": dict({"word": "line", "words": "A guide to the night clinic", "for": "x-req"}, **(payload or {}))},
+               how={"adapt.fit": "model"})
+    ctx["bag"] = dict(ctx["bag"], **{"adapt.fit": fit})
+    out = v1().CODE["adapt_line_offer"](ctx, None, None)
+    return out, [(p["dst"][0], p["msg_type"], p["payload"]) for p in R.board(ref)[before:]]
+
+
+def test_f1_the_offer_proposes_the_engines_it_kept_with_their_notes_in_fit_and_on_each_row(j2, monkeypatch):
+    ctx = _fit_ctx(j2)
+    out, posts = _fit_offer(j2, monkeypatch, ctx, {"engines": ["Plan", "Write", "Check"], "fit": {"Write": "one page, no gallery", "Check": "  keep  it\nshort "},
+                                                  "why": "one page"})
+    sent = _covers_of(posts)
+    assert posts[0][:2] == ("Priority", "propose") and [e["name"] for e in sent["engines"]] == ["Plan", "Write", "Check"]
+    assert sent["fit"] == {"Write": "one page, no gallery", "Check": "keep it short"}, "notes ride in act.line fit, in plain words"
+    assert [e.get("fit") for e in sent["engines"]] == [None, "one page, no gallery", "keep it short"], "and on the row of the engine they are for"
+    assert sent["source"] == "library" and "Publish" not in json.dumps(sent["engines"])
+    assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+    assert out["said"] == "proposed the line to Priority: Plan -> Write -> Check (fitted to the goal, leaving out Publish, 2 notes)"
+
+
+def test_f1_a_line_with_no_note_and_nothing_left_out_is_proposed_as_it_always_was(j2, monkeypatch):
+    ctx = _fit_ctx(j2)
+    out, posts = _fit_offer(j2, monkeypatch, ctx, {"engines": LINE, "fit": {}, "why": "nothing to change"})
+    sent = _covers_of(posts)
+    assert "fit" not in sent and not [e for e in sent["engines"] if "fit" in e] and [e["name"] for e in sent["engines"]] == LINE
+    assert out["said"] == "proposed the line to Priority: Plan -> Write -> Check -> Publish"
+
+
+def test_f1_a_line_root_sent_back_is_taken_whole_and_a_fit_that_is_not_sound_cannot_stop_it(j2, monkeypatch):
+    ctx = _fit_ctx(j2, payload={"faults": ["required_kept: the plan leaves out Check"]}, ref="dref-fit-back")
+    bad = {"engines": ["Plan", "Gallery"], "fit": {"Gallery": "x" * 400}, "why": "x"}
+    assert v1().CHECK["line_is_fitted"](ctx, None, None, bad)["ok"] is True, "the line is taken whole, so nothing is held"
+    out, posts = _fit_offer(j2, monkeypatch, ctx, {"engines": ["Check"], "fit": {"Check": "alone"}, "why": "x"}, payload={"faults": ["x"]})
+    sent = _covers_of(posts)
+    assert [e["name"] for e in sent["engines"]] == LINE and "fit" not in sent, "the repair of a refused line has always been the whole line"
+
+
+def test_f1_an_offline_department_proposes_and_registers_the_kinds_line_with_no_note(j2):
+    W, R, J, _, _ = j2
+    ref = _born_site(j2)
+    sent = next(p["payload"] for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "line")
+    assert [e["name"] for e in sent["engines"]] == LINE and "fit" not in sent and not [e for e in sent["engines"] if "fit" in e]
+    reg = W.dept(ref)["workflows"][-1]
+    assert reg["engines"] == LINE and "fit" not in reg and reg["left_out"] == [] and reg["source"] == "library"
+    fit_rows = [r for r in R.step_rows(ref) if r.get("step") == "adapt.fit"]
+    assert fit_rows and all(r["status"] == "ok" and r["by"] == "offline draft" for r in fit_rows), fit_rows
+
+
+def _born_site(j2, words=WEBSITE, org="Acme Learning", answers=None, monkeypatch=None):
+    """A website department as a person makes one: found the organisation, say the words, Root sets it up, and the motor
+    runs until idle. With `answers` a model that is a function stands in for each step id they name."""
+    W, R, J, founding, FV = j2
+    seen = _stub(monkeypatch, R, answers) if answers is not None else None
+    root = founding.found_structure(org, owner="Sankalp")["root"]
+    W.owner_ask(root, words)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    return (ref, seen) if answers is not None else ref
+
+
+ONE_PAGE = WEBSITE + ". One page only."
+ONE_PLAN = {"site_name": "Algebra, Class 8", "tagline": "One page of algebra", "palette": {"primary": "#0f5e7a", "accent": "#c4956a"},
+            "pages": [{"slug": "index", "title": "Algebra", "purpose": "the one page", "sections": ["Algebra"]}]}
+ONE_PAGE_BODY = {"title": "Algebra", "body_html": "<section><h1>Algebra for Class 8</h1><p>One page that teaches the first steps of algebra to students of Class 8.</p></section>"}
+PLAN_NOTE, WRITE_NOTE = "plan that one page and no other", "write the one page; link to no other"
+
+
+def test_j1_b4_adaptation_fits_the_templates_line_before_the_first_run(j2, monkeypatch):
+    """J1 row B4 (A3): between birth and the first run, adapt.fit may only narrow the template's engines; the engines the kind
+    marks required (Check) stay. 'One page only' leaves the last engine out, and Plan and Write are handed their notes."""
+    W, R, J, _, _ = j2
+    fit = {"engines": ["Plan", "Write", "Check"], "fit": {"Plan": PLAN_NOTE, "Write": WRITE_NOTE}, "why": "one page needs no publish step of its own"}
+    ref, seen = _born_site(j2, ONE_PAGE, answers={"adapt.fit": fit, "plan.pages": ONE_PLAN, "write.page": ONE_PAGE_BODY}, monkeypatch=monkeypatch)
+    d = W.dept(ref)
+    reg = d["workflows"][-1]
+    assert reg["engines"] == ["Plan", "Write", "Check"] and set(reg["engines"]) <= set(LINE), "only narrowed, never added to"
+    assert [n for n in LINE if n in reg["engines"]] == reg["engines"], "in the template's order"
+    assert "Check" in reg["engines"] and reg["left_out"] == ["Publish"] and reg["source"] == "library"
+    assert reg["fit"] == {"Plan": PLAN_NOTE, "Write": WRITE_NOTE}, "the registration copies the notes"
+    assert S.validate("workflow.registration", reg) == []
+    acts = [e["action"] for e in J.events(ref)]
+    assert acts.index("workflow.registered") < acts.index("run.started"), "fitted between birth and the first run"
+    ran = [r["engine"] for r in W.runs(ref) if not r.get("system")]
+    assert ran[:3] == ["Plan", "Write", "Check"] and "Publish" not in ran, ran
+    # the prompts of the engines handed a note hold it, once, and Write's holds its own and not Plan's
+    plan_prompt = next(p for sid, p in seen if sid == "plan.pages")
+    write_prompt = next(p for sid, p in seen if sid == "write.page")
+    assert plan_prompt.endswith("\n\nFOR THIS GOAL: " + PLAN_NOTE) and write_prompt.count("FOR THIS GOAL: " + WRITE_NOTE) == 1
+    assert PLAN_NOTE not in write_prompt and WRITE_NOTE not in plan_prompt
+
+
+def test_f1_one_page_only_keeps_check_and_a_fit_naming_an_engine_outside_the_line_is_refused_naming_it(j2):
+    ctx = _fit_ctx(j2)
+    assert _fitted(ctx, ["Check"], {"Check": "one page only"})["ok"] is True
+    got = _fitted(ctx, ["Check"], {"Check": "one page only", "Banner": "a banner"})
+    assert got["ok"] is False and got["notes"] == ["fit has a note for Banner, which is no engine of the line"]
+    assert _fitted(ctx, ["Plan", "Write"], {})["notes"] == ["the line leaves out Check, which this kind of department requires"]
+
+
+def test_f1_an_unsound_fit_from_a_model_never_blocks_the_department_it_gets_the_librarys_line(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    bad = {"engines": ["Plan", "Write", "Gallery"], "fit": {"Gallery": "a photo gallery"}, "why": "x"}
+    ref, seen = _born_site(j2, ONE_PAGE, answers={"adapt.fit": bad}, monkeypatch=monkeypatch)
+    assert [sid for sid, _ in seen].count("adapt.fit") >= 1
+    reg = W.dept(ref)["workflows"][-1]
+    assert reg["engines"] == LINE and "fit" not in reg, "the Library's line, whole"
+    assert not [a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending"], "nobody is asked, nothing is blocked"
+    assert [r for r in R.step_rows(ref) if r.get("step") == "adapt.fit" and r["status"] == "failed"], "the refusal is on the record"
+
+
+def test_f1_a_prompt_with_no_note_is_what_it_always_was(j2):
+    W, R, J, _, _ = j2
+    ref = _born_site(j2)
+    for engine in ("Plan", "Write"):
+        assert R._fit_note(ref, engine) == ""
+    assert R._context_block(ref) == R._context_block(ref, "Plan") == R._context_block(ref, "Write")
+
+
+def test_f1_a_note_is_handed_to_the_engine_it_is_for_and_no_other_and_audit_never_reads_it(j2):
+    W, R, J, _, _ = j2
+    ref = _born_site(j2)
+    d = W.dept(ref)
+    d["workflows"][-1]["fit"] = {"Write": "  one   page\nonly "}
+    W.save_dept(ref, d)
+    assert R._fit_note(ref, "Write") == "\n\nFOR THIS GOAL: one page only" and R._fit_note(ref, "Plan") == ""
+    assert R._context_block(ref, "Write").endswith("\n\nFOR THIS GOAL: one page only")
+    assert "FOR THIS GOAL" not in R._context_block(ref), "Audit's reading of what was filed carries no note"
+
+
+# ---- F2 · conflicts carry Priority's options (W2-ADAPT, M5.4) ---------------------------------------------------------
+def _ways_out(W):
+    """The three ways out Priority prices for a no (M5.4): raise the envelope, leave an item out, stop. Built as W.option builds them."""
+    raise_ = W.option("raise", "Add 2.00 USD for Plan", "about 2.00 USD more a day, up to twice where it started",
+                      params={"what": "envelope", "engine": "Plan", "calls": 30, "usd": 2.0})
+    return [raise_, W.option("leave:D1", "Leave D1 out", "D1 is dropped from done-when; nothing more is spent"),
+            W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later")]
+
+
+def _priority_sends_options(monkeypatch, R, options, words=("line",)):
+    """Priority as W2-PRIORITY makes it, for a no or an ask for less on a line: the answer carries the ways out it priced."""
+    real = R.post
+
+    def post(ref, src, dst, msg_type, payload=None, *a, **kw):
+        if src == "Priority" and msg_type in ("reject-proposal", "propose") and (payload or {}).get("word") in words:
+            payload = dict(payload, options=options)
+        return real(ref, src, dst, msg_type, payload, *a, **kw)
+    monkeypatch.setattr(R, "post", post)
+
+
+def _conflicts(R, ref):
+    return [p["payload"] for p in R.board(ref) if p["src"] in ("Adaptation", "Coordination") and p["dst"] == ["Identity"] and p["payload"].get("word") == "conflict"]
+
+
+def test_f2_a_no_that_carries_options_reaches_identity_with_them(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    opts = _ways_out(W)
+    _priority_sends_options(monkeypatch, R, opts)
+    ref, _ = _born_site(j2, answers={"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}}, monkeypatch=monkeypatch)
+    [conflict] = _conflicts(R, ref)
+    assert conflict["options"] == opts and [o["kind"] for o in conflict["options"]] == ["raise", "leave", "stop"]
+    assert conflict["why"] == "Priority said no to the plan: no room in the envelope today"
+    assert S.validate("act.conflict", conflict) == [], "the act fits the interface, three typed options"
+    sent = next(p["payload"] for p in R.board(ref) if p["src"] == "Priority" and p["msg_type"] == "reject-proposal")
+    assert sent["options"] == opts, "what Priority sent is what Adaptation passed on"
+
+
+def test_f2_an_ask_for_less_that_cannot_be_taken_reaches_identity_with_the_options_too(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    opts = _ways_out(W)
+    _priority_sends_options(monkeypatch, R, opts)
+    # Priority asks to keep Plan -> Write -> Publish: it leaves out Check, which a website requires, so Identity closes it
+    counter = {"answer": "counter", "why": "room for three today", "keep": ["Plan", "Write", "Publish"]}
+    ref, _ = _born_site(j2, answers={"priority.bargain": counter}, monkeypatch=monkeypatch)
+    [conflict] = _conflicts(R, ref)
+    assert "leave out Check, which this kind of department requires" in conflict["why"] and conflict["options"] == opts
+    assert S.validate("act.conflict", conflict) == []
+
+
+def test_f2_no_options_from_priority_is_a_conflict_with_none_as_it_always_was(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref, _ = _born_site(j2, answers={"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}}, monkeypatch=monkeypatch)
+    [conflict] = _conflicts(R, ref)
+    assert "options" not in conflict and conflict["why"].startswith("Priority said no to the plan")
+
+
+def test_f2_only_options_that_fit_the_interface_are_passed_on_and_at_most_three(j2):
+    W = j2[0]
+    good = _ways_out(W)
+    assert v1().options_of({"options": good}) == good
+    assert v1().options_of({"options": good + [W.option("words", "Say it in my words", "free")]}) == good, "at most three"
+    assert v1().options_of({"options": [{"id": "Not An Id", "label": "x", "cost": "y"}, good[1], "stop", None]}) == [good[1]], "what is not an option is not passed on"
+    for nothing in ({}, {"options": []}, {"options": "stop"}, {"options": [{"id": "stop"}]}, None):
+        assert v1().options_of(nothing) is None
+
+
+def test_f2_a_kept_engine_keeps_its_note_when_priority_asks_for_less_and_a_dropped_one_takes_its_note_away(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    notes = {"Write": "one page, no gallery", "Publish": "put the page live at once"}
+    fit = {"engines": LINE, "fit": notes, "why": "one page"}
+    counter = {"answer": "counter", "why": "room for three today", "keep": ["Plan", "Write", "Check"]}
+    ref, seen = _born_site(j2, ONE_PAGE, answers={"adapt.fit": fit, "priority.bargain": counter}, monkeypatch=monkeypatch)
+    again = [p["payload"] for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "line"]
+    assert [[e["name"] for e in pl["engines"]] for pl in again] == [LINE, ["Plan", "Write", "Check"]]
+    assert again[0]["fit"] == notes and again[1]["fit"] == {"Write": notes["Write"]}, "the dropped engine's note goes with it"
+    assert [e.get("fit") for e in again[1]["engines"]] == [None, notes["Write"], None]
+    reg = W.dept(ref)["workflows"][-1]
+    assert reg["engines"] == ["Plan", "Write", "Check"] and reg["fit"] == {"Write": notes["Write"]} and reg["left_out"] == ["Publish"]
+    assert S.validate("workflow.registration", reg) == []
+
+
+def test_f2_the_two_handlers_are_the_layers_own_now_and_the_runtimes_copies_stay_the_fallback(j2):
+    R = j2[1]
+    for name in ("adapt_line_refused", "adapt_line_counter"):
+        assert not hasattr(v1().CODE[name], "legacy"), "%s is a body of the layer's own" % name
+        assert callable(getattr(R, name)), "and engine_runtime's copy is still there for a department whose layer does not load"
+
+
+# ---- F3 · propose the next round (W2-ADAPT, M9.1, M9.4) ---------------------------------------------------------------
+LINE_COST = {"calls": 8, "usd": 0.36, "basis": "median", "runs": 3,
+             "per_engine": {n: {"calls": 2, "usd": 0.09, "basis": "median", "runs": 3} for n in LINE}}
+D2_CLAIM = "the doctors page does not name the phone line"
+RID = "r-0a1b2c3d"
+
+
+def _reading_row(W, rid=RID, v=1, not_met=("D2",), claim=D2_CLAIM):
+    """What Audit files (audit.reading) when D1 holds, D3 is for the owner to confirm and the items named do not."""
+    rows = [{"id": "D1", "subject": "Live site", "claim": "the site is served", "evidence": "the live site passed its check", "method": "code",
+             "verdict": "met", "severity": "low"},
+            {"id": "D3", "subject": "doctors", "claim": "a visitor can find the doctors", "evidence": "the menu names them", "method": "model",
+             "verdict": "met", "severity": "low"}]
+    rows += [{"id": i, "subject": "doctors", "claim": claim, "evidence": "doctors.html has no number", "method": "model", "verdict": "not_met",
+              "severity": "high"} for i in not_met]
+    return {"schema_version": 1, "id": rid, "v": v, "artifact": "Live site", "cycle_id": None, "round": None, "read": True, "why_not_read": None,
+            "items": sorted(rows, key=lambda r: r["id"]),
+            "findings": [{"id": "F%d" % n, "severity": "high", "claim": claim, "where": "doctors", "item": i, "went_to": "Identity"}
+                         for n, i in enumerate(not_met, 1)], "at": W.now()}
+
+
+def _pursuing(j2, ref="dref-pursue", items=ITEMS):
+    """A website department with its line registered, Priority's price for that line on its record, and the reading that found D2
+    not met: everything the next round reads, with no run in the way."""
+    W, R, J, _, _ = j2
+    _dept(j2, "website", ref=ref, items=items, name="Pursue Dept")
+    d = W.dept(ref)
+    d["engines"] = list(LINE)
+    d["workflows"] = [{"version": 1, "engines": LINE, "source": "library", "registered": W.now(), "by": "Root"}]
+    W.save_dept(ref, d)
+    W.append_row(ref, "prices.jsonl", {"schema_version": 1, "id": "pr-0000fix1", "at": W.now(), "cycle_id": None, "round": None, "proposal": "line",
+                                       "engines": LINE, "estimate": LINE_COST, "room": {"calls": 120, "usd": 24.0}, "remaining": {"calls": 112, "usd": 23.64},
+                                       "answer": "accept", "keep": [], "why": "fits today", "indices": {"spend_per_run": {}, "checks": {}}})
+    W.append_row(ref, "readings.jsonl", _reading_row(W))
+    return ref
+
+
+def _ask_next(R, ref, items=("D2",), reading=RID, findings=("F1",), **more):
+    """Identity asks Adaptation for the next round, as W2-IDENTITY will after a reading that is not done (act.next)."""
+    return R.post(ref, "Identity", "Adaptation", "request", dict({"word": "next", "items": list(items), "reading": reading, "findings": list(findings)}, **more))
+
+
+def _round_posts(R, ref):
+    return [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["msg_type"] == "propose" and p["payload"].get("word") == "round"]
+
+
+def _rows(W, ref):
+    return W.rows(ref, "rounds.jsonl")
+
+
+def test_f3_a_reading_with_d2_not_met_gives_one_round_naming_d2_with_the_line_cost_priority_observed(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    assert _ask_next(R, ref)
+    W.run_until_idle(ref, limit=100)
+    [sent] = _round_posts(R, ref)
+    pl = sent["payload"]
+    assert pl["round"] == 1 and pl["covers"] == ["D2"] and pl["fixes"] == ["F1"], pl
+    assert "D2" in pl["correction"] and D2_CLAIM in pl["correction"], "it names the item and what Audit found"
+    assert pl["estimate"] == LINE_COST, "the estimate is the cost on Priority's latest price row for the line, as it is"
+    assert S.validate_act("Adaptation", ["Priority"], "propose", pl) == [] and S.validate("act.round", pl) == []
+    first = _rows(W, ref)[0]
+    assert (first["round"], first["status"], first["thread"], first["reading"]) == (1, "proposed", sent["thread"], RID)
+    assert first["covers"] == ["D2"] and first["estimate"] == LINE_COST and S.validate("adaptation.round", first) == []
+    d = W.dept(ref)
+    assert len(d["workflows"]) == 1 and d["engines"] == LINE, "a round never registers a line"
+    assert not [p for p in R.board(ref) if (p["payload"] or {}).get("word") == "line"], "and proposes none"
+
+
+def test_f3_priority_saying_yes_moves_the_round_to_granted_and_the_fold_keeps_the_latest_row(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    _ask_next(R, ref)
+    W.run_until_idle(ref, limit=100)
+    rows = _rows(W, ref)
+    assert [r["status"] for r in rows] == ["proposed", "granted"] and rows[0]["thread"] == rows[1]["thread"]
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted")], "folded by round, the latest status winning"
+    assert [r for r in R.board(ref) if r["src"] == "Priority" and r["msg_type"] == "accept-proposal" and r["payload"].get("word") == "round"]
+    told = [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Identity"] and p["payload"].get("word") == "round"]
+    assert bool(told) == v1().hears_round(), "Identity is told to file it once its recipe hears a round, and not before (A1-14)"
+    for p in told:
+        assert p["payload"]["round"] == 1 and p["payload"]["covers"] == ["D2"] and p["payload"]["estimate"] == LINE_COST
+        assert S.validate_act("Adaptation", ["Identity"], "inform", p["payload"]) == []
+
+
+def _round_in_hand(j2, ref="dref-pursue", **ask):
+    """Round 1 proposed and not yet answered: the three steps run as the recipe runs them, with no motor in between, so a test can
+    answer it as Priority."""
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2, ref)
+    post = _ask_next(R, ref, **ask)
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}, "how": {}}
+    ctx["bag"]["adapt.hearnext"] = v1().CODE["adapt_hearnext"](ctx, None, None)
+    ctx["bag"]["adapt.next"] = v1().DRAFT["adapt_next_draft"](ctx, None, None)
+    out = v1().CODE["adapt_round"](ctx, None, None)
+    return ref, out, _rows(W, ref)[-1]
+
+
+def _answer(j2, ref, thread, act, payload):
+    W, R, _, _, _ = j2
+    post = {"n": 99, "thread": thread, "src": "Priority", "msg_type": act, "payload": payload}
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}, "how": {}}
+    code = v1().CODE["adapt_round_granted" if act == "accept-proposal" else "adapt_round_refused"]
+    return code(ctx, None, None)
+
+
+def test_f3_priority_saying_no_moves_the_round_to_refused_and_it_becomes_a_conflict_with_the_ways_out_it_sent(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: True)
+    ref, out, row = _round_in_hand(j2)
+    opts = _ways_out(W)
+    got = _answer(j2, ref, row["thread"], "reject-proposal", {"word": "round", "why": "round 7 of 6 is past the ceiling", "options": opts})
+    assert "the conflict goes to Identity" in got["said"]
+    assert [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"]
+    [conflict] = _conflicts(R, ref)
+    assert conflict["options"] == opts and conflict["round"] == 1 and conflict["for"] == row["thread"] and conflict["engines"] == []
+    assert conflict["why"] == "Priority said no to round 1: round 7 of 6 is past the ceiling"
+    assert S.validate("act.conflict", conflict) == []
+    again = _answer(j2, ref, row["thread"], "reject-proposal", {"word": "round", "why": "again", "options": opts})
+    assert len(_conflicts(R, ref)) == 1 and [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"], "a second no is the same no"
+
+
+def test_f3_until_identity_hears_a_round_a_refusal_and_a_grant_stay_on_the_record_and_post_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: False)
+    ref, out, row = _round_in_hand(j2)
+    before = len(R.board(ref))
+    got = _answer(j2, ref, row["thread"], "reject-proposal", {"word": "round", "why": "no room", "options": _ways_out(W)})
+    assert "stays on the record" in got["said"] and len(R.board(ref)) == before and [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"]
+    ref2, _, row2 = _round_in_hand(j2, ref="dref-pursue-two")
+    before = len(R.board(ref2))
+    got = _answer(j2, ref2, row2["thread"], "accept-proposal", {"word": "round", "why": "fits today"})
+    assert "Identity does not take rounds yet" in got["said"] and len(R.board(ref2)) == before and _rows(W, ref2)[-1]["status"] == "granted"
+
+
+def test_f3_a_round_nobody_proposed_is_heard_and_nothing_is_written(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    assert "nobody proposed" in _answer(j2, ref, "x-nobody", "accept-proposal", {"word": "round"})["said"]
+    assert "nobody proposed" in _answer(j2, ref, "x-nobody", "reject-proposal", {"word": "round"})["said"]
+    assert _rows(W, ref) == []
+
+
+def test_f3_the_same_reading_asked_twice_is_one_round(j2):
+    W, R, J, _, _ = j2
+    ref, out, row = _round_in_hand(j2)
+    post = _ask_next(R, ref)
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}, "how": {}}
+    ctx["bag"]["adapt.hearnext"] = v1().CODE["adapt_hearnext"](ctx, None, None)
+    ctx["bag"]["adapt.next"] = v1().DRAFT["adapt_next_draft"](ctx, None, None)
+    again = v1().CODE["adapt_round"](ctx, None, None)
+    assert again["said"] == "round 1 is already with Priority for this reading" and len(_round_posts(R, ref)) == 1 and len(_rows(W, ref)) == 1
+
+
+def test_f3_what_adaptation_hears_is_the_items_that_are_in_done_when_what_audit_found_the_line_and_the_number(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    post = {"n": 1, "thread": "x-n", "src": "Identity", "msg_type": "request",
+            "payload": {"word": "next", "items": ["D2", "D9", "D2"], "reading": RID, "findings": ["F1", "F8"]}}
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}}
+    got = v1().CODE["adapt_hearnext"](ctx, None, None)
+    assert [i["id"] for i in got["items"]] == ["D2"], "D9 is not in done-when, and D2 is named once"
+    assert got["items"][0]["text"] == "Every page names the phone line" and got["items"][0]["claim"] == D2_CLAIM
+    assert [(f["id"], f["item"]) for f in got["findings"]] == [("F1", "D2")] and got["line"] == LINE
+    assert got["round"] == 1 and got["last"] is None and got["reading"] == RID
+    assert got["facts"] == {"from": "Identity", "act": "request", "word": "next", "items": "D2", "repeat": False}
+    assert R.CHECK["facts_are_closed"](ctx, None, None, got)["ok"] is True, "the unit starts with code, and its facts are closed"
+    post["payload"]["round"] = 5
+    assert v1().CODE["adapt_hearnext"](ctx, None, None)["round"] == 5, "the number Identity gives is kept when it is later than the next"
+    post["payload"].update({"items": ["D9"], "reading": "r-ffffffff", "findings": []})
+    none = v1().CODE["adapt_hearnext"](ctx, None, None)
+    assert none["items"] == [] and none["reading"] == "r-ffffffff" and "no item that done-when has" in none["said"]
+
+
+def test_f3_the_numbers_of_the_rounds_follow_each_other_and_start_again_with_a_cycle(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    base = {"schema_version": 1, "at": W.now(), "correction": "x", "covers": ["D2"], "status": "granted"}
+    W.append_row(ref, "rounds.jsonl", dict(base, round=1, cycle_id="c-one"))
+    W.append_row(ref, "rounds.jsonl", dict(base, round=2, cycle_id="c-one"))
+    monkeypatch.setattr(v1(), "cycle_of", lambda r: "c-one")
+    assert v1().next_number(ref, {}) == 3 and [r["round"] for r in v1().rounds_of(ref)] == [1, 2]
+    monkeypatch.setattr(v1(), "cycle_of", lambda r: "c-two")
+    assert v1().next_number(ref, {}) == 1 and v1().rounds_of(ref) == [], "the goal changed: a new cycle's first round is round 1"
+    assert v1().next_number(ref, {"round": 99}) == 99 and v1().next_number(ref, {"round": 120}) == 1 and v1().next_number(ref, {"round": True}) == 1, \
+        "a number outside 1 to 99 is not one Identity gave"
+
+
+@pytest.mark.parametrize("text, says", [
+    ("Put the phone line on the doctors page", "already failed in round 1"),                      # the one that failed, as it was
+    ("put the phone line on the doctors page.", "already failed in round 1"),                     # in lower case and with a full stop
+    ("  PUT   the phone line, on the doctors page!! ", "already failed in round 1"),            # and with other spaces and marks
+    ("Put the phone line on the doctors page and the contact page", None),
+    ("Add the phone line to the footer of every page", None),
+    ("", "a round says what to correct"), ("   ", "a round says what to correct"), (None, "a round says what to correct"),
+    (7, "a round says what to correct")])
+def test_f3_a_correction_equal_in_its_words_to_the_one_that_failed_is_refused_and_a_new_one_passes(text, says):
+    ctx = {"bag": {"adapt.hearnext": {"items": [{"id": "D2"}], "last": {"round": 1, "correction": "Put the phone line on the doctors page"}}}}
+    got = v1().CHECK["round_is_new"](ctx, None, None, {"correction": text, "fixes": [], "covers": ["D2"], "why": "x"})
+    assert got["ok"] is (says is None), got
+    if says:
+        assert says in got["notes"][0]
+    else:
+        assert got["notes"] == ["a correction that is new for D2"]
+
+
+def test_f3_with_nothing_that_failed_any_correction_with_words_is_new_and_the_check_needs_no_department():
+    for ctx in (None, {}, {"bag": {}}, {"bag": {"adapt.hearnext": {"items": [], "last": None}}}):
+        assert v1().CHECK["round_is_new"](ctx, None, None, {"correction": "Put right D2"})["ok"] is True
+    assert v1().CHECK["round_is_new"](None, None, None, "not an object")["ok"] is False
+
+
+def _granted_round(W, ref, correction, n=1, covers=("D2",), cycle=None):
+    W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": cycle, "correction": correction, "fixes": ["F1"],
+                                       "covers": list(covers), "estimate": LINE_COST, "status": "granted", "thread": "x-r%d" % n, "reading": RID})
+
+
+FIRST_TRY = "Put the phone line on the doctors page"
+
+
+def test_f3_the_same_failure_twice_gives_a_different_correction_and_the_agent_is_told_the_last_approach_failed(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    _granted_round(W, ref, FIRST_TRY)                                            # round 1 ran, and the next reading finds D2 not met again
+    W.append_row(ref, "readings.jsonl", _reading_row(W, rid="r-1b2c3d4e", v=2))
+    different = "Add the phone line to the footer of every page, the doctors page included"
+    seen = _stub(monkeypatch, R, {"adapt.next": {"correction": different, "fixes": ["F1"], "covers": ["D2"], "why": "the first fix did not hold"}})
+    _ask_next(R, ref, reading="r-1b2c3d4e")
+    W.run_until_idle(ref, limit=100)
+    [sent] = _round_posts(R, ref)
+    assert sent["payload"]["round"] == 2 and sent["payload"]["correction"] == different
+    prompt = next(p for sid, p in seen if sid == "adapt.next")
+    assert "THE LAST ROUND: the last approach failed: " + FIRST_TRY in prompt and "D2: Every page names the phone line" in prompt
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted"), (2, "granted")]
+
+
+def test_f3_offline_the_draft_is_a_numbered_other_try_so_it_is_never_the_approach_that_failed(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+
+    def draft():
+        post = {"n": 1, "thread": "x-d", "src": "Identity", "msg_type": "request", "payload": {"word": "next", "items": ["D2"], "reading": RID, "findings": ["F1"]}}
+        ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}}
+        ctx["bag"]["adapt.hearnext"] = v1().CODE["adapt_hearnext"](ctx, None, None)
+        out = v1().DRAFT["adapt_next_draft"](ctx, None, None)
+        assert v1().CHECK["round_is_new"](ctx, None, None, out)["ok"] is True, "the draft passes the check it stands behind"
+        return out["correction"]
+    first = draft()
+    assert first == "Put right D2: Every page names the phone line. Audit found: " + D2_CLAIM
+    _granted_round(W, ref, first, n=1)
+    second = draft()
+    assert second.startswith("Try another way, attempt 2.") and words_differ(second, first)
+    _granted_round(W, ref, second, n=2)
+    third = draft()
+    assert third.startswith("Try another way, attempt 3.") and words_differ(third, second) and words_differ(third, first)
+
+
+def words_differ(a, b):
+    return v1().words_of(a) != v1().words_of(b)
+
+
+def test_f3_a_round_that_priority_would_not_pay_for_did_not_fail_so_its_correction_may_be_said_again(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": 1, "at": W.now(), "cycle_id": None, "correction": FIRST_TRY, "fixes": [], "covers": ["D2"],
+                                       "status": "refused", "thread": "x-r1"})
+    assert v1().failed_round(ref, ["D2"]) is None
+    _granted_round(W, ref, "Another", n=2)
+    assert v1().failed_round(ref, ["D2"])["correction"] == "Another" and v1().failed_round(ref, ["D3"]) is None, "only for the same items"
+
+
+def test_f3_a_model_that_says_the_failed_correction_again_ends_in_one_question_to_identity_with_three_ways_out(j2, monkeypatch):
+    """The covering refuses the repeat and the step fails; the department does not go quiet: Identity is put one conflict with the
+    owner's own words, leaving the item out, and stopping as the ways out (M9.4's limit question)."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: True)
+    ref = _pursuing(j2)
+    _granted_round(W, ref, FIRST_TRY)
+    _stub(monkeypatch, R, {"adapt.next": {"correction": FIRST_TRY.lower() + ".", "fixes": ["F1"], "covers": ["D2"], "why": "again"}})
+    _ask_next(R, ref)
+    W.run_until_idle(ref, limit=100)
+    assert _round_posts(R, ref) == [], "no second round for the approach that failed"
+    failed = [r for r in R.step_rows(ref) if r.get("step") == "adapt.next" and r["status"] == "failed"]
+    assert failed and "already failed in round 1" in failed[0]["why"]
+    [conflict] = _conflicts(R, ref)
+    assert [o["id"] for o in conflict["options"]] == ["words", "leave:D2", "stop"] and [o["kind"] for o in conflict["options"]] == ["words", "leave", "stop"]
+    assert conflict["round"] == 2 and "Adaptation has no new way to put D2 right" in conflict["why"] and "already failed in round 1" in conflict["why"]
+    assert S.validate("act.conflict", conflict) == [] and conflict["engines"] == []
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted")], "nothing was written for a round that was not proposed"
+
+
+def test_f3_one_item_left_in_done_when_cannot_be_left_out_so_the_limit_question_has_two_ways_out(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: True)
+    ref = _pursuing(j2, items=[dict(ITEMS[1], id="D1")])
+    assert [o["kind"] for o in v1().next_options(W.dept(ref), ["D1"])] == ["words", "stop"]
+    three = _pursuing(j2, "dref-pursue-three")
+    assert [o["kind"] for o in v1().next_options(W.dept(three), ["D2"])] == ["words", "leave", "stop"]
+    assert [o["kind"] for o in v1().next_options(W.dept(three), ["D9"])] == ["words", "stop"], "an item that is not there is not left out"
+
+
+def test_f3_until_identity_hears_a_round_a_failed_next_posts_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: False)
+    ref = _pursuing(j2)
+    post = _ask_next(R, ref)
+    before = len(R.board(ref))
+    assert v1().next_failed(ref, W.dept(ref), post, "a step failed") is None and len(R.board(ref)) == before
+
+
+def test_f3_a_round_is_asked_by_identity_alone_and_the_edges_are_the_boards(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    assert _ask_next(R, ref)
+    assert R.may_post("Identity", ["Adaptation"], "request", ref) and R.may_post("Adaptation", ["Priority"], "propose", ref)
+    assert R.may_post("Adaptation", ["Identity"], "inform", ref) and not R.may_post("Adaptation", ["Owner"], "inform", ref), "only Identity speaks to the owner"
+    assert S.validate_act("Identity", ["Adaptation"], "request", {"word": "next", "items": []}), "act.next needs at least one item"
+
+
+def test_f3_the_interface_hears_and_sends_the_round_and_the_recipe_has_the_handlers_for_it():
+    hears = {(r["act"], r["word"]): r for r in S.hears("adaptation")}
+    for pair, handler in ((("request", "next"), "Propose the next round"), (("accept-proposal", "round"), "Priority said yes to the round"),
+                          (("reject-proposal", "round"), "Priority said no to the round")):
+        assert hears[pair]["handler"] == handler and hears[pair]["via"] == "board"
+    assert hears[("request", "next")]["from"] == ("Identity",) and hears[("request", "next")]["payload"] == "act.next"
+    assert hears[("accept-proposal", "round")]["from"] == hears[("reject-proposal", "round")]["from"] == ("Priority",)
+    sends = {(r["act"], r["words"]): r for r in S.SENDS["Adaptation"]}
+    assert sends[("propose", ("round",))]["to"] == ("Priority",) and sends[("inform", ("round",))]["to"] == ("Identity",)
+    assert {r["payload"] for r in S.SENDS["Adaptation"] if r["words"] == ("round",)} == {"act.round"}
+    assert any(r["act"] == "request" and r["words"] == ("next",) and r["to"] == ("Adaptation",) for r in S.SENDS["Identity"])
+    part = S.PROMPTS["adaptation"]["decide"]["next"]
+    assert part["read_by"] == "adapt.next" and part["inputs"] == ("dept", "items", "findings", "line", "last") and set(part["fields"]) == {"task", "guidance"}
+    assert part["returns"] == 'Return ONLY a JSON object: {"correction": "one line: what to correct", "fixes": ["F1"], "covers": ["D2"], "why": "one line"}.'
+    assert ("adaptation", "decide", "next") in S.ADDED_PARTS and "round_is_new" in S.CHECKS["adaptation"]
+    handler = next(h for h in layers.recipes()["Adaptation"]["on"] if h["name"] == "Propose the next round")
+    assert [(s["id"], s["born"], s["nature"]) for s in handler["steps"]] == [("adapt.hearnext", "C2", "transform"), ("adapt.next", "C0", "decide"),
+                                                                           ("adapt.round", "C2", "transform")]
+    nxt = handler["steps"][1]
+    assert (nxt["prompt"], nxt["draft"], nxt["check"]) == ("adapt_next", "adapt_next_draft", "round_is_new")
+    assert nxt["out"] == {"correction": "str", "fixes": "list", "covers": "list", "why": "str"}
+
+
+def test_f3_a_department_whose_adaptation_layer_does_not_load_hears_a_request_for_a_round_and_proposes_none(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    real = layers.load
+    monkeypatch.setattr(layers, "load", lambda impl_id: None if str(impl_id).startswith("adaptation/") else real(impl_id))
+    ref = _pursuing(j2)
+    _stub(monkeypatch, R, {"adapt.next": {"correction": "Put right D2", "fixes": [], "covers": ["D2"], "why": "x"}})
+    _ask_next(R, ref)
+    W.run_until_idle(ref, limit=100)
+    assert _round_posts(R, ref) == [] and _rows(W, ref) == []
+    ran = [r for r in W.runs(ref) if r.get("engine") == "Adaptation" and "round" in str(r.get("what"))]
+    assert ran and ran[-1]["status"] == "ok" and "not loaded" in ran[-1]["what"], [(r.get("what"), r["status"]) for r in W.runs(ref)]
+
+
+# ---- F4 · the rounds in the view (W2-ADAPT, M9.6) --------------------------------------------------------------------
+def _pane(j2, ref):
+    W, R, J, _, FV = j2
+    return v1().view(ref, W.dept(ref), [], W.asks(ref))
+
+
+def test_f4_the_view_validates_in_a_two_round_fixture_and_a_round_is_one_row_the_latest_status_winning(j2):
+    W, R, J, _, FV = j2
+    ref = _pursuing(j2)
+    base = {"schema_version": 1, "cycle_id": None, "fixes": ["F1"], "covers": ["D2"], "estimate": LINE_COST, "reading": RID}
+    W.append_row(ref, "rounds.jsonl", dict(base, round=1, at="2026-10-26T10:00:00+05:30", correction=FIRST_TRY, status="proposed", thread="x-r1"))
+    W.append_row(ref, "rounds.jsonl", dict(base, round=1, at="2026-10-26T10:01:00+05:30", correction=FIRST_TRY, status="granted", thread="x-r1"))
+    W.append_row(ref, "rounds.jsonl", dict(base, round=2, at="2026-10-26T10:30:00+05:30", correction="Add the phone line to every footer", status="proposed",
+                                           thread="x-r2", reading="r-1b2c3d4e"))
+    pane = _pane(j2, ref)
+    assert S.validate_view("adaptation", pane) == [], S.validate_view("adaptation", pane)
+    assert [(r["round"], r["status"], r["said"]) for r in pane["rounds"]] == [(1, "granted", "Priority said yes"), (2, "proposed", "asked Priority")]
+    assert pane["round"] == pane["rounds"][-1] and pane["round"]["correction"] == "Add the phone line to every footer"
+    assert pane["rounds"][0]["at"] == "2026-10-26T10:01:00+05:30" and pane["rounds"][0]["estimate"] == LINE_COST and pane["rounds"][0]["covers"] == ["D2"]
+    # what the pane is read from is the journal as written: three rows, two rounds
+    assert len(_rows(W, ref)) == 3 and len(pane["rounds"]) == 2
+    for r in pane["rounds"]:
+        assert S.validate("view.adaptation.round", r) == []
+
+
+def test_f4_a_department_with_no_round_has_none_and_still_validates(j2):
+    W, R, J, _, FV = j2
+    ref = _pursuing(j2)
+    pane = _pane(j2, ref)
+    assert pane["round"] is None and pane["rounds"] == [] and S.validate_view("adaptation", pane) == []
+
+
+def test_f4_each_status_has_the_owners_words_and_never_the_bargains_inside_ones(j2):
+    for status, says in (("proposed", "asked Priority"), ("granted", "Priority said yes"), ("refused", "Priority said no"),
+                         ("filed", "filed in the Brief"), ("read", "read by Audit")):
+        assert v1().ROUND_SAID[status] == says
+    assert set(v1().ROUND_SAID) == {"proposed", "granted", "refused", "filed", "read"} == set(S.DEFS["adaptation.round"]["properties"]["status"]["enum"])
+    assert not re.search(r"grant|counter|refus", " ".join(v1().ROUND_SAID.values()), re.I)
+
+
+def test_f4_only_the_rounds_of_the_cycle_the_department_is_in_are_shown(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _pursuing(j2)
+    _granted_round(W, ref, "old way", n=1, cycle="c-one")
+    _granted_round(W, ref, "old way two", n=2, cycle="c-one")
+    _granted_round(W, ref, "new way", n=1, cycle="c-two")
+    monkeypatch.setattr(v1(), "cycle_of", lambda r: "c-two")
+    pane = _pane(j2, ref)
+    assert [(r["round"], r["correction"]) for r in pane["rounds"]] == [(1, "new way")] and pane["round"]["correction"] == "new way"
+    monkeypatch.setattr(v1(), "cycle_of", lambda r: "c-one")
+    assert [r["round"] for r in _pane(j2, ref)["rounds"]] == [1, 2]
+    assert S.validate_view("adaptation", _pane(j2, ref)) == []
+
+
+def test_f4_the_pane_a_function_page_reads_carries_the_rounds_through_the_layer(j2):
+    W, R, J, _, FV = j2
+    ref = _pursuing(j2)
+    _granted_round(W, ref, FIRST_TRY)
+    pane = FV.function(ref, "Adaptation")["j2"]
+    assert [(r["round"], r["status"]) for r in pane["rounds"]] == [(1, "granted")] and pane["round"]["said"] == "Priority said yes"
+    assert "j2_faults" not in pane, "the layer's view passed the interface, so the page did not fall back"
+
+
+def test_f4_a_round_row_written_by_a_later_writer_with_a_status_the_pane_does_not_know_is_not_shown(j2):
+    W, R, J, _, FV = j2
+    ref = _pursuing(j2)
+    path = W.ddir(ref) / "rounds.jsonl"
+    path.write_text(json.dumps({"round": 1, "correction": "x", "covers": ["D2"], "status": "archived", "cycle_id": None}) + "\n", encoding="utf-8")
+    pane = _pane(j2, ref)
+    assert pane["rounds"] == [] and S.validate_view("adaptation", pane) == []

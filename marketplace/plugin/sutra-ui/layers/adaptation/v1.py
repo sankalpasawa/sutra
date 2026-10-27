@@ -5,9 +5,17 @@ Every code, prompt, draft and check name the recipe uses is provided here (A1 st
 engine_runtime still holds, until this layer moves one in to change it (move on touch, A1.19). The layer's words are
 WORDS and LAYOUT below (A1.16), from the extractor and proved byte for byte against the .md bundle, which is now only the
 fallback for a part no layer holds. view() returns the pane's read model.
+
+W2-ADAPT (M5.2, M5.4, M9.1, M9.4, M9.6) adds to the same version, as additions and not a new version: adapt.fit fits the Library's
+line to the goal (a note per engine, an engine left out only when the kind does not require it), the two handlers that hear
+Priority's no and its ask for less copy the ways out Priority priced into the conflict, and the next round (adapt_hearnext,
+adapt.next, adapt_round, and the two handlers for Priority's answer to it) proposes a correction on the registered line, never
+the one that already failed, and keeps rounds.jsonl, which view() folds by round.
 """
 import os
 import re
+import types
+import uuid
 
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
@@ -351,6 +359,357 @@ def d_adapt_line(ctx, step, item):
     return {'engines': engines}
 
 
+def kind_line(ctx):
+    """The names of the line the fit starts from (M5.2): the engines adapt.source took, the department's own or its kind's, in
+    the order the Library runs them."""
+    src = ((ctx or {}).get('bag') or {}).get('adapt.source') or {}
+    return [str(e.get('name')) for e in src.get('engines') or [] if isinstance(e, dict) and e.get('name')]
+
+
+def p_adapt_fit(ctx, step, item):
+    """The prompt that fits the Library's line to the goal (adapt.fit): the typed part make.fit (A1-FIT), given the line as the
+    Library has it, each engine with what it reads and writes, and the ones this kind of department requires marked."""
+    d, pl = ctx['dept'], ctx['post']['payload']
+    required = R.required_engines(d)
+    lines = ['- %s%s (reads %s, writes %s): %s' % (e['name'], ' [required: it stays]' if e['name'] in required else '', e.get('reads') or 'Brief',
+                                                   e.get('writes') or e['name'], e.get('does') or 'no description')
+             for e in ((ctx['bag'].get('adapt.source') or {}).get('engines') or []) if isinstance(e, dict) and e.get('name')]
+    rules = '; '.join(str(r.get('line')) for r in d.get('rules') or [] if r.get('line'))
+    return R._prompt('adaptation', 'make', 'fit', ctx['ref'], dept=d.get('name'), words=pl.get('words') or d.get('goal'),
+                     items=item_lines(d), engines='\n'.join(lines) or 'none', rules=rules or 'none')
+
+
+def d_adapt_fit(ctx, step, item):
+    """The draft, when no agent is there to fit the line: the kind's line as it is, every engine and no note."""
+    return {'engines': kind_line(ctx), 'fit': {}, 'why': "no agent was there to fit the line, so the Library's line stands as it is"}
+
+
+def c_line_is_fitted(ctx, step, item, out):
+    """A fitted line is an in-order subsequence of the kind's line that holds every engine the kind requires (M5.2: Adaptation
+    may leave out an engine that is not required, and nothing else). Refused: an engine that is not in the kind's line, one
+    named twice, a changed order, a required engine left out, a note for an engine the fitted line does not have, and a note
+    over 300 characters. Whether the engines left read each other is Root's standards' to say at the proposal and at the
+    registration, not this check's."""
+    base = kind_line(ctx)
+    engs = out.get('engines') if isinstance(out, dict) else None
+    if not base:
+        return R._verdict(False, '', "there is no line of the kind's to fit")
+    if (((ctx or {}).get('post') or {}).get('payload') or {}).get('faults'):
+        # Root's check sent the last line back (or this step failed once): the Library's line is taken whole (fitted()), so
+        # a fit that is not sound cannot stop the department from getting its line; the repair always converges
+        return {'ok': True, 'notes': ["the last line was sent back, so the Library's line is taken whole and nothing is fitted"]}
+    if not isinstance(engs, list) or not engs or any(not isinstance(n, str) or not n.strip() for n in engs):
+        return R._verdict(False, '', "the engines to run are named, as a list of names")
+    names, notes = [' '.join(n.split()) for n in engs], []
+    twice = [n for n in dict.fromkeys(names) if names.count(n) > 1]
+    if twice:
+        notes.append('%s named more than once' % R._names(twice))
+    foreign = [n for n in dict.fromkeys(names) if n not in base]
+    if foreign:
+        notes.append("%s %s not in the kind's line (%s)" % (R._names(foreign), 'is' if len(foreign) == 1 else 'are', ' -> '.join(base)))
+    known = [n for n in dict.fromkeys(names) if n in base]
+    if [base.index(n) for n in known] != sorted(base.index(n) for n in known):
+        notes.append("the Library's order is changed: it runs %s" % ' -> '.join(base))
+    gone = [n for n in R.required_engines((ctx or {}).get('dept')) if n in base and n not in names]
+    if gone:
+        notes.append('the line leaves out %s, which this kind of department requires' % R._names(gone))
+    fit = out.get('fit', {})
+    if not isinstance(fit, dict):
+        notes.append('fit is a note for each engine that needs one, as an object')
+    else:
+        stray = [str(k) for k in fit if k not in names]
+        if stray:
+            notes.append('fit has a note for %s, which is no engine of the line' % R._names(stray))
+        for k, v in fit.items():
+            if not isinstance(v, str):
+                notes.append('the note for %s is not words' % k)
+            elif len(v.strip()) > 300:
+                notes.append('the note for %s is %d characters; at most 300' % (k, len(v.strip())))
+    left = [n for n in base if n not in names]
+    return {'ok': not notes, 'notes': notes or ["%d of %d engines, in the Library's order%s" % (len(names), len(base),
+                                                (', leaving out ' + R._names(left)) if left else '')]}
+
+
+def fitted(ctx, src):
+    """The Library's line as adapt.fit left it (M5.2): the engines it kept, in the Library's order, each with its note
+    (`fit`). The line whole when there is nothing to carry: a shaped source, a skipped step, and a line Root's check sent
+    back (`faults` on the request), which is taken again whole, as the repair of a refused line has always been."""
+    fit = ((ctx or {}).get('bag') or {}).get('adapt.fit')
+    pl = (((ctx or {}).get('post') or {}).get('payload')) or {}
+    if src.get('shape') or src.get('source') != 'library' or pl.get('faults') or not isinstance(fit, dict):
+        return src
+    keep = {' '.join(str(n).split()) for n in fit.get('engines') or [] if isinstance(n, str)}
+    rows = [dict(e) for e in src.get('engines') or [] if e.get('name') in keep]
+    if not rows:
+        return src
+    notes = {k: ' '.join(v.split()) for k, v in (fit.get('fit') if isinstance(fit.get('fit'), dict) else {}).items()
+             if isinstance(v, str) and v.strip() and k in {e['name'] for e in rows}}
+    return dict(src, engines=rows, fit=notes, left_out=[e['name'] for e in src.get('engines') or [] if e.get('name') not in keep])
+
+
+# ---- the next round (W2-ADAPT: M9.1 the round, M9.4 never the same twice, M9.6 the rounds) ---------------------------------
+#: a round's statuses, in the order it passes through them (adaptation.round): proposed to Priority, granted or refused by it,
+#: filed in the Brief by Identity, read by Audit. Adaptation writes the first three; the others are Identity's and Audit's to
+#: move on the record they own, and the fold takes whatever the latest row says.
+RAN = ('granted', 'filed', 'read')           # a round that ran: the approach it named was tried
+#: what a round says is at most this long (adaptation.round correction); the model's own words are cut to it, never refused for it
+SAYS = 600
+
+
+def clip(text, n=SAYS):
+    return ' '.join(str(text or '').split())[:n]
+
+
+def words_of(text):
+    """The words of a line as the repeat guard compares them: lower case, letters and digits only, in order."""
+    return ' '.join(re.findall(r'[a-z0-9]+', str(text or '').lower()))
+
+
+def cycle_of(ref):
+    """The cycle the department is in (J2): its id, or None when it has none."""
+    try:
+        return (J._state(ref) or {}).get('cycle_id')
+    except Exception:  # noqa: BLE001 -- no cycle to read: the rounds are the department's own
+        return None
+
+
+def all_rounds(ref):
+    """rounds.jsonl folded by round, the latest row of each round winning (M9.6). Rounds of two cycles are two rounds: the
+    number starts again with the cycle."""
+    folded = {}
+    try:
+        rows = W.rows(ref, 'rounds.jsonl')
+    except (ValueError, OSError):
+        rows = []
+    for r in rows:
+        if isinstance(r, dict) and isinstance(r.get('round'), int) and not isinstance(r.get('round'), bool):
+            key = (r.get('cycle_id'), r['round'])
+            folded[key] = dict(folded.get(key, {}), **r)
+    return list(folded.values())
+
+
+def rounds_of(ref):
+    """The rounds of the cycle the department is in, oldest first; the department's whole record when it has no cycle."""
+    cur = cycle_of(ref)
+    return sorted((r for r in all_rounds(ref) if cur is None or r.get('cycle_id') == cur), key=lambda r: r['round'])
+
+
+def failed_round(ref, ids):
+    """The latest round that ran for any of these items and did not put them right (M9.4): the reading that asked for the next
+    round found them still not met, so the correction it named is the last approach that failed. A round Priority would not pay
+    for never ran, so its approach did not fail."""
+    for r in reversed(rounds_of(ref)):
+        if r.get('status') in RAN and set(r.get('covers') or []) & set(ids):
+            return r
+    return None
+
+
+def next_number(ref, pl):
+    """The number of the round now asked for: one after the latest of this cycle, or the number Identity gave when that is later."""
+    n = max([r['round'] for r in rounds_of(ref)] or [0]) + 1
+    given = pl.get('round')
+    if isinstance(given, int) and not isinstance(given, bool) and 1 <= given <= 99:
+        n = max(n, given)
+    return min(n, 99)
+
+
+def reading_of(ref, rid=None):
+    """The reading a request names (readings.jsonl, by its id); the latest one when it names none; None when Audit has filed none."""
+    try:
+        rows = [r for r in W.rows(ref, 'readings.jsonl') if isinstance(r, dict)]
+    except (ValueError, OSError):
+        rows = []
+    if rid:
+        return next((r for r in reversed(rows) if r.get('id') == rid), None)
+    return rows[-1] if rows else None
+
+
+def line_estimate(ref):
+    """Priority's observed cost of the line (M9.1): the estimate on the latest price row for a line, the cost it read from the
+    runs that finished. Nothing observed is a zero with the basis 'prior': Priority prices the round itself all the same."""
+    try:
+        rows = [r for r in W.rows(ref, 'prices.jsonl') if isinstance(r, dict) and r.get('proposal') == 'line' and isinstance(r.get('estimate'), dict)]
+    except (ValueError, OSError):
+        rows = []
+    return dict(rows[-1]['estimate']) if rows else {'calls': 0, 'usd': 0.0, 'basis': 'prior', 'runs': 0}
+
+
+def adapt_hearnext(ctx, step, item):
+    """Adaptation hears Identity ask for the next round (M9.1): which of the items it names are in done-when and what the reading
+    said of each, what Audit found about them, the line that ran, the number of this round and the last approach that failed
+    for the same items. The unit starts with code: closed facts."""
+    ref, d, p = ctx['ref'], ctx['dept'], ctx['post']
+    pl = p.get('payload') or {}
+    mine = {i['id']: i for i in items_of(d)}
+    ids = [i for i in dict.fromkeys(pl.get('items') or []) if isinstance(i, str) and i in mine]
+    reading = reading_of(ref, pl.get('reading'))
+    said = {r['id']: r for r in (reading or {}).get('items') or [] if isinstance(r, dict) and r.get('id')}
+    items = [{'id': i, 'text': clip(mine[i].get('text'), 300), 'claim': clip((said.get(i) or {}).get('claim'), 300)} for i in ids]
+    asked = set(x for x in pl.get('findings') or [] if isinstance(x, str))
+    findings = [{'id': f['id'], 'severity': f.get('severity'), 'claim': clip(f.get('claim'), 300), 'where': clip(f.get('where'), 120), 'item': f.get('item')}
+                for f in (reading or {}).get('findings') or [] if isinstance(f, dict) and f.get('id') and (f['id'] in asked or f.get('item') in ids)]
+    last = failed_round(ref, ids)
+    n = next_number(ref, pl)
+    out = R.hear(ctx, step, item)
+    out['facts'].update({'items': ' '.join(ids), 'repeat': bool(last)})
+    wf = (d or {}).get('workflows') or []
+    out.update({'items': items, 'findings': findings, 'round': n, 'reading': (reading or {}).get('id') or (str(pl.get('reading'))[:40] if pl.get('reading') else None),
+                'line': list((wf[-1] if wf else {}).get('engines') or (d or {}).get('engines') or []),
+                'last': {'round': last['round'], 'correction': last.get('correction')} if last else None,
+                'said': ('heard that %s does not hold; round %d to propose%s' % (', '.join(ids), n, ' (the last approach failed)' if last else '')) if ids
+                else 'heard a request for a round naming no item that done-when has'})
+    return out
+
+
+def p_adapt_next(ctx, step, item):
+    """The prompt that says what to correct (adapt.next): the typed part decide.next (A1-NEXT), given the items that do not hold
+    with what the reading said of each, what Audit found, the line that ran and, when the same items failed a round already,
+    the approach that failed."""
+    heard = ctx['bag']['adapt.hearnext']
+    items = '\n'.join('%s: %s%s' % (i['id'], i['text'], (' (what the reading says: %s)' % i['claim']) if i['claim'] else '') for i in heard['items']) or 'none'
+    found = '\n'.join('%s (%s)%s: %s' % (f['id'], f.get('severity') or 'medium', (', ' + f['where']) if f.get('where') else '', f['claim'])
+                      for f in heard['findings']) or 'none'
+    last = ('the last approach failed: %s' % heard['last']['correction']) if heard.get('last') else 'none yet; this is the first round for these items'
+    return R._prompt('adaptation', 'decide', 'next', ctx['ref'], dept=ctx['dept'].get('name'), items=items, findings=found,
+                     line=' -> '.join(heard.get('line') or []) or 'none', last=last)
+
+
+def d_adapt_next(ctx, step, item):
+    """The draft, when no agent is there to say what to correct: the items that do not hold and what Audit found of them, put as
+    a correction. When the same items failed a round already it is another try, numbered, so it is never the approach that
+    failed (M9.4)."""
+    heard = ctx['bag']['adapt.hearnext']
+    ids = [i['id'] for i in heard['items']]
+    tried = len([r for r in rounds_of(ctx['ref']) if r.get('status') in RAN and set(r.get('covers') or []) & set(ids)])
+    what = '; '.join('%s: %s' % (i['id'], i['text'].rstrip('.')) for i in heard['items']) or 'what the reading found'
+    found = '; '.join(dict.fromkeys(f['claim'].rstrip('.') for f in heard['findings'] if f['claim']))
+    text = 'Put right %s' % what + ('. Audit found: %s' % found if found else '')
+    if tried:
+        text = 'Try another way, attempt %d. %s. The last approach did not put it right' % (tried + 1, text)
+    return {'correction': clip(text), 'fixes': [f['id'] for f in heard['findings']], 'covers': ids,
+            'why': 'the reading found %s not met' % (', '.join(ids) or 'an item')}
+
+
+def c_round_is_new(ctx, step, item, out):
+    """A round says what to correct, and says something new (M9.4): a correction equal, word for word, to the one that already
+    failed for the same items is refused, naming the round it repeats. What a reading found that no correction answers is
+    Identity's to put to the owner, never a round that does it again."""
+    heard = ((ctx or {}).get('bag') or {}).get('adapt.hearnext') or {}
+    text = out.get('correction') if isinstance(out, dict) else None
+    if not isinstance(text, str) or not words_of(text):
+        return R._verdict(False, '', 'a round says what to correct')
+    last = heard.get('last') or {}
+    if last and words_of(text) == words_of(last.get('correction')):
+        return R._verdict(False, '', 'this is the approach that already failed in round %s (%s); a round says something new'
+                          % (last.get('round'), clip(last.get('correction'), 120)))
+    named = ', '.join(i['id'] for i in heard.get('items') or []) or 'these items'
+    return R._verdict(True, 'a correction that is new for %s' % named, '')
+
+
+def hears_round():
+    """Whether Identity's recipe has a handler for a granted round (A1.14: an act is posted only to a receiver that hears it)."""
+    return R._handler(R.engine_def('Identity'), {'msg_type': 'inform', 'payload': {'word': 'round'}}) is not None
+
+
+def adapt_round(ctx, step, item):
+    """The round goes to Priority (M9.1): one propose/round with the correction, the findings it fixes, the items it covers and
+    the line's observed cost, in a thread of its own with the board's bounds, and a row in rounds.jsonl, proposed. A round is a
+    correction on the line that is registered; it never registers a line. The same reading asked twice is one round."""
+    ref, heard, got = ctx['ref'], ctx['bag']['adapt.hearnext'], ctx['bag']['adapt.next']
+    ids = [i['id'] for i in heard['items']]
+    if not ids:
+        return {'said': 'no item the request names is in done-when, so there is no round to propose'}
+    reading = heard.get('reading')
+    twice = next((r for r in rounds_of(ref) if reading and r.get('reading') == reading and r.get('status') in ('proposed',) + RAN), None)
+    if twice:
+        return {'said': 'round %d is already with Priority for this reading' % twice['round'], 'round': twice['round']}
+    known = {f['id'] for f in heard['findings']}
+    covers = [c for c in dict.fromkeys(got.get('covers') or []) if c in ids] or ids
+    fixes = [f for f in dict.fromkeys(got.get('fixes') or []) if f in known]
+    thread = 'x-' + uuid.uuid4().hex[:8]
+    row = {'schema_version': 1, 'round': heard['round'], 'at': W.now(), 'cycle_id': cycle_of(ref), 'correction': clip(got['correction']),
+           'fixes': fixes, 'covers': covers, 'estimate': line_estimate(ref), 'status': 'proposed', 'thread': thread}
+    if reading:
+        row['reading'] = str(reading)[:40]
+    W.append_row(ref, 'rounds.jsonl', row)
+    body = {'word': 'round', 'round': row['round'], 'correction': row['correction'], 'fixes': fixes, 'covers': covers, 'estimate': row['estimate'],
+            'why': clip(got.get('why')) or 'the reading found %s not met' % ', '.join(covers)}
+    if R.post(ref, 'Adaptation', 'Priority', 'propose', body, thread=thread) is None:
+        W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', at=W.now()))
+        return {'said': 'round %d could not go to Priority: the bargain reached its bound' % row['round'], 'round': row['round']}
+    return {'said': 'proposed round %d to Priority: %s' % (row['round'], row['correction']), 'round': row['round']}
+
+
+def round_of_thread(ref, thread):
+    return next((r for r in reversed(all_rounds(ref)) if r.get('thread') == thread), None)
+
+
+def adapt_round_granted(ctx, step, item):
+    """Priority said yes to the round (M9.1): the row says granted, and Identity is told to file it as a correction to the Brief.
+    A round is never filed by Adaptation, and Identity is told only once its recipe hears a round."""
+    ref, p = ctx['ref'], ctx['post']
+    row = round_of_thread(ref, p['thread'])
+    if not row:
+        return {'said': 'heard Priority on a round nobody proposed'}
+    if row.get('status') != 'proposed':
+        return {'said': 'round %d was already %s' % (row['round'], row.get('status')), 'round': row['round']}
+    row = W.append_row(ref, 'rounds.jsonl', dict(row, status='granted', at=W.now()))
+    if not hears_round():
+        return {'said': 'Priority said yes to round %d; Identity does not take rounds yet, so it stays on the record' % row['round'], 'round': row['round']}
+    why = clip((p.get('payload') or {}).get('why')) or 'Priority said yes'
+    R.post(ref, 'Adaptation', 'Identity', 'inform', {'word': 'round', 'round': row['round'], 'correction': row['correction'], 'fixes': row.get('fixes') or [],
+                                                     'covers': row.get('covers') or [], 'estimate': row.get('estimate') or line_estimate(ref), 'why': why,
+                                                     'for': p['thread']})
+    return {'said': 'Priority said yes to round %d; Identity is told to file it' % row['round'], 'round': row['round']}
+
+
+def adapt_round_refused(ctx, step, item):
+    """Priority said no to the round (M9.1, M5.4): the row says refused, and it does not go quiet. Identity gets the conflict with
+    the ways out Priority priced, once its recipe hears a round, and puts it to the owner."""
+    ref, p = ctx['ref'], ctx['post']
+    pl = p.get('payload') or {}
+    row = round_of_thread(ref, p['thread'])
+    if not row:
+        return {'said': 'heard Priority on a round nobody proposed'}
+    why = clip(pl.get('why'), 300).rstrip('.') or 'no room for it'
+    if row.get('status') == 'proposed':
+        row = W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', at=W.now()))
+    if not hears_round():
+        return {'said': 'Priority said no to round %d (%s); Identity does not take rounds yet, so it stays on the record' % (row['round'], why), 'round': row['round']}
+    line_conflict(ref, p['thread'], 'Priority said no to round %d: %s' % (row['round'], why), options=options_of(pl), engines=[],
+                  extra={'round': row['round'], 'correction': row['correction']})
+    return {'said': 'Priority said no to round %d (%s); the conflict goes to Identity, with the ways out' % (row['round'], why), 'round': row['round']}
+
+
+def next_options(d, ids):
+    """The ways out when no round can be said that is new, built by code: the owner's own words, which go into the Brief; leave the
+    item out, when done-when has another to keep; stop."""
+    opts = [W.option(W.WORDS_OPTION, 'Say how to put it right', 'your words go into the Brief and the line runs again; no round is paid for')]
+    items = items_of(d)
+    named = next((i for i in items if i['id'] in ids), None)
+    if len(items) > 1 and named:
+        opts.append(W.option('leave:' + named['id'], 'Leave %s out' % named['id'],
+                             '%s is dropped from done-when (%s); nothing more is spent' % (named['id'], str(named.get('text') or '').rstrip('.'))))
+    opts.append(W.option(W.STOP_OPTION, 'Stop here', 'the department stops where it is; you can start it again later'))
+    return opts
+
+
+def next_failed(ref, d, p, note):
+    """The step that says what to correct failed (M9.4): its covering refused the correction because it is the approach that
+    already failed, or no answer fitted. Nothing is proposed and nothing goes quiet: one conflict goes to Identity, with the ways
+    out built by code, once its recipe hears a round. engine_runtime calls it when the run of a request for the next round
+    fails. Never raises."""
+    try:
+        if not hears_round():
+            return None
+        pl = p.get('payload') or {}
+        ids = [i for i in pl.get('items') or [] if isinstance(i, str)]
+        why = 'Adaptation has no new way to put %s right: %s' % (', '.join(ids) or 'the items', clip(note, 600).rstrip('.') or 'nothing it could say was new')
+        return line_conflict(ref, p['thread'], why[:2000], options=next_options(d, ids), engines=[], extra={'round': next_number(ref, pl)})
+    except Exception:  # noqa: BLE001 -- the failed run is a row whether or not the word reached Identity
+        return None
+
+
 def with_covers(engines, d, made=False):
     """Each engine's covers made known and whole (M5.1), and the map of item to engines the proposal carries. Only items
     done-when has stay. Every item no engine names goes to the last engine, as code does for a Library line: a line that
@@ -383,9 +742,9 @@ def hears_doubt():
     return R._handler(R.engine_def('Identity'), {'msg_type': 'inform', 'payload': {'word': 'doubt'}}) is not None
 
 
-def line_conflict(ref, thread, why, bound=None, src='Adaptation', options=None, engines=None, source=None, words=None):
+def line_conflict(ref, thread, why, bound=None, src='Adaptation', options=None, engines=None, source=None, words=None, extra=None):
     """The bargain did not close (a refusal, or its bound), or no line can be made: it goes to Identity, never silently to
-    nothing (J2.2). _line_conflict as engine_runtime has it, with the ways out Adaptation can build (M6.4)."""
+    nothing (J2.2). _line_conflict as engine_runtime has it, with the ways out Adaptation can build (M6.4) or Priority priced (M5.4)."""
     offer = R._line_proposal(ref, thread) or {}
     if any((x.get('payload') or {}).get('word') == 'conflict' and (x.get('payload') or {}).get('for') == thread for x in R.board(ref)):
         return None
@@ -394,7 +753,62 @@ def line_conflict(ref, thread, why, bound=None, src='Adaptation', options=None, 
             'why': why, 'bound': bound, 'for': thread}
     if options:
         body['options'] = options
+    body.update(extra or {})
     return R.post(ref, src, 'Identity', 'inform', body)
+
+
+def options_of(payload):
+    """The ways out Priority sent with a no or an ask for less (M5.4), as the conflict carries them: at most three, each an
+    option the interface types. None when Priority sent none, or sent what is not an option: a way out that does not fit is
+    never put to the owner."""
+    got = (payload or {}).get('options')
+    if not isinstance(got, list):
+        return None
+    out = [dict(o) for o in got if isinstance(o, dict) and not S.validate('option', o)][:S.OPTIONS_MAX]
+    return out or None
+
+
+def adapt_line_refused(ctx, step, item):
+    """Priority said no to the line: Adaptation does not drop it in silence; Identity closes the conflict (step 4), with the
+    ways out Priority priced when it sent them (M5.4). Moved from engine_runtime.adapt_line_refused."""
+    ref, p = ctx['ref'], ctx['post']
+    pl = p.get('payload') or {}
+    why = str(pl.get('why') or 'no room in the envelope').strip().rstrip('.')
+    line_conflict(ref, p['thread'], 'Priority said no to the plan: %s' % why, options=options_of(pl))
+    return {'said': 'Priority said no to the line (%s); the conflict goes to Identity' % why}
+
+
+def adapt_line_counter(ctx, step, item):
+    """Priority asked for less: Adaptation takes that when it leaves a line that still works, and proposes that line
+    again in the same thread, each kept engine with its note; what it cannot take goes to Identity, with the ways out
+    Priority sent (M5.4). The thread's own bound ends a bargain that will not close. Moved from engine_runtime.adapt_line_counter."""
+    ref, p = ctx['ref'], ctx['post']
+    pl = p.get('payload') or {}
+    offer = R._line_proposal(ref, p['thread']) or {}
+    keep = [str(k) for k in pl.get('keep') or []]
+    engines = [e for e in offer.get('engines') or [] if e.get('name') in keep]
+    why = str(pl.get('why') or 'the envelope has no room for all of it').strip().rstrip('.')
+    options = options_of(pl)
+    # a counter that drops an engine the kind requires is never taken: Identity closes it (PRD M4.4)
+    proposed = [e.get('name') for e in offer.get('engines') or []]
+    dropped = [n for n in R.required_engines(ctx['dept']) if n in proposed and n not in keep]
+    if dropped:
+        line_conflict(ref, p['thread'], 'Priority asked for less (%s) and the line would leave out %s, which this kind of department requires'
+                      % (why, R._names(dropped)), options=options)
+        return {'said': "could not take Priority's ask for less: it leaves out %s, which is required; the conflict goes to Identity" % R._names(dropped)}
+    if not engines or len(engines) == len(offer.get('engines') or []) or R._root_check(ref, ctx['dept'], engines, offer.get('source') or 'shaped'):
+        line_conflict(ref, p['thread'], 'Priority asked for less (%s) and the line does not work that way' % why, options=options)
+        return {'said': "could not take Priority's ask for less; the conflict goes to Identity"}
+    body = {'word': 'line', 'engines': engines, 'source': offer.get('source'), 'words': offer.get('words'), 'for': offer.get('for'),
+            'why': "took Priority's ask for less: " + why}
+    notes = {e['name']: e['fit'] for e in engines if e.get('fit')}          # M5.2: a kept engine keeps its note
+    if notes:
+        body['fit'] = notes
+    row = R.post(ref, 'Adaptation', 'Priority', 'propose', body, thread=p['thread'])
+    if row is None:
+        line_conflict(ref, p['thread'], 'the bargain reached its bound', bound='hops', src='Coordination', options=options)
+        return {'said': 'the bargain reached its bound; it goes to Identity'}
+    return {'said': "took Priority's ask for less and proposed again: " + ' -> '.join(e['name'] for e in engines)}
 
 
 def cannot_options(d, cannot, words=None):
@@ -433,15 +847,25 @@ def adapt_line_offer(ctx, step, item):
     a conflict, with the ways out built by code."""
     ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
     src = ctx['bag'].get('adapt.source') or {'shape': True, 'source': 'shaped'}
-    got = ctx['bag']['adapt.line'] if src.get('shape') else src
+    got = ctx['bag']['adapt.line'] if src.get('shape') else fitted(ctx, src)
     if isinstance(got.get('cannot'), dict) and not got.get('engines'):
         return cannot_offer(ctx, got['cannot'])
     made = bool(src.get('shape')) and is_made(ctx)
     engines = (made_engines if made else covered_engines)(got['engines'])
     covers = with_covers(engines, d, made)
+    kept = got if got is not src and not src.get('shape') else {}                      # the Library's line, fitted (M5.2)
+    notes = kept.get('fit') or {}
+    for row in engines:
+        if notes.get(row['name']):
+            row['fit'] = notes[row['name']]
     source = 'library' if from_library(ctx, got) else src.get('source')
     body = {'word': 'line', 'engines': engines, 'source': source, 'words': pl.get('words'), 'for': pl.get('for'), 'covers': covers}
+    if notes:
+        body['fit'] = dict(notes)
     names = ' -> '.join(e['name'] for e in engines)
+    if notes or kept.get('left_out'):
+        names += ' (fitted to the goal%s%s)' % ((', leaving out ' + R._names(kept['left_out'])) if kept.get('left_out') else '',
+                                                (', %d note%s' % (len(notes), '' if len(notes) == 1 else 's')) if notes else '')
     if R._j2_live(ref):
         shown = None
         if made:
@@ -472,14 +896,21 @@ def adapt_line_offer(ctx, step, item):
 
 CODE = {name: ref_to(name) for name in (
     'hear', 'adapt_sense', 'adapt_ladder', 'adapt_act', 'adapt_trial', 'adapt_notrial', 'adapt_heard', 'adapt_park', 'adapt_offer',
-    'adapt_priced', 'adapt_line_granted', 'adapt_line_refused', 'adapt_line_counter')}
+    'adapt_priced', 'adapt_line_granted')}
 CODE['adapt_source'] = adapt_source
 CODE['adapt_line_offer'] = adapt_line_offer
-PROMPT = {'adapt_shape': ref_to('p_adapt_shape'), 'adapt_line': p_adapt_line}
-DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': d_adapt_line}
+CODE['adapt_line_refused'] = adapt_line_refused
+CODE['adapt_line_counter'] = adapt_line_counter
+CODE.update({'adapt_hearnext': adapt_hearnext, 'adapt_round': adapt_round, 'adapt_round_granted': adapt_round_granted,
+             'adapt_round_refused': adapt_round_refused})
+PROMPT = {'adapt_shape': ref_to('p_adapt_shape'), 'adapt_line': p_adapt_line, 'adapt_fit': p_adapt_fit, 'adapt_next': p_adapt_next}
+DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': d_adapt_line, 'adapt_fit_draft': d_adapt_fit,
+         'adapt_next_draft': d_adapt_next}
 CHECK = {name: ref_to('c_' + name) for name in (
     'counted_the_rows', 'moves_name_their_rows', 'said_what_it_did', 'facts_are_closed', 'idea_has_shapes')}
 CHECK['line_is_engines'] = c_line_is_engines
+CHECK['line_is_fitted'] = c_line_is_fitted
+CHECK['round_is_new'] = c_round_is_new
 # Adaptation: WORDS and LAYOUT by the split rule of A1.16, from function-prompts/adaptation/*.md
 WORDS = {
     'goal': {
@@ -499,6 +930,21 @@ WORDS = {
         'shape': {},
     },
     'decide': {
+        # M9.1 (A1-NEXT): the words of the part adapt.next reads after a reading that is not done
+        'next': {
+            'task': (
+                'A reading of the work found done-when items that do not hold. Say what to correct, in one line the '
+                'department can act on: the line runs again with your correction in the Brief, so write it as the '
+                'owner would ask for it. Correct only what the items below name, and only when the correction moves '
+                'the department toward its goal.'
+            ),
+            'guidance': (
+                'A correction names the item it puts right and the finding it answers. Name the findings it fixes '
+                '(fixes) and the items it covers (covers), each from the lists above. Never repeat the approach that '
+                'already failed: when the last round failed, say a different thing, and do not ask for more of the '
+                'same. State no fact nobody gave: where a fact is missing, say it is to be confirmed.'
+            ),
+        },
         'note': {
             'text': (
                 'In this version the choice is made by code, not by words its agent reads: a step whose answers '
@@ -511,6 +957,22 @@ WORDS = {
     'make': {
         'line': {},
         'refused': {},
+        # M5.2 (A1-FIT): the words of the part adapt.fit reads when the line is the Library's own
+        'fit': {
+            'task': (
+                "Fit the Library's line to this goal. The line below is what the Library runs for this kind of "
+                'department. Keep every engine the goal needs, in the same order, and say, for an engine that '
+                'should work differently for this goal, what it does differently. Leave an engine out only when '
+                'no done-when item needs what it writes, and never one marked required.'
+            ),
+            'guidance': (
+                'An engine you keep reads what an earlier one wrote, so leave out only an engine that no engine '
+                'you keep reads. A note is one line about this goal, at most 300 characters, and says what the '
+                'engine does differently; give an engine no note when it does what it always does. Name only '
+                'engines of the line above. When nothing needs to change, answer with the whole line and an '
+                'empty fit.'
+            ),
+        },
         # M6.4 (A1-SHAPE): the words of the part adapt.line reads when the make setting is on and no template fits
         'shape': {
             'task': (
@@ -561,6 +1023,22 @@ LAYOUT = {
         ),
     },
     'decide': {
+        'next': (
+            '{task}\n'
+            'THE DEPARTMENT: {{dept}}\n'
+            'THE ITEMS THAT DO NOT HOLD:\n'
+            '{{items}}\n'
+            '\n'
+            'WHAT AUDIT FOUND:\n'
+            '{{findings}}\n'
+            '\n'
+            'THE LINE THAT RAN: {{line}}\n'
+            'THE LAST ROUND: {{last}}\n'
+            '\n'
+            '{returns}\n'
+            '\n'
+            '{guidance}'
+        ),
         'note': '{text}',
     },
     'make': {
@@ -583,6 +1061,23 @@ LAYOUT = {
             '{returns}{{refused}}'
         ),
         'refused': "YOUR LAST LINE WAS REFUSED BY ROOT'S CHECK: {{faults}}. Shape it again without these faults.",
+        'fit': (
+            '{task}\n'
+            'THE DEPARTMENT: {{dept}}\n'
+            "THE OWNER'S WORDS:\n"
+            '{{words}}\n'
+            '\n'
+            'WHAT DONE MEANS, ITEM BY ITEM:\n'
+            '{{items}}\n'
+            '\n'
+            "THE LIBRARY'S LINE FOR THIS KIND OF DEPARTMENT, in the order it runs:\n"
+            '{{engines}}\n'
+            "THE DEPARTMENT'S RULES: {{rules}}\n"
+            '\n'
+            '{returns}\n'
+            '\n'
+            '{guidance}'
+        ),
         'shape': (
             '{task}\n'
             'THE DEPARTMENT: {{dept}}\n'
@@ -627,6 +1122,18 @@ def coverage(ref, d, prop):
     return {'items': ids, 'uncovered': [i for i in ids if i not in covers], 'by': 'adaptation'}
 
 
+#: what a round's status is called to the owner (never grant or refuse: the bargain's words are said yes and said no)
+ROUND_SAID = types.MappingProxyType({'proposed': 'asked Priority', 'granted': 'Priority said yes', 'refused': 'Priority said no',
+                                     'filed': 'filed in the Brief', 'read': 'read by Audit'})
+
+
+def round_view(r):
+    """One round as the pane has it (view.adaptation.round): the folded row, with its status in the owner's words."""
+    return {'round': r['round'], 'correction': clip(r.get('correction')), 'covers': list(r.get('covers') or []), 'fixes': list(r.get('fixes') or []),
+            'status': r.get('status'), 'said': ROUND_SAID.get(r.get('status'), ''), 'estimate': r.get('estimate') if isinstance(r.get('estimate'), dict) else None,
+            'at': r.get('at'), 'reading': r.get('reading'), 'brief_v': r.get('brief_v')}
+
+
 def view(ref, d, events, asks):
     """Adaptation's pane (S.VIEWS['adaptation']): what it has always shown (the latest proposal, and the last Root reviews),
     with the coverage of that proposal (M5.1) and, on each review, the checks that ran, each with what the standard says,
@@ -636,6 +1143,7 @@ def view(ref, d, events, asks):
     says = {i: text for i, text, _, _ in S.WORKFLOW_STANDARDS}
     prop = next((e for e in reversed(events or []) if e.get('action') == 'proposal.created'), None)
     reviews = [e for e in events or [] if e.get('action') in ('workflow.validated', 'workflow.blocked')][-4:]
+    rounds = [round_view(r) for r in rounds_of(ref) if r.get('status') in ROUND_SAID]               # M9.6: rounds.jsonl, folded by round
     return {'proposal': prop and {'workflow': (prop.get('payload') or {}).get('workflow') or [],
                                   'source': (prop.get('payload') or {}).get('source'), 'at': prop.get('occurred_at')},
             'root_checks': [{'summary': plain(e.get('summary')), 'at': e.get('occurred_at'), 'passed': e.get('action') == 'workflow.validated',
@@ -644,4 +1152,5 @@ def view(ref, d, events, asks):
                                         for c in (e.get('payload') or {}).get('checks') or [] if isinstance(c, dict) and c.get('check')]}
                             for e in reviews],
             'coverage': coverage(ref, d, prop),
-            'rounds': []}
+            'round': rounds[-1] if rounds else None,
+            'rounds': rounds}

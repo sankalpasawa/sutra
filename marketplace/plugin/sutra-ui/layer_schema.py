@@ -623,7 +623,7 @@ DEFS.update({
     'adaptation.round': obj({'schema_version': integer(1), 'round': integer(1, 99), 'at': text(40), 'cycle_id': nullable(text(80)),
                              'correction': text(600), 'fixes': items(ref('id.finding')), 'covers': items(ref('id.item')),
                              'estimate': ref('priority.estimate'), 'status': enum('proposed', 'granted', 'refused', 'filed', 'read'),
-                             'reading': text(40), 'brief_v': integer(1)}, required=('round', 'correction', 'covers', 'status')),
+                             'reading': text(40), 'brief_v': integer(1), 'thread': text(80)}, required=('round', 'correction', 'covers', 'status')),
     'coordination.question': obj({'schema': const('board/1'), 'id': word(r'^Q-[1-9][0-9]*$', 8), 'asked_by': ref('name'), 'to': ref('name'),
                                   'about': text(120), 'question': text(600), 'answer': nullable(text(2000)),
                                   'answered_by': nullable(ref('name')), 'status': enum(*QUESTION_STATUSES), 'reason': nullable(text(300)),
@@ -741,8 +741,15 @@ DEFS.update({
                                                       required=('check', 'says', 'passed', 'why')))})),
         'coverage': nullable(obj({'items': items(ref('id.item')), 'uncovered': items(ref('id.item')), 'by': enum('adaptation', 'default')},
                                  required=('items', 'uncovered', 'by'))),
-        'rounds': items(obj({}))},
+        # W2-ADAPT (M9.6): the rounds of the current cycle, one row each (rounds.jsonl folded by round, the latest status winning),
+        # and the latest of them, the round in hand; round is not required, so a view written before it still validates
+        'round': nullable(ref('view.adaptation.round')),
+        'rounds': items(ref('view.adaptation.round'))},
         required=('proposal', 'root_checks', 'rounds')),
+    'view.adaptation.round': obj({'round': integer(1, 99), 'correction': text(600), 'covers': items(ref('id.item')),
+                                  'fixes': items(ref('id.finding')), 'status': enum('proposed', 'granted', 'refused', 'filed', 'read'),
+                                  'said': text(60), 'estimate': nullable(ref('priority.estimate')), 'at': _AT, 'reading': nullable(text(40)),
+                                  'brief_v': nullable(integer(1))}, required=('round', 'correction', 'covers', 'status')),
     'view.priority': obj({
         'bargains': items(obj({'said': enum('said yes', 'asked for less', 'said no'), 'summary': nullable(text(4000)), 'at': _AT})),
         'envelopes': items(obj({'engine': text(80), 'calls': integer(0), 'usd': number(0), 'calls_limit': integer(0),
@@ -927,6 +934,10 @@ HEARS = {
         {'act': 'accept-proposal', 'word': 'line', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Priority said yes to the line'},
         {'act': 'reject-proposal', 'word': 'line', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Priority said no to the line'},
         {'act': 'propose', 'word': 'line', 'from': ('Priority',), 'via': 'board', 'payload': 'act.line', 'handler': 'Priority asked for less on the line'},
+        # W2-ADAPT (M9.1): the next round, after a reading that is not done, and Priority's answer to it
+        {'act': 'request', 'word': 'next', 'from': ('Identity',), 'via': 'board', 'payload': 'act.next', 'handler': 'Propose the next round'},
+        {'act': 'accept-proposal', 'word': 'round', 'from': ('Priority',), 'via': 'board', 'payload': 'act.round', 'handler': 'Priority said yes to the round'},
+        {'act': 'reject-proposal', 'word': 'round', 'from': ('Priority',), 'via': 'board', 'payload': 'act.round', 'handler': 'Priority said no to the round'},
     ],
     'priority': [
         {'act': 'propose', 'word': ANY, 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.any', 'handler': 'Answer a proposal'},
@@ -970,7 +981,7 @@ SENDS = {
         {'act': 'request', 'words': _IDENTITY_ASKS, 'to': ('Owner',), 'payload': 'act.ask'},
         {'act': 'request', 'words': ('line',), 'to': ('Adaptation',), 'payload': 'act.line_request'},
         {'act': 'request', 'words': ('idea',), 'to': ('Adaptation',), 'payload': 'act.any'},
-        {'act': 'request', 'words': ('next',), 'to': ('Adaptation',), 'payload': 'act.next'},      # W2-IDENTITY, M8.5
+        {'act': 'request', 'words': ('next',), 'to': ('Adaptation',), 'payload': 'act.next'},      # W2-IDENTITY, M8.5; W2-ADAPT hears it (M9.1)
         {'act': 'inform', 'words': _IDENTITY_TELLS, 'to': ('Owner',), 'payload': 'act.tell'},
         {'act': 'inform', 'words': ANY, 'to': ('Owner',), 'payload': 'act.tell'},    # _reconcile_j1_tells posts the tell Setup stored
         {'act': 'inform', 'words': ('rung',), 'to': ('Adaptation',), 'payload': 'act.any'},
@@ -989,6 +1000,8 @@ SENDS = {
         {'act': 'inform', 'words': ('idea',), 'to': ('Identity',), 'payload': 'act.any'},
         {'act': 'inform', 'words': ('conflict',), 'to': ('Identity',), 'payload': 'act.conflict'},
         {'act': 'inform', 'words': ('doubt',), 'to': ('Identity',), 'payload': 'act.doubt'},      # W1-ADAPT, M6.4
+        {'act': 'propose', 'words': ('round',), 'to': ('Priority',), 'payload': 'act.round'},      # W2-ADAPT, M9.1
+        {'act': 'inform', 'words': ('round',), 'to': ('Identity',), 'payload': 'act.round'},       # a round Priority said yes to, to file
     ],
     'Priority': [
         # Priority answers with the word of the proposal it answers (priority_post), and asks for less on any of them
@@ -1059,7 +1072,10 @@ CHECKS = {
     'adaptation': {'counted_the_rows': 'every step is counted from its own rows',
                    'idea_has_shapes': 'an idea is reflected back with the shapes it could take',
                    'line_is_engines': 'a shaped line is one to six engines that code finds nothing wrong with',
-                   'moves_name_their_rows': 'each move is of a known kind and names the rows it rests on'},
+                   'line_is_fitted': "a fitted line is the kind's line in its order, less engines the kind does not require, "
+                                     'and every note is for an engine of it and at most 300 characters',
+                   'moves_name_their_rows': 'each move is of a known kind and names the rows it rests on',
+                   'round_is_new': 'a round says what to correct, and is not the approach that already failed for the same item'},
     'priority': {'answer_has_its_price': 'said yes, asked for less or said no, each with its price; an ask for less names what it keeps',
                  'price_is_observed': 'a yes, or an ask for less, is held to the facts Priority read: what it keeps costs no more than '
                                       'the room left; a no, or a smaller yes, always stands',
@@ -1232,6 +1248,12 @@ PROMPTS = {
         },
         'decide': {
             'note': {'fields': {'text': 'field.note'}, 'inputs': (), 'returns': None, 'read_by': None},   # NOT_READ: no run reads it
+            # A1-NEXT (W2-ADAPT, M9.1): adapt.next reads this part after a reading that is not done
+            'next': {'fields': {'task': 'field.task', 'guidance': 'field.guidance'},
+                     'inputs': ('dept', 'items', 'findings', 'line', 'last'),
+                     'returns': 'Return ONLY a JSON object: {"correction": "one line: what to correct", "fixes": ["F1"], '
+                                '"covers": ["D2"], "why": "one line"}.',
+                     'read_by': 'adapt.next'},
         },
         'make': {
             'line': {'fields': {}, 'inputs': ('dept', 'words', 'items', 'taken', 'out', 'rules', 'refused'),   # items: W1-ADAPT, M5.1
@@ -1247,6 +1269,12 @@ PROMPTS = {
                                  '{"cannot": {"engine": str, "items": ["D1"], "why": str}} when an engine the kind requires cannot '
                                  'serve an item.',
                       'read_by': 'adapt.line'},
+            # A1-FIT (W2-ADAPT, M5.2): adapt.fit reads this part when the line is the Library's own
+            'fit': {'fields': {'task': 'field.task', 'guidance': 'field.guidance'},
+                    'inputs': ('dept', 'words', 'items', 'engines', 'rules'),
+                    'returns': 'Return ONLY a JSON object: {"engines": ["the Library engines to run, in their order"], "fit": '
+                               '{"<engine>": "one line: what this engine does differently for this goal"}, "why": "one line"}.',
+                    'read_by': 'adapt.fit'},
         },
     },
     'priority': {
@@ -1304,7 +1332,8 @@ PROMPTS = {
 
 #: the prompt parts later steps added to PROMPTS (A1.16, 'Parts added by later steps'): a layer's WORDS and LAYOUT hold
 #: them, and no .md file of the bundle does, so the extractor and the bundle's tests leave them out. A package adds its own.
-ADDED_PARTS = (('adaptation', 'make', 'shape'), ('priority', 'bargain', 'round'))
+ADDED_PARTS = (('adaptation', 'make', 'shape'), ('priority', 'bargain', 'round'), ('adaptation', 'make', 'fit'),
+               ('adaptation', 'decide', 'next'))
 
 #: each layer's pane view (A1.17), plus the engine card
 VIEWS = {'identity': 'view.identity', 'adaptation': 'view.adaptation', 'priority': 'view.priority',

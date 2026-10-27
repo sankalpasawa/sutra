@@ -205,6 +205,22 @@
      "check": "said_what_it_did"
     },
     {
+     "id": "adapt.fit",
+     "name": "Fit the Library's line to the goal",
+     "nature": "decide",
+     "born": "C0",
+     "ceiling": "C1",
+     "prompt": "adapt_fit",
+     "draft": "adapt_fit_draft",
+     "out": {
+      "engines": "list",
+      "fit": "dict",
+      "why": "str"
+     },
+     "check": "line_is_fitted",
+     "only_if": "adapt.source.source=library"
+    },
+    {
      "id": "adapt.line",
      "name": "Shape the line the words need",
      "nature": "make",
@@ -278,6 +294,81 @@
      "nature": "transform",
      "born": "C2",
      "code": "adapt_line_counter",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Propose the next round",
+   "when": {
+    "msg_type": "request",
+    "word": "next"
+   },
+   "steps": [
+    {
+     "id": "adapt.hearnext",
+     "name": "Hear which items do not hold",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_hearnext",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "adapt.next",
+     "name": "Say what to correct",
+     "nature": "decide",
+     "born": "C0",
+     "ceiling": "C1",
+     "prompt": "adapt_next",
+     "draft": "adapt_next_draft",
+     "out": {
+      "correction": "str",
+      "fixes": "list",
+      "covers": "list",
+      "why": "str"
+     },
+     "check": "round_is_new"
+    },
+    {
+     "id": "adapt.round",
+     "name": "Put the round to Priority",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_round",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Priority said yes to the round",
+   "when": {
+    "msg_type": "accept-proposal",
+    "word": "round"
+   },
+   "steps": [
+    {
+     "id": "adapt.roundgranted",
+     "name": "Tell Identity the round Priority said yes to",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_round_granted",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Priority said no to the round",
+   "when": {
+    "msg_type": "reject-proposal",
+    "word": "round"
+   },
+   "steps": [
+    {
+     "id": "adapt.roundrefused",
+     "name": "Take Priority's no on the round to Identity",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_round_refused",
      "check": "said_what_it_did"
     }
    ]

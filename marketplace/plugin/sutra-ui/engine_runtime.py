@@ -1596,6 +1596,11 @@ def run_engine(ref, name, inp, slot):
         row.update({"status": "failed", "what": note or "failed"})
         if name == "Adaptation" and p and (p.get("payload") or {}).get("word") == "line" and p.get("msg_type") == "request":
             _j2_shape_failed(ref, d, p, note)
+        if name == "Adaptation" and p and (p.get("payload") or {}).get("word") == "next" and p.get("msg_type") == "request":
+            try:                                   # no round that is new (M9.4): Identity is told, with the ways out; never a silent end
+                layers.call(ref, "adaptation", "next_failed", ref, d, p, note)
+            except Exception:  # noqa: BLE001 -- the failed run is a row whether or not the word reached Identity
+                pass
         if name == "Setup":
             _j1_close(ref, "failed", "I could not set the department up: %s. Say what you want again, or say it differently."
                       % str(note or "a step failed").rstrip("."))
@@ -4854,9 +4859,18 @@ def _has_web(d):
     return True
 
 
-def _context_block(ref):
+def _fit_note(ref, engine):
+    """What the registered line says this engine does differently for this goal (M5.2): the note Adaptation fitted to it,
+    which the registration kept. '' when the line has none for it, so a prompt without a note is as it always was."""
+    wf = (W.dept(ref) or {}).get("workflows") or []
+    note = " ".join(str(((wf[-1] if wf else {}).get("fit") or {}).get(engine) or "").split())
+    return ("\n\nFOR THIS GOAL: " + note) if note else ""
+
+
+def _context_block(ref, engine=None):
     """The latest text of every artifact on the record that the kind's own line did not name: what the engines the
-    person added have filed (their facts, their lists), for Plan and Write to build from and cite."""
+    person added have filed (their facts, their lists), for Plan and Write to build from and cite. With an engine, the
+    note the line was fitted with for it follows (M5.2)."""
     d = W.dept(ref) or {}
     own = set((W.KINDS.get(d.get("kind") or "website") or {}).get("artifacts") or [])
     out = []
@@ -4871,7 +4885,8 @@ def _context_block(ref):
         text = "\n".join(str(v) for k, v in sorted(files.items()) if str(k).endswith((".md", ".txt", ".json"))).strip()
         if text:
             out.append("%s (v%d):\n%s" % (a, cur["v"], text[:8000]))
-    return ("\n\nWHAT THE DEPARTMENT'S OWN ENGINES FILED (build from it; say on the page where each fact came from):\n\n" + "\n\n".join(out)) if out else ""
+    block = ("\n\nWHAT THE DEPARTMENT'S OWN ENGINES FILED (build from it; say on the page where each fact came from):\n\n" + "\n\n".join(out)) if out else ""
+    return (block + _fit_note(ref, engine)) if engine else block
 
 
 def _pre(step):
@@ -5803,6 +5818,7 @@ INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done m
               "deliverable": "what was made", "measured": "what code measured", "estimate": "what it is likely to cost",
               "remaining": "what remains of today's room", "round": "the round", "correction": "what the round puts right",
               "ceiling": "the goal's ceiling"}
+INPUT_SAYS.update({"findings": "what Audit found", "line": "the line that ran", "last": "the last round"})       # adapt.next (W2-ADAPT, M9.1)
 
 
 def _what(fn, group, part, field):
@@ -5970,7 +5986,7 @@ def p_plan_pages(ctx, step, item):
             "\"tagline\": str, \"palette\": {\"primary\": \"#hex\", \"accent\": \"#hex\"}, \"pages\": [{\"slug\": \"lowercase-hyphen\", "
             "\"title\": str, \"purpose\": str, \"sections\": [str]}]}. The first page's slug is index. Include every page "
             "the brief or an ask names. Six to ten pages. " + NOTHING_INVENTED +
-            "\n\nBRIEF:\n" + ctx["bag"]["plan.read"]["brief"] + _context_block(ctx["ref"]))
+            "\n\nBRIEF:\n" + ctx["bag"]["plan.read"]["brief"] + _context_block(ctx["ref"], ctx.get("engine")))
 
 
 def d_plan_pages(ctx, step, item):
@@ -5992,7 +6008,7 @@ def p_write_page(ctx, step, item):
             "<style>, no external images or links. Link to other pages as '<slug>.html' and only to slugs of this site. "
             + NOTHING_INVENTED +
             (("\n\nTHE OWNER'S RULES, EACH ONE MET HERE:\n- " + "\n- ".join(rules)) if rules else "") +
-            "\n\nTHE BRIEF, AND WHAT WAS ASKED SINCE:\n" + _brief_text(ctx["ref"]) + _context_block(ctx["ref"]) +
+            "\n\nTHE BRIEF, AND WHAT WAS ASKED SINCE:\n" + _brief_text(ctx["ref"]) + _context_block(ctx["ref"], ctx.get("engine")) +
             "\n\nTHE SITE:\n" + json.dumps(site) + "\n\nTHIS PAGE:\n" + json.dumps(page))
 
 
@@ -6823,6 +6839,51 @@ def c_done_is_read(ctx, step, item, out):
 
 
 CHECK["done_is_read"] = c_done_is_read
+
+
+# adaptation/v1's step adapt.fit (W2-ADAPT, M5.2): the copy a department runs when the layer does not load. It fits nothing: the
+# Library's line stays whole, which is also what the layer's own draft answers, and the check takes that answer and no other
+def _fit_line(ctx):
+    return [e["name"] for e in ((ctx.get("bag") or {}).get("adapt.source") or {}).get("engines") or [] if isinstance(e, dict) and e.get("name")]
+
+
+def p_adapt_fit(ctx, step, item):
+    return ("Keep the Library's line whole. Answer with one JSON object only: {\"engines\": [every engine of the line, in its order], "
+            "\"fit\": {}, \"why\": \"one line\"}.\nTHE LINE: " + ", ".join(_fit_line(ctx)))
+
+
+def d_adapt_fit(ctx, step, item):
+    return {"engines": _fit_line(ctx), "fit": {}, "why": "the Library's line stands as it is"}
+
+
+def c_line_is_fitted(ctx, step, item, out):
+    ok = isinstance(out, dict) and out.get("engines") == _fit_line(ctx) and not out.get("fit")
+    return _verdict(ok, "the Library's line, whole", "the Library's line is kept whole")
+
+
+PROMPT["adapt_fit"], DRAFT["adapt_fit_draft"], CHECK["line_is_fitted"] = p_adapt_fit, d_adapt_fit, c_line_is_fitted
+
+
+# adaptation/v1's steps for the next round (W2-ADAPT, M9.1): the copies a department runs when the layer does not load. None of
+# them proposes a round: the request is heard, nothing is asked of Priority and nothing is written, and the run says so
+def _round_inert(ctx, step, item):
+    return {"said": "adaptation/v1 is not loaded, so no round is proposed"}
+
+
+def p_adapt_next(ctx, step, item):
+    return "Say in one line what to correct. Answer with one JSON object only: {\"correction\": str, \"fixes\": [], \"covers\": [], \"why\": str}."
+
+
+def d_adapt_next(ctx, step, item):
+    return {"correction": "Put right what the reading found", "fixes": [], "covers": [], "why": "no agent was there to say it"}
+
+
+def c_round_is_new(ctx, step, item, out):
+    return _verdict(isinstance(out, dict) and bool(str(out.get("correction") or "").strip()), "a round says what to correct", "a round says what to correct")
+
+
+CODE.update({"adapt_hearnext": hear, "adapt_round": _round_inert, "adapt_round_granted": _round_inert, "adapt_round_refused": _round_inert})
+PROMPT["adapt_next"], DRAFT["adapt_next_draft"], CHECK["round_is_new"] = p_adapt_next, d_adapt_next, c_round_is_new
 
 
 # ---- what the screens read -----------------------------------------------------------------------------------------
