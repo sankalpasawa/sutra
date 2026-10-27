@@ -5440,7 +5440,7 @@ def leave_out(ref, iid, why, words=None, answers=None):
     if not gone:
         return None
     ask = W.done_items_ask("Leave %s out of done-when: %s. The goal stays as it is" % (iid, str(gone["text"]).rstrip(".")),
-                           [i for i in items if i["id"] != iid], why, words=words, answers=answers)
+                           [i for i in items if i["id"] != iid], why, words=words, **({"answers": answers} if answers else {}))
     ask.update({"status": "stamped", "decided": W.now(), "by": "the owner"})   # the owner's one click is its stamp
     W._put_ask(ref, ask)
     d = W.apply_done_items(ref, ask)
