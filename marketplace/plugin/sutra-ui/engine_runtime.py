@@ -3768,6 +3768,9 @@ READ_BY = ("model", "checklist", "stamped by the owner")
 VERDICT_RANK = {"met": 0, "to_confirm": 1, "not_met": 2}
 #: how serious an item's verdict is, the S-30 reading's severity
 ITEM_SEVERITY = {"met": "low", "to_confirm": "medium", "not_met": "high"}
+#: how serious a finding is, the worse the higher: the order a reading keeps its findings in (FINDINGS_MAX), so a high one is
+#: never the one the cut drops
+FINDING_RANK = {"low": 0, "medium": 1, "high": 2}
 
 
 def audit_text(files):
@@ -3906,26 +3909,28 @@ def audit_rows(dept_items, mech, said, sampled):
 
 #: the most findings one reading carries, and the most one post to Identity names
 FINDINGS_MAX = 12
-#: how serious a finding is, the worse first (audit.finding's severities): the order a reading keeps its findings in
-SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 
 def _finding_severity(f):
-    """A finding's weight as the interface types it (audit.finding): critical is high, and one with no weight, or one that is
-    not high, medium or low, is medium."""
-    sev = str(f.get("severity") or "").strip().lower()
-    return "high" if sev == "critical" else sev if sev in SEVERITY_ORDER else "medium"
+    """A finding's severity as the interface types it (audit.finding: high, medium or low): a reader's or a judge's 'critical' is
+    high, and a word that is none of them, or none at all, is medium. The reading, the post to Identity and the ask all read this
+    one word."""
+    sev = str((f or {}).get("severity") or "").strip().lower()
+    return "high" if sev == "critical" else sev if sev in FINDING_RANK else "medium"
 
 
-def _worst_first(found):
-    """The findings of a reading, the worse first and each weight in the order it was found (a stable sort), so the cap on what a
-    reading carries cuts the lightest and never the worst: a page with many small defects does not push a high finding out."""
-    return sorted(found, key=lambda f: SEVERITY_ORDER[_finding_severity(f)])
+def _ranked(found):
+    """The findings of a reading with their severity as the interface types it, the worse first and each weight kept in the order
+    it was found (a stable sort): one list for the reading's cut, the post to Identity and whether a high finding is open, so the
+    cap on what a reading carries cuts the lightest and never the worst: a page with many small defects does not push a high
+    finding out."""
+    return sorted(({**f, "severity": _finding_severity(f)} for f in found), key=lambda f: -FINDING_RANK[f["severity"]])
 
 
 def _audit_reading_findings(found, art):
     """The findings of a reading as the interface types them (audit.finding): numbered F1, F2, ... within the reading, each
-    with where it is and what, how serious, the item it belongs to, and that Identity was told."""
+    with where it is and what, how serious, the item it belongs to, and that Identity was told. `found` is ranked (_ranked),
+    so the cut keeps the worst."""
     out = []
     for n, f in enumerate(found[:FINDINGS_MAX], 1):
         sev = _finding_severity(f)
@@ -3977,12 +3982,14 @@ def audit_file(ctx, step, item):
     found += [f for f in judged.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
     found += [{"page": f.get("where"), "claim": f["claim"], "severity": f.get("severity"), "item": f.get("item")}
               for f in said.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
-    seen_claims, once = set(), []
+    seen_claims, once = {}, []
     for f in found:                                   # the reader and the judge may each find the one thing, on the one page
         key = (str(f.get("page") or "").lower(), " ".join(str(f.get("claim")).split()).lower())
         if key not in seen_claims:
-            seen_claims.add(key)
+            seen_claims[key] = len(once)
             once.append(f)
+        elif FINDING_RANK[_finding_severity(f)] > FINDING_RANK[_finding_severity(once[seen_claims[key]])]:
+            once[seen_claims[key]] = dict(once[seen_claims[key]], severity=_finding_severity(f))      # the worse of the two stands
     found = once
     # 'found nothing' is a reading only when the version was read item by item: a reader skipped (not sampled) or answered
     # by its offline draft read nothing, and its empty list is no evidence (M0.3; found 2026-10-23: an offline department
@@ -3997,11 +4004,14 @@ def audit_file(ctx, step, item):
     sampled = bool(ctx["bag"]["audit.pick"].get("sample"))
     rows = audit_rows(dept_items, mech, said, sampled) if read else []
     verdicts = audit_verdicts(rows)
-    # an item that does not hold, or cannot be said to, and that no finding names, is a finding of its own: it reaches
-    # Identity by the way every finding does, so no reading leaves the owner without a next move (interim until
-    # Identity weighs readings, M8.5)
+    # an item that does not hold, or cannot be said to, and that no finding as serious as its verdict names, is a finding of its
+    # own: it reaches Identity by the way every finding does, so no reading leaves the owner without a next move (interim until
+    # Identity weighs readings, M8.5). A lesser finding the reader filed on the item stays as it said it, and the item's own is
+    # added beside it: a reader's low note on D1 does not make 'D1 is not met' a low matter (found 2026-10-26)
     for it in dept_items:
-        if not read or verdicts.get(it["id"]) not in ("not_met", "to_confirm") or any(f.get("item") == it["id"] for f in found):
+        if not read or verdicts.get(it["id"]) not in ("not_met", "to_confirm"):
+            continue
+        if any(f.get("item") == it["id"] and FINDING_RANK[_finding_severity(f)] >= FINDING_RANK[ITEM_SEVERITY[verdicts[it["id"]]]] for f in found):
             continue
         if any(r["id"] == it["id"] and r["method"] == "code" and r["verdict"] == "not_met" for r in rows):
             continue                                  # what the measure found is already a finding of its own
@@ -4010,12 +4020,13 @@ def audit_file(ctx, step, item):
                       "claim": "“%s” %s: %s" % (_clip(it.get("text"), 120).rstrip("."),
                                                 "does not hold" if verdicts[it["id"]] == "not_met" else "cannot be confirmed yet",
                                                 row["claim"].rstrip("."))})
-    found = _worst_first(found)                       # the reading and the post to Identity cut at FINDINGS_MAX: the lightest go, never the worst
+    found = _ranked(found)                            # one list, worst first: the reading and the post cut it at FINDINGS_MAX (the lightest go, never the worst)
+    high = [f for f in found if f["severity"] == "high"]    # and 'a high finding is open' reads it whole
     findings = _audit_reading_findings(found, art)
     reading = audit_record(ref, ctx.get("slot"), art, v, read, why_not, rows, findings) if art else None
     met = [i for i, x in verdicts.items() if x == "met"]
     summary = {"id": reading and reading["id"], "read": read, "met": met, "not_met": [i for i, x in verdicts.items() if x == "not_met"],
-               "to_confirm": [i for i, x in verdicts.items() if x == "to_confirm"], "high": any(f["severity"] == "high" for f in findings)}
+               "to_confirm": [i for i, x in verdicts.items() if x == "to_confirm"], "high": bool(high)}
     if not found:
         if not read:
             return {"said": "did not read what went live (%s); nothing is said of it" % why_not, "filed": 0, "read": False,
@@ -4023,7 +4034,6 @@ def audit_file(ctx, step, item):
         if reading:
             audit_tell(ref, reading)
         return {"said": "read what went live item by item; every item holds", "filed": 0, "read": True, "artifact": art, "reading": summary}
-    high = [f for f in found if str(f.get("severity") or "").lower() == "high"]
     claim = str((high or found)[0]["claim"])
     post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high" if high else "low",
                                               "findings": found[:FINDINGS_MAX], "about_version": v, "artifact": art,
