@@ -237,6 +237,76 @@ def question_is_bounded(ctx, step, item, out):
     return {'ok': True, 'notes': ['within its bounds']}
 
 
+# ---- the target engine answers, in a run of its own ---------------------------------------------------------------------------
+#: an answer that is none: the target says the question is not its own, or says nothing
+NO_ANSWER = ('', 'not mine', 'n/a', 'none')
+
+
+def _answer_prompt(ctx, step, item):
+    """What an engine is asked when another engine puts it a question: the question, and its own recorded work to answer from."""
+    e = ctx['post']['payload']['entry']
+    own = ctx['def'].get('writes')
+    cur = W.latest(ctx['ref'], own) if own else None
+    files = W.read_files(ctx['ref'], own, cur['v']) if cur else {}
+    work = json.dumps({'artifact': own, 'version': cur and cur['v'],
+                       'files': {k: str(v)[:4000] for k, v in sorted(files.items())[:6]}}, ensure_ascii=False)
+    return ('%s ASKS YOU ABOUT %s: %s\nYOUR RECORDED WORK: %s\nAnswer from the record only, in one or two short sentences: say "not recorded" '
+            'for anything this department has not recorded, and "not mine" if this is not your area. You may not ask anything back. '
+            'Return ONLY a JSON object: {"answer": "plain words; \\"not mine\\" if this is not your area"}.'
+            % (e['asked_by'], e['about'], e['question'], work))
+
+
+def _answer_draft(ctx, step, item):
+    """Offline there is nobody to ask: the engine says the question is not its own, and the asker takes its normal path."""
+    return {'answer': 'not mine'}
+
+
+def _answer_check(ctx, step, item, out):
+    ok = isinstance(out, dict) and isinstance(out.get('answer'), str)
+    return {'ok': ok, 'notes': ['an answer, in words'] if ok else ['no answer in words']}
+
+
+def _answer_step():
+    """The one step of an engine's answer: its agent, run on the rungs like any step (the engine's own card is the agent's), with
+    the bodies Coordination brings (run_step runs a step that carries its body)."""
+    return {'id': ANSWER_STEP, 'name': 'Answer a question from another engine', 'nature': 'transform', 'born': 'C0',
+            'prompt': _answer_prompt, 'draft': _answer_draft, 'out': {'answer': 'str'}, 'answer': 'answer', 'check': _answer_check}
+
+
+def answer_run(ref, d, e, p2, asker_run):
+    """The target engine's run that answers a question (M4.9): in its own slot (Target@board.n<post>), started only when the
+    engine's own blockers let it, as any start (the owner's stamps, its envelope, the chain), and charged to its own envelope by the
+    spend on its run row. It is the run of one step, its agent given its own recorded work. It starts while the asker's run is open,
+    which gave it the turn: the row says which run it answers for (for_run). Returns (the answer, or None; why there is none; the run)."""
+    target = e['to']
+    tdef = R.engine_def(target)
+    art = tdef['reads']
+    cur = W.latest(ref, art)
+    inp = {'post': p2, 'v': cur['v'] if cur else 0, 'art': art}
+    slot = '%s@board.n%d' % (target, p2['n'])
+    verdict, why = R.blocked(R._coord_ctx(ref, d), target, tdef, inp, slot)
+    if verdict != 'admit':
+        return None, 'a run of %s was not let start: %s' % (target, why), None
+    row = W._put_run(ref, R._run_row(target, False, slot, 'running', 'answering %s about %s' % (e['asked_by'], e['about']),
+                                     chain=W._chain_of(ref, art, inp['v']), answers=e['id'], for_run=asker_run))
+    tctx = {'ref': ref, 'dept': d, 'engine': target, 'def': tdef, 'slot': slot, 'inp': inp, 'post': p2, 'run': row['id'], 'bag': {},
+            'how': {}, 'spend': {'calls': 0, 'usd': 0.0}}
+    R._thread_set(ref, p2['thread'], state='working')
+    try:
+        srow, out = R.run_step(tctx, _answer_step(), None)
+    except Exception as exc:  # noqa: BLE001 -- an answer that breaks is a question unanswered, never a crash of the asker's run
+        srow, out = {'status': 'failed', 'why': str(exc)}, None
+    said = str((out or {}).get('answer') or '').strip() if srow['status'] == 'ok' and isinstance(out, dict) else ''
+    answered = said.rstrip('. ').lower() not in NO_ANSWER
+    why_not = None if answered else str(srow.get('why') or 'it says the question is not its own')
+    R._thread_set(ref, p2['thread'], spent=tctx['spend']['usd'])
+    row = W._put_run(ref, dict(row, status='ok' if answered else 'skipped', ended=W.now(),
+                               spend={'calls': tctx['spend']['calls'], 'usd': round(tctx['spend']['usd'], 4)},
+                               what=('answered %s about %s' % (e['asked_by'], e['about'])) if answered else
+                               ('did not answer %s: %s' % (e['asked_by'], why_not))))
+    return (said if answered else None), why_not, row
+
+
 def coord_question(ctx, step, item):
     """Coordination's handler for a question between engines (M4.9). Run in place (`item`: the entry as the asker put it, its
     thread and the run that asked): the bounds judge it and it is filed on the board, open when it is within them and refused,
@@ -269,8 +339,47 @@ def coord_question(ctx, step, item):
                 if reuse and x['id'] == reuse and e['asked_by'] not in x.get('used_by', []):
                     x['used_by'] = list(x.get('used_by') or []) + [e['asked_by']]
         _save(ref, rows + [e])
-    out = {'said': 'took %s: %s' % (e['id'], 'a question for %s' % e['to'] if ok else 'said no, %s' % e['reason']), 'entry': e, 'ref': ref}
+    if ok:
+        e = _answered(ref, ctx, item, e)
+    try:                      # the answer, or the reason there is none, goes back to the asker (Coordination to Engine, inform)
+        R.post(ref, 'Coordination', [e['asked_by']], 'inform', {'word': 'answer', 'entry': e, 'what': _says(e)}, thread=item['thread'])
+    except (ValueError, S.SchemaFault):
+        pass                  # the board's record holds the answer whether or not the post that says it could be made
+    out = {'said': 'took %s: %s' % (e['id'], _says(e)), 'entry': e, 'ref': ref}
     return dict(out, reuse=reuse) if reuse else out
+
+
+def _says(e):
+    """What became of a question, as the board's rows say it."""
+    if e['status'] == 'answered':
+        return '%s answers %s' % (e['to'], e['asked_by'])
+    if e['status'] == 'refused':
+        return 'said no to %s: %s' % (e['asked_by'], e.get('reason'))
+    return 'no answer for %s: %s' % (e['asked_by'], e.get('reason'))
+
+
+def _answered(ref, ctx, item, e):
+    """An open question goes to the engine it names (Coordination to Engine, request), whose run answers it; the entry is filed
+    answered, with the run and where the answer came from, or unanswered, with the reason. Returns the entry as filed."""
+    d = ctx.get('dept') or W.dept(ref) or {}
+    try:
+        p2 = R.post(ref, 'Coordination', [e['to']], 'request', {'word': 'question', 'entry': e, 'what': _said(e)}, thread=item['thread'])
+    except (ValueError, S.SchemaFault) as exc:
+        p2, no = None, 'the board would not carry it: %s' % exc
+    else:
+        no = 'the board would not carry it'
+    answer, why_not, row = answer_run(ref, d, e, p2, item.get('run')) if p2 else (None, no, None)
+    with W._lock(ref):
+        rows = entries(ref)
+        mine = next(x for x in rows if x['id'] == e['id'])
+        if answer:
+            version = (W.latest(ref, R.engine_def(e['to'])['writes']) or {}).get('v')
+            mine.update({'status': 'answered', 'answer': _clip(answer, 2000), 'answered_by': e['to'], 'run': row['id'],
+                         'answered_from': {'workflow': e['to'], 'version': version}})
+        else:
+            mine.update({'status': 'unanswered', 'reason': _clip(why_not, 300), 'run': row['id'] if row else None})
+        _save(ref, rows)
+    return mine
 
 
 # ---- the asker's side: the board in the step's prompt, and what its answer says --------------------------------------------------
