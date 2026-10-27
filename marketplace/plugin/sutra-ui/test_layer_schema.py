@@ -1065,6 +1065,8 @@ def test_x2_the_interface_is_frozen_at_schema_version_1():
     assert S.interface_sha() == hashlib.sha256((S.SCHEMA_FOLDER / "interface.v1.json").read_bytes()).hexdigest()
     assert S.interface_sha() == hashlib.sha256(S._dump(S.describe()).encode("utf-8")).hexdigest() == S.interface_sha(), "and it is stable"
     assert re.fullmatch(r"[0-9a-f]{64}", S.INTERFACE_SHA[1])
+    readme = (S.SCHEMA_FOLDER / "README.md").read_text(encoding="utf-8")
+    assert "| Frozen |" in readme and "INTERFACE_SHA[1]" in readme and "interface_sha()" in readme and "shasum -a 256" in readme, "the README says how to check it"
 
 
 def test_x2_the_hash_moves_with_the_interface_and_with_nothing_else(monkeypatch):

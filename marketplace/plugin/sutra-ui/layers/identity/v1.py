@@ -38,7 +38,6 @@ CODE = {
     'identity_lost': ref_to('identity_lost'),
     'identity_engine': ref_to('identity_engine'),
     'identity_line': ref_to('identity_line'),
-    'identity_closed': ref_to('identity_closed'),
 }
 #: the prompts its soft steps send, and the plain drafts they fall to offline
 PROMPT = {

@@ -214,3 +214,15 @@ def test_x1_the_checks_a_version_took_over_are_gone_and_the_ones_it_wraps_or_ref
             assert callable(layers.resolve(None, engine, "check", step["check"], runtime.CHECK)), (engine, step["id"], step["check"])
             if step.get("code"):
                 assert callable(layers.resolve(None, engine, "code", step["code"], runtime.CODE)), (engine, step["id"], step["code"])
+
+
+def test_x1_no_version_names_by_reference_a_body_engine_runtime_no_longer_has(runtime):
+    """A ref_to in a version's source, even one a later line of the table replaces, names a body that is there: the copy of a body the version
+    took over is deleted, and so is every line that pointed at it."""
+    gone = []
+    for path in sorted((HERE / "layers").glob("*/v*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "ref_to" and node.args and isinstance(node.args[0], ast.Constant):
+                if not hasattr(runtime, node.args[0].value):
+                    gone.append("%s:%d %s" % (path.relative_to(HERE), node.lineno, node.args[0].value))
+    assert gone == []
