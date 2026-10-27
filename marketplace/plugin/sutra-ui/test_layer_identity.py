@@ -656,8 +656,10 @@ SHOWS_THE_INSIDE = [
      "Coordination runs Check after the Site engine"),
     ("I am only 45% sure the shop wants 3 pages, and the charter says Priority must refuse orders over the engine limit (confidence 0.45)",
      "Priority holds the envelope at 70 percent"),
-    ("Should the page say who the baker is? My confidence is low.", "the workflow goes on without it")]
-INSIDE_WORDS = re.compile(r"confiden|\b0?\.\d+\b|%|per ?cent|Adaptation|Priority|Coordination|Audit|engine|envelope|workflow|charter|refus", re.I)
+    ("Should the page say who the baker is? My confidence is low.", "the Check engine goes on without it")]
+#: what the owner may not read, as the oracle of these tests says it (apart from V1.INSIDE, which is what is under test). The
+#: owner's page says workflow in its headers and on its map (j2ui_assets/j2_ui.html), so the word is not one of them.
+INSIDE_WORDS = re.compile(r"confiden|\b0?\.\d+\b|%|per ?cent|Adaptation|Priority|Coordination|Audit|engine|envelope|charter|refus", re.I)
 
 
 def _the_card_the_owner_reads(R, ref, ask):
@@ -735,7 +737,7 @@ ENDS_ON_A_FIGURE = [
 #: a figure or a word of the owner's own work, which is theirs: a time, a class, a version, a layout, a count of what they sell
 THE_OWNERS_OWN = [
     "Open from 9.30.", "Class 8.5.", "It needs v2.1.3.", "Version 0.45.3 of the font.", "Show 3 in 4 columns.",
-    "Do 2 out of 3 customers want it on a phone?", "A search engine finds it.",
+    "Do 2 out of 3 customers want it on a phone?", "The workflow for the cake page lists the sizes.", "A search engine finds it.",
     "Show 12 pages in 3 rows."]
 
 
@@ -745,7 +747,7 @@ def test_i5_inside_finds_the_confidence_when_it_ends_a_sentence_or_is_spelled_ou
 
 
 @pytest.mark.parametrize("text", THE_OWNERS_OWN)
-def test_i5_inside_leaves_the_owners_own_figures_alone(text):
+def test_i5_inside_leaves_the_owners_own_figures_and_the_word_workflow_alone(text):
     assert V1.inside(text) == [], text
 
 
@@ -768,6 +770,20 @@ def test_i5_a_doubt_that_ends_on_a_figure_or_spells_it_out_is_put_in_the_stock_w
     seen = _the_card_the_owner_reads(R, ref, ask)
     assert len(seen) == 3 and all(not re.search(r"\d|per ?cent|sixty|in three|zero point", s.replace(name, ""), re.I) for s in seen), seen
     assert ask["doubt"]["doubt"] == V1._said(doubt, 600) and ask["doubt"]["shown"] == V1.SOMETHING and S.validate_record("identity", "ask", ask) == []
+
+
+def test_i5_a_doubt_that_names_a_workflow_keeps_its_words(j2):
+    """The owner's page says workflow where it lists the work and on its map, so a doubt that names one is asked as it is:
+    the owner is asked what was doubted, not that something was (found by a verifier)."""
+    W, R, J, _, _ = j2
+    doubt, fallback = "Should the workflow that builds the cake page also list the sizes?", "the workflow lists one size"
+    ref = _born(j2, BAKERY)
+    _doubts(R, ref, doubt=doubt, fallback=fallback)
+    W.run_until_idle(ref, limit=300)
+    ask = _plan_asks(W, ref)[0]
+    assert ask["text"] == 'Before I set up the work for %s: %s Unless you say, %s. Answer in your own words, or say "just do it".' % (W.dept(ref)["name"], doubt, fallback)
+    assert ask["doubt"]["shown"] == doubt and ask["doubt"]["fallback"] == fallback and V1.SOMETHING not in ask["text"]
+    assert S.validate_record("identity", "ask", ask) == []
 
 
 def test_i5_the_default_fallback_says_the_department_unless_it_is_a_website(j2):

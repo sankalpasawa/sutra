@@ -267,8 +267,9 @@ def _said(text, n):
 #: What the owner may not read in a doubt or a fallback a model wrote (J2B-8: it shows no number and names no internal part): the
 #: confidence, as the word or as a figure (0.45, .45, 45%, 45 percent; one that ends a sentence, '... at 0.45.'; and one said in
 #: words, 'sixty percent', 'a 1 in 3 chance', 'zero point four five'), the parts by name (Adaptation, Priority, Coordination,
-#: Audit) and the app's own words for its insides (engine, envelope, workflow, charter, refuse). A figure of the owner's own work (three
-#: pages, Class 8.5, 9.30, v2.1.3, 3 in 4 columns) is theirs, and so is a search engine: neither is matched. A ratio is read as odds only beside a word of chance, so a count of the owner's own is never taken for one.
+#: Audit) and the app's own words for its insides (engine, envelope, charter, refuse). A figure of the owner's own work (three
+#: pages, Class 8.5, 9.30, v2.1.3, 3 in 4 columns) is theirs, and so are the words their page says (workflow, a search engine):
+#: none is matched. A ratio is read as odds only beside a word of chance, so a count of the owner's own is never taken for one.
 _NUMBER = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twenty|hundred)"
 _RATIO = r"\b%s\s+(?:in|out\s+of)\s+%s\b" % (_NUMBER, _NUMBER)
 _CHANCE = r"\b(?:chances?|odds|probab\w*|likel\w*|sure|certain\w*|put\s+(?:it|this|that)\s+at|give\s+(?:it|this|that))\b"
@@ -278,7 +279,7 @@ INSIDE = re.compile("|".join((
     r"(?i:\d+\s*(?:%|per\s?cent)|\bper\s?cent\b|\b(?:zero|nought|naught)\s+point\b)",   # 45%, 45 percent, sixty percent, zero point
     r"(?i:%s(?=[^.?!;]{0,40}%s)|%s[^.?!;]{0,40}?%s)" % (_RATIO, _CHANCE, _CHANCE, _RATIO),   # 'a 1 in 3 chance', 'I put it at 2 out of 5'
     r"\b(?:Adaptation|Priority|Coordination|Audit)\b",
-    r"(?i:\b(?:engines?|envelopes?|workflows?|charter|internal system|refus\w*)\b)")))
+    r"(?i:\b(?:engines?|envelopes?|charter|internal system|refus\w*)\b)")))
 SEARCH_ENGINE = re.compile(r"\bsearch engines?\b", re.I)
 
 
