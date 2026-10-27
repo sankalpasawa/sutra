@@ -1055,6 +1055,32 @@ def test_p4_said_plainly_says_a_sentence_once_and_a_second_reading_changes_nothi
     assert owner_words.said_plainly(None) == "" and owner_words.said_plainly("fits today: about 3 calls") == "fits today: about 3 calls"
 
 
+def test_p4_the_card_identity_puts_to_the_owner_quotes_priority_s_no_in_the_owners_words(live, monkeypatch):
+    """Identity is the one voice to the owner and quotes Priority's no on the card it files. The plain-words check under it
+    (M3.6) used to find 'grant' and 'counter' in a model's why and put a template in its place; Priority's why is plain now, so the
+    card says why Priority said no, in the owner's words, with no template, and the card, its line on the board and the pane of
+    Identity's conflicts agree. A card that quotes the agent's words as it wrote them, or hides a plain reason, must fail."""
+    import functions_view as F
+    W, R, J, _ = live
+    why = "I will not grant this; I would counter with half"
+    plain = "Priority said no to the plan: I will not say yes to this; I would ask for less with half"
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": why}})
+    ref = _priced(live, {n: (50, 5.0) for n in LINE})
+    card = _one_way_out_card(W, ref)                      # the no with its ways out is one card that holds them
+    assert plain + "." in card["text"] and R.plain_faults(card["text"]) == [] and card["text"] != R.PLAIN_TEMPLATE["blocked"]
+    line = next(p for p in R.board(ref) if (p["payload"] or {}).get("card") == card["id"])
+    assert line["payload"]["done"] == line["payload"]["objective"] == card["text"], "the card and its line agree"
+    [conflict] = F.function(ref, "identity")["j2"]["conflicts"]
+    assert conflict["split"] == plain and not LEFT_IN.search(conflict["split"] + conflict["why"] + conflict["who"])
+    _no_ways_out(monkeypatch, R)                          # and the same no as the stamp that runs the plan or drops it
+    stamp = _priced(live, {n: (50, 5.0) for n in LINE}, org="Stamp Co")
+    ask = _one_conflict_ask(W, stamp)
+    assert plain + "." in ask["text"] and R.plain_faults(ask["text"]) == [] and ask["text"] != R.PLAIN_TEMPLATE["conflict"]
+    line = next(p for p in R.board(stamp) if (p["payload"] or {}).get("word") == "conflict" and "Owner" in p["dst"])
+    assert line["payload"]["objective"] == ask["text"]
+    assert not [a for a in R.chat_view(stamp)["asks"] if R.plain_faults(a["text"])]
+
+
 GRANTS = {"engines": [{"name": "Grant", "does": "finds the funding", "reads": "Brief", "writes": "Funding", "internet": True},
                       {"name": "Counter Offer", "does": "drafts the offer", "reads": "Funding", "writes": "Offer", "internet": False}]}
 
