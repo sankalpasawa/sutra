@@ -1276,6 +1276,20 @@ def test_static_mode_runs_without_a_test_run(folder, monkeypatch, capsys):
         JS.main([])
 
 
+def test_check_exits_zero_on_an_empty_folder(folder, monkeypatch, capsys):
+    """Q5's done check, held for good: `qa/journey_status.py --check` exits 0 on an empty journeys folder, in every mode that checks, with
+    the exact last line and no process started. It names its own empty folder, so it does not depend on what the repository's folder
+    holds (which is why it still runs now that the journeys ship), and it is the lane's behaviour for a release that carries none."""
+    def never(*args, **kw):
+        raise AssertionError("a process was started: %r" % (args,))
+    monkeypatch.setattr(JS.subprocess, "run", never)
+    assert journeys.load() == {}
+    for args in (["--check"], ["--check", "--no-run"], ["--write"]):
+        assert JS.main(args) == 0, args
+        assert capsys.readouterr().out == "journeys: 0 rows, 0 proven, 0 wanted, 0 faults\n", args
+    assert sorted(p.name for p in folder.rglob("*")) == ["functions"], "nothing was written for a folder with no journey"
+
+
 def test_check_and_write_the_whole_lane_with_injected_results(folder, monkeypatch, capsys):
     j = proven()
     j["steps"][0]["tests"] = [REAL_TEST]
@@ -1359,8 +1373,8 @@ def test_run_tests_runs_each_file_once_and_reads_what_it_printed(folder, monkeyp
 
 
 def test_the_command_line_on_the_journeys_of_the_repository():
-    """python qa/journey_status.py exits 0 on the folder the repository holds: with no journey it is the empty folder, and with
-    journeys their status files are fresh (--no-run) and their static cases pass (--static)."""
+    """python qa/journey_status.py exits 0 on the folder the repository holds: its status files are fresh (--no-run) and its static
+    cases pass (--static). The empty folder is test_check_exits_zero_on_an_empty_folder's."""
     def cli(*args):
         done = subprocess.run([sys.executable, str(HERE / "qa" / "journey_status.py")] + list(args), cwd=str(HERE), capture_output=True, text=True, timeout=600)
         return done.returncode, done.stdout.strip().splitlines()
@@ -1368,9 +1382,6 @@ def test_the_command_line_on_the_journeys_of_the_repository():
     assert (code, out[-1].startswith("journeys: ")) == (0, True), out
     code, out = cli("--check", "--no-run")
     assert code == 0 and out[-1].endswith(" 0 faults"), out
-    if not journeys.load():
-        code, out = cli("--check")
-        assert (code, out) == (0, ["journeys: 0 rows, 0 proven, 0 wanted, 0 faults"])
     code, out = cli("--no-such-mode")
     assert code == 2
 
