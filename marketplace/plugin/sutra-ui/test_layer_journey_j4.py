@@ -409,6 +409,52 @@ def test_j4_4_an_answer_to_identitys_own_question_that_would_loosen_a_rule_is_tu
     assert again and again["missing"] == "rules" and again["id"] != asked["id"], "Identity's question is asked again"
 
 
+def test_j4_4_a_stale_stamp_of_an_answer_to_identitys_own_question_is_turned_down_and_the_question_is_asked_again(j2, monkeypatch):
+    """The second guard, at the stamp (identity_apply's rule branch): the owner answered Identity's question on the rules while no
+    ancestor held the line, so the answer was restated as a rule ask and put to them; an ancestor's rule on that line arrives
+    before they stamp it. The stamp writes nothing, Identity says once that a department's rules can only tighten it, a row on
+    the record says what stood, and the question the answer was for is asked again: with no open question the cycle stalls."""
+    W, R, J, founding, _ = j2
+    import placement_engine as E
+    root = founding.found_structure("Bakery Co", owner="Sankalp")["root"]
+    W.owner_ask(root, "a site for my bakery in Pune")
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    own = [{"id": "r1", "line": "Work inside the record"}]
+    d = W.dept(ref)
+    d["rules"] = copy_rules(own)                                           # a rule with no tag: Identity's question is on the rules
+    W.save_dept(ref, d)
+    R.identity_next(ref)
+    asked = J.status(ref)["open_question"]
+    assert asked and asked["missing"] == "rules"
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: (({"tag": "ask", "line": LINE, "scope": "standing"}, 0.01, "model")
+                                                          if step["id"] == "identity.rule" else (None, 0.0, "offline")))
+    # the answer, while nothing above the department holds the line: restated as a rule ask the owner has yet to stamp
+    W.owner_ask(ref, LINE)
+    W.run_until_idle(ref, limit=300)
+    filed = [a for a in W.asks(ref) if a["kind"] == "rule" and a["status"] == "pending"]
+    assert [(a["tag"], a["line"]) for a in filed] == [("ask", LINE)], "the answer was asked for as a rule"
+    assert filed[0].get("answers"), "and it answers Identity's question on the rules, which is why a no must ask the question again"
+    # an ancestor's rule on that line arrives between the ask and the stamp
+    charter = E.charters_for(W.dept(root)["org"]["ref"])[0]
+    sidecar = E.load_sidecar(charter["id"])
+    sidecar["rules"] = [{"tag": "refuse", "line": LINE}]
+    E.save_sidecar(charter["id"], sidecar)
+    posts, runs = len(R.board(ref)), len(W.runs(ref))
+    W.decide_ask(ref, filed[0]["id"], True)
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["rules"] == own, "the stamp wrote nothing: the rule would loosen one the department inherits"
+    told = [p for p in R.board(ref)[posts:] if p["src"] == "Identity" and p["msg_type"] == "inform" and SAID in str(p["payload"].get("done"))]
+    assert len(told) == 1, told
+    assert LINE in told[0]["payload"]["done"], "and it names the rule that stands"
+    rows = [r for r in W.runs(ref)[runs:] if "loosens one it inherits" in r["what"]]
+    assert [(r["engine"], r["system"]) for r in rows] == [("Identity", True)], "a row on the record says Identity said no to it"
+    again = J.status(ref)["open_question"]
+    assert again and again["missing"] == "rules" and again["id"] != asked["id"], "Identity's question is asked again, so the cycle does not stall"
+
+
 # ---- the pure module: layers/identity/tighten.py --------------------------------------------------------------------------
 class TestTighten:
     """normalise, rank and rule_faults: no runtime, no record."""
