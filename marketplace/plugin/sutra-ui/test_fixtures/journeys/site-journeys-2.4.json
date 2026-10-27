@@ -1,0 +1,1804 @@
+{
+ "_about": "The single source of the journeys section on system/department.html. Rendered by _journeys.py (python3 _journeys.py --apply). Edit this file, never the rendered HTML or SVG. Schema: journeys[].steps[] {n, lane in you|root|identity|priority|coord|engine|adapt|audit, short (<= 4 words, on the picture), text (the table), function, code}; journeys[].edges[] {id J<n>.<m>, at (the step n it hangs under), short, edge, code_does, mark}; directed[] {id, direction, built, gap, mark}; blocks[] and links[] draw the block diagram. Every claim names a function or file from sutra-ui/docs/department/ (sutra 50599599); a founder direction not in the code is written DIRECTED in its text.",
+ "version": "2.4, 2026-10-01 (J2 answers batch 1)",
+ "source": "sutra/marketplace/plugin/sutra-ui/docs/department/ at sutra 50599599; founder directions of 2026-09-29; session 3c's refit note holding/research/2026-09-29-questions-refit-to-the-system.md (b381f5d4); the organisation row: sutra 297f45bd (v2.306.20-desktop), docs chat.md 'The organisation row'; ORG-1 holding e06e5f74 (TODO row), sutra release 065f4525",
+ "lanes": [
+  [
+   "you",
+   "You"
+  ],
+  [
+   "root",
+   "Root"
+  ],
+  [
+   "identity",
+   "Identity"
+  ],
+  [
+   "priority",
+   "Priority"
+  ],
+  [
+   "coord",
+   "Coordination"
+  ],
+  [
+   "engine",
+   "Engines"
+  ],
+  [
+   "adapt",
+   "Adaptation"
+  ],
+  [
+   "audit",
+   "Audit"
+  ]
+ ],
+ "directed": [
+  {
+   "id": "D-a",
+   "direction": "Root creates the files: the department and the five functions.",
+   "built": "MATCHES: Root's Setup spawns the department of the kind with its goal; the five functions are born from the kind's <code>functions_template</code> (<code>setup_make</code>, <code>founding</code>).",
+   "gap": "none",
+   "mark": ""
+  },
+  {
+   "id": "D-b",
+   "direction": "Root starts these engines.",
+   "built": "DIFFERS: nobody starts an engine. Each engine wakes on its own trigger (a new version of what it reads, a post, a timer: <code>ready</code>); the motor asks Coordination who goes first every 3 s (<code>motor_tick</code>, <code>coord_pick</code>). Root's part ends when the child is born and its first words are handed over.",
+   "gap": "a Root step that starts engines does not exist; Brief v1 is the start",
+   "mark": ""
+  },
+  {
+   "id": "D-c",
+   "direction": "Root never creates engines.",
+   "built": "MATCHES: engines come from the Library's templates at birth and from an idea after it (<code>engine-templates/*.json</code>, <code>add_engine</code>); Root's line is one engine, Setup.",
+   "gap": "none",
+   "mark": ""
+  },
+  {
+   "id": "D-d",
+   "direction": "Engines are created by Adaptation from the user's input and the onboarding of the department.",
+   "built": "PARTLY: Adaptation creates an engine from an idea the owner floats (Identity's new-idea journey &#8594; <code>adapt.shape</code> &#8594; Priority &#8594; the engine ask). It does not read the onboarding answers or the first words for engines; from what repeated it proposes a rung move, not an engine (<code>adapt.ladder</code>).",
+   "gap": "Adaptation reading the birth words and the first turns for missing engines",
+   "mark": ""
+  },
+  {
+   "id": "D-e",
+   "direction": "Where the template's engines are mandatory, Adaptation modifies them for the use case before starting and running.",
+   "built": "NOT BUILT: the kind's line runs as shipped from the first Brief; Adaptation wakes only on a checked Live site or an idea. The only fitting before a run is Setup's pick of the kind whose use case fits (<code>p_setup_shape</code>) and Do's need step (<code>do.need</code>), which is a born engine's, not the line's.",
+   "gap": "an Adaptation step between birth and the first run",
+   "mark": ""
+  },
+  {
+   "id": "D-f",
+   "direction": "Anyone proposes a department; Root creates it (ruling of this morning).",
+   "built": "PARTLY: the owner's words through Root's Identity make a department; a department's Adaptation may file a department ask from its own chat tools (<code>sutra_department_ask</code> in its template brief), which still ends at the owner's stamp and Root's Setup.",
+   "gap": "no engine step of Adaptation proposes a department on its own",
+   "mark": ""
+  }
+ ],
+ "blocks": [
+  {
+   "id": "you",
+   "label": "You",
+   "x": 20,
+   "y": 20,
+   "w": 100,
+   "h": 40
+  },
+  {
+   "id": "root",
+   "label": "Root (Setup)",
+   "x": 200,
+   "y": 20,
+   "w": 120,
+   "h": 40
+  },
+  {
+   "id": "identity",
+   "label": "Identity",
+   "x": 400,
+   "y": 20,
+   "w": 110,
+   "h": 40
+  },
+  {
+   "id": "priority",
+   "label": "Priority",
+   "x": 590,
+   "y": 20,
+   "w": 100,
+   "h": 40
+  },
+  {
+   "id": "coord",
+   "label": "Coordination",
+   "x": 770,
+   "y": 20,
+   "w": 120,
+   "h": 40
+  },
+  {
+   "id": "adapt",
+   "label": "Adaptation",
+   "x": 20,
+   "y": 160,
+   "w": 100,
+   "h": 40
+  },
+  {
+   "id": "audit",
+   "label": "Audit",
+   "x": 200,
+   "y": 160,
+   "w": 120,
+   "h": 40
+  },
+  {
+   "id": "line",
+   "label": "the line: Plan > Write > Check > Publish",
+   "x": 400,
+   "y": 160,
+   "w": 290,
+   "h": 40
+  },
+  {
+   "id": "born",
+   "label": "born engines (from ideas)",
+   "x": 770,
+   "y": 160,
+   "w": 120,
+   "h": 52
+  },
+  {
+   "id": "record",
+   "label": "the record: Brief, Site plan, Pages, Build, Live site; runs, steps, asks, rules",
+   "x": 200,
+   "y": 300,
+   "w": 490,
+   "h": 44
+  },
+  {
+   "id": "library",
+   "label": "the Library: kinds, engine templates, born templates",
+   "x": 770,
+   "y": 300,
+   "w": 120,
+   "h": 58
+  }
+ ],
+ "links": [
+  {
+   "from": "you",
+   "to": "root",
+   "label": "words, stamps  J1 J6"
+  },
+  {
+   "from": "root",
+   "to": "identity",
+   "label": "hands on  J3"
+  },
+  {
+   "from": "root",
+   "to": "library",
+   "label": "picks a kind  J1"
+  },
+  {
+   "from": "identity",
+   "to": "record",
+   "label": "files the Brief, rules  J1 J3 J4"
+  },
+  {
+   "from": "identity",
+   "to": "you",
+   "label": "asks, tells  J2 J3 J4 J5"
+  },
+  {
+   "from": "coord",
+   "to": "line",
+   "label": "who goes first  J2"
+  },
+  {
+   "from": "priority",
+   "to": "line",
+   "label": "envelope  J2"
+  },
+  {
+   "from": "identity",
+   "to": "line",
+   "label": "gate, wait  J2 J5"
+  },
+  {
+   "from": "line",
+   "to": "record",
+   "label": "versions  J2"
+  },
+  {
+   "from": "record",
+   "to": "audit",
+   "label": "checked Live site  J2"
+  },
+  {
+   "from": "audit",
+   "to": "identity",
+   "label": "finding  J2"
+  },
+  {
+   "from": "record",
+   "to": "adapt",
+   "label": "checked Live site  J2"
+  },
+  {
+   "from": "identity",
+   "to": "adapt",
+   "label": "idea  J5"
+  },
+  {
+   "from": "adapt",
+   "to": "priority",
+   "label": "offer  J5"
+  },
+  {
+   "from": "born",
+   "to": "library",
+   "label": "template born  J5"
+  },
+  {
+   "from": "born",
+   "to": "record",
+   "label": "X v1 filed  J5"
+  }
+ ],
+ "journeys": [
+  {
+   "id": "j1",
+   "title": "Found the organisation; Sutra asks, then makes the first department",
+   "steps": [
+    {
+     "n": "1",
+     "lane": "you",
+     "short": "type the name; Found",
+     "status": "built",
+     "text": "You type the organisation's name and press Found. One line about what you want is welcome but not needed.",
+     "function": "you",
+     "code": "<code>wbFoundGo</code>, <code>POST /api/native/found</code>"
+    },
+    {
+     "n": "2",
+     "lane": "root",
+     "short": "Sutra appears",
+     "status": "built, name to change",
+     "text": "Sutra appears: the organisation's helper, on the organisation's row. The code calls it Root and shows the organisation's name; the screen will say Sutra.",
+     "function": "Root (shown as Sutra)",
+     "code": "<code>founding.found_structure</code>; the organisation row is Root's chat (v2.306.20)"
+    },
+    {
+     "n": "3",
+     "lane": "root",
+     "short": "Sutra asks until clear",
+     "status": "to build",
+     "text": "Sutra asks you what it needs to know, one question at a time, until it can confidently create the department: what it is for, for whom, what first. No fixed list: the questions are an instruction inside the Setup workflow's converse step (<a href=\"../platform/model/root-lifecycle.html#setup\">the recipe</a>); the five on the Root page are its examples. \"Just do it\" ends the questions.",
+     "function": "Root's Setup, a model step",
+     "code": "Setup step 2, converse (an AI inside with the default instruction); the covering posts the question or hands \"clear\" to shape"
+    },
+    {
+     "n": "4",
+     "lane": "you",
+     "short": "you answer",
+     "status": "to build",
+     "text": "You answer in the chat, or say \"just do it\".",
+     "function": "you",
+     "code": "the answers ride as the Request's next versions"
+    },
+    {
+     "n": "5",
+     "lane": "root",
+     "short": "Sutra decides: name, template, purpose",
+     "status": "built, stamp to remove",
+     "text": "Sutra decides the department: a name, the template that fits your answers (website, organic, or another), and its purpose. No stamp: the AI acts unless you have said otherwise (S-18).",
+     "function": "Root's Setup, a model step",
+     "code": "<code>setup.shape</code>, <code>p_setup_shape</code>; the setup ask in <code>identity_gate</code> goes, kept only when a rule tagged ask exists"
+    },
+    {
+     "n": "6",
+     "lane": "root",
+     "short": "Sutra builds it",
+     "status": "built",
+     "text": "Sutra builds the department: its five functions from the template, its born rules and limits, and hands your answers to it as its goal.",
+     "function": "Root's Setup, code",
+     "code": "<code>setup.make</code>, <code>founding</code>, <code>website_dept.create</code>"
+    },
+    {
+     "n": "7",
+     "lane": "root",
+     "short": "Sutra tells you what it made",
+     "status": "built, wording to change",
+     "text": "Sutra tells you: the department it made, its engines, and what happens first. The department appears under the organisation on the left.",
+     "function": "Root (shown as Sutra)",
+     "code": "<code>_tell</code> after <code>setup.file</code>; <code>wbBorn</code> slides the row in"
+    }
+   ],
+   "edges": [
+    {
+     "id": "J1.1",
+     "at": "4",
+     "short": "keeps asking, or just do it",
+     "edge": "Your answers still say nothing to build from.",
+     "code_does": "Wanted: Sutra keeps asking, one question a turn, until it is clear or you say \"just do it\"; then it decides with defaults and says which it took. Today: Identity asks one question and files nothing.",
+     "mark": "keep / change / drop"
+    },
+    {
+     "id": "J1.2",
+     "at": "4",
+     "short": "just do it",
+     "edge": "You say \"just do it\" or answer nothing.",
+     "code_does": "Wanted: Sutra skips the questions and decides from your first line; the department is born with the template's defaults.",
+     "mark": ""
+    },
+    {
+     "id": "J1.3",
+     "at": "5",
+     "short": "name exists",
+     "edge": "The name Sutra picks already exists under this organisation.",
+     "code_does": "Built: not made again; your answers are handed to the existing department and you are told (<code>setup_make</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J1.4",
+     "at": "5",
+     "short": "no template fits",
+     "edge": "No template's use case fits your answers.",
+     "code_does": "Built: the organic template: no engines at birth, Adaptation shapes the whole line from your answers (v2.306.21).",
+     "mark": ""
+    },
+    {
+     "id": "J1.5",
+     "at": "5",
+     "short": "two departments implied",
+     "edge": "Your answers describe two departments.",
+     "code_does": "Wanted: Sutra makes the first and offers the second as a chip you can click; today only one is made.",
+     "mark": ""
+    },
+    {
+     "id": "J1.6",
+     "at": "5",
+     "short": "ask me first, a rule",
+     "edge": "You said earlier \"ask me before you make anything\".",
+     "code_does": "Built as a rule tagged ask: Sutra asks once and waits for your stamp; that is the only case the birth stops for you (S-18).",
+     "mark": ""
+    },
+    {
+     "id": "J1.7",
+     "at": "2",
+     "short": "no answer in 60 s",
+     "edge": "Nobody answers your line inside 60 s.",
+     "code_does": "Built: said back and shown as waiting (<code>front_state</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J1.8",
+     "at": "5",
+     "short": "model away",
+     "edge": "The model is away while Sutra asks or decides.",
+     "code_does": "Built: retried after 30, 120 and 600 s, then you are told (<code>WAITS</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J1.9",
+     "at": "3",
+     "short": "you leave mid-questions",
+     "edge": "You close the app in the middle of Sutra's questions.",
+     "code_does": "Wanted: Sutra keeps what you said on the Request and continues where you left off when you return; today the Request holds only the first line.",
+     "mark": ""
+    }
+   ],
+   "tag": "THE FLOW YOU WANT (S-20, S-21) · each step says built or to build",
+   "lead": "You type the organisation's name. Sutra, the organisation's helper (the code calls it Root), asks you what you want to create until it is clear, decides the department itself, builds it with its five functions from the template that fits, hands your words over and tells you. No stamp at birth. J1 ends there: what the department does with your words is its own life, J2.",
+   "build": [
+    {
+     "change": "<b>v1</b> &#183; Sutra asks before deciding: the converse step (an AI inside with an instruction, no question in code) on Root's Setup, between read and shape; the covering posts the question and waits, or hands \"clear\" on; the answers are Request versions",
+     "where": "<code>engine-templates/setup.json</code> (the step and its default instruction), <code>engine_runtime.py</code> (<code>p_setup_converse</code>, the covering's check)",
+     "owner": "session 0c (the app)",
+     "size": "M"
+    },
+    {
+     "change": "<b>v1</b> &#183; No stamp at birth: <code>identity.gate</code> stops holding Setup; it holds only when a rule tagged ask matches (J1.7)",
+     "where": "<code>engine_runtime.py</code> <code>identity_gate</code>",
+     "owner": "session 0c",
+     "size": "S"
+    },
+    {
+     "change": "<b>later</b> &#183; The template's offer carries a <code>required</code> flag per engine; the kinds table gains it (website: none required by default, your call)",
+     "where": "<code>engine_defs/website.json</code> kinds, <code>engine-templates/*.json</code>",
+     "owner": "session 0c",
+     "size": "S"
+    },
+    {
+     "change": "<b>later</b> &#183; Adaptation's overlay at every birth: the organic kind's Shape the line step runs for every kind with the template's engines as candidates; the code check keeps required ones; one path replaces two",
+     "where": "<code>engine_runtime.py</code> <code>adapt.line</code>, <code>website_dept.create</code>",
+     "owner": "session 0c",
+     "size": "M"
+    },
+    {
+     "change": "<b>v1</b> &#183; The screen says Sutra for Root's chat and its tells; Sutra's tell after birth names the department, its engines and what happens first",
+     "where": "<code>19-org2.js</code>, <code>22-website.js</code>, <code>_tell</code> wording",
+     "owner": "session 0c",
+     "size": "S"
+    },
+    {
+     "change": "<b>later</b> &#183; Resume mid-questions: the Request keeps every answer; Setup's converse step reads them back on return",
+     "where": "<code>setup_read</code>, the Request artifact",
+     "owner": "session 0c",
+     "size": "S"
+    },
+    {
+     "change": "<b>v1 (page rows)</b> &#183; The page: J1 re-marked from to build to built as each row lands; J8 (the organic birth) folded into this J1 since it is now the same flow",
+     "where": "<code>system/journeys.json</code>",
+     "owner": "this session (the page)",
+     "size": "S"
+    }
+   ],
+   "today": "You type the name and one line; Root reads it; Root asks \"Set up a department for: ...?\"; you stamp; Setup reads, shapes (name, kind, goal by one model call) and makes the department with the template's engines written on the record as shipped (website: Plan, Write, Check, Publish; organic: none, then Adaptation shapes them); the department's Identity takes your line as the Brief; the line starts. Source: birth.md, sutra 50599599 and ef0e8c39."
+  },
+  {
+   "id": "j2",
+   "title": "The five functions work toward the identity's goal",
+   "steps": [
+    {
+     "n": "1",
+     "lane": "identity",
+     "short": "identity good enough?",
+     "status": "partly built",
+     "text": "The department's Identity looks at the identity Root stamped: is it good enough to start on? If not, it asks questions until it meets its own standard; then the department starts.",
+     "function": "Identity",
+     "code": "today: the thin and unsure branches of <code>identity_file</code>; the loop to build"
+    },
+    {
+     "n": "2",
+     "lane": "adapt",
+     "short": "proposes what to do next",
+     "status": "built for the organic kind",
+     "text": "Adaptation reads the identity and proposes what the department should do next: the workflows it needs, as many as it needs, from the Library or its own.",
+     "function": "Adaptation",
+     "code": "<code>adapt.line</code> (Shape the line), <code>p_adapt_shape</code>; the Make module a placeholder (S-26)"
+    },
+    {
+     "n": "3",
+     "lane": "priority",
+     "short": "grant, refuse, counter",
+     "status": "built for an idea; to build for the line",
+     "text": "Priority answers from the budget and the present work: grant, refuse, or counter. Adaptation accepts or changes its proposal. The exchange is on the department's one board and is bounded: four hops, fifteen minutes, its spend.",
+     "function": "Priority, with Adaptation",
+     "code": "<code>priority.read</code>, <code>priority.bargain</code>, <code>priority.post</code>; the board's thread bounds (engine page, section 5)"
+    },
+    {
+     "n": "4",
+     "lane": "identity",
+     "short": "closes a conflict",
+     "status": "to build",
+     "text": "If they cannot agree, or the limit is hit, it goes to Identity, which closes it against the goal and the rules. What Identity cannot settle goes to you as an ask.",
+     "function": "Identity, then you",
+     "code": "today the limit's default is refuse and nothing goes up; the alarm to Identity exists for a run past its window"
+    },
+    {
+     "n": "5",
+     "lane": "root",
+     "short": "Root checks, registers",
+     "status": "to build",
+     "text": "A granted workflow goes to Root, which checks it against Sutra's standards and registers it on the department's record. It does not go into the Library.",
+     "function": "Root",
+     "code": "today the runtime's <code>validate</code> checks and <code>born_template</code> writes the record home's Library (S-25 changes both)"
+    },
+    {
+     "n": "6",
+     "lane": "coord",
+     "short": "orders; the workflows run",
+     "status": "built",
+     "text": "Coordination orders the work, one run at a time; the workflows run and file what they made.",
+     "function": "Coordination, the workflows",
+     "code": "<code>next_due</code>, <code>coord_pick</code>, <code>run_engine</code>, <code>add_version</code>"
+    },
+    {
+     "n": "7",
+     "lane": "audit",
+     "short": "reads the result",
+     "status": "built",
+     "text": "Audit reads what was filed against the identity; a finding goes to Identity.",
+     "function": "Audit",
+     "code": "<code>audit_pick</code>, <code>audit_mechanical</code>, <code>audit.judge</code>, <code>audit_file</code>"
+    },
+    {
+     "n": "8",
+     "lane": "adapt",
+     "short": "next proposal, until done",
+     "status": "to build",
+     "text": "Adaptation senses how far the goal is and proposes the next move: back to step 2. The loop ends on one check: does the identity's done-when now hold? Audit's reading in step 7 answers it. When it holds, Identity tells you the goal is reached and Adaptation stops proposing.",
+     "function": "Adaptation; Identity says done",
+     "code": "the loop (name: placeholder); today Adaptation wakes only on a checked last artifact or an idea"
+    }
+   ],
+   "edges": [
+    {
+     "id": "J2.1",
+     "at": "1",
+     "short": "not good enough: asks",
+     "edge": "The identity is not good enough to start on.",
+     "code_does": "Wanted: Identity asks until it meets its standard. Today: one question when the words name nothing; facts marked not sure are asked at once.",
+     "mark": "keep / change / drop"
+    },
+    {
+     "id": "J2.2",
+     "at": "3",
+     "short": "the limit is hit",
+     "edge": "The bargain reaches four hops, fifteen minutes or its spend.",
+     "code_does": "Today: the default holds, refuse, and nothing goes up. Wanted: it goes to Identity (step 4).",
+     "mark": ""
+    },
+    {
+     "id": "J2.3",
+     "at": "4",
+     "short": "Identity cannot settle",
+     "edge": "Identity cannot close the conflict by the goal and the rules.",
+     "code_does": "Wanted: an ask to you. To build.",
+     "mark": ""
+    },
+    {
+     "id": "J2.4",
+     "at": "5",
+     "short": "Root refuses the workflow",
+     "edge": "The workflow does not meet the standards.",
+     "code_does": "Wanted: refused with the reason; Adaptation reshapes. The standards list: placeholder.",
+     "mark": ""
+    },
+    {
+     "id": "J2.5",
+     "at": "6",
+     "short": "over the envelope",
+     "edge": "A workflow is past its day's calls or money.",
+     "code_does": "Built: held; an ask goes up (<code>priority.envelope</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J2.6",
+     "at": "6",
+     "short": "goes outside",
+     "edge": "A workflow wants to send something outside.",
+     "code_does": "Built: the first time asks once (the born rule). Your ruling S-18 says no ask unless a rule says so: open.",
+     "mark": ""
+    },
+    {
+     "id": "J2.7",
+     "at": "6",
+     "short": "fails its check",
+     "edge": "A result fails its check.",
+     "code_does": "Built: sent back, twice at most, then you are told (<code>_send_back</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J2.8",
+     "at": "8",
+     "short": "the goal moves",
+     "edge": "You change the goal.",
+     "code_does": "Open: through Root again (a new stamp on the identity), or Identity takes your words directly.",
+     "mark": ""
+    }
+   ],
+   "lead": "J1 ends with the department made and its identity stamped by Root: the goal, the rules, done when. J2 is the department's life: Adaptation proposes what to do next, Priority answers from the budget and the present work, Identity closes a conflict between them, and you close what Identity cannot. What is granted runs; Audit reads the result against the identity; the loop goes on until the goal holds. <b>Identity speaks to you throughout</b>: beside every step, it tells you what was made, and asks only when a rule says ask; no other function speaks to you.",
+   "was": {
+    "title": "The department's first breath, then the first site",
+    "steps": [
+     {
+      "n": "0a",
+      "lane": "adapt",
+      "short": "Adaptation overlays the engines",
+      "status": "built for organic, to build for website",
+      "text": "The department's Adaptation lays its overlay on the template's engines: the ones the template marks as must-have stay; the rest it keeps, swaps for a Library engine, or replaces with one made on the spot from your answers. A code check holds the result (unique names, the first reads the Brief, each reads what one before it wrote, the must-haves present).",
+      "function": "the department's Adaptation",
+      "code": "<code>adapt.line</code> (Shape the line) runs at every birth with the template's engines as the offer; a <code>required</code> flag per offered engine"
+     },
+     {
+      "n": "0b",
+      "lane": "identity",
+      "short": "Brief filed; the line wakes",
+      "status": "built",
+      "text": "The department's Identity files your words as the Brief; the first engine wakes on it. What goes outside asks you first only if a rule says so, or if the born rule about the first publish stands (your open call, J2 step 6).",
+      "function": "the department's Identity",
+      "code": "<code>identity_file</code>, <code>_file_words</code>, <code>ready</code>"
+     },
+     {
+      "n": "1",
+      "lane": "coord",
+      "short": "motor: who first",
+      "text": "Every 3 s the motor asks Coordination who goes first; one run per department per tick.",
+      "function": "Coordination",
+      "code": "<code>motor_tick</code>, <code>next_due</code>, <code>coord_pick</code>"
+     },
+     {
+      "n": "2",
+      "lane": "identity",
+      "short": "blockers pass",
+      "text": "Plan is ready: a Brief version it has not run on. Its blockers run in order: no engine ask pending; Identity's gate; Priority's envelope; the chain under 12.",
+      "function": "Identity, Priority, Coordination",
+      "code": "<code>ready</code>, <code>blocked</code>: <code>identity.wait_engine</code>, <code>identity.gate</code>, <code>priority.envelope</code>, <code>coord.chain</code>"
+     },
+     {
+      "n": "3",
+      "lane": "engine",
+      "short": "Plan: Site plan v1",
+      "text": "Plan runs: read the Brief (code), propose the pages (model), fit (code), file the Site plan v1 with its check. The chat shows \"Plan is working: &#8230;\".",
+      "function": "Plan",
+      "code": "<code>plan.read</code> &#8230; <code>plan.file</code>, <code>add_version</code>, <code>working_now</code>"
+     },
+     {
+      "n": "4",
+      "lane": "engine",
+      "short": "Write: Pages v1",
+      "text": "Write wakes on the Site plan: one model call per page, four side by side; Pages v1.",
+      "function": "Write",
+      "code": "<code>write.page</code>, <code>side_by_side</code>"
+     },
+     {
+      "n": "5",
+      "lane": "engine",
+      "short": "Check: Build v1",
+      "text": "Check wakes on the Pages: lists the stamped rules that apply (code); reads each page against them (model, only when there are any); builds; Build v1 with its check.",
+      "function": "Check",
+      "code": "<code>check.rules_of</code>, <code>check.rules</code>, <code>check_build</code>"
+     },
+     {
+      "n": "6",
+      "lane": "identity",
+      "short": "asks: go live?",
+      "text": "Publish wakes on a checked Build but Identity's gate holds it: the first publish ask, \"go live for the first time, served from &lt;host&gt;\".",
+      "function": "Identity",
+      "code": "<code>identity_gate</code>, kind <code>publish</code>"
+     },
+     {
+      "n": "7",
+      "lane": "you",
+      "short": "Stamp",
+      "text": "You stamp. The host stays on the record.",
+      "function": "you",
+      "code": "<code>identity_apply</code>"
+     },
+     {
+      "n": "8",
+      "lane": "engine",
+      "short": "Publish: Live site v1",
+      "text": "Publish copies the build to the served site: Live site v1. You are told \"Live site v1 is live.\" with Open the live site; the tell reaches Root's board too.",
+      "function": "Publish, Identity",
+      "code": "<code>publish.copy</code>, <code>_tell</code> word live"
+     },
+     {
+      "n": "9",
+      "lane": "audit",
+      "short": "sample, judge, file",
+      "text": "Audit wakes on the checked Live site: samples (versions 1 to 3, then every third); the mechanical checks; the judge (facts the Brief and the department's own filings do not give); files a finding to Identity.",
+      "function": "Audit",
+      "code": "<code>audit_pick</code>, <code>audit_mechanical</code>, <code>audit.judge</code>, <code>audit_file</code>"
+     },
+     {
+      "n": "10",
+      "lane": "identity",
+      "short": "facts question",
+      "text": "Identity turns the holes (\"to be confirmed\") into a facts question in the chat; a high-severity finding into an ask, \"Audit found: &#8230; Stamp to have it put right.\"",
+      "function": "Identity",
+      "code": "<code>identity_finding</code>"
+     },
+     {
+      "n": "11",
+      "lane": "adapt",
+      "short": "ladder proposal",
+      "text": "Adaptation wakes on the checked Live site: senses, reads the ladder, proposes a step's move up to Priority; granted, to you as a rung ask.",
+      "function": "Adaptation, Priority, Identity",
+      "code": "<code>adapt.sense</code>, <code>adapt.ladder</code>, <code>adapt.act</code>, <code>identity_rung</code>"
+     }
+    ],
+    "edges": [
+     {
+      "id": "J2.1",
+      "at": "0a",
+      "short": "must-have dropped",
+      "edge": "Adaptation's overlay drops an engine the template marks as must-have.",
+      "code_does": "Wanted: the code check refuses the overlay and keeps the engine; Adaptation is told why. To build with the required flag.",
+      "mark": ""
+     },
+     {
+      "id": "J2.2",
+      "at": "0b",
+      "short": "engine needs the web",
+      "edge": "The first engine needs the internet.",
+      "code_does": "Built: every model step has the web tools; nothing asks (founder 2026-09-29).",
+      "mark": ""
+     },
+     {
+      "id": "J2.3",
+      "at": "3",
+      "short": "The model is away during",
+      "edge": "The model is away during a step.",
+      "code_does": "The step waits; retried after 30, 120, 600 s; then you are asked (<code>WAITS</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.4",
+      "at": "3",
+      "short": "A step fails",
+      "edge": "A step fails.",
+      "code_does": "A failed row; the motor never crashes; the run ends failed.",
+      "mark": ""
+     },
+     {
+      "id": "J2.5",
+      "at": "5",
+      "short": "A page breaks a stamped",
+      "edge": "A page breaks a stamped rule.",
+      "code_does": "Check files the Build failed with the finding; the line sends it back to Write, twice at most; then you are told (<code>_send_back</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.6",
+      "at": "5",
+      "short": "A version's check failed",
+      "edge": "A version's check failed.",
+      "code_does": "The next engine does not wake on it (<code>checked: true</code> on the trigger); the version stays on the record with its check.",
+      "mark": ""
+     },
+     {
+      "id": "J2.7",
+      "at": "7",
+      "short": "You refuse the first publish",
+      "edge": "You refuse the first publish.",
+      "code_does": "The build is skipped, never live; a later new goal asks again (<code>publish_asks_from</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.8",
+      "at": "2",
+      "short": "An engine is past its",
+      "edge": "An engine is past its day's calls or USD.",
+      "code_does": "Held; an envelope ask is put up, escalated; your stamp lets it go on (<code>priority_envelope</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.9",
+      "at": "2",
+      "short": "The chain from one ask",
+      "edge": "The chain from one ask reaches 12 runs.",
+      "code_does": "It stops (<code>coord.chain</code>, <code>CHAIN_LIMIT</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.10",
+      "at": "1",
+      "short": "Two engines are equally ready",
+      "edge": "Two engines are equally ready.",
+      "code_does": "Coordination's tie, one model call, never on a peek (<code>coord.tie</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.11",
+      "at": "2",
+      "short": "An engine ahead in the",
+      "edge": "An engine ahead in the line is held.",
+      "code_does": "The ones after it wait (<code>coord.pick</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.12",
+      "at": "3",
+      "short": "A run passes its window",
+      "edge": "A run passes its window.",
+      "code_does": "An alarm rule fires (<code>coord.alarm</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.13",
+      "at": "2",
+      "short": "A gate is not on",
+      "edge": "A gate is not on the code rung.",
+      "code_does": "The function is asked to judge it; the engine waits for the verdict; a gate row either way (<code>coord.verdict</code>, <code>_gate_row</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.14",
+      "at": "4",
+      "short": "A step's answer does not",
+      "edge": "A step's answer does not fit its rung.",
+      "code_does": "It falls to the rung below (<code>_fits</code>, <code>BELOW</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.15",
+      "at": "3",
+      "short": "A dead process left a",
+      "edge": "A dead process left a run row open.",
+      "code_does": "Past twice the model's timeout it is not counted as working (<code>working_now</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.16",
+      "at": "10",
+      "short": "Audit finds a hole and",
+      "edge": "Audit finds a hole and an engine with web tools is on the record.",
+      "code_does": "The holes are filed once as \"Look up: &#8230;\" for it instead of asked (<code>_web_engine</code>, <code>looked_up</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.17",
+      "at": "10",
+      "short": "You answer the facts question",
+      "edge": "You answer the facts question.",
+      "code_does": "Your words go through J3: a task, filed to the Brief; Write runs on it; Check; Publish by rule, no second stamp.",
+      "mark": ""
+     },
+     {
+      "id": "J2.18",
+      "at": "8",
+      "short": "A version has no run",
+      "edge": "A version has no run or no check; a slot ran twice.",
+      "code_does": "Health blocks and names it (<code>health</code>: Versions, Slots).",
+      "mark": ""
+     },
+     {
+      "id": "J2.19",
+      "at": "6",
+      "short": "An ask waits longer than",
+      "edge": "An ask waits longer than 30 min.",
+      "code_does": "Health says Stuck (<code>STALE_ASK_S</code>).",
+      "mark": ""
+     },
+     {
+      "id": "J2.20",
+      "at": "1",
+      "short": "The motor's last tick is",
+      "edge": "The motor's last tick is old.",
+      "code_does": "Health warns at 15 s, blocks at 90 s.",
+      "mark": ""
+     }
+    ]
+   },
+   "tag": "THE FLOW YOU WANT · from the recorded thesis (Beer's five; the board) · each step says built or to build",
+   "said": [
+    "Identity has to be stamped by the root. Once identity is good enough, then the department starts. If, at times, it happens that the identity is not good enough, then identity will ask questions of itself to reach its standards. Once it's done, how will the workflow look between these 5 functions to reach the goal of the identity? I think that is the journey.",
+    "I think the original thesis was that adaptation and priority work with each other, and if there is a conflict, then I need to resolve it somewhere. That is how we have designed it.",
+    "2 to 5 workflows, there is no limit to that.",
+    "Keep it simple for now the way you have written. We can always evolve it later on.",
+    "The high level makes sense, though all nine steps, the ninth step is not clear. The first eight steps are clear.",
+    "For now, you can just keep these eight journeys and go with this. For the detailing of these journeys, you can do it later on.",
+    "2026-10-01, on J2.a: “I think knowing the identity is good enough. We need to define identity and its journeys.”",
+    "2026-10-01, on J2.b: “Deciding what to do next: first, workflow from the library template or automation from identity. Default is a template if there is one, but if there is no template, then how do we solve for it? What's the process of adaptation for doing that? I want to focus on that. There, I want to take identities and goals, and use how much logic, considering various practices, is in place. This is the shape, and other various ways to create workflows and logic will come. There, I want to go deeper into it.”"
+   ],
+   "today": "The website template's line as built: a Brief filed by Identity wakes Plan, then Write (one call a page), Check (against stamped rules), Publish (held for the first-publish stamp), then Live site; Audit and Adaptation wake on the checked site. The organic kind (v2.306.21): Adaptation shapes the whole line from the first words, one stamp births it. The earlier rows of this journey are kept in the data file under was. Source: line.md, engines-and-library.md.",
+   "sub": [
+    [
+     "J2.a",
+     "Is the identity good enough?",
+     "Identity checks what Root stamped, asks until it meets its standard, then starts the department. Founder 2026-10-01: knowing the identity is good enough; Identity and its journeys are to define (needs to be filled).",
+     "Identity",
+     "1",
+     "<a href=\"../platform/model/functions/identity.html#fi1\">Identity: enough to work?</a>"
+    ],
+    [
+     "J2.b",
+     "Deciding what to do next",
+     "Adaptation reads the identity and makes the workflows: from the Library or its own. This is where workflows are created. Founder 2026-10-01: a template if there is one; with no template, Adaptation makes the workflow from the identity, the goal and the practices in place; that process is the focus (needs to be filled).",
+     "Adaptation",
+     "2",
+     "<a href=\"../platform/model/functions/adaptation.html#fa1\">Adaptation: the first workflows</a>"
+    ],
+    [
+     "J2.c",
+     "The bargain",
+     "Adaptation proposes; Priority answers grant, refuse, counter; bounded.",
+     "Priority, with Adaptation",
+     "3",
+     "<a href=\"../platform/model/functions/priority.html#fp2\">Priority: the bargain</a>"
+    ],
+    [
+     "J2.d",
+     "Closing a conflict",
+     "They cannot agree: Identity closes it; what it cannot settle comes to you.",
+     "Identity, then you",
+     "4",
+     "<a href=\"../platform/model/functions/identity.html#fi4\">Identity: closes a conflict</a>"
+    ],
+    [
+     "J2.e",
+     "Root's check",
+     "A granted workflow meets the standards or is sent back; registered on the record.",
+     "Root",
+     "5",
+     "not drawn yet"
+    ],
+    [
+     "J2.f",
+     "Running the work",
+     "Coordination gives one workflow its turn; it runs step by step, AI inside, code around; it files what it made; the envelope holds it.",
+     "Coordination, Priority, the workflow",
+     "6",
+     "<a href=\"../platform/model/functions/coordination.html#fc1\">Coordination: who goes first</a> &#183; <a href=\"../platform/model/functions/priority.html#fp1\">Priority: the envelope</a> &#183; one workflow's own run: not drawn yet"
+    ],
+    [
+     "J2.g",
+     "Reading the result",
+     "Audit samples, checks, judges against the identity and files a finding. Identity weighs it three ways: a missing fact only you know becomes a question to you; a wrong that needs your yes becomes an ask; anything else goes back to Adaptation as the next thing to do.",
+     "Audit, then Identity",
+     "7",
+     "<a href=\"../platform/model/functions/audit.html#fau1\">Audit: read the result</a>"
+    ],
+    [
+     "J2.h",
+     "The next move, or done",
+     "Adaptation senses the gap and proposes again, or learns, crystallizes, grows; when done-when holds, Identity says so.",
+     "Adaptation, Identity",
+     "8",
+     "<a href=\"../platform/model/functions/adaptation.html#fa2\">Adaptation: pursue, crystallize, grow, learn</a>"
+    ]
+   ]
+  },
+  {
+   "id": "j3",
+   "title": "Words after go-live: a change, a question, a correction, an idea",
+   "steps": [
+    {
+     "n": "1",
+     "lane": "you",
+     "short": "words (+ chip)",
+     "text": "You speak: on Root's chat with the department's chip, or inside the department, or in a function's chat.",
+     "function": "you",
+     "code": "<code>request</code>: front / request / <code>about.fn</code> / <code>about.dept</code>"
+    },
+    {
+     "n": "2",
+     "lane": "root",
+     "short": "hands on",
+     "text": "On Root the words are handed on as a post from Root to the department's Identity; the answers come back onto Root's board, marked via Root.",
+     "function": "Root's Identity",
+     "code": "<code>request</code>, <code>_tell</code>"
+    },
+    {
+     "n": "3",
+     "lane": "identity",
+     "short": "recognise",
+     "text": "The department's Identity reads (code) and recognises the journey: task, query, directive, feedback, new-idea.",
+     "function": "Identity",
+     "code": "<code>identity.read</code>, <code>identity.recognise</code>"
+    },
+    {
+     "n": "4a",
+     "lane": "identity",
+     "short": "take: Brief v+1",
+     "text": "Task: the take gives go / ask / refuse, what you are unsure of, a rule your words state, thin. Go files a Brief version and tells \"filed in the Brief\"; the line runs from Write on; Publish needs no second stamp.",
+     "function": "Identity",
+     "code": "<code>identity.take</code>, <code>identity_file</code>"
+    },
+    {
+     "n": "4b",
+     "lane": "identity",
+     "short": "answer",
+     "text": "Query: answered from the record's lines: the plan, the site, version counts, what waits, the latest text filed.",
+     "function": "Identity",
+     "code": "<code>identity.answer</code>, <code>_record_lines</code>"
+    },
+    {
+     "n": "4c",
+     "lane": "identity",
+     "short": "rule ask (J4)",
+     "text": "Directive: restated as one rule with a tag and a scope: J4.",
+     "function": "Identity",
+     "code": "<code>identity.rule</code>"
+    },
+    {
+     "n": "4d",
+     "lane": "identity",
+     "short": "weigh: correction",
+     "text": "Feedback: the page, what changes now, a rule to carry; the correction filed to the line and marked against the step that made the page.",
+     "function": "Identity",
+     "code": "<code>identity.weigh</code>, <code>_mark</code>"
+    },
+    {
+     "n": "4e",
+     "lane": "identity",
+     "short": "idea (J5)",
+     "text": "New idea: to Adaptation: J5.",
+     "function": "Identity, Adaptation",
+     "code": "<code>post</code> word idea"
+    },
+    {
+     "n": "5",
+     "lane": "identity",
+     "short": "function chat",
+     "text": "The function's chat keeps your words said to it, the tells of the line on the Brief versions they made, and its own thinking as quiet lines.",
+     "function": "the function",
+     "code": "<code>fn_chat_view</code>"
+    }
+   ],
+   "edges": [
+    {
+     "id": "J3.1",
+     "at": "4a",
+     "short": "Your words reach outside the",
+     "edge": "Your words reach outside the site (a claim, a name, a price).",
+     "code_does": "An ask of kind request: \"Put them on the site as said?\"; a stamp files them as a Brief version, a refusal leaves them out (<code>_reaches</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J3.2",
+     "at": "4a",
+     "short": "The take refuses",
+     "edge": "The take refuses.",
+     "code_does": "You are told why; nothing filed.",
+     "mark": ""
+    },
+    {
+     "id": "J3.3",
+     "at": "4a",
+     "short": "Your words state a standing",
+     "edge": "Your words state a standing rule inside a task.",
+     "code_does": "The rule ask comes first (\"A rule, as understood\"), then the task (<code>_rule_ask</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J3.4",
+     "at": "1",
+     "short": "You take the chip off",
+     "edge": "You take the chip off on Root's chat.",
+     "code_does": "The words go to Root itself: a new department, or a query Root answers.",
+     "mark": ""
+    },
+    {
+     "id": "J3.5",
+     "at": "2",
+     "short": "You name a department in",
+     "edge": "You name a department in the words.",
+     "code_does": "Root's Identity finds it by the name and hands on.",
+     "mark": ""
+    },
+    {
+     "id": "J3.6",
+     "at": "4a",
+     "short": "The words name nothing to",
+     "edge": "The words name nothing to build from.",
+     "code_does": "One question, nothing filed (thin).",
+     "mark": ""
+    },
+    {
+     "id": "J3.7",
+     "at": "4c",
+     "short": "A directive meant once (\"just",
+     "edge": "A directive meant once (\"just this once\").",
+     "code_does": "Applied once, not kept (<code>scope: one-time</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J3.8",
+     "at": "4a",
+     "short": "A born engine's words again",
+     "edge": "A born engine's words again.",
+     "code_does": "Its need step decides whether the newest words ask for its work again; \"not needed\" files nothing and the line reads its last filing (<code>do.need</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J3.9",
+     "at": "3",
+     "short": "An engine ask is pending",
+     "edge": "An engine ask is pending when you speak.",
+     "code_does": "Every work engine waits; you are told once that the line waits for your stamp (<code>identity_wait_engine</code>); Root is never held.",
+     "mark": ""
+    }
+   ]
+  },
+  {
+   "id": "j4",
+   "title": "A rule",
+   "steps": [
+    {
+     "n": "1",
+     "lane": "you",
+     "short": "a directive",
+     "text": "You say a directive (\"never say X\", \"always show the phone number\").",
+     "function": "you",
+     "code": "&#8212;"
+    },
+    {
+     "n": "2",
+     "lane": "identity",
+     "short": "asks: rule as understood",
+     "text": "Identity restates it as one rule with a tag (always / ask / refuse / goal) and a scope, and asks: \"A rule, as understood: &#8230;\".",
+     "function": "Identity",
+     "code": "<code>identity.rule</code>, <code>_rule_ask</code>"
+    },
+    {
+     "n": "3",
+     "lane": "identity",
+     "short": "Stamp",
+     "text": "You stamp. The rule is written on the record with its id, tag, line and your words; the Brief gets \"A rule, from now on: &#8230;\".",
+     "function": "Identity",
+     "code": "<code>identity_apply</code> kind rule, <code>d[\"rules\"]</code>"
+    },
+    {
+     "n": "4",
+     "lane": "identity",
+     "short": "rule on record",
+     "text": "Every agent step's card shows the rules; Identity's take reads them as THE RULES.",
+     "function": "all functions",
+     "code": "<code>card</code>, <code>p_identity_take</code>"
+    },
+    {
+     "n": "5",
+     "lane": "engine",
+     "short": "Check reads pages",
+     "text": "Check lists the rules that apply to the pages and reads each page against them; a broken rule files the Build failed with the finding.",
+     "function": "Check",
+     "code": "<code>check.rules_of</code>, <code>check.rules</code>, <code>check_build</code>"
+    },
+    {
+     "n": "6",
+     "lane": "coord",
+     "short": "send back, 2 max",
+     "text": "The line sends the build back to Write with the finding, twice at most; then you are told.",
+     "function": "Coordination",
+     "code": "<code>_send_back</code>"
+    }
+   ],
+   "edges": [
+    {
+     "id": "J4.1",
+     "at": "2",
+     "short": "The rule is already on",
+     "edge": "The rule is already on the record.",
+     "code_does": "Said back, not added twice.",
+     "mark": ""
+    },
+    {
+     "id": "J4.2",
+     "at": "4",
+     "short": "The rule is tagged goal",
+     "edge": "The rule is tagged goal.",
+     "code_does": "It replaces the goal and the next publish asks again (<code>publish_asks_from</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J4.3",
+     "at": "3",
+     "short": "You refuse the rule ask",
+     "edge": "You refuse the rule ask.",
+     "code_does": "Nothing kept.",
+     "mark": ""
+    },
+    {
+     "id": "J4.4",
+     "at": "4",
+     "short": "A child's rule is looser",
+     "edge": "A child's rule is looser than Root's.",
+     "code_does": "Identity's own check at birth keeps the child's rules within the parent's (a born Root rule).",
+     "mark": ""
+    },
+    {
+     "id": "J4.5",
+     "at": "2",
+     "short": "A rule the take reads",
+     "edge": "A rule the take reads out of a task.",
+     "code_does": "Asked as a rule before the task is filed (J3.3).",
+     "mark": ""
+    },
+    {
+     "id": "J4.6",
+     "at": "6",
+     "short": "The build still breaks the",
+     "edge": "The build still breaks the rule after two returns.",
+     "code_does": "You are told; the build stays failed; nothing publishes (<code>_send_back</code>).",
+     "mark": ""
+    }
+   ]
+  },
+  {
+   "id": "j5",
+   "title": "An engine from an idea",
+   "steps": [
+    {
+     "n": "1",
+     "lane": "you",
+     "short": "an idea",
+     "text": "You float an idea (\"keep a list of our events and put the next one on the home page\").",
+     "function": "you",
+     "code": "&#8212;"
+    },
+    {
+     "n": "2",
+     "lane": "identity",
+     "short": "new-idea to Adaptation",
+     "text": "Identity recognises new-idea and posts it to Adaptation.",
+     "function": "Identity",
+     "code": "<code>identity.recognise</code>, word idea"
+    },
+    {
+     "n": "3",
+     "lane": "adapt",
+     "short": "shape",
+     "text": "Adaptation hears (code), shapes (model): the idea reflected back; a Library engine picked if its use case fits, else an engine shaped with a name, what it does, what it needs.",
+     "function": "Adaptation",
+     "code": "<code>adapt.hear</code>, <code>adapt.shape</code>, <code>p_adapt_shape</code>"
+    },
+    {
+     "n": "4",
+     "lane": "adapt",
+     "short": "park + offer",
+     "text": "Adaptation parks the idea and offers the engine to Priority.",
+     "function": "Adaptation",
+     "code": "<code>adapt.park</code> (<code>ideas.json</code>), <code>adapt.offer</code>, <code>engine_from_shape</code>"
+    },
+    {
+     "n": "5",
+     "lane": "priority",
+     "short": "price",
+     "text": "Priority reads, bargains, posts: accept or reject, from what it does, needs and costs.",
+     "function": "Priority",
+     "code": "<code>priority.read</code>, <code>priority.bargain</code>, <code>priority.post</code>, <code>_offer_lines</code>"
+    },
+    {
+     "n": "6",
+     "lane": "identity",
+     "short": "asks: add engine?",
+     "text": "Priced, Identity puts it to you: \"Add the engine X to Y? What it does: &#8230; Stamp to add it, Refuse to leave the idea parked.\"",
+     "function": "Identity",
+     "code": "<code>identity_engine</code>, kind engine"
+    },
+    {
+     "n": "7",
+     "lane": "identity",
+     "short": "Stamp",
+     "text": "While the ask is pending every work engine waits; you are told once.",
+     "function": "Identity",
+     "code": "<code>identity_wait_engine</code>"
+    },
+    {
+     "n": "8",
+     "lane": "identity",
+     "short": "adds; line grows",
+     "text": "You stamp. The engine and its artifact go on the record with an envelope and a window; Coordination's line grows (before Plan when it reads the Brief); a shaped engine's template is born into the record home's Library with made_by, and web tools when it named a need.",
+     "function": "Identity, Coordination",
+     "code": "<code>identity_apply</code> kind engine, <code>W.add_engine</code>, <code>grow_line</code>, <code>born_template</code>"
+    },
+    {
+     "n": "9",
+     "lane": "engine",
+     "short": "runs: X v1 filed",
+     "text": "The engine starts on its own trigger, a new Brief: read; need (only when it filed before); make; file. You are told \"X v1 is filed.\" with Open X.",
+     "function": "the engine",
+     "code": "<code>do.read</code>, <code>do.need</code>, <code>do.make</code>, <code>do.file</code>, <code>_tell</code> word filed"
+    },
+    {
+     "n": "10",
+     "lane": "engine",
+     "short": "Plan/Write build on it",
+     "text": "What it filed is handed to Plan, Write and Audit's judge as what the department's own engines filed.",
+     "function": "Plan, Write, Audit",
+     "code": "<code>_context_block</code>"
+    }
+   ],
+   "edges": [
+    {
+     "id": "J5.1",
+     "at": "5",
+     "short": "Priority refuses the offer",
+     "edge": "Priority refuses the offer.",
+     "code_does": "You are told; the idea is marked priced: refused and stays parked (<code>adapt_priced</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J5.2",
+     "at": "7",
+     "short": "You refuse the engine ask",
+     "edge": "You refuse the engine ask.",
+     "code_does": "The idea stays parked; the line goes on.",
+     "mark": ""
+    },
+    {
+     "id": "J5.3",
+     "at": "3",
+     "short": "A Library engine's use case",
+     "edge": "A Library engine's use case fits the idea.",
+     "code_does": "That template is offered; nothing new is shaped.",
+     "mark": ""
+    },
+    {
+     "id": "J5.4",
+     "at": "8",
+     "short": "The born template fails validation",
+     "edge": "The born template fails validation.",
+     "code_does": "It is unlinked (<code>validate</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J5.5",
+     "at": "8",
+     "short": "The engine's name is already",
+     "edge": "The engine's name is already taken in the Library.",
+     "code_does": "The load refuses it (<code>engine_templates</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J5.6",
+     "at": "8",
+     "short": "The idea names a need",
+     "edge": "The idea names a need (the internet).",
+     "code_does": "Its prompt steps get WebSearch and WebFetch; every agent step has them anyway (founder 2026-09-29, <code>NEEDS</code>, <code>MODEL_TOOLS</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J5.7",
+     "at": "9",
+     "short": "A later Brief does not",
+     "edge": "A later Brief does not ask for its work.",
+     "code_does": "Its need step ends the run ok, \"not needed: &#8230;\", files nothing (<code>may_end</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J5.8",
+     "at": "9",
+     "short": "An update removes its template",
+     "edge": "An update removes its template.",
+     "code_does": "The card says Missing; the health line says \"say its idea again to shape it anew\"; it has no trigger; the rest of the line runs (<code>missing_engines</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J5.9",
+     "at": "3",
+     "short": "The same idea floated twice",
+     "edge": "The same idea floated twice.",
+     "code_does": "Not read in the docs set: whether a parked idea is matched before a new shape. Open.",
+     "mark": ""
+    },
+    {
+     "id": "J5.10",
+     "at": "2",
+     "short": "D-d: an engine from the",
+     "edge": "DIRECTED D-d: an engine from the onboarding answers or from what repeats.",
+     "code_does": "Not built: only a floated idea reaches Adaptation's shape step; what repeats moves a rung.",
+     "mark": ""
+    }
+   ]
+  },
+  {
+   "id": "j6",
+   "title": "A second department",
+   "steps": [
+    {
+     "n": "1",
+     "lane": "you",
+     "short": "words on the organisation row",
+     "text": "You speak to Root: the organisation row of the Org structure screen is Root's chat and nothing else, headed by the organisation's name with one Root settings button (what Root does, On/Off, rules, departments made). Say \"start a hiring department\", or any words with the chip off. Root is not a row of the tree; its departments sit under the organisation.",
+     "function": "you",
+     "code": "<code>19-org2.js</code> (o2Data), <code>FRONT</code>, <code>request</code>; sutra 297f45bd, v2.306.20-desktop"
+    },
+    {
+     "n": "2",
+     "lane": "engine",
+     "short": "asks: set up?",
+     "text": "Root's Identity files a Request and asks \"Set up a department for: &#8230;\"; you stamp; Setup shapes and makes it as in J1.",
+     "function": "Root's Identity, Setup",
+     "code": "<code>identity_gate</code>, <code>setup_make</code>"
+    },
+    {
+     "n": "3",
+     "lane": "root",
+     "short": "Setup makes",
+     "text": "The new department appears under Root; its own line runs on its own record; its tells reach Root's board with its chip.",
+     "function": "Root, the child's Identity",
+     "code": "<code>chat_view</code>, <code>_own_turns</code>, <code>_tell</code> via Root"
+    },
+    {
+     "n": "4",
+     "lane": "root",
+     "short": "Root's chat shows all",
+     "text": "Root's chat, which is the organisation row, shows every department's owner-facing turns and every pending ask with the department it belongs to; a born department slides into the tree once, and a department's crumb names the organisation.",
+     "function": "Root",
+     "code": "<code>chat_view</code>, <code>asks</code>; <code>19-org2.js</code> (sutra 297f45bd)"
+    },
+    {
+     "n": "5",
+     "lane": "root",
+     "short": "Root settings pane",
+     "text": "Root settings is a pane, never a chat: what Root does (its goal), On or Off with one switch, its rules, the departments it has made (chips that open them), Back to the chat. The clicks and the box on the organisation row speak for Root: a stamp, Stop, Start and Send post to Root's routes.",
+     "function": "Root (the screen)",
+     "code": "<code>wbRootPaneHtml</code>, <code>dpSelect(root)</code> in <code>wbOrgHtml</code>; sutra 297f45bd, released v2.306.20-desktop (065f4525)"
+    }
+   ],
+   "edges": [
+    {
+     "id": "J6.1",
+     "at": "3",
+     "short": "The name exists",
+     "edge": "The name exists.",
+     "code_does": "Handed to the existing department; you are told (J1.2).",
+     "mark": ""
+    },
+    {
+     "id": "J6.2",
+     "at": "1",
+     "short": "A department's Adaptation wants a",
+     "edge": "A department's Adaptation wants a new department.",
+     "code_does": "Its chat tools can file a department ask; it ends at your stamp and Root's Setup. No engine step of Adaptation does this on its own.",
+     "mark": ""
+    },
+    {
+     "id": "J6.3",
+     "at": "4",
+     "short": "A department with no Root",
+     "edge": "A department with no Root.",
+     "code_does": "Its own board is its chat; nothing is relayed.",
+     "mark": ""
+    },
+    {
+     "id": "J6.4",
+     "at": "4",
+     "short": "Two departments' asks pending at",
+     "edge": "Two departments' asks pending at once.",
+     "code_does": "Root's chat lists both, each with its department.",
+     "mark": ""
+    },
+    {
+     "id": "J6.5",
+     "at": "1",
+     "short": "D-f: anyone proposes",
+     "edge": "DIRECTED D-f: anyone proposes.",
+     "code_does": "Partly built (row D-f).",
+     "mark": ""
+    },
+    {
+     "id": "J6.6",
+     "at": "1",
+     "short": "no Root on the runtime",
+     "edge": "An organisation without a Root on the runtime.",
+     "code_does": "The Org structure screen paints as before: no chat on the organisation row (<code>wbOrgHtml</code> answers null).",
+     "mark": ""
+    }
+   ]
+  },
+  {
+   "id": "j7",
+   "title": "Stop, Start, an update, an end",
+   "steps": [
+    {
+     "n": "1",
+     "lane": "coord",
+     "short": "Stop",
+     "text": "Stop: stopped on the record; a running step finishes its call; the chat says \"Stopped by you: every engine stops where it is.\" Stop and Start are also on Root settings on the organisation row, and post to Root's routes (v2.306.20).",
+     "function": "Coordination, Identity",
+     "code": "<code>/{ref}/stop</code>, <code>next_due</code> stopped, <code>tell_switch</code>"
+    },
+    {
+     "n": "2",
+     "lane": "coord",
+     "short": "Start",
+     "text": "Start: \"Started by you: every engine looks to its own triggers.\"",
+     "function": "Coordination, Identity",
+     "code": "<code>/{ref}/resume</code>"
+    },
+    {
+     "n": "3",
+     "lane": "coord",
+     "short": "update: bundle new",
+     "text": "An update replaces the bundle (code, definitions, shipped templates, screens) and keeps the records home (departments, boards, runs, versions, served sites, born templates).",
+     "function": "&#8212;",
+     "code": "<code>home</code>, <code>user_templates_dir</code>"
+    },
+    {
+     "n": "4",
+     "lane": "coord",
+     "short": "definitions re-read",
+     "text": "The definitions are read again with the born templates merged in; a record's engines list is read as it is.",
+     "function": "&#8212;",
+     "code": "<code>engine_templates</code>, <code>defs</code>"
+    },
+    {
+     "n": "5",
+     "lane": "root",
+     "short": "end: retire, no door",
+     "text": "An end: Root's goal says it ends this organisation's departments. Designed as Root's end verb (<a href=\"../platform/model/root-lifecycle.html\">Root and the organisation</a>: you or the parent asks, Root ends it and keeps its record); the record's retire verb is built: it re-homes children, rules and filed work onto a successor, refuses while anything would be stranded, writes a recovery manifest, and unretire reverses it (<a href=\"../platform/model/lifecycle.html\">the life cycle</a> s12, <a href=\"../platform/model/eight-states.html\">state 8</a>). No ask and no door on the screen.",
+     "function": "Root (designed), the record (built)",
+     "code": "retire / unretire on the record; no step of Root's Setup"
+    }
+   ],
+   "edges": [
+    {
+     "id": "J7.1",
+     "at": "4",
+     "short": "An engine on a record",
+     "edge": "An engine on a record that the new bundle does not define.",
+     "code_does": "Missing: card, health line, no trigger; the rest runs.",
+     "mark": ""
+    },
+    {
+     "id": "J7.2",
+     "at": "4",
+     "short": "A department born before records",
+     "edge": "A department born before records carried engines.",
+     "code_does": "Takes the kind's line (<code>engines_of</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J7.3",
+     "at": "4",
+     "short": "A record whose runtime is",
+     "edge": "A record whose runtime is not 2.",
+     "code_does": "Keeps the first build's four engines and five artifacts.",
+     "mark": ""
+    },
+    {
+     "id": "J7.4",
+     "at": "3",
+     "short": "Stable and Beta apps",
+     "edge": "Stable and Beta apps.",
+     "code_does": "Separate homes and ports; a record is never shared.",
+     "mark": ""
+    },
+    {
+     "id": "J7.5",
+     "at": "1",
+     "short": "Stop while an ask is",
+     "edge": "Stop while an ask is pending.",
+     "code_does": "The ask stays; nothing runs until Start (<code>next_due</code>).",
+     "mark": ""
+    },
+    {
+     "id": "J7.6",
+     "at": "5",
+     "short": "end: no door yet",
+     "edge": "Ending a department.",
+     "code_does": "Built in the record (retire / unretire), no door on the screen; DIRECTED this morning: Root ends a department when asked. The missing door is the parked org.retire build, under Root's end verb.",
+     "mark": ""
+    }
+   ]
+  }
+ ],
+ "rulings": [
+  {
+   "id": "S-01",
+   "level": "L1",
+   "words": "The first MVP is one kind, all the way: the website department, the five functions dynamic, Adaptation shaping engines from asks.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-02",
+   "level": "L1",
+   "words": "The label: we sell an operating system for an organisation; the platform for self-running departments is its first subproduct; the website department the first use (flipped from B to A on review).",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "the lead of this page and root-lifecycle.html centre on the department; wording to follow",
+   "mark": ""
+  },
+  {
+   "id": "S-03",
+   "level": "L3",
+   "words": "The crystallization spectrum (person, AI, code): PARKED; scaffolding only, every step keeps its born rung field.",
+   "status": "parked",
+   "date": "2026-09-30",
+   "contradiction": "J2 step 11 and edge J2.12 describe the ladder; they stay as built facts, not design",
+   "mark": ""
+  },
+  {
+   "id": "S-04",
+   "level": "L3",
+   "words": "Escalation E1..E6 as default settings: superseded by S-18.",
+   "status": "open",
+   "date": "2026-09-30",
+   "contradiction": "see S-18",
+   "mark": ""
+  },
+  {
+   "id": "S-05",
+   "level": "L3",
+   "words": "Coordination keeps the table and the tie; Priority prices and holds the budget, never orders.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-06",
+   "level": "L4",
+   "words": "No mandatory engine: Adaptation may drop any engine with a stamp. Refined by S-21: a template may mark an engine as must-have.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "the kind's done words lose their anchor when the last engine is dropped; the done line moves to the department's goal",
+   "mark": ""
+  },
+  {
+   "id": "S-07",
+   "level": "L4",
+   "words": "Adaptation may change the wording inside model steps without an ask; the rest stays behind asks.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-08",
+   "level": "L8",
+   "words": "Approval settings live per department, inherited from Root; a department may only tighten.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-09",
+   "level": "L3",
+   "words": "As simple a product as possible; AI-first; code later.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "rides on the parked spectrum for the 'code later' half",
+   "mark": ""
+  },
+  {
+   "id": "S-10",
+   "level": "L2",
+   "words": "Root creates the department and the five functions and hands over; Root never creates engines; engines come from Adaptation.",
+   "status": "ruled",
+   "date": "2026-09-29",
+   "contradiction": "D-b on this page (Root starts the engines) differs: Brief v1 is the start",
+   "mark": ""
+  },
+  {
+   "id": "S-11",
+   "level": "L2",
+   "words": "Workflow and engine as in the Native documentation: a workflow with multiple runs is an engine.",
+   "status": "ruled",
+   "date": "2026-09-29",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-12",
+   "level": "L8",
+   "words": "Born engine templates stay local; shipping to the Library is roadmap.",
+   "status": "ruled",
+   "date": "2026-09-29",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-13",
+   "level": "L8",
+   "words": "Adaptation's permission layer is for the future; flexible for the proof of concept (tags now, gate later).",
+   "status": "ruled",
+   "date": "2026-09-29",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-14",
+   "level": "L8",
+   "words": "Who may add a template: only the Library today; others later.",
+   "status": "open",
+   "date": "2026-09-29",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-15",
+   "level": "L4",
+   "words": "The 12-part cut of a function: marks owed.",
+   "status": "open",
+   "date": "2026-09-29",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-16",
+   "level": "L7",
+   "words": "What proves the MVP: open.",
+   "status": "open",
+   "date": "2026-09-30",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-17",
+   "level": "L3",
+   "words": "The confidence threshold: parked with S-03.",
+   "status": "parked",
+   "date": "2026-09-30",
+   "contradiction": "",
+   "mark": ""
+  },
+  {
+   "id": "S-18",
+   "level": "L3",
+   "words": "Authority: the AI has the whole authority to make things happen unless a person says something; no ask stops a run by default; a person narrows with a rule, a Stop, a refusal.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "strains 'every write is an ask' and the two built gates (the setup stamp, J1 step 5 today; the first publish stamp, J2 steps 6-7); open: whether the born rule 'ask before the first publish' counts as a person having spoken",
+   "mark": ""
+  },
+  {
+   "id": "S-19",
+   "level": "L4",
+   "words": "A kind may offer engines; at birth Adaptation shapes the line from the offer, the Library, or on the fly; one stamp births the line (S-18 makes it none); more kinds later.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "the website kind's four engines become candidates; the code has two birth paths and S-19 asks for one",
+   "mark": ""
+  },
+  {
+   "id": "S-20",
+   "level": "L1",
+   "words": "Birth as a conversation: after the name, Sutra (Root, shown as Sutra) asks what I want to create, and creates the first department itself; no 'set up a department?' ask.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "J1 steps 3-5 as built (the setup ask and stamp) are replaced; the Root page's five questions, designed, become the pool Sutra asks from",
+   "mark": ""
+  },
+  {
+   "id": "S-21",
+   "level": "L4",
+   "words": "A template may bring default engines; the department's Adaptation overlays what it needs, unless the template says explicitly that an engine has to be there.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "refines S-06: 'no mandatory' now means 'none unless the template says so'; needs a required flag per offered engine (J1 build row B3)",
+   "mark": ""
+  },
+  {
+   "id": "S-22",
+   "level": "L3",
+   "words": "At the start, the inside of every box is AI only; nothing deterministic lives in an inside; a box climbs the ladder to code as its rows earn it.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "my cut of 2026-09-29 had system parts born as code inside a function; under S-22 they are the covering, not insides; rows 4.x of the big page and the 12-part cut (S-15) re-read that way",
+   "mark": ""
+  },
+  {
+   "id": "S-23",
+   "level": "L4",
+   "words": "The box: every engine and function is a black box with a covering of code (input typed, the check, the row, the trigger, the gates) and an inside of AI; the same shape at two levels, engine and step; C1 (checklist) folds into F (a prompt is a prompt); the ladder is F to A to C. Recorded on the engine runtime page, section 3a.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "S-03 (crystallization parked) is unparked as this component; engines.html section 3 keeps four rungs while the box names three insides plus the person outside",
+   "mark": ""
+  },
+  {
+   "id": "S-24",
+   "level": "L4",
+   "words": "The birth questions are not code: the Setup workflow's converse step carries an instruction, ask until you can confidently create; the five on the Root page are examples inside it; a template may bring its own wording.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "the Root page's rule 'at most five questions, each skippable' and its ask card are superseded (marked on the page); J1 step 3 rewritten",
+   "mark": ""
+  },
+  {
+   "id": "S-29",
+   "level": "L2",
+   "words": "J2 is the five functions working toward the identity's goal, designed on the recorded thesis: Adaptation and Priority work with each other; a conflict is closed by Identity, and what Identity cannot settle comes to me. Keep it simple; evolve later.",
+   "status": "ruled",
+   "date": "2026-09-30",
+   "contradiction": "today the bargain's limit ends in refuse with nothing going up; the line of the organic kind is born on one stamp without pricing",
+   "mark": ""
+  },
+  {
+   "id": "S-30",
+   "level": "L4",
+   "words": "Verification as a product (founder, 2026-10-01, verbatim kept): “A goal is an outcome which we want... a goal is creating a reality, right? Something in reality you're trying to create... That reality should be articulated enough so that an LLM can test it against it. It has to be articulated from various angles from an LLM point of view, and that verification engine is very important here.” “There are various levels of abstraction in terms of a goal, so we need to have various levels of abstraction coded up. Depending on the level of abstraction, we need to have a standardized template which we think really works in verification level.” “I think this is verification logic as a whole product... one of those products of the root, which is like a template.” “That kind of verification is used by audit as well at a workflow level. It is also used at a work item level.” “When we break down the task into various dimensions, the verification for each dimension is created. At the end of it... one verification should work, which includes all kinds of verification from a design point of view, a product point of view, and a strategy point of view. Otherwise, we need to have a rework there.” “There are three components of the workflows. Those three components need to speak to each other as well to align to a common thing. There is also an open problem statement... Linear is one way, but I don't want to solve by the way because that doesn't work.” “Don't miss out on anything.” STRUCTURE (Claude, for the founder's marks): (1) four levels of a goal: direction (no number; frames), target (a metric, a number, a date, a source; verified by a reading from a measuring workflow), outcome (an artifact meeting a specification written from several angles; one check per angle plus one combined judgement), atom (one step's output and its own check); only outcome and atom end a workflow. (2) the angles for a website: product, design, tech, content, strategy (content added by Claude; the founder named design, product, tech, strategy). (3) the components of one verification: subject, claim, evidence, method (code, LLM, person), verdict, severity. (4) the verification engine is a workflow of its own: input the artifact and its specification, output a verdict artifact, run by Audit at workflow level and at atom level. (5) specification standards: per outcome kind, published standards are the starting template (placeholder until named). (6) the three components of a workflow: goal as specification, work as atoms, verification; aligned by a trace (every verify line to a specification line; every atom's output to a verify line); Claude's reading, to confirm. (7) the open problem statement: a goal whose reality cannot yet be written; a probing workflow comes first and its output is the specification (the how ladder: find, derive, synthesise). (8) the ways: verification first; by dimension then integrate; iterate (bounded rework); probe; linear only when the how is known. For a website in v1: verification first, by dimension, iterate. (9) where it sits: the templates are Root's standards; Adaptation's Make reads them first; Audit runs them; Identity's done-when is written at the target level; the compass guides how, the templates say what counts as done.",
+   "status": "ruled; marks owed on the four levels, the five angles, the v1 way and the three components",
+   "date": "2026-10-01",
+   "contradiction": "the website kind's Check today verifies only stamped rules and pages_have_html; Audit judges facts only; no specification template exists per outcome kind; Root holds no verification template; the first-publish check is 'has_index_html'",
+   "mark": ""
+  },
+  {
+   "id": "S-31",
+   "level": "L4",
+   "words": "The PRD's structure (founder, 2026-10-01, verbatim): “The six families don't make sense right now, so let's use what we can use from that, and let's create the structure. Let's go with the structure which we have created.” Earlier the same day: “These four structures are not connecting with each other. They are not part of some structure which I chose.” “Maybe we don't need to grow into that many axes, which are not required, but as and when we have a new idea, can we make sure that we modify the current axes?” RULED: one structure, a system of the same shape at every level; three faces (PARTS what it is made of, LIFE what it does over time, MEETINGS how a person meets it); six levels (organisation, department, function, engine, workflow, atom); every idea gets a card (THIS IS, ONE OF level x face, WORK ON, BECAUSE) and one cell; the kind is found, not picked; the axes change only when an idea needs it. The six families stay the compass a department holds (Adaptation's how methodology), not the faces. Page: platform/structure.html.",
+   "status": "ruled",
+   "date": "2026-10-01",
+   "contradiction": "the sidebar and the function pages' renderer still carry older words (objects, templates); the older-word pages (the model, type system, builders, bootstrap, what comes first) keep their cells until folded; nothing in the code knows the structure",
+   "mark": ""
+  }
+ ]
+}

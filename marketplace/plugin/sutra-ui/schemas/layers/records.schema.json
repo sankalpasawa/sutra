@@ -176,14 +176,278 @@
     },
     "adaptation.idea": {
       "additionalProperties": true,
-      "properties": {},
-      "required": [],
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "engine": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "priced": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reflected": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "shapes": {
+          "items": {
+            "maxLength": 2000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 3,
+          "minItems": 0,
+          "type": "array"
+        },
+        "state": {
+          "enum": [
+            "parked",
+            "built"
+          ]
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "words": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "reflected",
+        "shapes",
+        "state",
+        "at"
+      ],
       "type": "object"
     },
     "adaptation.ladder": {
       "additionalProperties": true,
-      "properties": {},
-      "required": [],
+      "properties": {
+        "engine": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "form": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "held": {
+          "type": "boolean"
+        },
+        "history": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "by": {
+                "maxLength": 400,
+                "minLength": 0,
+                "type": "string"
+              },
+              "evidence": {},
+              "from": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "P",
+                      "C0",
+                      "C1",
+                      "C2"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "to": {
+                "enum": [
+                  "P",
+                  "C0",
+                  "C1",
+                  "C2"
+                ]
+              }
+            },
+            "required": [
+              "to",
+              "by"
+            ],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "pending": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rung": {
+          "enum": [
+            "P",
+            "C0",
+            "C1",
+            "C2"
+          ]
+        },
+        "since": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "since_row": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "step": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "trial": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "agree": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "form": {
+                  "anyOf": [
+                    {
+                      "maxLength": 40,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "norule": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "rung": {
+                  "enum": [
+                    "P",
+                    "C0",
+                    "C1",
+                    "C2"
+                  ]
+                },
+                "runs": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "started": {
+                  "maxLength": 40,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "state": {
+                  "enum": [
+                    "running",
+                    "done"
+                  ]
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "engine",
+        "step",
+        "rung",
+        "held",
+        "history"
+      ],
       "type": "object"
     },
     "adaptation.round": {
@@ -1540,6 +1804,55 @@
               "type": "null"
             }
           ]
+        },
+        "doubt": {
+          "additionalProperties": true,
+          "properties": {
+            "answered": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "doubt": {
+              "maxLength": 600,
+              "minLength": 0,
+              "type": "string"
+            },
+            "engine": {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            "fallback": {
+              "maxLength": 600,
+              "minLength": 0,
+              "type": "string"
+            },
+            "line": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "shown": {
+              "maxLength": 600,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
         },
         "engine": {
           "anyOf": [

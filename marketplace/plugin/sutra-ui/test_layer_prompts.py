@@ -63,7 +63,9 @@ def split_of(layer, *groups):
 
 
 def all_parts():
-    return [(layer, group, part) for layer in S.FUNCTION_LAYERS for group, parts in S.PROMPTS[layer].items() for part in parts]
+    """The parts the .md bundle holds: the interface's, less the parts later steps added (S.ADDED_PARTS)."""
+    return [(layer, group, part) for layer in S.FUNCTION_LAYERS for group, parts in S.PROMPTS[layer].items() for part in parts
+            if (layer, group, part) not in S.ADDED_PARTS]
 
 
 GATE = ("identity", "take", "gate")
@@ -161,13 +163,14 @@ def test_c3_the_goal_of_a_function_is_what_its_definition_says_and_a_work_engine
 
 def test_c3_instructions_are_the_interfaces_parts_with_the_inputs_code_fills(runtime):
     R = runtime
-    assert {fn: {g: list(parts) for g, parts in files.items()} for fn, files in R.INSTRUCTIONS.items()} == {
+    assert {fn: {g: [p for p in parts if (fn, g, p) not in S.ADDED_PARTS] for g, parts in files.items()}
+            for fn, files in R.INSTRUCTIONS.items()} == {
         "identity": {"goal": ["does", "skills", "close"], "completeness": ["thin", "enough"],
                      "take": ["recognise", "take", "answer", "rule", "weigh", "gate"]},
         "adaptation": {"goal": ["does", "skills"], "sense": ["shape"], "decide": [], "make": ["line", "refused"]},
         "priority": {"goal": ["does", "skills"], "bargain": ["line", "engine", "cost"]},
         "coordination": {"goal": ["does", "skills"], "tie": ["tie"]},
-        "audit": {"goal": ["does", "skills"], "judge": ["judge"]}}
+        "audit": {"goal": ["does", "skills"], "judge": ["judge", "items"]}}
     assert R.INSTRUCTIONS["identity"]["completeness"]["enough"] == ("words", "asked", "goal", "items", "rules", "owner", "budget", "confirm")
     for layer, group, part in all_parts():
         if layer == "adaptation" and group == "decide":
@@ -212,6 +215,7 @@ def test_c3_faults_name_what_keeps_a_typed_part_from_serving(runtime, monkeypatc
 
 
 def test_c3_a_file_every_part_of_which_is_typed_needs_no_bundle_file(runtime, monkeypatch, tmp_path):
+    holding(monkeypatch, "audit", {}, {})                     # as a layer that holds no words yet: the layer's real words are not the test's
     words, layout = split_of("audit", "judge")
     bundle = tmp_path / "bundle"
     shutil.copytree(runtime.PROMPTS_DIR, bundle)
@@ -222,6 +226,42 @@ def test_c3_a_file_every_part_of_which_is_typed_needs_no_bundle_file(runtime, mo
     assert P.faults() == [], "the words are the module's now"
     (bundle / "audit" / "goal.md").unlink()
     assert P.faults() == ["Audit's goal instructions are missing from the bundle"], "a file with a part still on the fallback is needed"
+
+
+#: a part of a layer that holds its words (Identity's, Coordination's and Priority's), and the file the owner changes whole
+HELD = [("identity", "take", "take"), ("coordination", "tie", "tie"), ("priority", "bargain", "line")]
+
+
+@pytest.mark.parametrize("layer,group,part", HELD)
+def test_c3_a_file_the_owner_changed_whole_is_no_run_s_words_the_typed_values_took_it_over(runtime, layer, group, part):
+    """M2.2 read a department's own copy of a file in the words' place; W1-CORE K2's typed values took that over (A1-7): a
+    whole-file copy is kept as the owner's note and no run reads it, so the layer's words (and any typed value laid over
+    them) are what a prompt is made of, in that department and in every other."""
+    import website_dept as W
+    ref, other = "dref-ownscopy0001", "dref-ownscopy0002"
+    for r in (ref, other):
+        W.create(r, "Own Copy " + r[-1] + " Website", None)
+    module = layers.load(S.DEFAULT_PINS[layer])
+    inputs = {n: "<%s>" % n for n in S.PROMPTS[layer][group][part]["inputs"]}
+    shipped = P.prompt(ref, layer, group, part, **inputs)
+    assert P._module(ref, layer, group, part) is module and P.words(ref, layer, group, part) == module.WORDS[group][part]
+    mine_part = "The owner's own words.\n" + P.file_parts(layer, group)[part]
+    mine = P.instruction(layer, group).replace(P.file_parts(layer, group)[part], mine_part, 1)
+    path = P.own(ref, layer, group)
+    path.parent.mkdir(parents=True)
+    path.write_text(mine, encoding="utf-8")
+    assert P._module(ref, layer, group, part) is module, "the copy is not read in the words' place"
+    assert P.prompt(ref, layer, group, part, **inputs) == shipped and layers.prompt(ref, layer, group, part, **inputs) == shipped
+    assert P.words(ref, layer, group, part) == module.WORDS[group][part]
+    assert "The owner's own words." not in " ".join(str(v) for v in P.words(ref, layer, group, part).values())
+    assert P.prompt(other, layer, group, part, **inputs) == shipped
+    assert P.own_files(ref, layer) == [group] and P.own_files(other, layer) == [], "it is the department's own note, and only theirs"
+
+
+def test_c3_a_ref_that_is_no_department_is_served_the_words_all_the_same(runtime):
+    inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"]["take"]["gate"]["inputs"]}
+    assert P.prompt("../not-a-ref", "identity", "take", "gate", **inputs) == P.prompt(None, "identity", "take", "gate", **inputs)
+    assert P.own_files("../not-a-ref", "identity") == [] and P.owner_values("../not-a-ref", "identity", "take", "gate") == {}
 
 
 # ---- C4 · the extractor and the split proof -----------------------------------------------------------------------------
@@ -326,6 +366,8 @@ def test_c4_compiled_from_its_extracted_words_every_part_is_the_md_part_byte_for
         assert bad == [], bad
         for group, parts in S.PROMPTS[layer].items():
             for part, spec in parts.items():
+                if (layer, group, part) in S.ADDED_PARTS:
+                    continue                                   # an added part has no .md part to be the same as
                 md = P.md_part(layer, group, part)
                 sample = {n: "<<%s>>" % n for n in spec["inputs"]}
                 got = P.compile_layout(layout[group][part], words[group][part], spec["returns"], sample, P.who(layer, group, part))
@@ -333,7 +375,7 @@ def test_c4_compiled_from_its_extracted_words_every_part_is_the_md_part_byte_for
                 assert spec["returns"] is None or spec["returns"] in md, "returns is the part's own, byte for byte"
                 assert set(words[group][part]) == set(spec["fields"]), (layer, group, part)
                 seen += 1
-    assert seen == len(all_parts()) == 28
+    assert seen == len(all_parts()) == 29
 
 
 def test_c4_the_extracted_words_pass_the_interface_and_the_layouts_serve(runtime):
@@ -434,6 +476,10 @@ def _stub(layer, words, layout, tmp_path):
 
 def test_c5_case_5_compiles_each_part_with_sample_inputs(tmp_path):
     words, layout, _ = P.extract("priority")
+    real = layers.load(S.DEFAULT_PINS["priority"])
+    for _layer, group, part in (a for a in S.ADDED_PARTS if a[0] == "priority"):
+        # an added part has no .md part to extract: the version's own words, which no part of Priority may be without
+        words.setdefault(group, {})[part], layout.setdefault(group, {})[part] = real.WORDS[group][part], real.LAYOUT[group][part]
     assert C.case_5(_stub("priority", words, layout, tmp_path)) == [], "the extracted words serve"
 
     def broken(edit):

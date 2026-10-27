@@ -1093,7 +1093,7 @@ def test_m17_every_ask_says_its_answers_in_the_words_of_its_buttons(mods, born, 
     W.run_until_idle(ref, limit=300)
     out = next(a for a in W.asks(ref) if a["kind"] == "request" and a["status"] == "pending")
     assert "Stamp to go ahead, or say no to leave them out." in out["text"] and out["text"].endswith("Email the new site to every patient")
-    ins = R.instructions_ask(ref, "audit", "goal", R._instruction("audit", "goal", ref) + "\nRead every page twice.\n")
+    ins = R.instructions_ask(ref, "audit", "goal", "skills", "items", list(R.layers.words(ref, "audit", "goal", "skills")["items"]) + ["read every page twice"])
     asked = next(p for p in R.board(ref) if p["thread"] == ins["thread"])
     assert asked["payload"]["objective"].endswith("Stamp to use them from the next run, or say no to keep them as they are.")
     for v in [F.functions(ref), F.function(ref, "identity")]:

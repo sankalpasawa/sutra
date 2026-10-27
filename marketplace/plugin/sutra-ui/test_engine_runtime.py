@@ -158,6 +158,10 @@ class Model:
             return {"ruling": "ask", "why": "the goal and the rules do not settle it"}, 0.01, "model"
         if sid == "audit.judge":
             return {"ok": not self.findings, "findings": list(self.findings)}, 0.02, "model"
+        if sid == "audit.items":                          # Audit's reader of the done-when items (M8.3): each one met, with evidence
+            items = json.loads(prompt.split("THE DONE-WHEN ITEMS:\n", 1)[1].split("\n\nWHAT CODE MEASURED:", 1)[0])
+            return {"items": [{"id": i["id"], "verdict": "met", "claim": "it holds", "evidence": "the work shows it"} for i in items],
+                    "findings": []}, 0.02, "model"
         if sid == "check.rules":
             return {"broken": [dict(b) for b in self.broken]}, 0.02, "model"
         raise AssertionError("the model was asked for a step no test expects: " + sid)
@@ -311,7 +315,7 @@ class TestOneSkeleton(Base):
 
     def test_05_a_step_on_the_code_rung_makes_no_model_call(self):
         self.live()
-        soft = {"identity.take", "plan.pages", "write.page", "audit.judge", "coord.tie"}
+        soft = {"identity.take", "plan.pages", "write.page", "audit.items", "audit.judge", "coord.tie"}
         self.assertEqual(set(self.M.calls), soft)
         for r in self.rows():
             if r["rung"] == "C2":
@@ -517,7 +521,7 @@ class TestTheLadder(Base):
     def harden(self):
         """Six asks of one kind, by a strict step: a trial by checklist that Priority grants, a move the owner stamps."""
         self.numbers(runs=3, differing=0, trial=2, misses=2)
-        for other in ("plan.pages", "write.page", "audit.judge", "priority.bargain", "identity.recognise", "coord.tie"):
+        for other in ("plan.pages", "write.page", "audit.items", "audit.judge", "priority.bargain", "identity.recognise", "coord.tie"):
             self.R.hold(REF, other)                     # one step is watched; the owner holds the others where they are
         self.live()
         for i in range(12):
@@ -652,6 +656,59 @@ class TestTheGates(Base):
         self.idle()
         self.assertEqual(W.versions(REF, "Live site"), [], "refused by the owner: never published")
         self.assertEqual([r["what"] for r in W.runs(REF) if r["status"] == "skipped"], ["refused by the owner"])
+
+    def records(self):
+        """Every file of the records home and the hash of its bytes."""
+        import hashlib
+        out = {}
+        for root, _dirs, files in os.walk(self.home):
+            for f in files:
+                p = os.path.join(root, f)
+                with open(p, "rb") as fh:
+                    out[os.path.relpath(p, self.home)] = hashlib.sha256(fh.read()).hexdigest()
+        return out
+
+    def test_28a_a_panel_read_between_the_slot_that_files_build_and_the_next_tick_does_not_ask_for_the_publish_stamp(self):
+        """A read writes nothing. After the slot that files Build and before the motor's next tick nothing has asked the owner
+        to publish yet, and the panel (status, the map, what is due next) reads the department in that window as a peek. It
+        said the same words as the tick does ('waits for the stamp') but filed the ask, the post to the owner, the ledger
+        event and the step row as well. The tick files them, once, and the reads after it still write nothing."""
+        R, W = self.R, self.W
+        W.give_goal(REF, GOAL)
+        while not W.versions(REF, "Build"):
+            self.assertEqual(W.run_until_idle(REF, limit=1), 1, "the line files Build")
+        self.assertEqual([a for a in W.asks(REF) if a["kind"] == "publish"], [], "the window: Build is filed and nobody has asked yet")
+        before = self.records()
+        self.assertEqual(R.next_due(REF, peek=True), (None, None, "waits for the stamp"), "a peek says what the tick will")
+        W.status(REF)
+        W.map_view(REF)
+        self.assertEqual({k for k in set(before) | set(self.records()) if before.get(k) != self.records().get(k)}, set(), "the reads wrote")
+        self.assertEqual([a for a in W.asks(REF) if a["kind"] == "publish"], [])
+        self.assertEqual(W.due(REF), (None, None, "waits for the stamp"), "the motor's own tick asks")
+        asks = [a for a in W.asks(REF) if a["kind"] == "publish"]
+        self.assertEqual([(a["status"], a["slot"]) for a in asks], [("pending", "Publish@build.v1")], "once")
+        after = self.records()
+        W.status(REF)
+        W.map_view(REF)
+        self.assertEqual(self.records(), after, "and the reads after it write nothing")
+        self.assertEqual(len([a for a in W.asks(REF) if a["kind"] == "publish"]), 1)
+
+    def test_28b_a_panel_read_of_a_line_out_of_its_envelope_does_not_file_the_ask_for_more(self):
+        """The same rule for Priority's envelope: the ask that says an engine is out of today's envelope is the tick's to file,
+        and a panel read, which peeks, files none (a hold on the ledger was already the tick's alone)."""
+        R, W = self.R, self.W
+        W.set_envelope(REF, "Plan", calls=0)
+        W.give_goal(REF, GOAL)
+        while not W.versions(REF, "Brief"):
+            self.assertEqual(W.run_until_idle(REF, limit=1), 1, "the goal is taken and the Brief filed")
+        self.assertEqual([a for a in W.asks(REF) if a["kind"] == "envelope"], [], "the window: Plan is due and no tick has asked yet")
+        before = self.records()
+        for _ in range(3):
+            R.next_due(REF, peek=True)
+            W.status(REF)
+        self.assertEqual({k for k in set(before) | set(self.records()) if before.get(k) != self.records().get(k)}, set(), "the reads wrote")
+        W.run_until_idle(REF, limit=1)
+        self.assertEqual([(a["status"], a["escalated"]) for a in W.asks(REF) if a["kind"] == "envelope"], [("pending", True)], "the tick asks, once")
 
 
 class TestAuditAndAlarm(Base):

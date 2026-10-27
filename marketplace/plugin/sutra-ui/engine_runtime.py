@@ -617,6 +617,7 @@ def rung_of(ref, step):
 
 
 def _save_entry(ref, e):
+    layer_schema.check_record("adaptation", "ladder", e, ref=ref)      # the entry as the interface types it, before it is written (A1.20)
     with W._lock(ref):
         L = ladder(ref)
         L[e["step"]] = e
@@ -841,7 +842,9 @@ PLAIN_FAULTS = (("a function addressing another",
                  re.compile(r"^\s*(?:Adaptation|Priority|Coordination|Audit)\s*[,:]|\b(?:dear|hey|hi|hello)\s+(?:Adaptation|Priority|Coordination|Audit)\b|"
                             r"@(?:Adaptation|Priority|Coordination|Audit)\b", re.I)),
                 ("a J2 code", re.compile(r"\bJ[12](?:\.[a-h1-9])?\b|\b(?:FI|FA|FP|FC|FAU)\d+(?:\.\d+)?\b|\b(?:S|SM|MK|Q)-\d+\b")),
-                ("grant or counter", re.compile(r"\bgrant(?:s|ed|ing)?\b|\bcounter(?:s|ed|ing)?\b|\bcounter-?offers?\b", re.I)))
+                ("grant or counter", re.compile(r"\bgrant(?:s|ed|ing)?\b|\bcounter(?:s|ed|ing)?\b|\bcounter-?offers?\b", re.I)),
+                # a note that names the standard a fault breaks by its id ('reads_known: ...'): owner_words.plain says the fault alone
+                ("a standard's id", owner_words.standard_lead()))
 PLAIN_KEYS = ("done", "objective", "answer", "why")
 PLAIN_TEMPLATE = {"answer": "I could not put that in plain words. Ask me again, in other words.",
                   "question": "What should I know before the department starts?",
@@ -1090,13 +1093,44 @@ def next_due(ref, peek=False):
 # One rule for all nine, the five internal systems and the four work engines alike. An engine's definition names its
 # start: `on`, the triggers that make it want to run, and `unless`, the blockers that hold it. `ready` is the one piece
 # of code that reads a start. No engine has a start of its own in code, so none can differ.
+#: a version trigger that reads the department's own deliverable, whatever its kind (PRD M8.2): the last output of its
+#: registered plan, which the interface says (S.deliverable)
+DELIVERABLE = "$deliverable"
+
+
+def trigger_art(d, trig):
+    """The artifact a version trigger reads: its `of`, or for '$deliverable' the department's own, the last output of its
+    registered plan (the interface's S.deliverable); None when the department has none yet. Root has none to read: what
+    Setup files is a department made, not a deliverable a goal closes on, and Audit never read it (the scenarios of the
+    kinds that have a goal are as they were)."""
+    if (trig or {}).get("of") != DELIVERABLE:
+        return (trig or {}).get("of")
+    if (d or {}).get("kind") == "root":
+        return None
+    import layer_schema as S
+    return S.deliverable(d)
+
+
+def reads_art(d, e):
+    """The artifact an engine reads: the one its definition names; an engine that names none reads what it starts on, so
+    Audit, whose start is on the department's deliverable, reads the department's own whatever its kind (trigger_art).
+    None when it reads nothing, or has no deliverable yet."""
+    e = e or {}
+    if e.get("reads"):
+        return e["reads"]
+    trig = next((t for t in (e.get("start") or {}).get("on") or [] if t.get("kind") == "version"), None)
+    return trigger_art(d, trig) if trig else None
+
+
 def _on_version(ctx, name, e, trig):
-    """Outside trigger: a version of what it reads that it has not run on yet."""
-    v = W.latest(ctx["ref"], trig["of"], passed=bool(trig.get("checked")))
+    """Outside trigger: a version of what it reads that it has not run on yet. A trigger on the deliverable names the
+    artifact in the input it yields (`art`), so the run reads the one that started it; with no deliverable, nothing starts."""
+    of = trigger_art(ctx.get("dept") or W.dept(ctx["ref"]), trig)
+    v = W.latest(ctx["ref"], of, passed=bool(trig.get("checked"))) if of else None
     if v:
-        slot = W._slot_id(name, trig["of"], v["v"])
+        slot = W._slot_id(name, of, v["v"])
         if slot not in ctx["done"]:
-            yield v, slot
+            yield (dict(v, art=of) if trig.get("of") == DELIVERABLE else v), slot
 
 
 def _on_post(ctx, name, e, trig):
@@ -1434,7 +1468,8 @@ def run_engine(ref, name, inp, slot):
     steps = handler["steps"] if handler else list(e.get("steps") or [])
     prior = [r for r in W.runs(ref) if r.get("slot") == slot and r.get("status") in ("interrupted", "waiting", "asked")]
     system = e["kind"] == "function"
-    what = handler["name"] if handler else "reading %s" % e.get("reads")
+    what = handler["name"] if handler else "reading %s" % (
+        (inp.get("art") if isinstance(inp, dict) else None) or reads_art(d, e) or "the deliverable")
     row = W._put_run(ref, _run_row(name, system, slot, "running", what,
                                    chain=None if system else W._chain_of(ref, e["reads"], inp["v"]),
                                    retries=len([r for r in prior if r["status"] == "interrupted"])))
@@ -1583,13 +1618,17 @@ def run_engine(ref, name, inp, slot):
         if name == "Audit" and row.get("status") == "ok" and not p and isinstance(ctx["bag"].get("audit.file"), dict):
             filed = ctx["bag"]["audit.file"]
             if filed.get("read") is False and not filed.get("filed"):
-                J.not_read(ref, inp.get("v"), filed.get("why_not_read"))      # never 'clean': the cycle stays at step 7
+                J.not_read(ref, inp.get("v"), filed.get("why_not_read"), artifact=filed.get("artifact"))      # never 'clean': the cycle stays at step 7
             else:
-                _j2_audit_read(ref, d, inp.get("v"), filed.get("filed"))
+                _j2_audit_read(ref, d, inp.get("v"), filed.get("filed"), art=filed.get("artifact"), reading=filed.get("reading"))
         elif name == "Audit" and row.get("status") == "failed" and not p and inp.get("v") is not None:
             # a reading whose covering check failed is no reading (M2.4): the version is not read, nothing is cleared,
             # and the cycle stays at step 7; the failed step is Audit's fault on every screen
-            J.not_read(ref, inp.get("v"), "its reading failed its check (%s)" % str(note or "a step failed").rstrip("."))
+            why = "its reading failed its check (%s)" % str(note or "a step failed").rstrip(".")
+            art = inp.get("art") or audit_art({"ref": ref, "dept": d})
+            if art:
+                audit_record(ref, slot, art, int(inp["v"]), False, why, [], [])
+            J.not_read(ref, inp.get("v"), why, artifact=art)
     return row
 
 
@@ -1639,7 +1678,8 @@ def run_step(ctx, step, item):
            "mode": "slot", "slot": ctx["slot"], "impl": _impl(ctx), "asked_rung": asked, "rung": rung, "miss": rung != asked, "by": how,
            "agent": ctx["engine"] if how in ("model", "checklist") else None,
            "applied": [r["id"] for r in ctx["dept"].get("rules") or [] if r.get("id")] if how in ("model", "checklist") else [],
-           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else [{"art": ctx["def"].get("reads"), "v": ctx["inp"]["v"]}],
+           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else
+           [{"art": ctx["inp"].get("art") or reads_art(ctx.get("dept"), ctx["def"]), "v": ctx["inp"]["v"]}],
            "facts": facts, "in_sig": _sha(facts if facts is not None else {"step": step["id"], "item": item, "in": ctx["inp"].get("v")}),
            "usd": round(usd, 4), "calls": calls, "def_version": defs()["def_version"], "started": started}
 
@@ -1689,6 +1729,9 @@ def _fits(out, step):
     if not isinstance(out, dict):
         return "the answer is not an object"
     kinds = {"str": str, "list": list, "dict": dict, "bool": bool}
+    for k, t in (step.get("or") or {}).items():
+        if k in out:                  # an answer that is one of the alternatives the step names needs none of its `out` (cannot)
+            return None if t not in kinds or isinstance(out[k], kinds[t]) else "%s is not a %s" % (k, t)
     for k, t in (step.get("out") or {}).items():
         if k not in out:
             return "the answer has no %s" % k
@@ -1899,9 +1942,23 @@ def check_rules_of(ctx, step, item):
 SEND_BACK = "Correct this: the rule is broken"
 
 
+def _broken_rule(d, broken):
+    """The owner's own rule (stamped, so its id begins u-) that a build breaks, by its line; with one rule of the owner's and no
+    line that matches, that one; None when none is to be found."""
+    mine = [r for r in d.get("rules") or [] if str(r.get("id") or "").startswith("u-") and r.get("line")]
+    for b in broken:
+        want = " ".join(str(b.get("rule") or "").lower().split())
+        hit = next((r for r in mine if " ".join(str(r["line"]).lower().split()) == want), None)
+        if hit:
+            return hit
+    return mine[0] if len(mine) == 1 else None
+
+
 def _send_back(ref, d, art, v, broken):
     """A build that breaks a stamped rule goes back to the line with the finding, twice at most, and the person is told
-    each time (finding 12: two versions broke a stamped rule and nothing said so)."""
+    each time (finding 12: two versions broke a stamped rule and nothing said so). When two rewrites did not mend it, the
+    person is told so and given the ways out as one ask, never left with a tell only (PRD M9.5, J2.7): say the rule another
+    way, leave it out, or stop."""
     try:
         lines = ["'%s' on %s" % (b.get("rule"), ", ".join(b.get("pages") or [])) for b in broken]
         cur = W.latest(ref, "Brief")
@@ -1910,6 +1967,14 @@ def _send_back(ref, d, art, v, broken):
         if tries >= 2:
             _tell(ref, d, src, "inform", {"word": "broken", "done": "%s v%d breaks your rule %s, and two rewrites did not mend it. Say the rule another way, or drop it."
                                           % (art, v, "; ".join(lines))})
+            rule = _broken_rule(d, broken)
+            ways = [W.option(W.WORDS_OPTION, "Say the rule another way", "your words go to Identity; the line builds again once the rule is stamped")]
+            if rule:
+                ways.append(W.option("leave:" + rule["id"], "Leave this rule out",
+                                     "the rule is dropped (%s); the line builds again without it" % str(rule["line"]).rstrip(".")))
+            ways.append(W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later"))
+            _blocked(ref, d, src, "Nothing goes live while your rule %s is broken. Choose how to go on." % "; ".join(lines),
+                     "Your rule is still broken.", "Check, holding the build to your rule", "; ".join(lines), options=ways)
             return
         _file_words(ref, d, "%s %s" % (SEND_BACK, "; ".join(lines)), "the check's finding")
         _tell(ref, d, src, "inform", {"word": "broken", "done": "%s v%d breaks your rule %s. Sent back to be rewritten." % (art, v, "; ".join(lines))})
@@ -2056,6 +2121,8 @@ def identity_gate(ctx, step, item):
     with W._lock(ref):
         a = next((x for x in W.asks(ref) if x.get("slot") == slot and x.get("kind") == kind), None)
         if a is None:
+            if ctx.get("peek"):
+                return "wait", "waits for the stamp"       # a panel read asking: it says what the tick will, and the tick files the ask
             p = post(ref, "Identity", OWNER, "request",
                      {"word": kind, "objective": objective, "output": "a stamp or a refusal", "may_read": may_read,
                       "boundaries": "this one %s" % kind}, about=about)
@@ -2120,7 +2187,7 @@ def priority_envelope(ctx, step, item):
     calls, usd = W._today_spend(ref, name)
     env = W.limit_of(ctx["dept"], name)
     if calls >= env.get("calls", 0) or usd >= env.get("usd", 0):
-        if not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
+        if not ctx.get("peek") and not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
             W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "envelope", "engine": name, "slot": slot,
                              "text": "%s is out of today's envelope" % name, "status": "pending", "created": W.now(), "escalated": True})
         if not ctx.get("peek"):
@@ -2256,15 +2323,24 @@ def identity_read(ctx, step, item):
                       "cue": cue if rule else ("task" if first else cue), "names_work": bool(about)}}
 
 
-def _file_brief(ref, d, words, note):
+def _file_brief(ref, d, words, note, rnd=None):
+    """The owner's words, or a correction, as the Brief's next version. `rnd` is the correction round the words are (PRD M9.3):
+    the version says which round and cycle it answers, and a round already filed in the cycle is that version again, so a
+    handler that runs twice files the round once."""
     cur = W.latest(ref, "Brief")
+    J = _j2()
+    mark = {"ask": words, "at": W.now()}
+    if rnd is not None:
+        mark.update({"round": rnd, "cycle": (J._state(ref) or {}).get("cycle_id") if J else None})
+        again = next((v for v in W.versions(ref, "Brief") for m in v.get("made_from") or []
+                      if isinstance(m, dict) and (m.get("round"), m.get("cycle"), m.get("ask")) == (rnd, mark["cycle"], words)), None)
+        if again:
+            return again
     if not cur:
-        return W.add_version(ref, "Brief", {"brief.md": "# " + d["name"] + "\n\n" + words + "\n"},
-                             [{"ask": words, "at": W.now()}], "owner", {"ok": True, "notes": [note]})
+        return W.add_version(ref, "Brief", {"brief.md": "# " + d["name"] + "\n\n" + words + "\n"}, [mark], "owner", {"ok": True, "notes": [note]})
     base = W.read_files(ref, "Brief", cur["v"]).get("brief.md", "")
     body = base.rstrip() + ("\n\n## Asked since\n" if "## Asked since" not in base else "\n") + "- " + words + "\n"
-    return W.add_version(ref, "Brief", {"brief.md": body}, [{"art": "Brief", "v": cur["v"]}, {"ask": words, "at": W.now()}],
-                         "owner", {"ok": True, "notes": [note]})
+    return W.add_version(ref, "Brief", {"brief.md": body}, [{"art": "Brief", "v": cur["v"]}, mark], "owner", {"ok": True, "notes": [note]})
 
 
 def _file_words(ref, d, words, note):
@@ -3298,7 +3374,7 @@ def identity_apply(ctx, step, item):
                           "a finding the owner stamped")
         return {"said": "sent a finding back to the line", "filed": row["v"]}
     if a.get("kind") == "instructions":
-        # PRD M2.2: the owner's own words for one of a function's instruction files, used from the next run on
+        # PRD A1.16: the owner's typed value for one field of a function's instructions, used from the next run on
         return _apply_instructions(ref, ctx["dept"], a)
     return {"said": "took the owner's stamp: " + a["text"]}
 
@@ -3421,6 +3497,7 @@ def adapt_park(ctx, step, item):
     ref, pl, got = ctx["ref"], ctx["post"]["payload"], ctx["bag"]["adapt.shape"]
     row = {"id": "i-" + uuid.uuid4().hex[:6], "words": pl.get("words"), "reflected": got["reflected"], "question": got.get("question"),
            "shapes": [str(x) for x in got["shapes"]][:3], "state": "parked", "at": W.now()}
+    layer_schema.check_record("adaptation", "idea", row, ref=ref)      # the idea as the interface types it, before it is written (A1.20)
     with W._lock(ref):
         rows = ideas(ref)
         rows.append(row)
@@ -3595,13 +3672,36 @@ def adapt_heard(ctx, step, item):
     return {"said": "heard the ruling on " + str(pl.get("step")) + (": moved" if pl.get("stamped") else ": left as it is")}
 
 
+def audit_art(ctx):
+    """The artifact Audit reads: the department's deliverable, the last output of its registered plan (PRD M8.1), which is
+    the interface's to say (S.deliverable); None when it has none yet. A run that was started on a version of it reads
+    that artifact, even if a later plan names another."""
+    import layer_schema as S
+    return (ctx.get("inp") or {}).get("art") or S.deliverable(ctx.get("dept") or W.dept(ctx["ref"]))
+
+
+def audit_files(ctx):
+    """The files of the version Audit is reading: the deliverable's, by their path; none when there is no deliverable."""
+    art = audit_art(ctx)
+    return W.read_files(ctx["ref"], art, int(ctx["inp"]["v"])) if art else {}
+
+
+#: the most of a deliverable that is not HTML one reading takes, in characters: its files' text (PRD M8.2)
+READ_MAX = 40000
+
+
+def audit_pages(files):
+    """What Audit reads of a version, by name: its HTML pages; a deliverable with none is read as text, every file."""
+    return sorted(k for k in files if k.endswith(".html")) or sorted(files)
+
+
 def audit_pick(ctx, step, item):
     v = int(ctx["inp"]["v"])
-    files = W.read_files(ctx["ref"], "Live site", v)
+    files = audit_files(ctx)
     # while the department lives its J2 cycle, done-when is read off Audit's reading, so every version is read (M0.3,
     # interim until M8 reads each done-when item); outside a cycle Audit drops in on a sample, as it always has
     sample = _j2_live(ctx["ref"]) or v <= 3 or v % 3 == 0
-    return {"sample": sample, "v": v, "pages": sorted(k for k in files if k.endswith(".html"))}
+    return {"sample": sample, "v": v, "pages": audit_pages(files)}
 
 
 def audit_mechanical(ctx, step, item):
@@ -3613,11 +3713,12 @@ def audit_mechanical(ctx, step, item):
         for v in W.versions(ref, a):
             if not v.get("run") or "check" not in v:
                 notes.append("%s has a version with no run or no check" % a)
-    if not any(c.get("kind") == "ask" for c in W.trace(ref, "Live site", ctx["inp"]["v"])):
-        notes.append("the live site does not trace back to the owner's words")
+    art = audit_art(ctx)
+    if not any(c.get("kind") == "ask" for c in (W.trace(ref, art, ctx["inp"]["v"]) if art else [])):
+        notes.append("the %s does not trace back to the owner's words" % (art or "deliverable").lower())
     # a page that says "to be confirmed" published what nobody knew (found live 2026-09-28: twelve such places on
     # four pages); Audit names each hole, Identity asks the owner for the facts instead of a stamp
-    holes = placeholders(W.read_files(ref, "Live site", ctx["inp"]["v"]))
+    holes = placeholders(audit_files(ctx))
     said = notes + (["the site says it does not know %d thing%s" % (len(holes), "" if len(holes) == 1 else "s")] if holes else [])
     return {"ok": not said, "notes": said or ["every version has its run and its check; the trace reaches the owner's words"],
             "faults": notes, "holes": holes}
@@ -3652,33 +3753,241 @@ def placeholders(files):
 #: how a judge step was answered, when someone actually read the pages: its agent, its checklist, or a person by hand
 READ_BY = ("model", "checklist", "stamped by the owner")
 
+#: a reading's verdicts, the worse the higher: when code and the reader disagree about an item both rows are kept (Q4)
+#: and the worse stands (decision A1-16). Q4 rules that a measured failure stands over the reader's yes; a reader's no,
+#: or its doubt, stands over a measure that only found the record whole, since the measure is not of that item.
+VERDICT_RANK = {"met": 0, "to_confirm": 1, "not_met": 2}
+#: how serious an item's verdict is, the S-30 reading's severity
+ITEM_SEVERITY = {"met": "low", "to_confirm": "medium", "not_met": "high"}
+
+
+def audit_text(files):
+    """What one reading takes of a version, as text: each of its pages or files under its name, HTML with its tags out,
+    at most READ_MAX characters in all (PRD M8.2: a deliverable that is not HTML is read as text)."""
+    out, left = [], READ_MAX
+    for name in audit_pages(files):
+        raw = str(files.get(name, ""))
+        text = " ".join(re.sub(r"<[^>]+>", " ", raw).split()) if name.endswith(".html") else raw.strip()
+        block = "--- %s ---\n%s" % (name, text)
+        out.append(block[:left])
+        left -= len(block) + 2
+        if left <= 0:
+            break
+    return "\n\n".join(out)
+
+
+def p_audit_items(ctx, step, item):
+    ref = ctx["ref"]
+    d = ctx.get("dept") or W.dept(ref) or {}
+    mech = ctx["bag"]["audit.mechanical"]
+    items = [{k: i[k] for k in ("id", "text", "how", "level", "confirm") if i.get(k)} for i in W.items_of(d)]
+    measured = {"ok": bool(mech.get("ok")), "notes": list(mech.get("notes") or []),
+                "holes": [{"page": h.get("page"), "claim": h.get("claim")} for h in mech.get("holes") or []]}
+    return _prompt("audit", "judge", "items", ref, brief=_brief_text(ref), filed=_context_block(ref),
+                   deliverable=audit_text(audit_files(ctx)), items=json.dumps(items), measured=json.dumps(measured))
+
+
+def d_audit_items(ctx, step, item):
+    """Offline, or not needed this time, nothing reads the version: it claims no item, and nothing is ever done offline."""
+    return {"items": [], "findings": [], "read": False}
+
+
+def _audit_item_ids(ctx):
+    """The done-when items of the department the reading is of, by id; None when the check has no department in hand."""
+    if not (ctx or {}).get("ref"):
+        return None
+    d = ctx.get("dept") or W.dept(ctx["ref"])
+    return [i["id"] for i in W.items_of(d)] if d else None
+
+
+def c_reading_is_s30(ctx, step, item, out):
+    """Audit's covering (A1.12, M8.3): a reading gives each done-when item its verdict (met, not met or to confirm) with the
+    claim and the evidence behind it, each item once, and each finding names where and what. A reading that does not fails
+    the step and the version is not read; a reader that read nothing (the offline draft) claims no item."""
+    if not isinstance(out, dict) or not isinstance(out.get("items"), list) or not isinstance(out.get("findings"), list):
+        return _verdict(False, "", "a reading is a list of items and a list of findings")
+    rows = out["items"]
+    if out.get("read") is False and not rows:
+        return _verdict(True, "it read nothing, so it claims no item", "")
+    notes, seen = [], []
+    for n, r in enumerate(rows, 1):
+        if not isinstance(r, dict) or not re.match(r"^D[1-9][0-9]?$", str(r.get("id") or "")):
+            notes.append("row %d names no done-when item" % n)
+            continue
+        iid = r["id"]
+        if iid in seen:
+            notes.append("%s is read twice" % iid)
+        seen.append(iid)
+        if r.get("verdict") not in VERDICT_RANK:
+            notes.append("%s: the verdict is not one of met, not met or to confirm" % iid)
+        for k in ("claim", "evidence"):
+            if not str(r.get(k) or "").strip():
+                notes.append("%s: no %s" % (iid, k))
+    want = _audit_item_ids(ctx)
+    if want is not None:
+        notes += ["%s is not read" % i for i in want if i not in seen]
+    where = c_findings_name_where_and_what(ctx, step, item, {"findings": out["findings"]})
+    if not where["ok"]:
+        notes += where["notes"]
+    return {"ok": not notes, "notes": notes or ["%d items, each with its verdict, claim and evidence" % len(rows)]}
+
+
+def audit_verdicts(rows):
+    """The verdict of each done-when item in a reading's rows, {id: verdict}: with one row it is that row's; with two (code
+    and the reader disagreed) the worse stands (VERDICT_RANK, decision A1-16): a measured failure over the reader's yes, a
+    reader's no or doubt over a measure that found the record whole."""
+    out = {}
+    for r in rows or []:
+        if r.get("id") and r.get("verdict") in VERDICT_RANK and VERDICT_RANK[r["verdict"]] >= VERDICT_RANK.get(out.get(r["id"]), -1):
+            out[r["id"]] = r["verdict"]
+    return out
+
+
+def audit_rows(dept_items, mech, said, sampled):
+    """One reading row per done-when item, in the S-30 shape (subject, claim, evidence, method, verdict, severity). An item
+    whose how is code gets a row from the mechanical step's result when it measured anything; every item gets the reader's
+    row, from audit.items. When the two disagree both are kept, and the worse verdict stands (VERDICT_RANK, A1-16). A reader's
+    yes with no evidence, or about an item that rests on a fact nobody gave, is a doubt, never a yes; an item the reader
+    did not read is a doubt too."""
+    by_id = {}
+    for r in said.get("items") or []:
+        if isinstance(r, dict) and r.get("id") not in by_id:
+            by_id[r.get("id")] = r
+    rows = []
+    for it in dept_items:
+        subject = _clip(it.get("text"), 200)
+        r = by_id.get(it["id"]) or {}
+        verdict = r.get("verdict") if r.get("verdict") in VERDICT_RANK else "to_confirm"
+        claim, evidence = " ".join(str(r.get("claim") or "").split()), " ".join(str(r.get("evidence") or "").split())
+        if not r:
+            claim, evidence = "Audit gave no reading of this item", "nothing in the reading speaks to it"
+        elif verdict == "met" and not evidence:
+            verdict, claim, evidence = "to_confirm", "it is said to hold, with nothing to show it", "no evidence was given"
+        if it.get("confirm") and verdict == "met":
+            verdict, claim, evidence = "to_confirm", "it waits on a fact nobody has given: %s" % it["confirm"], evidence or "no fact was given"
+        model = {"id": it["id"], "subject": subject, "claim": claim[:600], "evidence": evidence[:1000], "method": "model",
+                 "verdict": verdict, "severity": ITEM_SEVERITY[verdict]}
+        if it.get("how") == "code" and sampled:
+            ok = bool(mech.get("ok"))
+            said_what = "; ".join(str(n) for n in mech.get("notes") or []) or ("the record holds" if ok else "the record does not hold")
+            code = {"id": it["id"], "subject": subject, "claim": ("the record holds: " if ok else "the record does not hold: ") + said_what[:560],
+                    "evidence": said_what[:1000], "method": "code", "verdict": "met" if ok else "not_met",
+                    "severity": ITEM_SEVERITY["met" if ok else "not_met"]}
+            rows += [code] if code["verdict"] == model["verdict"] else [code, model]
+        else:
+            rows.append(model)
+    return rows
+
+
+def _audit_reading_findings(found, art):
+    """The findings of a reading as the interface types them (audit.finding): numbered F1, F2, ... within the reading, each
+    with where it is and what, how serious, the item it belongs to, and that Identity was told."""
+    out = []
+    for n, f in enumerate(found[:12], 1):
+        sev = str(f.get("severity") or "").strip().lower()
+        sev = "high" if sev == "critical" else sev if sev in ("high", "medium", "low") else "medium"
+        item_id = f.get("item") if re.match(r"^D[1-9][0-9]?$", str(f.get("item") or "")) else None
+        out.append({"id": "F%d" % n, "severity": sev, "claim": _clip(f.get("claim"), 600),
+                    "where": " ".join(str(f.get("page") or f.get("where") or art or "").split())[:200], "item": item_id,
+                    "went_to": "Identity"})
+    return out
+
+
+def audit_tell(ref, reading):
+    """Audit tells Identity a reading (inform/reading, act.reading), once Identity's recipe has a handler for it (A1-14: an
+    act is posted only when its receiver hears it, so no merge order leaves one unheard). Returns the post, or None."""
+    if _handler(engine_def("Identity"), {"msg_type": "inform", "payload": {"word": "reading"}}) is None:
+        return None
+    verdicts = audit_verdicts(reading["items"])
+    pl = {"word": "reading", "reading": reading["id"], "artifact": reading["artifact"], "v": reading["v"], "read": reading["read"],
+          "met": [i for i, v in verdicts.items() if v == "met"], "not_met": [i for i, v in verdicts.items() if v == "not_met"],
+          "to_confirm": [i for i, v in verdicts.items() if v == "to_confirm"], "findings": [f["id"] for f in reading["findings"]],
+          "high": any(f["severity"] == "high" for f in reading["findings"])}
+    return post(ref, "Audit", "Identity", "inform", pl, about={"art": reading["artifact"], "v": reading["v"]})
+
+
+def audit_record(ref, slot, art, v, read, why_not, rows, findings):
+    """The reading of one version, as a row of readings.jsonl (audit.reading, checked as the interface types it): one for
+    a slot, so a replay of the step writes it once. A version not read is a row with read false and why_not_read, never
+    a silence (PRD M0.3). Returns the row."""
+    slot = slot or "Audit@%s.v%d" % (W.slug(art), v)
+    try:
+        cycle = _j2().status(ref).get("cycle_id")
+    except Exception:  # noqa: BLE001 -- a reading with no cycle to name is still a reading
+        cycle = None
+    row = {"schema_version": 1, "id": "r-" + hashlib.sha1(slot.encode("utf-8")).hexdigest()[:8], "v": v, "artifact": art,
+           "cycle_id": cycle, "round": None, "read": bool(read), "why_not_read": None if read else " ".join(str(why_not or "it was not read").split())[:300],
+           "items": rows, "findings": findings, "at": W.now()}
+    kept = next((r for r in W.rows(ref, "readings.jsonl") if r.get("id") == row["id"]), None)
+    return kept or W.append_row(ref, "readings.jsonl", row)
+
 
 def audit_file(ctx, step, item):
     ref = ctx["ref"]
-    mech, judged = ctx["bag"]["audit.mechanical"], ctx["bag"]["audit.judge"]
+    d = ctx.get("dept") or W.dept(ref) or {}
+    art, v = audit_art(ctx), int(ctx["inp"]["v"])
+    mech, judged, said = ctx["bag"]["audit.mechanical"], ctx["bag"]["audit.judge"], ctx["bag"].get("audit.items") or {}
     faults = mech.get("faults") if "faults" in mech else (mech.get("notes") if not mech.get("ok") else [])
     found = [{"page": None, "claim": n, "severity": "high"} for n in faults or []]
     found += list(mech.get("holes") or [])
     found += [f for f in judged.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
-    # 'found nothing' is a reading only when the judge read the version: a judge skipped (not sampled) or answered by
-    # its offline draft read nothing, and its empty list is no evidence (M0.3; found 2026-10-23: an offline department
+    found += [{"page": f.get("where"), "claim": f["claim"], "severity": f.get("severity"), "item": f.get("item")}
+              for f in said.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
+    seen_claims, once = set(), []
+    for f in found:                                   # the reader and the judge may each find the one thing, on the one page
+        key = (str(f.get("page") or "").lower(), " ".join(str(f.get("claim")).split()).lower())
+        if key not in seen_claims:
+            seen_claims.add(key)
+            once.append(f)
+    found = once
+    # 'found nothing' is a reading only when the version was read item by item: a reader skipped (not sampled) or answered
+    # by its offline draft read nothing, and its empty list is no evidence (M0.3; found 2026-10-23: an offline department
     # reached its goal on a version no one read)
-    how = ctx["how"].get("audit.judge")
-    read = how in READ_BY
-    why_not = None if read else {SKIPPED: "it was not sampled", "offline draft": "no model was there to read it"}.get(
-        how, "how it was read is not on the record")
+    dept_items = W.items_of(d)
+    how = ctx["how"].get("audit.items")
+    read = bool(art) and how in READ_BY and said.get("read") is not False and bool(dept_items)
+    why_not = None if read else (
+        "the plan delivers nothing to read yet" if not art else
+        "the department has no done-when items to read it against" if how in READ_BY and said.get("read") is not False else
+        {SKIPPED: "it was not sampled", "offline draft": "no model was there to read it"}.get(how, "how it was read is not on the record"))
+    sampled = bool(ctx["bag"]["audit.pick"].get("sample"))
+    rows = audit_rows(dept_items, mech, said, sampled) if read else []
+    verdicts = audit_verdicts(rows)
+    # an item that does not hold, or cannot be said to, and that no finding names, is a finding of its own: it reaches
+    # Identity by the way every finding does, so no reading leaves the owner without a next move (interim until
+    # Identity weighs readings, M8.5)
+    for it in dept_items:
+        if not read or verdicts.get(it["id"]) not in ("not_met", "to_confirm") or any(f.get("item") == it["id"] for f in found):
+            continue
+        if any(r["id"] == it["id"] and r["method"] == "code" and r["verdict"] == "not_met" for r in rows):
+            continue                                  # what the measure found is already a finding of its own
+        row = next(r for r in rows if r["id"] == it["id"] and r["verdict"] == verdicts[it["id"]])
+        found.append({"page": art, "item": it["id"], "severity": ITEM_SEVERITY[verdicts[it["id"]]],
+                      "claim": "“%s” %s: %s" % (_clip(it.get("text"), 120).rstrip("."),
+                                                "does not hold" if verdicts[it["id"]] == "not_met" else "cannot be confirmed yet",
+                                                row["claim"].rstrip("."))})
+    findings = _audit_reading_findings(found, art)
+    reading = audit_record(ref, ctx.get("slot"), art, v, read, why_not, rows, findings) if art else None
+    met = [i for i, x in verdicts.items() if x == "met"]
+    summary = {"id": reading and reading["id"], "read": read, "met": met, "not_met": [i for i, x in verdicts.items() if x == "not_met"],
+               "to_confirm": [i for i, x in verdicts.items() if x == "to_confirm"], "high": any(f["severity"] == "high" for f in findings)}
     if not found:
         if not read:
             return {"said": "did not read what went live (%s); nothing is said of it" % why_not, "filed": 0, "read": False,
-                    "why_not_read": why_not}
-        return {"said": "checked what went live; found nothing", "filed": 0, "read": True}
+                    "why_not_read": why_not, "artifact": art, "reading": summary}
+        if reading:
+            audit_tell(ref, reading)
+        return {"said": "read what went live item by item; every item holds", "filed": 0, "read": True, "artifact": art, "reading": summary}
     high = [f for f in found if str(f.get("severity") or "").lower() == "high"]
     claim = str((high or found)[0]["claim"])
     post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high" if high else "low",
-                                              "findings": found[:12], "about_version": ctx["inp"]["v"]},
-         about={"art": "Live site", "v": ctx["inp"]["v"]})
+                                              "findings": found[:12], "about_version": v, "artifact": art,
+                                              "reading": reading and reading["id"]},
+         about={"art": art, "v": v})
+    if reading:
+        audit_tell(ref, reading)
     return {"said": "found %s: %s" % ("something to put right" if high else "something to note", claim), "filed": len(found),
-            "read": read, "why_not_read": why_not}
+            "read": read, "why_not_read": why_not, "artifact": art, "reading": summary}
 
 
 # ---- the rulings of 2026-09-28: every unit starts and ends with code; Coordination's own agent; Root spawns ---------
@@ -4164,9 +4473,10 @@ def slot_of(ref, name, rs=None):
     if trig.get("kind") == "version":
         rs = W.runs(ref) if rs is None else rs
         done = {r.get("slot") for r in rs if r.get("status") in ("ok", "failed", "skipped")}
-        cur = W.latest(ref, trig["of"], passed=bool(trig.get("checked")))
-        v = cur["v"] if cur and W._slot_id(name, trig["of"], cur["v"]) not in done else (cur["v"] + 1 if cur else 1)
-        return {"on": "after %s v%d" % (trig["of"], v), "of": trig["of"], "checked": bool(trig.get("checked")), "v": v}
+        of = trigger_art(W.dept(ref), trig) or "the deliverable"
+        cur = W.latest(ref, of, passed=bool(trig.get("checked")))
+        v = cur["v"] if cur and W._slot_id(name, of, cur["v"]) not in done else (cur["v"] + 1 if cur else 1)
+        return {"on": "after %s v%d" % (of, v), "of": of, "checked": bool(trig.get("checked")), "v": v}
     if trig.get("kind") == "timer":
         return {"on": "every " + _period(trig.get("every_s")), "every_s": trig.get("every_s")}
     return {"on": "on a post to it"}
@@ -4418,6 +4728,7 @@ def _note_idea(ref, idea_id, note):
         for r in rows:
             if r.get("id") == idea_id:
                 r.update(note)
+                layer_schema.check_record("adaptation", "idea", r, ref=ref)
         W._write(W.ddir(ref) / "ideas.json", rows)
 
 
@@ -4775,11 +5086,13 @@ def _j2_live(ref):
 
 
 def _line_request(ref, d, words, thread=None, faults=None):
-    """Identity asks Adaptation what the department does next (step 2). With faults, it is Root's refusal going back."""
+    """Identity asks Adaptation what the department does next (step 2). With faults, it is Root's refusal going back.
+    The payload is the interface's act.line_request (A1.13), which post() checks: a fault is kept to a line's length."""
     return post(ref, "Identity", "Adaptation", "request",
                 {"word": "line", "words": words, "objective": "propose the workflows the goal needs",
                  "output": "the engines, each with what it does, reads and writes", "may_read": ["Brief"],
-                 "boundaries": "nothing runs before Priority grants it and Root registers it", "for": thread, "faults": list(faults or [])})
+                 "boundaries": "nothing runs before Priority grants it and Root registers it", "for": thread,
+                 "faults": [str(f)[:600] for f in faults or []]})
 
 
 def _library_repair(d, lib):
@@ -4984,8 +5297,13 @@ def _j2_settle(ref, d, engines, source, words, by):
                 added.remove(n)
                 lost.append("%s (%s)" % (n, exc))
     else:
+        mine = list((W.dept(ref) or {}).get("engines") or [])
         for e in engines:
             try:
+                if e.get("level") == 1 and e["name"] in mine:
+                    # the Library's own engine (level 1, J2B-3), already on the record: the plan names it, and Root adds nothing
+                    added.append(e["name"])
+                    continue
                 does = str(e.get("does") or "").strip()
                 W.add_engine(ref, e["name"], shape={"name": e["name"], "use_case": does or e["name"], "does": does,
                                                      "instruction": ("%s\n\nThe goal, in the owner's words: %s" % (does, words or "")).strip(),
@@ -5025,11 +5343,13 @@ def _left_out(d, why):
     return (named or items)[-1]
 
 
-def _blocked(ref, d, who, said, title, by, why):
+def _blocked(ref, d, who, said, title, by, why, options=None):
     """The plan is blocked, and there is always a way out (PRD M3.5, screen S10): the cycle says blocked, and what
     Identity says is an ask with options, the first the one it recommends, each applied by code when the owner chooses
     it: change the plan in my words; leave an item out (a done_items ask, stamped by that choice); stop. The line names
-    its card, so the chat says it once, on the card; an older card for the same plan goes quiet."""
+    its card, so the chat says it once, on the card; an older card for the same plan goes quiet. `options`, when given,
+    are the ways out the card offers instead of those three (at most OPTIONS_MAX, each built by W.option): a conflict's own
+    (Priority's raise, Adaptation's set-up-again; M5.4), or leaving a rule out (M9.5)."""
     J = _j2()
     if J:
         J._set(ref, state="blocked")
@@ -5042,6 +5362,7 @@ def _blocked(ref, d, who, said, title, by, why):
         opts.append(W.option("leave:" + item["id"], "Leave %s out" % item["id"],
                              "%s is dropped from done-when (%s); nothing more is spent" % (item["id"], str(item["text"]).rstrip("."))))
     opts.append(W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later"))
+    opts = [o for o in options or []][:W.OPTIONS_MAX] or opts
     for old in W.asks(ref):
         if old.get("kind") == "blocked" and old["status"] == "pending":
             W._put_ask(ref, dict(old, status="replaced", decided=W.now()))
@@ -5237,6 +5558,17 @@ def identity_closed(ctx, step, item):
     engines, J = [e for e in pl.get("engines") or [] if isinstance(e, dict) and e.get("name")], _j2()
     names = " -> ".join(e["name"] for e in engines)
     who = {"src": "Root" if d.get("root") else OWNER}
+    if not engines:
+        # no plan at all: Adaptation answered that an engine the kind requires cannot serve an item (J2B-4, M6.4), so there
+        # is nothing to run, nothing to drop and no plan to stamp (a stamp would send Root a plan that names no engine, and
+        # the same card would come back). The owner is put the reason in plain words, on the card every blocked plan has,
+        # with its ways out. The conflict's own options (root_setup among them) are filed by the options ask of W2-IDENTITY J1
+        reason = str(pl.get("why") or "no plan can be made").strip().rstrip(".")
+        if J:
+            J.ruled(ref, "ask", reason, engines)
+        _blocked(ref, d, who, "%s. Say what the department should do, or choose a way forward on this card." % reason,
+                 "No plan can be made as it stands.", "Adaptation, shaping the plan", reason)
+        return {"said": "no plan can be made (%s); put to the owner, with the ways out" % reason}
     if J:
         J.ruled(ref, ruling, why, engines)
     if ruling == "run":
@@ -5262,15 +5594,20 @@ def identity_closed(ctx, step, item):
     return {"said": "could not close the conflict from the goal and the rules; put it to the owner"}
 
 
-def _j2_audit_read(ref, d, version, filed):
-    """Audit's reading closes the loop (step 8): nothing to put right means done-when holds, and Identity says so once."""
+def _j2_audit_read(ref, d, version, filed, art=None, reading=None):
+    """Audit's reading closes the loop (step 8): when it holds done-when, the goal is reached, and Identity says so once.
+    What Identity says of the reading is what the reading filed: 'found nothing to put right' only when it filed nothing,
+    else that it noted something that does not block (a low or a medium finding; a high one holds the goal back)."""
     J = _j2()
-    if not J or not J.audited(ref, version, filed):
+    if not J or not J.audited(ref, version, filed, artifact=art, reading=reading):
         return
+    import layer_schema as S
+    art = art or S.deliverable(d)
+    found = "noted something that does not block" if filed else "found nothing to put right"
     try:
         _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
-              {"word": "goal", "done": "The goal is reached: %s. Audit read Live site v%s and found nothing to put right."
-               % (str(d.get("done") or "done").rstrip("."), version), "link": "Live site", "v": version})
+              {"word": "goal", "done": "The goal is reached: %s. Audit read %s v%s and %s."
+               % (str(d.get("done") or "done").rstrip("."), art, version, found), "link": art, "v": version})
     except Exception:  # noqa: BLE001 -- the goal is reached on the record whether or not the word reached the chat
         pass
 
@@ -5353,99 +5690,176 @@ def _goal_of(ref, name, e=None):
     return layers.words(ref, fn, "goal", "does")["text"], list(layers.words(ref, fn, "goal", "skills")["items"])
 
 
-INSTRUCTIONS_MAX = 20000                               # the most one file may hold, in characters
-#: What the owner is told of a file no step reads (Adaptation's decide): its words are kept, and no run is sent them.
+#: What the owner is told of a part no step reads (Adaptation's decide note): its words are kept, and no run is sent them.
 NOT_READ = "in this version the code makes this choice, so no run reads it yet"
+#: What a part's inputs are called on the owner's screen (S16, 'filled by the app: the goal, the rules, the request'): the
+#: names code fills, in words. A name not here is said as it is, with its underscores gone.
+INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done means", "rules": "the rules", "plan": "the plan",
+              "against": "what was said against it", "words": "the request", "asked": "what was asked", "items": "the done-when items",
+              "owner": "the owner", "budget": "the budget", "confirm": "what is still to confirm", "facts": "what code read",
+              "completeness": "how complete the request is", "question": "the question", "record": "the record", "pages": "the pages",
+              "needs": "what it needs", "idea": "the idea", "library": "the Library's engines", "taken": "what is already taken",
+              "out": "what is left out", "refused": "why the last line was sent back", "faults": "what was found wrong",
+              "source": "where the plan came from", "engines": "the engines", "calls": "the calls", "usd": "the money",
+              "room": "the room left", "limit": "the limit", "engine": "the engine", "does": "what it does", "word": "the kind of proposal",
+              "step": "the step", "cost": "what it costs", "ready": "who is ready", "what": "what each does", "order": "the usual order",
+              "waiting": "what waits for the owner", "brief": "the brief", "filed": "what was filed", "examples": "the examples",
+              "existing": "what exists", "conversation": "the conversation so far", "org": "the organisation", "named": "what was named",
+              "kinds": "the kinds of department", "use_cases": "the use cases", "practices": "the practices in place",
+              "deliverable": "what was made", "measured": "what code measured", "estimate": "what it is likely to cost",
+              "remaining": "what remains of today's room", "round": "the round", "correction": "what the round puts right",
+              "ceiling": "the goal's ceiling"}
 
 
-def _read_by_a_run(fn, file):
-    """Whether a run is sent any of one instruction file's words: a file that holds no part a step reads (Adaptation's
-    decide, whose choice the code makes in this version) is kept as the owner's note, and the owner is told so, never
-    that the next run uses it."""
-    return bool((INSTRUCTIONS.get(fn) or {}).get(file))
+def _what(fn, group, part, field):
+    """One field as the owner and the record call it: 'Identity's gate task', 'what Identity does', 'Identity's skills'."""
+    title = fn.title()
+    if part == "does":
+        return "what %s does" % title
+    if part == "skills":
+        return "%s's skills" % title
+    if part == "note":
+        return "%s's %s note" % (title, group)
+    return "%s's %s %s" % (title, part, field)
 
 
-def _waiting_change(ref, fn, file):
+def _read_by(fn, group, part):
+    """The steps that read a part, by id; [] for a part no step reads."""
+    rb = layer_schema.PROMPTS[fn][group][part]["read_by"]
+    return [rb] if isinstance(rb, str) else list(rb or [])
+
+
+def _read_by_a_run(fn, group, part):
+    """Whether a run is sent a part's words: every part but a note no code reads (Adaptation's decide, whose choice the code
+    makes in this version) is. A note is kept as the owner's, and the owner is told so, never that the next run uses it. A
+    part no step names may still be read: what a function does and its skills go in every agent's card."""
+    return part in ((INSTRUCTIONS.get(fn) or {}).get(group) or {})
+
+
+def _waiting_change(ref, fn, group, part, field):
     return next((a for a in W.asks(ref) if a.get("kind") == "instructions" and a["status"] == "pending"
-                 and a.get("fn") == fn and a.get("file") == file), None)
+                 and (a.get("fn"), a.get("group"), a.get("part"), a.get("field")) == (fn, group, part, field)), None)
+
+
+def _tell_kept_notes(ref, d, fn):
+    """The department's whole-file changes made before fields were typed (PRD M2.2) are the owner's notes: no run reads
+    them. The first read of a department's instructions records each (layers.prompts.kept_as_notes), and Identity says so
+    once. A note that cannot be told never fails the read."""
+    try:
+        for file in layers.prompts.kept_as_notes(ref, fn):
+            _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
+                  {"word": "instructions", "done": "Your earlier change to %s's %s is kept as a note; change the field again in "
+                                                    "Settings to use it." % (fn.title(), file)})
+    except Exception:  # noqa: BLE001 -- the owner's read of Settings does not depend on a tell
+        pass
 
 
 def instructions_view(ref, fn):
-    """A function's instruction files as its Settings shows them: each by name, the line that says what it is for, its
-    words as the department reads them now, whether they are the owner's or as shipped, whether a run reads them, and
-    a change that waits for the stamp. Names only, never where a file lives."""
+    """A function's instructions as its Settings shows them (S16): each group by name with the line that says what it is
+    for, in it each part with whether a run reads it, the steps that do, what the app fills and what it answers with, and
+    each field the owner may change with its type and bounds, the words the department reads now, whether they are as
+    shipped, and a change that waits for the stamp. An earlier whole-file change shows once as the group's `kept` note.
+    Names only, never where anything lives."""
+    d = W.dept(ref)
+    if d:
+        _tell_kept_notes(ref, d, fn)
     out = []
-    for file in INSTRUCTIONS.get(fn) or {}:
-        text = _instruction(fn, file, ref)
-        shipped = _instruction(fn, file)
-        a = _waiting_change(ref, fn, file)
-        out.append({"file": file, "lead": _parts(text)[0].split("\n", 1)[0], "text": text, "as_shipped": text == shipped,
-                    "read": _read_by_a_run(fn, file), "waits": {"ask": a["id"], "at": a.get("created")} if a else None})
+    for group, parts in layer_schema.PROMPTS[fn].items():
+        rows = []
+        for part, spec in parts.items():
+            shipped = layers.prompts.defaults(ref, fn, group, part)
+            now = layers.prompts.words(ref, fn, group, part)
+            fields = []
+            for field, name in spec["fields"].items():
+                shape = layer_schema.DEFS[name]
+                listed = shape.get("type") == "array"
+                one = shape["items"] if listed else shape
+                a = _waiting_change(ref, fn, group, part, field)
+                fields.append({"field": field, "type": "list" if listed else "text", "max": one["maxLength"], "min": one["minLength"],
+                               "max_items": shape.get("maxItems") if listed else None,
+                               "multiline": bool((one.get("x-field") or {}).get("multiline")),
+                               "value": now.get(field), "as_shipped": now.get(field) == shipped.get(field),
+                               "waits": {"ask": a["id"], "at": a.get("created")} if a else None})
+            rows.append({"part": part, "read": _read_by_a_run(fn, group, part), "read_by": _read_by(fn, group, part),
+                         "inputs": [INPUT_SAYS.get(n, n.replace("_", " ")) for n in spec["inputs"]],
+                         "answers": layers.prompts.answer_keys(spec["returns"]), "fields": fields})
+        out.append({"group": group, "lead": layer_schema.GROUPS[fn][group], "kept": layers.prompts.kept_note(ref, fn, group),
+                    "parts": rows})
     return out
 
 
-def instructions_ask(ref, fn, file, text):
-    """The owner's change to one of a function's instruction files, filed as an ask (PRD M2.2): Identity puts it to
-    the owner and nothing changes until the stamp; on the stamp identity_apply writes the department's own copy. The
-    file's covering check runs here, and again at the stamp; one change waits per file."""
-    fn, file = str(fn or "").strip().lower(), str(file or "").strip().lower()
+def _clean_value(name, value):
+    """An owner's value as it is kept: line ends as \n and the edges trimmed; a list without its blank items. A value of the
+    wrong type is left as it came, for the interface to name."""
+    if name == "field.items":
+        if isinstance(value, (list, tuple)):
+            return [x.strip() if isinstance(x, str) else x for x in value if not (isinstance(x, str) and not x.strip())]
+        return value
+    return value.replace("\r\n", "\n").strip() if isinstance(value, str) else value
+
+
+def instructions_ask(ref, fn, group, part, field, value):
+    """The owner's change to one field of one of a function's instruction parts, filed as an ask (PRD A1.16): Identity puts
+    it to the owner and nothing changes until the stamp; on the stamp _apply_instructions writes the typed value. The
+    interface checks it here (layer_schema.validate_field: the field's type, no {{ or }}, no 'Return ONLY'), and again at
+    the stamp; one change waits per field. A ValueError says what is wrong in plain words."""
+    fn, group, part, field = (str(x or "").strip().lower() for x in (fn, group, part, field))
     if fn.title() not in FUNCTIONS or fn not in INSTRUCTIONS:
         raise ValueError("no function named %s" % (fn or "nothing"))
-    if file not in INSTRUCTIONS[fn]:
-        raise ValueError("%s has no instructions named %s" % (fn.title(), file or "nothing"))
-    text = str(text if text is not None else "").replace("\r\n", "\n").strip("\n")
-    if not text.strip():
-        raise ValueError("say what the instructions should be")
-    if len(text) > INSTRUCTIONS_MAX:
-        raise ValueError("the instructions are too long to keep")
-    text += "\n"
-    faults = instruction_faults(fn, file, text)
-    if faults:
-        raise ValueError("these words cannot serve %s: %s" % (fn.title(), "; ".join(faults)))
+    if group not in layer_schema.PROMPTS[fn]:
+        raise ValueError("%s has no instructions named %s" % (fn.title(), group or "nothing"))
+    if part not in layer_schema.PROMPTS[fn][group]:
+        raise ValueError("%s's %s instructions have no part %s" % (fn.title(), group, part or "nothing"))
+    fields = layer_schema.PROMPTS[fn][group][part]["fields"]
+    if field not in fields:
+        raise ValueError("%s's %s, %s, has no %s you may change" % (fn.title(), group, part, field or "nothing"))
+    value = _clean_value(fields[field], value)
+    bad = layer_schema.validate_field(fn, group, part, field, value)
+    if bad:
+        raise ValueError("these words cannot serve %s: %s" % (fn.title(), "; ".join(layers.prompts.plain_faults(field, bad))))
     d = W.dept(ref)
     if not d:
         raise ValueError("no department at %s" % ref)
+    what = _what(fn, group, part, field)
     with W._lock(ref):
-        if _waiting_change(ref, fn, file):
-            raise ValueError("a change to %s's %s already waits for your stamp" % (fn.title(), file))
-        if text == _instruction(fn, file, ref):
-            raise ValueError("these are the words %s's %s holds now" % (fn.title(), file))
-        line = "Change %s's %s instructions to your words" % (fn.title(), file)
-        use = (_answers("use them from the next run", "to keep them as they are") if _read_by_a_run(fn, file) else
+        if _waiting_change(ref, fn, group, part, field):
+            raise ValueError("a change to %s already waits for your stamp" % what)
+        if value == layers.prompts.words(ref, fn, group, part).get(field):
+            raise ValueError("these are the words %s holds now" % what)
+        line = "Change %s to your words" % what
+        use = (_answers("use them from the next run", "to keep them as they are") if _read_by_a_run(fn, group, part) else
                _answers("keep them as your note", "to keep them as they are",
                         lead="In this version the code makes this choice, so no run reads these words yet: "))
         p = post(ref, "Identity", OWNER, "request", {"word": "instructions", "objective": line + "? " + use, "output": "a stamp or a refusal",
-                                                     "may_read": [], "boundaries": "this one file"})
-        return W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "instructions", "engine": fn.title(), "fn": fn, "file": file,
-                                "words": text, "text": line, "status": "pending", "created": W.now(), "thread": p["thread"] if p else None})
+                                                     "may_read": [], "boundaries": "this one field"})
+        return W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "instructions", "engine": fn.title(), "fn": fn, "group": group,
+                                "part": part, "field": field, "value": value, "text": line, "status": "pending", "created": W.now(),
+                                "thread": p["thread"] if p else None})
 
 
 def _apply_instructions(ref, d, a):
-    """The owner's stamp on a change to one instruction file: the department's own copy, written whole, and read by the
-    next run. Words that no longer serve the function (the bundle changed under them) are not written, and the owner
-    hears why. Words the same as the bundle's take the department's copy away, so a later bundle's words reach it. A
-    file no run reads is kept as the owner's note, and the owner is told that, never that the next run uses it."""
-    fn, file, text = a.get("fn"), a.get("file"), str(a.get("words") or "")
+    """The owner's stamp on a change to one field: the typed value, checked again against the interface and written
+    whole and atomically (layers.prompts.store), read by the next run. A value that no longer serves (the interface
+    changed under it) is not written, and the owner hears why. A value the same as the shipped one takes the owner's
+    value away, so a later default reaches the department. A part no run reads is kept as the owner's note, and the owner
+    is told that, never that the next run uses it."""
+    fn, group, part, field = (a.get(k) for k in ("fn", "group", "part", "field"))
     who = {"src": "Root" if d.get("root") else OWNER}
-    faults = instruction_faults(fn, file, text) if fn in INSTRUCTIONS else ["no function named %s" % fn]
-    if faults:
-        _tell(ref, d, who, "inform", {"word": "instructions", "done": "Your change to %s's %s was not put in place: %s. Change it again."
-                                      % (str(fn).title(), file, "; ".join(faults))})
-        return {"said": "could not put the owner's change to %s's %s in place: %s" % (str(fn).title(), file, "; ".join(faults))}
-    own = _own(ref, fn, file)
-    with W._lock(ref):
-        if text == _instruction(fn, file):
-            if own.is_file():
-                own.unlink()
-        else:
-            own.parent.mkdir(parents=True, exist_ok=True)
-            tmp = own.with_name(own.name + ".tmp")
-            tmp.write_text(text, encoding="utf-8")
-            os.replace(tmp, own)
-    _tell(ref, d, who, "inform", {"word": "instructions", "done": "%s's %s now reads as you changed it%s."
-                                  % (str(fn).title(), file, "; the next run uses it" if _read_by_a_run(fn, file)
-                                     else ", kept as your note; " + NOT_READ)})
-    return {"said": "put the owner's change to %s's %s in place" % (str(fn).title(), file)}
+    known = fn in INSTRUCTIONS and field in ((layer_schema.PROMPTS[fn].get(group) or {}).get(part) or {}).get("fields", {})
+    what = _what(fn, group, part, field) if known else "%s's %s" % (str(fn).title(), field)
+    try:
+        if not known:
+            raise ValueError("there is no such field")
+        done = layers.prompts.store(ref, fn, group, part, field, a.get("value"), ask=a.get("id"))
+    except ValueError as exc:
+        _tell(ref, d, who, "inform", {"word": "instructions", "done": "Your change to %s was not put in place: %s. Change it again." % (what, exc)})
+        return {"said": "could not put the owner's change to %s in place: %s" % (what, exc)}
+    read = _read_by_a_run(fn, group, part)
+    tail = "; the next run uses it" if read else ", kept as your note; " + NOT_READ
+    _tell(ref, d, who, "inform", {"word": "instructions", "done": "%s now reads as %s%s."
+                                  % (what, "shipped" if done == "removed" else "you changed it", tail if done != "removed" else
+                                     ("; the next run uses it" if read else "; " + NOT_READ))})
+    return {"said": "put the owner's change to %s in place" % what}
 
 
 # ---- the registry: prompts and drafts ------------------------------------------------------------------------------
@@ -5842,12 +6256,17 @@ def d_priority_bargain(ctx, step, item):
 
 
 def p_audit_judge(ctx, step, item):
-    ref, v = ctx["ref"], ctx["inp"]["v"]
-    files = W.read_files(ref, "Live site", v)
-    pages = []
+    ref = ctx["ref"]
+    files = audit_files(ctx)
+    pages, html, left = [], any(str(n).endswith(".html") for n in files), READ_MAX
     for name in ctx["bag"]["audit.pick"]["pages"][:12]:
-        text = re.sub(r"<[^>]+>", " ", files.get(name, ""))
-        pages.append({"page": name, "text": " ".join(text.split())[:1500]})
+        if html:
+            text = re.sub(r"<[^>]+>", " ", files.get(name, ""))
+            pages.append({"page": name, "text": " ".join(text.split())[:1500]})
+        else:                                    # not HTML: read as text, its files' text, at most READ_MAX characters in all
+            text = str(files.get(name, "")).strip()[:left]
+            left -= len(text)
+            pages.append({"page": name, "text": text})
     # what the department's own engines filed backs a page as the brief does (found live 2026-09-29: facts Source Reader
     # filed with their URLs were asked to be "put right" because the brief did not give them)
     return _prompt("audit", "judge", "judge", ref, brief=_brief_text(ref), filed=_context_block(ref), pages=json.dumps(pages))
@@ -5963,8 +6382,12 @@ def p_adapt_line(ctx, step, item):
     rules = "; ".join(str(r.get("line")) for r in d.get("rules") or [] if r.get("line"))
     taken = ", ".join(sorted(defs()["engines"]))
     refused = ("\n\n" + _prompt("adaptation", "make", "refused", ctx["ref"], faults="; ".join(str(f) for f in pl["faults"]))) if pl.get("faults") else ""
-    return _prompt("adaptation", "make", "line", ctx["ref"], dept=d.get("name"), words=pl.get("words") or d.get("goal"), taken=taken,
-                   out=_out_artifacts() or "none", rules=rules or "none", refused=refused)
+    # the done-when items, one a line ('D1: the site is live'): make.line names them (PRD M5.1), and a layer that does not load
+    # runs this body, which must fill every slot the part has (layers/adaptation/v1.item_lines says it the same way)
+    items = "\n".join("%s: %s" % (i["id"], " ".join(str(i.get("text") or "").split()))
+                      for i in d.get("done_items") or [] if isinstance(i, dict) and i.get("id"))
+    return _prompt("adaptation", "make", "line", ctx["ref"], dept=d.get("name"), words=pl.get("words") or d.get("goal"), items=items or "none",
+                   taken=taken, out=_out_artifacts() or "none", rules=rules or "none", refused=refused)
 
 
 def d_adapt_line(ctx, step, item):
@@ -6292,6 +6715,20 @@ CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_na
          "department_is_shaped": c_department_is_shaped, "department_is_made": c_department_is_made,
          "setup_converse_is_valid": c_setup_converse_is_valid, "ruling_is_known": c_ruling_is_known,
          "enough_is_shaped": c_enough_is_shaped}
+# audit/v1's step audit.items (A1 W1-AUDIT, M8.3): registered beside the literals, which are not edited before W3-PROOF
+PROMPT["audit_items"], DRAFT["audit_items_draft"], CHECK["reading_is_s30"] = p_audit_items, d_audit_items, c_reading_is_s30
+
+
+def c_done_is_read(ctx, step, item, out):
+    """The name of identity/v1's covering of the goal reached (A1 W2-IDENTITY, M8.4), registered beside the literals as
+    reading_is_s30 is: the body is the version's, and without the version there is no claim of done to let through."""
+    got = layers.load("identity/v1")
+    if got is None:
+        return {"ok": False, "notes": ["Identity's version is not there to read a claim of done"]}
+    return got.c_done_is_read(ctx, step, item, out)
+
+
+CHECK["done_is_read"] = c_done_is_read
 
 
 # ---- what the screens read -----------------------------------------------------------------------------------------
@@ -6329,9 +6766,9 @@ def steps_view(ref, name):
                     "history": en.get("history") or []})
     does, skills = _goal_of(ref, name, e)                     # a function's own words, as its agent is told them
     view = {"name": name, "kind": e["kind"], "description": does or e.get("description"), "skills": skills,
-            "reads": e.get("reads"), "writes": e.get("writes"), "steps": out,
+            "reads": reads_art(W.dept(ref), e), "writes": e.get("writes"), "steps": out,
             "hears": ([SHARED] if rules else []) + [h["name"] for h in e.get("on") or []],
-            "start": start_view(e), "numbers": numbers(ref, name)}
+            "start": start_view(e, W.dept(ref)), "numbers": numbers(ref, name)}
     if name == "Coordination":
         t = coordination(ref)
         view["table"] = {"first": [FIRST[k] for k in t["order"]], "line": list(t["line"]),
@@ -6347,7 +6784,7 @@ def steps_view(ref, name):
             view["limits"].append({"engine": n, "calls": int(env.get("calls", 0)), "usd": float(env.get("usd", 0.0)),
                                    "used_calls": calls, "used_usd": round(usd, 3)})
     if e["kind"] == "function" and name.lower() in INSTRUCTIONS:
-        view["instructions"] = instructions_view(ref, name.lower())      # its version 1 files, for its Settings (S16)
+        view["instructions"] = instructions_view(ref, name.lower())      # its typed instruction fields, for its Settings (S16)
     return view
 
 
@@ -6357,12 +6794,14 @@ SHARED = "What engines share"
 FIRST = {"posts": "A post waiting for its reader", "line": "The line, in its order", "functions": "A function woken by new work"}
 
 
-def start_view(e):
-    """An engine's start, in words: what makes it run, and what holds it."""
+def start_view(e, d=None):
+    """An engine's start, in words: what makes it run, and what holds it. A trigger on the deliverable names it by the
+    department's own when `d` is the department, else says 'deliverable'."""
     on = []
     for t in (e.get("start") or {}).get("on") or []:
         if t["kind"] == "version":
-            on.append("a new %s%s" % (t["of"], " that passed its check" if t.get("checked") else ""))
+            on.append("a new %s%s" % ((trigger_art(d, t) or "deliverable") if t["of"] == DELIVERABLE else t["of"],
+                                      " that passed its check" if t.get("checked") else ""))
         elif t["kind"] == "post":
             on.append("a post addressed to it")
         else:

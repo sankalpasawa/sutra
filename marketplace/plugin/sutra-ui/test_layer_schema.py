@@ -137,7 +137,8 @@ def test_s1_field_refuses_markers_return_only_and_a_newline_when_not_multiline_w
 
 
 # ---- S1: the modes -----------------------------------------------------------------------------------------------------
-def test_s1_warn_mode_a_fault_is_a_row_and_a_count_and_nothing_raises(home, envelope):
+def test_s1_warn_mode_a_fault_is_a_row_and_a_count_and_nothing_raises(home, envelope, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W = home
     W.create("t-warn", "Acme", None)
     runs = len(W.runs("t-warn"))
@@ -185,7 +186,7 @@ def test_s1_refused_never_raises_and_a_ref_with_no_department_writes_no_row(home
 
 def test_s1_mode_is_a_code_constant_never_an_environment_variable():
     src = (S.HERE / "layer_schema.py").read_text(encoding="utf-8")
-    assert S.MODE == "warn" and S.OWNERSHIP_MODE == "warn"
+    assert S.MODE == "refuse" and S.OWNERSHIP_MODE == "warn"        # 'A1 interface: refuse'; ownership refuses at W3-PROOF
     assert "os.environ" not in src and "getenv" not in src
 
 
@@ -411,6 +412,8 @@ DEPARTMENT_BAD = {
     "ladder": {"Write": "2"}, "bounds": {"hops": -1}, "envelopes": {"Write": {"calls": 40}}, "ceiling": {"rounds": 6},
 }
 SAMPLES["department"] = (DEPARTMENT, _but(DEPARTMENT, colour="red"))
+# the A3 definitions' samples (PRD amendment A3: the templates at every level) live beside their fixtures, a (good, bad) pair each
+SAMPLES.update({k: tuple(v) for k, v in json.loads((S.HERE / "test_fixtures" / "templates" / "samples.json").read_text(encoding="utf-8")).items()})
 
 
 def test_s2_the_samples_name_every_definition():
@@ -618,8 +621,11 @@ def test_s3_prompts_are_the_bundles_parts_and_the_returns_byte_for_byte():
             if not parts:
                 assert list(S.PROMPTS[fn][file]) == ["note"], "a file no step reads is its note (A1.16 rule 7)"
                 continue
-            assert list(S.PROMPTS[fn][file]) == list(parts)
+            # a part a later step added to the interface (A1.16, 'Parts added by later steps') is in no file of the bundle
+            assert [p for p in S.PROMPTS[fn][file] if (fn, file, p) not in S.ADDED_PARTS] == [p for p in parts if (fn, file, p) not in S.ADDED_PARTS]
             for part, slots in parts.items():
+                if (fn, file, part) in S.ADDED_PARTS:
+                    continue
                 p = S.PROMPTS[fn][file][part]
                 assert p["inputs"] == tuple(slots)
                 assert p["returns"] is None or p["returns"] in got[part], "%s.%s.%s: returns byte for byte" % (fn, file, part)
@@ -696,10 +702,14 @@ def test_s3_outputs_are_the_step_outputs_read_outside_the_layer():
 
 
 def test_s3_layers_carry_the_function_pages_verbatim():
+    """The pages are the interface's (A1 C8: functions_view.PAGES moved here and was deleted), word for word as the pane
+    printed them (test_fixtures/function-pages.snapshot.json, taken from functions_view.PAGES before it went); each
+    function's journeys, which the interface does not hold, stay with the view that reads them from the record."""
+    snap = json.loads((S.HERE / "test_fixtures" / "function-pages.snapshot.json").read_text(encoding="utf-8"))
+    assert not hasattr(FV, "PAGES") and set(FV.JOURNEYS) == set(snap) == {S.TITLE[layer] for layer in S.FUNCTION_LAYERS}
     for layer in S.FUNCTION_LAYERS:
-        page = FV.PAGES[S.TITLE[layer]]
         for k in ("vsm", "line", "holds", "hands_to", "keeps", "v1"):
-            assert S.LAYERS[layer][k] == page[k], (layer, k)
+            assert S.LAYERS[layer][k] == snap[S.TITLE[layer]][k], (layer, k)
     assert set(S.LAYERS) == set(S.LAYER_NAMES) and S.LAYERS["identity"]["view"] == "view.identity"
 
 
@@ -849,6 +859,7 @@ def test_s4_validate_act_holds_the_edges_the_words_and_the_payload():
 
 
 def test_s4_check_act_is_a_row_in_warn_mode_and_a_refusal_in_refuse_mode(monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     with S.expect_refused("act") as met:
         assert S.check_act("Priority", "Owner", "inform", {"word": "said"}) == {"word": "said"}
     assert met == ["Priority inform to Owner: $: Priority sends no inform"]
@@ -859,6 +870,7 @@ def test_s4_check_act_is_a_row_in_warn_mode_and_a_refusal_in_refuse_mode(monkeyp
 
 
 def test_s4_check_department_checks_only_the_changed_keys_and_stamps_the_version(monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     before = {"kind": "website", "ref": "r", "name": "Acme", "colour": "an old key", "windows": {"Plan": "fifteen"}}
     d = dict(before, goal="A live site")
     assert S.check_department(dict(d), before=before)["schema_version"] == 1, "a legacy fault never blocks a later save"
@@ -888,8 +900,9 @@ def test_s4_a_new_workflows_entry_is_a_registration_and_meets_the_write_stage():
     reg = {"version": 1, "engines": ["Plan", "Write", "Check", "Publish"], "source": "library", "registered": "2026-10-26", "by": "Root"}
     S.check_department(dict(base, workflows=[reg]), before=base)
     with S.expect_refused("department") as met:
-        S.check_department(dict(base, workflows=[reg, {"version": 2, "engines": ["Plan"], "source": "copied"}]),
-                           before=dict(base, workflows=[reg]))
+        with pytest.raises(S.SchemaFault):
+            S.check_department(dict(base, workflows=[reg, {"version": 2, "engines": ["Plan"], "source": "copied"}]),
+                               before=dict(base, workflows=[reg]))
     assert "$.workflows[1].registered: is missing" in met and "$.workflows[1].source: is not one of library, shaped, fitted, made" in met
     assert not [f for f in met if f.startswith("$.workflows[0]")], "the entry already on the record is not read again"
 
@@ -915,14 +928,14 @@ def test_s4_describe_is_the_whole_interface_as_json():
     assert json.loads(json.dumps(got)) == got
     for k in ("layers", "records", "department_keys", "hears", "sends", "edges", "calls", "verdicts", "checks", "shared_checks",
               "contract_samples", "outputs", "settings", "groups", "prompts", "option_kinds", "workflow_standards", "views",
-              "sink", "sink_journals", "defs"):
+              "sink", "sink_journals", "defs", "template_levels", "ask_forms", "ledger_actions", "recognitions", "steps"):
         assert got[k], k
     assert got["edges"] == R.defs()["edges"] and got["schema_version"] == S.SCHEMA_VERSION
 
 
 # ---- S6: the generated JSON Schema files ------------------------------------------------------------------------------
 FILES = ("department.schema.json", "workflow.schema.json", "records.schema.json", "acts.schema.json",
-         "instructions.schema.json", "views.schema.json", "interface.v1.json")
+         "instructions.schema.json", "views.schema.json", "templates.schema.json", "journeys.schema.json", "interface.v1.json")
 
 
 def test_s6_the_files_on_disk_are_what_the_definitions_generate():

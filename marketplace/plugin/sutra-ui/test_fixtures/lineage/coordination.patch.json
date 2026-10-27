@@ -1,0 +1,26 @@
+{
+ "parent": "coordination/v1",
+ "on": [
+  {
+   "when": {
+    "msg_type": "inform",
+    "word": "born"
+   },
+   "steps": [
+    {
+     "id": "coord.probe",
+     "name": "Look at the new line",
+     "nature": "transform",
+     "born": "C2",
+     "code": "coord_ready",
+     "check": "said_what_it_did",
+     "after": "coord.table"
+    },
+    {
+     "id": "coord.table",
+     "name": "Write the line and a slot for each engine, version 2"
+    }
+   ]
+  }
+ ]
+}

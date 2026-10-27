@@ -186,23 +186,29 @@ STOP_OPTION = "stop"                         # the option that stops the departm
 
 
 class AskError(ValueError):
-    """A choice an ask cannot take, by a stable code: UNKNOWN_OPTION, ALREADY_HANDLED, EMPTY_ANSWER."""
+    """A choice an ask cannot take, by a stable code: UNKNOWN_OPTION, ALREADY_HANDLED, EMPTY_ANSWER, and OVER_CAP (a raise
+    past RAISE_CAP times where the limit started, PRD M5.4)."""
 
     def __init__(self, code, why=""):
         super().__init__("%s: %s" % (code, why) if why else code)
         self.code = code
 
 
-def option(oid, label, cost):
-    """One way forward on an ask: what the button says, and what it costs (said beside it, and in its title)."""
-    return {"id": str(oid), "label": str(label), "cost": str(cost)}
+def option(oid, label, cost, params=None):
+    """One way forward on an ask: what the button says, and what it costs (said beside it, and in its title). Its `kind`
+    is the part of the id before ':' (words, leave, stop: S.OPTION_KINDS, the interface's ways out, A1.15), which says
+    which layer applies it; `params`, when given, pass through untouched for that layer to read."""
+    out = {"id": str(oid), "label": str(label), "cost": str(cost), "kind": str(oid).split(":", 1)[0]}
+    if params is not None:
+        out["params"] = params
+    return out
 
 
 def options_ask(kind, text, options, **more):
     """An ask whose answer is one of its options, at most three."""
     return dict({"id": "a-" + uuid.uuid4().hex[:8], "kind": kind, "engine": "Identity", "text": text,
-                 "options": [option(o["id"], o["label"], o["cost"]) for o in options][:OPTIONS_MAX], "chosen": None,
-                 "status": "pending", "created": now()}, **more)
+                 "options": [option(o["id"], o["label"], o["cost"], o.get("params")) for o in options][:OPTIONS_MAX],
+                 "chosen": None, "status": "pending", "created": now()}, **more)
 
 
 def chosen(option, words=None, by="the owner", at=None):
@@ -218,6 +224,12 @@ def offered(d, a):
     if (d or {}).get("stopped"):
         opts = [o for o in opts if o.get("id") != STOP_OPTION]
     return opts
+
+
+def _priority(ref, name, *args):
+    """A function of Priority's implementation (layers/priority), called; lazy, as the layers import this module."""
+    import layers
+    return layers.call(ref, "priority", name, *args)
 
 
 def choose_option(ref, aid, oid, text=None, by="the owner"):
@@ -240,10 +252,20 @@ def choose_option(ref, aid, oid, text=None, by="the owner"):
             raise AskError("ALREADY_HANDLED")
         if oid == WORDS_OPTION and not text:
             raise AskError("EMPTY_ANSWER")
+        if offer[oid].get("kind") == "raise":
+            _priority(ref, "check_raise", ref, offer[oid])     # OVER_CAP before anything is recorded (PRD M5.4)
         before = dict(a)
         at = now()
         a.update({"status": "chosen", "decided": at, "by": by, "chosen": chosen(offer[oid], text, by, at)})
         _put_ask(ref, a)
+    if offer[oid].get("kind") == "raise" or (a.get("kind") == "envelope" and not a.get("thread")):
+        # Priority adds the budget the owner chose, and applies the other ways out of the limit card it filed itself (an
+        # ask with no thread has no step of Identity's to apply them); what could not be applied is no choice
+        try:
+            _priority(ref, "apply_choice", ref, a, offer[oid])
+        except Exception:
+            _put_ask(ref, before)
+            raise
     rt = _runtime(ref)
     if rt and a.get("thread"):
         # posted in the ask's thread; Identity applies the choice as a step
@@ -386,6 +408,9 @@ def _check_sink(p, name, ref, obj):
         for row in obj:
             if not isinstance(row, dict) or stored.get(row.get("id")) != row:
                 S.check("identity.ask", row, ref=ref, owner="identity")
+        return
+    if name == "instructions.json":
+        S.report("instructions", S.validate_instructions(obj), ref=ref, owner="identity")    # every value as its field types it
         return
     S.check(S.SINK[name], obj, ref=ref, owner={"coordination.json": "coordination"}.get(name, "identity"))
 
@@ -888,14 +913,42 @@ def limit_of(d, name):
     return ENVELOPE
 
 
+def envelope_start(d, name):
+    """Where an engine's limit started: the one Priority gave it at birth, from its template (the first build's constant
+    for a department off the engine runtime). A raise the owner chooses on an ask may reach S.RAISE_CAP times this and
+    no more (PRD M5.4)."""
+    if (d or {}).get("runtime") == 2:
+        import engine_runtime
+        return engine_runtime.engine_limit(name)
+    return dict(ENVELOPE)
+
+
+def envelope_over(d, name, calls, usd):
+    """None when raising one engine's limit to `calls` and `usd` stays inside S.RAISE_CAP times where it started, else the
+    limit it may be raised to, in words. A value no higher than the limit now is never over (the cap judges a raise, not
+    a limit the owner set lower or higher by hand)."""
+    start, now_ = envelope_start(d, name), limit_of(d, name)
+    cap_c, cap_u = int(S.RAISE_CAP * int(start["calls"])), round(S.RAISE_CAP * float(start["usd"]), 4)
+    if (calls is not None and int(calls) > int(now_["calls"]) and int(calls) > cap_c) or \
+            (usd is not None and round(float(usd), 4) > round(float(now_["usd"]), 4) and round(float(usd), 4) > cap_u):
+        return "%s may be raised to %d calls and %.2f USD a day, twice where it started, and no further" % (name, cap_c, cap_u)
+    return None
+
+
 def set_envelope(ref, name, calls=None, usd=None, by="the owner"):
     """The owner's own limits for one engine, set on Priority's card. The defaults came from Priority's template
-    at birth (founder, 2026-09-28: "These limits can be configured in the relevant priority")."""
+    at birth (founder, 2026-09-28: "These limits can be configured in the relevant priority"). With by="option" the
+    owner chose a raise on an ask (PRD M5.4): it may reach RAISE_CAP times where the limit started, else AskError
+    OVER_CAP; the card's own box (by the owner) sets any limit the owner types."""
     d = dept(ref)
     if not d:
         raise ValueError("no website department here")
     if name not in {e[0] for e in engines_of(d)} | set(SYSTEMS):
         raise ValueError("no engine named %s" % name)
+    if by == "option":
+        over = envelope_over(d, name, calls, usd)
+        if over:
+            raise AskError("OVER_CAP", over)
     env = dict(limit_of(d, name))
     if calls is not None:
         env["calls"] = max(0, int(calls))
@@ -903,7 +956,8 @@ def set_envelope(ref, name, calls=None, usd=None, by="the owner"):
         env["usd"] = max(0.0, float(usd))
     d.setdefault("envelopes", {})[name] = env
     save_dept(ref, d, by="priority")      # the envelope is Priority's key, whoever asked (`by` above is who, in words)
-    system_run(ref, "Priority", "%s set %s's envelope: %d calls, %.2f USD a day" % (by, name, env["calls"], env["usd"]))
+    system_run(ref, "Priority", "%s set %s's envelope: %d calls, %.2f USD a day"
+               % ("the owner's choice" if by == "option" else by, name, env["calls"], env["usd"]))
     return env
 
 
@@ -1463,7 +1517,9 @@ def status(ref):
     rs, ak = runs(ref), asks(ref)
     pend = [a for a in ak if a["status"] == "pending"]
     name, inp, why = due(ref, peek=True) if not any(r["status"] == "running" for r in rs) else (None, None, "running")
-    waits = [{"what": a["engine"], "why": "for the stamp" if a["kind"] == "publish" else a["text"], "since": a["created"]} for a in pend]
+    # Identity's question to the owner (j2_identity_ask) names no engine: it is Identity's, so that is what it waits on
+    waits = [{"what": a.get("engine") or "Identity", "why": "for the stamp" if a["kind"] == "publish" else a["text"], "since": a["created"]}
+             for a in pend]
     rt = _runtime(ref)
     if rt:                                     # the owner's own words nobody has answered yet (ER-9)
         waits += [{"what": "Identity", "why": "your words wait: " + w["words"], "since": w["since"]} for w in rt.front_state(ref)["waiting"]]
@@ -1600,7 +1656,7 @@ def map_view(ref):
         e.pop("runs", None)
         last = next((r for r in reversed(rs) if r["engine"] == e["name"]), None)
         e["last"] = last and {"status": last["status"], "at": last["started"], "what": last.get("what"), "words": last.get("words")}
-        if any(a["engine"] == e["name"] and a["status"] == "pending" for a in asks(ref)):
+        if any(a.get("engine") == e["name"] and a["status"] == "pending" for a in asks(ref)):   # Identity's question names none
             e["state"] = "Waits"
         # an engine the registered plan left out stays on the record and never runs (PRD M4.2): it says so
         e["in_line"] = line is None or e["name"] in line

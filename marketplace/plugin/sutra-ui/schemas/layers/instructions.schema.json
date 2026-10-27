@@ -113,7 +113,11 @@
       },
       "make": {
         "line": {},
-        "refused": {}
+        "refused": {},
+        "shape": {
+          "guidance": "field.guidance",
+          "task": "field.task"
+        }
       },
       "sense": {
         "shape": {}
@@ -129,6 +133,10 @@
         }
       },
       "judge": {
+        "items": {
+          "guidance": "field.guidance",
+          "task": "field.task"
+        },
         "judge": {
           "guidance": "field.guidance",
           "task": "field.task"
@@ -199,7 +207,10 @@
         "engine": {
           "task": "field.task"
         },
-        "line": {}
+        "line": {},
+        "round": {
+          "task": "field.task"
+        }
       },
       "goal": {
         "does": {

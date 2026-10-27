@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.routing import APIRoute
+from starlette.convertors import Convertor, register_url_convertor
 
 _LIB_DIR = str(Path(__file__).resolve().parents[1] / "lib")
 if _LIB_DIR not in sys.path:
@@ -24,10 +26,45 @@ if _LIB_DIR not in sys.path:
 import placement_engine as E  # noqa: E402
 import founding  # noqa: E402
 import functions_view  # noqa: E402
+import journeys  # noqa: E402
+import layers  # noqa: E402
+import layer_schema as S  # noqa: E402
 import owner_words  # noqa: E402
 import website_dept as W  # noqa: E402
 
-router = APIRouter(prefix="/api/native", tags=["native"])
+
+class _InterfaceRoute(APIRoute):
+    """A write the interface refuses (layer_schema.SchemaFault, in refuse mode) is 422 NOT_IN_SCHEMA with its first three
+    faults, whichever of these routes met it (PRD A1.4, A1.20). One handler for the router: an APIRouter has no exception
+    handlers of its own, and a test that builds an app of its own around the router gets it too."""
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def guarded(request: Request):
+            try:
+                return await handler(request)
+            except S.SchemaFault as exc:
+                return JSONResponse(status_code=422, content={"detail": {"code": "NOT_IN_SCHEMA", "faults": exc.faults[:3]}})
+        return guarded
+
+
+router = APIRouter(prefix="/api/native", tags=["native"], route_class=_InterfaceRoute)
+
+
+class _JourneyId(Convertor):
+    """A path part shaped like a journey's id (J1, FI2 ...). The one-journey route claims nothing else, so a department whose ref
+    is `journeys` keeps every route of its own."""
+    regex = S.JOURNEY_ID.strip("^$")
+
+    def convert(self, value: str) -> str:
+        return value
+
+    def to_string(self, value: str) -> str:
+        return str(value)
+
+
+register_url_convertor("journey_id", _JourneyId())
 
 
 @router.get("/ping")
@@ -61,6 +98,25 @@ async def found(request: Request):
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     return out
+
+
+# The user journeys (PRD A3.6): data for the screens, global (a journey is not a department's record), read only. Registered before
+# every route that begins with /{ref}, so that `journeys` is never read as a department's ref.
+@router.get("/journeys")
+def journey_list():
+    """Every user journey with the state its rows have earned from the last run of their tests: {schema_version, journeys: [{id,
+    title, kind, inside, bound_to, declared, state, stale, counts}]}. Nothing is read from a department and nothing is written."""
+    return journeys.view()
+
+
+@router.get("/journeys/{jid:journey_id}")
+def journey_one(jid: str):
+    """One journey as the site draws it, without its code and tests, with `status`: its state, whether the file the state
+    was computed for is stale, each row's state with the tests that proved it, and where the site's word and the state differ."""
+    try:
+        return journeys.view(jid)
+    except journeys.UnknownJourney:
+        raise HTTPException(404, detail={"code": "UNKNOWN_JOURNEY"})
 
 
 def _need(ref):
@@ -230,18 +286,34 @@ async def ladder(ref: str, request: Request):
 
 @router.post("/{ref}/instructions")
 async def instructions(ref: str, request: Request):
-    """The owner's change to one of a function's instruction files, {fn, file, text}: filed as an ask Identity puts
-    to the owner; nothing changes until the stamp (PRD M2.2). The words are kept as written, lines and all."""
+    """The owner's change to one field of one of a function's instructions, {fn, group, part, field, value}: filed as an
+    ask Identity puts to the owner; nothing changes until the stamp (PRD A1.16). The old body, {fn, file, text}, names no
+    part and no field: 400, 'say which part and which field'."""
     rt = _rt(ref)
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
         body = {}
     body = body if isinstance(body, dict) else {}
+    group, part, field = (str(body.get(k) or "").strip() for k in ("group", "part", "field"))
+    if not (group and part and field):
+        raise HTTPException(400, detail="say which part and which field")
+    if "value" not in body:
+        raise HTTPException(400, detail="say what the words should be")
     try:
-        return {"ok": True, "ask": rt.instructions_ask(ref, str(body.get("fn") or ""), str(body.get("file") or ""), body.get("text"))}
+        return {"ok": True, "ask": rt.instructions_ask(ref, str(body.get("fn") or ""), group, part, field, body["value"])}
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
+
+
+@router.get("/{ref}/layers")
+def layers_(ref: str):
+    """The interface the department runs under (PRD A1.18), for the version line on each function's Settings and the
+    standards on Root's: the schema version, the implementation each layer runs, every implementation on disk, Root's
+    standards in their words, and the whole interface as JSON. Read only. 404 for a department off the engine runtime."""
+    _rt(ref)
+    return {"schema_version": S.SCHEMA_VERSION, "pins": layers.pins(ref), "available": layers.available(),
+            "standards": [{"id": i, "says": says} for i, says, _, _ in S.WORKFLOW_STANDARDS], "describe": S.describe()}
 
 
 @router.post("/{ref}/host")

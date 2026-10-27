@@ -1,0 +1,1725 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="j2host.js"></script>
+<title>J2 Department</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --charter:var(--priority);--site:var(--accent);--other:var(--builder);--prd:var(--identity);--hld:var(--adaptation);--lld:var(--coordination);
+  --bg:#f1f3f2;--panel:#fff;--panel2:#eaeeec;--ink:#18201e;--muted:#5d6865;--line:#d6ddd9;--on:#fff;
+  --user:#18201e;--validator:#8a6d1d;--identity:#6b45b3;--adaptation:#3056b8;--priority:#b0680f;
+  --coordination:#1f7a55;--builder:#5d6865;--audit:#b4487e;--system:#8a6d1d;--bad:#b83a32;--ok:#2c7d4f;--accent:#0e6b61;
+  --wf0:#0f6e8c;--wf1:#8a4f12;--wf2:#5a7a12;--wf3:#9c3d5b;--wf4:#46549c;--wf5:#2f7d6d;
+  --display:"Bricolage Grotesque",Arial,sans-serif;--body:"IBM Plex Sans",Arial,sans-serif;--mono:"IBM Plex Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;
+  --bg:#101413;--panel:#191f1d;--panel2:#212826;--ink:#e6ebe9;--muted:#9aa5a1;--line:#2d3633;--on:#0f1312;
+  --user:#e6ebe9;--validator:#d9b55a;--identity:#ab8cec;--adaptation:#7c9ef0;--priority:#e3a24b;
+  --coordination:#5cc596;--builder:#9aa5a1;--audit:#e58ab5;--system:#d9b55a;--bad:#f07a70;--ok:#5fc28c;--accent:#4fc2b2;
+  --wf0:#5cc3e0;--wf1:#e0a15c;--wf2:#a9cf5a;--wf3:#e58aa6;--wf4:#94a3f0;--wf5:#6fd1bd}}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14.5px/1.5 var(--body);display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+h1{font:700 18px var(--display);margin:0}
+.meta{font:500 12px var(--mono);color:var(--muted)}
+.spacer{flex:1}
+button{font:500 13px var(--body);cursor:pointer}
+.ghost{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 11px;border-radius:7px}
+.warn{font:500 12px var(--body);color:var(--priority);background:var(--panel2);padding:4px 10px;border-radius:6px}
+.steps{display:flex;gap:4px;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto}
+.st{flex:1;min-width:120px;padding:6px 8px;border-radius:7px;background:var(--panel2);font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:baseline}
+.st b{font:700 13px var(--display);white-space:nowrap}
+.code{font:500 11px var(--mono);color:var(--muted);white-space:nowrap}.st.on .code{color:var(--on);opacity:.75}
+.atom{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:6px 0;background:var(--panel)}
+.atom>summary{cursor:pointer}.atom h4{margin:8px 0 2px;font-size:12.5px}.atom p{margin:0 0 4px}
+.foldbody[hidden]{display:none}.otag{border:0;border-radius:10px;padding:1px 8px;margin:2px 4px 2px 0;color:var(--on);font:inherit;font-size:12px;cursor:pointer}.otag.on{outline:2px solid var(--ink)}.mapwrap{padding:4px 0}.maphead{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px}.maphead h3{margin:0 8px 0 0}.mappill{border-radius:12px;padding:2px 10px;border:1px solid var(--line);font-size:13px}.mappill.running,.mappill.waiting_on_you{border-color:var(--validator);color:var(--validator);font-weight:600}.mappill.checks{border-color:var(--ok);color:var(--ok)}.mappill.nochecks{color:var(--muted)}#dview .work.mapfit{align-self:start;max-height:100%}.mappill.checks.needsrev{border-color:var(--validator);color:var(--validator)}.mapsvg.mapvert{display:none}@media (max-width:900px){.mapsvg:not(.mapvert){display:none}.mapsvg.mapvert{display:block}}.mapsvg{width:100%;height:auto;display:block;font:12px system-ui,sans-serif}.mapsvg text{fill:var(--ink)}.mapsvg .rowlab{fill:var(--muted);font-size:10px;letter-spacing:.12em}.mapsvg .sub{fill:var(--muted);font-size:10.5px}.mapsvg a{cursor:pointer}.mapsvg a:focus-visible rect,.mapsvg a:focus-visible circle{outline:2px solid var(--ink)}.maplegend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:12px 0;font-size:13px}.maplegend span{display:inline-flex;align-items:center;gap:6px}.mapnr{margin:8px 0;font-size:13px;color:var(--muted)}.mapcards{display:none}.mapcard{border:2px solid var(--line);border-radius:8px;padding:8px 12px;margin:0;background:var(--panel)}.mapcard.st-filed{border-style:solid}.mapcard.st-left_open{border-style:dashed}.mapcard.st-running{border-style:double;border-width:5px}.mapcard.st-fault{border-color:var(--bad);border-width:4px}.mapcard.st-waiting{border-color:var(--validator);border-width:4px}.mapdd{margin:8px 0;font-size:13px;color:var(--muted)}.mapdd summary{cursor:pointer}.maptable{width:auto;border-collapse:collapse;margin:6px 0 0;font-size:13px;color:var(--ink)}.maptable th,.maptable td{border-bottom:1px solid var(--line);padding:2px 12px 2px 0;text-align:left}.mapcard.st-waiting_on_you{border-color:var(--validator);border-width:4px}.mapcard.st-done_unchecked{border-color:var(--validator);border-width:4px;border-style:dotted}.mapcard.st-not_made{background:transparent;border-width:1px;color:var(--muted)}.mapstep{margin:4px 0 4px 16px;color:var(--muted);font-size:13px}.mapcard .sub{color:var(--muted);font-size:13px}@media (max-width:600px){.mapsvgwrap{display:none}.mapcards{display:block}}.artrow{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:6px 0}.arttext{white-space:pre-wrap;max-height:420px;overflow:auto;margin:8px 0 0;font-size:13px}.artimg{max-width:100%;margin-top:8px}.artframe{width:100%;height:420px;border:1px solid var(--line);margin-top:8px;background:#fff}.runsum{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:0 0 10px}.runsum div{margin:2px 0}.ogroups{margin:6px 0 10px}.ogroups div{margin:2px 0}.dochead .code{color:var(--on);background:rgba(0,0,0,.3);border-radius:4px;padding:0 6px;font-size:12px}.docmeta{margin-left:8px}.chnote,.brief{margin:0 0 10px}.brief{border:1px solid var(--line);border-radius:8px;padding:8px 12px;white-space:pre-wrap}.chitems{padding-left:26px}.chitems li{margin:6px 0}.chsrc,.chused{color:var(--muted);font-size:13px}.cgroup{margin:4px 0}.clist{margin:2px 0 4px;padding-left:20px}.dl.hit{background:var(--hit,#fff3b0);color:#111;border-radius:4px;padding:2px 4px}.doc{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}.dochead{color:var(--on);padding:8px 12px}.docbody{padding:4px 12px 10px}.docbody h4{margin:10px 0 2px}.docjump{position:sticky;top:-16px;z-index:1;margin:-16px -16px 10px;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line)}.docjump a{margin-right:10px}.docdiv{display:flex;gap:16px;justify-content:space-between;margin:12px 0;padding:6px 0;border-top:2px dashed var(--line);border-bottom:2px dashed var(--line);color:var(--muted);font-size:13px}.ablock{margin:4px 0}.agroup{margin:10px 0 2px;color:var(--muted)}.long>summary{cursor:pointer;color:var(--muted);display:inline}
+.apreview{display:block;width:100%;min-height:48px;max-height:260px;border:1px solid var(--line);border-radius:6px;margin:6px 0;padding:6px;background:#fff;color:#111}
+iframe.apreview{height:220px;padding:0}.linkbtn{border:0;background:none;color:var(--accent,#2a6);text-decoration:underline;cursor:pointer;padding:0;font:inherit}
+.st.on{background:var(--accent);color:var(--on)}
+.st.past{color:var(--ink)}
+main{flex:1;display:grid;grid-template-columns:minmax(320px,1fr) 250px minmax(0,1.3fr);min-height:0}
+main>*{min-width:0}
+@media (max-width:1100px){main{grid-template-columns:minmax(0,1fr);grid-template-rows:60vh auto 70vh}.lanes{border-right:0;border-bottom:1px solid var(--line);max-height:40vh}}
+.chat{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+.msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.msg{display:grid;grid-template-columns:30px 1fr;gap:9px}
+.av{width:30px;height:30px;border-radius:8px;background:var(--c);color:var(--on);display:grid;place-items:center;font:700 12px var(--display)}
+.bubble{background:var(--panel);border:1px solid var(--line);border-radius:4px 12px 12px 12px;padding:8px 11px;min-width:0}
+.msg.user .bubble{background:var(--panel2)}
+.who{font:600 12.5px var(--body);color:var(--c)}.who span{font:400 11px var(--mono);color:var(--muted);margin-left:6px}
+.text{white-space:pre-wrap;word-wrap:break-word}
+.tag{display:inline-block;margin:5px 4px 0 0;font:500 11px var(--mono);padding:2px 7px;border-radius:5px;background:var(--panel2);color:var(--muted)}
+.tag.bad{color:var(--bad)}.tag.ok{color:var(--ok)}
+.sys{font:500 12px var(--mono);color:var(--system);text-align:center;overflow-wrap:anywhere}
+.msg.touser .bubble{border:2px solid var(--identity);background:color-mix(in srgb,var(--identity) 9%,var(--panel))}
+.touser-label{font:600 11px var(--mono);color:var(--identity);margin-left:6px}
+.waiting{border:2px solid var(--identity);border-radius:9px;padding:8px 11px;background:color-mix(in srgb,var(--identity) 9%,var(--panel));font-size:13.5px}
+.waiting b{color:var(--identity)}.waiting ol{margin:4px 0 0;padding-left:20px}.waiting .opt{color:var(--muted);font-size:12.5px}
+.typing{font-size:13px;color:var(--muted);padding:0 14px 6px;min-height:22px}
+.compose{border-top:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--panel)}
+.quick{display:flex;gap:6px;flex-wrap:wrap}
+.quick button{border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:5px 10px;border-radius:99px;font-size:12.5px}
+.row{display:flex;gap:8px}
+textarea{flex:1;resize:none;height:56px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;background:var(--panel);color:var(--ink)}
+.send{background:var(--accent);color:var(--on);border:0;border-radius:9px;padding:0 18px;font-weight:600}
+.send:disabled,textarea:disabled{opacity:.5;cursor:not-allowed}
+.work{display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--line);background:var(--panel);align-items:flex-end;flex-wrap:wrap}
+.tabs button{border:0;background:none;color:var(--muted);padding:8px 12px;border-bottom:2px solid transparent}
+.tabs button[aria-selected="true"]{color:var(--ink);border-color:var(--accent);font-weight:600}
+.tabs select{margin:0 0 6px auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 6px;font:inherit}
+.pane{flex:1;min-height:0;overflow:auto;padding:16px}
+.pane.preview{padding:0;background:#fff}
+.doclinks{display:flex;gap:8px;align-items:center;height:38px;padding:0 10px;border-bottom:1px solid var(--line);background:var(--panel);font-size:13.5px}
+.doclinks a{color:var(--ink)}.pane.preview.has-links iframe{height:calc(100% - 39px)}
+.outsel{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 6px;font:inherit}
+iframe{width:100%;height:100%;border:0;display:block}
+.empty{color:var(--muted)}
+h3{font:600 15px var(--display);margin:0 0 8px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin-bottom:14px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{font-weight:600;color:var(--muted);background:var(--panel2)}
+.pill{font:600 11px var(--mono);padding:2px 7px;border-radius:5px;background:var(--panel2)}
+.pill.done{color:var(--ok)}.pill.failed{color:var(--bad)}.pill.running{color:var(--priority)}
+.bar{height:12px;border-radius:6px;background:var(--panel2);overflow:hidden;margin:6px 0 16px;max-width:520px}
+.bar i{display:block;height:100%;background:var(--priority)}
+dl{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;margin:0 0 14px}
+dt{font:500 12px var(--mono);color:var(--muted);padding-top:2px}dd{margin:0}
+.pass{color:var(--ok);font-weight:600}.fail{color:var(--bad);font-weight:600}
+.lanes{border-right:1px solid var(--line);overflow:auto;padding:10px;display:flex;flex-direction:column;gap:6px;background:var(--panel)}
+.lanes h2{font:600 13px var(--display);margin:0 0 2px;color:var(--muted)}
+.lane{text-align:left;border:1px solid var(--line);border-left:5px solid var(--c);background:var(--bg);color:var(--ink);border-radius:8px;padding:6px 8px;font-size:12.5px}
+.lane b{color:var(--c);font-size:13px}.lane .d{color:var(--muted);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.lane .pg{font:500 11px var(--mono);color:var(--muted);display:block;margin-top:2px}
+.st-working{color:var(--accent)}.st-waiting{color:var(--priority)}.st-blocked{color:var(--bad)}.st-idle{color:var(--muted)}
+.pill.st-working,.pill.st-waiting,.pill.st-blocked{font-weight:700}
+.tline{display:flex;gap:4px;overflow-x:auto;padding:6px 0 12px;align-items:stretch}
+.chip{flex:0 0 auto;border:1px solid var(--line);border-top:4px solid var(--c);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 7px;font-size:11.5px;text-align:left;max-width:180px}
+.chip b{color:var(--c);display:block;font-size:12px}.chip span{color:var(--muted)}
+.mark{flex:0 0 auto;align-self:center;font:500 11px var(--mono);color:var(--muted);background:var(--panel2);border-radius:5px;padding:3px 6px}
+.msg:not(.user) .bubble{cursor:pointer}.msg:not(.user) .bubble:hover{border-color:var(--c)}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);width:min(760px,calc(100vw - 32px));max-height:86vh;padding:0}
+dialog::backdrop{background:rgb(0 0 0 / .35)}
+.dhead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+.dbody{padding:12px 16px;overflow:auto}
+.dbody h3{margin-top:14px}
+pre{white-space:pre-wrap;word-wrap:break-word;font:12px/1.45 var(--mono);background:var(--panel2);padding:8px 10px;border-radius:7px;max-height:340px;overflow:auto}
+#runsel{max-width:min(340px,100%);text-overflow:ellipsis}
+.banner{font:500 12.5px var(--body);background:var(--panel2);color:var(--priority);padding:6px 16px;border-bottom:1px solid var(--line)}
+.lock{font:500 12px var(--mono);color:var(--coordination)}
+/* ---- Simple view (default): chat + preview, one voice, plain words */
+body:not(.simple) #sview{display:none}
+/* the Simple view keeps the rail (Chat lit, Map back to the home): only the rail of #dview shows */
+body.simple #dview{display:flex;flex:0 0 auto}body.simple #dview .dcol{display:none}@media (min-width:601px){body.simple{flex-direction:row}body.simple #dview{order:-1}}
+#dview{display:contents}
+#sview{flex:1;display:flex;flex-direction:column;min-height:0}
+.shead{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.shead b{font:700 18px var(--display)}
+.slink{font-size:13px;color:var(--muted)}
+.smain{flex:1;display:grid;grid-template-columns:minmax(320px,1fr) minmax(0,1.6fr);min-height:0}
+.smain>*{min-width:0}
+.schat{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+.sprog{display:flex;gap:4px;padding:12px 14px 10px;background:var(--bg);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2;flex:0 0 auto}
+.sq{margin:6px 0 0}
+.stoggle{display:none}
+.sprog div{flex:1;text-align:center;font-size:12px;color:var(--muted)}
+.sprog div i{display:block;height:6px;border-radius:3px;background:var(--panel2);margin-bottom:5px}
+.sprog div.done i,.sprog div.on i{background:var(--accent)}.sprog div.on{color:var(--ink);font-weight:600}
+.smsgs{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.sb{max-width:88%;padding:9px 12px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word}
+.sb.team{background:var(--panel);border:1px solid var(--line);align-self:flex-start}
+.sb.me{background:var(--accent);color:var(--on);align-self:flex-end}
+.sb small{display:block;font-weight:600;color:var(--accent);margin-bottom:2px}
+.sb ol{margin:6px 0 0;padding-left:20px}
+.opts{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.opts button{text-align:left;border:1px solid var(--accent);background:var(--panel);color:var(--ink);border-radius:9px;padding:8px 11px;font-size:14px}
+.opts button:hover{background:var(--panel2)}
+.sstatus{padding:0 14px 8px;color:var(--muted);font-size:14px;min-height:24px}
+.scompose{border-top:1px solid var(--line);padding:10px;background:var(--panel)}
+.cards{display:grid;gap:8px;margin-top:6px}
+.cards button{text-align:left;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:14px}
+.ready{border:2px solid var(--ok);border-radius:12px;padding:12px;background:var(--panel)}
+.ready h2{font:700 17px var(--display);margin:0 0 8px;color:var(--ok)}
+.ready .acts{display:flex;gap:8px;flex-wrap:wrap}
+.ready a,.ready button{border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:8px;padding:7px 11px;font-size:13.5px;text-decoration:none}
+.oops{border:2px solid var(--bad);border-radius:12px;padding:12px;background:var(--panel)}
+.sprev{min-height:0;background:#fff}
+@media (max-width:900px){
+  /* phone: one pane at a time; the preview only once a site exists, via the Chat | Preview toggle */
+  .smain{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  .schat{border-right:0;grid-row:2}.sprev{display:none;grid-row:2}
+  body.has-site .stoggle{display:flex;grid-row:1;border-bottom:1px solid var(--line);background:var(--panel)}
+  .stoggle button{flex:1;border:0;background:none;color:var(--muted);padding:10px;font-weight:600;border-bottom:2px solid transparent}
+  .stoggle button[aria-selected="true"]{color:var(--ink);border-color:var(--accent)}
+  body.sp-preview .schat{display:none}body.sp-preview .sprev{display:block}}
+/* Map: calm graph look, details in a click panel */
+.mapsvg{background:var(--panel);border:1px solid var(--line);border-radius:12px}.mapsvg .rowlab{text-transform:uppercase}.mapsvg .mapnode:focus{outline:none}.mapsvg .mapnode:focus-visible circle:first-of-type{stroke-width:3}
+.mappanel{border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:10px 0;background:var(--panel)}.mappanelhead{display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:4px}.mappanel .sub{color:var(--muted);font-size:13px;margin:2px 0}
+/* ---- Home: Needs you strip, Map, Chat docked right. The rail has Map, Chat and one Internals folder. */
+.needs{margin:var(--gut) var(--gut) 12px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
+.needs:focus{outline:2px solid var(--vio);outline-offset:2px}.needs h2{font-size:15px;margin:0;display:flex;align-items:center;gap:8px}
+.needbadge{font:600 11px var(--mono);border-radius:99px;padding:1px 8px;background:var(--panel2);color:var(--muted)}.needs.on .needbadge{background:var(--validator);color:var(--on)}
+.needs .none{color:var(--muted);font-size:13.5px}.needs .outcome{flex:1 1 100%;border-top:1px solid var(--line);padding-top:6px;color:var(--muted);font-size:13.5px}.wbar[hidden]{display:none}.pane .banner{margin:0 0 12px}.runset{display:flex;flex-direction:column;gap:12px;align-items:flex-start}.runset label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.runact{display:flex;gap:14px;align-items:center}
+.needitem{display:flex;gap:10px;align-items:center;flex:1 1 100%;border-top:1px solid var(--line);padding-top:6px}.needitem span{flex:1}
+.needitem button,.mappanel .gobtn{border:1px solid var(--vio);background:color-mix(in srgb,var(--vio) 12%,transparent);color:var(--ink);border-radius:8px;padding:5px 11px}
+.msg.flash .bubble{outline:2px solid var(--vio);outline-offset:2px}.msg:focus{outline:none}
+.railsub{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);margin-top:4px;padding-top:6px}.railsub[hidden]{display:none}
+.rail.tabs .railsub button{display:block;padding:5px 2px;border-radius:8px;font-size:11px}
+#backmap{display:block;margin:0 0 2px;font-size:13px}#backmap[hidden]{display:none}
+/* ---- Detailed view layout: icon rail, one title, two soft cards (message board + output), a collapsed Run details row.
+   Everything is scoped to #dview so the Simple view is untouched. System serif for headings, no web fonts. */
+#dview{--vio:#6b45b3;--serif:ui-serif,Georgia,"Times New Roman",serif;--gut:24px}
+@media (prefers-color-scheme:dark){#dview{--vio:#ab8cec}}
+body:not(.simple) #dview{display:flex;flex:1;min-height:0}
+#dview h1,#dview h2,#dview h3,#dview h4{font-family:var(--serif);font-weight:600}
+.rail.tabs{flex:0 0 76px;width:76px;flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:4px;padding:10px 8px;border-bottom:0;border-right:1px solid var(--line);overflow-y:auto}
+.rail.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;border:0;border-radius:12px;padding:8px 2px;font:500 10.5px/1.2 var(--body);text-align:center;color:var(--muted)}
+.rail.tabs button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.rail.tabs button:hover{color:var(--ink)}
+.rail.tabs button[aria-selected="true"],.rail.tabs #gochat[aria-current="page"]{color:var(--vio);background:color-mix(in srgb,var(--vio) 13%,transparent);font-weight:600}
+body.simple .rail.tabs button[aria-selected="true"]{color:var(--muted);background:none;font-weight:500}
+.rail.tabs button:focus-visible,.rdrow:focus-visible{outline:2px solid var(--vio);outline-offset:1px}
+.dcol{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+#dview header.dtop{align-items:flex-end;gap:10px;padding:18px var(--gut) 8px;border-bottom:0;background:none}
+#dview h1{font-size:28px;line-height:1.1;margin:0}
+#dview .banner{margin:0 var(--gut) 8px;border:1px solid var(--line);border-radius:10px}
+.rdmeta{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
+#pane-rundetails .steps{padding:8px 0;background:none;border:0}
+#pane-rundetails .lanes{flex-direction:row;flex-wrap:wrap;border:0;padding:0;overflow:visible;background:none}
+#pane-rundetails .lanes h2{flex:0 0 100%}#pane-rundetails .lane{flex:1 1 200px}
+#dview main{grid-template-columns:minmax(0,1.7fr) minmax(320px,1fr);gap:14px;padding:0 var(--gut) 20px}
+#dview .chat,#dview .work{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+.wbar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.wbar>div{flex:1;min-width:0}.wbar select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:4px 6px;font:inherit}
+.wtitle{font-size:18px;margin:0}.wsub{display:block;color:var(--muted);font-size:13px}
+#dview .pane:not(.preview){width:100%;max-width:880px;margin:0 auto}
+@media (max-width:900px){#dview .dcol{overflow:auto}#dview main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(460px,70vh) minmax(420px,70vh);flex:none}}
+@media (max-width:600px){
+  #dview{--gut:12px}body:not(.simple) #dview{flex-direction:column-reverse}
+  .rail.tabs{flex:0 0 auto;width:auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;border-right:0;border-top:1px solid var(--line);padding:6px}
+  .rail.tabs>button{flex:0 0 64px}
+  .railsub{position:fixed;left:8px;right:8px;bottom:64px;z-index:5;flex-direction:row;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px}.rail.tabs .railsub button{flex:1 1 90px}}
+</style>
+</head>
+<body class="simple">
+<div id="sview">
+  <header class="shead"><b id="stitle">Your website team</b><span class="meta" id="sotype"></span><span class="spacer"></span><a href="?view=detail" class="slink" id="to-detail">See how it works</a></header>
+  <main class="smain">
+    <div class="stoggle" role="tablist" aria-label="Show"><button type="button" role="tab" data-pane="chat" aria-selected="true">Chat</button><button type="button" role="tab" data-pane="preview" aria-selected="false">Preview</button></div>
+    <section class="schat">
+      <div class="sprog" id="sprog" aria-label="Progress"></div>
+      <div class="smsgs" id="smsgs" aria-live="polite"></div>
+      <div class="sstatus" id="sstatus"></div>
+      <div class="scompose"><div class="row"><textarea id="sbox" aria-label="Your message" placeholder="Describe the website you want…"></textarea><button class="send" id="ssend">Send</button></div></div>
+    </section>
+    <section class="sprev"><iframe id="sframe" title="Your website" src="site/latest"></iframe></section>
+  </main>
+</div>
+<div id="dview">
+<nav class="rail tabs" role="tablist" aria-label="Sections" aria-orientation="vertical">
+  <button role="tab" data-tab="map" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11l-6 6M12 11l6 6"/></svg><span>Map</span></button>
+  <button type="button" id="gochat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Chat</span></button>
+  <button type="button" id="internals" aria-expanded="false" aria-controls="railsub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg><span>Internals</span></button>
+  <div class="railsub" id="railsub" hidden>
+    <button role="tab" data-tab="preview" aria-selected="false">Preview</button>
+    <button role="tab" data-tab="goal" aria-selected="false">Goal</button>
+    <button role="tab" data-tab="workflows" aria-selected="false">Workflows</button>
+    <button role="tab" data-tab="conflicts" aria-selected="false">Conflicts</button>
+    <button role="tab" data-tab="timeline" aria-selected="false">Timeline</button>
+    <button role="tab" data-tab="audit" aria-selected="false">Audit</button>
+    <button role="tab" data-tab="charter" aria-selected="false">Charter</button>
+    <button role="tab" data-tab="docs" aria-selected="false">Documents</button>
+    <button role="tab" data-tab="artifacts" aria-selected="false">Artifacts</button>
+    <button role="tab" id="tab-board" data-tab="board" aria-selected="false" hidden>Board</button>
+    <button role="tab" data-tab="style" aria-selected="false">Style guide</button>
+    <button role="tab" data-tab="lessons" aria-selected="false">Lessons</button>
+    <button role="tab" data-tab="playbooks" aria-selected="false">Playbooks</button>
+    <button role="tab" data-tab="report" aria-selected="false">Report</button>
+    <button role="tab" data-tab="rundetails" aria-selected="false">Run details</button>
+    <button role="tab" data-tab="runsettings" aria-selected="false">Run settings</button>
+  </div>
+</nav>
+<div class="dcol">
+<section class="needs" id="needs" aria-label="Needs you" tabindex="-1"></section>
+<main>
+  <section class="work">
+    <div class="wbar"><div><button type="button" class="linkbtn" id="backmap" hidden>← Back to map</button><h2 class="wtitle" id="wtitle">Map</h2><span class="wsub" id="wsub"></span></div><select id="ver" aria-label="Version"></select></div>
+    <div class="pane preview" id="pane-preview" hidden><div class="doclinks" id="doclinks" hidden></div><iframe id="frame" title="Website preview" src="site/latest"></iframe></div>
+    <div class="pane" id="pane-goal" hidden></div>
+    <div class="pane" id="pane-workflows" hidden></div>
+    <div class="pane" id="pane-conflicts" hidden></div>
+    <div class="pane" id="pane-timeline" hidden></div>
+    <div class="pane" id="pane-audit" hidden></div>
+    <div class="pane" id="pane-charter" hidden></div>
+    <div class="pane" id="pane-docs" hidden></div>
+    <div class="pane" id="pane-artifacts" hidden></div>
+    <div class="pane" id="pane-board" hidden></div>
+    <div class="pane" id="pane-map"></div>
+    <div class="pane" id="pane-style" hidden></div>
+    <div class="pane" id="pane-lessons" hidden></div>
+    <div class="pane" id="pane-playbooks" hidden></div>
+    <div class="pane" id="pane-report" hidden><div class="banner" id="banner" hidden></div><div id="reportbody"></div></div>
+    <div class="pane" id="pane-runsettings" hidden>
+      <div class="runset">
+        <label>What to build <select id="outsel" class="outsel" aria-label="What to build"></select></label>
+        <label>Saved runs <select id="runsel" class="ghost" aria-label="Open a saved run"><option value="">Live run</option></select></label>
+        <div class="runact"><button class="ghost" id="reset">New run</button> <a href="?view=simple" class="slink" id="to-simple">Back to simple view</a></div>
+      </div>
+    </div>
+    <div class="pane" id="pane-rundetails" hidden>
+      <div class="rdmeta">
+        <span class="meta" id="mode"></span>
+        <span class="meta" id="otype"></span>
+        <span class="warn" id="fixes"></span>
+        <span class="warn" id="forced" hidden style="color:var(--bad)"></span>
+        <span class="warn" id="testles" hidden style="color:var(--bad)">J2_MEMORY_TEST_LESSONS=1: test lessons can be used (demo)</span>
+        <span class="warn" id="ph" hidden></span>
+        <span class="lock" id="lock"></span>
+        <span class="meta" id="mem"></span>
+      </div>
+      <div class="steps" id="steps"></div>
+      <aside class="lanes" id="lanes" aria-label="Agents"></aside>
+    </div>
+  </section>
+  <section class="chat">
+    <div class="msgs" id="msgs"></div>
+    <div class="typing" id="typing"></div>
+    <div class="compose">
+      <div class="waiting" id="waiting" hidden></div>
+      <div class="quick" id="quick"></div>
+      <div class="row">
+        <textarea id="box" placeholder="Describe the website you want. The agents take it from there…" aria-label="Message"></textarea>
+        <button class="send" id="send">Send</button>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+<dialog id="detail"><div class="dhead"><b id="dtitle"></b><span class="spacer"></span><button class="ghost" id="dclose">Close</button></div>
+  <div class="dbody" id="dbody"></div></dialog>
+</div>
+<script>
+const WHO = {user:["Requester (you)","R"],validator:["Validator","V"],identity:["Identity","I"],adaptation:["Adaptation","Ad"],
+  priority:["Priority","P"],coordination:["Coordination","C"],builder:["Builder","B"],audit:["Audit","Au"],system:["System","!"]};
+// Workflow agents ("W-1") get "W-1 Builder" and a colour from the --wf palette.
+const isWf = k => /^W-\d+$/.test(k || "");
+const who = k => WHO[k] || (isWf(k) ? [k + " Builder", k.replace("-", "")] : [k, "?"]);
+const col = k => isWf(k) ? `var(--wf${(+k.slice(2) - 1) % 6})` : `var(--${k})`;
+const $ = id => document.getElementById(id);
+// Panes are re-rendered on every poll. Leave a pane alone when its HTML is unchanged, and when it does change, reopen
+// any <details> the user had open (matched by data-key), so an opened screenshot or log stays open until closed.
+function paint(el, html){
+  if (el.__html === html) return;
+  const open = new Set([...el.querySelectorAll("details[open][data-key]")].map(d => d.dataset.key));
+  el.innerHTML = html; el.__html = html;
+  open.forEach(k => { const d = el.querySelector(`details[data-key="${CSS.escape(k)}"]`); if (d) d.open = true; });
+}
+// Example briefs for both views: different kinds of business, so nothing assumes a cafe.
+const EXAMPLES = ["A website for my cafe", "A website for Sweet Crumbs Bakery in Pune: menu, cake orders, contact",
+  "A website for Petal & Stem, a florist in Jaipur: bouquets, same-day delivery, wedding flowers",
+  "A website for Asha Rao Photography, a wedding and portrait photographer in Mumbai: portfolio, packages, booking"];
+// Output types the start page offers (J2_OUTPUT sets the default); the run keeps its type once it starts.
+const OUTS = [["website", "Website"], ["prd", "PRD document"]];
+const PRD_EXAMPLES = ["Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. "
+  + "Users: patients at small clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on "
+  + "average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS alert "
+  + "when 2 patients are ahead, staff dashboard to call the next patient. Constraints: works on low-end Android phones; no "
+  + "patient health data stored. Success: average in-room wait under 10 minutes; 60% of patients join remotely within 3 months."];
+const examples = s => s.doc ? PRD_EXAMPLES : EXAMPLES;
+const outOptions = s => OUTS.map(([v, l]) => `<option value="${v}"${s.output === v ? " selected" : ""}>${l}</option>`).join("");
+const docLinks = s => (s.docset_files || []).map(d => `<a href="file/${d.md}${runQ().replace("&", "?")}" download>${esc(d.kind.toUpperCase())} .md</a> <a href="file/${d.docx}${runQ().replace("&", "?")}" download>${esc(d.kind.toUpperCase())} .docx</a>`).join(" ");
+const plainDocLinks = s => (s.docset_files || []).map(d => `<a href="file/${d.md}${runQ().replace("&", "?")}" download>Download the ${esc(d.label)} (markdown)</a> <a href="file/${d.docx}${runQ().replace("&", "?")}" download>Download the ${esc(d.label)} (Word file)</a>`).join(" ");
+const fileLinks = s => (s.files || []).map(f => `<a href="file/${f}${runQ().replace("&", "?")}" download>Download ${f.split(".").pop() === "docx" ? "the Word file (.docx)" : "the markdown (.md)"}</a>`).join(" ");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+// Detailed view wording: plain names for J2 terms; the J2 step codes stay, in small grey text.
+const dv = t => String(t ?? "").replace(/\benvelope's\b/gi, "limits'").replace(/\benvelopes?\b/gi, "limits")
+  .replace(/\bdone[-_ ]when list\b/gi, "checklist").replace(/\bdone[-_ ]when\b/gi, "checklist");
+const md = s => esc(dv(s)).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/@(\w+)/g,"<b>@$1</b>");
+let seen = 0, state = null, versions = 0, allChat = [], viewRun = new URLSearchParams(location.search).get("run") || "";
+const runQ = () => viewRun ? "&run=" + encodeURIComponent(viewRun) : "";
+
+function addMsg(m){
+  const el = document.createElement("div");
+  if (m.who === "system"){ el.className = "sys"; if (m.test) el.style.cssText = "color:var(--bad);font-weight:700";
+    el.textContent = dv(m.text); $("msgs").appendChild(el); return; }
+  el.className = "msg " + m.who + (m.to_user ? " touser" : ""); el.style.setProperty("--c", col(m.who)); el.dataset.id = m.id;
+  let t = "";
+  if (m.act) t += `<span class="tag ${m.act==="PARK"||m.act==="DISPUTE"?"bad":m.act==="LESSON"?"ok":""}">${m.act}</span>`;
+  if (m.auto) t += `<span class="tag">by code, no AI call</span>`;
+  if (m.envelope) t += `<span class="tag ${m.envelope==="allowed"?"ok":"bad"}">limits: ${m.envelope}</span>`;
+  if (m.attempt) t += `<span class="tag ${m.agree?"ok":"bad"}">${m.agree?"agrees":"holds position"} · attempt ${m.attempt}/4</span>`;
+  if (m.audience) t += `<span class="tag aud">for ${esc(m.audience === "user" ? "Requester (you)" : who(m.audience)[0])}</span>`;
+  else if (m.next && !m.to_user) t += `<span class="tag">→ ${esc(who(m.next)[0])}</span>`;
+  if (m.lesson_used) t += m.lesson_test ? `<span class="tag bad">used TEST LESSON ${esc(m.lesson_used)} (from a forced failure, demo only)</span>`
+    : `<span class="tag ok">used lesson ${esc(m.lesson_used)}</span>`;
+  if (m.lessons) t += `<span class="tag ok">saved ${esc(m.lessons.join(", "))}</span>`;
+  if (m.playbook) t += `<span class="tag ok">saved playbook ${esc(m.playbook)}</span>`;
+  if (m.playbook_used) t += `<span class="tag ok">used playbook ${esc(m.playbook_used)}${m.playbook_changes ? ": " + esc(m.playbook_changes) : ""}</span>`;
+  if (m.section) t += `<span class="tag">section ${esc(m.section)}</span>`;
+  if (m.workable !== undefined) t += `<span class="tag ${m.workable?"ok":"bad"}">${m.workable?"workable":"not workable"}</span>`;
+  if (m.stamp === true) t += `<span class="tag ok">charter valid</span>`;
+  if (m.stamp === false) t += `<span class="tag bad">charter rejected</span>`;
+  if (m.proposal) t += `<span class="tag">proposes ${m.proposal.length} workflow(s) · ${m.proposal.reduce((a,w)=>a+(+w.cost||0),0)} work credits</span>`;
+  if (m.decision && m.who === "priority") t += `<span class="tag ${m.decision==="grant"?"ok":"bad"}">${m.decision.toUpperCase()} · ${m.exchange==="ruling"?"after ruling":"exchange "+m.exchange+"/4"}</span>`;
+  if (m.accept !== undefined) t += `<span class="tag ${m.accept?"ok":"bad"}">${m.accept?"accepts":"pushes back"} · exchange ${m.exchange}/4</span>`;
+  if (m.conflict) t += `<span class="tag bad">${m.conflict}${m.decision === true ? " · ruling" : ""}</span>`;
+  if (m.forced_test) t += `<span class="tag bad">TEST: item ${m.forced_test} forced to fail, not a real finding</span>`;
+  if (m.check) t += `<span class="tag ${m.ok?"ok":"bad"}">charter check: ${m.ok?"ok":"issues"}</span>`;
+  if (m.schedule) t += `<span class="tag">schedule: ${m.schedule.join(" → ")}</span>`;
+  if (m.done !== undefined) t += `<span class="tag ${m.done?"ok":"bad"}">${m.done?"checklist holds":"not done"}</span>`;
+  if (m.register === true) t += `<span class="tag ok">registered</span>`;
+  if (m.register === false) t += `<span class="tag bad">rejected</span>`;
+  if (m.version) t += `<span class="tag">site v${m.version}</span>`;
+  if (m.audit !== undefined) t += `<span class="tag ${m.audit?"ok":"bad"}">${m.audit?"all criteria pass":"criteria failing"}</span>`;
+  el.innerHTML = `<div class="av">${esc(who(m.who)[1])}</div><div class="bubble"><div class="who">${esc(who(m.who)[0])}${m.to_user ? '<span class="touser-label">to you</span>' : ""}<span>${m.t}</span></div>
+    <div class="text">${md(m.text)}</div>${t ? `<div>${t}</div>` : ""}</div>`;
+  $("msgs").appendChild(el);
+}
+function renderSteps(s){
+  $("steps").innerHTML = Object.entries(s.steps).map(([n,l]) =>
+    `<div class="st ${+n===s.step?"on":(+n<s.step?"past":"")}"><small class="code">${esc(l.split(" ")[0])}</small>${esc(dv(l.split(" ").slice(1).join(" ")))}</div>`).join("");
+}
+function renderGoal(s){
+  const g = s.goal;
+  if (!g) return `<p class="empty">Identity reads your brief (J2.a), asks you for anything it needs, records the charter, and the validator checks it before work starts.</p>`;
+  return `<h3>${esc(g.site_name || "Goal")} ${s.stamped ? '<span class="pill done">validated</span>' : ""}</h3>
+    <dl><dt>goal</dt><dd>${esc(g.statement)}</dd><dt>audience</dt><dd>${esc(g.audience)}</dd>
+    <dt>standards</dt><dd>${(g.standards||[]).map(esc).join("<br>")}</dd><dt>rules</dt><dd>${(g.rules||[]).map(esc).join("<br>")}</dd>
+    <dt>checklist</dt><dd>${(g.done_when||[]).map(esc).join("<br>")}</dd>
+    ${(g.to_be_confirmed||[]).length ? `<dt>to be confirmed</dt><dd class="fail">${g.to_be_confirmed.map(t => esc(t.criterion + ": " + t.fact)).join("<br>")}<br><span class="empty">These items are not met until you confirm the fact.</span></dd>` : ""}
+    ${(g.confirmed_facts||[]).length ? `<dt>confirmed by you</dt><dd>${g.confirmed_facts.map(t => esc(t.criterion + ": " + t.fact)).join("<br>")}</dd>` : ""}
+    ${(g.dropped_by_requester||[]).length ? `<dt>dropped by you</dt><dd>${g.dropped_by_requester.map(esc).join("<br>")}</dd>` : ""}</dl>`;
+}
+function envCell(w){
+  const e = w.envelope; if (!e) return '<span class="empty">none</span>';
+  return `money ${e.money_limit} · calls ${w.calls_used||0}/${e.model_call_limit} · retries ${w.retries_used||0}/${e.retry_limit}`
+    + (e.time_limit_minutes != null ? ` · ${e.time_limit_minutes} min` : "")
+    + (e.stop_loss ? `<br><span class="empty">stop-loss: ${esc(dv(e.stop_loss))}</span>` : "");
+}
+// ===== atom cards: start (rendered in a browser-free harness by j2_ui_render.js; keep it free of DOM calls)
+// A work atom card: a preview of what it built, then eight blocks in three groups: particles (goal, how, constraints,
+// context), defined output and verification, outputs (human_output, agent_output). Long blocks are collapsed.
+const ATOM_ROWS = [["goal", "Goal", "What must be true when this is done"], ["constraints", "Constraints", "What must never break"],
+  ["context", "Context", "What it needs to know"], ["how", "How", "Who builds it"],
+  ["expected_output", "Expected output", "What must exist when it is done"],
+  ["verification", "Verification", "The check that proves the goal is met"]];
+const sentence = t => { t = dv(t).trim(); return t && !/[.!?]$/.test(t) ? t + "." : t; };
+const words = v => (Array.isArray(v) ? v : [v]).filter(Boolean).map(x => typeof x === "string" ? x : Object.values(x).join(" ")).join("; ");
+function atomRow(a, k, w){
+  const v = a[k];
+  if (k === "goal") return linkDocItems(esc(sentence(words(v))));
+  if (k === "constraints") return constraintsHTML(v);
+  if (k === "context") return contextHTML(v, a, w);
+  if (k === "how"){ const ai = !(v && v.kind === "code"); let ag = v && v.agent;
+    if (ai && (!ag || /^(W-\d+ )?builder$/i.test(ag) || w.revises)) ag = builderName(w);   // "W-1 PRD Problem section builder", never a bare "Builder"
+    const o = ai && wfOrigin(w);
+    return esc(sentence((ai ? "AI builds it" : "Code builds it") + (ag ? ": " + ag : "") + (o ? ` as a revision of ${o.id} ${o.name}` : ""))); }
+  // one line per item, marked once code has run the atom's checks
+  if (k === "expected_output") return (Array.isArray(v) ? v : []).map(x => esc(sentence(typeof x === "string" ? x : x.text))
+    + (!a.attempts ? "" : x.met === true ? ' <span class="pass">Met</span>' : x.met === false ? ' <span class="fail">Not met</span>'
+      : ' <span class="empty">Not run</span>')).join("<br>") || '<span class="empty">None written.</span>';
+  // each check with what code found when it ran it (the atom's latest receipts)
+  return (Array.isArray(v) ? v : []).map((c, i) => { const r = (a.results || [])[i];
+    const st = !r ? '<span class="empty">Not run yet.</span>'
+      : r.pass === null ? `<span class="empty">Could not run</span>: ${esc(sentence(r.evidence))} <span class="empty">Not counted as a failed attempt.</span>`
+      : `<span class="${r.pass ? "pass" : "fail"}">${r.pass ? "Passed" : a.status === "escalated" ? "Failed, escalated" : "Failed"}</span>: ${esc(sentence(r.evidence))} <span class="empty">Attempt ${r.attempt} of ${r.of}${r.recheck ? ", " + esc(r.recheck) : ""}.</span>`;
+    return `${esc(sentence(typeof c === "string" ? c : c.text))}<br>${st}`; }).join("<br>");
+}
+// Context and Constraints in plain words; a document item named on a card (PRD R2, S1) links to the Documents tab.
+let CTX = null, FOCUS = {};   // CTX: the state the cards are drawn from (charter items, sections); FOCUS: the item the Documents tab shows
+const DOCS = {};              // "prd" | "hld" | "lld" -> {asked, text} from /api/docs
+const DOC_KINDS = [["prd", "PRD", "Product requirements"], ["hld", "HLD", "High-level design"], ["lld", "LLD", "Low-level design"]];
+const ITEM_AT = /^\s*(?:[-*]\s+|\d+\.\s+)?\**([A-Z]{1,2}-?\d+)\**/;
+const docLine = id => { for (const [k] of DOC_KINDS){ const l = ((DOCS[k] || {}).text || "").split("\n").find(x => (x.match(ITEM_AT) || [])[1] === id);
+  if (l) return {kind: k, text: l.replace(ITEM_AT, "").replace(/^[\s:]+/, "").replace(/[`*]/g, "")}; } return null; };
+const docLink = (kind, id, label) => `<a href="#" data-doc="${kind}" data-item="${esc(id)}">${esc(label || id)}</a>`;
+const chLink = n => `<a href="#" data-charter="${n}">item ${n}</a>`;
+const linkDocItems = html => html.replace(/\b([Cc]harter\s+(?:done-when\s+)?items?\s+)(\d+(?:(?:,\s*|\s+and\s+|\s+to\s+)\d+)*)/g,
+  (m, k, ns) => k + ns.replace(/\d+/g, n => `<a href="#" data-charter="${n}">${n}</a>`)).replace(/\b(PRD|HLD|LLD)(\s+)([A-Z]\d+(?:(?:,\s*|\s+and\s+|\s+to\s+)[A-Z]\d+)*)/g,
+  (m, k, sp, ids) => k + sp + ids.replace(/[A-Z]\d+/g, id => docLink(k.toLowerCase(), id)));
+const charterNums = t => [...t.matchAll(/(\d+)(?:\s*(?:to|-)\s*(\d+))?/g)].flatMap(m => Array.from({length: Math.min((+(m[2] || m[1])) - +m[1] + 1, 50)}, (_, i) => +m[1] + i));
+const KIND_OF = {R: "prd", G: "prd", C: "hld", S: "lld"};      // a bare id's document, when no document holds it yet
+// Folds are drawn from FOLD (open keys), not from <details>, so a collapsed list is hidden whatever the browser does with <summary>.
+const FOLD = new Set();
+const foldBtn = (key, label) => `<button type="button" class="linkbtn" data-fold="${esc(key)}" aria-expanded="${FOLD.has(key)}">${label}</button>`;
+const foldBlock = (key, body) => `<div class="fold" data-foldlist="${esc(key)}">${foldBtn(key, FOLD.has(key) ? "hide" : "show")}<div class="foldbody"${FOLD.has(key) ? "" : " hidden"}>${body}</div></div>`;
+const foldList = (key, n, rows) => `<span class="fold" data-foldlist="${esc(key)}">${n} atoms (${foldBtn(key, FOLD.has(key) ? "hide" : "show")})<span class="foldbody"${FOLD.has(key) ? "" : " hidden"}><br>${rows}</span></span>`;
+// A long line is cut at a word boundary, never inside a word; "show more" reveals the rest.
+const clip = (key, text, n = 140) => { text = String(text);
+  if (text.length <= n) return esc(text);
+  if (FOLD.has(key)) return esc(text) + " " + foldBtn(key, "show less");
+  const cut = text.slice(0, n), sp = cut.lastIndexOf(" ");
+  return esc((sp > 0 && text[n] !== " " ? cut.slice(0, sp) : cut).trimEnd()) + "… " + foldBtn(key, "show more"); };
+// Reason text for a document section builder names the document and the section; website wording stays.
+const SITE_WHY = /^its section, anchor and selectors were listed in this builder's prompt/;
+function whyShown(why, atomId){
+  if (!SITE_WHY.test(why || "")) return why;
+  const o = ((((CTX && CTX.atoms_v1) || {})[atomId] || {}).output || []).find(x => x.verb === "make" && x.form === "doc" && /^(prd|hld|lld)\.md#/.test(String(x.ref)));
+  return o ? `the ${o.ref.slice(0, 3).toUpperCase()} ${o.ref.split("#")[1]} section was in this builder's prompt` : why;
+}
+// The text of a document section, from the saved document: "## heading" down to the next "## ".
+const docSection = (kind, heading) => { const lines = (((DOCS[kind] || {}).text) || "").split("\n"), i = lines.findIndex(l => l.replace(/^#+\s*/, "").trim() === heading && /^#/.test(l));
+  if (i < 0) return ""; const j = lines.findIndex((l, k) => k > i && /^#{1,2}\s/.test(l)); return lines.slice(i + 1, j < 0 ? undefined : j).join("\n").trim(); };
+const sectionOf = (atomId, kind) => { const o = ((((CTX && CTX.atoms_v1) || {})[atomId] || {}).output || []).find(x => new RegExp("^" + kind + "\\.md#").test(String(x.ref))); return o ? o.ref.split("#")[1] : ""; };
+// "LLD slice S2" and "the HLD component summary" rows: the slice or summary itself, not only that it was in the prompt.
+function sliceInfo(e){
+  const m = String(e.why || "").match(/^LLD slice ([A-Z]\d+)/), h = /^the HLD component summary/.test(String(e.why || ""));
+  if (!m && !h) return null;
+  const kind = m ? "lld" : "hld", sec = sectionOf(e.atom, kind), body = docSection(kind, sec), label = m ? `LLD slice ${m[1]}` : "HLD component summary";
+  const strip = t => t.map(l => l.replace(/^\s*[-*]\s+/, "")).join(" ").replace(/\s+/g, " ").replace(/[`*]/g, "").trim();
+  const text = strip(m ? body.split("\n").filter(l => new RegExp("\\b" + m[1] + "\\b").test(l)) : body.split("\n"));
+  return {label, text, headline: m ? label : `HLD ${sec || "component"} summary`, id: m && m[1]};
+}
+const builderName = w => `${w.id} ${w.name} builder`;
+const STAGE_AUDITS = [];   // earlier stages' audits, condensed, from /api/audits (the state holds only the current stage's)
+const VERDICT = {PASS: "passed", PASS_WITH_WARNING: "passed with a warning", NEEDS_REVISION: "needs revision", FAIL: "failed"};
+function idStatus(a, id){        // what one audit recorded for a finding, rubric item or condition; "" if it did not record it
+  const r = [...(a.results || []), ...(a.extra_issues || []), ...(a.rubric || [])].find(x => x.id === id);
+  if (r) return r.verdict ? (VERDICT[r.verdict] || String(r.verdict).toLowerCase().replace(/_/g, " ")) : r.pass === true ? "passed" : r.pass === false ? "failed" : "";
+  const c = (a.conditions || []).find(x => x.id === id);
+  return c && typeof c.met === "boolean" ? (c.met ? "met" : "not met") : "";
+}
+// "Fixes: ids. Before: status. After: status." for a revise atom, from stored audits only; a status nobody recorded says so.
+function fixesLine(a, w){
+  if (!w.revises) return "";
+  const ids = [...new Set((Array.isArray(a.context) ? a.context : [a.context]).flatMap(r => { const m = typeof r === "string" && r.trim().match(/^(?:findings?|(?:necessary\s+)?conditions?)\s+(.+)$/i);
+    return m ? m[1].split(/\s*(?:,|\band\b)\s*/).filter(x => /^[A-Z]{1,2}-?\d+$/.test(x)) : []; }))];
+  const fixes = ids.length ? ids : (w.fixes || []);
+  if (!fixes.length) return `Fixes: <span class="empty">not recorded</span>.`;
+  const c = w.cycle, pool = [...STAGE_AUDITS, ...((CTX && CTX.audits) || [])].filter(x => x && x.cycle != null);
+  const pick = (list, id) => { for (const x of list){ const t = idStatus(x, id); if (t) return t; } return ""; };
+  const before = id => pick(pool.filter(x => x.cycle < c).sort((x, y) => y.cycle - x.cycle), id), after = id => pick(pool.filter(x => x.cycle === c), id);
+  const show = f => { const t = fixes.map(id => [id, f(id)]), got = new Set(t.map(x => x[1]).filter(Boolean));
+    if (!got.size) return '<span class="empty">not recorded</span>';
+    return got.size === 1 && t.every(x => x[1]) ? esc([...got][0]) : t.map(([id, x]) => `${esc(id)} ${x ? esc(x) : '<span class="empty">not recorded</span>'}`).join(", "); };
+  return `Fixes: ${fixes.map(esc).join(", ")}. Before: ${show(before)}. After: ${show(after)}.`;
+}
+// "Asked Q-n" / "Answered Q-n" / "Used Q-n" for an atom card, from the Board tab's own data (BOARD), recorded only.
+// An entry a function asked says so ("Answered Q-1, asked by Identity (function)"), since the asker is no atom.
+const fnName = f => String(f || "").charAt(0).toUpperCase() + String(f || "").slice(1);
+function boardLine(a, w){
+  const es = BOARD.entries || [];
+  if (!es.length) return "";
+  const asked = es.filter(e => e.atom === a.id), answered = es.filter(e => e.answered_by === w.id && e.to === a.id);
+  const used = es.filter(e => (e.used_by || []).includes(a.id));
+  const from = e => e.asked_by_role === "function" ? `${esc(e.id)}, asked by ${esc(fnName(e.asked_by))} (function)` : esc(e.id);
+  const parts = [];
+  if (asked.length) parts.push(`Asked ${asked.map(e => esc(e.id)).join(", ")}`);
+  if (answered.length) parts.push(`Answered ${answered.map(from).join("; ")}`);
+  if (used.length) parts.push(`Used ${used.map(e => esc(e.id)).join(", ")}`);
+  return parts.join(". ");
+}
+const REFS = {conditions: {}, rubric: {}};   // id -> text, from /api/refs: conditions/*.json and each output type's rubric
+const wfById = id => ((CTX && CTX.workflows) || []).find(x => x.id === id);
+const wfOrigin = w => { const id = w.revises || (w.section && w.section !== w.id ? w.section : null); return id && wfById(id); };
+const ctxRow = (type, body, nosrc) => `<li data-ctx="${type.toLowerCase().replace(/\W+/g, "-")}"><b class="ctype">${esc(type)}</b> ${String(body).trim() || '<span class="empty">nothing on record</span>'}${nosrc ? ' <span class="empty">no source on record</span>' : ""}</li>`;
+const idRange = t => { const m = t.match(/^([A-Z]{1,2})(\d+)\s+to\s+\1(\d+)$/); return m ? Array.from({length: Math.min(+m[3] - +m[2] + 1, 50)}, (_, i) => m[1] + (+m[2] + i)) : [t]; };
+const findingText = id => { if (REFS.rubric[id]) return REFS.rubric[id]; if (REFS.conditions[id]) return REFS.conditions[id];
+  const r = [...((CTX && CTX.audits) || [])].reverse().flatMap(x => x.results || []).find(x => x.id === id);
+  return r ? [r.criterion, r.note].filter(Boolean).join(": ") : ""; };
+function contextHTML(v, a, w){
+  const g = (CTX && CTX.goal) || {}, items = g.charter_items || g.done_when || [], deps = (((CTX && CTX.atoms_v1) || {})[a && a.id] || {}).depends_on || [];
+  const docRow = (label, id) => { const d = docLine(id); return d ? ctxRow(label || d.kind.toUpperCase(), docLink(d.kind, id) + ": " + dtext(id, d.text))
+    : ctxRow(label || (KIND_OF[id[0]] || "other").toUpperCase(), esc(id), true); };
+  const dtext = (id, t) => clip(`ctx-${a && a.id}-${id}`, t);
+  const shown = new Set();
+  const typed = new Map(), norm = t => String(t).replace(/\s+/g, " ").trim(), lineage = {impl: new Set(), serves: new Set()}, docsLoaded = () => DOC_KINDS.some(([k]) => (DOCS[k] || {}).text);
+  const lineRow = (label, ids) => { if (!ids.size) return []; const f = [...ids].map(id => ({id, d: docLine(id)})), ok = f.filter(x => x.d);
+    const t = ok.map(x => ok.length > 1 ? `${x.id} ${x.d.text}` : x.d.text).join("; ");
+    if (ok.length) typed.set(norm(t), docLink(ok[0].d.kind, ok[0].id, label + " " + f.map(x => x.id).join(", ")));
+    return [ctxRow(label, f.map(x => x.d ? docLink(x.d.kind, x.id) : esc(x.id) + ' <span class="empty">not found in the documents</span>').join(", ") + (t ? ": " + clip(`ctx-${a && a.id}-${label}`, t) : ""))]; };
+  const wfRow = id => { const x = wfById(id), e0 = deps.find(e => (x.atoms || []).some(at => at.id === e.atom)) || {}, why = whyShown(e0.why, e0.atom); shown.add(id);
+    return ctxRow(w && w.revises === id ? "Revises" : "From workflow", `${esc(x.id)} ${esc(x.name)}` + (why ? ": " + esc(sentence(why)) : "")); };
+  const rows = (Array.isArray(v) ? v : [v]).map(r => typeof r === "string" ? r.trim() : r ? words(r).trim() : "").filter(Boolean).flatMap(r => {
+    let m = r.match(/^(?:charter\s+)?(?:done[- ]when\s+)?items?\s+([\d\s,andto-]+)$/i);
+    if (m) return charterNums(m[1]).map(n => ctxRow("Charter", (items[n - 1] ? chLink(n) : `item ${n}`) + (items[n - 1] ? ": " + esc(items[n - 1]) : ""), !items[n - 1]));
+    if (m = r.match(/^charter[.\s]+([a-z_]+)$/i)) { const f = g[m[1]]; const t = Array.isArray(f) ? f.join("; ") : typeof f === "string" ? f : "";
+      return [ctxRow("Charter", esc(m[1]) + (t ? ": " + esc(t) : ""), !t)]; }
+    if (m = r.match(/^conditions?\s+([A-Z]\d+)$/i)) { const t = REFS.conditions[m[1].toUpperCase()]; return [ctxRow("Condition", esc(m[1]) + (t ? ": " + esc(t) : ""), !t)]; }
+    if (m = r.match(/^findings?\s+(.+)$/i)) return m[1].split(/\s*(?:,|\band\b)\s*/).filter(Boolean).map(id => { const t = findingText(id); return ctxRow("Finding", esc(id) + (t ? ": " + esc(t) : ""), !t); });
+    if (m = r.match(/^sections?\s+(?:ids?\s+)?(.+)$/i)) return m[1].split(/\s*(?:,|\band\b)\s*/).filter(Boolean).flatMap(idRange).map(id => {
+      if (wfById(id)) return wfRow(id);                                 // a workflow id is never a "Section"
+      const d = docLine(id), sec = ((CTX && CTX.sections) || []).find(x => x.id === id), t = (sec && sec.workflow) || (d && d.text);
+      if (d && d.kind === "lld"){                                       // a documents run: the section's own text from the LLD, and what it implements and serves
+        (d.text.match(/\bImplements\s+([A-Z]\d+(?:(?:,\s*|\s+and\s+)[A-Z]\d+)*)/) || [, ""])[1].match(/[A-Z]\d+/g)?.forEach(x => lineage.impl.add(x));
+        (d.text.match(/\bServes\s+([A-Z]\d+(?:(?:,\s*|\s+and\s+)[A-Z]\d+)*)/) || [, ""])[1].match(/[A-Z]\d+/g)?.forEach(x => lineage.serves.add(x));
+        typed.set(norm(`${id} ${d.text}`), docLink("lld", id, "LLD " + id));
+        return ctxRow("LLD", docLink("lld", id) + ": " + dtext(id, d.text)); }
+      if (!t && docsLoaded() && /^[A-Z]\d+$/.test(id)) return ctxRow((KIND_OF[id[0]] || "section").toUpperCase(), esc(id) + ' <span class="empty">not found in the documents</span>');
+      return ctxRow("Section", (d ? docLink(d.kind, id) : esc(id)) + (t ? ": " + dtext(id, t) : ""), !t); });
+    if (/^W-\d+$/.test(r) && wfById(r)) return [wfRow(r)];
+    if (m = r.match(/^(PRD|HLD|LLD)\s+(.+)$/)) return m[2].split(/\s*(?:,|\band\b)\s*/).filter(Boolean).flatMap(idRange).map(id => /^[A-Z]{1,2}-?\d+$/.test(id) ? docRow(m[1], id)
+      : ctxRow(m[1], esc(id), !((DOCS[m[1].toLowerCase()] || {}).text)));
+    if (/^[A-Z]{1,2}\d+(?:\s+to\s+[A-Z]{1,2}\d+)?$/.test(r)) return idRange(r).map(id => docRow("", id));
+    return [ctxRow("Other", linkDocItems(esc(r)), true)];
+  });
+  const lin = lineRow("HLD", lineage.impl).concat(lineRow("PRD", lineage.serves));
+  const wfLink = id => `<a href="#" data-wfcard="${esc(id)}">${esc(id)}</a>`;
+  const ents = deps.map(e => ({e, x: ((CTX && CTX.workflows) || []).find(x => (x.atoms || []).some(at => at.id === e.atom))})).filter(({x}) => !x || !shown.has(x.id))
+    .map(({e, x}) => { const si = x && sliceInfo(e), why = esc(sentence(whyShown(e.why, e.atom) || "its output"));
+      return {e, x, si, text: si ? si.text : "", key: x ? (si ? si.label + "|" + norm(si.text) : "plain|" + why) : "", why}; });
+  const groups = []; ents.forEach(en => { const g = en.key && groups.find(q => q.key === en.key); if (g) g.list.push(en); else groups.push({key: en.key, list: [en]}); });
+  let gi = 0;
+  const given = groups.map(g => { const en = g.list[0], {e, x, si} = en;
+    if (!x) return ctxRow("From workflow", esc(e.atom) + (e.why ? ": " + esc(sentence(whyShown(e.why, e.atom))) : ""), true);
+    if (si && si.text && typed.has(norm(si.text))) return ctxRow("From workflow", g.list.map(q => wfLink(q.x.id)).join(", ") + ": same as " + typed.get(norm(si.text)) + " above");   // not the same text twice
+    const body = si ? (si.text ? `${esc(si.label)}: ${clip(`ctx-${a && a.id}-${e.atom}`, si.text)}` : `${esc(si.label)} <span class="empty">not found in the documents</span>`) : en.why;
+    if (g.list.length === 1) return ctxRow("From workflow", `${esc(x.id)} ${esc(x.name)}: ` + body);
+    const made = g.list.filter(q => !q.x.revises), revised = g.list.filter(q => q.x.revises);       // an original and its revision(s): the text once
+    const head = si ? si.headline : (made[0] || g.list[0]).x.name, names = l => l.map(q => wfLink(q.x.id)).join(", ");
+    return ctxRow("From workflow", esc(head) + (made.length ? ", made by " + names(made) : "") + (revised.length ? ", revised by " + names(revised) : "") + ": "
+      + (si ? (si.text ? clip(`ctx-${a && a.id}-m${gi++}`, si.text) : '<span class="empty">not found in the documents</span>') : en.why)); });
+  const all = rows.concat(lin, given);
+  return all.length ? `<ul class="clist">${all.join("")}</ul>` : '<span class="empty">None written.</span>';
+}
+// Same stored lines, grouped under short labels by what they say; a line that fits no group stays in a plain list.
+const CGROUPS = [["Only build", /^(?:create|change|touch)\s+only\b|^only\b/i],
+  ["No inventing", /invent|\bfacts\b|beyond the (?:brief|charter)|not in the brief|exactly as (?:in|given)|copied exactly|only (?:the )?(?:brief|charter)/i],
+  ["Do not touch", /^(?:do not|don't)\s+(?:change|touch|edit|alter)|^touch no\b|^change nothing|^keep\b|\bunchanged\b|\bother sections?\b/i],
+  ["Format", /markdown|\bhtml\b|\bformat\b|\bids?\b|plain language|rupees|overflow|mobile|sequential|\bunique\b|palette|wa\.me|mailto|\bscripts?\b/i]];
+function constraintsHTML(v){
+  const by = {}, rest = [], ul = a => `<ul class="clist">${a.map(x => `<li>${linkDocItems(esc(x))}</li>`).join("")}</ul>`;
+  (Array.isArray(v) ? v : [v]).filter(Boolean).map(x => typeof x === "string" ? x : words(x)).forEach(l => {
+    const g = CGROUPS.find(([, re]) => re.test(l)); if (g) (by[g[0]] = by[g[0]] || []).push(l); else rest.push(l); });
+  return CGROUPS.filter(([n]) => by[n]).map(([n]) => `<div class="cgroup"><b>${n}</b>${ul(by[n])}</div>`).join("")
+    + (rest.length ? ul(rest) : "") || '<span class="empty">None written.</span>';
+}
+// The Documents tab: prd.md, hld.md, lld.md as readable lines; an item's first line has an id the links scroll to.
+function docBody(kind, text){
+  const seen = {};
+  return text.split("\n").map(l => { if (!l.trim()) return "";
+    const h = l.match(/^#{1,6}\s+(.*)$/); if (h) return `<h4>${md(h[1])}</h4>`;
+    const id = (l.match(ITEM_AT) || [])[1], first = id && !seen[id]; if (first) seen[id] = 1;
+    return `<p class="dl${first && FOCUS.kind === kind && FOCUS.item === id ? " hit" : ""}"${first ? ` id="doc-${kind}-${esc(id)}"` : ""}>${md(l.replace(/^\s*[-*]\s+/, "• ").replace(/`/g, ""))}</p>`; }).join("");
+}
+const docItems = text => new Set(text.split("\n").map(l => (l.match(ITEM_AT) || [])[1]).filter(Boolean)).size;
+const docBuilt = d => (d.workflows || []).map(id => { const w = ((CTX && CTX.workflows) || []).find(x => x.id === id); return w ? `${id} ${w.name}` : id; }).join(", ");
+const docBlock = ([k, tag, name]) => { const d = DOCS[k];
+  const meta = d && d.text ? [`${docItems(d.text)} items`].concat((d.workflows || []).length ? [`built by ${esc(docBuilt(d))}`] : []).join(" · ") : "";
+  const head = `<header class="dochead" style="background:var(--${k})"><b>${name}</b> <span class="code">${tag}</span>` + (meta ? `<span class="docmeta">${meta}</span>` : "") + "</header>";
+  return `<section class="doc" id="docblock-${k}" data-doc-kind="${k}">${head}<div class="docbody">` + (!d ? '<p class="empty">Loading…</p>'
+    : d.text ? docBody(k, d.text) : d.asked ? '<p class="empty">Not written yet.</p>' : '<p class="empty">Not asked for in this run.</p>') + "</div></section>"; };
+const renderDocs = () => `<nav class="docjump" id="doc-top">Jump to <a href="#" data-tabjump="charter">Charter</a> ` + DOC_KINDS.map(([k, tag]) => `<a href="#" data-docjump="${k}"${(DOCS[k] || {}).text ? "" : ' class="empty"'}>${tag}</a>`).join(" ") + "</nav>"
+  + DOC_KINDS.map((x, i) => docBlock(x) + (i < DOC_KINDS.length - 1 ? `<div class="docdiv" data-div="${x[0]}"><span>End of ${x[1]}</span><span>Start of ${DOC_KINDS[i + 1][1]}</span><a href="#" data-docjump="top">Back to top</a></div>`
+    : `<div class="docdiv" data-div="${x[0]}"><span>End of ${x[1]}</span><a href="#" data-docjump="top">Back to top</a></div>`)).join("");
+// The Charter tab: the items every agent works from, where the run stored their source, and which workflows cite each.
+let CHFOCUS = 0;
+const charterOf = s => { const g = (s && s.goal) || {}; return g.charter_items || g.done_when || []; };
+const citedBy = (s, n) => (s.workflows || []).filter(w => (w.atoms || []).some(a => (Array.isArray(a.context) ? a.context : [a.context]).some(r => {
+  const m = typeof r === "string" && r.trim().match(/^(?:charter\s+)?(?:done[- ]when\s+)?items?\s+([\d\s,andto-]+)$/i); return m && charterNums(m[1]).includes(n); })));
+function renderCharter(s){
+  const items = charterOf(s), g = (s && s.goal) || {}, note = '<p class="chnote empty">The charter is the list of things the Requester confirmed. Every agent works from it.</p>';
+  if (!items.length) return note + '<p class="empty">No charter recorded yet.</p>';
+  const first = ((s.allChat || s.chat || []).find(m => m.who === "user") || {}).text;
+  const src = g.charter_sources || {};   // only if the run stored where an item came from; none does today, so nothing is shown or guessed
+  const answers = (g.requester_answers || []).filter(Boolean);
+  const lis = items.map((t, i) => { const n = i + 1, from = Array.isArray(src) ? src[i] : src[n], used = citedBy(s, n);
+    return `<li value="${n}" id="charter-item-${n}" class="dl${CHFOCUS === n ? " hit" : ""}" data-item="${n}">${esc(t)}`
+      + (from ? `<div class="chsrc" data-chsrc>Came from: ${esc(typeof from === "string" ? from : words(from))}</div>` : "")
+      + `<div class="chused" data-chused>Used by: ` + (used.length ? used.map(w => `<a href="#" data-wfcard="${esc(w.id)}">${esc(w.id)} ${esc(w.name)}</a>`).join(", ") : "no workflow cites it") + "</div></li>"; }).join("");
+  return note + (first ? `<h4>The Requester's original brief</h4><p class="brief" data-brief>${esc(first)}</p>` : "")
+    + `<section class="doc" id="charterblock"><header class="dochead" style="background:var(--charter)"><b>Charter</b> <span class="code">CHARTER</span><span class="docmeta">${items.length} items · Recorded by Identity</span></header>`
+    + `<div class="docbody"><ol class="chitems">${lis}</ol>`
+    + (g.business_type ? `<h4>Business type</h4><p>${esc(g.business_type)}</p>` : "")
+    + (answers.length ? `<h4>The Requester's confirmed answers</h4><ul class="clist">${answers.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "") + "</div></section>";
+}
+const PREVIEWS = {};          // atom id -> srcdoc of its section (from /api/preview), "" when it has none
+const blockHTML = (a, key, label, gloss, body, long) => `<div class="ablock" data-block="${key}"><b>${label}</b> <span class="empty">${gloss}</span>
+  ${long ? foldBlock(`blk-${a.id}-${key}`, body) : `<div>${body}</div>`}</div>`;
+// atom/1 (s.atoms_v1): the refs of what the atom made say where to look; deeds and atoms without a section have no preview or link
+const artifact = (v, form) => ((v && v.output) || []).find(o => o.verb === "make" && o.form === form && String(o.ref).includes("#"));
+const NOUN = {make: "artifact", do: "deed"};
+const mixed = v => v && (v.output || []).some(o => o.verb === "make") && (v.output || []).some(o => o.verb === "do");
+function atomPreview(a, v){
+  const h = a.human_output && a.human_output.text;
+  if (!artifact(v, "page") && !artifact(v, "doc")) return `<div class="apreview" data-preview="text">${esc(h || "Nothing built yet.")}</div>`;
+  if (PREVIEWS[a.id] === undefined){ if (typeof wantPreview === "function") wantPreview(a.id);
+    return `<div class="apreview" data-preview="wait"><span class="empty">Loading the preview…</span></div>`; }
+  return PREVIEWS[a.id] ? `<iframe class="apreview" data-preview="frame" sandbox="" title="What this atom built" srcdoc="${esc(PREVIEWS[a.id])}"></iframe>`
+    : `<div class="apreview" data-preview="text">${esc(h || "")}</div>`;
+}
+function atomBlocks(a, w, v){
+  const ag = a.agent_output, res = a.results || [], ok = res.filter(r => r.pass === true).length, bad = res.filter(r => r.pass === false).length;
+  const g = t => `<h4 class="agroup">${t}</h4>`;
+  const q = runQ().replace("&", "?"), sec = artifact(v, "page"), dsec = artifact(v, "doc");
+  const base = dsec ? String(dsec.ref.split("#")[0]).replace(/\.md$/, "") : "";
+  const site = dsec ? `<a data-link="md" href="file/${esc(base)}.md${q}" download>Download the markdown (.md)</a> <a data-link="docx" href="file/${esc(base)}.docx${q}" download>Download the Word file (.docx)</a>`
+    : sec ? `<a data-link="site" href="site/latest${q}#${esc(sec.ref.split("#")[1])}" target="_blank" rel="noopener">View in site</a>` : "";
+  const rowsOf = l => l.map(e => esc(e.atom) + ": " + esc(sentence(whyShown(e.why, e.atom)))).join("<br>");
+  const edges = (t, l) => !l || !l.length ? "none recorded" : l.length > 4 ? foldList(`blk-${a.id}-${t}`, l.length, rowsOf(l)) : "<br>" + rowsOf(l);
+  const isFile = o => !String(o.ref).includes("#") && /^[\w./-]+\.(md|html|docx|css|js|json)$/.test(o.ref);   // hld.md, site/v9.md: where it is kept, not what it made
+  const outs = v ? (v.output || []) : [], made = outs.filter(o => !isFile(o)).sort((x, y) => String(y.ref).includes("#") - String(x.ref).includes("#"));
+  const fx = fixesLine(a, w), fxHTML = fx ? `<br><span data-note="fixes">${fx}</span>` : "";
+  const bl = boardLine(a, w), blHTML = bl ? `<br><span data-note="board">${bl}</span>` : "";
+  const wout = v ? (made.map(o => `${esc(o.name)} <span class="empty">${esc(o.verb)} · ${esc(NOUN[o.verb] || "")} · ${esc(o.form)} · ${esc(o.ref)}</span>`).join("<br>") || '<span class="empty">Nothing made yet.</span>')
+    + fxHTML      // a revise atom's Fixes line sits right under what it made, above Saved in, Depends on and Used by
+    + blHTML
+    + (outs.some(isFile) ? `<br><span data-note="saved">Saved in: ${outs.filter(isFile).map(o => esc(o.ref)).join(", ")}</span>` : "")
+    + `<br>Depends on: ${edges("dep", v.depends_on)}<br>Used by: ${edges("used", v.used_by)} <button type="button" class="linkbtn" data-link="agent" data-atom="${esc(a.id)}">Workflow output</button>`
+    : '<span class="empty">Built by code when the checks pass.</span>' + fxHTML + blHTML;
+  const mix = mixed(v) ? ' <span class="empty" data-note="mixed">mixed: makes and does</span>' : "";
+  return g("1. Particles")
+    + blockHTML(a, "goal", "Goal", "What must be true when this is done", atomRow(a, "goal", w), false)
+    + blockHTML(a, "how", "How", "Who builds it", atomRow(a, "how", w), false)
+    + blockHTML(a, "constraints", "Constraints", "What must never break", atomRow(a, "constraints", w), true)
+    + blockHTML(a, "context", "Context", "What it needs to know", atomRow(a, "context", w), true)
+    + g("2. Defined output and verification")
+    + blockHTML(a, "expected_output", "Defined output", "What must exist when it is done", atomRow(a, "expected_output", w), false)
+    + blockHTML(a, "verification", "Verification", "The check that proves the goal is met",
+        `${res.length ? `${ok} passed, ${bad} failed of ${res.length}.` : "Not run yet."} <button type="button" class="linkbtn" data-link="evidence" data-atom="${esc(a.id)}">Verification evidence</button>`
+        + foldBlock(`blk-${a.id}-evidence`, atomRow(a, "verification", w)), false)
+    + g("3. Outputs")
+    + blockHTML(a, "human_output", "Notes", "What it did, in plain words",
+        a.human_output ? linkDocItems(esc(sentence(a.human_output.text))) + ` <span class="empty">Attempt ${a.human_output.attempt}.</span>` : '<span class="empty">Not written yet.</span>', false)
+    + blockHTML(a, "agent_output", "Workflow output", "What it made or did, what it used and who uses it" + mix, wout, false)
+    + blockHTML(a, "result", "Result", "What it looks like", atomPreview(a, v) + (site ? ` ${site}` : ""), false);
+}
+function atomCards(s, w){
+  CTX = s;
+  const atoms = w.atoms || [];
+  if (!atoms.length) return '<p class="empty">No work atoms: registered before work atoms existed.</p>';
+  return atoms.map((a, i) => `<details class="atom" data-key="atom-${esc(a.id)}"${atoms.length === 1 ? " open" : ""}>
+    <summary><b>Work atom ${i + 1}</b> <span class="code">${esc(a.id)}</span> · ${esc(dv(words(a.goal)))} <span class="${a.status === "passed" ? "pass" : a.status && a.status !== "could not run" ? "fail" : "empty"}">· ${(a.verification || []).length} check(s), ${ATOM_STATUS[a.status] || "not run yet"}${a.attempts ? `, attempt ${a.attempts} of 3` : ""}</span></summary>
+    ${atomBlocks(a, w, (s.atoms_v1 || {})[a.id])}
+    ${runDetails(s, a, w)}</details>`).join("");
+}
+const ATOM_STATUS = {passed: "checks passed", failed: "checks failing", escalated: "ESCALATED", "could not run": "a check could not run"};
+function runDetails(s, a, w){
+  const calls = s.call_log.filter(c => c.atom === a.id), none = '<p class="empty">No AI call yet.</p>';
+  const each = (f, raw) => calls.length ? calls.map(c => `<p><span class="code">call ${c.id}</span> ${esc(raw ? f(c) : dv(f(c)))}</p>`).join("") : none;
+  const tok = calls.some(c => c.tokens) ? calls.reduce((n, c) => n + ((c.tokens || {}).input || 0) + ((c.tokens || {}).output || 0), 0) + " tokens"
+    : calls.reduce((n, c) => n + c.chars.prompt + c.chars.reply, 0).toLocaleString() + " characters in and out";
+  return `<details data-key="run-${esc(a.id)}"><summary>Run details</summary>
+    <h4>Prompt sent</h4>${each(c => c.inputs.map(([k, v]) => k + ": " + v).join(" · "), true)}
+    <h4>Reply received</h4>${each(c => c.reply ? [c.reply.say, c.reply.check].filter(Boolean).join(" · ") : "No usable reply.")}
+    <h4>Reason given</h4>${each(c => c.reason || "No reason given in the reply.")}
+    <h4>Cost</h4>${calls.length ? `<p>${calls.length} AI call(s) · ${tok} · ${calls.reduce((n, c) => n + (c.seconds || 0), 0).toFixed(1)} s</p>` : none}
+    <h4>Attempts</h4><p>${a.attempts ? `Check attempt ${a.attempts} of 3` : "Checks not run yet"} · ${calls.length} AI call(s), ${w.retries_used || 0} retry(ies) after an unusable reply.</p></details>`;
+}
+// ===== atom cards: end
+// Output tags: what each workflow made, from the atoms' output refs (atoms.json): PRD, HLD, LLD, Site <section id>, Other.
+const OTYPES = [["prd", "PRD"], ["hld", "HLD"], ["lld", "LLD"], ["site", "Site"], ["other", "Other"]];
+let OTAG = "";                                       // the output type the list is filtered to; "" = all
+function outTags(s, w){
+  const tags = [], add = (type, label) => { if (!tags.some(t => t.label === label)) tags.push({type, label}); };
+  (w.atoms || []).forEach(a => (((s.atoms_v1 || {})[a.id] || {}).output || []).forEach(o => { const ref = String(o.ref || ""), d = ref.match(/^(prd|hld|lld)\.md(?:#|$)/);
+    if (d) add(d[1], d[1].toUpperCase());
+    else if (o.verb === "make" && /^[\w./-]+\.(md|html|docx|css|js|json)$/.test(ref)) return;          // a file it was saved in, not what it made
+    else if (o.verb === "make" && ref.includes("#") && /\.html?#/.test(ref)) add("site", "Site " + ref.split("#")[1]);
+    else add("other", "Other"); }));
+  return tags;
+}
+const otagBtn = t => `<button type="button" class="otag${OTAG === t.type ? " on" : ""}" data-otag="${t.type}" style="background:var(--${t.type})" title="Show only ${esc(t.type === "site" ? "site" : t.label)} workflows">${esc(t.label)}</button>`;
+const tagsHTML = tags => tags.length ? tags.map(otagBtn).join("") : '<span class="empty" data-otag-none>no output recorded</span>';
+function idRuns(ids){        // W-1, W-2, W-3, W-5 -> "W-1 to W-3, W-5"; ids that are not W-n are listed as they are
+  const nums = ids.map(x => (String(x).match(/^W-(\d+)$/) || [])[1]).filter(Boolean).map(Number).sort((a, b) => a - b), out = [];
+  for (let i = 0; i < nums.length;){ let j = i; while (j + 1 < nums.length && nums[j + 1] === nums[j] + 1) j++;
+    if (j - i >= 2) out.push(`W-${nums[i]} to W-${nums[j]}`); else for (let k = i; k <= j; k++) out.push("W-" + nums[k]); i = j + 1; }
+  return out.concat(ids.filter(x => !/^W-\d+$/.test(x))).join(", ");
+}
+function runSummary(s){
+  const at = Object.values(s.atoms_v1 || {}), n = st => at.filter(a => st(a.status)).length;
+  const built = [...(s.docset_files || []).map(d => d.kind.toUpperCase()), ...(s.doc && !(s.docset_files || []).length && (s.files || []).length ? ["PRD"] : []), ...(s.versions ? ["website"] : [])];
+  return `<div class="runsum" data-summary><div><b>Outcome:</b> ${clip("sum-outcome", dv(s.outcome || s.status || "not started"), 160)}</div>`
+    + `<div><b>Credits:</b> ${s.spent} of ${s.budget} used</div>`
+    + `<div><b>Work atoms:</b> ${n(x => x === "closed")} closed · ${n(x => x === "verify_failed" || x === "abandoned")} failed · ${n(x => x !== "closed" && x !== "verify_failed" && x !== "abandoned")} open</div>`
+    + `<div><b>Built:</b> ${built.length ? built.join(", ") : "nothing yet"}</div></div>`;
+}
+function renderWorkflows(s){
+  const pct = Math.min(100, s.spent / s.budget * 100);
+  const tags = Object.fromEntries(s.workflows.map(w => [w.id, outTags(s, w)])), shown = s.workflows.filter(w => (!OTAG || tags[w.id].some(t => t.type === OTAG)) && (!WFSTEP.length || WFSTEP.includes(w.id)));
+  const rows = shown.map(w => `<tr><td>${w.id}</td><td style="color:${col(w.id)}"><b>${esc(w.agent || who(w.id)[0])}</b><br><span class="empty">section ${esc(w.section || "")}${w.revises ? " (rewrites " + esc(w.revises) + "'s)" : ""}</span><br>${tagsHTML(tags[w.id])}</td>
+    <td>${w.cost}${w.charged === false ? '<br><span class="empty">released</span>' : ""}</td>
+    <td>${envCell(w)}</td><td>${w.cycle}</td><td><span class="pill ${w.status}">${w.status}</span></td></tr>
+    <tr><td colspan="7"><details data-key="wf-${esc(w.id)}"><summary>Open ${esc(w.id)}: ${(w.atoms || []).length} work atom(s)</summary><div class="wtags">Made: ${tagsHTML(tags[w.id])}</div>${atomCards(s, w)}</details></td></tr>`).join("");
+  const groups = OTYPES.map(([k, label]) => [label, s.workflows.filter(w => tags[w.id].some(t => t.type === k)).map(w => w.id)]).filter(g => g[1].length)
+    .concat([["No output recorded", s.workflows.filter(w => !tags[w.id].length).map(w => w.id)]].filter(g => g[1].length));
+  const legend = OTYPES.map(([k, label]) => otagBtn({type: k, label})).join("");
+  return (s.workflows.length ? runSummary(s) + `<div class="legend" data-legend><b>Output types</b> ${legend} <span class="empty">Click one to filter; click again to clear. Status is always a word as well as a colour.</span></div>`
+      + `<div class="ogroups" data-groups>${groups.map(([l, ids]) => `<div>${esc(l)}: ${esc(idRuns(ids))}</div>`).join("")}</div>`
+      + (WFSTEP.length ? `<p data-stepfilter>Showing ${shown.length} of ${s.workflows.length} workflows: the ones of the step you opened from the Map. <button type="button" class="linkbtn" data-wfclear>Show all</button></p>` : "")
+      + (OTAG ? `<p data-filter>Showing ${shown.length} of ${s.workflows.length} workflows with ${esc(OTYPES.find(t => t[0] === OTAG)[1])} output.</p>` : "") : "")
+    + `<h3>Budget: ${s.spent} of ${s.budget} work credits used</h3><div class="bar"><i style="width:${pct}%"></i></div>
+    ${rows ? `<table><tr><th>ID</th><th>Agent</th><th>Workflow</th><th>Charged</th><th>Limits</th><th>Cycle</th><th>Status</th></tr>${rows}</table>`
+      : `<p class="empty">${s.workflows.length ? "No workflow has that output." : "Nothing registered yet. Adaptation proposes, Priority answers, the validator registers what's agreed."}</p>`}`;
+}
+function renderConflicts(s){
+  if (!s.conflicts.length) return `<p class="empty">No conflicts yet. Any two agents that disagree get 4 attempts to settle it; then Identity resolves it from the charter, or asks you. Every disagreement is logged here and in conflicts.json.</p>`;
+  const pos = p => Array.isArray(p) ? (p.map(w => `${esc(w.name)} (${w.cost ?? "?"})`).join("<br>") || "nothing") : esc(p);
+  const by = {agents:"the agents themselves", identity:"Identity, from the charter", identity_after_user:"Identity, after your answer", default:"default (no ruling)"};
+  return s.conflicts.slice().reverse().map(c => {
+    const [a, b] = c.between, n = c.attempts.filter(x => x.n > 0).length;
+    const tries = c.attempts.map(x => `<tr><td>${x.n || "open"}</td><td>${esc(who(x.who)[0])}${x.msg ? ` <span class="empty">[${x.msg}]</span>` : ""}</td>
+      <td>${esc(x.text)}</td><td class="${x.agree ? "pass" : ""}">${x.agree ? "agrees" : esc(x.position || "")}</td></tr>`).join("");
+    const idr = (c.identity || []).map(r => `${r.after_user ? "After your answer" : "From the charter"}: ${r.resolved ? "ruled <b>" + esc(r.ruling) + "</b>" : "<b>couldn't resolve</b>"}. ${esc(r.clause ? "Clause: " + r.clause + ". " : "")}${esc(r.say)}`).join("<br>");
+    const finals = c.topic === "proposal" ? `<tr><th>${esc(who(a)[0])}'s final position</th><th>${esc(who(b)[0])}'s final position</th></tr>
+      <tr><td>${pos(c.adaptation_final)}</td><td>${pos(c.priority_final)}</td></tr>` : "";
+    return `<h3>${c.id} · cycle ${c.cycle} · ${esc(who(a)[0])} vs ${esc(who(b)[0])} · ${esc(c.subject)} <span class="pill ${c.status === "settled" ? "done" : "running"}">${c.status}</span></h3>
+    <dl><dt>attempts</dt><dd>${n} of 4${c.escalated ? ` · escalated to Identity after ${c.attempts_before_escalation}` : " · settled without escalating"}</dd>
+    <dt>resolved by</dt><dd>${esc(by[c.resolved_by] || "open")}</dd>
+    ${idr ? `<dt>Identity</dt><dd>${idr}</dd>` : ""}
+    ${c.user_question ? `<dt>asked you</dt><dd>${esc(c.user_question.question)}${(c.user_question.options||[]).map((o,i) => `<br><span class="empty">Option ${i+1}: ${esc(o)}</span>`).join("")}</dd>
+      <dt>your answer</dt><dd>${c.user_answer ? esc(c.user_answer) : '<span class="fail">waiting</span>'}</dd>` : ""}
+    <dt>outcome</dt><dd>${esc(c.outcome || "open")}${c.registered ? ` · registered: ${esc(c.registered.join(", ") || "nothing")}` : ""}</dd></dl>
+    ${finals ? `<table>${finals}</table>` : ""}
+    <table><tr><th>#</th><th>Who</th><th>Message</th><th>Position</th></tr>${tries}</table>`; }).join("");
+}
+function renderAudit(s){
+  if (!s.audits.length) return `<p class="empty">Audit checks the site against Identity's checklist after each cycle.</p>`;
+  const wk = s.workable ? (s.workable.length ? `<h3 class="fail">Not workable yet (checked by code)</h3><ul>${s.workable.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`
+    : `<h3 class="pass">Workable (checked by code)</h3>`) : "";
+  const last = s.audits[s.audits.length - 1];
+  const conds = s.conditions ? `<h3>Necessary conditions (checked by code, ${s.doc ? "document" : "site"} v${last.version}): ${s.conditions.filter(c => c.met).length} of ${s.conditions.length} met</h3><table><tr><th>Condition</th><th>Result</th><th>Evidence</th></tr>${s.conditions.map(c =>
+      `<tr><td><b>${esc(c.id)}</b> ${esc(c.text)}</td><td class="${c.met?"pass":c.severity==="warn"?"":"fail"}">${c.met ? "MET" : c.severity === "warn" ? "WARNING" : "NOT MET"}</td><td>${esc(c.evidence)}${(c.assumptions||[]).length ? `<br><span class="empty">Assumptions to confirm: ${c.assumptions.map(esc).join("; ")}</span>` : ""}</td></tr>`).join("")}</table>` : "";
+  return conds + wk + s.audits.slice().reverse().map(a => `<h3>Cycle ${a.cycle} · ${s.doc ? "document" : "site"} v${a.version} · ${a.all_pass ? '<span class="pass">all pass</span>' : '<span class="fail">failing</span>'}</h3>
+    ${a.read ? `<p class="empty">Audit read: ${esc(a.read)}</p>` : ""}
+    <table><tr><th>Criterion</th><th>Result</th><th>Evidence</th></tr>${a.results.concat(a.extra_issues||[]).map(r => `<tr><td>${r.id ? `<b>${esc(r.id)}</b> ` : ""}${r.item ? r.item + ". " : "extra: "}${esc(r.criterion)}</td>
+    <td class="${r.pass?"pass":"fail"}">${esc(r.verdict || (r.pass?"PASS":"FAIL"))}</td><td>${esc(r.note)}</td></tr>`).join("")}</table>
+    ${(a.rubric || []).length ? `<h3>${s.doc ? "Document rubric" : "Design and usability rubric"}</h3><table><tr><th>Item</th><th>Result</th><th>Evidence</th></tr>${a.rubric.map(r =>
+      `<tr><td><b>${esc(r.id)}</b> ${esc(r.criterion)}</td><td class="${r.pass?"pass":"fail"}">${esc(r.verdict)}</td><td>${esc(r.note)}</td></tr>`).join("")}</table>` : ""}
+    ${a.screenshot ? `<details data-key="shot-v${a.version}"><summary>Screenshot Audit looked at (360px left, 1280px right)</summary><img alt="Site v${a.version} at 360px and 1280px" style="max-width:100%;border:1px solid var(--line)" src="shot/${a.version}${runQ().replace("&", "?")}"></details>` : ""}`).join("");
+}
+const ROLE = {identity:"J2.a charter, J2.d rulings, J2.h workable?", adaptation:"J2.b proposes, disputes, saves lessons",
+  priority:"J2.c prices, checks run limits", coordination:"J2.f schedules, holds the write lock", audit:"J2.g checks the site",
+  validator:"J2.e code: checks and registers workflows"};
+const stepTag = (s, n) => s.steps[n] ? s.steps[n].split(" ")[0] : "";
+function renderLanes(s){
+  return `<h2>Agents · live status</h2>` + s.lanes.map(l => { const p = l.progress;
+    return `<button type="button" class="lane" data-msg="${l.last_msg ?? ""}" style="--c:${col(l.id)}">
+      <b>${esc(l.name)}</b> <span class="pill st-${l.status}">${l.status}${l.on ? " on " + esc(l.on) : ""}</span>
+      ${l.test_lesson ? `<span class="pill" style="color:var(--bad)">test lesson ${esc(l.test_lesson)}</span>` : ""}
+      <span class="d">${esc(l.doing || ROLE[l.id] || "")}</span>
+      ${p ? `<span class="pg">section ${esc(p.section)} · attempts ${p.attempts}/${p.attempt_limit} · retries ${p.retries}/${p.retry_limit}${p.write_lock ? " · write lock" : ""}<br>last check: ${esc(p.last_check || "not run yet")}</span>` : ""}
+    </button>`; }).join("");
+}
+function decided(m){
+  if (m.decision && m.who === "priority") return String(m.decision).toUpperCase();
+  if (m.act) return m.act;
+  if (m.envelope) return "limits " + m.envelope;
+  if (m.register !== undefined) return m.register ? "registered" : "rejected";
+  if (m.stamp !== undefined) return m.stamp ? "charter valid" : "charter rejected";
+  if (m.audit !== undefined) return m.workable ? "workable" : m.audit ? "all pass" : "findings";
+  if (m.done !== undefined) return m.done ? "done" : "not done";
+  if (m.accept !== undefined) return m.accept ? "accepts" : "pushes back";
+  if (m.attempt) return m.agree ? "agrees" : "holds";
+  if (m.to_user) return "asks you";
+  if (m.version) return "site v" + m.version;
+  return "";
+}
+function renderTimeline(s){
+  let prev = null, out = "";
+  s.allChat.filter(m => m.who !== "system").forEach(m => {
+    if (m.step && m.step !== prev){ out += `<span class="mark" title="${esc(s.steps[m.step] || "")}">${esc(stepTag(s, m.step))}</span>`; prev = m.step; }
+    out += `<button type="button" class="chip" data-msg="${m.id}" style="--c:${col(m.who)}" title="${esc(m.text.slice(0, 200))}">
+      <b>${esc(who(m.who)[0])}</b>${esc(decided(m) || m.text.slice(0, 40))}<br><span>[${m.id}] ${m.t}</span></button>`;
+  });
+  return `<h3>Every step in order <span class="empty">(coloured by agent; J2 step marked; click for details)</span></h3>
+    <div class="tline">${out || '<span class="empty">Nothing yet.</span>'}</div>
+    <p class="empty">${s.calls} AI calls · ${s.allChat.length} messages · cycle ${s.cycle}</p>`;
+}
+async function openDetail(id){
+  const m = state && state.allChat.find(x => x.id === +id); if (!m || m.who === "system" || m.who === "user") return;
+  const calls = (m.calls || []).map(c => state.call_log.find(x => x.id === c)).filter(Boolean);
+  const sum = (k) => calls.reduce((a, c) => a + (c[k] || 0), 0);
+  const tokIn = calls.some(c => c.tokens) ? calls.reduce((a, c) => a + ((c.tokens || {}).input || 0), 0) : null;
+  const tokOut = calls.some(c => c.tokens) ? calls.reduce((a, c) => a + ((c.tokens || {}).output || 0), 0) : null;
+  const charged = m.charged ?? 0, last = calls[calls.length - 1];
+  const reply = last && last.reply ? Object.fromEntries(Object.entries(last.reply).filter(([k]) => k !== "say")) : null;
+  $("dtitle").innerHTML = `<span style="color:${col(m.who)}">${esc(who(m.who)[0])}</span> · message ${m.id} · ${esc(state.steps[m.step] || "")}`;
+  $("dbody").innerHTML = `<p>${md(m.text)}</p>`
+    + (calls.length ? `<h3>What it read</h3><dl>${last.inputs.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(dv(v))}</dd>`).join("")}</dl>
+      <details id="full"><summary>Full text of what it was given (${calls.length > 1 ? "last of " + calls.length + " calls, " : ""}${last.chars.prompt.toLocaleString()} characters)</summary><pre id="fulltext">Loading…</pre></details>
+      <h3>What it decided</h3><p><b>${esc(decided(m) || "see reply")}</b></p>${reply ? `<pre>${esc(JSON.stringify(reply, null, 2))}</pre>` : ""}
+      <h3>Why</h3><p>${esc(last.reason || "No reason given in the reply.")}</p>`
+      : `<h3>What it read / decided / why</h3><p class="empty">Written by code, no AI call (${esc(decided(m) || "a rule in j2.py")}).</p>`)
+    + `<h3>Cost of this step</h3><dl><dt>AI calls</dt><dd>${calls.length}</dd>
+      <dt>tokens</dt><dd>${tokIn === null ? `not reported${state.mock ? " (mock mode)" : " by this provider"}; ${calls.reduce((a, c) => a + c.chars.prompt + c.chars.reply, 0).toLocaleString()} characters in and out` : `${tokIn.toLocaleString()} in · ${tokOut.toLocaleString()} out`}</dd>
+      <dt>time</dt><dd>${calls.length ? sum("seconds").toFixed(1) + " s" : "instant (code)"}</dd>
+      <dt>work credits charged</dt><dd>${charged}${m.workflow_cost ? ` · this workflow costs ${m.workflow_cost} (charged at registration)` : ""}</dd></dl>`;
+  if (!$("detail").open) $("detail").showModal();
+  const f = $("full");
+  if (f) f.addEventListener("toggle", async () => { if (!f.open || $("fulltext").dataset.ok) return;
+    const r = await fetch(`api/call?id=${last.id}${viewRun ? "&run=" + encodeURIComponent(viewRun) : ""}`);
+    const c = r.ok ? await r.json() : null;
+    $("fulltext").textContent = c ? `SYSTEM PROMPT\n${c.system}\n\nPROMPT\n${c.prompt}\n\nRAW REPLY\n${c.raw}` : "Not found.";
+    $("fulltext").dataset.ok = 1; });
+}
+function renderStyle(s){
+  const g = s.style;
+  if (!g) return `<p class="empty">The first workflow that runs writes the style guide (palette, fonts, spacing, buttons, cards) before any section is built. Every workflow agent follows it.</p>`;
+  const sw = Object.entries(g.palette || {}).map(([k, v]) => `<div style="display:inline-block;margin:0 10px 10px 0;text-align:center;font-size:12px"><div style="width:64px;height:44px;border-radius:8px;border:1px solid var(--line);background:${esc(v)}"></div>${esc(k)}<br><span class="empty">${esc(v)}</span></div>`).join("");
+  // values were checked by code (no <, >, { or }), so they are safe as inline styles
+  return `<h3>Style guide</h3><p>${esc(g.notes || "")}</p><div>${sw}</div>
+    <dl><dt>heading font</dt><dd style="font-family:${esc(g.fonts.heading)};font-size:20px">${esc(g.fonts.heading)}</dd>
+    <dt>body font</dt><dd style="font-family:${esc(g.fonts.body)}">${esc(g.fonts.body)}</dd>
+    <dt>spacing</dt><dd>${esc(JSON.stringify(g.spacing || {}))} · radius ${esc(g.radius || "")}</dd></dl>
+    <div style="background:${esc(g.palette.background)};padding:16px;border-radius:10px;border:1px solid var(--line)">
+      <span style="display:inline-block;${esc((g.buttons || {}).primary || "")}">Primary button</span>
+      <span style="display:inline-block;margin-left:8px;${esc((g.buttons || {}).secondary || "")}">Secondary</span>
+      <div style="margin-top:12px;color:${esc(g.palette.text)};${esc(g.card || "")}">A card in this style</div></div>`;
+}
+function renderPlaybooks(s){
+  if (!s.memory) return `<p class="empty">Memory is off (J2_MEMORY=0): no playbooks are read or saved in this run.</p>`;
+  const pbs = s.playbooks || [], used = new Set((s.playbooks_used || []).map(x => x.playbook));
+  const byType = {};
+  pbs.filter(p => !p.test).forEach(p => (byType[p.business_type] = byType[p.business_type] || []).push(p));
+  const avg = xs => xs.length ? (xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(1) : "–";
+  const prog = Object.entries(byType).map(([t, xs]) => `<tr><td><b>${esc(t)}</b></td><td>${xs.length}</td>
+    <td>${Math.round(100 * xs.filter(p => p.outcome.first_pass_audit).length / xs.length)}%</td>
+    <td>${avg(xs.map(p => p.outcome.cycles))}</td><td>${avg(xs.map(p => p.outcome.ai_calls))}</td>
+    <td>${xs.map(p => `${p.outcome.first_pass_audit ? "✓" : "✗"} ${p.outcome.cycles}c/${p.outcome.ai_calls}`).join(" → ")}</td></tr>`).join("");
+  const rows = pbs.slice().reverse().map(p => `<tr><td><b>${esc(p.id)}</b>${p.id === s.playbook_saved ? ' <span class="pill done">this run</span>' : ""}${used.has(p.id) ? ' <span class="pill running">used this run</span>' : ""}${p.test ? ' <span class="pill" style="color:var(--bad)">test</span>' : ""}<br><span class="empty">${esc(p.t)}</span></td>
+    <td>${esc(p.business_type)}</td><td>${esc((p.sections || []).join(" → "))}</td><td>${esc((p.watch_out || []).join("; "))}</td>
+    <td>${p.outcome.first_pass_audit ? "passed first time" : "needed fixes"} · ${p.outcome.cycles} cycles · ${p.outcome.ai_calls} AI calls${(p.outcome.change_requests || []).length ? " · " + p.outcome.change_requests.length + " change(s)" : ""}</td></tr>`).join("");
+  return `<h3>Progress by business type <span class="empty">(Done runs; test runs left out)</span></h3>
+    ${prog ? `<table><tr><th>Type</th><th>Runs</th><th>First-pass Audit</th><th>Cycles / run</th><th>AI calls / run</th><th>Run by run (oldest first: audit, cycles/calls)</th></tr>${prog}</table>` : '<p class="empty">No Done runs yet.</p>'}
+    <h3>Playbooks (${pbs.length}) <button type="button" class="ghost" id="clear-playbooks">Clear playbooks</button></h3>
+    <p class="empty">Saved when a run ends Done; Adaptation reads the closest ones at its first J2.b and says which it used. Stored in memory/playbooks.jsonl.</p>
+    ${rows ? `<table><tr><th>Playbook</th><th>Type</th><th>Sections in build order</th><th>Watch out</th><th>Outcome</th></tr>${rows}</table>` : ""}`;
+}
+function renderLessons(s){
+  if (!s.memory) return `<p class="empty">Memory is off (J2_MEMORY=0): no lessons are read or saved in this run.</p>`;
+  const used = new Set(s.lessons_used.map(x => x.lesson)), saved = new Set(s.lessons_saved);
+  const rows = s.lessons.slice().reverse().map(l => `<tr><td><b>${esc(l.id)}</b>${saved.has(l.id) ? ' <span class="pill done">new this run</span>' : ""}${used.has(l.id) ? ' <span class="pill running">used this run</span>' : ""}${l.test ? ' <span class="pill" style="color:var(--bad)">test lesson</span>' : ""}<br><span class="empty">${esc(l.t || "")}</span></td>
+    <td>${esc(l.problem)}</td><td>${esc(l.cause)}</td><td>${esc(l.fix)}</td><td>${esc(l.run)}</td></tr>`).join("");
+  return `<h3>Lessons (${s.lessons.length}) <button type="button" class="ghost" id="clear-lessons">Clear memory</button></h3>
+    <p class="empty">Adaptation saves a lesson when Audit confirms a fix worked, and reads the 5 most relevant at J2.b. Stored in memory/lessons.jsonl.</p>
+    ${rows ? `<table><tr><th>Lesson</th><th>Problem</th><th>Cause</th><th>Fix</th><th>Run</th></tr>${rows}</table>` : '<p class="empty">No lessons yet.</p>'}`;
+}
+// ================= Simple view: one voice ("Your website team"), plain words, no internals =================
+// Order matters: specific phrases first, then names and words. Internals become plain words; nothing is invented.
+const AGENT = "(?:Identity|Adaptation|Priority|Coordination|Validator|W-\\d+(?: Builder)?|Builder)";
+const PLAIN = [[/@[\w-]+[,:]?/g, ""], [/\(?\bJ2(?:\.[a-h]|_[A-Z_]+(?:=\S*)?)?\)?/g, ""], [/\bClause:\s*/g, ""],
+  [/\s+(?:on|in|for|of) [CFW]-\d+\b/g, ""], [/\bF-(\d+)\b/g, "item $1"], [/\bC-\d+\b/g, ""],
+  [/\b[Tt]he Requester\b/g, "you"], [/\bRequester's\b/g, "your"], [/\bRequester\b/g, "you"],
+  [/\bCOUNTER\b/g, "a smaller offer"], [/\bGRANT\b/g, "a yes"], [/\bREFUSE\b/g, "a no"],
+  [/\bover (?:the )?budget\b/gi, "more than planned"], [/\bout of budget\b/gi, "out of planned effort"],
+  [/\bbudgets?\b/gi, "effort"], [/\bunits\b/g, "work credits"], [/\bunit\b/g, "work credit"],
+  [/\bdone[-_ ]when list\b/gi, "checklist"], [/\bdone[-_ ]when (items?)\b/gi, "checklist $1"], [/\bdone[-_ ]when\b/gi, "checklist"],
+  [/\bthe render check is clean\b/gi, "it works on phones and computers"], [/\brender check\b/gi, "browser check"],
+  [/\bworkable\b/gi, "ready to use"], [/\bcharter\b/gi, "plan"], [/\bworkflows\b/gi, "tasks"], [/\bworkflow\b/gi, "task"],
+  [/\bcycles\b/gi, "rounds"], [/\bcycle\b/gi, "round"], [/\benvelope\b/gi, "limit"], [/\brate[- ]card\b/gi, "price list"],
+  [/\bAI calls?\b/gi, "steps"], [/\bmock\b/gi, "sample"],
+  [/\bAudit's\b/g, "our checks'"], [/\bAudit\b/g, "our checks"],
+  [new RegExp(`\\b${AGENT}'s\\b`, "g"), "the team's"], [new RegExp(`\\b${AGENT}\\b`, "g"), "the team"]];
+const plain = t => PLAIN.reduce((a, [r, w]) => a.replace(r, w), String(t || "")).replace(/[ \t]{2,}/g, " ")
+  .replace(/\s+([.,;:!?])/g, "$1").replace(/\(\s*\)/g, "").trim().replace(/(^|[.!?]\s+|\n)([a-z])/g, (m, a, b) => a + b.toUpperCase());
+const STAGES = ["Understanding your request", "Planning", "Building", "Checking", "Ready"];
+const isReady = s => /^Done/.test(s.outcome || "") && !s.paused && s.status !== "running";
+const failed = s => !!s.error || /^(Crashed|Stopped)/.test(s.outcome || "");
+function stage(s){ if (isReady(s)) return 4; const n = s.step || 0; return n <= 1 ? 0 : n <= 5 ? 1 : n === 6 ? 2 : 3; }
+function parseAsk(text){   // "@Requester say\n1. question\n   Option 1: text" -> {say, qs:[{q, opts}]}
+  const lines = String(text).split("\n"), qs = []; let say = [];
+  lines.forEach(l => { let m;
+    if ((m = l.match(/^(\d+)\. (.*)$/))) qs.push({q: m[2], opts: []});
+    else if ((m = l.match(/^\s+Option \d+: (.*?)(?: \[adds \d+ (?:units|work credits)[^\]]*\])?$/)) && qs.length) qs[qs.length - 1].opts.push(m[1]);
+    else if (/^\s+Option \d+: /.test(l) && !qs.length){   // one unnumbered question: the line above its options
+      const q = say.length && !/^-|^Still not right|^Some parts|^I couldn't tell/.test(say[say.length - 1]) ? say.pop() : "";
+      qs.push({q, opts: [l.replace(/^\s+Option \d+: /, "").replace(/ \[adds \d+ (?:units|work credits)[^\]]*\]$/, "")]}); }
+    else if (!qs.length) say.push(l); });
+  return {say: say.join("\n"), qs};
+}
+function optLabel(kind, o){ return plain(o); }   // options say what you get, amounts included, in plain words
+function askBubble(m, live){
+  const a = parseAsk(m.text), kind = m.pause;
+  let body = `<small>Your website team</small>${esc(plain(a.say))}`;
+  if (a.qs.length === 1 || a.qs.some(q => q.opts.length)){
+    // a question with options: the question once, then its buttons (no numbered list)
+    a.qs.forEach((q, i) => { body += `<p class="sq">${esc(plain(q.q))}</p>` + (live && q.opts.length ? optButtons(a, i, kind) : ""); });
+  } else body += `<ol>${a.qs.map(q => `<li>${esc(plain(q.q))}</li>`).join("")}</ol>`;
+  return `<div class="sb team">${body}</div>`;
+}
+function optButtons(a, i, kind){
+  return `<div class="opts" data-q="${i + 1}" data-n="${a.qs.length}">${a.qs[i].opts.map((o, j) =>
+    `<button type="button" data-opt="${j + 1}">${esc(optLabel(kind, o))}</button>`).join("")}</div>`;
+}
+function renderSimple(s){
+  const st = stage(s);
+  $("sprog").innerHTML = STAGES.map((x, i) => `<div class="${i < st ? "done" : i === st ? "on" : ""}"><i></i>${x}</div>`).join("");
+  let out = "", lastAsk = null;
+  if (!s.allChat.length) out = `<div class="sb team"><small>${s.doc ? "Your document team" : "Your website team"}</small>
+    <div><label>What should we make? <select class="outsel" aria-label="What to build">${outOptions(s)}</select></label></div>
+    ${s.doc ? "Describe the product. We'll ask for any facts we need, then write the PRD." : "Describe the website you want. We'll ask a few questions, then build it."}
+    <div class="cards">${examples(s).map(t => `<button type="button" data-brief="${esc(t)}">${esc(t)}</button>`).join("")}</div></div>`;
+  s.allChat.forEach(m => {
+    if (m.who === "user"){
+      const k = String(m.text).match(/^Option (\d+)$/), a = lastAsk && parseAsk(lastAsk.text);
+      const lab = k && a && a.qs[0] && a.qs[0].opts[+k[1] - 1] ? optLabel(lastAsk.pause, a.qs[0].opts[+k[1] - 1]) : m.text;
+      out += `<div class="sb me">${esc(lab)}</div>`;
+    } else if (m.who === "system" && m.override){
+      out += `<div class="sb team"><small>Owner override</small>${esc(plain(m.text))}</div>`;
+    } else if (m.who === "identity" && m.to_user){   // only messages for you; never one for an agent
+      if (m.act === "ASK_REQUESTER"){ lastAsk = m; out += askBubble(m, s.paused && s.paused.msg === m.id && s.status !== "running"); }
+      else out += `<div class="sb team"><small>Your website team</small>${esc(plain(m.text))}</div>`;
+    }
+  });
+  if (isReady(s)) out += `<div class="ready"><h2>${(s.docset || []).length > 1 ? "Your design documents are ready" : `Your ${s.doc ? "document" : "website"} is ready`}${/^Done with open items/.test(s.outcome) ? " (some things were left as they are)" : ""}</h2>
+    <div class="acts"><a href="site/latest${runQ().replace("&", "?")}" target="_blank" rel="noopener">Open full screen</a>
+    ${(s.docset || []).length > 1 ? plainDocLinks(s) : ""}${s.doc && (s.docset || []).length < 2 ? fileLinks(s) : s.doc ? "" : `<a href="site/latest${runQ().replace("&", "?")}" download="my-website.html">Download the HTML file</a>`}
+    <button type="button" id="sask-change">Ask for a change</button></div></div>`;
+  if (failed(s)) out += `<div class="oops">Something went wrong. Try again.<div class="acts" style="margin-top:8px"><button type="button" class="ghost" id="sretry">Start over</button></div></div>`;
+  if (out !== simpleHTML){ simpleHTML = out; $("smsgs").innerHTML = out;
+    const end = () => { $("smsgs").scrollTop = $("smsgs").scrollHeight; };   // again after layout and fonts settle
+    end(); requestAnimationFrame(end); setTimeout(end, 300); }
+  const w = s.workflows.find(x => x.id === s.thinking || x.status === "running");
+  $("stitle").textContent = s.doc ? "Your document team" : "Your website team";
+  $("sotype").textContent = s.doc ? `· ${s.output_label}` : "";
+  $("sstatus").textContent = s.status !== "running" ? "" : w ? `Building your ${plain(w.name).toLowerCase()}…`
+    : ["Reading your request…", "Reading your request…", "Planning your website…", "Planning your website…", "Planning your website…",
+       "Planning your website…", "Building your website…", "Checking everything works on phones and computers…", "Almost there…"][s.step || 0];
+  if (s.doc) $("sstatus").textContent = $("sstatus").textContent.replace("your website", "your document")
+    .replace("everything works on phones and computers", "the document");
+  const busy = s.status === "running" || !!s.saved;
+  $("sbox").disabled = $("ssend").disabled = busy;
+  $("sbox").placeholder = s.paused ? "Or type your own answer…" : isReady(s) ? "Describe a change…" : s.allChat.length ? "Write a message…" : s.doc ? "Describe the product…" : "Describe the website you want…";
+  if (s.versions !== sversions){ sversions = s.versions; $("sframe").src = `site/latest?t=${Date.now()}${runQ()}`; }
+  document.body.classList.toggle("has-site", s.versions > 0);
+  if (!s.versions) document.body.classList.remove("sp-preview");
+}
+let simpleHTML = null, sversions = -1;
+async function sendText(text){
+  if (!text) return;
+  await fetch("api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text})});
+}
+document.querySelector(".stoggle").addEventListener("click", e => { const b = e.target.closest("[data-pane]"); if (!b) return;
+  document.body.classList.toggle("sp-preview", b.dataset.pane === "preview");
+  document.querySelectorAll(".stoggle [data-pane]").forEach(x => x.setAttribute("aria-selected", x === b)); });
+$("ssend").onclick = () => { const t = $("sbox").value.trim(); $("sbox").value = ""; sendText(t); };
+$("sbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); $("ssend").click(); }});
+$("smsgs").addEventListener("click", async e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.brief) return sendText(b.dataset.brief);
+  if (b.id === "sask-change"){ $("sbox").focus(); return; }
+  if (b.id === "sretry"){ await fetch("api/reset", {method:"POST"}); location.reload(); return; }
+  const g = b.closest(".opts"); if (!g) return;
+  if (g.dataset.n === "1") return sendText(`Option ${b.dataset.opt}`);   // one question: send at once
+  $("sbox").value += `${$("sbox").value ? "; " : ""}${g.dataset.q}. Option ${b.dataset.opt}`; $("sbox").focus();
+});
+// View choice: ?view= wins, then the saved choice, then Simple. localStorage can throw (private mode, blocked).
+function setView(v, keep){ document.body.classList.toggle("simple", v !== "detail"); $("gochat").setAttribute("aria-current", v !== "detail" ? "page" : "false");
+  if (keep) try { localStorage.setItem("j2view", v); } catch (e) {} }
+(() => { const q = new URLSearchParams(location.search).get("view"); let v = q;
+  if (!v) try { v = localStorage.getItem("j2view"); } catch (e) {}
+  setView(v === "detail" ? "detail" : "simple", !!q); })();
+$("to-detail").onclick = e => { e.preventDefault(); setView("detail", true); };
+$("to-simple").onclick = e => { e.preventDefault(); setView("simple", true); };
+
+function renderReport(s){
+  const R = s.report;
+  if (!R) return `<p class="empty">The run report appears here when a run ends or pauses: counts measured by code, and learnings from a reviewer call.</p>`;
+  const m = R.metrics, r = R.review || {}, n = m.negotiation;
+  const list = (t, xs) => (xs && xs.length) ? `<h3>${t}</h3><ul>${xs.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+  const agents = Object.entries(m.agents).map(([k,a]) => { const sc = (r.agents||{})[k] || {};
+    return `<tr><td style="color:${col(k)}">${esc(who(k)[0])}</td><td>${a.turns}</td><td class="${a.redirects?"fail":""}">${a.redirects}</td>
+      <td class="${a.invalid_moves?"fail":""}">${a.invalid_moves}</td><td>${sc.score ?? ""}</td><td>${esc(sc.note || "")}</td></tr>`; }).join("");
+  const cf = m.conflicts;
+  const conf = cf.list.length ? cf.list.map(c => `<li>${c.id} · cycle ${c.cycle} · ${c.between.map(x => who(x)[0]).join(" vs ")}: ${c.attempts} attempt(s)${c.escalated ? ", escalated" : ""}, resolved by ${esc(c.resolved_by || "open")}${c.user_question ? `; asked you “${esc(c.user_question)}”, answer “${esc(c.user_answer || "waiting")}”` : ""}. ${esc(c.outcome || "")}</li>`).join("")
+      : "<li>None</li>";
+  const est = m.workflows.estimate_vs_charged.map(w => `<tr><td>${w.id}</td><td>${esc(w.name)}</td><td>${w.agent_estimate ?? ""}</td><td>${w.charged}</td></tr>`).join("");
+  return `<h3>${esc(m.outcome || "")}</h3><p><b>Reviewer:</b> ${esc(r.verdict || "")}</p>
+    <h3>Measured by code</h3>
+    <dl><dt>run</dt><dd>${m.ai_calls} AI calls · ${m.cycles} cycles · ${m.minutes} min · ${esc(m.model || "mock")}</dd>
+    <dt>budget</dt><dd>${m.budget.spent} of ${m.budget.total} · started ${m.budget.start ?? m.budget.total}${(m.budget.raises||[]).length ? ` · raised on your approval ${m.budget.raises.map(r => r.from+"→"+r.to).join(", ")} (cap ${m.budget.cap})` : ""} · rate card ${m.budget.rate_card ? "on" : "off"}</dd>
+    <dt>site</dt><dd>${m.site_versions} versions · ${(m.site_bytes/1000).toFixed(0)} KB</dd>
+    <dt>negotiation</dt><dd>${n.proposals} proposals · ${n.grants} GRANT / ${n.counters} COUNTER / ${n.refuses} REFUSE${n.refuses_converted_by_code ? ` (${n.refuses_converted_by_code} by code)` : ""} · ${n.parks} parked</dd>
+    <dt>conflicts</dt><dd>${cf.total} · ${cf.settled_by_agents} settled by the agents · ${cf.resolved_by_identity} by Identity from the charter · ${cf.asked_requester} needed you</dd>
+    <dt>questions to you</dt><dd>${m.requester_questions.total}${Object.entries(m.requester_questions.by_kind).map(([k,v]) => ` · ${esc(k)} ${v}`).join("")}</dd>
+    <dt>guards</dt><dd>${m.validator_refusals} validator refusals (${m.role_refusals} role) · ${m.limit_failures} limit failures · ${m.warnings} warnings</dd></dl>
+    <h3>Agents</h3><table><tr><th>Agent</th><th>Turns</th><th>Redirects</th><th>Invalid moves</th><th>Score (reviewer)</th><th>Note (reviewer)</th></tr>${agents}</table>
+    <h3>Conflicts</h3><ul>${conf}</ul>
+    <h3>Audit by cycle</h3><table><tr><th>Cycle</th><th>Version</th><th>Pass</th><th>Warn</th><th>Fail</th><th>Mechanical check</th></tr>
+      ${m.audits.map(a => `<tr><td>${a.cycle}</td><td>v${a.version}</td><td>${a.pass}</td><td>${a.warn}</td><td class="${a.fail?"fail":""}">${a.fail}</td>
+      <td class="${(a.mechanical||[]).length?"fail":""}">${!a.mechanical_ran ? "not run" : (a.mechanical||[]).length ? esc(a.mechanical.join("; ")) : "clean"}</td></tr>`).join("")}</table>
+    ${est ? `<h3>Agent estimate vs charged</h3><table><tr><th>ID</th><th>Workflow</th><th>Agent estimate</th><th>Charged</th></tr>${est}</table>` : ""}
+    ${list("What went well (reviewer)", r.went_well)}${list("Problems (reviewer)", r.problems)}${list("Learnings (reviewer)", r.learnings)}
+    <details data-key="events"><summary>Event log (${R.events.length})</summary><ul>${R.events.map(e => `<li>[${e.msg}] ${esc(e.agent)} · ${esc(e.type)}: ${esc(e.detail)}</li>`).join("")}</ul></details>
+    <p class="empty">Saved as report.json and report.md in the run folder. Scores and learnings are one reviewer model's judgment; counts are exact.</p>`;
+}
+function quick(s){
+  let items = [];
+  if (!s.total) items = examples(s);
+  else if (s.status === "waiting" && s.done && !s.paused) items = ["Add a section for visiting hours", "Looks good"];
+  $("quick").innerHTML = items.map(t => `<button type="button">${esc(t)}</button>`).join("");
+  [...$("quick").children].forEach(b => b.onclick = () => { $("box").value = b.textContent; send(); });
+}
+async function poll(){
+  try{
+    const s = await (await fetch(`api/state?since=${seen}${runQ()}`, {cache:"no-store"})).json();
+    CTX = s;
+    s.chat.forEach(addMsg);
+    allChat = allChat.concat(s.chat); s.allChat = allChat;
+    if (s.chat.length){ seen = s.total; $("msgs").scrollTop = $("msgs").scrollHeight; }
+    renderSteps(s);
+    $("typing").innerHTML = s.thinking ? `<b style="color:${col(s.thinking)}">${esc(who(s.thinking)[0])}</b> is working…`
+      : s.status === "running" ? "Working…" : s.status === "waiting" ? "Your turn." : "";
+    const busy = s.status === "running" || !!s.saved, p = s.paused;
+    $("banner").hidden = !s.saved;
+    if (s.saved) $("banner").textContent = `Viewing saved run ${s.saved} (read only). ${s.outcome || ""}`;
+    paint($("lanes"), renderLanes(s));
+    $("waiting").hidden = !p || busy;
+    if (p) $("waiting").innerHTML = `<b>Identity is waiting on your answer</b> · ${esc(p.label)} <span class="empty">(message ${p.msg})</span>`
+      + (p.questions.length ? `<ol>${p.questions.map(q => `<li>${esc(q.question)}${q.options.map((o,i) => `<div class="opt">Option ${i+1}: ${esc(o)}</div>`).join("")}</li>`).join("")}</ol>` : "");
+    $("box").placeholder = p ? "Answer Identity's question…" : s.total ? "Ask for a change…" : "Describe the website you want. The agents take it from there…";
+    $("box").disabled = busy; $("send").disabled = busy;
+    $("mode").textContent = (s.mock ? "mock functions" : `model: ${s.model}`) + ` · ${s.calls} AI calls · cycle ${s.cycle}`;
+    $("fixes").textContent = s.fixes ? "J2_FIXES=1 (fixes)" : "J2_FIXES=0 (baseline, as in the diagram)";
+    $("otype").textContent = `output: ${s.output_label}`;
+    if ($("outsel").__v !== s.output + s.total){ $("outsel").__v = s.output + s.total; $("outsel").innerHTML = outOptions(s); }
+    $("outsel").disabled = !!s.total || !!s.saved;
+    $("doclinks").hidden = !(s.doc || (s.docset || []).length) || !(s.files || []).length;
+    $("pane-preview").classList.toggle("has-links", !$("doclinks").hidden);
+    if (!$("doclinks").hidden) paint($("doclinks"), (s.docset || []).length > 1 ? `<b>Design documents</b> ${docLinks(s)}` : `<b>${esc(s.output_label)}</b> ${fileLinks(s)}`);
+    $("tab-board").hidden = !s.has_board;
+    $("forced").hidden = !s.force_audit_fail;
+    $("testles").hidden = !s.test_lessons;
+    $("forced").textContent = `TEST: J2_FORCE_AUDIT_FAIL=${s.force_audit_fail} (cycle 1 Audit result forced)`;
+    $("lock").textContent = s.write_lock ? `write lock: ${who(s.write_lock)[0]}` : "";
+    $("mem").textContent = s.memory ? `memory on · ${s.lessons.length} lesson(s)` : "memory off";
+    $("ph").hidden = !s.placeholders.length;
+    $("ph").textContent = `Placeholder md: ${s.placeholders.join(", ")}`;
+    paint($("needs"), renderNeeds(s)); $("needs").classList.toggle("on", needsYou(s).length > 0);
+    if (s.versions !== versions){
+      versions = s.versions;
+      $("ver").innerHTML = Array.from({length:versions}, (_,i) => `<option value="v${i+1}">v${i+1}</option>`).join("") || "<option>no site yet</option>";
+      $("ver").value = versions ? "v"+versions : ""; $("frame").src = `site/${versions ? "v"+versions : "latest"}?t=${Date.now()}${runQ()}`;
+    }
+    paint($("pane-goal"), renderGoal(s)); paint($("pane-workflows"), renderWorkflows(s));
+    paint($("pane-conflicts"), renderConflicts(s)); paint($("pane-audit"), renderAudit(s));
+    paint($("reportbody"), renderReport(s));
+    paint($("pane-charter"), renderCharter(s));
+    paint($("pane-timeline"), renderTimeline(s)); paint($("pane-lessons"), renderLessons(s));
+    paint($("pane-style"), renderStyle(s)); paint($("pane-playbooks"), renderPlaybooks(s));
+    const dk = s.total + "|" + (s.docset || []).join(); if (dk !== docsKey){ docsKey = dk; loadDocs(); loadArtifacts(); }
+    if (s.has_board) loadBoard();
+    const mk = s.total + "|" + s.status + "|" + (s.turn || "") + "|" + (s.paused ? s.paused.kind : ""); if (mk !== mapKey && Date.now() - mapT > 1500){ mapKey = mk; mapT = Date.now(); loadMap(); }
+    renderSimple(s);
+    if (!state || state.status !== s.status || state.total !== s.total) quick(s);
+    state = s;
+  }catch(e){ if (!state) $("sstatus").textContent = "Something went wrong. Try again."; }
+  if (!(state && state.saved)) setTimeout(poll, 700);   // a saved run doesn't change: load it once
+}
+$("ver").onchange = () => $("frame").src = `site/${$("ver").value}?t=${Date.now()}${runQ()}`;
+// Needs you: every open question to the Requester. The same items make a node "waiting on you": a live pause, or a saved run whose last
+// Identity message still waits. Each has a button that scrolls to and focuses that question in the Chat.
+function needsYou(s){
+  const p = s && s.paused, msgs = (s && (s.allChat || s.chat)) || [], last = [...msgs].reverse().find(m => m.who !== "system");
+  if (p) return (p.questions || []).length ? p.questions.map(q => ({msg: p.msg, line: q.question})) : [{msg: p.msg, line: p.label || "Identity is waiting on your answer."}];
+  return last && last.pause && last.who === "identity" ? [{msg: last.id, line: String(last.text || "Identity is waiting on your answer.").replace(/\s+/g, " ").trim()}] : [];
+}
+const needLine = t => { t = dv(mapClean(t)); return esc(t.length > 150 ? t.slice(0, 149) + "…" : t); };
+// One plain line for a finished or saved run: how it ended, with a link to the Report (the full text of the outcome is there, word for word).
+function outcomeLine(s){
+  const o = String((s && s.outcome) || ""); if (!o) return "";
+  const left = (MAP.nodes || []).filter(n => n.kind === "work" && n.status === "left_open"), mails = left.filter(n => /^Email · /.test(n.label) && /dry run/i.test(n.detail || ""));
+  const open = left.filter(n => !mails.includes(n)).map(n => String(n.label).replace(/^send (a |an |the )?/i, "").replace(/^./, c => c.toLowerCase()) + (/dry run/i.test(n.detail || "") ? " (dry run)" : ""));
+  const parts = [...(mails.length ? [`${mails.length} email${mails.length === 1 ? "" : "s"} waiting (dry run)`] : []), ...(open.length ? [`${open.length} item${open.length === 1 ? "" : "s"} left open: ${open.join(", ")}`] : [])];
+  if (parts.length && /^Done/i.test(o)) return `Finished. ${parts.join(". ")}.`;
+  return /^Done with open items/i.test(o) ? "Finished. Some items were left open." : /^Done/i.test(o) ? "Finished. Nothing is left open." : /^Stopped|^Crashed/i.test(o) ? "Stopped before the end." : "Finished.";
+}
+function renderNeeds(s){
+  const items = needsYou(s), out = outcomeLine(s);
+  return `<h2>Needs you <span class="needbadge" id="needcount">${items.length}</span></h2>`
+    + (items.length ? items.map(i => `<div class="needitem"><span>${needLine(i.line)}</span><button type="button" data-needmsg="${esc(i.msg)}">Answer in Chat</button></div>`).join("") : `<span class="none">Nothing needs you right now.</span>`)
+    + (out ? `<div class="outcome" data-outcome>${esc(out)} <button type="button" class="linkbtn" data-gotab="report">See report</button></div>` : "");
+}
+function focusChat(){ const c = document.querySelector("#dview .chat"); if (c && c.scrollIntoView) c.scrollIntoView({block: "nearest"}); if (!$("box").disabled) $("box").focus(); }
+function focusQuestion(id){
+  const el = $("msgs").querySelector(`.msg[data-id="${CSS.escape(String(id))}"]`);
+  if (!el){ focusChat(); return false; }
+  el.tabIndex = -1; el.classList.add("flash"); if (el.scrollIntoView) el.scrollIntoView({block: "center"}); el.focus(); setTimeout(() => el.classList.remove("flash"), 2500); return true;
+}
+$("needs").addEventListener("click", e => { const b = e.target.closest("[data-needmsg]"); if (b) focusQuestion(b.dataset.needmsg); const g = e.target.closest("[data-gotab]"); if (g) showTab(g.dataset.gotab); });
+const TABHINT = {preview: "What the team has built so far.", goal: "What you asked for and what the team took from it.",
+  workflows: "The jobs the work was split into, and the budget.", conflicts: "Where the agents disagreed and how it was settled.",
+  timeline: "Every message, in order.", audit: "The checks run on each version of the site.", charter: "The list of things you confirmed.",
+  docs: "The design documents the team wrote.", artifacts: "The files and records this run produced.",
+  map: "Who worked with whom, and what each made.", style: "The look and feel the team agreed on.",
+  lessons: "What the team learned from earlier runs.", playbooks: "Plans reused from earlier runs of the same kind.",
+  report: "A summary of the run.", rundetails: "The agents, the steps and the settings of this run.", runsettings: "What to build, which run to open, and a new run.",
+  board: "Questions the functions and the builders asked, who answered them, and who reused them (recorded data only)."};
+function showTab(name){
+  document.querySelectorAll(".tabs [role=tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === name));
+  const tb = document.querySelector(`.tabs [data-tab="${name}"]`);
+  $("wtitle").textContent = tb ? tb.textContent.trim() : name; $("wsub").textContent = TABHINT[name] || ""; $("ver").hidden = name !== "preview";
+  // the Map has its own heading, so the title bar is only for the other views
+  $("backmap").hidden = name === "map"; document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map"); if (name !== "map"){ $("railsub").hidden = false; $("internals").setAttribute("aria-expanded", "true"); }
+  ["preview","goal","workflows","conflicts","timeline","audit","charter","docs","artifacts","board","map","style","lessons","playbooks","report","rundetails","runsettings"].forEach(t => $("pane-"+t).hidden = t !== name);
+}
+document.querySelectorAll(".tabs [role=tab]").forEach(b => b.onclick = () => { if (b.dataset.tab === "workflows" && WFSTEP.length){ WFSTEP = []; if (state) paint($("pane-workflows"), renderWorkflows(state)); } showTab(b.dataset.tab); });
+showTab("map");
+$("gochat").onclick = () => setView("simple", true);      // Chat is the Simple view; any other rail item goes back to the Detailed view
+document.querySelectorAll(".rail [role=tab]").forEach(b => b.addEventListener("click", () => setView("detail", true)));
+$("internals").onclick = () => { const o = $("railsub").hidden; $("railsub").hidden = !o; $("internals").setAttribute("aria-expanded", String(o)); };
+$("backmap").onclick = () => showTab("map");
+// Artifacts: read-only list driven by artifacts/types.json (/api/artifacts): deliverables, then evidence and records.
+const ARTS = {deliverables: [], records: []}, ARTTEXT = {};      // ARTTEXT: file -> text already fetched for an open row
+let ARTOPEN = "";
+// Board tab: board/1 entries (j2_board.py), read-only. Shown only when the run has one (tab-board.hidden, set from
+// s.has_board). Recorded data only: every row is a stored board entry, nothing guessed.
+const BOARD = {schema: "board/1", entries: []};
+// Where an answer came from: {workflow, version} or {function}, as recorded (nothing guessed).
+const boardFrom = f => !f ? '<span class="empty">not recorded</span>'
+  : f.function ? `${esc(fnName(f.function))} (function)`
+  : `${esc(f.workflow)}${f.version ? " v" + esc(f.version) : ""}`;
+function boardRow(e){
+  const st = {open: "open", answered: "answered", unanswered: "unanswered", refused: "refused"}[e.status] || e.status;
+  const role = e.asked_by_role ? ` <span class="empty">${esc(e.asked_by_role)}</span>` : "";
+  return `<tr data-board="${esc(e.id)}"><td>${esc(e.id)}</td><td>${esc(e.asked_by)}${role}</td><td>${esc(e.to)}</td>`
+    + `<td>${esc(e.question)}</td><td>${e.answer ? esc(e.answer) : '<span class="empty">not recorded</span>'}</td>`
+    + `<td>${esc(st)}</td><td>${boardFrom(e.answered_from)}</td>`
+    + `<td>${e.artifact_update ? "yes" : '<span class="empty">no</span>'}</td>`
+    + `<td>${(e.used_by || []).length ? esc(e.used_by.join(", ")) : '<span class="empty">none</span>'}</td></tr>`;
+}
+const renderBoard = () => !BOARD.entries.length ? '<p class="empty">No questions asked yet.</p>'
+  : `<table class="boardtbl"><thead><tr><th>Q-id</th><th>Asked by</th><th>To</th><th>Question</th><th>Answer</th>`
+    + `<th>Status</th><th>Answered from</th><th>Artifact update</th><th>Used by</th></tr></thead>`
+    + `<tbody>${BOARD.entries.map(boardRow).join("")}</tbody></table>`;
+async function loadBoard(){
+  try { const r = await fetch(`api/board?${runQ().slice(1)}`, {cache:"no-store"}); if (r.ok) Object.assign(BOARD, await r.json()); } catch (e) {}
+  paint($("pane-board"), renderBoard());
+}
+const artUrl = f => `api/artifact?name=${encodeURIComponent(f)}${runQ()}`;
+function artRow(r){
+  const open = ARTOPEN === r.file, made = (r.workflows || []).length ? `made by ${esc(idRuns(r.workflows))}` : "no workflow recorded";
+  const dep = (r.depends_on_labels || []).length ? `depends on ${r.depends_on_labels.map(esc).join(", ")}` : "depends on nothing in this run";
+  const body = !open ? "" : r.open === "image" ? `<img class="artimg" alt="${esc(r.name)}" src="${artUrl(r.file)}">`
+    : r.open === "preview" ? `<iframe class="artframe" sandbox="" title="${esc(r.name)}" src="${artUrl(r.file)}"></iframe>`
+    : `<pre class="arttext">${esc(ARTTEXT[r.file] === undefined ? "Loading..." : ARTTEXT[r.file])}</pre>`;
+  return `<div class="artrow" data-art="${esc(r.file)}"><div><b>${esc(r.name)}</b> <span class="empty">${esc(r.form)}</span> `
+    + `<span class="otag" style="background:var(${esc(r.color)})">${esc(r.tag)}</span> <span class="empty">${made} · ${dep}</span> `
+    + `<button type="button" class="linkbtn" data-artopen="${esc(r.file)}" aria-expanded="${open}">${open ? "Close" : "Open"}</button></div>${body}</div>`;
+}
+const renderArtifacts = () => {
+  const part = (title, rows, none) => `<h3>${title}</h3>` + (rows.length ? rows.map(artRow).join("") : `<p class="empty">${none}</p>`);
+  return part("Deliverables", ARTS.deliverables, "Nothing built yet.") + part("Evidence and records", ARTS.records, "Nothing recorded yet.");
+};
+async function loadArtifacts(){
+  try { const r = await fetch(`api/artifacts?${runQ().slice(1)}`, {cache:"no-store"}); if (r.ok) Object.assign(ARTS, await r.json()); } catch (e) {}
+  paint($("pane-artifacts"), renderArtifacts());
+}
+$("pane-artifacts").addEventListener("click", async e => { const b = e.target.closest("[data-artopen]"); if (!b) return;
+  const f = b.dataset.artopen; ARTOPEN = ARTOPEN === f ? "" : f;
+  const r = [...ARTS.deliverables, ...ARTS.records].find(x => x.file === f);
+  if (ARTOPEN && r && r.open === "text" && ARTTEXT[f] === undefined){ paint($("pane-artifacts"), renderArtifacts());
+    try { const x = await fetch(artUrl(f), {cache:"no-store"}); ARTTEXT[f] = x.ok ? await x.text() : "Could not open this file."; } catch (err) { ARTTEXT[f] = "Could not open this file."; } }
+  paint($("pane-artifacts"), renderArtifacts()); });
+// Map: read-only drawing of a run, from /api/map (map/1). renderMap(map) is one pure function: inline SVG for wide screens and a card
+// list for 600px and under. Status is never colour alone: solid = filed and checked, dashed = left open, double = running now, thick red
+// edge plus "!" = fault or blocked, hollow = not made, thick amber edge plus "?" = waiting (on you, or on another function).
+const MAP = {nodes: [], edges: [], status: {}, legend: [], not_recorded: []};
+let mapKey = "", mapT = 0, MAPPIN = "", MAPFILT = "", WFSTEP = [], MAPPAGES = [], MAPBRANCH = [];      // which side each "given to" line and each side job took in the wide layout      // MAPPIN: the function whose lines stay highlighted after a click
+// Every word the Map shows comes from this one table. Internal ids, map.json, class names and the other tabs keep their names.
+const MAPLABEL = {
+  rows: {people: "You", functions: "Management layer", work: "Team layer and deliverables"},
+  persona: {identity: "Client Lead", adaptation: "Strategist", priority: "Prioritiser", coordination: "Scheduler", audit: "Quality Reviewer"},
+  checker: "Checker (automatic)",
+  verb: {Write: "drafting", Build: "building", Send: "sending"},                                     // from what the step's workflows make (map.json), never from its place on the map
+  verbTag: {PRD: "drafting", HLD: "drafting", LLD: "drafting", Site: "building", Send: "sending"},     // a step with no recorded kind: the deliverable it leads to says
+  team: {drafting: {PRD: "Product Analyst", HLD: "Solution Architect", LLD: "Technical Designer", other: "Specialist"}, building: "Web Developer", sending: "Messenger"},
+  legend: {function: "Management persona (chip)", engine: "Team (dot cluster)", work: "Deliverable (diamond)", send: "Side job: a send (letter icon)", person: "You", filed: "filed and checked", running: "running now", left_open: "left open",
+           waiting_on_you: "waiting on you", fault: "fault", not_made: "not made", handoff: "hand-off", speaks_to: "speaks to", given_to: "given to", done_unchecked: "done · checks did not pass"}};
+const MAPW = {filed: "filed and checked", done_unchecked: "done · checks did not pass", running: "running now", left_open: "left open", waiting: "waiting", waiting_on_you: "waiting on you", fault: "fault", not_made: "not made", idle: ""};
+const MAPS = {filed: "filed", done_unchecked: "done · checks did not pass", running: "running now", left_open: "left open", waiting: "waiting", waiting_on_you: "waiting on you", fault: "fault", not_made: "not made", idle: ""};
+const MAXLINES = 3;      // more function-to-function lines than this go in a small table instead of crossing lines
+const isWait = st => st === "waiting" || st === "waiting_on_you";
+function mapWords(t, n){ t = esc(dv(String(t ?? ""))); return n && t.length > n ? t.slice(0, n - 1) + "…" : t; }
+const mapClean = t => String(t ?? "").replace(/@[\w-]+[,:]?\s*/g, "").replace(/\(?\bJ2(?:\.[a-h]|_[A-Z_]+(?:=\S*)?)?\)?/g, "").replace(/\s{2,}/g, " ").trim();      // a chat message with its @tags and step codes taken out (Detailed view words, not the Simple view's)
+function mapSay(t, n){ const m = String(t ?? "").match(/^(last seen: )([\s\S]*)$/); return m ? mapWords(m[1] + mapClean(m[2]), n) : mapWords(mapClean(t), n); }      // a message quoted from the chat: @tags and step codes taken out
+const mapFn = n => { const p = MAPLABEL.persona[String(n.id).replace("fn:", "")]; return p ? `${p} (${n.label})` : n.label; };      // "Persona (Function)"
+const mapState = n => n.kind === "function" ? (n.status === "waiting" ? "waiting on " + (n.wait_on || "someone") : n.status === "fault" ? "blocked" : n.status === "idle" ? "idle" : MAPW[n.status]) : MAPS[n.status];
+function mapLook(st, thin){      // one colour meaning everywhere: green = filed and checked, amber = waiting, red = fault, grey = everything else
+  return {stroke: st === "fault" ? "var(--bad)" : isWait(st) || st === "done_unchecked" ? "var(--validator)" : st === "filed" ? "var(--ok)" : st === "not_made" || st === "idle" ? "var(--line)" : "var(--muted)",
+    width: st === "fault" || isWait(st) || st === "done_unchecked" ? 4 : st === "not_made" ? 1.5 : thin ? 1.2 : 1.5, fill: st === "filed" ? "color-mix(in srgb, var(--ok) 14%, var(--panel))" : st === "not_made" ? "none" : "var(--panel)",
+    dash: st === "left_open" ? ' stroke-dasharray="6 4"' : st === "done_unchecked" ? ' stroke-dasharray="2 3"' : ""}; }      // done · checks did not pass: amber and dotted
+function mapShape(kind, st, c, x, y, w, h, col, thin){      // the ring of a dot (or the outline of a box) for a status: solid, dashed, double, thick red, thick amber, hollow
+  const {stroke, width, fill, dash} = mapLook(st, thin);
+  const R = g2 => Math.round((c ? c.r : 0) + g2) , one = (g, f) => kind === "diamond" ? `<polygon class="shape" points="${c.x},${c.y - R(g)} ${c.x + R(g)},${c.y} ${c.x},${c.y + R(g)} ${c.x - R(g)},${c.y}" fill="${f}" stroke="${stroke}" stroke-width="${width}"${dash}/>`
+    : kind === "circle" ? `<circle class="shape" cx="${c.x}" cy="${c.y}" r="${c.r + g}" fill="${f}" stroke="${stroke}" stroke-width="${width}"${dash}/>`
+    : `<rect class="shape" x="${x - g}" y="${y - g}" width="${w + 2 * g}" height="${h + 2 * g}" rx="${8 + g}" fill="${f}" stroke="${stroke}" stroke-width="${width}"${dash}/>`;
+  return st === "running" ? one(4, "none") + one(0, fill) : one(0, fill);
+}
+function mapBadge(st, x, y){ return st === "fault" || isWait(st) ? `<g><circle cx="${x}" cy="${y}" r="8" fill="${st === "fault" ? "var(--bad)" : "var(--validator)"}"/><text x="${x}" y="${y + 4}" text-anchor="middle" style="fill:var(--on);font-weight:700">${st === "fault" ? "!" : "?"}</text></g>` : ""; }
+function mapLabelLines(t){ const w = String(t).split(" "), out = [""]; w.forEach(x => { const l = out[out.length - 1]; if (l && (l + " " + x).length > 17 && out.length < 2) out.push(x); else out[out.length - 1] = l ? l + " " + x : x; }); return out; }
+const mapGoLabel = n => n.status === "waiting_on_you" ? "Answer in Chat" : n.kind === "person" ? "Show what needs you" : n.kind === "engine" ? "Open these workflows"
+  : n.kind === "function" ? (n.id === "fn:identity" ? "Open Chat" : n.id === "fn:audit" ? "Open Audit findings" : "Show messages and calls") : n.tag === "Site" || n.id === "work:website" ? "Open the site preview" : n.id === "work:charter" ? "Open the Charter" : "Open the document";
+const mapById = m => Object.fromEntries((m.nodes || []).map(n => [n.id, n]));
+const mapStepTo = (m, n) => { const e = (m.edges || []).find(x => x.kind === "step" && x.from === n.id); return e ? mapById(m)[e.to] : null; };      // the deliverable a step leads to
+const mapStepVerb = (m, n) => MAPLABEL.verb[n.label] || (mapStepTo(m, n) && MAPLABEL.verbTag[mapStepTo(m, n).tag]) || "working on";
+const mapPersona = (m, n) => { if (n.team) return n.team; const v = mapStepVerb(m, n), t = mapStepTo(m, n), p = MAPLABEL.team[v]; return typeof p === "string" ? p : p ? (t && p[t.tag]) || p.other : "Specialist"; };      // the stage's role (map.json team), else chosen from the step's output type
+const mapUnchecked = n => (n.unchecked || []).length ? ` · ${n.unchecked.length} done, checks did not pass` : "";      // workflows set to done whose atom failed its checks
+const mapWfN = n => (n.workflows || []).length;
+const mapStepSay = (m, n) => { const t = mapStepTo(m, n); return `${mapPersona(m, n)}, ${mapStepVerb(m, n)} ${t ? t.label : "this deliverable"} (${mapWfN(n)} workflow${mapWfN(n) === 1 ? "" : "s"}${mapUnchecked(n)})`; };
+const mapName = (m, id) => { const n = mapById(m)[id]; return !n ? id : n.kind === "function" ? mapFn(n) : n.kind === "engine" ? `${mapPersona(m, n)} (${mapStepVerb(m, n)} ${(mapStepTo(m, n) || {label: "this deliverable"}).label})` : n.label; };
+// "Given to": a document box to the step that was given it. The step is the one that leads to the box the hand-off recorded, so the line ends on that step circle.
+// No such step in the map: the line stays on the box and the gap is listed under Not recorded. Nothing is guessed.
+function mapGiven(m){
+  const by = mapById(m), edges = m.edges || [], stepOf = {};
+  edges.filter(e => e.kind === "step" && by[e.from] && by[e.from].kind === "engine" && by[e.to]).forEach(e => { stepOf[e.to] = e.from; });
+  return edges.filter(e => e.kind === "handoff" && by[e.from] && by[e.to]).map(e => {
+    const s = stepOf[e.to] || "";
+    return {from: e.from, to: s || e.to, box: e.to, step: s, known: !!s, basis: e.basis, label: e.label, chain: !!s && edges.some(x => x.kind === "step" && x.from === e.from && x.to === s)};      // chain: the straight step line already ends here
+  });
+}
+const mapMade = (m, n) => n.made_by ? "made by " + Object.entries(n.made_by.functions || {}).map(([f, c]) => `${mapName(m, "fn:" + f)} ${c}`).join(", ") : "which function made this step: not recorded";
+function mapTip(m, n){
+  if (n.kind === "function") return [mapFn(n), mapState(n), mapClean(n.detail || ""), `${n.calls || 0} AI call${n.calls === 1 ? "" : "s"}${n.seconds ? ", " + n.seconds + " s" : ""}${n.tokens && (n.tokens.input || n.tokens.output) ? ", " + n.tokens.input + " tokens in, " + n.tokens.output + " out" : ""}`].filter(Boolean).join(", ");
+  if (n.kind === "engine") return [mapStepSay(m, n), MAPW[n.status], n.detail, mapMade(m, n)].filter(Boolean).join(", ");
+  return [n.label, n.version != null ? "version " + n.version : n.kind === "work" ? "version not recorded" : "", MAPW[n.status], n.detail].filter(Boolean).join(", "); }
+function renderMap(m){
+  const nodes = m.nodes || [], edges = m.edges || [];
+  if (!nodes.length) return `<div class="mapwrap"><p class="empty">Nothing to draw yet.</p></div>`;
+  const st = m.status || {}, ck = st.checks || {passed: 0, run: 0}, by = mapById(m), name = id => mapName(m, id);
+  const head = `<div class="maphead"><h3>Map</h3><span class="mappill ${esc(st.state_status || "idle")}">${mapWords(st.state || "not recorded")}</span>`
+    + (!ck.run ? `<span class="mappill nochecks">No checks yet</span>` : Array.isArray((CTX || {}).workable) && CTX.workable.length && (CTX.audits || []).length
+        ? `<span class="mappill checks needsrev">${ck.passed} of ${ck.run} checks passed · Audit: needs revision</span>` : `<span class="mappill checks">${ck.passed} of ${ck.run} checks passed</span>`) + `</div>`;      // the code's checks can all pass while the latest Audit still says not workable      // no checks run: neutral, never a green "0 of 0"
+  const work = nodes.filter(n => n.row === "work"), people = nodes.filter(n => n.row === "people"), fns = nodes.filter(n => n.row === "functions"), decks = work.filter(n => n.kind !== "engine"), steps = work.filter(n => n.kind === "engine");
+  const cap = (v, k) => Math.min(k, v), rd = v => Math.round(v * 10) / 10, gaps = [...(m.not_recorded || [])], addGap = t => { if (!gaps.includes(t)) gaps.push(t); };
+  const given = mapGiven(m), sel = by[MAPPIN] ? MAPPIN : "";
+  const speaks = edges.filter(e => e.kind === "speaks_to"), toYou = speaks.filter(e => e.from === "person:requester" || e.to === "person:requester"), ff = speaks.filter(e => !toYou.includes(e) && String(e.to).startsWith("fn:"));      // function to function only; function to deliverable lines are drawn separately
+  const you = toYou.find(e => e.from === "person:requester"), back = toYou.find(e => e.to === "person:requester"), youSay = `${you ? you.n + " from you" : ""}${you && back ? " · " : ""}${back ? back.n + " to you" : ""}`;
+  // geometry check: every drawn line, sampled, against every other. Lines that share a node only touch there.
+  const pts = e => { const o = []; let cx = 0, cy = 0; for (const [, k, a] of e.d.matchAll(/([MLC])([^MLC]*)/g)){ const v = a.trim().split(/[\s,]+/).map(Number);
+      if (k !== "C"){ cx = v[0]; cy = v[1]; o.push([cx, cy]); continue; }
+      for (let t = 1; t <= 24; t++){ const s = t / 24, u = 1 - s; o.push([u ** 3 * cx + 3 * u * u * s * v[0] + 3 * u * s * s * v[2] + s ** 3 * v[4], u ** 3 * cy + 3 * u * u * s * v[1] + 3 * u * s * s * v[3] + s ** 3 * v[5]]); }
+      cx = v[4]; cy = v[5]; } return o; };
+  const cross = (p, q) => { const o = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]); for (let i = 0; i < p.length - 1; i++) for (let j = 0; j < q.length - 1; j++){ const a = p[i], b = p[i + 1], c = q[j], d = q[j + 1];
+      if (o(a, b, c) * o(a, b, d) < -1e-6 && o(c, d, a) * o(c, d, b) < -1e-6) return true; } return false; };
+  const touches = (p, q) => p.from === q.from || p.from === q.to || p.to === q.from || p.to === q.to;
+  const lineWord = e => e.label === "wrote the charter" ? `${name(e.from)} wrote the ${name(e.to)}` : e.label === "audits" ? `${name(e.from)} audited ${name(e.to)} ${e.n} time${e.n === 1 ? "" : "s"}` : `${name(e.from)} made ${e.n} AI call${e.n === 1 ? "" : "s"} on ${name(e.to)}`;
+  // node shapes: a diamond for a deliverable, a ring of five small dots for a team persona, a circle for a management persona,
+  // and a circle with a solid centre for You. The status is always on the outline (never colour alone).
+  const nodeShape = (n, p) => {
+    if (n.kind === "work" && n.tag === "Send"){ const k = mapLook(n.status);      // a side job that sends: an envelope
+      return `<rect class="shape" x="${rd(p.x - 12)}" y="${rd(p.y - 8)}" width="24" height="16" rx="3" fill="${k.fill}" stroke="${k.stroke}" stroke-width="${k.width}"${k.dash}/>`
+        + `<path d="M${rd(p.x - 11)} ${rd(p.y - 7)} L${p.x} ${rd(p.y + 1)} L${rd(p.x + 11)} ${rd(p.y - 7)}" fill="none" stroke="${k.stroke}" stroke-width="1.2" stroke-linejoin="round"/>`; }
+    if (n.kind === "work") return mapShape("diamond", n.status, p, 0, 0, 0, 0, n.color);
+    if (n.kind === "engine"){ const dots = [[0, 1], [72, .9], [144, 1.05], [216, .92], [288, 1]].map(([a, f], k) => { const t = (a - 90 + [0, 8, -6, 5, -4][k]) * Math.PI / 180, q = p.r * 0.52 * f;
+        return `<circle class="teamdot" cx="${rd(p.x + q * Math.cos(t))}" cy="${rd(p.y + q * Math.sin(t))}" r="${rd(Math.max(1.8, p.r * 0.16))}" fill="var(--muted)"/>`; }).join("");
+      return `<circle class="teamhit" cx="${p.x}" cy="${p.y}" r="${p.r}" fill="transparent" stroke="none"/>` + mapShape("circle", n.status, p, 0, 0, 0, 0, "--muted", true) + dots; }
+    return mapShape("circle", n.status, p, 0, 0, 0, 0, n.color) + (n.kind === "person" ? `<circle class="youdot" cx="${p.x}" cy="${p.y}" r="3.2" fill="var(--muted)"/>` : ""); };
+  const css = `.mapedge{opacity:.6}.mapedge.given{opacity:.3}.mapsvg .mapnode:hover .shape,.mapsvg .mapnode.hot .shape,.mapsvg .mapnode[aria-pressed="true"] .shape{filter:drop-shadow(0 0 4px var(--muted))}`
+    + `.mapedge.speak{opacity:.6}.mapln{opacity:0}.maplbl{opacity:0;font-size:11px;paint-order:stroke;stroke:var(--panel);stroke-width:3px}.mapcnt{font-size:10.5px}.mapnode{cursor:pointer}.mapnode:focus-visible .shape{stroke-width:3}`
+    + `.mapsvg .mapnode.dim,.mapsvg .mapedge.dim,.mapsvg .mapcnt.dim{opacity:.16}.mapsvg .mapln.dim{opacity:0}.mapsvg .hot.mapedge,.mapsvg .hot.mapln{opacity:1;stroke-width:2}.mapsvg .hot.maplbl,.mapsvg .hot.mapcnt{opacity:1}.mapsvg .hot.mapnode{opacity:1}`;
+  // drawing shared by both layouts: lines first (under the nodes), then the nodes with their labels
+  const draw = (L, adj) => { const hotN = id => !sel ? "" : id === sel || (adj[sel] && adj[sel].has(id)) ? " hot" : " dim", hotE = e => !sel ? "" : e.from === sel || e.to === sel ? " hot" : " dim", pos = L.pos;
+    let svg = `<svg class="${L.cls}" data-pin="${esc(MAPPIN)}" viewBox="0 0 ${rd(L.W)} ${rd(L.H)}" role="img" aria-label="Map of the run: who is working and the work in order"><defs><style>${css}</style><marker id="${L.mid}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--muted)"/></marker></defs>`;
+    svg += L.rows.map(([txt, y]) => `<line class="rowdiv" x1="0" y1="${y - 12}" x2="${rd(L.W)}" y2="${y - 12}" stroke="var(--line)" stroke-width="1"/><text class="rowlab" x="${rd(L.W)}" y="${y}" text-anchor="end">${mapWords(txt)}</text>`).join("");      // at the right edge: nothing else is drawn there
+    L.ed.forEach(e => { const dash = e.dash ? ` stroke-dasharray="${e.dash}"${e.dash === "1 3" ? ' stroke-linecap="round"' : ""}` : "";
+      svg += `<path class="${e.cls}${hotE(e)}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" d="${e.d}" fill="none" stroke="var(--muted)" stroke-width="${e.w}" stroke-linejoin="round" stroke-linecap="round"${dash} marker-end="url(#${L.mid})"><title>${mapWords(e.title)}</title></path>`;
+      if (e.say) svg += `<text class="mapcnt${hotE(e)}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" x="${rd((pos[e.from].x + pos[e.to].x) / 2 + 22)}" y="${rd((pos[e.from].y + pos[e.to].y) / 2 - 2)}" style="fill:var(--muted)">${mapWords(e.say)}</text>`;
+      if (e.n != null && e.nx != null) svg += `<text class="mapcnt sub${hotE(e)}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" x="${rd(e.nx)}" y="${rd(e.ny)}" text-anchor="middle">${e.n}</text>`;
+      if (e.lbl != null) svg += `<text class="maplbl${hotE(e)}" data-from="${esc(e.from)}" data-to="${esc(e.to)}" x="${rd(e.lx)}" y="${rd(e.ly)}">${e.lbl}</text>`; });
+    L.dots.forEach(({n, lines = [], side, html, badge, dy, anchor}) => { const p = pos[n.id]; if (!p) return; const g = n.kind === "function" ? " mapfn" : "", sub = k => typeof lines[k] === "object" ? lines[k].sub : k > 0, txt = k => typeof lines[k] === "object" ? lines[k].t : lines[k];
+      const body = html || lines.map((_, k) => side === "above" ? `<text class="${sub(k) ? "sub" : ""}" x="${rd(p.x + (anchor === "start" ? 6 : anchor === "end" ? -6 : 0))}" y="${rd(p.y - (dy || p.r + 9) - (lines.length - 1 - k) * 13)}" text-anchor="${anchor || "middle"}"${sub(k) ? "" : ' style="font-weight:600"'}>${txt(k)}</text>`
+          : side === "below" ? `<text class="${sub(k) ? "sub" : ""}" x="${p.x}" y="${rd(p.y + (dy || p.r + 14) + k * 13)}" text-anchor="middle"${sub(k) ? "" : ' style="font-weight:600"'}>${txt(k)}</text>`
+          : side === "below-right"
+          ? `<text class="${sub(k) ? "sub" : ""}" x="${rd(p.x + 7)}" y="${rd(p.y + p.r + 14 + k * 14)}" text-anchor="start"${sub(k) ? "" : ' style="font-weight:600"'}>${txt(k)}</text>`
+          : side ? `<text class="${sub(k) ? "sub" : ""}" x="${rd(p.x + (side === "left" ? -1 : 1) * (p.r + 9))}" y="${rd(p.y + 4 + (k - (lines.length - 1) / 2) * 12.5)}" text-anchor="${side === "left" ? "end" : "start"}"${sub(k) ? "" : ' style="font-weight:600"'}>${txt(k)}</text>`
+          : `<text class="${sub(k) ? "sub" : ""}" x="${p.x}" y="${rd(p.y + p.r + 15 + k * 12.5)}" text-anchor="middle"${sub(k) ? "" : ' style="font-weight:600"'}>${txt(k)}</text>`).join("");
+      svg += `<g class="mapnode${g}${hotN(n.id)}" data-id="${esc(n.id)}"${n.kind === "function" ? ` data-fn="${esc(n.id)}"` : ""} tabindex="0" role="button" aria-pressed="${sel === n.id}" aria-label="${esc(n.kind === "function" ? mapFn(n) : n.kind === "engine" ? name(n.id) : n.label)}: details">`
+        + `<title>${mapWords(mapTip(m, n))}</title>${html ? "" : nodeShape(n, p)}${mapBadge(n.status, ...(badge || [rd(p.x + p.r * 0.75), rd(p.y - p.r * 0.75)]))}${body}</g>`; });
+    return svg + "</svg>"; };
+  const fnLines = n => { const p = MAPLABEL.persona[n.id.replace("fn:", "")]; return p ? [mapWords(p), mapWords(`(${n.label})`)] : [mapWords(n.label)]; };
+  const fnArcsFor = (pos, ed, fnBottom) => { const drawn = [];      // function-to-function lines under the function labels; one that would cross another goes in the table instead
+    if (new Set(ff.map(e => [e.from, e.to].sort().join("|"))).size <= MAXLINES) ff.forEach(e => { const a = pos[e.from], b = pos[e.to]; if (!a || !b) return; const lvl = Math.abs(fns.findIndex(n => n.id === e.from) - fns.findIndex(n => n.id === e.to)), d = 18 + 8 * lvl, off = e.from < e.to ? -10 : 10;
+      const arc = {cls: "mapedge speak", from: e.from, to: e.to, d: `M${a.x + off} ${fnBottom} C${a.x + off} ${fnBottom + d} ${b.x + off} ${fnBottom + d} ${b.x + off} ${fnBottom + 2}`, w: 1, dash: "1 3", n: e.n, nx: (a.x + b.x) / 2 + off, ny: fnBottom + d * 0.75 + 14,
+        title: `${name(e.from)} speaks to ${name(e.to)}: ${e.n} messages`, e};
+      if (!ed.some(o => !touches(arc, o) && cross(pts(arc), pts(o)))){ ed.push(arc); drawn.push(e); } });
+    return ff.filter(e => !drawn.includes(e)); };
+  const workLines = (pos, ed, fnBottom) => { const wl = speaks.filter(e => String(e.to).startsWith("work:") && pos[e.to] && pos[e.from]), outN = {}, inN = {}, oi = {}, ii = {};      // shown on hover or click only
+    wl.forEach(e => { outN[e.from] = (outN[e.from] || 0) + 1; inN[e.to] = (inN[e.to] || 0) + 1; });
+    wl.forEach(e => { const a = pos[e.from], b = pos[e.to], o = (oi[e.from] = (oi[e.from] || 0) + 1) - 1, i = (ii[e.to] = (ii[e.to] || 0) + 1) - 1, dir = a.x <= b.x ? 1 : -1;
+      const sx = rd(a.x + (o - (outN[e.from] - 1) / 2) * 9), ex = rd(b.x - dir * (b.r + 4)), ey = rd(b.y + (i - (inN[e.to] - 1) / 2) * 6), y0 = fnBottom, t = 0.5, mt = 1 - t;
+      const lx = mt ** 3 * sx + 3 * mt * mt * t * sx + 3 * mt * t * t * (ex - dir * 50) + t ** 3 * ex, ly = mt ** 3 * y0 + 3 * mt * mt * t * (ey) + 3 * mt * t * t * ey + t ** 3 * ey;
+      ed.push({cls: "mapln", from: e.from, to: e.to, d: `M${sx} ${y0} C${sx} ${ey} ${rd(ex - dir * 50)} ${ey} ${ex} ${ey}`, w: 1, dash: "1 3", title: lineWord(e), lbl: e.n != null ? e.n : "wrote it", lx: lx + 4, ly: ly - 6}); }); };
+  const adjOf = ed => { const adj = {}; ed.forEach(e => { (adj[e.from] = adj[e.from] || new Set()).add(e.to); (adj[e.to] = adj[e.to] || new Set()).add(e.from); }); return adj; };
+  // lanes (map.json "lane"): documents and the site are the trunk; a side job (a send) is a branch. An older map with no lane: a send is a branch.
+  const laneOf = n => n.lane || (n.kind === "engine" ? (((mapStepTo(m, n) || {}).tag === "Send" || (mapStepTo(m, n) || {}).lane === "branch") ? "branch" : "trunk") : n.tag === "Send" ? "branch" : "trunk");
+  const trunkDecks = decks.filter(d => laneOf(d) === "trunk"), trunkSteps = steps.filter(x => laneOf(x) === "trunk");
+  const branchList = decks.filter(d => laneOf(d) !== "trunk").map(d => { const st = steps.find(x => laneOf(x) !== "trunk" && (mapStepTo(m, x) || {}).id === d.id) || null;
+    const e = st && edges.find(x => x.kind === "step" && x.to === st.id && trunkDecks.some(t => t.id === x.from));
+    const pv = work.slice(0, work.indexOf(d)).reverse().find(x => trunkDecks.includes(x));
+    return {d, s: st, p: e ? e.from : pv ? pv.id : (trunkDecks[trunkDecks.length - 1] || {}).id}; }).filter(b => b.p);
+  const branchText = d => /^Email · /.test(d.label) ? `${d.label} · ${/dry run/i.test(d.detail || "") ? "dry run" : MAPW[d.status] || mapClean(d.detail || "")}`      // a milestone email
+    : `${String(d.label).replace(/^send (a |an |the )?/i, "").replace(/^./, c => c.toUpperCase())} · ${/dry run/i.test(d.detail || "") ? "dry run, not sent" : MAPW[d.status] || mapClean(d.detail || "")}`;
+  // ---- the vertical layout (under 900px): You and the Management layer across the top, then the work as a tree down the middle: Charter at the root,
+  // each persona above the deliverable it made.
+  // Hand-off lines run straight down the spine; "given to" lines loop round it on the left or the right, so a deliverable that feeds more than one step branches.
+  // Two loops that would interleave go on opposite sides, so none cross. No physics, no random: the same map always draws the same.
+  const layoutV = () => {
+  const X0 = 60, Y_YOU = 44, Y_FN = 150, Y_T0 = fns.length ? 290 : 150, SP = 58;
+  const spine = work.filter(n => laneOf(n) === "trunk"), idx = Object.fromEntries(spine.map((n, i) => [n.id, i]));
+  const vb = branchList.filter(b => idx[b.p] != null).map(b => ({...b, i: idx[b.p]}));
+  const rad = n => n.kind === "engine" ? 9 + cap(Math.round(mapWfN(n) / 2), 5) : (17 + cap(Math.round(mapWfN(n) / 4), 3)) * 1.15;      // a diamond reaches out to its corners
+  const lblLines = n => n.kind === "engine" ? [mapPersona(m, n), `${mapStepVerb(m, n)} · ${mapWfN(n)} workflow${mapWfN(n) === 1 ? "" : "s"}${mapUnchecked(n)}`] : mapLabelLines(n.label);
+  const lblW = n => Math.max(...lblLines(n).map(l => l.length)) * 6.3 + 8;
+  const arcs = [];      // arcs: "given to" lines that skip a node on the spine
+  given.forEach(g => { if (g.chain || idx[g.from] == null || idx[g.to] == null) return; const a = idx[g.from], b = idx[g.to];
+    arcs.push({g, from: g.from, to: g.to, lo: Math.min(a, b), hi: Math.max(a, b), page: ""}); });
+  const overBranch = p => vb.some(b => p.lo <= b.i && b.i <= p.hi);      // a loop round a side job's parent goes on the left, so the job can sit on the right
+  arcs.sort((p, q) => overBranch(q) - overBranch(p) || p.lo - q.lo || q.hi - p.hi);
+  const clash = (p, q) => (p.lo < q.lo && q.lo < p.hi && p.hi < q.hi) || (q.lo < p.lo && p.lo < q.hi && q.hi < p.hi);      // two loops that interleave cannot share a side without crossing
+  arcs.forEach(p => { const L = arcs.some(q => q.page === "L" && clash(p, q)), R = arcs.some(q => q.page === "R" && clash(p, q)); p.page = !L ? "L" : "R"; p.bad = L && R; });
+  const sideOf = {}; spine.forEach(n => { sideOf[n.id] = "right"; }); arcs.forEach(p => { if (p.page === "R"){ sideOf[p.from] = "left"; sideOf[p.to] = "left"; } });      // a label goes on the side with no loop ending at its node
+  vb.forEach(b => { const hits = pg => arcs.some(p => p.page === pg && p.lo <= b.i && b.i <= p.hi); b.side = !hits("R") ? "R" : !hits("L") ? "L" : "R"; sideOf[b.p] = b.side === "R" ? "left" : "right"; });
+  arcs.sort((p, q) => (p.hi - p.lo) - (q.hi - q.lo) || p.lo - q.lo);
+  arcs.forEach(p => { let need = 34;      // clear the labels of the nodes the loop passes, on its own side
+    for (let k = p.lo + 1; k < p.hi; k++){ const n = spine[k]; if ((p.page === "L") === (sideOf[n.id] === "left")) need = Math.max(need, rad(n) + 8 + lblW(n) + 14); }
+    arcs.forEach(q => { if (q !== p && q.page === p.page && q.lo >= p.lo && q.hi <= p.hi && q.bulge) need = Math.max(need, q.bulge + 14); });      // a loop round another loop bulges further
+    p.bulge = need; });
+  const leftExt = Math.max(30, ...arcs.filter(p => p.page === "L").map(p => p.bulge)), rightExt = Math.max(rad(spine[0] || {}) + 8 + Math.max(0, ...spine.map(lblW)), ...arcs.filter(p => p.page === "R").map(p => p.bulge));
+  const bw = Math.max(0, ...vb.map(b => Math.max(b.s ? (mapPersona(m, b.s).length + 14) * 6 : 0, branchText(b.d).length * 5.8))) + 30;
+  const leftX = leftExt + (vb.some(b => b.side === "L") ? 40 + bw : 0), rightX = rightExt + (vb.some(b => b.side === "R") ? 40 + bw : 0);
+  const fnW = fns.length ? X0 + (fns.length - 1) * 128 + 70 : 0, spineX = Math.max(X0 + leftX + 10, Math.round(fnW / 2));
+  const W = Math.max(560, fnW, spineX + rightX + 24), pos = {};
+  let yy = Y_T0; spine.forEach((n, i) => { const r = rad(n); if (i) yy += SP; pos[n.id] = {x: spineX, y: yy, r}; });
+  vb.forEach(b => { const p0 = pos[b.p], sg = b.side === "R" ? 1 : -1, x = rd(spineX + sg * ((b.side === "R" ? rightExt : leftExt) + 40));
+    if (b.s) pos[b.s.id] = {x, y: p0.y, r: rad(b.s)}; pos[b.d.id] = {x, y: rd(p0.y + 46), r: 12}; });
+  const H = Math.max((spine.length ? yy : Y_T0) + 60, ...vb.map(b => pos[b.d.id].y + 36));
+  const span = fns.length > 1 ? (W - X0 - 70) / (fns.length - 1) : 0;
+  fns.forEach((n, i) => { pos[n.id] = {x: X0 + i * span, y: Y_FN, r: 12 + cap(Math.round(Math.sqrt(n.calls || 0) / 1.5), 6)}; });
+  const idn = pos["fn:identity"];
+  people.forEach((n, i) => { pos[n.id] = {x: (idn ? idn.x + 90 : X0) + i * 60, y: Y_YOU, r: 14}; });
+  const fnBottom = Y_FN + 18 + 32;      // function lines start under the function's label
+  // every line is described first, so a node knows its neighbours (hover and click light a node and the lines that touch it)
+  const ed = [], seg = (a, b) => { const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1; return `M${rd(a.x + dx / L * (a.r + 2))} ${rd(a.y + dy / L * (a.r + 2))} L${rd(b.x - dx / L * (b.r + 4))} ${rd(b.y - dy / L * (b.r + 4))}`; };
+  spine.forEach((n, i) => { const p = spine[i + 1]; if (p) ed.push({cls: "mapedge", from: n.id, to: p.id, d: seg(pos[n.id], pos[p.id]), w: 1.2, title: `hand-off: ${name(n.id)} to ${name(p.id)}`}); });
+  arcs.forEach(p => { const a = pos[p.from], b = pos[p.to], sg = p.page === "L" ? -1 : 1, k = 1.33 * (p.bulge + (p.bad ? 40 : 0)), g = p.g;
+    ed.push({cls: "mapedge given", from: p.from, to: p.to, d: `M${rd(a.x + sg * (a.r + 2))} ${a.y} C${rd(a.x + sg * k)} ${a.y} ${rd(b.x + sg * k)} ${b.y} ${rd(b.x + sg * (b.r + 5))} ${b.y}`, w: 1, dash: g.basis === "declared" ? "2 3" : "", box: g.box, bad: p.bad,
+      title: `${name(p.from)} was given to ${g.known ? name(g.to) : "the " + name(g.box) + " box"}${g.basis === "declared" ? " (by order, not recorded)" : ""}`}); });
+  if (idn && pos["person:requester"] && (you || back)) ed.push({cls: "mapedge speak", from: "person:requester", to: "fn:identity", d: seg(pos["person:requester"], idn), w: 1, dash: "1 3",
+    title: `you speak to ${name("fn:identity")}: ${you ? you.n : 0} messages; ${name("fn:identity")} speaks to you: ${back ? back.n : 0}`, say: youSay});
+  vb.forEach(b => { const from = b.s ? b.s.id : b.p; if (b.s) ed.push({cls: "mapedge branch", from: b.p, to: b.s.id, d: seg(pos[b.p], pos[b.s.id]), w: 1.5, title: `side job: ${name(b.p)} to ${name(b.s.id)}`});
+    ed.push({cls: "mapedge branch", from, to: b.d.id, d: seg(pos[from], pos[b.d.id]), w: 1.5, title: `side job: ${name(from)} to ${name(b.d.id)}`}); });
+  const hidden = fnArcsFor(pos, ed, fnBottom);
+  ed.forEach((p, i) => { if (p.cls !== "mapedge given" && p.cls !== "mapedge branch") return; const hit = ed.filter((o, j) => j !== i && !touches(p, o) && cross(pts(p), pts(o)));
+    if (hit.length && (p.bad || !hit.some(o => o.bad))) addGap(`${name(p.from)} given to ${name(p.to)}: could not be drawn without crossing`); });      // the loop that had no free side is the one listed
+  workLines(pos, ed, fnBottom);
+  const L = {cls: "mapsvg mapvert", mid: "maparrowv", W, H, pos, ed, rows: [[MAPLABEL.rows.people, Y_YOU - 34], ...(fns.length ? [[MAPLABEL.rows.functions, Y_FN - 36]] : []), [MAPLABEL.rows.work, Y_T0 - 36]],
+    dots: [...people.map(n => ({n, lines: [mapWords(n.label)]})), ...fns.map(n => ({n, lines: fnLines(n)})), ...spine.map(n => ({n, lines: lblLines(n).map(l => mapWords(l)), side: sideOf[n.id]})),
+      ...vb.flatMap(b => [...(b.s ? [{n: b.s, lines: lblLines(b.s).map(l => mapWords(l)), side: b.side === "R" ? "right" : "left"}] : []), {n: b.d, lines: [mapWords(branchText(b.d))], side: b.side === "R" ? "right" : "left"}])]};
+  return {svg: draw(L, adjOf(ed)), hidden};
+  };
+  // ---- the metro layout (900px and wider). One horizontal trunk: the documents and the site are diamonds on the line, evenly spaced,
+  // and the team that made each one sits on the stretch of line leading into it. A side job (a test email) leaves its parent diamond on
+  // a short branch. "Given to" lines that skip a stop arc faintly above the line, or under it and up to the team that used the document;
+  // two that would interleave go on opposite sides, and the code checks every pair of lines for a crossing. The Management layer is one
+  // row of chips above, You first.
+  const layoutH = () => {
+    const td = trunkDecks, n = td.length, at = Object.fromEntries(td.map((d, i) => [d.id, i])), rD = 15, rP = s => 9 + cap(Math.round(mapWfN(s) / 2), 3);
+    const into = {}; trunkSteps.forEach(s => { const t = mapStepTo(m, s); let i = t && at[t.id] != null ? at[t.id] : null;
+      if (i == null){ const k = work.indexOf(s), nx = work.slice(k + 1).find(x => at[x.id] != null); i = nx ? at[nx.id] : null; }
+      if (i != null && i > 0 && into[i] == null) into[i] = s.id; });
+    const glyphOf = Object.fromEntries(Object.entries(into).map(([i, s]) => [s, +i]));
+    const teamText = s => `${mapPersona(m, s)} · ${mapWfN(s)} workflow${mapWfN(s) === 1 ? "" : "s"}${mapUnchecked(s)}`;
+    const fact = d => { if (d.id === "work:charter") return "the plan"; const s = steps.find(x => (mapStepTo(m, x) || {}).id === d.id);
+      const ch = s && /(\d+) of (\d+) checks passed/.exec(s.detail || ""); const parts = [d.version != null ? "v" + d.version : "", ch ? `${ch[1]}/${ch[2]} checks` : ""].filter(Boolean);
+      return parts.length ? parts.join(" · ") : "not recorded"; };
+    const wName = t => String(t).length * 6.9 + 6, wSub = t => String(t).length * 5.8 + 6, wTeam = s => mapPersona(m, s).length * 6.9 + (teamText(s).length - mapPersona(m, s).length) * 5.8 + 6;
+    const dW = d => Math.max(wName(d.label), wSub(fact(d)));      // a deliverable's label box (name over its fact line), centred under it
+    // labels: every deliverable's two lines below its diamond; every team's one line above the trunk, on one of two rows
+    const Y = {name: 33, fact: 46, rowA: 16, rowB: 31};
+    // management chips: You, then the five functions, each with a count
+    const chipOf = x => ({x, text: x.kind === "person" ? "You" : MAPLABEL.persona[x.id.replace("fn:", "")] || x.label, count: x.kind === "person" ? (you ? you.n : 0) : (x.calls || 0)});
+    const chips = [...people, ...fns].map(chipOf); chips.forEach(c => { c.w = Math.round(String(c.text).length * 6.6 + String(c.count).length * 6 + (c.x.kind === "person" ? 40 : 32)); });
+    const chipsW = chips.reduce((a, c) => a + c.w, 0) + Math.max(chips.length - 1, 0) * 12;
+    // "given to" lines that skip a stop: positions on the line, deliverable i at 2i, the team into it at 2i - 1
+    const arcs = given.filter(g => !g.chain && at[g.from] != null && (g.known ? glyphOf[g.to] != null : at[g.to] != null))
+      .map(g => ({g, from: g.from, to: g.to, a: 2 * at[g.from], b: g.known ? 2 * glyphOf[g.to] - 1 : 2 * at[g.to], toP: g.known})).filter(p => p.b > p.a);
+    const bpos = branchList.filter(b => at[b.p] != null).map(b => 2 * at[b.p]), overBranch = p => bpos.some(x => p.a <= x && x < p.b);
+    arcs.sort((p, q) => overBranch(q) - overBranch(p) || p.a - q.a || q.b - p.b);      // a line over a side job's parent goes above, so the job can leave below
+    const clash = (p, q) => (p.a < q.a && q.a < p.b && p.b < q.b) || (q.a < p.a && p.a < q.b && q.b < p.b);
+    arcs.forEach(p => { const U = arcs.some(q => q.page === "U" && clash(p, q)), B = arcs.some(q => q.page === "B" && clash(p, q));
+      p.page = !p.toP || !U ? "U" : "B"; p.bad = p.page === "U" ? U : B; });      // a line to a deliverable (its user not recorded) always arcs above
+    arcs.slice().sort((p, q) => (p.b - p.a) - (q.b - q.a)).forEach(p => {
+      p.lvl = 1 + Math.max(0, ...arcs.filter(q => q !== p && q.page === p.page && q.lvl && q.a >= p.a && q.b <= p.b).map(q => q.lvl)); });
+    arcs.filter(p => p.bad).forEach(p => { p.lvl = 1 + Math.max(0, ...arcs.filter(q => q.page === p.page && !q.bad).map(q => q.lvl)); });
+    const Us = arcs.filter(p => p.page === "U"), Bs = arcs.filter(p => p.page === "B"), lvlMax = l => Math.max(0, ...l.map(p => p.lvl));
+    const brs = branchList.filter(b => at[b.p] != null).map(b => ({...b, i: at[b.p], side: "below"}));
+    const group = (l, key) => { const o = {}; l.forEach(p => (o[p[key]] = o[p[key]] || []).push(p)); return Object.values(o); };
+    group(Us, "to").forEach(l => l.sort((p, q) => q.a - p.a).forEach((p, k) => { p.off = (k - (l.length - 1) / 2) * 7; }));
+    group(Us, "from").forEach(l => l.sort((p, q) => (q.b - q.a) - (p.b - p.a)).forEach((p, k) => { p.soff = (k - (l.length - 1) / 2) * 7; }));
+    group(Bs, "to").forEach(l => l.sort((p, q) => q.a - p.a).forEach((p, k) => { p.off = (k - (l.length - 1) / 2) * 7; }));
+    const T = Math.round(34 + 16 + 41 + 10 + 14 * lvlMax(Us)), topY = T - Y.rowB - 10 - 10;
+    const brBase = T + Y.fact + 10, brBottom = brs.length ? brBase + 80 : T + Y.fact + 4;      // side jobs hang under their parent's labels, each label centred under its node
+    const botY = brBottom + 10;      // lines under the trunk pass below the labels and the side jobs
+    const flat = (xs, y0, xe, y1, lev) => { const R = Math.min(24, Math.abs(xe - xs) / 3);      // up (or down), flat across at one level clear of the labels, rounded corners, down to the end
+      return `M${rd(xs)} ${rd(y0)} C${rd(xs)} ${rd(lev)} ${rd(xs)} ${rd(lev)} ${rd(xs + R)} ${rd(lev)} L${rd(xe - R)} ${rd(lev)} C${rd(xe)} ${rd(lev)} ${rd(xe)} ${rd(lev)} ${rd(xe)} ${rd(y1)}`; };
+    const title = p => `${name(p.from)} was given to ${p.g.known ? name(p.to) : "the " + name(p.g.box) + " box"}${p.g.basis === "declared" ? " (by order, not recorded)" : ""}`;
+    // the layout is tried with growing spacing until no "given to" line or side job passes through a label box (the boxes are estimated from the text)
+    const colW = d => Math.max(dW(d), ...brs.filter(b => b.p === d.id).flatMap(b => [b.s ? wTeam(b.s) : 0, wSub(branchText(b.d))]));      // a deliverable's column: its labels and its side jobs'
+    let S = 150; for (let i = 1; i < n; i++){ const s = into[i] && by[into[i]]; S = Math.max(S, s ? wTeam(s) + 12 : 0, Math.max(colW(td[i]), colW(td[i - 1])) + 20); }
+    let out;
+    for (let tries = 0; tries < 10; tries++, S += 24){
+      const M = n ? Math.max(48, colW(td[0]) / 2 + 8) : 48, Mr = n ? Math.max(48, colW(td[n - 1]) / 2 + 8) : 48;
+      const W0 = Math.max(720, chipsW + 24, M + Math.max(n - 1, 0) * S + Mr), sp = n > 1 ? (W0 - M - Mr) / (n - 1) : 0, pos = {}, ed = [], boxes = [], team = {};
+      td.forEach((d, i) => { pos[d.id] = {x: rd(M + i * sp), y: T, r: rD}; });
+      Object.entries(into).forEach(([i, s]) => { pos[s] = {x: rd((pos[td[i - 1].id].x + pos[td[i].id].x) / 2), y: T, r: rP(by[s])}; });
+      let cx = (W0 - chipsW) / 2; chips.forEach(c => { pos[c.x.id] = {x: rd(cx + c.w / 2), y: 21, r: 13, w: c.w, h: 26}; cx += c.w + 12; });
+      // label boxes: deliverables below, teams above (a team a line comes down to has its label beside the line, not across it)
+      td.forEach(d => { const p = pos[d.id], w = dW(d); boxes.push({id: d.id, x0: p.x - w / 2, x1: p.x + w / 2, y0: T + Y.name - 11, y1: T + Y.fact + 3}); });
+      const downAt = Us.map(p => rd(pos[p.to].x + p.off)), upAt = Us.map(p => rd(pos[p.from].x + p.soff));
+      Object.values(into).forEach((s, k) => { const p = pos[s], w = wTeam(by[s]), row = k % 2 ? "rowB" : "rowA", target = Us.some(q => q.to === s);
+        const opts = target ? [["start", p.x + 6, p.x + 6 + w], ["end", p.x - 6 - w, p.x - 6]] : [["middle", p.x - w / 2, p.x + w / 2]];
+        const free = ([, x0, x1]) => ![...downAt, ...upAt].some(x => x > x0 - 3 && x < x1 + 3);
+        const [anchor, x0, x1] = opts.find(free) || opts[0];
+        team[s] = {anchor, row}; boxes.push({id: s, x0, x1, y0: T - Y[row] - 10, y1: T - Y[row] + 3}); });
+      // the trunk: deliverable, team, deliverable; a stretch with no team recorded joins the two deliverables
+      td.forEach((d, i) => { if (!i) return; const a = pos[td[i - 1].id], b = pos[d.id], s = into[i];
+        if (s){ const g = pos[s];
+          ed.push({cls: "mapedge trunk", from: td[i - 1].id, to: s, d: `M${rd(a.x + a.r + 1)} ${T} L${rd(g.x - g.r - 4)} ${T}`, w: 1.5, title: `hand-off: ${name(td[i - 1].id)} to ${name(s)}`});
+          ed.push({cls: "mapedge trunk", from: s, to: d.id, d: `M${rd(g.x + g.r + 1)} ${T} L${rd(b.x - b.r - 4)} ${T}`, w: 1.5, title: `hand-off: ${name(s)} to ${name(d.id)}`}); }
+        else ed.push({cls: "mapedge trunk", from: td[i - 1].id, to: d.id, d: `M${rd(a.x + a.r + 1)} ${T} L${rd(b.x - b.r - 4)} ${T}`, w: 1.5, title: `hand-off: ${name(td[i - 1].id)} to ${name(d.id)}`}); });
+      const push = (p, d) => ed.push({cls: "mapedge given", from: p.from, to: p.to, d, w: 1.5, dash: p.g.basis === "declared" ? "2 3" : "", box: p.g.box, bad: p.bad, page: p.page, title: title(p)});
+      // above: straight up from the top of the diamond, across over the team labels, down to the top of the team that used it
+      Us.forEach(p => { const s0 = pos[p.from], e = pos[p.to], lev = topY - 14 * (p.lvl - 1) - (p.bad ? 24 : 0);
+        push(p, flat(s0.x + p.soff, T - s0.r - 2, e.x + p.off, T - e.r - 4, lev)); });
+      // below: out of the diamond's lower right, past its label, under the labels, up into the bottom of the team that used it
+      const under = (x, y, xd, lev) => `M${rd(x)} ${rd(y)} L${rd(xd - 8)} ${rd(y)} C${rd(xd)} ${rd(y)} ${rd(xd)} ${rd(y)} ${rd(xd)} ${rd(y + 8)} L${rd(xd)} ${rd(lev)}`;
+      Bs.forEach(p => { const s0 = pos[p.from], e = pos[p.to], lev = botY + 14 * (p.lvl - 1) + (p.bad ? 24 : 0), xe = rd(e.x + p.off), xd = s0.x + colW(by[p.from]) / 2 + 8 + (brs.some(b => b.p === p.from) ? 8 : 0), y = T + s0.r / 2 + 1;
+        const R = Math.min(18, Math.abs(xe - xd) / 3);
+        push(p, under(s0.x + s0.r / 2 + 1, y, xd, lev - R) + ` C${rd(xd)} ${rd(lev)} ${rd(xd)} ${rd(lev)} ${rd(xd + R)} ${rd(lev)} L${rd(xe - R)} ${rd(lev)} C${rd(xe)} ${rd(lev)} ${rd(xe)} ${rd(lev)} ${rd(xe)} ${rd(lev - R)} L${xe} ${rd(T + e.r + 4)}`); });
+      // side jobs: out of the parent's lower right, past its label, down to the team, then the end (a letter icon for a send)
+      // a side job: out of its parent's lower right, round its label, back under the parent, down to the team and the end
+      const hook = (p0, xh, yb, yEnd) => under(p0.x + p0.r / 2 + 1, T + p0.r / 2 + 1, xh, yb - 8)
+        + ` C${rd(xh)} ${rd(yb)} ${rd(xh)} ${rd(yb)} ${rd(xh - 8)} ${rd(yb)} L${rd(p0.x + 8)} ${rd(yb)} C${rd(p0.x)} ${rd(yb)} ${rd(p0.x)} ${rd(yb)} ${rd(p0.x)} ${rd(yb + 8)} L${rd(p0.x)} ${rd(yEnd)}`;
+      brs.forEach(b => { const p0 = pos[b.p], xh = p0.x + dW(by[b.p]) / 2 + 8, gy = rd(brBase + 18), ey = rd(brBase + 54);
+        if (b.s){ pos[b.s.id] = {x: p0.x, y: gy, r: rP(b.s)};
+          ed.push({cls: "mapedge branch", from: b.p, to: b.s.id, d: hook(p0, xh, brBase, gy - rP(b.s) - 4), w: 1.5, title: `side job: ${name(b.p)} to ${name(b.s.id)}`}); }
+        pos[b.d.id] = {x: p0.x, y: ey, r: 12};
+        ed.push({cls: "mapedge branch", from: b.s ? b.s.id : b.p, to: b.d.id, d: b.s ? `M${p0.x} ${rd(gy + rP(b.s) + 15)} L${p0.x} ${rd(ey - 12)}` : hook(p0, xh, brBase, ey - 12), w: 1.5,
+          title: `side job: ${name(b.s ? b.s.id : b.p)} to ${name(b.d.id)}`});
+        if (b.s){ const w = wTeam(b.s); boxes.push({id: b.s.id, x0: p0.x - w / 2, x1: p0.x + w / 2, y0: gy + rP(b.s) + 2, y1: gy + rP(b.s) + 14}); }
+        const w2 = wSub(branchText(b.d)); boxes.push({id: b.d.id, x0: p0.x - w2 / 2, x1: p0.x + w2 / 2, y0: ey + 14, y1: ey + 26}); });
+      // the check: no line through a label box (its own end excepted), and no two team labels on top of each other
+      const hit = ed.filter(e => e.cls === "mapedge given" || e.cls === "mapedge branch").some(e => { const q = pts(e);
+        return boxes.some(bx => bx.id !== e.from && bx.id !== e.to && q.some(([x, y]) => x > bx.x0 && x < bx.x1 && y > bx.y0 && y < bx.y1)); })
+        || boxes.some((a, i) => boxes.some((b, j) => j > i && a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1));
+      out = {W: Math.max(W0, ...boxes.map(bx => bx.x1 + 8)), pos, ed, team};
+      if (!hit) break;
+    }
+    const {W, pos, ed, team} = out;
+    const idn = pos["fn:identity"], yo = pos["person:requester"];
+    if (idn && yo && (you || back)) ed.push({cls: "mapedge speak", from: "person:requester", to: "fn:identity", d: `M${rd(yo.x + yo.w / 2 + 1)} 21 L${rd(idn.x - idn.w / 2 - 4)} 21`, w: 1.5, dash: "1 3",
+      title: `you speak to ${name("fn:identity")}: ${you ? you.n : 0} messages; ${name("fn:identity")} speaks to you: ${back ? back.n : 0}`});
+    ed.forEach((p, i) => { if (p.cls !== "mapedge given" && p.cls !== "mapedge branch") return; const hit = ed.filter((o, j) => j !== i && !touches(p, o) && cross(pts(p), pts(o)));
+      if (hit.length && (p.bad || !hit.some(o => o.bad))) addGap(`${name(p.from)} given to ${name(p.to)}: could not be drawn without crossing`); });
+    // the lines from a chip to the work it did: drawn, but shown only on hover or click
+    speaks.filter(e => String(e.to).startsWith("work:") && pos[e.from] && pos[e.to]).forEach(e => { const a = pos[e.from], mk = Object.keys(glyphOf).find(s => (mapStepTo(m, by[s]) || {}).id === e.to) || (branchList.find(b => b.d.id === e.to && b.s) || {}).s?.id;
+      const b = pos[mk] || pos[e.to], x0 = a.x, y0 = 21 + 14, x1 = b.x, y1 = rd(b.y - b.r - 4);
+      ed.push({cls: "mapln", from: e.from, to: e.to, d: `M${x0} ${y0} C${x0} ${rd((y0 + y1) / 2)} ${x1} ${rd((y0 + y1) / 2)} ${x1} ${y1}`, w: 1.5, dash: "1 3", title: lineWord(e), lbl: e.n != null ? e.n : "wrote it", lx: rd((x0 + x1) / 2 + 4), ly: rd((y0 + y1) / 2 - 4)}); });
+    const bottom = Math.max(T + Y.fact + 6, Bs.length ? botY + 14 * (lvlMax(Bs) - 1) + 4 : 0, brs.length ? brBase + 54 + 28 : 0) + 6;
+    const chipHtml = c => { const p = pos[c.x.id], x0 = rd(p.x - c.w / 2);
+      return mapShape("rect", c.x.status, null, x0, 8, c.w, 26) + (c.x.kind === "person" ? `<circle class="youdot" cx="${x0 + 14}" cy="21" r="3.2" fill="var(--muted)"/>` : "")
+        + `<text x="${x0 + (c.x.kind === "person" ? 24 : 12)}" y="25" style="font-weight:600">${mapWords(c.text)}</text><text class="sub chipn" x="${rd(x0 + c.w - 10)}" y="25" text-anchor="end">${c.count}</text>`; };
+    const teamLine = s => ({t: `<tspan style="font-weight:600">${mapWords(mapPersona(m, s))}</tspan> · ${mapWfN(s)} workflow${mapWfN(s) === 1 ? "" : "s"}${mapWords(mapUnchecked(s))}`, sub: true});
+    const dots = [...chips.map(c => ({n: c.x, html: chipHtml(c), badge: [rd(pos[c.x.id].x + c.w / 2 - 3), 9]})),
+      ...Object.values(into).map(s => ({n: by[s], lines: [teamLine(by[s])], side: "above", dy: Y[team[s].row], anchor: team[s].anchor})),
+      ...td.map(d => ({n: d, lines: [mapWords(d.label), {t: mapWords(fact(d)), sub: true}], side: "below", dy: Y.name})),
+      ...brs.flatMap(b => [...(b.s ? [{n: b.s, lines: [teamLine(b.s)], side: "below", dy: rP(b.s) + 12}] : []), {n: b.d, lines: [{t: mapWords(branchText(b.d)), sub: true}], side: "below", dy: 23}])];
+    const L = {cls: "mapsvg", mid: "maparrow", W, H: bottom, pos, ed, rows: [], dots};
+    return {svg: draw(L, adjOf(ed)), hidden: ff.slice(), arcs: arcs.map(p => ({from: p.from, to: p.to, page: p.page})), branches: brs.map(b => ({id: b.d.id, side: b.side})),
+      drawn: {given: arcs.length > 0, speak: !!(idn && yo && (you || back)), branch: brs.length > 0}};
+  };
+  const LH = layoutH(), LV = layoutV(); MAPPAGES = LH.arcs; MAPBRANCH = LH.branches; const svg = LH.svg + LV.svg, hidden = [...LH.hidden, ...LV.hidden.filter(e => !LH.hidden.includes(e))];
+  // the click panel: everything the old boxes and tooltips said about the selected dot
+  const outs = {}, ins = {}; given.forEach(g => { (outs[g.from] = outs[g.from] || []).push(g); (ins[g.box] = ins[g.box] || []).push(g); });
+  const says = {}; ff.forEach(e => (says[e.from] = says[e.from] || []).push(e));
+  const wmade = {}, wdid = {}; speaks.filter(e => String(e.to).startsWith("work:")).forEach(e => { (wmade[e.to] = wmade[e.to] || []).push(e); (wdid[e.from] = wdid[e.from] || []).push(e); });
+  const nTxt = e => `${name(e.from)}${e.n != null ? " " + e.n : ""}`, plural = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
+  const givenTxt = g => `given to ${g.known ? name(g.to) : name(g.box) + " (which step used it: not recorded)"}${g.basis === "declared" ? " (by order, not recorded)" : ""}`;
+  const panelRows = n => {
+    const r = [];
+    if (n.kind === "function") { r.push(mapState(n), mapSay(n.detail), `${plural(n.calls || 0, "AI call")}${n.seconds ? ", " + n.seconds + " s" : ""}${n.tokens && (n.tokens.input || n.tokens.output) ? ", " + n.tokens.input + " tokens in, " + n.tokens.output + " out" : ""}`);
+      (says[n.id] || []).forEach(e => r.push(`speaks to ${mapWords(name(e.to))} · ${e.n}`)); (wdid[n.id] || []).length && r.push("worked on: " + wdid[n.id].map(e => mapWords(name(e.to)) + (e.n != null ? " " + e.n : "")).join(", "));
+      if (n.id === "fn:identity") toYou.forEach(e => r.push(e.from === "person:requester" ? `you speak to ${mapWords(name("fn:identity"))} · ${e.n}` : `${mapWords(name("fn:identity"))} speaks to you · ${e.n}`)); }
+    else if (n.kind === "engine") { r.push(mapWords(mapStepSay(m, n)), MAPS[n.status], mapWords(n.detail), mapWords(mapMade(m, n)), `checks run by the ${MAPLABEL.checker}`, (n.workflows || []).length ? "workflows: " + n.workflows.map(w => esc(w)).join(", ") : ""); }
+    else if (n.kind === "person") { r.push(MAPS[n.status], mapWords(n.detail)); toYou.forEach(e => r.push(e.from === "person:requester" ? `speaks to ${mapWords(name("fn:identity"))} · ${e.n}` : `${mapWords(name("fn:identity"))} speaks to you · ${e.n}`)); }
+    else { r.push(n.version != null ? "v" + esc(n.version) : "version not recorded", MAPW[n.status], mapWords(n.detail), n.tag ? "kind: " + mapWords(n.tag) : "", (n.workflows || []).length ? `${plural(n.workflows.length, "workflow")}: ` + n.workflows.map(w => esc(w)).join(", ") : "");
+      if (fns.length) { (wmade[n.id] || []).length ? r.push("made with: " + wmade[n.id].map(e => mapWords(nTxt(e))).join(", ")) : "";
+        r.push(n.id === "work:website" ? "which other function worked on this: not recorded" : (wmade[n.id] || []).length || n.status === "not_made" ? "" : "which function worked on this: not recorded"); }
+      (ins[n.id] || []).forEach(g => r.push(`${mapWords(name(g.from))} ${givenTxt(g)}`)); (outs[n.id] || []).forEach(g => r.push(mapWords(givenTxt(g)))); }
+    return r.filter(Boolean).map(x => `<div class="sub">${x}</div>`).join("");
+  };
+  const sn = by[sel], link = n => n.kind === "function" && n.tab ? `<a href="#" data-maptab="${esc(n.tab)}">Open the ${mapWords(mapFn(n))} view</a>` : n.file ? `<a href="#" data-mapopen="${esc(n.file)}">Open ${mapWords(n.label)}</a>` : "";
+  const panel = sn ? `<aside class="mappanel" data-panel="${esc(sn.id)}" aria-label="Details of ${esc(sn.kind === "function" ? mapFn(sn) : name(sn.id))}"><div class="mappanelhead"><b>${mapWords(sn.kind === "function" ? mapFn(sn) : name(sn.id))}</b><button type="button" class="linkbtn" data-mapclose>Close (Esc)</button></div>${panelRows(sn)}<div class="sub"><button type="button" class="gobtn" data-mapgo="${esc(sn.id)}">${mapGoLabel(sn)}</button> ${link(sn)}</div></aside>` : "";
+  // under the drawing: messages between functions when there are too many lines to draw, and who made each step
+  const table = (cap, hd, rows, open) => `<details class="mapdd"${open ? " open" : ""}><summary>${mapWords(cap)}</summary><table class="maptable"><thead><tr>${hd.map(h => `<th>${mapWords(h)}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${mapWords(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></details>`;
+  const filt = by[MAPFILT] && by[MAPFILT].kind === "function" ? MAPFILT : "", ffs = filt ? ff.filter(e => e.from === filt || e.to === filt) : ff, cols = filt ? fns.filter(f => f.id === filt) : fns;
+  const under = (filt ? `<div class="mapfilt sub">Showing messages and calls for ${mapWords(name(filt))}. <button type="button" class="linkbtn" data-mapfiltclear>Show all</button></div>` : "")
+    + (hidden.length || filt ? table("Messages between functions (speaks to)", ["From", "To", "Messages"], (filt ? ffs : hidden).length ? (filt ? ffs : hidden).map(e => [name(e.from), name(e.to), e.n]) : [["none recorded", "", ""]], !!filt) : "")
+    + (fns.length && steps.length ? table("Who made each step (calls by function)", ["Step", ...cols.map(f => mapFn(f))],
+        steps.map(n => [name(n.id), ...cols.map(f => n.made_by ? ((n.made_by.functions || {})[f.id.slice(3)] || 0) : "not recorded")]), !!filt) : "");
+  const card = n => n.kind === "engine" ? `<div class="mapstep" data-node="${esc(n.id)}">↓ ${mapWords(mapPersona(m, n))} · ${mapWords(mapStepVerb(m, n))} · ${mapWords(n.detail)}<br>${mapWords(mapStepSay(m, n))}<br>${mapWords(mapMade(m, n))}</div>`
+    : n.kind === "function" ? `<div class="mapcard st-${esc(n.status)}" data-node="${esc(n.id)}"><b>${n.tab ? `<a href="#" data-maptab="${esc(n.tab)}">${mapWords(mapFn(n))}</a>` : mapWords(mapFn(n))}</b>${n.status === "fault" ? " <b>!</b>" : isWait(n.status) ? " <b>?</b>" : ""}`
+      + `<div class="sub">${mapWords(mapState(n))}</div><div class="sub">${mapSay(n.detail)}</div><div class="sub">${n.calls || 0} call${n.calls === 1 ? "" : "s"}</div>`
+      + (says[n.id] || []).map(e => `<div class="sub">speaks to ${mapWords(name(e.to))} · ${e.n}</div>`).join("")
+      + ((wdid[n.id] || []).length ? `<div class="sub">worked on: ${(wdid[n.id]).map(e => mapWords(name(e.to)) + (e.n != null ? " " + e.n : "")).join(", ")}</div>` : "") + `</div>`
+    : `<div class="mapcard st-${esc(n.status)}" data-node="${esc(n.id)}"><b>${n.file ? `<a href="#" data-mapopen="${esc(n.file)}">${mapWords(n.label)}</a>` : mapWords(n.label)}</b>`
+      + (n.status === "fault" ? " <b>!</b>" : isWait(n.status) ? " <b>?</b>" : "")
+      + `<div class="sub">${n.kind === "work" ? (n.version != null ? "v" + esc(n.version) : "version not recorded") + (MAPW[n.status] ? " · " + esc(MAPW[n.status]) : "") : esc(n.detail || "")}</div>`
+      + (n.kind === "work" ? `<div class="sub">${mapWords(n.detail)}</div>` : "")
+      + (n.kind === "work" && fns.length ? ((wmade[n.id] || []).length ? `<div class="sub">made with: ${wmade[n.id].map(e => mapWords(nTxt(e))).join(", ")}</div>` : "") + (n.id === "work:website" ? '<div class="sub">which other function worked on this: not recorded</div>'
+          : (wmade[n.id] || []).length || n.status === "not_made" ? "" : '<div class="sub">which function worked on this: not recorded</div>') : "")
+      + (n.kind === "person" ? toYou.map(e => `<div class="sub">${e.from === "person:requester" ? "speaks to " + mapWords(name("fn:identity")) : mapWords(name("fn:identity")) + " speaks to you"} · ${e.n}</div>`).join("") : "")
+      + (outs[n.id] || []).map(g => `<div class="sub">${mapWords(givenTxt(g))}</div>`).join("") + `</div>`;
+  const cards = `<div class="mapcards">${people.map(card).join("")}${fns.map(card).join("")}${work.map(card).join("")}</div>`;
+  const ring = (k, extra = "") => `<svg width="22" height="18" viewBox="0 0 22 18" aria-hidden="true"><circle cx="11" cy="9" r="6" ${k}/>${extra}</svg>`;
+  const sw = k => {
+    if (k === "function") return `<svg width="28" height="18" viewBox="0 0 28 18" aria-hidden="true"><rect x="2" y="3" width="24" height="12" rx="6" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5"/></svg>`;
+    if (k === "send") return `<svg width="24" height="18" viewBox="0 0 24 18" aria-hidden="true"><rect x="3" y="3" width="18" height="12" rx="2" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5"/><path d="M4 4 L12 10 L20 4" fill="none" stroke="var(--muted)" stroke-width="1.2"/></svg>`;
+    if (k === "work") return `<svg width="22" height="18" viewBox="0 0 22 18" aria-hidden="true"><polygon points="11,2 18,9 11,16 4,9" fill="var(--panel)" stroke="var(--muted)" stroke-width="1.5"/></svg>`;
+    if (k === "engine") return `<svg width="22" height="18" viewBox="0 0 22 18" aria-hidden="true"><circle cx="11" cy="9" r="7" fill="none" stroke="var(--muted)" stroke-width="1"/>${[[11, 5.2], [14.6, 7.8], [13.3, 12], [8.7, 12], [7.4, 7.8]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.3" fill="var(--muted)"/>`).join("")}</svg>`;
+    if (k === "handoff") return `<svg width="28" height="18" viewBox="0 0 28 18" aria-hidden="true"><line x1="2" y1="9" x2="22" y2="9" stroke="var(--muted)" stroke-width="1.2" marker-end="url(#maparrow)"/></svg>`;
+    if (k === "speaks_to") return `<svg width="28" height="18" viewBox="0 0 28 18" aria-hidden="true"><line x1="2" y1="9" x2="22" y2="9" stroke="var(--muted)" stroke-width="1" stroke-dasharray="1 3" stroke-linecap="round" marker-end="url(#maparrow)"/></svg>`;
+    if (k === "given_to") return `<svg width="28" height="18" viewBox="0 0 28 18" aria-hidden="true"><path d="M2 16 C2 4 22 14 22 3" fill="none" stroke="var(--muted)" stroke-width="1" opacity=".6" marker-end="url(#maparrow)"/></svg>`;
+    const sh = {function: 'stroke="var(--muted)" stroke-width="1.5" fill="var(--panel)"', engine: 'stroke="var(--muted)" stroke-width="1.5" fill="var(--panel)"', work: 'stroke="var(--muted)" stroke-width="1.5" fill="var(--panel)"',
+      filed: 'stroke="var(--ok)" stroke-width="2" fill="color-mix(in srgb, var(--ok) 14%, var(--panel))"', running: 'stroke="var(--muted)" stroke-width="1.5" fill="var(--panel)"',
+      left_open: 'stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3" fill="var(--panel)"', waiting_on_you: 'stroke="var(--validator)" stroke-width="4" fill="var(--panel)"',
+      fault: 'stroke="var(--bad)" stroke-width="4" fill="var(--panel)"', done_unchecked: 'stroke="var(--validator)" stroke-width="3" stroke-dasharray="2 2" fill="var(--panel)"', not_made: 'stroke="var(--line)" stroke-width="1.5" fill="none"'}[k];
+    if (!sh) return `<svg width="28" height="18" viewBox="0 0 28 18" aria-hidden="true"><line x1="2" y1="9" x2="22" y2="9" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/></svg>`;      // any other line kind the map lists
+    const mark = k === "fault" ? '<text x="11" y="13" text-anchor="middle" style="font-weight:700;font-size:10px;fill:var(--bad)">!</text>' : k === "waiting_on_you" ? '<text x="11" y="13" text-anchor="middle" style="font-weight:700;font-size:10px;fill:var(--validator)">?</text>' : "";
+    return k === "running" ? `<svg width="22" height="18" viewBox="0 0 22 18" aria-hidden="true"><circle cx="11" cy="9" r="8" fill="none" stroke="var(--muted)" stroke-width="1.5"/><circle cx="11" cy="9" r="4.5" ${sh}/></svg>` : ring(sh, mark); };
+  const fixed = ["work", "engine", "function", "send", "filed", "done_unchecked", "waiting_on_you", "fault", "not_made", "left_open", "running", "handoff", "given_to", "speaks_to"];
+  const drawnKinds = new Set(LH.drawn.given ? ["given_to"] : []);      // the legend lists only what this map draws
+  if (LH.drawn.speak) drawnKinds.add("speaks_to");
+  if (edges.some(e => e.kind === "step") || trunkDecks.length > 1) drawnKinds.add("handoff");
+  nodes.forEach(x => { drawnKinds.add(x.kind === "work" ? (x.tag === "Send" ? "send" : "work") : x.kind === "engine" ? "engine" : "function"); drawnKinds.add(isWait(x.status) ? "waiting_on_you" : x.status); });
+  const ordered = fixed.filter(k => drawnKinds.has(k)).map(k => ({key: k, label: MAPLABEL.legend[k] || k}));
+  const legend = `<details class="mapdd mapleg"><summary>Legend</summary><div class="maplegend" aria-label="Legend">${ordered.map(l => `<span data-legend="${esc(l.key)}">${sw(l.key)}${mapWords(MAPLABEL.legend[l.key] || l.label)}</span>`).join("")}</div></details>`;
+  given.filter(g => !g.known).forEach(g => gaps.push(`which step used ${name(g.from)} given to ${name(g.box)}: not recorded`));
+  const nr = gaps.length ? `<details class="mapnr"><summary>Not recorded (${gaps.length})</summary><ul>${gaps.map(x => `<li>${mapWords(x)}</li>`).join("")}</ul></details>` : "";
+  return `<div class="mapwrap">${head}<div class="mapsvgwrap">${svg}${panel}${under}</div>${cards}${legend}${nr}</div>`;
+}
+async function openArtifact(f){
+  ARTOPEN = f; showTab("artifacts"); await loadArtifacts();
+  const r = [...ARTS.deliverables, ...ARTS.records].find(x => x.file === f);
+  if (r && r.open === "text" && ARTTEXT[f] === undefined){ try { const x = await fetch(artUrl(f), {cache:"no-store"}); ARTTEXT[f] = x.ok ? await x.text() : "Could not open this file."; } catch (err) { ARTTEXT[f] = "Could not open this file."; } }
+  paint($("pane-artifacts"), renderArtifacts());
+}
+// The Open button of a node: where it goes. A node waiting on you goes to its question in the Chat; You goes to the Needs you strip; Client Lead goes
+// to the Chat; Audit to its findings; the other functions to their messages and calls (the tables under the Map, filtered to them); a step to
+// its workflows; the Website to the site preview; the Charter to the Charter; any other deliverable to its document in Artifacts.
+function mapGo(id){
+  const n = (MAP.nodes || []).find(x => x.id === id); if (!n) return;
+  if (n.status === "waiting_on_you"){ const it = needsYou(state)[0]; if (it) focusQuestion(it.msg); else focusChat(); return; }
+  if (n.kind === "person"){ $("needs").scrollIntoView({block: "nearest"}); $("needs").focus(); return; }
+  if (n.kind === "engine"){ WFSTEP = n.workflows || []; if (state) paint($("pane-workflows"), renderWorkflows(state)); showTab("workflows"); return; }
+  if (n.kind === "function"){
+    if (n.id === "fn:identity") return focusChat();
+    if (n.id === "fn:audit") return showTab("audit");
+    MAPFILT = n.id; paint($("pane-map"), renderMap(MAP)); const d = $("pane-map").querySelector(".mapfilt"); if (d && d.scrollIntoView) d.scrollIntoView({block: "nearest"}); return; }
+  if (n.tag === "Site" || n.id === "work:website") return showTab("preview");
+  if (n.id === "work:charter") return showTab("charter");
+  if (n.file) return openArtifact(n.file);
+}
+async function loadMap(){
+  try { const r = await fetch(`api/map?${runQ().slice(1)}`, {cache:"no-store"}); if (r.ok) Object.assign(MAP, await r.json()); } catch (e) {}
+  if (state) paint($("needs"), renderNeeds(state));      // the outcome line names what the Map shows left open
+  paint($("pane-map"), renderMap(MAP));
+}
+function mapLight(svg, id){      // hover or focus: light the dot, the lines that touch it and the dots at their other ends; fade the rest ("" clears)
+  const els = [...svg.querySelectorAll("[data-from],[data-id]")], hot = new Set(id ? [id] : []);
+  if (id) els.forEach(el => { if (el.dataset.from === id) hot.add(el.dataset.to); else if (el.dataset.to === id) hot.add(el.dataset.from); });
+  els.forEach(el => { const on = el.dataset.id ? hot.has(el.dataset.id) : el.dataset.from === id || el.dataset.to === id; el.classList.toggle("hot", !!id && on); el.classList.toggle("dim", !!id && !on); });
+}
+const mapNode = e => e.target.closest && e.target.closest(".mapnode");
+const mapSvg = () => $("pane-map").querySelector && $("pane-map").querySelector(".mapsvg");
+function mapSelect(id){      // click or Enter: open this dot's panel (the same one again closes it); the pin keeps its lines lit
+  MAPPIN = id; paint($("pane-map"), renderMap(MAP));
+  const el = id && $("pane-map").querySelectorAll && [...$("pane-map").querySelectorAll(`.mapnode[data-id="${CSS.escape(id)}"]`)].find(x => x.getClientRects().length); if (el && el.focus) el.focus();
+  const pn = id && $("pane-map").querySelector && $("pane-map").querySelector(".mappanel"); if (pn && pn.scrollIntoView) pn.scrollIntoView({block: "nearest"});      // the panel opens below the Map: bring it into view
+}
+const mapHover = (e, on) => { const g = mapNode(e), svg = mapSvg(); if (!g || !svg) return; if (on) svg.dataset.hover = g.dataset.id; else delete svg.dataset.hover;
+  $("pane-map").querySelectorAll(".mapsvg").forEach(x => mapLight(x, on ? g.dataset.id : MAPPIN)); };      // the wide and the narrow drawing stay in step
+$("pane-map").addEventListener("mouseover", e => mapHover(e, true)); $("pane-map").addEventListener("mouseout", e => mapHover(e, false));
+$("pane-map").addEventListener("focusin", e => mapHover(e, true)); $("pane-map").addEventListener("focusout", e => mapHover(e, false));
+$("pane-map").addEventListener("keydown", e => { const g = mapNode(e); if (g && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); mapSelect(MAPPIN === g.dataset.id ? "" : g.dataset.id); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && MAPPIN && !$("pane-map").hidden) mapSelect(""); });
+$("pane-map").addEventListener("click", async e => { const t = e.target.closest("[data-maptab]"); if (t){ e.preventDefault(); showTab(t.dataset.maptab); return; }
+  if (e.target.closest("[data-mapclose]")){ e.preventDefault(); mapSelect(""); return; }
+  const go = e.target.closest("[data-mapgo]"); if (go){ e.preventDefault(); mapGo(go.dataset.mapgo); return; }
+  if (e.target.closest("[data-mapfiltclear]")){ e.preventDefault(); MAPFILT = ""; paint($("pane-map"), renderMap(MAP)); return; }
+  const g = mapNode(e); if (g){ e.preventDefault(); mapSelect(MAPPIN === g.dataset.id ? "" : g.dataset.id); return; }
+  const b = e.target.closest("[data-mapopen]"); if (!b) return; e.preventDefault();
+  await openArtifact(b.dataset.mapopen); });
+// Documents: read-only, reloaded when the run's chat or documents change; a link on an atom card opens the tab at that item.
+let docsKey = null;
+(async () => { try { const r = await fetch("api/refs"); if (r.ok){ Object.assign(REFS, await r.json()); if (state) paint($("pane-workflows"), renderWorkflows(state)); } } catch (e) {} })();
+async function loadDocs(){
+  try { const r = await fetch(`api/docs?${runQ().slice(1)}`, {cache:"no-store"});
+    if (r.ok) Object.assign(DOCS, await r.json()); } catch (e) {}
+  try { const r = await fetch(`api/audits?${runQ().slice(1)}`, {cache:"no-store"});
+    if (r.ok){ STAGE_AUDITS.length = 0; STAGE_AUDITS.push(...await r.json()); } } catch (e) {}
+  if (state) paint($("pane-workflows"), renderWorkflows(state));
+  paint($("pane-docs"), renderDocs());
+}
+$("pane-docs").addEventListener("click", e => { const a = e.target.closest("[data-docjump]"); if (!a) return; e.preventDefault();
+  const t = a.dataset.docjump === "top" ? $("pane-docs") : document.getElementById("docblock-" + a.dataset.docjump);
+  if (t && t.scrollIntoView) t.scrollIntoView({block: "start"}); });
+$("pane-workflows").addEventListener("click", e => { if (!e.target.closest("[data-wfclear]")) return; WFSTEP = []; if (state) paint($("pane-workflows"), renderWorkflows(state)); });
+$("pane-workflows").addEventListener("click", e => { const b = e.target.closest("[data-otag]"); if (!b) return;
+  OTAG = OTAG === b.dataset.otag ? "" : b.dataset.otag; if (state) paint($("pane-workflows"), renderWorkflows(state)); });
+$("pane-workflows").addEventListener("click", e => { const b = e.target.closest("[data-fold]"); if (!b) return;
+  const k = b.dataset.fold; FOLD.has(k) ? FOLD.delete(k) : FOLD.add(k); if (state) paint($("pane-workflows"), renderWorkflows(state)); });
+document.addEventListener("click", e => { const a = e.target.closest("[data-charter]"), t = e.target.closest("[data-tabjump]"); if (!a && !t) return;
+  e.preventDefault(); CHFOCUS = a ? +a.dataset.charter : 0; paint($("pane-charter"), renderCharter(state)); showTab("charter");
+  const el = a && document.getElementById("charter-item-" + CHFOCUS); if (el && el.scrollIntoView) el.scrollIntoView({block: "center"}); });
+document.addEventListener("click", e => { const a = e.target.closest("[data-wfcard]"); if (!a) return; e.preventDefault();
+  const w = (state.workflows || []).find(x => x.id === a.dataset.wfcard); showTab("workflows");
+  [`wf-${a.dataset.wfcard}`, ...((w && w.atoms) || []).map(x => `atom-${x.id}`)].forEach(k => { const d = document.querySelector(`details[data-key="${CSS.escape(k)}"]`); if (d) d.open = true; });
+  const d = document.querySelector(`details[data-key="atom-${CSS.escape((w && w.atoms && w.atoms[0] || {}).id || "")}"]`); if (d && d.scrollIntoView) d.scrollIntoView({block: "start"}); });
+$("pane-workflows").addEventListener("click", e => { const a = e.target.closest("[data-doc]"); if (!a) return;
+  e.preventDefault(); FOCUS = {kind: a.dataset.doc, item: a.dataset.item};
+  paint($("pane-docs"), renderDocs()); showTab("docs");
+  const t = document.getElementById(`doc-${FOCUS.kind}-${FOCUS.item}`); if (t && t.scrollIntoView) t.scrollIntoView({block: "center"}); });
+async function send(){
+  const text = $("box").value.trim(); if (!text) return;
+  $("box").value = "";
+  await fetch("api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text})});
+}
+$("send").onclick = send;
+// The start page's output type (both views): only before the first message; the server refuses it after.
+document.addEventListener("change", async e => { if (!e.target.matches(".outsel")) return;
+  await fetch("api/output", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type: e.target.value})}); });
+// Delegated clicks: panes are re-rendered on every poll.
+// Detail view: click an agent message, a timeline step, or a lane (its latest message).
+$("msgs").addEventListener("click", e => { const b = e.target.closest(".msg"); if (b && b.dataset.id) openDetail(b.dataset.id); });
+$("pane-timeline").addEventListener("click", e => { const b = e.target.closest("[data-msg]"); if (b) openDetail(b.dataset.msg); });
+$("lanes").addEventListener("click", e => { const b = e.target.closest("[data-msg]"); if (b && b.dataset.msg) openDetail(b.dataset.msg); });
+$("dclose").onclick = () => $("detail").close();
+// Atom card links that open stored data in the detail pane: the atom's agent_output, or its verification evidence.
+async function wantPreview(id){
+  PREVIEWS[id] = "";                                  // asked once; the answer replaces it
+  try { const r = await fetch(`api/preview?atom=${encodeURIComponent(id)}${runQ()}`, {cache:"no-store"});
+    PREVIEWS[id] = r.ok ? (await r.json()).html || "" : ""; } catch (e) {}
+  if (state) paint($("pane-workflows"), renderWorkflows(state));
+}
+$("pane-workflows").addEventListener("click", e => { const b = e.target.closest("[data-link]"); if (!b || b.tagName === "A") return;
+  const a = state.workflows.flatMap(w => w.atoms || []).find(x => x.id === b.dataset.atom); if (!a) return;
+  $("dtitle").textContent = `${a.id} · ${b.dataset.link === "agent" ? "workflow output" : "verification evidence"}`;
+  $("dbody").innerHTML = `<pre>${esc(JSON.stringify(b.dataset.link === "agent" ? a.agent_output : (a.results || []), null, 2))}</pre>`;
+  $("detail").showModal(); });
+// Saved runs: pick one to open it read-only; the URL keeps ?run= so it can be reloaded or shared locally.
+(async () => { try { const r = await (await fetch("api/runs")).json();
+  $("runsel").innerHTML = `<option value="">Live run (${esc(r.live)})</option>` + r.runs.filter(x => x.id !== r.live)
+    .map(x => `<option value="${esc(x.id)}">${esc(x.id)} · ${esc(x.status)} · ${esc(x.brief.slice(0, 50))}</option>`).join("");
+  $("runsel").value = viewRun; } catch (e) {} })();
+$("runsel").onchange = () => { location.search = $("runsel").value ? "?run=" + encodeURIComponent($("runsel").value) : ""; };
+$("pane-playbooks").addEventListener("click", async e => {
+  if (e.target.id !== "clear-playbooks" || !confirm("Delete every saved playbook (memory/playbooks.jsonl)? This can't be undone.")) return;
+  await fetch("api/playbooks/clear", {method:"POST"});
+});
+$("pane-lessons").addEventListener("click", async e => {
+  if (e.target.id !== "clear-lessons" || !confirm("Delete every saved lesson (memory/lessons.jsonl)? This can't be undone.")) return;
+  await fetch("api/lessons/clear", {method:"POST"});
+});
+$("box").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }});
+$("reset").onclick = async () => { await fetch("api/reset", {method:"POST"}); location.search = ""; };
+poll();
+</script>
+</body>
+</html>

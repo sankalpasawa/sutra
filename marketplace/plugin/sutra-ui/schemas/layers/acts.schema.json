@@ -449,6 +449,21 @@
     "act.line_request": {
       "additionalProperties": true,
       "properties": {
+        "answer": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "doubt": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "fallback": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
         "faults": {
           "items": {
             "maxLength": 600,
@@ -457,6 +472,9 @@
           },
           "minItems": 0,
           "type": "array"
+        },
+        "go_on": {
+          "type": "boolean"
         },
         "objective": {
           "maxLength": 2000,
@@ -1364,6 +1382,16 @@
         "words": [
           "conflict"
         ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.doubt",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "doubt"
+        ]
       }
     ],
     "Audit": [
@@ -1375,6 +1403,16 @@
         ],
         "words": [
           "finding"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.reading",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "reading"
         ]
       }
     ],
@@ -1501,6 +1539,16 @@
         ],
         "words": [
           "idea"
+        ]
+      },
+      {
+        "act": "request",
+        "payload": "act.next",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "next"
         ]
       },
       {

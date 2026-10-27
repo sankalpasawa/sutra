@@ -129,6 +129,9 @@ function wbBorn(ref){
 /* A department on the engine runtime opens on its chat: the one point of entry
    (founder, 2026-09-28). One of the first build opens on its Map, as before. */
 function wbTab(ref){
+  /* 25-j2view.js: a website department on the engine runtime is the J2 page, which folds Chat, Map, All five, Board,
+     Agent activity and System status into itself, and Settings and records is the `records` tab; null for the rest */
+  if (typeof j2vTab === "function"){ const t = j2vTab(ref); if (t) return t; }
   const st = wbS();
   return st.tab[ref] === undefined ? (wbRt(st.map[ref]) ? "chat" : "map") : st.tab[ref];
 }
@@ -274,7 +277,7 @@ function wbList(n){
   if (!wbIs(n.ref)) return null;
   const st = wbS(), m = st.map[n.ref], tab = wbTab(n.ref);
   if (!m) wbLoadMap(n.ref);
-  const top = `<div class="o2g dpg wb">` +
+  let top = `<div class="o2g dpg wb">` +
     (wbRt(m) ? dpRow("Chat", `data-wbtab="chat"`, tab === "chat") : "") +
     dpRow("Map", `data-wbtab="map"`, tab === "map") +
     /* the ruled Map (PRD M1.5): System status folds into the Map's NOW line for a department on the runtime */
@@ -283,6 +286,8 @@ function wbList(n){
     (wbRt(m) ? "" : dpRow("Motor", `data-wbtab="motor"`, tab === "motor")) +
     (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") +
       dpRow("Agent activity", `data-wbtab="activity"`, tab === "activity") : "") + `</div>`;
+  /* 25-j2view.js: in Settings and records the first group is one row back to the J2 page */
+  if (typeof j2vTop === "function"){ const t = j2vTop(n.ref, m); if (t) top = t; }
   const engines = dpGroup("Engines", ((m && m.engines) || []).map(e => {
     const on = tab === "engine" && st.sel[n.ref] === e.name;
     const word = e.state === "Running" ? "running" : (e.state === "Waits" ? "paused" : (e.state === "Missing" ? "fault" : "idle"));
@@ -1151,7 +1156,7 @@ function wbFnPageSig(v){
     (v.fields || []).map(f => [f.key, f.label, f.placeholder, value(f)]),
     (co.timetable || []).map(r => [r.engine, r.on, r.state, r.why, minute(r.at), r.window_min, r.last && r.last.wrote]),
     (co.left_out || []).map(r => r.engine), (co.handoffs || []).map(h => [h.art, h.v, h.says, (h.readers || []).join(",")]),
-    share((co.chain || {}).share), (co.alarms || []).map(a => a.text), (co.ties || []).map(t => [t.said, minute(t.at)]), wbIdSig(v.j2)]);
+    share((co.chain || {}).share), (co.alarms || []).map(a => a.text), (co.ties || []).map(t => [t.said, minute(t.at)]), wbIdSig(v.j2), wbRcSig(v.j2)]);
 }
 /* Identity's pane paints again when its record moves: a point of the standard, the done line or an item, a rule, its
    question, a ruling */
@@ -1216,6 +1221,46 @@ async function wbLoadFnPage(ref, fn, again){
     if (!again) dpRender();
   }
 }
+/* ── Root's check, on Adaptation's pane (PRD M7.3, S11) ────────────────────────────────────────────────────────
+   One row for the last review of the plan: a dot for each standard of the workflow schema that applied, in the order the
+   app keeps them (its words as the title; ticked when it held and crossed when it did not, so a mark says it as well as a
+   colour), the verdict and the time. A plan Root sent back names the standard that broke, in its words, and why, and shows
+   the reshapes so far as dots. Root sends a plan back twice at most; the third refusal is the block (engine_runtime
+   _j2_settle), and the owner is asked what to change in Chat. No count is printed. Reads root_checks[].checks of the
+   Adaptation view ([{check, says, passed, why}]); a review from before the standards were listed has no checks and shows
+   its own sentence. */
+const WB_RESHAPES = 2;
+const WB_RC_SAYS = { approved: "approved", back: "sent back", blocked: "blocked" };
+/* a check's words: the standard's, or for the schema's own row (which is no standard) what it found */
+function wbRcSays(c){ return c.says && c.says !== c.check ? c.says : (c.why || ""); }
+function wbRcDot(c){
+  const said = wbRcSays(c);
+  return `<span class="wbrcdot${c.passed ? "" : " no"}" role="img" title="${wbEsc(said)}" aria-label="${wbEsc(said + (c.passed ? ", held" : ", did not hold"))}"></span>`;
+}
+/* the reviews at the end of the list that sent the plan back, one after another */
+function wbRcFails(rows){
+  let n = 0;
+  for (let i = rows.length - 1; i >= 0 && !rows[i].passed; i--) n++;
+  return n;
+}
+function wbRcSig(j){
+  return j && Array.isArray(j.root_checks) ? j.root_checks.map(r => [r.at, r.passed, (r.checks || []).map(c => c.passed)]) : null;
+}
+function wbRootChecksHtml(rows){
+  if (!rows.length) return dpCard("Root's check", dpQuiet("Root has not checked a plan yet"));
+  const last = rows[rows.length - 1], fails = wbRcFails(rows), checks = last.checks || [];
+  const state = last.passed ? "approved" : (fails > WB_RESHAPES ? "blocked" : "back");
+  const row = `<div class="wbrcrow"><span class="wbrcdots">${checks.map(wbRcDot).join("")}</span>` +
+    `<span class="wbrcv ${state}">${WB_RC_SAYS[state]}${last.at ? " · " + wbEsc(wbWhen(last.at)) : ""}</span></div>`;
+  if (last.passed) return dpCard("Root's check", row);
+  const broke = checks.filter(c => !c.passed).map(c => c.says && c.says !== c.check
+    ? `<div class="wbrcwhy"><b>${wbEsc(c.says)}</b>${c.why ? wbEsc(": " + c.why) : ""}</div>` : `<div class="wbrcwhy"><b>${wbEsc(wbRcSays(c))}</b></div>`);
+  const why = broke.length ? broke.join("") : (last.summary ? `<div class="wbrcwhy">${wbEsc(last.summary)}</div>` : "");
+  const sent = Math.min(fails, WB_RESHAPES);
+  return dpCard("Root's check", row + why + `<div class="wbrcrs ${state}"><span>reshapes</span>` +
+    [0, 1].map(i => `<i class="${i < sent ? "on" : ""}"></i>`).join("") + `</div>`);
+}
+
 const WB_JOURNEY_DOT = { "done": "ok", "said yes": "ok", "heard": "ok", "let through": "ok", "told Identity": "ok", "moved": "ok",
                          "waiting": "wait", "held": "wait", "running": "", "failed": "block" };
 const WB_BY = { code: "Code", AI: "AI", person: "Person" };
@@ -1262,6 +1307,8 @@ function wbFnPageHtml(ref, fn){
   const j = wbIdRecord(p);
   if (fn === "identity" && j)
     return wbIdentityHtml(ref, j) + `<details class="wbhow wb"><summary>How Identity works</summary>${page}</details>`;
+  /* Adaptation's pane opens on Root's check of its plan (S11), when the read carries the reviews */
+  if (fn === "adaptation" && p.j2 && Array.isArray(p.j2.root_checks)) return wbRootChecksHtml(p.j2.root_checks) + page;
   return page;
 }
 
@@ -1439,27 +1486,112 @@ function wbHostHtml(ref, m){
   return dpCard("Served from", `<div class="wbstep wbset"><input type="text" data-wbdraft="${wbEsc(key)}" value="${wbEsc(st.draft[key] !== undefined ? st.draft[key] : (m.host || ""))}"` +
     ` aria-label="where the site is served from" placeholder="Where the site is served from">` + wbBtn("Set", `data-wbhost="1"`) + `</div>`);
 }
-/* Settings > Instructions (PRD M2.3, S16): each function's version 1 is one
-   agent and its files (S-28), listed by the names its page gives them, each
-   with the line that says what it is for. Change opens a sheet whose Send
-   files an ask; nothing changes until the owner stamps it, and until then the
-   row says so in words beside the amber mark. A file no run reads (Adaptation's
-   decide: in this version the code makes that choice) says so too, so a change
-   to it is kept as the owner's note and never read as one the next run uses.
-   Names only, never where a file lives. */
+/* Settings > Instructions (PRD A1.16, S16): each function's version 1 is one agent whose instructions are typed fields of
+   the interface, kept in groups as its page names them. A card for each group, its lead line as the title; in it each part
+   with the fields the owner may change: the words in use, a mark for as shipped or the owner's own, and Change. Under a
+   part two quiet notes say, in words, what the app fills in and what the part answers with; the shape of an answer is the
+   app's and is never shown or editable here. Change opens a sheet (a textarea with a count of its length, or a list
+   editor for skills); Send files the one ask Identity puts to the owner, and nothing changes until the stamp: until then
+   the field says it waits, beside the amber mark. A part no run reads says so, so a change to it is read as the owner's
+   note; an earlier whole-file change shows once as kept as a note. Names only, never where anything lives.
+
+   Before the interface's typed fields arrive (a read whose instructions are the first design's files) the files are listed
+   as they were: wbInsFilesHtml, with the sheet and the Send of that design (an ask {fn, file, text}). */
 const WB_INS_NOT_READ = "In this version the code makes this choice, so no run reads these words yet";
+const WB_INS_FIELDS = { task: "the task", guidance: "the guidance", text: "the words", items: "the list" };
+const WB_INS_OWN = { "does.text": "what it does", "skills.items": "the skills", "note.text": "the note" };
+const WB_INS_WAIT = "your change waits for your stamp";
+function wbInsLabel(part, field){ return WB_INS_OWN[part + "." + field] || WB_INS_FIELDS[field] || String(field); }
+/* the typed fields, or the first design's files */
 function wbInsHtml(fn, v){
   const rows = v.instructions || [];
   if (!rows.length) return "";
+  return rows[0] && rows[0].parts ? rows.map(g => wbInsGroupHtml(fn, g)).join("") : wbInsFilesHtml(fn, rows);
+}
+function wbInsFilesHtml(fn, rows){
   return dpCard("Instructions", rows.map(r => `<div class="wbins"><b>${wbEsc(r.file)}</b><span class="wbinslead">${wbEsc(r.lead)}</span>` +
     (r.read === false ? `<span class="wbchip" title="${wbEsc(WB_INS_NOT_READ)}">a note: no run reads it yet</span>` : "") +
-    (r.waits ? `<span class="wbinsnote"><i class="wbinsq">?</i>your change waits for your stamp${r.waits.at ? " · " + wbEsc(wbWhen(r.waits.at)) : ""}</span>`
+    (r.waits ? `<span class="wbinsnote"><i class="wbinsq">?</i>${WB_INS_WAIT}${r.waits.at ? " · " + wbEsc(wbWhen(r.waits.at)) : ""}</span>`
              : wbChip(r.as_shipped ? "as shipped" : "your words") + wbBtn("Change", `data-wbins="${wbEsc(r.file)}" data-wbinsfn="${wbEsc(fn)}"`)) +
     `</div>`).join(""));
+}
+/* the words in use as one line of a row, as the read says them in the owner's words (`shown`); else a list read as its items,
+   a text with its lines run together */
+function wbInsShown(f){
+  if (typeof f.shown === "string") return f.shown;
+  return (Array.isArray(f.value) ? f.value.join("; ") : String(f.value == null ? "" : f.value)).replace(/\s+/g, " ").trim();
+}
+function wbInsFieldHtml(fn, g, p, f){
+  const open = `data-wbins="change" data-wbinsfn="${wbEsc(fn)}" data-wbinsgroup="${wbEsc(g.group)}" data-wbinspart="${wbEsc(p.part)}" data-wbinsfield="${wbEsc(f.field)}"`;
+  return `<div class="wbins"><span class="wbinsf">${wbEsc(wbInsLabel(p.part, f.field))}</span><span class="wbinslead">${wbEsc(wbInsShown(f))}</span>` +
+    (f.waits ? `<span class="wbinsnote"><i class="wbinsq">?</i>${WB_INS_WAIT}${f.waits.at ? " · " + wbEsc(wbWhen(f.waits.at)) : ""}</span>`
+             : wbChip(f.as_shipped ? "as shipped" : "your words") + wbBtn("Change", open)) + `</div>`;
+}
+function wbInsPartHtml(fn, g, p){
+  const said = (words, list) => (list && list.length) ? `<div class="dpchk">${words}: ${list.map(wbEsc).join(", ")}</div>` : "";
+  return `<div class="wbinsp"><div class="wbinsh"><b>${wbEsc(p.label || p.part)}</b>` +
+    (p.read === false ? `<span class="wbchip" title="${wbEsc(WB_INS_NOT_READ)}">a note: no run reads it yet</span>` : "") + `</div>` +
+    (p.fields || []).map(f => wbInsFieldHtml(fn, g, p, f)).join("") + said("filled by the app", p.inputs) + said("answers with", p.answers) + `</div>`;
+}
+function wbInsGroupHtml(fn, g){
+  const kept = g.kept ? `<div class="wbinsk">${wbChip("kept as your note")}<span class="dpchk">${g.kept.at ? wbEsc(wbWhen(g.kept.at)) : ""}</span></div>` : "";
+  return dpCard(g.lead || g.group, kept + (g.parts || []).map(p => wbInsPartHtml(fn, g, p)).join(""));
+}
+/* a field of the read, with its group and part, or null */
+function wbInsFind(ref, fn, group, part, field){
+  const v = wbS().steps[ref + ":" + wbCap(fn)], gs = (v && v.instructions) || [];
+  for (const g of gs){
+    if (g.group !== group) continue;
+    for (const p of g.parts || []){
+      if (p.part !== part) continue;
+      for (const f of p.fields || []) if (f.field === field) return { g, p, f };
+    }
+  }
+  return null;
+}
+/* The words against the field's bounds, as one answer: whether they may be sent, the count to show, and why not. A text
+   is at most `max` long and has some words; a list is at most `max_items` long, each at most `max`, with at least one. */
+function wbInsCheck(s){
+  if (s.type === "list"){
+    const items = (s.items || []).map(x => String(x == null ? "" : x)), kept = items.filter(x => x.trim());
+    const long = items.some(x => x.length > s.max), full = items.length > (s.max_items || Infinity);
+    return { ok: !long && !full && kept.length > 0, over: long || full, line: items.length + " of " + (s.max_items || "no limit"),
+             why: long ? "an item is longer than " + s.max + " characters" : (full ? "too many items" : (kept.length ? "" : "add at least one item")) };
+  }
+  const n = String(s.text == null ? "" : s.text).length, empty = !String(s.text == null ? "" : s.text).trim();
+  return { ok: !empty && n <= s.max, over: n > s.max, line: n + " of " + s.max + (n > s.max ? ": too long" : ""),
+           why: empty ? "Say what the words should be" : (n > s.max ? "These words are longer than " + s.max + " characters" : "") };
+}
+/* an error as the owner reads it: the server's plain sentence, without the route apiPost appends to it */
+function wbInsPlain(e){
+  const m = String((e && e.message) || e || "").replace(/\s*\((?:\/[^)\s]*)\s*->\s*\d+\)\s*$/, "").trim();
+  return m && !/^\/\S+ -> \d+$/.test(m) ? m : "Sutra could not take that; try again";
+}
+function wbInsItemRow(s, i, x){
+  const over = String(x).length > s.max;
+  const b = (word, what, off) => wbBtn(word, `data-wbins="${what}" data-wbinsi="${i}" aria-label="${wbEsc(word + " item")}"${off ? " disabled" : ""}`);
+  return `<li class="wbinsit"><input type="text" data-wbinsitem="${i}" value="${wbEsc(x)}" aria-label="${wbEsc("item " + (i + 1))}" spellcheck="false">` +
+    `<span id="wbins-n${i}" class="wbinscount${over ? " over" : ""}">${String(x).length} of ${s.max}</span>` +
+    b("Up", "up", i === 0) + b("Down", "down", i === s.items.length - 1) + b("Remove", "rm", false) + `</li>`;
+}
+function wbInsTypedSheetHtml(s){
+  const c = wbInsCheck(s), title = wbCap(s.fn) + " · " + s.part + " · " + s.label;
+  const body = s.type === "list"
+    ? `<label>${wbEsc(wbCap(s.label))}</label><ol class="wbinslist">${s.items.map((x, i) => wbInsItemRow(s, i, x)).join("")}</ol>` +
+      `<div class="wbinsadd">${wbBtn("Add", `data-wbins="add"${s.items.length >= (s.max_items || Infinity) ? " disabled" : ""}`)}</div>`
+    : `<label for="wbins-text">${wbEsc(wbCap(s.label))}</label>` +
+      `<textarea id="wbins-text" data-wbinstext="1" rows="${s.multiline ? 12 : 3}" spellcheck="false">${wbEsc(s.text)}</textarea>`;
+  return `<div class="wbscrim wb" data-wbins="close"></div><div class="o2sheet wbsheet wbinssheet wb" role="dialog" aria-label="${wbEsc("Change " + title)}">` +
+    `<h4>${wbEsc(title)}</h4>${s.lead ? `<div class="o2quiet dpq">${wbEsc(s.lead)}</div>` : ""}${body}` +
+    `<div id="wbins-count" class="wbinscount${c.over ? " over" : ""}">${wbEsc(c.line)}</div>` +
+    (s.error ? `<div class="o2err wbinserr" role="alert">${wbEsc(s.error)}</div>` : "") +
+    `<div class="o2acts2">${wbBtn(s.busy ? "Sending" : "Send", `id="wbins-send" data-wbins="send"${s.busy || !c.ok ? " disabled" : ""}`, "dpstamp")}` +
+    wbBtn("Cancel", `data-wbins="close"`) + `</div></div>`;
 }
 function wbInsSheetHtml(){
   const s = wbS().ins;
   if (!s) return "";
+  if (s.group !== undefined) return wbInsTypedSheetHtml(s);
   const title = wbCap(s.fn) + " · " + s.file;
   return `<div class="wbscrim wb" data-wbins="close"></div><div class="o2sheet wbsheet wbinssheet wb" role="dialog" aria-label="${wbEsc("Change " + title)}">` +
     `<h4>${wbEsc(title)}</h4>` +
@@ -1472,6 +1604,19 @@ function wbInsPaint(){
   if (!host){ host = document.createElement("div"); host.id = "wbins-sheet"; document.body.appendChild(host); }
   host.innerHTML = wbInsSheetHtml();
 }
+/* While the owner types, the count and Send follow the words without the sheet being painted again (a paint would take
+   the caret out from under them) */
+function wbInsSync(){
+  const s = wbS().ins;
+  if (!s || s.group === undefined || typeof document === "undefined" || !document.getElementById) return;
+  const c = wbInsCheck(s), line = document.getElementById("wbins-count"), send = document.getElementById("wbins-send");
+  if (line){ line.textContent = c.line; line.className = "wbinscount" + (c.over ? " over" : ""); }
+  if (send) send.disabled = !!s.busy || !c.ok;
+  if (s.type === "list") (s.items || []).forEach((x, i) => {
+    const n = document.getElementById("wbins-n" + i);
+    if (n){ n.textContent = String(x).length + " of " + s.max; n.className = "wbinscount" + (String(x).length > s.max ? " over" : ""); }
+  });
+}
 function wbInsOpen(ref, fn, file){
   const v = wbS().steps[ref + ":" + wbCap(fn)];
   const r = ((v && v.instructions) || []).filter(x => x.file === file)[0];
@@ -1479,9 +1624,45 @@ function wbInsOpen(ref, fn, file){
   wbS().ins = { ref, fn, file, text: r.text || "", busy: false, error: null };
   wbInsPaint();
 }
+function wbInsOpenField(ref, fn, group, part, field){
+  const hit = wbInsFind(ref, fn, group, part, field);
+  if (!hit || hit.f.waits) return;
+  const f = hit.f, list = f.type === "list";
+  wbS().ins = { ref, fn, group, part, field, type: f.type, max: f.max, max_items: f.max_items, multiline: !!f.multiline, lead: hit.g.lead,
+                label: wbInsLabel(part, field), text: list ? "" : String(f.value == null ? "" : f.value),
+                items: list ? (f.value || []).map(String) : null, busy: false, error: null };
+  wbInsPaint();
+}
+/* the list editor's own buttons: add an item, remove one, move one up or down */
+function wbInsEdit(what, i){
+  const s = wbS().ins;
+  if (!s || s.type !== "list") return;
+  const items = s.items;
+  if (what === "add" && items.length < (s.max_items || Infinity)) items.push("");
+  else if (what === "rm" && i >= 0 && i < items.length) items.splice(i, 1);
+  else if ((what === "up" && i > 0) || (what === "down" && i < items.length - 1)){
+    const j = what === "up" ? i - 1 : i + 1, t = items[i]; items[i] = items[j]; items[j] = t;
+  }
+  s.error = null;
+  wbInsPaint();
+}
 async function wbInsSend(){
   const st = wbS(), s = st.ins;
   if (!s || s.busy) return;
+  if (s.group !== undefined){
+    const c = wbInsCheck(s);
+    if (!c.ok){ s.error = c.why; wbInsPaint(); return; }
+    s.busy = true; s.error = null; wbInsPaint();
+    try {
+      await apiPost(wbUrl(s.ref, "instructions"), { fn: s.fn, group: s.group, part: s.part, field: s.field,
+                                                    value: s.type === "list" ? s.items.map(x => String(x).trim()).filter(Boolean) : s.text });
+      st.ins = null; wbInsPaint();
+      wbLoadSteps(s.ref, wbCap(s.fn), true);            /* the field reads that the change waits for the stamp */
+    } catch (e) {
+      s.busy = false; s.error = wbInsPlain(e); wbInsPaint();
+    }
+    return;
+  }
   if (!String(s.text || "").trim()){ s.error = "Say what the instructions should be"; wbInsPaint(); return; }
   s.busy = true; s.error = null; wbInsPaint();
   try {
@@ -1492,6 +1673,37 @@ async function wbInsSend(){
     s.busy = false; s.error = (e && e.message) || String(e); wbInsPaint();
   }
 }
+/* ── what the interface says it runs: GET /layers (PRD A1.18, A1.23) ─────────────────────────────────────────
+   The schema version, the implementation each layer runs and Root's standards in their words, read once for the pane that
+   asks (a function's Settings, Root's settings) and kept; a read that failed is kept as failed and is not asked again, so
+   the pane says Not read yet instead of reading on every paint. */
+async function wbLoadLayers(ref){
+  const L = wbS().layers || (wbS().layers = {});
+  if (L[ref] !== undefined) return;                    /* undefined: not asked; null: on its way; { failed }: it could not be read */
+  L[ref] = null;
+  try { L[ref] = await apiGet(wbUrl(ref, "layers")); } catch (e) { L[ref] = { failed: true }; }
+  dpRender();
+}
+function wbLayers(ref){
+  const L = wbS().layers || (wbS().layers = {});
+  if (L[ref] === undefined) wbLoadLayers(ref);
+  return L[ref] && !L[ref].failed ? L[ref] : null;
+}
+/* Root's settings (S18): the standards every plan meets, read only, in the order the app keeps them, with the line that
+   says they are part of how the app is built. There is no Change: they move only with a new version of the app. */
+/* a function's Settings head (A1.23): one quiet line, Runs version N, N being the number after /v in the pin of the
+   function's layer; nothing until the read has come, so the head never says a version it does not know */
+function wbRunsLine(ref, fn){
+  const L = wbLayers(ref), m = /\/v(\d+)$/.exec(String(((L && L.pins) || {})[fn] || ""));
+  return m ? dpQuiet("Runs version " + m[1]) : "";
+}
+const WB_STANDARDS_LINE = "These are part of how the app is built; they change only with a new version of the app.";
+function wbStandardsHtml(ref){
+  const L = wbLayers(ref), std = (L && Array.isArray(L.standards)) ? L.standards : [];
+  return dpCard("Standards every plan meets", std.length
+    ? std.map(x => `<div class="dpfline">${wbEsc(x.says)}</div>`).join("") + dpQuiet(WB_STANDARDS_LINE) : dpQuiet("Not read yet"));
+}
+
 function wbSettingsHtml(ref, fn){
   const st = wbS(), m = st.map[ref], name = wbCap(fn), v = st.steps[ref + ":" + name];
   if (!v){ wbLoadSteps(ref, name); return dpSkel(); }
@@ -1500,8 +1712,8 @@ function wbSettingsHtml(ref, fn){
   if (!pr) wbLoadSteps(ref, "Priority");
   const lim = ((pr && pr.limits) || []).filter(l => l.engine === name)[0];
   const tpl = (typeof dpTemplateLine === "function") ? dpTemplateLine(fn) : "";
-  /* S16: the Instructions first, then the Template and today's limit side by side */
-  return wbInsHtml(fn, v) + `<div class="wbpair">` + dpCard("Template", tpl || dpQuiet("Not read yet")) +
+  /* the version the function runs, then S16: the Instructions, then the Template and today's limit side by side */
+  return wbRunsLine(ref, fn) + wbInsHtml(fn, v) + `<div class="wbpair">` + dpCard("Template", tpl || dpQuiet("Not read yet")) +
     (lim ? dpCard("Limit", wbLimitRow(ref, lim)) : "") + `</div>` +
     wbLadderHtml(ref, name, v.numbers || {}) +
     (fn === "identity" ? wbHostHtml(ref, m) : "") +
@@ -1537,6 +1749,8 @@ function wbViewer(n){
   const st = wbS(), m = st.map[n.ref], tab = wbTab(n.ref);
   wbTick();
   if (!m){ wbLoadMap(n.ref); return dpViewerShell(n.name, st.err[n.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
+  /* 25-j2view.js: Settings and records, the classic list with a way back to the J2 page */
+  if (tab === "records" && typeof j2vRecordsHtml === "function") return dpViewerShell("Settings and records", j2vRecordsHtml(n), "wb");
   /* the Map and the Board of the second design, when the switch is on; null hands the rest back to this file */
   if (wbV2() && wbRt(m) && typeof wb2Viewer === "function"){ const own = wb2Viewer(n); if (own) return own; }
   /* All five (PRD M1.8, S2): 24-functions.js draws the five as one system */
@@ -1608,6 +1822,7 @@ function wbRootPaneHtml(n, m){
     row(m.stopped ? "Off" : "On", (m.stopped ? "makes no department until started " : "makes departments when asked ") + sw, m.stopped ? "off" : "ok") +
     row("Rules", rules.length ? rules.join("; ") : "none yet", rules.length ? "ok" : "") +
     row("Departments it has made", made || "none yet", made ? "ok" : "")) +
+    wbStandardsHtml(n.ref) +
     `<div>${wbBtn("Back to the chat", `data-wbtab="chat"`)}</div>`;
 }
 
@@ -1719,6 +1934,8 @@ if (typeof document !== "undefined" && document.addEventListener){
       ev.preventDefault(); ev.stopPropagation();
       if (ds.wbins === "close"){ st.ins = null; wbInsPaint(); }
       else if (ds.wbins === "send") wbInsSend();
+      else if (ds.wbins === "change"){ if (ref && wbIs(ref)) wbInsOpenField(ref, ds.wbinsfn, ds.wbinsgroup, ds.wbinspart, ds.wbinsfield); }
+      else if (/^(add|rm|up|down)$/.test(ds.wbins)) wbInsEdit(ds.wbins, ds.wbinsi === undefined ? -1 : Number(ds.wbinsi));
       else if (ref && wbIs(ref)) wbInsOpen(ref, ds.wbinsfn, ds.wbins);
       return;
     }
@@ -1806,7 +2023,8 @@ if (typeof document !== "undefined" && document.addEventListener){
     const t = ev.target, ds = (t && t.dataset) || {};
     if (ds.wbdraft !== undefined) wbS().draft[ds.wbdraft] = t.value;
     if (ds.wbfield !== undefined && wbS().found) wbS().found[ds.wbfield] = t.value;
-    if (ds.wbinstext !== undefined && wbS().ins) wbS().ins.text = t.value;
+    if (ds.wbinstext !== undefined && wbS().ins){ wbS().ins.text = t.value; wbInsSync(); }
+    if (ds.wbinsitem !== undefined && wbS().ins && wbS().ins.items){ wbS().ins.items[Number(ds.wbinsitem)] = t.value; wbInsSync(); }
   });
   /* Cmd+Enter (Ctrl+Enter) in the box of Identity's question sends the answer */
   document.addEventListener("keydown", (ev) => {

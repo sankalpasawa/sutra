@@ -1,0 +1,207 @@
+{
+  "schema": "j2ui-captured/1",
+  "commit": "f9ceba15192bbd6f62047cb7288d0f291b2fbc4f",
+  "prototype": "J2_Prototype",
+  "mode": "STUDIO_MOCK=1, J2_RUNS_DIR=a scratch copy",
+  "runs": [
+    {
+      "id": "j2-20261008-153402",
+      "why": "a small website run, a boutique: done with open items",
+      "preview_atom": null,
+      "files": {
+        "state": {
+          "sha256": "ad33a558d0ba8a5a086eafbbd287285cb1408cd00650428021d81d46463b5d3b",
+          "bytes": 10540
+        },
+        "map": {
+          "sha256": "6c6218766ee79a32c6d3a61ff87dd4b906b6a827da7c9a04a34ad41dad323b7a",
+          "bytes": 1183
+        },
+        "board": {
+          "sha256": "6f58dcc2b5480f7e3ead01d8eacfa51c093081e6631405fdc741628e331d9fc4",
+          "bytes": 53
+        },
+        "artifacts": {
+          "sha256": "7ba139ada25068aed01810ace905dcb05d99109ee86938dbc0db4901de5fe1cc",
+          "bytes": 481
+        },
+        "docs": {
+          "sha256": "b49c79be76f98d81dfd0e150a4b3f47ede4f20e1023ad8b3270b042f5e3e955e",
+          "bytes": 78
+        },
+        "audits": {
+          "sha256": "64406e753d82e11c6bd63d1d04bb6aa083eefa0a46949bbfce994d556b989f0f",
+          "bytes": 22
+        },
+        "refs": {
+          "sha256": "37f0c3aeef376035831ad7b026bff09de86e7c71deb1f6350fd7eb887f193639",
+          "bytes": 1265
+        },
+        "runs": {
+          "sha256": "bfcf2f7318c6775ce307fe7232475ee661bb11d459c318fdb26b923abfbc42d1",
+          "bytes": 400
+        }
+      }
+    },
+    {
+      "id": "j2-20261008-123848",
+      "why": "a website run with a conflict, three audits and six workflows",
+      "preview_atom": null,
+      "files": {
+        "state": {
+          "sha256": "157f8b2e633ef2accaaaa99027bc409390d2fd1e8dc4f9c9723114082ed1d443",
+          "bytes": 32950
+        },
+        "map": {
+          "sha256": "f5561ff4d32b8e91cf84b487518daa6c6319549e4440ca6aac548914dc82ab5d",
+          "bytes": 1799
+        },
+        "board": {
+          "sha256": "6f58dcc2b5480f7e3ead01d8eacfa51c093081e6631405fdc741628e331d9fc4",
+          "bytes": 53
+        },
+        "artifacts": {
+          "sha256": "3bd0534ade67738de13f390ad258e0f0426b0c8e389d1ae37fd9a9a488d30564",
+          "bytes": 789
+        },
+        "docs": {
+          "sha256": "b49c79be76f98d81dfd0e150a4b3f47ede4f20e1023ad8b3270b042f5e3e955e",
+          "bytes": 78
+        },
+        "audits": {
+          "sha256": "64406e753d82e11c6bd63d1d04bb6aa083eefa0a46949bbfce994d556b989f0f",
+          "bytes": 22
+        },
+        "refs": {
+          "sha256": "37f0c3aeef376035831ad7b026bff09de86e7c71deb1f6350fd7eb887f193639",
+          "bytes": 1265
+        },
+        "runs": {
+          "sha256": "bfcf2f7318c6775ce307fe7232475ee661bb11d459c318fdb26b923abfbc42d1",
+          "bytes": 400
+        }
+      }
+    },
+    {
+      "id": "j2-20261014-111512",
+      "why": "a website run that crashed, with atoms_v1 for its seven workflows",
+      "preview_atom": null,
+      "files": {
+        "state": {
+          "sha256": "a2c75fd60676cbef5b058c21d4d2d672b0afd0a95f8bed288badff62cfefe4fb",
+          "bytes": 32527
+        },
+        "map": {
+          "sha256": "09d651a7a97ac6133b83df3bd656414dd9028bd8829ae9b1c7d3b2b8f5adccbf",
+          "bytes": 1758
+        },
+        "board": {
+          "sha256": "6f58dcc2b5480f7e3ead01d8eacfa51c093081e6631405fdc741628e331d9fc4",
+          "bytes": 53
+        },
+        "artifacts": {
+          "sha256": "d13fc622a235e92c8001be8e99e4b65bc7c5f971b36798ccb5f25fa357ff0723",
+          "bytes": 955
+        },
+        "docs": {
+          "sha256": "b49c79be76f98d81dfd0e150a4b3f47ede4f20e1023ad8b3270b042f5e3e955e",
+          "bytes": 78
+        },
+        "audits": {
+          "sha256": "64406e753d82e11c6bd63d1d04bb6aa083eefa0a46949bbfce994d556b989f0f",
+          "bytes": 22
+        },
+        "refs": {
+          "sha256": "37f0c3aeef376035831ad7b026bff09de86e7c71deb1f6350fd7eb887f193639",
+          "bytes": 1265
+        },
+        "runs": {
+          "sha256": "bfcf2f7318c6775ce307fe7232475ee661bb11d459c318fdb26b923abfbc42d1",
+          "bytes": 400
+        }
+      }
+    },
+    {
+      "id": "j2-20261022-123744",
+      "why": "the large documents run: PRD, HLD and LLD, then the website",
+      "preview_atom": "W-1.a1",
+      "files": {
+        "state": {
+          "sha256": "f19b234fd9f7d80fac06024ee5929a833bcce635d126b3eb682aae465191c7a4",
+          "bytes": 180379
+        },
+        "map": {
+          "sha256": "c0134779e5380ded4b57d614a47e735bcc7f2c3dc15b16eae5ce5a8077b8f914",
+          "bytes": 2472
+        },
+        "board": {
+          "sha256": "6f58dcc2b5480f7e3ead01d8eacfa51c093081e6631405fdc741628e331d9fc4",
+          "bytes": 53
+        },
+        "artifacts": {
+          "sha256": "983dfa40d8baf8e1a17e2de88dd204fca1917dbd9b3bf27392f174a4c59be2c1",
+          "bytes": 1594
+        },
+        "docs": {
+          "sha256": "13efbc94eefb4b098705a3a15b659c90b65de82a854d384ed47ab92e8db45169",
+          "bytes": 8733
+        },
+        "audits": {
+          "sha256": "bc99e9496731bc3fec740246706c714108298b224401c41d521f1979bbb65ac3",
+          "bytes": 504
+        },
+        "refs": {
+          "sha256": "37f0c3aeef376035831ad7b026bff09de86e7c71deb1f6350fd7eb887f193639",
+          "bytes": 1265
+        },
+        "runs": {
+          "sha256": "bfcf2f7318c6775ce307fe7232475ee661bb11d459c318fdb26b923abfbc42d1",
+          "bytes": 400
+        },
+        "preview": {
+          "sha256": "7fb5c37f74d300c2696eff69d0db59d9c7b07774eabcaee71f8613cd3a72ca33",
+          "bytes": 592
+        }
+      }
+    },
+    {
+      "id": "idle",
+      "why": "the live run before anything is said: the page's start screen",
+      "preview_atom": null,
+      "files": {
+        "state": {
+          "sha256": "b72fbf71af6fa888a26b9f347eda3ddd02176662fabd4de1b46752f3723b9023",
+          "bytes": 1003
+        },
+        "map": {
+          "sha256": "9d63ffc39390189840a3abd5d57bba89d88a6d69bc37e45b5912f63a9cf26e1d",
+          "bytes": 378
+        },
+        "board": {
+          "sha256": "6f58dcc2b5480f7e3ead01d8eacfa51c093081e6631405fdc741628e331d9fc4",
+          "bytes": 53
+        },
+        "artifacts": {
+          "sha256": "dfaedf6acc378c5497d01cd2fa1fbac18f71dee0f65518aa43169aac416bb144",
+          "bytes": 48
+        },
+        "docs": {
+          "sha256": "b49c79be76f98d81dfd0e150a4b3f47ede4f20e1023ad8b3270b042f5e3e955e",
+          "bytes": 78
+        },
+        "audits": {
+          "sha256": "64406e753d82e11c6bd63d1d04bb6aa083eefa0a46949bbfce994d556b989f0f",
+          "bytes": 22
+        },
+        "refs": {
+          "sha256": "37f0c3aeef376035831ad7b026bff09de86e7c71deb1f6350fd7eb887f193639",
+          "bytes": 1265
+        },
+        "runs": {
+          "sha256": "bfcf2f7318c6775ce307fe7232475ee661bb11d459c318fdb26b923abfbc42d1",
+          "bytes": 400
+        }
+      }
+    }
+  ]
+}

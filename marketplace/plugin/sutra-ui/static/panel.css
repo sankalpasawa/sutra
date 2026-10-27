@@ -6182,3 +6182,46 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
   .wbfive>.wbfivefn,.wbfive>.dpk{grid-column:1/-1}
   .wbfive>span:last-child{grid-column:2}
 }
+/* ── the J2 view (25-j2view.js) ──────────────────────────────────────────────
+   The J2 prototype's page, in one iframe, under a slim bar of this app's own: the department's On/Off switch and
+   Settings and records. The frame lives on a host of <body>, laid over .j2frame after every paint, hidden (never
+   emptied) when the placeholder is gone: the chat frame's rule (.dpframehost). Tokens only. */
+.o2viewer.j2v{border:0;background:transparent;overflow:visible;gap:8px}
+.j2vbar{flex:none;display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.j2frame{flex:1;min-height:420px;border:1px solid var(--line-soft);border-radius:var(--r);background:var(--surface)}
+.j2vhost{position:fixed;z-index:4;border-radius:var(--r);overflow:hidden}
+.j2vhost[hidden]{display:none}
+.j2v-if{width:100%;height:100%;border:0;display:block;background:var(--surface)}
+/* ── Settings > Instructions as typed fields (22-website.js; PRD A1.16, S16) ─────────────────────────────────
+   A card for each group, a block for each part, a row for each field the owner may change; the sheet has a count of the
+   words' length and a list editor. Tokens only. */
+.wbinsp{padding:2px 0 6px;border-top:1px solid var(--line-soft)}
+.wbinsp:first-child{border-top:0}
+.wbinsh{display:flex;align-items:center;gap:8px;padding:6px 0 0;font:600 12.5px/1.45 var(--sans);color:var(--ink)}
+.wbinsf{flex:none;width:96px;color:var(--muted)}
+.wbinsk{display:flex;align-items:center;gap:8px;padding:2px 0 6px}
+.wbinscount{font:400 11px/1.4 var(--mono);color:var(--muted);flex:none}
+.wbinscount.over{color:var(--block);font-weight:600}
+.wbinserr{margin:6px 0 0}
+.wbinslist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.wbinsit{display:flex;align-items:center;gap:6px}
+.wbinsit input{flex:1;min-width:0}
+.wbinsadd{margin-top:8px}
+/* ── Root's check on Adaptation's pane (22-website.js; PRD M7.3, S11) ─────────────────────────────────────────
+   A ring for each standard, ticked when it held and crossed when it did not (a mark, never a colour alone); the verdict
+   as a word; the reshapes so far as two dots. Tokens only. */
+.wbrcrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font:400 12.5px/1.45 var(--sans);color:var(--ink)}
+.wbrcdots{display:inline-flex;flex-wrap:wrap;gap:4px}
+.wbrcdot{width:14px;height:14px;border-radius:50%;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;
+  box-shadow:inset 0 0 0 1.5px var(--ok);color:var(--ok);font:600 9px/1 var(--sans)}
+.wbrcdot::after{content:"\2713"}
+.wbrcdot.no{box-shadow:inset 0 0 0 1.5px var(--block);color:var(--block)}
+.wbrcdot.no::after{content:"\00d7";font-size:12px}
+.wbrcv{font-weight:500}
+.wbrcv.back{color:var(--warn)}
+.wbrcv.blocked{color:var(--block)}
+.wbrcwhy{margin-top:6px;font:400 12.5px/1.45 var(--sans);color:var(--ink)}
+.wbrcrs{display:inline-flex;align-items:center;gap:5px;margin-top:6px;font:400 11.5px/1.4 var(--sans);color:var(--muted)}
+.wbrcrs i{width:8px;height:8px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--muted)}
+.wbrcrs i.on{background:var(--warn);box-shadow:none}
+.wbrcrs.blocked i.on{background:var(--block)}

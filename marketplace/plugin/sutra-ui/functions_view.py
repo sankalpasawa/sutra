@@ -19,12 +19,15 @@ model. The state rules are the J2 prototype's map/1 function node (j2_map._funct
 There is no 'asleep' state: the order the five wake in is not ruled (PRD Q9), so only states the record has are shown.
 What the record does not hold is named in not_recorded and never guessed (the prototype's "not recorded" list).
 """
+import contextvars
 import re
 import time
 from datetime import datetime
 
 import engine_runtime as R
 import j2_runtime as J
+import layer_schema as S
+import layers
 import owner_words
 import website_dept as W
 
@@ -55,80 +58,28 @@ ACT_WORDS = {"request": "asks", "agree": "agrees with", "refuse": "says no to", 
 RUNG_BY = {"C2": "code", "C1": "AI", "C0": "AI", "P": "person"}
 
 
-# ---- the site's function pages: what each function is, as its page says it ------------------------------------------
-# The one line, what it holds, who it hands to, its version 1 scope and its journeys come from the department's site
-# page for each function (PRD section 6). A journey names the ledger actions and the record rows that are its moves, so
-# its live status is read from the record, never written here. built: built, partly built, not built yet, or later.
-PAGES = {
-    "Identity": {
-        "vsm": "VSM S5: identity and policy",
-        "line": "The department's voice and conscience. It hears you, checks that the identity is good enough, gates every "
-                "effect by rule, closes conflicts, and says when the goal is reached.",
-        # a rule's tags as the pane says them (22-website.js WB_TAG_SAYS): the screen never says refuse
-        "holds": "Goal, done-when, rules (go, ask, never, always), budget, owner and parent, and each engine's window.",
-        "hands_to": "Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. "
-                    "You: it is the only function that speaks to you.",
-        "keeps": "Never makes anything; the maker is an engine. Asks only when a rule says ask. Approvals only tighten. "
-                 "Never invents a goal or a rule, and asks one question at a time.",
-        "v1": "Your words become the Brief, one question when the words are thin, the ask before the first publish, and a tell.",
-        "journeys": [("FI1", "Enough to work?", "built", ("identity.assessed", "identity.questioned"), "answered"),
-                     ("FI2", "Words after go-live", "built", (), "owner_words"),
-                     ("FI3", "The gates", "built", (), "identity_gates"),
-                     ("FI4", "Closes a conflict", "built", ("conflict.raised", "identity.ruled"), None)],
-    },
-    "Adaptation": {
-        "vsm": "VSM S4: outside and future",
-        "line": "Decides how the department gets there. It proposes the workflows the goal needs, from the Library, fitted, "
-                "or made fresh, and after each reading it proposes the next round, until the goal holds.",
-        "holds": "Its proposals on the board, the ideas it parked, the ladder of every step, and its rounds.",
-        "hands_to": "Priority: every proposal and every round. Identity: conflicts, and a round Priority said yes to, to file. "
-                    "Root: the line Priority said yes to, for its check.",
-        "keeps": "Senses and proposes; never applies. Every proposal passes Priority first. May leave out an engine its "
-                 "template does not mark required. Engines come from Adaptation, never from Root.",
-        "v1": "Two to five workflows from the Library or shaped for the goal; no loop and no Make module yet.",
-        "journeys": [("FA1", "The first workflows", "partly built",
-                      ("proposal.requested", "proposal.created", "workflow.validated", "workflow.registered", "workflow.blocked"), None),
-                     ("FA2", "Pursue until done", "not built yet", (), None),
-                     ("FA3", "Crystallize a step", "built", (), "ladder_moves"),
-                     ("FA4", "Grow out", "later", (), None),
-                     ("FA5", "Learn", "later", (), None)],
-    },
-    "Priority": {
-        "vsm": "VSM S3: inside and now",
-        "line": "Prices every proposal against the room actually left and holds the budget. It says yes, asks for less, or "
-                "says no. Who goes first is never its call.",
-        "holds": "One limit per engine (calls and money a day) and the bargain threads.",
-        "hands_to": "Adaptation: said yes, asked for less, or said no. Identity: through Adaptation's conflict, when a limit is hit.",
-        "keeps": "Prices and holds the budget; who goes first is Coordination's call. Never starts a run and never says no "
-                 "over method. Never changes the goal or speaks to you.",
-        "v1": "The limit on every start, as built. Nothing else.",
-        "journeys": [("FP1", "The limit on every start", "built", ("envelope.held",), "priority_gates"),
-                     ("FP2", "The bargain with Adaptation", "partly built",
-                      ("proposal.granted", "proposal.countered", "proposal.refused"), None)],
-    },
-    "Coordination": {
-        "vsm": "VSM S2: timetables and standards",
-        "line": "Keeps the timetable: a slot for each engine, who goes first, one run at a time, hand-offs, a chain that "
-                "stops at its limit, and an alarm past a window. It judges nothing about content.",
-        "holds": "Its table: the order, the line and who may post to whom; the run rows and each thread's bounds.",
-        "hands_to": "Identity: alarms, lost requests and verdict asks. Priority: verdict asks.",
-        "keeps": "No model call inside a tick; a missed slot runs once, and each slot runs once. The engine starts itself in "
-                 "its slot. Never changes limits, scope or quality calls.",
-        "v1": "As built.",
-        "journeys": [("FC1", "Who goes first", "built", ("slot.assigned",), "coord_picks"),
+# ---- the site's function pages: each function's journeys --------------------------------------------------------------
+# What each function is, as its page says it (the one line, what it holds, who it hands to, what it keeps and its version 1
+# scope) is the interface's: layer_schema.LAYERS (PRD A1.4; they were this module's PAGES until A1 C8). A journey on a
+# page names the ledger actions and the record rows that are its moves, so its live status is read from the record, never
+# written here. built: built, partly built, not built yet, or later.
+JOURNEYS = {
+    "Identity": [("FI1", "Enough to work?", "built", ("identity.assessed", "identity.questioned"), "answered"),
+                 ("FI2", "Words after go-live", "built", (), "owner_words"),
+                 ("FI3", "The gates", "built", (), "identity_gates"),
+                 ("FI4", "Closes a conflict", "built", ("conflict.raised", "identity.ruled"), None)],
+    "Adaptation": [("FA1", "The first workflows", "partly built",
+                    ("proposal.requested", "proposal.created", "workflow.validated", "workflow.registered", "workflow.blocked"), None),
+                   ("FA2", "Pursue until done", "not built yet", (), None),
+                   ("FA3", "Crystallize a step", "built", (), "ladder_moves"),
+                   ("FA4", "Grow out", "later", (), None),
+                   ("FA5", "Learn", "later", (), None)],
+    "Priority": [("FP1", "The limit on every start", "built", ("envelope.held",), "priority_gates"),
+                 ("FP2", "The bargain with Adaptation", "partly built",
+                  ("proposal.granted", "proposal.countered", "proposal.refused"), None)],
+    "Coordination": [("FC1", "Who goes first", "built", ("slot.assigned",), "coord_picks"),
                      ("FC2", "A lost request", "built", (), "lost")],
-    },
-    "Audit": {
-        "vsm": "VSM S3*: sporadic direct inspection",
-        "line": "The second pair of eyes. It reads what the department actually filed, item by item against done-when, "
-                "with code checks first, and it also drops in unannounced. Its findings go to Identity.",
-        "holds": "Its readings and its findings.",
-        "hands_to": "Identity only: readings and findings.",
-        "keeps": "The checker is never the writer; it never touches a workflow or a version. A check is a check, never a "
-                 "score. It reads what the department did, never only its goal.",
-        "v1": "As built: read the live site against the words.",
-        "journeys": [("FAU1", "Read the result", "partly built", ("audit.finding_filed",), "audit_runs")],
-    },
+    "Audit": [("FAU1", "Read the result", "partly built", ("audit.finding_filed",), "audit_runs")],
 }
 NOT_RUN = {"built": "not run yet", "partly built": "not run yet", "not built yet": "not built yet", "later": "later"}
 # a ledger row's state, as the word a journey row carries
@@ -252,7 +203,7 @@ def made(ref, d, nr):
     line = [e[0] for e in W.engines_of(d)]
     readers_of = {}
     for name in line + list(FUNCS):
-        reads = (defs.get(name) or {}).get("reads")
+        reads = R.reads_art(d, defs.get(name))             # an engine that names none reads what it starts on (PRD M8.2)
         if reads:
             readers_of.setdefault(reads, []).append(name)
     by_run = {}
@@ -326,14 +277,15 @@ def _faults(ref, d, rs, rows, now_s):
     # should have fired: Audit by its own start (a checked version of what it reads), past the grace window
     audit = R.engine_def("Audit") or {}
     for trig in ((audit.get("start") or {}).get("on") or []):
-        if trig.get("kind") != "version" or trig.get("of") not in W.artifacts_of(d):
+        of = R.trigger_art(d, trig)                        # '$deliverable' is the department's own (PRD M8.2)
+        if trig.get("kind") != "version" or of not in W.artifacts_of(d):
             continue
-        v = W.latest(ref, trig["of"], passed=bool(trig.get("checked")))
+        v = W.latest(ref, of, passed=bool(trig.get("checked")))
         if not v or now_s - W._ts(v.get("at") or "") < FIRE_GRACE_S:
             continue
-        slot = W._slot_id("Audit", trig["of"], v["v"])
+        slot = W._slot_id("Audit", of, v["v"])
         if not any(r.get("slot") == slot for r in rs):
-            out.setdefault("Audit", "Audit has not read %s v%s" % (trig["of"], v["v"]))
+            out.setdefault("Audit", "Audit has not read %s v%s" % (of, v["v"]))
     # should have fired: Coordination idle while two engines are ready, past the grace window
     last = max((W._ts(r.get("started") or "") for r in rs), default=0.0)
     if now_s - last >= FIRE_GRACE_S:
@@ -510,15 +462,16 @@ def functions(ref):
              "steps": _steps(cur, events, state) if cur.get("cycle_id") else [],
              "needs_you": needs and state not in ("stopped", "done"), "asks": len(pending),
              "running": [r["engine"] for r in work_running],
-             "ceiling": ((d.get("envelopes") or {}).get("_goal") or None), "round": cur.get("round")}
+             "ceiling": (d.get("ceiling") or None), "round": cur.get("round")}
     return _clean({"ref": ref, "name": d.get("name"), "kind": d.get("kind"), "stopped": stopped,
                    "functions": nodes, "cycle": cycle, "speaks": pairs, "made": mades, "between": _between(posts),
                    "budget": _budget(ref, d), "not_recorded": nr})
 
 
 def _budget(ref, d):
-    """The whole goal's spend against its ceiling, for the Map's Budget bar: today's spend of every engine against the
-    sum of their limits until Priority holds a ceiling for the goal (M9.2)."""
+    """The whole goal's spend against its ceiling, for the Map's Budget bar: what the goal has spent in all against the
+    ceiling Priority holds for it (dept.ceiling, M9.2); until it holds one, today's spend of every engine against the sum of
+    their limits."""
     envs = {k: v for k, v in (d.get("envelopes") or {}).items() if not str(k).startswith("_")}
     calls = usd = cap_c = cap_u = 0
     for name, env in envs.items():
@@ -526,14 +479,21 @@ def _budget(ref, d):
         calls, usd = calls + c, usd + u
         cap_c += int((env or {}).get("calls") or 0)
         cap_u += float((env or {}).get("usd") or 0.0)
-    goal = (d.get("envelopes") or {}).get("_goal") or {}
+    goal = d.get("ceiling") or {}
+    held = bool(goal.get("calls") or goal.get("usd"))
+    if held:
+        try:
+            spent = layers.call(ref, "priority", "spent_of", ref)        # the goal's, not the day's
+            calls, usd = spent["calls"], spent["usd"]
+        except Exception:  # noqa: BLE001 -- a layer that does not load: the bar reads the day's spend, as it did before the ceiling
+            pass
     if goal.get("calls"):
         cap_c = int(goal["calls"])
     if goal.get("usd"):
         cap_u = float(goal["usd"])
     share = max(calls / cap_c if cap_c else 0.0, usd / cap_u if cap_u else 0.0)
     return {"calls": calls, "usd": round(usd, 3), "calls_limit": cap_c, "usd_limit": round(cap_u, 3), "share": round(min(1.0, share), 3),
-            "of": "the goal" if goal else "today's limits"}
+            "of": "the goal" if held else "today's limits"}
 
 
 # ---- M1.7: one function, as its site page holds it -----------------------------------------------------------------
@@ -594,14 +554,24 @@ def _recipe(ref, fn):
         out.append({"id": s["id"], "name": _plain(s["name"]), "by": RUNG_BY.get(s["rung"], "AI"), "rung": s["rung"],
                     "rung_name": s["rung_name"], "mode": s["mode"], "under": _plain(s.get("under")) or None, "held": s.get("held"),
                     "last": (s.get("last") or {}).get("status")})
-    return out, [_plain(h) for h in view.get("hears") or []]
+    return out
+
+
+def _hears(layer):
+    """What the layer hears, in words: one line per row of the interface's HEARS (layer_schema.hears), the handler's name."""
+    return [_plain(h["handler"]) for h in S.hears(layer)]
+
+
+def _checks(layer):
+    """What the layer's checks hold, in words: the interface's CHECKS (layer_schema), the way each is said there."""
+    return [_plain(says) for says in S.CHECKS[layer].values()]
 
 
 def _journey_rows(ref, fn, events, rows, rs, posts):
     """Each journey on the function's page, with its live status: its last move on the ledger or the record."""
     gates = {g["id"]: g["name"] for g in ((R.engine_def(fn) or {}).get("gates") or [])}
     out = []
-    for jid, name, built, actions, extra in PAGES[fn]["journeys"]:
+    for jid, name, built, actions, extra in JOURNEYS[fn]:
         hits = []
         for e in events:
             if e.get("action") in actions:
@@ -1012,8 +982,38 @@ def engine_card(ref, name):
     return _clean({k: out[k] for k in ENGINE_CARD_FIELDS})
 
 
+#: set while a layer's view() is being read: a view that returns today's body by reference (every layer's wave 0 stub calls
+#: _j2_part) finds the body, not the dispatch again
+_VIEWING = contextvars.ContextVar("functions_view_viewing", default=False)
+
+
 def _j2_part(ref, d, fn, events, ak):
-    """What J2 adds to this function's pane, from the record as it stands (later milestones fill more of it)."""
+    """What J2 adds to this function's pane (PRD A1.17): the pinned implementation's view(), when it has one and what it
+    returns fits the interface (layer_schema.VIEWS); else today's body (_j2_body). A view that does not fit, or raises, is
+    replaced by today's body with `j2_faults` added, its first three faults; the read never raises, and the owner's
+    screens do not draw the faults."""
+    if _VIEWING.get():
+        return _j2_body(ref, d, fn, events, ak)
+    layer = layers.layer_of(fn)
+    faults = []
+    token = _VIEWING.set(True)
+    try:
+        got = layers.view(ref, layer, d, events, ak) if layer else None
+    except Exception as exc:  # noqa: BLE001 -- a layer's view that breaks costs its pane nothing but its own version
+        got, faults = None, ["the view could not be read: %s" % exc]
+    finally:
+        _VIEWING.reset(token)
+    if got is not None:
+        faults = S.validate_view(layer, got)
+        if not faults:
+            return got
+    body = _j2_body(ref, d, fn, events, ak)
+    return dict(body, j2_faults=faults[:3]) if faults else body
+
+
+def _j2_body(ref, d, fn, events, ak):
+    """What J2 adds to this function's pane, from the record as it stands (later milestones fill more of it): today's
+    read of each function, which a layer's view() takes over from and which the part falls back on."""
     if fn == "Identity":
         return _identity_part(ref, d, events)
     if fn == "Adaptation":
@@ -1051,21 +1051,21 @@ def function(ref, fn):
     events = _events(ref, cur.get("cycle_id")) if cur.get("cycle_id") else []
     rows, rs, posts, ak = _rows(ref), W.runs(ref), R.board(ref), W.asks(ref)
     t = _picked(ref, d, name)
-    recipe, hears = _recipe(ref, name)
+    recipe = _recipe(ref, name)
     e = R.engine_def(name) or {}
-    page = PAGES[name]
+    layer = S.LAYERS[name.lower()]                       # what the function is, as its page says it: the interface's
     spend = _spend(ref, d, name)
     fields = [{"key": "goal", "label": "Goal", "value": _cap(_plain(e.get("description")))},
               {"key": "done", "label": "Done when", "value": None},
-              {"key": "hears", "label": "Hears", "value": hears or None},
+              {"key": "hears", "label": "Hears", "value": _hears(name.lower()) or None},
               {"key": "writes", "label": "Writes", "value": _writes(ref, name) or None},
-              {"key": "checks", "label": "Checks", "value": [_plain(c) for c in t.get("checks") or []] or None},
+              {"key": "checks", "label": "Checks", "value": _checks(name.lower()) or None},
               {"key": "envelope", "label": "Limit", "value": {"share": spend["share"]}},
               {"key": "settings", "label": "Settings", "value": _settings(name)}]
     for f in fields:
         f["placeholder"] = f["value"] in (None, "", [])
-    return _clean({"ref": ref, "fn": name.lower(), "name": name, "vsm": page["vsm"], "line": page["line"],
-                   "holds": page["holds"], "hands_to": page["hands_to"], "keeps": page["keeps"], "v1": page["v1"],
+    return _clean({"ref": ref, "fn": name.lower(), "name": name, "vsm": layer["vsm"], "line": layer["line"],
+                   "holds": layer["holds"], "hands_to": layer["hands_to"], "keeps": layer["keeps"], "v1": layer["v1"],
                    "template": {"id": t.get("id"), "name": t.get("name") or "Default", "use_case": t.get("use_case")},
                    "fields": fields, "recipe": recipe,
                    "journeys": _journey_rows(ref, name, _events(ref), rows, rs, posts),

@@ -1,0 +1,193 @@
+{
+ "asks": [],
+ "board": [
+  {
+   "act": "request",
+   "dst": [
+    "Identity"
+   ],
+   "n": 1,
+   "ref": "r1",
+   "src": "Owner",
+   "word": "front"
+  },
+  {
+   "act": "inform",
+   "dst": [
+    "Owner"
+   ],
+   "n": 2,
+   "ref": "r1",
+   "src": "Identity",
+   "word": "question"
+  },
+  {
+   "act": "request",
+   "dst": [
+    "Identity"
+   ],
+   "n": 3,
+   "ref": "r1",
+   "src": "Owner",
+   "word": "front"
+  },
+  {
+   "act": "inform",
+   "dst": [
+    "Owner"
+   ],
+   "n": 4,
+   "ref": "r1",
+   "src": "Identity",
+   "word": "request"
+  },
+  {
+   "act": "inform",
+   "dst": [
+    "Owner"
+   ],
+   "n": 5,
+   "ref": "r1",
+   "src": "Identity",
+   "word": "department"
+  }
+ ],
+ "events": [],
+ "steps": [
+  {
+   "engine": "Coordination",
+   "status": "ok",
+   "step": "coord.edge"
+  },
+  {
+   "engine": "Coordination",
+   "status": "ok",
+   "step": "coord.pick"
+  },
+  {
+   "engine": "Identity",
+   "status": "ok",
+   "step": "identity.front"
+  },
+  {
+   "engine": "Identity",
+   "status": "ok",
+   "step": "identity.route"
+  },
+  {
+   "engine": "Identity",
+   "status": "ok",
+   "step": "identity.hand"
+  },
+  {
+   "engine": "Identity",
+   "status": "ok",
+   "step": "identity.gate"
+  },
+  {
+   "engine": "Priority",
+   "status": "ok",
+   "step": "priority.envelope"
+  },
+  {
+   "engine": "Coordination",
+   "status": "ok",
+   "step": "coord.chain"
+  },
+  {
+   "engine": "Coordination",
+   "status": "ok",
+   "step": "coord.pick"
+  },
+  {
+   "engine": "Setup",
+   "status": "ok",
+   "step": "setup.read"
+  },
+  {
+   "engine": "Setup",
+   "status": "ok",
+   "step": "setup.converse"
+  },
+  {
+   "engine": "Coordination",
+   "status": "ok",
+   "step": "coord.edge"
+  },
+  {
+   "engine": "Setup",
+   "status": "ok",
+   "step": "setup.say"
+  },
+  {
+   "engine": "Coordination",
+   "status": "ok",
+   "step": "coord.pick"
+  },
+  {
+   "engine": "Identity",
+   "status": "ok",
+   "step": "identity.front"
+  },
+  {
+   "engine": "Identity",
+   "status": "ok",
+   "step": "identity.route"
+  },
+  {
+   "engine": "Identity",
+   "status": "ok",
+   "step": "identity.hand"
+  },
+  {
+   "engine": "Identity",
+   "status": "ok",
+   "step": "identity.gate"
+  },
+  {
+   "engine": "Priority",
+   "status": "ok",
+   "step": "priority.envelope"
+  },
+  {
+   "engine": "Coordination",
+   "status": "ok",
+   "step": "coord.chain"
+  },
+  {
+   "engine": "Coordination",
+   "status": "ok",
+   "step": "coord.pick"
+  },
+  {
+   "engine": "Setup",
+   "status": "ok",
+   "step": "setup.read"
+  },
+  {
+   "engine": "Setup",
+   "status": "ok",
+   "step": "setup.converse"
+  },
+  {
+   "engine": "Setup",
+   "status": "ok",
+   "step": "setup.say"
+  },
+  {
+   "engine": "Setup",
+   "status": "ok",
+   "step": "setup.shape"
+  },
+  {
+   "engine": "Setup",
+   "status": "ok",
+   "step": "setup.make"
+  },
+  {
+   "engine": "Setup",
+   "status": "ok",
+   "step": "setup.file"
+  }
+ ]
+}

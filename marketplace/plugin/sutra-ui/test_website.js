@@ -77,6 +77,23 @@
          and Change; Change opens a sheet whose Send files the one ask; the
          row then says the change waits for the stamp; no path, no count
          (PRD M2.3)
+     X1  (UI-port package j2ui-shell) Settings > Instructions from the interface's typed view: a card for each group
+         (its lead as the title), in it each part with its fields (the words in use, as shipped or your words,
+         Change) and the notes `filled by the app` and `answers with` in words; a part no run reads says so; a field
+         that waits says so beside the amber mark; an earlier whole-file change reads kept as your note; no path, no
+         `Return ONLY`, no JSON, no count at rest (from test_fixtures/views/instructions.identity.json); before the
+         typed fields arrive the first design's files are listed as they were (S16 above)
+     X2  Change opens a sheet: a textarea with a count of its length against the field's most, or a list editor for
+         skills (add, remove, move, at most the field's most); past the most the count says so and Send is disabled
+     X3  Send posts {fn, group, part, field, value} to the one route; the sheet closes and the card is read again; a
+         refusal shows the server's plain reason under the field, never the route
+     X4  Root settings carries a read-only card Standards every plan meets: the standards in their order from GET /layers,
+         the line that says they are the app's, no button; read once for the pane and kept (test_fixtures/views/layers.json)
+     X5  each function's Settings head says Runs version N, N the number after /v in its layer's pin
+     X6  Root's check on Adaptation's pane (S11), from test_fixtures/views/adaptation.root_checks.json: one row, a ticked or
+         crossed ring for each standard that applied titled with its words, the verdict and the time; a plan sent
+         back names the broken standard in its words with why, and shows the reshapes as two dots; blocked after two;
+         not yet says Root has not checked a plan; no count at rest
      S7  Coordination's pane on the engine runtime opens on its timetable: one row per engine with what starts it, its
          window, and its last run or the exact reason it waits; who makes and who reads each thing; the chain, alarms
          and ties side by side; the function's page folded under it; every state the screen names; no count at rest
@@ -200,7 +217,7 @@ function stepsOf(name, o){
     line: ["Plan", "Write", "Check", "Publish"], may_post: [{ from: "Audit", act: "inform", to: ["Identity"] }, { from: "Owner", act: "request", to: ["Identity"] }] };
   const limits = name !== "Priority" ? undefined : ENGS.map(e => ({ engine: e[0], calls: 240, usd: 6, used_calls: 3, used_usd: 0.4 }))
     .concat(["Identity", "Adaptation", "Priority", "Coordination", "Audit"].map(s => ({ engine: s, calls: 30, usd: 6, used_calls: 0, used_usd: 0 })));
-  const fn = name.toLowerCase(), instructions = (INS[fn] || []).map(([file, lead]) => ({ file, lead, text: lead + "\n\n## " + file + "\n\nThe words.\n",
+  const fn = name.toLowerCase(), instructions = o.instructions !== undefined ? JSON.parse(JSON.stringify(o.instructions)) : (INS[fn] || []).map(([file, lead]) => ({ file, lead, text: lead + "\n\n## " + file + "\n\nThe words.\n",
     as_shipped: o.mine !== fn + ":" + file, read: fn + ":" + file !== "adaptation:decide", waits: o.waits === fn + ":" + file ? { ask: "a-9", at: "2026-10-23T11:02:00+05:30" } : null }));
   return { name, kind: "function", description: name === "Priority" ? "grants each engine its budget" : "", skills: [], reads: null, writes: null, numbers, table, limits, instructions,
     start: { on: ["a post addressed to it"], unless: [] },
@@ -311,6 +328,9 @@ function fresh(opts){
                     written_by: ["Publish"], counts_after: "stamp", put_back: true, operations: ["Adaptation", "Audit"] }, versions: [
         { v: 2, at: "2026-09-27T11:20:00+05:30", made_from: [{ art: "Build", v: 6 }], run: "r-2", check: { ok: true, notes: ["live"] }, note: "" },
         { v: 1, at: "2026-09-27T11:10:00+05:30", made_from: [{ art: "Build", v: 5 }], run: "r-1", check: { ok: true, notes: ["live"] }, note: "" }] });
+      /* the interface the department runs under (GET /layers): what a test gives, or nothing that answers; layersFail refuses it */
+      if (/\/api\/native\/r\d\/layers$/.test(p) && opts.layersFail) return Promise.reject(new Error("layers"));
+      if (/\/api\/native\/r\d\/layers$/.test(p) && opts.layers) return Promise.resolve(JSON.parse(JSON.stringify(opts.layers)));
       if (/^\/api\/dept\//.test(p)) return Promise.resolve({});   /* 20-dept.js's own reads: an empty record */
       return new Promise(() => {});
     },
@@ -2033,6 +2053,395 @@ test("S16: a function's Settings lists its files by name with their first line a
             "the row says the change waits, in words beside the mark");
   assert.ok(html.indexOf('data-wbins="completeness"') < 0 && html.indexOf('data-wbins="take"') >= 0, "no second change while one waits");
   assert.ok(/<b>goal<\/b><span class="wbinslead">[^<]*<\/span><span class="wbchip">your words<\/span>/.test(html), "a file the owner changed");
+});
+
+/* ── S16 as typed fields (PRD A1.16; UI-port package j2ui-shell X1 to X3), from the interface's own view ────────────
+   test_fixtures/views/instructions.identity.json is instructions_view('identity') as layers/ and engine_runtime.py give
+   it: groups with a lead, parts with what the app fills and what each answers with, fields with their bounds and words. */
+const VIEWS_DIR = path.join(__dirname, "test_fixtures", "views");
+const viewFile = f => JSON.parse(fs.readFileSync(path.join(VIEWS_DIR, f), "utf8"));
+const settle = async () => { for (let i = 0; i < 6; i++) await sleep(); };
+const TYPED = () => viewFile("instructions.identity.json");
+async function typedCard(o, instr){
+  const c = await opened(Object.assign({ map: rtMap(), steps: { instructions: instr || TYPED() } }, o || {}));
+  vm.runInContext("dpS().pane['r3:identity'] = 'settings';", c);
+  return [c, await fnCard(c, "identity")];
+}
+/* the fake elements a sheet's count and Send are found by, so the typing can be seen to move them */
+function sheetEls(c){
+  const els = {};
+  c.document.getElementById = id => els[id] || (els[id] = { id, textContent: "", className: "", disabled: false, innerHTML: "" });
+  return els;
+}
+const OPEN = (group, part, field) => ({ wbins: "change", wbinsfn: "identity", wbinsgroup: group, wbinspart: part, wbinsfield: field });
+const typeInto = (c, ds, value) => (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: ds, value } }));
+const TYPED_FIELDS = () => TYPED().reduce((n, g) => n + g.parts.reduce((m, p) => m + p.fields.length, 0), 0);
+
+test("X1: Settings draws a card for each group of the typed view, in its order; each part with its fields, Change and the notes in words", async () => {
+  const [c, html] = await typedCard();
+  const groups = TYPED();
+  const from = html.indexOf("<h3>" + c.wbEsc(groups[0].lead) + "</h3>"), to = html.indexOf('<div class="wbpair">');
+  assert.ok(from >= 0 && to > from, "the groups come before the template and the limit");
+  const section = html.slice(from, to);
+  let at = -1;
+  groups.forEach(g => {
+    const i = section.indexOf("<h3>" + c.wbEsc(g.lead) + "</h3>");
+    assert.ok(i > at, g.group + ": its card, after the one before it"); at = i;
+    g.parts.forEach(p => {
+      assert.ok(section.indexOf("<b>" + p.part + "</b>") >= 0, g.group + "/" + p.part + " is listed");
+      p.fields.forEach(f => {
+        const open = 'data-wbins="change" data-wbinsfn="identity" data-wbinsgroup="' + g.group + '" data-wbinspart="' + p.part + '" data-wbinsfield="' + f.field + '"';
+        assert.ok(section.indexOf(open) >= 0, g.group + "/" + p.part + "/" + f.field + " has its Change");
+        assert.ok(section.indexOf('<span class="wbinsf">' + c.wbInsLabel(p.part, f.field) + "</span>") >= 0, "and its name in words");
+      });
+      if (p.inputs.length) assert.ok(section.indexOf("filled by the app: " + p.inputs.map(c.wbEsc).join(", ")) >= 0, p.part + ": what the app fills");
+      if (p.answers.length) assert.ok(section.indexOf("answers with: " + p.answers.map(c.wbEsc).join(", ")) >= 0, p.part + ": what it answers with");
+    });
+  });
+  assert.strictEqual((section.match(/<h3>/g) || []).length, groups.length, "a card for each group and no other");
+  assert.strictEqual((section.match(/data-wbins="change"/g) || []).length, TYPED_FIELDS(), "a Change for each field and no other");
+  assert.strictEqual((section.match(/>as shipped</g) || []).length, TYPED_FIELDS(), "each as shipped");
+  assert.strictEqual((section.match(/>filled by the app: /g) || []).length, groups.reduce((n, g) => n + g.parts.filter(p => p.inputs.length).length, 0));
+  assert.ok(!/<h3>Instructions<\/h3>/.test(html), "the first design's one card is gone");
+  assert.ok(!/function-prompts|\.md\b|\/prompts\/|records home|Return ONLY/.test(section), "no path and no answer's shape");
+  const t = words(section);
+  assert.ok(!/[{}]|"\w+"\s*:/.test(t), "no JSON on the screen");
+  assert.ok(!/charter|internal\s+system/i.test(t), "the screen's words");
+  assert.ok(!/\d/.test(t), "a count at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+});
+
+test("X1: a part no run reads says so; a field that waits says so beside the amber mark with no second Change; one the owner changed reads your words; an earlier whole-file change reads kept as your note", async () => {
+  const v = TYPED(), take = v.filter(g => g.group === "take")[0];
+  take.parts.filter(p => p.part === "recognise")[0].read = false;
+  const tk = take.parts.filter(p => p.part === "take")[0];
+  tk.fields.filter(f => f.field === "task")[0].waits = { ask: "a-9", at: "2026-10-26T11:02:00+05:30" };
+  tk.fields.filter(f => f.field === "guidance")[0].as_shipped = false;
+  take.kept = { at: "2026-10-26T09:00:00+05:30" };
+  const [c, html] = await typedCard({}, v);
+  assert.ok(/<b>recognise<\/b><span class="wbchip" title="In this version the code makes this choice, so no run reads these words yet">a note: no run reads it yet<\/span>/.test(html), "a part no run reads");
+  assert.strictEqual((html.match(/>a note: no run reads it yet</g) || []).length, 1, "only that one");
+  assert.ok(/<span class="wbinsf">the task<\/span><span class="wbinslead">[^<]*<\/span><span class="wbinsnote"><i class="wbinsq">\?<\/i>your change waits for your stamp · \d\d:\d\d<\/span>/.test(html), "the waiting field");
+  assert.ok(html.indexOf('data-wbinspart="take" data-wbinsfield="task"') < 0, "no second change while one waits");
+  assert.ok(html.indexOf('data-wbinspart="take" data-wbinsfield="guidance"') >= 0);
+  assert.ok(/<span class="wbinsf">the guidance<\/span><span class="wbinslead">[^<]*<\/span><span class="wbchip">your words<\/span><button/.test(html), "a field the owner changed");
+  assert.ok(/<div class="wbinsk"><span class="wbchip">kept as your note<\/span><span class="dpchk">\d\d:\d\d<\/span><\/div>/.test(html), "the earlier whole-file change");
+  assert.strictEqual((html.match(/kept as your note/g) || []).length, 1, "said once");
+  /* a click on a field that waits opens nothing */
+  assert.ok(click(c, OPEN("take", "take", "task")));
+  assert.strictEqual(c.wbInsSheetHtml(), "");
+});
+
+test("X1: the words are escaped, a list reads as its items, and a part with no fields still shows its notes", async () => {
+  const v = TYPED();
+  v[0].parts[0].fields[0].value = "<img src=x onerror=alert(1)> & \"quoted\"";
+  const [c, html] = await typedCard({}, v);
+  assert.ok(html.indexOf("<img src=x") < 0 && html.indexOf("&lt;img src=x onerror=alert(1)") >= 0 && html.indexOf("&amp; &quot;quoted&quot;") >= 0, "escaped");
+  assert.ok(/<span class="wbinsf">the skills<\/span><span class="wbinslead">recognise a task, a query, a directive, feedback or a new idea; judge a request against the goal; /.test(html), "the skills as one line");
+  assert.ok(/<b>close<\/b><\/div>(?:<div class="dpchk">filled by the app: [^<]*<\/div>)(?:<div class="dpchk">answers with: [^<]*<\/div>)<\/div>/.test(html), "the part with no field: its notes only");
+});
+
+test("X1: a row prints the words the read says in the owner's words (shown) and a part its label, while Change opens the words as they are", async () => {
+  const v = TYPED();
+  const tk = v.filter(g => g.group === "take")[0].parts.filter(p => p.part === "take")[0];
+  const guidance = tk.fields.filter(f => f.field === "guidance")[0];
+  guidance.value = "go: do it. refuse: it breaks a rule.";
+  guidance.shown = "go: do it. stop: it breaks a rule.";
+  tk.label = "sent back";
+  const [c, html] = await typedCard({}, v);
+  assert.ok(/<span class="wbinsf">the guidance<\/span><span class="wbinslead">go: do it\. stop: it breaks a rule\.<\/span>/.test(html), "the row prints shown");
+  assert.ok(html.indexOf("refuse: it breaks a rule") < 0, "and not the inside word");
+  assert.ok(html.indexOf("<b>sent back</b>") >= 0 && html.indexOf("<b>take</b>") < 0 && html.indexOf("<b>recognise</b>") >= 0, "a part with a label prints it; one without prints its name");
+  assert.ok(html.indexOf('data-wbinspart="take" data-wbinsfield="guidance"') >= 0, "a change still names the part, not the label");
+  assert.ok(click(c, OPEN("take", "take", "guidance")));
+  assert.ok(c.wbInsSheetHtml().indexOf("go: do it. refuse: it breaks a rule.") >= 0, "the sheet holds the words as the department reads them");
+});
+
+test("X1: before the typed fields arrive the files are listed as the first design had them", async () => {
+  const c = await opened({ map: rtMap() });
+  vm.runInContext("dpS().pane['r3:identity'] = 'settings';", c);
+  const html = await fnCard(c, "identity");
+  assert.ok(/<h3>Instructions<\/h3>/.test(html) && /<div class="wbins"><b>take<\/b>/.test(html) && html.indexOf("wbinsgroup") < 0);
+});
+
+test("X2: Change opens the sheet with a textarea and the count of its length; past the most the count says so and Send is disabled", async () => {
+  const [c] = await typedCard();
+  const els = sheetEls(c), guidance = TYPED().filter(g => g.group === "take")[0].parts.filter(p => p.part === "take")[0].fields[1];
+  assert.ok(click(c, OPEN("take", "take", "guidance")));
+  let sheet = c.wbInsSheetHtml();
+  assert.ok(/role="dialog" aria-label="Change Identity · take · the guidance"/.test(sheet) && /<h4>Identity · take · the guidance<\/h4>/.test(sheet), "the sheet names the function, the part and the field");
+  assert.ok(sheet.indexOf('<textarea id="wbins-text" data-wbinstext="1" rows="12" spellcheck="false">' + c.wbEsc(guidance.value) + "</textarea>") >= 0, "the words in use, to change");
+  assert.ok(sheet.indexOf('<div id="wbins-count" class="wbinscount">' + guidance.value.length + " of 2000</div>") >= 0, "the count against the field's most");
+  assert.ok(/id="wbins-send" data-wbins="send"[^>]*>Send</.test(sheet) && !/id="wbins-send"[^>]*disabled/.test(sheet) && /data-wbins="close"[^>]*>Cancel</.test(sheet));
+  assert.ok(!/function-prompts|\.md\b|\/prompts\/|Return ONLY/.test(sheet), "no path and no answer's shape in the sheet");
+  assert.strictEqual(c.calls.apiPost.length, 0, "opening the sheet changes nothing");
+  typeInto(c, { wbinstext: "1" }, "x".repeat(2001));
+  assert.strictEqual(els["wbins-count"].textContent, "2001 of 2000: too long", "the count follows the typing, without a paint");
+  assert.ok(/over/.test(els["wbins-count"].className) && els["wbins-send"].disabled === true, "over: the count says so and Send is disabled");
+  sheet = c.wbInsSheetHtml();
+  assert.ok(/<div id="wbins-count" class="wbinscount over">2001 of 2000: too long<\/div>/.test(sheet) && /id="wbins-send" data-wbins="send"[^>]*disabled/.test(sheet), "and so a paint says it");
+  assert.ok(click(c, { wbins: "send" }));
+  for (let i = 0; i < 4; i++) await sleep();
+  assert.strictEqual(c.calls.apiPost.length, 0, "nothing is sent while over");
+  assert.ok(/These words are longer than 2000 characters/.test(c.wbInsSheetHtml()), "and the sheet says why");
+  typeInto(c, { wbinstext: "1" }, "x".repeat(2000));
+  assert.ok(!/over/.test(els["wbins-count"].className) && els["wbins-send"].disabled === false, "back within it");
+  typeInto(c, { wbinstext: "1" }, "   ");
+  assert.ok(els["wbins-send"].disabled === true, "no words, no Send");
+  click(c, { wbins: "close" });
+  assert.strictEqual(c.wbInsSheetHtml(), "", "Cancel closes it and files nothing");
+  assert.strictEqual(c.calls.apiPost.length, 0);
+});
+
+test("X2: a one-line field is a short textarea; the sheet's count and Send are the field's own", async () => {
+  const [c] = await typedCard();
+  click(c, OPEN("goal", "does", "text"));
+  const sheet = c.wbInsSheetHtml();
+  assert.ok(/<textarea id="wbins-text" data-wbinstext="1" rows="3"/.test(sheet) && /holds the goal and the rules, judges every effect/.test(sheet));
+  assert.ok(/<div id="wbins-count" class="wbinscount">\d+ of 400<\/div>/.test(sheet), "the field's most is 400");
+});
+
+test("X2: skills are a list editor: an input for each item with Up, Down and Remove, and Add up to the field's most; an item past its most is counted over", async () => {
+  const [c] = await typedCard();
+  const els = sheetEls(c), skills = TYPED()[0].parts[1].fields[0];
+  assert.ok(click(c, OPEN("goal", "skills", "items")));
+  let sheet = c.wbInsSheetHtml();
+  assert.strictEqual((sheet.match(/<input type="text" data-wbinsitem="/g) || []).length, skills.value.length, "an input for each item");
+  skills.value.forEach((x, i) => assert.ok(sheet.indexOf('<input type="text" data-wbinsitem="' + i + '" value="' + c.wbEsc(x) + '"') >= 0, "item " + i));
+  assert.ok(/data-wbins="up" data-wbinsi="0"[^>]*disabled/.test(sheet) && !/data-wbins="up" data-wbinsi="1"[^>]*disabled/.test(sheet), "the first cannot go up");
+  const last = skills.value.length - 1;
+  assert.ok(new RegExp('data-wbins="down" data-wbinsi="' + last + '"[^>]*disabled').test(sheet) && !/data-wbins="down" data-wbinsi="0"[^>]*disabled/.test(sheet), "the last cannot go down");
+  assert.ok(/data-wbins="rm" data-wbinsi="0"/.test(sheet) && /data-wbins="add"(?![^>]*disabled)[^>]*>Add</.test(sheet));
+  assert.ok(sheet.indexOf('<div id="wbins-count" class="wbinscount">4 of 12</div>') >= 0, "the items against the field's most");
+  /* move: Down on the first swaps it with the second; Up puts it back */
+  click(c, { wbins: "down", wbinsi: "0" });
+  assert.deepStrictEqual(Array.from(c.wbS().ins.items).slice(0, 2), [skills.value[1], skills.value[0]]);
+  click(c, { wbins: "up", wbinsi: "1" });
+  assert.deepStrictEqual(Array.from(c.wbS().ins.items), skills.value, "and back");
+  click(c, { wbins: "up", wbinsi: "0" });
+  assert.deepStrictEqual(Array.from(c.wbS().ins.items), skills.value, "nothing above the first");
+  /* remove, then add up to the most */
+  click(c, { wbins: "rm", wbinsi: "1" });
+  assert.strictEqual(c.wbS().ins.items.length, 3);
+  assert.ok(!c.wbInsSheetHtml().includes(c.wbEsc(skills.value[1]) + '"'), "gone");
+  for (let i = 0; i < 20; i++) click(c, { wbins: "add" });
+  assert.strictEqual(c.wbS().ins.items.length, 12, "at most the field's most");
+  sheet = c.wbInsSheetHtml();
+  assert.ok(/data-wbins="add"[^>]*disabled/.test(sheet), "Add is disabled at the most");
+  assert.ok(sheet.indexOf('<div id="wbins-count" class="wbinscount">12 of 12</div>') >= 0);
+  /* an item past its most: counted over, and Send is disabled */
+  typeInto(c, { wbinsitem: "0" }, "y".repeat(161));
+  assert.strictEqual(els["wbins-n0"].textContent, "161 of 160");
+  assert.ok(/over/.test(els["wbins-n0"].className) && els["wbins-send"].disabled === true && /over/.test(els["wbins-count"].className));
+  typeInto(c, { wbinsitem: "0" }, "recognise a task");
+  assert.ok(els["wbins-send"].disabled === false, "back within it; the empty items do not hold Send");
+  click(c, { wbins: "close" });
+});
+
+test("X3: Send posts {fn, group, part, field, value} to the one route and nothing else; the sheet closes and the card is read again", async () => {
+  const [c] = await typedCard();
+  sheetEls(c);
+  const before = readsOf(c, /\/steps\/Identity$/).length;
+  click(c, OPEN("take", "take", "guidance"));
+  typeInto(c, { wbinstext: "1" }, "go: do it. ask: it reaches outside. refuse: never.");
+  assert.ok(click(c, { wbins: "send" }));
+  for (let i = 0; i < 6; i++) await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [
+    { p: "/api/native/r3/instructions", body: { fn: "identity", group: "take", part: "take", field: "guidance", value: "go: do it. ask: it reaches outside. refuse: never." } }],
+    "Send files the one ask, and the old body's file and text are gone");
+  assert.strictEqual(c.wbInsSheetHtml(), "", "the sheet closes");
+  assert.ok(readsOf(c, /\/steps\/Identity$/).length > before, "the card is read again");
+  assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "identity", "the card stays open");
+  /* skills go as the list, trimmed and without the blank items */
+  click(c, OPEN("goal", "skills", "items"));
+  click(c, { wbins: "add" });
+  typeInto(c, { wbinsitem: "4" }, "  put a question to the owner, kindly  ");
+  click(c, { wbins: "add" });
+  assert.ok(click(c, { wbins: "send" }));
+  for (let i = 0; i < 6; i++) await sleep();
+  const body = JSON.parse(JSON.stringify(c.calls.apiPost[1].body));
+  assert.deepStrictEqual(Object.keys(body), ["fn", "group", "part", "field", "value"]);
+  assert.strictEqual(body.value.length, 5);
+  assert.strictEqual(body.value[4], "put a question to the owner, kindly");
+  assert.ok(body.value.every(x => x === x.trim() && x), "trimmed, none blank");
+  /* the field then waits for the stamp, beside the amber mark */
+  const v = TYPED();
+  v[2].parts[1].fields[1].waits = { ask: "a-9", at: "2026-10-26T11:02:00+05:30" };
+  const [, html] = await typedCard({}, v);
+  assert.ok(/<span class="wbinsf">the guidance<\/span><span class="wbinslead">[^<]*<\/span><span class="wbinsnote"><i class="wbinsq">\?<\/i>your change waits for your stamp/.test(html));
+});
+
+test("X3: a refusal shows the server's plain reason under the field, never the route; the sheet stays and Send can be tried again", async () => {
+  const [c] = await typedCard();
+  sheetEls(c);
+  let n = 0;
+  c.apiPost = (p, body) => {
+    c.calls.apiPost.push({ p, body });
+    n++;
+    return n === 1 ? Promise.reject(Object.assign(new Error("these words cannot serve Identity: a field may not hold the answer's shape (/api/native/r3/instructions -> 400)"), { status: 400 }))
+         : n === 2 ? Promise.reject(Object.assign(new Error("/api/native/r3/instructions -> 500"), { status: 500 }))
+         : Promise.resolve({ ok: true });
+  };
+  click(c, OPEN("take", "take", "task"));
+  typeInto(c, { wbinstext: "1" }, "Judge it kindly.");
+  click(c, { wbins: "send" });
+  for (let i = 0; i < 6; i++) await sleep();
+  let sheet = c.wbInsSheetHtml();
+  assert.ok(sheet.indexOf('<div class="o2err wbinserr" role="alert">these words cannot serve Identity: a field may not hold the answer&#39;s shape</div>') >= 0
+         || sheet.indexOf('<div class="o2err wbinserr" role="alert">these words cannot serve Identity: a field may not hold the answer\'s shape</div>') >= 0, "the plain reason, under the field: " + sheet.slice(sheet.indexOf("wbinserr") - 40, sheet.indexOf("wbinserr") + 200));
+  assert.ok(!/\/api\/|-> 400|\(\//.test(words(sheet)), "never the route");
+  assert.ok(sheet.indexOf('<textarea id="wbins-text"') >= 0 && !/id="wbins-send"[^>]*disabled/.test(sheet), "the sheet stays, with the words, and Send is live");
+  assert.ok(sheet.indexOf('id="wbins-text" data-wbinstext="1" rows="12" spellcheck="false">Judge it kindly.</textarea>') >= 0, "the owner's words kept");
+  click(c, { wbins: "send" });
+  for (let i = 0; i < 6; i++) await sleep();
+  assert.ok(/Sutra could not take that; try again/.test(c.wbInsSheetHtml()), "a failure with no sentence of its own: one of ours, not the route");
+  click(c, { wbins: "send" });
+  for (let i = 0; i < 6; i++) await sleep();
+  assert.strictEqual(c.wbInsSheetHtml(), "", "the third try goes through and the sheet closes");
+  assert.strictEqual(c.calls.apiPost.length, 3);
+});
+
+/* ── S18 and the version line (PRD A1.23; UI-port package j2ui-shell X4, X5), from GET /layers ──────────────────────
+   test_fixtures/views/layers.json is the answer of /api/native/{ref}/layers: the schema version, the implementation each
+   layer runs, every implementation on disk and Root's standards in their words. The screen reads pins and standards. */
+const LAYERS = () => viewFile("layers.json");
+const layersReads = c => readsOf(c, /\/api\/native\/r\d\/layers$/);
+
+test("X4: Root settings has a read-only card Standards every plan meets: the standards in their order, the line that says they are the app's, no button", async () => {
+  const c = await orgOpened({ layers: LAYERS() });
+  click(c, { wbtab: "root" });
+  for (let k = 0; k < 3; k++){ c.o2ScreenHtml(); await settle(); }
+  const html = c.o2ScreenHtml();
+  const from = html.indexOf("<h3>Standards every plan meets</h3>"), to = html.lastIndexOf("<div><button", html.indexOf("Back to the chat"));
+  assert.ok(from > 0 && to > from, "the card is in Root's pane, before the way back");
+  const card = html.slice(from, to);
+  const says = LAYERS().standards.map(s => s.says);
+  let at = -1;
+  says.forEach(t => { const i = card.indexOf('<div class="dpfline">' + c.wbEsc(t) + "</div>"); assert.ok(i > at, t); at = i; });
+  assert.strictEqual((card.match(/<div class="dpfline">/g) || []).length, says.length, "the standards and no other line");
+  assert.ok(card.indexOf("These are part of how the app is built; they change only with a new version of the app.") > at, "the line, after them");
+  assert.ok(!/<button|<textarea|<input/.test(card), "no Change and nothing to type in");
+  assert.ok(!/<h3>Standards every plan meets<\/h3>/.test(html.slice(0, from)), "once");
+  assert.ok(/<h3>Root<\/h3>/.test(html) && /Back to the chat/.test(html), "the rest of Root's pane is as it was");
+  assert.ok(!/charter|internal\s+system|GRANT|COUNTER|REFUSE/.test(words(card)), "the screen's words");
+});
+
+test("X4: the layers are read once for the pane, kept, and a failed read says Not read yet and is not asked again", async () => {
+  const c = await orgOpened({ layers: LAYERS() });
+  click(c, { wbtab: "root" });
+  for (let k = 0; k < 6; k++){ c.o2ScreenHtml(); await settle(); }
+  assert.deepStrictEqual(layersReads(c), ["/api/native/r2/layers"], "one read, for Root");
+  const down = await orgOpened({});                          /* nothing answers the route */
+  click(down, { wbtab: "root" });
+  for (let k = 0; k < 4; k++){ down.o2ScreenHtml(); await settle(); }
+  assert.ok(/<h3>Standards every plan meets<\/h3><div class="o2quiet dpq">Not read yet<\/div>/.test(down.o2ScreenHtml()), "while it is on its way, or if it never comes");
+  assert.strictEqual(layersReads(down).length, 1);
+  const failing = await orgOpened({ layersFail: true });
+  click(failing, { wbtab: "root" });
+  for (let k = 0; k < 6; k++){ failing.o2ScreenHtml(); await settle(); }
+  assert.ok(/Standards every plan meets<\/h3><div class="o2quiet dpq">Not read yet</.test(failing.o2ScreenHtml()));
+  assert.strictEqual(layersReads(failing).length, 1, "not asked again");
+});
+
+
+test("X5: each function's Settings head says Runs version N, N being the number after /v in its layer's pin; nothing until it is read", async () => {
+  const c = await opened({ map: rtMap(), layers: LAYERS() });
+  for (const fn of ["identity", "adaptation", "priority", "coordination", "audit"]){
+    vm.runInContext("dpS().pane['r3:" + fn + "'] = 'settings';", c);
+    let html = await fnCard(c, fn);
+    for (let i = 0; i < 4 && html.indexOf("Runs version") < 0; i++){ await settle(); html = c.dpViewerHtml(WEB, {}, null, null); }
+    assert.ok(html.indexOf('<div class="o2quiet dpq">Runs version 1</div>') >= 0, fn + ": Runs version 1");
+    assert.strictEqual((html.match(/Runs version/g) || []).length, 1, fn + ": said once");
+    assert.ok(html.indexOf("Runs version 1") < html.indexOf("<h3>Template</h3>"), fn + ": at the head, before the cards");
+  }
+  assert.deepStrictEqual(layersReads(c), ["/api/native/r3/layers"], "read once for the department");
+  const three = LAYERS(); three.pins.identity = "identity/v3";
+  const d = await opened({ map: rtMap(), layers: three });
+  vm.runInContext("dpS().pane['r3:identity'] = 'settings';", d);
+  await fnCard(d, "identity"); await settle();
+  assert.ok(d.dpViewerHtml(WEB, {}, null, null).indexOf("Runs version 3") >= 0, "the pin says v3");
+  const none = await opened({ map: rtMap() });
+  vm.runInContext("dpS().pane['r3:identity'] = 'settings';", none);
+  assert.ok((await fnCard(none, "identity")).indexOf("Runs version") < 0, "no line while the read has not come");
+});
+
+/* ── S11: Root's check on Adaptation's pane (PRD M7.3; UI-port package j2ui-shell X6), from the Adaptation view ────────
+   test_fixtures/views/adaptation.root_checks.json: view.adaptation as layers/adaptation/v1.py builds it, in the states
+   the row has: none yet, approved, sent back once and twice, blocked, and approved after a send back. */
+const RC = () => viewFile("adaptation.root_checks.json");
+async function adaptationPane(state){
+  const j2 = RC()[state];
+  const c = await opened({ map: rtMap(), fnpage: fn => Object.assign(fnPageOf(fn), fn === "adaptation" ? { j2 } : {}) });
+  for (let k = 0; k < 3; k++){ c.wbFnOwn("r3", "adaptation"); await settle(); }
+  return [c, c.wbFnOwn("r3", "adaptation"), j2];
+}
+const rcRow = html => html.slice(html.indexOf("<h3>Root's check</h3>"), html.indexOf("<h3>The function</h3>"));
+const rcDots = row => [...row.matchAll(/<span class="wbrcdot( no)?" role="img" title="([^"]*)" aria-label="([^"]*)"><\/span>/g)].map(m => ({ no: !!m[1], title: m[2], label: m[3] }));
+
+test("X6: an approved plan is one row: a ticked dot for each standard that applied, each titled with its words, and approved with the time", async () => {
+  const [c, html, j2] = await adaptationPane("approved");
+  const row = rcRow(html), checks = j2.root_checks[0].checks;
+  assert.ok(row.length > 20, "the row is above the function's page: " + html.slice(0, 200));
+  const dots = rcDots(row);
+  assert.strictEqual(dots.length, checks.length, "a dot for each row of the review, the schema's own row first");
+  assert.ok(dots.every(d => !d.no), "every standard held");
+  checks.forEach((ch, i) => {
+    const said = ch.says !== ch.check ? ch.says : ch.why;
+    assert.strictEqual(dots[i].title, c.wbEsc(said), "the dot is titled with its words, in order");
+    assert.strictEqual(dots[i].label, c.wbEsc(said + ", held"), "and said in words to a screen reader");
+  });
+  assert.ok(!dots.some(d => /workflow_meets_standards|_/.test(d.title)), "no check id on the screen");
+  assert.ok(/<span class="wbrcv approved">approved · \d\d:\d\d<\/span>/.test(row), "the verdict and the time");
+  assert.ok(!/wbrcwhy|wbrcrs/.test(row), "nothing to explain and no reshapes");
+  assert.ok(html.indexOf("<h3>Root's check</h3>") < html.indexOf("<h3>The function</h3>"), "above the function's page");
+});
+
+test("X6: a plan sent back names the standard that broke in its words, with why, and shows the reshapes so far as dots", async () => {
+  const [c, html, j2] = await adaptationPane("sent_back");
+  const row = rcRow(html), dots = rcDots(row);
+  assert.deepStrictEqual(dots.map(d => d.no), j2.root_checks[0].checks.map(ch => !ch.passed), "the crossed dot is the one that broke");
+  const broke = dots.filter(d => d.no);
+  assert.strictEqual(broke.length, 1);
+  assert.strictEqual(broke[0].title, "every done-when item is covered by an engine");
+  assert.ok(/<span class="wbrcv back">sent back · \d\d:\d\d<\/span>/.test(row));
+  assert.ok(/<div class="wbrcwhy"><b>every done-when item is covered by an engine<\/b>: D3 \(new arrivals, lookbook, reviews\) is covered by no engine<\/div>/.test(row), "the standard in its words, then why");
+  assert.ok(/<div class="wbrcrs back"><span>reshapes<\/span><i class="on"><\/i><i class=""><\/i><\/div>/.test(row), "one reshape of the two");
+  assert.ok(!/\d/.test(words(row).replace(/D3 \(new arrivals, lookbook, reviews\)/, "")), "no count at rest: " + words(row));
+  const twice = (await adaptationPane("sent_back_twice"))[1];
+  assert.ok(/<div class="wbrcrs back"><span>reshapes<\/span><i class="on"><\/i><i class="on"><\/i><\/div>/.test(rcRow(twice)) && /wbrcv back">sent back/.test(rcRow(twice)), "sent back twice: both dots, still sent back");
+});
+
+test("X6: after two reshapes the plan is blocked: both dots, the broken standard named, and the word blocked", async () => {
+  const [, html] = await adaptationPane("blocked");
+  const row = rcRow(html);
+  assert.ok(/<span class="wbrcv blocked">blocked · \d\d:\d\d<\/span>/.test(row), row);
+  assert.ok(/<div class="wbrcrs blocked"><span>reshapes<\/span><i class="on"><\/i><i class="on"><\/i><\/div>/.test(row));
+  assert.ok(/<b>every done-when item is covered by an engine<\/b>/.test(row));
+});
+
+test("X6: approved after a send back is approved; no review yet says Root has not checked a plan", async () => {
+  const [, html] = await adaptationPane("approved_after_a_send_back");
+  assert.ok(/wbrcv approved">approved/.test(rcRow(html)) && !/wbrcrs/.test(rcRow(html)));
+  const none = (await adaptationPane("none"))[1];
+  assert.ok(/<h3>Root's check<\/h3><div class="o2quiet dpq">Root has not checked a plan yet<\/div>/.test(none));
+  /* a read from before the standards were listed (no checks): the review's own sentence, and no dots */
+  const c = await opened({ map: rtMap(), fnpage: fn => Object.assign(fnPageOf(fn), fn === "adaptation" ? { j2: { proposal: null, root_checks: [{ summary: "Root's check sent the plan back: the line reaches outside without a rule", at: AT, passed: false }], rounds: [] } } : {}) });
+  for (let k = 0; k < 3; k++){ c.wbFnOwn("r3", "adaptation"); await settle(); }
+  const row = rcRow(c.wbFnOwn("r3", "adaptation"));
+  assert.ok(/wbrcv back">sent back/.test(row) && /<div class="wbrcwhy">Root's check sent the plan back: the line reaches outside without a rule<\/div>/.test(row) && rcDots(row).length === 0);
+  const plain = await opened({ map: rtMap(), fnpage: fn => fnPageOf(fn) });          /* a page whose view holds no root_checks: nothing added */
+  for (let k = 0; k < 3; k++){ plain.wbFnOwn("r3", "adaptation"); await settle(); }
+  assert.ok(plain.wbFnOwn("r3", "adaptation").indexOf("Root's check") < 0, "an older read is drawn as it was");
+});
+
+test("X6: the row repaints when a review moves, and the words are escaped", async () => {
+  const j = RC().sent_back;
+  const c = fresh({ map: rtMap() });
+  const before = c.wbFnPageSig({ fn: "adaptation", j2: j });
+  const moved = JSON.parse(JSON.stringify(j)); moved.root_checks[0].checks[7].passed = true; moved.root_checks[0].passed = true;
+  assert.notStrictEqual(c.wbFnPageSig({ fn: "adaptation", j2: moved }), before, "a check that held now changes the signature");
+  const hostile = JSON.parse(JSON.stringify(j)); hostile.root_checks[0].checks[7].why = "<script>x</script>";
+  const html = c.wbRootChecksHtml(hostile.root_checks);
+  assert.ok(html.indexOf("<script") < 0 && html.indexOf("&lt;script") >= 0, "escaped");
 });
 
 /* ── W47: Identity's question as a card in Chat (PRD-FIVE-FUNCTIONS M0.6, screen S6) ── */

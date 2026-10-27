@@ -18,6 +18,7 @@ turn the record marks quoted, the words an ask's or a run's line ends with: kept
 always) is the owner's own word for a rule and is left as it is. One line is read whole: Coordination's who-may-post note, which
 carried the act's own id ('Identity may refuse to Owner'), is said again the way the runtime says it now (MAY_NOTE).
 """
+import functools
 import re
 
 # The bargain in the owner's words wherever a definition's name, a run's line or a ledger row's summary carries the inside
@@ -26,6 +27,7 @@ import re
 # identity_closed, identity_drop), the text of the ask it puts to the owner and a step's check notes all pass through
 # here. Phrases first, longest first, then the plain verbs.
 BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priority said yes to, to Root's check"),
+                 ("File a granted round", "File a round Priority said yes to"),
                  ("Take the refusal to Identity", "Take Priority's no to Identity"),
                  ("Take the counter, or take it to Identity", "Take Priority's ask for less, or take it to Identity"),
                  ("Grant, refuse or counter", "Say yes, ask for less, or say no"),
@@ -65,8 +67,13 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("the answer is accept, reject or counter", "the answer is say yes, ask for less or say no"),
                  ("the verdict is one of admit, wait, refuse", "the verdict is let through, wait or stop"),
                  ("the verdict is one of go, ask, refuse", "the verdict is go, ask or stop"),
+                 # the same checks as the interface lists them (layer_schema.CHECKS), on a function's page (A1 C8)
+                 ("a gate's verdict is admit, wait or refuse", "a gate's verdict is let through, wait or stop"),
+                 ("a verdict is go, ask or refuse", "a verdict is go, ask or stop"),
                  # what an instruction file is for, as its Settings row says it (identity's take: the verdict on a request)
                  ("a request: go, ask or refuse", "a request: go, ask or stop"),
+                 # the words in use as a field of Identity's take shows them (K2: a typed value is on its Settings at rest)
+                 ("refuse: it breaks a rule", "stop: it breaks a rule"),
                  ("Countered.", "Asked for less."), ("Refused.", "Said no."))
 
 
@@ -91,6 +98,16 @@ def _may_note(line):
     return R._may_note(m.group("src"), dst, m.group("act"), "may not" if m.group("not") else "may")
 
 
+@functools.lru_cache(maxsize=1)
+def standard_lead():
+    """A pattern for Root's standards named by their id where a note leads with one ('reads_known: Site 2 reads ...'): the
+    ids of layer_schema.WORKFLOW_STANDARDS, a word and a colon. The record keeps the id (a step's notes name the standard a
+    fault breaks, and the pane lists each check by id beside what it says); the owner reads the fault, which stands as a
+    sentence of its own."""
+    import layer_schema as S                       # lazy: the interface is not needed to say a bargain's words
+    return re.compile(r"(?<![\w-])(?:%s): ?" % "|".join(re.escape(i) for i, _, _, _ in S.WORKFLOW_STANDARDS))
+
+
 def plain(line):
     """One line in the owner's words; '' for nothing."""
     line = str(line or "")
@@ -99,7 +116,7 @@ def plain(line):
         return said
     for inside, said in BARGAIN_WORDS:
         line = line.replace(inside, said)
-    return line
+    return standard_lead().sub("", line)
 
 
 def _keep(value):
@@ -123,12 +140,44 @@ def runs(rows):
     return [dict(r, what=kept(r.get("what"), r.get("words"))) if isinstance(r, dict) else r for r in rows or []]
 
 
+def _shown(value):
+    """The words of a field in use as one line of a Settings row, said in the owner's words: a list as its items, a text with
+    its lines run together. The value itself is the owner's to change and stays as it is (the row's `value`)."""
+    return plain(" ".join(("; ".join(str(x) for x in value) if isinstance(value, list) else str(value or "")).split()))
+
+
+#: A part whose name is an inside word, as its Settings row calls it: Adaptation's 'refused' is the line it is sent when Root's
+#: check sent the plan back. The part keeps its name (the row's `part` is what a change names); the row prints the label.
+PART_SAYS = {"refused": "sent back"}
+
+
+def _instruction_part(p):
+    if not isinstance(p, dict):
+        return p
+    out = dict(p, fields=[dict(f, shown=_shown(f.get("value"))) if isinstance(f, dict) else f for f in p.get("fields") or []])
+    if p.get("part") in PART_SAYS:
+        out["label"] = PART_SAYS[p["part"]]
+    return out
+
+
+def _instruction_row(r):
+    """One row of a function's instructions: a file of the first design (its line said plainly) or a group of the interface's
+    typed fields (its line, each part's label and each field's words in use as `shown`)."""
+    if not isinstance(r, dict):
+        return r
+    out = dict(r, lead=_keep(r.get("lead")))
+    if isinstance(r.get("parts"), list):
+        out["parts"] = [_instruction_part(p) for p in r["parts"]]
+    return out
+
+
 def steps(view):
     """An engine or a function as its steps (engine_runtime.steps_view), as its card prints it: the description, each
     step's name, the handler it sits under, its last check notes and who moved its rung, what it hears, the names of
     the steps that hold its start, and the line that says what each of its instruction files is for (its Settings), in
-    the owner's words. Ids, rungs, checks and numbers are left as they are, and so is an instruction file's own text,
-    which is the file the owner changes."""
+    the owner's words; and each typed field's words in use, said again as `shown` (the row prints that; the field's
+    `value` is the owner's to change and stays). Ids, rungs, checks and numbers are left as they are, and so is an
+    instruction file's own text, which is the file the owner changes."""
     if not view:
         return view
     out = dict(view, description=_keep(view.get("description")), hears=[plain(h) for h in view.get("hears") or []])
@@ -141,7 +190,7 @@ def steps(view):
         rows.append(s)
     out["steps"] = rows
     if isinstance(view.get("instructions"), list):
-        out["instructions"] = [dict(r, lead=_keep(r.get("lead"))) if isinstance(r, dict) else r for r in view["instructions"]]
+        out["instructions"] = [_instruction_row(r) for r in view["instructions"]]
     start = view.get("start")
     if isinstance(start, dict):
         out["start"] = dict(start, on=[plain(x) for x in start.get("on") or []],
