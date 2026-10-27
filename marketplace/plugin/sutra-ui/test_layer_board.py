@@ -148,6 +148,15 @@ def test_b1_with_the_flag_off_no_questions_file_exists_and_the_prompt_is_as_it_w
     assert COORD.board_on({"dept": W.dept(ref)}) is False
 
 
+def test_b1_a_whole_department_runs_with_the_flag_on_and_no_model_and_asks_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    ref = _born(j2)                                                  # offline: every step falls to its draft
+    assert [r["status"] for r in W.runs(ref) if r["engine"] in ("Plan", "Write", "Check")] == ["ok", "ok", "ok"]
+    assert not (W.ddir(ref) / "questions.json").exists() and COORD.entries(ref) == []
+    assert not [r for r in R.board(ref) if (r.get("payload") or {}).get("word") in ("question", "answer")]
+
+
 def test_b1_a_root_and_a_department_off_the_runtime_ask_nothing(j2, monkeypatch):
     W, R, J, _, _ = j2
     ref = _born(j2)
@@ -454,6 +463,32 @@ def test_b2_a_later_engine_reads_the_answer_and_a_run_that_uses_it_is_in_used_by
     assert {"board": "Q-1", "art": "Site plan", "v": W.latest(ref, "Site plan")["v"]} in row["read"], "the step depends on the answer's artifact"
     assert [x for x in row["read"] if "board" not in x], "and still reads what it read"
     assert "board_used" not in json.dumps(W._read(R._out_path(ref, "Check@pages.v9", "check.rules", None), {})), "the board's fields are not the work"
+
+
+def test_b2_the_whole_flow_through_the_motor_asks_answers_and_settles(j2, monkeypatch):
+    """A new Brief wakes Plan, then Write: Write asks Plan about the page list, Plan's run answers in its own slot, Write files, Check
+    reads, and the motor finds nothing due: the exchange leaves no run open, no slot run twice and no post unheard."""
+    W, R, J, _, FV = j2
+    ref = _born(j2)
+    monkeypatch.setenv("SUTRA_BOARD_QUESTIONS", "1")
+    _model(monkeypatch, R, _asks_once())
+    v = W.latest(ref, "Brief")["v"]
+    W.add_version(ref, "Brief", {"brief.md": "Add a page for the timetable of the algebra classes"}, [{"art": "Brief", "v": v}], "owner",
+                  {"ok": True, "notes": []})
+    W.run_until_idle(ref, limit=100)
+    runs = W.runs(ref)
+    assert not [r for r in runs if r["status"] == "running"], "no run left open"
+    asker = [r for r in runs if r["engine"] == "Write" and r["slot"].endswith("site-plan.v2")]
+    assert asker and asker[-1]["status"] == "ok"
+    answers = [r for r in runs if r.get("answers")]
+    assert len(answers) == 1 and answers[0]["engine"] == "Plan" and answers[0]["for_run"] == asker[-1]["id"] and answers[0]["status"] == "ok"
+    assert FV.slot_clashes(runs) == [], "the answering run is no clash"
+    heard = [r for r in runs if r["engine"] == "Coordination" and "@board.n" in str(r.get("slot"))]
+    assert heard and all(r["status"] == "ok" for r in heard), "Coordination heard the asker's post, and found it taken"
+    assert W.due(ref)[0] is None, "nothing is due"
+    assert [e["status"] for e in COORD.entries(ref)] == ["answered"]
+    assert len({r["slot"] for r in runs if r["status"] in ("ok", "failed", "skipped") and r.get("slot")}) == len(
+        [r for r in runs if r["status"] in ("ok", "failed", "skipped") and r.get("slot")]), "no slot ran twice"
 
 
 # ---- B3: spot checks -------------------------------------------------------------------------------------------------------
