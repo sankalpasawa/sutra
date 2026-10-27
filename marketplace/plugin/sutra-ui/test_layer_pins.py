@@ -314,14 +314,14 @@ def test_n1_a_route_whose_pins_cannot_be_read_reads_the_default_definitions(monk
 
 
 # ---- N2 . Root's version from the organisation's Root; a pin that cannot run -------------------------------------------------
-def stub(tmp_path, recipe=None, patch=None, layer="coordination", **more):
-    """A child of layers/<layer>/v1 as a SimpleNamespace (A2-INHERIT's way): the tables copied from the parent, its folder in
-    tmp_path, and the recipe (a whole file) or the patch it is given written beside it. `more` overrides any attribute."""
+def stub(tmp_path, recipe=None, patch=None, layer="coordination", parent_id=None, **more):
+    """A child of layers/<layer>/v1 (or of `parent_id`) as a SimpleNamespace (A2-INHERIT's way): the tables copied from the parent,
+    its folder in tmp_path, and the recipe (a whole file) or the patch it is given written beside it. `more` overrides any attribute."""
     from layers import versions as V
-    parent = layers.load("%s/v1" % layer)
+    parent = layers.load(parent_id or "%s/v1" % layer)
     folder = tmp_path / layer
     folder.mkdir(parents=True, exist_ok=True)
-    base = dict(__file__=str(folder / "v2.py"), LAYER=layer, VERSION=2, IMPLEMENTS=S.SCHEMA_VERSION, PARENT="%s/v1" % layer,
+    base = dict(__file__=str(folder / "v2.py"), LAYER=layer, VERSION=2, IMPLEMENTS=S.SCHEMA_VERSION, PARENT=parent_id or "%s/v1" % layer,
                 CODE=dict(parent.CODE), PROMPT=dict(parent.PROMPT), DRAFT=dict(parent.DRAFT), CHECK=dict(parent.CHECK),
                 WORDS=copy.deepcopy(parent.WORDS), LAYOUT=copy.deepcopy(parent.LAYOUT))
     base.update({name: getattr(parent, name) for name in V.SURFACE if callable(getattr(parent, name, None))})
@@ -540,3 +540,156 @@ def test_n2_a_read_of_the_department_tells_no_pin_and_the_tick_tells_it_once(hom
     for _ in range(2):
         layers.pins(ref, d)
     assert told(ref) == [("Identity", "runs the default: its per-department version cannot run here (it does not load)")]
+
+
+# ---- N3 . ladders per version -----------------------------------------------------------------------------------------------
+def ladder_file(ref):
+    return json.loads((W.ddir(ref) / "ladder.json").read_text(encoding="utf-8"))
+
+
+def learn(ref, step_id, rung, by="a test"):
+    """The step moves to `rung` for the department, as a keeper's move does it."""
+    with R.pinned(ref):
+        _, step = R.step_def(step_id)
+        return R.move(ref, step, rung, by)
+
+
+def repin(ref, **pins):
+    d = W.dept(ref)
+    d["layers"] = dict(d["layers"], **pins)
+    W.save_dept(ref, d, by="root")
+
+
+def test_n3_an_entry_is_kept_for_the_step_and_the_version_that_made_it(home):
+    ref = department(home, "dref-v1")
+    learn(ref, "coord.pick", "C1")
+    assert set(ladder_file(ref)) == {"coord.pick@coordination/v1"}
+    with R.pinned(ref):
+        assert R.ladder(ref)["coord.pick"]["rung"] == "C1" and set(R.ladder(ref)) == {"coord.pick"}, "read by the step, as every reader asks"
+        assert R.ladder_key(ref, "coord.pick", "Coordination") == "coord.pick@coordination/v1"
+        assert R.ladder_key(ref, "identity.take", "Identity") == "identity.take@identity/v1"
+        assert R.ladder_key(ref, "write.page", "Write") == "write.page", "a work engine has no versions: its key is the step"
+        assert R.ladder_key(ref, "setup.read", "Setup") == "setup.read@root/v1"
+
+
+def test_n3_an_old_key_is_the_version_1_entry(home, child):
+    ref = department(home, "dref-v1")
+    learn(ref, "coord.pick", "C1")
+    old = ladder_file(ref)
+    (W.ddir(ref) / "ladder.json").write_text(json.dumps({"coord.pick": old["coord.pick@coordination/v1"]}), encoding="utf-8")   # as an older app kept it
+    with R.pinned(ref):
+        assert R.ladder(ref)["coord.pick"]["rung"] == "C1"
+        _, step = R.step_def("coord.pick")
+        assert R.rung_of(ref, step) == "C1" and R.entry(ref, step)["rung"] == "C1"
+    repin(ref, coordination=CHILD)
+    with R.pinned(ref):
+        assert R.ladder(ref)["coord.pick"]["rung"] == "C1", "a step the child leaves as it is reads the version 1 rung through the old key"
+    learn(ref, "coord.pick", "C0")
+    assert set(ladder_file(ref)) == {"coord.pick", "coord.pick@coordination/v2"}, "and the old key is left as it is"
+    assert ladder_file(ref)["coord.pick"]["rung"] == "C1"
+    repin(ref, coordination="coordination/v1")
+    with R.pinned(ref):
+        assert R.ladder(ref)["coord.pick"]["rung"] == "C1"
+    learn(ref, "coord.pick", "C0")
+    with R.pinned(ref):
+        assert R.ladder(ref)["coord.pick"]["rung"] == "C0", "a key for the version beats the old key"
+
+
+def test_n3_a_work_engines_step_is_kept_under_its_own_name(home):
+    ref = department(home, "dref-v1")
+    learn(ref, "write.page", "C1")
+    assert set(ladder_file(ref)) == {"write.page"}
+    with R.pinned(ref):
+        assert R.ladder(ref)["write.page"]["rung"] == "C1"
+
+
+def test_n3_a_pin_change_returns_a_step_the_child_changes_to_its_born_rung_and_carries_over_one_it_leaves(home, child):
+    from layers import versions as V
+    changes = {"coord.table", "coord.probe"}
+    unchanged = V.unchanged_steps(CHILD)
+    assert changes.isdisjoint(unchanged) and "coord.pick" in unchanged and "coord.busy" in unchanged
+    ref = department(home, "dref-x")
+    learn(ref, "coord.pick", "C1", "learned under version 1")
+    learn(ref, "coord.table", "C1", "learned under version 1")
+    v1_file = ladder_file(ref)
+    repin(ref, coordination=CHILD)
+    with R.pinned(ref):
+        seen = R.ladder(ref)
+        assert seen["coord.pick"]["rung"] == "C1", "carried over"
+        assert "coord.table" not in seen, "a rung learned under version 1 is not applied to a step version 2 changed"
+        _, table = R.step_def("coord.table")
+        assert R.rung_of(ref, table) == table["born"] == "C2" and R.entry(ref, table)["history"][0]["by"] == "born"
+        assert R.entry(ref, table)["rung"] == "C2"
+    assert ladder_file(ref) == v1_file, "reading writes nothing"
+
+
+def test_n3_a_run_under_the_child_never_writes_the_parents_key(home, child):
+    ref = department(home, "dref-x")
+    learn(ref, "coord.pick", "C1", "learned under version 1")
+    learn(ref, "coord.table", "C1", "learned under version 1")
+    v1_file = ladder_file(ref)
+    repin(ref, coordination=CHILD)
+    learn(ref, "coord.pick", "C0", "learned under version 2")
+    learn(ref, "coord.table", "C0", "learned under version 2")
+    now = ladder_file(ref)
+    assert {k: now[k] for k in v1_file} == v1_file, "version 1's entries are as they were"
+    assert set(now) == set(v1_file) | {"coord.pick@coordination/v2", "coord.table@coordination/v2"}
+    pick = now["coord.pick@coordination/v2"]
+    assert pick["rung"] == "C0" and [h["by"] for h in pick["history"]] == ["born", "learned under version 1", "learned under version 2"], \
+        "the child's entry begins from the rung it read, and says where it came from"
+    assert [h["by"] for h in now["coord.table@coordination/v2"]["history"]] == ["born", "learned under version 2"]
+    repin(ref, coordination="coordination/v1")
+    with R.pinned(ref):
+        assert (R.ladder(ref)["coord.pick"]["rung"], R.ladder(ref)["coord.table"]["rung"]) == ("C1", "C1"), "back on version 1, its own rungs"
+
+
+def test_n3_a_hold_carries_over_with_the_rung_and_is_the_childs_own_after_it(home, child):
+    ref = department(home, "dref-x")
+    with R.pinned(ref):
+        R.hold(ref, "coord.pick", True)
+    repin(ref, coordination=CHILD)
+    with R.pinned(ref):
+        assert R.ladder(ref)["coord.pick"]["held"] is True
+        R.hold(ref, "coord.pick", False)
+        assert R.ladder(ref)["coord.pick"]["held"] is False
+    assert ladder_file(ref)["coord.pick@coordination/v1"]["held"] is True
+
+
+def test_n3_a_step_reads_the_rung_of_the_version_that_made_it_what_it_is_up_the_lineage(home, child, monkeypatch, tmp_path):
+    """v3 extends v2 extends v1. v2 changed coord.table and coord.probe; v3 changes coord.pick and leaves the rest as v2 has them."""
+    v3 = stub(tmp_path, parent_id=CHILD, VERSION=3,
+              patch={"parent": CHILD, "rules": [{"id": "coord.pick", "name": "Say who goes first, version 3"}]})
+    hold(monkeypatch, "coordination/v3", v3)
+    from layers import versions as V
+    assert V.chain("coordination/v3") == ["coordination/v3", CHILD, "coordination/v1"]
+    assert "coord.pick" not in V.unchanged_steps("coordination/v3") and {"coord.table", "coord.probe", "coord.busy"} <= V.unchanged_steps("coordination/v3")
+    ref = department(home, "dref-x")
+    learn(ref, "coord.busy", "C1", "version 1")
+    learn(ref, "coord.pick", "C1", "version 1")
+    learn(ref, "coord.table", "C1", "version 1")
+    repin(ref, coordination=CHILD)
+    learn(ref, "coord.table", "C0", "version 2")
+    learn(ref, "coord.probe", "C0", "version 2")
+    repin(ref, coordination="coordination/v3")
+    with R.pinned(ref):
+        seen = {k: v["rung"] for k, v in R.ladder(ref).items()}
+    assert seen == {"coord.busy": "C1", "coord.table": "C0", "coord.probe": "C0"}, \
+        "busy: v2 left it as v1, so v1's rung; table and probe: v2 made them what they are, so v2's; pick: v3 changed it, so it is born"
+    learn(ref, "coord.busy", "C0", "version 3")
+    now = ladder_file(ref)
+    assert now["coord.busy@coordination/v1"]["rung"] == "C1" and now["coord.busy@coordination/v3"]["rung"] == "C0"
+    assert "coord.busy@coordination/v2" not in now, "the middle version never wrote it"
+
+
+def test_n3_what_a_version_inherits_is_worked_out_once_and_again_for_another_module(home, child, monkeypatch):
+    ref = department(home, "dref-x", coordination=CHILD)
+    from layers import versions as V
+    seen = []
+    real = V.unchanged_steps
+    monkeypatch.setattr(V, "unchanged_steps", lambda impl: seen.append(impl) or real(impl))
+    monkeypatch.setattr(RT(), "_INHERITS", {})
+    learn(ref, "coord.pick", "C1")
+    for _ in range(10):
+        with R.pinned(ref):
+            R.ladder(ref)
+    assert seen.count(CHILD) == 1 and len(seen) == len(set(seen)), seen

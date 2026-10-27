@@ -604,8 +604,94 @@ def threads(ref):
     return W._read(W.ddir(ref) / "exchanges.json", [])
 
 
+def _ladder_raw(ref):
+    """ladder.json as it is kept: an entry for each step of each version of a function ('step@implementation'), and, from
+    before ladders were kept per version, for each step ('step'), which is its version 1 entry (PRD A1.18, W3-PINS N3)."""
+    got = W._read(W.ddir(ref) / "ladder.json", {})
+    return got if isinstance(got, dict) else {}
+
+
+def _dept_pins(ref):
+    """{layer: implementation id} the department runs: the set in hand when it is that department's, else its record's."""
+    held = _PINS.get()
+    if held and held[0] == ref:
+        return held[2]
+    with layers.reading():
+        return layers.pins(ref)
+
+
+def ladder_key(ref, step_id, engine):
+    """The key an entry is kept under: 'step@implementation' for a step of a function, by the version the department runs for
+    that function, so a rung learned under one version is not applied to another; the step alone for a work engine's, which is
+    no layer's and has no versions."""
+    layer = layers.layer_of(engine)
+    return step_id if not layer else "%s@%s" % (step_id, _dept_pins(ref)[layer])
+
+
+#: {step id: the versions its entry may be read from, nearest first} for a version that extends another, by (id, the module the
+#: registry holds for it): layers.unchanged_steps resolves recipes, so it is asked once for a version, not on every read
+_INHERITS = {}
+
+
+def _inherited(impl):
+    """The steps a version leaves as the version it extends has them, each with the versions up its lineage whose entry it may read:
+    the parent's, and the parent's own parent's when the parent left the step as it had it, and so on up to the version that made
+    the step what it is (A2-D13). {} for a version that extends none, or whose lineage cannot be read."""
+    from layers import lineage
+    try:
+        chain = layers.chain(impl)
+    except lineage.ModelFault:
+        return {}
+    left = {version: layers.unchanged_steps(version) for version in chain[:-1]}      # what each leaves as the one it extends has it
+    out = {}
+    for step in left[impl] if impl in left else ():
+        reads = []
+        for version, parent in zip(chain, chain[1:]):
+            if step not in left[version]:
+                break
+            reads.append(parent)
+        out[step] = reads
+    return out
+
+
+def _inherits(impl):
+    key = (impl, id(layers.load(impl)))
+    if key not in _INHERITS:
+        _INHERITS[key] = _inherited(impl)
+    return _INHERITS[key]
+
+
 def ladder(ref):
-    return W._read(W.ddir(ref) / "ladder.json", {})
+    """The department's ladder as it reads it, {step id: entry}, for the versions it runs: the entry kept under 'step@implementation'
+    for each step of a function (an old key, kept before ladders were per version, is the version 1 entry), the step alone for a work
+    engine's. A step a version leaves as the version it extends has it reads the rung that version learned (A2-D13), and one it
+    changes starts at its born rung. A read; the entry a run changes is written under its own version's key only (_save_entry)."""
+    raw = _ladder_raw(ref)
+    if not raw:
+        return raw
+    pins, out = _dept_pins(ref), {}
+    keyed = {}
+    for key, e in raw.items():
+        step, at, impl = key.rpartition("@")
+        if at and re.fullmatch(layer_schema.IMPL_RE, impl):
+            keyed[key] = (step, impl)
+            continue
+        layer = layers.layer_of((e or {}).get("engine"))
+        if layer is None or pins.get(layer) == "%s/v1" % layer:
+            out[key] = e                                       # an old key is the version 1 entry; a work engine's step is never keyed
+    for key, (step, impl) in keyed.items():
+        if pins.get(impl.split("/")[0]) == impl:
+            out[step] = raw[key]
+    for layer, impl in pins.items():
+        for step, reads in _inherits(impl).items():
+            if step in out:
+                continue
+            for parent in reads:
+                got = raw.get("%s@%s" % (step, parent)) or (raw.get(step) if parent == "%s/v1" % layer else None)
+                if got:
+                    out[step] = got
+                    break
+    return out
 
 
 def numbers(ref, engine=None):
@@ -752,8 +838,8 @@ def rung_of(ref, step):
 def _save_entry(ref, e):
     layer_schema.check_record("adaptation", "ladder", e, ref=ref)      # the entry as the interface types it, before it is written (A1.20)
     with W._lock(ref):
-        L = ladder(ref)
-        L[e["step"]] = e
+        L = _ladder_raw(ref)
+        L[ladder_key(ref, e["step"], e.get("engine"))] = e
         W._write(W.ddir(ref) / "ladder.json", L)
     return e
 
