@@ -243,6 +243,32 @@ class TestJ4Edges(Ruling):
         self.assertEqual(len([r for r in W.runs(child)[runs:] if "loosens one it inherits" in r["what"]]), 1)
         self.assertEqual(self.kept(child), kept)
 
+    def test_j4_4_the_owner_hears_a_prohibition_an_ancestor_tagged_always_as_one_that_never_does_it(self):
+        """J4.4 as the owner hears it: an ancestor's `always: Never publish prices` is compared as a refusal (a prohibition tagged
+        always ranks 2), so the tell on the board says 'it never does this', never 'it always does this'. And an ancestor's `ask`
+        rule on a line is said as 'it asks you first'. Read off the board, where the words the owner sees are."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        self.reads_as(LINE, "ask")
+        self.inherit(root, {"tag": "always", "line": LINE})
+        posts = len(R.board(child))
+        self.say(child, WORDS)
+        told = self.told_tighten(child, posts)
+        self.assertEqual(len(told), 1, told)
+        done = told[0]["payload"]["done"]
+        self.assertEqual(done, "Root's rule stands: %s. The rule above says: %s (it never does this)." % (SAID, LINE), done)
+        self.assertNotIn("it always does this", done)
+        self.assertEqual(self.rule_asks(child), [], "and no ask is filed")
+        # an ancestor's `ask` rule, on a line a `go` rule would loosen
+        line = "Check the opening hours with the clinic"
+        self.inherit(root, {"tag": "ask", "line": line})
+        self.reads_as(line, "go")
+        posts = len(R.board(child))
+        self.assertIsNone(R._rule_ask(child, "slot", line, "go", "From now on, " + line.lower(), None, "A rule, as understood"))
+        told = self.told_tighten(child, posts)
+        self.assertEqual(len(told), 1, told)
+        self.assertIn("The rule above says: %s (it asks you first)." % line, told[0]["payload"]["done"])
+
     def test_j4_4_a_rule_identitys_take_reads_out_of_a_task_is_turned_down_when_it_loosens_an_inherited_one(self):
         """J4.5 meets J4.4: words that are a task and carry a rule on a line an ancestor holds more strictly (Identity's take reads
         `ask: Never publish prices` out of them) are turned down at the third place a rule is asked for. Identity says a
@@ -383,6 +409,52 @@ def test_j4_4_an_answer_to_identitys_own_question_that_would_loosen_a_rule_is_tu
     assert again and again["missing"] == "rules" and again["id"] != asked["id"], "Identity's question is asked again"
 
 
+def test_j4_4_a_stale_stamp_of_an_answer_to_identitys_own_question_is_turned_down_and_the_question_is_asked_again(j2, monkeypatch):
+    """The second guard, at the stamp (identity_apply's rule branch): the owner answered Identity's question on the rules while no
+    ancestor held the line, so the answer was restated as a rule ask and put to them; an ancestor's rule on that line arrives
+    before they stamp it. The stamp writes nothing, Identity says once that a department's rules can only tighten it, a row on
+    the record says what stood, and the question the answer was for is asked again: with no open question the cycle stalls."""
+    W, R, J, founding, _ = j2
+    import placement_engine as E
+    root = founding.found_structure("Bakery Co", owner="Sankalp")["root"]
+    W.owner_ask(root, "a site for my bakery in Pune")
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    own = [{"id": "r1", "line": "Work inside the record"}]
+    d = W.dept(ref)
+    d["rules"] = copy_rules(own)                                           # a rule with no tag: Identity's question is on the rules
+    W.save_dept(ref, d)
+    R.identity_next(ref)
+    asked = J.status(ref)["open_question"]
+    assert asked and asked["missing"] == "rules"
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: (({"tag": "ask", "line": LINE, "scope": "standing"}, 0.01, "model")
+                                                          if step["id"] == "identity.rule" else (None, 0.0, "offline")))
+    # the answer, while nothing above the department holds the line: restated as a rule ask the owner has yet to stamp
+    W.owner_ask(ref, LINE)
+    W.run_until_idle(ref, limit=300)
+    filed = [a for a in W.asks(ref) if a["kind"] == "rule" and a["status"] == "pending"]
+    assert [(a["tag"], a["line"]) for a in filed] == [("ask", LINE)], "the answer was asked for as a rule"
+    assert filed[0].get("answers"), "and it answers Identity's question on the rules, which is why a no must ask the question again"
+    # an ancestor's rule on that line arrives between the ask and the stamp
+    charter = E.charters_for(W.dept(root)["org"]["ref"])[0]
+    sidecar = E.load_sidecar(charter["id"])
+    sidecar["rules"] = [{"tag": "refuse", "line": LINE}]
+    E.save_sidecar(charter["id"], sidecar)
+    posts, runs = len(R.board(ref)), len(W.runs(ref))
+    W.decide_ask(ref, filed[0]["id"], True)
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["rules"] == own, "the stamp wrote nothing: the rule would loosen one the department inherits"
+    told = [p for p in R.board(ref)[posts:] if p["src"] == "Identity" and p["msg_type"] == "inform" and SAID in str(p["payload"].get("done"))]
+    assert len(told) == 1, told
+    assert LINE in told[0]["payload"]["done"], "and it names the rule that stands"
+    rows = [r for r in W.runs(ref)[runs:] if "loosens one it inherits" in r["what"]]
+    assert [(r["engine"], r["system"]) for r in rows] == [("Identity", True)], "a row on the record says Identity said no to it"
+    again = J.status(ref)["open_question"]
+    assert again and again["missing"] == "rules" and again["id"] != asked["id"], "Identity's question is asked again, so the cycle does not stall"
+
+
 # ---- the pure module: layers/identity/tighten.py --------------------------------------------------------------------------
 class TestTighten:
     """normalise, rank and rule_faults: no runtime, no record."""
@@ -432,3 +504,19 @@ class TestTighten:
             for sentence in tighten.rule_faults([{"tag": tag, "line": "Never publish prices"}], "Never publish prices", "go"):
                 assert not re.search(S.TEMPLATE_BANNED, sentence, re.I), sentence
                 assert "(%s)" % tag not in sentence, "the owner is never shown a tag: " + sentence
+                if tag == "always":                  # a prohibition tagged always ranks as refuse, and is glossed as it
+                    assert "it never does this" in sentence and "it always does this" not in sentence, sentence
+
+    def test_a_prohibition_tagged_always_is_glossed_as_the_refusal_it_ranks_as(self):
+        """The gloss follows the rank. An inherited `always: Never publish prices` is compared as `refuse` (rank 2), so the owner
+        hears 'it never does this'; 'it always does this' beside a line that says never is a sentence that contradicts itself."""
+        always = tighten.rule_faults([{"tag": "always", "line": "Never publish prices"}], "Never publish prices", "go")
+        assert always == ["The rule above says: Never publish prices (it never does this)."], always
+        assert all("it always does this" not in s for s in always)
+        for line in ("Do not publish prices.", "Don't publish prices"):
+            got = tighten.rule_faults([{"tag": "always", "line": line}], "Never publish prices", "ask")
+            assert len(got) == 1 and "it never does this" in got[0] and "it always does this" not in got[0], got
+        refuse = tighten.rule_faults([{"tag": "refuse", "line": "Never publish prices"}], "Never publish prices", "go")
+        assert refuse == always, "a refuse rule and a prohibition tagged always are said the same way"
+        asks = tighten.rule_faults([{"tag": "ask", "line": "Publish prices"}], "Publish prices", "go")
+        assert asks == ["The rule above says: Publish prices (it asks you first)."], asks
