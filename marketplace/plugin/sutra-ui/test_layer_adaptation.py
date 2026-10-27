@@ -1909,6 +1909,35 @@ def test_f3_priority_saying_no_moves_the_round_to_refused_and_it_becomes_a_confl
     assert len(_conflicts(R, ref)) == 1 and [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"], "a second no is the same no"
 
 
+def test_f3_a_round_whose_proposal_the_bound_stopped_is_refused_on_the_record_and_told_to_identity_once(j2, monkeypatch):
+    """adapt_round marked the row refused and told nobody when its post came back None (rule 12): Identity hears it once, with the
+    ways out, and a bound the runtime already reported is not reported twice."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: True)
+    real = R.post
+
+    def stopped(ref, src, dst, msg_type, payload=None, *a, **kw):
+        return None if (src, dst, (payload or {}).get("word")) == ("Adaptation", "Priority", "round") else real(ref, src, dst, msg_type, payload, *a, **kw)
+    monkeypatch.setattr(R, "post", stopped)
+    ref, out, row = _round_in_hand(j2)
+    assert "could not go to Priority" in out["said"] and [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"]
+    [conflict] = _conflicts(R, ref)
+    assert (conflict["bound"], conflict["round"], conflict["correction"], conflict["for"], conflict["engines"]) == ("hops", 1, row["correction"], row["thread"], [])
+    assert [o["kind"] for o in conflict["options"]] == ["words", "leave", "stop"] and S.validate("act.conflict", conflict) == []
+    assert conflict["why"] == "Priority and Adaptation could not settle round 1 between them"
+    assert v1().round_bound(ref, row["thread"], "hops") is None and len(_conflicts(R, ref)) == 1, "once, however often the bound is reported"
+    assert [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"]
+    assert v1().round_bound(ref, "x-nobody", "seconds") is None and v1().round_bound(None, "x", "usd") is None, "a thread that is no round's, and a record that is not there: nothing"
+
+
+def test_f3_until_identity_hears_a_round_a_round_at_its_bound_stays_on_the_record_and_posts_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: False)
+    ref, out, row = _round_in_hand(j2)
+    before = len(R.board(ref))
+    assert v1().round_bound(ref, row["thread"], "seconds") is None and len(R.board(ref)) == before and [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"]
+
+
 def test_f3_until_identity_hears_a_round_a_refusal_and_a_grant_stay_on_the_record_and_post_nothing(j2, monkeypatch):
     W, R, J, _, _ = j2
     monkeypatch.setattr(v1(), "hears_round", lambda: False)

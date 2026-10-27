@@ -640,13 +640,38 @@ def adapt_round(ctx, step, item):
     body = {'word': 'round', 'round': row['round'], 'correction': row['correction'], 'fixes': fixes, 'covers': covers, 'estimate': row['estimate'],
             'why': clip(got.get('why')) or 'the reading found %s not met' % ', '.join(covers)}
     if R.post(ref, 'Adaptation', 'Priority', 'propose', body, thread=thread) is None:
-        W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', at=W.now()))
+        round_bound(ref, thread, 'hops')           # refused on the record, and told to Identity unless the runtime did when it closed the thread
         return {'said': 'round %d could not go to Priority: the bargain reached its bound' % row['round'], 'round': row['round']}
     return {'said': 'proposed round %d to Priority: %s' % (row['round'], row['correction']), 'round': row['round']}
 
 
 def round_of_thread(ref, thread):
     return next((r for r in reversed(all_rounds(ref)) if r.get('thread') == thread), None)
+
+
+#: how a round that reached a limit of its thread is put to the owner (the limit is rule 12's: hops, time or spend), by the limit
+BOUND_SAYS = {'seconds': 'Priority had not priced round %d in time', 'usd': 'pricing round %d cost more than it may',
+              'hops': 'Priority and Adaptation could not settle round %d between them'}
+
+
+def round_bound(ref, thread, which):
+    """A round's thread was closed at its bound (rule 12; M9.5): the round does not stay proposed for good and does not go quiet.
+    The row says refused, so the same reading asked again proposes again, and one conflict goes to Identity with the ways out
+    built by code (next_options), once its recipe hears a round. Coordination calls it where it closes the thread (engine_runtime)
+    and adapt_round where its own post is stopped. Idempotent: a thread's conflict is filed once. Never raises."""
+    try:
+        row = round_of_thread(ref, thread)
+        if not row:
+            return None
+        if row.get('status') == 'proposed':
+            row = W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', at=W.now()))
+        if not hears_round():
+            return None
+        why = BOUND_SAYS.get(which, 'round %d did not go on in time') % row['round']
+        return line_conflict(ref, thread, why, bound=which, src='Coordination', options=next_options(W.dept(ref) or {}, row.get('covers') or []),
+                             engines=[], extra={'round': row['round'], 'correction': row['correction']})
+    except Exception:  # noqa: BLE001 -- the thread is closed and the round is on the record whether or not the word reached Identity
+        return None
 
 
 def adapt_round_granted(ctx, step, item):

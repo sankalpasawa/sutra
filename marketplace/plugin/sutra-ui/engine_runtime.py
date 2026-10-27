@@ -811,6 +811,8 @@ def post(ref, src, dst, msg_type, payload=None, thread=None, about=None, by=None
             _save_threads(ref, ths)
             if th.get("topic") == "line" and (payload or {}).get("word") == "line" and _j2_live(ref):
                 _line_conflict(ref, th["id"], "the bargain reached its bound of %s hops" % th["bounds"].get("hops"), bound="hops", src="Coordination")
+            elif th.get("topic") == "round" and _j2_live(ref):
+                _round_bound(ref, th["id"], "hops")
             return None
         if between:
             th["hops"] += 1
@@ -1364,6 +1366,8 @@ def coord_bounds(ctx, step, item):
         if first and first["src"] == "Adaptation" and (first.get("payload") or {}).get("word") == "line" and _j2_live(ref):
             which = ((_thread(ref, tid) or {}).get("outcome") or {}).get("which")
             _line_conflict(ref, tid, "the bargain reached its bound (%s)" % which, bound=which, src="Coordination")
+        if first and first["src"] == "Adaptation" and (first.get("payload") or {}).get("word") == "round" and _j2_live(ref):
+            _round_bound(ref, tid, ((_thread(ref, tid) or {}).get("outcome") or {}).get("which"))     # a round's thread is bounded too (rule 12)
         if first and first["src"] in (OWNER, "Root") and first["msg_type"] == "request":
             fpl = first.get("payload") or {}
             post(ref, "Coordination", "Identity", "inform",
@@ -5294,6 +5298,16 @@ def _line_conflict(ref, thread, why, bound=None, src="Adaptation"):
     if ways:
         body["options"] = ways
     return post(ref, src, "Identity", "inform", body)
+
+
+def _round_bound(ref, thread, which):
+    """A round's thread (Adaptation's proposal to Priority, M9.1) reached its bound (hops, time or spend): at a limit a thread goes to
+    Identity, the round's as a line's is (rule 12). The round is Adaptation's record, so its layer marks the round refused and puts
+    the conflict, with the ways out (round_bound). A limit is closed whether or not the word reached Identity."""
+    try:
+        return layers.call(ref, "adaptation", "round_bound", ref, thread, which)
+    except Exception:  # noqa: BLE001 -- the thread is closed at its bound all the same
+        return None
 
 
 def required_engines(d):

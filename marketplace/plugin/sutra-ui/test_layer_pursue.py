@@ -358,6 +358,98 @@ def test_p2c_a_raise_asks_for_the_refused_round_once_and_only_where_one_was_refu
     assert ident.ask_again(ref, W.dept(ref)) is None
 
 
+def _priority_away(monkeypatch, R, cost=0.0, before=None):
+    """Priority's price for a round is a model step that never comes back (it costs `cost`), so the round's bargain stays open until
+    a limit of its thread closes it. `before(prompt)` runs when the round is asked, for a test that shapes the thread."""
+    inner = R.MODEL
+
+    def model(prompt, step):
+        if step["id"] == "priority.bargain" and "THE ROUND:" in prompt:
+            if before:
+                before(prompt)
+                return inner(prompt, step)
+            return None, cost, "away"
+        return inner(prompt, step)
+    monkeypatch.setattr(R, "MODEL", model)
+
+
+def _conflicts(R, ref):
+    return [p["payload"] for p in R.board(ref) if p["src"] in ("Adaptation", "Coordination") and p["dst"] == ["Identity"] and p["payload"].get("word") == "conflict"]
+
+
+def _round_thread(R, ref):
+    return next(t for t in R.threads(ref) if t["topic"] == "round")
+
+
+def _the_round_stopped_at_its_limit(W, R, ref, bound):
+    """The one conflict, the one card and the refused row a round's thread closed at `bound` must leave (rule 12, M9.5)."""
+    th = _round_thread(R, ref)
+    assert (th["state"], th["outcome"]["by"], th["outcome"]["which"]) == ("canceled", "bound", bound), th
+    [row] = v1().rounds_of(ref)
+    assert (row["round"], row["status"], row["thread"]) == (1, "refused", th["id"]), "the round does not stay proposed for good"
+    [conflict] = _conflicts(R, ref)
+    assert conflict["bound"] == bound and conflict["round"] == 1 and conflict["correction"] == row["correction"] and conflict["for"] == th["id"]
+    assert conflict["engines"] == [] and [o["id"] for o in conflict["options"]] == ["words", "leave:D2", "stop"] and S.validate("act.conflict", conflict) == []
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert card["kind"] == "blocked" and [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"]
+    assert (card["title"], card["who"]) == ("The next round needs your word.", "Priority, pricing the round")
+    assert not re.search(r"\bplan\b|\b(?:bound|hops|seconds|usd)\b|\b(?:grant|counter|refus)", " ".join((card["title"], card["who"], card["text"])), re.I), card
+    return row, conflict
+
+
+@pytest.mark.parametrize("bound", ("seconds", "usd"))
+def test_p6_a_round_whose_thread_reaches_its_time_or_spend_limit_goes_to_identity_and_the_reading_asked_again_proposes_again(j2, monkeypatch, bound):
+    """Rule 12 for the thread this package added (found by a verifier 2026-10-27): at its limit a round's bargain closed in silence,
+    no conflict reached Identity, the row stayed proposed for good, and 'the same reading asked twice' answered 'already with
+    Priority' for ever. Now the row says refused, Identity gets one conflict with the ways out, and the owner one card."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(R, "BOUNDS", {"hops": 4, "seconds": 5 if bound == "seconds" else 900, "usd": 0.5})
+    _reader(monkeypatch, R, [["D2"], []])
+    _priority_away(monkeypatch, R, cost=0.6 if bound == "usd" else 0.0)
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    _pursue(j2, ref, neighbours)
+    [row] = v1().rounds_of(ref)
+    assert (row["round"], row["status"]) == (1, "proposed") and _conflicts(R, ref) == [], "Priority has not answered, and the limit is not reached"
+    for _ in range(3):
+        R.sweep(ref)
+    W.run_until_idle(ref, limit=100)
+    row, conflict = _the_round_stopped_at_its_limit(W, R, ref, bound)
+    assert J.status(ref)["state"] == "blocked" and "goal.reached" not in _events(J, ref)
+    for _ in range(3):
+        R.sweep(ref)
+    W.run_until_idle(ref, limit=100)
+    assert len(_conflicts(R, ref)) == 1, "a thread's conflict is filed once"
+    # the same reading, asked again, is a round again (and the round keeps its number): the guard no longer counts the refused one
+    proposals = len([p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "round"])
+    R.post(ref, "Identity", "Adaptation", "request", {"word": "next", "items": ["D2"], "reading": row["reading"], "findings": row["fixes"], "round": 1})
+    W.run_until_idle(ref, limit=100)
+    again = [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "round"]
+    assert len(again) == proposals + 1 and again[-1]["payload"]["round"] == 1 and again[-1]["thread"] != row["thread"]
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "proposed")]
+    _only_registered_engines_ran(W, R, ref)
+
+
+def test_p6_a_round_whose_answer_is_past_its_hop_limit_goes_to_identity_too(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _reader(monkeypatch, R, [["D2"], []])
+    ref = _born(j2)
+
+    def shorten(prompt):                         # the round was proposed (one hop), and its thread may go back and forth no more
+        with W._lock(ref):
+            ths = R.threads(ref)
+            for t in ths:
+                if t["topic"] == "round" and t["state"] not in R.CLOSED:
+                    t["bounds"] = dict(t["bounds"], hops=1)
+            R._save_threads(ref, ths)
+    _priority_away(monkeypatch, R, before=shorten)
+    neighbours = Neighbours(j2, monkeypatch)
+    _pursue(j2, ref, neighbours)
+    row, conflict = _the_round_stopped_at_its_limit(W, R, ref, "hops")
+    assert not [p for p in R.board(ref) if p["src"] == "Priority" and p["payload"].get("word") == "round"], "Priority's answer was past the limit"
+    assert "goal.reached" not in _events(J, ref) and J.status(ref)["state"] == "blocked"
+
+
 def test_p3_the_same_item_not_met_twice_gets_a_different_correction_and_two_rounds_reach_the_goal(j2, monkeypatch):
     """The acceptance of M9: a department with a failing item reaches done in two or more rounds."""
     W, R, J, _, _ = j2
