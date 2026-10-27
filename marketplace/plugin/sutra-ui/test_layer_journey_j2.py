@@ -3,14 +3,16 @@
 `journeys/J2.json` says what the department goes through, step by step and edge by edge; this file runs the real flow with a
 model that is a function and asks the one question of A3.6: did the journey happen the way its definition says?
 (`journeys.walk`). It also holds the two edge tests that J2 was missing (the clock and the spend bounds of J2.2, and the
-`run.failed` event of J2.7) and the test that keeps the eight sub-journeys equal to the names the ledger stamps. The model is
-stubbed everywhere: no test here calls a live one.
+`run.failed` event of J2.7), the test that proves the two clauses of J2.8 that no test of the identity's own asserted (a run in
+flight finishes, and the record of the old cycle is kept as it was) and the test that keeps the eight sub-journeys equal to the
+names the ledger stamps. The model is stubbed everywhere: no test here calls a live one.
 
 The fixture, the model and the helpers are the ones of test_j2.py, copied and not imported, so this file stands alone.
 """
 import copy
 import importlib
 import json
+import threading
 
 import pytest
 
@@ -21,6 +23,7 @@ WEBSITE = "Build a website that teaches algebra to Class 8 students"
 ORGANIC = "Set up a laboratory system to track chemical inventory for our school science team"
 LINE = ["Plan", "Write", "Check", "Publish"]
 RULE = "Every page ends with: Call 108."
+NEW_GOAL = "A phone-first website that teaches algebra and geometry to Class 8 students"
 
 
 @pytest.fixture
@@ -130,7 +133,18 @@ def test_j2_walk_from_the_identity_to_the_goal(j2, monkeypatch):
     J2 = journeys.load()["J2"]
     _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}, "audit.items": _items_met})
     ref = _born(j2)
+
+    # J2.6, the edge out of step 6: the first publish is asked of the owner, once, in the golden lead of the row, and the ask is
+    # the act the edge names (Identity requests the owner's publish). The line has run up to it and goes no further without the stamp.
+    edge = next(e for e in J2["edges"] if e["id"] == "J2.6")
+    (first,) = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert first["kind"] == "publish" and first["text"].startswith("Publish: go live for the first time"), first
+    assert first["text"].startswith(edge["outcome"]["golden"]), "the row's golden lead is what the owner reads"
+    assert [(p["src"], p["dst"][0], p["msg_type"]) for p in R.board(ref) if (p["payload"] or {}).get("word") == "publish"] == \
+        [("Identity", "Owner", "request")], "and it is one request from Identity to the owner"
+    assert _work(W, ref) == LINE[:-1] and not W.versions(ref, "Live site"), "nothing goes outside before the stamp"
     _stamp_all(W, ref)                                           # the first publish: a born rule says ask
+    assert _work(W, ref) == LINE and len(W.versions(ref, "Live site")) == 1, "and the stamp lets it go, once"
 
     # the ledger, in order, each event stamped with the sub-journey of its step
     named = {"identity.assessed", "proposal.requested", "proposal.created", "proposal.granted", "workflow.validated",
@@ -346,3 +360,65 @@ def test_j2_7_after_the_goal_a_failed_run_is_not_yet_a_run_failed_event(j2, monk
     on_ledger = [e for e in J.events(ref) if e["action"] == "run.failed"]
     assert {e["run_ref"] for e in on_ledger} <= {r["id"] for r in failed_runs}, "an event is never written for a run that did not fail"
     assert len(on_ledger) < len(failed_runs), "BL-4b: the ledger misses the failed runs of a cycle that is done"
+
+
+# ---- J2.8: the goal changes while a run is in flight -------------------------------------------------------------------
+def test_j2_8_work_in_flight_finishes_and_the_record_of_the_old_cycle_is_kept(j2, monkeypatch):
+    """J2.8: a stamped goal rule starts the cycle again from step 1 with the record kept, and the run that was in flight when
+    the owner stamped it finishes: the stamp is applied after the run, never in the middle of it. The owner stamps while the
+    first publish is running (held in a step, as a slow one is; the stamp comes in as the page's request thread brings it, and
+    the department's own turns run in another thread). The run ends ok and files its page under the cycle it began in, every
+    event the old cycle had is as it was, and the new cycle opens after the run with goal.revised. A reopen that cut the run
+    short, that opened the new cycle while it ran, or that rewrote the old record fails."""
+    W, R, J, _ = j2
+    _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}})
+    ref = _born(j2)
+    old = J.status(ref)["cycle_id"]
+    _model(monkeypatch, R, {"identity.recognise": {"journey": "directive", "why": "a standing change"},
+                            "identity.rule": {"tag": "goal", "line": NEW_GOAL, "scope": "standing"},
+                            "audit.judge": {"ok": True, "findings": []}})
+    W.owner_ask(ref, "From now on, the goal is " + NEW_GOAL)
+    W.run_until_idle(ref, limit=300)
+    asks = {a["kind"]: a["id"] for a in W.asks(ref) if a["status"] == "pending"}
+    assert set(asks) == {"publish", "rule"} and J.status(ref)["cycle_id"] == old and W.dept(ref)["goal"] != NEW_GOAL
+
+    entered, go, real = threading.Event(), threading.Event(), R.run_step
+
+    def run_step(ctx, step, item):
+        if ctx["engine"] == "Publish" and not entered.is_set():
+            entered.set()
+            go.wait(30)                                          # the publish is under way until the test lets it go on
+        return real(ctx, step, item)
+
+    monkeypatch.setattr(R, "run_step", run_step)
+    W.decide_ask(ref, asks["publish"], True)                    # the first publish is let go: the department's own thread runs it
+    motor = threading.Thread(target=W.run_until_idle, args=(ref, 300))
+    motor.start()
+    try:
+        assert entered.wait(30), "the publish never started"
+        (running,) = [r for r in W.runs(ref) if not r.get("system") and r["status"] == "running"]
+        assert running["engine"] == "Publish" and not W.versions(ref, "Live site"), "the publish is in flight, and has filed nothing"
+        in_flight = J.events(ref)
+        W.decide_ask(ref, asks["rule"], True)                   # the owner stamps the goal rule while it runs
+        assert J.status(ref)["cycle_id"] == old and W.dept(ref)["goal"] != NEW_GOAL, "the stamp is not applied in the middle of a run"
+        assert [r["status"] for r in W.runs(ref) if r["id"] == running["id"]] == ["running"], "and the run is left to finish"
+    finally:
+        go.set()
+        motor.join(60)
+    assert not motor.is_alive()
+
+    # the run finished, under the cycle it began in
+    (ended,) = [r for r in W.runs(ref) if r["id"] == running["id"]]
+    assert ended["status"] == "ok" and ended["wrote"]["art"] == "Live site" and W.latest(ref, "Live site")["v"] == ended["wrote"]["v"]
+    events = J.events(ref)
+    mine = [e for e in events if e.get("run_ref") == running["id"]]
+    assert [e["action"] for e in mine] == ["slot.assigned", "run.started", "artifact.filed", "run.completed"]
+    assert {e["cycle_id"] for e in mine} == {old}, "the run in flight is the old cycle's"
+
+    # then the cycle began again, with the record kept: what the old cycle had written is as it was, and nothing of it is rewritten
+    opened = next(e for e in events if e["action"] == "goal.revised")
+    assert opened["cycle_id"] != old and opened["step"] == 1 and opened["payload"]["previous_cycle"] == old
+    assert max(e["seq"] for e in mine) < opened["seq"], "the new cycle opens after the run in flight, not during it"
+    assert in_flight and events[:len(in_flight)] == in_flight, "the events of the old cycle are as they were"
+    assert [e for e in events[:events.index(opened)] if e["cycle_id"] != old] == [], "and the old cycle is all that came before the new"
+    assert W.dept(ref)["goal"] == NEW_GOAL and J.status(ref)["cycle_id"] == opened["cycle_id"]
