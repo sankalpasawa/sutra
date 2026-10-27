@@ -10,11 +10,13 @@ WAVE 0 writes the skeleton: the lazy proxies R, W, J, S and FV (tests reload eng
 holds a module object), ref_to (a late-bound delegate to a body that has not moved yet) and recipes() (the five
 function engines, which engine_runtime.defs() assembles before the Library's templates). W1-CORE adds the registry
 (available, load, pins, impl, layer_of, resolve, names, call, view) and layers/prompts.py (the typed prompt compiler);
-W3-PINS the pin sets per department.
+W3-PINS the pin sets per department: recipes() for a pin set, pins() honouring a department's record, cannot_run().
 
 THE REGISTRY (A1.18): engine_runtime asks it, for every step and gate, which function runs a name: the one the layer's
 pinned implementation provides in its CODE, PROMPT, DRAFT or CHECK dict, else engine_runtime's own, which is the fallback
-until a body has moved. Until W3-PINS every department runs DEFAULT_PINS. A module that does not load runs nothing: the
+until a body has moved. A department runs the versions its record pins while S.PER_DEPARTMENT (W3-PINS), by the rule that keeps
+old pins working: a pin names a whole version, its recipe and its bodies together; Root's version is the organisation's Root's;
+a pin that cannot run (cannot_run) runs the layer's default, with one row. A module that does not load runs nothing: the
 engine_runtime body is used, so a broken layer file never stops a department.
 
 A VERSION THAT EXTENDS A VERSION (PRD amendment A2): a version above 1 names the one it extends (PARENT) and writes only what
@@ -66,19 +68,22 @@ def ref_to(name, module='engine_runtime'):
     return delegate
 
 
-def recipes():
-    """The five function engines, keyed by engine title, each read from the recipe of the version DEFAULT_PINS names
-    (layers/<layer>/v1.json), in RECIPE_ORDER; a default pin that is a child with a patch and no whole file of its own is
-    resolved by recipe() (A2). A recipe that is not there, or is not JSON, or does not merge, refuses the definitions load
-    with a named fault, as a template that is not one does."""
+def recipes(pins=None):
+    """The five function engines, keyed by engine title, each read from the recipe of the version `pins` names for its layer
+    ({layer: impl id}; DEFAULT_PINS for a layer it leaves out, or for all of them with no `pins`), in RECIPE_ORDER. A default pin
+    reads layers/<layer>/v1.json as it always has, or, when it is a child with a patch and no whole file of its own, is resolved
+    by recipe() (A2); any other pin is resolved by recipe() too, never by reading a file here (W3-PINS). A recipe that is not
+    there, or is not JSON, or does not merge, refuses the definitions load with a named fault, as a template that is not one
+    does."""
     import layer_schema
     out = {}
     for layer in RECIPE_ORDER:
-        impl = layer_schema.DEFAULT_PINS[layer]
+        default = layer_schema.DEFAULT_PINS[layer]
+        impl = (pins or {}).get(layer) or default
         title = layer_schema.TITLE[layer]
         v = impl.split('/', 1)[1]
         p = HERE / layer / (v + '.json')
-        if not p.exists() and (HERE / layer / (v + '.py')).is_file():
+        if impl != default or (not p.exists() and (HERE / layer / (v + '.py')).is_file()):
             from layers import lineage, versions
             try:
                 out[title] = versions.recipe(impl)
@@ -149,26 +154,144 @@ def load(impl_id):
     return module
 
 
+#: why a version cannot run, or None when it can, by (its id, the identity of the module the registry holds under it): the check
+#: runs the runtime's own definition law over a recipe, so it is made once for each implementation, and again only when the
+#: registry holds another module under the id (a test's stub). Likewise, for a set of versions, whether they fit together.
+_RUNNABLE = {}
+
+
+def _why_not(impl_id, module):
+    """The words for the first reason `module`, the version `impl_id`, cannot run; None when it can: it loads, with every
+    version it extends, each written for this schema version of the interface; its recipe resolves; the definitions assembled
+    with it in its layer's place are not refused (the runtime's own law, A2-R9); and its words keep the function template
+    (contract case 14)."""
+    if module is None:
+        return 'it does not load'
+    from layers import contract, lineage, versions
+    try:
+        lineage_ids = versions.chain(impl_id)
+    except lineage.ModelFault:
+        return 'a version it extends does not load'
+    if any(getattr(load(i), 'IMPLEMENTS', None) != S.SCHEMA_VERSION for i in lineage_ids):
+        return 'it was written for another version of the interface'
+    try:
+        versions.recipe(impl_id)
+    except lineage.ModelFault:
+        return 'its recipe does not resolve'
+    with R.pinned():                                   # against the default definitions, whatever department asks
+        if versions.definition_faults(impl_id):
+            return 'its steps break the rules every function keeps'
+    if contract.case_14_function_template(impl_id):
+        return 'its words break what every function keeps'
+    return None
+
+
+def cannot_run(impl_id):
+    """Why a version cannot run in a department, in a few words; None when it can (W3-PINS N2). The answer is kept for the
+    version: the check is made once, never on a lookup."""
+    module = load(impl_id)
+    key = (impl_id, id(module))
+    if key not in _RUNNABLE:
+        _RUNNABLE[key] = _why_not(impl_id, module)
+    return _RUNNABLE[key]
+
+
+def _pin_fault(layer, want):
+    """Why the version a record names for `layer` does not run; None when it does."""
+    if not (isinstance(want, str) and re.fullmatch(S.IMPL_RE, want) and want.startswith(layer + '/')):
+        return 'it is not a version of %s' % S.TITLE[layer]
+    return cannot_run(want)
+
+
+def _unfit(ids):
+    """Why the versions `ids` (RECIPE_ORDER) do not fit together though each runs alone, e.g. two that add the same step; None when
+    the definitions assembled with all of them are not refused. Made once for each set."""
+    key = (ids, tuple(id(load(i)) for i in ids))
+    if key not in _RUNNABLE:
+        try:
+            R.defs_of(ids)
+            _RUNNABLE[key] = None
+        except ValueError:
+            _RUNNABLE[key] = 'the versions pinned for it do not fit together'
+    return _RUNNABLE[key]
+
+
+def _tell(ref, layer, named, what):
+    """One row in the department's record that a pin it names does not run, once for each (department, layer, pin): the
+    tick tells it, a read of the department does not (reading()), and a department with no record to write to says nothing."""
+    if _READING.get() or (ref, layer, named) in _TOLD:
+        return
+    _TOLD.add((ref, layer, named))
+    try:
+        if ref and (W.ddir(ref) / 'dept.json').exists():
+            W.system_run(ref, S.TITLE[layer], what)
+    except Exception:  # noqa: BLE001 -- the row is a note of the pin, never a second fault
+        pass
+
+
+def _organisation_root(ref, d):
+    """The record of the organisation's Root department, found through the department's own record of its root; None for a
+    department that has none, or whose Root has no record here. Root's own record is itself."""
+    if d.get('kind') == 'root':
+        return d
+    root = d.get('root')
+    if not isinstance(root, str) or not root or root == ref:
+        return None
+    try:
+        got = W.dept(root)
+    except Exception:  # noqa: BLE001 -- no records home to read it from
+        return None
+    return got if isinstance(got, dict) and got.get('kind') == 'root' else None
+
+
 def pins(ref=None, d=None):
-    """The implementation each layer runs for a department, {layer: impl id}: DEFAULT_PINS while S.PER_DEPARTMENT is
-    False. A record whose `layers` names another implementation runs the default all the same, and the record says so,
-    once (per-department versions come in wave 3)."""
+    """The implementation each layer runs for a department, {layer: impl id}: DEFAULT_PINS, and while S.PER_DEPARTMENT the
+    department's own record laid over them (W3-PINS), by the rule that keeps old pins working (A1.18): a pin names a whole
+    version; a pin that cannot run (cannot_run), or that does not fit with the others, runs that layer's default, and the record
+    says so, once. Root's version is the organisation's Root's, never the child's: a child's record names none of its own."""
     out = dict(S.DEFAULT_PINS)
-    if S.PER_DEPARTMENT:
-        return out
     if d is None and ref:
         try:
             d = W.dept(ref)
         except Exception:  # noqa: BLE001 -- no records home to read it from: every layer runs its default
             d = None
-    for layer, named in ((d or {}).get('layers') or {}).items():
-        if layer in out and named != out[layer] and not _READING.get() and (ref, layer, named) not in _TOLD:
-            _TOLD.add((ref, layer, named))
-            try:
-                if ref and (W.ddir(ref) / 'dept.json').exists():
-                    W.system_run(ref, S.TITLE[layer], 'runs the default: per-department versions come in wave 3')
-            except Exception:  # noqa: BLE001 -- the row is a note of the pin, never a second fault
-                pass
+    if not isinstance(d, dict) or not isinstance(d.get('layers'), dict):
+        return out
+    named = d['layers']
+    if not S.PER_DEPARTMENT:
+        for layer, want in named.items():
+            if layer in out and want is not None and want != out[layer]:
+                _tell(ref, layer, want, 'runs the default: per-department versions are not on')
+        return out
+    for layer in S.FUNCTION_LAYERS:
+        want = named.get(layer)
+        if want is None or want == out[layer]:
+            continue
+        why = _pin_fault(layer, want)
+        if why:
+            _tell(ref, layer, want, 'runs the default: its per-department version cannot run here (%s)' % why)
+        else:
+            out[layer] = want
+    # Root's: the organisation's Root names it for every department of the organisation
+    mine, theirs = named.get('root'), ((_organisation_root(ref, d) or {}).get('layers') or {}).get('root')
+    if d.get('kind') == 'root':
+        theirs = mine
+    if theirs is not None and theirs != out['root']:
+        why = _pin_fault('root', theirs)
+        if not why:
+            out['root'] = theirs
+        elif d.get('kind') == 'root':
+            _tell(ref, 'root', theirs, 'runs the default: its per-department version cannot run here (%s)' % why)
+    if d.get('kind') != 'root' and mine is not None and mine != S.DEFAULT_PINS['root'] and mine != out['root']:
+        _tell(ref, 'root', mine, "runs the organisation's version of Root: Root's version is not pinned for one department")
+    ids = tuple(out[layer] for layer in RECIPE_ORDER)
+    if ids != tuple(S.DEFAULT_PINS[layer] for layer in RECIPE_ORDER):
+        why = _unfit(ids)
+        if why:
+            for layer in RECIPE_ORDER:
+                if out[layer] != S.DEFAULT_PINS[layer]:
+                    _tell(ref, layer, out[layer], 'runs the default: %s' % why)
+                    out[layer] = S.DEFAULT_PINS[layer]
     return out
 
 

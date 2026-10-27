@@ -42,6 +42,9 @@ THE BOARD
     holds when a bound is hit. Acts are FIPA's; thread states are A2A's.
 """
 import contextlib
+import contextvars
+import copy
+import functools
 import hashlib
 import json
 import math
@@ -103,6 +106,11 @@ SKIPPED = "not needed this time"
 #: A test may put a callable here: (prompt, step) -> (object or None, usd, how).
 MODEL = None
 _DEFS = {}
+#: the versions the department in hand runs: (its ref, the implementation ids of layers.RECIPE_ORDER, every layer's pin), or None for
+#: DEFAULT_PINS. Set at each entry point from the department's pins (the motor's slot, a board delivery, the sweep, an API route;
+#: pinned), it chooses which definitions defs() serves, and so what engine_def, all_steps and step_def read (PRD A1.18,
+#: W3-PINS). A call with no department runs the default set.
+_PINS = contextvars.ContextVar("engine_pins", default=None)
 _GATE_SEEN = {}
 _SPEND = threading.Lock()
 
@@ -333,10 +341,97 @@ def missing_engines(d):
     return [n for n in (d or {}).get("engines") or [] if n not in have]
 
 
+def default_ids():
+    """The implementation ids of the five function layers the release runs, in layers.RECIPE_ORDER: the key of the default definitions."""
+    return tuple(layer_schema.DEFAULT_PINS[layer] for layer in layers.RECIPE_ORDER)
+
+
+def current_ids():
+    """The implementation ids (layers.RECIPE_ORDER) of the department in hand; the default set when no department is."""
+    cur = _PINS.get()
+    return cur[1] if cur else default_ids()
+
+
+def _pin_value(ref, d):
+    """What _PINS holds for a department: (ref, the ids of its function layers, its pin of every layer). Choosing the set tells
+    nothing in the record (reading()): the tick that runs the step does."""
+    ref = ref or (d or {}).get("ref")
+    if not (ref or d):
+        return None
+    try:
+        with layers.reading():
+            got = layers.pins(ref, d)
+        return (ref, tuple(got[layer] for layer in layers.RECIPE_ORDER), got)
+    except Exception:  # noqa: BLE001 -- a department whose pins cannot be read runs the default versions, as one with none does
+        return None
+
+
+@contextlib.contextmanager
+def pinned(ref=None, d=None):
+    """Inside it every definition lookup is the department's own: defs(), engine_def, all_steps, step_def and what reads them
+    are assembled from the versions its pins name (W3-PINS). With no department, the default set."""
+    token = _PINS.set(_pin_value(ref, d))
+    try:
+        yield
+    finally:
+        _PINS.reset(token)
+
+
+def in_dept(fn):
+    """fn(ref, ...) runs with its department's versions in hand (pinned): the entry points of the runtime, each one a place a
+    tick, a delivery or a read begins. One that is called inside a run of the same department keeps the versions that run
+    began with: a run is on one set of versions from its first step to its last, whatever the record says meanwhile."""
+    @functools.wraps(fn)
+    def run(ref, *args, **kwargs):
+        held = _PINS.get()
+        if held and held[0] == ref:
+            return fn(ref, *args, **kwargs)
+        with pinned(ref):
+            return fn(ref, *args, **kwargs)
+    return run
+
+
 def defs():
     """The definitions: the file (the kinds, the edges, Coordination's table), the five functions' engines from their
     layers' recipes (layers/<layer>/v1.json, PRD A1.18), and the Library's engine templates assembled in as engines,
-    validated as one."""
+    validated as one. For the department in hand (pinned): the default set is assembled once, and any other set of
+    versions, a copy of it with those versions' recipes in their layers' places, once for each tuple of implementation ids."""
+    return defs_of(current_ids())
+
+
+def defs_of(ids):
+    """The definitions of one set of versions, `ids` in layers.RECIPE_ORDER: the default set's are the file's, any other set's
+    are assembled once and kept under its tuple. ValueError, as defs() raises it, when the set is refused."""
+    base = _base_defs()
+    if ids == default_ids():
+        return base
+    got = _DEFS.get(ids)
+    if got is None:
+        got = _DEFS[ids] = _pinned_defs(base, ids)
+    return got
+
+
+def _pinned_defs(base, ids):
+    """The default definitions with the recipes of the versions `ids` names in their layers' places, validated as the default
+    set is. A version outside layers/ (a test's, tried before it ships) brings its own names (validate's `provided`)."""
+    d = copy.deepcopy(base)
+    pins = dict(zip(layers.RECIPE_ORDER, ids))
+    made = layers.recipes(pins)
+    for layer, impl in pins.items():
+        if impl != layer_schema.DEFAULT_PINS[layer]:
+            d["engines"][layer_schema.TITLE[layer]] = made[layer_schema.TITLE[layer]]
+    provided = {k: set() for k in layers.KINDS}
+    for impl in ids:
+        module = layers.load(impl)
+        for k in layers.KINDS:
+            provided[k] |= set(getattr(module, k.upper(), None) or {})
+    faults = validate(d, provided)
+    if faults:
+        raise ValueError("the engine definitions are refused: " + "; ".join(faults[:6]))
+    return d
+
+
+def _base_defs():
     try:
         key = str(user_templates_dir())
     except Exception:  # noqa: BLE001 -- no record home set
@@ -504,8 +599,94 @@ def threads(ref):
     return W._read(W.ddir(ref) / "exchanges.json", [])
 
 
+def _ladder_raw(ref):
+    """ladder.json as it is kept: an entry for each step of each version of a function ('step@implementation'), and, from
+    before ladders were kept per version, for each step ('step'), which is its version 1 entry (PRD A1.18, W3-PINS N3)."""
+    got = W._read(W.ddir(ref) / "ladder.json", {})
+    return got if isinstance(got, dict) else {}
+
+
+def _dept_pins(ref):
+    """{layer: implementation id} the department runs: the set in hand when it is that department's, else its record's."""
+    held = _PINS.get()
+    if held and held[0] == ref:
+        return held[2]
+    with layers.reading():
+        return layers.pins(ref)
+
+
+def ladder_key(ref, step_id, engine):
+    """The key an entry is kept under: 'step@implementation' for a step of a function, by the version the department runs for
+    that function, so a rung learned under one version is not applied to another; the step alone for a work engine's, which is
+    no layer's and has no versions."""
+    layer = layers.layer_of(engine)
+    return step_id if not layer else "%s@%s" % (step_id, _dept_pins(ref)[layer])
+
+
+#: {step id: the versions its entry may be read from, nearest first} for a version that extends another, by (id, the module the
+#: registry holds for it): layers.unchanged_steps resolves recipes, so it is asked once for a version, not on every read
+_INHERITS = {}
+
+
+def _inherited(impl):
+    """The steps a version leaves as the version it extends has them, each with the versions up its lineage whose entry it may read:
+    the parent's, and the parent's own parent's when the parent left the step as it had it, and so on up to the version that made
+    the step what it is (A2-D13). {} for a version that extends none, or whose lineage cannot be read."""
+    from layers import lineage
+    try:
+        chain = layers.chain(impl)
+    except lineage.ModelFault:
+        return {}
+    left = {version: layers.unchanged_steps(version) for version in chain[:-1]}      # what each leaves as the one it extends has it
+    out = {}
+    for step in left[impl] if impl in left else ():
+        reads = []
+        for version, parent in zip(chain, chain[1:]):
+            if step not in left[version]:
+                break
+            reads.append(parent)
+        out[step] = reads
+    return out
+
+
+def _inherits(impl):
+    key = (impl, id(layers.load(impl)))
+    if key not in _INHERITS:
+        _INHERITS[key] = _inherited(impl)
+    return _INHERITS[key]
+
+
 def ladder(ref):
-    return W._read(W.ddir(ref) / "ladder.json", {})
+    """The department's ladder as it reads it, {step id: entry}, for the versions it runs: the entry kept under 'step@implementation'
+    for each step of a function (an old key, kept before ladders were per version, is the version 1 entry), the step alone for a work
+    engine's. A step a version leaves as the version it extends has it reads the rung that version learned (A2-D13), and one it
+    changes starts at its born rung. A read; the entry a run changes is written under its own version's key only (_save_entry)."""
+    raw = _ladder_raw(ref)
+    if not raw:
+        return raw
+    pins, out = _dept_pins(ref), {}
+    keyed = {}
+    for key, e in raw.items():
+        step, at, impl = key.rpartition("@")
+        if at and re.fullmatch(layer_schema.IMPL_RE, impl):
+            keyed[key] = (step, impl)
+            continue
+        layer = layers.layer_of((e or {}).get("engine"))
+        if layer is None or pins.get(layer) == "%s/v1" % layer:
+            out[key] = e                                       # an old key is the version 1 entry; a work engine's step is never keyed
+    for key, (step, impl) in keyed.items():
+        if pins.get(impl.split("/")[0]) == impl:
+            out[step] = raw[key]
+    for layer, impl in pins.items():
+        for step, reads in _inherits(impl).items():
+            if step in out:
+                continue
+            for parent in reads:
+                got = raw.get("%s@%s" % (step, parent)) or (raw.get(step) if parent == "%s/v1" % layer else None)
+                if got:
+                    out[step] = got
+                    break
+    return out
 
 
 def numbers(ref, engine=None):
@@ -652,8 +833,8 @@ def rung_of(ref, step):
 def _save_entry(ref, e):
     layer_schema.check_record("adaptation", "ladder", e, ref=ref)      # the entry as the interface types it, before it is written (A1.20)
     with W._lock(ref):
-        L = ladder(ref)
-        L[e["step"]] = e
+        L = _ladder_raw(ref)
+        L[ladder_key(ref, e["step"], e.get("engine"))] = e
         W._write(W.ddir(ref) / "ladder.json", L)
     return e
 
@@ -808,6 +989,7 @@ def _state_after(th, dst, msg_type):
     return "working"
 
 
+@in_dept
 def post(ref, src, dst, msg_type, payload=None, thread=None, about=None, by=None, protocol=None, bounds=None, default=None):
     """One post on the department's board. It names who it is for, and wakes only them.
     Returns the post, or None when its thread is closed or was closed just now at its bound."""
@@ -980,6 +1162,7 @@ def _thread_set(ref, tid, state=None, spent=0.0, outcome=None):
         return th
 
 
+@in_dept
 def sweep(ref):
     """Each tick of the system clock: Coordination closes what is past its bound and raises what is past its window.
     A department that is off is left alone: its threads freeze, and their clocks do not run."""
@@ -1097,6 +1280,7 @@ def _held_back(ref, slot, rs, peek=False):
     return None
 
 
+@in_dept
 def next_due(ref, peek=False):
     """(engine, input, slot), or (None, None, why): what starts now in this department.
 
@@ -1498,6 +1682,7 @@ def _items(ctx, step):
     return list(_at(ctx["bag"], step["each"]) or []) if step.get("each") else [None]
 
 
+@in_dept
 def run_engine(ref, name, inp, slot):
     d = W.dept(ref)
     e = engine_def(name)
@@ -1557,8 +1742,16 @@ def run_engine(ref, name, inp, slot):
                 return i, got1
             width = max(1, min(int(s.get("side_by_side") or 1), len(todo) or 1))
             if width > 1:
+                held = _PINS.get()                         # a worker thread has no context of its own: it runs in the department's versions
+
+                def in_hand(i, one=one, held=held):
+                    token = _PINS.set(held)
+                    try:
+                        return one(i)
+                    finally:
+                        _PINS.reset(token)
                 with ThreadPoolExecutor(max_workers=width, thread_name_prefix="step") as pool:
-                    got = list(pool.map(one, todo))
+                    got = list(pool.map(in_hand, todo))
             else:
                 got = [one(i) for i in todo]
             bad = None
