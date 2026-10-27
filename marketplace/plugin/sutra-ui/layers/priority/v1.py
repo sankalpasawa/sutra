@@ -628,16 +628,19 @@ def apply_option(ref, ask, option):
 
 
 def apply_choice(ref, ask, option):
-    """What the owner chose on a card Priority filed (the limit card of an engine held at its envelope, which has no thread
-    for Identity's step to apply it): a raise is Priority's. Leave and stop are Identity's (S.OPTION_KINDS, A1.15), so they are
-    put in place by Identity's own code, the one a blocked plan's card uses (R.leave_out, R.stop_department): leaving an item
-    out reshapes the plan from the done-when that is kept, so the held engine does not wait in a line that no longer needs it,
-    and the card never says 'You chose' over nothing applied. On a card with a thread, only a raise is applied here; Identity
-    applies the rest."""
+    """What the owner chose on a card with no thread for Identity's step to apply it from (the limit card of an engine held at
+    its envelope, or any card whose line did not reach the board): a raise is Priority's. Leave and stop are Identity's
+    (S.OPTION_KINDS, A1.15), so they are put in place by Identity's own code, the one a blocked plan's card uses (R.leave_out,
+    R.stop_department): leaving an item out reshapes the plan from the done-when that is kept, so the held engine does not wait
+    in a line that no longer needs it, and the card never says 'You chose' over nothing applied. A card with a thread is
+    Identity's to apply whole: its step hands a raise to apply_option (apply_way), once; only check_raise, before the choice is
+    recorded, is Priority's there."""
     kind = str((option or {}).get('kind') or str((option or {}).get('id') or '').split(':', 1)[0])
+    if (ask or {}).get('thread'):
+        return {}
     if kind == 'raise':
         return apply_option(ref, ask, option)
-    if (ask or {}).get('kind') != 'envelope' or (ask or {}).get('thread'):
+    if (ask or {}).get('kind') != 'envelope':
         return {}
     if kind == 'stop':
         R.stop_department(ref)

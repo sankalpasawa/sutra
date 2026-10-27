@@ -1089,6 +1089,29 @@ def test_q1_priority_applies_only_the_raise_and_a_raise_names_what_it_raises(liv
     assert W.dept(ref).get("stopped") is not True
 
 
+def test_q1_a_raise_on_a_card_identity_holds_a_thread_for_is_applied_once_by_identitys_step(live, monkeypatch):
+    """A raise applied twice (once as the card is answered, once by Identity's step), or by Priority where the interface gives
+    the card's ways to Identity's step (A1.15), must fail: on a card with a thread the answer is checked against the cap by
+    Priority before it is recorded and applied by Identity's step through Priority's apply_option, once; on a card with none
+    (the limit card of a held engine) Priority applies it as the card is answered."""
+    W, R, J, _ = live
+    ref = _held(live)
+    d = W.dept(ref)
+    raise_ = _envelope_ask(W, ref)["options"][0]
+    assert V1.apply_choice(ref, dict(_envelope_ask(W, ref), thread="x-1"), raise_) == {}, "Identity's step is the one to apply it"
+    assert W.dept(ref)["envelopes"]["Plan"] == {"calls": 0, "usd": 6.0}
+    card = R._blocked(ref, d, {"src": "Root" if d.get("root") else R.OWNER}, "Plan is out of its envelope. Choose how to go on.",
+                      "Plan is held.", "Priority, holding the engine", "the limit", options=[raise_, W.option(W.STOP_OPTION, "Stop here", "x")])
+    assert card["thread"], "the card has a line on the board, so a step of Identity's applies the choice"
+    seen, inner = [], V1.apply_option
+    monkeypatch.setattr(V1, "apply_option", lambda r, a, o: seen.append(o["id"]) or inner(r, a, o))
+    W.choose_option(ref, card["id"], "raise:Plan")
+    assert seen == [] and W.dept(ref)["envelopes"]["Plan"] == {"calls": 0, "usd": 6.0}, "answering the card applies nothing"
+    W.run_until_idle(ref, limit=300)
+    assert seen == ["raise:Plan"] and W.dept(ref)["envelopes"]["Plan"] == {"calls": 1, "usd": 6.0}, "Identity's step applied it, once"
+    assert next(a for a in W.asks(ref) if a["id"] == card["id"])["status"] == "chosen"
+
+
 # ---- Q2: the goal's ceiling (M9.2) --------------------------------------------------------------------------------------------
 # Priority holds one ceiling for the whole goal beside its engines' daily limits: dept.ceiling, written once at the first
 # registration (rounds, and the calls and money of that many runs of the line), raised only by the owner's choice up to RAISE_CAP
