@@ -394,6 +394,13 @@ def _the_round_stopped_at_its_limit(W, R, ref, bound):
     assert card["kind"] == "blocked" and [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"]
     assert (card["title"], card["who"]) == ("The next round needs your word.", "Priority, pricing the round")
     assert not re.search(r"\bplan\b|\b(?:bound|hops|seconds|usd)\b|\b(?:grant|counter|refus)", " ".join((card["title"], card["who"], card["text"])), re.I), card
+    # the rounds view says why the round stopped in the owner's words: Priority never answered it, so it did not say no (found by a verifier 2026-10-27)
+    assert row["bound"] == bound
+    pane = v1().view(ref, W.dept(ref), [], W.asks(ref))
+    assert S.validate_view("adaptation", pane) == []
+    assert [(r["round"], r["status"], r["said"]) for r in pane["rounds"]] == [(1, "refused", {"seconds": "Priority did not answer in time",
+                                                                                              "usd": "Pricing it cost more than it may",
+                                                                                              "hops": "Priority and Adaptation could not settle it"}[bound])]
     return row, conflict
 
 

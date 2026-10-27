@@ -2367,6 +2367,81 @@ def test_f4_each_status_has_the_owners_words_and_never_the_bargains_inside_ones(
     assert not re.search(r"grant|counter|refus", " ".join(v1().ROUND_SAID.values()), re.I)
 
 
+#: what the pane says of a round a limit of its thread closed (rule 12), by the limit: Priority never answered it, so it did not say no
+BOUND_SAID = {"seconds": "Priority did not answer in time", "usd": "Pricing it cost more than it may", "hops": "Priority and Adaptation could not settle it"}
+
+
+def _propose_again(j2, ref):
+    """The same reading asked for the round again, as the steps run it (no motor): a new row, proposed, on a thread of its own."""
+    W, R, J, _, _ = j2
+    post = _ask_next(R, ref, round=1)
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}, "how": {}}
+    ctx["bag"]["adapt.hearnext"] = v1().CODE["adapt_hearnext"](ctx, None, None)
+    ctx["bag"]["adapt.next"] = v1().DRAFT["adapt_next_draft"](ctx, None, None)
+    return v1().CODE["adapt_round"](ctx, None, None)
+
+
+@pytest.mark.parametrize("bound", sorted(BOUND_SAID))
+def test_f4_a_round_a_limit_closed_says_priority_did_not_answer_it_and_not_that_priority_said_no(j2, monkeypatch, bound):
+    """Found by a verifier 2026-10-27: round_bound marked a round whose thread hit its time, spend or hop limit refused, and the
+    pane read 'Priority said no' for a round Priority never answered (at the hop limit it may have said yes, the answer dropped).
+    The row keeps which limit closed it, and the owner's words say that."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: True)
+    ref, out, row = _round_in_hand(j2)
+    assert v1().round_bound(ref, row["thread"], bound) is not None
+    stopped = _rows(W, ref)[-1]
+    assert (stopped["status"], stopped["bound"], stopped["thread"]) == ("refused", bound, row["thread"]) and S.validate("adaptation.round", stopped) == []
+    pane = _pane(j2, ref)
+    assert S.validate_view("adaptation", pane) == []
+    [shown] = pane["rounds"]
+    assert (shown["round"], shown["status"], shown["said"]) == (1, "refused", BOUND_SAID[bound]) and pane["round"] == shown
+    assert S.validate("view.adaptation.round", shown) == [] and len(shown["said"]) <= 60
+    assert not re.search(r"said no|grant|counter|refus|\bbound\b|\bhops\b|\busd\b|\bseconds\b", shown["said"], re.I), shown["said"]
+
+
+def test_f4_a_round_priority_really_said_no_to_keeps_saying_so_and_the_cause_of_an_earlier_try_does_not_outlive_it(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: True)
+    ref, out, row = _round_in_hand(j2)
+    # a real no from Priority: no limit on the row
+    _answer(j2, ref, row["thread"], "reject-proposal", {"word": "round", "why": "no room", "options": _ways_out(W)})
+    [said_no] = _pane(j2, ref)["rounds"]
+    assert (said_no["status"], said_no["said"]) == ("refused", "Priority said no") and not _rows(W, ref)[-1].get("bound")
+    # the round is asked for again, the limit of its new thread closes it: now it was never answered
+    assert "proposed round 1" in _propose_again(j2, ref)["said"]
+    again = _rows(W, ref)[-1]
+    assert (again["status"], again["bound"]) == ("proposed", None) and again["thread"] != row["thread"]
+    assert v1().round_bound(ref, again["thread"], "seconds") is not None
+    assert [(r["round"], r["status"], r["said"]) for r in _pane(j2, ref)["rounds"]] == [(1, "refused", BOUND_SAID["seconds"])]
+    # asked a third time, the limit of the second try is not carried to the third: when Priority really says no this time, it says no
+    assert "proposed round 1" in _propose_again(j2, ref)["said"]
+    third = _rows(W, ref)[-1]
+    assert (third["status"], third["bound"]) == ("proposed", None)
+    assert [(r["status"], r["said"]) for r in _pane(j2, ref)["rounds"]] == [("proposed", "asked Priority")]
+    _answer(j2, ref, third["thread"], "reject-proposal", {"word": "round", "why": "still no room", "options": _ways_out(W)})
+    assert [(r["status"], r["said"]) for r in _pane(j2, ref)["rounds"]] == [("refused", "Priority said no")]
+
+
+def test_f4_a_round_a_limit_closed_and_asked_again_that_priority_then_says_yes_to_says_yes(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: True)
+    ref, out, row = _round_in_hand(j2)
+    v1().round_bound(ref, row["thread"], "hops")
+    _propose_again(j2, ref)
+    again = _rows(W, ref)[-1]
+    _answer(j2, ref, again["thread"], "accept-proposal", {"word": "round", "why": "it fits"})
+    assert [(r["status"], r["said"]) for r in _pane(j2, ref)["rounds"]] == [("granted", "Priority said yes")]
+
+
+def test_f4_a_limit_the_view_has_no_words_for_still_says_the_round_was_not_settled_and_the_bound_words_are_the_owners(j2):
+    assert set(v1().BOUND_ROUND_SAID) == set(v1().BOUND_SAYS) == set(BOUND_SAID) and dict(v1().BOUND_ROUND_SAID) == BOUND_SAID
+    assert v1().round_said({"status": "refused", "bound": "weather"}) == "Priority and Adaptation could not settle it"
+    assert v1().round_said({"status": "refused", "bound": None}) == "Priority said no" and v1().round_said({"status": "refused"}) == "Priority said no"
+    assert v1().round_said({"status": "granted", "bound": "seconds"}) == "Priority said yes", "a limit means something only on a refused round"
+    assert not re.search(r"grant|counter|refus|said no", " ".join(v1().BOUND_ROUND_SAID.values()), re.I)
+
+
 def test_f4_only_the_rounds_of_the_cycle_the_department_is_in_are_shown(j2, monkeypatch):
     W, R, J, _, FV = j2
     ref = _pursuing(j2)
