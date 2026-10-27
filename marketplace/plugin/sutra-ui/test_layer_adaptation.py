@@ -520,6 +520,71 @@ def test_a4_a_name_with_a_character_the_interface_refuses_is_proposed_and_regist
     assert not [a for a in W.asks(ref) if a["kind"] == "blocked"]
 
 
+def _organic_cycle(j2, monkeypatch, plan, make=False, items=None):
+    """An organic department born the way a person makes one, a stub for every model it calls, and the motor run until idle:
+    what the cycle did, in the department's own words (events, asks, the registered plan)."""
+    W, R, J, founding, FV = j2
+    if make:
+        monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    stubs = {"adapt.line": plan, "priority.bargain": {"answer": "accept", "why": "the envelope has room"}}
+    if items:
+        stubs["setup.shape"] = {"name": "Lab Co Department", "kind": "organic", "goal": ORGANIC, "done_items": items}
+    _stub(monkeypatch, R, stubs)
+    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
+    W.owner_ask(root, ORGANIC)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    return ref, [e["action"] for e in J.events(ref)]
+
+
+def _never_silent(W, ref, acts):
+    """A plan a department cannot register ends in a card the owner can read; it never ends in nothing (found by a verifier:
+    a long name stalled at step 3, with no event, no card and no tell)."""
+    pending = [a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending"]
+    assert "workflow.registered" in acts or pending, acts
+
+
+FACTS_40 = "Facts web Facts web Facts web Facts web"
+CLINIC = "Facts about the night clinic and all of its rooms and doors"
+
+
+@pytest.mark.parametrize("name, writes, fit", [
+    ("Facts (web) " * 5, "Facts (web) " * 5, FACTS_40),            # the gap's own characters, made long
+    ("Facts web " * 5, "Facts web " * 5, FACTS_40),
+    ("a" * 39 + " bc", "a" * 39 + " bc", "a" * 39),
+    (CLINIC, CLINIC, "Facts about the night clinic and all of"),
+    ("Facts (web) " * 5, "Facts 2", FACTS_40),                     # a long name that writes something short
+    ("Facts 2", "Facts (web) " * 5, "Facts 2")])                   # a short name that writes something long
+def test_a4_a_name_cut_at_forty_where_the_cut_falls_on_a_space_is_proposed_and_registered_as_it_fits(j2, monkeypatch, name, writes, fit):
+    """Found by two verifiers: a model name over forty characters whose fortieth is a space was cut to forty with the space
+    kept, which the interface takes and Root's own run-together of a name drops, so the registered engines no longer matched the
+    Library and the department stopped at step 3 with nothing said. The name is cut to fit and ends in no space, so it is the
+    same name wherever it is run together again: the plan registers, as it fits."""
+    W, R, J, founding, FV = j2
+    assert v1().fit_name(name) == fit and re.search(S.NAME_RE, fit)
+    plan = {"engines": [dict(GOOD[0], name=name, writes=writes), dict(GOOD[1], reads=writes)]}
+    ref, acts = _organic_cycle(j2, monkeypatch, plan)
+    _never_silent(W, ref, acts)
+    assert "workflow.registered" in acts and "workflow.blocked" not in acts, acts
+    assert W.dept(ref)["workflows"][-1]["engines"] == [fit, "Site 2"]
+    assert not [a for a in W.asks(ref) if a["kind"] == "blocked"]
+    assert J.status(ref)["step"] > 3, J.status(ref)
+
+
+def test_a4_a_made_engine_whose_name_is_cut_at_a_space_registers_as_it_fits_with_the_setting_on(j2, monkeypatch):
+    """The same stall with J2_ADAPT_MAKE on: a made engine named 'aaa...a bc' (the fortieth character a space) is made to fit
+    and registers, the next engine reading what it writes."""
+    W, R, J, founding, FV = j2
+    long = "a" * 39 + " bc"
+    plan = {"engines": [_made(long, "Brief", long, ["D1", "D2"], confidence=0.9), _made("Stock page", long, "Live site", ["D3"], confidence=0.85)]}
+    ref, acts = _organic_cycle(j2, monkeypatch, plan, make=True, items=LAB)
+    _never_silent(W, ref, acts)
+    assert "workflow.registered" in acts and "workflow.blocked" not in acts, acts
+    assert W.dept(ref)["workflows"][-1]["engines"] == ["a" * 39, "Stock page"]
+    assert J.status(ref)["step"] > 3, J.status(ref)
+
+
 def test_a4_a_plan_no_name_can_be_made_of_blocks_with_a_card_that_has_no_path_and_no_pattern(j2, monkeypatch):
     """When nothing is left of a name to judge, the reasons go back twice and then the owner is told: the card, the tell and
     the pane say it in words. The record keeps the check that failed."""
