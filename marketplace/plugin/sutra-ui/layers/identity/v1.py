@@ -698,21 +698,39 @@ def plan_again(ctx, got):
     return dict(got, said='%s; asked Adaptation to shape the plan afresh, now that the budget is there' % got['said'], reopened=True)
 
 
+def a_way_out(ctx, got):
+    """A raise that set nothing going must not leave the owner with nothing to do (SM-6): when the choice has been applied and the
+    cycle is still blocked with no question waiting, the owner is given the ways out on one card, as for any block. Never reached
+    by a raise that resumed the work, which moves the cycle on; this is the end that no ask would otherwise be pending at."""
+    ref = ctx['ref']
+    cj = R._j2()
+    if not (cj and (cj._state(ref) or {}).get('state') == 'blocked') or any(a['status'] == 'pending' and a.get('options') for a in W.asks(ref)):
+        return got
+    d = W.dept(ref) or ctx['dept']
+    why = 'the room you added is in place, and there is nothing left for the department to go on with'
+    R._blocked(ref, d, _who(d), '%s. %s' % (why[0].upper() + why[1:], ways_out(d, why)), 'The department needs your word.',
+               'Identity, after the room you added', why)
+    return dict(got, said='%s; nothing was left to go on with, so the owner is given the ways out, on one card' % got['said'])
+
+
 def resume_after_raise(ctx, got):
     """What apply_way gave back, and the work that stopped for want of what the choice added set going again: a raise of an engine's
     limit on the card of a blocked plan shapes the plan afresh (plan_again); one that added room to the goal's ceiling has the round the
-    ceiling refused asked for again (ask_again). The owner who pays for more gets it, and not the card they chose from."""
+    ceiling refused asked for again (ask_again). The owner who pays for more gets it, and not the card they chose from; and where
+    nothing could go on, a card with the ways out (a_way_out)."""
     if not got.get('applied'):
         return got
     what = (got.get('result') or {}).get('what')
     if what == 'envelope':
-        return plan_again(ctx, got)
-    if what != 'ceiling':
+        got = plan_again(ctx, got)
+    elif what == 'ceiling':
+        again = ask_again(ctx['ref'], ctx['dept'])
+        if again:
+            got = dict(got, said='%s; asked Adaptation for round %d again, on %s' % (got['said'], again['round'], ', '.join(again['items'])),
+                       round=again['round'])
+    else:
         return got
-    again = ask_again(ctx['ref'], ctx['dept'])
-    if not again:
-        return got
-    return dict(got, said='%s; asked Adaptation for round %d again, on %s' % (got['said'], again['round'], ', '.join(again['items'])), round=again['round'])
+    return a_way_out(ctx, got)
 
 
 def _standing(d):

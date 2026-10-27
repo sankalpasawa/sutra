@@ -357,6 +357,27 @@ def test_p2d_the_click_that_adds_a_round_is_all_the_owner_does_and_the_round_run
     _only_registered_engines_ran(W, R, ref)
 
 
+def test_p2e_a_raise_that_has_no_round_to_ask_for_again_leaves_the_owner_a_card_and_not_a_block_with_none(j2, monkeypatch):
+    """The end that no ask would otherwise be pending at (SM-6): the ceiling was raised and Identity can ask Adaptation for nothing
+    (here: it hears no round to ask for), the cycle is still blocked, and the owner is given the ways out on one card, in plain words."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(S, "ROUNDS_DEFAULT", 1)
+    _reader(monkeypatch, R, [["D2"]])
+    ref = _born(j2)
+    neighbours = Neighbours(j2, monkeypatch)
+    _pursue(j2, ref, neighbours, limit=16)
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "blocked"]
+    monkeypatch.setattr(layers.load("identity/v1"), "ask_again", lambda ref, d: None)
+    W.choose_option(ref, card["id"], "raise:ceiling")
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["ceiling"]["rounds"] == 2 and J.status(ref)["state"] == "blocked"
+    [again] = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert again["id"] != card["id"] and again["kind"] == "blocked" and again["title"] == "The department needs your word."
+    assert [o["id"] for o in again["options"]][0] == "words" and [o["id"] for o in again["options"]][-1] == "stop" and 2 <= len(again["options"]) <= 3
+    assert not re.search(r"charter|\b(grant|counter|refus)|\bplan\b", " ".join(str(again.get(k) or "") for k in ("title", "who", "text", "why")), re.I), again
+    assert S.validate("identity.ask", again) == []
+
+
 def test_p2c_a_raise_asks_for_the_refused_round_once_and_only_where_one_was_refused(j2, monkeypatch):
     W, R, J, _, _ = j2
     monkeypatch.setattr(S, "ROUNDS_DEFAULT", 1)
