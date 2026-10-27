@@ -761,6 +761,20 @@ def test_m17_a_born_department_reads_in_the_owners_words(mods, born):
         assert not _banned(page), (fn, _banned(page))
 
 
+def _no_ways_out(monkeypatch, R):
+    """Priority's no as it was before it priced ways out: the answer carries none, so the conflict reaches the owner as the stamp
+    that runs or drops the plan. Priority sends them now and Adaptation passes them to Identity (W2-ADAPT, M5.4), whose one card
+    then holds them; a row that reads the stamp's words takes them off. Returns the post it replaced, to put back."""
+    real = R.post
+
+    def post(ref, src, dst, msg_type, payload=None, *a, **kw):
+        if src == "Priority" and isinstance(payload, dict) and "options" in payload:
+            payload = {k: v for k, v in payload.items() if k != "options"}
+        return real(ref, src, dst, msg_type, payload, *a, **kw)
+    monkeypatch.setattr(R, "post", post)
+    return real
+
+
 def _model(monkeypatch, R, answers):
     """test_j2.py's model that is a function: a step id maps to what the AI inside says; every other step falls to its
     draft, as it does offline."""
@@ -790,6 +804,7 @@ def test_m17_the_real_flow_reads_in_the_owners_words_in_every_state_it_passes(mo
     ask's text is Identity's line, at rest on All five and its pane), the owner says no (Identity's tell is its last
     act's detail); and Root's check sends a plan back once, so Adaptation reshapes it (FA1's row and the Propose pill)."""
     W, R, J, F = mods
+    real_post = _no_ways_out(monkeypatch, R)                    # the stamp, which a no without ways out still is
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "the envelope has no room today"}})
     ref, bad = born(WEBSITE, "Acme Learning", settle=False), []
     _stepped(W, J, F, ref, bad)
@@ -803,6 +818,14 @@ def test_m17_the_real_flow_reads_in_the_owners_words_in_every_state_it_passes(mo
     assert J.status(ref)["state"] == "blocked"
     last = next(n for n in F.functions(ref)["functions"] if n["name"] == "Identity")["last"]
     assert last and "said no" in " ".join(filter(None, [last["what"], last["detail"]])), last
+    # the same no with the ways out Priority priced: one card that holds them, read in the owner's words in every state it passes
+    monkeypatch.setattr(R, "post", real_post)
+    ways = born(WEBSITE, "Ways Co", settle=False)
+    _stepped(W, J, F, ways, bad)
+    idn = next(n for n in F.functions(ways)["functions"] if n["name"] == "Identity")
+    assert J.status(ways)["state"] == "blocked" and idn["state"] == "waiting_on_you", (J.status(ways), idn)
+    [card] = [a for a in W.asks(ways) if a["status"] == "pending"]
+    assert card["kind"] == "blocked" and "Priority said no to the plan: the envelope has no room today" in card["text"], card
     # Identity rules the plan runs: its tell says Priority did not say yes, never that it did not grant
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "the envelope has no room today"},
                             "identity.close": {"ruling": "run", "why": "the goal cannot be met without a site"}})
@@ -910,12 +933,21 @@ def test_m17_every_card_on_a_functions_pane_says_the_owners_words(mods, born, mo
     monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
     monkeypatch.setattr(R, "MODEL", lambda prompt, step: ({"answer": "reject", "why": "the envelope has no room today"}, 0.01, "model")
                         if step["id"] == "priority.bargain" else (None, 0.0, "offline"))
+    real_post = _no_ways_out(monkeypatch, R)
     ref = born(WEBSITE, "No Room Co")
     assert J.status(ref)["state"] == "waiting"
     panes = _panes(tmp_path, _reads(W, ref))
     for k, v in panes.items():
         assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))
     assert "Priority said no to the plan" in panes["five"]["rest"], "the ask at rest on All five"
+    # and with the ways out Priority priced, the card that holds them
+    monkeypatch.setattr(R, "post", real_post)
+    ref = born(WEBSITE, "Ways Co")
+    assert J.status(ref)["state"] == "blocked"
+    panes = _panes(tmp_path, _reads(W, ref))
+    for k, v in panes.items():
+        assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))
+    assert "Priority said no to the plan" in panes["five"]["rest"], "the card at rest on All five"
     # an organic department: Adaptation shapes its engines and Identity adds each on Priority's yes (Stamped by rule)
     monkeypatch.setattr(R, "MODEL", lambda prompt, step: (None, 0.0, "offline"))
     ref = born(ORGANIC, "Lab Co")
@@ -1016,6 +1048,7 @@ def test_m17_every_tab_of_every_functions_pane_says_the_owners_words(mods, born,
 
     # Priority says no: Identity puts the plan to the owner, with the ask's answers in the buttons' words
     _offline(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "the envelope has no room today"}})
+    real_post = _no_ways_out(monkeypatch, R)
     ref = born(WEBSITE, "No Room Co")
     assert J.status(ref)["state"] == "waiting"
     panes = _panes(tmp_path, _reads(W, ref))
@@ -1033,6 +1066,16 @@ def test_m17_every_tab_of_every_functions_pane_says_the_owners_words(mods, born,
     _scan(panes, "the owner said no")
     assert "The plan is dropped because you said no" in panes["chat"]["rest"] and "because you said no" in tells(ref)
     assert "Drop what was turned down" in panes["identity:chat"]["rest"], "Identity's thinking on the owner's no"
+
+    # Priority says no with the ways out it priced: Identity puts the owner one card that holds them
+    monkeypatch.setattr(R, "post", real_post)
+    ref = born(WEBSITE, "Ways Co")
+    assert J.status(ref)["state"] == "blocked"
+    panes = _panes(tmp_path, _reads(W, ref))
+    _scan(panes, "said no, with ways out")
+    assert "Priority said no to the plan: the envelope has no room today" in panes["identity:chat"]["rest"]
+    assert "Take Priority's no to Identity" in panes["adaptation:chat"]["rest"]
+    tells(ref)
 
     # Root's check sends a plan back once, and Adaptation reshapes it
     real, calls = R._root_check, {"n": 0}

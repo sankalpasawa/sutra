@@ -490,12 +490,12 @@ def test_u5_a_measure_that_found_the_record_whole_does_not_overrule_a_reader_who
     _model(monkeypatch, R, {"audit.items": _says("not_met"), "audit.judge": JUDGE_OK})
     ref = _born(j2)
     _stamp_all(W, ref, kind="publish")                              # a website's D1 is by code, and its record holds
-    (row,) = _readings(W, ref)
+    [row, *later] = _readings(W, ref)                               # (the reader never changes its mind, so the pursuit reads again, and ends in one ask)
     assert [(r["id"], r["method"], r["verdict"]) for r in row["items"]] == [("D1", "code", "met"), ("D1", "model", "not_met")], \
         "both rows are kept"
     assert R.audit_verdicts(row["items"]) == {"D1": "not_met"}, "a reader's no stands over a measure that only found the record whole"
     assert [(f["severity"], f["item"]) for f in row["findings"]] == [("high", "D1")] and "does not hold" in row["findings"][0]["claim"]
-    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "pursuing" and J.status(ref)["goal_reached"] is not True
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "blocked" and J.status(ref)["goal_reached"] is not True
     latest = _view(j2, ref)["latest"]
     assert [(i["id"], i["verdict"], i["method"]) for i in latest["items"]] == [("D1", "not_met", "model")], "the pane shows the row that stands"
 
@@ -581,12 +581,15 @@ def test_u5_a_reader_that_says_not_met_leaves_the_owner_a_next_move_and_no_goal(
     W, R, J, _, _ = j2
     _model(monkeypatch, R, {"audit.items": _says("not_met"), "audit.judge": JUDGE_OK})
     ref = _default(j2)
-    (row,) = _readings(W, ref)
+    [row, *later] = _readings(W, ref)                               # (the reader never changes its mind, so the pursuit reads again)
     assert [(r["id"], r["method"], r["verdict"], r["severity"]) for r in row["items"]] == [("D1", "model", "not_met", "high")]
     (f,) = row["findings"]
     assert (f["severity"], f["item"], f["where"]) == ("high", "D1", "Result") and "does not hold" in f["claim"]
-    assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"] == ["finding"], "the existing finding ask is the next move"
-    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "pursuing"
+    # the next move is a round (S-18: the finding is not also put to the owner), and a pursuit that gets no closer ends in one ask
+    # with its ways out, never in silence (M9.5)
+    [card] = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert card["kind"] == "blocked" and 1 <= len(card["options"]) <= 3, "SM-6: the end that is not done is one ask with ways out"
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "blocked"
 
 
 def test_u5_a_reader_in_doubt_blocks_done_and_is_noted_not_put_to_the_owner(j2, monkeypatch):

@@ -1174,6 +1174,20 @@ GRANT_Q = "Will Priority grant a budget, or counter it first?"
 BARGAIN_WHY = "I will not grant this; I would counter with half"
 
 
+def _no_ways_out(monkeypatch, R):
+    """Priority's no as it was before it priced ways out: the answer carries none, so the conflict reaches the owner as the stamp
+    that runs or drops the plan. Priority sends them now and Adaptation passes them to Identity (W2-ADAPT, M5.4), whose one card
+    then holds them; a row that reads the stamp's words takes them off. Returns the post it replaced, to put back."""
+    real = R.post
+
+    def post(ref, src, dst, msg_type, payload=None, *a, **kw):
+        if src == "Priority" and isinstance(payload, dict) and "options" in payload:
+            payload = {k: v for k, v in payload.items() if k != "options"}
+        return real(ref, src, dst, msg_type, payload, *a, **kw)
+    monkeypatch.setattr(R, "post", post)
+    return real
+
+
 def _scenarios(j2, monkeypatch):
     """The J2 scenarios, each a department: born and run offline; Priority says no and Identity rules it runs; Priority
     says no and Identity puts the plan to the owner; Root's check refuses the plan until it is blocked; Identity's
@@ -1185,8 +1199,10 @@ def _scenarios(j2, monkeypatch):
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"},
                             "identity.close": {"ruling": "run", "why": "the goal cannot be met without a site"}})
     refs.append(_born(j2, org="Ruled Co"))
+    real_post = _no_ways_out(monkeypatch, R)                    # the conflict as a stamp, which a no without ways out still is
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}})
     refs.append(_born(j2, org="Asked Co"))
+    monkeypatch.setattr(R, "post", real_post)
     real = R._root_check
     monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: [FAULT])
     _model(monkeypatch, R, {"setup.shape": dict(SHAPED, goal="A website for Blocked Co where customers see every cake",
@@ -1199,8 +1215,12 @@ def _scenarios(j2, monkeypatch):
     W.owner_ask(ref, NEVER)
     W.run_until_idle(ref, limit=300)
     refs.append(ref)
+    _no_ways_out(monkeypatch, R)
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY}})
     refs.append(_born(j2, org="Asked Grant Co"))
+    monkeypatch.setattr(R, "post", real_post)
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}})
+    refs.append(_born(j2, org="Ways Co"))                       # the same no with Priority's ways out: one card that holds them
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"}, "identity.close": {"ruling": "drop", "why": DROP_WHY}})
     refs.append(_born(j2, org="Dropped Co"))
     _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["budget"], "question": GRANT_Q, "why": "no grant yet"}})
@@ -1214,6 +1234,7 @@ def test_m3_6_one_voice_in_plain_words_on_every_board(j2, monkeypatch):
     W, R, J, _, _ = j2
     refs = _scenarios(j2, monkeypatch)
     assert any(a["kind"] == "conflict" for a in W.asks(refs[2])) and J.status(refs[3])["state"] == "blocked"
+    assert any(a["kind"] == "blocked" and a["options"] for a in W.asks(refs[-3])), "the no with ways out is a card that holds them"
     boards = set(refs) | {W.dept(r).get("root") for r in refs if W.dept(r).get("root")}
     told = 0
     for b in boards:
@@ -1263,6 +1284,7 @@ def test_m3_6_a_cards_words_are_plain_as_the_line_it_stands_for(j2, monkeypatch)
         {"text": "Priority said yes to the line", "title": "Priority's yes", "why": "Priority asked for less (no room)"}
     # the conflict card Identity puts to the owner quotes Priority's no: in the bargain's words, the card is the template,
     # its line says the same, and the Chat's 'Waiting for you' never shows grant or counter (found by a verifier 2026-10-26)
+    real_post = _no_ways_out(monkeypatch, R)
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY}})
     ref = _born(j2, org="Asked Grant Co")
     conflict = next(a for a in W.asks(ref) if a["kind"] == "conflict" and a["status"] == "pending")
@@ -1276,6 +1298,16 @@ def test_m3_6_a_cards_words_are_plain_as_the_line_it_stands_for(j2, monkeypatch)
     ref = _born(j2, org="Asked Less Co")
     conflict = next(a for a in W.asks(ref) if a["kind"] == "conflict" and a["status"] == "pending")
     assert "Priority asked for less (no room)" in conflict["text"] and conflict["text"].startswith("Adaptation proposes the plan ")
+    # and a no that carries Priority's ways out is one card that holds them: the card is the template, its line says the same,
+    # and no option's words are the bargain's
+    monkeypatch.setattr(R, "post", real_post)
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY}})
+    ref = _born(j2, org="Asked Grant Ways Co")
+    card = _card(W, ref)
+    assert card["options"] and card["text"] == R.PLAIN_TEMPLATE["blocked"] and R.plain_faults(card["text"]) == []
+    line = next(p for p in R.board(ref) if (p["payload"] or {}).get("card") == card["id"])
+    assert line["payload"]["done"] == line["payload"]["objective"] == card["text"]
+    assert not [x for o in card["options"] for x in (o["label"], o["cost"]) if R.plain_faults(x)]
     assert not [t for t in R.PLAIN_TEMPLATE.values() if R.plain_faults(t)]
 
 
