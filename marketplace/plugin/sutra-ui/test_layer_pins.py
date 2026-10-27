@@ -18,6 +18,7 @@ import copy
 import importlib
 import importlib.util
 import json
+import shutil
 import sys
 import types
 from pathlib import Path
@@ -242,6 +243,45 @@ def test_n1_both_pass_the_contract_for_the_version_each_pins(home, child):
         assert len(C.cases()) >= 13
         for number, what, fn in C.cases():
             assert fn(module, ctx) == [], "%s, case %d: %s" % (impl, number, what)
+
+
+def test_n1_a_department_pinned_to_an_older_version_keeps_it_after_the_release_moves_its_default(home, tmp_path, monkeypatch):
+    """The headline rule in its own direction (M2.11): a department born while coordination/v1 was the default holds that pin, so
+    when a release ships v2 and makes it the default, the old department still runs v1's recipe and bodies and one born after runs v2.
+    The release is laid out as it would be on disk: an overlay of layers/ with the fixture beside v1, standing in for layers.HERE
+    (a default pin's recipe is found under layers/ only), and nothing is added to layers/ itself."""
+    old = department(home, "dref-old")
+    assert W.dept(old)["layers"]["coordination"] == "coordination/v1", "born under the release whose default was v1"
+    overlay = tmp_path / "release" / "layers"
+    shutil.copytree(layers.HERE, overlay, ignore=shutil.ignore_patterns("__pycache__"))
+    for name in ("v2.py", "v2.patch.json"):
+        shutil.copy(FIXTURE / "coordination" / name, overlay / "coordination" / name)
+    v1_recipe = json.loads((overlay / "coordination" / "v1.json").read_text(encoding="utf-8"))
+    v2 = load_fixture(monkeypatch)
+    monkeypatch.setattr(layers, "HERE", overlay)
+    monkeypatch.setitem(S.DEFAULT_PINS, "coordination", CHILD)         # the release moves on
+    R._DEFS.clear()
+    new = department(home, "dref-new")
+    assert W.dept(new)["layers"]["coordination"] == CHILD
+    assert layers.pins(old)["coordination"] == "coordination/v1" and layers.pins(new)["coordination"] == CHILD
+    assert layers.impl(old, "coordination") is layers.load("coordination/v1") and layers.impl(new, "coordination") is v2, "each one's bodies"
+    assert layers.recipes()["Coordination"] == layers.recipe(CHILD), "the default is now the child's"
+    assert layers.recipes({"coordination": "coordination/v1"})["Coordination"] == v1_recipe, "a v1 pin is the whole file, though no longer the default"
+    old_ids = tuple("coordination/v1" if layer == "coordination" else S.DEFAULT_PINS[layer] for layer in ORDER)
+    with R.pinned(old):
+        assert R.current_ids() == old_ids != R.default_ids()
+        assert R.step_def("coord.probe") == (None, None) and R.step_def("coord.table")[0] == "Coordination"
+        assert R.engine_def("Coordination") == v1_recipe
+    with R.pinned(new):
+        assert R.current_ids() == R.default_ids() == child_ids()
+        assert R.step_def("coord.probe")[0] == "Coordination"
+    for ref in (old, new):
+        born_post(ref)
+        W.run_until_idle(ref, limit=20)
+    assert coordination_rows(old) == [("coord.table", "coordination/v1")]
+    assert coordination_rows(new) == [("coord.table", CHILD), ("coord.probe", CHILD)]
+    assert told(old) == [] and told(new) == [], "a pin that runs is no news, the old one least of all"
+    assert R._PINS.get() is None
 
 
 def test_n1_the_steps_of_a_side_by_side_step_run_in_the_department_that_started_them(home, child, monkeypatch):
