@@ -1891,7 +1891,7 @@ def test_j5_a_no_to_a_finding_that_is_not_a_rounds_leaves_the_ways_out_never_a_s
     card = _the_card(W, ref)
     assert [o["id"] for o in card["options"]] == ["words", "leave:D3", "stop"] and "leave D3 out of done-when" in card["text"] and "D3 not met" in card["why"]
     # a finding a rule says to ask about, with no item named: the reading's last item that is not met
-    monkeypatch.setattr(R, "_handler", real)
+    # (the stub stays: with nobody taking a next round, the rule's ask is the only finding ask; a round filed for real adds its own)
     ref = _a_running_department(j2, org="Rule No Co")
     _four_items(W, ref)
     _tell_reading(j2, ref, _file_reading(j2, ref, {"D1": "met", "D2": "not_met", "D3": "met", "D4": "not_met"},
