@@ -694,6 +694,59 @@ def test_r5_a_stamped_line_whose_engine_has_a_name_that_does_not_fit_says_so_in_
     assert W.dept(ref)["engines"] == ["Facts"] + LINE and "Site #2" not in R.defs()["engines"]
 
 
+def test_r5_a_stamped_line_in_which_every_engine_is_refused_is_not_told_as_added_and_its_ask_says_it_was_not_applied(home):
+    """The line passes the line's own standards (_line_faults reads it against itself) and is refused whole at the grow stage,
+    one engine writing what the department already files. Nothing was added, so the owner is not told 'Added the line', the
+    line is as it was, and the ask, stamped as the owner made it, is marked not applied with the words on it (as a stamped
+    engine's is). Found by a verifier: 'Added the line ; the first starts on your words now.'"""
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    before = W.dept(ref)
+    said = _stamp_line(home, ref, [{"name": "Site2", "does": "builds a second site", "reads": "Brief", "writes": "Pages"}])
+    assert len(said) == 1, said
+    _plain_to_owner(said[0])
+    assert "Added the line" not in said[0] and "starts on your words" not in said[0], said[0]
+    assert said[0].startswith("The line was not added to Acme, and nothing was changed. Not added: Site2 (Root holds every line to its "
+                              "standards, and this engine would break one: %s (" % WS.SAYS["one_output"]), said[0]
+    after = W.dept(ref)
+    assert after["engines"] == before["engines"] == LINE and after["artifacts"] == before["artifacts"]
+    assert "Site2" not in R.defs()["engines"] and not list(R.user_templates_dir().glob("*.json")), "nothing was born"
+    ask = next(a for a in W.asks(ref) if a["kind"] == "line")
+    assert ask["status"] == "stamped" and ask["applied"] is False and ask["not_added"] == said[0]
+    assert any(t["line"] == said[0] for t in R.chat_view(ref)["turns"]), "and the owner's chat carries it"
+    runs = [r for r in W.runs(ref) if r["engine"] == "Identity"]
+    assert not [r for r in runs if r["status"] == "failed"], runs
+    assert not [r for r in runs if "added the line on the owner's stamp" in str(r["what"])], "the run log does not say it was added"
+    assert any("did not add the line" in r["what"] for r in runs), runs
+
+
+def test_r5_a_stamped_line_with_a_fault_of_its_own_is_refused_whole_and_its_ask_says_it_was_not_applied(home, monkeypatch):
+    """The line the stamp meets with a fault of its own (a name twice; refuse mode stops it at Adaptation's post, so warn
+    mode here) adds nothing, and the ask says so as the line whose engines the department refused does."""
+    monkeypatch.setattr(S, "MODE", "warn")
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    with S.expect_refused("act"):
+        said = _stamp_line(home, ref, [{"name": "Facts", "does": "gathers facts", "reads": "Brief", "writes": "Notes"},
+                                       {"name": "Facts", "does": "gathers more", "reads": "Notes", "writes": "More"}])
+    assert len(said) == 1 and said[0].startswith("The line could not be set up: "), said
+    _plain_to_owner(said[0])
+    assert W.dept(ref)["engines"] == LINE and "Facts" not in R.defs()["engines"]
+    ask = next(a for a in W.asks(ref) if a["kind"] == "line")
+    assert ask["status"] == "stamped" and ask["applied"] is False and ask["not_added"] == said[0]
+
+
+def test_r5_a_stamped_line_some_of_whose_engines_are_added_keeps_its_ask_as_applied_and_names_the_rest(home):
+    """The half that already held: one engine added, one refused, is an added line with a note of what was not."""
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    said = _stamp_line(home, ref, [{"name": "Facts", "does": "gathers facts", "reads": "Brief", "writes": "Notes"},
+                                   {"name": "Site2", "does": "builds a second site", "reads": "Notes", "writes": "Pages"}])
+    assert len(said) == 1 and said[0].startswith("Added the line Facts; the first starts on your words now. Not added: Site2"), said
+    ask = next(a for a in W.asks(ref) if a["kind"] == "line")
+    assert ask["status"] == "stamped" and "applied" not in ask and "not_added" not in ask
+
+
 def test_r5_the_reasons_count_only_standards_and_a_refusal_that_is_no_standard_keeps_its_own_words(home):
     W, R, J, _ = home
     import engine_runtime

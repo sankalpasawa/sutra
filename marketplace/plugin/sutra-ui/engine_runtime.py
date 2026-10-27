@@ -3572,6 +3572,18 @@ def _engine_not_added(ref, d, a, exc):
     return {"said": "did not add the engine %s on the owner's stamp: %s" % (name, reason), "refused": True}
 
 
+def _line_not_added(ref, d, a, faults):
+    """The owner stamped a line and not one of its engines could be added (PRD A1.14, J5: when the grow stage refuses, the
+    engines are not added and the owner is told why): the line is read against itself before the stamp, so a line whose every
+    engine writes what the department already files gets as far as here. Identity says so in plain words, never 'Added the
+    line'; the ask stays what the owner made it, stamped, but is marked not applied with the words on it, as for a stamped
+    engine (_engine_not_added). `faults` are the engines' refusals, each already in the owner's words."""
+    words = "The line was not added to %s, and nothing was changed.%s" % (d.get("name"), (" Not added: %s." % "; ".join(faults)) if faults else "")
+    W._put_ask(ref, dict(a, applied=False, not_added=words))
+    _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform", {"word": "line", "engines": [], "done": words})
+    return {"said": "did not add the line on the owner's stamp: " + "; ".join(faults), "refused": True}
+
+
 def identity_apply(ctx, step, item):
     ref, pl = ctx["ref"], ctx["post"]["payload"]
     a = next((x for x in W.asks(ref) if x["id"] == pl.get("ask")), None)
@@ -3601,8 +3613,9 @@ def identity_apply(ctx, step, item):
         engines = [e for e in (a.get("engines") or []) if isinstance(e, dict) and e.get("name")]
         bad = _line_faults(engines)
         if bad:
-            _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
-                  {"word": "line", "done": "The line could not be set up: %s. Say the words again and I will shape it afresh." % "; ".join(bad)})
+            words = "The line could not be set up: %s. Say the words again and I will shape it afresh." % "; ".join(bad)
+            W._put_ask(ref, dict(a, applied=False, not_added=words))     # nothing added: the stamped ask says so, as a stamped engine's does
+            _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform", {"word": "line", "done": words})
             return {"said": "could not set up the line: " + "; ".join(bad)}
         added, faults = [], []
         for e in engines:
@@ -3615,6 +3628,8 @@ def identity_apply(ctx, step, item):
                 added.append(e["name"])
             except Exception as exc:  # noqa: BLE001 -- one engine that cannot be born does not lose the rest; the owner hears which
                 faults.append("%s (%s)" % (e.get("name"), _not_added_reason(exc)))
+        if not added:
+            return _line_not_added(ref, ctx["dept"], a, faults)
         # a thread of its own: the ask's thread closed on the stamp, and a post into a closed thread is dropped
         _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
               {"word": "line", "engines": added,
