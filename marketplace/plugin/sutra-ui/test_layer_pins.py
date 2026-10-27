@@ -872,3 +872,43 @@ def test_n4_a_pin_that_is_refused_leaves_the_card_waiting_and_says_why_in_plain_
     assert "this app has no version 9 of Identity. Nothing changed; choose again on the card." in told
     assert not [t for t in told if "UNKNOWN_OPTION" in str(t)], "the code is the API's, never the owner's"
     assert any("could not apply the owner's choice (pin:identity.v9)" in r["what"] for r in W.runs(ref))
+
+
+# ---- the whole way: a department made as a person makes one, pinned, runs ----------------------------------------------------
+@pytest.fixture
+def j2(home, monkeypatch):
+    """test_j2's fixture: the records home and the registry in this test's own folder, the modules reloaded, a domain minted."""
+    monkeypatch.setenv("J1_FLOW_V1", "1")
+    monkeypatch.setenv("J2_FLOW_V1", "1")
+    import website_dept
+    import founding
+    import placement_engine as E
+    import org2_apply
+    import engine_runtime
+    import j2_runtime
+    import functions_view
+    for module in (E, website_dept, org2_apply, founding, engine_runtime, j2_runtime, functions_view):
+        importlib.reload(module)
+    if not E.active_roots(E.load_domains()):
+        E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
+    return founding
+
+
+def test_a_department_made_the_way_a_person_makes_one_runs_to_its_work_on_the_version_its_record_pins(j2, child, monkeypatch):
+    on_disk(monkeypatch, CHILD)
+    root = j2.found_structure("Acme Learning", owner="Sankalp")["root"]
+    W.owner_ask(root, "Build a website that teaches algebra to Class 8 students")
+    W.run_until_idle(root, limit=300)
+    kid = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    assert W.dept(kid)["root"] == root and layers.pins(kid) == S.DEFAULT_PINS
+    apply_pin(kid, pin_option("coordination", CHILD))                  # the owner's stamp on the card, as Root applies it
+    assert layers.pins(kid)["coordination"] == CHILD and layers.pins(root) == S.DEFAULT_PINS, "a pin is one department's"
+    W.run_until_idle(kid, limit=300)
+    runs = W.runs(kid)
+    assert {r["engine"] for r in runs} >= {"Plan", "Write", "Check"} and not [r for r in runs if r["status"] in ("failed", "interrupted")]
+    rows = [r for r in R.step_rows(kid) if r.get("impl")]
+    assert {r["impl"] for r in rows if r["engine"] == "Coordination"} == {"coordination/v1", CHILD}, "before the pin and after it"
+    assert [r for r in rows if r["engine"] == "Coordination" and r["impl"] == CHILD], "and the department ran its Coordination on the child"
+    assert {r["impl"] for r in rows if r["engine"] != "Coordination" and r["impl"]} <= {"identity/v1", "adaptation/v1", "priority/v1", "audit/v1"}, \
+        "every other function ran its own"
+    assert RT()._PINS.get() is None
