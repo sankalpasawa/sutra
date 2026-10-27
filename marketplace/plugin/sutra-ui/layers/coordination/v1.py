@@ -170,7 +170,9 @@ def _clip(text, n):
 
 
 def _words(text):
-    return [w for w in re.findall(r'[a-z0-9]+', str(text or '').lower()) if len(w) > 1 and w not in STOPWORDS]
+    """The words a subject is about: lower case, no stop word and no single letter, a plural said as its singular (pages, page)."""
+    words = [w for w in re.findall(r'[a-z0-9]+', str(text or '').lower()) if len(w) > 1 and w not in STOPWORDS]
+    return [w[:-1] if len(w) > 3 and w.endswith('s') and not w.endswith('ss') else w for w in words]
 
 
 def duplicate_of(about, rows):
@@ -269,6 +271,150 @@ def coord_question(ctx, step, item):
         _save(ref, rows + [e])
     out = {'said': 'took %s: %s' % (e['id'], 'a question for %s' % e['to'] if ok else 'said no, %s' % e['reason']), 'entry': e, 'ref': ref}
     return dict(out, reuse=reuse) if reuse else out
+
+
+# ---- the asker's side: the board in the step's prompt, and what its answer says --------------------------------------------------
+BOARD_FORMAT = (
+    'THE BOARD: if this step cannot be done without a fact that an earlier engine of the line holds, you may add one field to your '
+    'JSON object: "question": {"to": the name of that engine, "about": a few words, "text": your question}. Ask at most one question, '
+    'only of an engine named below, and never one the BOARD already answers. If you used an answer from the BOARD, add '
+    '"board_used": [its ids, such as "Q-1"]. Otherwise leave both out and do the step as asked.')
+
+
+def board_text(ctx, step):
+    """What a work step is given of the board: the questions already answered (every engine reads them before it asks), and, while
+    an earlier engine of the line has filed, the format of a question and the engines it may be put to."""
+    ref, mine = ctx['ref'], ctx.get('engine')
+    answered = [{'id': e['id'], 'to': e.get('to'), 'about': e.get('about'), 'answer': e.get('answer')}
+                for e in entries(ref) if e.get('status') == 'answered']
+    line = R.coordination(ref).get('line') or []
+    askable = [n for n in _filed(ref, line) if mine in line and line.index(n) < line.index(mine)]
+    out = ''
+    if answered:
+        out += '\n\nBOARD (answered questions; check here before asking): ' + json.dumps(answered, ensure_ascii=False)
+    if askable:
+        out += '\n\n' + BOARD_FORMAT + ' ENGINES YOU MAY ASK: ' + ', '.join(askable) + '.'
+    return out
+
+
+def board_step(ctx, step):
+    """The step with the board in its prompt (run_step's hook): the step's own builder, and the board's text after it. The prompt
+    reads questions.json each time it is built, so the run of the step that follows an answer holds the answer."""
+    base = step['prompt']
+
+    def prompt(c, s, item):
+        return R._resolve(c, 'prompt', base)(c, s, item) + board_text(c, s)
+    return dict(step, prompt=prompt)
+
+
+def _credit(ref, who, used):
+    """The answered entries a step names (board_used) are used by it: used_by gains the engine, once. Returns the ids credited."""
+    ids = [str(i) for i in used if isinstance(i, (str, int))] if isinstance(used, list) else []
+    with W._lock(ref):
+        rows, read = entries(ref), []
+        for e in rows:
+            if e.get('id') in ids and e.get('status') == 'answered':
+                read.append(e['id'])
+                if who and who not in e.get('used_by', []):
+                    e['used_by'] = list(e.get('used_by') or []) + [who]
+        if read:
+            _save(ref, rows)
+    return read
+
+
+def _depends(ref):
+    """What the prompt held of the board, as the step's row records what it read: each answered entry, with the artifact and the
+    version of the engine that answered it (the step depends on them)."""
+    out = []
+    for e in entries(ref):
+        if e.get('status') == 'answered':
+            row = {'board': e['id']}
+            art = (R.engine_def(e.get('to')) or {}).get('writes')
+            version = (e.get('answered_from') or {}).get('version')
+            if art and version:
+                row.update({'art': art, 'v': version})
+            out.append(row)
+    return out
+
+
+def _asked(ctx, step, item, raw, attempt):
+    """ask(), without ever failing the asker's step: a board that breaks leaves the question unasked and the step on its normal path."""
+    try:
+        return ask(ctx, step, item, raw, attempt)
+    except Exception:  # noqa: BLE001 -- the board never fails the step that asked
+        return None
+
+
+def board_turn(ctx, step, item, out, again):
+    """run_step's hook after a work step's answer (M4.9): the board's two fields are taken out of the answer (a question, and the ids
+    it used), the ids are credited, and a question goes to Coordination. When it was answered (or the board answered it already) the
+    step is run once more, `again()`, with the board in its prompt; an answer that does not come, or a run that does not fit, leaves
+    the asker's own answer, which takes its normal path. Returns (the answer, {usd, calls, read})."""
+    ref, who = ctx['ref'], ctx.get('engine')
+    out = dict(out)
+    asked, used = out.pop('question', None), out.pop('board_used', None)
+    more = {'usd': 0.0, 'calls': 0, 'read': []}
+    if isinstance(asked, dict) and str(asked.get('to') or '').strip():
+        e = _asked(ctx, step, item, asked, 1)
+        if e and (e.get('status') == 'answered' or e.get('reuse')):
+            got, cost, how, n = again()
+            more['usd'] += float(cost or 0)
+            more['calls'] += int(n or 0)
+            if isinstance(got, dict) and how in ('model', 'checklist'):
+                out = dict(got)
+                again_asked, again_used = out.pop('question', None), out.pop('board_used', None)
+                used = again_used if again_used is not None else used
+                if isinstance(again_asked, dict) and str(again_asked.get('to') or '').strip():
+                    _asked(ctx, step, item, again_asked, 2)      # a second question in the slot: the board says no, with its reason
+            if e.get('reuse'):
+                used = list(used if isinstance(used, list) else []) + [e['reuse']]
+    _credit(ref, who, used)
+    more['read'] = _depends(ref)
+    return out, more
+
+
+def _cycle(ref):
+    try:
+        return J.status(ref).get('cycle_id')
+    except Exception:  # noqa: BLE001 -- a question with no cycle to name is still a question
+        return None
+
+
+def _draft(ref, ctx, raw, attempt):
+    """The question as the asker put it, as a board/1 entry, still open: the next id on the board, who asked it and in which slot."""
+    to = re.sub(r"[^A-Za-z0-9 &'.-]", '', str(raw.get('to') or '')).strip()[:40]
+    return {'schema': 'board/1', 'id': 'Q-%d' % (len(entries(ref)) + 1), 'asked_by': ctx['engine'], 'to': to or 'nobody',
+            'about': _clip(raw.get('about'), 120) or 'this step', 'question': _clip(raw.get('text'), 600) or _clip(raw.get('about'), 600),
+            'answer': None, 'answered_by': None, 'status': 'open', 'reason': None, 'artifact_update': None, 'used_by': [],
+            'cycle': _cycle(ref), 'slot': str(ctx.get('slot') or '')[:160], 'attempt': int(attempt), 'run': None}
+
+
+def _said(e):
+    """A question as the board's rows say it: 'Write asks Plan about the page list'."""
+    return '%s asks %s about %s' % (e['asked_by'], e['to'], e['about'])
+
+
+def ask(ctx, step, item, raw, attempt):
+    """An engine's question reaches Coordination (M4.9): the asker posts it (Engine to Coordination, request) and Coordination takes
+    it in its handler, in place; the entry it filed comes back, whatever became of it, with `reuse` set (on the copy returned, never
+    on the board) when the board answered the question already. A board that would not carry the post leaves the entry
+    refused, with the reason."""
+    ref = ctx['ref']
+    draft = _draft(ref, ctx, raw if isinstance(raw, dict) else {}, attempt)
+    try:
+        p1 = R.post(ref, ctx['engine'], ['Coordination'], 'request', {'word': 'question', 'entry': draft, 'what': _said(draft)},
+                    about={'art': (ctx.get('def') or {}).get('reads'), 'v': (ctx.get('inp') or {}).get('v')})
+        if p1 is None:
+            raise ValueError('the thread was closed')
+    except (ValueError, S.SchemaFault) as exc:
+        with W._lock(ref):
+            rows = entries(ref)
+            draft.update({'id': 'Q-%d' % (len(rows) + 1), 'status': 'refused', 'reason': _clip('the board would not carry it: %s' % exc, 300)})
+            _save(ref, rows + [draft])
+        return draft
+    got = R._ask_rule(ref, 'coord.question', {'entry': draft, 'thread': p1['thread'], 'run': ctx.get('run')},
+                      key='question@%s@%s' % (ctx.get('slot'), draft['id']))
+    return dict(got['entry'], reuse=got['reuse']) if got.get('reuse') else got['entry']
 
 
 CODE['coord_question'] = coord_question
