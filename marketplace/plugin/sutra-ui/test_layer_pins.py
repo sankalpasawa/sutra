@@ -693,3 +693,144 @@ def test_n3_what_a_version_inherits_is_worked_out_once_and_again_for_another_mod
         with R.pinned(ref):
             R.ladder(ref)
     assert seen.count(CHILD) == 1 and len(seen) == len(set(seen)), seen
+
+
+# ---- N4 . the pin option ----------------------------------------------------------------------------------------------------
+def on_disk(monkeypatch, *impls):
+    """The registry lists `impls` as versions the app has, as it would a file under layers/ (it lists layers/ only, and nothing is
+    put there): the pin option asks layers.available(), and so does the interface's check of a record."""
+    real = layers.available
+
+    def available():
+        out = {layer: list(ids) for layer, ids in real().items()}
+        for impl in impls:
+            if impl not in out.setdefault(impl.split("/")[0], []):
+                out[impl.split("/")[0]].append(impl)
+        return out
+    monkeypatch.setattr(layers, "available", available)
+
+
+def pin_option(layer, impl, params=True):
+    return W.option("pin:%s" % impl, "Run another version of %s" % S.TITLE[layer], "nothing", {"layer": layer, "impl": impl} if params else None)
+
+
+def apply_pin(ref, option, ask=None):
+    return layers.impl(ref, "root").apply_option(ref, ask or {"id": "a-pin", "kind": "line", "options": [option]}, option)
+
+
+def pins_in_record(ref):
+    return W.dept(ref)["layers"]
+
+
+def test_n4_the_pin_option_is_the_interfaces_and_root_applies_it():
+    assert S.PER_DEPARTMENT is True and S.describe()["per_department"] is True
+    spec = S.OPTION_KINDS["pin"]
+    assert (spec["layer"], spec["params"]) == ("root", "option.pin") and S.validate("option.pin", {"layer": "audit", "impl": "audit/v2"}) == []
+    assert pin_option("coordination", CHILD)["kind"] == "pin" and pin_option("coordination", CHILD)["params"] == {"layer": "coordination", "impl": CHILD}
+    assert callable(layers.load("root/v1").apply_option)
+
+
+def test_n4_a_pin_for_a_version_the_app_has_writes_the_record_through_root_and_the_department_runs_it(home, child, monkeypatch):
+    on_disk(monkeypatch, CHILD)
+    ref = department(home, "dref-x")
+    before = dict(pins_in_record(ref))
+    got = apply_pin(ref, pin_option("coordination", CHILD))
+    assert got == {"layer": "coordination", "impl": CHILD, "was": "coordination/v1"}
+    assert pins_in_record(ref) == dict(before, coordination=CHILD), "the record names it, and only that layer's pin changed"
+    assert ("Coordination", "runs version 2 from now on") in [(r["engine"], r["what"]) for r in W.runs(ref)]
+    assert layers.pins(ref)["coordination"] == CHILD
+    born_post(ref)
+    W.run_until_idle(ref, limit=20)
+    assert coordination_rows(ref) == [("coord.table", CHILD), ("coord.probe", CHILD)], "and from its next step the department runs it"
+    assert apply_pin(ref, pin_option("coordination", "coordination/v1"))["was"] == CHILD, "and the pin goes back the same way"
+    assert pins_in_record(ref) == before
+
+
+def test_n4_the_write_is_roots_the_interface_asks_who_wrote_a_key(home, child, monkeypatch):
+    on_disk(monkeypatch, CHILD)
+    ref = department(home, "dref-x")
+    seen = []
+    real = W.save_dept
+    monkeypatch.setattr(importlib.import_module("website_dept"), "save_dept", lambda r, d, by=None: seen.append(by) or real(r, d, by=by))
+    apply_pin(ref, pin_option("coordination", CHILD))
+    assert seen == ["root"]
+
+
+def test_n4_the_id_may_carry_the_pin_when_the_option_has_no_params(home, child, monkeypatch):
+    on_disk(monkeypatch, CHILD)
+    ref = department(home, "dref-x")
+    apply_pin(ref, pin_option("coordination", CHILD, params=False))
+    assert pins_in_record(ref)["coordination"] == CHILD
+
+
+def _refused(ref, option, says, monkeypatch=None):
+    before = copy.deepcopy(W.dept(ref))
+    with pytest.raises(W.AskError) as caught:
+        apply_pin(ref, option)
+    assert caught.value.code == "UNKNOWN_OPTION" and str(caught.value) == says, str(caught.value)
+    assert isinstance(caught.value, ValueError), "Identity's apply_way catches a ValueError, and the card waits as it was"
+    assert W.dept(ref) == before, "nothing changed"
+
+
+def test_n4_a_version_the_app_does_not_have_is_unknown_option(home):
+    ref = department(home, "dref-x")
+    _refused(ref, pin_option("identity", "identity/v9"), "this app has no version 9 of Identity")
+
+
+def test_n4_a_version_of_another_function_is_unknown_option(home):
+    ref = department(home, "dref-x")
+    _refused(ref, pin_option("audit", "identity/v1"), "version 1 is not a version of Audit")
+
+
+def test_n4_a_pin_with_no_layer_or_version_is_unknown_option(home):
+    ref = department(home, "dref-x")
+    _refused(ref, W.option("pin:", "Run another version", "nothing", {"layer": "audit"}), "say which version of which function to run")
+    _refused(ref, W.option("pin", "Run another version", "nothing"), "say which version of which function to run")
+
+
+def test_n4_a_version_that_loads_but_cannot_run_is_unknown_option(home, monkeypatch, tmp_path):
+    on_disk(monkeypatch, CHILD)
+    monkeypatch.setitem(layers._LOADED, CHILD, stub(tmp_path, patch=patch_of(soft_step("coord.pre", before="coord.table"))))
+    ref = department(home, "dref-x")
+    _refused(ref, pin_option("coordination", CHILD), "version 2 of Coordination cannot run: its steps break the rules every function keeps")
+    monkeypatch.setitem(layers._LOADED, CHILD, stub(tmp_path / "w", IMPLEMENTS=0, patch=patch_of()))
+    layers._RUNNABLE.clear()
+    _refused(ref, pin_option("coordination", CHILD), "version 2 of Coordination cannot run: it was written for another version of the interface")
+
+
+def test_n4_a_version_on_disk_that_does_not_load_is_unknown_option(home, monkeypatch):
+    on_disk(monkeypatch, "priority/v2")                                  # listed, and nothing can be imported under that name
+    ref = department(home, "dref-x")
+    _refused(ref, pin_option("priority", "priority/v2"), "version 2 of Priority cannot run: it does not load")
+
+
+def test_n4_a_pin_for_root_applies_only_on_the_root_department(org, monkeypatch):
+    on_disk(monkeypatch, "root/v2")
+    kid, root = org["kid"], org["root"]
+    _refused(kid, pin_option("root", "root/v2"), "Root's version is chosen on Root, for the whole organisation")
+    assert apply_pin(root, pin_option("root", "root/v2")) == {"layer": "root", "impl": "root/v2", "was": "root/v1"}
+    assert pins_in_record(root)["root"] == "root/v2" and pins_in_record(kid)["root"] == "root/v1"
+    assert layers.pins(kid)["root"] == "root/v2", "and the organisation's other departments follow it"
+
+
+def test_n4_an_option_that_is_not_a_pin_is_still_root_setup(home):
+    ref = department(home, "dref-x")
+    with pytest.raises(ValueError, match="say what the department is for"):
+        layers.impl(ref, "root").apply_option(ref, {}, W.option("root_setup", "Set it up again", "nothing"))
+    with pytest.raises(ValueError, match="say what the department is for"):
+        layers.impl(ref, "root").apply_option(ref, {}, {"id": "root_setup"})
+
+
+def test_n4_the_layers_route_shows_the_pin_the_record_holds(home, child, monkeypatch):
+    on_disk(monkeypatch, CHILD)
+    import website_api
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    ref = department(home, "dref-x")
+    app = FastAPI()
+    app.include_router(website_api.router)
+    api = TestClient(app)
+    assert api.get("/api/native/%s/layers" % ref).json()["pins"] == S.DEFAULT_PINS
+    apply_pin(ref, pin_option("coordination", CHILD))
+    got = api.get("/api/native/%s/layers" % ref).json()
+    assert got["pins"] == dict(S.DEFAULT_PINS, coordination=CHILD) and got["describe"]["per_department"] is True

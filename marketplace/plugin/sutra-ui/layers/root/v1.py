@@ -10,9 +10,13 @@ far) and root.setup.shape (the department's name, kind, goal and done-when items
 interface's (layer_schema.PROMPTS), compiled in verbatim; the owner cannot change them. The words are the inline
 builders' (p_setup_converse and p_setup_shape) byte for byte, which test_fixtures/root-prompts.snapshot.json proves.
 
-standards() is what GET /layers shows of Root's standards (S18, read only); apply_option() applies the one option Root
-applies in wave 1, root_setup. Root has no pane of its own: Adaptation's view carries Root's check.
+standards() is what GET /layers shows of Root's standards (S18, read only); apply_option() applies the options Root applies:
+root_setup (wave 1) and pin (W3-PINS: run another version of one function). Root has no pane of its own: Adaptation's view
+carries Root's check.
 """
+import re
+
+import layers
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
 LAYER = 'root'
@@ -66,13 +70,63 @@ def standards():
     return [{'id': sid, 'says': says, 'sources': list(sources), 'stages': list(stages)} for sid, says, sources, stages in S.WORKFLOW_STANDARDS]
 
 
+def _unknown(why):
+    """UNKNOWN_OPTION, which the API says as 409 {code}, with the sentence the card says: Identity's apply_way tells the owner
+    str(exc), so the message is the words alone and the code is its attribute."""
+    err = W.AskError('UNKNOWN_OPTION', why)
+    err.args = (why,)
+    return err
+
+
+def _version(impl):
+    m = re.fullmatch(r'[a-z]+/v([1-9][0-9]*)', str(impl))
+    return 'version %s' % m.group(1) if m else str(impl)
+
+
+def _apply_pin(ref, ask, option):
+    """The owner chose 'run another version of one function' (pin, option.pin {layer, impl}): the department's record names that
+    version for that layer from now on, written through save_dept(by='root'), and the department runs it from the next step it
+    starts. A version this app does not have, or that cannot run (it does not load, its steps are refused, its words break the
+    function template), is UNKNOWN_OPTION and changes nothing; so is a pin of Root's own version anywhere but on Root, which
+    names it for the whole organisation. Returns {layer, impl, was}."""
+    params = option.get('params')
+    if not isinstance(params, dict):                                   # the id may carry it: pin:<layer>/v<N>
+        impl = str(option.get('id') or '').split(':', 1)[1] if ':' in str(option.get('id') or '') else ''
+        params = {'layer': impl.split('/', 1)[0], 'impl': impl}
+    if S.validate('option.pin', params):
+        raise _unknown('say which version of which function to run')
+    layer, impl = params['layer'], params['impl']
+    if not impl.startswith(layer + '/'):
+        raise _unknown('%s is not a version of %s' % (_version(impl), S.TITLE[layer]))
+    d = W.dept(ref)
+    if not d:
+        raise ValueError('no department at %s' % ref)
+    if layer == 'root' and d.get('kind') != 'root':
+        raise _unknown("Root's version is chosen on Root, for the whole organisation")
+    if impl not in layers.available().get(layer, []):
+        raise _unknown('this app has no %s of %s' % (_version(impl), S.TITLE[layer]))
+    why = layers.cannot_run(impl)
+    if why:
+        raise _unknown('%s of %s cannot run: %s' % (_version(impl), S.TITLE[layer], why))
+    with W._lock(ref):
+        d = W.dept(ref)
+        was = (d.get('layers') or {}).get(layer)
+        d['layers'] = dict(d.get('layers') or S.DEFAULT_PINS, **{layer: impl})
+        W.save_dept(ref, d, by='root')
+    W.system_run(ref, S.TITLE[layer], 'runs %s from now on' % _version(impl))
+    return {'layer': layer, 'impl': impl, 'was': was}
+
+
 def apply_option(ref, ask, option):
-    """The owner chose 'set the department up again, done its own way' (root_setup, option.words {words}): the words go to
+    """A pin (the owner chose to run another version of one function) is _apply_pin's. Otherwise: the owner chose 'set the
+    department up again, done its own way' (root_setup, option.words {words}): the words go to
     the organisation's Root department as one request, '<the words>, done its own way', which Root's Identity takes as it
     takes the owner's words at the front door, for the owner's stamp. That request is all: no key of any department
     changes, no ask is touched and no engine is made (Root never creates or starts an engine, S-10). Returns
     {root, request, text}."""
     option = option if isinstance(option, dict) else {}
+    if str(option.get('kind') or str(option.get('id') or '').split(':', 1)[0]) == 'pin':
+        return _apply_pin(ref, ask, option)
     words = " ".join(str(((option.get('params') or {}).get('words')) or ((ask or {}).get('chosen') or {}).get('words') or '').split())
     if not words:
         raise ValueError("say what the department is for")
