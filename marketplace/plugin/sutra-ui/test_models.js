@@ -237,6 +237,68 @@ test("M4: Stamp and No post to the one route they name, then the list is read ag
   assert.ok(/Dropped\. Nothing changed\./.test(c.mdlPaneHtml()), "and the screen says what it did");
 });
 
+/* ── M5 ─────────────────────────────────────────────────────────────────── */
+test("M5: inherited fields have no buttons; a built-in model has no change button", async () => {
+  const c = await onPage();
+  const h = c.mdlPageHtml("x.client"), w = words(h);
+  const rows = attrs(h, /<div class="mdlfield[^"]*">.*?<\/span><\/div>/g);
+  const idRow = rows.filter(r => /<span class="mdlfn"><i class="mdlpad" aria-hidden="true"><\/i>id</.test(r))[0];
+  assert.ok(idRow && /from Record/.test(idRow) && !/data-mdl=/.test(idRow), "id is locked with no button");
+  const nameRow = rows.filter(r => /mdlfn">name</.test(r))[0];
+  ["field", "rename", "retire"].forEach(a => assert.ok(new RegExp('data-mdl="' + a + '" data-mdl-name="name"').test(nameRow), a));
+  assert.ok(/Add a field/.test(h) && /Link or nest/.test(h) && /Try a sample/.test(h) && /See its shape/.test(h) && /New version/.test(h));
+  assert.ok(/Pointed at by: Order \(by its id\)/.test(w) && /Points out: nothing yet/.test(w));
+  assert.ok(/Built on it/.test(w) && /VIP client/.test(w));
+  assert.ok(/up to 80 characters, at least 1, required/.test(w));
+  /* a built-in model: the lock, the line, three buttons at most */
+  click(c, { mdl: "open", mdlKey: "core:record" }); await settle();
+  const b = c.mdlPageHtml("core:record");
+  assert.ok(/Built in/.test(b) && /Part of the app: you can look, not change\./.test(words(b)));
+  assert.ok(!/data-mdl="(field|rename|retire|link|onoff|undo|newversion)"/.test(b));
+  assert.ok(/Try a sample/.test(b) && /See its shape/.test(b) && /data-mdl="add" data-mdl-key="core:record"/.test(b) && /Build on it/.test(b));
+  /* a retired field says Retired and is not offered Change */
+  const P = copy(PAGE); P.fields[0].retired = true;
+  const r = await onPage({ page: P });
+  const rh = r.mdlPageHtml("x.client");
+  assert.ok(/Retired/.test(rh) && !/data-mdl="field" data-mdl-name="name"/.test(rh));
+});
+
+/* ── M8 ─────────────────────────────────────────────────────────────────── */
+test("M8: turning a model off says what turns off and what is kept; Turn off posts {enabled: false, rev}", async () => {
+  const c = await onPage();
+  click(c, { mdl: "onoff" }); await settle();
+  const h = sheet(c), w = words(h);
+  assert.ok(/Client stops being offered when you build, link or file\./.test(w));
+  assert.ok(/It turns off with it: VIP client/.test(w));
+  assert.ok(/Still there, nothing lost/.test(w) && /You can turn it on again; everything comes back as it was\./.test(w));
+  assert.ok(/Keep it on/.test(h));
+  assert.strictEqual(posts(c, /preview/)[0].body.op, "disable");
+  click(c, { mdl: "onoffgo" }); await settle();
+  const p = posts(c, /enabled$/)[0];
+  assert.strictEqual(p.p, "/api/native/_models/x.client/enabled");
+  assert.deepStrictEqual(p.body, { enabled: false, rev: PAGE.rev });
+  /* turning on a child whose base is off: no button */
+  const L = copy(LIST); L.yours.forEach(e => { if (e.key === "x.client") e.state = "off"; });
+  const V = copy(PAGE); V.key = "x.vip_client"; V.name = "vip_client"; V.label = "VIP client"; V.base = "x:client/v1"; V.base_label = "Client"; V.state = "off";
+  const d = await loaded({ list: L, vip: V });
+  click(d, { mdl: "open", mdlKey: "x.vip_client" }); await settle();
+  assert.ok(/Off\. Nothing new is offered\. What is stored stays\./.test(words(d.mdlPageHtml("x.vip_client"))));
+  assert.ok(/Turn on/.test(d.mdlPageHtml("x.vip_client")));
+  click(d, { mdl: "onoff" }); await settle();
+  assert.ok(/Client is off; turn it on first/.test(words(sheet(d))) && !/data-mdl="onoffgo"/.test(sheet(d)));
+  /* needs a look: the sentence and the way to fit it */
+  const N = copy(PAGE); N.state = "needs_a_look"; N.why = "its base changed: \"tier\" now allows fewer values";
+  const n = await onPage({ page: N });
+  assert.ok(/its base changed: "tier" now allows fewer values/.test(words(n.mdlPageHtml("x.client"))) && /Fit it to its base/.test(n.mdlPageHtml("x.client")));
+  /* the amber line on the page, and Undo posts the undo with the rev */
+  const pg = copy(PAGE); pg.pending = LIST.yours[0].pending;
+  const a = await onPage({ page: pg });
+  assert.ok(/mdlnote/.test(a.mdlPageHtml("x.client")) && />Stamp</.test(a.mdlPageHtml("x.client")));
+  click(a, { mdl: "undo" }); await settle();
+  const u = posts(a, /undo$/)[0];
+  assert.strictEqual(u.p, "/api/native/_models/x.client/undo"); assert.deepStrictEqual(u.body, { rev: PAGE.rev });
+});
+
 /* ── M14 ────────────────────────────────────────────────────────────────── */
 test("M14: the stylesheet block is tokens only and covers what the script emits; panel.html loads the script before the tail", () => {
   const i = css.indexOf("/* Models (A4)");
