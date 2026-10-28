@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "classes": [],
+  "extensible": [
+    "record",
+    "artifact.template",
+    "engine.library",
+    "kind",
+    "journey"
+  ],
+  "nestable": [
+    "envelope",
+    "identity.done_item",
+    "option"
+  ],
+  "extension_points": {
+    "artifact.template": "$",
+    "engine.library": "$",
+    "engine.template": "$",
+    "kind": "$",
+    "journey": "$",
+    "journey.file": "$.journeys[*]"
+  }
+}

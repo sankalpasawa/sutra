@@ -1,0 +1,1 @@
+The owner-defined models the A4-OWN tests build on (Client, VIP client, Order, Line, Visit note, Shape/Circle/Square), keyed 'name/vN' as models.json keys them. Read by test_layer_models_owner.py and test_layer_models_api.py.
