@@ -263,6 +263,102 @@ test("M5: inherited fields have no buttons; a built-in model has no change butto
   assert.ok(/Retired/.test(rh) && !/data-mdl="field" data-mdl-name="name"/.test(rh));
 });
 
+/* ── M6 ─────────────────────────────────────────────────────────────────── */
+test("M6: add a model: the base first, Make it off until it is; a taken name; Make it posts {spec}", async () => {
+  const c = await loaded();
+  click(c, { mdl: "add" });
+  let h = sheet(c);
+  assert.ok(/Build it on/.test(h) && /Call it/.test(h) && /Its fields/.test(h));
+  assert.ok(/id="mdl-save" data-mdl="make" disabled/.test(h), "off with nothing chosen");
+  /* the bases: the five, and the owner's models that are on (not the one that is off) */
+  assert.ok(/value="core:record"/.test(h) && /value="x.client"/.test(h) && !/value="x.visit_note"/.test(h));
+  type(c, "label", "Regular client");
+  assert.ok(/data-mdl="make" disabled/.test(sheet(c)), "a name without a base is still off");
+  c.mdlInput({ dataset: { mdlin: "base" }, value: "x.client", type: "radio" }); await settle();
+  h = sheet(c);
+  assert.ok(!/data-mdl="make" disabled/.test(h), "base and name: on");
+  assert.ok(/kept as x\.regular_client/.test(h));
+  assert.ok(/from Record/.test(h) && /mdlpad/.test(h), "the base's fields, locked");
+  /* a taken name */
+  type(c, "label", "Client");
+  h = sheet(c);
+  assert.ok(/a model called Client is already there/.test(h) && /data-mdl="make" disabled/.test(h));
+  /* a fault of the server is printed as written, under the field */
+  type(c, "label", "VIP club");
+  click(c, { mdl: "make" });
+  await settle();
+  const post = posts(c, /^\/api\/native\/_models$/)[0];
+  assert.ok(post && Object.keys(post.body).join() === "spec", "posts {spec}");
+  assert.deepStrictEqual({ n: post.body.spec.name, l: post.body.spec.label, b: post.body.spec.base, v: post.body.spec.version },
+    { n: "vip_club", l: "VIP club", b: "x:client/v1", v: 1 });
+  assert.ok(c.mdlState().sheet === null, "the sheet is gone");
+  assert.ok(/Done\./.test(c.mdlPaneHtml()), "and the screen says what it did");
+  const d = await loaded({ post: (p) => p === "/api/native/_models" ? Promise.reject(new Fail({ code: "NAME_TAKEN", faults: ["a model called Client is already there"] })) : undefined });
+  click(d, { mdl: "add" }); type(d, "label", "Zed");
+  d.mdlInput({ dataset: { mdlin: "base" }, value: "core:record", type: "radio" });
+  click(d, { mdl: "make" }); await settle();
+  assert.ok(/a model called Client is already there/.test(sheet(d)) && !/->/.test(sheet(d)), "the server's sentence, never the path");
+});
+
+/* ── M7 ─────────────────────────────────────────────────────────────────── */
+test("M7: change a field: the live line says the class in words, once, after the pause", async () => {
+  const c = await onPage();
+  click(c, { mdl: "field", mdlName: "name" });
+  await fire(c);
+  let live = () => words(sheet(c).match(/<div id="mdl-live"[\s\S]*?<\/div>/)[0]);
+  assert.ok(/No change in what fits\./.test(live()), live());
+  assert.ok(/Type: text \(fixed\)/.test(words(sheet(c))), "the type is fixed once saved");
+  const n0 = posts(c, /preview/).length;
+  /* five keys, one call */
+  "6".split("").concat(["60"]).forEach(v => type(c, "f:max_len", v));
+  type(c, "f:max_len", "6"); type(c, "f:max_len", "60");
+  assert.strictEqual(c.timers.filter(x => x.live).length, 1, "one pending call, not one for each key");
+  assert.ok(/Checking\.\.\./.test(live()), "a quiet Checking... while it waits");
+  await fire(c);
+  assert.strictEqual(posts(c, /preview/).length, n0 + 1);
+  const call = posts(c, /preview/)[n0];
+  assert.strictEqual(call.body.op, "edit"); assert.strictEqual(call.body.key, "x.client");
+  assert.strictEqual(call.body.spec.fields.filter(f => f.name === "name")[0].max_len, 60);
+  assert.ok(/Tightens: fewer values fit\./.test(live()), live());
+  assert.ok(/>Save</.test(sheet(c)) && !/Save for my stamp/.test(sheet(c)));
+  type(c, "f:max_len", "120"); await fire(c);
+  assert.ok(/Lets in more: this would let name run to 120 characters\. This waits for your stamp\./.test(live()), live());
+  assert.ok(/Save for my stamp/.test(sheet(c)));
+  assert.ok(!/\b(tightens|widens|mixed)\b/.test(words(sheet(c))), "never the codes on screen");
+  /* Save posts the whole spec with the page's rev; a stamp waits */
+  const d = await onPage({ post: (p) => /x\.client$/.test(p) ? Promise.resolve({ ok: true, pending: true, class: "widens", pending_id: "p-1", says: "let name run to 120 characters" }) : undefined });
+  click(d, { mdl: "field", mdlName: "name" }); type(d, "f:max_len", "120"); await fire(d);
+  click(d, { mdl: "save" }); await settle();
+  const sv = posts(d, /x\.client$/)[0];
+  assert.deepStrictEqual(Object.keys(sv.body).sort(), ["rev", "spec"]);
+  assert.strictEqual(sv.body.rev, PAGE.rev);
+  assert.ok(/Saved for your stamp/.test(d.mdlPaneHtml()));
+  /* a server sentence under the control */
+  const e = await onPage({ post: (p) => /x\.client$/.test(p) ? Promise.reject(new Fail({ code: "LOOSENS_BASE", faults: ["name cannot allow more than Record does"] })) : p === "/api/native/_models/preview" ? Promise.resolve(copy(fx("preview_same"))) : undefined });
+  click(e, { mdl: "field", mdlName: "name" }); await fire(e);
+  click(e, { mdl: "save" }); await settle();
+  assert.ok(/name cannot allow more than Record does/.test(sheet(e)));
+  /* the control stops at the base's bound, and says so */
+  const f = await loaded();
+  click(f, { mdl: "add" });
+  f.mdlInput({ dataset: { mdlin: "base" }, value: "x.client", type: "radio" }); await settle();
+  click(f, { mdl: "field" });
+  type(f, "f:name", "name"); type(f, "f:label", "Name");
+  const hh = sheet(f);
+  assert.ok(/max="80"/.test(hh) && /the base allows up to 80/.test(words(hh)), words(hh));
+  type(f, "f:max_len", "200");
+  assert.strictEqual(f.mdlState().sheet.field.max_len, 80, "clamped to the base");
+  /* rename keeps the old name; retire says it stays readable */
+  const g = await onPage();
+  click(g, { mdl: "rename", mdlName: "phone" });
+  assert.ok(/The old name keeps working\./.test(words(sheet(g))));
+  type(g, "f:name", "mobile"); await fire(g);
+  const rp = posts(g, /preview/).pop().body.spec.fields;
+  assert.ok(rp.some(x => x.name === "mobile" && x.aliases.indexOf("phone") >= 0) && !rp.some(x => x.name === "phone"));
+  click(g, { mdl: "retire", mdlName: "name" });
+  assert.ok(/It stays readable and is never asked for\./.test(words(sheet(g))) && /lets in more/.test(words(sheet(g))), "a required field says it lets in more");
+});
+
 /* ── M8 ─────────────────────────────────────────────────────────────────── */
 test("M8: turning a model off says what turns off and what is kept; Turn off posts {enabled: false, rev}", async () => {
   const c = await onPage();
