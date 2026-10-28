@@ -1,0 +1,45 @@
+{"cannot": null, "confidence": 0.45, "doubt": "Where should an order go?", "engine": "Game", "fallback": "the form shows the order on the screen and sends nothing.", "for": "x-req", "word": "doubt", "words": "A guide to the night clinic"}
+{"cannot": null, "confidence": 0.45, "doubt": "Where should the weekly list go?", "engine": "Game", "for": "x-req", "word": "doubt", "words": "A guide to the night clinic"}
+{"cannot": null, "confidence": 0.45, "doubt": "Where should the weekly list go?", "engine": "Stock page", "for": "x-e4c0cf25", "word": "doubt", "words": "Set up a laboratory system to track chemical inventory for our school science team"}
+{"cannot": null, "confidence": 0.45, "doubt": "Where should the weekly list go?", "engine": "Stock page", "for": "x-5175237a", "word": "doubt", "words": "Set up a laboratory system to track chemical inventory for our school science team"}
+{"cannot": null, "confidence": 0.45, "doubt": "Where should the weekly list go?", "engine": "Stock page", "for": null, "word": "doubt", "words": "# Lab Co Department\n\nSet up a laboratory system to track chemical inventory for our school science team\n\n## Asked since\n- To Identity's question (Where should the weekly list go): Send it to the science teacher"}
+{"cannot": null, "confidence": 0.45, "doubt": "Where should the weekly list go?", "engine": "Stock page", "for": null, "word": "doubt", "words": "# Lab Co Department\n\nSet up a laboratory system to track chemical inventory for our school science team\n\n## Asked since\n- To Identity's question (Where should the weekly list go): Send it to the science teacher\n- To Identity's question (Where should the weekly list go): Only the lab technician sees it"}
+{"cannot": null, "confidence": 0.45, "doubt": "Where should the weekly list go?", "engine": "Stock page", "fallback": "it is filed and sent nowhere.", "for": "x-bb2ca5b4", "word": "doubt", "words": "Set up a laboratory system to track chemical inventory for our school science team"}
+{"confidence": 0.45, "doubt": "When someone pre-orders a cake, where should the order go, for example an email to the shop?", "engine": "Site", "fallback": "the form shows the order on screen for the customer to take to the shop, and sends nothing", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which days is the shop closed?", "engine": "Site", "fallback": "the page says nothing of the days", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Should the page say who the baker is?", "engine": "Site", "fallback": "the page names no one", "word": "doubt"}
+{"confidence": 0.45, "doubt": "When someone pre-orders a cake, where should the order go, for example an email to the shop?", "engine": "Site", "fallback": "the form sends the order by email to the shop", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Should Priority grant the cake counter its own page?", "engine": "Site", "fallback": "the cake counter shares the home page", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Adaptation is unsure, at confidence 0.45, whether the Check engine should read the order form; Root may review it.", "engine": "Site", "fallback": "Coordination runs Check after the Site engine", "word": "doubt"}
+{"confidence": 0.45, "doubt": "I am only 45% sure the shop wants 3 pages, and the charter says Priority must refuse orders over the engine limit (confidence 0.45)", "engine": "Site", "fallback": "Priority holds the envelope at 70 percent", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Should the page say who the baker is? My confidence is low.", "engine": "Site", "fallback": "the Check engine goes on without it", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Should the cake page show 3 sizes, and be easy to find on a search engine?", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I put it at 0.45.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? 0.45.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I am about sixty percent sure.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? Call it sixty per cent.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? It is a 1 in 3 chance.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I put it at one in three.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I'd rate it 6 out of 10.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? About 6/10.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I am at sixty %.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? There is one chance in three.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I put it at 0,45.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I am 60 pct sure.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? About fifty-fifty.", "engine": "Site", "fallback": "the page shows one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I'd rate it 6 out of 10.", "engine": "Site", "fallback": "the page shows one size. I'd rate it 6 out of 10.", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I'd rate it 6 out of 10.", "engine": "Site", "fallback": "", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? About 6/10.", "engine": "Site", "fallback": "the page shows one size. About 6/10.", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? About 6/10.", "engine": "Site", "fallback": "", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I put it at 0,45.", "engine": "Site", "fallback": "the page shows one size. I put it at 0,45.", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I put it at 0,45.", "engine": "Site", "fallback": "", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which pages does the shop want? I would say 45.", "engine": "Site", "fallback": "the page shows 45 sizes", "word": "doubt"}
+{"confidence": 0.8, "doubt": "Which pages does the shop want? I would say 45.", "engine": "Site", "fallback": "the page shows 45 sizes", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Should the page list all 45 cakes?", "engine": "Site", "fallback": "the page lists the first 12", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Should the workflow that builds the cake page also list the sizes?", "engine": "Site", "fallback": "the workflow lists one size", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which cakes need a note?", "engine": "Site", "fallback": "", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which chemicals need a safety note?", "engine": "Site", "fallback": "", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Which shelf holds the acids?", "engine": "Site", "fallback": "Coordination moves them to another engine", "word": "doubt"}
+{"confidence": 0.45, "doubt": "Who signs the inventory?", "engine": "Site", "fallback": "", "word": "doubt"}
+{"cannot": {"engine": "Translate", "items": ["D3"], "why": "no engine can"}, "confidence": 0.4, "doubt": "no engine in the Library translates", "engine": "Translate", "fallback": "Write writes both languages", "word": "doubt"}
+{"engine": "Translate", "word": "doubt"}

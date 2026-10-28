@@ -1,0 +1,130 @@
+{"born": "C2", "check": "said_what_it_did", "code": "plan_read", "id": "plan.read", "name": "Read the brief", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "plan_read", "colour": "red", "id": "plan.read", "name": "Read the brief", "nature": "transform"}
+{"born": "C2", "check": "brief_is_text", "code": "plan_read", "id": "plan.read", "name": "Read the brief", "nature": "transform"}
+{"born": "C2", "check": "brief_is_text", "code": "plan_read", "id": "plan.read", "name": "Read the brief", "nature": "dream"}
+{"born": "C2", "check": "counted_the_rows", "code": "adapt_sense", "id": "adapt.sense", "name": "Count from the rows", "nature": "transform"}
+{"born": "C2", "check": "moves_name_their_rows", "code": "adapt_ladder", "id": "adapt.ladder", "name": "Keep the ladder", "nature": "decide"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_act", "id": "adapt.act", "name": "Post what it proposes", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_trial", "id": "adapt.trial", "name": "Start the trial", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_notrial", "id": "adapt.notrial", "name": "Drop the trial", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_heard", "id": "adapt.heard", "name": "Note the ruling", "nature": "transform"}
+{"born": "C2", "check": "facts_are_closed", "code": "hear", "id": "adapt.hear", "name": "Read the idea", "nature": "transform"}
+{"born": "C0", "ceiling": "C1", "check": "idea_has_shapes", "draft": "adapt_shape_draft", "id": "adapt.shape", "name": "Reflect the idea back, in shapes", "nature": "make", "out": {"reflected": "str", "shapes": "list"}, "prompt": "adapt_shape"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_park", "id": "adapt.park", "name": "Park the idea", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_offer", "id": "adapt.offer", "name": "Offer the engine the idea asks for", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_priced", "id": "adapt.priced", "name": "Put the priced engine to Identity", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_priced", "id": "adapt.unpriced", "name": "Leave the idea parked, priced", "nature": "transform"}
+{"born": "C2", "check": "facts_are_closed", "code": "hear", "id": "adapt.hearline", "name": "Hear the words", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_source", "id": "adapt.source", "name": "Take the Library's line, or shape one", "nature": "transform"}
+{"born": "C0", "ceiling": "C1", "check": "line_is_fitted", "draft": "adapt_fit_draft", "id": "adapt.fit", "name": "Fit the Library's line to the goal", "nature": "decide", "only_if": "adapt.source.source=library", "out": {"engines": "list", "fit": "dict", "why": "str"}, "prompt": "adapt_fit"}
+{"born": "C0", "ceiling": "C1", "check": "line_is_engines", "draft": "adapt_line_draft", "id": "adapt.line", "name": "Shape the line the words need", "nature": "make", "only_if": "adapt.source.shape", "or": {"cannot": "dict"}, "out": {"engines": "list"}, "prompt": "adapt_line"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_line_offer", "id": "adapt.lineoffer", "name": "Put the line to Identity", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_line_granted", "id": "adapt.linegranted", "name": "Send the line Priority said yes to, to Root's check", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_line_refused", "id": "adapt.linerefused", "name": "Take Priority's no to Identity", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_line_counter", "id": "adapt.linecounter", "name": "Take Priority's ask for less, or take it to Identity", "nature": "transform"}
+{"born": "C2", "check": "facts_are_closed", "code": "adapt_hearnext", "id": "adapt.hearnext", "name": "Hear which items do not hold", "nature": "transform"}
+{"born": "C0", "ceiling": "C1", "check": "round_is_new", "draft": "adapt_next_draft", "id": "adapt.next", "name": "Say what to correct", "nature": "decide", "out": {"correction": "str", "covers": "list", "fixes": "list", "why": "str"}, "prompt": "adapt_next"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_round", "id": "adapt.round", "name": "Put the round to Priority", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_round_granted", "id": "adapt.roundgranted", "name": "Tell Identity the round Priority said yes to", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "adapt_round_refused", "id": "adapt.roundrefused", "name": "Take Priority's no on the round to Identity", "nature": "transform"}
+{"born": "C2", "check": "gate_answer_is_known", "code": "audit_when", "id": "audit.when", "name": "Wait for its time in the period", "nature": "decide"}
+{"born": "C2", "check": "picked_a_sample", "code": "audit_pick", "id": "audit.pick", "name": "Pick what to check", "nature": "decide"}
+{"born": "C2", "check": "has_a_verdict", "code": "audit_mechanical", "id": "audit.mechanical", "name": "Check the record", "nature": "check"}
+{"born": "C0", "ceiling": "C1", "check": "reading_is_s30", "draft": "audit_items_draft", "id": "audit.items", "name": "Read each done-when item", "nature": "check", "only_if": "audit.pick.sample", "out": {"findings": "list", "items": "list"}, "prompt": "audit_items"}
+{"born": "C0", "ceiling": "C1", "check": "findings_name_where_and_what", "draft": "audit_judge_draft", "id": "audit.judge", "name": "Judge the pages against the brief", "nature": "check", "only_if": "audit.pick.sample", "out": {"findings": "list", "ok": "bool"}, "prompt": "audit_judge"}
+{"born": "C2", "check": "spot_check_reads_only", "code": "audit_file", "id": "audit.file", "name": "File what it found", "nature": "transform"}
+{"born": "C2", "check": "chain_under_its_limit", "code": "coord_chain", "id": "coord.chain", "name": "Stop a chain at its limit", "nature": "decide"}
+{"born": "C2", "check": "one_run_at_a_time", "code": "coord_busy", "id": "coord.busy", "name": "Keep one run at a time", "nature": "decide"}
+{"born": "C2", "check": "names_who_goes_first", "code": "coord_pick", "id": "coord.pick", "name": "Say who goes first, when several are ready", "nature": "decide"}
+{"born": "C2", "check": "gate_answer_is_known", "code": "coord_edge", "id": "coord.edge", "name": "Say who may post what to whom", "nature": "check"}
+{"born": "C2", "check": "said_what_it_did", "code": "coord_verdict", "id": "coord.verdict", "name": "Ask a function for its verdict", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "coord_bounds", "id": "coord.bounds", "name": "Close a thread at its bound", "nature": "decide"}
+{"born": "C2", "check": "said_what_it_did", "code": "coord_alarm", "id": "coord.alarm", "name": "Raise an alarm for a run past its window", "nature": "check"}
+{"born": "C2", "check": "facts_are_closed", "code": "coord_ready", "id": "coord.ready", "name": "List who is ready", "nature": "transform"}
+{"answer": "answer", "born": "C0", "ceiling": "C2", "check": "names_who_goes_first", "draft": "coord_tie_draft", "id": "coord.tie", "name": "Say who goes first among equals", "nature": "decide", "out": {"answer": "str", "why": "str"}, "prompt": "coord_tie"}
+{"born": "C2", "check": "said_what_it_did", "code": "coord_record", "id": "coord.record", "name": "Record the pick", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "coord_heard", "id": "coord.heard", "name": "Note the verdict", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "coord_heard", "id": "coord.refused", "name": "Note the no", "nature": "transform"}
+{"born": "C2", "check": "question_is_bounded", "code": "coord_question", "id": "coord.question", "name": "File the question and have it answered", "nature": "decide"}
+{"born": "C2", "check": "said_what_it_did", "code": "coord_table", "id": "coord.table", "name": "Write the line and a slot for each engine", "nature": "transform"}
+{"born": "C2", "check": "gate_answer_is_known", "code": "identity_gate", "draft": "identity_gate_draft", "id": "identity.gate", "name": "Gate the effect by rule", "nature": "decide", "out": {"verdict": ["admit", "wait", "refuse"]}, "prompt": "identity_gate_soft"}
+{"born": "C2", "check": "gate_answer_is_known", "code": "identity_wait_engine", "draft": "identity_gate_draft", "id": "identity.wait_engine", "name": "Wait for the engine the words need", "nature": "decide", "out": {"verdict": ["admit", "wait", "refuse"]}, "prompt": "identity_gate_soft"}
+{"born": "C2", "check": "facts_are_closed", "code": "hear", "id": "identity.front", "name": "Read what was said", "nature": "transform"}
+{"born": "C2", "check": "facts_are_closed", "code": "identity_route", "id": "identity.route", "name": "Find who it is for", "nature": "decide"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_hand", "id": "identity.hand", "name": "Hand it on, or do it", "nature": "transform"}
+{"born": "C2", "check": "facts_are_closed", "code": "identity_read", "id": "identity.read", "name": "Read the request", "nature": "transform"}
+{"answer": "journey", "born": "C0", "ceiling": "C2", "check": "journey_is_known", "draft": "identity_recognise_draft", "facts": ["cue", "names_work", "first"], "id": "identity.recognise", "name": "Recognise what kind of words these are", "nature": "decide", "only_if": "identity.read.later", "out": {"journey": ["task", "query", "directive", "feedback", "new-idea"]}, "prompt": "identity_recognise", "stringency": "high"}
+{"answer": "verdict", "born": "C0", "ceiling": "C2", "check": "verdict_is_known", "draft": "identity_take_draft", "facts": ["kind", "leaves_site", "first"], "id": "identity.take", "name": "Judge it against the goal", "nature": "decide", "only_if": "identity.recognise.journey=task", "out": {"verdict": ["go", "ask", "refuse"]}, "prompt": "identity_take", "stringency": "high"}
+{"born": "C0", "ceiling": "C1", "check": "enough_is_shaped", "draft": "identity_enough_draft", "id": "identity.enough", "name": "Read the identity against the standard", "nature": "check", "only_if": "identity.read.assess", "out": {"enough": "bool", "missing": "list"}, "prompt": "identity_enough"}
+{"born": "C0", "ceiling": "C1", "check": "answer_names_its_source", "draft": "identity_answer_draft", "id": "identity.answer", "name": "Answer from the record", "nature": "make", "only_if": "identity.recognise.journey=query", "out": {"answer": "str", "confidence": ["high", "moderate", "low", "unknown"], "source": "str"}, "prompt": "identity_answer"}
+{"born": "C0", "ceiling": "C1", "check": "rule_is_tagged", "draft": "identity_rule_draft", "id": "identity.rule", "name": "Restate it as a rule", "nature": "make", "only_if": "identity.recognise.journey=directive", "out": {"line": "str", "scope": ["standing", "one-time"], "tag": ["always", "ask", "refuse", "goal"]}, "prompt": "identity_rule"}
+{"born": "C0", "ceiling": "C1", "check": "feedback_says_what_changes", "draft": "identity_weigh_draft", "id": "identity.weigh", "name": "Read what the feedback changes", "nature": "make", "only_if": "identity.recognise.journey=feedback", "out": {"now": "str", "what": ["format", "content", "tone", "scope", "accuracy"]}, "prompt": "identity_weigh"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_file", "id": "identity.file", "name": "File what was decided", "nature": "transform"}
+{"born": "C2", "check": "facts_are_closed", "code": "hear", "id": "identity.hear", "name": "Read what was asked", "nature": "transform"}
+{"born": "C0", "ceiling": "C1", "check": "gate_verdict_is_known", "draft": "identity_gate_draft", "id": "identity.judge", "name": "Judge whether it may start", "nature": "decide", "out": {"verdict": ["admit", "wait", "refuse"]}, "prompt": "identity_gate_soft"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_verdict", "id": "identity.verdict", "name": "Post the verdict", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_rung", "id": "identity.rung", "name": "Put the move to the owner", "nature": "decide"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_apply", "id": "identity.apply", "name": "Apply what was stamped", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_drop", "id": "identity.drop", "name": "Drop what was turned down", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_finding", "id": "identity.finding", "name": "Weigh the finding", "nature": "decide"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_alarm", "id": "identity.alarm", "name": "Put the alarm to the owner", "nature": "decide"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_idea", "id": "identity.idea", "name": "Tell the owner where the idea went", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_lost", "id": "identity.lost", "name": "Say it back", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_engine", "id": "identity.engine", "name": "Put the engine to the owner", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_line", "id": "identity.line", "name": "Put the line to the owner", "nature": "transform"}
+{"born": "C2", "check": "facts_are_closed", "code": "hear", "id": "identity.conflict", "name": "Hear the conflict", "nature": "transform"}
+{"born": "C0", "ceiling": "C0", "check": "ruling_is_known", "draft": "identity_close_draft", "id": "identity.close", "name": "Close it against the goal and the rules", "nature": "decide", "out": {"ruling": ["run", "drop", "ask"], "why": "str"}, "prompt": "identity_close"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_closed", "id": "identity.closed", "name": "Run it, drop it, or ask the owner", "nature": "transform"}
+{"born": "C2", "check": "facts_are_closed", "code": "hear", "id": "identity.heard", "name": "Read the doubt", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_doubt", "id": "identity.doubt", "name": "Ask it once, or tell Adaptation to go on", "nature": "decide"}
+{"born": "C2", "check": "facts_are_closed", "code": "hear", "id": "identity.hear_reading", "name": "Read what Audit reports", "nature": "transform"}
+{"born": "C2", "check": "done_is_read", "code": "identity_done", "id": "identity.done", "name": "Say whether the goal is reached", "nature": "decide"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_weigh_reading", "id": "identity.weigh_reading", "name": "Weigh what the reading leaves open", "nature": "decide"}
+{"born": "C2", "check": "facts_are_closed", "code": "hear", "id": "identity.hear_round", "name": "Read the round", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "identity_round", "id": "identity.round", "name": "File the correction in the Brief", "nature": "transform"}
+{"born": "C2", "check": "gate_answer_is_known", "code": "priority_envelope", "id": "priority.envelope", "name": "Hold the envelope", "nature": "decide"}
+{"born": "C2", "check": "facts_are_closed", "code": "priority_read", "id": "priority.read", "name": "Read what it would cost", "nature": "transform"}
+{"answer": "answer", "born": "C0", "ceiling": "C2", "check": "answer_has_its_price", "draft": "priority_bargain_draft", "facts": ["word", "room"], "id": "priority.bargain", "name": "Say yes, ask for less, or say no", "nature": "decide", "out": {"answer": ["accept", "reject", "counter"]}, "prompt": "priority_bargain", "stringency": "low"}
+{"born": "C2", "check": "said_what_it_did", "code": "priority_post", "id": "priority.post", "name": "Post the answer", "nature": "transform"}
+{"born": "C2", "check": "said_what_it_did", "code": "priority_grant", "id": "priority.grant", "name": "Give each new engine its limit", "nature": "decide"}
+{"born": "C2", "check": "rules_are_listed", "code": "check_rules_of", "id": "check.rules_of", "name": "List the owner's rules and the pages", "nature": "transform"}
+{"born": "C0", "ceiling": "C1", "check": "broken_is_listed", "draft": "check_rules_draft", "id": "check.rules", "name": "Hold every page to the owner's rules", "nature": "check", "only_if": "check.rules_of.any", "out": {"broken": "list"}, "prompt": "check_rules"}
+{"born": "C2", "check": "filed_has_files", "code": "check_build", "files": true, "id": "check.build", "name": "Build and check", "nature": "check"}
+{"born": "C2", "check": "brief_is_text", "code": "do_read", "id": "do.read", "name": "Read the brief", "nature": "transform"}
+{"born": "C0", "ceiling": "C1", "check": "need_is_answer", "draft": "do_need_draft", "id": "do.need", "may_end": true, "name": "Weigh the words against what was filed", "nature": "decide", "only_if": "do.read.previous", "out": {"run": "bool", "why": "str"}, "prompt": "do_need"}
+{"born": "C0", "ceiling": "C1", "check": "result_is_text", "draft": "do_make_draft", "id": "do.make", "name": "Do what it asks", "nature": "make", "out": {"text": "str"}, "prompt": "do_make"}
+{"born": "C2", "check": "filed_has_files", "code": "do_file", "files": true, "id": "do.file", "name": "File the result", "nature": "transform"}
+{"born": "C0", "ceiling": "C1", "check": "plan_has_pages", "draft": "plan_pages_draft", "id": "plan.pages", "name": "Propose the pages", "nature": "make", "out": {"pages": "list", "site_name": "str"}, "prompt": "plan_pages"}
+{"born": "C2", "check": "plan_is_fit", "code": "plan_fit", "id": "plan.fit", "name": "Fit the page list", "nature": "transform"}
+{"born": "C2", "check": "filed_has_files", "code": "plan_file", "files": true, "id": "plan.file", "name": "File the plan", "nature": "transform"}
+{"born": "C2", "check": "filed_has_files", "code": "publish_copy", "files": true, "id": "publish.copy", "name": "Copy the build live", "nature": "transform"}
+{"born": "C2", "check": "facts_are_closed", "code": "setup_read", "id": "setup.read", "name": "Read the request", "nature": "transform"}
+{"born": "C0", "ceiling": "C2", "check": "setup_converse_is_valid", "draft": "setup_converse_draft", "id": "setup.converse", "name": "Ask until the department is clear", "nature": "decide", "only_if": "setup.read.conversing", "out": {"question": "str", "verdict": ["ask", "clear"]}, "prompt": "setup_converse"}
+{"born": "C2", "check": "said_what_it_did", "code": "setup_say", "id": "setup.say", "may_end": true, "name": "Ask the owner, or hand the words on", "nature": "transform"}
+{"born": "C0", "by_hand": "Sutra could not decide the department by itself. Stamp to set it up from your words with the defaults, or say no and say it again.", "ceiling": "C2", "check": "department_is_shaped", "draft": "setup_shape_draft", "id": "setup.shape", "name": "Shape the department", "nature": "make", "out": {"goal": "str", "kind": "str", "name": "str"}, "prompt": "setup_shape"}
+{"born": "C2", "check": "department_is_made", "code": "setup_make", "id": "setup.make", "name": "Make it", "nature": "make"}
+{"born": "C2", "check": "filed_has_files", "code": "setup_file", "files": true, "id": "setup.file", "name": "File it", "nature": "transform"}
+{"born": "C2", "check": "list_has_pages", "code": "write_list", "id": "write.list", "name": "List the pages", "nature": "transform"}
+{"born": "C0", "ceiling": "C1", "check": "page_has_body", "draft": "write_page_draft", "each": "write.list.pages", "id": "write.page", "name": "Write a page", "nature": "make", "out": {"body_html": "str", "title": "str"}, "prompt": "write_page", "side_by_side": 4}
+{"born": "C2", "check": "filed_has_files", "code": "write_file", "files": true, "id": "write.file", "name": "Put the pages together", "nature": "transform"}
+{"born": "C0", "ceiling": "C1", "check": "idea_has_shapes", "id": "adapt.shape", "name": "Reflect the idea back, in shapes", "nature": "make", "out": {"reflected": "str", "shapes": "list"}, "prompt": "adapt_shape"}
+{"born": "C0", "ceiling": "C1", "check": "idea_has_shapes", "draft": "adapt_shape_draft", "id": "adapt.shape", "name": "Reflect the idea back, in shapes", "nature": "make", "prompt": "adapt_shape"}
+{"born": "C2", "ceiling": "C1", "check": "idea_has_shapes", "draft": "adapt_shape_draft", "id": "adapt.shape", "name": "Reflect the idea back, in shapes", "nature": "make", "out": {"reflected": "str", "shapes": "list"}, "prompt": "adapt_shape"}
+{"born": "C2", "check": "counted_the_rows", "code": "adapt_sense", "id": "adapt.sense", "name": "Count from the rows", "nature": "transform", "prompt": "adapt_shape"}
+{"born": "C1", "check": "counted_the_rows", "code": "adapt_sense", "id": "adapt.sense", "name": "Count from the rows", "nature": "transform"}
+{"born": "C2", "check": "counted_the_rows", "code": "adapt_sense", "draft": "x_draft", "id": "adapt.sense", "name": "Count from the rows", "nature": "transform"}
+{"born": "C2", "by_hand": "Do it.", "check": "counted_the_rows", "code": "adapt_sense", "id": "adapt.sense", "name": "Count from the rows", "nature": "transform"}
+{"born": "P", "by_hand": "Say what the page should hold.", "ceiling": "C1", "check": "idea_has_shapes", "draft": "adapt_shape_draft", "id": "adapt.shape", "name": "Reflect the idea back, in shapes", "nature": "make", "out": {"reflected": "str", "shapes": "list"}, "prompt": "adapt_shape"}
+{"born": "P", "ceiling": "C1", "check": "idea_has_shapes", "draft": "adapt_shape_draft", "id": "adapt.shape", "name": "Reflect the idea back, in shapes", "nature": "make", "out": {"reflected": "str", "shapes": "list"}, "prompt": "adapt_shape"}
+{"born": "C2", "check": "gate_answer_is_known", "id": "audit.when", "name": "Wait for its time in the period", "nature": "decide"}
+{"born": "C2", "check": "one_run_at_a_time", "id": "coord.busy", "name": "Keep one run at a time", "nature": "decide"}
+{"born": "C2", "check": "one_run_at_a_time", "code": "coord_busy", "draft": "x_draft", "id": "coord.busy", "name": "Keep one run at a time", "nature": "decide", "out": {"a": "str"}, "prompt": "x_prompt"}
+{"born": "C2", "check": "counted_the_rows", "code": "adapt_sense", "colour": "red", "id": "adapt.sense", "name": "Count from the rows", "nature": "transform"}
+{"born": "C2", "code": "adapt_sense", "id": "adapt.sense", "name": "Count from the rows", "nature": "transform"}
+"not a step"
+{"born": "C3", "check": "counted_the_rows", "code": "adapt_sense", "id": "adapt.sense", "name": "Count from the rows", "nature": "transform"}
+{"born": "C2", "check": "reads_well", "code": "adapt_sense", "id": "adapt.sense", "name": "Count from the rows", "nature": "transform"}
+{"born": "C2", "check": "brief_is_text", "code": "do_read", "id": "translate.read", "name": "Read the brief", "nature": "transform"}
+{"born": "C0", "ceiling": "C1", "check": "need_is_answer", "draft": "do_need_draft", "id": "translate.need", "may_end": true, "name": "Weigh the words against what was filed", "nature": "decide", "only_if": "translate.read.previous", "out": {"run": "bool", "why": "str"}, "prompt": "do_need"}
+{"born": "C0", "ceiling": "C1", "check": "result_is_text", "draft": "do_make_draft", "id": "translate.make", "name": "Do what it asks", "nature": "make", "out": {"text": "str"}, "prompt": "do_make"}
+{"born": "C2", "check": "filed_has_files", "code": "do_file", "files": true, "id": "translate.file", "name": "File the result", "nature": "transform"}

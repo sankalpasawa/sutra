@@ -1,0 +1,10 @@
+{"basis": "line", "calls": 11, "per_engine": {"Check": {"basis": "prior", "calls": 1, "runs": 0, "usd": 0.04}, "Plan": {"basis": "median", "calls": 3, "runs": 3, "usd": 0.08}, "Publish": {"basis": "prior", "calls": 0, "runs": 0, "usd": 0.0}, "Write": {"basis": "median", "calls": 7, "runs": 4, "usd": 0.275}}, "runs": 7, "usd": 0.395}
+{"basis": "prior", "calls": 2, "per_engine": {"Booking": {"basis": "prior", "calls": 2, "runs": 0, "usd": 0.08}}, "runs": 0, "usd": 0.08}
+{"basis": "prior", "calls": 1, "per_engine": {"Write": {"basis": "prior", "calls": 1, "runs": 0, "usd": 0.04}}, "runs": 0, "usd": 0.04}
+{"basis": "median", "calls": 12, "per_engine": {"Write": {"basis": "median", "calls": 8, "runs": 4, "usd": 0.2}}, "runs": 4, "usd": 0.3}
+{"basis": "guess", "calls": 12, "per_engine": {"Write": {"basis": "median", "calls": 8, "runs": 4, "usd": 0.2}}, "runs": 4, "usd": 0.3}
+{"calls": 4, "usd": 0.2}
+{"basis": "median", "calls": 4, "runs": 3, "usd": 0.2}
+{"basis": "guess", "calls": 4, "usd": 0.2}
+{"calls": 4, "per_engine": {"Plan": {"basis": "prior", "calls": 1, "usd": 0.1}}, "usd": 0.2}
+{"calls": 4, "per_engine": {"Plan": {"basis": "line", "calls": 1, "usd": 0.1}}, "usd": 0.2}

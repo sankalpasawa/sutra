@@ -8,8 +8,7 @@
 
 Four sources of input: the samples (the good and the failing example of every definition), mutants of a good value, the writers'
 output (recorded by qa/a4_record.py) and seeded fuzz. The oracle is layer_schema as it stands (`oracle`); A4-PORT re-points it to
-layer_models.legacy, the frozen literal definitions. The port is whatever `port_classes()` finds: the registry, and until the
-definitions are ported the six trial definitions of a4_trial.py. No allow-list of differences exists, and none is added."""
+layer_models.legacy, the frozen literal definitions. The port is whatever `port_classes()` finds: the 130 definitions of layer_models. No allow-list of differences exists, and none is added."""
 import argparse
 import copy
 import hashlib
@@ -35,20 +34,25 @@ GOLDEN_DIR = UI / 'test_fixtures' / 'models' / 'corpus' / 'golden'
 KINDS = [None, True, 0, 7, -1, 2.5, 3.0, '', 'x', 'D1', [], [1], {}, {'a': 1}, 'a' * 5000, '\x01', 'a\nb', '{{x}}', 'Return ONLY',
          'abc\n', float('nan')]
 CANDS = ['x', 'Plan', 'D1', 'F1', 'identity/v1', 'r-0123abcd', 'Q-1', '2026-10-27', 'engine/a-b', 'go', 'abc def', 'a_b:c.d',
-         'pending', 'publish', 'ask', 'library', 'run it', 'Write', 'accept', 'words', 'adaptation']
+         'pending', 'publish', 'ask', 'library', 'run it', 'Write', 'accept', 'words', 'adaptation',
+         'ab.cd', 'BL-1', 'J1', 'J1.a', 'J1.1', 'J1/step/1', 'J1:2', 'S1', 'RULED', 'a.py::t', 'js:a.js#W1', 'FI1', '1', '4a']
 
 
 # ---- the two sides --------------------------------------------------------------------------------------------------------
 def oracle(name, value):
-    """The sentences of the oracle. A4-PORT points this at layer_models.legacy."""
-    return S.faults(S.DEFS[name], value)
+    """The sentences of the oracle: the frozen walker over the frozen literal definitions (layer_models.legacy)."""
+    import layer_models.legacy as L
+    return L.oracle(name, value)
 
 
 def port_classes():
-    """{definition name: class} of the port: the trial definitions, over whatever the registry holds."""
+    """{definition name: class or annotation} of the port: the 130 definitions of layer_models, over the trial's six for a name
+    nobody registered (none, once the port is complete)."""
     import a4_trial
-    from layer_models import registry
-    return dict(a4_trial.EXPORTED, **registry.classes())
+    import layer_models
+    reg = layer_models.load()
+    found = dict(a4_trial.EXPORTED, **reg.DEF_CLASS, **reg.DEF_TYPE)
+    return {n: t for n, t in found.items() if n in S.DEFS}               # a family such as identity.ask.form is not a definition
 
 
 _ADAPTERS = {}
@@ -121,6 +125,8 @@ def good(sch, full=False, depth=0, alt=False):
         return sch.get('minimum', 0) if sch.get('minimum', 0) else 0.5
     if t == 'boolean':
         return True
+    if t == 'null':
+        return None
     if t == 'array':
         out = []
         for _ in range(max(sch.get('minItems', 0), 1 if full else 0)):
@@ -200,6 +206,7 @@ def mutants(v, rng=None):
         if isinstance(cur, list):
             yield put(v, p, cur + cur)
             yield put(v, p, cur + [cur[0]] * 30 if cur else [1] * 30)
+            yield put(v, p, cur + [cur[0]] * 70 if cur else [1] * 70)
             yield put(v, p, [])
             yield put(v, p, tuple(cur))
             if cur:
@@ -306,9 +313,9 @@ def uses(name):
         walk(s.get('items'))
         if isinstance(s.get('additionalProperties'), dict):
             walk(s['additionalProperties'])
-        for b in s.get('anyOf') or []:
-            if '$ref' not in b:          # a shape that is a definition is proved on its own: the walker shows only a failing
-                walk(b)                  # anyOf's first shape's first fault, so what is inside it can hide
+        for i, b in enumerate(s.get('anyOf') or []):
+            if i == 0 and '$ref' not in b:   # a shape that is a definition is proved on its own; the walker shows only a failing
+                walk(b)                      # anyOf's first shape's first fault, so what is inside any other shape cannot show
     walk(S.DEFS[name])
     return found
 
@@ -524,7 +531,7 @@ def main(argv=None):
         print('CORPUS_SHA', write_golden(a.write_golden, only or None, a.seed))
     if a.bench:
         res = bench(only)
-        rc |= 1 if res and sum(b for _, b in res.values()) > sum(o for o, _ in res.values()) else 0
+        rc |= 1 if any(b > o for o, b in res.values()) else 0                  # P6: no definition slower than the oracle
     if a.mixins:
         for f, sch, ds in mixins():
             print('%-16s in %2d: %s  %s' % (f, len(ds), json.dumps(sch, sort_keys=True)[:80], ', '.join(ds[:6])))

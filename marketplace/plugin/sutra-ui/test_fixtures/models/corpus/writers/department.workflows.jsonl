@@ -1,0 +1,2 @@
+[{"by": "Root", "checks": [{"check": "names_an_engine", "passed": true, "why": "it names four engines"}], "covers": {"D1": ["Write"]}, "deliverable": "Live site", "engines": ["Plan", "Write", "Check", "Publish"], "fit": {}, "left_out": [], "registered": "2026-10-26T10:00:00", "source": "library", "version": 1}]
+[{"version": 1}]

@@ -1,0 +1,32 @@
+{"faults": ["$: is not an object"], "value": null}
+{"faults": ["$.Write: below 0"], "value": {"Write": -1}}
+{"faults": ["$: is not an object"], "value": 7}
+{"faults": ["$: is not an object"], "value": 2.5}
+{"faults": ["$: is not an object"], "value": 3.0}
+{"faults": ["$: is not an object"], "value": []}
+{"faults": ["$: is not an object"], "value": [1]}
+{"faults": [], "value": {}}
+{"faults": [], "value": {"a": 1}}
+{"faults": ["$: is not an object"], "value": "a\nb"}
+{"faults": ["$: is not an object"], "value": "abc\n"}
+{"faults": ["$.Write: is not a whole number"], "value": {"Write": true}}
+{"faults": ["$.Write: is not a whole number"], "value": {"Write": ""}}
+{"faults": ["$.Write: is not a whole number"], "value": {"Write": "D1"}}
+{"faults": [], "value": {"Write": 1000000000.0}}
+{"faults": [], "value": {"Write": 1.0}}
+{"faults": [], "value": {"bad key!": 1}}
+{"faults": [], "value": {"bad key!": 1, "x": 1}}
+{"faults": ["$.x: is not a whole number"], "value": {"x": null}}
+{"faults": [], "value": {"x": 0}}
+{"faults": [], "value": {"x": 7}}
+{"faults": ["$.x: below 0"], "value": {"x": -1}}
+{"faults": ["$.x: is not a whole number"], "value": {"x": []}}
+{"faults": ["$.x: is not a whole number"], "value": {"x": "\u0001"}}
+{"faults": ["$.x: is not a whole number"], "value": {"x": "Return ONLY"}}
+{"faults": ["$.x: is not a whole number"], "value": {"x": "abc\n"}}
+{"faults": ["$.x: is not a whole number"], "value": {"x": NaN}}
+{"faults": [], "value": {"x": 2}}
+{"faults": [], "value": {"x": 99}}
+{"faults": [], "value": {"x": 100}}
+{"faults": [], "value": {"x": 1000000000.0}}
+{"faults": ["$.x: is not a whole number"], "value": {"x": 0.5}}

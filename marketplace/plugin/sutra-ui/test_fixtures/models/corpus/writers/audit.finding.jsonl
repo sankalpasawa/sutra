@@ -1,0 +1,51 @@
+{"ask": null, "at": "2026-10-28T19:10:14+05:30", "claim": "Pages has a version with no run or no check", "id": "F1", "item": null, "severity": "medium", "went_to": "Identity", "where": "Pages"}
+{"claim": "the link 'Our fees' goes to a page the site does not have", "id": "F1", "kind": "defect", "page": "index.html", "severity": "medium", "where": "index.html: the link 'Our fees' (to fees.html)"}
+{"claim": "the link 'Fees' goes to a page the site does not have", "id": "F1", "kind": "defect", "page": "index.html", "severity": "medium", "where": "index.html: the link 'Fees' (to docs/fees.html)"}
+{"claim": "the link 'Opening hours' goes to a part of the page that is not there", "id": "F1", "kind": "defect", "page": "index.html", "severity": "low", "where": "index.html: the link 'Opening hours' (to #hours)"}
+{"claim": "the link 'Week nine' goes to a part of another page that is not there", "id": "F1", "kind": "defect", "page": "index.html", "severity": "low", "where": "index.html: the link 'Week nine' (to lessons.html#week9)"}
+{"claim": "the form has no submit button, so a visitor cannot send it", "id": "F1", "kind": "defect", "page": "index.html", "severity": "medium", "where": "index.html: the form"}
+{"claim": "the image 'hero.png' has no alt text for a reader who cannot see it", "id": "F1", "kind": "defect", "page": "index.html", "severity": "medium", "where": "index.html: the image 'hero.png'"}
+{"claim": "the page has no h1 heading", "id": "F1", "kind": "defect", "page": "index.html", "severity": "medium", "where": "index.html: the main heading (h1)"}
+{"claim": "the page has more than one h1 heading, and should have one: 'Welcome', 'Also welcome'", "id": "F1", "kind": "defect", "page": "index.html", "severity": "low", "where": "index.html: the main heading (h1)"}
+{"claim": "the link 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…' goes to a page the site does not have", "id": "F1", "kind": "defect", "page": "index.html", "severity": "medium", "where": "index.html: the link 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…' (to xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…)"}
+{"claim": "the image 'class.png' has no alt text for a reader who cannot see it", "id": "F1", "item": null, "severity": "medium", "went_to": "Identity", "where": "about.html: the image 'class.png'"}
+{"claim": "the image 'class.png' has no alt text for a reader who cannot see it", "id": "F2", "item": null, "severity": "medium", "went_to": "Identity", "where": "appointments.html: the image 'class.png'"}
+{"claim": "the image 'class.png' has no alt text for a reader who cannot see it", "id": "F3", "item": null, "severity": "medium", "went_to": "Identity", "where": "contact.html: the image 'class.png'"}
+{"claim": "the image 'class.png' has no alt text for a reader who cannot see it", "id": "F4", "item": null, "severity": "medium", "went_to": "Identity", "where": "departments.html: the image 'class.png'"}
+{"claim": "the image 'class.png' has no alt text for a reader who cannot see it", "id": "F5", "item": null, "severity": "medium", "went_to": "Identity", "where": "doctors.html: the image 'class.png'"}
+{"claim": "the image 'class.png' has no alt text for a reader who cannot see it", "id": "F6", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'class.png'"}
+{"claim": "the page says 'Phone: to be confirmed'", "id": "F1", "item": null, "severity": "high", "went_to": "Identity", "where": "about.html: the text 'to be confirmed'"}
+{"claim": "the page says 'Phone: to be confirmed'", "id": "F2", "item": null, "severity": "high", "went_to": "Identity", "where": "appointments.html: the text 'to be confirmed'"}
+{"claim": "the page says 'Phone: to be confirmed'", "id": "F3", "item": null, "severity": "high", "went_to": "Identity", "where": "contact.html: the text 'to be confirmed'"}
+{"claim": "the page says 'Phone: to be confirmed'", "id": "F4", "item": null, "severity": "high", "went_to": "Identity", "where": "departments.html: the text 'to be confirmed'"}
+{"claim": "the page says 'Phone: to be confirmed'", "id": "F5", "item": null, "severity": "high", "went_to": "Identity", "where": "doctors.html: the text 'to be confirmed'"}
+{"claim": "the page says 'Phone: to be confirmed'", "id": "F6", "item": null, "severity": "high", "went_to": "Identity", "where": "index.html: the text 'to be confirmed'"}
+{"claim": "states a fee nobody gave", "id": "F1", "item": null, "severity": "high", "went_to": "Identity", "where": "index.html"}
+{"claim": "the image 'photo0.png' has no alt text for a reader who cannot see it", "id": "F2", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo0.png'"}
+{"claim": "the image 'photo1.png' has no alt text for a reader who cannot see it", "id": "F3", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo1.png'"}
+{"claim": "the image 'photo2.png' has no alt text for a reader who cannot see it", "id": "F4", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo2.png'"}
+{"claim": "the image 'photo3.png' has no alt text for a reader who cannot see it", "id": "F5", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo3.png'"}
+{"claim": "the image 'photo4.png' has no alt text for a reader who cannot see it", "id": "F6", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo4.png'"}
+{"claim": "the image 'photo5.png' has no alt text for a reader who cannot see it", "id": "F7", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo5.png'"}
+{"claim": "the image 'photo6.png' has no alt text for a reader who cannot see it", "id": "F8", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo6.png'"}
+{"claim": "the image 'photo7.png' has no alt text for a reader who cannot see it", "id": "F9", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo7.png'"}
+{"claim": "the image 'photo8.png' has no alt text for a reader who cannot see it", "id": "F10", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo8.png'"}
+{"claim": "the image 'photo9.png' has no alt text for a reader who cannot see it", "id": "F11", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo9.png'"}
+{"claim": "the image 'photo10.png' has no alt text for a reader who cannot see it", "id": "F12", "item": null, "severity": "medium", "went_to": "Identity", "where": "index.html: the image 'photo10.png'"}
+{"claim": "the link 'Fees' goes to a page the site does not have", "id": "F1", "kind": "defect", "page": "index.html", "severity": "medium", "where": "index.html: the link 'Fees' (to fees.html)"}
+{"claim": "a link goes to a page the site does not have", "id": "F1", "kind": "defect", "page": "index.html", "severity": "medium", "where": "index.html: a link (to fees.html)"}
+{"claim": "the link 'Fees' goes to a part of the page that is not there", "id": "F1", "kind": "defect", "page": "index.html", "severity": "low", "where": "index.html: the link 'Fees' (to #week9)"}
+{"claim": "the link 'Fees' goes to a part of another page that is not there", "id": "F1", "kind": "defect", "page": "index.html", "severity": "low", "where": "index.html: the link 'Fees' (to lessons.html#week9)"}
+{"claim": "the page says 'Page About us Opening hours: to be confirmed'", "id": "F1", "kind": "hole", "name": "About", "page": "about.html", "severity": "high", "where": "about.html: the text 'to be confirmed'"}
+{"claim": "the page says 'Home Welcome Phone: to be confirmed'", "id": "F1", "kind": "hole", "name": "Home", "page": "index.html", "severity": "high", "where": "index.html: the text 'to be confirmed'"}
+{"claim": "the page says 'What we charge Fees TBD'", "id": "F1", "kind": "hole", "name": "What we charge", "page": "our-fees.html", "severity": "high", "where": "our-fees.html: the text 'TBD'"}
+{"claim": "the link 'Gone' goes to a page the site does not have", "id": "F1", "kind": "defect", "name": "About", "page": "about.html", "severity": "medium", "where": "about.html: the link 'Gone' (to gone.html)"}
+{"claim": "the image 'a.png' has no alt text for a reader who cannot see it", "id": "F1", "kind": "defect", "name": "Home", "page": "index.html", "severity": "medium", "where": "index.html: the image 'a.png'"}
+{"claim": "the form has no submit button, so a visitor cannot send it", "id": "F1", "kind": "defect", "name": "price list", "page": "price_list.html", "severity": "medium", "where": "price_list.html: the form"}
+{"ask": null, "at": "2026-10-26T10:00:00", "claim": "the booking form has no button", "id": "F1", "item": "D2", "severity": "high", "went_to": "Identity", "where": "Live site, the booking page"}
+{"ask": null, "at": "2026-10-26T10:00:00", "claim": "the booking form has no button", "id": "F1", "item": "D2", "severity": "critical", "went_to": "Identity", "where": "Live site, the booking page"}
+{"claim": "x", "id": "F1", "severity": "high", "where": "index"}
+{"claim": "x", "id": "F1", "severity": "grave", "where": "index"}
+{"claim": "x", "id": "F1", "severity": "low", "went_to": null, "where": "index"}
+{"claim": "x", "id": "F1", "severity": "low", "went_to": "Priority", "where": "index"}
+{"claim": "x", "id": "F1", "item": "D2", "severity": "low", "where": "index"}

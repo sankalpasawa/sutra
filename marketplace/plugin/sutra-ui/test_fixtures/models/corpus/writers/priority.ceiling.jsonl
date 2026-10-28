@@ -1,0 +1,7 @@
+{"at": "2026-10-28T19:14:24+05:30", "calls": 18, "rounds": 6, "start": {"calls": 18, "rounds": 6, "usd": 0.72}, "usd": 0.72}
+{"at": "2026-10-28T19:14:25+05:30", "calls": 24, "rounds": 6, "start": {"calls": 24, "rounds": 6, "usd": 0.96}, "usd": 0.96}
+{"at": "2026-10-28T19:14:27+05:30", "calls": 30, "raised": [{"at": "2026-10-28T19:14:27+05:30", "by": "the owner", "to": {"calls": 30, "rounds": 8, "usd": 1.32}}], "rounds": 8, "start": {"calls": 18, "rounds": 6, "usd": 0.72}, "usd": 1.32}
+{"at": "2026-10-28T19:14:27+05:30", "calls": 36, "raised": [{"at": "2026-10-28T19:14:27+05:30", "by": "the owner", "to": {"calls": 30, "rounds": 8, "usd": 1.32}}, {"at": "2026-10-28T19:14:27+05:30", "by": "the owner", "to": {"calls": 36, "rounds": 10, "usd": 1.44}}], "rounds": 10, "start": {"calls": 18, "rounds": 6, "usd": 0.72}, "usd": 1.44}
+{"at": "2026-10-28T19:14:27+05:30", "calls": 36, "raised": [{"at": "2026-10-28T19:14:27+05:30", "by": "the owner", "to": {"calls": 30, "rounds": 8, "usd": 1.32}}, {"at": "2026-10-28T19:14:27+05:30", "by": "the owner", "to": {"calls": 36, "rounds": 10, "usd": 1.44}}, {"at": "2026-10-28T19:14:27+05:30", "by": "the owner", "to": {"calls": 36, "rounds": 12, "usd": 1.44}}], "rounds": 12, "start": {"calls": 18, "rounds": 6, "usd": 0.72}, "usd": 1.44}
+{"at": "2026-10-26T10:00:00", "calls": 200, "raised": [], "rounds": 6, "start": {"calls": 200, "rounds": 6, "usd": 5.0}, "usd": 5.0}
+{"at": "2026-10-26T10:00:00", "calls": 200, "raised": [], "rounds": 100, "start": {"calls": 200, "rounds": 6, "usd": 5.0}, "usd": 5.0}
