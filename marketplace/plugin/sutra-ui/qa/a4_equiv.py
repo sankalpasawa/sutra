@@ -40,8 +40,9 @@ CANDS = ['x', 'Plan', 'D1', 'F1', 'identity/v1', 'r-0123abcd', 'Q-1', '2026-10-2
 
 # ---- the two sides --------------------------------------------------------------------------------------------------------
 def oracle(name, value):
-    """The sentences of the oracle. A4-PORT points this at layer_models.legacy."""
-    return S.faults(S.DEFS[name], value)
+    """The sentences of the oracle: the frozen walker over the frozen literal definitions (layer_models.legacy)."""
+    import layer_models.legacy as L
+    return L.oracle(name, value)
 
 
 def port_classes():

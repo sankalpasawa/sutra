@@ -129,3 +129,32 @@ def test_the_constants_that_stay_stay_in_layer_schema():
         assert not hasattr(K, name), name
     for name in K.__all__:
         assert getattr(S, name) is getattr(K, name), name
+
+
+# ---- P2 -------------------------------------------------------------------------------------------------------------------
+LEGACY_SHA = "b9ccb1740dc22f6c30b5edf1c4c745ccd58a10cfa004b7010520fe66fbe4374e"
+
+
+def test_the_oracle_is_frozen():
+    import layer_models.legacy as L
+    assert hashlib.sha256(json.dumps(L.LEGACY_DEFS, sort_keys=True).encode("utf-8")).hexdigest() == LEGACY_SHA
+    assert len(L.LEGACY_DEFS) == 130
+
+
+def test_the_oracle_gives_the_walkers_answers():
+    import layer_models.legacy as L
+    n = 0
+    for path in sorted(GOLDEN.glob("*.jsonl")):
+        name = path.name[:-6]
+        for row in _rows(path):
+            assert L.oracle(name, row["value"]) == row["faults"]
+            n += 1
+    assert n > 4500
+
+
+def test_faults_resolves_a_ref_in_the_defs_it_is_given():
+    other = {"thing": S.text(3)}
+    assert S.faults(S.ref("thing"), "abcd", defs=other) == ["$: longer than 3"]
+    assert S.faults(S.ref("thing"), "abc", defs=other) == []
+    assert S.faults(S.ref("name"), "x y", defs=other) == ["$: no definition named name"]       # not DEFS when `defs` is given
+    assert S.faults(S.ref("name"), "?") != []                                                   # DEFS when it is not

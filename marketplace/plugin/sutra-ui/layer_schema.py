@@ -189,31 +189,31 @@ def _key(path, k):
     return '%s.%s' % (path, k)
 
 
-def faults(schema, value, path='$'):
+def faults(schema, value, path='$', defs=None):
     """What is wrong with `value` against `schema`, one line each, '<path>: <what is wrong>'; [] when it fits. Supports
     exactly: type (a bool is not an integer), enum, const, minLength, maxLength, pattern (re.search), minimum, maximum,
     items, minItems, maxItems, uniqueItems, properties, required, additionalProperties (bool or schema),
-    propertyNames.pattern, anyOf, $ref into DEFS, x-say and x-field. Unknown keywords are ignored."""
+    propertyNames.pattern, anyOf, $ref into DEFS (or into `defs` when one is given), x-say and x-field. Unknown keywords are ignored."""
     out = []
-    _walk(schema, value, path, out)
+    _walk(schema, value, path, out, DEFS if defs is None else defs)
     return out
 
 
-def _walk(s, v, path, out):
+def _walk(s, v, path, out, defs):
     if not isinstance(s, dict) or not s:
         return
     if '$ref' in s:
         name = str(s['$ref']).rsplit('/', 1)[-1]
-        target = DEFS.get(name)
+        target = defs.get(name)
         if target is None:
             out.append('%s: no definition named %s' % (path, name))
             return
-        _walk(target, v, path, out)
+        _walk(target, v, path, out, defs)
     if 'anyOf' in s:
         tries = []
         for branch in s['anyOf']:
             got = []
-            _walk(branch, v, path, got)
+            _walk(branch, v, path, got, defs)
             if not got:
                 break
             tries.append(got)
@@ -265,7 +265,7 @@ def _walk(s, v, path, out):
             out.append('%s: holds an item twice' % path)
         if 'items' in s:
             for i, x in enumerate(v):
-                _walk(s['items'], x, '%s[%d]' % (path, i), out)
+                _walk(s['items'], x, '%s[%d]' % (path, i), out, defs)
     if isinstance(v, dict):
         props = s.get('properties') or {}
         for k in s.get('required') or []:
@@ -277,11 +277,11 @@ def _walk(s, v, path, out):
             if pattern and not re.search(pattern, str(k)):
                 out.append('%s: the key does not match %s' % (_key(path, k), pattern))
             if k in props:
-                _walk(props[k], x, _key(path, k), out)
+                _walk(props[k], x, _key(path, k), out, defs)
             elif extra is False:
                 out.append('%s: is not a field here' % _key(path, k))
             elif isinstance(extra, dict):
-                _walk(extra, x, _key(path, k), out)
+                _walk(extra, x, _key(path, k), out, defs)
 
 
 # ---- faults and errors -----------------------------------------------------------------------------------------------
