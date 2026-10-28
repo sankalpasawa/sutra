@@ -17,6 +17,8 @@ test_layer_contracts.py runs on every implementation it discovers (layers/<layer
     8  every OUTPUTS step the recipe provides declares or returns those keys
     14 a function version keeps the function template (A3.4.8): its words, its role block and its boundaries (FT-1 to FT-6,
        FT-9, FT-10)
+    15 the two engines of the interface agree (A4): the pane view the version returns, the department record and the asks it writes
+       in the fixture are judged the same by the pydantic classes and by the walker (layer_schema.VALIDATOR)
 
 and, from amendment A2 (design/PRD-FIVE-FUNCTIONS-A2.md A2.7), the cases of a version that extends a version. A version with no
 PARENT has nothing to compare, and passes them as it is; a stub with none of the new attributes passes them too:
@@ -30,6 +32,7 @@ PARENT has nothing to compare, and passes them as it is; a stub with none of the
 
 A case returns its faults as a list of strings, each naming the row or the name at fault; [] when the module passes.
 """
+import contextlib
 import importlib
 import json
 import os
@@ -375,7 +378,7 @@ def cases():
     return [(n, fn.__doc__.strip().split('\n')[0], fn) for n, fn in (
         (1, case_1), (2, case_2), (3, case_3), (4, case_4), (5, case_5), (6, case_6), (7, case_7), (8, case_8),
         (9, case_9), (10, case_10), (11, case_11), (12, case_12), (13, case_13),
-        (14, case_14_function_template),
+        (14, case_14_function_template), (15, case_15_both_engines_agree),
     )]
 
 
@@ -533,4 +536,40 @@ def case_14_function_template(module, ctx=None):
                     out.append('%s: goal.%s line %d says what %s never does: %s' % (who, part, i, title, never))
     except Exception as exc:  # noqa: BLE001 -- a case never raises on a stub: it says what it could not read
         out.append('%s: the function template could not be read (%s)' % (impl_id(module) if module is not None and not isinstance(module, str) else module, exc))
+    return out
+
+
+# ---- case 15: the two engines of the interface agree (A4) --------------------------------------------------------------------
+@contextlib.contextmanager
+def _engine(name):
+    """layer_schema.VALIDATOR set to `name` for the block and put back after: a code constant, never an environment variable."""
+    real = importlib.import_module('layer_schema')          # S is a lazy proxy: an assignment must reach the module itself
+    was = real.VALIDATOR
+    real.VALIDATOR = name
+    try:
+        yield
+    finally:
+        real.VALIDATOR = was
+
+
+def case_15_both_engines_agree(module, ctx=None):
+    """The pane view, the department record and the asks of the fixture are judged the same by the classes and by the walker."""
+    layer = getattr(module, 'LAYER', None)
+    ref = (ctx or {}).get('ref')
+    view = getattr(module, 'view', None)
+    if not ref or layer not in S.VIEWS or not callable(view):
+        return []
+    d = W.dept(ref)
+    asks = W.asks(ref)
+    subjects = [('view', S.VIEWS[layer], view(ref, d, [], asks)), ('department', 'department', d)] + \
+               [('ask %d' % i, 'identity.ask', a) for i, a in enumerate(asks, 1)]
+    out = []
+    for what, name, value in subjects:
+        got = {}
+        for engine in ('models', 'walker'):
+            with _engine(engine):
+                got[engine] = S.validate(name, value)
+        if got['models'] != got['walker']:
+            out.append('%s: the %s is judged differently: the classes say %s, the walker says %s'
+                       % (impl_id(module), what, got['models'] or 'it fits', got['walker'] or 'it fits'))
     return out

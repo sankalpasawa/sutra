@@ -487,7 +487,7 @@ _Revised for amendment A1 (2026-10-26) and for what is on main `d24a467d`. Each 
 | M9 | Pursue: keep going until done | to build | Adaptation, with Priority and Identity · FA2, J2.h · S-31: department × LIFE | M5, M8 | L · wave 2: W2-IDENTITY, W2-ADAPT, W2-PRIORITY and W2-SCREENS (about 80 min) |
 | M10 | Internal messages, one API, the proof run | to build | All five · ruled screens 3.1 to 3.4 · S-31: department × MEETINGS | M1, M2, M9 | M · wave 2: W2-SCREENS and W2-PROOF; wave 3: W3-PROOF reruns the proof |
 | M11 | Templates at every level, and the journeys as a template (A3) | to build | Every level of the department; the user journeys J1 to J4 · S-31: department × MEETINGS and function × PARTS | M2.12, M4 to M9 for the rows it binds | L · five packages (A3.12); A3-CORE first, the rest alongside and after wave 2 |
-| M12 | The pydantic interface and the Models editor (A4) | to build | The interface layer; the owner's own models · S-31: organisation × PARTS | M2, M11 (A3-CORE); the closure round and W3-BOARD merged | L · six packages (A4.9), about 1,010 minutes of developer time, about 640 on the critical path |
+| M12 | The pydantic interface and the Models editor (A4) | built | The interface layer; the owner's own models · S-31: organisation × PARTS | M2, M11 (A3-CORE); the closure round and W3-BOARD merged | L · six packages (A4.9), about 1,010 minutes of developer time, about 640 on the critical path |
 
 **How it is built (A1.26).** Parallel developer agents, each in its own git worktree with its own files, merged into main one at a time by an integrator on a green gate, then verified.
 - **Wave 0** (about 75 min): W0-SCHEMA alone, the schema core: layer_schema.py bound to the writers on main, warn mode at every write point and on every post, the generated JSON Schema files, the recipes in `layers/<layer>/v1.json`, the contract helpers, and a conftest fixture that fails any test meeting a fault.
@@ -1406,7 +1406,7 @@ flowchart LR
 | **Centres on** | The interface layer (all of `layer_schema.py`); the owner's own models · S-31: organisation × PARTS |
 | **Goal** | All of the interface is pydantic, behind the unchanged `layer_schema.py` facade and proved equal to the hand-written validator; the owner can make and change models of their own from the Models screen, turn them on and off, link and nest them, under twelve rules; streaming is neither slowed nor reshaped. |
 | **At the end, the owner sees** | On Root's pane, a Models card and the Models screens (S19 to S26). Nothing else on screen changes; the J2 page is untouched. |
-| **Status** | to build |
+| **Status** | built (A4-CORE, A4-PORT, A4-STREAM, A4-OWN, A4-UI and A4-DOCS merged; steps M12.1 to M12.8 built, 2026-10-28) |
 | **Ships screens** | S19 to S26 |
 | **Depends on** | M2 (the interface), M11 (A3-CORE's templates); the closure round and W3-BOARD merged |
 | **Size** | L · six packages (A4.9), about 1,010 minutes of developer time, about 640 on the critical path |

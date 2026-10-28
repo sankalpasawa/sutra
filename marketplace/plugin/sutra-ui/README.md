@@ -558,6 +558,10 @@ script directly, it says so itself:
 cd qa-shell && QA_SCRIPTS="$PWD/shadow-check.mjs" QA_BACKEND=repo bash run.sh
 ```
 
+## The interface is pydantic
+
+The interface layer (the records, acts, asks, verdicts, views, workflow, journey and template definitions of `layer_schema.py`) is a set of pydantic v2 classes in `layer_models/`. `layer_schema.py` is still the one public facade, so nothing that calls it changed, and the generated JSON Schema under `schemas/layers/` is the same byte for byte. The old hand-written validator is kept as a frozen oracle (`layer_schema.VALIDATOR = 'walker'` runs it), and `python qa/a4_equiv.py --check` proves the two equal. The owner can add models of their own on Root's Models screen, held to twelve rules; streaming does not validate (`python qa/stream_bench.py --check`). See `layer_models/README.md` and `design/PRD-FIVE-FUNCTIONS-A4.md`. pydantic is pinned `==2.13.5` in `requirements.txt`.
+
 ## Layout
 
 | File | Role |

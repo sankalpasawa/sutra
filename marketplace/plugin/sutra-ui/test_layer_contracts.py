@@ -110,3 +110,22 @@ def test_the_other_cases_catch_what_they_are_for(tmp_path):
     lying = _fake(tmp_path, "priority", layers.recipes()["Priority"], CHECK={"answer_has_its_price": lambda c, s, i, out: {"ok": True, "notes": []}})
     assert C.case_4(lying) == ['priority/v1: answer_has_its_price accepts the bad sample {"answer": "accept", "why": ""}',
                                'priority/v1: answer_has_its_price accepts the bad sample {"answer": "grant", "why": "x"}']
+
+
+@pytest.mark.parametrize("module", MODULES, ids=C.impl_id)
+def test_case_15_holds_for_every_version(module, ctx):
+    assert 15 in [n for n, _, _ in C.cases()]
+    assert C.case_15_both_engines_agree(module, ctx) == []
+    assert S.VALIDATOR == "models", "the engine is put back"
+
+
+def test_case_15_has_a_failing_example(ctx, monkeypatch):
+    """A planted difference in the classes' answer for the view is reported, with the two answers, and the engine is put back."""
+    import layer_models
+    module = next(m for m in MODULES if m.LAYER == "identity")
+    real = layer_models.sentences
+    monkeypatch.setattr(layer_models, "sentences", lambda name, value: (real(name, value)[0] + ["$: planted"], []) if name == S.VIEWS["identity"] else real(name, value))
+    got = C.case_15_both_engines_agree(module, ctx)
+    assert len(got) == 1 and got[0].startswith("identity/v1: the view is judged differently: the classes say ['$: planted']"), got
+    assert "the walker says it fits" in got[0]
+    assert S.VALIDATOR == "models"
