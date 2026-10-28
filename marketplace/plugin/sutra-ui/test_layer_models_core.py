@@ -215,3 +215,42 @@ def test_a_map_of_thousands_of_keys_is_not_quadratic():
     got = F.sentences(ad, v)
     assert time.perf_counter() - t < 1.0
     assert len(got) == 10000 and got[0] == "$.m.x0: the key does not match ^k"
+
+
+# ---- C4 -------------------------------------------------------------------------------------------------------------------
+import json as _json
+import sys as _sys
+
+_sys.path.insert(0, str(HERE / "qa"))
+import a4_trial as TR                                            # noqa: E402  the six trial definitions, as classes
+from layer_models.schema import export                           # noqa: E402
+
+
+@pytest.mark.parametrize("name", sorted(TR.EXPORTED))
+def test_the_trial_definitions_export_identical_dicts(name):
+    got = export(TR.EXPORTED[name], TR.NAMES)
+    want = _json.loads(_json.dumps(S.DEFS[name]))
+    assert got == want, "%s differs from the oracle's dict" % name
+    assert _json.dumps(got, sort_keys=True) == _json.dumps(want, sort_keys=True)
+
+
+def test_there_are_twelve_trial_definitions():
+    assert len(TR.EXPORTED) == 12
+
+
+def test_a_ref_keeps_its_owner_keyword():
+    from layer_models.types import Owner
+
+    class Dept(Closed):
+        goal: Annotated[T(20), Owner("identity")] = None
+        done_items: Annotated[list[TR.DoneItem], Items(), Owner("identity")] = None
+        one: Annotated[TR.DoneItem, Owner("identity")] = None
+        name: Annotated[TR.Name, Owner("root")] = None
+    got = export(Dept, TR.NAMES)["properties"]
+    assert got["one"] == {"$ref": "#/$defs/identity.done_item", "x-owner": "identity"}
+    assert got["name"] == {"$ref": "#/$defs/name", "x-owner": "root"}
+    assert got["goal"]["x-owner"] == "identity"
+    assert got["done_items"]["x-owner"] == "identity" and got["done_items"]["items"] == {"$ref": "#/$defs/identity.done_item"}
+    # a nested class that is not a definition is written inline, with its owner
+    inline = export(Dept, {})["properties"]["one"]
+    assert inline["x-owner"] == "identity" and inline["type"] == "object" and "$ref" not in inline
