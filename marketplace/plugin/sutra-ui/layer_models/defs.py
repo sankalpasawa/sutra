@@ -1,11 +1,13 @@
 """Every definition of the interface, registered (A4.3.1): the classes of the layer modules under the names layer_schema.DEFS has.
 
 `NAMES` is the interface's order, the order `export_all()` writes in. A name is registered once, here; a module only declares
-`DEFINES = {name: class or annotation}`. Importing this module registers them all."""
+`DEFINES = {name: class or annotation}`. Importing this module registers all 130."""
 from . import registry
-from . import acts, adaptation, audit, common, coordination, department, fields, identity, options, priority, root, settings, views, workflow
+from . import (acts, adaptation, audit, common, coordination, department, fields, identity, options, priority, root, settings,
+               templates, views, workflow, journey)
 
-MODULES = (common, identity, root, workflow, options, coordination, adaptation, priority, audit, acts, fields, settings, views, department)
+MODULES = (common, identity, root, workflow, coordination, adaptation, priority, audit, options, acts, fields, settings, views,
+           department, templates, journey)
 
 NAMES = (
     'name', 'id.item', 'id.finding', 'impl', 'envelope', 'option', 'check.verdict', 'identity.done_item', 'identity.rule',
@@ -25,7 +27,10 @@ NAMES = (
     'department.to_be_confirmed', 'department.rules', 'department.owner', 'department.windows', 'department.identity_revision',
     'department.initial_goal_context', 'department.publish_asks_from', 'department.goals', 'department.looked_up',
     'department.host', 'department.ladders', 'department.ladder', 'department.bounds', 'department.envelopes',
-    'department.ceiling', 'department',
+    'department.ceiling', 'department', 'step', 'step.row', 'engine.start', 'kind', 'engine.library', 'artifact.template',
+    'journey.lane', 'journey.bind', 'journey.branch', 'journey.step', 'journey.outcome', 'journey.edge', 'journey.sub',
+    'journey.ruling', 'journey.quote', 'journey.scenario', 'journey.backlog', 'journey.direction', 'journey.build_row',
+    'journey.was', 'journey', 'journey.file', 'journey.row_status', 'journey.status',
 )
 
 

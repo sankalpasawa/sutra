@@ -182,3 +182,72 @@ def test_a_department_key_is_checked_alone_against_its_own_definition():
     assert layer_models.validate("department.goal", "fine") == []
     assert layer_models.validate("department.layers", {"identity": "identity/v1"}) == []
     assert layer_models.validate("department.layers", {"identity": "nope"}) == ["$.identity: does not match " + S.IMPL_RE]
+
+
+# ---- P6: templates, journeys and the ask forms ------------------------------------------------------------------------------
+def test_all_130_definitions_are_ported():
+    import layer_models
+    import layer_models.legacy as L
+    from layer_models import defs
+    layer_models.load()
+    assert list(defs.NAMES) == list(L.LEGACY_DEFS) and len(defs.NAMES) == 130
+
+
+def test_the_step_keeps_its_law_for_every_field():
+    import layer_models
+    import layer_models.legacy as L
+    out = layer_models.export_all()["step"]
+    want = {k: v["x-law"] for k, v in L.LEGACY_DEFS["step"]["properties"].items()}
+    assert {k: v["x-law"] for k, v in out["properties"].items()} == want
+    assert sorted(set(want.values())) == ["fixed", "free"]
+
+
+def test_a_nested_object_is_inline_and_a_definition_is_a_ref():
+    import layer_models
+    out = layer_models.export_all()
+    assert out["identity.ask"]["properties"]["options"]["items"] == {"$ref": "#/$defs/option"}
+    assert out["identity.ask"]["properties"]["chosen"]["anyOf"][0]["type"] == "object"          # chosen is written inline
+    assert out["department"]["properties"]["layers"] == {"$ref": "#/$defs/department.layers", "x-owner": "root"}
+
+
+def test_a_keyword_field_is_read_by_its_own_name():
+    import layer_models
+    assert layer_models.validate("act.line", {"word": "line", "for": "x" * 81}) == ["$.for: fits none of its shapes (longer than 80)"]
+    assert layer_models.validate("act.line", {"word": "line", "for": "ok"}) == []
+    assert layer_models.validate("step", {"id": "a.b", "name": "n", "nature": "check", "born": "C0", "check": "c", "or": 1}) == []
+    assert "$.schema: is not board/1" in layer_models.validate("coordination.question", {"schema": "board/2"})        # `schema` is the field
+
+
+def test_r8_ask_form_adds_no_rejection():
+    """A value of a known kind is judged the same through the family as by identity.ask itself (A4-18)."""
+    import layer_models
+    from layer_models import unions
+    from layer_models.faults import sentences
+    from pydantic import TypeAdapter
+    ad = TypeAdapter(unions.ASK_FORM)
+    rows = [json.loads(l) for l in (GOLDEN / "identity.ask.jsonl").read_text(encoding="utf-8").splitlines()]
+    rows += [json.loads(l) for l in (WRITERS / "identity.ask.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
+    rows = [r["value"] if isinstance(r, dict) and "faults" in r and "value" in r else r for r in rows]
+    checked = 0
+    for v in rows:
+        if isinstance(v, dict) and v.get("kind") in S.ASK_KINDS:
+            assert sentences(ad, v) == layer_models.validate("identity.ask", v), v
+            checked += 1
+    assert checked > 100
+    assert len(unions.CHILDREN) == len(S.ASK_KINDS) == 20
+
+
+def test_the_ask_form_dispatches_by_its_tag_and_is_not_a_definition():
+    import layer_models
+    from layer_models import registry, unions
+    from layer_models.faults import sentences
+    from pydantic import TypeAdapter
+    ad = registry.adapter("identity.ask.form")
+    bad = sentences(ad, {"id": "a", "kind": "zzz", "status": "pending"})
+    assert bad == ["$.kind: is not one of " + ", ".join(S.ASK_KINDS)]
+    assert sentences(ad, {"id": "a", "status": "pending"}) == ["$.kind: is missing"]
+    assert "identity.ask.form" not in layer_models.export_all()
+    assert issubclass(unions.CHILDREN["publish"], unions.AskForm) and unions.AskForm.__dict__["__abstract__"] is True
+    with pytest.raises(TypeError):
+        unions.AskForm(id="a", kind="publish", status="pending")
+    assert TypeAdapter(unions.CHILDREN["publish"]).validate_python({"id": "a", "kind": "publish", "status": "pending"}).kind == "publish"

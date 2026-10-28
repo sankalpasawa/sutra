@@ -51,7 +51,8 @@ def port_classes():
     import a4_trial
     import layer_models
     reg = layer_models.load()
-    return dict(a4_trial.EXPORTED, **reg.DEF_CLASS, **reg.DEF_TYPE)
+    found = dict(a4_trial.EXPORTED, **reg.DEF_CLASS, **reg.DEF_TYPE)
+    return {n: t for n, t in found.items() if n in S.DEFS}               # a family such as identity.ask.form is not a definition
 
 
 _ADAPTERS = {}
