@@ -376,7 +376,8 @@ class MapOf:
 
 class AnyOf:
     """A union of shapes with the walker's sentence: fits none of its shapes (<the first shape's first fault>). The first shape
-    that fits answers. Each branch's adapter is built once, with the class that holds the field."""
+    that fits answers. A value that fits goes through the union in the core; only a value that fits none is taken through the
+    branches again, one adapter each (built once, with the class that holds the field), to find the first shape's first fault."""
 
     def bounds(self):
         return {}
@@ -386,6 +387,10 @@ class AnyOf:
         branches = [TypeAdapter(b) for b in get_args(source)]
 
         def wrap(v, h):
+            try:
+                return h(v)              # the union itself, in the core: a value some shape takes is taken (the common case, fast)
+            except ValidationError:
+                pass
             first = None
             for ad in branches:
                 try:

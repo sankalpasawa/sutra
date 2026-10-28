@@ -531,7 +531,7 @@ def main(argv=None):
         print('CORPUS_SHA', write_golden(a.write_golden, only or None, a.seed))
     if a.bench:
         res = bench(only)
-        rc |= 1 if res and sum(b for _, b in res.values()) > sum(o for o, _ in res.values()) else 0
+        rc |= 1 if any(b > o for o, b in res.values()) else 0                  # P6: no definition slower than the oracle
     if a.mixins:
         for f, sch, ds in mixins():
             print('%-16s in %2d: %s  %s' % (f, len(ds), json.dumps(sch, sort_keys=True)[:80], ', '.join(ds[:6])))

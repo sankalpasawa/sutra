@@ -370,3 +370,54 @@ def test_the_properties_keep_the_interfaces_order_all_the_way_down():
         return out
     for name, want in L.LEGACY_DEFS.items():
         assert orders(S.DEFS[name]) == orders(want), name
+
+
+# ---- P8: the proof at scale ---------------------------------------------------------------------------------------------------
+def test_stage_carries_the_package():
+    """install.sh stages the plugin folder with rsync and an exclude list: layer_models/ and layer_consts.py must not match any of it."""
+    import fnmatch
+    import re
+    sh = (HERE / "install.sh").read_text(encoding="utf-8")
+    start = sh.index("stage_runtime() {")
+    stage = sh[start:sh.index("\n}", start)]
+    first = stage[stage.index("rsync -a --delete --delete-excluded"):stage.index("\"$REPO\"/")]
+    excludes = re.findall(r"--exclude '([^']+)'", first)
+    assert "test_*" in excludes and ".venv/" in excludes                   # the list is the one that stages the app
+    files = sorted(["layer_consts.py", "layer_schema.py"] + ["layer_models/" + p.name for p in (HERE / "layer_models").glob("*.py")])
+    assert "layer_models/__init__.py" in files and "layer_models/legacy.py" in files and "layer_models/defs.py" in files
+    for f in files:
+        parts = f.split("/")
+        for pat in excludes:
+            if pat.endswith("/"):
+                assert not any(fnmatch.fnmatch(d, pat[:-1]) for d in parts[:-1]), (f, pat)       # a directory pattern
+            else:
+                assert not fnmatch.fnmatch(parts[-1], pat), (f, pat)                               # a name pattern, at any depth
+
+
+def test_the_import_of_layer_schema_stays_inside_its_budget():
+    """P7 of A4.3.7: `import layer_schema` in a fresh interpreter, 250 ms at most on the build machine, over the cost of importing
+    pydantic (which the app loads in any case, through fastapi)."""
+    code = ("import time; t = time.perf_counter(); import pydantic; base = time.perf_counter() - t; t = time.perf_counter(); "
+            "import layer_schema; print(int(base * 1000), int((time.perf_counter() - t) * 1000))")
+    best = None
+    for _ in range(5):
+        r = _fresh(code)
+        assert r.returncode == 0, r.stderr
+        base, took = (int(x) for x in r.stdout.split())
+        best = took if best is None else min(best, took)
+    assert best <= 250, "import layer_schema took %d ms" % best
+
+
+def test_nothing_of_the_app_is_imported_by_the_models():
+    r = _fresh("import sys; import layer_models; layer_models.load(); import layer_models.unions; "
+               "bad = [m for m in sys.modules if m in ('layer_schema', 'website_dept', 'engine_runtime', 'j2_runtime', 'functions_view', 'layers')]; "
+               "assert not bad, bad")
+    assert r.returncode == 0, r.stderr
+
+
+def test_x2_is_the_witness_that_describe_is_the_same_bytes():
+    """W3-PROOF's two tests (test_x2_*) live in test_layer_schema.py and pass unchanged on the classes; this is the same fact stated
+    from this side: the hash of describe() is the one W3-PROOF set, and the files on disk are its bytes."""
+    assert S.interface_sha() == S.INTERFACE_SHA[1] == "e23aeacef66e0d6da6b455d6e9bfba0ddac0b626197eada1ea078d2d99bacbb6"
+    on_disk = (S.SCHEMA_FOLDER / "interface.v1.json").read_bytes()
+    assert hashlib.sha256(on_disk).hexdigest() == S.INTERFACE_SHA[1]

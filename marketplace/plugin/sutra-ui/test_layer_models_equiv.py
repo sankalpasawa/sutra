@@ -233,3 +233,18 @@ def test_no_error_type_is_left_without_a_sentence(ported_reports):
 
 def test_an_unknown_name_is_answered_as_the_walker_answers():
     assert layer_models.validate("no.such", {}) == LEGACY.oracle("no.such", {}) == ["$: no definition named no.such"]
+
+
+def test_p6_no_definition_is_slower_than_the_oracle():
+    out = io.StringIO()
+    res = Q.bench(n=400, out=out)
+    assert sorted(res) == sorted(PORTED)
+    slower = {n: (round(o, 1), round(p, 1)) for n, (o, p) in res.items() if p > o}
+    assert slower == {}, out.getvalue()
+    assert sum(p for _, p in res.values()) < 0.7 * sum(o for o, _ in res.values())
+
+
+def test_the_cli_bench_exits_clean_when_nothing_is_slower():
+    r = subprocess.run([sys.executable, str(HERE / "qa" / "a4_equiv.py"), "--bench", "--only", "envelope,option,identity.ask"],
+                       cwd=str(HERE), capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
