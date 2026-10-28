@@ -1,0 +1,16 @@
+{
+ "affects": {
+  "turns_off": [
+   "VIP client"
+  ],
+  "unchecked": false,
+  "used_by": [],
+  "would_not_fit": []
+ },
+ "class": "same",
+ "code": null,
+ "faults": [],
+ "needs_stamp": false,
+ "ok": true,
+ "says": "turned Client off"
+}

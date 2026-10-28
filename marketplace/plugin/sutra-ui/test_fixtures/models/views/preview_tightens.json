@@ -1,0 +1,14 @@
+{
+ "affects": {
+  "turns_off": [],
+  "unchecked": false,
+  "used_by": [],
+  "would_not_fit": []
+ },
+ "class": "tightens",
+ "code": null,
+ "faults": [],
+ "needs_stamp": false,
+ "ok": true,
+ "says": "cut name to 60 characters"
+}

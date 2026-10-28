@@ -1,0 +1,40 @@
+{
+ "example": {
+  "id": "2026-10-27",
+  "name": "o1"
+ },
+ "schema": {
+  "additionalProperties": true,
+  "properties": {
+   "id": {
+    "maxLength": 40,
+    "pattern": "^[a-z0-9][a-z0-9_-]*$",
+    "type": "string"
+   },
+   "name": {
+    "maxLength": 80,
+    "minLength": 1,
+    "type": "string",
+    "x-say": true
+   },
+   "phone": {
+    "maxLength": 30,
+    "minLength": 0,
+    "type": "string",
+    "x-say": true
+   },
+   "tier": {
+    "enum": [
+     "gold",
+     "silver",
+     "bronze"
+    ]
+   }
+  },
+  "required": [
+   "id",
+   "name"
+  ],
+  "type": "object"
+ }
+}

@@ -1,0 +1,89 @@
+{
+ "about": "",
+ "abstract": false,
+ "base": "core:record",
+ "base_label": "Record",
+ "chain": [
+  "Record"
+ ],
+ "children": [],
+ "discriminator": null,
+ "exact": "x.order/v1",
+ "faults": [],
+ "fields": [
+  {
+   "aliases": [],
+   "from": "Order",
+   "label": "Note",
+   "locked": false,
+   "name": "note",
+   "nullable": false,
+   "required": false,
+   "retired": false,
+   "says": "up to 100 characters",
+   "type": "text"
+  },
+  {
+   "aliases": [],
+   "from": "Record",
+   "label": "Id",
+   "locked": true,
+   "name": "id",
+   "nullable": false,
+   "required": true,
+   "retired": false,
+   "says": "",
+   "type": "text"
+  }
+ ],
+ "history_tail": [
+  {
+   "at": "2026-10-28T22:19:29+05:30",
+   "class": "same",
+   "op": "create",
+   "rev": 3,
+   "says": "made Order"
+  }
+ ],
+ "key": "x.order",
+ "label": "Order",
+ "links": {
+  "in": [],
+  "out": [
+   {
+    "enabled": true,
+    "label": "Lines",
+    "many": true,
+    "mode": "nest",
+    "name": "lines",
+    "required": true,
+    "to": "x:line/v1",
+    "to_label": "Line"
+   },
+   {
+    "enabled": true,
+    "label": "Client",
+    "many": false,
+    "mode": "refer",
+    "name": "client_id",
+    "required": true,
+    "to": "x:client/v1",
+    "to_label": "Client"
+   }
+  ]
+ },
+ "name": "order",
+ "pending": null,
+ "rev": 6,
+ "state": "on",
+ "used_by": [],
+ "version": 1,
+ "versions": [
+  {
+   "key": "x.order/v1",
+   "state": "on",
+   "version": 1
+  }
+ ],
+ "why": null
+}

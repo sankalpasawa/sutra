@@ -115,6 +115,10 @@ function startSessionStream(){
       scheduleRender();
     } catch (e) {}
   });
+  _sessStream.addEventListener("models", ev=>{
+    /* A4.6.6: a model was saved, stamped, undone or reverted; 26-models.js decides what to redraw */
+    try { if (typeof mdlOnModelsEvent === "function") mdlOnModelsEvent(JSON.parse(ev.data)); } catch (e) {}
+  });
   _sessStream.addEventListener("tick", ()=>{
     /* Liveness decays with the CLOCK, not with writes: a session nobody has
        touched for a minute stops being active on its own, and without a tick

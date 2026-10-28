@@ -1,0 +1,126 @@
+{
+ "buildable": [
+  {
+   "key": "core:record",
+   "label": "Record",
+   "says": "a record with an id"
+  },
+  {
+   "key": "core:artifact.template",
+   "label": "Artifact template",
+   "says": "what a kind of filed work holds"
+  },
+  {
+   "key": "core:engine.library",
+   "label": "Engine library",
+   "says": "what an engine template holds"
+  },
+  {
+   "key": "core:kind",
+   "label": "Department kind",
+   "says": "what a kind of department holds"
+  },
+  {
+   "key": "core:journey",
+   "label": "Journey",
+   "says": "what a journey holds"
+  },
+  {
+   "key": "x.client",
+   "label": "Client",
+   "says": ""
+  },
+  {
+   "key": "x.line",
+   "label": "Line",
+   "says": ""
+  },
+  {
+   "key": "x.order",
+   "label": "Order",
+   "says": ""
+  },
+  {
+   "key": "x.vip_client",
+   "label": "VIP client",
+   "says": ""
+  }
+ ],
+ "built_in": null,
+ "rev": 6,
+ "root": null,
+ "schema_version": 1,
+ "yours": [
+  {
+   "abstract": false,
+   "base": "core:record",
+   "base_label": "Record",
+   "children": [
+    "x.vip_client"
+   ],
+   "key": "x.client",
+   "label": "Client",
+   "name": "client",
+   "pending": {
+    "at": "2026-10-28T22:19:29+05:30",
+    "id": "p-5567de1e",
+    "says": "let name run to 120 characters"
+   },
+   "state": "on",
+   "version": 1,
+   "why": null
+  },
+  {
+   "abstract": false,
+   "base": "core:record",
+   "base_label": "Record",
+   "children": [],
+   "key": "x.line",
+   "label": "Line",
+   "name": "line",
+   "pending": null,
+   "state": "on",
+   "version": 1,
+   "why": null
+  },
+  {
+   "abstract": false,
+   "base": "core:record",
+   "base_label": "Record",
+   "children": [],
+   "key": "x.order",
+   "label": "Order",
+   "name": "order",
+   "pending": null,
+   "state": "on",
+   "version": 1,
+   "why": null
+  },
+  {
+   "abstract": false,
+   "base": "x:client/v1",
+   "base_label": "Client",
+   "children": [],
+   "key": "x.vip_client",
+   "label": "VIP client",
+   "name": "vip_client",
+   "pending": null,
+   "state": "on",
+   "version": 1,
+   "why": null
+  },
+  {
+   "abstract": false,
+   "base": "core:artifact.template",
+   "base_label": "Artifact template",
+   "children": [],
+   "key": "x.visit_note",
+   "label": "Visit note",
+   "name": "visit_note",
+   "pending": null,
+   "state": "off",
+   "version": 1,
+   "why": null
+  }
+ ]
+}

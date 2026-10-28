@@ -1,0 +1,14 @@
+{
+ "affects": {
+  "turns_off": [],
+  "unchecked": false,
+  "used_by": [],
+  "would_not_fit": []
+ },
+ "class": "widens",
+ "code": null,
+ "faults": [],
+ "needs_stamp": true,
+ "ok": true,
+ "says": "let name run to 120 characters"
+}
