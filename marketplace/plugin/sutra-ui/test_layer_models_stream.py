@@ -778,3 +778,76 @@ def test_no_function_step_passes_on_progress():
     import website_dept as W
     sig = inspect.signature(W.model_json)
     assert sig.parameters["on_progress"].default is None and sig.parameters["abort_on_fault"].default is False
+
+
+# --------------------------------------------------------------------------------------------------------------------------- T8
+sys.path.insert(0, str(HERE / "qa"))
+
+
+def test_str6_a_big_value_does_not_stall_another_stream():
+    """Stream A at 5 ms; B validates 5 MB through validate_off_loop, then a 0.5 s custom validator: A's gap p99 at most 60 ms."""
+    import stream_bench as B
+    worst = min(B.slow_validators()["slow_validator_gap_p99_ms"] for _ in range(3))        # a busy machine is noisy
+    assert worst <= 60.0, "A's gap p99 was %.1f ms while B validated off the loop" % worst
+
+
+def test_a_large_compile_beside_a_stream_stays_under_50_ms():
+    import stream_bench as B
+    assert min(B.large_compile()["compile_lag_ms"] for _ in range(3)) <= 50.0
+
+
+def test_str8_a_closed_stream_leaves_no_task(monkeypatch):
+    """A generator closed by the server leaves no task and no reader behind."""
+    import app
+
+    async def run():
+        before = set(asyncio.all_tasks())
+        monkeypatch.setattr(app.sr, "index", lambda: {"a": {"mtime": 1, "size": 1, "agents_bytes": 0}})
+        monkeypatch.setattr(app.sr, "liveness", lambda m: "idle")
+        monkeypatch.setattr(app, "SESSION_POLL_S", 0.001)
+        monkeypatch.setattr(app, "SESSION_HEARTBEAT_S", 0)          # a tick every poll, so a second frame arrives
+        resps = [await app.api_sessions_stream() for _ in range(5)]
+        for r in resps:
+            await r.body_iterator.__anext__()
+            await r.body_iterator.__anext__()
+        for r in resps:
+            await r.body_iterator.aclose()
+        # a reader discarded with its stream holds a scanner and its text, no task
+        reader = ST.ObjectReader(_FLOW, throttle=0)
+        reader.feed(_answer(_flow())[:300])
+        await ST.validate_off_loop(_ENGS, _flow()["engines"], size=ST.BIG + 1)
+        await asyncio.sleep(0.05)
+        return set(asyncio.all_tasks()) - before - {asyncio.current_task()}
+
+    assert asyncio.run(run()) == set()
+
+
+def test_str10_the_sessions_constants_and_headers_are_unchanged():
+    import app
+    assert app.SESSION_POLL_S == 1.5 and app.SESSION_HEARTBEAT_S == 25
+
+    async def run():
+        resp = await app.api_sessions_stream()
+        first = await resp.body_iterator.__anext__()
+        await resp.body_iterator.aclose()
+        return resp, first
+
+    resp, first = asyncio.run(run())
+    assert resp.media_type == "text/event-stream"
+    assert resp.headers["cache-control"] == "no-cache" and resp.headers["x-accel-buffering"] == "no"
+    assert (first.decode() if isinstance(first, bytes) else first).startswith("event: sync\ndata: ")
+
+
+def test_the_bench_judges_against_the_baseline_only_on_its_own_machine():
+    import stream_bench as B
+    base = json.loads((FIX / "baseline.json").read_text(encoding="utf-8"))
+    for k in ("node", "cores", "first_byte_ms", "gap_p99_ms", "events_per_s", "mem_growth_mb"):
+        assert k in base, k
+    good = {k: base[k] for k in ("first_byte_ms", "gap_p99_ms", "events_per_s", "mem_growth_mb")}
+    assert all(ok for _, ok, _ in B.judge(good, base, True))
+    worse = dict(good, first_byte_ms=base["first_byte_ms"] + 40, gap_p99_ms=100.0, events_per_s=base["events_per_s"] * 0.5,
+                 mem_growth_mb=base["mem_growth_mb"] + 20)
+    assert [n for n, ok, _ in B.judge(worse, base, True) if not ok] == ["first byte", "gap", "events", "memory"]
+    assert B.judge(worse, base, False) == [], "on another machine the absolute thresholds are skipped"
+    lane = (HERE / "qa" / "walks" / "suites.sh").read_text(encoding="utf-8")
+    assert lane.count("qa/stream_bench.py --check") == 1
