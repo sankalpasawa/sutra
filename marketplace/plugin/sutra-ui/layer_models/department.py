@@ -1,8 +1,9 @@
 """The department record (dept.json) and who owns each key (A1.6). Only the keys a save changes are checked (A1.20)."""
 from typing import Annotated
+from pydantic import ConfigDict
 from .base import Closed, Open
 from .types import Owner
-from .common import ISO, BARE, ANYOF, NULLABLE, named, ref_of, T, I, N, B, E, L, M, Envelope, IdItem, Name
+from .common import keep_order, ISO, BARE, ANYOF, NULLABLE, named, ref_of, T, I, N, B, E, L, M, Envelope, IdItem, Name
 from .identity import IdentityDoneItem, IdentityRule
 from .priority import PriorityCeiling
 from .root import RootPins
@@ -180,6 +181,7 @@ DepartmentCeiling = named('department.ceiling', PriorityCeiling)
 
 class Department(Closed):
     __def__ = 'department'
+    model_config = ConfigDict(json_schema_extra=keep_order(('schema_version', 'kind', 'ref', 'name', 'parent', 'created', 'runtime', 'control', 'stopped', 'engines', 'artifacts', 'workflows', 'layers', 'org', 'root', 'template_ref', 'templates', 'founding', 'events', 'pending_final_tell', 'goal', 'done', 'done_items', 'to_be_confirmed', 'rules', 'owner', 'windows', 'identity_revision', 'initial_goal_context', 'publish_asks_from', 'goals', 'looked_up', 'host', 'ladders', 'ladder', 'bounds', 'envelopes', 'ceiling')))
     kind: Annotated[DepartmentKind, Owner('root')]
     ref: Annotated[DepartmentRef, Owner('root')]
     name: Annotated[DepartmentName, Owner('root')]

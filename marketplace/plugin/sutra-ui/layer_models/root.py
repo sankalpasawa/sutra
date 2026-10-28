@@ -1,6 +1,7 @@
 """Root's records (A1.6, A1.7): the pins and the born engine template."""
+from pydantic import ConfigDict
 from .base import Closed, Open
-from .common import WORD, BARE, NULLABLE, T, I, C, L, Impl
+from .common import keep_order, WORD, BARE, NULLABLE, T, I, C, L, Impl
 
 
 class RootPins(Closed):
@@ -23,6 +24,7 @@ class EngineTemplateMadeBy(Open):
 
 class EngineTemplate(Open):
     __def__ = 'engine.template'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'name', 'version', 'use_case', 'description', 'instruction', 'reads', 'writes', 'made_by', 'start', 'steps', 'needs', 'kind', 'form')))
     id: WORD('^engine/[a-z0-9][a-z0-9-]*$', 80)
     name: T(40, 1)
     use_case: T(300, 1)

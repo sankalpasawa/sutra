@@ -1,6 +1,7 @@
 """Priority's records (A1.13b): the estimate, the price and the ceiling."""
+from pydantic import ConfigDict
 from .base import Open
-from .common import BARE, NULLABLE, T, I, N, E, L, M, Name
+from .common import keep_order, BARE, NULLABLE, T, I, N, E, L, M, Name
 
 
 class PriorityEstimatePerEngineValue(Open):
@@ -40,6 +41,7 @@ class PriorityPriceIndices(Open):
 
 class PriorityPrice(Open):
     __def__ = 'priority.price'
+    model_config = ConfigDict(json_schema_extra=keep_order(('schema_version', 'id', 'at', 'cycle_id', 'round', 'thread', 'proposal', 'engines', 'estimate', 'room', 'remaining', 'answer', 'keep', 'why', 'indices')))
     at: T(40)
     proposal: E('line', 'round', 'engine', 'cost')
     estimate: PriorityEstimate

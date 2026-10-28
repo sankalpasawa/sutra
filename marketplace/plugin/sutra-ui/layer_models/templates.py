@@ -1,14 +1,15 @@
 """The templates of the levels below the journey (A3.3, A3.5): the step with its row and start, the kind, the engine and the artifact."""
 from typing import Annotated
-from pydantic import Field
+from pydantic import ConfigDict, Field
 import layer_consts as K
 from .base import Closed, Open
 from .types import Law
-from .common import SAY, WORD, ANYOF, NULLABLE, ANY, T, I, N, B, E, C, L, M, CheckVerdict, Impl, Name
+from .common import keep_order, SAY, WORD, ANYOF, NULLABLE, ANY, T, I, N, B, E, C, L, M, CheckVerdict, Impl, Name
 
 
 class Step(Closed):
     __def__ = 'step'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'name', 'nature', 'born', 'ceiling', 'below', 'check', 'code', 'prompt', 'draft', 'out', 'answer', 'facts', 'stringency', 'only_if', 'each', 'side_by_side', 'files', 'may_end', 'by_hand', 'tools', 'timeout_s', 'or')))
     id: Annotated[WORD(r'^[a-z][a-z0-9]*\.[a-z0-9_.]+$', 60), Law('fixed')]
     name: Annotated[SAY(160, 1), Law('free')]
     nature: Annotated[E(*K.NATURES), Law('fixed')]
@@ -36,6 +37,7 @@ class Step(Closed):
 
 class StepRow(Open):
     __def__ = 'step.row'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'engine', 'step', 'mode', 'rung', 'status', 'check', 'impl', 'usd', 'calls', 'started', 'ended')))
     id: T(40, 1)
     engine: T(80, 1)
     step: T(60, 1)
@@ -72,6 +74,7 @@ class KindRulesItem(Open):
 
 class Kind(Closed):
     __def__ = 'kind'
+    model_config = ConfigDict(json_schema_extra=keep_order(('line', 'required', 'artifacts', 'goal', 'done', 'done_words', 'rules', 'say', 'use_case', 'functions_template')))
     line: L(Name)
     artifacts: L(Name, 32, 1)
     goal: T(2000, 1)
@@ -86,6 +89,7 @@ class Kind(Closed):
 
 class EngineLibrary(Open):
     __def__ = 'engine.library'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'name', 'version', 'use_case', 'description', 'skills', 'reads', 'writes', 'start', 'steps', 'kind', 'instruction', 'needs')))
     id: WORD('^engine/[a-z0-9][a-z0-9-]*$', 80)
     name: T(40, 1)
     version: I(1)
@@ -103,6 +107,7 @@ class EngineLibrary(Open):
 
 class ArtifactTemplate(Open):
     __def__ = 'artifact.template'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'name', 'kind', 'use_case', 'files', 'checks', 'written_by', 'counts_after', 'put_back', 'operations', 'made_from', 'version', 'screen', 'reads', 'form')))
     id: WORD('^artifact/[a-z0-9-]+$', 60)
     name: Name
     kind: E('text', 'plan', 'pages', 'build', 'site', 'record', 'app')

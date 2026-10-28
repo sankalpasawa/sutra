@@ -1,8 +1,8 @@
 """Coordination's records (A1.11): the slot, what is left out, the table and the question between engines."""
-from pydantic import Field
+from pydantic import ConfigDict, Field
 import layer_consts as K
 from .base import Closed, Open
-from .common import WORD, BARE, NULLABLE, T, I, N, B, E, C, L, Name
+from .common import keep_order, WORD, BARE, NULLABLE, T, I, N, B, E, C, L, Name
 
 
 class CoordinationSlot(Closed):
@@ -25,6 +25,7 @@ class CoordinationLeftOut(Closed):
 
 class CoordinationTable(Closed):
     __def__ = 'coordination.table'
+    model_config = ConfigDict(json_schema_extra=keep_order(('schema_version', 'order', 'functions', 'line', 'edges', 'left_out', 'grown', 'registered', 'timetable', 'by', 'since', 'why')))
     order: L(E('posts', 'line', 'functions'), 3, 1, True)
     line: L(Name, 24, 0, True)
     schema_version: I(1) = None
@@ -47,6 +48,7 @@ class CoordinationQuestionAnsweredFrom(Open):
 
 class CoordinationQuestion(Open):
     __def__ = 'coordination.question'
+    model_config = ConfigDict(json_schema_extra=keep_order(('schema', 'id', 'asked_by', 'to', 'about', 'question', 'answer', 'answered_by', 'status', 'reason', 'artifact_update', 'used_by', 'cycle', 'slot', 'attempt', 'run', 'answered_from')))
     schema_: C('board/1') = Field(alias='schema')
     id: WORD('^Q-[1-9][0-9]*$', 8)
     asked_by: Name

@@ -1,13 +1,14 @@
 """Adaptation's records (A1.9): an idea, a step's ladder and a round."""
-from pydantic import Field
+from pydantic import ConfigDict, Field
 import layer_consts as K
 from .base import Open
-from .common import NULLABLE, ANY, T, I, B, E, L, IdFinding, IdItem
+from .common import keep_order, NULLABLE, ANY, T, I, B, E, L, IdFinding, IdItem
 from .priority import PriorityEstimate
 
 
 class AdaptationIdea(Open):
     __def__ = 'adaptation.idea'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'words', 'reflected', 'question', 'shapes', 'state', 'at', 'engine', 'priced', 'why')))
     id: T(40, 1)
     reflected: T(8000)
     shapes: L(T(2000), 3)
@@ -22,6 +23,7 @@ class AdaptationIdea(Open):
 
 class AdaptationLadderHistoryItem(Open):
     __inline__ = True
+    model_config = ConfigDict(json_schema_extra=keep_order(('at', 'from', 'to', 'by', 'evidence')))
     to: E(*K.RUNGS)
     by: T(400)
     at: NULLABLE(T(40)) = None
@@ -42,6 +44,7 @@ class AdaptationLadderTrial(Open):
 
 class AdaptationLadder(Open):
     __def__ = 'adaptation.ladder'
+    model_config = ConfigDict(json_schema_extra=keep_order(('engine', 'step', 'rung', 'form', 'since', 'since_row', 'held', 'pending', 'trial', 'history')))
     engine: T(80, 1)
     step: T(80, 1)
     rung: E(*K.RUNGS)
@@ -56,6 +59,7 @@ class AdaptationLadder(Open):
 
 class AdaptationRound(Open):
     __def__ = 'adaptation.round'
+    model_config = ConfigDict(json_schema_extra=keep_order(('schema_version', 'round', 'at', 'cycle_id', 'correction', 'fixes', 'covers', 'estimate', 'status', 'reading', 'brief_v', 'thread', 'bound')))
     round: I(1, 99)
     correction: T(600)
     covers: L(IdItem)

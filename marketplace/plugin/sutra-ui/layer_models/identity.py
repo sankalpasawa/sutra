@@ -1,8 +1,8 @@
 """Identity's records (A1.6, A1.8): the done-when item, the rule and the ask."""
-from pydantic import Field
+from pydantic import ConfigDict, Field
 import layer_consts as K
 from .base import Closed, Open
-from .common import ANYOF, NULLABLE, T, I, B, E, L, IdItem, Option
+from .common import keep_order, ANYOF, NULLABLE, T, I, B, E, L, IdItem, Option
 
 
 class IdentityDoneItem(Closed):
@@ -16,6 +16,7 @@ class IdentityDoneItem(Closed):
 
 class IdentityRule(Open):
     __def__ = 'identity.rule'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'tag', 'line', 'since', 'from', 'scope')))
     line: T(2000)
     id: T(80) = None
     tag: NULLABLE(T(20)) = None

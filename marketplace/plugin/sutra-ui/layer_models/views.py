@@ -1,7 +1,8 @@
 """The pane views (A1.17): the read models already merged; later steps add fields, never rename them."""
+from pydantic import ConfigDict
 import layer_consts as K
 from .base import Closed, Open
-from .common import NULLABLE, ANY, T, I, N, B, E, L, M, IdFinding, IdItem, Name
+from .common import keep_order, NULLABLE, ANY, T, I, N, B, E, L, M, IdFinding, IdItem, Name
 from .audit import AuditFinding
 from .coordination import CoordinationQuestion
 from .priority import PriorityCeiling, PriorityEstimate
@@ -75,6 +76,7 @@ class ViewIdentity(Open):
 
 class ViewAdaptationRound(Open):
     __def__ = 'view.adaptation.round'
+    model_config = ConfigDict(json_schema_extra=keep_order(('round', 'correction', 'covers', 'fixes', 'status', 'said', 'estimate', 'at', 'reading', 'brief_v')))
     round: I(1, 99)
     correction: T(600)
     covers: L(IdItem)
@@ -119,6 +121,7 @@ class ViewAdaptationCoverage(Open):
 
 class ViewAdaptation(Open):
     __def__ = 'view.adaptation'
+    model_config = ConfigDict(json_schema_extra=keep_order(('proposal', 'root_checks', 'coverage', 'round', 'rounds')))
     proposal: NULLABLE(ViewAdaptationProposal)
     root_checks: L(ViewAdaptationRootChecksItem)
     rounds: L(ViewAdaptationRound)

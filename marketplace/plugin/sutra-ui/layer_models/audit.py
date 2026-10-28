@@ -1,7 +1,8 @@
 """Audit's records (A1.13b): a reading, its items, a finding and a spot check."""
+from pydantic import ConfigDict
 import layer_consts as K
 from .base import Open
-from .common import WORD, NULLABLE, T, I, B, E, L, IdFinding, IdItem, Name
+from .common import keep_order, WORD, NULLABLE, T, I, B, E, L, IdFinding, IdItem, Name
 
 
 class AuditReadingItem(Open):
@@ -29,6 +30,7 @@ class AuditFinding(Open):
 
 class AuditReading(Open):
     __def__ = 'audit.reading'
+    model_config = ConfigDict(json_schema_extra=keep_order(('schema_version', 'id', 'v', 'artifact', 'cycle_id', 'round', 'read', 'why_not_read', 'items', 'findings', 'at')))
     id: WORD('^r-[0-9a-f]{8}$', 10)
     v: I(1)
     artifact: Name
@@ -51,6 +53,7 @@ class AuditSpotCheckChecksItem(Open):
 
 class AuditSpotCheck(Open):
     __def__ = 'audit.spot_check'
+    model_config = ConfigDict(json_schema_extra=keep_order(('schema_version', 'id', 'at', 'minute', 'checks', 'findings')))
     id: T(40)
     at: T(40)
     checks: L(AuditSpotCheckChecksItem)

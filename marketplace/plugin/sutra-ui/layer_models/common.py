@@ -62,6 +62,19 @@ BARE = Annotated[dict[str, Any], Bare()]
 ISO = WORD(r'^\d{4}-\d\d-\d\d', 40)               # the head of W.now(): a date and, after it, whatever the clock says
 
 
+def keep_order(names):
+    """A class whose properties the interface lists in another order than its fields (the required ones come first, so that a
+    missing key is reported in the order `required` lists them): the export puts them back, so DEFS[name]['properties'] reads as
+    it always did."""
+    names = tuple(names)
+
+    def put_back(schema, cls=None):
+        props = schema.get('properties')
+        if props:
+            schema['properties'] = dict({k: props[k] for k in names if k in props}, **props)
+    return put_back
+
+
 def named(def_name, body):
     """A definition other definitions point at by $ref: the annotation a field uses (the file says {'$ref': ...}), the body being
     what the name itself is checked against."""

@@ -1,7 +1,8 @@
 """The user-journey template (A3.6): a journey file and its parts, and the status document computed for each."""
+from pydantic import ConfigDict
 import layer_consts as K
 from .base import Closed
-from .common import SAY, WORD, ISO, NULLABLE, T, I, B, E, L, M
+from .common import keep_order, SAY, WORD, ISO, NULLABLE, T, I, B, E, L, M
 
 
 class JourneyLane(Closed):
@@ -91,6 +92,7 @@ class JourneyEdge(Closed):
 
 class JourneySub(Closed):
     __def__ = 'journey.sub'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'title', 'owner', 'step', 'text', 'drawn')))
     id: WORD(K.SUB_ID, 6)
     title: SAY(80, 1)
     step: WORD(K.STEP_N, 3)
@@ -101,6 +103,7 @@ class JourneySub(Closed):
 
 class JourneyRuling(Closed):
     __def__ = 'journey.ruling'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'status', 'date', 'text')))
     id: WORD(K.RULING_ID, 8)
     status: E(*K.RULING_STATUS)
     text: SAY(700)
@@ -109,6 +112,7 @@ class JourneyRuling(Closed):
 
 class JourneyQuote(Closed):
     __def__ = 'journey.quote'
+    model_config = ConfigDict(json_schema_extra=keep_order(('date', 'on', 'text')))
     text: SAY(1500, 1)
     date: NULLABLE(ISO) = None
     on: T(20) = None
@@ -125,6 +129,7 @@ class JourneyScenario(Closed):
 
 class JourneyBacklog(Closed):
     __def__ = 'journey.backlog'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'row', 'smallest', 'decision', 'package')))
     id: WORD(K.BACKLOG_ID, 6)
     row: T(20, 1)
     smallest: SAY(700, 1)
@@ -143,6 +148,7 @@ class JourneyDirection(Closed):
 
 class JourneyBuildRow(Closed):
     __def__ = 'journey.build_row'
+    model_config = ConfigDict(json_schema_extra=keep_order(('id', 'when', 'change', 'where', 'owner', 'size', 'tests', 'backlog')))
     id: T(8, 1)
     change: SAY(800, 1)
     when: E('v1', 'later') = None
@@ -155,6 +161,7 @@ class JourneyBuildRow(Closed):
 
 class JourneyWas(Closed):
     __def__ = 'journey.was'
+    model_config = ConfigDict(json_schema_extra=keep_order(('title', 'lanes', 'steps', 'edges')))
     title: SAY(120, 1)
     steps: L(JourneyStep, 24)
     edges: L(JourneyEdge, 30)
@@ -183,6 +190,7 @@ class JourneyHelper(Closed):
 
 class Journey(Closed):
     __def__ = 'journey'
+    model_config = ConfigDict(json_schema_extra=keep_order(('schema_version', 'id', 'title', 'kind', 'inside', 'bound_to', 'serves', 'site_serves', 'declared', 'goal', 'lead', 'ends_when', 'flag', 'tag', 'today', 'was', 'site', 'helper', 'lanes', 'steps', 'edges', 'sub', 'children', 'directions', 'build_rows', 'rulings', 'decisions', 'quotes', 'scenarios', 'invariants', 'backlog', 'site_ids')))
     schema_version: I(1)
     id: WORD(K.JOURNEY_ID, 6)
     title: SAY(120, 1)

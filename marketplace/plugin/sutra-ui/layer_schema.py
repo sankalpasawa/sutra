@@ -24,6 +24,13 @@ Packages import it as `import layer_schema as S` and use exactly A1's names. Aft
 ('A1 interface:' commits); the JSON Schema files under schemas/layers/ are generated from here (`python layer_schema.py
 --write`) and never edited by hand.
 
+THE CLASSES (amendment A4). The definitions are pydantic classes, one module per layer under layer_models/ (annotation objects that
+carry both the check and the JSON Schema, and the sentences of the walker translated from pydantic's errors); DEFS is their export,
+the same dicts the literals here were, key for key (the proof is qa/a4_equiv.py, run against the frozen literals and the walker in
+layer_models/legacy.py), and validate() asks the classes. The constants the classes read are in layer_consts.py and are re-exported
+here, so every name is still S.<name>. A test that replaces a DEFS entry still changes what validate() says: the walker runs, over
+DEFS, while an entry is not the exported object.
+
 THE TEMPLATES (amendment A3). A template is an interface is a base class, at seven levels: the user journey, the department
 kind, the function, the engine and workflow, the step, the artifact and the ask. The section "A3: the templates at every
 level" types the ones A1 and A2 left as prose; template_checks.py holds the rules a type cannot say.
@@ -356,10 +363,16 @@ def report(name, faults, ref=None, owner=None, never_refuse=False):
 
 
 def validate(name, value):
-    """What is wrong with `value` as DEFS[name]: [] when it fits."""
+    """What is wrong with `value` as DEFS[name]: [] when it fits. The classes of layer_models answer while DEFS is as it was
+    exported; the walker answers, over DEFS, when a test has replaced an entry or VALIDATOR says so."""
     if name not in DEFS:
         return ['$: no definition named %s' % name]
-    return faults(DEFS[name], value)
+    if VALIDATOR == 'walker' or DEFS.dirty:
+        return faults(DEFS[name], value, defs=DEFS)
+    got, unmapped = layer_models.sentences(name, value)
+    if unmapped:
+        refused(None, 'unmapped', ['an error type with no sentence written for it: %s' % ', '.join(unmapped)])
+    return got
 
 
 def check(name, value, ref=None, owner=None, never_refuse=False):
@@ -391,407 +404,81 @@ def expect_refused(name=None):
 
 
 # ---- the definitions (A1.5 to A1.17, A1.13b) ------------------------------------------------------------------------
-# Every type is bound to the writer that exists on main (test_layer_writers.py has one test per writer). The store's
-# enums are loose where Identity's standard must see a bad value: a rule with no tag, an item whose how is not code,
-# model or person, an empty goal (A1.6). Objects are open unless A1 closes them. A bound wider than A1's says so beside it.
-DEFS = {}
+# The 130 definitions are the classes of layer_models (PRD amendment A4), and DEFS is their export: the same dicts the literals
+# here were, key for key (the frozen literals are layer_models/legacy.py, the oracle the proof runs the classes against). Every
+# type is bound to the writer that exists on main (test_layer_writers.py has one test per writer). Objects are open unless A1
+# closes them; a bound wider than A1's says so beside it, in the class.
+import layer_models                                                   # noqa: E402  imports nothing of the app, nor layer_schema
 
-# common (A1.5)
-DEFS.update({
-    'name': word(NAME_RE, 40),
-    'id.item': word(ITEM_RE, 3),
-    'id.finding': word(FINDING_RE, 4),
-    'impl': word(IMPL_RE, 24),
-    'envelope': obj({'calls': integer(0), 'usd': number(0)}, required=('calls', 'usd')),
-    # cost: say(400), wider than A1's 300: _blocked's leave option says the item's text (up to 300) inside its cost
-    'option': obj({'id': word(r'^[a-z][a-z0-9_]*(:[A-Za-z0-9_.-]{1,40})?$', 64), 'label': say(120, 1), 'cost': say(400),
-                   'kind': enum(*OPTION_KINDS), 'params': obj({})}, required=('id', 'label', 'cost')),
-    'check.verdict': obj({'ok': boolean(), 'notes': items(text(2000))}, required=('ok', 'notes')),   # every covering check returns this
-})
 
-# Identity's records (A1.6, A1.8)
-DEFS.update({
-    # how and level as said (W.done_items keeps them as the agent said them, lowercased): text(200), wider than A1's 20
-    'identity.done_item': obj({'id': ref('id.item'), 'text': text(300, 1), 'how': text(200), 'level': text(200), 'confirm': text(200)},
-                              required=('id', 'text'), open=False),
-    # W.rule_row: {id, tag, line, since, from, scope?}; a kind's rules are {tag, line}. tag may be absent or null (a rule with no
-    # tag is a standard gap, not a store fault); line text(2000), wider than A1's 600: a restated line is a model's words
-    'identity.rule': obj({'id': text(80), 'tag': nullable(text(20)), 'line': text(2000), 'since': nullable(text(40)),
-                          'from': nullable(text(8000)), 'scope': text(20)}, required=('line',)),
-    # open: title, who, why, if_nothing, missing, standard, points, fn, file, ...
-    # decided and by are null on a card that waits open again after its choice (_blocked_chosen, M3.5's fix)
-    'identity.ask': obj({'id': text(40, 1), 'kind': enum(*ASK_KINDS), 'status': enum(*ASK_STATUSES), 'text': text(4000),
-                         'created': text(40), 'decided': nullable(text(40)), 'by': nullable(text(80)), 'engine': nullable(text(60)),
-                         'thread': nullable(text(80)),
-                         'options': items(ref('option'), OPTIONS_MAX),
-                         'chosen': nullable(obj({'id': text(64), 'label': text(120), 'at': text(40), 'by': text(80),
-                                                 'words': nullable(text(2000))})),
-                         'items': items(ref('identity.done_item'), DONE_ITEMS_MAX), 'cycle_id': nullable(text(80)),
-                         # a j2_identity ask that puts Adaptation's doubt to the owner (M3.9, W1-IDENTITY): doubt is Adaptation's words, shown
-                         # the words the owner was asked (the doubt put in plain words), line the board post of the line request it
-                         # doubted, answered the board post of the request that carried the owner's answer (true when it carried none)
-                         'doubt': obj({'engine': text(40), 'doubt': text(600), 'shown': text(600), 'fallback': text(600),
-                                       'line': nullable(integer(0)), 'answered': any_of(integer(0), boolean())})},
-                        required=('id', 'kind', 'status')),
-})
+class Defs(dict):
+    """DEFS: the export of the classes, a dict. `dirty` says whether any entry is no longer the object that was exported (a test
+    replaced one, an entry was added or removed): it is recomputed on every change and never on a read, so a monkeypatch that is
+    undone puts the fast path back. validate() asks the classes while it is False and the walker, over this dict, while it is
+    True (a $ref is followed at call time, so a replaced entry changes what the definitions that point at it say)."""
 
-# Root's records (A1.6, A1.7)
-DEFS.update({
-    'root.pins': obj({layer: ref('impl') for layer in LAYER_NAMES}, open=False),
-    # a born engine template, as R.born_template writes it to the records home's _library/<slug>.json (W1-ROOT checks it
-    # before the file is written). It is the child of engine.library (A3.5): that template with a required made_by.
-    # form (W2-CHECKS, M7.5): the artifact whose form the engine files what it writes in, when a level-1 engine reads it
-    # (J2B-3); the Library's template for that artifact names the check that holds the form
-    'engine.template': obj({'id': word(r'^engine/[a-z0-9][a-z0-9-]*$', 80), 'name': text(40, 1), 'version': integer(1),
-                            'use_case': text(300, 1), 'description': text(300), 'instruction': text(4000), 'reads': text(200),
-                            'writes': text(40),
-                            'made_by': obj({'by': const('Adaptation'), 'dept': text(200), 'at': text(40), 'idea': nullable(text(300))},
-                                           required=('by',)),
-                            'start': obj({}), 'steps': items(obj({})), 'needs': items(text(40)), 'kind': const('work'),
-                            'form': text(60, 1)},
-                           required=('id', 'name', 'use_case', 'made_by')),
-})
+    def __init__(self, exported):
+        super().__init__(exported)
+        self._exported = dict(exported)
+        self.dirty = False
 
-# the workflow schema (A1.14)
-DEFS.update({
-    'workflow.engine': obj({'name': ref('name'), 'does': text(300), 'reads': ref('name'), 'writes': ref('name'),
-                            'covers': items(ref('id.item'), 12, unique=True), 'internet': boolean(), 'start': obj({}), 'check': text(60),
-                            'envelope': ref('envelope'), 'made_by': enum('library', 'fitted', 'shaped', 'made'), 'required': boolean(),
-                            'fit': text(300), 'level': enum(1, 2), 'confidence': number(0, 1), 'doubt': text(300)},
-                           required=('name', 'reads', 'writes')),
-    'workflow': obj({'schema_version': integer(1), 'version': integer(1), 'kind': text(40), 'source': enum(*SOURCES),
-                     'engines': items(ref('workflow.engine'), 24), 'deliverable': nullable(ref('name')),
-                     'covers': map_of(items(ref('name'), min_items=1), keys=ITEM_RE), 'covers_by': enum('adaptation', 'default'),
-                     'left_out': items(ref('name')), 'checks': items(ref('workflow.check')), 'why': text(600), 'at': text(40),
-                     'by': text(40)},
-                    required=('engines', 'source')),
-    'workflow.check': obj({'check': enum(*([s[0] for s in WORKFLOW_STANDARDS] + ['workflow_meets_standards'])), 'passed': boolean(),
-                           'why': text(600)}, required=('check', 'passed', 'why')),
-    # j2_runtime.registered writes the first five
-    'workflow.registration': obj({'version': integer(1), 'engines': items(ref('name'), 24), 'source': enum(*SOURCES),
-                                  'registered': text(40), 'by': text(40), 'checks': items(ref('workflow.check')),
-                                  'covers': map_of(items(ref('name')), keys=ITEM_RE), 'fit': map_of(text(300)),
-                                  'deliverable': nullable(ref('name')), 'left_out': items(ref('name'))},
-                                 required=('version', 'engines', 'source', 'registered')),
-})
+    def _recount(self):
+        base = self._exported
+        self.dirty = len(self) != len(base) or any(k not in base or self[k] is not base[k] for k in self)
 
-# Coordination's records (A1.11)
-DEFS.update({
-    'coordination.slot': obj({'engine': ref('name'), 'on': text(80), 'of': ref('name'), 'checked': boolean(), 'every_s': number(0),
-                              'window_min': integer(0, 1440), 'since': text(40)}, required=('engine', 'on'), open=False),
-    'coordination.left_out': obj({'engine': ref('name'), 'in_line': const(False), 'since': text(40)}, required=('engine',), open=False),
-    'coordination.table': obj({'schema_version': integer(1), 'order': items(enum('posts', 'line', 'functions'), 3, 1, True),
-                               'functions': items(enum(*TITLE.values())), 'line': items(ref('name'), 24, unique=True), 'edges': obj({}),
-                               'left_out': items(ref('coordination.left_out')), 'grown': items(ref('name'), unique=True),
-                               'registered': nullable(integer(0)), 'timetable': items(ref('coordination.slot')),
-                               'by': enum('born', 'Coordination'), 'since': text(40), 'why': text(300)},
-                              required=('order', 'line'), open=False),
-})
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self._recount()
 
-# Adaptation's records (A1.9), typed as their writers write them (W1-ADAPT binds them): an idea parked by R.adapt_park and
-# noted by R._note_idea (the engine it was built as, or that Priority would not price it), and a step's ladder entry, written by
-# R._save_entry from R.entry, R.move, the keeper's trial and the owner's hold. Open objects: a key a later writer adds passes.
-# reflected, question and why are a model's words, so their bounds are wide (the same reason as act.conflict's why).
-DEFS.update({
-    'adaptation.idea': obj({'id': text(40, 1), 'words': nullable(text(100000)), 'reflected': text(8000), 'question': nullable(text(2000)),
-                            'shapes': items(text(2000), 3), 'state': enum('parked', 'built'), 'at': text(40),
-                            'engine': nullable(text(80)), 'priced': text(40), 'why': text(2000)},
-                           required=('id', 'reflected', 'shapes', 'state', 'at')),
-    # since is null on a department record that has no created stamp; trial is the next rung run beside the incumbent, counted
-    # (R.adapt_trial, the keeper's table trial and R._trial); evidence is the numbers a move rested on (a step's rows counted),
-    # or null; by is who moved it and why, in the keeper's words
-    'adaptation.ladder': obj({'engine': text(80, 1), 'step': text(80, 1), 'rung': enum(*RUNGS), 'form': nullable(text(40)),
-                              'since': nullable(text(40)), 'since_row': integer(0), 'held': boolean(), 'pending': nullable(text(80)),
-                              'trial': nullable(obj({'rung': enum(*RUNGS), 'form': nullable(text(40)), 'runs': integer(0),
-                                                     'agree': integer(0), 'norule': integer(0), 'state': enum('running', 'done'),
-                                                     'started': text(40)})),
-                              'history': items(obj({'at': nullable(text(40)), 'from': nullable(enum(*RUNGS)), 'to': enum(*RUNGS),
-                                                    'by': text(400), 'evidence': ANYTHING}, required=('to', 'by')))},
-                             required=('engine', 'step', 'rung', 'held', 'history')),
-})
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        self._recount()
 
-# the records and acts waves 1 to 3 write first (A1.13b), declared as A1 types them
-DEFS.update({
-    'priority.estimate': obj({'calls': integer(0), 'usd': number(0), 'basis': enum('median', 'prior', 'line'), 'runs': integer(0),
-                              'per_engine': map_of(obj({'calls': integer(0), 'usd': number(0), 'basis': enum('median', 'prior'),
-                                                        'runs': integer(0)}))}, required=('calls', 'usd')),
-    'priority.price': obj({'schema_version': integer(1), 'id': text(40), 'at': text(40), 'cycle_id': nullable(text(80)),
-                           'round': nullable(integer(1)), 'thread': text(80), 'proposal': enum('line', 'round', 'engine', 'cost'),
-                           'engines': items(ref('name')), 'estimate': ref('priority.estimate'),
-                           'room': obj({'calls': integer(), 'usd': number()}), 'remaining': obj({'calls': integer(), 'usd': number()}),
-                           'answer': enum('accept', 'counter', 'reject'), 'keep': items(ref('name')), 'why': text(600),
-                           'indices': obj({'spend_per_run': map_of(number(0)), 'checks': map_of(enum('ok', 'failed', 'none'))})},
-                          required=('at', 'proposal', 'estimate', 'room', 'answer', 'why')),
-    'priority.ceiling': obj({'rounds': integer(1, 99), 'calls': integer(0), 'usd': number(0),
-                             'start': obj({'rounds': integer(1), 'calls': integer(0), 'usd': number(0)}, required=('rounds', 'calls', 'usd')),
-                             'raised': items(obj({'at': text(40), 'by': text(80), 'to': obj({})})), 'at': text(40)},
-                            required=('rounds', 'calls', 'usd', 'start')),
-    'audit.reading_item': obj({'id': ref('id.item'), 'subject': text(200), 'claim': text(600), 'evidence': text(1000),
-                               'method': enum('code', 'model'), 'verdict': enum(*ITEM_VERDICTS), 'severity': enum(*SEVERITIES)},
-                              required=('id', 'subject', 'claim', 'evidence', 'method', 'verdict', 'severity')),
-    'audit.finding': obj({'id': ref('id.finding'), 'severity': enum(*SEVERITIES), 'claim': text(600), 'where': text(200),
-                          'item': nullable(ref('id.item')), 'went_to': nullable(enum('Identity', 'Adaptation', 'you')),
-                          'ask': nullable(text(40)), 'at': text(40)}, required=('id', 'severity', 'claim', 'where')),
-    'audit.reading': obj({'schema_version': integer(1), 'id': word(r'^r-[0-9a-f]{8}$', 10), 'v': integer(1), 'artifact': ref('name'),
-                          'cycle_id': nullable(text(80)), 'round': nullable(integer(1)), 'read': boolean(),
-                          'why_not_read': nullable(text(300)), 'items': items(ref('audit.reading_item')),
-                          'findings': items(ref('audit.finding')), 'at': text(40)},
-                         required=('id', 'v', 'artifact', 'read', 'items', 'at')),
-    'adaptation.round': obj({'schema_version': integer(1), 'round': integer(1, 99), 'at': text(40), 'cycle_id': nullable(text(80)),
-                             'correction': text(600), 'fixes': items(ref('id.finding')), 'covers': items(ref('id.item')),
-                             'estimate': ref('priority.estimate'), 'status': enum('proposed', 'granted', 'refused', 'filed', 'read'),
-                             'reading': text(40), 'brief_v': integer(1), 'thread': text(80),
-                             # a round a limit of its thread closed (rule 12; seconds, usd or hops) says which: Priority never answered it
-                             'bound': nullable(text(40))}, required=('round', 'correction', 'covers', 'status')),
-    'coordination.question': obj({'schema': const('board/1'), 'id': word(r'^Q-[1-9][0-9]*$', 8), 'asked_by': ref('name'), 'to': ref('name'),
-                                  'about': text(120), 'question': text(600), 'answer': nullable(text(2000)),
-                                  'answered_by': nullable(ref('name')), 'status': enum(*QUESTION_STATUSES), 'reason': nullable(text(300)),
-                                  'artifact_update': nullable(obj({})), 'used_by': items(ref('name')), 'cycle': nullable(text(80)),
-                                  'slot': text(160), 'attempt': integer(1), 'run': nullable(text(40)),
-                                  # W3-BOARD: where an answer came from, the engine and the version of what it filed that it answered from
-                                  'answered_from': nullable(obj({'workflow': ref('name'), 'version': nullable(integer(0))}, required=('workflow',)))},
-                                 required=('schema', 'id', 'asked_by', 'to', 'about', 'question', 'status', 'used_by')),
-    'audit.spot_check': obj({'schema_version': integer(1), 'id': text(40), 'at': text(40), 'minute': integer(0, 1439),
-                             'checks': items(obj({'check': text(80), 'ok': boolean(), 'why': text(300)}, required=('check', 'ok', 'why'))),
-                             'findings': items(ref('audit.finding'))}, required=('id', 'at', 'checks', 'findings')),
-    'option.raise': obj({'what': enum('envelope', 'ceiling'), 'engine': ref('name'), 'calls': integer(0), 'usd': number(0),
-                         'rounds': integer(0)}, required=('what',)),
-    'option.words': obj({'words': text(4000, 1)}, required=('words',)),
-    'option.pin': obj({'layer': enum(*LAYER_NAMES), 'impl': ref('impl')}, required=('layer', 'impl')),
-})
+    def pop(self, *a):
+        out = super().pop(*a)
+        self._recount()
+        return out
 
-# the board's acts and their payloads (A1.13, A1.13b). Every payload is open: unknown keys pass, and only the fields
-# named are typed. Words that may carry a whole Brief (a line request's, a proposal's) are text(100000).
-DEFS.update({
-    'act.any': obj({'word': text(40)}, required=('word',)),
-    'act.words': obj({'word': enum('front', 'request'), 'words': text(8000), 'objective': text(8000), 'output': text(600),
-                      'may_read': items(text(60)), 'boundaries': text(8000), 'request': ANYTHING, 'about': ANYTHING,
-                      'answers': ANYTHING}, required=('word',)),
-    'act.stamp': obj({'word': text(40), 'ask': text(40)}),
-    # done: say(8000), wider than A1's 4000: the birth tell names every done-when item, up to twelve of 300
-    'act.tell': obj({'word': text(40), 'done': say(8000), 'card': text(40)}, required=('word',)),
-    'act.ask': obj({'word': text(40), 'objective': say(4000), 'output': text(600), 'may_read': items(text(60)),
-                    'boundaries': text(8000)}, required=('word',)),
-    'act.verdict': obj({'word': const('verdict'), 'answer': enum('admit', 'wait', 'refuse'), 'why': nullable(text(600))},
-                       required=('word',)),
-    # answer, doubt, fallback and go_on are Identity's (M3.9, W1-IDENTITY): the owner's answer to Adaptation's doubt (or the fallback
-    # 'just do it' took), the doubt and the fallback it was put with, and go_on, which tells Adaptation to go on to Priority with
-    # the doubt named, as for a confidence from 0.6 to under 0.8, and not to doubt again
-    'act.line_request': obj({'word': const('line'), 'words': nullable(text(100000)), 'objective': text(2000),
-                             'faults': items(text(600)), 'answer': text(2000), 'doubt': text(600), 'fallback': text(600),
-                             'go_on': boolean(),
-                             'practices': obj({'rules': ANYTHING, 'engines': ANYTHING, 'artifacts': ANYTHING, 'required': ANYTHING,
-                                               'taken': ANYTHING})}, required=('word',)),
-    'act.line': obj({'word': const('line'), 'engines': items(any_of(ref('name'), ref('workflow.engine')), 24),
-                     'source': nullable(enum(*SOURCES)), 'words': nullable(text(100000)), 'for': nullable(text(80)),
-                     'covers': map_of(items(ref('name')), keys=ITEM_RE), 'doubt': text(600), 'confidence': number(0, 1),
-                     'fit': map_of(text(300)), 'keep': items(ref('name')), 'why': text(2000)}, required=('word',)),
-    # why: text(2000), wider than A1's 600: a conflict quotes the counter's own why
-    'act.conflict': obj({'word': const('conflict'), 'engines': items(any_of(ref('name'), ref('workflow.engine'))),
-                         'source': nullable(enum(*SOURCES)), 'words': nullable(text(100000)), 'why': text(2000),
-                         'bound': nullable(text(40)), 'for': nullable(text(80)), 'options': items(ref('option'), 3),
-                         # a conflict about a round (M9.4, M9.5) names it; one about a round that was proposed carries its correction
-                         'round': integer(1, 99), 'correction': text(600)},
-                        required=('word',)),
-    # claim: text(2000), wider than A1's 600: a mechanical note is the claim when the judge found nothing
-    'act.finding': obj({'word': const('finding'), 'claim': text(2000), 'severity': enum(*SEVERITIES), 'where': text(200),
-                        'page': nullable(text(200)), 'item': nullable(ref('id.item')), 'v': integer(1), 'findings': items(obj({}))},
-                       required=('word',)),
-    # beyond A1.13: the word born, as BORN_FIELDS names it (a plan Root registered, or an engine the owner stamped)
-    'act.born': obj({'word': const('born'), 'engines': items(text(80)), 'version': nullable(integer(0)), 'full': boolean(),
-                     'grow': text(80), 'before': nullable(text(80))}, required=('word',)),
-    'act.doubt': obj({'word': const('doubt'), 'engine': ref('name'), 'doubt': text(600), 'fallback': text(600),
-                      'confidence': number(0, 1),
-                      'cannot': nullable(obj({'engine': ref('name'), 'items': items(ref('id.item')), 'why': text(600)}))},
-                     required=('word', 'engine', 'doubt')),
-    'act.reading': obj({'word': const('reading'), 'reading': text(40), 'artifact': ref('name'), 'v': integer(1), 'read': boolean(),
-                        'met': items(ref('id.item')), 'not_met': items(ref('id.item')), 'to_confirm': items(ref('id.item')),
-                        'findings': items(ref('id.finding')), 'high': boolean()},
-                       required=('word', 'reading', 'artifact', 'v', 'read', 'met', 'not_met', 'to_confirm')),
-    'act.next': obj({'word': const('next'), 'items': items(ref('id.item'), min_items=1), 'reading': text(40),
-                     'findings': items(ref('id.finding')), 'round': integer(1, 99)}, required=('word', 'items', 'reading')),
-    'act.round': obj({'word': const('round'), 'round': integer(1, 99), 'correction': text(600), 'fixes': items(ref('id.finding')),
-                      'covers': items(ref('id.item')), 'estimate': ref('priority.estimate'), 'why': text(600),
-                      'ceiling': ref('priority.ceiling')}, required=('word', 'round')),
-    'act.question': obj({'word': const('question'), 'entry': ref('coordination.question')}, required=('word', 'entry')),
-    'act.answer': obj({'word': const('answer'), 'entry': ref('coordination.question')}, required=('word', 'entry')),
-})
+    def popitem(self):
+        out = super().popitem()
+        self._recount()
+        return out
 
-# prompt fields and the owner's values (A1.16)
-DEFS.update({
-    'field.task': field(1200, multiline=True),
-    'field.guidance': field(2000, 0, multiline=True),
-    'field.text': field(400),
-    'field.note': field(4000, 0, multiline=True),
-    'field.items': items(field(160), 12, 1),
-    'instructions': obj({'schema_version': const(1),
-                         'values': map_of(map_of(map_of(map_of(obj({'value': ANYTHING, 'at': text(40), 'ask': text(40)},
-                                                                   required=('value',))))))},
-                        required=('schema_version', 'values')),
-})
+    def update(self, *a, **kw):
+        super().update(*a, **kw)
+        self._recount()
 
-# settings (A1.8 to A1.12)
-DEFS.update({
-    'setting.windows': map_of(integer(0, 1440)),
-    'setting.make': boolean(),
-    'setting.order': items(enum('posts', 'line', 'functions'), 3, 1, True),
-    'setting.spot_every_s': integer(3600, 604800),
-})
+    def setdefault(self, key, default=None):
+        out = super().setdefault(key, default)
+        self._recount()
+        return out
 
-# the pane views (A1.17): the read models already merged, typed as they are; later steps add fields, never rename them
-_AT = nullable(text(40))
-DEFS.update({
-    'view.identity': obj({
-        'standard': obj({'met': boolean(), 'missing': items(enum(*STANDARD)),
-                         'rows': items(obj({'id': enum('goal', 'items', 'rules', 'owner_budget', 'invented'), 'says': text(200),
-                                            'state': enum('met', 'not_met', 'to_confirm', 'reading'), 'note': text(4000)},
-                                           required=('id', 'says', 'state', 'note')))},
-                        required=('met', 'missing', 'rows')),
-        'goal': nullable(text(2000)), 'done': nullable(text(4000)),
-        'done_items': items(obj({'id': text(8), 'text': nullable(text(300)), 'how': nullable(text(200)), 'level': nullable(text(200)),
-                                 'confirm': nullable(text(300))})),
-        'rules': items(obj({'tag': nullable(text(20)), 'line': text(2000), 'by': enum('yours', 'the template'), 'since': _AT})),
-        'open_question': nullable(obj({'id': ANYTHING, 'text': ANYTHING, 'why': ANYTHING, 'missing': ANYTHING, 'asked': ANYTHING,
-                                       'standard': ANYTHING, 'points': ANYTHING})),
-        'conflicts': items(obj({'at': _AT, 'who': text(200), 'split': nullable(text(4000)), 'plan': nullable(text(2000)),
-                                'ruling': text(20), 'ruled': text(40), 'why': nullable(text(4000)), 'asked_you': boolean()}), 6)},
-        required=('standard', 'goal', 'done', 'done_items', 'rules', 'open_question', 'conflicts')),
-    # W1-ADAPT adds coverage (M5.1) and, on each Root review, the checks that ran (M7.3); W2-ADAPT adds round and rounds
-    'view.adaptation': obj({
-        'proposal': nullable(obj({'workflow': items(text(80)), 'source': nullable(text(40)), 'at': _AT})),
-        'root_checks': items(obj({'summary': nullable(text(4000)), 'at': _AT, 'passed': boolean(),
-                                  'checks': items(obj({'check': text(60), 'says': text(300), 'passed': boolean(), 'why': text(600)},
-                                                      required=('check', 'says', 'passed', 'why')))})),
-        'coverage': nullable(obj({'items': items(ref('id.item')), 'uncovered': items(ref('id.item')), 'by': enum('adaptation', 'default')},
-                                 required=('items', 'uncovered', 'by'))),
-        # W2-ADAPT (M9.6): the rounds of the current cycle, one row each (rounds.jsonl folded by round, the latest status winning),
-        # and the latest of them, the round in hand; round is not required, so a view written before it still validates
-        'round': nullable(ref('view.adaptation.round')),
-        'rounds': items(ref('view.adaptation.round'))},
-        required=('proposal', 'root_checks', 'rounds')),
-    'view.adaptation.round': obj({'round': integer(1, 99), 'correction': text(600), 'covers': items(ref('id.item')),
-                                  'fixes': items(ref('id.finding')), 'status': enum('proposed', 'granted', 'refused', 'filed', 'read'),
-                                  'said': text(60), 'estimate': nullable(ref('priority.estimate')), 'at': _AT, 'reading': nullable(text(40)),
-                                  'brief_v': nullable(integer(1))}, required=('round', 'correction', 'covers', 'status')),
-    'view.priority': obj({
-        'bargains': items(obj({'said': enum('said yes', 'asked for less', 'said no'), 'summary': nullable(text(4000)), 'at': _AT})),
-        'envelopes': items(obj({'engine': text(80), 'calls': integer(0), 'usd': number(0), 'calls_limit': integer(0),
-                                'usd_limit': number(0), 'share': number(0, 1)})),
-        # from W1-PRIORITY (M5.3): what Priority priced and answered, newest first, from prices.jsonl; not required, so a
-        # view written before it still validates
-        'prices': items(obj({'at': _AT, 'proposal': enum('line', 'round', 'engine', 'cost'),
-                             'answer': enum('accept', 'counter', 'reject'), 'said': enum('said yes', 'asked for less', 'said no'),
-                             'estimate': obj({'calls': integer(0), 'usd': number(0)}, required=('calls', 'usd')),
-                             'room': obj({'calls': integer(), 'usd': number()}, required=('calls', 'usd')), 'why': text(600)},
-                            required=('at', 'proposal', 'answer', 'said', 'estimate', 'room', 'why'))),
-        # from W2-PRIORITY (M9.2): the goal's ceiling, as the record keeps it, or null before the first registration; not required
-        'ceiling': nullable(ref('priority.ceiling')),
-        # from W2-PRIORITY (M9.6): what each round of the goal has spent, oldest first, from the runs the ledger links by run_ref;
-        # not required
-        'spend_by_round': items(obj({'round': integer(1), 'calls': integer(0), 'usd': number(0)}, required=('round', 'calls', 'usd')))},
-        required=('bargains', 'envelopes')),
-    'view.coordination': obj({
-        'line': items(text(80)), 'registered': nullable(integer(0)),
-        'timetable': items(obj({'engine': text(80), 'on': nullable(text(80)), 'starts': text(200), 'window_min': integer(0),
-                                'since': _AT, 'state': enum(*SLOT_STATES), 'word': text(40), 'why': nullable(text(600)), 'at': _AT,
-                                'last': nullable(obj({'at': _AT, 'status': nullable(text(20)), 'wrote': nullable(text(120))}))},
-                               required=TIMETABLE_ROW, open=False)),
-        'left_out': items(obj({'engine': nullable(text(80)), 'since': _AT}, open=False)),
-        'holds': items(obj({'engine': text(80), 'why': text(600)}, open=False)),
-        'handoffs': items(obj({'art': text(80), 'v': nullable(integer(0)), 'by': nullable(text(80)), 'says': nullable(text(200)),
-                               'readers': items(text(80))})),
-        'chain': obj({'of': nullable(text(80)), 'used': integer(0), 'limit': integer(0), 'share': number(0, 1)}),
-        'alarms': items(obj({'engine': nullable(text(80)), 'text': nullable(text(600)), 'at': _AT})),
-        'ties': items(obj({'pick': text(80), 'said': text(200), 'why': nullable(text(600)), 'at': _AT, 'today': boolean()})),
-        # from W3-BOARD (M4.9): the questions engines put to each other, the last few, oldest first; [] when none was asked
-        'questions': items(ref('coordination.question'))},
-        required=COORDINATION_FIELDS, open=False),
-    'view.engine_card': obj({
-        'engine': text(80),
-        'head': obj({'state': enum(*(SLOT_STATES + ('left_out', 'quiet'))), 'word': nullable(text(80)), 'why': nullable(text(600)),
-                     'at': _AT, 'round': ANYTHING}, required=('state', 'word', 'why', 'at', 'round'), open=False),
-        'motor': obj({'slot': nullable(text(80)), 'starts': text(200), 'once': boolean(), 'says': text(80), 'window_min': integer(0),
-                      'today': number(0, 1)}, required=('slot', 'starts', 'once', 'says', 'window_min', 'today'), open=False),
-        'five': items(obj({'fn': enum(*[TITLE[x] for x in FUNCTION_LAYERS]),
-                           'state': enum('ok', 'warn', 'block', 'wait', 'breath', 'off'), 'says': text(300), 'at': _AT,
-                           'share': nullable(number(0, 1))}, required=ENGINE_FIVE_ROW, open=False), 5, 5)},
-        required=ENGINE_CARD_FIELDS, open=False),
-    # W1-AUDIT adds latest and each reading's artifact, v, read, why_not_read and verdicts (M8.3, A1.17): optional, since a
-    # reading from before the journal is only its summary and its time; latest.findings are the findings the newest reading
-    # filed, so a low or medium one, which asks the owner nothing, is still shown
-    'view.audit': obj({
-        'readings': items(obj({'summary': nullable(text(4000)), 'at': _AT, 'artifact': ref('name'), 'v': integer(1),
-                               'read': boolean(), 'why_not_read': nullable(text(300)),
-                               'verdicts': map_of(enum(*ITEM_VERDICTS), keys=ITEM_RE)})),
-        'findings': items(obj({'text': nullable(text(4000)), 'at': _AT})),
-        # from W3-BOARD (M8.7): Audit's spot checks, oldest first, each in the owner's words: what it says, when, whether every check held,
-        # the checks and the findings it filed; not the minute it fell on, since Audit drops in unannounced
-        'spot_checks': items(obj({'summary': text(1000), 'at': _AT, 'ok': boolean(),
-                                  'checks': items(obj({'check': text(80), 'ok': boolean(), 'why': text(300)}, required=('check', 'ok', 'why'))),
-                                  'findings': items(ref('audit.finding'))}, required=('summary', 'at', 'ok', 'checks', 'findings'))),
-        'latest': nullable(obj({'artifact': ref('name'), 'v': integer(1), 'at': _AT,
-                                'items': items(obj({'id': ref('id.item'), 'verdict': enum(*ITEM_VERDICTS), 'method': enum('code', 'model'),
-                                                    'evidence': text(1000), 'claim': text(600)},
-                                                   required=('id', 'verdict', 'method', 'evidence', 'claim'))),
-                                'findings': items(ref('audit.finding'))},
-                               required=('artifact', 'v', 'at', 'items')))},
-        required=('readings', 'findings', 'spot_checks')),
-})
+    def clear(self):
+        super().clear()
+        self._recount()
 
-# the department record (dept.json) and who owns each key (A1.6): (key, owner, type). Only the keys a save changes are
-# checked (A1.20). Three keys are beyond A1.6's table, each with a reader or writer on main: pending_final_tell (Setup
-# writes it on the child; _reconcile_j1_tells pops it), ladder (numbers() reads the department's own ladder numbers)
-# and bounds (post() reads a department's own thread bounds).
-_DEPARTMENT = (
-    ('schema_version', 'root', integer(0)),
-    ('kind', 'root', text(40)),
-    ('ref', 'root', text(200, 1)),
-    ('name', 'root', text(200, 1)),
-    ('parent', 'root', nullable(text(200))),
-    ('created', 'root', iso()),
-    ('runtime', 'root', enum(1, 2)),
-    ('control', 'root', text(40)),
-    ('stopped', 'root', boolean()),
-    ('engines', 'root', items(ref('name'), 24, unique=True)),
-    ('artifacts', 'root', items(ref('name'), 32, unique=True)),
-    ('workflows', 'root', items(ref('workflow.registration'))),
-    ('layers', 'root', ref('root.pins')),
-    ('org', 'root', obj({})),
-    ('root', 'root', nullable(text(200))),
-    # template_ref: founding.spawn writes Setup's {id, version} (or None), wider than A1's nullable text
-    ('template_ref', 'root', nullable(any_of(text(200), obj({})))),
-    ('templates', 'root', map_of(text(80))),
-    ('founding', 'root', obj({'operation_id': text(200), 'checkpoints': items(text(40))})),
-    ('events', 'root', items(obj({'kind': text(40)}))),
-    ('pending_final_tell', 'root', obj({})),
-    ('goal', 'identity', text(2000)),
-    ('done', 'identity', text(4000)),
-    ('done_items', 'identity', items(ref('identity.done_item'), DONE_ITEMS_MAX)),
-    ('to_be_confirmed', 'identity', items(obj({'item': ref('id.item'), 'why': text(300)}, required=('item',)))),
-    ('rules', 'identity', items(ref('identity.rule'), 64)),
-    ('owner', 'identity', text(200)),
-    ('windows', 'identity', ref('setting.windows')),
-    ('identity_revision', 'identity', integer(1)),
-    ('initial_goal_context', 'identity', obj({})),
-    ('publish_asks_from', 'identity', integer(0)),
-    ('goals', 'identity', items(obj({}))),
-    ('looked_up', 'identity', items(text(2000))),
-    ('host', 'identity', text(200)),
-    ('ladders', 'identity', map_of(obj({}))),
-    ('ladder', 'identity', map_of(integer(0))),
-    ('bounds', 'identity', obj({'hops': integer(0), 'seconds': number(0), 'usd': number(0)})),
-    ('envelopes', 'priority', map_of(ref('envelope'))),          # any name: there is no membership rule
-    ('ceiling', 'priority', ref('priority.ceiling')),            # declared in wave 0; written from wave 2 (W2-PRIORITY)
-)
-DEFS.update({'department.' + key: t for key, _, t in _DEPARTMENT})
-DEFS['department'] = obj({key: dict(ref('department.' + key), **{'x-owner': owner}) for key, owner, _ in _DEPARTMENT},
-                         required=('kind', 'ref', 'name'), open=False)
+    def __ior__(self, other):
+        self.update(other)
+        return self
+
+
+DEFS = Defs(layer_models.export_all())
+VALIDATOR = 'models'      # 'models' | 'walker'. A code constant, never an environment variable; a test changes it with monkeypatch.
+#                           'walker' runs the old path (the walker over DEFS), the same sentences by the proof of qa/a4_equiv.py
 
 
 # ---- the tables (A1.4; contents A1.5 to A1.17) -----------------------------------------------------------------------
 #: every department key, its owning layer and its definition (A1.6). LEGACY_KEYS: keys no layer claims that older
 #: records may still carry; none today.
-DEPARTMENT_KEYS = {key: (owner, 'department.' + key) for key, owner, _ in _DEPARTMENT}
+def _department_keys():
+    """{key: (owning layer, definition name)}, in the interface's order, from the Owner annotation of each field of the
+    Department class: the owner of a key is written once."""
+    from layer_models import department as D
+    order = [n[len('department.'):] for n in layer_models.defs.NAMES if n.startswith('department.')]
+    return {key: (D.OWNERS[key], 'department.' + key) for key in order}
+
+
+DEPARTMENT_KEYS = _department_keys()
 LEGACY_KEYS = ()
 
 #: the records each layer owns: {layer: {kind: {def, store, writer}}}
@@ -1386,12 +1073,6 @@ LAYERS = {
 # the step's, the journey's and the ledger's constants (NATURES ... STEP_ROW, JOURNEY_KINDS ... RULING_ID, LEDGER_ACTIONS) are in layer_consts.py
 
 
-def _law(law, schema):
-    """A step field's place in the law of inheritance (A2): fixed, a child version keeps the parent's value; free, a child
-    may change it. The classification is read from DEFS['step'] by template_checks.step_law, so the law has one source."""
-    return dict(schema, **{'x-law': law})
-
-
 def step_kind(step, group='steps'):
     """The one kind a step has (ST-3): 'gate' or 'rule' by the list the recipe holds it in ('gates', 'rules'); else 'person'
     when it is born on the person's rung, 'ai' when it has a prompt, and 'code' when it has neither. `group` is 'steps' for
@@ -1406,152 +1087,8 @@ def step_kind(step, group='steps'):
     return 'person' if step.get('born') == 'P' else 'ai' if step.get('prompt') else 'code'
 
 
-DEFS['step'] = obj({
-    'id': _law('fixed', word(r'^[a-z][a-z0-9]*\.[a-z0-9_.]+$', 60)),            # '<engine prefix>.<name>', unique across all engines
-    'name': _law('free', say(160, 1)),
-    'nature': _law('fixed', enum(*NATURES)),
-    'born': _law('free', enum(*RUNGS)),
-    'ceiling': _law('free', enum('C0', 'C1', 'C2')),
-    'below': _law('free', enum('P', 'C0', 'C1')),
-    'check': _law('fixed', text(60, 1)),                                        # a name in CHECKS[layer], SHARED_CHECKS, or the legacy CHECK
-    'code': _law('free', text(60, 1)),
-    'prompt': _law('free', text(60, 1)),
-    'draft': _law('free', text(60, 1)),                                         # the answer when no model is there
-    'out': _law('fixed', map_of(any_of(text(20), items(text(40), 12, 1)))),     # {key: 'str'|'list'|'bool'|'dict'} or {key: [enum values]}
-    'answer': _law('fixed', text(40, 1)),                                       # the key whose value a table can answer (rung C2 as a table)
-    'facts': _law('free', items(text(40), 12)),
-    'stringency': _law('fixed', enum('high', 'low')),
-    'only_if': _law('fixed', text(120, 1)),                                     # '<step id>.<key>' or '<step id>.<key>=<value>'
-    'each': _law('fixed', text(60, 1)),                                         # fan out over the items another step listed
-    'side_by_side': _law('free', integer(1, 16)),
-    'files': _law('fixed', boolean()),
-    'may_end': _law('fixed', boolean()),                                        # 'not needed' ends the run ok
-    'by_hand': _law('fixed', text(600, 1)),                                     # the ask's text when the step falls to the person
-    'tools': _law('free', items(enum(*MODEL_TOOLS))),
-    'timeout_s': _law('free', number(0)),
-    'or': _law('fixed', ANYTHING),                                              # the alternative answers a step may give (cannot)
-}, required=('id', 'name', 'nature', 'born', 'check'), open=False)
-
-# the row a run writes (R.step_rows): mode is slot for an ordinary step, gate for a gate's decision (Coordination's rules are
-# written that way too, never as a mode of their own) and mark for the owner's mark. Open: every other key of STEP_ROW passes,
-# and a mark row has run None
-DEFS['step.row'] = obj({'id': text(40, 1), 'engine': text(80, 1), 'step': text(60, 1), 'mode': enum('slot', 'gate', 'mark'),
-                        'rung': nullable(enum(*RUNGS)), 'status': text(20, 1), 'check': nullable(ref('check.verdict')),
-                        'impl': nullable(ref('impl')), 'usd': number(0), 'calls': integer(0), 'started': text(40), 'ended': text(40)},
-                       required=('id', 'engine', 'step', 'status'))
-
-# an engine's start: what makes it run. $deliverable is the department's last artifact, whatever its kind (Adaptation's and
-# Audit's start); engine_runtime.start_faults stays the law (a version trigger names what it is a version of, a post trigger
-# needs a handler, a timer names its period, a blocker is a gate)
-DEFS['engine.start'] = obj({
-    'on': items(obj({'kind': enum('version', 'post', 'timer'), 'of': any_of(ref('name'), const('$deliverable')), 'checked': boolean(),
-                     'every_s': number(1)}, required=('kind',)), min_items=1),
-    'unless': items(text(60)),                                                  # gate ids
-}, required=('on',), open=False)
-
-# the department kind (L1, A3.5): a department made of a kind is an instance of it, not a child. required is inside line, which
-# a type cannot say: template_checks.kind_faults reads the two fields together, as engine_runtime.validate does
-DEFS['kind'] = obj({
-    'line': items(ref('name')), 'required': items(ref('name')), 'artifacts': items(ref('name'), 32, 1),
-    'goal': text(2000, 1), 'done': text(200), 'done_words': items(text(80), 2, 2),
-    'rules': items(obj({'tag': enum(*RULE_TAGS), 'line': text(2000, 1)}, required=('tag', 'line'))),
-    'say': text(200), 'use_case': text(400, 1), 'functions_template': word(r'^[a-z][a-z-]*$', 40),
-}, required=('line', 'artifacts', 'goal', 'rules', 'use_case', 'functions_template'), open=False)
-
-# the engine and workflow (L3, A3.5): a shipped Library template. engine.template (A1.7) is its born child, the same with a
-# required made_by (the engine Adaptation made on the owner's stamp), and is not changed. Open: Setup's converse_instruction
-# and clarification_questions pass
-DEFS['engine.library'] = obj({
-    'id': word(r'^engine/[a-z0-9][a-z0-9-]*$', 80), 'name': text(40, 1), 'version': integer(1), 'use_case': text(400, 1),
-    'description': text(400), 'skills': items(text(200)), 'reads': ref('name'), 'writes': ref('name'),
-    'start': ref('engine.start'), 'steps': items(ref('step')), 'kind': const('work'),
-    'instruction': text(4000), 'needs': items(text(40)),
-}, required=('id', 'name', 'version', 'use_case', 'kind', 'description', 'reads', 'writes', 'start', 'steps'))
-
-# the artifact (L5, A3.5): the Default template and the ten shipped ones are the base and its children; a template an app
-# brings is a child of kind app (which also names its screen and what it reads). Open: a key a later template adds passes
-DEFS['artifact.template'] = obj({
-    'id': word(r'^artifact/[a-z0-9-]+$', 60), 'name': ref('name'),
-    'kind': enum('text', 'plan', 'pages', 'build', 'site', 'record', 'app'), 'use_case': text(400, 1), 'files': items(text(80), 16),
-    'checks': items(text(60)), 'written_by': items(text(60)), 'counts_after': enum('filing', 'stamp'), 'put_back': boolean(),
-    'operations': items(ref('name')), 'made_from': items(text(80)), 'version': integer(1),
-    'screen': text(200), 'reads': items(ref('name')), 'form': text(60),         # an app template brings screen and reads; W2-CHECKS adds form
-}, required=('id', 'name', 'kind', 'use_case', 'files', 'counts_after'))
-
-# the user journey (L0, A3.6): a journey is a JSON file under journeys/ that conforms to DEFS['journey']. It carries everything
-# the site's own data file lists (the tag, today, the earlier rows kept as was, the site's status words and Code column), and
-# no row leaves it but by the owner's mark. A state is never in a definition: ROW_STATES and READ_STATES exist for the status
-# document and the read model only, and the site's claim is kept as site_status and site_says so a drift can be seen, never to
-# decide a state
-
-DEFS['journey.lane'] = obj({'id': word(LANE_ID, 16), 'label': say(40, 1), 'kind': enum(*LANE_KINDS),
-                            'function': nullable(enum(*FUNCTION_LAYERS))}, required=('id', 'label', 'kind'), open=False)
-DEFS['journey.bind'] = obj({'kind': enum(*BIND_KINDS), 'src': enum(*ACTORS), 'act': enum(*ACTS), 'word': text(40), 'dst': enum(*ACTORS),
-                            'id': text(60), 'action': text(60), 'method': enum('GET', 'POST'), 'path': text(120), 'symbol': text(80),
-                            'what': text(200), 'optional': boolean()}, required=('kind',), open=False)
-DEFS['journey.branch'] = obj({'label': say(40, 1), 'to': text(20, 1)}, required=('label', 'to'), open=False)
-DEFS['journey.step'] = obj({'n': word(STEP_N, 3), 'lane': word(LANE_ID, 16), 'short': say(60, 1), 'text': say(1500, 1),
-                            'site_function': say(200), 'site_status': enum(*SITE_STATUS), 'site_says': say(120), 'site_code': say(600),
-                            'act': enum(*STEP_ACTS), 'binds': items(ref('journey.bind'), 8), 'code': items(word(SYMBOL, 80), 12),
-                            'tests': items(word(TEST_REF, 200), 12), 'branches': items(ref('journey.branch'), 6),
-                            'child': nullable(word(JOURNEY_ID, 6)), 'read': boolean(), 'backlog': nullable(word(BACKLOG_ID, 6)),
-                            'same_as': nullable(word(SAME_AS, 24))},
-                           required=('n', 'lane', 'short', 'text'), open=False)
-DEFS['journey.outcome'] = obj({'kind': enum(*OUTCOME_KINDS), 'voice': enum(*OUTCOME_VOICES), 'golden': nullable(text(200))},
-                              required=('kind',), open=False)
-DEFS['journey.edge'] = obj({'id': word(EDGE_ID, 8), 'at': text(20, 1), 'short': say(60, 1), 'trigger': say(400, 1),
-                            'site': obj({'status': enum(*SITE_STATUS), 'text': say(1500)}, required=('status',), open=False),
-                            'code_does': say(1500), 'outcome': ref('journey.outcome'), 'binds': items(ref('journey.bind'), 8),
-                            'code': items(word(SYMBOL, 80), 12), 'tests': items(word(TEST_REF, 200), 12),
-                            'backlog': nullable(word(BACKLOG_ID, 6)), 'disposition': nullable(enum(*DISPOSITIONS)),
-                            'rulings': items(word(RULING_ID, 8), 8), 'read': boolean(), 'truncated': boolean(),
-                            'reword': nullable(say(700)), 'same_as': nullable(word(SAME_AS, 24))},
-                           required=('id', 'at', 'short', 'trigger', 'site'), open=False)
-DEFS['journey.sub'] = obj({'id': word(SUB_ID, 6), 'title': say(80, 1), 'owner': say(80), 'step': word(STEP_N, 3), 'text': say(800),
-                           'drawn': say(120)}, required=('id', 'title', 'step'), open=False)
-DEFS['journey.ruling'] = obj({'id': word(RULING_ID, 8), 'status': enum(*RULING_STATUS), 'date': nullable(iso()), 'text': say(700)},
-                             required=('id', 'status', 'text'), open=False)
-DEFS['journey.quote'] = obj({'date': nullable(iso()), 'on': text(20), 'text': say(1500, 1)}, required=('text',), open=False)
-DEFS['journey.scenario'] = obj({'id': text(40, 1), 'lane': text(40, 1), 'test': word(TEST_REF, 200), 'walks': items(word(STEP_N, 3), 20),
-                                'says': say(300)}, required=('id', 'lane', 'test'), open=False)
-DEFS['journey.backlog'] = obj({'id': word(BACKLOG_ID, 6), 'row': text(20, 1), 'smallest': say(700, 1), 'decision': text(40),
-                               'package': text(160, 1)}, required=('id', 'row', 'smallest', 'package'), open=False)
-DEFS['journey.direction'] = obj({'id': text(8, 1), 'direction': say(500, 1), 'built': say(800), 'gap': say(500),
-                                 'mark': nullable(enum(*DISPOSITIONS))}, required=('id', 'direction'), open=False)
-DEFS['journey.build_row'] = obj({'id': text(8, 1), 'when': enum('v1', 'later'), 'change': say(800, 1), 'where': say(300),
-                                 'owner': text(40), 'size': enum('S', 'M', 'L'), 'tests': items(word(TEST_REF, 200), 6),
-                                 'backlog': nullable(word(BACKLOG_ID, 6))}, required=('id', 'change'), open=False)
-# the site's earlier rows of a journey (J2's thirteen steps and twenty edges): history, kept in the site's words, with no state
-DEFS['journey.was'] = obj({'title': say(120, 1), 'lanes': items(word(LANE_ID, 16), 10), 'steps': items(ref('journey.step'), 24),
-                           'edges': items(ref('journey.edge'), 30)}, required=('title', 'steps', 'edges'), open=False)
-DEFS['journey'] = obj({'schema_version': integer(1), 'id': word(JOURNEY_ID, 6), 'title': say(120, 1), 'kind': enum(*JOURNEY_KINDS),
-                       'inside': nullable(word(JOURNEY_ID, 6)), 'bound_to': nullable(enum(*FUNCTION_LAYERS)),
-                       'serves': items(word(STEP_REF, 8), 6), 'site_serves': nullable(say(40)), 'declared': boolean(),
-                       'goal': say(300, 1), 'lead': say(1500), 'ends_when': say(400), 'flag': nullable(text(40)), 'tag': say(200),
-                       'today': obj({'text': say(1500, 1), 'sources': text(200)}, required=('text',), open=False), 'was': ref('journey.was'),
-                       'site': obj({'page': text(200), 'data_version': text(8), 'as_of': iso()}, open=False),
-                       'helper': obj({'site': text(20), 'screen': text(20), 'code': text(20)}, open=False),
-                       'lanes': items(ref('journey.lane'), 10), 'steps': items(ref('journey.step'), 24),
-                       'edges': items(ref('journey.edge'), 24), 'sub': items(ref('journey.sub'), 10),
-                       'children': items(word(JOURNEY_ID, 6), 10), 'directions': items(ref('journey.direction'), 12),
-                       'build_rows': items(ref('journey.build_row'), 12), 'rulings': items(ref('journey.ruling'), 24),
-                       'decisions': items(text(12), 24), 'quotes': items(ref('journey.quote'), 12),
-                       'scenarios': items(ref('journey.scenario'), 12), 'invariants': items(text(60), 8),
-                       'backlog': items(ref('journey.backlog'), 24), 'site_ids': items(text(32, 1), 100, unique=True)},
-                      required=('schema_version', 'id', 'title', 'kind', 'goal', 'lanes', 'steps', 'edges', 'site_ids'), open=False)
-DEFS['journey.file'] = obj({'journeys': items(ref('journey'), 8, 1)}, required=('journeys',), open=False)   # a function's file holds a list
-
-# a row's computed state and a journey's, as the status document and the read model say them: one document per journey
-# (journeys/status/<id>.json) with the hash of its own definition, so two packages never conflict on one file
-DEFS['journey.row_status'] = obj({'state': enum(*(READ_STATES + ('declared',))), 'proven_by': items(text(200)), 'failing': items(text(200)),
-                                  'site': nullable(enum(*SITE_STATUS)), 'drift': boolean()}, required=('state',), open=False)
-DEFS['journey.status'] = obj({'schema_version': integer(1), 'id': word(JOURNEY_ID, 6), 'definitions_sha': text(64, 1),
-                              'state': enum(*(JOURNEY_STATES + ('unknown',))), 'counts': map_of(integer(0)),
-                              'tests': map_of(enum('passed', 'failed', 'missing')), 'rows': map_of(ref('journey.row_status')),
-                              'drift': items(obj({'row': text(40, 1), 'site': enum(*SITE_STATUS), 'state': enum(*(READ_STATES + ('declared',)))},
-                                                 required=('row', 'site', 'state'), open=False))},
-                             required=('schema_version', 'id', 'definitions_sha', 'state', 'counts', 'tests', 'rows'), open=False)
-
+# the definitions of the step (L4), the kind (L1), the engine and workflow (L3), the artifact (L5) and the user journey (L0) are
+# the classes of layer_models.templates and layer_models.journey (A3.3, A3.5, A3.6); DEFS holds their export
 #: Identity's five recognitions of a request (task, query, directive, feedback, new idea): a verdict of its covering, not the
 #: user journeys. The key `journeys` of engine_defs/website.json and the check journey_is_known name them and are not renamed
 RECOGNITIONS = VERDICTS['identity']['journey']

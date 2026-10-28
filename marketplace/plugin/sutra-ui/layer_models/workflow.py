@@ -1,7 +1,8 @@
 """The one workflow schema (A1.14): its engines, checks and registration."""
+from pydantic import ConfigDict
 import layer_consts as K
 from .base import Open
-from .common import BARE, NULLABLE, T, I, N, B, E, L, M, Envelope, IdItem, Name
+from .common import keep_order, BARE, NULLABLE, T, I, N, B, E, L, M, Envelope, IdItem, Name
 
 
 WORKFLOW_CHECKS = [s[0] for s in K.WORKFLOW_STANDARDS] + ['workflow_meets_standards']
@@ -9,6 +10,7 @@ WORKFLOW_CHECKS = [s[0] for s in K.WORKFLOW_STANDARDS] + ['workflow_meets_standa
 
 class WorkflowEngine(Open):
     __def__ = 'workflow.engine'
+    model_config = ConfigDict(json_schema_extra=keep_order(('name', 'does', 'reads', 'writes', 'covers', 'internet', 'start', 'check', 'envelope', 'made_by', 'required', 'fit', 'level', 'confidence', 'doubt')))
     name: Name
     reads: Name
     writes: Name
@@ -35,6 +37,7 @@ class WorkflowCheck(Open):
 
 class Workflow(Open):
     __def__ = 'workflow'
+    model_config = ConfigDict(json_schema_extra=keep_order(('schema_version', 'version', 'kind', 'source', 'engines', 'deliverable', 'covers', 'covers_by', 'left_out', 'checks', 'why', 'at', 'by')))
     engines: L(WorkflowEngine, 24)
     source: E(*K.SOURCES)
     schema_version: I(1) = None
