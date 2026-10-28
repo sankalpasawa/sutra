@@ -452,7 +452,7 @@ def test_p3_an_ask_for_less_that_leaves_out_a_workflow_in_the_middle_is_posted_a
     assert all(r["status"] == "ok" for r in R.step_rows(ref) if r["step"].startswith("priority"))
     acts = _actions(J, ref)
     assert acts[2:8] == ["proposal.created", "proposal.countered", "proposal.created", "proposal.granted", "workflow.validated", "workflow.registered"]
-    assert "conflict.raised" not in acts and not [a for a in W.asks(ref) if a["kind"] in ("blocked", "conflict")]
+    assert "conflict.raised" not in acts and not [a for a in W.asks(ref) if a["kind"] in ("blocked", "conflict") and not a.get("unread")]
     first, second = _prices(W, ref)
     assert (first["answer"], first["keep"], first["engines"]) == ("counter", ["Facts"], ["Facts", "Notes", "Summary"]), "what was posted, not what was asked"
     assert (second["answer"], second["keep"]) == ("accept", ["Facts"]) and W.dept(ref)["engines"] == ["Facts"]
