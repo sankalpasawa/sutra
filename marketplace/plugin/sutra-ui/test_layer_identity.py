@@ -1364,7 +1364,8 @@ def _next_requests(R, ref):
 
 
 def _asks_of(W, ref, kind, status="pending"):
-    return [a for a in W.asks(ref) if a["kind"] == kind and a["status"] == status]
+    """The asks of a kind; a plan's blocked card is not the card for a version nobody read (_unread_ask), which has its own tests."""
+    return [a for a in W.asks(ref) if a["kind"] == kind and a["status"] == status and not a.get("unread")]
 
 
 def _four_items(W, ref):
@@ -1511,7 +1512,7 @@ def _a_next_move_for(R, W, ref, reading):
     on the owner. Returns what it is, or None for a silent end."""
     if [q for q in _next_requests(R, ref) if q["payload"].get("reading") == reading]:
         return "next"
-    pending = [a for a in W.asks(ref) if a["status"] == "pending"]
+    pending = [a for a in W.asks(ref) if a["status"] == "pending" and not a.get("unread")]       # the card for a version nobody read is not the item's move
     return pending[0]["kind"] if pending else None
 
 

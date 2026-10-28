@@ -1492,7 +1492,7 @@ def test_a9_with_the_setting_on_and_no_agent_to_shape_a_website_reshape_gets_the
     assert acts.count("workflow.blocked") == 1 and "workflow.registered" in acts, acts
     registered = W.dept(ref)["workflows"][-1]
     assert registered["engines"] == LINE and registered["source"] == "library"
-    assert not [a for a in W.asks(ref) if a["kind"] == "blocked"] and J.status(ref)["state"] != "blocked"
+    assert not [a for a in W.asks(ref) if a["kind"] == "blocked" and not a.get("unread")] and J.status(ref)["state"] != "blocked"
 
 
 def test_a9_the_librarys_draft_is_judged_as_the_librarys_line_and_only_when_it_is_the_draft(j2, monkeypatch):

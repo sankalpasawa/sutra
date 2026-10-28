@@ -167,7 +167,7 @@ def run_arm(name, arm, live=False):
             child = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
             W.run_until_idle(child, limit=300)
             for _ in range(4):                                         # the owner answers what waits, so the work goes on
-                waiting = [(a, _says(yes, a)) for a in W.asks(child) if a["status"] == "pending"]
+                waiting = [(a, _says(yes, a)) for a in W.asks(child) if a["status"] == "pending" and not a.get("options")]       # a card with ways out is chosen from
                 waiting = [(a, said) for a, said in waiting if said is not None]
                 if not waiting:
                     break

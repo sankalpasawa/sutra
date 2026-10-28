@@ -101,7 +101,9 @@ def test_m2_4a_an_audit_finding_with_no_where_fails_the_step_and_no_goal_is_reac
     assert (st["state"], st["step"], st["goal_reached"]) == ("unread", 7, False)
     node = _node(F, ref, "Audit")
     assert node["state"] == "fault" and node["word"] == "fault" and "names no where" in node["why"]
-    assert not [a for a in W.asks(ref) if a["kind"] == "finding"]                       # nothing was put to the owner
+    assert not [a for a in W.asks(ref) if a["kind"] == "finding"]                       # no finding was put to the owner
+    (card,) = [a for a in W.asks(ref) if a["status"] == "pending"]                      # but the version nobody read leaves a card (SM-6)
+    assert card["kind"] == "blocked" and card.get("unread") and "failed its check" in card["text"] and [o["id"] for o in card["options"]] == ["words", "stop"]
     W.run_until_idle(ref, limit=100)
     assert "goal.reached" not in _actions(J, ref)
 

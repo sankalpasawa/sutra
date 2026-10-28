@@ -774,7 +774,9 @@ def test_t34_a_stamp_is_option_1_and_what_identity_answers_comes_after_it(client
     live = next(x for x in s["chat"] if "is live" in x["text"])
     assert len(stamps) == 1 and ask["id"] < stamps[0]["id"] < live["id"]
     assert [a["status"] for a in m.W.asks(ref) if a["kind"] == "publish"] == ["stamped"]
-    assert s["paused"] is None
+    # nothing waits on the stamp now; the one card left is Identity's for the version nobody could read (the model is stubbed)
+    assert s["paused"] and s["paused"]["questions"][0]["question"].startswith("Live site v1 was not read"), s["paused"]
+    assert [a["kind"] for a in m.W.asks(ref) if a["status"] == "pending"] == ["blocked"]
 
 
 def test_t34_option_3_on_a_two_option_ask_is_400_and_blank_words_are_400(client, plant):

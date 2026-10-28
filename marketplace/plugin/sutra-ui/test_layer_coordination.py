@@ -177,7 +177,7 @@ def _done(j2, monkeypatch):
     """The owner stamped what waited and every engine ran: nothing waits, nothing is held."""
     W = j2[0]
     ref = _born(j2)
-    for a in [a for a in W.asks(ref) if a["status"] == "pending"]:
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and not a.get("options")]:
         W.decide_ask(ref, a["id"], True)
     W.run_until_idle(ref, limit=300)
     return ref
@@ -526,7 +526,7 @@ def test_k3_every_table_written_as_a_department_settles_validates(words, org, j2
     website_dept._write = lambda p, obj: (written.append(obj) if str(p).endswith("coordination.json") else None) or orig(p, obj)
     try:
         ref = _born(j2, words=words, org=org)
-        for a in [a for a in W.asks(ref) if a["status"] == "pending"]:
+        for a in [a for a in W.asks(ref) if a["status"] == "pending" and not a.get("options")]:
             W.decide_ask(ref, a["id"], True)
         W.run_until_idle(ref, limit=300)
     finally:

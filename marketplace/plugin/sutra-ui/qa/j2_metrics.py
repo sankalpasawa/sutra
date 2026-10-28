@@ -75,7 +75,7 @@ UNPROVEN = ("unproven", "failing", "fault")
 RID = re.compile(r"^r-[0-9a-f]{8}$")
 RANK = {"met": 0, "to_confirm": 1, "not_met": 2}                    # the worse verdict stands (A1-16); == R.VERDICT_RANK
 TARGET = {"effort": 3, "calls": 40, "usd": 3.0, "share": 0.2}       # SM-8, SM-9 (Q15, proposed), SM-11
-#: the metrics the gate's line fails on (--check): the ones the build holds at 0 (SM-6 since W3-PROOF's ruling on an unread cycle)
+#: the metrics the gate's line fails on (--check): the ones the build holds at 0 (SM-6 since Identity files a card for an unread cycle, W3P-7)
 HARD = ("SM-1", "SM-2", "SM-3", "SM-4", "SM-6", "SM-13")
 #: the metrics whose gaps are runs, posts or rows, which can run to hundreds: the text report lists the first few and a count,
 #: and the report file (--out) names them all. Every other metric names each of its gaps in the text: "and 1 more" would hide the
@@ -320,25 +320,11 @@ def sm4(depts):
               "board.jsonl: every post whose destination is the owner", posts=posts, read="%d posts to the owner" % posts)
 
 
-#: why a version stands unread when no live reader could have met it, as the reading records it (engine_runtime's audit_record). Two causes,
-#: both made by the scenario suite and neither reachable by a live cycle: (1) no model was there to read it, for the suite stubs every model
-#: (C2) and a live read decides; (2) it was not sampled, which a live cycle never says, for audit_pick samples every version in a cycle, and
-#: which the suite meets only where a test puts the old sampling rule back (test_j2.py's unsampled v4)
-NO_READER = ("no model was there to read it", "it was not sampled")
-
-
-def no_reader(d):
-    """The cycle stands unread because no live reader met it: the department's last reading is a version not read, and says one of NO_READER.
-    A reading that failed its check, or an unread cycle with no reading on the record, says a reader was there (or says nothing), and stands."""
-    last = d.readings[-1] if d.readings else None
-    return bool(last) and last.get("read") is False and any(why in str(last.get("why_not_read") or "") for why in NO_READER)
-
-
 def sm6(depts):
-    """Dead ends. W3-PROOF's ruling (the proof run carried it to W3-PROOF): a cycle that stands unread for want of a live reader (NO_READER) is not
-    a dead end of the suite, for the suite has no reader to read it with (C2) and a live read is what decides it; it is listed beside the
-    metric, not counted in it. A cycle that stands unread with a reader there, or in a state the owner cannot move, is a dead end as it was."""
-    seen, gaps, unread, ruled = 0, [], 0, []
+    """Dead ends: an end state that is not done and holds no pending ask the owner can answer. A cycle that stands unread is counted like any
+    other: Identity files a card for a version nobody read (engine_runtime._unread_ask: words, stop), so an unread cycle with no ask is a fault,
+    whatever the reason it was not read (no model, a reading that failed its check, a sampler)."""
+    seen, gaps, unread = 0, [], 0
     for d in depts:
         st = d.state.get("state")
         if st not in END_STATES:
@@ -348,21 +334,16 @@ def sm6(depts):
         if st == "blocked":
             pending = [a for a in pending if a.get("options")]
         if not pending:
-            if st == "unread" and no_reader(d):
-                ruled.append("%s: stands unread and holds no pending ask: %s, which no live cycle meets (models stubbed, C2), so a live read decides" % (
-                    d.label, d.readings[-1].get("why_not_read")))
-                continue
             unread += st == "unread"
             gaps.append("%s: stands %s and holds no pending ask%s: the owner has no next move" % (
                 d.label, st, " with options" if st == "blocked" else ""))
-    # an unread cycle with a reader there is a product gap, not this report's: J.not_read leaves it unread and files no ask
-    carried = ["%d of these stand unread with a reader there: J.not_read leaves the cycle unread and no ask is filed. Identity files an ask for an "
-               "unread cycle (a product change outside this package) before this is 0" % unread] if unread else []
+    # an unread cycle with no card is a fault of the product, not of this report: Identity files one when Audit does not read a version
+    carried = ["%d of these stand unread with no card: Identity files one (words, stop) whenever Audit does not read a version, "
+               "so a cycle that stands without it was left unread by a path that does not file it" % unread] if unread else []
     return _m("SM-6", "Dead-end states: the owner has no next move", "0", len(gaps), not gaps, gaps,
               "an end state that is not done (waiting, blocked or unread; stopped has Start) holds a pending ask; a "
-              "question the owner answers in words counts as a next move, a blocked cycle needs options; a cycle unread for want of a reader "
-              "(models stubbed, C2) or skipped by a sampler a live cycle does not have is ruled not a dead end of the suite, and listed", end_states=seen,
-              unread=unread, carried=carried, waiting=ruled, ruled=len(ruled), read="%d end states" % seen)
+              "question the owner answers in words counts as a next move, a blocked cycle needs options (an unread cycle holds "
+              "Identity's card for the version nobody read)", end_states=seen, unread=unread, carried=carried, read="%d end states" % seen)
 
 
 def real_done(d):

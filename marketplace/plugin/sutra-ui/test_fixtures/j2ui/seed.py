@@ -172,6 +172,7 @@ def read_clean(m, ref, version=1, artifact="Live site"):
     """Audit read what went out and found nothing to put right: j2_runtime.audited records it, and the goal is reached, as
     Identity says it (j2_runtime.reached records that) when it hears the reading. The department here is written by hand, so
     the reading itself is not on the record, and the page draws no per-item claim from it."""
+    m.R._unread_quiet(ref)                  # a version was read: the card for one nobody read goes quiet, as engine_runtime's read puts it away
     m.J.audited(ref, version, [], artifact=artifact, reading=dict(READING))
     m.J.reached(ref, version, artifact=artifact)
 
