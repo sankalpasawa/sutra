@@ -25,3 +25,6 @@ jsonschema>=4.17  # Apps manifest validation on import (APPS-THREATS.md X-2); ex
 # wheel, but 46.0.0 ships one cp311-abi3 macosx_10_9_universal2 wheel and its cffi pulls per-arch cp312 wheels, so the
 # cross-arch --only-binary install resolves for both arches (checked 2026-09-12 with pip download --platform, both).
 cryptography==46.0.0
+# The interface's classes (layer_models/, PRD amendment A4). Already installed through fastapi; pinned here because the
+# validator now depends on its behaviour (A4-24).
+pydantic==2.13.5
