@@ -215,3 +215,109 @@ def test_the_baseline_carries_the_machine(write_goldens, monkeypatch):
         path.write_text(json.dumps(base, indent=1) + "\n", encoding="utf-8")
     base = json.loads(path.read_text(encoding="utf-8"))
     assert base["node"] and base["cores"] and "first_byte_ms" in base
+
+
+# --------------------------------------------------------------------------------------------------------------------------- T3
+import ast
+import copy  # noqa: E402,F401
+from pydantic import ValidationError  # noqa: E402
+
+
+def test_every_chat_frame_fits_chatframe():
+    """The frames of the chat golden (both variants) and of a turn the fake agent answers fit ChatFrame."""
+    from layer_models.frames import CHAT_ADAPTER
+    chat = json.loads((FIX / "chat.golden.json").read_text(encoding="utf-8"))
+    seen = 0
+    for variant in chat.values():
+        for f in variant["frames"]:
+            CHAT_ADAPTER.validate_python(f)
+            seen += 1
+    assert seen >= 14
+    # the fake agent's own turn (qa/fake_claude_agent.py): init, a text block, a result
+    import session_runtime as sr
+    lines = [json.dumps({"type": "system", "subtype": "init", "session_id": "s", "model": "stub-model", "tools": [], "mcp_servers": []}),
+             json.dumps({"type": "assistant", "session_id": "s", "message": {"role": "assistant", "content": [{"type": "text", "text": "ack"}]}}),
+             json.dumps({"type": "result", "subtype": "success", "session_id": "s", "is_error": False, "duration_ms": 1,
+                         "num_turns": 1, "total_cost_usd": 0.0, "result": "ack"})]
+    rt = sr.SessionRuntime()
+    rt.proc = types.SimpleNamespace(stdout=_Stdout([l + "\n" for l in lines]))
+    got = []
+
+    async def emit(f):
+        got.append(f)
+
+    asyncio.run(rt.demux_turn(emit, None))
+    assert [f["type"] for f in got] == ["session", "sysinit", "token", "done"]
+    for f in got:
+        CHAT_ADAPTER.validate_python(f)
+    with pytest.raises(ValidationError):
+        CHAT_ADAPTER.validate_python({"type": "no-such-frame"})
+    with pytest.raises(ValidationError):
+        CHAT_ADAPTER.validate_python({"type": "token"})      # a token without its text
+
+
+_EMITTERS = {"emit", "send_json", "_emit", "send", "_send"}
+_SOURCES = ["app.py", "session_runtime.py", "codex_runtime.py", "acp_runtime.py", "provider_adapters.py"]
+
+
+def _emitted_types():
+    """Every frame `type` that is a constant in an argument of an emit/send_json call: a dict literal's "type", or a `type=` keyword
+    of dict(...). Types that begin with an underscore are internal to the observers and never reach the client."""
+    found = {}
+    for name in _SOURCES:
+        tree = ast.parse((HERE / name).read_text(encoding="utf-8"))
+        for n in ast.walk(tree):
+            if not (isinstance(n, ast.Call) and (getattr(n.func, "id", None) in _EMITTERS or getattr(n.func, "attr", None) in _EMITTERS)):
+                continue
+            for arg in n.args:
+                for m in ast.walk(arg):
+                    if isinstance(m, ast.Dict):
+                        for k, v in zip(m.keys, m.values):
+                            if isinstance(k, ast.Constant) and k.value == "type" and isinstance(v, ast.Constant) and isinstance(v.value, str):
+                                found.setdefault(v.value, []).append(name)
+                    elif isinstance(m, ast.Call) and getattr(m.func, "id", None) == "dict":
+                        for kw in m.keywords:
+                            if kw.arg == "type" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                                found.setdefault(kw.value.value, []).append(name)
+    return {t: s for t, s in found.items() if not t.startswith("_")}
+
+
+def test_every_emitted_type_has_a_model():
+    from layer_models.frames import CHAT_TYPES, CHAT_ADAPTER
+    emitted = _emitted_types()
+    assert len(emitted) >= 14, "the scan found too little: %s" % sorted(emitted)
+    assert "mode_note" in emitted, "the dict(note, type=...) form is scanned"
+    missing = sorted(t for t in emitted if t not in CHAT_TYPES)
+    assert missing == [], "frame types in no model: %s (from %s)" % (missing, [emitted[t][0] for t in missing])
+    # and the union holds exactly the types it names: each type validates as the frame it names
+    for t in CHAT_TYPES:
+        body = {"type": t, "text": "x"} if t in ("token", "notice") else {"type": t}
+        assert CHAT_ADAPTER.validate_python(body).type == t
+
+
+def test_the_frames_file_is_what_the_models_generate():
+    from layer_models import frames
+    on_disk = frames.SCHEMA_PATH.read_text(encoding="utf-8")
+    assert on_disk == frames.schema_text(), "run `python -m layer_models.frames --write`; never edit the file by hand"
+    doc = json.loads(on_disk)
+    assert set(doc) == {"title", "chat", "sessions", "log_tail", "added"}
+    assert set(doc["added"]) == {"models", "progress"}
+    assert frames.SCHEMA_PATH.parent.name == "models" and "layers" not in str(frames.SCHEMA_PATH)
+
+
+def test_str3_a_new_frame_is_made_once_and_dumped():
+    """Building a Models validates it; dumping it does not (a frame that was never validated dumps without a ValidationError)."""
+    from layer_models.frames import FRAME_ADAPTER, Models, Progress, frame_json
+    with pytest.raises(ValidationError):
+        Models(rev="x", keys=[])
+    with pytest.raises(ValidationError):
+        Models(rev=1, keys=[], extra_key=1)
+    m = Models(rev=15, keys=["x.client"])
+    assert json.loads(frame_json(m)) == {"rev": 15, "keys": ["x.client"]}
+    never = Models.model_construct(rev="x", keys=[])
+    assert FRAME_ADAPTER.dump_json(never, warnings=False)          # no validation on the way out
+    p = Progress(arrived=["engines"], counts={"engines": 2}, faults=[], pending=["deliverable"], done=False, bytes=10)
+    assert json.loads(frame_json(p))["counts"] == {"engines": 2}
+    # the adapter is the one built at import
+    from layer_models import frames
+    assert frames.FRAME_ADAPTER is FRAME_ADAPTER
