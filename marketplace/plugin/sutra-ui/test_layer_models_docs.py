@@ -13,6 +13,7 @@ import pytest
 HERE = Path(__file__).resolve().parent
 README = (HERE / "layer_models" / "README.md").read_text(encoding="utf-8")
 SCHEMAS_README = (HERE / "schemas" / "layers" / "README.md").read_text(encoding="utf-8")
+PRD = HERE / "design" / "PRD-FIVE-FUNCTIONS.md"
 DECISIONS = (HERE / "design" / "PRD-FIVE-FUNCTIONS-DECISIONS.md").read_text(encoding="utf-8")
 
 
@@ -42,6 +43,24 @@ def test_the_schemas_readme_names_every_file():
 
 def test_the_main_readme_has_its_section():
     assert "## The interface is pydantic" in (HERE / "README.md").read_text(encoding="utf-8")
+
+
+def test_a4_rows_are_in_the_decision_log():
+    rows = {}
+    for line in DECISIONS.splitlines():
+        m = re.match(r"^\| (A4-\d+) \|", line)
+        if m:
+            rows[m.group(1)] = [c for c in line.strip().strip("|").split(" | ")]
+    assert sorted(rows, key=lambda k: int(k[3:])) == ["A4-%d" % i for i in range(1, 32)]
+    assert all(len(r) == 5 and r[4] for r in rows.values()), [k for k, r in rows.items() if len(r) != 5 or not r[4]]
+
+
+def test_the_status_lines_say_a4_is_built():
+    a4 = (HERE / "design" / "PRD-FIVE-FUNCTIONS-A4.md").read_text(encoding="utf-8")
+    assert re.search(r"^\| \*\*status\*\* \| Final, ", a4, re.M)
+    assert re.search(r"^\| M12 \|.*\| built \|", PRD.read_text(encoding="utf-8"), re.M)
+    import layer_schema as S
+    assert S.INTERFACE_SHA[1].startswith("e23aeace") and "e23aeace" in a4
 
 
 @pytest.mark.skipif(not shutil.which("rsync"), reason="the install stage uses rsync")
