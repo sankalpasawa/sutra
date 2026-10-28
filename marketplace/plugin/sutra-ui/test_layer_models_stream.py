@@ -321,3 +321,232 @@ def test_str3_a_new_frame_is_made_once_and_dumped():
     # the adapter is the one built at import
     from layer_models import frames
     assert frames.FRAME_ADAPTER is FRAME_ADAPTER
+
+
+# --------------------------------------------------------------------------------------------------------------------------- T4
+import random  # noqa: E402
+from typing import Annotated, Any  # noqa: E402
+
+from pydantic import TypeAdapter  # noqa: E402
+
+from layer_models import stream as ST  # noqa: E402
+from layer_models.base import Closed  # noqa: E402
+from layer_models.types import Bool, Enum, Int, Items, Num, Str  # noqa: E402
+
+
+class _Eng(Closed):
+    name: Annotated[str, Str(40, 1)]
+    reads: Annotated[str, Str(40, 1)]
+    writes: Annotated[str, Str(40, 1)]
+    does: Annotated[str, Str(400)] = None
+    level: Annotated[Any, Enum(1, 2)] = None
+    confidence: Annotated[float, Num()] = None
+    covers: Annotated[list[Annotated[str, Str(8)]], Items(10)] = None
+    internet: Annotated[bool, Bool()] = None
+
+
+class _Flow(Closed):
+    schema_version: Annotated[int, Int(1, 1)]
+    source: Annotated[Any, Enum("shaped", "adapted")]
+    kind: Annotated[str, Str(40, 1)]
+    engines: Annotated[list[_Eng], Items(12, 1)]
+    deliverable: Annotated[str, Str(40, 1)]
+    covers_by: Annotated[Any, Enum("adaptation", "owner")]
+    why: Annotated[str, Str(200)] = None
+    at: Annotated[str, Str(40)] = None
+    by: Annotated[str, Str(40)] = None
+
+
+_FLOW = TypeAdapter(_Flow)
+_ENGS = TypeAdapter(list[_Eng])
+
+
+def _flow(level=1):
+    return {"schema_version": 1, "source": "shaped", "kind": "website",
+            "engines": [{"name": "Plan", "reads": "Brief", "writes": "Site plan", "does": "Plan the pages the brief asks for. " * 6,
+                         "covers": ["D1", "D2"], "internet": False},
+                        {"name": "Write", "reads": "Site plan", "writes": "Pages", "does": "Write every page in the voice. " * 6,
+                         "covers": ["D3"], "level": level, "confidence": 0.9},
+                        {"name": "Check", "reads": "Pages", "writes": "Check report", "does": "Check links, titles and words. " * 6,
+                         "covers": ["D4"]}],
+            "deliverable": "Check report", "covers_by": "adaptation", "why": "three engines, one for each stage",
+            "at": "2026-10-27T12:00:00", "by": "Adaptation"}
+
+
+def _answer(value, indent=1):
+    return "Here is the line:\n```json\n" + json.dumps(value, indent=indent) + "\n```\nThat is all."
+
+
+def _chunks(text, n):
+    return [text[i:i + n] for i in range(0, len(text), n)]
+
+
+def _run_object(text, n, reader=None):
+    r = reader or ST.ObjectReader(_FLOW, throttle=0)
+    trail = []
+    for c in _chunks(text, n):
+        trail.append((r.scanner.n + len(c), ST.Progress(**{k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)
+                                                           for k, v in vars(r.feed(c)).items()})))
+    return r, trail
+
+
+def test_list_reader_reports_each_whole_item():
+    text = json.dumps(_flow()["engines"], indent=1)
+    r = ST.ListReader(_ENGS, throttle=0)
+    seen = {}
+    for i, ch in enumerate(text, 1):
+        items = r.feed(ch)
+        seen.setdefault(len(items), i)
+    assert sorted(seen) == [0, 1, 2, 3]
+    ends = [m for m in range(len(text)) if text[m] == "}" and text[:m + 1].count("{") == text[:m + 1].count("}")]
+    assert ends == [e for e in ends] and len(ends) == 3
+    for n, at in ((1, ends[0] + 1), (2, ends[1] + 1)):
+        assert seen[n] <= at + 2, "item %d arrived whole near its closing brace (%d vs %d)" % (n, seen[n], at)
+    assert seen[1] >= ends[0] and seen[2] >= ends[1], "no item arrives before it is whole"
+    assert [e.name for e in r.feed("")] == ["Plan", "Write", "Check"] and r.progress.done
+
+
+def test_list_reader_reports_a_bad_item_one_element_late():
+    eng = _flow(level=7)["engines"]                        # element 1 has a level it cannot have
+    text = json.dumps(eng, indent=1)
+    r = ST.ListReader(_ENGS, throttle=0)
+    second_end = text.index("\n },", text.index('"Write"')) + 4          # the comma after element 1
+    third_start = text.index("{", second_end)
+    for ch in text[:third_start]:
+        r.feed(ch)
+    assert r.faults == [], "pydantic ignores every error in the last element, so the fault is not yet known"
+    assert [e.name for e in r.items] == ["Plan"], "the bad element is whole as text but is not handed back as a good item"
+    r.feed("{")
+    assert r.faults == ["$[1].level: is not one of 1, 2"], "one element late, when element 2 begins"
+    r.feed(text[third_start + 1:])
+    assert r.progress.done and r.faults == ["$[1].level: is not one of 1, 2"]
+    ok, found = ST.final(_ENGS, "x " + text)
+    assert not ok and found == r.faults
+
+
+def test_object_reader_progress_early_fault_and_final_agree():
+    wf = _flow(level=7)
+    text = _answer(wf)
+    sc = ST.Scanner()
+    sc.feed(text)
+    r, trail = _run_object(text, 24)
+    first_arrival = {}
+    for at, p in trail:
+        for k in p.arrived:
+            first_arrival.setdefault(k, at)
+    assert list(first_arrival)[:3] == ["schema_version", "source", "kind"], first_arrival
+    early = next((at for at, p in trail if p.faults), None)
+    assert early is not None and early < sc.end - 100, "the fault is found long before the end (%s of %s)" % (early, sc.end)
+    assert r.progress.faults == ["$.engines[1].level: is not one of 1, 2"]
+    assert r.progress.done and r.progress.arrived[-1] == "by" and r.progress.counts["engines"] == 3
+    ok, found = ST.final(_FLOW, text)
+    assert not ok and found == r.progress.faults
+
+
+def test_a_good_stream_never_shows_a_fault():
+    text = _answer(_flow())
+    for n in (1, 7, 24, 200):
+        r, trail = _run_object(text, n)
+        assert all(p.faults == [] for _, p in trail), n
+        assert r.progress.done
+    ok, found = ST.final(_FLOW, text)
+    assert ok and found == []
+    # the pending sentences describe what has not arrived, and are gone at the end
+    r, trail = _run_object(text, 24)
+    assert any(p.pending for _, p in trail) and trail[-1][1].pending == []
+    assert any("is missing" in s for _, p in trail for s in p.pending)
+
+
+def test_an_early_fault_is_never_withdrawn_by_the_final():
+    rng = random.Random(4)
+    for seed in range(200):
+        wf = _flow()
+        if rng.random() < 0.6:
+            e = wf["engines"][rng.randrange(3)]
+            e[rng.choice(["level", "internet", "confidence", "name", "covers"])] = rng.choice([7, "x" * 90, [1], None, 2.5, True])
+        if rng.random() < 0.2:
+            wf["source"] = "elsewhere"
+        text = _answer(wf, indent=rng.choice([None, 1, 2]))
+        n = rng.choice([1, 5, 24, 61, 300])
+        r, trail = _run_object(text, n)
+        ok, found = ST.final(_FLOW, text)
+        shown = set()
+        for _, p in trail:
+            assert shown <= set(p.faults), "seed %d: a fault was withdrawn along the way" % seed
+            shown |= set(p.faults)
+        assert shown <= set(found), "seed %d: an early fault the final does not give: %s vs %s" % (seed, shown, found)
+        assert ok == (found == []) and (not ok or not shown)
+
+
+def test_the_scanner_finds_the_end_through_a_fence_and_a_string_with_braces():
+    value = {"a": "close } and ] and \" quote \\ and { open", "b": [1, {"c": "]"}], "d": "x"}
+    body = json.dumps(value)
+    text = "Prose here.\n```json\n" + body + "\n```\ntrailing } ] text"
+    for n in (1, 3, 11, len(text)):
+        sc = ST.Scanner()
+        for c in _chunks(text, n):
+            sc.feed(c)
+        assert text[sc.start:sc.end] == body, n
+    sc = ST.Scanner()
+    sc.feed("[1, [2, 3], \"]\"]")
+    assert sc.start == 0 and sc.end == len("[1, [2, 3], \"]\"]") and sc.depth == 0 and sc.elements == 2
+    sc = ST.Scanner()
+    sc.feed("no json at all")
+    assert sc.start is None and sc.end is None
+
+
+def test_a_cut_off_stream_is_a_final_fault():
+    text = _answer(_flow())
+    cut = text[:len(text) // 2]
+    assert ST.final(_FLOW, cut) == (False, ["the answer stopped before it was whole"])
+    assert ST.final(_FLOW, "no json here") == (False, ["the answer stopped before it was whole"])
+    assert ST.final(_FLOW, "{not: json}") == (False, ["the answer is not valid JSON"])
+    r, trail = _run_object(cut, 24)
+    assert not r.progress.done
+
+
+def test_str9_the_reader_is_bounded():
+    big = "{" + ",".join('"k%d": "%s"' % (i, "x" * 1000) for i in range(5200))      # about 5 MB, never closed
+    assert len(big) > 5_000_000
+    r = ST.ObjectReader(_FLOW, throttle=0)
+    peak = 0
+    for c in _chunks(big, 64 * 1024):
+        r.feed(c)
+        peak = max(peak, r.kept)
+    assert peak <= ST.CAP and r.kept == ST.CAP and r.over
+    assert len(r.text()) == ST.CAP
+    assert r.bytes >= 5_000_000, "the byte count still counts what was not kept"
+    before = r.progress
+    r.feed("more")
+    assert r.progress is before or r.progress == before, "past the cap there is no more progress"
+    # the caller's final check on the whole text it holds still happens
+    ok, found = ST.final(_FLOW, big + "}")
+    assert not ok and found
+
+
+def test_validate_off_loop_slices_a_big_list():
+    item = TypeAdapter(_Eng)
+    good = {"name": "n", "reads": "r", "writes": "w"}
+    items = [dict(good) for _ in range(2600)]
+    items[1700] = dict(good, level=7)
+    assert ST.size_of(items) > ST.BIG
+    beats = {"n": 0}
+
+    async def beat():
+        while True:
+            await asyncio.sleep(0)
+            beats["n"] += 1
+
+    async def run():
+        t = asyncio.create_task(beat())
+        out = await ST.validate_off_loop(_ENGS, items, item_adapter=item)
+        t.cancel()
+        return out
+
+    ok, found = asyncio.run(run())
+    assert not ok and found == ["$[1700].level: is not one of 1, 2"]
+    assert beats["n"] >= 2600 // ST.SLICE, "the loop ran between the slices (%d beats)" % beats["n"]
+    # a small value is validated in place; a big one without an item adapter goes to a thread and says the same
+    assert asyncio.run(ST.validate_off_loop(_ENGS, items[:3])) == (True, [])
+    assert asyncio.run(ST.validate_off_loop(_ENGS, items)) == (False, found)
+    assert asyncio.run(ST.validate_off_loop(_ENGS, items[:3], size=ST.BIG + 1)) == (True, [])
