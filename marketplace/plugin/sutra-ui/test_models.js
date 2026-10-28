@@ -425,6 +425,50 @@ test("M9: a circle is shown before Save and Add is off; a target that is off is 
   assert.strictEqual(sv.body.rev, P.rev);
 });
 
+/* ── M10 ────────────────────────────────────────────────────────────────── */
+test("M10: try a sample: not JSON, fits, does not fit with the server's sentences, the twelve limit, a model that is off", async () => {
+  const c = await onPage();
+  click(c, { mdl: "try" });
+  type(c, "sample", "{not json");
+  click(c, { mdl: "check" }); await settle();
+  assert.ok(/That is not JSON: /.test(words(sheet(c))) && !/\d/.test(words(sheet(c)).match(/That is not JSON: [^<]*/)[0]), words(sheet(c)));
+  assert.strictEqual(posts(c, /validate/).length, 0, "nothing is sent");
+  type(c, "sample", '{"id": "C 1", "name": "", "tier": "platinum"}');
+  click(c, { mdl: "check" }); await settle();
+  const v = posts(c, /validate/)[0];
+  assert.deepStrictEqual(v.body, { key: "x.client", sample: { id: "C 1", name: "", tier: "platinum" } });
+  const w = words(sheet(c));
+  fx("validate_bad").faults.forEach(f => assert.ok(w.indexOf(words(f)) >= 0, f));
+  assert.ok(/It does not fit:/.test(w) && attrs(sheet(c), /<li>/g).length === 3);
+  const ok = await onPage({ post: (p) => p === "/api/native/_models/validate" ? Promise.resolve({ ok: true, faults: [] }) : undefined });
+  click(ok, { mdl: "try" }); type(ok, "sample", "{}"); click(ok, { mdl: "check" }); await settle();
+  assert.ok(/It fits\./.test(words(sheet(ok))));
+  const many = Array.from({ length: 15 }, (_, i) => "$.f" + i + ": is wrong");
+  const m = await onPage({ post: (p) => p === "/api/native/_models/validate" ? Promise.resolve({ ok: false, faults: many }) : undefined });
+  click(m, { mdl: "try" }); type(m, "sample", "{}"); click(m, { mdl: "check" }); await settle();
+  assert.strictEqual(attrs(sheet(m), /<li>/g).length, 13, "twelve and 'and more'");
+  assert.ok(/<li>and more<\/li>/.test(sheet(m)) && !/\$\.f12/.test(sheet(m)));
+  const off = copy(PAGE); off.state = "off";
+  const o = await onPage({ page: off });
+  click(o, { mdl: "try" });
+  assert.ok(/Client is off; this checks it anyway\./.test(words(sheet(o))));
+  /* Make an example reads the shape and fills the sample; Shape shows the schema read only with a copy button */
+  click(c, { mdl: "makeex" }); await settle();
+  assert.strictEqual(gets(c, /shape$/).length, 1);
+  assert.deepStrictEqual(JSON.parse(c.mdlState().sheet.sample), SHAPE.example);
+  click(c, { mdl: "shapetab" }); await settle();
+  assert.ok(/<pre class="mdlpre">/.test(sheet(c)) && /data-mdl="copy"/.test(sheet(c)) && !/<textarea/.test(sheet(c)));
+  click(c, { mdl: "copy" });
+  assert.strictEqual(JSON.parse(c.calls.copied).properties.name.maxLength, 80);
+  click(c, { mdl: "exampletab" }); await settle();
+  assert.ok(/<pre class="mdlpre">/.test(sheet(c)));
+  /* when a sheet is open the draft goes as spec */
+  const d = await loaded();
+  click(d, { mdl: "add" }); type(d, "label", "Zed"); d.mdlInput({ dataset: { mdlin: "base" }, value: "core:record", type: "radio" });
+  click(d, { mdl: "try" }); type(d, "sample", "{}"); click(d, { mdl: "check" }); await settle();
+  assert.strictEqual(posts(d, /validate/)[0].body.spec.name, "zed");
+});
+
 /* ── M14 ────────────────────────────────────────────────────────────────── */
 test("M14: the stylesheet block is tokens only and covers what the script emits; panel.html loads the script before the tail", () => {
   const i = css.indexOf("/* Models (A4)");
