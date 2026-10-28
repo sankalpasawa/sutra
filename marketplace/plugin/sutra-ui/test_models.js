@@ -395,6 +395,36 @@ test("M8: turning a model off says what turns off and what is kept; Turn off pos
   assert.strictEqual(u.p, "/api/native/_models/x.client/undo"); assert.deepStrictEqual(u.body, { rev: PAGE.rev });
 });
 
+/* ── M9 ─────────────────────────────────────────────────────────────────── */
+test("M9: a circle is shown before Save and Add is off; a target that is off is not offered; Add posts the model with the link", async () => {
+  const c = await onPage({}, "x.line");
+  /* Line's page: the page of the fixture stands in for it */
+  const P = copy(PAGE); P.key = "x.line"; P.name = "line"; P.label = "Line";
+  const d = await onPage({ get: (p) => p === "/api/native/_models/x.line" ? Promise.resolve(copy(P)) : undefined }, "x.line");
+  click(d, { mdl: "link" });
+  let h = sheet(d);
+  assert.ok(/value="x:order"/.test(h) && /value="x:client"/.test(h) && /value="core:envelope"/.test(h), "targets");
+  assert.ok(!/Visit note/.test(h), "a target that is off is not offered");
+  d.mdlInput({ dataset: { mdlin: "l:to" }, value: "x:order", type: "text" });
+  type(d, "l:name", "order");
+  await fire(d);
+  h = sheet(d);
+  assert.ok(/Line, Order, Line: a circle/.test(words(h)), words(h));
+  assert.ok(/data-mdl="addlink" disabled/.test(h), "Add is off");
+  d.mdlInput({ dataset: { mdlin: "l:to" }, value: "x:client", type: "text" });
+  type(d, "l:name", "client_id");
+  d.mdlInput({ dataset: { mdlin: "l:mode" }, value: "refer", type: "radio" });
+  check(d, "l:required", true);
+  await fire(d);
+  h = sheet(d);
+  assert.ok(!/data-mdl="addlink" disabled/.test(h) && /Hold it inside/.test(h) && /Point to it by its id/.test(h));
+  click(d, { mdl: "addlink" }); await settle();
+  const sv = posts(d, /x\.line$/)[0];
+  assert.ok(sv, "posted to the model");
+  assert.deepStrictEqual(sv.body.spec.links, [{ name: "client_id", label: "Client", mode: "refer", to: "x:client", required: true }]);
+  assert.strictEqual(sv.body.rev, P.rev);
+});
+
 /* ── M14 ────────────────────────────────────────────────────────────────── */
 test("M14: the stylesheet block is tokens only and covers what the script emits; panel.html loads the script before the tail", () => {
   const i = css.indexOf("/* Models (A4)");
