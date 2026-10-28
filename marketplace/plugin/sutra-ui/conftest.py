@@ -177,6 +177,13 @@ def _a_fault_of_the_interface_fails_the_test():
                     % (grew, "" if grew == 1 else "s", " | ".join(met[:3])), pytrace=False)
 
 
+def pytest_addoption(parser):
+    """A4 T1: the stream goldens are rewritten only by `--a4-write-goldens` (a pytest option, never an environment variable);
+    a normal run compares."""
+    parser.addoption("--a4-write-goldens", action="store_true", default=False,
+                     help="rewrite test_fixtures/stream/ from the code as it is (test_layer_models_stream.py)")
+
+
 _redirect_registry_home_to_temp()
 _redirect_agent_data_to_temp()
 _redirect_chats_to_temp()

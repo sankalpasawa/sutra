@@ -1068,6 +1068,17 @@ def _with_archive(rows):
 # originals, not new guesses. test_sessions_stream.py pins both.
 SESSION_POLL_S = 1.5
 SESSION_HEARTBEAT_S = 25        # keeps proxies and idle timeouts from closing it
+# A model edit reaches every open panel over this stream (A4.7.4). The bus holds one integer; the frame is made (so validated)
+# once, in _models_frame, outside the generator, and goes out dumped by an adapter built at import. The generator itself holds
+# one integer comparison per poll and the read of that integer, nothing more (test_layer_models_guard.py).
+from layer_models import bus as models_bus
+from layer_models.frames import Models as _ModelsFrame, frame_json as _frame_json
+
+
+def _models_frame(told, rev):
+    """The `models` event: the new revision and the keys that moved since the one this client was last told."""
+    return "event: models\ndata: %s\n\n" % _frame_json(_ModelsFrame(rev=rev, keys=models_bus.changed_since(told)))
+
 
 
 @app.get("/api/sessions/stream")
@@ -1076,6 +1087,7 @@ async def api_sessions_stream():
         prev = {}
         first = True
         last_beat = time.time()
+        told = models_bus.revision()
         while True:
             try:
                 cur = sr.index()
@@ -1117,6 +1129,10 @@ async def api_sessions_stream():
                     last_beat = time.time()
                     yield _sse_event("tick", {"now": int(time.time())})
             prev = cur
+            rev = models_bus.revision()
+            if rev != told:
+                yield _models_frame(told, rev)
+                told = rev
             await asyncio.sleep(SESSION_POLL_S)
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={

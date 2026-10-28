@@ -1,0 +1,778 @@
+{
+ "added": {
+  "models": {
+   "additionalProperties": false,
+   "description": "event: models on the sessions stream: a model edit reached the registry (A4.7.4).",
+   "properties": {
+    "keys": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Keys",
+     "type": "array"
+    },
+    "rev": {
+     "minimum": 0,
+     "title": "Rev",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "rev",
+    "keys"
+   ],
+   "title": "Models",
+   "type": "object"
+  },
+  "progress": {
+   "additionalProperties": false,
+   "description": "What a streamed answer has shown so far (A4.7.5): names and counts, never half a value.",
+   "properties": {
+    "arrived": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Arrived",
+     "type": "array"
+    },
+    "bytes": {
+     "title": "Bytes",
+     "type": "integer"
+    },
+    "counts": {
+     "additionalProperties": true,
+     "title": "Counts",
+     "type": "object"
+    },
+    "done": {
+     "title": "Done",
+     "type": "boolean"
+    },
+    "faults": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Faults",
+     "type": "array"
+    },
+    "pending": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Pending",
+     "type": "array"
+    }
+   },
+   "required": [
+    "arrived",
+    "counts",
+    "faults",
+    "pending",
+    "done",
+    "bytes"
+   ],
+   "title": "Progress",
+   "type": "object"
+  }
+ },
+ "chat": {
+  "$defs": {
+   "Chat": {
+    "additionalProperties": true,
+    "properties": {
+     "sutra_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sutra Id"
+     },
+     "type": {
+      "const": "chat",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Chat",
+    "type": "object"
+   },
+   "Done": {
+    "additionalProperties": true,
+    "properties": {
+     "cost_usd": {
+      "anyOf": [
+       {},
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Cost Usd"
+     },
+     "duration_ms": {
+      "anyOf": [
+       {},
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Duration Ms"
+     },
+     "num_turns": {
+      "anyOf": [
+       {},
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Num Turns"
+     },
+     "session": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Session"
+     },
+     "type": {
+      "const": "done",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Done",
+    "type": "object"
+   },
+   "Error": {
+    "additionalProperties": true,
+    "properties": {
+     "detail": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Detail"
+     },
+     "type": {
+      "const": "error",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Error",
+    "type": "object"
+   },
+   "Handed": {
+    "additionalProperties": true,
+    "properties": {
+     "type": {
+      "const": "handed",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Handed",
+    "type": "object"
+   },
+   "Joined": {
+    "additionalProperties": true,
+    "properties": {
+     "type": {
+      "const": "joined",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Joined",
+    "type": "object"
+   },
+   "ModeNote": {
+    "additionalProperties": true,
+    "properties": {
+     "type": {
+      "const": "mode_note",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "ModeNote",
+    "type": "object"
+   },
+   "Notice": {
+    "additionalProperties": true,
+    "properties": {
+     "text": {
+      "title": "Text",
+      "type": "string"
+     },
+     "type": {
+      "const": "notice",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type",
+     "text"
+    ],
+    "title": "Notice",
+    "type": "object"
+   },
+   "Provider": {
+    "additionalProperties": true,
+    "properties": {
+     "id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Id"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Name"
+     },
+     "type": {
+      "const": "provider",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Provider",
+    "type": "object"
+   },
+   "Queued": {
+    "additionalProperties": true,
+    "properties": {
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Reason"
+     },
+     "type": {
+      "const": "queued",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Queued",
+    "type": "object"
+   },
+   "Retry": {
+    "additionalProperties": true,
+    "properties": {
+     "detail": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Detail"
+     },
+     "type": {
+      "const": "retry",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Retry",
+    "type": "object"
+   },
+   "Retrying": {
+    "additionalProperties": true,
+    "properties": {
+     "attempt": {
+      "anyOf": [
+       {},
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Attempt"
+     },
+     "detail": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Detail"
+     },
+     "type": {
+      "const": "retrying",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Retrying",
+    "type": "object"
+   },
+   "Session": {
+    "additionalProperties": true,
+    "properties": {
+     "id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Id"
+     },
+     "type": {
+      "const": "session",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Session",
+    "type": "object"
+   },
+   "Start": {
+    "additionalProperties": true,
+    "properties": {
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Model"
+     },
+     "type": {
+      "const": "start",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Start",
+    "type": "object"
+   },
+   "Stopped": {
+    "additionalProperties": true,
+    "properties": {
+     "session": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Session"
+     },
+     "type": {
+      "const": "stopped",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Stopped",
+    "type": "object"
+   },
+   "Sysinit": {
+    "additionalProperties": true,
+    "properties": {
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Model"
+     },
+     "type": {
+      "const": "sysinit",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Sysinit",
+    "type": "object"
+   },
+   "Thinking": {
+    "additionalProperties": true,
+    "properties": {
+     "type": {
+      "const": "thinking",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Thinking",
+    "type": "object"
+   },
+   "Token": {
+    "additionalProperties": true,
+    "properties": {
+     "text": {
+      "title": "Text",
+      "type": "string"
+     },
+     "type": {
+      "const": "token",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type",
+     "text"
+    ],
+    "title": "Token",
+    "type": "object"
+   },
+   "Tool": {
+    "additionalProperties": true,
+    "description": "phase 'start' carries name, summary, kind; phase 'end' carries ok and output; both carry the id.",
+    "properties": {
+     "id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Id"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Name"
+     },
+     "ok": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Ok"
+     },
+     "output": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Output"
+     },
+     "phase": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Phase"
+     },
+     "type": {
+      "const": "tool",
+      "title": "Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type"
+    ],
+    "title": "Tool",
+    "type": "object"
+   }
+  },
+  "discriminator": {
+   "mapping": {
+    "chat": "#/$defs/Chat",
+    "done": "#/$defs/Done",
+    "error": "#/$defs/Error",
+    "handed": "#/$defs/Handed",
+    "joined": "#/$defs/Joined",
+    "mode_note": "#/$defs/ModeNote",
+    "notice": "#/$defs/Notice",
+    "provider": "#/$defs/Provider",
+    "queued": "#/$defs/Queued",
+    "retry": "#/$defs/Retry",
+    "retrying": "#/$defs/Retrying",
+    "session": "#/$defs/Session",
+    "start": "#/$defs/Start",
+    "stopped": "#/$defs/Stopped",
+    "sysinit": "#/$defs/Sysinit",
+    "thinking": "#/$defs/Thinking",
+    "token": "#/$defs/Token",
+    "tool": "#/$defs/Tool"
+   },
+   "propertyName": "type"
+  },
+  "oneOf": [
+   {
+    "$ref": "#/$defs/Start"
+   },
+   {
+    "$ref": "#/$defs/Session"
+   },
+   {
+    "$ref": "#/$defs/Token"
+   },
+   {
+    "$ref": "#/$defs/Thinking"
+   },
+   {
+    "$ref": "#/$defs/Tool"
+   },
+   {
+    "$ref": "#/$defs/Notice"
+   },
+   {
+    "$ref": "#/$defs/Done"
+   },
+   {
+    "$ref": "#/$defs/Error"
+   },
+   {
+    "$ref": "#/$defs/Stopped"
+   },
+   {
+    "$ref": "#/$defs/Handed"
+   },
+   {
+    "$ref": "#/$defs/Queued"
+   },
+   {
+    "$ref": "#/$defs/ModeNote"
+   },
+   {
+    "$ref": "#/$defs/Chat"
+   },
+   {
+    "$ref": "#/$defs/Provider"
+   },
+   {
+    "$ref": "#/$defs/Retry"
+   },
+   {
+    "$ref": "#/$defs/Retrying"
+   },
+   {
+    "$ref": "#/$defs/Sysinit"
+   },
+   {
+    "$ref": "#/$defs/Joined"
+   }
+  ]
+ },
+ "log_tail": {
+  "additionalProperties": true,
+  "description": "/sse/{source}: one parsed row of a governance log (the keys vary by log).",
+  "properties": {
+   "ts": {
+    "anyOf": [
+     {},
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Ts"
+   }
+  },
+  "title": "Row",
+  "type": "object"
+ },
+ "sessions": {
+  "changed": {
+   "additionalProperties": true,
+   "description": "event: changed, the sessions that moved.",
+   "properties": {
+    "sessions": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Sessions",
+     "type": "array"
+    }
+   },
+   "required": [
+    "sessions"
+   ],
+   "title": "Changed",
+   "type": "object"
+  },
+  "sync": {
+   "additionalProperties": true,
+   "description": "event: sync, the whole index first.",
+   "properties": {
+    "sessions": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Sessions",
+     "type": "array"
+    }
+   },
+   "required": [
+    "sessions"
+   ],
+   "title": "Sync",
+   "type": "object"
+  },
+  "tick": {
+   "additionalProperties": true,
+   "description": "event: tick, the keep-alive.",
+   "properties": {
+    "now": {
+     "title": "Now",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "now"
+   ],
+   "title": "Tick",
+   "type": "object"
+  },
+  "vanished": {
+   "additionalProperties": true,
+   "description": "event: vanished.",
+   "properties": {
+    "ids": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Ids",
+     "type": "array"
+    }
+   },
+   "required": [
+    "ids"
+   ],
+   "title": "Vanished",
+   "type": "object"
+  }
+ },
+ "title": "The frames the app sends (A4.7.3)"
+}

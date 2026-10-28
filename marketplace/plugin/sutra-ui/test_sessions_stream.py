@@ -153,6 +153,37 @@ class TestStreamRuns(unittest.TestCase):
         self.assertEqual(seen[0], "sync",
                          "and still served the index once it could")
 
+    def test_05_a_model_edit_adds_one_models_frame(self):
+        """A4.7.4: a model edit is told once to a client already connected, as `event: models`; a late client learns no past edit."""
+        import json
+        from layer_models import bus
+        app = self.app
+        real = app.sr.index
+        app.sr.index = lambda: {}
+        app.SESSION_HEARTBEAT_S = 3600
+
+        async def run():
+            resp = await app.api_sessions_stream()
+            body = resp.body_iterator
+            first = await asyncio.wait_for(body.__anext__(), 5)
+            rev = bus.bump(["x.client"])
+            got = []
+            for _ in range(2):
+                got.append(await asyncio.wait_for(body.__anext__(), 5))
+                if "event: models" in got[-1]:
+                    break
+            await body.aclose()
+            return first, got, rev
+
+        try:
+            first, got, rev = asyncio.run(run())
+        finally:
+            app.sr.index = real
+        self.assertTrue(first.startswith("event: sync"))
+        self.assertEqual(len(got), 1, "the very next frame after the edit is the models frame: %r" % (got,))
+        data = json.loads(got[0].split("data: ", 1)[1])
+        self.assertEqual(data, {"rev": rev, "keys": ["x.client"]})
+
 
 if __name__ == "__main__":
     unittest.main()

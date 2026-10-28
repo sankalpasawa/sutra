@@ -1,0 +1,10 @@
+{
+ "node": "Tishants-MacBook-Pro.local",
+ "cores": 10,
+ "recorded_from": "main before A4-STREAM (unchanged streams)",
+ "first_byte_ms": 1.972,
+ "first_byte_p95_ms": 2.847,
+ "gap_p99_ms": 2.381,
+ "events_per_s": 2732,
+ "mem_growth_mb": 2.755
+}

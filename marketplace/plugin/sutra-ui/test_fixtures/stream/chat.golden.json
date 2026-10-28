@@ -1,0 +1,140 @@
+{
+ "partial": {
+  "frames": [
+   {
+    "type": "session",
+    "id": "sess-golden-1"
+   },
+   {
+    "type": "sysinit",
+    "model": "stub-model",
+    "tools": 2,
+    "mcp_servers": [
+     {
+      "name": "sutra",
+      "status": "connected"
+     }
+    ],
+    "slash_commands": 1,
+    "permission_mode": "default",
+    "cwd": "/work/site"
+   },
+   {
+    "type": "token",
+    "text": "Looking "
+   },
+   {
+    "type": "token",
+    "text": "at the page."
+   },
+   {
+    "type": "thinking"
+   },
+   {
+    "type": "tool",
+    "phase": "start",
+    "id": "toolu_1",
+    "name": "Read",
+    "summary": "/work/site/index.html",
+    "command": "",
+    "caller": "direct",
+    "kind": "file_read",
+    "title": "index.html",
+    "detail": null,
+    "meta": {
+     "path": "/work/site/index.html"
+    }
+   },
+   {
+    "type": "tool",
+    "phase": "end",
+    "id": "toolu_1",
+    "ok": true,
+    "output": "<html>ok</html>"
+   },
+   {
+    "type": "token",
+    "text": " Done."
+   },
+   {
+    "type": "done",
+    "session": "sess-golden-1",
+    "duration_ms": 1234,
+    "num_turns": 2,
+    "cost_usd": 0.0123
+   }
+  ],
+  "returned": [
+   "sess-golden-1",
+   true,
+   true,
+   null,
+   false
+  ]
+ },
+ "plain": {
+  "frames": [
+   {
+    "type": "session",
+    "id": "sess-golden-1"
+   },
+   {
+    "type": "sysinit",
+    "model": "stub-model",
+    "tools": 2,
+    "mcp_servers": [
+     {
+      "name": "sutra",
+      "status": "connected"
+     }
+    ],
+    "slash_commands": 1,
+    "permission_mode": "default",
+    "cwd": "/work/site"
+   },
+   {
+    "type": "thinking"
+   },
+   {
+    "type": "token",
+    "text": "Looking at the page."
+   },
+   {
+    "type": "tool",
+    "phase": "start",
+    "id": "toolu_1",
+    "name": "Read",
+    "summary": "/work/site/index.html",
+    "command": "",
+    "caller": "direct",
+    "kind": "file_read",
+    "title": "index.html",
+    "detail": null,
+    "meta": {
+     "path": "/work/site/index.html"
+    }
+   },
+   {
+    "type": "tool",
+    "phase": "end",
+    "id": "toolu_1",
+    "ok": true,
+    "output": "<html>ok</html>"
+   },
+   {
+    "type": "done",
+    "session": "sess-golden-1",
+    "duration_ms": 1234,
+    "num_turns": 2,
+    "cost_usd": 0.0123
+   }
+  ],
+  "returned": [
+   "sess-golden-1",
+   true,
+   true,
+   null,
+   false
+  ]
+ }
+}

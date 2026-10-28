@@ -1,0 +1,12 @@
+event: sync
+data: {"sessions": [{"id": "id1", "mtime": 100, "size": 10, "agents_bytes": 0, "title": "one", "live": "idle"}, {"id": "id2", "mtime": 100, "size": 20, "agents_bytes": 0, "title": "two", "live": "idle"}]}
+
+event: changed
+data: {"sessions": [{"id": "id1", "mtime": 101, "size": 15, "agents_bytes": 0, "title": "one", "live": "idle"}]}
+
+event: vanished
+data: {"ids": ["id2"]}
+
+event: tick
+data: {"now": 1004}
+

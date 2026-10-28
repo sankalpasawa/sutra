@@ -38,6 +38,11 @@ tail -1 /tmp/sutra-suite-ledger.txt | sed "s/^/ledger and lanes: /"
 # the interface schema layer (PRD amendment A1): each test_layer_*.py file in a lane of its own, since their fixtures
 # reload modules; any test that meets a fault of the interface fails through conftest.py
 for t in test_layer_*.py; do lane $PY -m pytest -q -p no:cacheprovider "$t" > /tmp/sutra-suite-$t.txt 2>&1 || RC=1; tail -1 /tmp/sutra-suite-$t.txt | sed "s/^/$t: /"; done
+# streaming must not break (PRD amendment A4.7.7): first byte, the loop's lag with 20 streams, events a second, memory, the A/B with
+# the models event's one integer read, and a big value or a large compile beside a stream; one line of numbers and its seconds
+# (budget 20 s); the thresholds against test_fixtures/stream/baseline.json apply on the machine that baseline was taken on
+lane $PY qa/stream_bench.py --check > /tmp/sutra-suite-stream.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-stream.txt
 # the user journeys (PRD amendment A3.6): the static cases, the tests the journeys list run once (one process per file), and each
 # journey's status file compared with what they give; its last line is `journeys: <n> rows, <p> proven, <w> wanted, <f> faults`
 # and then the seconds the lane took, so that every run of the gate shows what the lane costs. The budget is three minutes added
