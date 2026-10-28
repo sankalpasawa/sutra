@@ -550,3 +550,52 @@ def test_validate_off_loop_slices_a_big_list():
     assert asyncio.run(ST.validate_off_loop(_ENGS, items[:3])) == (True, [])
     assert asyncio.run(ST.validate_off_loop(_ENGS, items)) == (False, found)
     assert asyncio.run(ST.validate_off_loop(_ENGS, items[:3], size=ST.BIG + 1)) == (True, [])
+
+
+# --------------------------------------------------------------------------------------------------------------------------- T5
+def test_str7_no_adapter_is_built_per_chunk(monkeypatch):
+    """The reader's adapter is built before the first chunk and not again: 1,000 chunks and a final build none."""
+    text = _answer(_flow(), indent=None)                        # one answer, fed as 1,000 one-character chunks
+    made = {"n": 0}
+    real = TypeAdapter.__init__
+
+    def counting(self, *a, **k):
+        made["n"] += 1
+        return real(self, *a, **k)
+
+    reader = ST.ObjectReader(_FLOW, throttle=0)
+    lreader = ST.ListReader(_ENGS, throttle=0)
+    monkeypatch.setattr(TypeAdapter, "__init__", counting)
+    assert len(text) >= 1000
+    for c in _chunks(text, 1)[:1000]:
+        reader.feed(c)
+    for c in _chunks(json.dumps(_flow()["engines"]), 1)[:1000]:
+        lreader.feed(c)
+    ST.final(_FLOW, text)
+    ST.final(_ENGS, json.dumps(_flow()["engines"]))
+    asyncio.run(ST.validate_off_loop(_ENGS, _flow()["engines"]))
+    assert made["n"] == 0, "%d adapters were built while streaming" % made["n"]
+
+
+def test_str7_an_edit_does_not_change_a_stream_in_flight():
+    """A stream takes its adapter when it starts: a registry edit between chunks changes its next stream, not this one."""
+    from layer_models import registry
+    registry.register("t5.flow", _Flow)
+    try:
+        mine = registry.adapter("t5.flow")                      # taken once, at the start
+        r = ST.ObjectReader(mine, throttle=0)
+        text = _answer(_flow(level=7))
+        verdicts = []
+        for i, c in enumerate(_chunks(text, 24)):
+            if i == 5:                                          # an edit swaps the definition for new streams
+                class _Looser(Closed):
+                    schema_version: Annotated[int, Int(1, 1)] = None
+                registry.register("t5.flow", _Looser)
+                assert registry.adapter("t5.flow") is not mine
+            verdicts.append(tuple(r.feed(c).faults))
+        assert r.progress.faults == ["$.engines[1].level: is not one of 1, 2"], "the stream kept its own rules"
+        assert ST.final(mine, text)[1] == r.progress.faults
+        assert ST.final(registry.adapter("t5.flow"), text)[0] is False         # a new stream sees the new rules (extra keys refused)
+    finally:
+        registry.DEF_CLASS.pop("t5.flow", None)
+        registry._ADAPTERS.pop("t5.flow", None)
