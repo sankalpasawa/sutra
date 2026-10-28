@@ -1874,6 +1874,7 @@ def run_engine(ref, name, inp, slot):
             filed = ctx["bag"]["audit.file"]
             if filed.get("read") is False and not filed.get("filed"):
                 J.not_read(ref, inp.get("v"), filed.get("why_not_read"), artifact=filed.get("artifact"))      # never 'clean': the cycle stays at step 7
+                _unread_ask(ref, d, inp.get("v"), filed.get("why_not_read"), filed.get("artifact"))        # and the owner has a next move
             else:
                 _j2_audit_read(ref, d, inp.get("v"), filed.get("filed"), art=filed.get("artifact"), reading=filed.get("reading"))
         elif name == "Audit" and row.get("status") == "failed" and not p and inp.get("v") is not None:
@@ -1884,6 +1885,7 @@ def run_engine(ref, name, inp, slot):
             if art:
                 audit_record(ref, slot, art, int(inp["v"]), False, why, [], [])
             J.not_read(ref, inp.get("v"), why, artifact=art)
+            _unread_ask(ref, d, inp.get("v"), why, art)
     return row
 
 
@@ -3158,8 +3160,8 @@ def identity_file(ctx, step, item):
             _line_request(ref, d, filed, thread=p["thread"])
             if organic:
                 _tell(ref, d, p, "inform", {"word": "line", "done": "Adaptation is shaping the engines your words need; Priority and Root check the line before anything runs."})
-        elif not first and live and (J._state(ref) or {}).get("state") == "blocked":
-            # the plan is blocked and the owner's new words go (M3.5): step 2 again, with Root's repairs at nought
+        elif not first and live and (J._state(ref) or {}).get("state") in ("blocked", "unread"):
+            # the plan is blocked (or its version was not read) and the owner's new words go (M3.5): step 2 again, with Root's repairs at nought
             _reopen(ref, d, filed)
         elif first and organic and not live:
             post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": filed, "objective": "shape the line the words need",
@@ -3348,9 +3350,9 @@ def _cards(rows):
     words), and where the owner said each answer."""
     ids, words = set(), set()
     for a in rows:
-        if a.get("options") and a["status"] in ("pending", "chosen"):
-            ids.add(a["id"])                              # an ask with options is a card too (M3.5); its choice is under it
-            continue
+        if a.get("options") and (a["status"] in ("pending", "chosen") or (a.get("unread") and a["status"] == "replaced")):
+            ids.add(a["id"])                              # an ask with options is a card too (M3.5); its choice is under it. The card for
+            continue                                      # a version nobody read that gave way keeps its line out of the chat, as it was on it
         if a.get("kind") != "j2_identity" or not (a["status"] == "pending" or (a["status"] == "stamped" and a.get("answered"))):
             continue
         ids.add(a["id"])
@@ -3659,8 +3661,8 @@ def identity_apply(ctx, step, item):
     if a.get("kind") == "request":
         row = _file_brief(ref, ctx["dept"], a.get("words") or "", "the owner's ask, stamped")
         J = _j2()
-        if J and J.active(ref) and (J._state(ref) or {}).get("state") == "blocked":
-            # the plan is blocked and the owner stamped the words Identity put back: their go, as a go in the chat is, so
+        if J and J.active(ref) and (J._state(ref) or {}).get("state") in ("blocked", "unread"):
+            # the plan is blocked (or its version was not read) and the owner stamped the words Identity put back: their go, as a go in the chat is, so
             # step 2 again with Root's repairs at nought, and the plan's card goes quiet with them (M3.5; found by a
             # verifier 2026-10-26: the stamp filed the words and left the plan blocked)
             _reopen(ref, W.dept(ref), a.get("words") or "")
@@ -5707,16 +5709,17 @@ def _left_out(d, why):
     return (named or items)[-1]
 
 
-def _blocked(ref, d, who, said, title, by, why, options=None):
+def _blocked(ref, d, who, said, title, by, why, options=None, state="blocked", **more):
     """The plan is blocked, and there is always a way out (PRD M3.5, screen S10): the cycle says blocked, and what
     Identity says is an ask with options, the first the one it recommends, each applied by code when the owner chooses
     it: change the plan in my words; leave an item out (a done_items ask, stamped by that choice); stop. The line names
     its card, so the chat says it once, on the card; an older card for the same plan goes quiet. `options`, when given,
     are the ways out the card offers instead of those three (at most OPTIONS_MAX, each built by W.option): a conflict's own
-    (Priority's raise, Adaptation's set-up-again; M5.4), or leaving a rule out (M9.5)."""
+    (Priority's raise, Adaptation's set-up-again; M5.4), or leaving a rule out (M9.5). `state` is what the cycle says while the
+    card is open (None leaves it as it stands: an unread version's card, _unread_ask); `more` are fields the card keeps."""
     J = _j2()
-    if J:
-        J._set(ref, state="blocked")
+    if J and state:
+        J._set(ref, state=state)
     # what the card says, in plain words before it is made (M3.6): the line that names it says the same
     w = plain_card(ref, {"text": said, "title": title, "why": str(why or "")}, "blocked")
     said, title, why = w["text"], w["title"], w["why"]
@@ -5732,10 +5735,39 @@ def _blocked(ref, d, who, said, title, by, why, options=None):
             W._put_ask(ref, dict(old, status="replaced", decided=W.now()))
     ask = W.options_ask("blocked", said, opts, title=title, who=by, why=str(why or "").strip(),
                         if_nothing="Nothing runs; the department waits for your words.",
-                        cycle_id=((J._state(ref) or {}).get("cycle_id") if J else None))
+                        cycle_id=((J._state(ref) or {}).get("cycle_id") if J else None), **more)
     ask["thread"] = _card_line(ref, d, who, ask)
     W._put_ask(ref, ask)
     return ask
+
+
+def _unread_ask(ref, d, version, why, art=None):
+    """Audit did not read a version, so the cycle stands unread and Identity says so to the owner (a rule of asking: the owner has
+    no move of their own when nothing was read, SM-6; W3P-5). It is the blocked card (words, stop) with the cycle left as it stands:
+    unread. Nothing is cleared and nothing is found. One card at a time: a newer version unread replaces the older card, and a
+    version read afterwards puts it away (_unread_quiet). Returns the ask, or None when the cycle is not unread."""
+    J = _j2()
+    try:
+        if not J or not J.active(ref) or (J._state(ref) or {}).get("state") != "unread":
+            return None
+        what = "%s v%s" % (art or "What the plan delivers", version)
+        why = str(why or "it was not read").rstrip(".")
+        opts = [W.option(W.WORDS_OPTION, "Tell me what to do about it",
+                         "the plan is shaped afresh from your words; Priority prices it and Root checks it before anything runs"),
+                W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later")]
+        return _blocked(ref, d, {"src": "Root" if d.get("root") else OWNER},
+                        "%s was not read: %s. Nothing is cleared and nothing is found. Say what you want next, or stop here." % (what, why),
+                        "%s was not read." % what, "Identity, on a version nobody read", why, options=opts, state=None,
+                        unread=True, version=version, artifact=art)
+    except Exception:  # noqa: BLE001 -- the card never fails the run it follows; the ledger already says the version was not read
+        return None
+
+
+def _unread_quiet(ref):
+    """A version was read: the card for a version nobody read has done its work, and goes quiet (replaced, not answered)."""
+    for a in W.asks(ref):
+        if a.get("unread") and a.get("kind") == "blocked" and a["status"] == "pending":
+            W._put_ask(ref, dict(a, status="replaced", decided=W.now()))
 
 
 def _card_line(ref, d, who, ask):
@@ -5903,6 +5935,8 @@ def _j2_audit_read(ref, d, version, filed, art=None, reading=None):
     What Identity says of the reading is what the reading filed: 'found nothing to put right' only when it filed nothing,
     else that it noted something that does not block (a low or a medium finding; a high one holds the goal back)."""
     J = _j2()
+    if (reading or {}).get("read"):
+        _unread_quiet(ref)                                       # a version was read: the card for one nobody read goes quiet
     if not J or not J.audited(ref, version, filed, artifact=art, reading=reading):
         return
     import layer_schema as S

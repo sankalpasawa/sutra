@@ -104,7 +104,7 @@ def _default(j2, ref="dref-answers"):
 
 
 def _stamp_all(W, ref):
-    for a in [a for a in W.asks(ref) if a["status"] == "pending"]:
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and not a.get("options")]:       # a card with ways out is chosen from, not stamped
         W.decide_ask(ref, a["id"], True)
     W.run_until_idle(ref, limit=300)
 
@@ -390,48 +390,26 @@ def test_sm6_an_end_state_that_is_not_done_needs_a_pending_ask(tmp_path, state, 
     assert not dead or "the owner has no next move" in m["gaps"][0]
 
 
-def test_sm6_a_cycle_unread_for_want_of_a_live_reader_is_ruled_not_a_dead_end_and_is_listed(tmp_path):
-    """W3-PROOF's ruling: the suite stubs every model (C2), so a cycle that stands unread because no model was there to read it is not a dead
-    end of the suite; nor is one a version the old sampling rule skipped, which a live cycle never says. Neither is counted; each is listed,
-    with its reason, under the metric, and the report says a live read decides."""
-    make(tmp_path, "dref-a", group="a", state={"state": "unread"}, asks=[], readings=[_reading(read=False, rows=[])])
-    make(tmp_path, "dref-b", group="b", state={"state": "unread"}, asks=[], readings=[dict(_reading(read=False, rows=[]), why_not_read="it was not sampled")])
-    m = M.sm6(_depts(tmp_path))
-    assert (m["value"], m["status"], m["ruled"], m["unread"]) == (0, "met", 2, 0) and m["gaps"] == [] and m["carried"] == []
-    assert len(m["waiting"]) == 2 and "no model was there to read it" in m["waiting"][0] and all("a live read decides" in w for w in m["waiting"])
-    assert "it was not sampled" in m["waiting"][1] and m["end_states"] == 2
-
-
-@pytest.mark.parametrize("why", ["its reading failed its check (the findings name no page)", "a reader there said nothing of it", None])
-def test_sm6_a_cycle_unread_with_a_reader_there_is_still_a_dead_end(tmp_path, why):
-    """The ruling is for the two causes alone: a version whose reading failed its check was met by a reader and the cycle still stands with no
-    ask; and an unread cycle with no reading on the record says nothing about a reader."""
+@pytest.mark.parametrize("why", ["no model was there to read it", "it was not sampled", "its reading failed its check (the findings name no page)", None])
+def test_sm6_an_unread_cycle_with_no_ask_is_a_dead_end_whatever_the_reason_it_was_not_read(tmp_path, why):
+    """No cause of an unread cycle is exempt: Identity files a card for a version nobody read (engine_runtime._unread_ask), so an unread cycle
+    that holds none is a dead end, with a model that was not there, a sampler, or a reading that failed its check."""
     readings = [] if why is None else [dict(_reading(read=False, rows=[]), why_not_read=why)]
     make(tmp_path, "dref-a", group="a", state={"state": "unread"}, asks=[], readings=readings)
     m = M.sm6(_depts(tmp_path))
-    assert (m["value"], m["status"], m["ruled"], m["unread"]) == (1, "gap", 0, 1) and "the owner has no next move" in m["gaps"][0]
-    assert m["waiting"] == [] and "stand unread with a reader there" in m["carried"][0]
+    assert (m["value"], m["status"], m["unread"]) == (1, "gap", 1) and "the owner has no next move" in m["gaps"][0]
+    assert "waiting" not in m and "stand unread with no card" in m["carried"][0]
 
 
-def test_sm6_the_last_reading_says_whether_the_reader_was_there(tmp_path):
-    older = _reading(rid="r-00000001", read=False, rows=[])                       # no reader, once
-    newer = dict(_reading(rid="r-00000002", v=2, read=False, rows=[]), why_not_read="its reading failed its check (a page is named twice)")
-    make(tmp_path, "dref-a", group="a", state={"state": "unread"}, asks=[], readings=[older, newer])
-    assert M.sm6(_depts(tmp_path))["value"] == 1, "the cycle stands for the later reason"
-    make(tmp_path, "dref-b", group="b", state={"state": "unread"}, asks=[], readings=[newer, older])
-    assert [g.split(" / ")[0] for g in M.sm6(_depts(tmp_path))["gaps"]] == ["a"], "and for the reason of the last one the record holds"
-    make(tmp_path, "dref-c", group="c", state={"state": "waiting"}, asks=[], readings=[older])
-    assert [g.split(" / ")[0] for g in M.sm6(_depts(tmp_path))["gaps"]] == ["a", "c"], "a waiting cycle is not ruled: only an unread one is"
+def test_sm6_an_unread_cycle_that_holds_identitys_card_is_not_a_dead_end(tmp_path):
+    card = _ask(options=[{"id": "words"}, {"id": "stop"}], kind="blocked", unread=True)
+    make(tmp_path, "dref-a", group="a", state={"state": "unread"}, asks=[card], readings=[_reading(read=False, rows=[])])
+    m = M.sm6(_depts(tmp_path))
+    assert (m["value"], m["status"], m["unread"], m["carried"]) == (0, "met", 0, []) and m["end_states"] == 1
 
 
-def test_sm6_is_0_in_the_report_and_the_text_lists_what_was_ruled(tmp_path, capsys):
-    for i in range(9):
-        make(tmp_path, "dref-%d" % i, group="t%d" % i, state={"state": "unread"}, asks=[], readings=[_reading(read=False, rows=[])])
-    assert M.main(["--records", str(tmp_path)]) == 0
-    text = capsys.readouterr().out
-    waits = [ln for ln in text.splitlines() if ln.startswith("        waits: ") and "stands unread" in ln]
-    assert len(waits) == 9 and len({ln.split(" / ")[0] for ln in waits}) == 9, "each ruled cycle is a line of its own, none cut to a count"
-    assert "SM-6  met" in text and "SM-6 0" in text.splitlines()[-1] and "gaps named" not in text.splitlines()[-1].split("SM-6")[0]
+def test_sm6_there_is_no_exemption_left_in_the_metric():
+    assert not hasattr(M, "NO_READER") and not hasattr(M, "no_reader")
 
 
 def _done_dept(tmp_path, ref, kind, **kw):
@@ -762,8 +740,8 @@ def test_the_text_report_says_how_each_metric_was_read_and_lists_the_waiting_jou
 
 
 def test_the_text_report_names_every_dead_end_not_a_count_of_them_and_says_what_is_carried(tmp_path, capsys):
-    """Nine departments stand unread with no ask and a reader there (the proof run found nine that stood so with no reader, which W3-PROOF
-    ruled, below). 'And 1 more' hid one of them, and the gate shows only the last line, so the text report lists every gap of a metric
+    """Nine departments stand unread with no ask (the proof run found nine that stood so, before Identity filed a card for them).
+    'And 1 more' hid one of them, and the gate shows only the last line, so the text report lists every gap of a metric
     that counts departments; the runs of SM-3 can run to hundreds and keep their cap, and --out names them all."""
     for i in range(9):
         make(tmp_path, "dref-%d" % i, group="t%d" % i, state={"state": "unread"}, asks=[])
@@ -775,7 +753,7 @@ def test_the_text_report_names_every_dead_end_not_a_count_of_them_and_says_what_
     assert len(sm6) == 9 and len({ln.split(" / ")[0] for ln in sm6}) == 9, "each of the nine is a line of its own"
     assert "more" not in text.split("SM-7")[0].split("SM-6")[1], "no 'and N more' under SM-6"
     assert text.count("ran Gone (run") == 8 and "and 4 more (the report file, --out, names every one)" in text, "a long list keeps its cap"
-    assert "carried: 9 of these stand unread with a reader there" in text and "no ask is filed" in text
+    assert "carried: 9 of these stand unread with no card" in text
     assert text.splitlines()[-1].startswith("proof run: SM-1 0, SM-3 12, SM-4 0, SM-6 9, SM-13 0;")
     rep = json.loads(out.read_text())
     by = {m["id"]: m for m in rep["metrics"]}

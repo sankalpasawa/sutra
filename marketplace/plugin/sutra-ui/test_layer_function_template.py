@@ -636,7 +636,7 @@ def _run_offline(j2, monkeypatch, words, org):
     child = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
     W.run_until_idle(child, limit=300)
     for _ in range(4):                                                         # the owner stamps what waits, so the reading is made
-        asks = [a for a in W.asks(child) if a["status"] == "pending"]
+        asks = [a for a in W.asks(child) if a["status"] == "pending" and not a.get("options")]       # a card with ways out is chosen from
         if not asks:
             break
         for a in asks:

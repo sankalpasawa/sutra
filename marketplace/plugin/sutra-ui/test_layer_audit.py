@@ -91,7 +91,7 @@ def _default(j2, ref="dref-answers"):
 
 
 def _stamp_all(W, ref, kind=None):
-    for a in [a for a in W.asks(ref) if a["status"] == "pending" and (kind is None or a["kind"] == kind)]:
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and not a.get("options") and (kind is None or a["kind"] == kind)]:      # a card with ways out is chosen from, not stamped
         W.decide_ask(ref, a["id"], True)
     W.run_until_idle(ref, limit=300)
 

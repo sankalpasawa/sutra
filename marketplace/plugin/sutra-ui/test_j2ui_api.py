@@ -318,6 +318,7 @@ def test_c55_a_done_when_the_owner_is_asked_to_stamp_reads_the_same_on_the_pause
     ref = born()
     assert client.post(url("api/say", ref), json={"text": "Option 1"}).json() == {"ok": True}
     mods.W.run_until_idle(ref, limit=300)
+    mods.R._unread_quiet(ref)                      # the version the stamp sent live was read, so no card for an unread one stands before the done-when
     said_by_owner = ("Never link /private/area from the menu and always keep /home/about first. Plan B:/pricing stays. "
                      "The done-when: /private/members is only for members")
     mods.W.owner_ask(born.root, said_by_owner, about=ref)

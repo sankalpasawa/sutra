@@ -1383,7 +1383,7 @@ def test_f12_a_waiting_engine_names_what_it_waits_for_and_the_one_with_the_turn_
     assert rows["Publish"]["starts"] == "after a Build that passed" and rows["Plan"]["starts"] == "after a new Brief"
     assert rows["Plan"]["last"]["wrote"] == "Site plan v1" and rows["Plan"]["window_min"] == 15
     assert c["holds"] == [{"engine": "Publish", "why": "waits for the stamp"}]
-    for a in [a for a in W.asks(ref) if a["status"] == "pending"]:
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and not a.get("options")]:
         W.decide_ask(ref, a["id"], True)
     W.run_until_idle(ref, limit=300)
     assert [r["state"] for r in F.coordination(ref)["timetable"]] == ["ran"] * 4 and F.coordination(ref)["holds"] == [], "nothing waiting"

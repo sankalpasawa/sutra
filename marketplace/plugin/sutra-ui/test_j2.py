@@ -96,7 +96,7 @@ def _work(W, ref):
 
 
 def _stamp_all(W, ref, approve=True, kind=None):
-    for a in [a for a in W.asks(ref) if a["status"] == "pending" and (kind is None or a["kind"] == kind)]:
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and not a.get("options") and (kind is None or a["kind"] == kind)]:      # a card with ways out is chosen from, not stamped
         W.decide_ask(ref, a["id"], approve)
     W.run_until_idle(ref, limit=300)
 
@@ -245,6 +245,64 @@ def test_m0_3_an_offline_department_never_reaches_its_goal(j2):
     assert filed and filed[-1]["by"] == "offline draft"
     W.run_until_idle(ref, limit=100)
     assert "goal.reached" not in _actions(J, ref) and _actions(J, ref).count("audit.not_read") == 1
+
+
+def _unread_cards(W, ref, status="pending"):
+    return [a for a in W.asks(ref) if a.get("unread") and a["status"] == status]
+
+
+def test_m0_3_a_version_nobody_read_leaves_the_owner_one_card_with_words_and_stop(j2):
+    """SM-6: an unread cycle with no ask is a dead end. Identity files one card for the version (kind blocked, words and stop), says it on
+    the board once, and leaves the cycle unread; nothing is cleared and nothing is found."""
+    import layer_schema as S
+    W, R, J, _ = j2
+    ref = _born(j2)
+    _stamp_all(W, ref)
+    assert J.status(ref)["state"] == "unread"
+    (card,) = _unread_cards(W, ref)
+    assert card["kind"] == "blocked" and [o["id"] for o in card["options"]] == ["words", "stop"] and card["engine"] == "Identity"
+    assert card["text"].startswith("Live site v1 was not read: no model was there to read it.") and card["version"] == 1
+    assert S.validate("identity.ask", card) == [] and card["thread"] and all(S.validate("option", o) == [] for o in card["options"])
+    assert not re.search(r"\b(?:grant|counter|refus|charter|audit)\b", " ".join([card["text"], card["title"]]), re.I)
+    assert [e["action"] for e in J.events(ref)].count("audit.not_read") == 1 and "goal.reached" not in _actions(J, ref)
+    W.run_until_idle(ref, limit=100)
+    assert len(_unread_cards(W, ref)) == 1, "a quiet department files no second card"
+
+
+def test_m0_3_stop_on_the_unread_card_stops_the_department_and_the_card_waits_again(j2):
+    W, R, J, _ = j2
+    ref = _born(j2)
+    _stamp_all(W, ref)
+    (card,) = _unread_cards(W, ref)
+    W.choose_option(ref, card["id"], "stop")
+    W.run_until_idle(ref, limit=50)                # Identity applies the choice as a step of its own
+    assert W.dept(ref)["stopped"] is True and J.status(ref)["state"] == "stopped"
+    (again,) = _unread_cards(W, ref)
+    assert again["id"] == card["id"] and again["chosen"] is None and [o["id"] for o in W.offered(W.dept(ref), again)] == ["words"]
+
+
+def test_m0_3_words_on_the_unread_card_shape_the_plan_afresh_and_the_card_goes_quiet(j2):
+    W, R, J, _ = j2
+    ref = _born(j2)
+    _stamp_all(W, ref)
+    (card,) = _unread_cards(W, ref)
+    W.choose_option(ref, card["id"], "words", "Read it again, and check the fees page first")
+    W.run_until_idle(ref, limit=50)
+    assert "cycle.reopened" in _actions(J, ref), "the plan is shaped afresh from the owner's words (step 2 again)"
+    assert not _unread_cards(W, ref) or all(a["id"] != card["id"] for a in _unread_cards(W, ref)), "the first card was answered"
+
+
+def test_m0_3_a_version_read_afterwards_puts_the_unread_card_away(j2):
+    W, R, J, _ = j2
+    ref = _born(j2)
+    _stamp_all(W, ref)
+    (card,) = _unread_cards(W, ref)
+    R._j2_audit_read(ref, W.dept(ref), 2, 0, art="Live site", reading={"read": False})
+    assert len(_unread_cards(W, ref)) == 1, "a version that was not read puts nothing away"
+    R._j2_audit_read(ref, W.dept(ref), 2, 0, art="Live site", reading={"read": True, "met": [], "not_met": [], "to_confirm": [], "high": False})
+    assert not _unread_cards(W, ref) and [a["status"] for a in W.asks(ref) if a["id"] == card["id"]] == ["replaced"]
+    assert not [t for t in R.chat_view(ref)["turns"] if t.get("word") == "blocked"], "its line goes with it"
+    J._set(ref, state="pursuing")                  # the reading above was made by hand: the cycle goes on, so the record leaves no unread cycle with no card
 
 
 def test_m0_3_every_version_is_read_in_a_cycle_and_an_unsampled_v4_is_never_clean(j2, monkeypatch):
