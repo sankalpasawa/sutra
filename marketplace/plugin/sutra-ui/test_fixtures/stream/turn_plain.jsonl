@@ -1,0 +1,5 @@
+{"type": "system", "subtype": "init", "session_id": "sess-golden-1", "model": "stub-model", "tools": ["Read", "Bash"], "mcp_servers": [{"name": "sutra", "status": "connected"}], "slash_commands": ["/help"], "permissionMode": "default", "cwd": "/work/site"}
+{"type": "assistant", "session_id": "sess-golden-1", "message": {"role": "assistant", "content": [{"type": "thinking", "thinking": "private"}]}}
+{"type": "assistant", "session_id": "sess-golden-1", "message": {"role": "assistant", "content": [{"type": "text", "text": "Looking at the page."}, {"type": "tool_use", "id": "toolu_1", "name": "Read", "input": {"file_path": "/work/site/index.html"}, "caller": {"type": "direct"}}]}}
+{"type": "user", "session_id": "sess-golden-1", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "<html>ok</html>", "is_error": false}]}}
+{"type": "result", "subtype": "success", "session_id": "sess-golden-1", "is_error": false, "duration_ms": 1234, "num_turns": 2, "total_cost_usd": 0.0123, "result": "Looking at the page. Done."}
