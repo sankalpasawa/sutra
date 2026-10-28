@@ -39,7 +39,17 @@ def sentences(name, value):
 def validate(name, value):
     """What is wrong with `value` as the definition `name`: [] when it fits. Never builds an adapter, a model or a schema per
     call (A4.7.2): the adapter of a name is built the first time and kept."""
+    from . import hooks
+    if name in hooks.HOOKS:
+        routed = hooks.route(name, value)
+        if routed is not None:
+            return routed
     return sentences(name, value)[0]
+
+
+def describe_models():
+    from .schema import describe_models as _d
+    return _d()
 
 
 def export_all():

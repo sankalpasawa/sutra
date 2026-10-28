@@ -56,6 +56,8 @@ def spec(name, base, fields, **k):
 
 @pytest.fixture
 def world(tmp_path, monkeypatch):
+    import layer_models
+    layer_models.load()                  # the real definitions first, so the stand-ins below are not replaced by a later load
     monkeypatch.setenv('SUTRA_NATIVE_DEPT_HOME', str(tmp_path / 'departments'))
     monkeypatch.setattr(store, 'MIN_GAP', 0)
     for n, c in (('artifact.template', Template), ('kind', Kind), ('journey', Journey), ('journey.file', JourneyFile)):

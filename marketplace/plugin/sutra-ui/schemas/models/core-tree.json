@@ -1,6 +1,1375 @@
 {
   "schema_version": 1,
-  "classes": [],
+  "classes": [
+    {
+      "name": "act.answer",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "entry"
+      ]
+    },
+    {
+      "name": "act.any",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word"
+      ]
+    },
+    {
+      "name": "act.ask",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "objective",
+        "output",
+        "may_read",
+        "boundaries"
+      ]
+    },
+    {
+      "name": "act.born",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "engines",
+        "version",
+        "full",
+        "grow",
+        "before"
+      ]
+    },
+    {
+      "name": "act.conflict",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "engines",
+        "source",
+        "words",
+        "why",
+        "bound",
+        "for_",
+        "options",
+        "round",
+        "correction"
+      ]
+    },
+    {
+      "name": "act.doubt",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "engine",
+        "doubt",
+        "fallback",
+        "confidence",
+        "cannot"
+      ]
+    },
+    {
+      "name": "act.finding",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "claim",
+        "severity",
+        "where",
+        "page",
+        "item",
+        "v",
+        "findings"
+      ]
+    },
+    {
+      "name": "act.line",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "engines",
+        "source",
+        "words",
+        "for_",
+        "covers",
+        "doubt",
+        "confidence",
+        "fit",
+        "keep",
+        "why"
+      ]
+    },
+    {
+      "name": "act.line_request",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "words",
+        "objective",
+        "faults",
+        "answer",
+        "doubt",
+        "fallback",
+        "go_on",
+        "practices"
+      ]
+    },
+    {
+      "name": "act.next",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "items",
+        "reading",
+        "findings",
+        "round"
+      ]
+    },
+    {
+      "name": "act.question",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "entry"
+      ]
+    },
+    {
+      "name": "act.reading",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "reading",
+        "artifact",
+        "v",
+        "read",
+        "met",
+        "not_met",
+        "to_confirm",
+        "findings",
+        "high"
+      ]
+    },
+    {
+      "name": "act.round",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "round",
+        "correction",
+        "fixes",
+        "covers",
+        "estimate",
+        "why",
+        "ceiling"
+      ]
+    },
+    {
+      "name": "act.stamp",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "ask"
+      ]
+    },
+    {
+      "name": "act.tell",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "done",
+        "card"
+      ]
+    },
+    {
+      "name": "act.verdict",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "answer",
+        "why"
+      ]
+    },
+    {
+      "name": "act.words",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "word",
+        "words",
+        "objective",
+        "output",
+        "may_read",
+        "boundaries",
+        "request",
+        "about",
+        "answers"
+      ]
+    },
+    {
+      "name": "adaptation.idea",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "reflected",
+        "shapes",
+        "state",
+        "at",
+        "words",
+        "question",
+        "engine",
+        "priced",
+        "why"
+      ]
+    },
+    {
+      "name": "adaptation.ladder",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "engine",
+        "step",
+        "rung",
+        "held",
+        "history",
+        "form",
+        "since",
+        "since_row",
+        "pending",
+        "trial"
+      ]
+    },
+    {
+      "name": "adaptation.round",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "round",
+        "correction",
+        "covers",
+        "status",
+        "schema_version",
+        "at",
+        "cycle_id",
+        "fixes",
+        "estimate",
+        "reading",
+        "brief_v",
+        "thread",
+        "bound"
+      ]
+    },
+    {
+      "name": "artifact.template",
+      "base": null,
+      "abstract": false,
+      "extensible": true,
+      "nestable": false,
+      "fields": [
+        "id",
+        "name",
+        "kind",
+        "use_case",
+        "files",
+        "counts_after",
+        "checks",
+        "written_by",
+        "put_back",
+        "operations",
+        "made_from",
+        "version",
+        "screen",
+        "reads",
+        "form"
+      ]
+    },
+    {
+      "name": "audit.finding",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "severity",
+        "claim",
+        "where",
+        "item",
+        "went_to",
+        "ask",
+        "at"
+      ]
+    },
+    {
+      "name": "audit.reading",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "v",
+        "artifact",
+        "read",
+        "items",
+        "at",
+        "schema_version",
+        "cycle_id",
+        "round",
+        "why_not_read",
+        "findings"
+      ]
+    },
+    {
+      "name": "audit.reading_item",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "subject",
+        "claim",
+        "evidence",
+        "method",
+        "verdict",
+        "severity"
+      ]
+    },
+    {
+      "name": "audit.spot_check",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "at",
+        "checks",
+        "findings",
+        "schema_version",
+        "minute"
+      ]
+    },
+    {
+      "name": "check.verdict",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "ok",
+        "notes"
+      ]
+    },
+    {
+      "name": "coordination.left_out",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "engine",
+        "in_line",
+        "since"
+      ]
+    },
+    {
+      "name": "coordination.question",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "schema_",
+        "id",
+        "asked_by",
+        "to",
+        "about",
+        "question",
+        "status",
+        "used_by",
+        "answer",
+        "answered_by",
+        "reason",
+        "artifact_update",
+        "cycle",
+        "slot",
+        "attempt",
+        "run",
+        "answered_from"
+      ]
+    },
+    {
+      "name": "coordination.slot",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "engine",
+        "on",
+        "of",
+        "checked",
+        "every_s",
+        "window_min",
+        "since"
+      ]
+    },
+    {
+      "name": "coordination.table",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "order",
+        "line",
+        "schema_version",
+        "functions",
+        "edges",
+        "left_out",
+        "grown",
+        "registered",
+        "timetable",
+        "by",
+        "since",
+        "why"
+      ]
+    },
+    {
+      "name": "department",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "kind",
+        "ref",
+        "name",
+        "schema_version",
+        "parent",
+        "created",
+        "runtime",
+        "control",
+        "stopped",
+        "engines",
+        "artifacts",
+        "workflows",
+        "layers",
+        "org",
+        "root",
+        "template_ref",
+        "templates",
+        "founding",
+        "events",
+        "pending_final_tell",
+        "goal",
+        "done",
+        "done_items",
+        "to_be_confirmed",
+        "rules",
+        "owner",
+        "windows",
+        "identity_revision",
+        "initial_goal_context",
+        "publish_asks_from",
+        "goals",
+        "looked_up",
+        "host",
+        "ladders",
+        "ladder",
+        "bounds",
+        "envelopes",
+        "ceiling"
+      ]
+    },
+    {
+      "name": "department.bounds",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "hops",
+        "seconds",
+        "usd"
+      ]
+    },
+    {
+      "name": "department.founding",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "operation_id",
+        "checkpoints"
+      ]
+    },
+    {
+      "name": "engine.library",
+      "base": null,
+      "abstract": false,
+      "extensible": true,
+      "nestable": false,
+      "fields": [
+        "id",
+        "name",
+        "version",
+        "use_case",
+        "kind",
+        "description",
+        "reads",
+        "writes",
+        "start",
+        "steps",
+        "skills",
+        "instruction",
+        "needs"
+      ]
+    },
+    {
+      "name": "engine.start",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "on",
+        "unless"
+      ]
+    },
+    {
+      "name": "engine.template",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "name",
+        "use_case",
+        "made_by",
+        "version",
+        "description",
+        "instruction",
+        "reads",
+        "writes",
+        "start",
+        "steps",
+        "needs",
+        "kind",
+        "form"
+      ]
+    },
+    {
+      "name": "envelope",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": true,
+      "fields": [
+        "calls",
+        "usd"
+      ]
+    },
+    {
+      "name": "identity.ask",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "kind",
+        "status",
+        "text",
+        "created",
+        "decided",
+        "by",
+        "engine",
+        "thread",
+        "options",
+        "chosen",
+        "items",
+        "cycle_id",
+        "doubt"
+      ]
+    },
+    {
+      "name": "identity.done_item",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": true,
+      "fields": [
+        "id",
+        "text",
+        "how",
+        "level",
+        "confirm"
+      ]
+    },
+    {
+      "name": "identity.rule",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "line",
+        "id",
+        "tag",
+        "since",
+        "from_",
+        "scope"
+      ]
+    },
+    {
+      "name": "instructions",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "schema_version",
+        "values"
+      ]
+    },
+    {
+      "name": "journey",
+      "base": null,
+      "abstract": false,
+      "extensible": true,
+      "nestable": false,
+      "fields": [
+        "schema_version",
+        "id",
+        "title",
+        "kind",
+        "goal",
+        "lanes",
+        "steps",
+        "edges",
+        "site_ids",
+        "inside",
+        "bound_to",
+        "serves",
+        "site_serves",
+        "declared",
+        "lead",
+        "ends_when",
+        "flag",
+        "tag",
+        "today",
+        "was",
+        "site",
+        "helper",
+        "sub",
+        "children",
+        "directions",
+        "build_rows",
+        "rulings",
+        "decisions",
+        "quotes",
+        "scenarios",
+        "invariants",
+        "backlog"
+      ]
+    },
+    {
+      "name": "journey.backlog",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "row",
+        "smallest",
+        "package",
+        "decision"
+      ]
+    },
+    {
+      "name": "journey.bind",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "kind",
+        "src",
+        "act",
+        "word",
+        "dst",
+        "id",
+        "action",
+        "method",
+        "path",
+        "symbol",
+        "what",
+        "optional"
+      ]
+    },
+    {
+      "name": "journey.branch",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "label",
+        "to"
+      ]
+    },
+    {
+      "name": "journey.build_row",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "change",
+        "when",
+        "where",
+        "owner",
+        "size",
+        "tests",
+        "backlog"
+      ]
+    },
+    {
+      "name": "journey.direction",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "direction",
+        "built",
+        "gap",
+        "mark"
+      ]
+    },
+    {
+      "name": "journey.edge",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "at",
+        "short",
+        "trigger",
+        "site",
+        "code_does",
+        "outcome",
+        "binds",
+        "code",
+        "tests",
+        "backlog",
+        "disposition",
+        "rulings",
+        "read",
+        "truncated",
+        "reword",
+        "same_as"
+      ]
+    },
+    {
+      "name": "journey.file",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "journeys"
+      ]
+    },
+    {
+      "name": "journey.lane",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "label",
+        "kind",
+        "function"
+      ]
+    },
+    {
+      "name": "journey.outcome",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "kind",
+        "voice",
+        "golden"
+      ]
+    },
+    {
+      "name": "journey.quote",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "text",
+        "date",
+        "on"
+      ]
+    },
+    {
+      "name": "journey.row_status",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "state",
+        "proven_by",
+        "failing",
+        "site",
+        "drift"
+      ]
+    },
+    {
+      "name": "journey.ruling",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "status",
+        "text",
+        "date"
+      ]
+    },
+    {
+      "name": "journey.scenario",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "lane",
+        "test",
+        "walks",
+        "says"
+      ]
+    },
+    {
+      "name": "journey.status",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "schema_version",
+        "id",
+        "definitions_sha",
+        "state",
+        "counts",
+        "tests",
+        "rows",
+        "drift"
+      ]
+    },
+    {
+      "name": "journey.step",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "n",
+        "lane",
+        "short",
+        "text",
+        "site_function",
+        "site_status",
+        "site_says",
+        "site_code",
+        "act",
+        "binds",
+        "code",
+        "tests",
+        "branches",
+        "child",
+        "read",
+        "backlog",
+        "same_as"
+      ]
+    },
+    {
+      "name": "journey.sub",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "title",
+        "step",
+        "owner",
+        "text",
+        "drawn"
+      ]
+    },
+    {
+      "name": "journey.was",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "title",
+        "steps",
+        "edges",
+        "lanes"
+      ]
+    },
+    {
+      "name": "kind",
+      "base": null,
+      "abstract": false,
+      "extensible": true,
+      "nestable": false,
+      "fields": [
+        "line",
+        "artifacts",
+        "goal",
+        "rules",
+        "use_case",
+        "functions_template",
+        "required",
+        "done",
+        "done_words",
+        "say"
+      ]
+    },
+    {
+      "name": "option",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": true,
+      "fields": [
+        "id",
+        "label",
+        "cost",
+        "kind",
+        "params"
+      ]
+    },
+    {
+      "name": "option.pin",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "layer",
+        "impl"
+      ]
+    },
+    {
+      "name": "option.raise",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "what",
+        "engine",
+        "calls",
+        "usd",
+        "rounds"
+      ]
+    },
+    {
+      "name": "option.words",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "words"
+      ]
+    },
+    {
+      "name": "priority.ceiling",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "rounds",
+        "calls",
+        "usd",
+        "start",
+        "raised",
+        "at"
+      ]
+    },
+    {
+      "name": "priority.estimate",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "calls",
+        "usd",
+        "basis",
+        "runs",
+        "per_engine"
+      ]
+    },
+    {
+      "name": "priority.price",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "at",
+        "proposal",
+        "estimate",
+        "room",
+        "answer",
+        "why",
+        "schema_version",
+        "id",
+        "cycle_id",
+        "round",
+        "thread",
+        "engines",
+        "remaining",
+        "keep",
+        "indices"
+      ]
+    },
+    {
+      "name": "root.pins",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "root",
+        "identity",
+        "adaptation",
+        "priority",
+        "coordination",
+        "audit"
+      ]
+    },
+    {
+      "name": "step",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "name",
+        "nature",
+        "born",
+        "check",
+        "ceiling",
+        "below",
+        "code",
+        "prompt",
+        "draft",
+        "out",
+        "answer",
+        "facts",
+        "stringency",
+        "only_if",
+        "each",
+        "side_by_side",
+        "files",
+        "may_end",
+        "by_hand",
+        "tools",
+        "timeout_s",
+        "or_"
+      ]
+    },
+    {
+      "name": "step.row",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "engine",
+        "step",
+        "status",
+        "mode",
+        "rung",
+        "check",
+        "impl",
+        "usd",
+        "calls",
+        "started",
+        "ended"
+      ]
+    },
+    {
+      "name": "view.adaptation",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "proposal",
+        "root_checks",
+        "rounds",
+        "coverage",
+        "round"
+      ]
+    },
+    {
+      "name": "view.adaptation.round",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "round",
+        "correction",
+        "covers",
+        "status",
+        "fixes",
+        "said",
+        "estimate",
+        "at",
+        "reading",
+        "brief_v"
+      ]
+    },
+    {
+      "name": "view.audit",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "readings",
+        "findings",
+        "spot_checks",
+        "latest"
+      ]
+    },
+    {
+      "name": "view.coordination",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "line",
+        "registered",
+        "timetable",
+        "left_out",
+        "holds",
+        "handoffs",
+        "chain",
+        "alarms",
+        "ties",
+        "questions"
+      ]
+    },
+    {
+      "name": "view.engine_card",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "engine",
+        "head",
+        "motor",
+        "five"
+      ]
+    },
+    {
+      "name": "view.identity",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "standard",
+        "goal",
+        "done",
+        "done_items",
+        "rules",
+        "open_question",
+        "conflicts"
+      ]
+    },
+    {
+      "name": "view.priority",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "bargains",
+        "envelopes",
+        "prices",
+        "ceiling",
+        "spend_by_round"
+      ]
+    },
+    {
+      "name": "workflow",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "engines",
+        "source",
+        "schema_version",
+        "version",
+        "kind",
+        "deliverable",
+        "covers",
+        "covers_by",
+        "left_out",
+        "checks",
+        "why",
+        "at",
+        "by"
+      ]
+    },
+    {
+      "name": "workflow.check",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "check",
+        "passed",
+        "why"
+      ]
+    },
+    {
+      "name": "workflow.engine",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "name",
+        "reads",
+        "writes",
+        "does",
+        "covers",
+        "internet",
+        "start",
+        "check",
+        "envelope",
+        "made_by",
+        "required",
+        "fit",
+        "level",
+        "confidence",
+        "doubt"
+      ]
+    },
+    {
+      "name": "workflow.registration",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "version",
+        "engines",
+        "source",
+        "registered",
+        "by",
+        "checks",
+        "covers",
+        "fit",
+        "deliverable",
+        "left_out"
+      ]
+    }
+  ],
   "extensible": [
     "record",
     "artifact.template",
