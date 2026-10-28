@@ -1,0 +1,8 @@
+{
+ "faults": [
+  "$.id: does not match ^[a-z0-9][a-z0-9_-]*$",
+  "$.name: shorter than 1",
+  "$.tier: is not one of gold, silver, bronze"
+ ],
+ "ok": false
+}

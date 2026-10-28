@@ -1,0 +1,546 @@
+{
+ "buildable": [
+  {
+   "key": "core:record",
+   "label": "Record",
+   "says": "a record with an id"
+  },
+  {
+   "key": "core:artifact.template",
+   "label": "Artifact template",
+   "says": "what a kind of filed work holds"
+  },
+  {
+   "key": "core:engine.library",
+   "label": "Engine library",
+   "says": "what an engine template holds"
+  },
+  {
+   "key": "core:kind",
+   "label": "Department kind",
+   "says": "what a kind of department holds"
+  },
+  {
+   "key": "core:journey",
+   "label": "Journey",
+   "says": "what a journey holds"
+  },
+  {
+   "key": "x.client",
+   "label": "Client",
+   "says": ""
+  },
+  {
+   "key": "x.line",
+   "label": "Line",
+   "says": ""
+  },
+  {
+   "key": "x.order",
+   "label": "Order",
+   "says": ""
+  },
+  {
+   "key": "x.vip_client",
+   "label": "VIP client",
+   "says": ""
+  }
+ ],
+ "built_in": [
+  {
+   "layer": "act",
+   "models": [
+    {
+     "key": "act.answer",
+     "label": "Answer"
+    },
+    {
+     "key": "act.any",
+     "label": "Any"
+    },
+    {
+     "key": "act.ask",
+     "label": "Ask"
+    },
+    {
+     "key": "act.born",
+     "label": "Born"
+    },
+    {
+     "key": "act.conflict",
+     "label": "Conflict"
+    },
+    {
+     "key": "act.doubt",
+     "label": "Doubt"
+    },
+    {
+     "key": "act.finding",
+     "label": "Finding"
+    },
+    {
+     "key": "act.line",
+     "label": "Line"
+    },
+    {
+     "key": "act.line_request",
+     "label": "Line request"
+    },
+    {
+     "key": "act.next",
+     "label": "Next"
+    },
+    {
+     "key": "act.question",
+     "label": "Question"
+    },
+    {
+     "key": "act.reading",
+     "label": "Reading"
+    },
+    {
+     "key": "act.round",
+     "label": "Round"
+    },
+    {
+     "key": "act.stamp",
+     "label": "Stamp"
+    },
+    {
+     "key": "act.tell",
+     "label": "Tell"
+    },
+    {
+     "key": "act.verdict",
+     "label": "Verdict"
+    },
+    {
+     "key": "act.words",
+     "label": "Words"
+    }
+   ]
+  },
+  {
+   "layer": "adaptation",
+   "models": [
+    {
+     "key": "adaptation.idea",
+     "label": "Idea"
+    },
+    {
+     "key": "adaptation.ladder",
+     "label": "Ladder"
+    },
+    {
+     "key": "adaptation.round",
+     "label": "Round"
+    }
+   ]
+  },
+  {
+   "layer": "artifact",
+   "models": [
+    {
+     "key": "artifact.template",
+     "label": "Artifact template"
+    }
+   ]
+  },
+  {
+   "layer": "audit",
+   "models": [
+    {
+     "key": "audit.finding",
+     "label": "Finding"
+    },
+    {
+     "key": "audit.reading",
+     "label": "Reading"
+    },
+    {
+     "key": "audit.reading_item",
+     "label": "Reading item"
+    },
+    {
+     "key": "audit.spot_check",
+     "label": "Spot check"
+    }
+   ]
+  },
+  {
+   "layer": "check",
+   "models": [
+    {
+     "key": "check.verdict",
+     "label": "Verdict"
+    }
+   ]
+  },
+  {
+   "layer": "coordination",
+   "models": [
+    {
+     "key": "coordination.left_out",
+     "label": "Left out"
+    },
+    {
+     "key": "coordination.question",
+     "label": "Question"
+    },
+    {
+     "key": "coordination.slot",
+     "label": "Slot"
+    },
+    {
+     "key": "coordination.table",
+     "label": "Table"
+    }
+   ]
+  },
+  {
+   "layer": "department",
+   "models": [
+    {
+     "key": "department",
+     "label": "Department"
+    },
+    {
+     "key": "department.bounds",
+     "label": "Bounds"
+    },
+    {
+     "key": "department.founding",
+     "label": "Founding"
+    }
+   ]
+  },
+  {
+   "layer": "engine",
+   "models": [
+    {
+     "key": "engine.library",
+     "label": "Engine library"
+    },
+    {
+     "key": "engine.start",
+     "label": "Start"
+    },
+    {
+     "key": "engine.template",
+     "label": "Template"
+    }
+   ]
+  },
+  {
+   "layer": "envelope",
+   "models": [
+    {
+     "key": "envelope",
+     "label": "Envelope"
+    }
+   ]
+  },
+  {
+   "layer": "identity",
+   "models": [
+    {
+     "key": "identity.ask",
+     "label": "Ask"
+    },
+    {
+     "key": "identity.done_item",
+     "label": "Done item"
+    },
+    {
+     "key": "identity.rule",
+     "label": "Rule"
+    }
+   ]
+  },
+  {
+   "layer": "instructions",
+   "models": [
+    {
+     "key": "instructions",
+     "label": "Instructions"
+    }
+   ]
+  },
+  {
+   "layer": "journey",
+   "models": [
+    {
+     "key": "journey",
+     "label": "Journey"
+    },
+    {
+     "key": "journey.backlog",
+     "label": "Backlog"
+    },
+    {
+     "key": "journey.bind",
+     "label": "Bind"
+    },
+    {
+     "key": "journey.branch",
+     "label": "Branch"
+    },
+    {
+     "key": "journey.build_row",
+     "label": "Build row"
+    },
+    {
+     "key": "journey.direction",
+     "label": "Direction"
+    },
+    {
+     "key": "journey.edge",
+     "label": "Edge"
+    },
+    {
+     "key": "journey.file",
+     "label": "File"
+    },
+    {
+     "key": "journey.lane",
+     "label": "Lane"
+    },
+    {
+     "key": "journey.outcome",
+     "label": "Outcome"
+    },
+    {
+     "key": "journey.quote",
+     "label": "Quote"
+    },
+    {
+     "key": "journey.row_status",
+     "label": "Row status"
+    },
+    {
+     "key": "journey.ruling",
+     "label": "Ruling"
+    },
+    {
+     "key": "journey.scenario",
+     "label": "Scenario"
+    },
+    {
+     "key": "journey.status",
+     "label": "Status"
+    },
+    {
+     "key": "journey.step",
+     "label": "Step"
+    },
+    {
+     "key": "journey.sub",
+     "label": "Sub"
+    },
+    {
+     "key": "journey.was",
+     "label": "Was"
+    }
+   ]
+  },
+  {
+   "layer": "kind",
+   "models": [
+    {
+     "key": "kind",
+     "label": "Department kind"
+    }
+   ]
+  },
+  {
+   "layer": "option",
+   "models": [
+    {
+     "key": "option",
+     "label": "Option"
+    },
+    {
+     "key": "option.pin",
+     "label": "Pin"
+    },
+    {
+     "key": "option.raise",
+     "label": "Raise"
+    },
+    {
+     "key": "option.words",
+     "label": "Words"
+    }
+   ]
+  },
+  {
+   "layer": "priority",
+   "models": [
+    {
+     "key": "priority.ceiling",
+     "label": "Ceiling"
+    },
+    {
+     "key": "priority.estimate",
+     "label": "Estimate"
+    },
+    {
+     "key": "priority.price",
+     "label": "Price"
+    }
+   ]
+  },
+  {
+   "layer": "root",
+   "models": [
+    {
+     "key": "root.pins",
+     "label": "Pins"
+    }
+   ]
+  },
+  {
+   "layer": "step",
+   "models": [
+    {
+     "key": "step",
+     "label": "Step"
+    },
+    {
+     "key": "step.row",
+     "label": "Row"
+    }
+   ]
+  },
+  {
+   "layer": "view",
+   "models": [
+    {
+     "key": "view.adaptation",
+     "label": "Adaptation"
+    },
+    {
+     "key": "view.adaptation.round",
+     "label": "Round"
+    },
+    {
+     "key": "view.audit",
+     "label": "Audit"
+    },
+    {
+     "key": "view.coordination",
+     "label": "Coordination"
+    },
+    {
+     "key": "view.engine_card",
+     "label": "Engine card"
+    },
+    {
+     "key": "view.identity",
+     "label": "Identity"
+    },
+    {
+     "key": "view.priority",
+     "label": "Priority"
+    }
+   ]
+  },
+  {
+   "layer": "workflow",
+   "models": [
+    {
+     "key": "workflow",
+     "label": "Workflow"
+    },
+    {
+     "key": "workflow.check",
+     "label": "Check"
+    },
+    {
+     "key": "workflow.engine",
+     "label": "Engine"
+    },
+    {
+     "key": "workflow.registration",
+     "label": "Registration"
+    }
+   ]
+  }
+ ],
+ "rev": 6,
+ "root": null,
+ "schema_version": 1,
+ "yours": [
+  {
+   "abstract": false,
+   "base": "core:record",
+   "base_label": "Record",
+   "children": [
+    "x.vip_client"
+   ],
+   "key": "x.client",
+   "label": "Client",
+   "name": "client",
+   "pending": {
+    "at": "2026-10-28T22:19:29+05:30",
+    "id": "p-5567de1e",
+    "says": "let name run to 120 characters"
+   },
+   "state": "on",
+   "version": 1,
+   "why": null
+  },
+  {
+   "abstract": false,
+   "base": "core:record",
+   "base_label": "Record",
+   "children": [],
+   "key": "x.line",
+   "label": "Line",
+   "name": "line",
+   "pending": null,
+   "state": "on",
+   "version": 1,
+   "why": null
+  },
+  {
+   "abstract": false,
+   "base": "core:record",
+   "base_label": "Record",
+   "children": [],
+   "key": "x.order",
+   "label": "Order",
+   "name": "order",
+   "pending": null,
+   "state": "on",
+   "version": 1,
+   "why": null
+  },
+  {
+   "abstract": false,
+   "base": "x:client/v1",
+   "base_label": "Client",
+   "children": [],
+   "key": "x.vip_client",
+   "label": "VIP client",
+   "name": "vip_client",
+   "pending": null,
+   "state": "on",
+   "version": 1,
+   "why": null
+  },
+  {
+   "abstract": false,
+   "base": "core:artifact.template",
+   "base_label": "Artifact template",
+   "children": [],
+   "key": "x.visit_note",
+   "label": "Visit note",
+   "name": "visit_note",
+   "pending": null,
+   "state": "off",
+   "version": 1,
+   "why": null
+  }
+ ]
+}

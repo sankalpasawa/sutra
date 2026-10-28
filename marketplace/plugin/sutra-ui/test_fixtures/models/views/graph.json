@@ -1,0 +1,106 @@
+{
+ "edges": [
+  {
+   "from": "x.client",
+   "kind": "extends",
+   "many": false,
+   "required": false,
+   "to": "core:record"
+  },
+  {
+   "from": "x.line",
+   "kind": "extends",
+   "many": false,
+   "required": false,
+   "to": "core:record"
+  },
+  {
+   "from": "x.order",
+   "kind": "extends",
+   "many": false,
+   "required": false,
+   "to": "core:record"
+  },
+  {
+   "from": "x.order",
+   "kind": "nests",
+   "many": true,
+   "required": true,
+   "to": "x.line"
+  },
+  {
+   "from": "x.order",
+   "kind": "refers",
+   "many": false,
+   "required": true,
+   "to": "x.client"
+  },
+  {
+   "from": "x.vip_client",
+   "kind": "extends",
+   "many": false,
+   "required": false,
+   "to": "x.client"
+  },
+  {
+   "from": "x.visit_note",
+   "kind": "extends",
+   "many": false,
+   "required": false,
+   "to": "core:artifact.template"
+  }
+ ],
+ "nodes": [
+  {
+   "core": false,
+   "key": "x.client",
+   "label": "Client",
+   "state": "on"
+  },
+  {
+   "core": false,
+   "key": "x.line",
+   "label": "Line",
+   "state": "on"
+  },
+  {
+   "core": false,
+   "key": "x.order",
+   "label": "Order",
+   "state": "on"
+  },
+  {
+   "core": false,
+   "key": "x.vip_client",
+   "label": "VIP client",
+   "state": "on"
+  },
+  {
+   "core": false,
+   "key": "x.visit_note",
+   "label": "Visit note",
+   "state": "off"
+  },
+  {
+   "core": true,
+   "key": "core:artifact.template",
+   "label": "Artifact template",
+   "state": "on"
+  },
+  {
+   "core": true,
+   "key": "core:record",
+   "label": "Record",
+   "state": "on"
+  }
+ ],
+ "text": [
+  "Client is a kind of Record",
+  "Line is a kind of Record",
+  "Order is a kind of Record",
+  "Order holds Line (many) (needed)",
+  "Order points at Client (needed)",
+  "VIP client is a kind of Client",
+  "Visit note is a kind of Artifact template"
+ ]
+}

@@ -1823,10 +1823,11 @@ function wbOrgHtml(n, d){
   if (typeof dpSelect === "function" && dpS().sel !== root.ref) dpSelect(root.ref);
   if (!m){ wbLoadMap(root.ref); return dpViewerShell(n.name, st.err[root.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
   const rn = { ref: root.ref, name: n.name };
-  const pane = st.tab[root.ref] === "root";
+  const models = st.tab[root.ref] === "models" && typeof mdlPaneHtml === "function";   /* 26-models.js: Root's Models pane (A4.6) */
+  const pane = st.tab[root.ref] === "root" || models;
   const head = `<div class="wb2head"><b>${wbEsc(n.name)}</b>${m.stopped ? `<span class="dpst paused">Off</span>` : ""}` +
     (pane ? "" : wbBtn(WB_HELPER + " settings", `data-wbtab="root"`)) + `</div>`;
-  return dpViewerShell(pane ? WB_HELPER : "Chat", head + (pane ? wbRootPaneHtml(rn, m) : wbChatHtml(rn, m)), "wb");
+  return dpViewerShell(pane ? WB_HELPER : "Chat", head + (models ? mdlPaneHtml() : pane ? wbRootPaneHtml(rn, m) : wbChatHtml(rn, m)), "wb");
 }
 /* Root's pane: what its record holds, in rows; the one switch; a way back */
 function wbRootPaneHtml(n, m){
@@ -1842,6 +1843,7 @@ function wbRootPaneHtml(n, m){
     row("Rules", rules.length ? rules.join("; ") : "none yet", rules.length ? "ok" : "") +
     row("Departments it has made", made || "none yet", made ? "ok" : "")) +
     wbStandardsHtml(n.ref) +
+    (typeof mdlCardHtml === "function" ? mdlCardHtml() : "") +
     `<div>${wbBtn("Back to the chat", `data-wbtab="chat"`)}</div>`;
 }
 

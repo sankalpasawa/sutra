@@ -1,0 +1,105 @@
+{
+ "about": "",
+ "abstract": false,
+ "base": "core:record",
+ "base_label": "Record",
+ "chain": [
+  "Record"
+ ],
+ "children": [
+  "x.vip_client"
+ ],
+ "discriminator": null,
+ "exact": "x.client/v1",
+ "faults": [],
+ "fields": [
+  {
+   "aliases": [],
+   "from": "Client",
+   "label": "Name",
+   "locked": false,
+   "name": "name",
+   "nullable": false,
+   "required": true,
+   "retired": false,
+   "says": "up to 80 characters, at least 1",
+   "type": "text"
+  },
+  {
+   "aliases": [],
+   "from": "Client",
+   "label": "Tier",
+   "locked": false,
+   "name": "tier",
+   "nullable": false,
+   "required": false,
+   "retired": false,
+   "says": "one of gold, silver, bronze",
+   "type": "one of"
+  },
+  {
+   "aliases": [],
+   "from": "Client",
+   "label": "Phone",
+   "locked": false,
+   "name": "phone",
+   "nullable": false,
+   "required": false,
+   "retired": false,
+   "says": "up to 30 characters",
+   "type": "text"
+  },
+  {
+   "aliases": [],
+   "from": "Record",
+   "label": "Id",
+   "locked": true,
+   "name": "id",
+   "nullable": false,
+   "required": true,
+   "retired": false,
+   "says": "",
+   "type": "text"
+  }
+ ],
+ "history_tail": [
+  {
+   "at": "2026-10-28T22:19:29+05:30",
+   "class": "same",
+   "op": "create",
+   "rev": 1,
+   "says": "made Client"
+  }
+ ],
+ "key": "x.client",
+ "label": "Client",
+ "links": {
+  "in": [
+   {
+    "from": "x.order",
+    "from_label": "Order",
+    "mode": "refer",
+    "name": "client_id"
+   }
+  ],
+  "out": []
+ },
+ "name": "client",
+ "pending": {
+  "at": "2026-10-28T22:19:29+05:30",
+  "id": "p-5567de1e",
+  "says": "let name run to 120 characters"
+ },
+ "rev": 6,
+ "state": "on",
+ "used_by": [],
+ "version": 1,
+ "versions": [
+  {
+   "key": "x.client/v1",
+   "state": "on",
+   "version": 1
+  }
+ ],
+ "why": null
+}
