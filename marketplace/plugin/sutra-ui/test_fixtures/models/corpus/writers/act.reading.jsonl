@@ -1,0 +1,139 @@
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": [], "not_met": [], "read": false, "reading": "r-af5238a5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-af5238a5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-af5238a5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-2418b18f", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-d923979f", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": [], "not_met": [], "read": true, "reading": "r-af5238a5", "to_confirm": ["D1"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-af5238a5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-bf549da2", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": ["F1"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-9f93ef6f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": ["F1"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-74b0c52a", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Result", "findings": ["F1"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-a08baa76", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Result", "findings": ["F1"], "high": false, "met": [], "not_met": [], "read": true, "reading": "r-9f93ef6f", "to_confirm": ["D1"], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-9f93ef6f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": [], "read": true, "reading": "r-9f93ef6f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"], "high": true, "met": ["D1"], "not_met": [], "read": true, "reading": "r-9f93ef6f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": ["F1", "F2", "F3", "F4", "F5", "F6"], "high": true, "met": ["D1"], "not_met": [], "read": true, "reading": "r-9f93ef6f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": ["F1", "F2"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-9f93ef6f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": ["F1", "F2"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-74b0c52a", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Result", "findings": ["F1", "F2"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-a08baa76", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Result", "findings": ["F1", "F2"], "high": false, "met": [], "not_met": [], "read": true, "reading": "r-9f93ef6f", "to_confirm": ["D1"], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": ["F1"], "high": true, "met": [], "not_met": [], "read": true, "reading": "r-9f93ef6f", "to_confirm": ["D1"], "v": 1, "word": "reading"}
+{"artifact": "Result", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-9f93ef6f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6"], "high": false, "met": [], "not_met": ["D1"], "read": true, "reading": "r-af5238a5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6"], "high": false, "met": [], "not_met": ["D1"], "read": true, "reading": "r-2418b18f", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6"], "high": false, "met": [], "not_met": ["D1"], "read": true, "reading": "r-d923979f", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-a28054a1", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-a28054a1", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3"], "high": false, "met": [], "not_met": ["D1"], "read": true, "reading": "r-a28054a1", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-af5238a5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-2418b18f", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-d923979f", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"], "high": false, "met": [], "not_met": ["D1"], "read": true, "reading": "r-af5238a5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2"], "high": false, "met": [], "not_met": ["D1"], "read": true, "reading": "r-a28054a1", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-a28054a1", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2", "F3", "F4", "F5", "F6", "F7"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-a28054a1", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-b195915a", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-23f9e601", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-db7f16d3", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-557dcfbb", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-bbe6ccff", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-103babaf", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": [], "not_met": [], "read": false, "reading": "r-f8942a20", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-451a4d8d", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-10096e15", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-7a2f191d", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2"], "high": true, "met": [], "not_met": [], "read": false, "reading": "r-2418b18f", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-97f81e85", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-9a22953d", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1", "F2"], "high": true, "met": ["D1"], "not_met": ["D3", "D4"], "read": true, "reading": "r-6098dd3d", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D4"], "not_met": [], "read": true, "reading": "r-e521d7a3", "to_confirm": ["D2", "D3"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-a4243d5a", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-2af97727", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-361464d5", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-76de6168", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-dcd53923", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-881419e4", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-c662777f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-d22102b6", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-adeed6cb", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-b3a9da30", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-fd257367", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-a802a28a", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-64af8e2e", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-64fa1ed6", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-1538106a", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-e24695c1", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-612fa8b7", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-7c808e5a", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-cfb82d1b", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": [], "not_met": [], "read": false, "reading": "r-83e78c09", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-ea829133", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-17c5da26", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D2"], "not_met": ["D1"], "read": true, "reading": "r-64a58b3e", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D2"], "not_met": ["D1"], "read": true, "reading": "r-7016135d", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-20a3b816", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-164242f9", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-2b45051f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-d3730f77", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-ee67e392", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-208b7c0a", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-b3b05f67", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D4"], "not_met": ["D2", "D3"], "read": true, "reading": "r-de7fdf58", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2", "D4"], "not_met": ["D3"], "read": true, "reading": "r-9ea1ada9", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2", "D4"], "not_met": ["D3"], "read": true, "reading": "r-d1e00850", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2", "D4"], "not_met": ["D3"], "read": true, "reading": "r-d6701dbd", "to_confirm": [], "v": 4, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-91749e2f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-f643c21b", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-75fd209c", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-d1825e93", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-fc2045ce", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-9e8ff77b", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-9bb2eebf", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-92892f4d", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-c051c21f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-e820551e", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-0452a961", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-5e7accd5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-3c57c577", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-a8b0461f", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-0fbc1351", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-d1ee98c5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-5b19532b", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-57c0a552", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-3e55f4f4", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-c3b59368", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-471de7eb", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-d0ec82b4", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-af5e0eaf", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1", "D2", "D4"], "not_met": ["D3"], "read": true, "reading": "r-d10f30b8", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": false, "met": ["D1", "D3"], "not_met": ["D2", "D4"], "read": true, "reading": "r-02ef4d74", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-7091f0c7", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": [], "read": true, "reading": "r-af5238a5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-42eb7cff", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-704d410e", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-93235a99", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-b228d7e3", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": [], "not_met": ["D1"], "read": true, "reading": "r-86a623e0", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": [], "not_met": [], "read": true, "reading": "r-ade02128", "to_confirm": ["D1"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-cdce9304", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-71cdbb45", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-a1a31692", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-264778f6", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-cad47aa2", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-e9348f35", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-2418b18f", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-c9128dee", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-14e71746", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-cd97e33c", "to_confirm": ["D2"], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-c10d90a1", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D2"], "not_met": [], "read": true, "reading": "r-3261af65", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1"], "not_met": [], "read": true, "reading": "r-d923979f", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D3"], "not_met": ["D2"], "read": true, "reading": "r-af5238a5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2", "D3"], "not_met": [], "read": true, "reading": "r-2418b18f", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D3"], "not_met": ["D2"], "read": true, "reading": "r-2418b18f", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2", "D3"], "not_met": [], "read": true, "reading": "r-d923979f", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1", "D3"], "not_met": ["D2"], "read": true, "reading": "r-d923979f", "to_confirm": [], "v": 3, "word": "reading"}
+{"artifact": "Live site", "findings": [], "high": false, "met": ["D1", "D2", "D3"], "not_met": [], "read": true, "reading": "r-af5238a5", "to_confirm": [], "v": 1, "word": "reading"}
+{"artifact": "Live site", "findings": ["F1"], "high": true, "met": ["D1"], "not_met": ["D2"], "read": true, "reading": "r-0a1b2c3d", "to_confirm": [], "v": 2, "word": "reading"}
+{"artifact": "Live site", "met": ["X1"], "not_met": [], "read": true, "reading": "r-0a1b2c3d", "to_confirm": [], "v": 2, "word": "reading"}

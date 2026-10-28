@@ -1,0 +1,2 @@
+{"adaptation": "adaptation/v1", "audit": "audit/v1", "coordination": "coordination/v1", "identity": "identity/v1", "priority": "priority/v1", "root": "root/v1"}
+{"adaptation": "adaptation/v1", "audit": "audit/v1", "coordination": "coordination/v1", "identity": "identity/v0", "priority": "priority/v1", "root": "root/v1"}

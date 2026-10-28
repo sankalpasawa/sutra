@@ -1,0 +1,33 @@
+{"faults": ["$: is not an object"], "value": null}
+{"faults": ["$.calls: is missing", "$.usd: is missing"], "value": {}}
+{"faults": ["$.calls: below 0"], "value": {"calls": -1, "usd": 0.5}}
+{"faults": ["$: is not an object"], "value": 7}
+{"faults": ["$: is not an object"], "value": 2.5}
+{"faults": ["$: is not an object"], "value": 3.0}
+{"faults": ["$: is not an object"], "value": []}
+{"faults": ["$.calls: is missing", "$.usd: is missing"], "value": {"a": 1}}
+{"faults": ["$: is not an object"], "value": "{{x}}"}
+{"faults": ["$: is not an object"], "value": NaN}
+{"faults": [], "value": {"calls": 40, "usd": 0.5}}
+{"faults": ["$.usd: is missing"], "value": {"calls": 40}}
+{"faults": ["$.calls: is not a whole number"], "value": {"calls": null, "usd": 0.5}}
+{"faults": ["$.calls: is not a whole number"], "value": {"calls": true, "usd": 0.5}}
+{"faults": ["$.calls: is not a whole number"], "value": {"calls": 2.5, "usd": 0.5}}
+{"faults": ["$.calls: is not a whole number"], "value": {"calls": "x", "usd": 0.5}}
+{"faults": ["$.calls: is not a whole number"], "value": {"calls": "{{x}}", "usd": 0.5}}
+{"faults": ["$.calls: is not a whole number"], "value": {"calls": 0.5, "usd": 0.5}}
+{"faults": ["$.usd: is not a number"], "value": {"calls": 40, "usd": true}}
+{"faults": [], "value": {"calls": 40, "usd": 0}}
+{"faults": ["$.usd: below 0"], "value": {"calls": 40, "usd": -1}}
+{"faults": ["$.usd: is not a number"], "value": {"calls": 40, "usd": [1]}}
+{"faults": ["$.usd: is not a number"], "value": {"calls": 40, "usd": {}}}
+{"faults": ["$.usd: is not a number"], "value": {"calls": 40, "usd": "abc\n"}}
+{"faults": [], "value": {"calls": 40, "usd": 1.0}}
+{"faults": ["$.usd: is not a number"], "value": {"calls": 1, "usd": {}}}
+{"faults": ["$.usd: is not a number"], "value": {"calls": 1, "usd": {"a": 1}}}
+{"faults": ["$.usd: is not a number"], "value": {"calls": 1, "usd": "\u0001"}}
+{"faults": ["$.usd: is not a number"], "value": {"calls": 1, "usd": "a\nb"}}
+{"faults": ["$.usd: is not a number"], "value": {"calls": 1, "usd": "Return ONLY"}}
+{"faults": [], "value": {"calls": 1, "usd": 2}}
+{"faults": [], "value": {"calls": 1, "usd": 99}}
+{"faults": [], "value": {"calls": 1, "usd": 100}}

@@ -1,0 +1,10 @@
+{"from": null, "id": "r-1", "line": "Never publish on a Sunday", "scope": "standing", "since": "2026-10-26T10:00:00", "tag": null}
+{"tag": "ask"}
+{"line": "x"}
+{"from": "always end with the name", "id": "u-889c87", "line": "Every page ends with the school's name", "since": "2026-10-28T19:15:42+05:30", "tag": "always"}
+{"from": null, "id": "u-46bfd3", "line": "Ask before a price goes on a page", "scope": "one-time", "since": "2026-10-28T19:15:42+05:30", "tag": "ask"}
+{"line": "A rule nobody tagged"}
+{"line": "A rule tagged null", "tag": null}
+{"line": "Plan, write and check inside the record", "tag": "go"}
+{"line": "Ask the owner before the first publish", "tag": "ask"}
+{"line": "Never publish a build whose check failed", "tag": "refuse"}

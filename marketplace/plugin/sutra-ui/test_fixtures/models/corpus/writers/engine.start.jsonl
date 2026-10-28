@@ -1,0 +1,16 @@
+{"on": [{"kind": "version", "of": "Brief"}], "unless": ["identity.gate"]}
+{"on": [{"every_s": 60, "kind": "cron"}]}
+{"on": [{"kind": "post"}, {"checked": true, "kind": "version", "of": "$deliverable"}], "unless": []}
+{"on": [{"checked": true, "kind": "version", "of": "$deliverable"}, {"every_s": 86400, "kind": "timer"}], "unless": ["audit.when"]}
+{"on": [{"kind": "post"}], "unless": []}
+{"on": [{"kind": "version", "of": "Pages"}], "unless": ["identity.wait_engine", "identity.gate", "priority.envelope", "coord.chain"]}
+{"on": [{"kind": "version", "of": "Brief"}], "unless": ["identity.wait_engine", "identity.gate", "priority.envelope", "coord.chain"]}
+{"on": [{"checked": true, "kind": "version", "of": "Build"}], "unless": ["identity.wait_engine", "identity.gate", "priority.envelope", "coord.chain"]}
+{"on": [{"kind": "version", "of": "Request"}], "unless": ["identity.gate", "priority.envelope", "coord.chain"]}
+{"on": [{"kind": "version", "of": "Site plan"}], "unless": ["identity.wait_engine", "identity.gate", "priority.envelope", "coord.chain"]}
+{"on": []}
+{"unless": []}
+{"on": [{"every_s": 0, "kind": "timer"}]}
+{"on": [{"kind": "version", "of": "Brief"}], "when": "noon"}
+{"on": [{"kind": "version", "of": "$deliverable"}]}
+{"on": [{"kind": "version", "of": "Pages"}], "unless": ["identity.no_such_gate"]}

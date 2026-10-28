@@ -1,0 +1,11 @@
+{"drift": false, "failing": [], "proven_by": ["test_j1.py::test_a"], "site": "built", "state": "proven"}
+{"state": "great"}
+{"state": "proven"}
+{"state": "partly"}
+{"state": "failing"}
+{"state": "unproven"}
+{"state": "wanted"}
+{"state": "dropped"}
+{"state": "fault"}
+{"state": "unknown"}
+{"state": "declared"}

@@ -1,0 +1,10 @@
+{"checked": false, "engine": "Plan", "of": "Brief", "on": "after Brief v2", "since": "2026-10-28T19:11:07+05:30", "window_min": 15}
+{"engine": "Plan", "every_s": 3600, "on": "every 1 h", "since": "2026-10-28T19:11:07+05:30", "window_min": 15}
+{"checked": false, "engine": "Write", "of": "Site plan", "on": "after Site plan v1", "since": "2026-10-26T10:00:00", "window_min": 30}
+{"checked": false, "engine": "Write", "of": "Site plan", "on": "after Site plan v1", "since": "2026-10-26T10:00:00", "window_min": 1441}
+{"engine": "Plan", "on": "version"}
+{"engine": "Plan", "on": "version", "window_min": 2000}
+{"colour": "red", "engine": "Plan", "on": "version"}
+{"engine": "Plan"}
+{"checked": false, "engine": "Plan", "of": "Brief", "on": "after Brief v1", "since": "2026-10-28T19:15:44+05:30", "window_min": 15}
+{"engine": "Ticker", "every_s": 3600, "on": "every 1 h", "since": "2026-10-28T19:15:44+05:30", "window_min": 30}

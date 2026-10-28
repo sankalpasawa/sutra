@@ -1,0 +1,13 @@
+{"calls": 7, "usd": 1.5}
+{"calls": 30, "usd": 6.0}
+{"calls": 240, "usd": 6.0}
+{"calls": 40, "usd": 0.5}
+{"calls": -1, "usd": 0.5}
+{"calls": 3, "usd": 0.5}
+{"calls": 3, "usd": 0}
+{"calls": 3}
+{"calls": 3.5, "usd": 1}
+{"calls": true, "usd": 1}
+{"calls": -1, "usd": 1}
+{"calls": 3, "note": "extra keys pass", "usd": 1}
+{"calls": 12, "usd": 2.5}

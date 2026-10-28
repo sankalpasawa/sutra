@@ -1,0 +1,10 @@
+{"impl": "audit/v2", "layer": "audit"}
+{"impl": "coordination/v2", "layer": "coordination"}
+{"impl": "coordination/v1", "layer": "coordination"}
+{"impl": "identity/v9", "layer": "identity"}
+{"impl": "identity/v1", "layer": "audit"}
+{"layer": "audit"}
+{"impl": "audit/1", "layer": "audit"}
+{"impl": "priority/v2", "layer": "priority"}
+{"impl": "root/v2", "layer": "root"}
+{"impl": "audit/2", "layer": "audit"}

@@ -1,0 +1,22 @@
+{"check": "workflow_meets_standards", "passed": true, "why": "the workflow fits the workflow schema"}
+{"check": "names_an_engine", "passed": true, "why": "the workflow names its engines"}
+{"check": "engines_known", "passed": true, "why": "each engine is one the Library has"}
+{"check": "first_reads_input", "passed": true, "why": "the first engine reads the kind's first artifact"}
+{"check": "reads_known", "passed": true, "why": "each engine reads the kind's first artifact or what one before it wrote"}
+{"check": "one_output", "passed": true, "why": "each engine writes something not yet written"}
+{"check": "required_kept", "passed": true, "why": "no engine the kind requires is left out"}
+{"check": "names_unique", "passed": true, "why": "no name is used twice, and none is a function's, Root's or Owner's"}
+{"check": "items_covered", "passed": true, "why": "every done-when item is covered by an engine"}
+{"check": "size_in_range", "passed": true, "why": "one engine or more; more than six says why"}
+{"check": "check_exists", "passed": true, "why": "each engine's output has a check"}
+{"check": "fits_room", "passed": true, "why": "Priority priced it and it fits today's room"}
+{"check": "line_is_registered", "passed": true, "why": "Coordination's line is a registered plan plus the engines the owner added"}
+{"check": "fits_room", "passed": true, "why": "not priced here"}
+{"check": "each_engine_named", "passed": true, "why": "every engine has a name"}
+{"check": "names_new", "passed": true, "why": "no name is one the Library already has"}
+{"check": "names_an_engine", "passed": true, "why": "it names four engines"}
+{"check": "looks_nice", "passed": true, "why": "it names four engines"}
+{"check": "items_covered", "passed": false, "why": "D6 is covered by no engine of the plan"}
+{"check": "engines_known", "passed": false, "why": "the Library has no engine named Nobody Knows"}
+{"check": "required_kept", "passed": false, "why": "the plan leaves out Check, which this kind of department requires"}
+{"check": "workflow_meets_standards", "passed": false, "why": "the line reaches outside without a rule"}

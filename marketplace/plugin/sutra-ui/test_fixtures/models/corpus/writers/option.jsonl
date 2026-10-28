@@ -1,0 +1,53 @@
+{"cost": "Root sets this department up again, done its own way, for your stamp; nothing is set up here", "id": "root_setup", "kind": "root_setup", "label": "Set it up again, done its own way", "params": {"words": "Build a browser game where you tap circles for thirty seconds"}}
+{"cost": "D3 is dropped from done-when (No script errors on any page); nothing more is spent", "id": "leave:D3", "kind": "leave", "label": "Leave D3 out"}
+{"cost": "the department stops where it is; you can start it again later", "id": "stop", "kind": "stop", "label": "Stop here"}
+{"cost": "about 2.00 USD more a day, up to twice where it started", "id": "raise", "kind": "raise", "label": "Add 2.00 USD for Plan", "params": {"calls": 30, "engine": "Plan", "usd": 2.0, "what": "envelope"}}
+{"cost": "D1 is dropped from done-when; nothing more is spent", "id": "leave:D1", "kind": "leave", "label": "Leave D1 out"}
+{"cost": "free", "id": "words", "kind": "words", "label": "Say it in my words"}
+{"cost": "y", "id": "Not An Id", "label": "x"}
+{"id": "stop"}
+{"cost": "D2 is dropped from done-when (The lessons for each topic are there); nothing more is spent", "id": "leave:D2", "kind": "leave", "label": "Leave D2 out"}
+{"cost": "your words go into the Brief and the line runs again; no round is paid for", "id": "words", "kind": "words", "label": "Say how to put it right"}
+{"cost": "D2 is dropped from done-when (Every page names the phone line); nothing more is spent", "id": "leave:D2", "kind": "leave", "label": "Leave D2 out"}
+{"cost": "c", "id": "words", "kind": "words", "label": "w"}
+{"cost": "c", "id": "leave:D2", "kind": "leave", "label": "l"}
+{"cost": "up to twice", "id": "raise", "kind": "raise", "label": "Add room", "params": {"calls": 4, "engine": "Design", "usd": 0.5, "what": "envelope"}}
+{"cost": "c", "id": "root_setup", "kind": "root_setup", "label": "r", "params": {"words": "again"}}
+{"cost": "Adaptation shapes it afresh from what you say; nothing runs before Root's review", "id": "words", "kind": "words", "label": "Change the plan in my words"}
+{"cost": "D3 is dropped from done-when (Three reviews from customers); nothing more is spent", "id": "leave:D3", "kind": "leave", "label": "Leave D3 out"}
+{"cost": "adds budget, up to twice where it started", "id": "raise", "kind": "raise", "label": "Raise the limit", "params": {"rounds": 12, "what": "ceiling"}}
+{"cost": "Root sets this up again for your stamp", "id": "root_setup", "kind": "root_setup", "label": "Set it up again, done its own way", "params": {"words": "A bakery site, done our way"}}
+{"cost": "y", "id": "Not A Way", "kind": "Not A Way", "label": "x"}
+{"cost": "z", "id": "teleport", "kind": "teleport", "label": "Teleport"}
+{"cost": "more", "id": "raise", "kind": "raise", "label": "Raise it", "params": {"what": "ceiling"}}
+{"cost": "less", "id": "leave:D2", "kind": "leave", "label": "Leave D2 out"}
+{"cost": "nothing", "id": "stop", "kind": "stop", "label": "Stop"}
+{"cost": "y", "id": "raise", "kind": "raise", "label": ""}
+{"cost": "c", "id": "raise", "kind": "raise", "label": "r", "params": "no"}
+{"cost": "Root sets this up again for your stamp", "id": "root_setup", "kind": "root_setup", "label": "Set it up again, done its own way", "params": {"words": "A bakery site"}}
+{"cost": "D2 is dropped from done-when; nothing more is spent", "id": "leave:D2", "kind": "leave", "label": "Leave D2 out"}
+{"cost": "D2 is dropped from done-when (Shoppers can order a cake on WhatsApp); nothing more is spent", "id": "leave:D2", "kind": "leave", "label": "Leave D2 out"}
+{"cost": "your words go to Identity; the line builds again once the rule is stamped", "id": "words", "kind": "words", "label": "Say the rule another way"}
+{"cost": "the rule is dropped (Every page ends with: Call 108); the line builds again without it", "id": "leave:u-05b188", "kind": "leave", "label": "Leave this rule out"}
+{"cost": "about 11 calls and 0.40 USD more a day; Plan's limit becomes 11 calls and 0.40 USD a day", "id": "raise:Plan", "kind": "raise", "label": "Add budget for Plan", "params": {"calls": 11, "engine": "Plan", "usd": 0.395, "what": "envelope"}}
+{"cost": "about 1 call more a day; Plan's limit becomes 1 call and 6.00 USD a day", "id": "raise:Plan", "kind": "raise", "label": "Add budget for Plan", "params": {"calls": 1, "engine": "Plan", "usd": 6.0, "what": "envelope"}}
+{"cost": "about 10 calls and 0.36 USD more a day; Plan's limit becomes 12 calls and 0.41 USD a day", "id": "raise:Plan", "kind": "raise", "label": "Add budget for Plan", "params": {"calls": 12, "engine": "Plan", "usd": 0.405, "what": "envelope"}}
+{"cost": "about nothing more; the goal's ceiling becomes 8 rounds, 18 calls and 0.72 USD", "id": "raise:ceiling", "kind": "raise", "label": "Add budget for two more rounds", "params": {"calls": 18, "rounds": 8, "usd": 0.72, "what": "ceiling"}}
+{"cost": "about 7 calls and 0.30 USD more; the goal's ceiling becomes 6 rounds, 97 calls and 9.30 USD", "id": "raise:ceiling", "kind": "raise", "label": "Add budget for the goal", "params": {"calls": 97, "rounds": 6, "usd": 9.3, "what": "ceiling"}}
+{"cost": "about 7 calls and 0.30 USD more; the goal's ceiling becomes 7 rounds, 97 calls and 9.30 USD", "id": "raise:ceiling", "kind": "raise", "label": "Add budget for one more round", "params": {"calls": 97, "rounds": 7, "usd": 9.3, "what": "ceiling"}}
+{"cost": "about 7 calls and 0.30 USD more; the goal's ceiling becomes 8 rounds, 97 calls and 9.30 USD", "id": "raise:ceiling", "kind": "raise", "label": "Add budget for two more rounds", "params": {"calls": 97, "rounds": 8, "usd": 9.3, "what": "ceiling"}}
+{"cost": "about 7 calls and 0.30 USD more; the goal's ceiling becomes 12 rounds, 97 calls and 9.30 USD", "id": "raise:ceiling", "kind": "raise", "label": "Add budget for six more rounds", "params": {"calls": 97, "rounds": 12, "usd": 9.3, "what": "ceiling"}}
+{"cost": "about 7 calls and 0.30 USD more; the goal's ceiling becomes 19 rounds, 97 calls and 9.30 USD", "id": "raise:ceiling", "kind": "raise", "label": "Add budget for more rounds", "params": {"calls": 97, "rounds": 19, "usd": 9.3, "what": "ceiling"}}
+{"cost": "about 7 calls and 0.30 USD more; the goal's ceiling becomes 40 rounds, 97 calls and 9.30 USD", "id": "raise:ceiling", "kind": "raise", "label": "Add budget for more rounds", "params": {"calls": 97, "rounds": 40, "usd": 9.3, "what": "ceiling"}}
+{"cost": "D2 is dropped", "id": "leave:D2", "kind": "leave", "label": "Leave D2 out"}
+{"cost": "the department stops where it is", "id": "stop", "kind": "stop", "label": "Stop here"}
+{"cost": "about nothing more; the goal's ceiling becomes 2 rounds, 3 calls and 0.12 USD (the most allowed)", "id": "raise:ceiling", "kind": "raise", "label": "Add budget for one more round", "params": {"calls": 3, "rounds": 2, "usd": 0.12, "what": "ceiling"}}
+{"cost": "The site goes live without the booking page.", "id": "leave:D2", "label": "Leave D2 out"}
+{"cost": "The site goes live without the booking page.", "id": "leave:D2", "label": ""}
+{"cost": "free", "id": "words", "label": "Say\u0007 it"}
+{"cost": "b", "id": "words", "kind": "words", "label": "a"}
+{"cost": "d", "id": "leave:D1", "kind": "leave", "label": "c"}
+{"cost": "f", "id": "stop", "kind": "stop", "label": "e"}
+{"cost": "Adaptation shapes it afresh", "id": "words", "kind": "words", "label": "Change the plan in my words"}
+{"cost": "D2 is dropped from done-when (xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx); nothing more is spent", "id": "leave:D2", "kind": "leave", "label": "Leave D2 out"}
+{"cost": "the plan is shaped afresh from your words; Priority prices it and Root checks it before anything runs", "id": "words", "kind": "words", "label": "Tell me what to do about it"}
