@@ -599,3 +599,22 @@ def test_str7_an_edit_does_not_change_a_stream_in_flight():
     finally:
         registry.DEF_CLASS.pop("t5.flow", None)
         registry._ADAPTERS.pop("t5.flow", None)
+
+
+# --------------------------------------------------------------------------------------------------------------------------- T6
+def test_str5_with_an_edit_the_only_difference_is_one_models_frame(monkeypatch):
+    """The sessions stream with a bump during poll 3: the golden's bytes plus one `models` frame, in that poll and nowhere else."""
+    import app
+    from layer_models import bus
+    golden = (FIX / "sessions.golden.txt").read_text(encoding="utf-8")
+    before = bus.revision()
+    box = {}
+    text, _ = sessions_frames(app, monkeypatch, hooks={3: lambda: box.setdefault("rev", bus.bump(["x.client", "x.line"]))})
+    assert box["rev"] == before + 1
+    frame = 'event: models\ndata: {"rev":%d,"keys":["x.client","x.line"]}\n\n' % box["rev"]
+    assert frame in text and text.count("event: models") == 1
+    assert text.replace(frame, "") == golden, "nothing else in the stream changed"
+    assert text.index(frame) > text.index("event: changed") and text.index(frame) < text.index("event: tick")
+    # a client that connects after the edit is told nothing of it
+    late, _ = sessions_frames(app, monkeypatch)
+    assert late == golden
