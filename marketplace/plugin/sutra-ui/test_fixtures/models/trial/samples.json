@@ -1,0 +1,349 @@
+{
+  "act.conflict": {
+    "failing": {
+      "options": [
+        {
+          "cost": "The site goes live without the booking page.",
+          "id": "leave:D2",
+          "label": "Leave D2 out"
+        },
+        {
+          "cost": "The site goes live without the booking page.",
+          "id": "leave:D2",
+          "label": "Leave D2 out"
+        },
+        {
+          "cost": "The site goes live without the booking page.",
+          "id": "leave:D2",
+          "label": "Leave D2 out"
+        },
+        {
+          "cost": "The site goes live without the booking page.",
+          "id": "leave:D2",
+          "label": "Leave D2 out"
+        }
+      ],
+      "word": "conflict"
+    },
+    "good": {
+      "bound": "hops",
+      "engines": [
+        "Plan",
+        "Write"
+      ],
+      "for": null,
+      "options": [
+        {
+          "cost": "The site goes live without the booking page.",
+          "id": "leave:D2",
+          "label": "Leave D2 out"
+        }
+      ],
+      "source": "library",
+      "why": "Priority asked for less",
+      "word": "conflict",
+      "words": null
+    }
+  },
+  "adaptation.ladder": {
+    "failing": [
+      "C0"
+    ],
+    "good": {
+      "engine": "Write",
+      "form": null,
+      "held": false,
+      "history": [],
+      "pending": null,
+      "rung": "C0",
+      "since": "2026-10-26T10:00:00",
+      "step": "write.page",
+      "trial": null
+    }
+  },
+  "coordination.left_out": {
+    "failing": {
+      "engine": "Check",
+      "in_line": true,
+      "since": "2026-10-26T10:00:00"
+    },
+    "good": {
+      "engine": "Check",
+      "in_line": false,
+      "since": "2026-10-26T10:00:00"
+    }
+  },
+  "coordination.slot": {
+    "failing": {
+      "checked": false,
+      "engine": "Write",
+      "of": "Site plan",
+      "on": "after Site plan v1",
+      "since": "2026-10-26T10:00:00",
+      "window_min": 1441
+    },
+    "good": {
+      "checked": false,
+      "engine": "Write",
+      "of": "Site plan",
+      "on": "after Site plan v1",
+      "since": "2026-10-26T10:00:00",
+      "window_min": 30
+    }
+  },
+  "coordination.table": {
+    "failing": {
+      "by": "Root",
+      "line": [
+        "Plan",
+        "Write",
+        "Check",
+        "Publish"
+      ],
+      "order": [
+        "posts",
+        "line",
+        "functions"
+      ]
+    },
+    "good": {
+      "by": "Coordination",
+      "edges": {},
+      "functions": [
+        "Identity",
+        "Adaptation",
+        "Priority",
+        "Coordination",
+        "Audit"
+      ],
+      "grown": [],
+      "left_out": [
+        {
+          "engine": "Check",
+          "in_line": false,
+          "since": "2026-10-26T10:00:00"
+        }
+      ],
+      "line": [
+        "Plan",
+        "Write",
+        "Check",
+        "Publish"
+      ],
+      "order": [
+        "posts",
+        "line",
+        "functions"
+      ],
+      "registered": 1,
+      "schema_version": 1,
+      "since": "2026-10-26T10:00:00",
+      "timetable": [
+        {
+          "checked": false,
+          "engine": "Write",
+          "of": "Site plan",
+          "on": "after Site plan v1",
+          "since": "2026-10-26T10:00:00",
+          "window_min": 30
+        }
+      ],
+      "why": "Root registered the plan"
+    }
+  },
+  "envelope": {
+    "failing": {
+      "calls": -1,
+      "usd": 0.5
+    },
+    "good": {
+      "calls": 40,
+      "usd": 0.5
+    }
+  },
+  "identity.ask": {
+    "failing": {
+      "id": "a-1",
+      "kind": "blocked",
+      "status": "maybe"
+    },
+    "good": {
+      "by": null,
+      "chosen": null,
+      "created": "2026-10-26T10:00:00",
+      "cycle_id": null,
+      "decided": null,
+      "engine": "Write",
+      "id": "a-1",
+      "items": [
+        {
+          "confirm": "",
+          "how": "by eye",
+          "id": "D1",
+          "level": "outcome",
+          "text": "The home page says what the clinic does"
+        }
+      ],
+      "kind": "blocked",
+      "options": [
+        {
+          "cost": "The site goes live without the booking page.",
+          "id": "leave:D2",
+          "label": "Leave D2 out"
+        }
+      ],
+      "status": "pending",
+      "text": "Write cannot run: the plan has no pages.",
+      "thread": null
+    }
+  },
+  "identity.done_item": {
+    "failing": {
+      "colour": "red",
+      "confirm": "",
+      "how": "by eye",
+      "id": "D1",
+      "level": "outcome",
+      "text": "The home page says what the clinic does"
+    },
+    "good": {
+      "confirm": "",
+      "how": "by eye",
+      "id": "D1",
+      "level": "outcome",
+      "text": "The home page says what the clinic does"
+    }
+  },
+  "option": {
+    "failing": {
+      "cost": "The site goes live without the booking page.",
+      "id": "leave:D2",
+      "label": ""
+    },
+    "good": {
+      "cost": "The site goes live without the booking page.",
+      "id": "leave:D2",
+      "label": "Leave D2 out"
+    }
+  },
+  "workflow": {
+    "failing": {
+      "engines": [
+        {
+          "check": "pages_are_html",
+          "confidence": 0.9,
+          "covers": [
+            "D1",
+            "D2"
+          ],
+          "does": "writes the pages",
+          "doubt": "",
+          "envelope": {
+            "calls": 40,
+            "usd": 0.5
+          },
+          "fit": "",
+          "internet": false,
+          "level": 1,
+          "made_by": "library",
+          "name": "Write",
+          "reads": "Site plan",
+          "required": false,
+          "start": {},
+          "writes": "Pages"
+        }
+      ],
+      "source": "copied"
+    },
+    "good": {
+      "at": "2026-10-26T10:00:00",
+      "by": "Root",
+      "checks": [
+        {
+          "check": "names_an_engine",
+          "passed": true,
+          "why": "it names four engines"
+        }
+      ],
+      "covers": {
+        "D1": [
+          "Write"
+        ]
+      },
+      "covers_by": "adaptation",
+      "deliverable": "Pages",
+      "engines": [
+        {
+          "check": "pages_are_html",
+          "confidence": 0.9,
+          "covers": [
+            "D1",
+            "D2"
+          ],
+          "does": "writes the pages",
+          "doubt": "",
+          "envelope": {
+            "calls": 40,
+            "usd": 0.5
+          },
+          "fit": "",
+          "internet": false,
+          "level": 1,
+          "made_by": "library",
+          "name": "Write",
+          "reads": "Site plan",
+          "required": false,
+          "start": {},
+          "writes": "Pages"
+        }
+      ],
+      "kind": "website",
+      "left_out": [],
+      "schema_version": 1,
+      "source": "library",
+      "version": 1,
+      "why": ""
+    }
+  },
+  "workflow.check": {
+    "failing": {
+      "check": "looks_nice",
+      "passed": true,
+      "why": "it names four engines"
+    },
+    "good": {
+      "check": "names_an_engine",
+      "passed": true,
+      "why": "it names four engines"
+    }
+  },
+  "workflow.engine": {
+    "failing": {
+      "name": "Write",
+      "reads": "Site plan"
+    },
+    "good": {
+      "check": "pages_are_html",
+      "confidence": 0.9,
+      "covers": [
+        "D1",
+        "D2"
+      ],
+      "does": "writes the pages",
+      "doubt": "",
+      "envelope": {
+        "calls": 40,
+        "usd": 0.5
+      },
+      "fit": "",
+      "internet": false,
+      "level": 1,
+      "made_by": "library",
+      "name": "Write",
+      "reads": "Site plan",
+      "required": false,
+      "start": {},
+      "writes": "Pages"
+    }
+  }
+}
