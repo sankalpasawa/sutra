@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from layer_models import compile as C, owner_rules as OR, registry, spec as SP
+from layer_models import bus, compile as C, owner_rules as OR, registry, rules, spec as SP, store
 from layer_models.faults import sentences
 
 HERE = Path(__file__).resolve().parent
@@ -363,6 +363,14 @@ def test_r10_a_new_version_is_a_child_of_the_last():
     assert ('LOOSENS_BASE', 'name: allows more than 80 characters') in r.faults['x.client/v2']
 
 
+def test_r10_a_change_in_place_that_loosens_is_not_in_place(home):
+    store.save(fix('client')['client/v1'])
+    wider = fix('client')['client/v1']
+    wider['fields'][0]['max_len'] = 120
+    r = store.save(wider, 1)
+    assert isinstance(r, store.Pending) and r['class'] == 'widens'
+
+
 def test_r11_names_and_vocabulary():
     for n in ('model_dump', 'json', 'class'):
         assert OR.names(spec('thing', fields=[F(n)])), n
@@ -418,3 +426,258 @@ def test_classification_table():
     assert classify(old, retired_optional) == 'same'
 
 
+# ---- O4: the store ----------------------------------------------------------------------------------------------------------
+def make(name='client'):
+    return store.save(fix(name)['%s/v1' % name])
+
+
+def test_a_save_writes_history_and_bumps_the_bus(home):
+    before = bus.revision()
+    r = make()
+    assert r == {'ok': True, 'rev': 1, 'class': 'same', 'key': 'x.client/v1'}
+    assert bus.revision() == before + 1 and 'x.client' in bus.changed_since(before)
+    rows = store.history()
+    assert rows[-1]['op'] == 'create' and rows[-1]['says'] == 'made Client' and rows[-1]['spec']['name'] == 'client'
+    assert SP.check(SP.HistoryRow, rows[-1]) == []
+    assert registry.current().state['x.client/v1'] == 'on'
+    doc = json.loads((store._paths()[0]).read_text())
+    assert doc['rev'] == 1 and SP.check(SP.ModelFile, doc) == []
+
+
+def test_a_stale_rev_is_refused(home):
+    make()
+    s = fix('client')['client/v1']
+    s['about'] = 'a'
+    with pytest.raises(store.ModelFault) as e:
+        store.save(s, 0)
+    assert e.value.code == 'STALE_REV' and e.value.faults == ['something changed since you looked; reload']
+    assert store.save(s, 1)['rev'] == 2
+
+
+def test_a_tightening_applies_and_a_widening_waits(home):
+    make()
+    tight = fix('client')['client/v1']
+    tight['fields'][0]['max_len'] = 40
+    assert store.save(tight, 1)['class'] == 'tightens'
+    wide = fix('client')['client/v1']
+    wide['fields'][0]['max_len'] = 120
+    r = store.save(wide, 2)
+    assert isinstance(r, store.Pending) and r['says'] == 'let name run to 120 characters'
+    on_disk = json.loads(store._paths()[0].read_text())
+    assert on_disk['models']['client/v1']['fields'][0]['max_len'] == 40 and on_disk['rev'] == 2
+    rows = json.loads(store._paths()[2].read_text())
+    assert rows[0]['id'] == r['pending_id'] and rows[0]['base_rev'] == 2 and rows[0]['spec']['fields'][0]['max_len'] == 120
+    assert rows[0]['id'].startswith('p-') and len(rows[0]['id']) == 10
+
+
+def test_the_stamp_applies_and_no_drops(home):
+    make()
+    wide = fix('client')['client/v1']
+    wide['fields'][0]['max_len'] = 120
+    r = store.save(wide, 1)
+    out = store.apply_pending(r['pending_id'], True)
+    assert out['rev'] == 2 and registry.current().specs['client/v1']['fields'][0]['max_len'] == 120
+    assert store.history()[-1]['op'] == 'stamp' and store.pending() == []
+    wide['fields'][0]['max_len'] = 200
+    r = store.save(wide, 2)
+    assert store.apply_pending(r['pending_id'], False) == {'ok': True, 'dropped': True}
+    assert registry.current().specs['client/v1']['fields'][0]['max_len'] == 120 and store.rev() == 2 and store.pending() == []
+
+
+def test_a_stale_pending_change_is_dropped_and_says_so(home):
+    make()
+    wide = fix('client')['client/v1']
+    wide['fields'][0]['max_len'] = 120
+    r = store.save(wide, 1)
+    other = fix('client')['client/v1']
+    other['about'] = 'moved on'
+    store.save(other, 1)
+    with pytest.raises(store.ModelFault) as e:
+        store.apply_pending(r['pending_id'], True)
+    assert e.value.code == 'STALE_REV' and 'dropped' in e.value.faults[0]
+    assert store.pending() == []
+    with pytest.raises(store.ModelFault) as e:
+        store.apply_pending('p-00000000', True)
+    assert e.value.code == 'UNKNOWN_PENDING' and e.value.status == 404
+
+
+def test_undo_is_direct(home):
+    make()
+    s = fix('client')['client/v1']
+    s['fields'].append(F('email', max_len=60))
+    store.save(s, 1)
+    assert 'email' in [f['name'] for f in registry.current().specs['client/v1']['fields']]
+    out = store.undo('x.client', 2)
+    assert out['class'] == 'same'
+    assert 'email' not in [f['name'] for f in registry.current().specs['client/v1']['fields']]
+    first = store.undo('x.client', 3)                       # the undo itself is a change, undone the same way
+    assert 'email' in [f['name'] for f in registry.current().specs['client/v1']['fields']] and first['rev'] == 4
+
+
+def test_revert_goes_by_comparison(home):
+    make()
+    tight = fix('client')['client/v1']
+    tight['fields'][0]['max_len'] = 40
+    store.save(tight, 1)
+    r = store.revert('x.client', 1, 2)                       # back to the looser one: lets in more
+    assert isinstance(r, store.Pending)
+    store.apply_pending(r['pending_id'], False)
+    wide = fix('client')['client/v1']
+    wide['fields'][0]['max_len'] = 120
+    store.apply_pending(store.save(wide, 2)['pending_id'], True)           # rev 3
+    back = store.revert('x.client', 2, 3)                    # to the 40 one: tighter, direct
+    assert back['class'] == 'tightens' and registry.current().specs['client/v1']['fields'][0]['max_len'] == 40
+    with pytest.raises(store.ModelFault) as e:
+        store.revert('x.client', 99, 4)
+    assert e.value.code == 'UNKNOWN_MODEL'
+
+
+def test_nothing_is_deleted(home):
+    make()
+    store.set_enabled('x.client', False, 1)
+    assert registry.current().state['x.client/v1'] == 'off' and 'client/v1' in json.loads(store._paths()[0].read_text())['models']
+    s = fix('client')['client/v1']
+    s['fields'][2]['retired'] = True
+    s['enabled'] = False
+    store.save(s, 2)
+    assert [f['name'] for f in store.load()['models']['client/v1']['fields']] == ['name', 'tier', 'phone']
+    assert [r['op'] for r in store.history()] == ['create', 'disable', 'edit']
+    gone = fix('client')['client/v1']
+    gone['fields'] = gone['fields'][:2]
+    with pytest.raises(store.ModelFault) as e:
+        store.save(gone, 3)
+    assert e.value.code == 'FIELD_DROPPED'
+
+
+def test_turning_on_a_child_while_its_base_is_off_is_base_off(home):
+    make()
+    make('vip_client')
+    store.set_enabled('x.vip_client', False, 2)
+    store.set_enabled('x.client', False, 3)
+    with pytest.raises(store.ModelFault) as e:
+        store.set_enabled('x.vip_client', True, 4)
+    assert e.value.code == 'BASE_OFF' and e.value.faults == ['Client is off; turn it on first']
+
+
+def test_a_changed_base_is_checked_again(home, monkeypatch):
+    from typing import Annotated, Any
+    from layer_models.base import Open
+    from layer_models.types import Enum, Str
+    from layer_models.owner_base import OwnerRecord
+
+    class Rec1(Open):
+        __abstract__ = True
+        id: Annotated[str, Str(40, 1, word=True)]
+        tier: Annotated[Any, Enum('gold', 'silver')] = None
+
+    class Rec2(Open):
+        __abstract__ = True
+        id: Annotated[str, Str(40, 1, word=True)]
+        tier: Annotated[Any, Enum('gold')] = None
+
+    class Rec3(Open):
+        __abstract__ = True
+        id: Annotated[str, Str(40, 1, word=True)]
+        tier: Annotated[Any, Enum('gold', 'silver')] = None
+        extra: Annotated[str, Str(10)] = None
+
+    monkeypatch.setattr(registry, 'core_map', lambda: {'core:record': Rec1})
+    s = spec('thing', fields=[F('tier', 'choice', choices=['gold', 'silver'])])
+    store.save(s)
+    sha1 = store.load()['models']['thing/v1']['base_sha']
+    assert sha1 and registry.current().state['x.thing/v1'] == 'on'
+    monkeypatch.setattr(registry, 'core_map', lambda: {'core:record': Rec3})       # additive: it still fits
+    store.reload()
+    assert store.history()[-1]['op'] == 'rebase' and store.load()['models']['thing/v1']['base_sha'] != sha1
+    monkeypatch.setattr(registry, 'core_map', lambda: {'core:record': Rec2})       # tighter: the child now loosens
+    store.reload()
+    reg = registry.current()
+    assert reg.state['x.thing/v1'] == 'needs_a_look' and 'tier' in reg.why['x.thing/v1']
+    assert store.history()[-1]['op'] == 'base_changed'
+    assert 'thing/v1' in store.load()['models']                                     # nothing is deleted
+    n = len(store.history())
+    store.reload()
+    assert len(store.history()) == n                                                # said once
+
+
+def test_a_bad_file_is_kept_and_marked(home):
+    make()
+    p = store._paths()[0]
+    doc = json.loads(p.read_text())
+    doc['models']['broken/v1'] = {'name': 'broken', 'version': 1, 'label': 'Broken', 'base': 'core:record',
+                                  'fields': [{'name': 'a', 'label': 'A', 'type': 'blob'}]}
+    p.write_text(json.dumps(doc))
+    before = p.read_text()
+    reg = store.reload()
+    assert reg.state['x.broken/v1'] == 'needs_a_look' and 'type' in reg.why['x.broken/v1']
+    assert reg.state['x.client/v1'] == 'on'
+    assert p.read_text() == before                                                   # a load rewrites nothing
+    p.write_text('{not json')
+    reg = store.reload()
+    assert reg.state == {} and p.read_text() == '{not json'
+    with pytest.raises(store.ModelFault) as e:
+        store.save(fix('client')['client/v1'])
+    assert e.value.code == 'BAD_FILE' and p.read_text() == '{not json'
+
+
+def test_history_rolls_at_5_mb(home, monkeypatch):
+    monkeypatch.setattr(store, 'HISTORY_MAX', 2000)
+    make()
+    s = fix('client')['client/v1']
+    for i in range(6):
+        s['about'] = 'edit %d ' % i + 'x' * 100
+        store.save(s)
+    h = store._paths()[1]
+    assert h.with_name('history.1.jsonl').exists() and h.exists()
+    assert len(store.history()) >= 2
+
+
+def test_one_write_a_second(home, monkeypatch):
+    monkeypatch.setattr(store, 'MIN_GAP', 1.0)
+    t = [100.0]
+    monkeypatch.setattr(store, '_clock', lambda: t[0])
+    store._LAST_WRITE[0] = 0.0
+    make()
+    s = fix('client')['client/v1']
+    s['about'] = 'a'
+    with pytest.raises(store.ModelFault) as e:
+        store.save(s)
+    assert e.value.code == 'SLOW_DOWN' and e.value.status == 429
+    t[0] += 1.5
+    assert store.save(s)['ok']
+
+
+def test_a_model_called_like_one_that_exists_is_taken(home):
+    make()
+    with pytest.raises(store.ModelFault) as e:
+        store.save(dict(spec('client'), label='Other'), create=True)
+    assert e.value.code == 'NAME_TAKEN'
+    with pytest.raises(store.ModelFault) as e:
+        store.save(spec('identity_x'))
+    assert e.value.code == 'NAME_RESERVED'
+
+
+def test_a_save_that_loosens_below_its_base_names_the_field(home):
+    make()
+    with pytest.raises(store.ModelFault) as e:
+        store.save(spec('loose', 'x:client/v1', [F('tier', 'choice', choices=['gold', 'platinum'])]))
+    assert e.value.code == 'LOOSENS_BASE' and 'tier: adds platinum to the choices' in e.value.faults
+    assert 'loose/v1' not in store.load()['models']
+
+
+def test_every_applied_change_leaves_a_row_in_roots_runs(home, monkeypatch):
+    import website_dept as W
+    d = W.home() / 'org-root'
+    d.mkdir(parents=True)
+    (d / 'dept.json').write_text(json.dumps({'kind': 'root', 'ref': 'org-root', 'name': 'Org Root'}))
+    make()
+    s = fix('client')['client/v1']
+    s['fields'].append(F('email', max_len=60))
+    store.save(s, 1)
+    s['fields'][0]['max_len'] = 120
+    store.save(s, 2)
+    rows = [r['what'] for r in W.runs('org-root')]
+    assert 'the owner changed Client: made Client' in rows
+    assert 'the owner changed Client: added the field email' in rows
+    assert "the owner asked to let name run to 120 characters for Client; it waits for the owner's stamp" in rows
+    assert all(r['engine'] == 'Root' and r['system'] for r in W.runs('org-root'))
