@@ -158,3 +158,27 @@ def test_faults_resolves_a_ref_in_the_defs_it_is_given():
     assert S.faults(S.ref("thing"), "abc", defs=other) == []
     assert S.faults(S.ref("name"), "x y", defs=other) == ["$: no definition named name"]       # not DEFS when `defs` is given
     assert S.faults(S.ref("name"), "?") != []                                                   # DEFS when it is not
+
+
+# ---- P5: the department record and the views --------------------------------------------------------------------------------
+def test_every_department_key_has_one_owner_and_one_adapter():
+    import layer_models
+    from layer_models import department as D, registry
+    import layer_models.legacy as L
+    layer_models.load()
+    want = {k: v["x-owner"] for k, v in L.LEGACY_DEFS["department"]["properties"].items()}
+    assert D.OWNERS == want and len(want) == 38
+    for key, owner in want.items():
+        assert owner in S.LAYER_NAMES
+        name = "department." + key
+        assert name in registry.DEF_CLASS or name in registry.DEF_TYPE, name       # its own definition
+        assert registry.adapter(name) is registry.adapter(name)                     # one adapter, built once
+    assert len({id(registry.adapter("department." + k)) for k in want}) == 38        # and each key has its own
+
+
+def test_a_department_key_is_checked_alone_against_its_own_definition():
+    import layer_models
+    assert layer_models.validate("department.goal", "x" * 2001) == ["$: longer than 2000"]
+    assert layer_models.validate("department.goal", "fine") == []
+    assert layer_models.validate("department.layers", {"identity": "identity/v1"}) == []
+    assert layer_models.validate("department.layers", {"identity": "nope"}) == ["$.identity: does not match " + S.IMPL_RE]

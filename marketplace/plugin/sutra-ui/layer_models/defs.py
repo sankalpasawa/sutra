@@ -3,9 +3,9 @@
 `NAMES` is the interface's order, the order `export_all()` writes in. A name is registered once, here; a module only declares
 `DEFINES = {name: class or annotation}`. Importing this module registers them all."""
 from . import registry
-from . import acts, adaptation, audit, common, coordination, fields, identity, options, priority, root, settings, workflow
+from . import acts, adaptation, audit, common, coordination, department, fields, identity, options, priority, root, settings, views, workflow
 
-MODULES = (common, identity, root, workflow, options, coordination, adaptation, priority, audit, acts, fields, settings)
+MODULES = (common, identity, root, workflow, options, coordination, adaptation, priority, audit, acts, fields, settings, views, department)
 
 NAMES = (
     'name', 'id.item', 'id.finding', 'impl', 'envelope', 'option', 'check.verdict', 'identity.done_item', 'identity.rule',
@@ -16,7 +16,16 @@ NAMES = (
     'act.words', 'act.stamp', 'act.tell', 'act.ask', 'act.verdict', 'act.line_request', 'act.line', 'act.conflict',
     'act.finding', 'act.born', 'act.doubt', 'act.reading', 'act.next', 'act.round', 'act.question', 'act.answer', 'field.task',
     'field.guidance', 'field.text', 'field.note', 'field.items', 'instructions', 'setting.windows', 'setting.make',
-    'setting.order', 'setting.spot_every_s',
+    'setting.order', 'setting.spot_every_s', 'view.identity', 'view.adaptation', 'view.adaptation.round', 'view.priority',
+    'view.coordination', 'view.engine_card', 'view.audit', 'department.schema_version', 'department.kind', 'department.ref',
+    'department.name', 'department.parent', 'department.created', 'department.runtime', 'department.control',
+    'department.stopped', 'department.engines', 'department.artifacts', 'department.workflows', 'department.layers',
+    'department.org', 'department.root', 'department.template_ref', 'department.templates', 'department.founding',
+    'department.events', 'department.pending_final_tell', 'department.goal', 'department.done', 'department.done_items',
+    'department.to_be_confirmed', 'department.rules', 'department.owner', 'department.windows', 'department.identity_revision',
+    'department.initial_goal_context', 'department.publish_asks_from', 'department.goals', 'department.looked_up',
+    'department.host', 'department.ladders', 'department.ladder', 'department.bounds', 'department.envelopes',
+    'department.ceiling', 'department',
 )
 
 
