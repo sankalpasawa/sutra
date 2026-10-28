@@ -284,3 +284,32 @@ def test_every_applied_change_leaves_a_row_in_roots_runs(api, home):
     rows = [r['what'] for r in W.runs('org-root')]
     assert len(rows) == 4 and rows[1] == 'the owner changed Client: added the field email'
     assert rows[2] == 'the owner changed Client: turned Client off' and rows[3].startswith('the owner changed Client: undid')
+
+
+def test_the_hostile_strings_come_back_as_the_strings_they_were_through_every_read_model(api):
+    """O8: the attack strings of test_j2ui_xss.py, sent as labels, choices and about text, come back from the list, the page, the shape,
+    the graph and the history as the exact same strings, as JSON data, never escaped, stripped or rewritten."""
+    from test_fixtures.j2ui import seed as SEED
+    hostile = list(SEED.PAYLOADS) + list(SEED.EXTRAS_OF_ATTACK)
+    for i, h in enumerate(hostile):
+        s = dict(fix('client'), name='thing%d' % i, label=h[:60], about=h)
+        s['fields'] = [dict(F('f', 'choice', choices=[h[:40]]), label=h[:60])]
+        r = api.post(BASE, json={'spec': s})
+        assert r.status_code == 200, r.text
+    lst = api.get(BASE).json()
+    assert [c['label'] for c in lst['yours']] == [h[:60] for h in hostile]
+    for i, h in enumerate(hostile):
+        key = 'x.thing%d' % i
+        page = api.get(BASE + '/' + key).json()
+        own = [f for f in page['fields'] if f['name'] == 'f'][0]
+        assert own['label'] == h[:60]
+        shape = api.get(BASE + '/' + key + '/shape')
+        assert shape.headers['content-type'].startswith('application/json')
+        assert shape.json()['schema']['properties']['f']['enum'] == [h[:40]]
+        hist = api.get(BASE + '/' + key + '/history').json()['history']
+        assert hist and hist[0]['op'] == 'create'
+    g = api.get(BASE + '/graph').json()
+    assert {n['label'] for n in g['nodes']} >= {h[:60] for h in hostile}
+    raw = api.get(BASE).text
+    for h in hostile:
+        assert json.dumps(h[:60], ensure_ascii=False)[1:-1] in raw
