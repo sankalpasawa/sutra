@@ -1,0 +1,203 @@
+{
+ "client/v1": {
+  "name": "client",
+  "version": 1,
+  "label": "Client",
+  "base": "core:record",
+  "fields": [
+   {
+    "name": "name",
+    "label": "Name",
+    "type": "text",
+    "max_len": 80,
+    "min_len": 1,
+    "required": true
+   },
+   {
+    "name": "tier",
+    "label": "Tier",
+    "type": "choice",
+    "choices": [
+     "gold",
+     "silver",
+     "bronze"
+    ]
+   },
+   {
+    "name": "phone",
+    "label": "Phone",
+    "type": "text",
+    "max_len": 30
+   }
+  ]
+ },
+ "vip_client/v1": {
+  "name": "vip_client",
+  "version": 1,
+  "label": "VIP client",
+  "base": "x:client/v1",
+  "fields": [
+   {
+    "name": "tier",
+    "label": "Tier",
+    "type": "choice",
+    "choices": [
+     "gold"
+    ]
+   },
+   {
+    "name": "name",
+    "label": "Name",
+    "type": "text",
+    "max_len": 40,
+    "min_len": 1,
+    "required": true
+   },
+   {
+    "name": "since",
+    "label": "Since",
+    "type": "date"
+   }
+  ]
+ },
+ "line/v1": {
+  "name": "line",
+  "version": 1,
+  "label": "Line",
+  "base": "core:record",
+  "fields": [
+   {
+    "name": "sku",
+    "label": "Sku",
+    "type": "text",
+    "max_len": 20,
+    "min_len": 1,
+    "required": true
+   },
+   {
+    "name": "qty",
+    "label": "Qty",
+    "type": "whole",
+    "minimum": 1,
+    "maximum": 99,
+    "required": true
+   }
+  ]
+ },
+ "order/v1": {
+  "name": "order",
+  "version": 1,
+  "label": "Order",
+  "base": "core:record",
+  "fields": [
+   {
+    "name": "note",
+    "label": "Note",
+    "type": "text",
+    "max_len": 100
+   }
+  ],
+  "links": [
+   {
+    "name": "lines",
+    "label": "Lines",
+    "mode": "nest",
+    "to": "x:line/v1",
+    "many": true,
+    "required": true,
+    "max": 5
+   },
+   {
+    "name": "client_id",
+    "label": "Client",
+    "mode": "refer",
+    "to": "x:client/v1",
+    "required": true
+   }
+  ]
+ },
+ "visit_note/v1": {
+  "name": "visit_note",
+  "version": 1,
+  "label": "Visit note",
+  "base": "core:artifact.template",
+  "fields": [
+   {
+    "name": "summary",
+    "label": "Summary",
+    "type": "long_text",
+    "max_len": 500
+   }
+  ]
+ },
+ "shape/v1": {
+  "name": "shape",
+  "version": 1,
+  "label": "Shape",
+  "base": "core:record",
+  "fields": [
+   {
+    "name": "kind",
+    "label": "Kind",
+    "type": "choice",
+    "choices": [
+     "circle",
+     "square"
+    ],
+    "required": true
+   }
+  ],
+  "abstract": true,
+  "discriminator": "kind"
+ },
+ "circle/v1": {
+  "name": "circle",
+  "version": 1,
+  "label": "Circle",
+  "base": "x:shape/v1",
+  "fields": [
+   {
+    "name": "kind",
+    "label": "Kind",
+    "type": "choice",
+    "choices": [
+     "circle"
+    ],
+    "required": true
+   },
+   {
+    "name": "radius",
+    "label": "Radius",
+    "type": "number",
+    "minimum": 0,
+    "maximum": 1000,
+    "required": true
+   }
+  ]
+ },
+ "square/v1": {
+  "name": "square",
+  "version": 1,
+  "label": "Square",
+  "base": "x:shape/v1",
+  "fields": [
+   {
+    "name": "kind",
+    "label": "Kind",
+    "type": "choice",
+    "choices": [
+     "square"
+    ],
+    "required": true
+   },
+   {
+    "name": "side",
+    "label": "Side",
+    "type": "number",
+    "minimum": 0,
+    "maximum": 1000,
+    "required": true
+   }
+  ]
+ }
+}
