@@ -469,6 +469,94 @@ test("M10: try a sample: not JSON, fits, does not fit with the server's sentence
   assert.strictEqual(posts(d, /validate/)[0].body.spec.name, "zed");
 });
 
+/* ── M11 ────────────────────────────────────────────────────────────────── */
+test("M11: structure: the sentences equal the graph's edges one for one; over thirty only the list and the filter; Tab reaches every box", async () => {
+  const c = await loaded();
+  click(c, { mdl: "structure" }); await settle();
+  const h = c.mdlStructureHtml();
+  const li = attrs(h, /<li>.*?<\/li>/g).map(x => words(x).trim().replace(/\.$/, "").trim());
+  assert.deepStrictEqual(li, GRAPH.text, "the same content, one for one");
+  /* the edges of the drawing: one line for each edge of the graph, by kind */
+  const kinds = k => attrs(h, new RegExp('<line class="' + k + '"', "g")).length;
+  assert.strictEqual(kinds("mdlext"), GRAPH.edges.filter(e => e.kind === "extends").length);
+  assert.strictEqual(kinds("mdlnest"), GRAPH.edges.filter(e => e.kind === "nests").length);
+  assert.strictEqual(kinds("mdlref"), GRAPH.edges.filter(e => e.kind === "refers").length);
+  assert.ok(/marker-end="url\(#mdl-closed\)"/.test(h) && /stroke-dasharray/.test(css.slice(css.indexOf("/* Models (A4)"))));
+  /* every box: focusable, in reading order (bases first, then what is built on them), owner models are links */
+  const boxes = attrs(h, /<g class="mdlbox[^"]*"[^>]*>/g);
+  assert.strictEqual(boxes.length, GRAPH.nodes.length);
+  boxes.forEach(b => assert.ok(/tabindex="0"/.test(b) && /role="link"/.test(b) && /aria-label="[^"]+, (built in|on|off|needs a look)"/.test(b), b));
+  const order = boxes.map(b => (/aria-label="([^"]+),/.exec(b) || [])[1]);
+  const lvl = lb => { const n = GRAPH.nodes.filter(x => x.label === lb)[0]; let d = 0, k = n.key; for (;;){ const e = GRAPH.edges.filter(x => x.from === k && x.kind === "extends")[0]; if (!e) break; k = e.to; d++; } return d; };
+  const lv = order.map(lvl);
+  assert.deepStrictEqual(lv, lv.slice().sort((a, b) => a - b), "reading order: left to right");
+  assert.strictEqual(attrs(h, /data-mdl="open" data-mdl-key="x\.[a-z_]+"/g).length, GRAPH.nodes.filter(n => !n.core).length);
+  assert.ok(/Built in/.test(h) && !/data-mdl-key="core:/.test(h), "built-in boxes are drawn grey with the word, and open nothing");
+  /* the words explain the lines without the drawing */
+  assert.ok(/Solid line with a closed head: is a kind of\. Thick line: holds\. Dashed line: points to by its id\./.test(words(h)));
+  /* over thirty models: no drawing, the list and a filter */
+  const big = { nodes: [], edges: [], text: [] };
+  for (let i = 0; i < 31; i++){ big.nodes.push({ key: "x.m" + i, label: "Model " + i, core: false, state: "on" }); big.text.push("Model " + i + " is a kind of Record"); }
+  const b = await loaded({ graph: big });
+  click(b, { mdl: "structure" }); await settle();
+  const bh = b.mdlStructureHtml();
+  assert.ok(!/<svg/.test(bh) && /data-mdlin="filter"/.test(bh) && attrs(bh, /<li>/g).length === 31);
+  b.mdlInput({ dataset: { mdlin: "filter" }, value: "Model 30" });
+  assert.strictEqual(attrs(b.mdlStructureHtml(), /<li>/g).length, 1);
+  /* the Enter key opens a box */
+  const key = (c.document.listeners.keydown || []).slice(-1)[0];
+  let prevented = false;
+  const el = { dataset: { mdl: "open", mdlKey: "x.order" }, getAttribute: () => "link", closest: () => el };
+  key({ target: el, key: "Enter", preventDefault(){ prevented = true; } });
+  assert.ok(prevented && c.mdlState().key === "x.order" && c.mdlState().view === "page");
+});
+
+/* ── M12 ────────────────────────────────────────────────────────────────── */
+test("M12: a model changed elsewhere is a quiet line, not a redraw; a restore that waits for a stamp shows the amber line", async () => {
+  const c = await loaded();
+  vm.runInContext("wbS().tab['r2'] = 'models'", c);
+  const renders = c.calls.render, reads = c.calls.apiGet.length;
+  c.mdlOnModelsEvent({ rev: LIST.rev + 5, keys: ["x.client"] });
+  assert.strictEqual(c.calls.render, renders, "no redraw");
+  assert.strictEqual(c.calls.apiGet.length, reads, "no read");
+  assert.ok(c.mdlState().stale);
+  assert.ok(/Models changed · Reload/.test(words(c.mdlPaneHtml())));
+  click(c, { mdl: "reload" }); await settle();
+  assert.ok(!c.mdlState().stale && !/Models changed/.test(c.mdlPaneHtml()) && c.calls.apiGet.length > reads);
+  /* an event for a revision this screen holds says nothing (its own write) */
+  const r1 = c.calls.apiGet.length;
+  c.mdlOnModelsEvent({ rev: LIST.rev });
+  assert.ok(!c.mdlState().stale && c.calls.apiGet.length === r1);
+  /* the pane is not open: the card is refreshed at once */
+  vm.runInContext("wbS().tab['r2'] = 'root'", c);
+  c.mdlOnModelsEvent({ rev: LIST.rev + 9 }); await settle();
+  assert.ok(c.calls.apiGet.length > r1 && !c.mdlState().stale);
+  /* history: rows with the time, the owner's words and the class as words; Restore this previews first */
+  const H = { history: [
+    { rev: 3, at: "2026-10-27T11:02:00+05:30", by: "the owner", op: "edit", says: "let name run to 120 characters", class: "widens" },
+    { rev: 2, at: "2026-10-27T10:31:00+05:30", by: "the owner", op: "edit", says: "added the field phone", class: "tightens" },
+    { rev: 1, at: "2026-10-27T10:24:00+05:30", by: "the owner", op: "create", says: "made Client", class: "same" }] };
+  const h = await loaded({ history: H });
+  click(h, { mdl: "structure" }); click(h, { mdl: "history" }); await settle();
+  const w = words(h.mdlStructureHtml());
+  assert.ok(/11:02 You let name run to 120 characters/.test(w) && /Lets in more/.test(w) && /10:31 You added the field phone/.test(w) && /Tightens/.test(w) && /No change/.test(w), w);
+  assert.ok(/mdlnote/.test(h.mdlStructureHtml()), "the stamp that waits is on the history too");
+  click(h, { mdl: "restore", mdlKey: "x.client", mdlRev: "3" }); await settle();
+  assert.deepStrictEqual(posts(h, /preview/)[0].body, { op: "revert", key: "x.client", to_rev: 3 });
+  const pr = copy(fx("preview_widens"));
+  const k = await loaded({ history: H, post: (p, b) => p === "/api/native/_models/preview" ? Promise.resolve(pr) : /revert$/.test(p) ? Promise.resolve({ ok: true, pending: true, class: "widens", pending_id: "p-9", says: "went back to revision 3 of Client" }) : undefined });
+  click(k, { mdl: "structure" }); click(k, { mdl: "history" }); await settle();
+  click(k, { mdl: "restore", mdlKey: "x.client", mdlRev: "3" }); await settle();
+  assert.ok(/Save for my stamp/.test(sheet(k)) && /mdllive amber/.test(sheet(k)) && /This waits for your stamp/.test(words(sheet(k))));
+  click(k, { mdl: "restorego" }); await settle();
+  const rv = posts(k, /revert$/)[0];
+  assert.strictEqual(rv.p, "/api/native/_models/x.client/revert"); assert.deepStrictEqual(rv.body, { to_rev: 3, rev: LIST.rev });
+  assert.ok(/Saved for your stamp/.test(k.mdlPaneHtml()));
+  const empty = await loaded({ history: { history: [] }, list: Object.assign(copy(LIST), { yours: [] }) });
+  click(empty, { mdl: "structure" }); click(empty, { mdl: "history" }); await settle();
+  assert.ok(/Nothing has changed yet/.test(words(empty.mdlStructureHtml())));
+});
+
 /* ── M14 ────────────────────────────────────────────────────────────────── */
 test("M14: the stylesheet block is tokens only and covers what the script emits; panel.html loads the script before the tail", () => {
   const i = css.indexOf("/* Models (A4)");
