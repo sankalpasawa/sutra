@@ -94,3 +94,38 @@ def test_facade_names():
     assert lost == []
     moved = {n: (k, _kind(getattr(S, n))) for n, k in snap.items() if _kind(getattr(S, n)) != k}
     assert moved == {}
+
+
+# ---- P1 -------------------------------------------------------------------------------------------------------------------
+def test_describe_is_byte_for_byte_what_it_was():
+    sha = hashlib.sha256(json.dumps(S.describe(), sort_keys=True).encode("utf-8")).hexdigest()
+    assert sha == (MODELS / "describe.sha").read_text(encoding="utf-8").strip()
+
+
+def _fresh(code):
+    env = dict(os.environ)
+    env.pop("PYTEST_ADDOPTS", None)
+    return subprocess.run([sys.executable, "-c", code], cwd=str(HERE), env=env, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("order", [("layer_consts", "layer_models", "layer_schema"), ("layer_consts", "layer_schema", "layer_models"),
+                                   ("layer_models", "layer_consts", "layer_schema"), ("layer_models", "layer_schema", "layer_consts"),
+                                   ("layer_schema", "layer_consts", "layer_models"), ("layer_schema", "layer_models", "layer_consts")])
+def test_import_in_both_orders(order):
+    r = _fresh("; ".join("import " + m for m in order) + "; import layer_schema as S, layer_consts as K; assert S.LAYER_NAMES is K.LAYER_NAMES")
+    assert r.returncode == 0, r.stderr
+
+
+def test_layer_consts_imports_nothing_of_the_app():
+    r = _fresh("import sys; import layer_consts; app = [m for m in sys.modules if m in ('layer_schema', 'website_dept', 'engine_runtime', "
+               "'j2_runtime', 'functions_view', 'layers')]; assert not app, app")
+    assert r.returncode == 0, r.stderr
+
+
+def test_the_constants_that_stay_stay_in_layer_schema():
+    import layer_consts as K
+    for name in ("MODE", "OWNERSHIP_MODE", "NEVER_REFUSE", "REFUSED", "ANY", "SCHEMA_VERSION", "HERE", "INTERFACE_SHA"):
+        assert name in vars(S)
+        assert not hasattr(K, name), name
+    for name in K.__all__:
+        assert getattr(S, name) is getattr(K, name), name
