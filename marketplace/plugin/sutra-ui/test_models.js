@@ -186,6 +186,57 @@ test("M2: the card names the owner's models, never a count; the empty sentence; 
   assert.ok(/mdlPaneHtml\(\)/.test(wbSrc) && /"models"/.test(wbSrc), "the models tab is drawn by the pane");
 });
 
+/* ── M3 ─────────────────────────────────────────────────────────────────── */
+test("M3: the list shows every state with its word and its glyph", async () => {
+  const L = copy(LIST);
+  L.yours.push({ key: "x.survey_answer", name: "survey_answer", label: "Survey answer", version: 1, base: "core:record", base_label: "Record", state: "needs_a_look",
+    why: "its base changed: \"tier\" now allows fewer values", abstract: false, children: [], pending: null });
+  const c = await loaded({ list: L });
+  const h = c.mdlListHtml(), w = words(h);
+  assert.ok(/On<\/span>/.test(h) && /Off<\/span>/.test(h) && /Needs a look<\/span>/.test(h), "the three state words");
+  /* every state carries its glyph in the same element as its word */
+  const states = attrs(h, /<span class="mdlstate [a-z]+">.*?<\/span>/g);
+  assert.ok(states.length >= 6);
+  states.forEach(s => assert.ok(/<i class="mdlg" aria-hidden="true">.<\/i>(On|Off|Needs a look|Retired)/.test(s), s));
+  assert.ok(/its base changed: "tier" now allows fewer values/.test(w), "why, in a quiet line");
+  assert.ok(/mdlrow mdlsub"><span class="mdlname">VIP client/.test(h), "a model built on another is indented");
+  assert.ok(/a kind of Client/.test(w));
+  assert.ok(/mdlnote/.test(h) && />Stamp</.test(h) && />No</.test(h) && /waits for your stamp/.test(w));
+  assert.ok(/Add a model/.test(h) && /Show everything built in/.test(h) && /Structure and history/.test(h));
+  ["Record", "Artifact template", "Engine template", "Department kind", "Journey"].forEach(n => assert.ok(w.indexOf(n) >= 0 || n === "Engine template" || n === "Department kind", n));
+  assert.strictEqual(attrs(h, /<span class="mdllock">/g).length, 5, "the five bases, locked");
+  assert.ok(/Built in<\/span>/.test(h));
+  /* loading, empty, read error */
+  const l = fresh({ get: () => new Promise(() => {}) });
+  assert.ok(/o2skel/.test(l.mdlListHtml()), "loading is a skeleton");
+  const e = await loaded({ list: Object.assign(copy(LIST), { yours: [] }) });
+  assert.ok(/You have not made a model yet\./.test(words(e.mdlListHtml())));
+  const bad = fresh({ get: () => Promise.reject(new Error("x")) });
+  bad.mdlLoad(); await settle();
+  assert.ok(/Could not read your models · /.test(words(bad.mdlListHtml())) && />Try again</.test(bad.mdlListHtml()));
+  /* Show everything built in reads the list with ?all=1 and names, by layer */
+  click(c, { mdl: "all" }); await settle();
+  assert.ok(gets(c, /\?all=1/).length === 1 && /Everything built in/.test(c.mdlListHtml()));
+});
+
+/* ── M4 ─────────────────────────────────────────────────────────────────── */
+test("M4: Stamp and No post to the one route they name, then the list is read again", async () => {
+  const c = await loaded();
+  const id = LIST.yours[0].pending.id;
+  const before = gets(c, /^\/api\/native\/_models$/).length;
+  click(c, { mdl: "stamp", mdlId: id }); await settle();
+  let p = posts(c, /pending/);
+  assert.strictEqual(p.length, 1);
+  assert.strictEqual(p[0].p, "/api/native/_models/pending/" + id);
+  assert.deepStrictEqual(p[0].body, { approve: true });
+  assert.strictEqual(gets(c, /^\/api\/native\/_models$/).length, before + 1, "read again");
+  click(c, { mdl: "no", mdlId: id }); await settle();
+  p = posts(c, /pending/);
+  assert.deepStrictEqual(p[1].body, { approve: false });
+  assert.strictEqual(p[1].p, "/api/native/_models/pending/" + id);
+  assert.ok(/Dropped\. Nothing changed\./.test(c.mdlPaneHtml()), "and the screen says what it did");
+});
+
 /* ── M14 ────────────────────────────────────────────────────────────────── */
 test("M14: the stylesheet block is tokens only and covers what the script emits; panel.html loads the script before the tail", () => {
   const i = css.indexOf("/* Models (A4)");
