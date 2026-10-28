@@ -10,7 +10,14 @@ _REF = '#/$defs/'
 
 
 class Dialect(GenerateJsonSchema):
-    """Leaves out the null default of an optional field."""
+    """Leaves out the null default of an optional field, and keeps a nullable union a union of its own (the interface writes
+    nullable(any_of(a, b)) as an anyOf inside an anyOf; pydantic would flatten it into one)."""
+
+    def nullable_schema(self, schema):
+        inner = self.generate_inner(schema['schema'])
+        if inner.get('type') == 'null':
+            return inner
+        return {'anyOf': [inner, {'type': 'null'}]}
 
     def default_schema(self, schema):
         if schema.get('default') is None:
@@ -42,7 +49,9 @@ def export(cls, names=None):
                 return dict({'$ref': _REF + names[cname]}, **rest)
             if cname in defs:
                 return dict(fix(defs[cname]), **rest)
-        return {k: fix(v) for k, v in x.items() if k != 'title'}
+        # `title` is pydantic's own key; a property that is called title is a field of the interface and stays
+        return {k: (({pk: fix(pv) for pk, pv in v.items()} if k == 'properties' and isinstance(v, dict) else fix(v)))
+                for k, v in x.items() if not (k == 'title' and isinstance(v, str))}
 
     out = fix(js)
 
