@@ -152,15 +152,20 @@ def check(name, files, default=False):
     """The artifact's own verdict on one version's files; with `default`, the Default's when the Library has no template
     of its own for the name (an artifact the department names); None when there is no template to check by."""
     t = get(name) or (default_template() if default else None)
-    if not t or not t.get("checks"):
+    if not t or not (t.get("checks") or t.get("model")):
         return None
     notes, ok = [], True
-    for c in t["checks"]:
+    for c in t.get("checks") or []:
         fn = CHECKS.get(c)
         if fn is None:
             ok, notes = False, notes + ["no check named %s ships with the app" % c]
             continue
         v = fn(files or {})
+        ok = ok and v["ok"]
+        notes += v["notes"]
+    if t.get("model"):                                    # an owner's model (A4.5.7): every .json file of a version must fit it
+        import layer_models.hooks
+        v = layer_models.hooks.fits_model(t["model"], files or {})
         ok = ok and v["ok"]
         notes += v["notes"]
     return {"ok": ok, "notes": notes}
