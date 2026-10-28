@@ -50,3 +50,13 @@ A template is an interface is a base class, at every level; what fills it is a c
 | `fixtures/department.v0.json`, `fixtures/department.v1.json` | a department record from before A1, and the same record as the migration reads it (written by hand; `migrate('department', v0) == v1`) |
 | `fixtures/workflow.<kind>.good.json`, `fixtures/workflow.bad.<standard>.json` | one workflow for each of the four kinds that passes every stage, and one for each of Root's standards that fails exactly that one (written by hand; `workflow_schema.py` is the code of the standards, and `test_layer_root.py` runs the fixtures through it) |
 | `fixtures/view.audit.v1.json` | Audit's pane (`view.audit`, S12) in the four states its screen draws: nothing read, a reading with an item not met and one to confirm, a version not read, every item met (written by hand; each validates as `view.audit`) |
+
+## Beside them: `schemas/models/` (PRD amendment A4)
+
+Generated from the classes of `layer_models/` and never edited by hand; the interface above is still generated from `layer_schema.py` (its definitions are now the export of the pydantic classes, byte for byte, and `INTERFACE_SHA[1]` still holds). These files are not part of the frozen interface.
+
+| File | What it holds |
+|---|---|
+| `schemas/models/frames.schema.json` | the frames the app streams, as models (written by `python -m layer_models.frames --write`) |
+| `schemas/models/models.schema.json` | the spec of an owner-defined model and its parts |
+| `schemas/models/core-tree.json` | every core class with its base and whether it is abstract, extensible or nestable, its fields, and the extension points |
