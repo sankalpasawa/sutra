@@ -166,7 +166,9 @@ app.include_router(library_api.router)
 # first build of the Native design. The motor is one thread in THIS process, so
 # it runs exactly while the app does; a slot missed while the app was closed is
 # still due when it returns, and runs once.
+import models_api
 import website_api
+app.include_router(models_api.router)
 app.include_router(website_api.router)
 # The department screen is the J2 prototype's page (j2ui_assets/, UI-port package j2ui-shell): j2ui_page serves it at
 # /j2ui/{ref}/, and j2ui_api (the adapter, UI-port package j2ui-core) answers the calls it makes under the same base.

@@ -311,6 +311,7 @@ def _validate_new(doc, key_file, new, old, creating):
     found += owner_rules.base_off(specs, key_file)
     reg = _compile.compile_all(specs, core, reuse=registry._CURRENT)
     found += [(c, s) for c, s in reg.faults.get('x.' + key_file, [])]
+    found = list(dict.fromkeys(found))                           # each sentence once
     if found:
         raise ModelFault(found[0][0], [s for _, s in found])
     return reg
@@ -349,29 +350,6 @@ def _classify(doc, key_file, new, reg_new, old):
     return owner_rules.classify(old_cls, new_cls)
 
 
-def save(spec, rev=None, by='the owner', create=False):
-    """Make a model or change one (a version of a name is the key 'name/vN'). A change that only tightens or leaves what fits is
-    applied: {ok, rev, class, key}. A change that lets in more is kept for the stamp: a Pending. ModelFault otherwise. With `create`
-    the name must be new (NAME_TAKEN otherwise); without it an existing key is an edit."""
-    with _LOCK:
-        _gap()
-        doc = _doc_to_write()
-        _guard_rev(doc, rev)
-        key_file = SP.key_of(spec)
-        old = doc['models'].get(key_file)
-        if create and any(m.get('name') == spec['name'] for m in doc['models'].values()):
-            raise ModelFault('NAME_TAKEN', ['a model called %s is already there' % spec.get('label', spec['name'])])
-        now = _now()
-        new = _spec_for(spec, by, now, (old or {}).get('created'))
-        reg = _validate_new(doc, key_file, new, old, creating=old is None)
-        klass = _classify(doc, key_file, new, reg, old)
-        text = says(old, new)
-        if klass in ('widens', 'mixed'):
-            return _hold('edit', key_file, new, doc, text, klass, now)
-        r = _commit(doc, key_file, new, 'create' if old is None else 'edit', text, klass, by, old)
-        return {'ok': True, 'rev': r, 'class': klass, 'key': 'x.' + key_file}
-
-
 def _hold(op, key_file, new, doc, text, klass, now):
     rows = _pending_list()
     if len(rows) >= LIMITS['pending']:
@@ -403,18 +381,84 @@ def _need(doc, key):
     return fk
 
 
+def _check_set(doc, fk, new):
+    """The compiled registry of the set with `new` in place, or ModelFault with the first code and every sentence."""
+    reg = _compile.compile_all(_set_of(doc, fk, new), registry.core_map(), reuse=registry._CURRENT)
+    found = list(reg.faults.get('x.' + fk, []))
+    if found:
+        raise ModelFault(found[0][0], [s for _, s in found])
+    return reg
+
+
+def _prepare_edit(doc, spec, by, create=False):
+    key_file = SP.key_of(spec)
+    old = doc['models'].get(key_file)
+    if create and any(m.get('name') == spec['name'] for m in doc['models'].values()):
+        raise ModelFault('NAME_TAKEN', ['a model called %s is already there' % spec.get('label', spec['name'])])
+    new = _spec_for(spec, by, _now(), (old or {}).get('created'))
+    reg = _validate_new(doc, key_file, new, old, creating=old is None)
+    return {'fk': key_file, 'old': old, 'new': new, 'reg': reg, 'class': _classify(doc, key_file, new, reg, old),
+            'says': says(old, new), 'op': 'create' if old is None else 'edit'}
+
+
+def _prepare_enable(doc, key, enabled, by):
+    fk = _need(doc, key)
+    old = doc['models'][fk]
+    new = _spec_for(dict(old, enabled=bool(enabled)), by, _now(), old.get('created'))
+    reg = _validate_new(doc, fk, new, old, creating=False)
+    return {'fk': fk, 'old': old, 'new': new, 'reg': reg, 'class': 'same', 'op': 'enable' if enabled else 'disable',
+            'says': 'turned %s %s' % (old['label'], 'on' if enabled else 'off')}
+
+
+def _prepare_undo(doc, key, by):
+    fk = _need(doc, key)
+    old = doc['models'][fk]
+    rows = [r for r in history('x.' + fk) if r.get('op') not in ('rebase', 'base_changed') and r.get('spec')]
+    target = rows[-2]['spec'] if len(rows) >= 2 else dict(old, enabled=False)
+    new = _spec_for(target, by, _now(), old.get('created'))
+    reg = _check_set(doc, fk, new)
+    return {'fk': fk, 'old': old, 'new': new, 'reg': reg, 'class': 'same', 'op': 'revert',
+            'says': 'undid the last change to %s' % old['label']}
+
+
+def _prepare_revert(doc, key, to_rev, by):
+    fk = _need(doc, key)
+    row = next((r for r in history('x.' + fk, 100000) if r.get('rev') == to_rev and r.get('spec')), None)
+    if row is None:
+        raise ModelFault('UNKNOWN_MODEL', ['there is no revision %s of %s' % (to_rev, key)], 404)
+    old = doc['models'][fk]
+    new = _spec_for(row['spec'], by, _now(), old.get('created'))
+    reg = _check_set(doc, fk, new)
+    return {'fk': fk, 'old': old, 'new': new, 'reg': reg, 'class': _classify(doc, fk, new, reg, old), 'op': 'revert',
+            'says': 'went back to revision %d of %s' % (to_rev, old['label'])}
+
+
+def _finish(doc, p, by):
+    """Apply a prepared change, or hold it for the stamp when it lets in more."""
+    if p['class'] in ('widens', 'mixed'):
+        return _hold(p['op'], p['fk'], p['new'], doc, p['says'], p['class'], _now())
+    r = _commit(doc, p['fk'], p['new'], p['op'], p['says'], p['class'], by, p['old'])
+    return {'ok': True, 'rev': r, 'class': p['class'], 'key': 'x.' + p['fk']}
+
+
+def save(spec, rev=None, by='the owner', create=False):
+    """Make a model or change one (a version of a name is the key 'name/vN'). A change that only tightens or leaves what fits is
+    applied: {ok, rev, class, key}. A change that lets in more is kept for the stamp: a Pending. ModelFault otherwise. With `create`
+    the name must be new (NAME_TAKEN otherwise); without it an existing key is an edit."""
+    with _LOCK:
+        _gap()
+        doc = _doc_to_write()
+        _guard_rev(doc, rev)
+        return _finish(doc, _prepare_edit(doc, spec, by, create), by)
+
+
 def set_enabled(key, enabled, rev=None, by='the owner'):
     """The model's own switch (R9). Turning on a child whose base is off is BASE_OFF; nothing is deleted either way."""
     with _LOCK:
         _gap()
         doc = _doc_to_write()
         _guard_rev(doc, rev)
-        fk = _need(doc, key)
-        old = doc['models'][fk]
-        new = _spec_for(dict(old, enabled=bool(enabled)), by, _now(), old.get('created'))
-        _validate_new(doc, fk, new, old, creating=False)
-        r = _commit(doc, fk, new, 'enable' if enabled else 'disable', 'turned %s %s' % (old['label'], 'on' if enabled else 'off'), 'same', by, old)
-        return {'ok': True, 'rev': r, 'class': 'same', 'key': 'x.' + fk}
+        return _finish(doc, _prepare_enable(doc, key, enabled, by), by)
 
 
 def undo(key, rev=None, by='the owner'):
@@ -424,21 +468,9 @@ def undo(key, rev=None, by='the owner'):
         _gap()
         doc = _doc_to_write()
         _guard_rev(doc, rev)
-        fk = _need(doc, key)
-        rows = [r for r in history('x.' + fk) if r.get('op') not in ('rebase', 'base_changed') and r.get('spec')]
-        if len(rows) < 2:
-            old = doc['models'][fk]
-            target = dict(old, enabled=False)
-        else:
-            target = rows[-2]['spec']
-        old = doc['models'][fk]
-        new = _spec_for(target, by, _now(), old.get('created'))
-        specs = _set_of(doc, fk, new)
-        reg = _compile.compile_all(specs, registry.core_map(), reuse=registry._CURRENT)
-        if reg.faults.get('x.' + fk):
-            raise ModelFault(reg.faults['x.' + fk][0][0], [s for _, s in reg.faults['x.' + fk]])
-        r = _commit(doc, fk, new, 'revert', 'undid the last change to %s' % old['label'], 'same', by, old)
-        return {'ok': True, 'rev': r, 'class': 'same', 'key': 'x.' + fk}
+        p = _prepare_undo(doc, key, by)
+        r = _commit(doc, p['fk'], p['new'], p['op'], p['says'], 'same', by, p['old'])
+        return {'ok': True, 'rev': r, 'class': 'same', 'key': 'x.' + p['fk']}
 
 
 def revert(key, to_rev, rev=None, by='the owner'):
@@ -447,22 +479,26 @@ def revert(key, to_rev, rev=None, by='the owner'):
         _gap()
         doc = _doc_to_write()
         _guard_rev(doc, rev)
-        fk = _need(doc, key)
-        row = next((r for r in history('x.' + fk, 100000) if r.get('rev') == to_rev and r.get('spec')), None)
-        if row is None:
-            raise ModelFault('UNKNOWN_MODEL', ['there is no revision %s of %s' % (to_rev, key)], 404)
-        old = doc['models'][fk]
-        new = _spec_for(row['spec'], by, _now(), old.get('created'))
-        specs = _set_of(doc, fk, new)
-        reg = _compile.compile_all(specs, registry.core_map(), reuse=registry._CURRENT)
-        if reg.faults.get('x.' + fk):
-            raise ModelFault(reg.faults['x.' + fk][0][0], [s for _, s in reg.faults['x.' + fk]])
-        klass = _classify(doc, fk, new, reg, old)
-        text = 'went back to revision %d of %s' % (to_rev, old['label'])
-        if klass in ('widens', 'mixed'):
-            return _hold('revert', fk, new, doc, text, klass, _now())
-        r = _commit(doc, fk, new, 'revert', text, klass, by, old)
-        return {'ok': True, 'rev': r, 'class': klass, 'key': 'x.' + fk}
+        return _finish(doc, _prepare_revert(doc, key, to_rev, by), by)
+
+
+def plan(op, by='the owner'):
+    """What a change would do, written nowhere: {ok, faults, code, class, says, needs_stamp, new, reg, old}. `op` is
+    {op: 'edit'|'enable'|'disable'|'revert', key, spec?, to_rev?}."""
+    doc = _read_doc()[0]
+    kind = op.get('op')
+    try:
+        if kind == 'edit':
+            p = _prepare_edit(doc, op['spec'], by)
+        elif kind in ('enable', 'disable'):
+            p = _prepare_enable(doc, op['key'], kind == 'enable', by)
+        elif kind == 'revert':
+            p = _prepare_revert(doc, op['key'], int(op['to_rev']), by)
+        else:
+            raise ModelFault('UNKNOWN_OP', ['say edit, enable, disable or revert'])
+    except ModelFault as e:
+        return {'ok': False, 'faults': e.faults, 'code': e.code, 'class': None, 'says': '', 'needs_stamp': False}
+    return dict(p, ok=True, faults=[], code=None, needs_stamp=p['class'] in ('widens', 'mixed'))
 
 
 def apply_pending(pid, approve, by='the owner'):
