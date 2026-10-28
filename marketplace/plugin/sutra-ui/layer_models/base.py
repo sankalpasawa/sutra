@@ -28,6 +28,8 @@ class SutraModel(BaseModel):
     def __pydantic_init_subclass__(cls, **kw):
         # fields exist only now (not in __init_subclass__), so the class rules are checked here
         super().__pydantic_init_subclass__(**kw)
+        if cls.__module__ == __name__:
+            return                                  # the roots below: the rules import this module
         from . import rules
         rules.check_class(cls)
 
