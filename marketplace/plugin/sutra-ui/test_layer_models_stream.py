@@ -618,3 +618,163 @@ def test_str5_with_an_edit_the_only_difference_is_one_models_frame(monkeypatch):
     # a client that connects after the edit is told nothing of it
     late, _ = sessions_frames(app, monkeypatch)
     assert late == golden
+
+
+# --------------------------------------------------------------------------------------------------------------------------- T7
+import stat  # noqa: E402
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+import textwrap  # noqa: E402
+
+_FAKE_CLAUDE = r'''#!{py}
+"""A claude -p that answers the same text whether it is asked for json or stream-json (the test's stand-in)."""
+import json, os, sys
+argv = sys.argv[1:]
+fmt = argv[argv.index("--output-format") + 1]
+answer = open(os.environ["FAKE_ANSWER"]).read()
+cost = 0.0421
+if os.environ.get("FAKE_MODE") == "garbage" and fmt == "stream-json":
+    print("this CLI does not stream"); sys.exit(0)
+if fmt == "json":
+    print(json.dumps({{"type": "result", "subtype": "success", "is_error": False, "result": answer, "total_cost_usd": cost}}))
+else:
+    assert "--verbose" in argv and "--include-partial-messages" in argv
+    print(json.dumps({{"type": "system", "subtype": "init", "session_id": "s"}}), flush=True)
+    for i in range(0, len(answer), 17):
+        print(json.dumps({{"type": "stream_event", "event": {{"type": "content_block_delta", "delta": {{"type": "text_delta", "text": answer[i:i + 17]}}}}}}), flush=True)
+    print(json.dumps({{"type": "result", "subtype": "success", "is_error": False, "result": answer, "total_cost_usd": cost}}), flush=True)
+'''
+
+
+@pytest.fixture
+def fake_cli(tmp_path, monkeypatch):
+    import website_dept as W
+    exe = tmp_path / "bin" / "claude"
+    exe.parent.mkdir()
+    exe.write_text(_FAKE_CLAUDE.format(py=sys.executable), encoding="utf-8")
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+    ans = tmp_path / "answer.txt"
+    monkeypatch.setenv("FAKE_ANSWER", str(ans))
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setenv("SUTRA_NATIVE_DEPT_HOME", str(tmp_path / "dept"))          # never the live records home
+    monkeypatch.setattr(W, "_login_path", lambda: str(exe.parent) + os.pathsep + os.environ.get("PATH", ""))
+
+    def say(text):
+        ans.write_text(text, encoding="utf-8")
+    return W, say
+
+
+def test_model_json_without_a_callback_is_unchanged(fake_cli, monkeypatch):
+    """With on_progress=None the call is the blocking one it has always been: one subprocess.run, the JSON output format, and
+    the streaming arm is never entered."""
+    W, say = fake_cli
+    say(_answer(_flow()))
+    entered = []
+    monkeypatch.setattr(W, "_stream_run", lambda *a, **k: entered.append(1))
+    popen = []
+    real_popen = subprocess.Popen
+
+    def popen_spy(args, **k):
+        if "stream-json" in args:
+            popen.append(1)
+        return real_popen(args, **k)
+
+    monkeypatch.setattr(W.subprocess, "Popen", popen_spy)
+    seen = {}
+    real = subprocess.run
+
+    def spy(args, **kw):
+        seen["args"] = list(args)
+        return real(args, **kw)
+
+    monkeypatch.setattr(W.subprocess, "run", spy)
+    out, usd, why = W.model_json("say ok", timeout=20)
+    assert (why, usd) == ("model", 0.0421) and out["engines"][1]["name"] == "Write"
+    assert not entered and not popen
+    a = seen["args"]
+    assert a[a.index("--output-format") + 1] == "json" and "--include-partial-messages" not in a and "--verbose" not in a
+
+
+def test_model_json_with_a_callback_reports_progress_and_returns_the_same_object(fake_cli):
+    W, say = fake_cli
+    say(_answer(_flow()))
+    plain = W.model_json("say ok", timeout=20)
+    got = []
+    streamed = W.model_json("say ok", timeout=20, on_progress=got.append, adapter=_FLOW)
+    assert streamed == plain and streamed[2] == "model"
+    assert len(got) >= 4 and got[-1].done and got[-1].faults == []
+    names = [k for p in got for k in p.arrived]
+    assert names.index("schema_version") < names.index("kind") and "engines" in names
+    assert any(p.counts.get("engines") == 2 for p in got)
+    assert all(a.key() != b.key() for a, b in zip(got, got[1:])), "the callback is told only when the progress changes"
+    # a list root is read by the list reader
+    lg = []
+    say("Engines:\n" + json.dumps(_flow()["engines"][:1]))          # today's extraction takes one {...}: an array of one
+    out, usd, why = W.model_json("say ok", timeout=20, on_progress=lg.append, root="list", adapter=_ENGS)
+    assert out is not None and lg and lg[-1].done
+
+
+def test_a_bad_final_answer_has_the_same_why(fake_cli):
+    W, say = fake_cli
+    for text in ("I could not do that.", "{not: json}", "```json\n{\"a\": \n```"):
+        say(text)
+        plain = W.model_json("x", timeout=20)
+        got = []
+        assert W.model_json("x", timeout=20, on_progress=got.append) == plain and plain[0] is None, text
+    # an answer of the wrong shape is returned as the blocking call returns it, and the final check says so to the callback
+    say(_answer(_flow(level=7)))
+    got = []
+    out, usd, why = W.model_json("x", timeout=20, on_progress=got.append, adapter=_FLOW)
+    assert why == "model" and out["engines"][1]["level"] == 7
+    assert got[-1].done and got[-1].faults == ["$.engines[1].level: is not one of 1, 2"]
+    assert any(p.faults for p in got[:-1]), "and it was found before the end"
+
+
+def test_the_stream_falls_back_once(fake_cli, monkeypatch):
+    W, say = fake_cli
+    say(_answer(_flow()))
+    monkeypatch.setenv("FAKE_MODE", "garbage")
+    calls = []
+    real_run, real_popen = subprocess.run, subprocess.Popen
+    monkeypatch.setattr(W.subprocess, "run", lambda *a, **k: (calls.append("run"), real_run(*a, **k))[1])
+    monkeypatch.setattr(W.subprocess, "Popen", lambda args, **k: ((calls.append("popen") if "stream-json" in args else None), real_popen(args, **k))[1])
+    got = []
+    out, usd, why = W.model_json("x", timeout=20, on_progress=got.append)
+    assert calls == ["popen", "run"], "one streamed attempt, then the blocking call once"
+    assert why == "model" and out["kind"] == "website" and got == []
+
+
+def test_a_slow_stream_times_out_with_the_blocking_words(fake_cli, monkeypatch):
+    W, say = fake_cli
+    say(_answer(_flow()))
+    real = subprocess.Popen
+
+    def slow(args, **kw):
+        return real([sys.executable, "-c", "import time; time.sleep(30)"], **kw)
+
+    monkeypatch.setattr(W.subprocess, "Popen", slow)
+    out, usd, why = W.model_json("x", timeout=1, on_progress=lambda p: None)
+    assert out is None and why.startswith("model call failed:") and "timed out after 1" in why
+
+
+def test_no_function_step_passes_on_progress():
+    """A4-30: the wire is built and wired to nothing. No file of the plugin folder passes on_progress to model_json."""
+    hits = []
+    for path in sorted(HERE.glob("*.py")):
+        if path.name.startswith("test_"):
+            continue
+        src = path.read_text(encoding="utf-8", errors="replace")
+        if "model_json" not in src:
+            continue
+        for n in ast.walk(ast.parse(src)):
+            if isinstance(n, ast.Call):
+                name = getattr(n.func, "id", None) or getattr(n.func, "attr", None)
+                if name in ("model_json", "_stream_run") and any(k.arg in ("on_progress", None) for k in n.keywords):
+                    if path.name != "website_dept.py" or name == "model_json":
+                        hits.append("%s:%d" % (path.name, n.lineno))
+    assert hits == [], "a call site passes on_progress: %s" % hits
+    assert (HERE / "engine_runtime.py").read_text(encoding="utf-8").count("W.model_json(") == 1
+    import inspect
+    import website_dept as W
+    sig = inspect.signature(W.model_json)
+    assert sig.parameters["on_progress"].default is None and sig.parameters["abort_on_fault"].default is False

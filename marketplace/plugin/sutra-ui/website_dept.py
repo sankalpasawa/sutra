@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import threading
 import time
+import types
 import uuid
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -1077,12 +1078,99 @@ def _login_path():
 MODEL_TOOLS = ("WebSearch", "WebFetch")       # the tools a step may name: the model reaches the internet, nothing else
 
 
-def model_json(prompt, timeout=MODEL_TIMEOUT_S, tools=None):
+def _stream_run(args, scratch, env, timeout, on_progress, root="object", adapter=None, abort_on_fault=False):
+    """The streaming arm of model_json (A4.7.6): the same call with `--output-format stream-json --include-partial-messages`,
+    read line by line. The text deltas feed a reader that tells `on_progress` what has arrived (names and counts, never half a
+    value); the `result` event is what the blocking call's JSON is, so the caller goes on exactly as it does today. Returns
+    an object shaped like subprocess.run's (stdout, returncode), or None when the stream cannot be read (an old CLI, a first
+    line that is not JSON): the caller then makes the blocking call, once. Raises what subprocess.run raises on a timeout."""
+    import queue
+    from pydantic import TypeAdapter
+    from layer_models import stream as ST
+    args = list(args)
+    at = args.index("--output-format")
+    args[at + 1:at + 2] = ["stream-json", "--verbose", "--include-partial-messages"]
+    ad = adapter or TypeAdapter(list if root == "list" else dict)         # built once, before the first chunk
+    reader = (ST.ListReader if root == "list" else ST.ObjectReader)(ad)
+    proc = subprocess.Popen(args, cwd=str(scratch), env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    lines = queue.Queue()
+
+    def pump():
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    threading.Thread(target=pump, daemon=True).start()
+    deadline = time.monotonic() + timeout
+    text, seen, result, shown = "", False, None, None
+
+    def tell(progress):
+        nonlocal shown
+        if shown is None or progress.key() != shown:
+            shown = progress.key()
+            try:
+                on_progress(progress)
+            except Exception:  # noqa: BLE001 -- a screen's callback never breaks the call
+                pass
+
+    try:
+        while True:
+            try:
+                line = lines.get(timeout=max(deadline - time.monotonic(), 0.001))
+            except queue.Empty:
+                raise subprocess.TimeoutExpired(args, timeout)
+            if line is None:
+                break
+            if not line.strip():
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                if not seen:
+                    return None                 # the first line is not JSON: this CLI does not stream
+                continue
+            if not isinstance(ev, dict):
+                continue
+            seen = True
+            if ev.get("type") == "stream_event":
+                delta = (ev.get("event") or {}).get("delta") or {}
+                if delta.get("type") == "text_delta" and delta.get("text"):
+                    text += delta["text"]
+                    reader.feed(delta["text"])
+                    tell(reader.progress)
+                    if abort_on_fault and reader.faults:
+                        return types.SimpleNamespace(stdout=json.dumps({"is_error": True, "result": "stopped at a fault: " + reader.faults[0]}),
+                                                     returncode=0)
+            elif ev.get("type") == "result":
+                result = ev
+                break
+    finally:
+        if result is None and proc.poll() is None:
+            proc.kill()
+        try:
+            proc.wait(timeout=2)
+        except Exception:  # noqa: BLE001
+            proc.kill()
+    if result is None:
+        return types.SimpleNamespace(stdout="", returncode=proc.returncode) if text else None
+    answer = str(result.get("result") or text)
+    ok, found = ST.final(ad, answer)
+    reader.progress.done, reader.progress.faults, reader.progress.pending = True, found if not ok else [], []
+    tell(reader.progress)
+    return types.SimpleNamespace(stdout=json.dumps(result), returncode=proc.returncode or 0)
+
+
+def model_json(prompt, timeout=MODEL_TIMEOUT_S, tools=None, on_progress=None, root="object", adapter=None, abort_on_fault=False):
     """(object or None, usd, why). One headless model call, as routines.py makes
     them: plan billing, quiet hooks, JSON back. Never raises. With `tools`, the
     step's own tools (MODEL_TOOLS only) are the ones the model may use: a
     Research step searches the web through them (founder, 2026-09-29: "I want
-    the data to be fetched from the internet by the department")."""
+    the data to be fetched from the internet by the department").
+
+    `on_progress` (PRD A4.7.6) is the opt-in streaming wire: with a callback the same call is read as it arrives and the callback
+    is given a layer_models.stream.Progress (names and counts) whenever it changes; the return value is the same. With None this
+    is the call it has always been. No step passes it today. `root="list"` names an answer that is an array; `adapter` is the
+    TypeAdapter its final check uses; `abort_on_fault` (never set) stops the call at the first fault found early."""
     if os.environ.get("SUTRA_WEBSITE_OFFLINE") == "1":
         return None, 0.0, "offline"
     env = dict(os.environ)
@@ -1102,7 +1190,9 @@ def model_json(prompt, timeout=MODEL_TIMEOUT_S, tools=None):
     scratch = home() / "_model"
     scratch.mkdir(parents=True, exist_ok=True)
     try:
-        p = subprocess.run(args, cwd=str(scratch), env=env, capture_output=True, text=True, timeout=timeout)
+        p = _stream_run(args, scratch, env, timeout, on_progress, root, adapter, abort_on_fault) if on_progress is not None else None
+        if p is None:                           # no callback, or a stream that cannot be read: the blocking call, once
+            p = subprocess.run(args, cwd=str(scratch), env=env, capture_output=True, text=True, timeout=timeout)
     except Exception as exc:  # noqa: BLE001
         return None, 0.0, "model call failed: %s" % exc
     try:
