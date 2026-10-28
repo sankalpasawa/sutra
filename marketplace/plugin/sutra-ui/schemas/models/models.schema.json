@@ -1,0 +1,747 @@
+{
+  "$defs": {
+    "model.spec": {
+      "additionalProperties": false,
+      "description": "One entry of models.json, keyed 'name/vN'.",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "name": {
+          "maxLength": 31,
+          "pattern": "^[a-z][a-z0-9_]{1,30}$",
+          "type": "string"
+        },
+        "version": {
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "parent": {
+          "maxLength": 60,
+          "pattern": "^x:[a-z][a-z0-9_]{1,30}/v[0-9]{1,2}$",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "about": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "base": {
+          "maxLength": 60,
+          "pattern": "^(core:[a-z][a-z0-9_.]{0,40}|x:[a-z][a-z0-9_]{1,30}(/v[0-9]{1,2})?)$",
+          "type": "string"
+        },
+        "abstract": {
+          "type": "boolean"
+        },
+        "discriminator": {
+          "maxLength": 31,
+          "pattern": "^[a-z][a-z0-9_]{0,30}$",
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "fields": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "choice": "#/$defs/ChoiceField",
+                "date": "#/$defs/DateField",
+                "long_text": "#/$defs/LongTextField",
+                "number": "#/$defs/NumberField",
+                "text": "#/$defs/TextField",
+                "whole": "#/$defs/WholeField",
+                "words": "#/$defs/WordsField",
+                "yesno": "#/$defs/YesNoField"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 31,
+                    "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 60,
+                    "minLength": 1,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "about": {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "nullable": {
+                    "type": "boolean"
+                  },
+                  "retired": {
+                    "type": "boolean"
+                  },
+                  "aliases": {
+                    "items": {
+                      "maxLength": 31,
+                      "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 0,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  },
+                  "max_len": {
+                    "maximum": 2000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "min_len": {
+                    "maximum": 2000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "pattern": {
+                    "enum": [
+                      "slug",
+                      "code",
+                      "date"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 31,
+                    "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 60,
+                    "minLength": 1,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "about": {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "nullable": {
+                    "type": "boolean"
+                  },
+                  "retired": {
+                    "type": "boolean"
+                  },
+                  "aliases": {
+                    "items": {
+                      "maxLength": 31,
+                      "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 0,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "type": {
+                    "const": "long_text",
+                    "type": "string"
+                  },
+                  "max_len": {
+                    "maximum": 20000,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 31,
+                    "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 60,
+                    "minLength": 1,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "about": {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "nullable": {
+                    "type": "boolean"
+                  },
+                  "retired": {
+                    "type": "boolean"
+                  },
+                  "aliases": {
+                    "items": {
+                      "maxLength": 31,
+                      "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 0,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "type": {
+                    "const": "whole",
+                    "type": "string"
+                  },
+                  "minimum": {
+                    "maximum": 1000000000,
+                    "minimum": -1000000000,
+                    "type": "integer"
+                  },
+                  "maximum": {
+                    "maximum": 1000000000,
+                    "minimum": -1000000000,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 31,
+                    "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 60,
+                    "minLength": 1,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "about": {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "nullable": {
+                    "type": "boolean"
+                  },
+                  "retired": {
+                    "type": "boolean"
+                  },
+                  "aliases": {
+                    "items": {
+                      "maxLength": 31,
+                      "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 0,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "type": {
+                    "const": "number",
+                    "type": "string"
+                  },
+                  "minimum": {
+                    "maximum": 1000000000,
+                    "minimum": -1000000000,
+                    "type": "number"
+                  },
+                  "maximum": {
+                    "maximum": 1000000000,
+                    "minimum": -1000000000,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 31,
+                    "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 60,
+                    "minLength": 1,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "about": {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "nullable": {
+                    "type": "boolean"
+                  },
+                  "retired": {
+                    "type": "boolean"
+                  },
+                  "aliases": {
+                    "items": {
+                      "maxLength": 31,
+                      "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 0,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "type": {
+                    "const": "yesno",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 31,
+                    "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 60,
+                    "minLength": 1,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "about": {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "nullable": {
+                    "type": "boolean"
+                  },
+                  "retired": {
+                    "type": "boolean"
+                  },
+                  "aliases": {
+                    "items": {
+                      "maxLength": 31,
+                      "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 0,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "type": {
+                    "const": "choice",
+                    "type": "string"
+                  },
+                  "choices": {
+                    "items": {
+                      "maxLength": 40,
+                      "minLength": 1,
+                      "type": "string",
+                      "x-say": true
+                    },
+                    "maxItems": 12,
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "type",
+                  "choices"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 31,
+                    "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 60,
+                    "minLength": 1,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "about": {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "nullable": {
+                    "type": "boolean"
+                  },
+                  "retired": {
+                    "type": "boolean"
+                  },
+                  "aliases": {
+                    "items": {
+                      "maxLength": 31,
+                      "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 0,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "type": {
+                    "const": "words",
+                    "type": "string"
+                  },
+                  "max_items": {
+                    "maximum": 100,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "unique": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 31,
+                    "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 60,
+                    "minLength": 1,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "about": {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string",
+                    "x-say": true
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "nullable": {
+                    "type": "boolean"
+                  },
+                  "retired": {
+                    "type": "boolean"
+                  },
+                  "aliases": {
+                    "items": {
+                      "maxLength": 31,
+                      "pattern": "^[a-z][a-z0-9_]{0,30}$",
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 0,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "type": {
+                    "const": "date",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 40,
+          "minItems": 0,
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "$ref": "#/$defs/model.link"
+          },
+          "maxItems": 10,
+          "minItems": 0,
+          "type": "array"
+        },
+        "base_sha": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "created": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "updated": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "by": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "label",
+        "base",
+        "fields"
+      ],
+      "type": "object"
+    },
+    "model.link": {
+      "additionalProperties": false,
+      "description": "A nest (the target's value sits inside this one) or a refer (the target's id).",
+      "properties": {
+        "name": {
+          "maxLength": 31,
+          "pattern": "^[a-z][a-z0-9_]{0,30}$",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "mode": {
+          "enum": [
+            "nest",
+            "refer"
+          ],
+          "type": "string"
+        },
+        "to": {
+          "maxLength": 60,
+          "pattern": "^(core:[a-z][a-z0-9_.]{0,40}|x:[a-z][a-z0-9_]{1,30}(/v[0-9]{1,2})?)$",
+          "type": "string"
+        },
+        "many": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "max": {
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "mode",
+        "to"
+      ],
+      "type": "object"
+    },
+    "model.file": {
+      "additionalProperties": false,
+      "description": "models.json as a whole.",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "rev": {
+          "maximum": 1000000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "models": {
+          "additionalProperties": {
+            "$ref": "#/$defs/model.spec"
+          },
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{1,30}/v[0-9]{1,2}$"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "rev",
+        "models"
+      ],
+      "type": "object"
+    },
+    "model.history": {
+      "additionalProperties": false,
+      "description": "One line of history.jsonl. `class` is a keyword, so the field is `klass` and answers to `class`.",
+      "properties": {
+        "rev": {
+          "maximum": 1000000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "at": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "by": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "op": {
+          "enum": [
+            "create",
+            "edit",
+            "enable",
+            "disable",
+            "revert",
+            "stamp",
+            "rebase",
+            "base_changed"
+          ]
+        },
+        "key": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "says": {
+          "maxLength": 400,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "class": {
+          "enum": [
+            "tightens",
+            "same",
+            "widens",
+            "mixed"
+          ]
+        },
+        "before_sha": {
+          "maxLength": 64,
+          "minLength": 0,
+          "type": "string"
+        },
+        "after_sha": {
+          "maxLength": 64,
+          "minLength": 0,
+          "type": "string"
+        },
+        "spec": {}
+      },
+      "required": [
+        "rev",
+        "at",
+        "by",
+        "op",
+        "key",
+        "says"
+      ],
+      "type": "object"
+    }
+  }
+}

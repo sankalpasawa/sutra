@@ -5,7 +5,7 @@ The vocabulary is closed: eight kinds of field, three named patterns, two kinds 
 spec is ever run; compile.py turns it into annotation objects of types.py and nothing else (A4.5.8)."""
 import json
 import re
-from typing import Annotated, Any, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import ConfigDict, Field, TypeAdapter, model_validator
 
@@ -54,39 +54,39 @@ class _Field(Closed):
     __abstract__ = True
     name: _FNAME
     label: T(60, 1, say=True)
-    about: Optional[T(200, 0, say=True)] = None
-    required: Optional[Annotated[bool, Bool()]] = None
-    nullable: Optional[Annotated[bool, Bool()]] = None
-    retired: Optional[Annotated[bool, Bool()]] = None
-    aliases: Optional[L(_FNAME, 3, 0, True)] = None
+    about: T(200, 0, say=True) = None
+    required: Annotated[bool, Bool()] = None
+    nullable: Annotated[bool, Bool()] = None
+    retired: Annotated[bool, Bool()] = None
+    aliases: L(_FNAME, 3, 0, True) = None
 
 
 class TextField(_Field):
     __abstract__ = False
     type: Literal['text']
-    max_len: Optional[Annotated[int, Int(1, 2000)]] = None
-    min_len: Optional[Annotated[int, Int(0, 2000)]] = None
-    pattern: Optional[Annotated[Any, Enum(*NAMED_PATTERNS)]] = None
+    max_len: Annotated[int, Int(1, 2000)] = None
+    min_len: Annotated[int, Int(0, 2000)] = None
+    pattern: Annotated[Any, Enum(*NAMED_PATTERNS)] = None
 
 
 class LongTextField(_Field):
     __abstract__ = False
     type: Literal['long_text']
-    max_len: Optional[Annotated[int, Int(1, 20000)]] = None
+    max_len: Annotated[int, Int(1, 20000)] = None
 
 
 class WholeField(_Field):
     __abstract__ = False
     type: Literal['whole']
-    minimum: Optional[BOUND] = None
-    maximum: Optional[BOUND] = None
+    minimum: BOUND = None
+    maximum: BOUND = None
 
 
 class NumberField(_Field):
     __abstract__ = False
     type: Literal['number']
-    minimum: Optional[Annotated[float, Num(-10 ** 9, 10 ** 9)]] = None
-    maximum: Optional[Annotated[float, Num(-10 ** 9, 10 ** 9)]] = None
+    minimum: Annotated[float, Num(-10 ** 9, 10 ** 9)] = None
+    maximum: Annotated[float, Num(-10 ** 9, 10 ** 9)] = None
 
 
 class YesNoField(_Field):
@@ -103,8 +103,8 @@ class ChoiceField(_Field):
 class WordsField(_Field):
     __abstract__ = False
     type: Literal['words']
-    max_items: Optional[Annotated[int, Int(1, 100)]] = None
-    unique: Optional[Annotated[bool, Bool()]] = None
+    max_items: Annotated[int, Int(1, 100)] = None
+    unique: Annotated[bool, Bool()] = None
 
 
 class DateField(_Field):
@@ -123,32 +123,32 @@ class LinkSpec(Closed):
     label: T(60, 1, say=True)
     mode: Literal['nest', 'refer']
     to: T(60, 1, pattern=BASE_REF, word=True)
-    many: Optional[Annotated[bool, Bool()]] = None
-    required: Optional[Annotated[bool, Bool()]] = None
-    max: Optional[Annotated[int, Int(1, 100)]] = None
-    enabled: Optional[Annotated[bool, Bool()]] = None
+    many: Annotated[bool, Bool()] = None
+    required: Annotated[bool, Bool()] = None
+    max: Annotated[int, Int(1, 100)] = None
+    enabled: Annotated[bool, Bool()] = None
 
 
 class ModelSpec(Closed):
     """One entry of models.json, keyed 'name/vN'."""
     __abstract__ = False
     __def__ = 'model.spec'
-    schema_version: Optional[Annotated[Any, Const(1)]] = None
+    schema_version: Annotated[Any, Const(1)] = None
     name: T(31, 2, pattern=NAME, word=True)
     version: Annotated[int, Int(1, LIMITS['versions'])]
-    parent: Optional[T(60, 1, pattern=EXACT_REF, word=True)] = None
+    parent: T(60, 1, pattern=EXACT_REF, word=True) = None
     label: T(60, 1, say=True)
-    about: Optional[T(300, 0, say=True)] = None
+    about: T(300, 0, say=True) = None
     base: T(60, 1, pattern=BASE_REF, word=True)
-    abstract: Optional[Annotated[bool, Bool()]] = None
-    discriminator: Optional[T(31, 1, pattern=FIELD_NAME, word=True)] = None
-    enabled: Optional[Annotated[bool, Bool()]] = None
+    abstract: Annotated[bool, Bool()] = None
+    discriminator: T(31, 1, pattern=FIELD_NAME, word=True) = None
+    enabled: Annotated[bool, Bool()] = None
     fields: L(FieldSpec, LIMITS['fields'])
-    links: Optional[L(LinkSpec, LIMITS['links'])] = None
-    base_sha: Optional[T(64, 64, pattern=r'^[0-9a-f]{64}$')] = None
-    created: Optional[T(40, 0)] = None
-    updated: Optional[T(40, 0)] = None
-    by: Optional[T(60, 0, say=True)] = None
+    links: L(LinkSpec, LIMITS['links']) = None
+    base_sha: T(64, 64, pattern=r'^[0-9a-f]{64}$') = None
+    created: T(40, 0) = None
+    updated: T(40, 0) = None
+    by: T(60, 0, say=True) = None
 
     @model_validator(mode='after')
     def _a_later_version_names_its_parent(self):
@@ -198,9 +198,9 @@ class HistoryRow(Closed):
     op: Annotated[Any, Enum('create', 'edit', 'enable', 'disable', 'revert', 'stamp', 'rebase', 'base_changed')]
     key: T(80, 1)
     says: T(400, 0, say=True)
-    klass: Optional[Annotated[Any, Enum('tightens', 'same', 'widens', 'mixed')]] = Field(default=None, alias='class')
-    before_sha: Optional[T(64, 0)] = None
-    after_sha: Optional[T(64, 0)] = None
+    klass: Annotated[Any, Enum('tightens', 'same', 'widens', 'mixed')] = Field(default=None, alias='class')
+    before_sha: T(64, 0) = None
+    after_sha: T(64, 0) = None
     spec: Annotated[Any, Anything()] = None
 
 

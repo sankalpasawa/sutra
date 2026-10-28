@@ -167,7 +167,7 @@ def _append(line):
         pass
     fd = os.open(str(p), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     with os.fdopen(fd, 'a', encoding='utf-8') as fh:
-        fh.write(json.dumps(line, ensure_ascii=False) + '\n')
+        fh.write(json.dumps({k: v for k, v in line.items() if v is not None}, ensure_ascii=False) + '\n')   # an absent key, never a null
 
 
 def history(key=None, limit=500):

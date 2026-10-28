@@ -681,3 +681,111 @@ def test_every_applied_change_leaves_a_row_in_roots_runs(home, monkeypatch):
     assert 'the owner changed Client: added the field email' in rows
     assert "the owner asked to let name run to 120 characters for Client; it waits for the owner's stamp" in rows
     assert all(r['engine'] == 'Root' and r['system'] for r in W.runs('org-root'))
+
+
+# ---- O7: the documents beside the interface, and the proof that nothing moved --------------------------------------------------
+def test_a4_changes_no_byte_of_the_interface(home):
+    import layer_schema as S
+    import layer_models.hooks, layer_models.impact, layer_models.graph                  # noqa: F401 -- everything of A4 is imported
+    import models_api                                                                    # noqa: F401
+    for n in ('client', 'vip_client'):
+        store.save(FIX['%s/v1' % n])
+    store.set_enabled('x.client', False)
+    edited = copy.deepcopy(FIX['client/v1'])
+    edited['about'] = 'edited'
+    store.save(edited)
+    assert S.interface_sha() == S.INTERFACE_SHA[1]
+    assert not any(k.startswith('x.') or k.startswith('model.') for k in S.DEFS)
+    assert 'model.spec' not in S.RECORDS
+
+
+def test_the_models_documents_are_what_the_classes_generate():
+    from layer_models import schema
+    out = HERE / 'schemas' / 'models'
+    for name, text in schema.documents().items():
+        assert (out / name).read_text(encoding='utf-8') == text, '%s differs: run python -m layer_models.schema --write' % name
+    assert json.loads((out / 'core-tree.json').read_text())['extension_points']['journey.file'] == '$.journeys[*]'
+
+
+# ---- O8: the rest of the rules, and the security rows -------------------------------------------------------------------------
+def test_r6_to_r12_each_have_their_failing_example():
+    """One failing example for each of R6 to R12 over owner models (the long forms are above)."""
+    a = spec('order', links=[dict(name='l', label='L', mode='nest', to='x:line/v1')])
+    b = spec('line', links=[dict(name='o', label='O', mode='nest', to='x:order/v1')])
+    assert any(c == 'CYCLE' for v in OR.check({'order/v1': a, 'line/v1': b}, core()).values() for c, _ in v)                       # R6
+    wide_name = spec('loose', 'x:client/v1', [F('name', max_len=500, min_len=1, required=True)])
+    assert ('LOOSENS_BASE', 'name: allows more than 80 characters') in build('client', **{'loose/v1': wide_name}).faults['x.loose/v1']   # R2/R10
+    assert sentences(build('shape', 'circle').adapter('x.shape'), {'id': 's', 'kind': 'zzz'}) == ['$.kind: is not one of circle']    # R8
+    off = fix('client')
+    off['client/v1']['enabled'] = False
+    assert C.compile_all(off, core()).state['x.client/v1'] == 'off'                                                               # R9
+    assert OR.compare_specs(spec('t', fields=[F('a')]), spec('t', fields=[F('a', 'whole')]))                                      # R10
+    assert OR.names(spec('t', fields=[F('json')]))                                                                                 # R11
+    assert OR.base_ok(spec('a', 'core:identity.ask'), {}, core())                                                                  # R12
+
+
+def test_the_hostile_strings_come_back_as_the_strings_they_were(home):
+    hostile = ['<img src=x onerror=window.__xss=1>', '<script>alert(1)</script>', '"><svg onload=1>', "' onfocus='x", 'javascript:alert(1)',
+               '{{7*7}}', '${7*7}', 'a' * 60]
+    for i, h in enumerate(hostile):
+        s = spec('thing%d' % i, fields=[dict(name='f', label=h[:60], type='choice', choices=[h[:40]])])
+        s['label'] = h[:60]
+        s['about'] = h
+        store.save(s)
+    for i, h in enumerate(hostile):
+        got = registry.current().specs['thing%d/v1' % i]
+        assert got['label'] == h[:60] and got['about'] == h and got['fields'][0]['choices'] == [h[:40]]
+    # a line break or a control character in a label is turned away by the vocabulary's own rule
+    assert SP.check(SP.ModelSpec, dict(spec('t'), label='a\x07b'))
+    assert SP.check(SP.ModelSpec, dict(spec('t'), label='x' * 61))
+
+
+def test_a_value_quoted_in_an_error_never_leaks():
+    ad = build('client').adapter('x.client')
+    secret = 'sk-secret-value-123'
+    got = sentences(ad, {'id': secret + ' ' * 3, 'name': 1})
+    assert got and not any(secret in g for g in got)
+    from pydantic import ValidationError
+    try:
+        ad.validate_python({'id': secret + '!', 'name': 1})
+    except ValidationError as e:
+        assert secret not in str(e)
+
+
+def test_the_model_page_says_where_it_is_used(home, monkeypatch):
+    import artifacts
+    import models_api
+    store.save(fix('client')['client/v1'])
+    monkeypatch.setitem(artifacts.templates(), 'Visit', {'id': 'visit', 'name': 'Visit', 'kind': 'record', 'model': 'x.client', 'checks': []})
+    page = models_api._page(registry.current(), 'client/v1')
+    assert {'kind': 'artifact_template', 'name': 'Visit', 'art': 'Visit', 'v': None, 'dept': None} in page['used_by']
+
+
+def test_links_report_lists_a_link_to_a_model_that_is_off_and_does_not_raise(home):
+    for n in ('client', 'line', 'order'):
+        store.save(FIX['%s/v1' % n])
+    store.set_enabled('x.client', False)
+    got = {(r['from'], r['field']): r['status'] for r in registry.links_report()}
+    assert got[('x.order/v1', 'client_id')] == 'off' and got[('x.order/v1', 'lines')] == 'ok'
+    # the stored value still validates against the order, and the order is not broken by the switch
+    assert registry.current().state['x.order/v1'] == 'on'
+    assert sentences(registry.current().adapter('x.order'), {'id': 'o1', 'lines': [{'id': 'l', 'sku': 'A', 'qty': 1}], 'client_id': 'c1'}) == []
+    missing = copy.deepcopy(FIX['order/v1'])
+    missing['links'][1]['to'] = 'x:gone/v1'
+    p = store._paths()[0]
+    doc = json.loads(p.read_text())
+    doc['models']['order/v1'] = missing
+    p.write_text(json.dumps(doc))
+    store.reload()
+    assert registry.current().state['x.order/v1'] == 'needs_a_look'
+    assert {(r['field'], r['status']) for r in registry.links_report()} == {('lines', 'ok'), ('client_id', 'missing')}
+
+
+def test_the_spec_is_a_core_definition_checked_at_load(home):
+    store.save(FIX['client/v1'])
+    p = store._paths()[0]
+    doc = json.loads(p.read_text())
+    doc['models']['client/v1']['fields'][0]['pattern'] = '^.*$'                           # a hand-edited regular expression
+    p.write_text(json.dumps(doc))
+    reg = store.reload()
+    assert reg.state['x.client/v1'] == 'needs_a_look' and 'is not one of slug, code, date' in reg.why['x.client/v1']

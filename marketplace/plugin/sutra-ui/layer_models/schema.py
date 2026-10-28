@@ -57,3 +57,61 @@ def export(cls, names=None):
                 req(v)
     req(out)
     return out
+
+
+# ---- the documents beside the interface (A4.5.7, A4.3.8): nothing is added to layer_schema ------------------------------------
+import json as _json
+from pathlib import Path as _Path
+
+_OUT = _Path(__file__).resolve().parent.parent / 'schemas' / 'models'
+SPEC_NAMES = {'ModelSpec': 'model.spec', 'ModelFile': 'model.file', 'HistoryRow': 'model.history', 'LinkSpec': 'model.link'}
+
+
+def spec_schemas():
+    """The spec definitions, as the classes generate them: {'model.spec': schema, ...}. A field kind is written inline."""
+    from . import spec as SP
+    names = {'LinkSpec': 'model.link'}
+    return {'model.spec': export(SP.ModelSpec, names), 'model.link': export(SP.LinkSpec), 'model.file': export(SP.ModelFile, names | {'ModelSpec': 'model.spec'}),
+            'model.history': export(SP.HistoryRow)}
+
+
+def describe_models():
+    """The core models an owner may build on or hold, and where a model is accepted. Static: never an owner's model."""
+    from . import registry
+    from .spec import EXTENSIBLE_CORE, NESTABLE_CORE
+    from .hooks import HOOKS
+    try:
+        from . import defs                                       # noqa: F401 -- registers the definitions when A4-PORT has them
+    except ImportError:
+        pass
+    from .base import is_abstract
+    classes = []
+    for name, cls in sorted(registry.DEF_CLASS.items()):
+        base = next((b for b in cls.__mro__[1:] if getattr(b, '__def__', None)), None)
+        classes.append({'name': name, 'base': getattr(base, '__def__', None), 'abstract': is_abstract(cls),
+                        'extensible': name in EXTENSIBLE_CORE, 'nestable': name in NESTABLE_CORE,
+                        'fields': list(cls.model_fields)})
+    return {'schema_version': 1, 'classes': classes, 'extensible': list(EXTENSIBLE_CORE), 'nestable': list(NESTABLE_CORE),
+            'extension_points': dict(HOOKS)}
+
+
+def documents():
+    """{file name: text} of the generated documents, exactly as --write puts them down."""
+    return {'models.schema.json': _json.dumps({'$defs': spec_schemas()}, indent=2, sort_keys=False) + '\n',
+            'core-tree.json': _json.dumps(describe_models(), indent=2) + '\n'}
+
+
+def write():
+    _OUT.mkdir(parents=True, exist_ok=True)
+    for name, text in documents().items():
+        (_OUT / name).write_text(text, encoding='utf-8')
+    return sorted(documents())
+
+
+if __name__ == '__main__':
+    import sys
+    if sys.argv[1:] == ['--write']:
+        print('wrote ' + ', '.join(write()))
+    else:
+        print('usage: python -m layer_models.schema --write    (regenerates schemas/models/*.json)')
+        sys.exit(2)
