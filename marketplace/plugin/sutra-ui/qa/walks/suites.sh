@@ -80,7 +80,7 @@ lane $PY -m pytest -q -p no:cacheprovider test_j2ui_verbatim.py test_j2ui_sync.p
 tail -1 /tmp/sutra-suite-j2ui-shell.txt | sed "s/^/J2 page, the copy and its route: /"
 lane $PY -m pytest -q -p no:cacheprovider test_j2ui_contract.py test_j2ui_render.py test_j2ui_xss.py > /tmp/sutra-suite-j2ui-verify.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-j2ui-verify.txt | sed "s/^/J2 page, contract, render and hostile strings: /"
-for t in test_website.js test_dept.js test_org2.js test_j2view.js; do
+for t in test_website.js test_dept.js test_org2.js test_j2view.js test_models.js; do
   node "$t" 2>&1 | tail -1 | sed "s/^/$t: /"
   node "$t" >/dev/null 2>&1 || RC=1
 done

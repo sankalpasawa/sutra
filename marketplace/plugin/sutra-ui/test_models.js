@@ -557,6 +557,85 @@ test("M12: a model changed elsewhere is a quiet line, not a redraw; a restore th
   assert.ok(/Nothing has changed yet/.test(words(empty.mdlStructureHtml())));
 });
 
+/* ── M13 ────────────────────────────────────────────────────────────────── */
+/* every string the script renders: the literals and templates, without the code inside ${} and without the markup's attributes */
+function literals(src){
+  const out = [];
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  let i = 0;
+  const push = (s) => { s = s.replace(/<[^>]*>/g, " ").replace(/\\u[0-9a-fA-F]{4}/g, " "); if (s.trim()) out.push(s); };
+  /* a string up to its closing quote */
+  function str(q){ let s = ""; i++; while (i < code.length && code[i] !== q){ if (code[i] === "\\"){ s += code[i] + code[i + 1]; i += 2; } else s += code[i++]; } i++; push(s); }
+  /* a template: its text, and the code inside ${} is scanned for literals of its own */
+  function tpl(){ let s = ""; i++; while (i < code.length && code[i] !== "`"){
+    if (code[i] === "\\"){ s += code[i] + code[i + 1]; i += 2; }
+    else if (code[i] === "$" && code[i + 1] === "{"){ s += " "; i += 2; let d = 1; while (i < code.length && d){ const ch = code[i]; if (ch === "{"){ d++; i++; } else if (ch === "}"){ d--; i++; } else if (ch === '"' || ch === "'") str(ch); else if (ch === "`") tpl(); else i++; } }
+    else s += code[i++]; }
+    i++; push(s); }
+  while (i < code.length){ const ch = code[i]; if (ch === '"' || ch === "'") str(ch); else if (ch === "`") tpl(); else i++; }
+  return out;
+}
+const BANNED = /\b(charters?|ceo|requesters?|grant(?:s|ed)?|counter(?:s|ed)?|refus\w*|internal systems?)\b/i;
+const HOSTILE = ['<img src=x onerror=window.__xss=1>', '"><script>window.__xss=1</script>', "';alert(1)//", '<svg onload=1>', '&lt;b&gt;x', "</div><div onclick='x'>"];
+test("M13: the screen's own words keep the rules; the hostile strings come out as text on every screen", async () => {
+  const lits = literals(mdSrc);
+  assert.ok(lits.length > 150, "found " + lits.length);
+  /* a literal that is a route, a query or a key is not printed; the rest is */
+  const printed = lits.filter(s => !/^[\/?#]/.test(s.trim()) && !/^[a-z0-9_.:\/-]+$/i.test(s.trim()));
+  assert.ok(printed.length > 100, "printed " + printed.length);
+  printed.forEach(s => {
+    assert.ok(!BANNED.test(s), "banned word in: " + s);
+    assert.ok(!/\d/.test(s.replace(/^\s*[123]\s/, "")), "a digit in a string the screen prints: " + s);   /* the three steps of the add sheet are numbered */
+    assert.ok(!/\.(json|py|js|md|html)\b|\/api\/|_models/.test(s), "a path or file name: " + s);
+  });
+  /* the screens, printed with the fixtures: no count at rest, no path, no file name */
+  const c = await onPage();
+  const shown = [c.mdlCardHtml(), c.mdlPaneHtml()];
+  click(c, { mdl: "onoff" }); await settle(); shown.push(sheet(c));
+  click(c, { mdl: "close" });
+  click(c, { mdl: "field", mdlName: "name" }); await fire(c); shown.push(sheet(c)); click(c, { mdl: "close" });
+  click(c, { mdl: "link" }); shown.push(sheet(c)); click(c, { mdl: "close" });
+  click(c, { mdl: "try" }); shown.push(sheet(c)); click(c, { mdl: "close" });
+  click(c, { mdl: "back" }); click(c, { mdl: "add" }); shown.push(sheet(c)); click(c, { mdl: "close" });
+  click(c, { mdl: "structure" }); await settle(); shown.push(c.mdlPaneHtml());
+  shown.forEach(h => {
+    const w = words(h).replace(/\b(x\.[a-z_]+|v\d+|version \d+|\d\d:\d\d)\b/g, " ").replace(/\b(up to|at least|between|from|and|runs? to) -?\d+( and \d+)?( characters| words)?/g, " ");
+    assert.ok(!BANNED.test(w), "banned: " + w);
+    assert.ok(!/\/api\/|_models|\.json|\.py\b|\/Users\//.test(w), "a path: " + w);
+  });
+  /* the pane prints no count of the owner's models */
+  assert.ok(!/\b\d+ (models?|fields?|links?|changes?)\b/i.test(words(shown.join(" "))));
+  /* hostile strings as a label, a field name, a choice and a model name, on every screen */
+  const L = copy(LIST), P = copy(PAGE), G = copy(GRAPH);
+  HOSTILE.forEach((x, i) => {
+    L.yours.push({ key: "x.h" + i, name: "h" + i, label: x, version: 1, base: "core:record", base_label: x, state: i % 3 === 0 ? "needs_a_look" : "on", why: x, abstract: false, children: [], pending: i === 0 ? { id: "p-" + i, says: x, at: "2026-10-27T11:02:00+05:30" } : null });
+    P.fields.push({ name: x, label: x, type: "one of", says: "one of " + x + ", b", required: true, nullable: false, retired: false, aliases: [x], from: x, locked: i % 2 === 0 });
+    G.nodes.push({ key: "x.h" + i, label: x, core: false, state: "on" }); G.text.push(x + " is a kind of " + x);
+    G.edges.push({ from: "x.h" + i, to: "x.client", kind: "extends", many: false, required: false });
+  });
+  P.label = HOSTILE[0]; P.chain = [HOSTILE[1]]; P.used_by = [{ kind: "filed", name: HOSTILE[2], art: "a", v: 3, dept: HOSTILE[3] }];
+  P.links = { out: [{ name: "n", label: HOSTILE[4], mode: "nest", to: "x:h", to_label: HOSTILE[4], many: true, required: true, enabled: true }], in: [{ from: "x.h", from_label: HOSTILE[5], name: "n", mode: "refer" }] };
+  const hostile = await onPage({ list: L, page: P, graph: G, shape: { schema: { title: HOSTILE[0] }, example: { a: HOSTILE[1] } } });
+  const screens = [hostile.mdlCardHtml(), hostile.mdlListHtml(), hostile.mdlPageHtml("x.client")];
+  click(hostile, { mdl: "add" }); type(hostile, "label", HOSTILE[0]); type(hostile, "about", HOSTILE[1]); screens.push(sheet(hostile));
+  click(hostile, { mdl: "field" }); type(hostile, "f:name", HOSTILE[2]); type(hostile, "f:label", HOSTILE[3]); type(hostile, "f:type", "choice"); type(hostile, "f:choices", HOSTILE.join(",")); screens.push(sheet(hostile)); click(hostile, { mdl: "close" }); click(hostile, { mdl: "close" });
+  click(hostile, { mdl: "link" }); screens.push(sheet(hostile)); click(hostile, { mdl: "close" });
+  click(hostile, { mdl: "try" }); type(hostile, "sample", HOSTILE[0]); click(hostile, { mdl: "check" }); await settle(); screens.push(sheet(hostile));
+  click(hostile, { mdl: "shapetab" }); await settle(); screens.push(sheet(hostile)); click(hostile, { mdl: "close" });
+  click(hostile, { mdl: "structure" }); await settle(); screens.push(hostile.mdlPaneHtml());
+  screens.forEach(h => {
+    /* no tag the page did not write: no img or script, and no attribute that runs anything */
+    const tags = attrs(h, /<[a-zA-Z](?:"[^"]*"|[^>"])*>/g);   /* a quoted value may hold a > */
+    tags.forEach(t => {
+      assert.ok(!/^<(img|script|iframe|object|embed)\b/i.test(t), "a tag made from an owner's word: " + t);
+      assert.ok(!/\son[a-z]+\s*=/i.test(t.replace(/"[^"]*"/g, '""')), "an event attribute: " + t);
+      assert.ok(!/href\s*=\s*"javascript:/i.test(t), t);
+    });
+    assert.ok(!/<svg onload/i.test(h));
+  });
+  assert.ok(/&lt;img src=x onerror=window.__xss=1&gt;|&lt;img src=x onerror=window\.__xss=1>/.test(screens[1]) || /&lt;img src=x onerror/.test(screens[1]), "as text");
+});
+
 /* ── M14 ────────────────────────────────────────────────────────────────── */
 test("M14: the stylesheet block is tokens only and covers what the script emits; panel.html loads the script before the tail", () => {
   const i = css.indexOf("/* Models (A4)");
