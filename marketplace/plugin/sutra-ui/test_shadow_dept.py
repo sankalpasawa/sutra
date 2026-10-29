@@ -33,6 +33,7 @@ def org(tmp_path, monkeypatch):
     import dept_read
     import shadow_dept
     mods = (E, W, org2_apply, founding, engine_runtime, dept_read, shadow_dept)
+    before = {m: dict(vars(m)) for m in mods}           # the modules as the suites collected them, put back at the end
     for m in mods:
         importlib.reload(m)
     if not E.active_roots(E.load_domains()):
@@ -45,9 +46,9 @@ def org(tmp_path, monkeypatch):
     yield type("Org", (), {"W": W, "founding": founding, "R": engine_runtime, "dr": dept_read, "sd": shadow_dept,
                            "root": root, "kids": kids})
     shadow_dept.CHOOSER["fn"] = None
-    monkeypatch.undo()                                  # the real environment back, then every module bound to it again
+    monkeypatch.undo()                                  # the real environment back, every module as it was collected
     for m in mods:
-        importlib.reload(m)
+        vars(m).update(before[m])
 
 
 def run(co):
