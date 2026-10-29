@@ -2456,6 +2456,14 @@ def _rule_applies_to_birth(rule):
     return bool(re.search(r"\b(new department|make|create|set up|anything|approval first|approve first)\b", line, re.I))
 
 
+def birth_ask_applies(root_ref):
+    """Does an `ask` rule on this Root or its ancestors hold a new department for the owner's stamp? The same question Setup
+    asks of each effective rule (_rule_applies_to_birth), asked of the Root, so a department made by a Shadow task is held
+    exactly when one made by the owner's words would be (PRD A5.3.4, S-18)."""
+    d = W.dept(root_ref)
+    return bool(d) and any(_rule_applies_to_birth(r) for r in _effective_rules(root_ref, d))
+
+
 def coord_chain(ctx, step, item):
     ref = ctx["ref"]
     chain = W._chain_of(ref, ctx["def"]["reads"], ctx["inp"]["v"])

@@ -2761,6 +2761,13 @@ async def _delegate_spawn(mission):
     stamp and this is its ONLY production caller: without the argument the
     field is never written outside the loop and the bug is exactly as it was.
     """
+    # A5: the task's department, decided once (reuse, create or none) and recorded before the worker is provisioned. Link-only: the
+    # worker runs as it always did. Never blocks the task.
+    try:
+        import shadow_dept
+        await shadow_dept.decide_and_apply(_mission_engine.MissionStore().load(mission["id"]) or mission)
+    except Exception:                   # noqa: BLE001 -- the decision is context, never a reason to fail a spawn
+        pass
     try:
         store = _mission_engine.MissionStore()
         m = store.load(mission["id"])

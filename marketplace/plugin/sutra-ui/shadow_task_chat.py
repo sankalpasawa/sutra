@@ -180,6 +180,16 @@ Reply with ONE fenced block and nothing else:
 """
 
 
+#: The create-or-reuse question (PRD A5.3.2). The body is shadow_dept_prompt.render's; this chat has no tools and returns text,
+#: which shadow_dept.parse_choice validates. The app does every write.
+DEPT_ASK = """Pick the department for this task. This is one question; do not start any work.
+
+%(facts)s
+"""
+
+DEPT_TIMEOUT_S = 45
+
+
 def _carry_stamp():
     """mission_engine.carry_block's fingerprint, imported lazily. Never
     raises: a fingerprint that cannot be taken is no fingerprint (None)."""
@@ -476,6 +486,11 @@ class TaskChat:
             TURN_TIMEOUT_S, images=_unseen_images(facts))
         m = _BRIEF_FENCE.search(raw or "")
         return (m.group(1).strip() if m else "")
+
+    async def dept_choice(self, facts):
+        """Ask this task's Shadow which department the task belongs to: `facts` is shadow_dept_prompt's text. Returns the raw
+        reply; shadow_dept.parse_choice validates it, and the app does every write."""
+        return await self._turn(DEPT_ASK % {"facts": facts}, DEPT_TIMEOUT_S)
 
     async def decide(self, context):
         """One turn of steering: the same prompt the one-shot decider sends,
