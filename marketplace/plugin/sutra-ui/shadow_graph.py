@@ -267,12 +267,12 @@ def _derive(missions, goals, convs, costs, depts, include_done=False, focus=None
             dept_users.setdefault(hit[0], []).append(r)
             dept_edges.append((tid, hit, on))
 
-    used_rows = set()
+    # a node is two rows tall: a department takes the row nearest the mean of its tasks that is two or more rows from every other
+    # node of its column (a task chat sits there too), so no two boxes overlap
+    used_rows = {n['row'] for n in nodes.values() if n['col'] == 3}
     for ref, rs in dept_users.items():
-        r = int(round(sum(rs) / len(rs)))
-        r = r + 1 if r % 2 == 0 else r
-        while r in used_rows:
-            r += 2
+        want = int(round(sum(rs) / len(rs)))
+        r = next(c for d in range(0, 400) for c in (want + d, want - d) if c >= 0 and all(abs(c - u) >= 2 for u in used_rows))
         used_rows.add(r)
         row = depts.get(ref)
         if row:

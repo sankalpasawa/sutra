@@ -11,7 +11,7 @@
 - Shadow's Home has a Graph button. The graph shows Shadow, its tasks, the goals and conversations they came from, their task chats and workers, and the departments a task uses (a solid line, tagged "uses") or made (a dashed line with a plus, tagged "spawned"), each with the reason in words. Each node opens the chat or page it names.
 - The Shadow chat has a Details button: one task's screen with the decision (used, made or none, why, how sure, who decided), the departments, the chats, the workers, what it cost, and what happened when.
 - For any task, an agent decides whether to use a department the organisation already has, make a new one, or use none. Code covers the answer (rules DR-1 to DR-8: a stopped department is never started, a new department under a Root's ask rule waits for the owner's yes, creates are rate limited, a duplicate becomes a use). **Link-only is the default**: the decision is recorded and drawn, the department is not messaged, and the worker runs the task as before.
-- Root's own chat stays the classic chat (`J2_ROOT_DEFAULT` is false). Its J2 page is one click away. The flip waits for a real Setup conversation walked in the page (`A5_REAL_SETUP=1 qa/walks/a5-e2e.sh`).
+- Root's own chat stays the classic chat (`J2_ROOT_DEFAULT` is false). Its J2 page is one click away. The real Setup conversation was walked in the page on 2026-10-30 and passed (`A5_REAL_SETUP=1 qa/walks/a5-e2e.sh`); the one-line flip is the next release's.
 
 ## What changed underneath
 
@@ -36,6 +36,4 @@ A build of 2.307.0 (schema version 1) reading a record that A5 wrote:
 ## Known, for the next release
 
 - A candidate that the task did not use is named by its ref in the decision's "Looked at" list.
-- On the phone list, the "uses" and "spawned" tags sit over the department's name.
-- A Root's J2 page shows its child departments' questions in its own chat.
 - `SUTRA_SHADOW_DEPT_EXECUTE` (a department running the task, `hand_words`, `follow()`) is a later package (A5-9).

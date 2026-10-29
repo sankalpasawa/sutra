@@ -117,7 +117,7 @@ async function loaded(ctx, body){
     const ctx = boot();
     let h = await loaded(ctx);
     assert.ok(!/Updated \d+s ago/.test(h));
-    assert.ok(/1 working, 1 waiting on you/.test(h));
+    assert.ok(/Working, Waiting on you/.test(h));
     ctx.clock.t += 30000;
     assert.ok(/Updated 30s ago/.test(html(ctx)));
   });
@@ -158,6 +158,29 @@ async function loaded(ctx, body){
     const heldId = SAMPLE.graph.edges.find(e => e.held).id;
     fire(ctx, "mouseover", btn({ sgtag: heldId }));
     assert.ok(/by the rule: /.test(html(ctx)) && /Held: Collections is Off/.test(html(ctx)));
+  });
+
+  await atest("no count at rest: the graph and its header hold no digit outside the names, times and ids", async () => {
+    const ctx = boot();
+    const h = await loaded(ctx);
+    const sum = /class="sgsum"[^>]*>([^<]*)</.exec(h);
+    assert.ok(sum && sum[1] && !/\d/.test(sum[1]), "the header summary has no digit: " + (sum && sum[1]));
+    const plain = h.replace(/<[^>]*>/g, " ");
+    assert.ok(!/\b\d+\s+(working|waiting|tasks?|departments?|chats?)\b/i.test(plain), "no 'N working'-style count");
+  });
+
+  await atest("layout: an edge tag clears every node box at the wide width", async () => {
+    const ctx = boot();
+    const h = await loaded(ctx);
+    const px = (s, k) => Number(new RegExp(k + ":(-?\\d+)px").exec(s)[1]);
+    const nodes = [...h.matchAll(/class="sgnode[^"]*"[^>]*?style="([^"]*)"/g)].map(m => ({ x: px(m[1], "left"), y: px(m[1], "top"), w: px(m[1], "width"), h: px(m[1], "height") }));
+    const tags = [...h.matchAll(/class="sgtag[^"]*"[^>]*style="([^"]*)"/g)].map(m => ({ x: px(m[1], "left"), y: px(m[1], "top"), w: 52, h: 18 }));
+    assert.ok(nodes.length > 3 && tags.length >= 3, nodes.length + " nodes, " + tags.length + " tags");
+    const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    tags.forEach(t => nodes.forEach(nd => assert.ok(!hit(t, nd), "a tag at " + t.x + "," + t.y + " touches a node at " + nd.x + "," + nd.y)));
+    const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
+    assert.ok(/\.sgtag\{[^}]*width:52px;height:18px/.test(css), "the tag size the box test assumes");
+    assert.ok(/\.sglist \.sgtag\{position:static/.test(css), "on the phone list a tag is in the flow, not over the name");
   });
 
   await atest("each node opens the right place with the right id", async () => {

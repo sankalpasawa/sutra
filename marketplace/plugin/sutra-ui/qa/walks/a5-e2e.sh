@@ -83,14 +83,21 @@ if [ "${A5_REAL_SETUP:-0}" = "1" ]; then
   ( unset SUTRA_WEBSITE_OFFLINE SUTRA_MOTOR_OFF; bash "$HERE/devserver-detach.sh" "$REC" "$PORT" | tail -1 )
   ROOT_REF="$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1]))['root'])" "$REC/refs.json")"
   curl -s -m 20 -X POST "http://127.0.0.1:$PORT/j2ui/$ROOT_REF/api/say" -H 'Content-Type: application/json' \
-    -d '{"text":"I want a department that answers customer invoice questions and files every invoice"}' >/dev/null
+    -d '{"text":"start a department for answering customer invoice questions and filing every invoice"}' >/dev/null
   SETUP=FAIL
-  for i in $(seq 1 36); do
+  # Root asks its question first (S-18: it asks only when a rule says ask); the walk answers it once, in the page, then waits for the department
+  ANSWERED=0
+  for i in $(seq 1 60); do
     sleep 5
+    if [ "$ANSWERED" = 0 ] && "$PY" -c "import json,sys,urllib.request; st=json.load(urllib.request.urlopen(sys.argv[1], timeout=10)); sys.exit(0 if any(m.get('who')=='identity' and '?' in str(m.get('text')) for m in st.get('chat', [])) else 1)" "http://127.0.0.1:$PORT/j2ui/$ROOT_REF/api/state"; then
+      curl -s -m 20 -X POST "http://127.0.0.1:$PORT/j2ui/$ROOT_REF/api/say" -H 'Content-Type: application/json' \
+        -d '{"text":"Our customers are small shops; the invoices arrive by email as PDF. Answer each question in a day and file every invoice by its number."}' >/dev/null
+      ANSWERED=1
+    fi
     N="$(curl -s -m 10 "http://127.0.0.1:$PORT/api/native/depts" | "$PY" -c "import json,sys; print(sum(1 for d in json.load(sys.stdin)['depts'] if d.get('parent') == sys.argv[1]))" "$ROOT_REF")"
     [ "${N:-0}" -gt 4 ] && { SETUP=PASS; break; }
   done
-  echo "root setup in the J2 page: $SETUP (a new department under the Root within 180 s)" | tee "$OUT/root-setup.txt"
+  echo "root setup in the J2 page: $SETUP (a new department under the Root within 300 s, after one answer in the page)" | tee "$OUT/root-setup.txt"
 else
   echo "root setup in the J2 page: not walked (A5_REAL_SETUP=1 needs a model); J2_ROOT_DEFAULT stays false"
 fi

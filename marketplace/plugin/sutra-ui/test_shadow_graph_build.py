@@ -199,6 +199,8 @@ def test_10_a_department_used_twice_sits_at_the_mean_row_and_rows_do_not_collide
     assert [n["id"] for n in g["nodes"] if n["kind"] == "department"] == ["dept:dref-billing01"]
     pos = [(n["col"], n["row"]) for n in g["nodes"]]
     assert len(pos) == len(set(pos)), "no two nodes share a cell"
+    col3 = sorted(n["row"] for n in g["nodes"] if n["col"] == 3)
+    assert all(b - a >= 2 for a, b in zip(col3, col3[1:])), "a department box never overlaps a task chat or another department: %s" % col3
 
 
 def test_11_executor_department_draws_no_worker(env):
@@ -324,3 +326,16 @@ def test_memo_is_keyed_by_the_real_departments_signature(org, monkeypatch):
     G.build()
     assert G._MEMO != memo and G._MEMO[('graph', None, False)][0] == G._signature()
     G.clear()
+
+
+def test_a5_a_department_beside_task_chats_overlaps_no_box(env, monkeypatch):
+    """A node is two rows tall: with a task chat on every task row, the departments of the same column still sit two or more rows from them."""
+    ms = [mission(objective="Task %d" % i, task_chat_session="sess-%d" % i) for i in range(3)]
+    for m, ref in zip(ms, ("dref-billing01", "dref-reports01", "dref-billing01")):
+        m["department_decision"] = decision(m["id"], ref)
+        ME.MissionStore().save(m)
+    monkeypatch.setattr(env, "dept_read", FakeDeptRead([row("dref-billing01", "Billing"), row("dref-reports01", "Reports")]))
+    g = env.build()
+    col3 = sorted(n["row"] for n in g["nodes"] if n["col"] == 3)
+    assert len([n for n in g["nodes"] if n["kind"] == "department"]) == 2 and len(col3) == 5
+    assert all(b - a >= 2 for a, b in zip(col3, col3[1:])), col3

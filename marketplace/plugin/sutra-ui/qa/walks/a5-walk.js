@@ -118,10 +118,30 @@ const NARROW = { w: 390, h: 844, mobile: false, tag: "390" };       // the app's
     })()`);
     const sd = JSON.parse(said);
     check("org: " + kind + ": a word said is in the chat", sd.code === 200 && sd.seen, said);
+    if (kind === "root") {          // a Root's page is Root's own chat: what was said in the departments under it is not in it
+      const mine = JSON.parse(await run(`(async () => { const w = document.querySelector('iframe.j2v-if').contentWindow;
+        const st = await (await w.fetch('api/state')).json(); return JSON.stringify((st.chat || []).map(m => String(m.text))); })()`));
+      const other = ["default", "organic", "website"].map(k => "hello from the " + k + " walk").filter(x => mine.some(t => t.indexOf(x) >= 0));
+      check("org: root: its chat holds no other department's say", other.length === 0, JSON.stringify(other));
+    }
     const text = await run(`document.querySelector('iframe.j2v-if').contentDocument.body.innerText`);
     check("org: " + kind + ": the page shows no undefined or NaN", !/\b(undefined|NaN)\b/.test(text || ""));
     if (kind !== "website") check("org: " + kind + ": the page does not call itself a website", !/website/i.test(text || ""), (text || "").match(/.{0,30}website.{0,30}/i));
   }
+
+
+  // a tag (the words on an edge) never sits on a node, and the graph holds no count at rest
+  const overlaps = `(() => { const box = e => e.getBoundingClientRect(), hit = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+    const nodes = [...document.querySelectorAll('[data-sgnode]')], bad = [];
+    document.querySelectorAll('[data-sgtag]').forEach(t => nodes.forEach(n => { if (hit(box(t), box(n))) bad.push(t.textContent.trim() + ' on ' + (n.querySelector('.sglab') || n).textContent.trim()); }));
+    if (document.querySelector('.sghost')) nodes.forEach((a, i) => nodes.slice(i + 1).forEach(b => { if (hit(box(a), box(b))) bad.push('node ' + a.dataset.sgnode + ' on ' + b.dataset.sgnode); }));
+    const sum = (document.querySelector('.sgsum') || {}).textContent || '';
+    return JSON.stringify({ bad, tags: document.querySelectorAll('[data-sgtag]').length, digits: /\\d/.test(sum), sum }); })()`;
+  const tagCheck = async w => {
+    const r = JSON.parse(await run(overlaps));
+    check("graph " + w + ": no edge tag sits on a node and no node on another", r.tags >= 2 && r.bad.length === 0, JSON.stringify(r));
+    check("graph " + w + ": the header holds no count at rest", !r.digits, JSON.stringify(r.sum));
+  };
 
   // ---- 2. Home, then Graph --------------------------------------------------------------------------------------------------
   const home = async () => { await run(`goDest('focus'); openScreen('shadow'); render()`); await sleep(800); };
@@ -150,6 +170,7 @@ const NARROW = { w: 390, h: 844, mobile: false, tag: "390" };       // the app's
   check("graph: spawned is a dashed line with a plus", view.spawned && view.spawned.dash && view.spawned.dash !== "none" && view.spawned.plus, JSON.stringify(view.spawned));
   check("graph: each of uses and spawned has a tag with its reason", ["uses", "spawned"].every(w => view.tags.some(t => t.word === w && /: .{5,}/.test(t.label || ""))), JSON.stringify(view.tags));
   check("graph: no node is only a colour (a word and a label go with it)", view.bare === 0, "bare " + view.bare);
+  await tagCheck("1280");
   await shot("graph-overview-1280.png");
 
   // every node opens the right chat or page
@@ -198,6 +219,7 @@ const NARROW = { w: 390, h: 844, mobile: false, tag: "390" };       // the app's
   await waitFor(`document.querySelectorAll('[data-sgnode]').length > 1 && !document.querySelector('.sgfocus')`, 15000);
   const phone = JSON.parse(await run(`JSON.stringify({ nodes: document.querySelectorAll('[data-sgnode]').length, small: [...document.querySelectorAll('[data-sgnode]')].filter(b => b.getBoundingClientRect().height < 44).length, over: document.documentElement.scrollWidth > window.innerWidth + 1 })`));
   check("phone: the graph is a list of 44 px targets with no sideways scroll", phone.nodes > 1 && phone.small === 0 && !phone.over, JSON.stringify(phone));
+  await tagCheck("390");
   await shot("graph-overview-390.png");
   for (const kind of ["default", "organic", "root"]) {
     for (const vp of [BIG, SMALL]) {

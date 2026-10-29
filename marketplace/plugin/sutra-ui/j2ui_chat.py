@@ -159,8 +159,11 @@ class _Read:
         except Exception as exc:  # noqa: BLE001 -- the owner's side is one read; when it fails the rest is still built, and says why
             cv = {}
             c.reasons.append("chat view: %s" % type(exc).__name__)
+        # a Root's own page is Root's chat alone: chat_view(root) reads the whole front door, each turn marked with the department it is
+        # about, and a turn about another department belongs to that department's page
+        mine = (lambda t: t.get("dept") in (None, "", c.ref)) if c.d.get("kind") == "root" else (lambda t: True)
         self.turns = [dict(t, _key=("b" if t.get("own") or not c.root_ref else "r", t["n"])) for t in cv.get("turns") or []
-                      if isinstance(t, dict) and t.get("n") is not None]
+                      if isinstance(t, dict) and t.get("n") is not None and mine(t)]
         self.raw = {("b", p.get("n")): p for p in c.posts}
         self.raw.update({("r", p.get("n")): p for p in c.root_posts})
         # the department's posts that tie to an ask: the card that names it, Identity's request relayed to Root, the owner's answer

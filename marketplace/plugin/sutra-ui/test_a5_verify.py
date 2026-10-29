@@ -109,6 +109,8 @@ def test_root_keeps_the_classic_chat_until_a_setup_conversation_has_been_walked(
     assert "const J2_ROOT_DEFAULT = false;" in js
     walk = (HERE / "qa" / "walks" / "a5-e2e.sh").read_text(encoding="utf-8")
     assert "A5_REAL_SETUP" in walk and "J2_ROOT_DEFAULT" in walk
+    rec = (HERE / "qa" / "shots" / "a5" / "root-setup.txt").read_text(encoding="utf-8")
+    assert rec.startswith("root setup in the J2 page: "), "the walk's result is on record, PASS or FAIL"
 
 
 def test_the_walk_scripts_are_in_place_and_parse():
