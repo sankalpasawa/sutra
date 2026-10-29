@@ -230,10 +230,10 @@ test("J2: the page is for every department on the engine runtime whose map says 
   assert.strictEqual(early.j2vEligible("r3"), false);
   const off = await opened("r3", { search: "?j2view=off" });
   assert.strictEqual(off.j2vOn("r3"), false, "the switch off");
-  run(c, "S.ui.j2off = { r3: true }");
-  assert.strictEqual(c.j2vOn("r3"), false, "the per-department switch (Settings and records) leaves the page for the page's life");
-  assert.strictEqual(c.j2vTab("r3"), null);
-  c.j2vSetOff("r3", false);
+  run(c, "wbS().tab.r3 = 'records'");
+  assert.strictEqual(c.j2vOn("r3"), false, "Settings and records (the stored tab) is the escape hatch from the page");
+  assert.strictEqual(c.j2vTab("r3"), "records");
+  run(c, "delete wbS().tab.r3");
   assert.strictEqual(c.j2vOn("r3"), true);
 });
 
