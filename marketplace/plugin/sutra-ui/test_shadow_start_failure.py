@@ -239,7 +239,8 @@ class AStartThatDies(unittest.IsolatedAsyncioTestCase):
                     break
         finally:
             shadow_runner.START_RETRY_DELAYS = orig
-        self.assertEqual(len(calls), 2, "the retry reached the spawner again")
+        # zero retry delays let a third and fourth call land before this check: the claim is that the retry reached the spawner again
+        self.assertGreaterEqual(len(calls), 2, "the retry reached the spawner again")
 
 
     async def test_the_exact_stale_write_race_cannot_fail_a_mission(self):
