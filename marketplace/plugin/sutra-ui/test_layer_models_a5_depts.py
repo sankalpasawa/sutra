@@ -89,6 +89,14 @@ def test_choice_takes_what_its_action_needs():
     bad(D.DeptChoice, dict(create, done_items=["d"] * 13), "more than 12")
 
 
+def test_choice_round_trips_for_each_action():
+    full = {"kind": "default", "name": "Billing", "goal": "g"}
+    for k in ({"action": "use", "ref": "dref-billing1"}, dict(full, action="create", ref=None), {"action": "none", "ref": None}):
+        c = D.DeptChoice(reason="x", confidence="low", **k)
+        assert c.done_items == []
+        TypeAdapter(D.DeptChoice).validate_python(c.model_dump())
+
+
 def test_override():
     ok(D.DeptOverride, {"rule": "founder_rule", "note": "held"})
     bad(D.DeptOverride, {"rule": "mystery", "note": "x"}, "is not one of")

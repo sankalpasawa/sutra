@@ -2,7 +2,7 @@
 
 A row, a candidate, a choice and a decision are what `dept_read` and `shadow_dept` build; the models are checked where they are written
 (the decision before `MissionStore.save`, the request at its route) and on the response of each route, never on a stream."""
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from .base import Closed
 from .common import B, E, I, L, N, NULLABLE, T
@@ -82,7 +82,7 @@ class DeptChoice(Closed):
     kind: NULLABLE(KIND) = None
     name: NULLABLE(T(80)) = None
     goal: NULLABLE(T(2000)) = None
-    done_items: L(T(200), 12) = None
+    done_items: L(T(200), 12) = Field(default_factory=list)
     reason: T(400, 1)
     confidence: E(*CONFIDENCE)
 
