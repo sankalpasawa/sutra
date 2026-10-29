@@ -8,6 +8,8 @@
 | **where it lives** | the page and its pin in `j2ui_assets/`; the adapter in `j2ui_*.py`; the frame in `static/js/25-j2view.js`; the proof in `test_j2ui_*.py`, `test_fixtures/j2ui/`, `qa/walks/`; the pictures in [`design/j2ui/`](j2ui/) |
 | **this file does not change** | `PRD-FIVE-FUNCTIONS.md`, `PRD-FIVE-FUNCTIONS-A1.md`, `PRD-FIVE-FUNCTIONS-DECISIONS.md`; the integrator adds the pointers and the supersession of the decision rows (section 10) |
 
+> **Superseded in scope by A5 (2026-10-29): the page is for every department kind.** The owner directed that the J2 page is the UI for all departments and that earlier conflicts are discarded. The page now serves every department of the engine runtime (runtime 2, kind in the Library: website, default, organic, root, and any kind the Library adds). The website-only gate (`KINDS_SUPPORTED`, `is_j2_kind`, the fallback in `j2ui_page._scoped`, `j2vEligible`) and the kind-based classic screens ("records mode") are retired; the classic screens remain only as the explicit "Settings and records" escape hatch and for runtime-1 departments. The verbatim rule is loosened only by the substitutions S4 (kind-neutral wording through `WD()` lookups whose defaults are the prototype's own text) and S5 (one helper line), listed in `scripts/sync_j2_ui.py`, pinned by `test_j2ui_verbatim.py` (pin schema `j2ui-pin/2`); a website department reads exactly as before. Where this file says "website only" (sections 1, 2 item 2 and 4, 4 `need`, the disposition rows for kinds `default` and `organic`, D10, D-SCOPE and the scope notes), read A5.1 of [PRD-FIVE-FUNCTIONS-A5.md](PRD-FIVE-FUNCTIONS-A5.md) instead. The rest of this file is unchanged.
+
 ## 1. What the owner asked for, and how it is read
 
 The department's screen in the Sutra desktop app is the J2 prototype's UI: the Simple view, the Detailed view with its rail, the Map drawn as a metro line, the Board tab, the cards, the phone-width layout, the colours, the fonts and the wording, reproduced exactly, with no redesign, no restyle and no re-worded label. The data comes from Sutra's runtime (the five functions, `dept.json`, runs, versions, asks, the J2 ledger) instead of the prototype's run folders. Screens the prototype has no version of (Settings > Instructions as typed fields, Root's Settings > Standards) stay in the app's own style.
@@ -17,9 +19,9 @@ The department's screen in the Sutra desktop app is the J2 prototype's UI: the S
 ## 2. What is built, in one page
 
 1. The prototype's single file `j2_ui.html` is copied into `j2ui_assets/` by one script, `scripts/sync_j2_ui.py`, which applies three documented substitutions only (section 3), pins the source commit and hashes, and copies two helper files byte for byte (`j2_schema.py`, the prototype's atom adapter, and `j2_ui_render.js`, its node render harness).
-2. `GET /j2ui/{ref}/` serves that file for a department of the engine runtime whose kind is `website`, with a content security policy. The page calls relative URLs, so a router under the same base (`j2ui_api.py`) answers every endpoint it uses, in the prototype's own JSON shapes, built from Sutra's records (section 4).
+2. `GET /j2ui/{ref}/` serves that file for a department of the engine runtime whose kind is in the Library (A5, 2026-10-29: every kind; was `website` only), with a content security policy. The page calls relative URLs, so a router under the same base (`j2ui_api.py`) answers every endpoint it uses, in the prototype's own JSON shapes, built from Sutra's records (section 4).
 3. In the department screen the page runs in one same-origin, unsandboxed iframe, laid over a placeholder by a mount-once frame host, under a slim native bar (the department's On/Off switch and `Settings and records`), with the list column hidden so the page has its desktop width. `Settings and records` shows the classic list and panes, including the typed Instructions and Root's Standards, so nothing Sutra-only is lost.
-4. Departments of kind `default` and `organic`, a Root, and a department of the first build keep the classic screens: the page's vocabulary is a website team's, and presenting another kind as one would be false.
+4. (Superseded by A5, 2026-10-29.) Every runtime-2 department is served by the page, with kind-neutral wording from the `words` state key; only a department of the first build (runtime 1) keeps the classic screens.
 5. The adapter invents nothing. Where Sutra has no record the page shows its own "not recorded" or empty text. The Audit tab claims no item-by-item result and no code check that nobody made.
 
 ## 3. Embedding, and the three substitutions (the only differences from the prototype's bytes)
@@ -130,7 +132,7 @@ Writes pass `app.py`'s origin guard unchanged: a POST that carries an `Origin` w
 | M4.9 and `W3-BOARD` board/1 between engines | Kept | `questions.json` feeds the Board tab and the Map's asks and uses edges |
 | M8.7 spot checks, M9 pursue rounds | Kept | server side, untouched; rounds show as the cycle number |
 | A1.28 emails as dry-run deeds, Sends | Kept (not adopted) | no send engine, no Send nodes |
-| Departments of kind `default` and `organic` | Kept classic | `is_j2_kind` and the shell's `j2vOn` both say `website` only |
+| Departments of kind `default`, `organic` and Root | Superseded by A5 (2026-10-29): served by the page | `need()` is the one rule (runtime 2 and kind in the Library); the map's `j2` key tells the shell |
 | User-journey templates J1 to J4 (A3) | Data only | no screen, no adapter field |
 | Base and child classes, function templates (A2, A3) | No screens | if A2 adds kinds that extend `website`, change `is_j2_kind` and the one JS test of `kind` together |
 
@@ -179,7 +181,7 @@ They stay on screen, unchanged, because the page is not edited.
 | D7 | at the 900 px minimum window the frame is narrow and the page draws its phone layout (the layout follows the frame's width) | [phone: question](j2ui/simple-question-390.png), [Map](j2ui/detail-map-390.png) |
 | D8 | links that open a new window (`Open full screen`, `View in site`) open the system browser at the app's local address in Electron; not testable headlessly here | none |
 | D9 | the fonts are the prototype's Google Fonts link while S3 is off; online it is identical, offline the page falls back to system fonts (D-FONTS) | none |
-| D10 | the page is only used for departments of kind `website` (D-SCOPE) | none |
+| D10 | superseded by A5-1: the page is used for every runtime-2 department kind | none |
 
 ### E. Found by this package's own walk (for the owner and the integrator)
 
@@ -225,7 +227,7 @@ How to run: `./run-tests.sh test_j2ui_verbatim.py test_j2ui_contract.py test_j2u
 | D-HOST | host the page in a same-origin, unsandboxed iframe at `/j2ui/{ref}/`, adapter routes under the same base | the alternatives collide with the app's CSS, listeners and routes (section 3) | model-written bodies carry `SAFE` on every route (tested) |
 | D-DIR | the vendored page in `j2ui_assets/`, read only by `j2ui_page.py` | not reachable at a broken base; no `static/**` capture per sync; ships with the plugin tree | none |
 | D-PIN | compare with git objects at the pinned commit; the hash check always runs; "moved" is a report | the prototype moved 20 commits in 6 days | none |
-| D-SCOPE | the page is for `kind == 'website'` only | `default` and `organic` have Brief and Result or Brief only | ask for a document mapping as a later package |
+| D-SCOPE | superseded by A5-1 (2026-10-29): the page is for every runtime-2 kind. Was: `kind == 'website'` only | `default` and `organic` have Brief and Result or Brief only | ask for a document mapping as a later package |
 | D-FONTS | vendor the three font families (S3) | local-first: identical typography offline | `--no-local-fonts` restores the prototype's line; **not yet applied** (needs one network fetch) |
 | D-LOCK | `status` is `waiting` whenever something waits on the owner | otherwise a pending stamp could not be answered while an engine runs | never report `running` (loses "Building your ...") |
 | D-BAR | a slim native bar: On/Off switch and `Settings and records` | the prototype has no run controls; Sutra needs Stop and the way to the typed Instructions and Standards | drop the bar and reach Stop from the strip |
