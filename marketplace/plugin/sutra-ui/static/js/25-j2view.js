@@ -1,7 +1,8 @@
 /* 25-j2view.js -- the department as the J2 prototype's own page (UI-port package j2ui-shell).
 
    Owner, 2026-10-26: "Take latest pull from J2 prototype and implement UI in the exact same fashion, no change."
-   A website department on the engine runtime opens on that page, served by j2ui_page.py at /j2ui/<ref>/ and fed by the
+   Every department on the engine runtime whose kind is in the Library opens on that page (A5.1: website, default, organic, root
+   and any Library kind; the page's words are kind-neutral, j2ui_words.py), served by j2ui_page.py at /j2ui/<ref>/ and fed by the
    adapter (j2ui_api.py), in ONE same-origin iframe under a slim bar of this app's own: the department's On/Off switch and
    `Settings and records`. The page is never edited here; this file only holds the frame and the bar.
 
@@ -14,8 +15,9 @@
                  wbList         in records mode the first group is one `Department view` row (j2vTop)
 
    Settings and records is the classic list and its panes (a function's Settings with its instructions, an engine, filed
-   work, People, Human Sutra), so nothing the page has no screen for is lost. A department of kind default or organic, a
-   Root and a department of the first build keep the classic screens (the page's words are a website team's).
+   work, People, Human Sutra), so nothing the page has no screen for is lost. Only a department of the first build, a ref the map
+   does not know, or one switched to Settings and records (S.ui.j2off[ref], for the page's life) keeps the classic screens. The
+   organisation row keeps Root's classic chat (J2_ROOT_DEFAULT = false); Root's page is one click away from it.
    `?j2view=off` in the address turns the page off everywhere (kept in localStorage through lsSet); `?j2view=on` back on.
 
    Copy discipline is 20-dept.js's: names, no counts at rest, no colour literal (every colour a panel.css token). */
@@ -23,6 +25,9 @@
 const J2V_KEY = "sutra.j2view";
 const J2V_TABS = ["j2", "chat", "map", "five", "board", "activity", "status"];
 const J2V_FRAME = { key: null, el: null, host: null, observed: false };
+/* Root's page is not the default of the organisation row until a real Setup conversation has been walked in the page
+   (A5.1.7); flipping this one constant makes it so. Until then Root's page opens from its chat (tab `j2`). */
+const J2_ROOT_DEFAULT = false;
 
 function j2vS(){
   if (!S.j2v) S.j2v = { on: undefined };
@@ -42,26 +47,37 @@ function j2vEnabled(){
   } catch (e) { st.on = true; }
   return st.on;
 }
-/* The scope: a department of the engine runtime whose kind is website, read from its map. The same word as
-   j2ui_common.is_j2_kind on the server, which is where the page answers 404 for any other. */
+/* The scope: the server's word. /api/native/<ref>/map says `j2: true` for a department of the engine runtime whose kind is in the
+   Library (j2ui_common.need); this file holds no kind list. */
 function j2vEligible(ref){
   const m = (typeof wbS === "function" && ref) ? wbS().map[ref] : null;
-  return !!(m && m.runtime === 2 && m.kind === "website");
+  return !!(m && m.j2 === true);
 }
-/* The tab the department is on: nothing chosen yet, or one of the six that the page folds. Reads the stored tab itself,
-   never wbTab (which asks this file first). */
-function j2vOn(ref){
-  if (!j2vEnabled() || !j2vEligible(ref)) return false;
-  const t = wbS().tab[ref];
+/* The explicit per-department switch to the classic screens ('Settings and records' as the escape hatch), for the page's life. */
+function j2vOff(ref){
+  return !!(typeof S !== "undefined" && S.ui && S.ui.j2off && S.ui.j2off[ref]);
+}
+function j2vSetOff(ref, on){
+  if (typeof S === "undefined" || !S.ui || !ref) return;
+  if (!S.ui.j2off) S.ui.j2off = {};
+  if (on) S.ui.j2off[ref] = true; else delete S.ui.j2off[ref];
+}
+/* Does the stored tab leave the department on the page? Nothing chosen yet, or one of the six that the page folds. A Root keeps its
+   own chat unless it was sent to the page (tab `j2`) or J2_ROOT_DEFAULT says the page is its default. */
+function j2vWants(ref){
+  const t = wbS().tab[ref], m = wbS().map[ref];
+  if (m && m.kind === "root") return t === "j2" || (t === undefined && J2_ROOT_DEFAULT);
   return t === undefined || J2V_TABS.indexOf(t) >= 0;
+}
+function j2vOn(ref){
+  return j2vEnabled() && j2vEligible(ref) && !j2vOff(ref) && j2vWants(ref);
 }
 /* What wbTab answers for this department: `j2` for the page, `records` for Settings and records, null to let wbTab answer
    as it always did (any other tab is the classic screen's own: an engine, a filed work, Human Sutra, a function's pane). */
 function j2vTab(ref){
-  if (!j2vEnabled() || !j2vEligible(ref)) return null;
-  const t = wbS().tab[ref];
-  if (t === undefined || J2V_TABS.indexOf(t) >= 0) return "j2";
-  return t === "records" ? "records" : null;
+  if (!j2vEnabled() || !j2vEligible(ref) || j2vOff(ref)) return null;
+  if (j2vWants(ref)) return "j2";
+  return wbS().tab[ref] === "records" ? "records" : null;
 }
 
 /* ── the viewer: the bar, and the place the page's frame is laid over ─────────────────────────────────────────────── */
@@ -70,8 +86,9 @@ function j2vHtml(n){
   wbTick();
   /* the list column is not painted, so the department is opened here, as wbOrgHtml does for Root */
   if (typeof dpSelect === "function" && dpS().sel !== n.ref) dpSelect(n.ref);
+  const root = !!(m && m.kind === "root");           /* a Root has its chat to go back to; its records are the classic Root pane */
   return `<div class="o2viewer j2v wb"><div class="j2vbar">${m ? wbOnOff(m) : ""}` +
-    wbBtn("Settings and records", `data-wbtab="records"`) + `</div>` +
+    (root ? wbBtn("Back to the chat", `data-wbtab="chat"`) : wbBtn("Settings and records", `data-wbtab="records"`)) + `</div>` +
     `<div class="j2frame" data-j2frame="${wbEsc(n.ref)}"></div></div>`;
 }
 function j2vRecordsHtml(n){
@@ -80,7 +97,7 @@ function j2vRecordsHtml(n){
 }
 /* The list's first group in records mode: one row back to the page where Chat, Map, Board and Agent activity were. */
 function j2vTop(ref, m){
-  if (!j2vEnabled() || !j2vEligible(ref) || j2vOn(ref)) return null;
+  if (!j2vEnabled() || !j2vEligible(ref) || j2vOff(ref) || j2vOn(ref)) return null;
   return `<div class="o2g dpg wb">` + dpRow("Department view", `data-wbtab="j2"`, false) + `</div>`;
 }
 

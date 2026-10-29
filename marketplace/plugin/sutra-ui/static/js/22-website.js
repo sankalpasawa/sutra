@@ -1823,10 +1823,13 @@ function wbOrgHtml(n, d){
   if (typeof dpSelect === "function" && dpS().sel !== root.ref) dpSelect(root.ref);
   if (!m){ wbLoadMap(root.ref); return dpViewerShell(n.name, st.err[root.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
   const rn = { ref: root.ref, name: n.name };
+  /* 25-j2view.js: Root's page, when it was opened from the chat (or is the default): the organisation row's body is the frame */
+  if (typeof j2vOn === "function" && typeof j2vHtml === "function" && j2vOn(root.ref)) return j2vHtml(rn);
   const models = st.tab[root.ref] === "models" && typeof mdlPaneHtml === "function";   /* 26-models.js: Root's Models pane (A4.6) */
   const pane = st.tab[root.ref] === "root" || models;
   const head = `<div class="wb2head"><b>${wbEsc(n.name)}</b>${m.stopped ? `<span class="dpst paused">Off</span>` : ""}` +
-    (pane ? "" : wbBtn(WB_HELPER + " settings", `data-wbtab="root"`)) + `</div>`;
+    (pane ? "" : wbBtn(WB_HELPER + " settings", `data-wbtab="root"`)) +
+    (!pane && typeof j2vEligible === "function" && j2vEligible(root.ref) ? wbBtn(WB_HELPER + "'s page", `data-wbtab="j2"`) : "") + `</div>`;
   return dpViewerShell(pane ? WB_HELPER : "Chat", head + (models ? mdlPaneHtml() : pane ? wbRootPaneHtml(rn, m) : wbChatHtml(rn, m)), "wb");
 }
 /* Root's pane: what its record holds, in rows; the one switch; a way back */

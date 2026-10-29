@@ -73,7 +73,7 @@ function mapOf(ref, o){
   return {
     ref, name: names[ref], goal: "A live website for City Care Hospital", done: "Every page checked and live",
     rules: [], owner: "Sankalp", control: "granted", stopped: !!o.stopped, has_goal: true, live: false,
-    runtime: o.runtime || 2, kind: o.kind || "website", root: "r2", planned: true,
+    runtime: o.runtime || 2, kind: o.kind || "website", j2: (o.runtime || 2) === 2, root: "r2", planned: true,
     systems: ["Identity", "Adaptation", "Priority", "Coordination", "Audit"].map(n => ({ name: n, state: "running", last: null })),
     engines: ENGS.map(e => ({ name: e[0], reads: e[1], writes: e[2], runs_as: e[3], slot: "after a new " + e[1], state: "Idle",
       envelope: { calls: 30, usd: 6, used_calls: 3, used_usd: 0.4 }, window_min: 15, last: { status: "ok", at: "2026-09-27T11:02:00+05:30", what: "" } })),
@@ -212,13 +212,16 @@ test("J1: the module writes storage only through lsSet", () => {
 });
 
 /* ── J2 ────────────────────────────────────────────────────────────────── */
-test("J2: the page is for a website department on the engine runtime whose map is read, and nothing else", async () => {
+test("J2: the page is for every department on the engine runtime whose map says j2 and is read, and nothing else", async () => {
   const c = await opened("r3");
   const on = ref => c.j2vOn(ref);
+  await settle();
+  for (const r of ["r4", "r5"]) c.wbLoadMap(r);
+  await settle();
   assert.strictEqual(on("r3"), true, "a website department");
-  assert.strictEqual(on("r2"), false, "a Root");
-  assert.strictEqual(on("r4"), false, "kind default");
-  assert.strictEqual(on("r5"), false, "kind organic");
+  assert.strictEqual(on("r2"), false, "a Root keeps its chat until it is sent to the page (J2_ROOT_DEFAULT is false)");
+  assert.strictEqual(on("r4"), true, "kind default");
+  assert.strictEqual(on("r5"), true, "kind organic");
   assert.strictEqual(on("r6"), false, "the first build's way (runtime 1)");
   assert.strictEqual(on("r9"), false, "a ref nobody has");
   assert.strictEqual(on(""), false);
@@ -227,6 +230,42 @@ test("J2: the page is for a website department on the engine runtime whose map i
   assert.strictEqual(early.j2vEligible("r3"), false);
   const off = await opened("r3", { search: "?j2view=off" });
   assert.strictEqual(off.j2vOn("r3"), false, "the switch off");
+  run(c, "S.ui.j2off = { r3: true }");
+  assert.strictEqual(c.j2vOn("r3"), false, "the per-department switch (Settings and records) leaves the page for the page's life");
+  assert.strictEqual(c.j2vTab("r3"), null);
+  c.j2vSetOff("r3", false);
+  assert.strictEqual(c.j2vOn("r3"), true);
+});
+
+test("J2: parity: j2vEligible is the map's j2 for every kind of the fixture, and the module holds no kind list", async () => {
+  const c = fresh();
+  run(c, "o2S().loaded = true;");
+  for (const r of ["r2", "r3", "r4", "r5", "r6"]) c.wbLoadMap(r);
+  await settle();
+  const want = { r2: true, r3: true, r4: true, r5: true, r6: false };
+  for (const r of Object.keys(want)) assert.strictEqual(c.j2vEligible(r), want[r], r);
+  run(c, "wbS().map['r3'] = { runtime: 2, kind: 'website' }");
+  assert.strictEqual(c.j2vEligible("r3"), false, "no j2 key, no page");
+  run(c, "wbS().map['r3'] = { runtime: 2, kind: 'brand-new-kind', j2: true }");
+  assert.strictEqual(c.j2vEligible("r3"), true, "a kind this file has never heard of");
+  assert.ok(!/"website"|'website'|"default"|"organic"/.test(jvSrc.replace(/\/\*[^]*?\*\//g, "")), "no kind named in code");
+  assert.strictEqual(run(c, "J2_ROOT_DEFAULT"), false);
+});
+
+test("J2: Root's page is one click away from its chat, and the bar leads back to the chat", async () => {
+  const c = fresh();
+  run(c, "o2S().loaded = true;");
+  c.wbLoadMap("r2");
+  await settle();
+  assert.strictEqual(c.j2vOn("r2"), false);
+  run(c, "wbS().tab['r2'] = 'j2'");
+  assert.strictEqual(c.j2vOn("r2"), true);
+  assert.strictEqual(c.wbTab("r2"), "j2");
+  const html = c.j2vHtml({ ref: "r2", name: "Root" });
+  assert.ok(/data-wbtab="chat"/.test(html) && !/data-wbtab="records"/.test(html), "back to the chat, no records for a Root");
+  run(c, "wbS().tab['r2'] = 'chat'");
+  assert.strictEqual(c.j2vOn("r2"), false);
+  assert.strictEqual(c.wbTab("r2"), "chat");
 });
 
 test("J2: the page holds on its own tabs; an engine, a filed work, a function's pane or records mode leave it", async () => {
@@ -260,9 +299,11 @@ test("J3: wbTab folds the six tabs into the page and answers records; every othe
     assert.strictEqual(c.wbTab("r3"), t, "the classic answer for " + JSON.stringify(t));
   }
   const other = await opened("r4");
-  assert.strictEqual(other.wbTab("r4"), "chat", "a department of another kind opens on the Chat as before");
+  assert.strictEqual(other.wbTab("r4"), "j2", "a department of another kind opens on the page too");
   run(other, "wbS().tab['r4'] = 'five'");
-  assert.strictEqual(other.wbTab("r4"), "five", "All five stays All five for a department the page is not for");
+  assert.strictEqual(other.wbTab("r4"), "j2", "All five is folded into the page for every kind");
+  const root = await opened("r2");
+  assert.strictEqual(root.wbTab("r2"), "chat", "a Root opens on its chat");
   const first = await opened("r6");
   assert.strictEqual(first.wbTab("r6"), "map", "one of the first build opens on its Map as before");
   const off = await opened("r3", { search: "?j2view=off" });
@@ -280,8 +321,16 @@ test("J4: with the page on the screen has no list column and a placeholder for t
   assert.strictEqual(run(c, "dpS().sel"), "r3", "the department is open though its list column is not painted");
 });
 
+test("J4: every kind on the engine runtime opens the page, and the frame holds its ref", async () => {
+  for (const ref of ["r4", "r5"]){
+    const c = await opened(ref);
+    const html = c.o2ScreenHtml();
+    assert.ok(new RegExp('<div class="j2frame" data-j2frame="' + ref + '"></div>').test(html) && !/class="o2list/.test(html), ref);
+  }
+});
+
 test("J4: for a department the page is not for, and with the switch off, the screen is the classic one", async () => {
-  for (const [ref, opts] of [["r4", {}], ["r5", {}], ["r6", {}], ["r3", { search: "?j2view=off" }]]){
+  for (const [ref, opts] of [["r6", {}], ["r3", { search: "?j2view=off" }], ["r4", { search: "?j2view=off" }]]){
     const c = await opened(ref, opts);
     const html = c.o2ScreenHtml();
     assert.ok(/class="o2list dplist dp"/.test(html) && !/data-j2frame/.test(html) && !/j2vbar/.test(html), ref + " " + JSON.stringify(opts));
@@ -449,8 +498,10 @@ test("J7: outside records mode, and for another department, the list's first gro
   assert.strictEqual(c.j2vTop("r3", null), null, "the page is on: no list at all");
   const bill = await opened("r4");
   assert.strictEqual(bill.j2vTop("r4", null), null);
-  const html = bill.o2ScreenHtml();
-  ["Chat", "Map", "Board", "Agent activity"].forEach(w => assert.ok(html.indexOf("<span>" + w + "</span>") >= 0, w));
+  const first = await opened("r6");
+  assert.strictEqual(first.j2vTop("r6", null), null, "a department of the first build has no page to go back to");
+  const html = first.o2ScreenHtml();
+  ["Map"].forEach(w => assert.ok(html.indexOf("<span>" + w + "</span>") >= 0, w));
   assert.ok(html.indexOf("Department view") < 0);
 });
 
@@ -517,7 +568,7 @@ test("J9: the module owns only j2v / J2V_ names and no other script declares one
   const re = /^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)|^const\s+([A-Za-z_$][\w$]*)/gm;
   while ((m = re.exec(jvSrc))) mine.add(m[1] || m[2]);
   assert.ok(mine.size >= 14, "parsed " + mine.size);
-  [...mine].forEach(n => assert.ok(/^(j2v[A-Z]|J2V_)/.test(n), n + " is not prefixed j2v / J2V_"));
+  [...mine].forEach(n => assert.ok(/^(j2v[A-Z]|J2V_|J2_ROOT_DEFAULT$)/.test(n), n + " is not prefixed j2v / J2V_"));
   fs.readdirSync(JS).filter(f => /\.js$/.test(f) && f !== "25-j2view.js").forEach(f => {
     const src = read(f);
     assert.ok(!/\bS\.j2v\b/.test(src), f + " reads S.j2v");
@@ -539,7 +590,7 @@ test("J9: every function of the module that 19-org2.js and 22-website.js use is 
     assert.ok(used.length >= 1, name + " has a hook");
     used.forEach(fn => assert.ok(new RegExp("typeof " + fn + ' === "function"').test(code), name + " uses " + fn + " with no typeof guard"));
   }
-  assert.deepStrictEqual([...new Set(wbSrc.replace(/\/\*[^]*?\*\//g, "").match(/\bj2v[A-Z]\w*/g))].sort(), ["j2vRecordsHtml", "j2vTab", "j2vTop"], "22-website.js uses three");
+  assert.deepStrictEqual([...new Set(wbSrc.replace(/\/\*[^]*?\*\//g, "").match(/\bj2v[A-Z]\w*/g))].sort(), ["j2vEligible", "j2vHtml", "j2vOn", "j2vRecordsHtml", "j2vTab", "j2vTop"], "22-website.js uses six");
   assert.deepStrictEqual([...new Set(o2Src.replace(/\/\*[^]*?\*\//g, "").match(/\bj2v[A-Z]\w*/g))].sort(), ["j2vAfterPaint", "j2vHtml", "j2vOn"], "19-org2.js uses three");
   assert.ok(!/dpLoad|dpSelect|dpS\(\)|dpAskHtml/.test(o2Src), "19-org2.js gains no department logic");
 });
