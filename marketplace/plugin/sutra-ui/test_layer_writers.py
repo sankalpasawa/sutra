@@ -370,18 +370,18 @@ def test_s5_set_stopped_always_lands_even_in_refuse_mode(j2, monkeypatch):
     assert W.set_stopped("s-stop", False)["stopped"] is False
 
 
-def test_s5_a_v0_record_reads_as_v1_and_the_next_save_writes_v1(j2):
+def test_s5_a_v0_record_reads_as_the_current_version_and_the_next_save_writes_it(j2):
     W = j2[0]
     W.create("s-v0", "Acme", None)
     v0 = json.loads((S.HERE / "schemas" / "layers" / "fixtures" / "department.v0.json").read_text(encoding="utf-8"))
     v0.update({"ref": "s-v0", "parent": None, "root": None})
     record.write(W.ddir("s-v0") / "dept.json", v0)
     d = W.dept("s-v0")
-    assert (d["schema_version"], d["layers"], d["done_items"][0]["id"]) == (1, S.DEFAULT_PINS, "D1")
+    assert (d["schema_version"], d["layers"], d["done_items"][0]["id"]) == (2, S.DEFAULT_PINS, "D1")
     assert "schema_version" not in W._read(W.ddir("s-v0") / "dept.json", None), "a read never writes"
     W.save_dept("s-v0", d)
     on_disk = W._read(W.ddir("s-v0") / "dept.json", None)
-    assert on_disk["schema_version"] == 1 and on_disk["layers"] == S.DEFAULT_PINS and on_disk["an_older_key"] == "kept on read"
+    assert on_disk["schema_version"] == 2 and on_disk["layers"] == S.DEFAULT_PINS and on_disk["an_older_key"] == "kept on read"
 
 
 def test_s5_an_owner_request_holding_braces_posts_and_files(j2):

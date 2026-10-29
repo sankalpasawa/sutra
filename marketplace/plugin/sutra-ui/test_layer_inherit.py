@@ -71,7 +71,7 @@ def stub(tmp_path, recipe=None, patch=None, layer="coordination", **more):
     parent = layers.load("%s/v1" % layer)
     folder = tmp_path / layer
     folder.mkdir(parents=True, exist_ok=True)
-    base = dict(__file__=str(folder / "v2.py"), LAYER=layer, VERSION=2, IMPLEMENTS=1, PARENT="%s/v1" % layer,
+    base = dict(__file__=str(folder / "v2.py"), LAYER=layer, VERSION=2, IMPLEMENTS=2, PARENT="%s/v1" % layer,
                 CODE=dict(parent.CODE), PROMPT=dict(parent.PROMPT), DRAFT=dict(parent.DRAFT), CHECK=dict(parent.CHECK),
                 WORDS=copy.deepcopy(parent.WORDS), LAYOUT=copy.deepcopy(parent.LAYOUT))
     base.update({name: getattr(parent, name) for name in V.SURFACE if callable(getattr(parent, name, None))})
@@ -598,7 +598,7 @@ def test_i3_recipe_of_resolves_a_patch_or_an_inherited_recipe_and_leaves_the_res
 def test_i3_the_new_cases_tolerate_a_module_with_none_of_the_new_attributes(tmp_path):
     (tmp_path / "coordination").mkdir()
     (tmp_path / "coordination" / "v1.json").write_text(json.dumps(layers.recipe("coordination/v1")), encoding="utf-8")
-    plain = types.SimpleNamespace(__file__=str(tmp_path / "coordination" / "v1.py"), LAYER="coordination", VERSION=1, IMPLEMENTS=1,
+    plain = types.SimpleNamespace(__file__=str(tmp_path / "coordination" / "v1.py"), LAYER="coordination", VERSION=1, IMPLEMENTS=2,
                                   RECIPE="v1.json", CODE={}, PROMPT={}, DRAFT={}, CHECK={}, WORDS={}, LAYOUT={})
     bare = types.SimpleNamespace(LAYER="coordination", VERSION=1)
     for module in (plain, bare, types.SimpleNamespace()):

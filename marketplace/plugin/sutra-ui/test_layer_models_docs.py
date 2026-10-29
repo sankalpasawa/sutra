@@ -60,7 +60,7 @@ def test_the_status_lines_say_a4_is_built():
     assert re.search(r"^\| \*\*status\*\* \| Final, ", a4, re.M)
     assert re.search(r"^\| M12 \|.*\| built \|", PRD.read_text(encoding="utf-8"), re.M)
     import layer_schema as S
-    assert S.INTERFACE_SHA[1].startswith("e23aeace") and "e23aeace" in a4
+    assert S.INTERFACE_SHA[1].startswith("e23aeace") and "e23aeace" in a4, "version 1's pin is kept"
 
 
 @pytest.mark.skipif(not shutil.which("rsync"), reason="the install stage uses rsync")

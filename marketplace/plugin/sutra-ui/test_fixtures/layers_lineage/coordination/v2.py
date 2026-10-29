@@ -6,7 +6,7 @@ from layers import R, W, J, S, FV, ref_to, inherit  # noqa: F401 -- lazy proxies
 
 LAYER = 'coordination'
 VERSION = 2
-IMPLEMENTS = 1
+IMPLEMENTS = 2
 PARENT = 'coordination/v1'
 RECIPE_PATCH = 'v2.patch.json'
 

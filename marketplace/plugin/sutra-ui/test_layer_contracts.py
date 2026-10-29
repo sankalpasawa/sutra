@@ -45,7 +45,7 @@ def test_what_the_contract_reports_and_no_part_is_left_without_words(module, cap
 def _fake(tmp_path, layer, recipe, **more):
     (tmp_path / layer).mkdir(parents=True, exist_ok=True)
     (tmp_path / layer / "v1.json").write_text(json.dumps(recipe), encoding="utf-8")
-    base = {"__file__": str(tmp_path / layer / "v1.py"), "LAYER": layer, "VERSION": 1, "IMPLEMENTS": 1, "RECIPE": "v1.json",
+    base = {"__file__": str(tmp_path / layer / "v1.py"), "LAYER": layer, "VERSION": 1, "IMPLEMENTS": 2, "RECIPE": "v1.json",
             "CODE": {}, "PROMPT": {}, "DRAFT": {}, "CHECK": {}, "WORDS": {}, "LAYOUT": {}}
     base.update(more)
     return types.SimpleNamespace(**base)
@@ -90,8 +90,8 @@ def test_a_ref_to_pointing_at_a_delegate_fails_case_7(tmp_path, monkeypatch):
 
 def test_the_other_cases_catch_what_they_are_for(tmp_path):
     recipe = layers.recipes()["Coordination"]
-    bad = _fake(tmp_path, "coordination", recipe, IMPLEMENTS=2)
-    assert C.case_1(bad) == ["coordination/v1: IMPLEMENTS 2 is not schema version 1"]
+    bad = _fake(tmp_path, "coordination", recipe, IMPLEMENTS=3)
+    assert C.case_1(bad) == ["coordination/v1: IMPLEMENTS 3 is not schema version 2"]
     nameless = json.loads(json.dumps(recipe))
     nameless["steps"][1]["prompt"] = "no_such_prompt"
     nameless["rules"][0]["check"] = "a_check_of_nobodys"

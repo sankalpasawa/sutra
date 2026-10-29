@@ -348,8 +348,8 @@ def test_department_keys_come_from_the_class():
 
 
 def test_the_pinned_hash_of_the_interface_is_what_it_was():
-    assert S.INTERFACE_SHA[1].startswith("e23aeace")
-    assert S.interface_sha() == S.INTERFACE_SHA[1]
+    assert S.INTERFACE_SHA[1].startswith("e23aeace"), "version 1's pin is kept"
+    assert S.interface_sha() == S.INTERFACE_SHA[S.SCHEMA_VERSION]
 
 
 def test_the_properties_keep_the_interfaces_order_all_the_way_down():
@@ -418,6 +418,7 @@ def test_nothing_of_the_app_is_imported_by_the_models():
 def test_x2_is_the_witness_that_describe_is_the_same_bytes():
     """W3-PROOF's two tests (test_x2_*) live in test_layer_schema.py and pass unchanged on the classes; this is the same fact stated
     from this side: the hash of describe() is the one W3-PROOF set, and the files on disk are its bytes."""
-    assert S.interface_sha() == S.INTERFACE_SHA[1] == "e23aeacef66e0d6da6b455d6e9bfba0ddac0b626197eada1ea078d2d99bacbb6"
-    on_disk = (S.SCHEMA_FOLDER / "interface.v1.json").read_bytes()
-    assert hashlib.sha256(on_disk).hexdigest() == S.INTERFACE_SHA[1]
+    assert S.INTERFACE_SHA[1] == "e23aeacef66e0d6da6b455d6e9bfba0ddac0b626197eada1ea078d2d99bacbb6"
+    assert hashlib.sha256((S.SCHEMA_FOLDER / "interface.v1.json").read_bytes()).hexdigest() == S.INTERFACE_SHA[1]
+    on_disk = (S.SCHEMA_FOLDER / "interface.v2.json").read_bytes()
+    assert S.interface_sha() == S.INTERFACE_SHA[2] and hashlib.sha256(on_disk).hexdigest() == S.INTERFACE_SHA[2]

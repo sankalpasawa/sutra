@@ -106,7 +106,7 @@ def test_a_role_may_of_thirteen_lines_and_a_two_line_done_are_refused():
 def types_module(layer, **more):
     """A stub version, as the contract's tests make them: a namespace with the attributes a version has."""
     import types
-    base = {"__file__": "/nowhere/layers/%s/v1.py" % layer, "LAYER": layer, "VERSION": 1, "IMPLEMENTS": 1, "RECIPE": "v1.json",
+    base = {"__file__": "/nowhere/layers/%s/v1.py" % layer, "LAYER": layer, "VERSION": 1, "IMPLEMENTS": 2, "RECIPE": "v1.json",
             "CODE": {}, "PROMPT": {}, "DRAFT": {}, "CHECK": {}, "WORDS": {}, "LAYOUT": {}}
     base.update(more)
     return types.SimpleNamespace(**base)
@@ -579,7 +579,7 @@ def test_a_child_version_overlay_changes_one_field_and_keeps_the_boundaries(rt, 
     layout = copy.deepcopy(parent.LAYOUT)
     if hasattr(layers, "inherit"):                                             # A2-INHERIT's registry helper, when it is on main
         child = types.SimpleNamespace(**dict(layers.inherit("identity/v1", words={"goal": {"role_procedure": {"items": words["goal"]["role_procedure"]["items"]}}}),
-                                             LAYER="identity", VERSION=2, IMPLEMENTS=1, PARENT="identity/v1", RECIPE="v1.json",
+                                             LAYER="identity", VERSION=2, IMPLEMENTS=2, PARENT="identity/v1", RECIPE="v1.json",
                                              __file__=parent.__file__.replace("v1.py", "v2.py")))
     else:
         child = types.SimpleNamespace(**{**vars(parent), "WORDS": words, "LAYOUT": layout, "VERSION": 2, "PARENT": "identity/v1"})

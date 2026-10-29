@@ -38,7 +38,7 @@ from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests r
 
 LAYER = 'audit'
 VERSION = 1
-IMPLEMENTS = 1
+IMPLEMENTS = 2
 RECIPE = 'v1.json'
 
 

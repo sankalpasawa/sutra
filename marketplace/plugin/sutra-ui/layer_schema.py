@@ -46,9 +46,10 @@ import time
 from pathlib import Path
 
 # ---- constants (A1.3) ----------------------------------------------------------------------------------------------
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 from layer_consts import *  # noqa: F401,F403 -- every constant is still layer_schema.<name> (A4.3.1)
-INTERFACE_SHA = {1: 'e23aeacef66e0d6da6b455d6e9bfba0ddac0b626197eada1ea078d2d99bacbb6'}  # frozen (W3-PROOF X2), see interface_sha()
+INTERFACE_SHA = {1: 'e23aeacef66e0d6da6b455d6e9bfba0ddac0b626197eada1ea078d2d99bacbb6',  # frozen (W3-PROOF X2), see interface_sha()
+                 2: 'ace5e0e10b0095cf303c93c02b28a4bd1fbbf1c5968f542e4f9cbaea81081356'}  # A5: 17 definitions added (PRD A5.4.2)
 MODE = 'refuse'        # 'warn' | 'refuse'. A code constant, never an environment variable; tests change it with monkeypatch.
                        # 'A1 interface: refuse' (the integrator's commit at the end of wave 1, the full gate showing no fault at
                        # all) set it: a write that does not fit the interface raises SchemaFault, after its row.
@@ -1720,7 +1721,7 @@ def deliverable(d):
 
 
 def describe():
-    """The whole interface as JSON: what GET /layers serves and the README points at (schemas/layers/interface.v1.json)."""
+    """The whole interface as JSON: what GET /layers serves and the README points at (schemas/layers/interface.v<SCHEMA_VERSION>.json)."""
     out = {
         'schema_version': SCHEMA_VERSION, 'layer_names': LAYER_NAMES, 'title': TITLE, 'engine_layer': ENGINE_LAYER,
         'actors': ACTORS, 'acts': ACTS, 'default_pins': DEFAULT_PINS, 'per_department': PER_DEPARTMENT,
@@ -1770,7 +1771,14 @@ def _m0_to_1(name, doc):
     return doc
 
 
-MIGRATIONS = {0: _m0_to_1}
+def _m1_to_2(name, doc):
+    """Schema version 1 to 2 (A5): the interface only gained definitions (the Shadow graph, the page words, create-or-reuse), so a
+    record of version 1 reads as it is, stamped 2."""
+    doc['schema_version'] = 2
+    return doc
+
+
+MIGRATIONS = {0: _m0_to_1, 1: _m1_to_2}
 
 
 def migrate(name, doc):
@@ -1878,7 +1886,7 @@ def json_schemas():
             'document that is computed for each journey; x-ledger-actions are the ledger words an event bind may name (PRD A3.6).',
             sorted(n for n in DEFS if n == 'journey' or n.startswith('journey.')), 'journey',
             **{'x-ledger-actions': LEDGER_ACTIONS, 'x-recognitions': RECOGNITIONS}),
-        'interface.v1.json': describe(),
+        'interface.v%d.json' % SCHEMA_VERSION: describe(),
     }
 
 
@@ -1887,7 +1895,7 @@ def _dump(doc):
 
 
 def interface_sha():
-    """The sha256 of describe() as sorted JSON: the hash of the very bytes of schemas/layers/interface.v1.json (`shasum -a 256` of that
+    """The sha256 of describe() as sorted JSON: the hash of the very bytes of schemas/layers/interface.v<SCHEMA_VERSION>.json (`shasum -a 256` of that
     file gives it). INTERFACE_SHA[SCHEMA_VERSION] is this, frozen when the interface was (W3-PROOF X2): a change to anything describe()
     holds changes the hash and fails the test that pins it, and what the interface then needs is a new schema version and a migration
     (A1.21), never a new hash for the same version."""
@@ -1912,7 +1920,14 @@ if __name__ == '__main__':
             print(path)
     elif sys.argv[1:] == ['--sha']:
         print(interface_sha())
+    elif sys.argv[1:] == ['--check']:
+        stale = [n for n, d in json_schemas().items() if not (SCHEMA_FOLDER / n).exists() or (SCHEMA_FOLDER / n).read_text(encoding='utf-8') != _dump(d)]
+        if interface_sha() != INTERFACE_SHA[SCHEMA_VERSION]:
+            stale.append('INTERFACE_SHA[%d] (now %s)' % (SCHEMA_VERSION, interface_sha()))
+        print('stale: ' + ', '.join(stale) if stale else 'schemas/layers is what layer_schema.py generates')
+        sys.exit(1 if stale else 0)
     else:
         print('usage: python layer_schema.py --write    (regenerates schemas/layers/*.json from this file)\n'
-              '       python layer_schema.py --sha      (prints interface_sha(), which INTERFACE_SHA[1] is frozen to)')
+              '       python layer_schema.py --check    (exit 1 when a file differs from what is generated, or INTERFACE_SHA is stale)\n'
+              '       python layer_schema.py --sha      (prints interface_sha(), which INTERFACE_SHA[SCHEMA_VERSION] is pinned to)')
         sys.exit(2)

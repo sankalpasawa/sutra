@@ -472,7 +472,7 @@ def _stub(layer, words, layout, tmp_path):
     fake.mkdir(exist_ok=True)
     real = layers.load(S.DEFAULT_PINS[layer])
     (fake / "v1.json").write_text(Path(real.__file__).with_name("v1.json").read_text(encoding="utf-8"), encoding="utf-8")
-    return type("Stub", (), {"__file__": str(fake / "v1.py"), "LAYER": layer, "VERSION": 1, "IMPLEMENTS": 1, "RECIPE": "v1.json",
+    return type("Stub", (), {"__file__": str(fake / "v1.py"), "LAYER": layer, "VERSION": 1, "IMPLEMENTS": 2, "RECIPE": "v1.json",
                             "CODE": {}, "PROMPT": {}, "DRAFT": {}, "CHECK": {}, "WORDS": words, "LAYOUT": layout})
 
 

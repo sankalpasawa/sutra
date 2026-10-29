@@ -2114,7 +2114,7 @@
   },
   "$id": "https://sutra.asawa.co/schemas/layers/views.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "What each pane renders, as the screens read it: Identity, Adaptation, Priority, Coordination and Audit, and the engine card (PRD A1.17). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "description": "What each pane renders, as the screens read it: Identity, Adaptation, Priority, Coordination and Audit, and the engine card (PRD A1.17). Generated from layer_schema.py (schema version 2); never edited by hand: run `python layer_schema.py --write`.",
   "title": "The panes' read models",
   "x-views": {
     "adaptation": "view.adaptation",

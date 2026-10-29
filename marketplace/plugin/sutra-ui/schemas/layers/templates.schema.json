@@ -658,7 +658,7 @@
   },
   "$id": "https://sutra.asawa.co/schemas/layers/templates.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The step with its row and its start, the department kind, the Library's engine template and the artifact template, the base classes of levels L1, L3, L4 and L5 (x-levels holds all seven levels, x-steps the constants of the step and x-ask-forms the form of each kind of ask) (PRD A3.1, A3.3, A3.5). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "description": "The step with its row and its start, the department kind, the Library's engine template and the artifact template, the base classes of levels L1, L3, L4 and L5 (x-levels holds all seven levels, x-steps the constants of the step and x-ask-forms the form of each kind of ask) (PRD A3.1, A3.3, A3.5). Generated from layer_schema.py (schema version 2); never edited by hand: run `python layer_schema.py --write`.",
   "title": "The templates of the levels below the journey",
   "x-ask-forms": {
     "alarm": {

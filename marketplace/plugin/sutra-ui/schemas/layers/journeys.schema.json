@@ -1392,7 +1392,7 @@
   "$id": "https://sutra.asawa.co/schemas/layers/journeys.schema.json",
   "$ref": "#/$defs/journey",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The user-journey template (level L0): a journey file under journeys/, its parts (lane, step, edge, bind, outcome, sub-journey, ruling, quote, scenario, backlog entry, direction, build row, the earlier rows kept as was) and the status document that is computed for each journey; x-ledger-actions are the ledger words an event bind may name (PRD A3.6). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "description": "The user-journey template (level L0): a journey file under journeys/, its parts (lane, step, edge, bind, outcome, sub-journey, ruling, quote, scenario, backlog entry, direction, build row, the earlier rows kept as was) and the status document that is computed for each journey; x-ledger-actions are the ledger words an event bind may name (PRD A3.6). Generated from layer_schema.py (schema version 2); never edited by hand: run `python layer_schema.py --write`.",
   "title": "A user journey",
   "x-ledger-actions": [
     "proposal.requested",

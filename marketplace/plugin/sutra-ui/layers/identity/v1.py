@@ -18,7 +18,7 @@ from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests r
 
 LAYER = 'identity'
 VERSION = 1
-IMPLEMENTS = 1
+IMPLEMENTS = 2
 RECIPE = 'v1.json'
 
 #: the steps of v1.json that run code (the gates' rules and every handler's code steps), by the body they name

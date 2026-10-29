@@ -24,7 +24,7 @@ from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests r
 
 LAYER = 'coordination'
 VERSION = 1
-IMPLEMENTS = 1
+IMPLEMENTS = 2
 RECIPE = 'v1.json'
 CODE = {name: ref_to(name) for name in (
     'coord_busy', 'coord_pick', 'coord_edge', 'coord_verdict', 'coord_bounds', 'coord_alarm',   # the rules
