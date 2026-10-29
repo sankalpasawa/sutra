@@ -509,3 +509,21 @@ def test_a512_a_versionless_artifact_is_tagged_other_on_the_map(mods, client):
     nodes = client.get(url("api/map", ref)).json()["nodes"]
     works = [n for n in nodes if n["kind"] == "work" and n["id"] != "work:charter"]
     assert works and all(n["tag"] != "Site" for n in works), [(n["label"], n["tag"]) for n in works]
+
+
+@pytest.mark.parametrize("kind", ["default", "organic", "root"])
+def test_a512_the_deliverable_per_kind_is_the_last_artifact_and_nothing_is_padded(mods, client, kind):
+    ref = _seed(mods, kind)
+    assert client.get(url("api/artifacts", ref)).json() == {"deliverables": [], "records": []}, "nothing filed, nothing listed"
+    arts = mods.W.artifacts_of(mods.W.dept(ref))
+    _file(mods, ref, arts[0], {"notes.md": "first"})
+    listing = client.get(url("api/artifacts", ref)).json()
+    names = [r["name"] for r in listing["deliverables"] + listing["records"]]
+    assert names == [arts[0]], "one row for the one filed artifact, no filler"
+    if len(arts) == 1:                                   # a kind with one artifact: it is the deliverable
+        assert [r["name"] for r in listing["deliverables"]] == [arts[0]] and listing["records"] == []
+        return
+    assert listing["deliverables"] == [], "the deliverable is the last artifact, filed or not: a first draft is a record"
+    _file(mods, ref, arts[-1], {"result.md": "last"})
+    listing = client.get(url("api/artifacts", ref)).json()
+    assert [r["name"] for r in listing["deliverables"]] == [arts[-1]] and [r["name"] for r in listing["records"]] == [arts[0]]

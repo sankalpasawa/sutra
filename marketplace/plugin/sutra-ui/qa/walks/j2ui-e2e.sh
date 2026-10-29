@@ -29,7 +29,7 @@ export SUTRA_WEBSITE_OFFLINE=1 SUTRA_MOTOR_OFF=1 J2_FLOW_V1=1 J1_FLOW_V1=1
 mkdir -p "$REC" "$OUT"
 cd "$UI" || exit 1
 bash "$HERE/devserver-stop.sh" "$PORT" 2>&1 | tail -1
-SEEDED="$("$PY" test_fixtures/j2ui/seed.py "$REC" start question building ready hostile 2>/dev/null)" || { echo "j2ui-e2e: the seed failed"; exit 1; }
+SEEDED="$("$PY" test_fixtures/j2ui/seed.py "$REC" start question building ready hostile kind_default kind_organic kind_root 2>/dev/null)" || { echo "j2ui-e2e: the seed failed"; exit 1; }
 echo "$SEEDED"
 ref_of() { echo "$SEEDED" | awk -v s="$1" '$1 == s { print $2 }'; }
 PPORT="${PROTO_PORT:-8763}"
@@ -46,6 +46,32 @@ RC=0
 for st in start question building ready hostile; do
   echo "=== $st"
   node "$HERE/shot-j2.js" "$OUT" "http://127.0.0.1:$PORT" "$(ref_of "$st")" "$st" || RC=1
+done
+
+# ---- A5.1: the page for every kind: open it, say a word, see it in the chat (no browser: the page's own routes) -------------------
+for st in kind_default kind_organic kind_root; do
+  echo "=== $st"
+  "$PY" - "http://127.0.0.1:$PORT/j2ui/$(ref_of "$st")/" "$st" <<'KPY' || RC=1
+import json, sys, time, urllib.request
+base, st = sys.argv[1], sys.argv[2]
+get = lambda p: urllib.request.urlopen(base + p, timeout=10)
+page = get("").read().decode("utf-8")
+assert "const WD = " in page, "the page is the J2 page with the words helper"
+state = json.load(get("api/state"))
+assert state["output"] == st.split("_")[1] and state["words"]["pick"] is False and "website" not in json.dumps(state["words"]).lower(), state["words"]
+assert state["cycle"] == 0 or st != "kind_root", "a Root with no cycle keeps cycle 0"
+word = "hello from the walk"
+req = urllib.request.Request(base + "api/say", data=json.dumps({"text": word}).encode(), headers={"Content-Type": "application/json"}, method="POST")
+code = urllib.request.urlopen(req, timeout=15).status
+assert code == 200, code
+for _ in range(20):
+    seen = [m for m in json.load(get("api/state"))["chat"] if word in str(m.get("text"))]
+    if seen:
+        break
+    time.sleep(0.5)
+assert seen, "the word said is in the chat"
+print(st, "page 200, said a word, saw it in the chat")
+KPY
 done
 
 # ---- the structure of the page: ours (in the app) and the prototype's own ---------------------------------------------------
