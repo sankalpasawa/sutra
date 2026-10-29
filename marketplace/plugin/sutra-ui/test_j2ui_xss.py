@@ -204,10 +204,10 @@ def test_t44_a_field_printed_raw_turns_the_check_red(client, hostile, tmp_path, 
 def test_t44_a_message_printed_raw_turns_the_check_red(client, hostile, tmp_path):
     ref, m = hostile
     text = COPY.read_text(encoding="utf-8")
-    old = "<small>Your website team</small>${esc(plain(m.text))}</div>`;"
+    old = '"Your website team"))}</small>${esc(plain(m.text))}</div>`;'
     assert text.count(old) == 1
     synthetic = tmp_path / "synthetic.html"
-    synthetic.write_text(text.replace(old, "<small>Your website team</small>${plain(m.text)}</div>`;"), encoding="utf-8")
+    synthetic.write_text(text.replace(old, '"Your website team"))}</small>${plain(m.text)}</div>`;'), encoding="utf-8")
     _, got = render(client, ref, page=synthetic)
     assert breakouts(got["panes"]), "a team message printed raw is caught"
     assert breakouts({k: v for k, v in got["panes"].items() if k == "smsgs"}), "and it is the Simple view's"

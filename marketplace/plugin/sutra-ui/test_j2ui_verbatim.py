@@ -1,4 +1,4 @@
-"""test_j2ui_verbatim.py -- the department's page is the J2 prototype's page, changed by the documented substitutions only.
+"""test_j2ui_verbatim.py -- the department's page is the J2 prototype's page, changed by the documented substitutions only (A5.1.3 adds S4, the kind-neutral wording, and S5, the line that defines WD).
 
 The owner's requirement (2026-10-26): "Take latest pull from J2 prototype and implement UI in the exact same fashion, no
 change." The page in j2ui_assets/ is scripts/sync_j2_ui.py's copy of the prototype's j2_ui.html (substitutions S1 relative
@@ -38,6 +38,7 @@ PAGE_SHA = "23549799903e98485f404872670c49e5735c7cc9962c19b42037b1bde5ebad0d"
 RENDER_SHA = "d65cf52fcf4cc2dafd70dcb7ac2a963be5508ba70531176a4fa4aaff0ed251f4"
 S1 = re.compile(rb'(["\'`])/(api|site|file|shot)/')
 S2_LINE = b'<script src="j2host.js"></script>'
+S5_LINE = b'const WD = (k, d) => { const w = CTX && CTX.words; return w && w[k] != null ? w[k] : d; };'
 
 
 def sha(b):
@@ -54,16 +55,25 @@ def subs(pin=PIN):
 
 # ── layer 1: the hermetic checks, as functions of bytes ───────────────────────────────────────────────────────────
 def restore(app, pin=PIN):
-    """The prototype's page from the copy: the S2 line out, the S3 href back, the S1 slashes in at the pinned columns
-    (original coordinates, so within a line the first goes in first and the others keep their columns)."""
+    """The prototype's page from the copy: the S5 and S2 lines out, the S3 href back, the S4 words back (in reverse), the S1
+    slashes in at the pinned columns (original coordinates, so within a line the first goes in first and the others keep
+    their columns). None when a line or a word is not there exactly once."""
     s = subs(pin)
     lines = app.splitlines(keepends=True)
-    at = [i for i, ln in enumerate(lines) if ln.rstrip(b"\r\n") == s["S2"]["text"].encode()]
-    if len(at) != 1:
-        return None
-    del lines[at[0]]
+    for key in ("S5", "S2"):
+        at = [i for i, ln in enumerate(lines) if ln.rstrip(b"\r\n") == s[key]["text"].encode()]
+        if len(at) != 1:
+            return None
+        del lines[at[0]]
     if "S3" in s:
         lines = [ln.replace(s["S3"]["new_href"].encode(), s["S3"]["original_href"].encode()) for ln in lines]
+    text = b"".join(lines)
+    for item in reversed(s["S4"]["items"]):
+        new = item["replacement"].encode("utf-8")
+        if text.count(new) != 1:
+            return None
+        text = text.replace(new, item["original"].encode("utf-8"), 1)
+    lines = text.splitlines(keepends=True)
     for line, col in sorted(s["S1"]["positions"]):
         ln = lines[line - 1]
         lines[line - 1] = ln[:col] + b"/" + ln[col:]
@@ -73,10 +83,10 @@ def restore(app, pin=PIN):
 def page_problems(app, pin=PIN):
     back = restore(app, pin)
     if back is None:
-        return ["j2ui_assets/j2_ui.html: the j2host.js line is not there exactly once"]
+        return ["j2ui_assets/j2_ui.html: the j2host.js line, the WD line or one of the S4 words is not there exactly once"]
     want = pin["source"]["files"]["j2_ui.html"]["sha256"]
     if sha(back) != want:
-        return ["j2ui_assets/j2_ui.html is not the prototype's page plus the documented substitutions: with S1, S2 and S3 undone "
+        return ["j2ui_assets/j2_ui.html is not the prototype's page plus the documented substitutions: with S1 to S5 undone "
                 "its sha256 is %s, the pin says %s" % (sha(back), want)]
     return []
 
@@ -99,11 +109,15 @@ def host_problems(js):
 
 
 def test_the_pin_is_well_formed():
-    assert PIN["schema"] == "j2ui-pin/1" and re.fullmatch(r"[0-9a-f]{40}", PIN["source"]["commit"])
+    assert PIN["schema"] == "j2ui-pin/2" and re.fullmatch(r"[0-9a-f]{40}", PIN["source"]["commit"])
     s = subs()
     assert s["S1"]["count"] == len(s["S1"]["positions"]) == 34 and len(s["S1"]["lines"]) == 31
     assert sorted({p[0] for p in s["S1"]["positions"]}) == s["S1"]["lines"]
     assert s["S2"]["text"] == S2_LINE.decode() and s["S2"]["line"] == 5
+    assert s["S5"]["text"] == S5_LINE.decode() and s["S5"]["line"] == 310
+    assert s["S4"]["count"] == len(s["S4"]["items"]) == 34
+    assert all(set(i) == {"id", "line", "original", "replacement"} for i in s["S4"]["items"])
+    assert len({i["id"] for i in s["S4"]["items"]}) == 34, "an id once"
     assert ("S3" in s) == PIN["local_fonts"], "S3 is listed exactly when the fonts are vendored"
     if "S3" in s:
         assert s["S3"]["original_href"].startswith("https://fonts.googleapis.com/css2?") and s["S3"]["new_href"] == "fonts/fonts.css"
@@ -136,13 +150,83 @@ def test_hermetic_j2host_names_no_url_but_the_panel_token():
 def test_hermetic_the_copy_adds_nothing_the_pin_does_not_name():
     app = (ASSETS / "j2_ui.html").read_bytes()
     assert not S1.search(app), "no quote-slash-api left: every URL is relative"
-    assert app.count(S2_LINE) == 1
-    # the copy is the original's size, less one byte per S1 slash, plus the S2 line, plus the S3 swap when it is on
+    assert app.count(S2_LINE) == 1 and app.count(S5_LINE) == 1
+    # the copy is the original's size, less one byte per S1 slash, plus the S2 and S5 lines, plus the S4 deltas, plus the S3 swap
     s = subs()
-    grow = len(S2_LINE) + 1 - s["S1"]["count"]
+    grow = len(S2_LINE) + 1 + len(S5_LINE) + 1 - s["S1"]["count"]
+    grow += sum(len(i["replacement"].encode()) - len(i["original"].encode()) for i in s["S4"]["items"])
     if "S3" in s:
         grow += len(s["S3"]["new_href"]) - len(s["S3"]["original_href"])
     assert len(app) == PIN["source"]["files"]["j2_ui.html"]["bytes"] + grow
+
+
+# ── S4 and S5: the wording edits are neutral, and each is listed ───────────────────────────────────────────────────
+#: replacements that hold a website word on purpose, each shown only when a boolean the kind's words set true says so
+#: (WD("can_open"/"can_download")): a department of another kind never sees them
+GATED = {"S4.15a": "the full-screen link: its href is the site route, gated by can_open", "S4.15b": "the HTML download: gated by can_download"}
+
+
+def strip_defaults(text):
+    """`text` with every WD("key", <default>) cut to WD("key"): the defaults are the originals, which may name the website."""
+    out, i = "", 0
+    while True:
+        m = re.compile(r'WD\("([a-z_]+)", ').search(text, i)
+        if not m:
+            return out + text[i:]
+        j, depth, q = m.end(), 1, None
+        while j < len(text) and depth:
+            c = text[j]
+            if q:
+                if c == "\\":
+                    j += 1
+                elif c == q:
+                    q = None
+            elif c in "\"'`":
+                q = c
+            elif c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+            j += 1
+        out += text[i:m.start()] + 'WD("%s")' % m.group(1)
+        i = j
+
+
+BANNED = re.compile(r"website|\bsite\b|PRD|document(?!\.)", re.I)          # `document.` is the DOM object, not a word
+
+
+def neutral_problems(pin=PIN):
+    return ["%s: %r" % (i["id"], strip_defaults(i["replacement"])) for i in subs(pin)["S4"]["items"]
+            if i["id"] not in GATED and BANNED.search(strip_defaults(i["replacement"]))]
+
+
+def test_hermetic_the_wording_edits_are_neutral():
+    """Strip every WD("key", <default>) default (the original text) and no website, site, PRD or document word is left in a
+    replacement, bar the two gated links. The static markup (S4.37) is not edited at all: it is set from the words by one
+    statement in S4.33, only when a word is set."""
+    assert neutral_problems() == []
+    bad = json.loads(json.dumps(PIN))
+    subs(bad)["S4"]["items"][0]["replacement"] += ' || "your website"'
+    assert neutral_problems(bad), "the check can fail"
+    assert strip_defaults('a WD("noun", "site") b WD("x", `Your ${s.doc ? "document" : "website"} (x)`) c') == 'a WD("noun") b WD("x") c'
+
+
+def test_hermetic_every_default_of_wd_is_the_original_text():
+    """With no word set the page reads as before: undoing S4 gives the prototype's bytes (the page hash), and every item's
+    replacement still holds its original's non-WD tokens, so a default that drifted would change a website's text."""
+    for item in subs()["S4"]["items"]:
+        assert item["original"] != item["replacement"], item["id"]
+        assert "WD(" in item["replacement"], item["id"]
+
+
+def test_a_hand_edit_of_a_word_the_s5_line_or_an_s4_line_is_caught():
+    app = (ASSETS / "j2_ui.html").read_bytes()
+    word = subs()["S4"]["items"][5]["replacement"].encode()
+    assert page_problems(app.replace(word, word[:-1] + b"X", 1)), "one byte of a replacement"
+    assert page_problems(app.replace(S5_LINE + b"\n", b"")), "S5 dropped"
+    assert page_problems(app.replace(S5_LINE + b"\n", S5_LINE + b"\n" + S5_LINE + b"\n")), "S5 twice"
+    row = next(ln for ln in app.splitlines(keepends=True) if b'WD("pick", true)' in ln and b"outsel" in ln)
+    assert page_problems(app.replace(row, row + row, 1)), "an S4 line duplicated"
 
 
 # ── the checks can fail: a hand-edited page is caught ─────────────────────────────────────────────────────────────
@@ -206,11 +290,12 @@ def obj(repo, name):
 
 
 def line_problems(orig, app, pin=PIN):
-    """difflib over lines, independent of transform: equal, replace blocks that pair line for line (a line with S1 applied,
-    or the one S3 href line), exactly one insert that is the S2 line, nothing deleted; the S1 total is the pin's."""
+    """difflib over lines, independent of transform: equal, replace blocks that are the old lines with S1 applied, then the S4
+    words whose originals they hold, or the one S3 href line; exactly two inserts, the S2 line and the S5 line; nothing deleted;
+    the S1 total and the S4 count are the pin's."""
     s = subs(pin)
     a, b = orig.splitlines(keepends=True), app.splitlines(keepends=True)
-    problems, total, inserted, s3 = [], 0, [], 0
+    problems, total, inserted, s3, words = [], 0, [], 0, 0
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
         if tag == "equal":
             continue
@@ -218,21 +303,27 @@ def line_problems(orig, app, pin=PIN):
             problems.append("lines %d-%d of the prototype's page are gone from the copy" % (i1 + 1, i2))
         elif tag == "insert":
             inserted += b[j1:j2]
-        elif i2 - i1 != j2 - j1:
-            problems.append("lines %d-%d changed in a way that does not pair line for line" % (i1 + 1, i2))
         else:
-            for k, (old, new) in enumerate(zip(a[i1:i2], b[j1:j2])):
-                want = S1.sub(rb"\1\2/", old)
-                if new == want and new != old:
-                    total += len(S1.findall(old))
-                elif "S3" in s and new == want.replace(s["S3"]["original_href"].encode(), s["S3"]["new_href"].encode()) and new != want:
-                    s3 += 1
-                else:
-                    problems.append("line %d is not the prototype's line with S1 applied: %r" % (i1 + k + 1, new[:80]))
-    if [x.rstrip(b"\r\n") for x in inserted] != [S2_LINE]:
-        problems.append("the one inserted line should be the S2 line, found %r" % inserted[:3])
+            old, new = b"".join(a[i1:i2]), b"".join(b[j1:j2])
+            want = S1.sub(rb"\1\2/", old)
+            n = len(S1.findall(old))
+            hit = 0
+            for item in s["S4"]["items"]:
+                o = item["original"].encode("utf-8")
+                if o in want:
+                    want, hit = want.replace(o, item["replacement"].encode("utf-8"), 1), hit + 1
+            if new == want and (n or hit):
+                total, words = total + n, words + hit
+            elif "S3" in s and new == want.replace(s["S3"]["original_href"].encode(), s["S3"]["new_href"].encode()) and new != want:
+                s3 += 1
+            else:
+                problems.append("lines %d-%d are not the prototype's lines with S1 and the S4 words applied: %r" % (i1 + 1, i2, new[:80]))
+    if [x.rstrip(b"\r\n") for x in inserted] != [S2_LINE, S5_LINE]:
+        problems.append("the two inserted lines should be the S2 line and the S5 line, found %r" % inserted[:3])
     if total != s["S1"]["count"]:
         problems.append("S1 changed %d places, the pin says %d" % (total, s["S1"]["count"]))
+    if words != s["S4"]["count"]:
+        problems.append("S4 changed %d words, the pin says %d" % (words, s["S4"]["count"]))
     if ("S3" in s) != bool(s3):
         problems.append("the S3 href line: pin says %s, the lines say %d" % ("on" if "S3" in s else "off", s3))
     return problems
@@ -266,6 +357,8 @@ def test_pinned_commit_the_line_check_catches_what_transform_alone_would_hide():
     assert line_problems(orig, app) == []
     assert line_problems(orig, app.replace(b"J2 Department", b"J2 department", 1)), "one character"
     assert line_problems(orig, app.replace(S2_LINE + b"\n", b"")), "no S2 line"
+    assert line_problems(orig, app.replace(S5_LINE + b"\n", b"")), "no S5 line"
+    assert line_problems(orig, app.replace(b'WD("pick", true) ?', b'WD("pick", false) ?', 1)), "one byte of a word"
     assert line_problems(orig, app.replace(b'"api/reset', b'"/api/reset', 1)), "a slash left in"
     assert line_problems(orig, b"".join(app.splitlines(keepends=True)[:-3])), "lines gone"
     wrong = json.loads(json.dumps(PIN))
