@@ -63,7 +63,7 @@ class ShadowGraphNode(Closed):
 
     @model_validator(mode='after')
     def _the_id_is_the_id_of_its_kind(self):
-        if not _NODE_RE[self.kind].fullmatch(self.id):
+        if not _NODE_RE[self.kind].search(self.id):          # the same match the id's own pattern makes
             raise fail('id %s is not the id of a %s node' % (self.id, self.kind))
         return self
 

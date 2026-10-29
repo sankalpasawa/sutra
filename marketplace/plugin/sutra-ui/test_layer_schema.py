@@ -423,6 +423,8 @@ DEPARTMENT_BAD = {
 SAMPLES["department"] = (DEPARTMENT, _but(DEPARTMENT, colour="red"))
 # the A3 definitions' samples (PRD amendment A3: the templates at every level) live beside their fixtures, a (good, bad) pair each
 SAMPLES.update({k: tuple(v) for k, v in json.loads((S.HERE / "test_fixtures" / "templates" / "samples.json").read_text(encoding="utf-8")).items()})
+# the 17 definitions schema version 2 added (A5): a good value and one the closed object refuses
+SAMPLES.update({k: tuple(v) for k, v in json.loads((S.HERE / "test_fixtures" / "models" / "a5_samples.json").read_text(encoding="utf-8")).items()})
 
 
 def test_s2_the_samples_name_every_definition():

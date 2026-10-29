@@ -3121,6 +3121,593 @@
       "minItems": 0,
       "type": "array"
     },
+    "dept.candidate": {
+      "additionalProperties": false,
+      "properties": {
+        "blocked": {
+          "type": "boolean"
+        },
+        "done": {
+          "maxLength": 160,
+          "minLength": 0,
+          "type": "string"
+        },
+        "goal": {
+          "maxLength": 240,
+          "minLength": 0,
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 40,
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "type": "string"
+        },
+        "last_activity": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "ref": {
+          "maxLength": 80,
+          "pattern": "^[A-Za-z0-9_.-]{1,80}$",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "state": {
+          "enum": [
+            "not_started",
+            "working",
+            "waiting",
+            "blocked",
+            "stopped",
+            "done",
+            "idle"
+          ]
+        },
+        "stopped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ref",
+        "name",
+        "kind",
+        "goal",
+        "done",
+        "state",
+        "stopped",
+        "blocked",
+        "score"
+      ],
+      "type": "object"
+    },
+    "dept.choice": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "use",
+            "create",
+            "none"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "done_items": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "goal": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^[a-z][a-z0-9-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "reason",
+        "confidence"
+      ],
+      "type": "object"
+    },
+    "dept.decision": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+          "type": "string"
+        },
+        "candidates_seen": {
+          "maximum": 500,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "choice": {
+          "$ref": "#/$defs/dept.choice"
+        },
+        "considered": {
+          "items": {
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9_.-]{1,80}$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array"
+        },
+        "decided_by": {
+          "enum": [
+            "agent",
+            "code",
+            "stub"
+          ]
+        },
+        "final_action": {
+          "enum": [
+            "use",
+            "create",
+            "none"
+          ]
+        },
+        "final_ref": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "held": {
+          "type": "boolean"
+        },
+        "held_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "stopped",
+                "blocked",
+                "founder_rule"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mission_id": {
+          "anyOf": [
+            {
+              "maxLength": 14,
+              "pattern": "^m-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "enum": [
+            "link",
+            "execute"
+          ]
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "overrides": {
+          "items": {
+            "$ref": "#/$defs/dept.override"
+          },
+          "maxItems": 6,
+          "minItems": 0,
+          "type": "array"
+        },
+        "prompt_version": {
+          "maxLength": 20,
+          "minLength": 0,
+          "type": "string"
+        },
+        "result_ref": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "root_ref": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "choice",
+        "final_action",
+        "overrides",
+        "held",
+        "decided_by",
+        "mode",
+        "considered",
+        "candidates_seen",
+        "at",
+        "prompt_version"
+      ],
+      "type": "object"
+    },
+    "dept.listing": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+          "type": "string"
+        },
+        "departments": {
+          "items": {
+            "$ref": "#/$defs/dept.row"
+          },
+          "maxItems": 500,
+          "minItems": 0,
+          "type": "array"
+        },
+        "root_ref": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "departments",
+        "as_of"
+      ],
+      "type": "object"
+    },
+    "dept.override": {
+      "additionalProperties": false,
+      "properties": {
+        "note": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "rule": {
+          "enum": [
+            "stopped",
+            "blocked",
+            "duplicate",
+            "not_a_child",
+            "bad_kind",
+            "rate",
+            "no_org",
+            "bad_output",
+            "offline",
+            "founder_rule"
+          ]
+        }
+      },
+      "required": [
+        "rule",
+        "note"
+      ],
+      "type": "object"
+    },
+    "dept.request": {
+      "additionalProperties": false,
+      "properties": {
+        "apply": {
+          "default": true,
+          "type": "boolean"
+        },
+        "confirmed": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mission_id": {
+          "anyOf": [
+            {
+              "maxLength": 14,
+              "pattern": "^m-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "words": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "words"
+      ],
+      "type": "object"
+    },
+    "dept.row": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 0,
+          "type": "array"
+        },
+        "created": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "done": {
+          "maxLength": 160,
+          "minLength": 0,
+          "type": "string"
+        },
+        "done_met": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 0,
+          "type": "array"
+        },
+        "goal": {
+          "maxLength": 240,
+          "minLength": 0,
+          "type": "string"
+        },
+        "j2_url": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "maxLength": 40,
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "type": "string"
+        },
+        "last_activity": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pending_asks": {
+          "maximum": 99,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ref": {
+          "maxLength": 80,
+          "pattern": "^[A-Za-z0-9_.-]{1,80}$",
+          "type": "string"
+        },
+        "root": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9_.-]{1,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "state": {
+          "enum": [
+            "not_started",
+            "working",
+            "waiting",
+            "blocked",
+            "stopped",
+            "done",
+            "idle"
+          ]
+        },
+        "stopped": {
+          "type": "boolean"
+        },
+        "waiting_on_you": {
+          "type": "boolean"
+        },
+        "working": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "ref",
+        "name",
+        "kind",
+        "runtime",
+        "stopped",
+        "state",
+        "waiting_on_you",
+        "pending_asks",
+        "working",
+        "goal",
+        "done",
+        "engines",
+        "artifacts"
+      ],
+      "type": "object"
+    },
     "engine.library": {
       "additionalProperties": true,
       "properties": {
@@ -5427,6 +6014,137 @@
       ],
       "type": "object"
     },
+    "page.words": {
+      "additionalProperties": false,
+      "properties": {
+        "built": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "can_download": {
+          "type": "boolean"
+        },
+        "can_open": {
+          "type": "boolean"
+        },
+        "describe": {
+          "maxLength": 120,
+          "minLength": 0,
+          "type": "string"
+        },
+        "describe_long": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "examples": {
+          "items": {
+            "maxLength": 160,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 0,
+          "type": "array"
+        },
+        "follow_ups": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 0,
+          "type": "array"
+        },
+        "frame_title": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
+        },
+        "go_preview": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string"
+        },
+        "hide_tabs": {
+          "items": {
+            "enum": [
+              "docs",
+              "style",
+              "lessons",
+              "playbooks",
+              "preview"
+            ]
+          },
+          "maxItems": 5,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "memory_off": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "new_task": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string"
+        },
+        "noun": {
+          "maxLength": 40,
+          "pattern": "^[a-z][a-z ]{0,38}$",
+          "type": "string"
+        },
+        "pick": {
+          "type": "boolean"
+        },
+        "ready": {
+          "maxLength": 120,
+          "minLength": 0,
+          "type": "string"
+        },
+        "retry": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "rubric": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
+        },
+        "start": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 9,
+          "minItems": 9,
+          "type": "array"
+        },
+        "style_empty": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "team": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
     "priority.ceiling": {
       "additionalProperties": true,
       "properties": {
@@ -5759,6 +6477,542 @@
         "minimum": 0,
         "type": "integer"
       },
+      "type": "object"
+    },
+    "shadow.chat_link": {
+      "additionalProperties": false,
+      "properties": {
+        "alt_open": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/shadow.open"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "live": {
+          "type": "boolean"
+        },
+        "open": {
+          "$ref": "#/$defs/shadow.open"
+        },
+        "role": {
+          "enum": [
+            "shadow_chat",
+            "conversation",
+            "worker",
+            "department_page",
+            "now"
+          ]
+        }
+      },
+      "required": [
+        "role",
+        "label",
+        "live",
+        "open"
+      ],
+      "type": "object"
+    },
+    "shadow.cost_line": {
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "now",
+            "shadow",
+            "worker",
+            "department"
+          ]
+        },
+        "turns": {
+          "maximum": 100000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "usd": {
+          "maximum": 1000000.0,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "role",
+        "usd",
+        "turns"
+      ],
+      "type": "object"
+    },
+    "shadow.edge": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "held": {
+          "type": "boolean"
+        },
+        "id": {
+          "maxLength": 260,
+          "minLength": 0,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "has",
+            "opened",
+            "attempt",
+            "steered_by",
+            "driven_by",
+            "uses",
+            "spawned"
+          ]
+        },
+        "live": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "maxLength": 90,
+          "pattern": "^(shadow:now|conv:shc-[0-9a-z]{6,40}|goal:g-[0-9a-f]{12}|task:m-[0-9a-f]{12}|tchat:m-[0-9a-f]{12}|worker:m-[0-9a-f]{12}|dept:[A-Za-z0-9_.-]{1,80})$",
+          "type": "string"
+        },
+        "target": {
+          "maxLength": 90,
+          "pattern": "^(shadow:now|conv:shc-[0-9a-z]{6,40}|goal:g-[0-9a-f]{12}|task:m-[0-9a-f]{12}|tchat:m-[0-9a-f]{12}|worker:m-[0-9a-f]{12}|dept:[A-Za-z0-9_.-]{1,80})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "source",
+        "target",
+        "live",
+        "held"
+      ],
+      "type": "object"
+    },
+    "shadow.graph": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+          "type": "string"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/shadow.edge"
+          },
+          "maxItems": 800,
+          "minItems": 0,
+          "type": "array"
+        },
+        "focus": {
+          "anyOf": [
+            {
+              "maxLength": 14,
+              "pattern": "^m-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/shadow.node"
+          },
+          "maxItems": 400,
+          "minItems": 0,
+          "type": "array"
+        },
+        "shadow_on": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "nodes",
+        "edges",
+        "as_of",
+        "truncated",
+        "shadow_on"
+      ],
+      "type": "object"
+    },
+    "shadow.node": {
+      "additionalProperties": false,
+      "properties": {
+        "col": {
+          "maximum": 8,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "maximum": 1000000.0,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 90,
+          "pattern": "^(shadow:now|conv:shc-[0-9a-z]{6,40}|goal:g-[0-9a-f]{12}|task:m-[0-9a-f]{12}|tchat:m-[0-9a-f]{12}|worker:m-[0-9a-f]{12}|dept:[A-Za-z0-9_.-]{1,80})$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "shadow",
+            "conversation",
+            "goal",
+            "task",
+            "task_chat",
+            "worker",
+            "department"
+          ]
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "open": {
+          "$ref": "#/$defs/shadow.open"
+        },
+        "row": {
+          "maximum": 399,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "since": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "idle",
+            "draft",
+            "working",
+            "waiting",
+            "blocked",
+            "done",
+            "failed",
+            "stopped",
+            "off"
+          ]
+        },
+        "sub": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tip": {
+          "maxLength": 240,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "status",
+        "col",
+        "row",
+        "open",
+        "tip"
+      ],
+      "type": "object"
+    },
+    "shadow.open": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "task",
+            "conversation",
+            "session",
+            "dept_page",
+            "goal",
+            "none"
+          ]
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9._:-]{1,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "shadow.task_detail": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+          "type": "string"
+        },
+        "chats": {
+          "items": {
+            "$ref": "#/$defs/shadow.chat_link"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "costs": {
+          "items": {
+            "$ref": "#/$defs/shadow.cost_line"
+          },
+          "maxItems": 6,
+          "minItems": 0,
+          "type": "array"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/dept.decision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "departments": {
+          "items": {
+            "$ref": "#/$defs/dept.row"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array"
+        },
+        "graph": {
+          "$ref": "#/$defs/shadow.graph"
+        },
+        "task": {
+          "$ref": "#/$defs/shadow.task_head"
+        },
+        "timeline": {
+          "items": {
+            "$ref": "#/$defs/shadow.timeline_row"
+          },
+          "maxItems": 200,
+          "minItems": 0,
+          "type": "array"
+        },
+        "total_usd": {
+          "maximum": 1000000.0,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "task",
+        "graph",
+        "departments",
+        "chats",
+        "costs",
+        "total_usd",
+        "timeline",
+        "as_of"
+      ],
+      "type": "object"
+    },
+    "shadow.task_head": {
+      "additionalProperties": false,
+      "properties": {
+        "created": {
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+          "type": "string"
+        },
+        "executor": {
+          "enum": [
+            "worker",
+            "department"
+          ]
+        },
+        "goal_id": {
+          "anyOf": [
+            {
+              "maxLength": 14,
+              "pattern": "^g-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 14,
+          "pattern": "^m-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "objective": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "draft",
+            "brief_confirm",
+            "running",
+            "queued",
+            "paused",
+            "blocked",
+            "done",
+            "failed",
+            "stopped"
+          ]
+        },
+        "template": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "turns_used": {
+          "maximum": 100000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "updated": {
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "objective",
+        "state",
+        "template",
+        "executor",
+        "created",
+        "updated",
+        "turns_used"
+      ],
+      "type": "object"
+    },
+    "shadow.timeline_row": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+          "type": "string"
+        },
+        "by": {
+          "enum": [
+            "founder",
+            "shadow",
+            "worker",
+            "department",
+            "system"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "said",
+            "did",
+            "asked",
+            "decided",
+            "state",
+            "department",
+            "cost",
+            "chat"
+          ]
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9._:-]{1,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "by",
+        "text"
+      ],
       "type": "object"
     },
     "step": {

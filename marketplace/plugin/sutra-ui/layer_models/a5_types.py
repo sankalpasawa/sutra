@@ -44,6 +44,8 @@ def rule(template):
 def is_rule(sentence):
     """Is this one of the sentences of the cross-field rules? (a sentence is 'path: words'.)"""
     words = sentence.split(': ', 1)[-1]
+    wrapped = re.match(r'^fits none of its shapes \((.*)\)$', words)          # a rule met inside a nullable member
+    words = wrapped.group(1) if wrapped else words
     return any(r.match(words) for r in RULE_RES)
 
 

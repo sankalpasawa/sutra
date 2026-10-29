@@ -49,7 +49,7 @@ from pathlib import Path
 SCHEMA_VERSION = 2
 from layer_consts import *  # noqa: F401,F403 -- every constant is still layer_schema.<name> (A4.3.1)
 INTERFACE_SHA = {1: 'e23aeacef66e0d6da6b455d6e9bfba0ddac0b626197eada1ea078d2d99bacbb6',  # frozen (W3-PROOF X2), see interface_sha()
-                 2: 'ace5e0e10b0095cf303c93c02b28a4bd1fbbf1c5968f542e4f9cbaea81081356'}  # A5: 17 definitions added (PRD A5.4.2)
+                 2: '9d5493205c8478760005bf6ad448f8f71350842e9d6e89fd992e11942caed7f2'}  # A5: 17 definitions added (PRD A5.4.2)
 MODE = 'refuse'        # 'warn' | 'refuse'. A code constant, never an environment variable; tests change it with monkeypatch.
                        # 'A1 interface: refuse' (the integrator's commit at the end of wave 1, the full gate showing no fault at
                        # all) set it: a write that does not fit the interface raises SchemaFault, after its row.

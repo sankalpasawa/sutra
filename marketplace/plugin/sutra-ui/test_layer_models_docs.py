@@ -73,7 +73,7 @@ def test_the_staged_copy_imports_the_package(tmp_path):
     assert (src / "layer_models" / "__init__.py").is_file() and (src / "models_api.py").is_file()
     code = ("import layer_models, layer_schema as S, pathlib;"
             "assert pathlib.Path(layer_models.__file__).resolve().parent.parent == pathlib.Path('.').resolve();"
-            "assert len(layer_models.classes()) > 50 and len(S.DEFS) == 130;"
+            "assert len(layer_models.classes()) > 50 and len(S.DEFS) == 147;"
             "assert S.validate('identity.ask', {}) != [];"
             "print('ok')")
     got = subprocess.run([sys.executable, "-I", "-c", "import sys; sys.path.insert(0, '.');" + code], cwd=str(src), capture_output=True, text=True, timeout=120)
