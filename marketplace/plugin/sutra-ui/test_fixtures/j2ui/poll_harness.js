@@ -154,7 +154,7 @@ function answer(url, init) {
 // the state the page is given: reads of a key it does not have are noted (the page's own writes, allChat, are not reads)
 const watch = o => new Proxy(o, {
   get(t, k) {
-    if (typeof k === "string" && !(k in t) && k !== "then" && k !== "toJSON") calls.missing.add(k);
+    if (typeof k === "string" && !(k in t) && k !== "then" && k !== "toJSON" && k !== "words") calls.missing.add(k);   // `words` (A5.1.4) is the app's own: WD reads it with a default
     return t[k];
   },
 });

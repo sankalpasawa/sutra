@@ -119,7 +119,15 @@ def _need(ref):
 def map_(ref: str):
     """The department as the Map and the function cards draw it; its run lines in the owner's words (owner_words.py)."""
     _need(ref)
-    return owner_words.map_view(W.map_view(ref))
+    out = owner_words.map_view(W.map_view(ref))
+    if isinstance(out, dict):
+        import j2ui_common                     # the one place that says which departments the J2 page is for (A5.1.1)
+        try:
+            j2ui_common.need(ref)
+            out["j2"] = True
+        except j2ui_common.NotJ2:
+            out["j2"] = False
+    return out
 
 
 @router.get("/{ref}/functions")

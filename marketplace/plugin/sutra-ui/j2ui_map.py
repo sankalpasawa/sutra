@@ -191,8 +191,9 @@ def boxes(ctx):
         row = rows.get(a["name"])
         slug = a.get("slug") or W.slug(a["name"])
         run = checks_of(eng)[1] if eng else 0
-        # the listing's own tag when the artifact has a file; before that the Preview's artifact and the Live site are pages
-        tag, color = (row["tag"], row["color"]) if row else A.tag_of(a["name"], "index.html", prev)
+        # the listing's own tag when the artifact has a file; before that a website's Preview artifact and Live site are pages
+        # (a website reads as before); any other kind's artifact with no version yet is Other, never a Site (A5.1.2)
+        tag, color = (row["tag"], row["color"]) if row else A.tag_of(a["name"], "index.html" if ver or getattr(ctx, "kind", "website") == "website" else None, prev)
         if out is branch:
             status, detail, version, file = "not_made", "left out of the plan", None, None
             tag, color = "Other", "--other"

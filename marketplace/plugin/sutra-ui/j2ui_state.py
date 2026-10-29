@@ -1,4 +1,4 @@
-"""j2ui_state.py -- `api/state`: the 56 keys the J2 page polls, drawn from one read of the department (UI port, step C3).
+"""j2ui_state.py -- `api/state`: the 57 keys the J2 page polls, drawn from one read of the department (UI port, step C3).
 
 The page polls this every 700 ms and a missing key blanks it, so every key is always there. j2ui-core fills the keys the
 record answers (the chat, status, the one ask the owner is asked, the goal, the budget, the version count); j2ui_work fills
@@ -20,6 +20,7 @@ import owner_words
 import website_dept as W
 import j2ui_chat as CH
 import j2ui_common as C
+import j2ui_words as X
 
 TAGS = {"refuse": "never"}                 # a rule's tag as the screen says it (22-website.js WB_TAG_SAYS)
 MORE = " (%d more waiting)"
@@ -136,8 +137,18 @@ def _own(c):
         "spent": int(budget.get("calls") or 0), "versions": len(build["versions"]) if build else 0,
         "cycle": int(c.cur.get("round") or (1 if c.cur.get("cycle_id") else 0)),
         "calls": sum(int((r.get("spend") or {}).get("calls") or 0) for r in c.runs), "done": c.state == "done",
-        "paused": paused, "outcome": _outcome(c), "mock": os.environ.get("SUTRA_WEBSITE_OFFLINE") == "1"})
+        "paused": paused, "outcome": _outcome(c), "mock": os.environ.get("SUTRA_WEBSITE_OFFLINE") == "1",
+        "output": c.kind, "output_label": X.label_of(c.kind)})
     return state
+
+
+def _words(c):
+    """The page's neutral words for this department's kind (A5.1.4), built once per read: {} for a website or when they fail."""
+    try:
+        return X.words_for(c.d)
+    except Exception as exc:  # noqa: BLE001 -- the words never take the state down with them
+        c.reasons.append("j2ui_words: %s" % type(exc).__name__)
+        return {}
 
 
 def _lazy(name, fn, c, default):
@@ -164,7 +175,7 @@ def runs(c):
 
 
 def build_state(c, since=0, run=None):
-    """The 56 keys of api/state. `since` is a place in the chat list (chat[since:], total the whole length), clamped at 0;
+    """The 57 keys of api/state. `since` is a place in the chat list (chat[since:], total the whole length), clamped at 0;
     `run` is the router's to validate (is_live_run). The state is built once per read of the department; only the slice of the
     chat differs per call."""
     try:
@@ -179,6 +190,7 @@ def build_state(c, since=0, run=None):
         work = _lazy("j2ui_work", "build", c, None)
         if isinstance(work, dict):
             base.update({k: work[k] for k in C.WORK_KEYS if k in work})
+        base["words"] = _words(c)
         c.memo["state"] = base
     out = dict(base)
     out["chat"] = base["chat"][since:]

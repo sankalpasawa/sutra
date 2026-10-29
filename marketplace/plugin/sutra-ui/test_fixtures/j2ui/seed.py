@@ -24,8 +24,8 @@ and the departments the contract needs besides (EXTRAS):
     with_board        the same, and two questions on the board between the engines (questions.json: one answered, one open)
     pursuing_line     the whole line filed, Audit found something and Identity asks the owner to put it right (a finding)
     filed             the whole line filed with real pages (Brief, Site plan, Pages, Build, Live site), a clean reading, nothing waiting
-    default_kind      a department of kind default under a Root: the J2 view is not for either (404 on every route)
-and the five the Chrome walk uses (qa/walks/j2ui-e2e.sh; HOMED):
+    default_kind      a department of kind default under a Root: the J2 page is served for both (A5.1)
+and the five the Chrome walk uses, then one of each other kind (kind_default, kind_organic, kind_root; qa/walks/j2ui-e2e.sh; HOMED):
     start       a department nothing has been said to: the page's start screen
     question    the department as a person makes it (found an organisation, said the words, Root set it up, the line ran to its first
                 question): Identity asks whether the site may go live, with Stamp and Say no
@@ -52,7 +52,9 @@ REF = "dref-j2c0001"
 ROOT = "dref-j2root1"
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
 EXTRAS = ("two_publish_asks", "root_follow_up", "running_line", "with_board", "pursuing_line", "filed", "build_filed", "default_kind")
-HOMED = ("start", "question", "ready", "hostile", "building")
+KINDS_WALKED = {"kind_default": ("dref-kdef1", "Billing", "default"), "kind_organic": ("dref-korg1", "Notes", "organic"),
+                "kind_root": ("dref-kroot1", "Acme Root", "root")}
+HOMED = ("start", "question", "ready", "hostile", "building") + tuple(KINDS_WALKED)
 ALIASES = {"not_yet": "not_started"}
 READING = {"read": 1, "met": ["D1"], "not_met": [], "to_confirm": [], "high": []}
 
@@ -311,6 +313,11 @@ def seed(tmp, state, env=None, ref=None, m=None, layout="test"):
     m = m or boot(tmp, env, layout)
     if name == "start":
         return start(m, ref or "dref-start1"), m
+    if name in KINDS_WALKED:
+        kref, kname, kind = KINDS_WALKED[name]
+        m.W.create(ref or kref, kname, None, kind=kind)
+        m.ref = ref or kref
+        return m.ref, m
     if name == "question":
         return born(m, org="Acme Learning"), m
     if name == "ready":

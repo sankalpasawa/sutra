@@ -156,8 +156,12 @@ def reset(ref):
 
 
 def output(ref, body):
-    """The output type: a department is a website team."""
-    return 409, {"ok": False, "output": "website"}
+    """The output type: a department has one, the kind's (named by its id)."""
+    try:
+        kind = (W.dept(ref) or {}).get("kind") or "website"
+    except (ValueError, OSError):
+        kind = "website"
+    return 409, {"ok": False, "output": kind}
 
 
 def clear(ref, kind):

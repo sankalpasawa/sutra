@@ -58,7 +58,19 @@ GOOD = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<link rel="stylesheet" href="%s">\n<script>\n'
         'const a = await fetch("/api/state?since=0"), b = `/site/latest`, c = "x".replace(/`/g, "");\n'
         'const d = ["/file/x.md", \'/shot/8\'].map(u => u + "/api/map");\n'
+        'const $ = id => document.getElementById(id);\nconst examples = s => s.doc ? PRD_EXAMPLES : EXAMPLES;\n'
         '</script>\n</head>\n<body><div>${esc(a)} ${md(b)}</div></body>\n</html>\n') % FONT
+
+
+#: the tests that run the real table on the real page; every other test syncs a synthetic page that holds one S4 original
+REAL = {"test_the_guard_exits_0_on_the_pinned_page_and_counts_34_on_31_lines",
+        "test_the_script_on_the_pinned_commit_of_the_prototype_exits_0_and_leaves_the_prototype_alone"}
+
+
+@pytest.fixture(autouse=True)
+def one_word(request, monkeypatch):
+    if request.node.name not in REAL and not request.node.name.startswith("test_s4_the_real"):
+        monkeypatch.setattr(SYNC.WT, "WORDS", SYNC.WT.WORDS[:1])
 
 
 def _repo(tmp_path, page=GOOD, name="proto"):
@@ -89,19 +101,11 @@ def _sync(root, repo, *flags):
 
 
 def _restore(app, pin):
-    """The prototype's page from the app's copy and the pin: the S2 line out, the S3 href back, the S1 slashes in at their
-    columns (original coordinates, so the first of a line goes in first)."""
-    lines = app.splitlines(keepends=True)
-    gone = [i for i, ln in enumerate(lines) if ln.strip() == b'<script src="j2host.js"></script>']
-    assert len(gone) == 1
-    del lines[gone[0]]
-    subs = {s["id"]: s for s in pin["substitutions"]}
-    if "S3" in subs:
-        lines = [ln.replace(subs["S3"]["new_href"].encode(), subs["S3"]["original_href"].encode()) for ln in lines]
-    for line, col in sorted(subs["S1"]["positions"]):
-        ln = lines[line - 1]
-        lines[line - 1] = ln[:col] + b"/" + ln[col:]
-    return b"".join(lines)
+    """The prototype's page from the app's copy and the pin (test_j2ui_verbatim.restore: S5 and S2 out, S3 back, S4 back, S1 in)."""
+    from test_j2ui_verbatim import restore
+    back = restore(app, pin)
+    assert back is not None
+    return back
 
 
 def _proto():
@@ -119,7 +123,7 @@ def _proto():
 def test_the_guard_exits_0_on_the_pinned_page_and_counts_34_on_31_lines():
     page = _restore((UI / "j2ui_assets" / "j2_ui.html").read_bytes(), PIN)
     out, rep = SYNC.transform(page)
-    assert rep["s1"]["count"] == 34 and len(rep["s1"]["lines"]) == 31
+    assert rep["s1"]["count"] == 34 and len(rep["s1"]["lines"]) == 31 and len(rep["s4"]) == 34 and rep["s5"]["line"] == 310
     by = {}
     for m in SYNC.S1.finditer(page):
         by[m.group(2)] = by.get(m.group(2), 0) + 1
@@ -230,7 +234,7 @@ def test_check_latest_says_not_moved_when_it_has_not_and_never_fails(tmp_path):
 def test_transform_keeps_crlf_and_non_ascii_and_records_columns_in_the_originals_coordinates():
     page = GOOD.replace("\n", "\r\n").replace("<title>T", "<title>café — T").encode("utf-8")
     out, rep = SYNC.transform(page)
-    assert b'<script src="j2host.js"></script>\r\n' in out and out.count(b"\r\n") == page.count(b"\r\n") + 1
+    assert b'<script src="j2host.js"></script>\r\n' in out and out.count(b"\r\n") == page.count(b"\r\n") + 2
     assert "café — T".encode() in out
     # line 10 holds three slashes to delete: the recorded columns are the original's, so the first goes in first
     three = [p for p in rep["s1"]["positions"] if p[0] == 10]
@@ -242,7 +246,12 @@ def test_transform_keeps_crlf_and_non_ascii_and_records_columns_in_the_originals
 
 def _restore_lines(out, rep):
     lines = out.splitlines(keepends=True)
+    del lines[rep["s5"]["line"] + 1]
     del lines[rep["s2"]["line"]]
+    text = b"".join(lines)
+    for item in reversed(rep["s4"]):
+        text = text.replace(item["replacement"].encode(), item["original"].encode(), 1)
+    lines = text.splitlines(keepends=True)
     for line, col in sorted(rep["s1"]["positions"]):
         lines[line - 1] = lines[line - 1][:col] + b"/" + lines[line - 1][col:]
     return b"".join(lines)
@@ -372,7 +381,7 @@ def test_the_fetch_script_writes_a_folder_the_sync_then_pins(tmp_path):
     css = (folder / "fonts.css").read_text()
     assert all((folder / m).is_file() for m in re.findall(r"url\(([^)]+)\)", css)), "fonts.css names only files that are there"
     again = json.loads(pin.read_text())
-    assert again["local_fonts"] is True and [s["id"] for s in again["substitutions"]] == ["S1", "S2", "S3"]
+    assert again["local_fonts"] is True and [s["id"] for s in again["substitutions"]] == ["S1", "S2", "S3", "S4", "S5"]
 
 
 def test_without_a_network_the_fetch_script_writes_nothing_and_exits_3(tmp_path):
@@ -391,3 +400,51 @@ def test_the_fetch_script_refuses_fonts_over_the_budget_and_a_stylesheet_with_no
     with pytest.raises(FETCHER.FetchError, match="no latin"):
         FETCHER.vendor("x", lambda u: b"/* cyrillic */ @font-face { font-family: 'A'; src: url(a.woff2) format('woff2'); }")
     assert FETCHER.main(["--root", str(tmp_path)], lambda *_: None) == 2, "no pin and no --css-url"
+
+
+# ── S4 and S5: the kind-neutral wording ───────────────────────────────────────────────────────────────────────────
+def test_s4_a_good_page_gets_the_word_and_the_wd_line(tmp_path):
+    repo, _, _ = _repo(tmp_path)
+    assert _sync(tmp_path / "app", repo)[0] == 0
+    page = (tmp_path / "app" / "j2ui_assets" / "j2_ui.html").read_text()
+    assert 'const examples = s => WD("examples", s.doc ? PRD_EXAMPLES : EXAMPLES);' in page
+    assert page.count("const WD = (k, d) =>") == 1
+    lines = page.splitlines()
+    assert lines[lines.index("const $ = id => document.getElementById(id);") + 1].startswith("const WD = ")
+    pin = json.loads((tmp_path / "app" / "j2ui_assets" / "PINNED.json").read_text())
+    assert pin["schema"] == "j2ui-pin/2" and {s["id"] for s in pin["substitutions"]} == {"S1", "S2", "S4", "S5"}
+
+
+def test_s4_guard_7_an_original_that_is_missing_or_twice_exits_1(tmp_path):
+    repo, _, _ = _repo(tmp_path, GOOD.replace("const examples = s => s.doc ? PRD_EXAMPLES : EXAMPLES;", "const x = 1;"))
+    code, said = _sync(tmp_path / "app", repo)
+    assert code == 1 and "guard 7" in said and "S4.06" in said and "0 times" in said
+    twice = GOOD.replace("</script>", "const examples = s => s.doc ? PRD_EXAMPLES : EXAMPLES;\n</script>")
+    repo2, _, _ = _repo(tmp_path, twice, name="proto2")
+    code, said = _sync(tmp_path / "app2", repo2)
+    assert code == 1 and "guard 7" in said and "2 times" in said
+
+
+def test_s4_guard_8_a_wd_in_a_template_needs_esc_unless_it_is_a_boolean_key():
+    ok = [("T.1", b"a", b'<b>${esc(WD("team", "x"))}</b>'), ("T.2", b"a", b'${WD("pick", true) ? `y` : ""}'),
+          ("T.3", b"a", b'x.textContent = WD("team", "x");')]
+    assert SYNC.word_problems(ok) == []
+    bad = SYNC.word_problems([("T.4", b"a", b'<b>${WD("team", "x")}</b>')])
+    assert bad and "T.4" in bad[0] and "guard 8" in bad[0]
+    assert SYNC.word_problems() == [], "the real table passes"
+
+
+def test_s4_the_real_table_has_each_original_once_in_the_prototypes_page_and_keeps_its_line_count():
+    page = _restore((UI / "j2ui_assets" / "j2_ui.html").read_bytes(), PIN)
+    s1 = SYNC.S1.sub(rb"\1\2/", page)
+    for wid, old, new in SYNC.WT.WORDS:
+        assert s1.count(old) == 1, wid
+        assert old.count(b"\n") == new.count(b"\n"), wid + ": a word keeps the line count of its original"
+    out, rep = SYNC.transform(page)
+    assert [i["id"] for i in rep["s4"]] == [w[0] for w in SYNC.WT.WORDS] and out.count(b"const WD = ") == 1
+
+
+def test_s5_the_wd_line_is_missing_when_the_anchor_is_not_exactly_one_line(tmp_path):
+    repo, _, _ = _repo(tmp_path, GOOD.replace("const $ = id => document.getElementById(id);\n", ""))
+    code, said = _sync(tmp_path / "app", repo)
+    assert code == 1 and "guard 4" in said and "WD line" in said

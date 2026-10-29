@@ -64,9 +64,10 @@ def need_node():
 
 
 def state_keys():
-    """The 56 keys of api/state (j2ui_common.STATE_KEYS): what a state must carry to be one the page was written for."""
+    """The prototype's 56 keys of api/state (j2ui_common.STATE_KEYS without `words`, the app's own 57th, which a captured state of the
+    prototype does not carry and the page reads only through WD, with a default): what a state must carry for the page to be drawn."""
     import j2ui_common
-    return list(j2ui_common.STATE_KEYS)
+    return [k for k in j2ui_common.STATE_KEYS if k != "words"]
 
 
 def run_harness(html, bundle, timeout=120, keys=True):

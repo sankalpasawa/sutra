@@ -4,7 +4,7 @@
 Named claims:
   T1-1  test_fixtures/j2ui/captured holds the prototype's own answers for four real runs and the idle live state: every endpoint
         of each, under 3 MB in all; SOURCE.json names the pinned commit and the hash of every file, and they match
-  T1-2  each state fixture has exactly the 56 keys of j2ui_common.STATE_KEYS (the live state in the same order; a saved run's
+  T1-2  each state fixture has exactly the 56 prototype keys of j2ui_common.STATE_KEYS (the 57th is words) (the live state in the same order; a saved run's
         snapshot leads with `saved`, which the page does not mind)
   T1-3  scripts/capture_j2_fixtures.py refuses a scratch or output folder inside the prototype's folder; run for real (when the
         prototype is here) it makes the same bytes as the committed fixtures and leaves `git status --short` of the prototype as it was
@@ -89,11 +89,12 @@ def test_t1_source_json_names_the_commit_and_every_files_hash():
 
 @pytest.mark.parametrize("run", ["idle"] + list(RUNS))
 def test_t1_each_state_has_exactly_the_56_keys(run):
+    """The captured states are the prototype's 56 keys; the adapter's 57th, `words` (A5.1.4), is the app's own and last."""
     state = H.captured(run, "state")
-    assert len(C.STATE_KEYS) == 56
-    assert sorted(state) == sorted(C.STATE_KEYS) and len(state) == 56
+    assert len(C.STATE_KEYS) == 57 and C.STATE_KEYS[-1] == "words"
+    assert sorted(state) == sorted(C.STATE_KEYS[:-1]) and len(state) == 56
     if run == "idle":
-        assert list(state) == list(C.STATE_KEYS), "the order the prototype sends the live state in is the order the adapter sends it in"
+        assert list(state) == list(C.STATE_KEYS[:-1]), "the order the prototype sends the live state in is the order the adapter sends it in"
     assert state["saved"] == (None if run == "idle" else run)
 
 
@@ -279,3 +280,40 @@ def test_t2_the_vendored_schema_is_the_file_atoms_loads_and_atoms_v1_is_its_run_
     views, _warnings = mod.run_views(built["workflows"])
     assert built["atoms_v1"] == {v["id"]: v for v in views}
     assert not [w for w in mod.validate_views(list(built["atoms_v1"].values())) if "missing" in w], "no view lacks an atom"
+
+
+# ---- A5.1.3: the words (S4, S5) ----------------------------------------------------------------------------------------------
+def _with_words(words, run="idle"):
+    bundle = H.bundle_of(run)
+    bundle["state"] = dict(bundle["state"], words=words)
+    return bundle
+
+
+def test_t2_words_a_website_with_the_empty_object_reads_exactly_as_the_prototype_does():
+    for run in ("idle", RUNS[2]):
+        theirs = H.run_harness(pinned_page(), H.bundle_of(run))
+        ours = H.run_harness(COPY, _with_words({}, run))
+        assert ours["ok"], ours["errors"]
+        assert differing(theirs, ours) == [], "the rendered text of a website department is the prototype's"
+
+
+def test_t2_words_the_start_card_of_another_kind_says_no_website_prd_or_document():
+    import j2ui_words
+    words = j2ui_words.words_for({"kind": "default", "name": "Billing"})
+    got = H.run_harness(COPY, _with_words(words))
+    assert got["ok"], got["errors"]
+    text = H.visible(got["panes"]["smsgs"])
+    assert "Billing" in text and "Tell Billing what you need" in text
+    for word in ("website", "PRD", "document", "Website"):
+        assert word not in text, (word, text[:300])
+    assert "What should we make?" not in got["panes"]["smsgs"], "the output picker is hidden when pick is false"
+
+
+def test_t2_words_a_hostile_team_name_comes_out_escaped():
+    hostile = "<img src=x onerror=alert(1)>"
+    import j2ui_words
+    words = j2ui_words.words_for({"kind": "organic", "name": hostile})
+    got = H.run_harness(COPY, _with_words(words))
+    assert got["ok"], got["errors"]
+    html = got["panes"]["smsgs"]
+    assert "<img src=x" not in html and "&lt;img" in html

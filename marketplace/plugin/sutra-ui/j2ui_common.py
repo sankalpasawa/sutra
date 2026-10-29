@@ -31,7 +31,6 @@ import machine_paths as MP
 import owner_words
 import website_dept as W
 
-KINDS_SUPPORTED = ("website",)           # departments of any other kind keep the classic screens (a mapping is not designed)
 MIN_REBUILD_S = 1.0                      # the page polls every 700 ms; a running engine changes steps.jsonl on every step
 TICK_S = 10                              # a read is never older than this many seconds, whatever the files say
 FUNCS = tuple(R.FUNCTIONS)               # Identity, Adaptation, Priority, Coordination, Audit
@@ -44,15 +43,16 @@ class NotJ2(Exception):
 
 
 def is_j2_kind(kind):
-    return kind in KINDS_SUPPORTED
+    """True for a kind of the Library (W.KINDS): the J2 page serves every one of them (A5.1.1)."""
+    return isinstance(kind, str) and kind in W.KINDS
 
 
 REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}")
 
 
 def need(ref):
-    """The department's record when the J2 view is for it: on the engine runtime, of a supported kind, not a Root.
-    Anything else (an unknown ref, a ref with path characters, a runtime-1 department, a Root, a kind with no mapping)
+    """The department's record when the J2 view is for it: on the engine runtime, of a kind in the Library (W.KINDS).
+    Anything else (an unknown ref, a ref with path characters, a runtime-1 department, a kind not in the Library)
     is NotJ2, which every route answers as 404 'no such department'."""
     if not isinstance(ref, str) or not REF.fullmatch(ref):
         raise NotJ2(str(ref))
@@ -73,7 +73,7 @@ class _Shape(dict):
         return copy.deepcopy(dict(self))
 
 
-#: the 56 keys of api/state: the prototype's snapshot (48) + output_info (7 more; rubric is in both) + saved (j2_server)
+#: the 57 keys of api/state: the prototype's snapshot (48) + output_info (7 more; rubric is in both) + saved (j2_server) + words (A5.1.4)
 EMPTY_DEFAULTS = (("chat", []), ("total", 0), ("status", "idle"), ("thinking", None), ("step", 0), ("steps", {}), ("goal", None),
                   ("stamped", False), ("workflows", []), ("budget", 0), ("spent", 0), ("conflicts", []), ("audits", []),
                   ("versions", 0), ("cycle", 0), ("calls", 0), ("error", None), ("done", False), ("atoms_v1", {}),
@@ -84,7 +84,7 @@ EMPTY_DEFAULTS = (("chat", []), ("total", 0), ("status", "idle"), ("thinking", N
                   ("report", None), ("sections", []), ("write_lock", None), ("agents", {}), ("lanes", []), ("call_log", []),
                   ("workable", None), ("memory", False), ("lessons", []), ("lessons_used", []), ("lessons_saved", []),
                   ("output", "website"), ("output_label", "Website"), ("doc", False), ("conditions", None), ("files", []),
-                  ("docset", []), ("docset_files", []), ("saved", None))
+                  ("docset", []), ("docset_files", []), ("saved", None), ("words", {}))
 STATE_KEYS = tuple(k for k, _ in EMPTY_DEFAULTS)
 #: the keys j2ui_work.build fills (exactly these 13); every other key of the state is j2ui_state's
 WORK_KEYS = ("workflows", "atoms_v1", "sections", "agents", "lanes", "style", "conflicts", "audits", "conditions", "rubric",
@@ -365,7 +365,7 @@ class Ctx:
     there, so one rebuild is shared by api/state, api/map and api/artifacts of a poll and the next poll builds nothing."""
 
     def __init__(self, ref):
-        self.ref, self.kind = ref, "website"
+        self.ref, self.kind = ref, "website"     # replaced by the record's kind when the department is read
         self.d, self.root_ref, self.doc, self.stopped = {}, None, False, False
         self.fv, self.cur, self.state = None, {}, "not_started"
         self.runs, self.asks, self.posts, self.root_posts, self.steps, self.events = [], [], [], [], [], []
@@ -507,6 +507,7 @@ def _build(ref, key):
     except ValueError:
         c.reasons.append("department: not a ref")
     c.d = read("department", lambda: W.dept(ref), {})
+    c.kind = c.d.get("kind") if isinstance(c.d.get("kind"), str) else c.kind
     c.stopped = bool(c.d.get("stopped"))
     root = c.d.get("root")
     c.root_ref = root if root and read("root", lambda: W.dept(root), None) else None

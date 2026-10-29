@@ -7,7 +7,7 @@ relative URLs, so every endpoint it uses lives here, under the same base, for on
           site/{key}[/{path}] file/{name} shot/{n}
     POST  api/say api/reset api/output api/playbooks/clear api/lessons/clear
 
-{ref} must be a runtime-2 department of kind website (j2ui_common.need); anything else is 404 {"error": "no such department"}
+{ref} must be a runtime-2 department of a kind in the Library (j2ui_common.need); anything else is 404 {"error": "no such department"}
 on every route. This module owns the state, runs and say routes; the rest are answered by the other packages' modules
 (j2ui_work, j2ui_audit, j2ui_map, j2ui_board, j2ui_artifacts, j2ui_site), imported when a request needs them: a module that is
 not there, or fails, answers the page's own empty shape, because a wrong shape blanks the page.

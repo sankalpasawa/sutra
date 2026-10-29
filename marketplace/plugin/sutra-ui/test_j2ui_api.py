@@ -4,7 +4,7 @@ Named claims:
   C5-1  every route answers on a seeded department with the right content type; an unknown ref, a Root, a department of kind default
         and a department of the first build are 404 on every route; a body that is not JSON is an empty one
   C5-2  with every other package's module absent, or failing, or answering in a wrong shape, the endpoints answer the page's own
-        empty shapes and api/state still has its 56 keys
+        empty shapes and api/state still has its 57 keys
   C5-3  every api/<name> the pinned page names has a route here; api/runs is {live, runs: []} and a run that is not the live one is 404
   C5-4  the website_api.SAFE headers are on every site, file, shot and api/artifact response, whoever built the body and whatever
         headers it sent; a name with '..', a root or a backslash never reaches the module that serves it
@@ -77,13 +77,12 @@ def test_c51_the_files_and_sites_answer_text_with_the_safe_headers_when_nothing_
             assert r.headers[k.lower()] == v, (path, k)
 
 
-@pytest.mark.parametrize("what", ["unknown", "root", "default", "old"])
+@pytest.mark.parametrize("what", ["unknown", "old"])
 def test_c51_a_department_the_view_is_not_for_is_404_on_every_route(mods, client, monkeypatch, what):
-    ref = {"unknown": "dref-nobody", "root": "dref-r", "default": "dref-d", "old": "dref-o"}[what]
+    ref = {"unknown": "dref-nobody", "old": "dref-o"}[what]
     if what == "old":
         monkeypatch.setenv("SUTRA_ENGINE_RUNTIME", "1")
-    if what != "unknown":
-        mods.W.create(ref, "Other", None, kind={"root": "root", "default": "default", "old": "website"}[what])
+        mods.W.create(ref, "Other", None, kind="website")
     for path in JSON_GETS + SERVED:
         r = client.get(url(path, ref))
         assert r.status_code == 404, (path, r.status_code)
@@ -401,3 +400,130 @@ def test_c55_the_state_end_to_end_on_a_department_roots_set_up(mods, born, tick,
     blob = str(s) + str(s2)
     for bad in ("GRANT", "COUNTER", "REFUSE", "accept-proposal", "reject-proposal", str(mods.home)):
         assert bad not in blob, bad
+
+
+# ---- A5.1.2: the per-kind route matrix (the gate for the wording work) ---------------------------------------------------------------
+KIND_ROUTES = ("api/state", "api/map", "api/board", "api/artifacts", "api/docs", "api/refs", "api/runs", "api/preview?atom=x", "api/audits")
+
+
+def _seed(mods, kind):
+    ref = "dref-k-" + kind
+    mods.W.create(ref, "Kind %s" % kind, "A brief for the %s department" % kind if kind != "brief" else "Only a brief", kind="organic" if kind == "brief" else kind)
+    return ref
+
+
+@pytest.mark.parametrize("kind", ["website", "default", "organic", "root", "brief"])
+def test_a512_every_kind_answers_every_read_route_with_200(mods, client, kind):
+    ref = _seed(mods, kind)
+    for path in KIND_ROUTES:
+        r = client.get(url(path, ref))
+        assert r.status_code == 200 and r.headers["content-type"].startswith("application/json"), (kind, path, r.status_code, r.text[:120])
+    s = client.get(url("api/state", ref)).json()
+    assert list(s) == list(C.STATE_KEYS)
+    assert client.get(url("site/latest", ref)).status_code in (200, 404)
+    for path in ("file/prd.md", "shot/1"):
+        assert client.get(url(path, ref)).status_code == 404, (kind, path)
+    r = client.post(url("api/say", ref), json={"text": "hello there"})
+    assert r.status_code in (200, 202), (kind, r.status_code, r.text[:120])
+
+
+def test_a512_a_kind_not_in_the_library_a_hostile_ref_and_a_runtime_1_record_are_404(mods, client, monkeypatch):
+    ref = _seed(mods, "organic")
+    f = mods.W.ddir(ref) / "dept.json"
+    f.write_text(json.dumps(dict(json.loads(f.read_text()), kind="gone")))
+    C.reset_caches()
+    assert client.get(url("api/state", ref)).status_code == 404 and not C.is_j2_kind("gone")
+    for bad in ("..%2Fx", "a%2Fb", "%2E%2E", "a b"):
+        assert client.get("/j2ui/%s/api/state" % bad).status_code == 404, bad
+    assert all(C.is_j2_kind(k) for k in mods.W.KINDS)
+
+
+def test_a512_the_ctx_kind_is_the_records(mods):
+    ref = _seed(mods, "default")
+    assert C.get_ctx(ref).kind == "default"
+    assert C.get_ctx(REF).kind == "website"
+
+
+def _file(mods, ref, art, files):
+    mods.W.add_version(ref, art, files, [], None, {"ok": True, "notes": ["ok"]})
+    C.reset_caches()
+
+
+def test_a512_state_says_the_kind_and_its_words_and_a_website_none(mods, client):
+    s = client.get(url("api/state", REF)).json()
+    assert (s["output"], s["output_label"], s["words"]) == ("website", "Website", {})
+    for kind, label in (("default", "Result"), ("organic", "Work"), ("root", "Department")):
+        ref = _seed(mods, kind)
+        s = client.get(url("api/state", ref)).json()
+        assert (s["output"], s["output_label"], s["doc"]) == (kind, label, False), kind
+        assert s["words"]["team"] == "Kind %s" % kind and s["words"]["pick"] is False and s["words"]["examples"] == []
+
+
+def test_a512_a_root_with_no_cycle_keeps_cycle_zero_and_is_never_faked(born, mods, client):
+    born()
+    root = born.root
+    assert mods.W.dept(root)["kind"] == "root"
+    s = client.get(url("api/state", root)).json()
+    assert (s["cycle"], s["step"], s["stamped"], s["outcome"]) == (0, 0, False, None)
+    assert s["output"] == "root" and list(s) == list(C.STATE_KEYS)
+    for path in KIND_ROUTES:
+        assert client.get(url(path, root)).status_code == 200, path
+
+
+def test_a512_the_output_post_names_the_kind_and_changes_nothing(mods, client):
+    ref = _seed(mods, "default")
+    r = client.post(url("api/output", ref), json={"type": "prd"})
+    assert (r.status_code, r.json()) == (409, {"ok": False, "output": "default"})
+    r = client.post(url("api/output", REF), json={"type": "prd"})
+    assert r.json() == {"ok": False, "output": "website"}
+
+
+def test_a512_site_placeholder_and_text_page_per_kind(mods, client):
+    web = client.get(url("site/latest", REF))
+    assert "Your website will appear here" in web.text
+    ref = _seed(mods, "default")
+    r = client.get(url("site/latest", ref))
+    assert r.status_code == 200 and "Nothing has been filed here yet." in r.text and "website" not in r.text
+    art = mods.W.artifacts_of(mods.W.dept(ref))[-1]
+    _file(mods, ref, art, {"notes.md": "# Notes <script>alert(1)</script>\nbody"})
+    r = client.get(url("site/latest", ref))
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    assert "<pre" in r.text and "&lt;script&gt;" in r.text and "<script>" not in r.text
+    for k, v in website_api.SAFE.items():
+        assert r.headers[k.lower()] == v, k
+
+
+def test_a512_the_map_says_j2_true_for_every_kind_and_false_for_the_old_build(mods, monkeypatch):
+    import app as app_module
+    c = TestClient(app_module.app, base_url="http://127.0.0.1")
+    for kind in ("website", "default", "organic", "root"):
+        ref = REF if kind == "website" else _seed(mods, kind)
+        assert c.get("/api/native/%s/map" % ref).json()["j2"] is True, kind
+    monkeypatch.setenv("SUTRA_ENGINE_RUNTIME", "1")
+    mods.W.create("dref-old9", "Old", None, kind="website")
+    assert c.get("/api/native/dref-old9/map").json()["j2"] is False
+
+
+def test_a512_a_versionless_artifact_is_tagged_other_on_the_map(mods, client):
+    ref = _seed(mods, "default")
+    nodes = client.get(url("api/map", ref)).json()["nodes"]
+    works = [n for n in nodes if n["kind"] == "work" and n["id"] != "work:charter"]
+    assert works and all(n["tag"] != "Site" for n in works), [(n["label"], n["tag"]) for n in works]
+
+
+@pytest.mark.parametrize("kind", ["default", "organic", "root"])
+def test_a512_the_deliverable_per_kind_is_the_last_artifact_and_nothing_is_padded(mods, client, kind):
+    ref = _seed(mods, kind)
+    assert client.get(url("api/artifacts", ref)).json() == {"deliverables": [], "records": []}, "nothing filed, nothing listed"
+    arts = mods.W.artifacts_of(mods.W.dept(ref))
+    _file(mods, ref, arts[0], {"notes.md": "first"})
+    listing = client.get(url("api/artifacts", ref)).json()
+    names = [r["name"] for r in listing["deliverables"] + listing["records"]]
+    assert names == [arts[0]], "one row for the one filed artifact, no filler"
+    if len(arts) == 1:                                   # a kind with one artifact: it is the deliverable
+        assert [r["name"] for r in listing["deliverables"]] == [arts[0]] and listing["records"] == []
+        return
+    assert listing["deliverables"] == [], "the deliverable is the last artifact, filed or not: a first draft is a record"
+    _file(mods, ref, arts[-1], {"result.md": "last"})
+    listing = client.get(url("api/artifacts", ref)).json()
+    assert [r["name"] for r in listing["deliverables"]] == [arts[-1]] and [r["name"] for r in listing["records"]] == [arts[0]]

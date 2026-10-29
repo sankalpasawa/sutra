@@ -1,5 +1,5 @@
 {
-  "schema": "j2ui-pin/1",
+  "schema": "j2ui-pin/2",
   "source": {
     "path": "/Users/tchandrakar/Desktop/development/J2_Prototype",
     "commit": "f9ceba15192bbd6f62047cb7288d0f291b2fbc4f",
@@ -25,8 +25,8 @@
         "bytes": 9694
       },
       "j2ui_assets/j2_ui.html": {
-        "sha256": "776aecafaa70d28a0338be94b4b87ced6d3bdd1a9623ac87bc49d1f675a1b7da",
-        "bytes": 193235
+        "sha256": "31a324036ac4a4e5f48651e24d47feebc072b659ef7bc46fc9fe3772711e44ec",
+        "bytes": 194654
       },
       "j2ui_assets/j2host.js": {
         "sha256": "98d346a6256602a8c9f4ab983e58f16fd68949f3c5a7b6b377e8d4cdfaf4ae6c",
@@ -51,6 +51,223 @@
       "rule": "insert a script line for j2host.js directly after the viewport meta line",
       "line": 5,
       "text": "<script src=\"j2host.js\"></script>"
+    },
+    {
+      "id": "S4",
+      "rule": "kind-neutral wording: each listed original is wrapped in WD(key, original) or escaped like it; defaults are the originals",
+      "count": 34,
+      "items": [
+        {
+          "id": "S4.06",
+          "line": 330,
+          "original": "const examples = s => s.doc ? PRD_EXAMPLES : EXAMPLES;",
+          "replacement": "const examples = s => WD(\"examples\", s.doc ? PRD_EXAMPLES : EXAMPLES);"
+        },
+        {
+          "id": "S4.07",
+          "line": 927,
+          "original": "<small>Your website team</small>${esc(plain(a.say))}",
+          "replacement": "<small>${esc(WD(\"team\", \"Your website team\"))}</small>${esc(plain(a.say))}"
+        },
+        {
+          "id": "S4.08",
+          "line": 942,
+          "original": "<small>${s.doc ? \"Your document team\" : \"Your website team\"}</small>",
+          "replacement": "<small>${esc(WD(\"team\", s.doc ? \"Your document team\" : \"Your website team\"))}</small>"
+        },
+        {
+          "id": "S4.09",
+          "line": 943,
+          "original": "<div><label>What should we make? <select class=\"outsel\" aria-label=\"What to build\">${outOptions(s)}</select></label></div>",
+          "replacement": "${WD(\"pick\", true) ? `<div><label>What should we make? <select class=\"outsel\" aria-label=\"What to build\">${outOptions(s)}</select></label></div>` : \"\"}"
+        },
+        {
+          "id": "S4.10",
+          "line": 944,
+          "original": "${s.doc ? \"Describe the product. We'll ask for any facts we need, then write the PRD.\" : \"Describe the website you want. We'll ask a few questions, then build it.\"}",
+          "replacement": "${esc(WD(\"start\", s.doc ? \"Describe the product. We'll ask for any facts we need, then write the PRD.\" : \"Describe the website you want. We'll ask a few questions, then build it.\"))}"
+        },
+        {
+          "id": "S4.11",
+          "line": 955,
+          "original": "<small>Your website team</small>${esc(plain(m.text))}",
+          "replacement": "<small>${esc(WD(\"team\", \"Your website team\"))}</small>${esc(plain(m.text))}"
+        },
+        {
+          "id": "S4.12",
+          "line": 958,
+          "original": "`Your ${s.doc ? \"document\" : \"website\"} is ready`",
+          "replacement": "`${esc(WD(\"ready\", `Your ${s.doc ? \"document\" : \"website\"} is ready`))}`"
+        },
+        {
+          "id": "S4.13",
+          "line": 967,
+          "original": "$(\"stitle\").textContent = s.doc ? \"Your document team\" : \"Your website team\";",
+          "replacement": "$(\"stitle\").textContent = WD(\"team\", s.doc ? \"Your document team\" : \"Your website team\");"
+        },
+        {
+          "id": "S4.14",
+          "line": 724,
+          "original": "...(s.versions ? [\"website\"] : [])];",
+          "replacement": "...(s.versions ? [esc(WD(\"built\", \"website\"))] : [])];"
+        },
+        {
+          "id": "S4.15a",
+          "line": 959,
+          "original": "<a href=\"site/latest${runQ().replace(\"&\", \"?\")}\" target=\"_blank\" rel=\"noopener\">Open full screen</a>",
+          "replacement": "${WD(\"can_open\", true) ? `<a href=\"site/latest${runQ().replace(\"&\", \"?\")}\" target=\"_blank\" rel=\"noopener\">Open full screen</a>` : \"\"}"
+        },
+        {
+          "id": "S4.15b",
+          "line": 960,
+          "original": "`<a href=\"site/latest${runQ().replace(\"&\", \"?\")}\" download=\"my-website.html\">Download the HTML file</a>`",
+          "replacement": "(WD(\"can_download\", true) ? `<a href=\"site/latest${runQ().replace(\"&\", \"?\")}\" download=\"my-website.html\">Download the HTML file</a>` : \"\")"
+        },
+        {
+          "id": "S4.16",
+          "line": 970,
+          "original": "[\"Reading your request…\", \"Reading your request…\", \"Planning your website…\", \"Planning your website…\", \"Planning your website…\",\n       \"Planning your website…\", \"Building your website…\", \"Checking everything works on phones and computers…\", \"Almost there…\"]",
+          "replacement": "WD(\"steps\", [\"Reading your request…\", \"Reading your request…\", \"Planning your website…\", \"Planning your website…\", \"Planning your website…\",\n       \"Planning your website…\", \"Building your website…\", \"Checking everything works on phones and computers…\", \"Almost there…\"])"
+        },
+        {
+          "id": "S4.17",
+          "line": 976,
+          "original": ": s.doc ? \"Describe the product…\" : \"Describe the website you want…\";",
+          "replacement": ": WD(\"describe\", s.doc ? \"Describe the product…\" : \"Describe the website you want…\");"
+        },
+        {
+          "id": "S4.18",
+          "line": 1064,
+          "original": "? \"Ask for a change…\" : \"Describe the website you want. The agents take it from there…\";",
+          "replacement": "? \"Ask for a change…\" : WD(\"describe_long\", \"Describe the website you want. The agents take it from there…\");"
+        },
+        {
+          "id": "S4.19",
+          "line": 1043,
+          "original": "items = [\"Add a section for visiting hours\", \"Looks good\"];",
+          "replacement": "items = WD(\"follow_ups\", [\"Add a section for visiting hours\", \"Looks good\"]);"
+        },
+        {
+          "id": "S4.20",
+          "line": 774,
+          "original": "(checked by code, ${s.doc ? \"document\" : \"site\"} v${last.version})",
+          "replacement": "(checked by code, ${esc(WD(\"noun\", s.doc ? \"document\" : \"site\"))} v${last.version})"
+        },
+        {
+          "id": "S4.21",
+          "line": 776,
+          "original": "Cycle ${a.cycle} · ${s.doc ? \"document\" : \"site\"} v${a.version}",
+          "replacement": "Cycle ${a.cycle} · ${esc(WD(\"noun\", s.doc ? \"document\" : \"site\"))} v${a.version}"
+        },
+        {
+          "id": "S4.22",
+          "line": 770,
+          "original": "Audit checks the site against",
+          "replacement": "Audit checks the ${esc(WD(\"noun\", \"site\"))} against"
+        },
+        {
+          "id": "S4.23",
+          "line": 780,
+          "original": "<h3>${s.doc ? \"Document rubric\" : \"Design and usability rubric\"}</h3>",
+          "replacement": "<h3>${esc(WD(\"rubric\", s.doc ? \"Document rubric\" : \"Design and usability rubric\"))}</h3>"
+        },
+        {
+          "id": "S4.24",
+          "line": 374,
+          "original": "<span class=\"tag\">site v${m.version}</span>",
+          "replacement": "<span class=\"tag\">${esc(WD(\"noun\", \"site\"))} v${m.version}</span>"
+        },
+        {
+          "id": "S4.25",
+          "line": 808,
+          "original": "return \"site v\" + m.version;",
+          "replacement": "return WD(\"noun\", \"site\") + \" v\" + m.version;"
+        },
+        {
+          "id": "S4.26",
+          "line": 785,
+          "original": "audit:\"J2.g checks the site\"",
+          "replacement": "get audit(){ return \"J2.g checks the \" + WD(\"noun\", \"site\"); }"
+        },
+        {
+          "id": "S4.27",
+          "line": 1025,
+          "original": "<dt>site</dt>",
+          "replacement": "<dt>${esc(WD(\"noun\", \"site\"))}</dt>"
+        },
+        {
+          "id": "S4.28",
+          "line": 1136,
+          "original": "audit: \"The checks run on each version of the site.\"",
+          "replacement": "get audit(){ return \"The checks run on each version of the \" + WD(\"noun\", \"site\") + \".\"; }"
+        },
+        {
+          "id": "S4.29",
+          "line": 851,
+          "original": "The first workflow that runs writes the style guide (palette, fonts, spacing, buttons, cards) before any section is built. Every workflow agent follows it.",
+          "replacement": "${esc(WD(\"style_empty\", \"The first workflow that runs writes the style guide (palette, fonts, spacing, buttons, cards) before any section is built. Every workflow agent follows it.\"))}"
+        },
+        {
+          "id": "S4.30a",
+          "line": 864,
+          "original": "Memory is off (J2_MEMORY=0): no playbooks are read or saved in this run.",
+          "replacement": "${esc(WD(\"memory_off\", \"Memory is off (J2_MEMORY=0): no playbooks are read or saved in this run.\"))}"
+        },
+        {
+          "id": "S4.30b",
+          "line": 883,
+          "original": "Memory is off (J2_MEMORY=0): no lessons are read or saved in this run.",
+          "replacement": "${esc(WD(\"memory_off\", \"Memory is off (J2_MEMORY=0): no lessons are read or saved in this run.\"))}"
+        },
+        {
+          "id": "S4.31",
+          "line": 1246,
+          "original": "\"Open the site preview\"",
+          "replacement": "WD(\"go_preview\", \"Open the site preview\")"
+        },
+        {
+          "id": "S4.32",
+          "line": 1085,
+          "original": "|| \"<option>no site yet</option>\"",
+          "replacement": "|| \"<option>no \" + esc(WD(\"noun\", \"site\")) + \" yet</option>\""
+        },
+        {
+          "id": "S4.33",
+          "line": 1074,
+          "original": "$(\"tab-board\").hidden = !s.has_board;",
+          "replacement": "$(\"tab-board\").hidden = !s.has_board; WD(\"hide_tabs\", []).forEach(t => { const b = document.querySelector(`.tabs [data-tab=\"${t}\"]`); if (b) b.hidden = true; }); { const ft = WD(\"frame_title\", null), tm = WD(\"team\", null), nt = WD(\"new_task\", null); if (ft != null){ $(\"sframe\").title = ft; $(\"frame\").title = ft; } if (tm != null) $(\"stitle\").textContent = tm; if (nt != null) $(\"reset\").textContent = nt; }"
+        },
+        {
+          "id": "S4.34",
+          "line": 740,
+          "original": "`<div class=\"legend\" data-legend><b>Output types</b> ${legend} <span class=\"empty\">Click one to filter; click again to clear. Status is always a word as well as a colour.</span></div>`",
+          "replacement": "(WD(\"pick\", true) ? `<div class=\"legend\" data-legend><b>Output types</b> ${legend} <span class=\"empty\">Click one to filter; click again to clear. Status is always a word as well as a colour.</span></div>` : \"\")"
+        },
+        {
+          "id": "S4.35b",
+          "line": 1720,
+          "original": "$(\"reset\").onclick = async () => { await fetch(",
+          "replacement": "$(\"reset\").onclick = async () => { if (WD(\"new_task\", null) != null){ ($(\"sbox\").offsetParent ? $(\"sbox\") : $(\"box\")).focus(); return; } await fetch("
+        },
+        {
+          "id": "S4.36a",
+          "line": 962,
+          "original": "<button type=\"button\" class=\"ghost\" id=\"sretry\">Start over</button>",
+          "replacement": "<button type=\"button\" class=\"ghost\" id=\"sretry\">${esc(WD(\"retry\", \"Start over\"))}</button>"
+        },
+        {
+          "id": "S4.36b",
+          "line": 995,
+          "original": "if (b.id === \"sretry\"){ await fetch(",
+          "replacement": "if (b.id === \"sretry\"){ if (WD(\"retry\", null) != null){ const u = (s => (s.allChat || []).filter(x => x.who === \"user\").pop())(CTX || {}); if (u) await sendText(u.text); return; } await fetch("
+        }
+      ]
+    },
+    {
+      "id": "S5",
+      "rule": "insert the WD line directly after the const $ line",
+      "line": 310,
+      "text": "const WD = (k, d) => { const w = CTX && CTX.words; return w && w[k] != null ? w[k] : d; };"
     }
   ],
   "external": ["https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"],
@@ -60,6 +277,6 @@
     "uses": 813,
     "acknowledged_commit": null
   },
-  "synced_at": "2026-10-26T17:24:35Z",
+  "synced_at": "2026-10-29T12:27:32Z",
   "fonts_note": "fonts not vendored: the page keeps the prototype's Google Fonts link and the page's security policy allows its two hosts (run scripts/fetch_j2_fonts.py, then this script)"
 }
