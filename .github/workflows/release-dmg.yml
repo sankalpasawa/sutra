@@ -201,6 +201,7 @@ jobs:
           node test_shadow_done_history.js
           node test_shadow_delegate_focus.js
           node test_shadow_floor_needs_you.js
+          node test_shadow_graph.js
           node test_shadow_hi_trace.js
           node test_shadow_home.js
           node test_shadow_intervention_ui.js
