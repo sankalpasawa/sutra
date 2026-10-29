@@ -18,12 +18,15 @@ REQUIRED = ("item_id", "producer", "kind", "title", "deep_link",
 #: the mission, so opening the card lands on the right form. Optional, so
 #: every existing producer and every existing row stays valid, and
 #: validate() keeps rejecting anything else.
+#: `department` (PRD A5.3.3, DR-5/DR-7): the ref of the department a decision
+#: is about, on an FYI row that says the decision stood still. Absent otherwise.
 #: `ts` (2026-09-16): when the row was emitted. emit() stamps it; a row that
 #: brings its own keeps it. The relevance rule below needs it for the one
 #: time-bound card (a failed task).
 OPTIONAL = ("mission_id", "thread_id", "severity", "why_now",
             "primary_action", "secondary_actions", "expires_at",
-            "evidence_links", "intervention_id", "ts")
+            "evidence_links", "intervention_id", "ts",
+            "department")
 STATES = ("new", "seen", "handled", "expired")
 
 # ── the relevance rule (founder 2026-09-16: "a lot of tasks in my Now, but

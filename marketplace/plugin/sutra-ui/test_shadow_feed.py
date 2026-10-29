@@ -52,6 +52,14 @@ class TestFeedContract(unittest.TestCase):
         ok, problems = shadow_feed.emit(_item(state="vibing"))
         self.assertFalse(ok)
 
+    def test_05_department_is_an_optional_key(self):
+        """PRD A5.3.3 (DR-5, DR-7): an FYI row may name the department a decision is about; any other key is still refused."""
+        self.assertIn("department", shadow_feed.OPTIONAL)
+        ok, problems = shadow_feed.emit(_item(kind="info", department="dref-abc", dedupe_key="d-1"))
+        self.assertTrue(ok, problems)
+        self.assertEqual(shadow_feed.validate(_item()), [])
+        self.assertTrue(shadow_feed.validate(_item(departments="dref-abc")))
+
 
 class _Store:
     """The two MissionStore reads live_items() makes, over a dict."""
