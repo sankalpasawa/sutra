@@ -127,7 +127,10 @@ def _buildable(reg):
 def _built_in():
     by = {}
     for name in sorted(registry.DEF_CLASS):
-        by.setdefault(name.split(".")[0], []).append({"key": name, "label": owner_rules.core_label(name)})
+        row = {"key": name, "label": owner_rules.core_label(name)}
+        if name in SP.SEALED_CORE:
+            row.update(sealed=True, says=owner_rules.CORE_SAYS.get(name, ""))     # A5: built in, read-only: not built on, not held
+        by.setdefault(name.split(".")[0], []).append(row)
     return [{"layer": layer, "models": ms} for layer, ms in sorted(by.items())]
 
 

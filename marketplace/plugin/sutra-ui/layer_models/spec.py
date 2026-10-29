@@ -30,6 +30,11 @@ LIMITS = {'models': 60, 'versions': 20, 'fields': 40, 'links': 10, 'nest_depth':
 #: the core models an owner may hold as a value (none may be extended) and the ones an owner may build on
 NESTABLE_CORE = ('envelope', 'identity.done_item', 'option')
 EXTENSIBLE_CORE = ('record', 'artifact.template', 'engine.library', 'kind', 'journey')
+#: the core models of schema version 2 (PRD amendment A5, A5.4.2): listed as built in and read-only; an owner can neither build on
+#: one nor hold one, so they are in neither tuple above
+SEALED_CORE = ('page.words', 'shadow.open', 'shadow.node', 'shadow.edge', 'shadow.graph', 'shadow.timeline_row', 'shadow.chat_link',
+               'shadow.cost_line', 'shadow.task_head', 'shadow.task_detail', 'dept.row', 'dept.listing', 'dept.candidate', 'dept.choice',
+               'dept.override', 'dept.decision', 'dept.request')
 
 
 def T(n, m=0, **k):
