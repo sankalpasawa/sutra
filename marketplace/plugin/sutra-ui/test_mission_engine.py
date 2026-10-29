@@ -489,5 +489,49 @@ class TestBriefIsNeverDeliveredTwice(Base):
         self.assertIsNone(clone["target_session"])
 
 
+class TestDepartmentDecision(Base):
+    """PRD A5.3.5: a task may carry the create-or-reuse decision; one made without it is exactly what it was."""
+
+    DECISION = {"choice": {"action": "none", "reason": "no department fits", "confidence": "low"}, "final_action": "none",
+                "final_ref": None, "overrides": [], "held": False, "held_reason": None, "decided_by": "stub", "mode": "link",
+                "considered": [], "candidates_seen": 0, "root_ref": None, "result_ref": None, "operation_id": None,
+                "mission_id": None, "at": "2026-10-29T10:00:00+05:30", "prompt_version": "1"}
+
+    def _fail(self, m):
+        for state in ("brief_confirm", "running", "failed"):
+            self.store.transition(m["id"], state, "for the test")
+
+    def test_25_a_task_made_without_a_decision_has_neither_key(self):
+        m = self.store.create("fix the nav test", "fix")
+        self.assertNotIn("department_decision", m)
+        self.assertNotIn("department_ref", m)
+
+    def test_26_a_pre_a5_record_loads_and_moves_unchanged(self):
+        m = self.store.create("fix the nav test", "fix")
+        self.store.transition(m["id"], "brief_confirm")
+        self.assertNotIn("department_decision", self.store.load(m["id"]))
+
+    def test_27_a_decision_given_at_creation_is_kept(self):
+        m = self.store.create("fix the nav test", "fix", department_decision=self.DECISION, department_ref="dref-a")
+        got = self.store.load(m["id"])
+        self.assertEqual(got["department_decision"], self.DECISION)
+        self.assertEqual(got["department_ref"], "dref-a")
+
+    def test_28_a_retry_copies_the_decision_and_names_itself_in_it(self):
+        m = self.store.create("fix the nav test", "fix", department_decision=self.DECISION, department_ref="dref-a")
+        self._fail(m)
+        clone = mission_engine.clone_for_retry(self.store, m["id"])
+        got = self.store.load(clone["id"])
+        self.assertEqual(got["department_ref"], "dref-a")
+        self.assertEqual(got["department_decision"]["mission_id"], clone["id"])
+        self.assertEqual(got["department_decision"]["final_action"], "none")
+
+    def test_29_a_retry_of_an_old_record_has_no_decision(self):
+        m = self.store.create("fix the nav test", "fix")
+        self._fail(m)
+        clone = mission_engine.clone_for_retry(self.store, m["id"])
+        self.assertNotIn("department_decision", self.store.load(clone["id"]))
+
+
 if __name__ == "__main__":
     unittest.main()

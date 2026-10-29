@@ -1979,8 +1979,11 @@ class MissionStore:
 
     def create(self, objective, template, target_mode="existing",
                target_session=None, done_when=None, manifest=None,
-               goal_id=None):
-        """`goal_id` marks this mission as ONE ATTEMPT at a durable goal.
+               goal_id=None, department_decision=None, department_ref=None):
+        """`department_decision` and `department_ref` carry the task's create-or-reuse decision (PRD A5.3.5, shadow_dept):
+        written only when given, so a record made without one is exactly what it was before A5.
+
+        `goal_id` marks this mission as ONE ATTEMPT at a durable goal.
 
         It is the whole switch for the new failure boundary: an attempt of a
         goal BLOCKS when it runs out of road (the founder is asked), while a
@@ -2031,6 +2034,9 @@ class MissionStore:
             "created_ns": __import__("time").time_ns(),
             "updated_at": _now(),
         }
+        if department_decision is not None:
+            mission["department_decision"] = department_decision
+            mission["department_ref"] = department_ref
         self.save(mission)
         shadow_ledger.append("missions", {
             "mission_id": mission["id"], "state": "draft",
@@ -2528,7 +2534,13 @@ def clone_for_retry(store, mid):
     clone = store.create(src["objective"],
                          src.get("template") or default_offer(),
                          target_mode="new", target_session=None,
-                         done_when=checks, manifest=src.get("manifest"))
+                         done_when=checks, manifest=src.get("manifest"),
+                         department_decision=src.get("department_decision"),
+                         department_ref=src.get("department_ref"))
+    if clone.get("department_decision"):
+        # the decision is the retry's own now: it names this task, not the one it was copied from
+        clone["department_decision"] = dict(clone["department_decision"], mission_id=clone["id"])
+        store.save(clone)
     src = store.load(mid)
     src["retried_to"] = clone["id"]
     store.save(src)
