@@ -580,3 +580,17 @@ def test_c24_every_ask_text_reads_the_same_in_the_pages_own_parse_ask(mods):
     for text, js in zip(texts, page_parse_ask(texts)):
         mine = parse_ask(text)
         assert js == {"say": mine["say"], "qs": mine["qs"]}, text
+
+
+# ---- a Root's page is Root's own chat (A5 verify, fix round 1) ----------------------------------------------------------
+def test_a5_a_roots_page_does_not_show_what_was_said_to_its_child_department(mods, born, tick):
+    ref = born()
+    W = mods.W
+    W.owner_ask(born.root, "Add a page about our pricing plans", about=ref)
+    W.run_until_idle(born.root, limit=300)
+    W.run_until_idle(ref, limit=300)
+    C.reset_caches()
+    kid = C.get_ctx(ref)
+    assert "Add a page about our pricing plans" in [x["text"] for x in users(kid)], "the department still shows it"
+    root = C.get_ctx(born.root)
+    assert not [x for x in root.chat if "pricing plans" in x["text"]], [x["text"] for x in root.chat]

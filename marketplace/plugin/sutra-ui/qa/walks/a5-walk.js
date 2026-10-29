@@ -118,6 +118,12 @@ const NARROW = { w: 390, h: 844, mobile: false, tag: "390" };       // the app's
     })()`);
     const sd = JSON.parse(said);
     check("org: " + kind + ": a word said is in the chat", sd.code === 200 && sd.seen, said);
+    if (kind === "root") {          // a Root's page is Root's own chat: what was said in the departments under it is not in it
+      const mine = JSON.parse(await run(`(async () => { const w = document.querySelector('iframe.j2v-if').contentWindow;
+        const st = await (await w.fetch('api/state')).json(); return JSON.stringify((st.chat || []).map(m => String(m.text))); })()`));
+      const other = ["default", "organic", "website"].map(k => "hello from the " + k + " walk").filter(x => mine.some(t => t.indexOf(x) >= 0));
+      check("org: root: its chat holds no other department's say", other.length === 0, JSON.stringify(other));
+    }
     const text = await run(`document.querySelector('iframe.j2v-if').contentDocument.body.innerText`);
     check("org: " + kind + ": the page shows no undefined or NaN", !/\b(undefined|NaN)\b/.test(text || ""));
     if (kind !== "website") check("org: " + kind + ": the page does not call itself a website", !/website/i.test(text || ""), (text || "").match(/.{0,30}website.{0,30}/i));
