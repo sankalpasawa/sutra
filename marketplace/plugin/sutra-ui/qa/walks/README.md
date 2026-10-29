@@ -20,6 +20,7 @@ Every tool takes its paths as arguments. None names a session's scratchpad.
 | `shot-j2.js` | headless Chrome over the DevTools protocol: the J2 page in the app, looking, clicking, counting its claims, writing the screenshots; or the page's DOM outline | `node shot-j2.js <out-dir> <base-url> <dept-ref> [kind]`; env `CHROME` |
 | `j2ui-e2e.sh` | the five seeded departments (start, question, building, ready, hostile) on a record of its own, `shot-j2.js` on each, and the page's structure against the prototype's own; says so and exits 0 without Chrome | `j2ui-e2e.sh [record-dir] [port] [out-dir]` (port 8362) |
 | `j2ui-against.sh` | does the J2 page still hold against a branch about to merge: the contract, render, chat and audit tests on a temporary merge, then the worktree is removed | `j2ui-against.sh <branch> [base]` |
+| `a5-e2e.sh` | amendment A5 end to end on a record of its own: one department of each kind, three tasks, a conversation and a goal (`a5_seed.py`); the graph, detail, listing, page and Models routes; the browser walk (`a5-walk.js`: the Org list, Graph, every node, the Details jump, the screenshots in `qa/shots/a5`); `A5_REAL_SETUP=1` also walks a Setup conversation with a Root (needs a model) | `a5-e2e.sh [record-dir] [port] [out-dir]` (port 8372; a record-dir that does not exist yet) |
 
 A walk, end to end:
 

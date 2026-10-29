@@ -85,6 +85,11 @@ lane $PY -m pytest -q -p no:cacheprovider test_j2ui_verbatim.py test_j2ui_sync.p
 tail -1 /tmp/sutra-suite-j2ui-shell.txt | sed "s/^/J2 page, the copy and its route: /"
 lane $PY -m pytest -q -p no:cacheprovider test_j2ui_contract.py test_j2ui_render.py test_j2ui_xss.py > /tmp/sutra-suite-j2ui-verify.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-j2ui-verify.txt | sed "s/^/J2 page, contract, render and hostile strings: /"
+# amendment A5 proved together (PRD A5.8 P5): the seeded record, the graph read on 300 tasks, the 17 models against the oracle, schema version 2,
+# link-only, the Root default, the walks' files and the documents; about half a minute, the equivalence proof most of it. The browser walk
+# itself is qa/walks/a5-e2e.sh (it needs Chrome, so it is not a lane of this gate)
+lane $PY -m pytest -q -p no:cacheprovider test_a5_verify.py > /tmp/sutra-suite-a5.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-a5.txt | sed "s/^/A5 verification: /"
 for t in test_website.js test_dept.js test_org2.js test_j2view.js test_models.js; do
   node "$t" 2>&1 | tail -1 | sed "s/^/$t: /"
   node "$t" >/dev/null 2>&1 || RC=1

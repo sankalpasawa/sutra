@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **status** | Proposed, 2026-10-29: amendment A5 to [PRD-FIVE-FUNCTIONS.md](PRD-FIVE-FUNCTIONS.md), to [PRD-FIVE-FUNCTIONS-J2UI.md](PRD-FIVE-FUNCTIONS-J2UI.md) (scope), [A1](PRD-FIVE-FUNCTIONS-A1.md) and [A4](PRD-FIVE-FUNCTIONS-A4.md). Designed and reviewed; not built. The review of 2026-10-29 (two P0, eight P1) is applied in this text (A5.9). |
+| **status** | Built, merged 2026-10-29: amendment A5 to [PRD-FIVE-FUNCTIONS.md](PRD-FIVE-FUNCTIONS.md), to [PRD-FIVE-FUNCTIONS-J2UI.md](PRD-FIVE-FUNCTIONS-J2UI.md) (scope), [A1](PRD-FIVE-FUNCTIONS-A1.md) and [A4](PRD-FIVE-FUNCTIONS-A4.md). All five packages are built and merged (see Build status after A5.8); the review of 2026-10-29 (two P0, eight P1) is applied in this text (A5.9). Verified by `qa/walks/a5-e2e.sh` (43 of 43 claims on the seeded record) and `test_a5_verify.py`. Not walked: a real Setup conversation with a Root in the J2 page (it needs a model), so Root's classic chat stays the default (A5-5). |
 | Direction | the owner, 2026-10-29, three numbered asks (A5.0); plus the owner's reminder the same day: the workflow follows the hardened pydantic models (A4) |
 | Overrides | the ruling of 2026-10-26 that the J2 page serves `website` departments only and every other kind keeps the classic screens ("records mode"); the 2026-09-29 ruling "Root = chat only" as the default of the organisation row is kept until a real Setup conversation has been walked in the page (A5.1.7). The verbatim rule is loosened only by the substitutions S4 and S5 (A5.1.3), each listed in `scripts/sync_j2_ui.py` and pinned by `test_j2ui_verbatim.py` |
 | Based on | sutra main with M0 to M12 and A1 to A4 merged, release 2.307.0, the J2 prototype `f9ceba1`, `layer_models/` (A4), `j2ui_*.py`, `static/js/25-j2view.js`, `shadow_*.py`, `static/js/16-shadow-home.js`, `engine_runtime.py`, `founding.py` |
@@ -314,6 +314,27 @@ No route has a `response_model`; none validates a streaming body.
 | a5-verify | P5 VERIFY | P2, P3, P4 | P2, P3, P4 | `qa/walks/a5-e2e.sh`, `qa/shots/a5/*`, the design documents |
 
 P1 merges first and is announced; P2, P3, P4 rebase. P4 merges after P2 because it calls `o2OpenDept`. The full specs are in the build scratchpad (`waves/A5-specs/<key>.md`). Milestone steps are in PRD-FIVE-FUNCTIONS.md M13.
+
+## Build status
+
+Built 2026-10-29, merged one at a time into main on a green gate. P5 is the verification package: no production code except the one fix named below.
+
+| Package | Steps | Merged as | What the check is |
+|---|---|---|---|
+| P1 a5-models | M13.1, M13.2 | `0f8d5304`, fix round `8c888551` | schema version 2, `layer_schema.py --check`, `qa/a4_equiv.py --check --only <name>` for each of the 17 (46,022 inputs, 0 differences), `test_models_api.py` lists all 17 |
+| P2 a5-j2all | M13.3, M13.4, M13.5 | `284fe6e2`, fix round `1631b39d` | `test_j2ui_*.py`, `test_j2view.js`, `sync_j2_ui.py --check` and `--check-latest` (prototype `f9ceba1`, unmoved), `test_j2ui_verbatim.py` |
+| P3 a5-decide | M13.6, M13.7 | `d0146616` (and `e2ba16da`) | `test_shadow_dept*.py`, `test_mission_engine.py`, `test_dept_list_api.py` |
+| P4 a5-graph | M13.8, M13.9 | `ec3dce19` | `test_shadow_graph_build.py`, `test_shadow_graph_api.py`, `test_shadow_graph.js`, `test_panel.js`, `test_nav.js` |
+| P5 a5-verify | M13.10 | branch `prd/a5-verify` (merged by the integrator) | `qa/walks/a5-e2e.sh` (routes and browser walk), `test_a5_verify.py`, `qa/shots/a5/` |
+
+What P5 measured and found:
+
+- Every runtime-2 kind (default, organic, Root, website) opens the J2 page in one frame from the Org list and takes a word; Graph shows `uses` solid and `spawned` dashed with its plus, each tag carrying its reason; every node kind opens the chat or page it names; the Details jump lands on a screen with Decision, Departments, Chats, Costs and Timeline; the phone list has 44 px targets and no sideways scroll.
+- Graph read time on 303 seeded tasks: 28 ms cold, 0.1 ms on a memo hit, the 60-task cap holds; the detail read is 19 ms.
+- Fixed by P5: a department node on the graph only selected the Org row (`o2OpenDept` is `o2Select`) and left the graph on screen; `sgOpen` now opens the Org screen first (`27-shadow-graph.js`, `test_shadow_graph.js`).
+- Found, not fixed (follow-ups for P4): the decision's "Looked at" list names a candidate by its ref when the candidate is not one of the departments the task used (the detail read carries rows for the used ones only); on the phone list the `uses` and `spawned` tags sit over the department's name.
+- Found, not fixed (follow-up for P2): a Root's J2 page lists the questions of its child departments in its own chat (a website child's go-live question showed in the Root's chat).
+- A5-5: a real Setup conversation with a Root in the J2 page was not walked, because no model was reachable from the build session. With the motor on and the offline functions answering, Root files nothing and makes no department. `J2_ROOT_DEFAULT` stays false; `A5_REAL_SETUP=1 qa/walks/a5-e2e.sh` runs the walk, and on PASS the P2 owner flips the one line in `25-j2view.js`.
 
 ## A5.9 The review of 2026-10-29 and how it is applied
 

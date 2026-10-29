@@ -346,8 +346,10 @@ function sgOpen(o){
         if (typeof shadowOpenSessionPane === "function") shadowOpenSessionPane(o.ref);
         return true;
       case "dept_page":
+        /* o2OpenDept only selects the row: the Org screen is opened first, or the graph stays where it was (found in the P5 walk) */
+        if (typeof goDest === "function") goDest("org");
         if (typeof window !== "undefined" && typeof window.o2OpenDept === "function") window.o2OpenDept(o.ref);
-        else { if (typeof goDest === "function") goDest("org"); if (typeof openScreen === "function" && typeof SCREENS !== "undefined" && SCREENS.org2) openScreen("org2"); }
+        else if (typeof openScreen === "function" && typeof SCREENS !== "undefined" && SCREENS.org2) openScreen("org2");
         return true;
       case "goal":
         if (typeof openGoal === "function") openGoal(o.ref);

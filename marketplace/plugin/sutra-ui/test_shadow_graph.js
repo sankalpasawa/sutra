@@ -184,8 +184,9 @@ async function loaded(ctx, body){
     assert.ok(c.some(x => x[0] === "goDest" && x[1] === "org"), "no o2OpenDept: the Org screen is the fallback");
     const seen = [];
     ctx.window.o2OpenDept = (ref) => seen.push(ref);
-    click(byKind("department"));
+    c = click(byKind("department"));
     assert.deepStrictEqual(seen, [byKind("department").open.ref]);
+    assert.ok(c.some(x => x[0] === "goDest" && x[1] === "org"), "the Org screen opens first: o2OpenDept only selects the row");
   });
 
   await atest("keyboard: roving tabindex, arrows follow edges and columns, space pins, f focuses, Escape leaves", async () => {

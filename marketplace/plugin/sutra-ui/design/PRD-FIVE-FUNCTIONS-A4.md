@@ -10,6 +10,7 @@
 | Decision log | the A4 rows of [PRD-FIVE-FUNCTIONS-DECISIONS.md](PRD-FIVE-FUNCTIONS-DECISIONS.md) |
 | Pointer for code | `layer_models/` (the pydantic models, new), `layer_schema.py` (the facade, kept), `layer_consts.py` (the constants the models read, moved out of the facade), `models_api.py` (the Models routes), `static/js/26-models.js` (the Models screens), `qa/a4_equiv.py` (the equivalence proof), `qa/stream_bench.py` (the streaming gate) |
 | Amended by | nothing. Its "Amended by A4" lines in A1 (A1.4, A1.21), A2 (A2.2, A2.7) and A3 (A3.1) were checked against what was built on 2026-10-28 and stand as written |
+| Amended by A5 | [PRD-FIVE-FUNCTIONS-A5.md](PRD-FIVE-FUNCTIONS-A5.md), 2026-10-29, built: 17 closed models are added in `layer_models/a5_*.py` (147 definitions in all) under A4's rules R1 to R12, listed by the Models editor as read-only built-ins through `SEALED_CORE` (neither `EXTENSIBLE_CORE` nor `NESTABLE_CORE`), and the interface is at schema version 2 with a no-op migration; every one is proved against the oracle by `qa/a4_equiv.py --check --only <name>` (46,022 inputs, 0 differences). |
 
 ## A4 at a glance
 
