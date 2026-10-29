@@ -1276,7 +1276,7 @@
   },
   "$id": "https://sutra.asawa.co/schemas/layers/acts.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Every board act's payload, and who may post what to whom (x-edges) with the words each sends (x-sends) (PRD A1.13). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "description": "Every board act's payload, and who may post what to whom (x-edges) with the words each sends (x-sends) (PRD A1.13). Generated from layer_schema.py (schema version 2); never edited by hand: run `python layer_schema.py --write`.",
   "title": "The board's acts",
   "x-edges": {
     "Adaptation": {

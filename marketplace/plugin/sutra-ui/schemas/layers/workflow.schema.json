@@ -337,7 +337,7 @@
   "$id": "https://sutra.asawa.co/schemas/layers/workflow.schema.json",
   "$ref": "#/$defs/workflow",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The one workflow schema every department workflow conforms to (a Library line, a fitted one, one Adaptation shapes or makes), its engines, its checks against the standards and its registration (PRD A1.14). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "description": "The one workflow schema every department workflow conforms to (a Library line, a fitted one, one Adaptation shapes or makes), its engines, its checks against the standards and its registration (PRD A1.14). Generated from layer_schema.py (schema version 2); never edited by hand: run `python layer_schema.py --write`.",
   "title": "A department workflow",
   "x-standards": [
     {

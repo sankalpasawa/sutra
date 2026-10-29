@@ -10,7 +10,7 @@ import re
 from pydantic import BaseModel
 
 from . import rules
-from .spec import EXTENSIBLE_CORE, LIMITS, NESTABLE_CORE, key_of
+from .spec import EXTENSIBLE_CORE, LIMITS, NESTABLE_CORE, SEALED_CORE, key_of
 
 RESERVED = set(dir(BaseModel)) | set(keyword.kwlist) | {'model', 'schema', 'json', 'copy', 'dict', 'id_'}
 #: the heads of the core definitions (identity.ask -> identity): a name that begins with one belongs to the app
@@ -19,10 +19,27 @@ CORE_HEADS = ('identity', 'adaptation', 'priority', 'coordination', 'audit', 'ro
               'artifact', 'kind', 'record', 'layer', 'model')
 CORE_LABELS = {'record': 'Record', 'artifact.template': 'Artifact template', 'engine.library': 'Engine library',
                'kind': 'Department kind', 'journey': 'Journey', 'envelope': 'Envelope', 'identity.done_item': 'Done item',
-               'option': 'Option'}
+               'option': 'Option', 'page.words': 'Page words', 'shadow.open': 'What a click opens', 'shadow.node': 'Graph node',
+               'shadow.edge': 'Graph edge', 'shadow.graph': 'Shadow graph', 'shadow.timeline_row': 'Timeline row',
+               'shadow.chat_link': 'Chat link', 'shadow.cost_line': 'Cost line', 'shadow.task_head': 'Task head',
+               'shadow.task_detail': 'Task detail', 'dept.row': 'Department row', 'dept.listing': 'Department list',
+               'dept.candidate': 'Department candidate', 'dept.choice': 'Department choice', 'dept.override': 'Department override',
+               'dept.decision': 'Department decision', 'dept.request': 'Department request'}
 CORE_SAYS = {'record': 'a record with an id', 'artifact.template': 'what a kind of filed work holds',
              'engine.library': 'what an engine template holds', 'kind': 'what a kind of department holds',
-             'journey': 'what a journey holds'}
+             'journey': 'what a journey holds',
+             'page.words': 'the words a department page says when it is not a website', 'shadow.open': 'what a click on a graph node opens',
+             'shadow.node': 'one thing on the Shadow graph: a task, a chat, a goal, a worker or a department',
+             'shadow.edge': 'a line between two things on the graph, with the reason when it says a department is used',
+             'shadow.graph': 'the Shadow graph: every thing drawn and every line between them',
+             'shadow.timeline_row': 'one line of what happened on a task', 'shadow.chat_link': 'a place a task can be talked about',
+             'shadow.cost_line': 'what one part of a task has cost', 'shadow.task_head': 'a task as the detail screen opens it',
+             'shadow.task_detail': 'everything the detail screen of a task shows',
+             'dept.row': 'a department as the list shows it', 'dept.listing': 'the list of departments under a Root',
+             'dept.candidate': 'a department that may already cover a task',
+             'dept.choice': 'what was chosen for a task: use a department, make one, or neither',
+             'dept.override': 'a rule that changed a choice, and why', 'dept.decision': 'a choice, what was done to it, and what came of it',
+             'dept.request': 'a request to find or make a department for some words'}
 
 
 def core_label(name):
@@ -266,7 +283,7 @@ def compare_specs(old, new):
 
 def core_locked(key):
     """A key that names a core model: [(code, sentence)]."""
-    if isinstance(key, str) and (key.startswith('core:') or (not key.startswith('x.') and key.split('/')[0] in EXTENSIBLE_CORE + NESTABLE_CORE)):
+    if isinstance(key, str) and (key.startswith('core:') or (not key.startswith('x.') and key.split('/')[0] in EXTENSIBLE_CORE + NESTABLE_CORE + SEALED_CORE)):
         return [('CORE_LOCKED', '%s is part of the app and cannot be changed' % core_label(key))]
     return []
 

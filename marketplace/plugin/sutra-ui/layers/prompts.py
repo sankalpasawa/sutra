@@ -190,6 +190,8 @@ def faults():
 # ---- the owner's typed values (PRD A1.16, M2.6) ------------------------------------------------------------------------
 #: where a department keeps them: {ref}/instructions.json, DEFS 'instructions', checked at the sink (website_dept._write)
 VALUES_FILE = "instructions.json"
+#: the version of instructions.json itself (the `instructions` definition holds `schema_version` at 1): it is not the interface's version
+VALUES_VERSION = 1
 
 
 def values_path(ref):
@@ -204,7 +206,7 @@ def owner_doc(ref):
     except ValueError:                                       # not a department ref: it holds nothing of the owner's
         doc = None
     if not isinstance(doc, dict) or not isinstance(doc.get("values"), dict):
-        return {"schema_version": S.SCHEMA_VERSION, "values": {}}
+        return {"schema_version": VALUES_VERSION, "values": {}}
     return doc
 
 
@@ -276,7 +278,7 @@ def store(ref, layer, group, part, field, value, ask=None):
         for tier in (doc["values"][layer][group], doc["values"][layer], doc["values"]):   # no empty shell is kept
             for k in [k for k, v in tier.items() if not v]:
                 del tier[k]
-        doc["schema_version"] = S.SCHEMA_VERSION
+        doc["schema_version"] = VALUES_VERSION
         bad = S.validate_instructions(doc)
         if bad:
             raise ValueError("; ".join(plain_faults(field, bad)))
@@ -317,7 +319,7 @@ def kept_as_notes(ref, layer):
         if new:
             for f in new:
                 kept["%s/%s" % (layer, f)] = {"at": W.now()}
-            doc["schema_version"] = S.SCHEMA_VERSION
+            doc["schema_version"] = VALUES_VERSION
             W._write(values_path(ref), doc)
         return new
 

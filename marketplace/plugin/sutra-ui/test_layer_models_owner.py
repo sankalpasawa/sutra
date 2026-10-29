@@ -694,7 +694,7 @@ def test_a4_changes_no_byte_of_the_interface(home):
     edited = copy.deepcopy(FIX['client/v1'])
     edited['about'] = 'edited'
     store.save(edited)
-    assert S.interface_sha() == S.INTERFACE_SHA[1]
+    assert S.interface_sha() == S.INTERFACE_SHA[S.SCHEMA_VERSION]
     assert not any(k.startswith('x.') or k.startswith('model.') for k in S.DEFS)
     assert 'model.spec' not in S.RECORDS
 
@@ -789,3 +789,26 @@ def test_the_spec_is_a_core_definition_checked_at_load(home):
     p.write_text(json.dumps(doc))
     reg = store.reload()
     assert reg.state['x.client/v1'] == 'needs_a_look' and 'is not one of slug, code, date' in reg.why['x.client/v1']
+
+
+# ---- A5: the sealed core (A5.4.2): built in, read-only, neither built on nor held --------------------------------------------
+def test_a5_the_seventeen_are_sealed_and_in_neither_tuple_an_owner_can_use():
+    from layer_models.defs import A5_NAMES
+    assert tuple(SP.SEALED_CORE) == tuple(A5_NAMES) and len(set(SP.SEALED_CORE)) == 17
+    assert not set(SP.SEALED_CORE) & set(SP.EXTENSIBLE_CORE) and not set(SP.SEALED_CORE) & set(SP.NESTABLE_CORE)
+    assert set(SP.SEALED_CORE) <= set(OR.CORE_SAYS) and set(SP.SEALED_CORE) <= set(OR.CORE_LABELS), "a word for each, in the owner's language"
+    assert all(OR.CORE_SAYS[n] and not any(w in OR.CORE_SAYS[n].lower() for w in ('charter', 'internal system')) for n in SP.SEALED_CORE)
+    assert not [n for n in SP.SEALED_CORE if n in registry.core_map() or 'core:' + n in registry.core_map()], "not offered as a base"
+
+
+def test_a5_an_owner_model_that_extends_or_nests_one_is_refused():
+    for name in SP.SEALED_CORE:
+        assert OR.base_ok(spec('a', 'core:' + name), {}, core()) == [('BASE_UNKNOWN', '%s cannot be built on' % OR.core_label(name))], name
+        specs = fix('client')
+        specs['u/v1'] = spec('u', links=[dict(name='x', label='X', mode='nest', to='core:' + name)])
+        specs['r/v1'] = spec('r', links=[dict(name='x', label='X', mode='refer', to='core:' + name)])
+        assert codes(specs, 'x.u/v1') == codes(specs, 'x.r/v1') == {'LINK_TARGET'}, name
+        assert sentence_of(specs, 'x.u/v1', 'LINK_TARGET') == '%s cannot be held by U' % OR.core_label(name)
+        (code, said), = OR.core_locked('core:' + name)
+        assert code == 'CORE_LOCKED' and said.endswith('is part of the app and cannot be changed')
+        assert OR.core_locked(name) and OR.core_locked(name + '/v1')

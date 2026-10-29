@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "classes": [
     {
       "name": "act.answer",
@@ -563,6 +563,131 @@
       ]
     },
     {
+      "name": "dept.candidate",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "ref",
+        "name",
+        "kind",
+        "goal",
+        "done",
+        "state",
+        "stopped",
+        "blocked",
+        "last_activity",
+        "score"
+      ]
+    },
+    {
+      "name": "dept.choice",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "action",
+        "ref",
+        "kind",
+        "name",
+        "goal",
+        "done_items",
+        "reason",
+        "confidence"
+      ]
+    },
+    {
+      "name": "dept.decision",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "choice",
+        "final_action",
+        "final_ref",
+        "overrides",
+        "held",
+        "held_reason",
+        "decided_by",
+        "mode",
+        "considered",
+        "candidates_seen",
+        "root_ref",
+        "result_ref",
+        "operation_id",
+        "mission_id",
+        "at",
+        "prompt_version"
+      ]
+    },
+    {
+      "name": "dept.listing",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "departments",
+        "root_ref",
+        "as_of"
+      ]
+    },
+    {
+      "name": "dept.override",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "rule",
+        "note"
+      ]
+    },
+    {
+      "name": "dept.request",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "words",
+        "mission_id",
+        "apply",
+        "confirmed"
+      ]
+    },
+    {
+      "name": "dept.row",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "ref",
+        "name",
+        "kind",
+        "parent",
+        "root",
+        "runtime",
+        "stopped",
+        "state",
+        "waiting_on_you",
+        "pending_asks",
+        "working",
+        "last_activity",
+        "created",
+        "goal",
+        "done",
+        "done_met",
+        "engines",
+        "artifacts",
+        "j2_url"
+      ]
+    },
+    {
       "name": "engine.library",
       "base": null,
       "abstract": false,
@@ -1064,6 +1189,36 @@
       ]
     },
     {
+      "name": "page.words",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "team",
+        "noun",
+        "describe",
+        "describe_long",
+        "start",
+        "ready",
+        "built",
+        "rubric",
+        "style_empty",
+        "memory_off",
+        "go_preview",
+        "new_task",
+        "retry",
+        "frame_title",
+        "steps",
+        "examples",
+        "follow_ups",
+        "pick",
+        "can_open",
+        "can_download",
+        "hide_tabs"
+      ]
+    },
+    {
       "name": "priority.ceiling",
       "base": null,
       "abstract": false,
@@ -1129,6 +1284,145 @@
         "priority",
         "coordination",
         "audit"
+      ]
+    },
+    {
+      "name": "shadow.chat_link",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "role",
+        "label",
+        "live",
+        "open",
+        "alt_open"
+      ]
+    },
+    {
+      "name": "shadow.cost_line",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "role",
+        "usd",
+        "turns"
+      ]
+    },
+    {
+      "name": "shadow.edge",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "kind",
+        "source",
+        "target",
+        "reason",
+        "confidence",
+        "live",
+        "held"
+      ]
+    },
+    {
+      "name": "shadow.graph",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "nodes",
+        "edges",
+        "as_of",
+        "focus",
+        "truncated",
+        "shadow_on"
+      ]
+    },
+    {
+      "name": "shadow.node",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "kind",
+        "label",
+        "sub",
+        "status",
+        "col",
+        "row",
+        "open",
+        "since",
+        "cost_usd",
+        "tip"
+      ]
+    },
+    {
+      "name": "shadow.open",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "kind",
+        "ref"
+      ]
+    },
+    {
+      "name": "shadow.task_detail",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "task",
+        "graph",
+        "decision",
+        "departments",
+        "chats",
+        "costs",
+        "total_usd",
+        "timeline",
+        "as_of"
+      ]
+    },
+    {
+      "name": "shadow.task_head",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "id",
+        "objective",
+        "state",
+        "template",
+        "executor",
+        "goal_id",
+        "created",
+        "updated",
+        "turns_used"
+      ]
+    },
+    {
+      "name": "shadow.timeline_row",
+      "base": null,
+      "abstract": false,
+      "extensible": false,
+      "nestable": false,
+      "fields": [
+        "at",
+        "kind",
+        "by",
+        "text",
+        "ref"
       ]
     },
     {

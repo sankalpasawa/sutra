@@ -94,7 +94,7 @@
   "$id": "https://sutra.asawa.co/schemas/layers/instructions.schema.json",
   "$ref": "#/$defs/instructions",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The owner's typed values for the prompt fields, by layer, group, part and field (x-fields: each part's fields and their types) (PRD A1.16). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "description": "The owner's typed values for the prompt fields, by layer, group, part and field (x-fields: each part's fields and their types) (PRD A1.16). Generated from layer_schema.py (schema version 2); never edited by hand: run `python layer_schema.py --write`.",
   "title": "The owner's instructions (instructions.json)",
   "x-fields": {
     "adaptation": {

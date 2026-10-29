@@ -21,7 +21,7 @@ from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests r
 
 LAYER = 'root'
 VERSION = 1
-IMPLEMENTS = 1
+IMPLEMENTS = 2
 RECIPE_TEMPLATE = 'Setup'
 
 #: Setup's instruction to its converse agent when the Library's template says none of its own (the template's

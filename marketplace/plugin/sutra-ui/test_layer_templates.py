@@ -959,7 +959,7 @@ def test_describe_carries_the_a3_tables():
     assert got["steps"] == {"kinds": list(S.STEP_KINDS), "natures": list(S.NATURES), "rungs": list(S.RUNGS), "gate_answers": list(S.GATE_ANSWERS),
                             "model_tools": list(S.MODEL_TOOLS), "ctx": list(S.STEP_CTX), "row": list(S.STEP_ROW)}
     assert {"step", "step.row", "engine.start", "engine.library", "kind", "artifact.template", "journey", "journey.status"} <= set(got["defs"])
-    interface = json.loads((S.SCHEMA_FOLDER / "interface.v1.json").read_text(encoding="utf-8"))
+    interface = json.loads((S.SCHEMA_FOLDER / "interface.v2.json").read_text(encoding="utf-8"))
     assert interface["template_levels"] == got["template_levels"] and interface["ask_forms"] == got["ask_forms"]
 
 

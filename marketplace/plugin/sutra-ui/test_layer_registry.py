@@ -142,7 +142,7 @@ def test_c1_pins_with_no_department_to_write_to_say_nothing(home):
 def test_c1_impl_is_the_module_the_pin_names(monkeypatch):
     assert layers.impl(None, "identity") is layers.load("identity/v1")
     assert layers.impl(None, "root") is layers.load("root/v1")
-    stub = types.SimpleNamespace(LAYER="identity", VERSION=1, IMPLEMENTS=1, CODE={})
+    stub = types.SimpleNamespace(LAYER="identity", VERSION=1, IMPLEMENTS=2, CODE={})
     monkeypatch.setitem(layers._LOADED, "identity/v1", stub)
     assert layers.impl("dref-x", "identity", {}) is stub
     monkeypatch.delitem(layers._LOADED, "identity/v1")
@@ -188,7 +188,7 @@ def test_c1_a_stub_holding_a_name_is_what_resolve_returns_for_that_layers_engine
 def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch, empty_modules):
     W, R = modules()
     f = lambda ctx, step, item: {}
-    stub = types.SimpleNamespace(LAYER="identity", VERSION=1, IMPLEMENTS=1, CODE={"identity_read": f}, PROMPT={}, DRAFT={}, CHECK={})
+    stub = types.SimpleNamespace(LAYER="identity", VERSION=1, IMPLEMENTS=2, CODE={"identity_read": f}, PROMPT={}, DRAFT={}, CHECK={})
     # the names the other layers' own packages hold already: a layer fills its dicts in its own package
     others = {n for layer, ids in layers.available().items() if layer != "identity" for i in ids for n in layers.load(i).CODE}
     monkeypatch.setitem(layers._LOADED, "identity/v1", stub)

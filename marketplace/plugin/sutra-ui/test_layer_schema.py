@@ -423,6 +423,8 @@ DEPARTMENT_BAD = {
 SAMPLES["department"] = (DEPARTMENT, _but(DEPARTMENT, colour="red"))
 # the A3 definitions' samples (PRD amendment A3: the templates at every level) live beside their fixtures, a (good, bad) pair each
 SAMPLES.update({k: tuple(v) for k, v in json.loads((S.HERE / "test_fixtures" / "templates" / "samples.json").read_text(encoding="utf-8")).items()})
+# the 17 definitions schema version 2 added (A5): a good value and one the closed object refuses
+SAMPLES.update({k: tuple(v) for k, v in json.loads((S.HERE / "test_fixtures" / "models" / "a5_samples.json").read_text(encoding="utf-8")).items()})
 
 
 def test_s2_the_samples_name_every_definition():
@@ -664,7 +666,7 @@ def test_s3_roots_converse_part_has_one_owner_field_and_the_examples_are_an_inpu
     assert S.PROMPTS["root"]["setup"]["shape"]["fields"] == {}
     assert S.validate_field("root", "setup", "converse", "task", "Ask what you need to know.") == []
     assert S.validate_field("root", "setup", "converse", "items", ["x"]) != [], "the examples are not the owner's to change"
-    interface = json.loads((S.HERE / "schemas" / "layers" / "interface.v1.json").read_text(encoding="utf-8"))
+    interface = json.loads((S.HERE / "schemas" / "layers" / "interface.v2.json").read_text(encoding="utf-8"))
     assert interface["prompts"]["root"]["setup"]["converse"]["fields"] == {"task": "field.task"}
     instructions = json.loads((S.HERE / "schemas" / "layers" / "instructions.schema.json").read_text(encoding="utf-8"))
     assert instructions["x-fields"]["root"]["setup"]["converse"] == {"task": "field.task"}
@@ -810,19 +812,37 @@ def test_s4_migrate_reads_a_v0_department_as_v1_and_never_writes():
     v0 = json.loads((FIXTURES / "department.v0.json").read_text(encoding="utf-8"))
     v1 = json.loads((FIXTURES / "department.v1.json").read_text(encoding="utf-8"))
     kept = json.dumps(v0, sort_keys=True)
-    assert S.migrate("department", v0) == v1
+    assert S.migrate("department", v0) == dict(v1, schema_version=2), "v0 reads as v1, and v1 reads as v2 (A5: the same record, stamped 2)"
     assert json.dumps(v0, sort_keys=True) == kept, "a read returns a copy and changes nothing"
     assert v1["schema_version"] == 1 and v1["layers"] == S.DEFAULT_PINS
     assert v1["done_items"] == [{"id": "D1", "text": v0["done"], "how": "code", "level": "outcome"}]
     assert v1["an_older_key"] == "kept on read", "unknown keys are kept on read"
     assert S.validate("department", {k: v for k, v in v1.items() if k != "an_older_key"}) == []
-    assert S.migrate("department", v1) == v1, "a v1 record reads as it is"
+    assert S.migrate("department", v1) == dict(v1, schema_version=2), "a v1 record reads as it is, stamped 2"
+
+
+def test_a5_schema_version_2_reads_a_v2_record_as_it_is_and_a_stored_v1_department_migrates_and_validates():
+    """A5 (P1.1): the interface only gained definitions, so MIGRATIONS[1] is a no-op. A v2 record reads as it is; a stored v1 dept.json
+    reads as version 2 through the chain, still validates, and extra=forbid still holds (a key nobody owns is a fault)."""
+    assert S.SCHEMA_VERSION == 2 and set(S.MIGRATIONS) == {0, 1}
+    v1 = json.loads((FIXTURES / "department.v1.json").read_text(encoding="utf-8"))
+    v2 = dict(v1, schema_version=2)
+    kept = json.dumps(v2, sort_keys=True)
+    assert S.migrate("department", v2) == v2 and json.dumps(v2, sort_keys=True) == kept, "a v2 record reads as it is, and the read changes nothing"
+    assert S.MIGRATIONS[1]("department", dict(v1)) == v2, "the step changes nothing but the stamp"
+    assert S.migrate("department", v1)["layers"] == v1["layers"]
+    got = S.migrate("department", v1)
+    assert got == v2, "a v1 record reads as it is, stamped 2"
+    clean = {k: v for k, v in got.items() if k != "an_older_key"}
+    assert S.validate("department", clean) == []
+    assert S.validate("department", dict(clean, nobody_owns_this=1)) != [], "extra keys are still forbidden"
+    assert S.INTERFACE_SHA[1] == "e23aeacef66e0d6da6b455d6e9bfba0ddac0b626197eada1ea078d2d99bacbb6", "version 1's pin is untouched"
 
 
 def test_s4_migrate_maps_an_older_tables_writer_to_coordination_keeping_its_why():
     t = {"order": ["posts", "line", "functions"], "line": ["Plan"], "by": "Root", "why": "the plan Root registered"}
     got = S.migrate("coordination.table", t)
-    assert (got["by"], got["why"], got["schema_version"]) == ("Coordination", "the plan Root registered", 1)
+    assert (got["by"], got["why"], got["schema_version"]) == ("Coordination", "the plan Root registered", 2)
     assert S.migrate("coordination.table", dict(t, by="born"))["by"] == "born"
     assert S.validate("coordination.table", got) == []
 
@@ -887,7 +907,7 @@ def test_s4_check_department_checks_only_the_changed_keys_and_stamps_the_version
     monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     before = {"kind": "website", "ref": "r", "name": "Acme", "colour": "an old key", "windows": {"Plan": "fifteen"}}
     d = dict(before, goal="A live site")
-    assert S.check_department(dict(d), before=before)["schema_version"] == 1, "a legacy fault never blocks a later save"
+    assert S.check_department(dict(d), before=before)["schema_version"] == S.SCHEMA_VERSION, "a legacy fault never blocks a later save"
     with S.expect_refused("department") as met:
         S.check_department(dict(d, colour="red"), before=before)
     assert met == ["$.colour: is not a field here"]
@@ -949,7 +969,7 @@ def test_s4_describe_is_the_whole_interface_as_json():
 
 # ---- S6: the generated JSON Schema files ------------------------------------------------------------------------------
 FILES = ("department.schema.json", "workflow.schema.json", "records.schema.json", "acts.schema.json",
-         "instructions.schema.json", "views.schema.json", "templates.schema.json", "journeys.schema.json", "interface.v1.json")
+         "instructions.schema.json", "views.schema.json", "templates.schema.json", "journeys.schema.json", "interface.v2.json")
 
 
 def test_s6_the_files_on_disk_are_what_the_definitions_generate():
@@ -968,7 +988,7 @@ def test_s6_a_changed_definition_without_write_fails_the_check(monkeypatch):
 
 def test_s6_each_file_is_draft_2020_12_with_its_id_and_holds_every_definition_it_reaches():
     for name, doc in S.json_schemas().items():
-        if name == "interface.v1.json":
+        if name == "interface.v2.json":
             assert doc == S.describe()
             continue
         assert doc["$schema"] == "https://json-schema.org/draft/2020-12/schema"
@@ -1057,19 +1077,22 @@ def test_s7_nothing_in_the_layer_package_imports_the_runtime_at_import_time():
 
 
 # ---- X2: strict and frozen (W3-PROOF, PRD M2.10 and M10.5) -------------------------------------------------------------------------
-def test_x2_the_interface_is_frozen_at_schema_version_1():
-    """interface_sha() is the sha256 of describe() as sorted JSON, INTERFACE_SHA[1] is that, and nothing about it is a guess: it is the hash
-    of the bytes of schemas/layers/interface.v1.json. A change to anything describe() holds fails here; the way out is not a new hash for
-    this version but schema version 2 and a migration (A1.21)."""
-    assert set(S.INTERFACE_SHA) == {S.SCHEMA_VERSION} == {1}
-    assert S.INTERFACE_SHA[1] == S.interface_sha(), "the interface changed after the freeze: it needs schema version 2 and a migration (python layer_schema.py --sha)"
+def test_x2_the_interface_is_frozen_at_schema_version_2():
+    """interface_sha() is the sha256 of describe() as sorted JSON, INTERFACE_SHA[2] is that, and nothing about it is a guess: it is the hash
+    of the bytes of schemas/layers/interface.v2.json. A5 added DEFS (17 definitions), which moved the hash, so the interface went from schema
+    version 1 to 2 (A1.21); version 1's hash and file are kept as they were. A change to anything describe() holds fails here; the way out
+    is not a new hash for this version but schema version 3 and a migration."""
+    assert set(S.INTERFACE_SHA) == {1, S.SCHEMA_VERSION} == {1, 2}
+    assert S.INTERFACE_SHA[2] == S.interface_sha(), "the interface changed after the freeze: it needs schema version 3 and a migration (python layer_schema.py --sha)"
     out = subprocess.run([sys.executable, str(S.HERE / "layer_schema.py"), "--sha"], capture_output=True, text=True, cwd=str(S.HERE))
-    assert out.returncode == 0 and out.stdout.strip() == S.INTERFACE_SHA[1], out.stderr
-    assert S.interface_sha() == hashlib.sha256((S.SCHEMA_FOLDER / "interface.v1.json").read_bytes()).hexdigest()
+    assert out.returncode == 0 and out.stdout.strip() == S.INTERFACE_SHA[2], out.stderr
+    assert S.interface_sha() == hashlib.sha256((S.SCHEMA_FOLDER / "interface.v2.json").read_bytes()).hexdigest()
     assert S.interface_sha() == hashlib.sha256(S._dump(S.describe()).encode("utf-8")).hexdigest() == S.interface_sha(), "and it is stable"
-    assert re.fullmatch(r"[0-9a-f]{64}", S.INTERFACE_SHA[1])
+    assert re.fullmatch(r"[0-9a-f]{64}", S.INTERFACE_SHA[2])
+    assert S.INTERFACE_SHA[1] == "e23aeacef66e0d6da6b455d6e9bfba0ddac0b626197eada1ea078d2d99bacbb6", "version 1 is never re-pinned"
+    assert hashlib.sha256((S.SCHEMA_FOLDER / "interface.v1.json").read_bytes()).hexdigest() == S.INTERFACE_SHA[1], "and its file is kept"
     readme = (S.SCHEMA_FOLDER / "README.md").read_text(encoding="utf-8")
-    assert "| Frozen |" in readme and "INTERFACE_SHA[1]" in readme and "interface_sha()" in readme and "shasum -a 256" in readme, "the README says how to check it"
+    assert "| Frozen |" in readme and "INTERFACE_SHA[2]" in readme and "interface_sha()" in readme and "shasum -a 256" in readme, "the README says how to check it"
 
 
 def test_x2_the_hash_moves_with_the_interface_and_with_nothing_else(monkeypatch):
@@ -1090,12 +1113,13 @@ def test_x2_the_hash_moves_with_the_interface_and_with_nothing_else(monkeypatch)
 
 def test_x2_the_generated_files_equal_json_schemas_and_each_is_a_json_schema():
     got = S.json_schemas()
-    assert sorted(p.name for p in S.SCHEMA_FOLDER.glob("*.json")) == sorted(got), "no file is missing and none is left over"
+    assert sorted(p.name for p in S.SCHEMA_FOLDER.glob("*.json")) == sorted(set(got) | {"interface.v1.json"}), \
+        "no file is missing and none is left over (version 1's interface is kept as it was frozen)"
     for name, doc in got.items():
         assert (S.SCHEMA_FOLDER / name).read_text(encoding="utf-8") == S._dump(doc), "%s is what the interface generates (python layer_schema.py --write)" % name
     jsonschema = pytest.importorskip("jsonschema")
     schemas = [name for name in got if name.endswith(".schema.json")]
-    assert len(schemas) == len(got) - 1 and "interface.v1.json" not in schemas, "every file but describe() itself is a JSON Schema"
+    assert len(schemas) == len(got) - 1 and "interface.v2.json" not in schemas, "every file but describe() itself is a JSON Schema"
     for name in schemas:
         jsonschema.Draft202012Validator.check_schema(got[name])
 

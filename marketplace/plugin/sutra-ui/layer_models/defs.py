@@ -1,13 +1,14 @@
 """Every definition of the interface, registered (A4.3.1): the classes of the layer modules under the names layer_schema.DEFS has.
 
-`NAMES` is the interface's order, the order `export_all()` writes in. A name is registered once, here; a module only declares
-`DEFINES = {name: class or annotation}`. Importing this module registers all 130."""
+`NAMES` is the interface's order of the 130 definitions of schema version 1, the order `export_all()` writes first; `A5_NAMES` are the
+17 that schema version 2 added (PRD amendment A5), written after them. A name is registered once, here; a module only declares
+`DEFINES = {name: class or annotation}`. Importing this module registers all 147."""
 from . import registry
 from . import (acts, adaptation, audit, common, coordination, department, fields, identity, options, priority, root, settings,
-               templates, views, workflow, journey)
+               templates, views, workflow, journey, a5_words, a5_depts, a5_graph)
 
 MODULES = (common, identity, root, workflow, coordination, adaptation, priority, audit, options, acts, fields, settings, views,
-           department, templates, journey)
+           department, templates, journey, a5_words, a5_depts, a5_graph)
 
 NAMES = (
     'name', 'id.item', 'id.finding', 'impl', 'envelope', 'option', 'check.verdict', 'identity.done_item', 'identity.rule',
@@ -33,17 +34,25 @@ NAMES = (
     'journey.was', 'journey', 'journey.file', 'journey.row_status', 'journey.status',
 )
 
+#: schema version 2 (A5.4.1): the page words, the Shadow graph and create-or-reuse
+A5_NAMES = (
+    'page.words', 'shadow.open', 'shadow.node', 'shadow.edge', 'shadow.graph', 'shadow.timeline_row', 'shadow.chat_link',
+    'shadow.cost_line', 'shadow.task_head', 'shadow.task_detail', 'dept.row', 'dept.listing', 'dept.candidate', 'dept.choice',
+    'dept.override', 'dept.decision', 'dept.request',
+)
+ALL_NAMES = NAMES + A5_NAMES
+
 
 def register_all():
     """Register every definition of every module; returns {name: registered object}."""
     found = {}
     for mod in MODULES:
         found.update(mod.DEFINES)
-    missing = [n for n in NAMES if n not in found]
-    extra = sorted(set(found) - set(NAMES))
+    missing = [n for n in ALL_NAMES if n not in found]
+    extra = sorted(set(found) - set(ALL_NAMES))
     if missing or extra:
         raise RuntimeError("the layer modules and NAMES disagree: missing %s, extra %s" % (missing, extra))
-    for name in NAMES:
+    for name in ALL_NAMES:
         registry.register(name, found[name])
     return found
 

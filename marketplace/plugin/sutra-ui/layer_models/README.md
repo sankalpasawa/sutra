@@ -25,6 +25,10 @@ One line for each module.
 | `defs.py` | Every definition of the interface, registered (A4.3.1): the classes of the layer modules under the names layer_schema.DEFS has |
 | `department.py` | The department record (dept.json) and who owns each key (A1.6). Only the keys a save changes are checked (A1.20) |
 | `faults.py` | The sentences: ValidationError.errors() translated into the lines layer_schema.faults() writes (A4.3.3) |
+| `a5_depts.py` | The department listing and create-or-reuse (A5.3, A5.4.1): the row, the listing, the candidate, the model's choice, an override, the decision and the request. Leaf records; schema version 2 |
+| `a5_graph.py` | The Shadow graph and the task detail (A5.2, A5.4.1): what a click opens, a node, an edge, the graph, a timeline row, a chat link, a cost line, the task head and the detail. Leaf records; every rule of the graph is a validator |
+| `a5_types.py` | The scalars the A5 models share: the stamp, the mission, goal and department ids, the node-id alternation, and the registry of the sentences their cross-field rules say |
+| `a5_words.py` | The words the J2 page says for a department that is not a website (A5.1.4): `PageWords`, the kind table validated once at import, the fallback kept apart |
 | `fields.py` | The prompt fields and the owner's values (A1.16) |
 | `frames.py` | The frames the app sends, as models (A4.7.3): a contract, and the two frames A4 adds |
 | `graph.py` | The map of the owner's models (A4.6.4): who extends whom, who holds whom and who points at whom, as nodes, edges and the same |

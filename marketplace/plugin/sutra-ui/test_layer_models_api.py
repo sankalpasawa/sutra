@@ -52,6 +52,18 @@ def detail(r):
     return r.json()['detail']
 
 
+def test_a5_the_seventeen_are_listed_read_only_among_the_built_in(api):
+    from layer_models.defs import A5_NAMES
+    groups = api.get(BASE + '?all=1').json()['built_in']
+    rows = {m['key']: m for g in groups for m in g['models']}
+    assert [n for n in A5_NAMES if n not in rows] == [] and len(A5_NAMES) == 17
+    assert all(rows[n].get('sealed') is True and rows[n]['label'] and rows[n]['says'] for n in A5_NAMES)
+    assert not [k for k, m in rows.items() if k not in A5_NAMES and 'sealed' in m], "only the A5 models are sealed"
+    assert {g['layer'] for g in groups} >= {'page', 'shadow', 'dept'}
+    buildable = {b['key'] for b in api.get(BASE).json()['buildable']}
+    assert not [n for n in A5_NAMES if 'core:' + n in buildable], "none is offered to build on"
+
+
 # ---- the routes, each with its success and its errors ---------------------------------------------------------------------
 def test_create_then_read_the_list_the_page_the_shape_and_the_history(api):
     r = make(api)

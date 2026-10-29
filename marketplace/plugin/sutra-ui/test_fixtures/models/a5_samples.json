@@ -1,0 +1,8208 @@
+{
+ "page.words": [
+  {
+   "noun": "result",
+   "built": "work",
+   "rubric": "Quality checks",
+   "style_empty": "No style guide has been filed for this department.",
+   "memory_off": "This department keeps its lessons in its own records.",
+   "go_preview": "Open the preview",
+   "new_task": "Give it another task",
+   "retry": "Try again",
+   "frame_title": "Preview",
+   "steps": [
+    "Reading your request…",
+    "Reading your request…",
+    "Planning the work…",
+    "Planning the work…",
+    "Planning the work…",
+    "Planning the work…",
+    "Doing the work…",
+    "Checking the result…",
+    "Almost there…"
+   ],
+   "pick": false,
+   "can_open": true,
+   "can_download": false,
+   "hide_tabs": [
+    "docs",
+    "style",
+    "lessons",
+    "playbooks"
+   ]
+  },
+  {
+   "noun": "result",
+   "built": "work",
+   "rubric": "Quality checks",
+   "style_empty": "No style guide has been filed for this department.",
+   "memory_off": "This department keeps its lessons in its own records.",
+   "go_preview": "Open the preview",
+   "new_task": "Give it another task",
+   "retry": "Try again",
+   "frame_title": "Preview",
+   "steps": [
+    "Reading your request…",
+    "Reading your request…",
+    "Planning the work…",
+    "Planning the work…",
+    "Planning the work…",
+    "Planning the work…",
+    "Doing the work…",
+    "Checking the result…",
+    "Almost there…"
+   ],
+   "pick": false,
+   "can_open": true,
+   "can_download": false,
+   "hide_tabs": [
+    "docs",
+    "style",
+    "lessons",
+    "playbooks"
+   ],
+   "colour": "red"
+  }
+ ],
+ "shadow.open": [
+  {
+   "kind": "task",
+   "ref": "m-00000000a001"
+  },
+  {
+   "kind": "task",
+   "ref": "m-00000000a001",
+   "colour": "red"
+  }
+ ],
+ "shadow.node": [
+  {
+   "id": "task:m-00000000a001",
+   "kind": "task",
+   "label": "Fix the login bug",
+   "sub": null,
+   "status": "working",
+   "col": 2,
+   "row": 0,
+   "open": {
+    "kind": "task",
+    "ref": "m-00000000a001"
+   },
+   "since": "2026-10-29T10:00:00+05:30",
+   "cost_usd": 0.12,
+   "tip": "Working"
+  },
+  {
+   "id": "task:m-00000000a001",
+   "kind": "task",
+   "label": "Fix the login bug",
+   "sub": null,
+   "status": "working",
+   "col": 2,
+   "row": 0,
+   "open": {
+    "kind": "task",
+    "ref": "m-00000000a001"
+   },
+   "since": "2026-10-29T10:00:00+05:30",
+   "cost_usd": 0.12,
+   "tip": "Working",
+   "colour": "red"
+  }
+ ],
+ "shadow.edge": [
+  {
+   "id": "uses:task:m-00000000a001>dept:dref-billing01",
+   "kind": "uses",
+   "source": "task:m-00000000a001",
+   "target": "dept:dref-billing01",
+   "reason": "Billing already handles invoice and login-token questions",
+   "confidence": "high",
+   "live": false,
+   "held": false
+  },
+  {
+   "id": "uses:task:m-00000000a001>dept:dref-billing01",
+   "kind": "uses",
+   "source": "task:m-00000000a001",
+   "target": "dept:dref-billing01",
+   "reason": "Billing already handles invoice and login-token questions",
+   "confidence": "high",
+   "live": false,
+   "held": false,
+   "colour": "red"
+  }
+ ],
+ "shadow.graph": [
+  {
+   "nodes": [
+    {
+     "id": "shadow:now",
+     "kind": "shadow",
+     "label": "Shadow",
+     "sub": "Now",
+     "status": "working",
+     "col": 0,
+     "row": 0,
+     "open": {
+      "kind": "none",
+      "ref": null
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "Shadow is working"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "conv:shc-a1b2c3",
+     "kind": "conversation",
+     "label": "Is the export slow?",
+     "sub": null,
+     "status": "idle",
+     "col": 1,
+     "row": 6,
+     "open": {
+      "kind": "conversation",
+      "ref": "shc-a1b2c3"
+     },
+     "since": "2026-10-29T10:00:00+05:30",
+     "cost_usd": null,
+     "tip": "A conversation"
+    },
+    {
+     "id": "task:m-00000000a001",
+     "kind": "task",
+     "label": "Fix the login bug",
+     "sub": null,
+     "status": "working",
+     "col": 2,
+     "row": 0,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a001"
+     },
+     "since": "2026-10-29T10:00:00+05:30",
+     "cost_usd": 0.12,
+     "tip": "Working"
+    },
+    {
+     "id": "tchat:m-00000000a001",
+     "kind": "task_chat",
+     "label": "Task chat",
+     "sub": null,
+     "status": "working",
+     "col": 3,
+     "row": 0,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "The chat about this task"
+    },
+    {
+     "id": "worker:m-00000000a001",
+     "kind": "worker",
+     "label": "Worker",
+     "sub": null,
+     "status": "working",
+     "col": 4,
+     "row": 0,
+     "open": {
+      "kind": "session",
+      "ref": "sess-0001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "The worker"
+    },
+    {
+     "id": "dept:dref-billing01",
+     "kind": "department",
+     "label": "Billing",
+     "sub": "default",
+     "status": "idle",
+     "col": 3,
+     "row": 1,
+     "open": {
+      "kind": "dept_page",
+      "ref": "dref-billing01"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "Billing"
+    },
+    {
+     "id": "task:m-00000000a002",
+     "kind": "task",
+     "label": "Weekly sales report",
+     "sub": null,
+     "status": "waiting",
+     "col": 2,
+     "row": 2,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a002"
+     },
+     "since": "2026-10-29T10:00:00+05:30",
+     "cost_usd": null,
+     "tip": "Waiting"
+    },
+    {
+     "id": "dept:dref-reports01",
+     "kind": "department",
+     "label": "Reports",
+     "sub": "organic",
+     "status": "idle",
+     "col": 3,
+     "row": 2,
+     "open": {
+      "kind": "dept_page",
+      "ref": "dref-reports01"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "Reports"
+    },
+    {
+     "id": "task:m-00000000a003",
+     "kind": "task",
+     "label": "Rename the settings tab",
+     "sub": null,
+     "status": "done",
+     "col": 2,
+     "row": 4,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a003"
+     },
+     "since": "2026-10-29T10:00:00+05:30",
+     "cost_usd": 0.04,
+     "tip": "Done"
+    },
+    {
+     "id": "task:m-00000000a004",
+     "kind": "task",
+     "label": "Chase the unpaid invoices",
+     "sub": null,
+     "status": "draft",
+     "col": 2,
+     "row": 6,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a004"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A draft"
+    },
+    {
+     "id": "dept:dref-collect01",
+     "kind": "department",
+     "label": "Collections",
+     "sub": "default",
+     "status": "off",
+     "col": 3,
+     "row": 6,
+     "open": {
+      "kind": "dept_page",
+      "ref": "dref-collect01"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "Off"
+    }
+   ],
+   "edges": [
+    {
+     "id": "has:shadow:now>task:m-00000000a001",
+     "kind": "has",
+     "source": "shadow:now",
+     "target": "task:m-00000000a001",
+     "reason": null,
+     "confidence": null,
+     "live": true,
+     "held": false
+    },
+    {
+     "id": "has:shadow:now>task:m-00000000a002",
+     "kind": "has",
+     "source": "shadow:now",
+     "target": "task:m-00000000a002",
+     "reason": null,
+     "confidence": null,
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "has:shadow:now>task:m-00000000a003",
+     "kind": "has",
+     "source": "shadow:now",
+     "target": "task:m-00000000a003",
+     "reason": null,
+     "confidence": null,
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "has:shadow:now>task:m-00000000a004",
+     "kind": "has",
+     "source": "shadow:now",
+     "target": "task:m-00000000a004",
+     "reason": null,
+     "confidence": null,
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "has:shadow:now>conv:shc-a1b2c3",
+     "kind": "has",
+     "source": "shadow:now",
+     "target": "conv:shc-a1b2c3",
+     "reason": null,
+     "confidence": null,
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "attempt:goal:g-000000000001>task:m-00000000a001",
+     "kind": "attempt",
+     "source": "goal:g-000000000001",
+     "target": "task:m-00000000a001",
+     "reason": null,
+     "confidence": null,
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "steered_by:task:m-00000000a001>tchat:m-00000000a001",
+     "kind": "steered_by",
+     "source": "task:m-00000000a001",
+     "target": "tchat:m-00000000a001",
+     "reason": null,
+     "confidence": null,
+     "live": true,
+     "held": false
+    },
+    {
+     "id": "driven_by:task:m-00000000a001>worker:m-00000000a001",
+     "kind": "driven_by",
+     "source": "task:m-00000000a001",
+     "target": "worker:m-00000000a001",
+     "reason": null,
+     "confidence": null,
+     "live": true,
+     "held": false
+    },
+    {
+     "id": "uses:task:m-00000000a001>dept:dref-billing01",
+     "kind": "uses",
+     "source": "task:m-00000000a001",
+     "target": "dept:dref-billing01",
+     "reason": "Billing already handles invoice and login-token questions",
+     "confidence": "high",
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "spawned:task:m-00000000a002>dept:dref-reports01",
+     "kind": "spawned",
+     "source": "task:m-00000000a002",
+     "target": "dept:dref-reports01",
+     "reason": "No department covers recurring reports",
+     "confidence": "medium",
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "uses:task:m-00000000a004>dept:dref-collect01",
+     "kind": "uses",
+     "source": "task:m-00000000a004",
+     "target": "dept:dref-collect01",
+     "reason": "Held: Collections is Off",
+     "confidence": "medium",
+     "live": false,
+     "held": true
+    }
+   ],
+   "as_of": "2026-10-29T10:00:00+05:30",
+   "focus": "m-00000000a001",
+   "truncated": false,
+   "shadow_on": true
+  },
+  {
+   "nodes": [
+    {
+     "id": "shadow:now",
+     "kind": "shadow",
+     "label": "Shadow",
+     "sub": "Now",
+     "status": "working",
+     "col": 0,
+     "row": 0,
+     "open": {
+      "kind": "none",
+      "ref": null
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "Shadow is working"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "conv:shc-a1b2c3",
+     "kind": "conversation",
+     "label": "Is the export slow?",
+     "sub": null,
+     "status": "idle",
+     "col": 1,
+     "row": 6,
+     "open": {
+      "kind": "conversation",
+      "ref": "shc-a1b2c3"
+     },
+     "since": "2026-10-29T10:00:00+05:30",
+     "cost_usd": null,
+     "tip": "A conversation"
+    },
+    {
+     "id": "task:m-00000000a001",
+     "kind": "task",
+     "label": "Fix the login bug",
+     "sub": null,
+     "status": "working",
+     "col": 2,
+     "row": 0,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a001"
+     },
+     "since": "2026-10-29T10:00:00+05:30",
+     "cost_usd": 0.12,
+     "tip": "Working"
+    },
+    {
+     "id": "tchat:m-00000000a001",
+     "kind": "task_chat",
+     "label": "Task chat",
+     "sub": null,
+     "status": "working",
+     "col": 3,
+     "row": 0,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "The chat about this task"
+    },
+    {
+     "id": "worker:m-00000000a001",
+     "kind": "worker",
+     "label": "Worker",
+     "sub": null,
+     "status": "working",
+     "col": 4,
+     "row": 0,
+     "open": {
+      "kind": "session",
+      "ref": "sess-0001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "The worker"
+    },
+    {
+     "id": "dept:dref-billing01",
+     "kind": "department",
+     "label": "Billing",
+     "sub": "default",
+     "status": "idle",
+     "col": 3,
+     "row": 1,
+     "open": {
+      "kind": "dept_page",
+      "ref": "dref-billing01"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "Billing"
+    },
+    {
+     "id": "task:m-00000000a002",
+     "kind": "task",
+     "label": "Weekly sales report",
+     "sub": null,
+     "status": "waiting",
+     "col": 2,
+     "row": 2,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a002"
+     },
+     "since": "2026-10-29T10:00:00+05:30",
+     "cost_usd": null,
+     "tip": "Waiting"
+    },
+    {
+     "id": "dept:dref-reports01",
+     "kind": "department",
+     "label": "Reports",
+     "sub": "organic",
+     "status": "idle",
+     "col": 3,
+     "row": 2,
+     "open": {
+      "kind": "dept_page",
+      "ref": "dref-reports01"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "Reports"
+    },
+    {
+     "id": "task:m-00000000a003",
+     "kind": "task",
+     "label": "Rename the settings tab",
+     "sub": null,
+     "status": "done",
+     "col": 2,
+     "row": 4,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a003"
+     },
+     "since": "2026-10-29T10:00:00+05:30",
+     "cost_usd": 0.04,
+     "tip": "Done"
+    },
+    {
+     "id": "task:m-00000000a004",
+     "kind": "task",
+     "label": "Chase the unpaid invoices",
+     "sub": null,
+     "status": "draft",
+     "col": 2,
+     "row": 6,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a004"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A draft"
+    },
+    {
+     "id": "dept:dref-collect01",
+     "kind": "department",
+     "label": "Collections",
+     "sub": "default",
+     "status": "off",
+     "col": 3,
+     "row": 6,
+     "open": {
+      "kind": "dept_page",
+      "ref": "dref-collect01"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "Off"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    },
+    {
+     "id": "goal:g-000000000001",
+     "kind": "goal",
+     "label": "Keep the app healthy",
+     "sub": null,
+     "status": "working",
+     "col": 1,
+     "row": 0,
+     "open": {
+      "kind": "goal",
+      "ref": "g-000000000001"
+     },
+     "since": null,
+     "cost_usd": null,
+     "tip": "A goal"
+    }
+   ],
+   "edges": [
+    {
+     "id": "has:shadow:now>task:m-00000000a001",
+     "kind": "has",
+     "source": "shadow:now",
+     "target": "task:m-00000000a001",
+     "reason": null,
+     "confidence": null,
+     "live": true,
+     "held": false
+    },
+    {
+     "id": "has:shadow:now>task:m-00000000a002",
+     "kind": "has",
+     "source": "shadow:now",
+     "target": "task:m-00000000a002",
+     "reason": null,
+     "confidence": null,
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "has:shadow:now>task:m-00000000a003",
+     "kind": "has",
+     "source": "shadow:now",
+     "target": "task:m-00000000a003",
+     "reason": null,
+     "confidence": null,
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "has:shadow:now>task:m-00000000a004",
+     "kind": "has",
+     "source": "shadow:now",
+     "target": "task:m-00000000a004",
+     "reason": null,
+     "confidence": null,
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "has:shadow:now>conv:shc-a1b2c3",
+     "kind": "has",
+     "source": "shadow:now",
+     "target": "conv:shc-a1b2c3",
+     "reason": null,
+     "confidence": null,
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "attempt:goal:g-000000000001>task:m-00000000a001",
+     "kind": "attempt",
+     "source": "goal:g-000000000001",
+     "target": "task:m-00000000a001",
+     "reason": null,
+     "confidence": null,
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "steered_by:task:m-00000000a001>tchat:m-00000000a001",
+     "kind": "steered_by",
+     "source": "task:m-00000000a001",
+     "target": "tchat:m-00000000a001",
+     "reason": null,
+     "confidence": null,
+     "live": true,
+     "held": false
+    },
+    {
+     "id": "driven_by:task:m-00000000a001>worker:m-00000000a001",
+     "kind": "driven_by",
+     "source": "task:m-00000000a001",
+     "target": "worker:m-00000000a001",
+     "reason": null,
+     "confidence": null,
+     "live": true,
+     "held": false
+    },
+    {
+     "id": "uses:task:m-00000000a001>dept:dref-billing01",
+     "kind": "uses",
+     "source": "task:m-00000000a001",
+     "target": "dept:dref-billing01",
+     "reason": "Billing already handles invoice and login-token questions",
+     "confidence": "high",
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "spawned:task:m-00000000a002>dept:dref-reports01",
+     "kind": "spawned",
+     "source": "task:m-00000000a002",
+     "target": "dept:dref-reports01",
+     "reason": "No department covers recurring reports",
+     "confidence": "medium",
+     "live": false,
+     "held": false
+    },
+    {
+     "id": "uses:task:m-00000000a004>dept:dref-collect01",
+     "kind": "uses",
+     "source": "task:m-00000000a004",
+     "target": "dept:dref-collect01",
+     "reason": "Held: Collections is Off",
+     "confidence": "medium",
+     "live": false,
+     "held": true
+    }
+   ],
+   "as_of": "2026-10-29T10:00:00+05:30",
+   "focus": "m-00000000a001",
+   "truncated": false,
+   "shadow_on": true
+  }
+ ],
+ "shadow.timeline_row": [
+  {
+   "at": "2026-10-29T10:00:00+05:30",
+   "kind": "said",
+   "by": "founder",
+   "text": "Fix the login bug",
+   "ref": null
+  },
+  {
+   "at": "2026-10-29T10:00:00+05:30",
+   "kind": "said",
+   "by": "founder",
+   "text": "Fix the login bug",
+   "ref": null,
+   "colour": "red"
+  }
+ ],
+ "shadow.chat_link": [
+  {
+   "role": "shadow_chat",
+   "label": "Task chat",
+   "live": true,
+   "open": {
+    "kind": "task",
+    "ref": "m-00000000a001"
+   },
+   "alt_open": {
+    "kind": "session",
+    "ref": "sess-0002"
+   }
+  },
+  {
+   "role": "shadow_chat",
+   "label": "Task chat",
+   "live": true,
+   "open": {
+    "kind": "task",
+    "ref": "m-00000000a001"
+   },
+   "alt_open": {
+    "kind": "session",
+    "ref": "sess-0002"
+   },
+   "colour": "red"
+  }
+ ],
+ "shadow.cost_line": [
+  {
+   "role": "now",
+   "usd": 0.02,
+   "turns": 2
+  },
+  {
+   "role": "now",
+   "usd": 0.02,
+   "turns": 2,
+   "colour": "red"
+  }
+ ],
+ "shadow.task_head": [
+  {
+   "id": "m-00000000a001",
+   "objective": "Fix the login bug",
+   "state": "running",
+   "template": "general",
+   "executor": "worker",
+   "goal_id": "g-000000000001",
+   "created": "2026-10-29T10:00:00+05:30",
+   "updated": "2026-10-29T10:00:00+05:30",
+   "turns_used": 4
+  },
+  {
+   "id": "m-00000000a001",
+   "objective": "Fix the login bug",
+   "state": "running",
+   "template": "general",
+   "executor": "worker",
+   "goal_id": "g-000000000001",
+   "created": "2026-10-29T10:00:00+05:30",
+   "updated": "2026-10-29T10:00:00+05:30",
+   "turns_used": 4,
+   "colour": "red"
+  }
+ ],
+ "shadow.task_detail": [
+  {
+   "task": {
+    "id": "m-00000000a001",
+    "objective": "Fix the login bug",
+    "state": "running",
+    "template": "general",
+    "executor": "worker",
+    "goal_id": "g-000000000001",
+    "created": "2026-10-29T10:00:00+05:30",
+    "updated": "2026-10-29T10:00:00+05:30",
+    "turns_used": 4
+   },
+   "graph": {
+    "nodes": [
+     {
+      "id": "shadow:now",
+      "kind": "shadow",
+      "label": "Shadow",
+      "sub": "Now",
+      "status": "working",
+      "col": 0,
+      "row": 0,
+      "open": {
+       "kind": "none",
+       "ref": null
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "Shadow is working"
+     },
+     {
+      "id": "goal:g-000000000001",
+      "kind": "goal",
+      "label": "Keep the app healthy",
+      "sub": null,
+      "status": "working",
+      "col": 1,
+      "row": 0,
+      "open": {
+       "kind": "goal",
+       "ref": "g-000000000001"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "A goal"
+     },
+     {
+      "id": "conv:shc-a1b2c3",
+      "kind": "conversation",
+      "label": "Is the export slow?",
+      "sub": null,
+      "status": "idle",
+      "col": 1,
+      "row": 6,
+      "open": {
+       "kind": "conversation",
+       "ref": "shc-a1b2c3"
+      },
+      "since": "2026-10-29T10:00:00+05:30",
+      "cost_usd": null,
+      "tip": "A conversation"
+     },
+     {
+      "id": "task:m-00000000a001",
+      "kind": "task",
+      "label": "Fix the login bug",
+      "sub": null,
+      "status": "working",
+      "col": 2,
+      "row": 0,
+      "open": {
+       "kind": "task",
+       "ref": "m-00000000a001"
+      },
+      "since": "2026-10-29T10:00:00+05:30",
+      "cost_usd": 0.12,
+      "tip": "Working"
+     },
+     {
+      "id": "tchat:m-00000000a001",
+      "kind": "task_chat",
+      "label": "Task chat",
+      "sub": null,
+      "status": "working",
+      "col": 3,
+      "row": 0,
+      "open": {
+       "kind": "task",
+       "ref": "m-00000000a001"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "The chat about this task"
+     },
+     {
+      "id": "worker:m-00000000a001",
+      "kind": "worker",
+      "label": "Worker",
+      "sub": null,
+      "status": "working",
+      "col": 4,
+      "row": 0,
+      "open": {
+       "kind": "session",
+       "ref": "sess-0001"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "The worker"
+     },
+     {
+      "id": "dept:dref-billing01",
+      "kind": "department",
+      "label": "Billing",
+      "sub": "default",
+      "status": "idle",
+      "col": 3,
+      "row": 1,
+      "open": {
+       "kind": "dept_page",
+       "ref": "dref-billing01"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "Billing"
+     },
+     {
+      "id": "task:m-00000000a002",
+      "kind": "task",
+      "label": "Weekly sales report",
+      "sub": null,
+      "status": "waiting",
+      "col": 2,
+      "row": 2,
+      "open": {
+       "kind": "task",
+       "ref": "m-00000000a002"
+      },
+      "since": "2026-10-29T10:00:00+05:30",
+      "cost_usd": null,
+      "tip": "Waiting"
+     },
+     {
+      "id": "dept:dref-reports01",
+      "kind": "department",
+      "label": "Reports",
+      "sub": "organic",
+      "status": "idle",
+      "col": 3,
+      "row": 2,
+      "open": {
+       "kind": "dept_page",
+       "ref": "dref-reports01"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "Reports"
+     },
+     {
+      "id": "task:m-00000000a003",
+      "kind": "task",
+      "label": "Rename the settings tab",
+      "sub": null,
+      "status": "done",
+      "col": 2,
+      "row": 4,
+      "open": {
+       "kind": "task",
+       "ref": "m-00000000a003"
+      },
+      "since": "2026-10-29T10:00:00+05:30",
+      "cost_usd": 0.04,
+      "tip": "Done"
+     },
+     {
+      "id": "task:m-00000000a004",
+      "kind": "task",
+      "label": "Chase the unpaid invoices",
+      "sub": null,
+      "status": "draft",
+      "col": 2,
+      "row": 6,
+      "open": {
+       "kind": "task",
+       "ref": "m-00000000a004"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "A draft"
+     },
+     {
+      "id": "dept:dref-collect01",
+      "kind": "department",
+      "label": "Collections",
+      "sub": "default",
+      "status": "off",
+      "col": 3,
+      "row": 6,
+      "open": {
+       "kind": "dept_page",
+       "ref": "dref-collect01"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "Off"
+     }
+    ],
+    "edges": [
+     {
+      "id": "has:shadow:now>task:m-00000000a001",
+      "kind": "has",
+      "source": "shadow:now",
+      "target": "task:m-00000000a001",
+      "reason": null,
+      "confidence": null,
+      "live": true,
+      "held": false
+     },
+     {
+      "id": "has:shadow:now>task:m-00000000a002",
+      "kind": "has",
+      "source": "shadow:now",
+      "target": "task:m-00000000a002",
+      "reason": null,
+      "confidence": null,
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "has:shadow:now>task:m-00000000a003",
+      "kind": "has",
+      "source": "shadow:now",
+      "target": "task:m-00000000a003",
+      "reason": null,
+      "confidence": null,
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "has:shadow:now>task:m-00000000a004",
+      "kind": "has",
+      "source": "shadow:now",
+      "target": "task:m-00000000a004",
+      "reason": null,
+      "confidence": null,
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "has:shadow:now>conv:shc-a1b2c3",
+      "kind": "has",
+      "source": "shadow:now",
+      "target": "conv:shc-a1b2c3",
+      "reason": null,
+      "confidence": null,
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "attempt:goal:g-000000000001>task:m-00000000a001",
+      "kind": "attempt",
+      "source": "goal:g-000000000001",
+      "target": "task:m-00000000a001",
+      "reason": null,
+      "confidence": null,
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "steered_by:task:m-00000000a001>tchat:m-00000000a001",
+      "kind": "steered_by",
+      "source": "task:m-00000000a001",
+      "target": "tchat:m-00000000a001",
+      "reason": null,
+      "confidence": null,
+      "live": true,
+      "held": false
+     },
+     {
+      "id": "driven_by:task:m-00000000a001>worker:m-00000000a001",
+      "kind": "driven_by",
+      "source": "task:m-00000000a001",
+      "target": "worker:m-00000000a001",
+      "reason": null,
+      "confidence": null,
+      "live": true,
+      "held": false
+     },
+     {
+      "id": "uses:task:m-00000000a001>dept:dref-billing01",
+      "kind": "uses",
+      "source": "task:m-00000000a001",
+      "target": "dept:dref-billing01",
+      "reason": "Billing already handles invoice and login-token questions",
+      "confidence": "high",
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "spawned:task:m-00000000a002>dept:dref-reports01",
+      "kind": "spawned",
+      "source": "task:m-00000000a002",
+      "target": "dept:dref-reports01",
+      "reason": "No department covers recurring reports",
+      "confidence": "medium",
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "uses:task:m-00000000a004>dept:dref-collect01",
+      "kind": "uses",
+      "source": "task:m-00000000a004",
+      "target": "dept:dref-collect01",
+      "reason": "Held: Collections is Off",
+      "confidence": "medium",
+      "live": false,
+      "held": true
+     }
+    ],
+    "as_of": "2026-10-29T10:00:00+05:30",
+    "focus": "m-00000000a001",
+    "truncated": false,
+    "shadow_on": true
+   },
+   "decision": {
+    "choice": {
+     "action": "use",
+     "ref": "dref-billing01",
+     "reason": "Billing already handles invoice and login-token questions",
+     "confidence": "high"
+    },
+    "final_action": "use",
+    "final_ref": "dref-billing01",
+    "overrides": [],
+    "held": false,
+    "held_reason": null,
+    "decided_by": "agent",
+    "mode": "link",
+    "considered": [
+     "dref-billing01",
+     "dref-collect01"
+    ],
+    "candidates_seen": 2,
+    "root_ref": "dref-root0001",
+    "result_ref": null,
+    "operation_id": null,
+    "mission_id": "m-00000000a001",
+    "at": "2026-10-29T10:00:00+05:30",
+    "prompt_version": "1"
+   },
+   "departments": [
+    {
+     "ref": "dref-billing01",
+     "name": "Billing",
+     "kind": "default",
+     "parent": "dref-root0001",
+     "root": "dref-root0001",
+     "runtime": 2,
+     "stopped": false,
+     "state": "idle",
+     "waiting_on_you": false,
+     "pending_asks": 0,
+     "working": [],
+     "last_activity": "2026-10-29T10:00:00+05:30",
+     "created": "2026-10-29T10:00:00+05:30",
+     "goal": "Billing work",
+     "done": "Done when it is filed",
+     "done_met": null,
+     "engines": [
+      "Plan",
+      "Write"
+     ],
+     "artifacts": [],
+     "j2_url": "/j2ui/dref-billing01/"
+    }
+   ],
+   "chats": [
+    {
+     "role": "shadow_chat",
+     "label": "Task chat",
+     "live": true,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a001"
+     },
+     "alt_open": {
+      "kind": "session",
+      "ref": "sess-0002"
+     }
+    },
+    {
+     "role": "worker",
+     "label": "Worker",
+     "live": true,
+     "open": {
+      "kind": "session",
+      "ref": "sess-0001"
+     },
+     "alt_open": null
+    },
+    {
+     "role": "department_page",
+     "label": "Billing",
+     "live": false,
+     "open": {
+      "kind": "dept_page",
+      "ref": "dref-billing01"
+     },
+     "alt_open": null
+    }
+   ],
+   "costs": [
+    {
+     "role": "now",
+     "usd": 0.02,
+     "turns": 2
+    },
+    {
+     "role": "worker",
+     "usd": 0.1,
+     "turns": 4
+    }
+   ],
+   "total_usd": 0.12,
+   "timeline": [
+    {
+     "at": "2026-10-29T10:00:00+05:30",
+     "kind": "said",
+     "by": "founder",
+     "text": "Fix the login bug",
+     "ref": null
+    },
+    {
+     "at": "2026-10-29T10:00:00+05:30",
+     "kind": "decided",
+     "by": "shadow",
+     "text": "Billing already handles it",
+     "ref": "dept:dref-billing01"
+    },
+    {
+     "at": "2026-10-29T10:00:00+05:30",
+     "kind": "state",
+     "by": "system",
+     "text": "Running",
+     "ref": null
+    }
+   ],
+   "as_of": "2026-10-29T10:00:00+05:30"
+  },
+  {
+   "task": {
+    "id": "m-00000000a001",
+    "objective": "Fix the login bug",
+    "state": "running",
+    "template": "general",
+    "executor": "worker",
+    "goal_id": "g-000000000001",
+    "created": "2026-10-29T10:00:00+05:30",
+    "updated": "2026-10-29T10:00:00+05:30",
+    "turns_used": 4
+   },
+   "graph": {
+    "nodes": [
+     {
+      "id": "shadow:now",
+      "kind": "shadow",
+      "label": "Shadow",
+      "sub": "Now",
+      "status": "working",
+      "col": 0,
+      "row": 0,
+      "open": {
+       "kind": "none",
+       "ref": null
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "Shadow is working"
+     },
+     {
+      "id": "goal:g-000000000001",
+      "kind": "goal",
+      "label": "Keep the app healthy",
+      "sub": null,
+      "status": "working",
+      "col": 1,
+      "row": 0,
+      "open": {
+       "kind": "goal",
+       "ref": "g-000000000001"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "A goal"
+     },
+     {
+      "id": "conv:shc-a1b2c3",
+      "kind": "conversation",
+      "label": "Is the export slow?",
+      "sub": null,
+      "status": "idle",
+      "col": 1,
+      "row": 6,
+      "open": {
+       "kind": "conversation",
+       "ref": "shc-a1b2c3"
+      },
+      "since": "2026-10-29T10:00:00+05:30",
+      "cost_usd": null,
+      "tip": "A conversation"
+     },
+     {
+      "id": "task:m-00000000a001",
+      "kind": "task",
+      "label": "Fix the login bug",
+      "sub": null,
+      "status": "working",
+      "col": 2,
+      "row": 0,
+      "open": {
+       "kind": "task",
+       "ref": "m-00000000a001"
+      },
+      "since": "2026-10-29T10:00:00+05:30",
+      "cost_usd": 0.12,
+      "tip": "Working"
+     },
+     {
+      "id": "tchat:m-00000000a001",
+      "kind": "task_chat",
+      "label": "Task chat",
+      "sub": null,
+      "status": "working",
+      "col": 3,
+      "row": 0,
+      "open": {
+       "kind": "task",
+       "ref": "m-00000000a001"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "The chat about this task"
+     },
+     {
+      "id": "worker:m-00000000a001",
+      "kind": "worker",
+      "label": "Worker",
+      "sub": null,
+      "status": "working",
+      "col": 4,
+      "row": 0,
+      "open": {
+       "kind": "session",
+       "ref": "sess-0001"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "The worker"
+     },
+     {
+      "id": "dept:dref-billing01",
+      "kind": "department",
+      "label": "Billing",
+      "sub": "default",
+      "status": "idle",
+      "col": 3,
+      "row": 1,
+      "open": {
+       "kind": "dept_page",
+       "ref": "dref-billing01"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "Billing"
+     },
+     {
+      "id": "task:m-00000000a002",
+      "kind": "task",
+      "label": "Weekly sales report",
+      "sub": null,
+      "status": "waiting",
+      "col": 2,
+      "row": 2,
+      "open": {
+       "kind": "task",
+       "ref": "m-00000000a002"
+      },
+      "since": "2026-10-29T10:00:00+05:30",
+      "cost_usd": null,
+      "tip": "Waiting"
+     },
+     {
+      "id": "dept:dref-reports01",
+      "kind": "department",
+      "label": "Reports",
+      "sub": "organic",
+      "status": "idle",
+      "col": 3,
+      "row": 2,
+      "open": {
+       "kind": "dept_page",
+       "ref": "dref-reports01"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "Reports"
+     },
+     {
+      "id": "task:m-00000000a003",
+      "kind": "task",
+      "label": "Rename the settings tab",
+      "sub": null,
+      "status": "done",
+      "col": 2,
+      "row": 4,
+      "open": {
+       "kind": "task",
+       "ref": "m-00000000a003"
+      },
+      "since": "2026-10-29T10:00:00+05:30",
+      "cost_usd": 0.04,
+      "tip": "Done"
+     },
+     {
+      "id": "task:m-00000000a004",
+      "kind": "task",
+      "label": "Chase the unpaid invoices",
+      "sub": null,
+      "status": "draft",
+      "col": 2,
+      "row": 6,
+      "open": {
+       "kind": "task",
+       "ref": "m-00000000a004"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "A draft"
+     },
+     {
+      "id": "dept:dref-collect01",
+      "kind": "department",
+      "label": "Collections",
+      "sub": "default",
+      "status": "off",
+      "col": 3,
+      "row": 6,
+      "open": {
+       "kind": "dept_page",
+       "ref": "dref-collect01"
+      },
+      "since": null,
+      "cost_usd": null,
+      "tip": "Off"
+     }
+    ],
+    "edges": [
+     {
+      "id": "has:shadow:now>task:m-00000000a001",
+      "kind": "has",
+      "source": "shadow:now",
+      "target": "task:m-00000000a001",
+      "reason": null,
+      "confidence": null,
+      "live": true,
+      "held": false
+     },
+     {
+      "id": "has:shadow:now>task:m-00000000a002",
+      "kind": "has",
+      "source": "shadow:now",
+      "target": "task:m-00000000a002",
+      "reason": null,
+      "confidence": null,
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "has:shadow:now>task:m-00000000a003",
+      "kind": "has",
+      "source": "shadow:now",
+      "target": "task:m-00000000a003",
+      "reason": null,
+      "confidence": null,
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "has:shadow:now>task:m-00000000a004",
+      "kind": "has",
+      "source": "shadow:now",
+      "target": "task:m-00000000a004",
+      "reason": null,
+      "confidence": null,
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "has:shadow:now>conv:shc-a1b2c3",
+      "kind": "has",
+      "source": "shadow:now",
+      "target": "conv:shc-a1b2c3",
+      "reason": null,
+      "confidence": null,
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "attempt:goal:g-000000000001>task:m-00000000a001",
+      "kind": "attempt",
+      "source": "goal:g-000000000001",
+      "target": "task:m-00000000a001",
+      "reason": null,
+      "confidence": null,
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "steered_by:task:m-00000000a001>tchat:m-00000000a001",
+      "kind": "steered_by",
+      "source": "task:m-00000000a001",
+      "target": "tchat:m-00000000a001",
+      "reason": null,
+      "confidence": null,
+      "live": true,
+      "held": false
+     },
+     {
+      "id": "driven_by:task:m-00000000a001>worker:m-00000000a001",
+      "kind": "driven_by",
+      "source": "task:m-00000000a001",
+      "target": "worker:m-00000000a001",
+      "reason": null,
+      "confidence": null,
+      "live": true,
+      "held": false
+     },
+     {
+      "id": "uses:task:m-00000000a001>dept:dref-billing01",
+      "kind": "uses",
+      "source": "task:m-00000000a001",
+      "target": "dept:dref-billing01",
+      "reason": "Billing already handles invoice and login-token questions",
+      "confidence": "high",
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "spawned:task:m-00000000a002>dept:dref-reports01",
+      "kind": "spawned",
+      "source": "task:m-00000000a002",
+      "target": "dept:dref-reports01",
+      "reason": "No department covers recurring reports",
+      "confidence": "medium",
+      "live": false,
+      "held": false
+     },
+     {
+      "id": "uses:task:m-00000000a004>dept:dref-collect01",
+      "kind": "uses",
+      "source": "task:m-00000000a004",
+      "target": "dept:dref-collect01",
+      "reason": "Held: Collections is Off",
+      "confidence": "medium",
+      "live": false,
+      "held": true
+     }
+    ],
+    "as_of": "2026-10-29T10:00:00+05:30",
+    "focus": "m-00000000a001",
+    "truncated": false,
+    "shadow_on": true
+   },
+   "decision": {
+    "choice": {
+     "action": "use",
+     "ref": "dref-billing01",
+     "reason": "Billing already handles invoice and login-token questions",
+     "confidence": "high"
+    },
+    "final_action": "use",
+    "final_ref": "dref-billing01",
+    "overrides": [],
+    "held": false,
+    "held_reason": null,
+    "decided_by": "agent",
+    "mode": "link",
+    "considered": [
+     "dref-billing01",
+     "dref-collect01"
+    ],
+    "candidates_seen": 2,
+    "root_ref": "dref-root0001",
+    "result_ref": null,
+    "operation_id": null,
+    "mission_id": "m-00000000a001",
+    "at": "2026-10-29T10:00:00+05:30",
+    "prompt_version": "1"
+   },
+   "departments": [
+    {
+     "ref": "dref-billing01",
+     "name": "Billing",
+     "kind": "default",
+     "parent": "dref-root0001",
+     "root": "dref-root0001",
+     "runtime": 2,
+     "stopped": false,
+     "state": "idle",
+     "waiting_on_you": false,
+     "pending_asks": 0,
+     "working": [],
+     "last_activity": "2026-10-29T10:00:00+05:30",
+     "created": "2026-10-29T10:00:00+05:30",
+     "goal": "Billing work",
+     "done": "Done when it is filed",
+     "done_met": null,
+     "engines": [
+      "Plan",
+      "Write"
+     ],
+     "artifacts": [],
+     "j2_url": "/j2ui/dref-billing01/"
+    }
+   ],
+   "chats": [
+    {
+     "role": "shadow_chat",
+     "label": "Task chat",
+     "live": true,
+     "open": {
+      "kind": "task",
+      "ref": "m-00000000a001"
+     },
+     "alt_open": {
+      "kind": "session",
+      "ref": "sess-0002"
+     }
+    },
+    {
+     "role": "worker",
+     "label": "Worker",
+     "live": true,
+     "open": {
+      "kind": "session",
+      "ref": "sess-0001"
+     },
+     "alt_open": null
+    },
+    {
+     "role": "department_page",
+     "label": "Billing",
+     "live": false,
+     "open": {
+      "kind": "dept_page",
+      "ref": "dref-billing01"
+     },
+     "alt_open": null
+    }
+   ],
+   "costs": [
+    {
+     "role": "now",
+     "usd": 0.02,
+     "turns": 2
+    },
+    {
+     "role": "worker",
+     "usd": 0.1,
+     "turns": 4
+    }
+   ],
+   "total_usd": 0.12,
+   "timeline": [
+    {
+     "at": "2026-10-29T10:00:00+05:30",
+     "kind": "said",
+     "by": "founder",
+     "text": "Fix the login bug",
+     "ref": null
+    },
+    {
+     "at": "2026-10-29T10:00:00+05:30",
+     "kind": "decided",
+     "by": "shadow",
+     "text": "Billing already handles it",
+     "ref": "dept:dref-billing01"
+    },
+    {
+     "at": "2026-10-29T10:00:00+05:30",
+     "kind": "state",
+     "by": "system",
+     "text": "Running",
+     "ref": null
+    }
+   ],
+   "as_of": "2026-10-29T10:00:00+05:30",
+   "colour": "red"
+  }
+ ],
+ "dept.row": [
+  {
+   "ref": "dref-billing01",
+   "name": "Billing",
+   "kind": "default",
+   "parent": "dref-root0001",
+   "root": "dref-root0001",
+   "runtime": 2,
+   "stopped": false,
+   "state": "idle",
+   "waiting_on_you": false,
+   "pending_asks": 0,
+   "working": [],
+   "last_activity": "2026-10-29T10:00:00+05:30",
+   "created": "2026-10-29T10:00:00+05:30",
+   "goal": "Billing work",
+   "done": "Done when it is filed",
+   "done_met": null,
+   "engines": [
+    "Plan",
+    "Write"
+   ],
+   "artifacts": [],
+   "j2_url": "/j2ui/dref-billing01/"
+  },
+  {
+   "ref": "dref-billing01",
+   "name": "Billing",
+   "kind": "default",
+   "parent": "dref-root0001",
+   "root": "dref-root0001",
+   "runtime": 2,
+   "stopped": false,
+   "state": "idle",
+   "waiting_on_you": false,
+   "pending_asks": 0,
+   "working": [],
+   "last_activity": "2026-10-29T10:00:00+05:30",
+   "created": "2026-10-29T10:00:00+05:30",
+   "goal": "Billing work",
+   "done": "Done when it is filed",
+   "done_met": null,
+   "engines": [
+    "Plan",
+    "Write"
+   ],
+   "artifacts": [],
+   "j2_url": "/j2ui/dref-billing01/",
+   "colour": "red"
+  }
+ ],
+ "dept.listing": [
+  {
+   "departments": [
+    {
+     "ref": "dref-billing01",
+     "name": "Billing",
+     "kind": "default",
+     "parent": "dref-root0001",
+     "root": "dref-root0001",
+     "runtime": 2,
+     "stopped": false,
+     "state": "idle",
+     "waiting_on_you": false,
+     "pending_asks": 0,
+     "working": [],
+     "last_activity": "2026-10-29T10:00:00+05:30",
+     "created": "2026-10-29T10:00:00+05:30",
+     "goal": "Billing work",
+     "done": "Done when it is filed",
+     "done_met": null,
+     "engines": [
+      "Plan",
+      "Write"
+     ],
+     "artifacts": [],
+     "j2_url": "/j2ui/dref-billing01/"
+    }
+   ],
+   "root_ref": "dref-root0001",
+   "as_of": "2026-10-29T10:00:00+05:30"
+  },
+  {
+   "departments": [
+    {
+     "ref": "dref-billing01",
+     "name": "Billing",
+     "kind": "default",
+     "parent": "dref-root0001",
+     "root": "dref-root0001",
+     "runtime": 2,
+     "stopped": false,
+     "state": "idle",
+     "waiting_on_you": false,
+     "pending_asks": 0,
+     "working": [],
+     "last_activity": "2026-10-29T10:00:00+05:30",
+     "created": "2026-10-29T10:00:00+05:30",
+     "goal": "Billing work",
+     "done": "Done when it is filed",
+     "done_met": null,
+     "engines": [
+      "Plan",
+      "Write"
+     ],
+     "artifacts": [],
+     "j2_url": "/j2ui/dref-billing01/"
+    }
+   ],
+   "root_ref": "dref-root0001",
+   "as_of": "2026-10-29T10:00:00+05:30",
+   "colour": "red"
+  }
+ ],
+ "dept.candidate": [
+  {
+   "ref": "dref-billing01",
+   "name": "Billing",
+   "kind": "default",
+   "goal": "Billing work",
+   "done": "Done when it is filed",
+   "state": "idle",
+   "stopped": false,
+   "blocked": false,
+   "last_activity": "2026-10-29T10:00:00+05:30",
+   "score": 0.5
+  },
+  {
+   "ref": "dref-billing01",
+   "name": "Billing",
+   "kind": "default",
+   "goal": "Billing work",
+   "done": "Done when it is filed",
+   "state": "idle",
+   "stopped": false,
+   "blocked": false,
+   "last_activity": "2026-10-29T10:00:00+05:30",
+   "score": 0.5,
+   "colour": "red"
+  }
+ ],
+ "dept.choice": [
+  {
+   "action": "use",
+   "ref": "dref-billing01",
+   "reason": "Billing already handles invoice and login-token questions",
+   "confidence": "high"
+  },
+  {
+   "action": "use",
+   "ref": "dref-billing01",
+   "reason": "Billing already handles invoice and login-token questions",
+   "confidence": "high",
+   "colour": "red"
+  }
+ ],
+ "dept.override": [
+  {
+   "rule": "founder_rule",
+   "note": "An ask rule holds department creation"
+  },
+  {
+   "rule": "founder_rule",
+   "note": "An ask rule holds department creation",
+   "colour": "red"
+  }
+ ],
+ "dept.decision": [
+  {
+   "choice": {
+    "action": "use",
+    "ref": "dref-billing01",
+    "reason": "Billing already handles invoice and login-token questions",
+    "confidence": "high"
+   },
+   "final_action": "use",
+   "final_ref": "dref-billing01",
+   "overrides": [],
+   "held": false,
+   "held_reason": null,
+   "decided_by": "agent",
+   "mode": "link",
+   "considered": [
+    "dref-billing01",
+    "dref-collect01"
+   ],
+   "candidates_seen": 2,
+   "root_ref": "dref-root0001",
+   "result_ref": null,
+   "operation_id": null,
+   "mission_id": "m-00000000a001",
+   "at": "2026-10-29T10:00:00+05:30",
+   "prompt_version": "1"
+  },
+  {
+   "choice": {
+    "action": "use",
+    "ref": "dref-billing01",
+    "reason": "Billing already handles invoice and login-token questions",
+    "confidence": "high"
+   },
+   "final_action": "use",
+   "final_ref": "dref-billing01",
+   "overrides": [],
+   "held": false,
+   "held_reason": null,
+   "decided_by": "agent",
+   "mode": "link",
+   "considered": [
+    "dref-billing01",
+    "dref-collect01"
+   ],
+   "candidates_seen": 2,
+   "root_ref": "dref-root0001",
+   "result_ref": null,
+   "operation_id": null,
+   "mission_id": "m-00000000a001",
+   "at": "2026-10-29T10:00:00+05:30",
+   "prompt_version": "1",
+   "colour": "red"
+  }
+ ],
+ "dept.request": [
+  {
+   "words": "Weekly sales reports",
+   "mission_id": "m-00000000a002",
+   "apply": true,
+   "confirmed": false
+  },
+  {
+   "words": "Weekly sales reports",
+   "mission_id": "m-00000000a002",
+   "apply": true,
+   "confirmed": false,
+   "colour": "red"
+  }
+ ]
+}

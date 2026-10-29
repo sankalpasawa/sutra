@@ -39,9 +39,20 @@ CANDS = ['x', 'Plan', 'D1', 'F1', 'identity/v1', 'r-0123abcd', 'Q-1', '2026-10-2
 
 
 # ---- the two sides --------------------------------------------------------------------------------------------------------
-def oracle(name, value):
-    """The sentences of the oracle: the frozen walker over the frozen literal definitions (layer_models.legacy)."""
+def a5(name):
+    """Is this one of the definitions schema version 2 added (A5)? They have no frozen literal."""
     import layer_models.legacy as L
+    return name not in L.LEGACY_DEFS
+
+
+def oracle(name, value):
+    """The sentences of the oracle: the frozen walker over the frozen literal definitions (layer_models.legacy). A definition of
+    schema version 2 (A5) has no literal: its oracle is the same walker over the JSON Schema its class exports, so the check says the
+    class enforces what its schema says; the class's cross-field rules (a5_types.rule) are not a JSON Schema keyword and are set
+    aside on the port side."""
+    import layer_models.legacy as L
+    if a5(name) and name in S.DEFS:
+        return L.walker(S.DEFS[name], value, defs=S.DEFS)
     return L.oracle(name, value)
 
 
@@ -66,7 +77,11 @@ def port(name, value):
         ad = _ADAPTERS.get(name)
         if ad is None:
             ad = _ADAPTERS[name] = TypeAdapter(port_classes()[name])
-        return sentences(ad, value)
+        got = sentences(ad, value)
+        if a5(name):
+            from layer_models.a5_types import is_rule
+            got = [g for g in got if not is_rule(g)]
+        return got
     except Exception as e:                                                  # noqa: BLE001
         return ['EXCEPTION %s: %s' % (type(e).__name__, str(e)[:120])]
 
@@ -459,7 +474,7 @@ def bench(only=None, n=2000, out=sys.stdout):
     seed_values = seeds()
     res = {}
     for name in sorted(port_classes()):
-        if only and name not in only:
+        if (only and name not in only) or a5(name):          # P6 is the port against the frozen oracle; A5's 17 have none
             continue
         good_ones = bases(name, seed_values.get(name, [])[:1])
         if not good_ones:

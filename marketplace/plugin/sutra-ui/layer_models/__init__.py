@@ -11,7 +11,7 @@ _LOADED = []
 
 
 def load():
-    """Import and register the 130 definitions (once); returns the registry module."""
+    """Import and register the 147 definitions (once); returns the registry module."""
     from . import registry
     if not _LOADED:
         from . import defs
@@ -53,9 +53,9 @@ def describe_models():
 
 
 def export_all():
-    """{name: JSON Schema dict} for the 130 definitions, key for key what layer_schema.DEFS holds, in the same order."""
+    """{name: JSON Schema dict} for the 147 definitions, key for key what layer_schema.DEFS holds, in the same order."""
     from .schema import export
     reg = load()
-    from .defs import NAMES
+    from .defs import ALL_NAMES
     names = {cls.__name__: n for n, cls in reg.DEF_CLASS.items() if not cls.__dict__.get('__inline__')}
-    return {n: export(reg.DEF_CLASS.get(n) or reg.DEF_TYPE[n], names) for n in NAMES}
+    return {n: export(reg.DEF_CLASS.get(n) or reg.DEF_TYPE[n], names) for n in ALL_NAMES}

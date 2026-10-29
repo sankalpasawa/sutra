@@ -169,6 +169,14 @@ app.include_router(library_api.router)
 import models_api
 import website_api
 app.include_router(models_api.router)
+# A5: the routers P3 and P4 fill (empty here). dept_list_api answers `_departments`, which a ref cannot be, so it goes before the
+# /{ref} routes of website_api like models_api does.
+import dept_list_api
+import shadow_dept_api
+import shadow_graph_api
+app.include_router(dept_list_api.router)
+app.include_router(shadow_dept_api.router)
+app.include_router(shadow_graph_api.router)
 app.include_router(website_api.router)
 # The department screen is the J2 prototype's page (j2ui_assets/, UI-port package j2ui-shell): j2ui_page serves it at
 # /j2ui/{ref}/, and j2ui_api (the adapter, UI-port package j2ui-core) answers the calls it makes under the same base.

@@ -202,7 +202,9 @@ def test_p3_the_export_is_the_literal_definition(name):
 
 
 def test_export_all_keeps_the_interfaces_order():
-    assert list(layer_models.export_all()) == [n for n in LEGACY.LEGACY_DEFS if n in set(PORTED)]
+    got = list(layer_models.export_all())
+    assert [n for n in got if n in LEGACY.LEGACY_DEFS] == [n for n in LEGACY.LEGACY_DEFS if n in set(PORTED)]
+    assert got[len(LEGACY.LEGACY_DEFS):] == list(__import__('layer_models.defs', fromlist=['A5_NAMES']).A5_NAMES), "then A5's 17"
 
 
 def test_the_golden_corpus_goes_through_the_classes_to_the_same_sentences():

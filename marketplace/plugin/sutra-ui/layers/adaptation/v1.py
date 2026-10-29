@@ -22,7 +22,7 @@ from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests r
 
 LAYER = 'adaptation'
 VERSION = 1
-IMPLEMENTS = 1
+IMPLEMENTS = 2
 RECIPE = 'v1.json'
 
 #: what a required engine's check refuses, in the owner's words (J2B-2): Make is told, so it shapes nothing the check fails
