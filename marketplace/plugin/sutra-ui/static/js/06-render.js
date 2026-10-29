@@ -1078,6 +1078,7 @@ function sessionPane(s){
     : "";
   const shDone = shTask && (shTask.done_when || []).length
     ? ` · done when ${esc(shTask.done_when.join(" · "))}` : "";
+  const shDetailMid = typeof sgMissionForSession === "function" ? sgMissionForSession(s) : null;
   const shadowChip = shadowDriving
     ? `<div class="shdrive" role="status">
       <span class="shdrivedot" aria-hidden="true"></span>
@@ -1085,7 +1086,11 @@ function sessionPane(s){
       ${shTask && shTask.mission_id ? `<span class="shdriveacts">
         <button class="btn" type="button"
           data-shopentask="${escAttr(shTask.mission_id)}"
-          title="Open this task in Focus › Shadow">Shadow ›</button>
+          title="Open this task in Focus › Shadow">Shadow ›</button>${
+          /* A5.2.4: the task's graph and details, one click from its chat */
+          shDetailMid ? `
+        <button class="btn" type="button" data-shdetail="${escAttr(shDetailMid)}"
+          title="This task's graph and details">Details</button>` : ""}
         <button class="btn" type="button"
           data-shtakeoverchat="${escAttr(shTask.mission_id)}"
           title="End Shadow's turn — you can type here straight after"
@@ -1094,7 +1099,9 @@ function sessionPane(s){
           data-shstopchat="${escAttr(shTask.mission_id)}"
           title="Stop the task">Stop</button>
       </span>` : ""}
-    </div>` : "";
+    </div>` : (shDetailMid ? `<div class="shdrive sgdetailbar">
+      <span class="shdriveacts"><button class="btn" type="button" data-shdetail="${escAttr(shDetailMid)}"
+        title="This task's graph and details">Details</button></span></div>` : "");
   const body = tab==="route" ? routingChart(s) : sessionBody(s);
   /* Chrome decisions (founder, 2026-08-18): the header exists only for the
      COLLAPSED strip -- while expanded it is display:none (panel.css), because
@@ -2222,8 +2229,10 @@ function render(){
       scBody.__lastScreenHtml = html;
       /* the same opt-out, for the same reason and on the same condition --
          see the panes swap above */
-      const patched = (typeof shadowPanelMounted === "function"
-        && shadowPanelMounted() && typeof shadowPatchInto === "function")
+      const patched = (typeof shadowPatchInto === "function"
+        && ((typeof shadowPanelMounted === "function" && shadowPanelMounted())
+          /* the Shadow graph: a focused node and its tooltip survive a poll */
+          || S.screen === "shadowgraph"))
         ? shadowPatchInto(scBody, html) : false;
       if (!patched) scBody.innerHTML = html;
       if (!patched && keep && keep.sel){
@@ -2252,7 +2261,7 @@ function render(){
       /* review fold: a COLLAPSED browse pane keeps its 38px rail -- never
          re-inflate it (inline flex beat .collapsed once before; documented
          above the bStyle computation) */
-      const wide = S.screen === "shadow" && !bCol;
+      const wide = (S.screen === "shadow" || S.screen === "shadowgraph") && !bCol;
       bp.classList.toggle("shwide", wide);
       /* the pane carries a saved inline flex-basis that beats any class;
          the render rebuilds it fresh each pass, so setting inline here is
