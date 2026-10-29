@@ -73,5 +73,26 @@ if [ ! -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ] && [ 
 else
   node "$HERE/a5-walk.js" "$OUT" "http://127.0.0.1:$PORT" "$REC/refs.json" || RC=1
 fi
+# ---- P5.3: a real Setup conversation with a Root inside the J2 page ------------------------------------------------------------------
+# It needs a model, so it is never part of the gate: A5_REAL_SETUP=1 runs it (the app on the record with the motor on and no offline
+# functions, the operator's own HOME so the model CLI is signed in; it spends what a Setup conversation spends). The record of 2026-10-29: not
+# walked, because no model was reachable from the build session (offline, with the motor on, Root files nothing and makes no department),
+# so J2_ROOT_DEFAULT stays false (A5-5) and Root's chat stays the classic one until this passes and its owner flips the one line.
+if [ "${A5_REAL_SETUP:-0}" = "1" ]; then
+  bash "$HERE/devserver-stop.sh" "$PORT" 2>&1 | tail -1
+  ( unset SUTRA_WEBSITE_OFFLINE SUTRA_MOTOR_OFF; bash "$HERE/devserver-detach.sh" "$REC" "$PORT" | tail -1 )
+  ROOT_REF="$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1]))['root'])" "$REC/refs.json")"
+  curl -s -m 20 -X POST "http://127.0.0.1:$PORT/j2ui/$ROOT_REF/api/say" -H 'Content-Type: application/json' \
+    -d '{"text":"I want a department that answers customer invoice questions and files every invoice"}' >/dev/null
+  SETUP=FAIL
+  for i in $(seq 1 36); do
+    sleep 5
+    N="$(curl -s -m 10 "http://127.0.0.1:$PORT/api/native/depts" | "$PY" -c "import json,sys; print(sum(1 for d in json.load(sys.stdin)['depts'] if d.get('parent') == sys.argv[1]))" "$ROOT_REF")"
+    [ "${N:-0}" -gt 4 ] && { SETUP=PASS; break; }
+  done
+  echo "root setup in the J2 page: $SETUP (a new department under the Root within 180 s)" | tee "$OUT/root-setup.txt"
+else
+  echo "root setup in the J2 page: not walked (A5_REAL_SETUP=1 needs a model); J2_ROOT_DEFAULT stays false"
+fi
 echo "record: $REC   screenshots: $OUT   exit $RC"
 exit $RC
