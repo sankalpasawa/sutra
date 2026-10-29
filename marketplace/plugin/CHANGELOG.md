@@ -2,6 +2,611 @@
 
 **status**: active · **updated**: 2026-09-28
 
+## 2.307.0 (2026-10-29)
+
+- Released from v2.306.25-desktop..HEAD: 599 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - shadow test: a retry reaching the spawner again is at least two calls, not exactly two
+  - A4 D4: The staged copy, the whole gate, the final numbers
+  - A4 D3: The status lines
+  - A4 D2: Contract case 15
+  - A4 D1: The READMEs
+  - A4 U8: Words, hostile strings, tokens, and the gate
+  - A4 U7: S26 structure and history
+  - A4 U6: S25 try a sample and the shape
+  - A4 U5: S24 link or nest
+  - A4 U4: S21 add a model, and S22 change a field
+  - A4 U3: S20 the page, and S23 turn on or off
+  - A4 U2: S19, the list
+  - A4 U1: the skeleton, the card, the tab and the stream handler
+  - PRD A4-OWN O8: fix: hostile strings proved through every read model route
+  - PRD a4-own: fix after merge: wire the hooks into validate, regenerate core-tree, load real definitions before test stand-ins
+  - A4 P8: The proof at scale
+  - A4 P7: The swap
+  - A4 P6: templates, journeys and the ask forms
+  - A4 P5: department and views
+  - A4 P4: coordination, adaptation, priority, audit, acts, fields, settings
+  - A4 P3: common, identity, root, workflow, options
+  - A4 P2: The oracle is frozen
+  - A4 P1: The constants move
+  - A4 T8: The benchmark and the gate lane
+  - A4 O7: the documents beside the interface
+  - A4 O6: the hooks
+  - A4 O5: the routes
+  - A4 T7: The opt-in streaming call for agent steps
+  - A4 P0: The old picture, taken first
+  - A4 O4: the store
+  - A4 O2: compile, and O3: the rules and the comparison
+  - A4 O1: the spec models
+  - A4 T6: The models event
+  - A4 T5: Adapters once, registry pinned
+  - A4 T4: The readers
+  - A4 T3: The frames
+  - A4 T2: The guards
+  - A4 T1: What the streams do today (goldens and the baseline)
+  - A4 C5: the roots skip the class check (import order)
+  - A4 C6: The equivalence harness
+  - A4 C5: The class rules
+  - A4 C4: The JSON Schema export
+  - A4 C3: The sentences, and the containers
+  - A4 C2: The types
+  - A4 C1: The pin and the base classes
+  - PRD W2-PRIORITY: test: an unread card is not a conflict ask
+  - PRD M2.10: fix: W3P-2 names the deviation from X1's done-check
+  - PRD M10.4: fix: Identity files a card for a version nobody read, and SM-6 exempts nothing
+  - sutra-ui design: amendment A4, pydantic interface layer, owner-defined models and the Models editor
+  - PRD M10.4: The proof again, and the final status lines (W3-PROOF X3)
+  - PRD M2.10: test fix: the ownership refusal leaves the envelope as it was, read without assuming a Plan entry (W3-PROOF X2)
+  - PRD M2.10: python layer_schema.py --sha prints the frozen hash (W3-PROOF X2)
+  - PRD M2.10: The README says how the freeze is checked; a ref_to line to a deleted body goes (W3-PROOF X1, X2)
+  - PRD M2.10: Pin the interface hash after main's last interface change (W3-PROOF X2)
+  - PRD M10.4: SM-6 ruled on the unread cycle, and the gate holds it (W3-PROOF X3)
+  - PRD W2-ADAPT: fix after merge: the limit card fixture carries the round it names
+  - PRD M2.10: Strict and frozen (W3-PROOF X2)
+  - PRD M2.10: Delete the dead copies of covering checks (W3-PROOF X1)
+  - PRD W3-BOARD: fix: record the thread-bound, card-route and covering decisions
+  - PRD W3-BOARD B3: fix: record who a spot check visits and what its stuck reading is, and test both through the motor
+  - PRD M2.10: Delete the dead copies of prompt and draft builders (W3-PROOF X1)
+  - PRD W3-BOARD B3: fix: spot_check_reads_only fails a filing that measured nothing, and its window is the whole run
+  - PRD M2.10: Delete the dead copies of code bodies (W3-PROOF X1)
+  - PRD W3-BOARD B2: fix: record the nested answering run as a decision and keep its clash exemption as narrow as the decision
+  - PRD W3-BOARD B2: fix: the thread's spend and time bounds hold for the question exchange
+  - PRD W3-BOARD B4: fix: the engine card's route carries the question rows
+  - PRD M2.10: Retire function-prompts/ and its reader (W3-PROOF X1)
+  - PRD j2ui-core C1: fix: the Audit tab, workable and the confirm line say the owner's routes as said (one path rule for functions_view and the adapter)
+  - PRD A4: fix: a long name cut at a space registers end to end and never ends in silence
+  - PRD A4: fix: a name cut at forty never ends in a space
+  - PRD a3-j12 P5: fix: J2.8 lists the tests of its retirement clause and asserts that work in flight finishes
+  - PRD a3-j12 P5: fix: J2.6's golden lead is asserted by a test that proves the edge
+  - PRD P4: fix: the plurals, prefixes and nouns of the bargain's words are said, and a form left over is caught
+  - PRD A3 F8: fix: the comparison script counts an answer that fits no shape as outside the contract
+  - PRD P4: fix: a word the owner said is the owner's, and the pass never says it again
+  - PRD P4: fix: a noun is said as the answer and a verb as the act, and a sentence that cannot be said plainly is not posted
+  - PRD A3-J34 P5: fix: test the stale stamp of an answer to Identity's own question on the rules
+  - PRD A3 F6: fix: the hover on a part a page shows is true, and the screen test renders the real view
+  - PRD A3-J34 P5: fix: an inherited prohibition tagged always is said to the owner as one that never does it
+  - PRD W3-BOARD B2: SM-11 does not read an answering run as a clash
+  - PRD W3-BOARD: say the board and the spot checks in the two modules' docstrings; clip a check's why to its 300
+  - test: W3-BOARD whole-flow tests (a department with the flag on and no model; a question through the motor)
+  - PRD W3-BOARD B4: Rows on screen (M4.9, M8.7)
+  - PRD W3-BOARD B3: Sporadic, unannounced spot checks (M8.7)
+  - PRD A3 F3: fix: an owner line that says the act of a never line with a reason is refused too
+  - PRD A3 Q6: fix: the read model's three statements are in the spec, the log and the routes
+  - PRD A3 Q5: fix: the status runner's check on an empty folder has a standing test
+  - PRD M8.6: fix: a finding names its page by title, and a link's claim names no file
+  - PRD M3.9: fix: the confidence never reaches the owner in a sibling shape, or as the figure the post carries
+  - PRD M10.3: fix: record W2S-6 to W2S-9 in the decision log
+  - PRD M10.3: fix: the words walk draws the limit card the code writes
+  - PRD M9.4: fix: the words way on the card for the next round corrects the Brief and the registered line runs again
+  - PRD M9.5: fix: the ceiling option's label and a round's no say their numbers in words
+  - PRD M9.3: fix: the Brief version a filed round makes names who said yes in the owner's words
+  - PRD M8.5: fix: a finding the owner already answered that comes back still leaves the item a next move
+  - PRD M9.2: fix: a raise that sets nothing going leaves the owner a card with the ways out
+  - PRD M5.4: fix: the cap on a raise is twice the limit the engine was given, not the template's
+  - PRD M5.4: fix: a raise past the cap on a card with a thread is tested to be refused before it is recorded
+  - PRD M10.1: fix: F14 pins the route's own-words step
+  - PRD M10.1: fix: Audit's reading says what it read in the messages, never a blank
+  - PRD M5.4: fix: a raise chosen at a bargain limit or after Priority's no sets the plan going again
+  - PRD R5: fix: a refused engine that repeats an output is named as the one at fault, not the engine it was placed before
+  - PRD M9.6: fix: a round a limit of its thread closed says Priority did not answer it, not that Priority said no
+  - PRD M9.5: fix: a no to a finding that names no item leaves no way to drop a met item
+  - PRD R5: fix: the Organisation sheet's engine request keeps the owner's words as its reason, not the grow stage's raw message
+  - PRD R5: fix: a stamped line in which every engine is refused is told as not added, and its ask says it was not applied
+  - A1 interface: audit: spot_check_reads_only, and the spot checks on its view (W3-BOARD)
+  - PRD W3-BOARD B2: The answer is a charged run (M4.9)
+  - PRD W3-BOARD B1: The question, bounded (M4.9)
+  - A1 interface: coordination: a work engine's question, the Engine edges, question_is_bounded, the questions on its view (W3-BOARD)
+  - PRD M2.11: fix: a department pinned to an older version keeps it after the release moves the default (tested)
+  - PRD a3-j34 P5: fix: the J4.4 guard on the take path is tested
+  - PRD a3-j34: fix after merge: J4 step 6 and J4.6 bound to the options ask W2-IDENTITY delivered
+  - PRD a2-inherit: fix: a PARENT loop is a ModelFault in recipe resolution, not a RecursionError
+  - PRD a3-j34: fix after merge: the function pages' journey ids test reads functions_view.JOURNEYS
+  - PRD W3-PINS N1: a department made as a person makes one runs to its work on the version its record pins
+  - A1 interface: root: DEFAULT_PINS says what a record's pin does (W3-PINS)
+  - PRD W3-PINS N4: the A3 child-version test pins its department
+  - PRD W3-PINS N4: a pin is chosen on a card by its params, and applied through Identity
+  - PRD W3-PINS N1: drop the unused use_pins; the role words follow the pin
+  - PRD W3-PINS N4: the pin option
+  - A1 interface: root: PER_DEPARTMENT is True (W3-PINS N4)
+  - PRD W3-PINS N3: ladders per version
+  - PRD W3-PINS N2: Root's version from the organisation's Root; a pin that cannot run
+  - PRD W3-PINS N1: recipes per pin set
+  - PRD a2-inherit: fix after merge: the case 9 words test reads the parent's parts instead of counting three
+  - PRD a3-j12 P4: fix: J2.7 says the ledger records run.failed only while the cycle is active
+  - PRD a3-j12 P2: fix: the J1 walk asserts step 6's born rules and limits
+  - PRD a3-j12 P4: fix: J2 step 7 binds the reading Audit hands Identity, and the walk asserts it
+  - PRD a3-j12: bind the rows wave 2 delivered (J2 steps 7 and 8, J2.7, J2.8, J1 B4)
+  - PRD a3-j12: fix after merge: test_f14 names a journey no file has
+  - PRD a3-j12: fix after merge: the J2 walk test cites the reading in goal.reached's evidence
+  - PRD M10.4: fix: tests that can fail for the gate's SM-13 and failed-lane behaviour
+  - PRD M10.4: fix: SM-3 allows a function's name only on a system row
+  - PRD M10.4: fix: SM-1 does not accept a reading written after the claim
+  - PRD M10.4: fix: the proof report names every SM-6 gap, and the gate keeps the whole report
+  - PRD P4: fix: Identity's card quotes Priority's no in the owner's words; its net is still tested
+  - PRD P4: fix: a workflow named like an inside word keeps its name in the owner's words
+  - PRD P4: fix: a test that no read of the department says the agent's inside words, and the decision
+  - PRD P4: fix: Priority says its why in the owner's words where it composes it
+  - PRD P4: fix: the bargain's summary and the price's why share one word pass, in owner_words
+  - PRD P6: fix: a test that an engine offer and a trial each leave one price row
+  - PRD C6-C7: fix: the owner-facing fault for '{{' and 'Return ONLY' is said once, whole
+  - PRD a1-priority: fix after merge: the no with no workflow from the first on reaches the owner as the one blocked card
+  - PRD M10.1: fix: ?fn=&after= with an empty after is every message; a non-number is a 400
+  - PRD M5.6: fix: record what the UI port leaves of H1 to H3 and the route, as decisions W2S-1 to W2S-5
+  - PRD M10.3: fix: the words walk draws a round, the priced limit card, every act and S4, S11
+  - PRD M9.7: fix: render tests for each state of S4, and the five repaint when the ceiling is raised
+  - PRD M10.1: fix: GET /api/native/{ref}/messages, the board read for the owner
+  - chore(domains): fast-lane data refresh
+  - PRD A3-FUNCTIONS F1: fix: goal.done is shown on the page and no run reads it, and Identity says so
+  - PRD a3-functions: fix after merge: Adaptation's role words promise Pursue now that W2-ADAPT is on main
+  - PRD T3: fix: the design record names the departments and routes the pin case was tested on, and round 3 of the verification
+  - PRD W2-IDENTITY: fix after merge: the rule's no test keeps nobody taking a next round
+  - PRD j2ui-core C1: fix: the Identity lane and the Map node say the ask the owner stamps, routes as said
+  - PRD T3: fix: every GET of the J2 view runs under layers.reading(), and the pin case is tested on every department and route
+  - PRD j2ui-core C1: fix: the captured-state done-check reads captured/<run>/state.json.gz and runs
+  - PRD a1-audit: fix after merge: the not-met tests meet main's pursuit that reads again
+  - PRD M8.5: fix: the post-merge test edits assert the state the real loop reaches, and the readings are bounded
+  - PRD M9.5: fix: a round whose thread reaches its limit goes to Identity, and the round is refused on the record
+  - PRD M9.2: fix: a round the ceiling refused keeps its number, and a raise asks for it again
+  - PRD M9.4: fix: the card for a round's limit speaks of the next round, in the owner's words
+  - PRD M5.4: fix: a conflict Adaptation files at a bound carries Priority's ways, and the counter's bound branch is no longer dead
+  - PRD M5.4: fix: a limit with no way forward but Stop keeps the owner's stamp card
+  - PRD M5.4: fix: the conflict a bargain's limit raises carries Priority's priced options to the owner
+  - PRD W2-ADAPT: fix after merge: the plain-words rows and Audit's rows meet the real pursuit and the card with ways out
+  - PRD W2-ADAPT: fix after merge: a no that carries Priority's ways out is one blocked card
+  - PRD W2-ADAPT: fix after merge: the pursue and round tests meet the real Identity and Priority
+  - PRD M8.6: fix: the measure's words say what failed, and name a page by its title
+  - PRD M8.6: fix: a reading keeps its worst findings when it holds more than it can carry
+  - PRD M9.8: fix: a reopen retires the old cycle's questions, and an old answer moves nothing
+  - PRD M9.3: fix: a round is filed only when Priority granted it
+  - PRD M9.5: fix: a card names the way that leaves an item out only when it offers it
+  - PRD M9.5: fix: the owner's no to any finding leaves the ways out, not only a round's
+  - PRD M9.5: fix: the leave-a-rule-out test runs offline, and no identity test may reach the live model
+  - PRD A4: fix: a name the interface refuses is made to fit, and the shape row is said in words
+  - PRD M5.4: fix: a limit with no way forward but Stop keeps the owner's stamp card
+  - PRD Q1: fix: leave_out files the done_items ask without an answers key when it answers no card
+  - PRD C4: fix: the extractor and the bundle check ask of the .md only the parts it holds
+  - PRD P4: fix: a test that the pane the app serves for Priority carries the prices
+  - PRD P4: fix: order as a verb in a why is said again on the pane
+  - PRD P3: fix: an ask for less is posted as the line cut short, by the post and not by the covering
+  - PRD M9.2: fix: the owner's instruction screen words the round part's inputs by the goal's ceiling
+  - PRD M5.4: fix: the conflict a bargain's limit raises carries Priority's priced options to the owner
+  - PRD M3.9: fix: a doubt that names a workflow keeps its words, the owner's page says workflow
+  - PRD M3.9: fix: a figure that ends a sentence, or is said in words, is never shown in a doubt's question
+  - PRD W2-IDENTITY: fix after merge: Identity's way-out tests stand in for Priority's click-time apply
+  - PRD U5: fix: a reader's lesser finding on an item does not hide that the item is not met
+  - PRD U5: fix: one severity list for the reading, the post and the goal; the worst findings are never the ones dropped
+  - PRD Q1: fix: a raise on a card Identity holds a thread for is applied once, by Identity's step
+  - PRD Q1: fix: leave and stop on the limit card go through Identity's code, and a leave shapes the plan afresh
+  - PRD R5: fix: a stamped line's refused engine is told in the same plain words as a stamped engine
+  - PRD R5: fix: a refused engine that breaks no standard is told in plain words, never 'None' or a schema path
+  - PRD P4: fix: the why on the pane says the owner's words, not grant, counter, reject or refuse
+  - PRD A3 Q5: fix: the gate is timed with and without the journeys line, and the line says its seconds
+  - PRD T3: fix: the design record names the paths 'reads write nothing' was tested on, and round 2 of the verification
+  - PRD T3: fix: a seeded owner-action walk reads the whole page between every step and the records never change
+  - PRD T3: fix: a test for every peek guard reachable from blocked() and _run_rule
+  - PRD T3: fix: a read tells no unhonourable pin in the record; the tick does, once
+  - PRD T3: fix: tests that Priority's envelope gate (the layer's own body) files its card only on a tick
+  - PRD T3: fix: identity_gate's refused branch honours peek, so a panel read after the owner's no files no skipped run
+  - A3 P8: The computed status of J3 and J4 at the final head (no file change)
+  - PRD UIPORT W3: fix: an atom's attempts are the tries in the latest run, not the engine's runs
+  - PRD UIPORT W7: fix: a call's reply is what the step answered, never what its check noted
+  - PRD UIPORT W8: fix: workable is drawn only when code checked every item of the reading
+  - PRD j2ui-core C2: fix: inside one recorded second the chat follows the ledger's own order
+  - A3 P6: the computed status of J1 and J2 at the final head (no file change)
+  - A3 P2, P4: the walk tests read their own journey file
+  - PRD A3 Q6: fix: the read model leaves out what names code, and the scan reads every string
+  - PRD j2ui-core C1: fix: the path rule shortens a path of this machine, not the owner's quoted routes
+  - A3 P6: The declared journeys and the function journeys
+  - A3 P5: J4.4, a department's rule can only tighten an inherited one (BL-2, partly built: BL-2b)
+  - A3 P4: The J4 scenario and the J4.1 test
+  - A3 P3: J4 as data
+  - A3 P2: The J3 scenarios and the missing edge tests
+  - A3 P5: bind J2.5 to the envelope ask wave 2 delivered (BL-6)
+  - PRD W2-PRIORITY: fix after merge: contract case 5 test stubs the added part's words
+  - PRD W2-PRIORITY: fix after merge: a panel read of a line out of its envelope files no ask
+  - A3 P1: J3 as data
+  - A3 P3: J2 as data, with its scenario and the three missing tests (P4)
+  - A3 P1: J1 as data, with its scenario and the J1.8 test (P2)
+  - PRD M9.8: A goal change reopens the cycle
+  - PRD M9.5: No silent ends
+  - PRD M9.3: File a granted round
+  - PRD M8.5: Weigh a reading three ways
+  - PRD M8.4: Identity declares done from the reading
+  - PRD M5.4: The conflict ask carries Priority's options
+  - PRD j2ui-verify: fix after merge: the hostile department's attacker-shaped engine names are planted in warn mode
+  - PRD A2 I5: _line_notes through S.validate_workflow; the family and the one entry
+  - A1 interface: workflow: the source family (A2)
+  - PRD A2 I4: the fixture child, end to end
+  - PRD A2 I3: the contract: recipe_of through the patch, cases 9 to 13
+  - PRD A2 I2: definition_faults and unchanged_steps; validate gets provided
+  - PRD A2 I1: inherit, chain, recipe, and recipes()
+  - PRD UIPORT T6: fix: the design record says what round 1 of the verification fixed and what ran
+  - PRD M9.6: adaptation/v1 says in its docstring what W2-ADAPT added to it
+  - PRD A3 C1: fix: every AI step of a function has a prompt part (ST-6)
+  - PRD A3 C4: fix: an ask is held to the ways out its form names (AS-2)
+  - A3 F1: a guard that Adaptation's words promise Pursue only when it is built
+  - test: the priority prices journal test holds in refuse mode too
+  - A3: keep the added blocks clear of the lines other packages edit
+  - A1 interface: refuse
+  - A3 F9: the README says how the templates meet the function template
+  - A3 F8: the comparison script
+  - PRD M10.5: Z2 tidy the proof scenario's setup
+  - A3 F7: one copy of the banned words, the official rules cannot be lost, two records kept equal
+  - A3 Q5: JC-8 in status.py, a declared journey has no status file
+  - A3 Q7: The README
+  - A3 F6: the pane reads the typed goal, and done is a proposal
+  - PRD UIPORT T3: fix: the plan's rule for conditions is a test again, as a strict expected failure until E1 is settled
+  - A3 Q6: The data-only API
+  - snapshot: A3 role block (A3 F4)
+  - PRD UIPORT T3: fix: rule 1 and the word rules are guarded as the spec says, and the guards are shown to fail
+  - A3 Q5: The status runner and the gate line
+  - A3 F5: the picked template's whole floor reaches the card
+  - snapshot: M9.1 the adapt.next cases leave the fixture's records as they found them
+  - A3 F3: contract case 14, and the field rule of FT-9
+  - PRD M9.3: The pursue scenario end to end (W2-ADAPT F5, done-checks of M9.1, M9.3 and M9.5)
+  - A3 Q4: The walk helper
+  - PRD UIPORT T4: fix: the hostile department carries attacker-shaped engine and artifact names
+  - PRD M8.6: Measurable checks for websites
+  - snapshot: Adaptation goal (A3 F2)
+  - PRD M9.6: Rounds in the view
+  - A1 interface: adaptation: a round in the pane says what it is in the owner's words
+  - PRD A2 L3: fix: recipe_faults is total over a recipe out of shape, and says so
+  - PRD A2 L5: fix: pin the A2 step-field names as a floor, not an exact tuple
+  - A3 Q3: The twelve cases
+  - PRD M9.6: Spend by round (Q4)
+  - PRD M9.1: Propose the next round (M9.4: never the approach that already failed)
+  - PRD UIPORT T3: fix: the read-writes-nothing test can fail: it hashes the records before the first read, in every state, and after every slot of a run
+  - A1 interface: priority: spend_by_round in the view
+  - PRD UIPORT T3: fix: a panel read no longer files the publish ask or the envelope ask (identity_gate and priority_envelope honour peek)
+  - A3 F1: the parts and the words, tested
+  - A3 interface: function parts
+  - PRD M5.5: Scenario tests for rare branches (Q3)
+  - snapshot: M9.1 adapt.next names the items that do not hold, what Audit found and the approach that failed
+  - PRD M9.2: The goal's ceiling and priced rounds (Q2)
+  - A1 interface: adaptation: the next round, decide.next, round_is_new and the three handlers that hear it
+  - PRD M10.5: Z2 Schema conformance counted in refuse mode
+  - PRD M10.4: Z1 The proof run reads SM-1 to SM-14 from the record
+  - PRD UIPORT T5: fix: the placeholder is 15px as the prototype's, and the walk draws the start screen against it
+  - A3 Q2: Resolution, the state of a row, and the site reader
+  - A1 interface: priority: the round bargain part, its covering, the ceiling in the view
+  - A3 Q1: The loader, the hash and the read model
+  - PRD M5.4: Priced options on budget and bargain limits (Q1)
+  - PRD M5.4: Conflicts carry Priority's options
+  - PRD M5.2: Fit a Library line to the use case
+  - snapshot: M5.2 adapt.fit names the Library's line and the engine the kind requires
+  - A1 interface: audit: a mechanical check names the page defects it finds
+  - A1 interface: adaptation: the make.fit part, the line_is_fitted check and the adapt.fit step
+  - PRD M7.5: Artifact forms on every write
+  - A1 interface: root: engine.template takes a form
+  - PRD M10.3: Words pass
+  - PRD M10.2: One API family for runtime departments
+  - A3 CORE: ST-9 test, the module's words, two counts loosened
+  - A3 C1: layers/lineage.py classifies may_end and side_by_side
+  - A3 C5: The function template's constants (L2)
+  - A3 C4: The levels, the ask forms, the generated schemas
+  - A3 C3: The journey template (L0)
+  - A3 C2: Kind, engine and artifact templates (L1, L3, L5)
+  - A3 C1: The step template (L4)
+  - PRD j2ui-verify: docs after merge: pointers to the J2 page design, the decision rows it settles, the three walk tools
+  - A2 L3: tidy recipe_faults
+  - PRD UIPORT T6: The gate, the branch check and the design record
+  - PRD C7: fix: a SchemaFault is 422 NOT_IN_SCHEMA from every router, not only website_api's
+  - PRD C6: fix: a Settings row says the rule tags the way the badge does
+  - A2 L5: the classification test and the hygiene test
+  - A2 L4: gate ranking
+  - A2 L3: recipe_faults
+  - A2 L2: merge_recipe
+  - A2 L1: words and layout merge
+  - PRD UIPORT T5: Documents, Artifacts, Conflicts and an opened atom, for the sign-off list
+  - PRD UIPORT T5: the screens the owner's sign-off list points at, and a department that is building
+  - PRD UIPORT T5: Chrome end to end and the screenshots
+  - PRD UIPORT T3: fix after the rebase onto main: the defect pinned in T3 is mended there
+  - PRD UIPORT T4: Hostile strings
+  - PRD UIPORT T3: The seeded department and the contract tests
+  - PRD UIPORT T2: The render harness and the same-page proof
+  - PRD UIPORT T1: Fixtures from the prototype's own runs
+  - sutra-ui design: amendment A3, templates at every level and the user-journey template
+  - PRD UIPORT W8: fix: a pane is read only when the record holds something for it, and once for each state of that record
+  - PRD a1-core-k2: fix after merge: a Settings row prints a typed value in the owner's words
+  - PRD a1-core-k2: fix after merge: inputs the other packages added are named, the whole-file copy no longer wins, the pane is the view
+  - PRD A1: fix: Adaptation's idea and ladder writers are checked against the interface they now have
+  - A1 interface: adaptation: type the idea and the ladder entry
+  - PRD UIPORT W7: fix: a call names the atom its step made, so the atom card shows it
+  - PRD A3: fix: the fallback copy of the line prompt fills the items slot
+  - PRD A8: fix: with the setting on and no agent to shape, the department keeps the Library's line
+  - PRD UIPORT W7: fix: a decision's answer reaches the page as the act in the owner's words, never the bare word
+  - PRD A8: fix: a cannot reaches the owner in plain words with ways out, not as a plan to stamp
+  - PRD A4: fix: the owner reads a fault, not the id of the standard it breaks
+  - PRD A8: fix: a made engine that leaves out does, reads, writes or internet is refused, not filled in
+  - PRD A3: fix: items no engine names default to the last engine on a line that is not made
+  - PRD A8: fix: a line request marked go_on goes to Priority with the doubt named, never to a second doubt
+  - PRD A8: fix: a doubt with no 'Unless you say' sentence leaves the fallback key out
+  - PRD j2ui-views: fix after merge: two core tests that expected map_view to raise KeyError
+  - PRD j2ui-work: fix after merge: a born department's idle shape has its registered line
+  - PRD j2ui-views M5: fix: text a builder or a function wrote leaves in the owner's words, and the line is tested with hostile text
+  - PRD j2ui-views M6: fix: the real ctx is compared with the stand-in while Identity's question is open
+  - PRD j2ui-views M6: fix: status and map_view read an ask that names no engine
+  - PRD j2ui-core C4: fix: a bare answer with no ask waiting is refused, not sent to Root as a request
+  - PRD j2ui-core C2: fix: only Root's own check speaks as the validator
+  - PRD j2ui-core C1: fix: clean() no longer rewrites the owner's own words
+  - PRD j2ui-core C1: fix: Identity's open question no longer takes the engines out of the read
+  - PRD M8.3: fix: A1.17 and M8.3 name the latest reading's findings and what Identity says of them
+  - PRD M8.2: fix: Audit reads what it starts on, the department's deliverable, whatever its kind
+  - PRD j2ui-shell: fix after merge: j2ui_api is in the tree, so app.py imports it plainly
+  - PRD M8.3: fix: Identity says only what the reading filed, and the owner can see what it noted
+  - A1 interface: audit: the latest reading's findings
+  - PRD M8.3: fix: the worse verdict stands when code and the reader disagree, recorded and pinned
+  - PRD UIPORT W6: the tab and the chat share functions_view's words for an act, and a test pins them
+  - PRD UIPORT W3: an atom's results are the latest rows, the latest run first
+  - PRD UIPORT W7: the call link looks only near a message, and the tests take the hour and the template's numbers from the record
+  - PRD UIPORT W8: Enrichment from the panes' new keys
+  - PRD UIPORT W7: docs, preview, call and the call log
+  - PRD UIPORT W6: Conflicts, the bargains Adaptation and Priority did not close at once
+  - PRD UIPORT W5: Audits, conditions, workable and refs, honest
+  - PRD UIPORT W4: Lanes, one for each agent
+  - PRD UIPORT W3: Atoms, atoms_v1, sections and agents
+  - PRD UIPORT W2: Workflows, one for each engine of the registered line
+  - PRD UIPORT W1: Adapter work content: the skeleton
+  - PRD a1-audit: fix after merge: the Identity view test files Audit's reading when it sets a department done
+  - PRD j2ui-core C4: Identity's question answered for real, with no spy
+  - PRD j2ui-core C3: a builder module without its builder is absent, not failed
+  - PRD j2ui-core C2: what Identity says of a stamp comes after the stamp
+  - PRD P6: fix: the calls median is told from the mean, the least and the most
+  - PRD P3: fix: an ask for less keeps the line cut short, and the covering holds it to that
+  - PRD M3.7: fix: the done state of Identity's pane is reached with Audit's reading when audited takes one
+  - PRD P4: fix: Priority's view builds its pane itself and never asks _j2_part
+  - PRD j2ui-shell X6: Root's check as dots on Adaptation's pane (S11), on fixtures
+  - PRD j2ui-shell X5: the version line, on fixtures
+  - PRD j2ui-shell X4: Root settings > Standards (S18), on fixtures
+  - PRD j2ui-shell X1-X3: Settings > Instructions as typed fields (S16), on fixtures
+  - PRD j2ui-core C6: Cost and the page-key scan
+  - PRD j2ui-shell E6: the rendered capture and the vendor row
+  - PRD j2ui-views M6: the tests meet j2ui-core's loader and its real ctx
+  - PRD j2ui-shell E5: test_j2view.js
+  - PRD j2ui-shell E4: the department opens on the J2 page, under a native bar
+  - PRD j2ui-core C5: j2ui_api: the router
+  - PRD j2ui-core C4: j2ui_say: the owner's words, routed to the existing writers
+  - PRD M3.9: fix: the default fallback says the department unless it is a website
+  - PRD j2ui-core C3: j2ui_state: paused, status, outcome and the 56 keys
+  - PRD j2ui-core C2: j2ui_chat: the arrival-ordered chat list
+  - PRD M3.9: fix: the doubt and its fallback never show the confidence or a part of the app to the owner
+  - PRD j2ui-views M6: tidy (the map reads the board at module level, no unused names, no "charter" in its own prose)
+  - PRD j2ui-views M6: all four views, end to end, in every cycle state
+  - PRD j2ui-views M5: the Board
+  - PRD j2ui-views M4: steps, edges, the status pill and what is not recorded
+  - PRD j2ui-views M3: the Map's nodes
+  - PRD j2ui-views M2: the preview, with links that stay inside their version
+  - PRD j2ui-views M1: the Artifacts listing and what may be served
+  - PRD M3.9: fix: A1 interface: identity: the doubt's fields are declared on the line request and the ask
+  - PRD M2.5: fix: the owner's stamped change wins over a layer's words, and the three tests run on the live path
+  - PRD j2ui-core C1: j2ui_common: scope, cache, journal tails, empty shapes
+  - PRD j2ui-core C0: The prototype loader for tests
+  - sutra-ui design: amendment A2, the class model of the interface layer
+  - PRD j2ui-shell E3: the page route and its mount in app.py
+  - PRD j2ui-shell E2: the verbatim test
+  - PRD j2ui-shell E1b: fonts script (S3), fonts not yet vendored
+  - PRD j2ui-shell E1: sync script and the first copy of the J2 page
+  - PRD R5: fix: the refused stamp's words are tested to reach the owner's chat
+  - PRD R6: fix: root.setup.converse has one owner field, the task, and the spec of record says so
+  - PRD M4.2: fix: the line Coordination writes is held to the plan registered last, not to the record
+  - PRD R5: fix: the owner is told why when a stamped engine is refused at the grow stage
+  - A1 A6: Adaptation starts on the deliverable
+  - PRD C2: fix: a gate's check and a rule's check are tested with their function as the engine
+  - A1 C11: Tests, then K2
+  - A1 C10: Typed options and the line request
+  - A1 P3: the born department's Root check reads Priority's real price
+  - A1 I6: the test file's header names every step
+  - A1 U2: the bundle tests set Audit's typed words aside, and keep their own assertions
+  - A1 K3: the line is held against the plan Root registered
+  - A1 C9: Views through the layers
+  - A1 C8: The page fields from the interface
+  - A1 U6: the README names the Audit view fixture
+  - A1 A8: Root takes the Library's own engine as the plan names it
+  - A1 U6: fixtures for Audit's pane, and done is read from a reading
+  - A1 A4: the notes name the standard a fault breaks, once
+  - A1 C7: The API
+  - A1 C6: Typed owner values
+  - A1 K5: Coordination's tests
+  - A1 U2: Audit's words
+  - A1 K2: Coordination's words
+  - snapshot: M6.4 the practices say the owner's rules, not yours
+  - A1 R6: root/v1 by reference, typed setup words, root_setup
+  - A1 U6: Audit's view and tests
+  - A1 interface: audit: the view's latest and each reading's verdicts
+  - A1 A9: no-template scenarios
+  - A1 P6: tests of Priority's layer
+  - snapshot: M6.4 adapt.line shapes with a confidence
+  - A1 interface: root: setup.converse has one owner field, the task
+  - snapshot: M5.1 adapt.line names the done-when items
+  - A1 I6: the contract, whole
+  - A1 U5: S-30 readings and the not-read row
+  - A1 P2: Priority's words (M2.5)
+  - A1 interface: adaptation: the line prompt gains the done-when items
+  - A1 I2: Identity's words
+  - A1 A2: Adaptation's words
+  - A1 interface: adaptation: ADDED_PARTS names the prompt parts the .md bundle does not hold
+  - A1 K3: the line is checked on write
+  - A1 I1: the failing-step test breaks the step where the runtime reads it
+  - snapshot: M5.3 bargain names the estimate and what remains
+  - A1 P3: K1's registry and prompt tests take the bodies a layer holds
+  - A1 I5: Hear a doubt
+  - A1 I1: the registry's tests with a layer that holds names
+  - A1 R7: Root's saves are Root's
+  - A1 R6: the root prompts snapshot, written before the words move
+  - A1 R5: the grown line and the born template are held to the interface
+  - A1 A5: Adaptation's view
+  - A1 interface: adaptation: coverage on view.adaptation, and the checks of each Root review
+  - A1 R3: birth carries six pins and holds the kind's line to Root's standards
+  - A1 P5: Priority's writers say who they are
+  - A1 interface: audit: the part audit.judge.items and the SENDS row for a reading
+  - A1 R4: the registration record
+  - A1 P4: Priority's view
+  - A1 A8: shape with a confidence
+  - A1 A3: proposals cover the done-when items
+  - A1 P3: Priority prices from observed spend (M5.3)
+  - A1 U4: Audit reads any kind's deliverable
+  - A1 R2: Root's check through the workflow schema
+  - A1 C5: The snapshot renders what runs
+  - A1 I4: Identity's writers say who they are
+  - A1 I3: Identity's view
+  - A1 I1: identity/v1 by reference
+  - A1 K4: Coordination's view and the engine card
+  - A1 U3: the deliverable, from the interface
+  - A1 C4: The extractor and the split proof
+  - A1 C3: The prompt compiler
+  - A1 interface: adaptation: the make.shape part and the doubt Adaptation sends
+  - A1 A4: the proposal stage
+  - A1 interface: priority: the estimate and what remains, the price covering, the prices view
+  - A1 U1: audit/v1 by reference
+  - A1 C2: The seam
+  - A1 R1: workflow_schema.py, Root's standards in code
+  - A1 P1: priority/v1 by reference
+  - A1 K1: coordination/v1 by reference
+  - A1 A7: the practices in place ride on the line request
+  - A1 C1: The registry
+  - A1 A1: adaptation/v1 by reference
+  - PRD M2.1: fix: every DEFS name has a passing example and a failing one
+  - PRD m3: fix after merge: the layer schema carries Identity's page as it now reads (never, not refuse)
+  - PRD M3.3: fix: every step-1 question of Identity's takes 'just do it', and the tell names the defaults
+  - PRD M3.3: fix: what the owner says the department may spend is the most Priority's limits come to
+  - PRD M3.7: fix: the poll clock reads the chat on All five and a function's pane, so their cards stay current
+  - A1 S9: Lanes and a clean gate in warn mode
+  - PRD M3.7: fix: Identity's page says a rule's tags as the pane does, never refuse
+  - PRD M3.7: fix: Identity's pane says a closed conflict's split and ruling in plain words
+  - PRD M3.6: fix: the conflict card Identity puts to the owner is in plain words, as its line is
+  - PRD M3.5: fix: the owner's stamp on words that reach outside reopens a blocked plan
+  - PRD M3.5: fix: a card that waits again gets a thread of its own, so the owner's next choice is applied
+  - A1 S8: Contract-test helpers
+  - A1 S7: The layer package and the recipes in it
+  - A1 S6: Generated JSON Schema files and the pointer
+  - A1 S5: The sink, the post check and the test fixture
+  - A1 S4: Public functions
+  - A1 S3: The tables
+  - A1 S2: Definitions bound to the writers
+  - A1 S1: Constants, types, validator and modes
+  - PRD M4.2: fix: before Root's check the Map draws the Brief alone and says No plan yet, as S7 does
+  - PRD M3.7: Identity's pane: the cards that wait on you stand wherever the department needs them
+  - PRD M4.1: fix: a born word on the board acts only on the plan Root registered, never on its payload
+  - PRD M1.7: fix: Identity's pane says the done line of a record from before done-when had items
+  - PRD M3.6: One voice, in plain words: Identity signs a department's chat, and a card's words are plain
+  - PRD M3.5: A way out of blocked, with options: every refusal on the ledger, the card always answerable
+  - PRD M3.4: Rules and done-when items change through the right asks: Identity asks the next point, Priority writes money
+  - sutra-ui design: A1.16, one sentence back in its place
+  - sutra-ui design: amendment A1, the interface schema layer
+  - PRD M3.3: Identity reads the identity against its standard: one standard, and an answer reaches the record
+  - PRD M3.1: One record of who the department is: a done-when answer is an item
+  - PRD M1.7: fix: Identity's pane draws what it holds once, from its own record when it has one
+  - PRD M4.7: fix: on the runtime no Map box opens the Motor, and the viewer serves none
+  - PRD M4.2: fix: the Map's line is the plan's; an engine it left out sits under it, said left out
+  - PRD M1.7: fix: an old who-may-post note is read again only when it names who posts
+  - PRD M4.1: fix: on every kind each engine's first limit is Priority's grant, at registration
+  - PRD M4.4: fix: a refused plan on a kind with required engines goes back through the Library, with them
+  - PRD M1.7: fix: Identity's pane shows the goal, done-when and rules from the record
+  - PRD M1.7: fix: the owner's words a function carries on stay as they said them
+  - PRD M4.1: fix: a born word on the board is read from its payload, and one that names no engine changes nothing
+  - PRD M4.6: fix: Priority's card on a registry department says what it admitted, not a queue
+  - PRD M4.7: fix: no timetable before Root's check, so the pane says No plan yet
+  - PRD M1.7: fix: an engine added says whose word added it, whole
+  - PRD M1.7: fix: Coordination's who-may-post check says each act in the owner's words
+  - PRD M4.7: fix: a reason that already says waits is not said twice
+  - PRD M4.6: fix: the runtime pane test finds the queue on Coordination's timetable
+  - PRD M4.4: fix: a counter that drops Check says asked for less on the record
+  - PRD M3.7: Identity's pane
+  - PRD M4.7: Coordination's pane and the engine card
+  - PRD M4.6: The queue belongs to Coordination; Priority never orders
+  - PRD M4.5: Hand-offs, hold reasons and ties from the record
+  - PRD M4.4: Required engines (Q12)
+  - PRD M4.3: Coordination's timetable is its own state
+  - PRD M4.2: The line is what was granted
+  - PRD M4.1: Registration by the right functions
+  - PRD M3.6: One voice, in plain words
+  - PRD M1.9: fix: a function's page repaints when its template, a field's value or a step's name moves
+  - PRD M1.7: fix: every tab of a function's pane says the owner's words
+  - PRD M3.5: A way out of blocked, with options
+  - PRD M3.4: Rules and done-when items change through the right asks
+  - PRD M3.3: Identity reads the identity against its standard
+  - PRD M3.2: Root drafts done-when items at birth
+  - PRD M3.1: One record of who the department is
+  - PRD M0.6: fix: the chat says Identity's question once, on its card, and the answer once, under it
+  - PRD M2.4: Covering checks fail loudly
+  - PRD M0.5: fix: a department that is not a website is never called a site
+  - PRD M1.4: fix: the Org sheet's name is the new department's name
+  - PRD M1.9: fix: the repaint signature holds everything the screens show
+  - PRD M1.8: fix: Between them shows what each function did, not the words it carried
+  - PRD M1.1: fix: a department switched off after its goal is reached says stopped
+  - PRD M1.7: fix: the older cards under each function's page say the owner's words
+  - PRD M1.7: fix: Identity's ask and tells, and Root's check, read in the owner's words
+  - PRD M1.1: fix: a running function's line says the owner's words
+  - PRD M0.3: fix: a kept judge step keeps how it was read
+  - PRD M0.6: fix: a yes, ok or no that says more answers Identity's question through Root
+  - PRD M1.4: fix: the Org sheet says where Root puts the new department
+  - PRD M1.5: fix: the deliverable takes the ok tint for every kind of department
+  - PRD M1.8: fix: All five keeps the record's counts on the hover, never at rest
+  - PRD M1.1: fix: the last act is what the function did, not the words it carried
+  - PRD M1.1: fix: one stopped word on the Map, the list, All five and the pane
+  - PRD M1.7: fix: the bargain and a dropped plan read in the owner's words
+  - PRD M1.1: fix: the suites run the functions read tests
+  - PRD m0: fix after merge: the suites run the ledger and the lane tests
+  - PRD m0: fix after merge: name the core plugin's Native skills
+  - PRD m0: fix after merge: the private-token test no longer matches a random id
+  - PRD m0: fix after merge: the functions read says the unread state
+  - PRD M0.1: fix: a __main__ block is the block, not the word
+  - PRD M0.6: fix: on Root's chat, the card names the department that asks
+  - PRD M0.3: fix: say plainly why a version was not read
+  - PRD M0.6: fix: Identity's question is never closed by a stamp
+  - PRD M0.7: An honest Root-check event, and the missing token
+  - PRD M0.6: Identity's question as a card in Chat
+  - PRD M0.5: Thin words become an answerable question
+  - PRD M0.4: Envelope holds reach the ledger
+  - PRD M0.3: An unread version is never 'clean'
+  - PRD M0.2: The ledger appends without reading the file
+  - PRD M0.1: Test lanes run what they report
+  - PRD M1.1: fix: read the board once per functions read
+  - PRD M1.5: Map extras after MK-8 (badges, lines, speaks-to, dropdowns)
+  - PRD M2.1: fix: run the function prompt tests in the suites
+  - PRD M2.3: fix: Settings says no run reads Adaptation's decide yet
+  - PRD M2.2: fix: tell the owner truly that no run reads Adaptation's decide
+  - PRD M1.9: Refresh without flicker
+  - PRD M1.8: The 'All five' overview (proposal, MK-8)
+  - PRD M6.1: fix: a doc test for the M6.1 done check
+  - PRD M1.7: Each function's pane mirrors its function page
+  - PRD M6.1: fix: cut the proposal to two pages, with the detail in appendices
+  - PRD M6.1: fix: state the Pages form a shaped writer meets for Check
+  - PRD M6.1: fix: keep a kind's required engines, and ask when one cannot serve
+  - PRD M1.6: Function rows carry a state (proposal, MK-8)
+  - PRD M1.5: Map: the NOW line and honest function boxes (ruled design)
+  - PRD M2.3: Settings > Instructions
+  - PRD M1.4: Every new department is a runtime department
+  - PRD M2.2: The owner's changes, kept in the records home and applied by an ask
+  - PRD M1.3: Function colours and the waiting ring
+  - PRD M2.1: Prompts load from .md files, byte for byte
+  - PRD M1.2: Speaks-to and made-by from the record
+  - PRD M6.1: A design spike in the prototype (desk spike)
+  - PRD M1.1: The functions read model
+  - sutra-ui design: PRD for the department's five functions, and the build's decision log
+  - seo_agent: symmetric +/-5% word band, and a distinct figure-comparability rule
+- Changed: 687 file(s), +156569/-2065
+- New test suites: test_covering_checks.py test_function_prompts.py test_functions_view.py test_j2_identity.py test_j2_ledger.py test_j2_metrics.py test_j2ui_api.py test_j2ui_artifacts.py test_j2ui_atoms.py test_j2ui_audit.py test_j2ui_board.py test_j2ui_chat.py test_j2ui_common.py test_j2ui_contract.py test_j2ui_map.py test_j2ui_page.py test_j2ui_proto.py test_j2ui_render.py test_j2ui_say.py test_j2ui_site.py test_j2ui_state.py test_j2ui_sync.py test_j2ui_verbatim.py test_j2ui_work.py test_j2ui_xss.py test_j2view.js test_layer_adaptation.py test_layer_audit.py test_layer_board.py test_layer_checks.py test_layer_contracts.py test_layer_coordination.py test_layer_core.py test_layer_function_template.py test_layer_identity.py test_layer_inherit.py test_layer_journey_j1.py test_layer_journey_j2.py test_layer_journey_j3.py test_layer_journey_j4.py test_layer_journeys.py test_layer_lineage.py test_layer_models_api.py test_layer_models_core.py test_layer_models_docs.py test_layer_models_equiv.py test_layer_models_guard.py test_layer_models_hooks.py test_layer_models_owner.py test_layer_models_port.py test_layer_models_rules.py test_layer_models_stream.py test_layer_models_types.py test_layer_models_ui.py test_layer_pins.py test_layer_priority.py test_layer_prompts.py test_layer_pursue.py test_layer_registry.py test_layer_retire.py test_layer_root.py test_layer_schema.py test_layer_templates.py test_layer_writers.py test_models.js test_prd_docs.py test_run_lanes.py
+
 ## 2.306.25 (2026-10-09)
 
 - Mac: Settings > Download & install now installs the incremental update (about 3 MB) instead of returning an error and falling back to the full 259 MB DMG.
