@@ -55,7 +55,7 @@ tail -1 /tmp/sutra-suite-journeys.txt | sed "s/^journeys: //; s/^/journeys: /; s
 # its stop case (S14) fails on main as this lane joins the gate (2026-10-26, outside the department) and is left out here
 # until the chat runtime's owner mends it: the lane is the gate's from now on, so a new red in it is a red run
 lane $PY -m pytest -q -p no:cacheprovider test_runtime_characterization.py test_function_templates.py test_prd_docs.py \
-  --deselect test_runtime_characterization.py::ChatCharacterization::test_03_stop_kills_turn_keeps_session_resumes_next \
+  -k "not test_03_stop_kills_turn_keeps_session_resumes_next" \
   > /tmp/sutra-suite-a1.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-a1.txt | sed "s/^/characterization, templates and PRD documents: /"
 # the proof run (PRD M10.4, M10.5): the metrics' own tests, then SM-1 to SM-14 read from the record the scenario suite leaves
