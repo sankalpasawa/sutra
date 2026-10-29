@@ -441,7 +441,7 @@ def test_c7_get_layers_describes_the_interface_the_department_runs_under(api, ho
     assert r.status_code == 200
     got = r.json()
     assert set(got) == {"schema_version", "pins", "available", "standards", "describe"}
-    assert got["schema_version"] == S.SCHEMA_VERSION == 1
+    assert got["schema_version"] == S.SCHEMA_VERSION == 2
     assert got["pins"] == S.DEFAULT_PINS and got["available"] == layers.available()
     assert got["standards"] == [{"id": i, "says": s} for i, s, _, _ in S.WORKFLOW_STANDARDS]
     assert [x["id"] for x in got["standards"]][0] == "names_an_engine" and all(set(x) == {"id", "says"} for x in got["standards"])

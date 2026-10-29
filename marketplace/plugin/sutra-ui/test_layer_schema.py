@@ -905,7 +905,7 @@ def test_s4_check_department_checks_only_the_changed_keys_and_stamps_the_version
     monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     before = {"kind": "website", "ref": "r", "name": "Acme", "colour": "an old key", "windows": {"Plan": "fifteen"}}
     d = dict(before, goal="A live site")
-    assert S.check_department(dict(d), before=before)["schema_version"] == 1, "a legacy fault never blocks a later save"
+    assert S.check_department(dict(d), before=before)["schema_version"] == S.SCHEMA_VERSION, "a legacy fault never blocks a later save"
     with S.expect_refused("department") as met:
         S.check_department(dict(d, colour="red"), before=before)
     assert met == ["$.colour: is not a field here"]

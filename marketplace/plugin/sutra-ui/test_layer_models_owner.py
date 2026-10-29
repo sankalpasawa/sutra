@@ -694,7 +694,7 @@ def test_a4_changes_no_byte_of_the_interface(home):
     edited = copy.deepcopy(FIX['client/v1'])
     edited['about'] = 'edited'
     store.save(edited)
-    assert S.interface_sha() == S.INTERFACE_SHA[1]
+    assert S.interface_sha() == S.INTERFACE_SHA[S.SCHEMA_VERSION]
     assert not any(k.startswith('x.') or k.startswith('model.') for k in S.DEFS)
     assert 'model.spec' not in S.RECORDS
 
@@ -789,3 +789,4 @@ def test_the_spec_is_a_core_definition_checked_at_load(home):
     p.write_text(json.dumps(doc))
     reg = store.reload()
     assert reg.state['x.client/v1'] == 'needs_a_look' and 'is not one of slug, code, date' in reg.why['x.client/v1']
+
