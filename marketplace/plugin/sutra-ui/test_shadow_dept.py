@@ -32,7 +32,8 @@ def org(tmp_path, monkeypatch):
     import engine_runtime
     import dept_read
     import shadow_dept
-    for m in (E, W, org2_apply, founding, engine_runtime, dept_read, shadow_dept):
+    mods = (E, W, org2_apply, founding, engine_runtime, dept_read, shadow_dept)
+    for m in mods:
         importlib.reload(m)
     if not E.active_roots(E.load_domains()):
         E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
@@ -44,10 +45,18 @@ def org(tmp_path, monkeypatch):
     yield type("Org", (), {"W": W, "founding": founding, "R": engine_runtime, "dr": dept_read, "sd": shadow_dept,
                            "root": root, "kids": kids})
     shadow_dept.CHOOSER["fn"] = None
+    monkeypatch.undo()                                  # the real environment back, then every module bound to it again
+    for m in mods:
+        importlib.reload(m)
 
 
 def run(co):
-    return asyncio.run(co)
+    # a loop of its own: asyncio.run would leave the thread with no current loop for the tests that call get_event_loop
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(co)
+    finally:
+        loop.close()
 
 
 def reply(**kw):
