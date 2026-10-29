@@ -42,6 +42,11 @@ def _signature(root_ref):
     return tuple(sig)
 
 
+def signature(root_ref=None):
+    """What changes when any department under `root_ref` changes (the memo key of the Shadow graph)."""
+    return _signature(root_ref)
+
+
 def _under(d, root_ref):
     return not root_ref or root_ref in (d.get("root"), d.get("parent"))
 

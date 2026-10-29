@@ -30,6 +30,7 @@ import pytest
 
 import layer_schema
 import mission_engine as ME
+from test_shadow_dept import org  # noqa: F401  (the fixture)
 
 SAMPLE = json.loads((Path(__file__).parent / "fixtures" / "shadow_graph_sample.json").read_text(encoding="utf-8"))
 ROOT = "dref-root0001"
@@ -303,3 +304,23 @@ def test_21_dept_read_failing_falls_back_to_refs(env, monkeypatch):
     monkeypatch.setattr(env, "dept_read", Boom())
     mission(department_ref="dref-x0001")
     assert [n["status"] for n in env.build()["nodes"] if n["kind"] == "department"] == ["off"]
+
+
+def test_memo_is_keyed_by_the_real_departments_signature(org, monkeypatch):
+    """Against the real dept_read (no fake): a department change moves the memo key and the graph is rebuilt, not served stale."""
+    import os
+    import shadow_graph as G
+    monkeypatch.setattr(G, "dept_read", org.dr)
+    G.clear()
+    sig0 = G._dept_signature()
+    assert sig0 and sig0 == org.dr.signature()
+    G.build()
+    ref = org.kids["Billing"]
+    p = org.W.ddir(ref) / "dept.json"
+    later = time.time() + 100
+    os.utime(p, (later, later))
+    assert G._dept_signature() != sig0
+    memo = dict(G._MEMO)
+    G.build()
+    assert G._MEMO != memo and G._MEMO[('graph', None, False)][0] == G._signature()
+    G.clear()
