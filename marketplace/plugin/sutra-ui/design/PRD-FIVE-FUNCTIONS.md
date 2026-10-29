@@ -1480,7 +1480,7 @@ flowchart LR
 | **Centres on** | The J2 page (`j2ui_*`, `25-j2view.js`); Shadow (`shadow_*`, Home); Root's founding path · A5 |
 | **Goal** | Every runtime-2 department opens the J2 page with neutral wording; Shadow shows tasks, departments and chats as a graph with a detail screen; an agent decides use, create or none for any task, recorded and drawn. All new records are closed pydantic models. |
 | **At the end, the owner sees** | Any department opens the J2 page; Home has a Graph button; the Shadow chat has a Details jump; a task shows `uses` (solid) or `spawned` (dashed) with the reason. |
-| **Status** | proposed (designed and reviewed 2026-10-29) |
+| **Status** | built 2026-10-29 (P1 to P4 merged; P5 verified: `qa/walks/a5-e2e.sh`, `test_a5_verify.py`; M13.10 leaves the Root default classic until a real Setup conversation has been walked, A5-5) |
 | **Depends on** | M12 (A4) |
 | **Size** | five packages (A5.8) |
 

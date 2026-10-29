@@ -120,3 +120,19 @@ def test_the_walk_scripts_are_in_place_and_parse():
         for w in ("1280", "390"):
             assert "%s-%s.png" % (stem, w) in shots
 
+
+
+def test_the_documents_say_what_was_built():
+    a5 = (DESIGN / "PRD-FIVE-FUNCTIONS-A5.md").read_text(encoding="utf-8")
+    prd = (DESIGN / "PRD-FIVE-FUNCTIONS.md").read_text(encoding="utf-8")
+    log = (DESIGN / "PRD-FIVE-FUNCTIONS-DECISIONS.md").read_text(encoding="utf-8")
+    assert "Built, merged 2026-10-29" in a5.splitlines()[4]
+    assert "## Build status" in a5
+    status = prd[prd.index("### M13 "):prd.index("### M13 ") + 1200]
+    assert "| **Status** | built" in status
+    rows = [l for l in log.splitlines() if l.startswith("| A5-")]
+    assert len(rows) == 16 and not [l for l in rows if "not built" in l]
+    for f in ("PRD-FIVE-FUNCTIONS-A1.md", "PRD-FIVE-FUNCTIONS-A4.md"):
+        assert "schema version 2" in (DESIGN / f).read_text(encoding="utf-8")
+    notes = (DESIGN / "RELEASE-NOTES-A5.md").read_text(encoding="utf-8")
+    assert "rolled back" in notes and "schema_version" in notes and "link-only" in notes
