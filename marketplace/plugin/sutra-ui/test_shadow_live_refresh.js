@@ -380,4 +380,15 @@ function nyCtx(){
   console.log("ok 14 founder-written Done when renders normally");
 })().catch(e => { console.error("FAIL 14:", e.message); process.exit(1); });
 
+/* A5.2.5: the Shadow graph is a screen that renders what loadShadowHome reads (the Details jump leaves Home on its missions), so the
+   home's lazy abandon and its ticker both count it as the home's own. */
+{
+  const ctx = shadowCtx();
+  ctx.S.screen = "shadowgraph";
+  assert.strictEqual(ctx.shadowHomeOnScreen(), true, "the graph is a Shadow Home screen");
+  ctx.S.screen = "settings";
+  assert.strictEqual(ctx.shadowHomeOnScreen(), false);
+  console.log("ok 15 the graph screen counts as Shadow Home for the lazy read");
+}
+
 console.log("\nall shadow live-refresh tests passed");
