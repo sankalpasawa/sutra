@@ -6347,6 +6347,7 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .sgtag.t-held{border-color:var(--warn);color:var(--warn);border-style:dotted}
 .sgtip{position:absolute;z-index:5;max-width:280px;padding:8px 10px;display:flex;flex-direction:column;gap:2px;background:var(--card);
   border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);font-size:12px}
+.sglist .sgtag{position:static;z-index:auto;width:auto;min-width:52px;min-height:44px;padding:0 14px;border-radius:22px;font-size:12px;line-height:1.2}
 .sgtip.inline{position:static;margin:4px 0 0 30px}
 .sglegend{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--muted);font-size:12px}
 .sglegend .k-spawned{border-bottom:2px dashed var(--muted)}

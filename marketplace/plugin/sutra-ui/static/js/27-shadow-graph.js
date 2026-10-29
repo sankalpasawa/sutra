@@ -13,7 +13,7 @@
 const SG_API = "/api/shadow/graph";
 const SG_POLL_MS = 4000;
 const SG_KEY = "sutra.shadow.graph";
-const SG_COLW = 232, SG_NODEW = 168, SG_ROWH = 22, SG_NODEH = 40, SG_PADX = 16, SG_PADY = 12, SG_PHONE = 700;
+const SG_COLW = 238, SG_NODEW = 152, SG_ROWH = 26, SG_NODEH = 40, SG_TAGW = 52, SG_TAGH = 18, SG_PADX = 16, SG_PADY = 12, SG_PHONE = 700;
 const SG_STALE_S = 12;
 
 /* a status is its word and its glyph before it is a colour */
@@ -189,7 +189,7 @@ function sgGraphHtml(g){
     if (!a || !b) return "";
     const pb = sgPos(b);
     const word = e.held ? "held" : SG_TAG[e.kind];
-    return `<button type="button" class="sgtag t-${e.held ? "held" : e.kind}" data-sgtag="${sgAttr(e.id)}" style="left:${pb.x - 54}px;top:${pb.y + SG_NODEH / 2 - 9}px"
+    return `<button type="button" class="sgtag t-${e.held ? "held" : e.kind}" data-sgtag="${sgAttr(e.id)}" style="left:${pb.x - Math.round((SG_COLW - SG_NODEW + SG_TAGW) / 2)}px;top:${pb.y + SG_NODEH / 2 - SG_TAGH / 2}px"
       aria-label="${sgAttr(word + ": " + (e.reason || ""))}">${sgEsc(word)}</button>`;
   }).join("");
   const tip = sgTipHtml();
@@ -218,12 +218,12 @@ function sgListHtml(g){
   return `<ul class="sglist" data-sghost="1" role="group" aria-label="Shadow graph">${rows}</ul>`;
 }
 
+/* no counts at rest: the header says what kind of thing is happening, never how many */
 function sgSummary(g){
   const t = (g.nodes || []).filter(n => n.kind === "task");
-  const w = t.filter(n => n.status === "working").length, q = t.filter(n => n.status === "waiting").length;
   const bits = [];
-  if (w) bits.push(w + " working");
-  if (q) bits.push(q + " waiting on you");
+  if (t.some(n => n.status === "working")) bits.push("Working");
+  if (t.some(n => n.status === "waiting")) bits.push("Waiting on you");
   return bits.join(", ");
 }
 function sgBanner(){
