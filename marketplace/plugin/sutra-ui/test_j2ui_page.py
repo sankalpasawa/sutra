@@ -93,12 +93,20 @@ def test_a_request_without_the_slash_is_redirected_to_it(client):
     assert client.get("/j2ui/%s" % WEB).status_code == 200
 
 
-@pytest.mark.parametrize("ref, why", [(ROOT, "a Root"), (DEFAULT, "kind default"), (ORGANIC, "kind organic"),
-                                      (OLD, "the first build's way"), ("dref-nobody", "an unknown ref"), (".hidden", "a dot ref")])
-def test_only_a_website_department_on_the_engine_runtime_has_the_page(client, ref, why):
+@pytest.mark.parametrize("ref, why", [(OLD, "the first build's way"), ("dref-nobody", "an unknown ref"), (".hidden", "a dot ref")])
+def test_only_a_department_on_the_engine_runtime_has_the_page(client, ref, why):
     for tail in ("", "index.html", "j2host.js", "fonts/fonts.css"):
         r = client.get("/j2ui/%s/%s" % (ref, tail))
         assert r.status_code == 404 and r.json() == {"error": "no such department"}, why + " / " + tail
+
+
+@pytest.mark.parametrize("ref", [WEB, ROOT, DEFAULT, ORGANIC])
+def test_every_kind_on_the_engine_runtime_has_the_page_and_scoped_agrees_with_need(client, ref):
+    import j2ui_common
+    for tail in ("", "index.html", "j2host.js"):
+        assert client.get("/j2ui/%s/%s" % (ref, tail)).status_code == 200, tail
+    assert j2ui_page._scoped(ref) is True and j2ui_common.need(ref)["ref"] == ref
+    assert j2ui_page._scoped(OLD) is False
 
 
 def test_the_scope_is_the_adapters_when_the_adapter_is_in_the_tree(client, monkeypatch):
@@ -188,7 +196,7 @@ def test_fonts_serves_only_the_names_the_pin_lists_with_the_right_type(client, f
 
 
 def test_fonts_for_a_department_that_has_no_page_is_404(client, fonts):
-    assert client.get("/j2ui/%s/fonts/a.woff2" % DEFAULT).status_code == 404
+    assert client.get("/j2ui/%s/fonts/a.woff2" % OLD).status_code == 404
 
 
 def test_a_file_is_read_again_only_when_it_changed(client, fonts):

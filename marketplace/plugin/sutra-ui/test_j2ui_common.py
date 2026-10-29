@@ -56,9 +56,9 @@ def spy(monkeypatch, obj, name):
 
 
 # ---- C1-1: the shapes -------------------------------------------------------------------------------------------------
-def test_c11_the_state_has_the_prototypes_56_keys():
-    assert list(C.STATE_KEYS) == KEYS56 and len(set(KEYS56)) == 56
-    assert list(C.EMPTY_STATE()) == KEYS56
+def test_c11_the_state_has_the_prototypes_56_keys_and_words():
+    assert list(C.STATE_KEYS) == KEYS56 + ["words"] and len(set(KEYS56)) == 56 and len(C.STATE_KEYS) == 57
+    assert list(C.EMPTY_STATE()) == KEYS56 + ["words"] and C.EMPTY_STATE["words"] == {}
     # the work package's thirteen are among them
     assert set(C.WORK_KEYS) <= set(KEYS56) and len(C.WORK_KEYS) == 13
     # a fresh copy each call: nobody shares the lists
@@ -87,7 +87,7 @@ def test_c11_the_captured_state_when_there_is_one():
     for run in runs:
         st = H.captured(run, "state")
         assert isinstance(st, dict) and len(st) == 56, (run, len(st))
-        assert set(st) == set(KEYS56) == set(C.STATE_KEYS), (run, sorted(set(st) ^ set(KEYS56)))
+        assert set(st) == set(KEYS56) == set(C.STATE_KEYS) - {"words"}, (run, sorted(set(st) ^ set(KEYS56)))
 
 
 def test_c11_the_other_empty_shapes_are_the_prototypes():
@@ -109,7 +109,8 @@ def test_c11_the_legend_is_the_prototypes():
 # ---- C1-2: the scope --------------------------------------------------------------------------------------------------
 def test_c12_need_is_the_one_scope(mods, monkeypatch):
     W = mods.W
-    assert C.need(REF)["ref"] == REF and C.is_j2_kind("website") and not C.is_j2_kind("default")
+    assert C.need(REF)["ref"] == REF and C.is_j2_kind("website")
+    assert all(C.is_j2_kind(k) for k in W.KINDS) and not C.is_j2_kind("gone") and not C.is_j2_kind(None)
     for bad in ("dref-nobody", "../x", "a/b", "..", ".", "", "x" * 200, None, 7):
         with pytest.raises(C.NotJ2):
             C.need(bad)
@@ -118,8 +119,7 @@ def test_c12_need_is_the_one_scope(mods, monkeypatch):
     W.create("dref-org", "Organic", None, kind="organic")
     for ref in ("dref-root", "dref-def", "dref-org"):
         assert W.dept(ref)["runtime"] == 2
-        with pytest.raises(C.NotJ2):
-            C.need(ref)
+        assert C.need(ref)["ref"] == ref          # every kind of the Library is served (A5.1.1)
     monkeypatch.setenv("SUTRA_ENGINE_RUNTIME", "1")
     W.create("dref-old", "Old way", None, kind="website")
     assert W.dept("dref-old")["runtime"] == 1

@@ -7,8 +7,8 @@ answers the page's api/, site/, file/ and shot/ calls under the same base is j2u
 
 The page sits at a directory-style URL, so the relative URLs substitution S1 left (api/state, site/latest) resolve to
 /j2ui/{ref}/api/state and so on; a request for /j2ui/{ref} is redirected to the slash by the framework. Only a department
-of the engine runtime whose kind is website has the page; a Root, a department of another kind, a department of the first
-build or an unknown ref is 404 {"error": "no such department"} on every route here.
+of the engine runtime whose kind is in the Library has the page; a department of the first
+build, a kind not in the Library or an unknown ref is 404 {"error": "no such department"} on every route here.
 
 Only this module reads j2ui_assets/. Nothing here writes."""
 import json
@@ -17,14 +17,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, Response
 
-import website_dept as W
-
-try:                                    # the adapter's package decides the scope once it is in the tree
-    import j2ui_common as _common
-except ModuleNotFoundError as _e:
-    if _e.name != "j2ui_common":
-        raise
-    _common = None
+import j2ui_common as _common
 
 router = APIRouter(prefix="/j2ui", tags=["j2ui"])
 
@@ -34,21 +27,12 @@ FONT_TYPES = {".woff2": "font/woff2", ".css": "text/css; charset=utf-8", ".txt":
 
 
 def _scoped(ref):
-    """True for a department of the engine runtime whose kind is website. j2ui_common.need is the one place that
-    decides when the adapter is in the tree; until then the same rule is read here from the record."""
-    if _common is not None:
-        try:
-            _common.need(ref)
-            return True
-        except _common.NotJ2:
-            return False
-    if not ref or ref.startswith("."):
-        return False
+    """True for a department the J2 page is for: j2ui_common.need is the one place that decides (A5.1.1)."""
     try:
-        d = W.dept(ref)
-    except ValueError:
+        _common.need(ref)
+        return True
+    except _common.NotJ2:
         return False
-    return bool(d) and d.get("runtime") == 2 and d.get("kind") == "website"
 
 
 def _none():

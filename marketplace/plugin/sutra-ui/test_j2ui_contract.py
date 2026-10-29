@@ -8,7 +8,7 @@ proves what the page is given.
 
 Named claims:
   T3-1  every cycle state of test_j2ui_state.STATE_TABLE (imported, not restated), and the departments the contract adds, answer
-        every route: api/state has exactly the 56 keys and carries each key the page reads, and says what its row says (status,
+        every route: api/state has exactly the 57 keys and carries each key the page reads, and says what its row says (status,
         thinking, step, paused, outcome, done, stamped); atoms_v1 is run_views of the workflows by the vendored schema and the
         prototype's validator finds no atom missing; api/map has the captured map's keys, statuses, node and edge kinds, the
         pinned legend, and the golden invariants; api/board, api/artifacts, api/docs, api/audits, api/refs, api/preview and
@@ -215,7 +215,7 @@ def check_board(bd):
 
 
 def check_state(s, row=None):
-    assert list(s) == list(C.STATE_KEYS) and len(s) == 56
+    assert list(s) == list(C.STATE_KEYS) and len(s) == 57
     assert s["total"] == len(s["chat"]) or s["total"] >= len(s["chat"])
     assert s["error"] is None and s["saved"] is None and s["write_lock"] is None and s["memory"] is False
     assert s["outcome"] in (None, "Done", "Done with open items"), "never Stopped, Crashed or Paused"
@@ -837,12 +837,12 @@ def test_t35_every_condition_is_the_check_engines_recorded_check_and_none_is_roo
 
 
 # ---- T3-6: scope ----------------------------------------------------------------------------------------------------------
-def test_t36_a_default_department_a_root_the_first_build_and_a_stranger_are_404_on_every_route(client, plant, monkeypatch):
+def test_t36_the_first_build_and_a_stranger_are_404_on_every_route_and_the_other_kinds_answer(client, plant, monkeypatch):
     ref, m = plant("default_kind")
     monkeypatch.setenv("SUTRA_ENGINE_RUNTIME", "1")
     m.W.create("dref-old1", "The first build", "x", kind="website")
     monkeypatch.delenv("SUTRA_ENGINE_RUNTIME")
-    for who in (ref, SEED.ROOT, "dref-old1", "dref-nobody", "%2E%2E"):
+    for who in ("dref-old1", "dref-nobody", "%2E%2E"):
         for path in GET_ROUTES + ("", "j2host.js"):
             r = client.get(url(who, path))
             assert r.status_code == 404, (who, path, r.status_code)
@@ -851,6 +851,8 @@ def test_t36_a_default_department_a_root_the_first_build_and_a_stranger_are_404_
         for path in POST_ROUTES:
             r = client.post(url(who, path), json={"text": "hello"})
             assert r.status_code == 404 and r.json() == {"error": "no such department"}, (who, path)
+    for who in (ref, SEED.ROOT):                       # a default department and a Root have the page (A5.1.1)
+        assert client.get(url(who, "")).status_code == 200 and client.get(url(who, "api/state")).status_code == 200, who
     for odd in ("a%2Fb", "dref-nobody%00", "x" * 200):                  # a ref that is not even a ref never reaches a department
         assert client.get(url(odd, "api/state?since=0")).status_code == 404, odd
 
