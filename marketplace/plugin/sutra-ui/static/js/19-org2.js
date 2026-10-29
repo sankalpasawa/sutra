@@ -280,6 +280,8 @@ function o2Select(ref){
   o2Render();
   o2LoadDept(ref);
 }
+/* the graph (P4) opens a department row by ref */
+window.o2OpenDept = o2Select;
 async function o2OpenCharter(cid){
   const st = o2S();
   o2UnmountEditor();
