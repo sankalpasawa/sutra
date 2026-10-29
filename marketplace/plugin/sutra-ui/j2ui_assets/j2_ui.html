@@ -309,6 +309,7 @@ const isWf = k => /^W-\d+$/.test(k || "");
 const who = k => WHO[k] || (isWf(k) ? [k + " Builder", k.replace("-", "")] : [k, "?"]);
 const col = k => isWf(k) ? `var(--wf${(+k.slice(2) - 1) % 6})` : `var(--${k})`;
 const $ = id => document.getElementById(id);
+const WD = (k, d) => { const w = CTX && CTX.words; return w && w[k] != null ? w[k] : d; };
 // Panes are re-rendered on every poll. Leave a pane alone when its HTML is unchanged, and when it does change, reopen
 // any <details> the user had open (matched by data-key), so an opened screenshot or log stays open until closed.
 function paint(el, html){
@@ -328,7 +329,7 @@ const PRD_EXAMPLES = ["Write a PRD for QuickQueue, a mobile app that lets clinic
   + "average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS alert "
   + "when 2 patients are ahead, staff dashboard to call the next patient. Constraints: works on low-end Android phones; no "
   + "patient health data stored. Success: average in-room wait under 10 minutes; 60% of patients join remotely within 3 months."];
-const examples = s => s.doc ? PRD_EXAMPLES : EXAMPLES;
+const examples = s => WD("examples", s.doc ? PRD_EXAMPLES : EXAMPLES);
 const outOptions = s => OUTS.map(([v, l]) => `<option value="${v}"${s.output === v ? " selected" : ""}>${l}</option>`).join("");
 const docLinks = s => (s.docset_files || []).map(d => `<a href="file/${d.md}${runQ().replace("&", "?")}" download>${esc(d.kind.toUpperCase())} .md</a> <a href="file/${d.docx}${runQ().replace("&", "?")}" download>${esc(d.kind.toUpperCase())} .docx</a>`).join(" ");
 const plainDocLinks = s => (s.docset_files || []).map(d => `<a href="file/${d.md}${runQ().replace("&", "?")}" download>Download the ${esc(d.label)} (markdown)</a> <a href="file/${d.docx}${runQ().replace("&", "?")}" download>Download the ${esc(d.label)} (Word file)</a>`).join(" ");
@@ -372,7 +373,7 @@ function addMsg(m){
   if (m.done !== undefined) t += `<span class="tag ${m.done?"ok":"bad"}">${m.done?"checklist holds":"not done"}</span>`;
   if (m.register === true) t += `<span class="tag ok">registered</span>`;
   if (m.register === false) t += `<span class="tag bad">rejected</span>`;
-  if (m.version) t += `<span class="tag">site v${m.version}</span>`;
+  if (m.version) t += `<span class="tag">${esc(WD("noun", "site"))} v${m.version}</span>`;
   if (m.audit !== undefined) t += `<span class="tag ${m.audit?"ok":"bad"}">${m.audit?"all criteria pass":"criteria failing"}</span>`;
   el.innerHTML = `<div class="av">${esc(who(m.who)[1])}</div><div class="bubble"><div class="who">${esc(who(m.who)[0])}${m.to_user ? '<span class="touser-label">to you</span>' : ""}<span>${m.t}</span></div>
     <div class="text">${md(m.text)}</div>${t ? `<div>${t}</div>` : ""}</div>`;
@@ -722,7 +723,7 @@ function idRuns(ids){        // W-1, W-2, W-3, W-5 -> "W-1 to W-3, W-5"; ids tha
 }
 function runSummary(s){
   const at = Object.values(s.atoms_v1 || {}), n = st => at.filter(a => st(a.status)).length;
-  const built = [...(s.docset_files || []).map(d => d.kind.toUpperCase()), ...(s.doc && !(s.docset_files || []).length && (s.files || []).length ? ["PRD"] : []), ...(s.versions ? ["website"] : [])];
+  const built = [...(s.docset_files || []).map(d => d.kind.toUpperCase()), ...(s.doc && !(s.docset_files || []).length && (s.files || []).length ? ["PRD"] : []), ...(s.versions ? [esc(WD("built", "website"))] : [])];
   return `<div class="runsum" data-summary><div><b>Outcome:</b> ${clip("sum-outcome", dv(s.outcome || s.status || "not started"), 160)}</div>`
     + `<div><b>Credits:</b> ${s.spent} of ${s.budget} used</div>`
     + `<div><b>Work atoms:</b> ${n(x => x === "closed")} closed · ${n(x => x === "verify_failed" || x === "abandoned")} failed · ${n(x => x !== "closed" && x !== "verify_failed" && x !== "abandoned")} open</div>`
@@ -738,7 +739,7 @@ function renderWorkflows(s){
   const groups = OTYPES.map(([k, label]) => [label, s.workflows.filter(w => tags[w.id].some(t => t.type === k)).map(w => w.id)]).filter(g => g[1].length)
     .concat([["No output recorded", s.workflows.filter(w => !tags[w.id].length).map(w => w.id)]].filter(g => g[1].length));
   const legend = OTYPES.map(([k, label]) => otagBtn({type: k, label})).join("");
-  return (s.workflows.length ? runSummary(s) + `<div class="legend" data-legend><b>Output types</b> ${legend} <span class="empty">Click one to filter; click again to clear. Status is always a word as well as a colour.</span></div>`
+  return (s.workflows.length ? runSummary(s) + (WD("pick", true) ? `<div class="legend" data-legend><b>Output types</b> ${legend} <span class="empty">Click one to filter; click again to clear. Status is always a word as well as a colour.</span></div>` : "")
       + `<div class="ogroups" data-groups>${groups.map(([l, ids]) => `<div>${esc(l)}: ${esc(idRuns(ids))}</div>`).join("")}</div>`
       + (WFSTEP.length ? `<p data-stepfilter>Showing ${shown.length} of ${s.workflows.length} workflows: the ones of the step you opened from the Map. <button type="button" class="linkbtn" data-wfclear>Show all</button></p>` : "")
       + (OTAG ? `<p data-filter>Showing ${shown.length} of ${s.workflows.length} workflows with ${esc(OTYPES.find(t => t[0] === OTAG)[1])} output.</p>` : "") : "")
@@ -768,22 +769,22 @@ function renderConflicts(s){
     <table><tr><th>#</th><th>Who</th><th>Message</th><th>Position</th></tr>${tries}</table>`; }).join("");
 }
 function renderAudit(s){
-  if (!s.audits.length) return `<p class="empty">Audit checks the site against Identity's checklist after each cycle.</p>`;
+  if (!s.audits.length) return `<p class="empty">Audit checks the ${esc(WD("noun", "site"))} against Identity's checklist after each cycle.</p>`;
   const wk = s.workable ? (s.workable.length ? `<h3 class="fail">Not workable yet (checked by code)</h3><ul>${s.workable.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`
     : `<h3 class="pass">Workable (checked by code)</h3>`) : "";
   const last = s.audits[s.audits.length - 1];
-  const conds = s.conditions ? `<h3>Necessary conditions (checked by code, ${s.doc ? "document" : "site"} v${last.version}): ${s.conditions.filter(c => c.met).length} of ${s.conditions.length} met</h3><table><tr><th>Condition</th><th>Result</th><th>Evidence</th></tr>${s.conditions.map(c =>
+  const conds = s.conditions ? `<h3>Necessary conditions (checked by code, ${esc(WD("noun", s.doc ? "document" : "site"))} v${last.version}): ${s.conditions.filter(c => c.met).length} of ${s.conditions.length} met</h3><table><tr><th>Condition</th><th>Result</th><th>Evidence</th></tr>${s.conditions.map(c =>
       `<tr><td><b>${esc(c.id)}</b> ${esc(c.text)}</td><td class="${c.met?"pass":c.severity==="warn"?"":"fail"}">${c.met ? "MET" : c.severity === "warn" ? "WARNING" : "NOT MET"}</td><td>${esc(c.evidence)}${(c.assumptions||[]).length ? `<br><span class="empty">Assumptions to confirm: ${c.assumptions.map(esc).join("; ")}</span>` : ""}</td></tr>`).join("")}</table>` : "";
-  return conds + wk + s.audits.slice().reverse().map(a => `<h3>Cycle ${a.cycle} · ${s.doc ? "document" : "site"} v${a.version} · ${a.all_pass ? '<span class="pass">all pass</span>' : '<span class="fail">failing</span>'}</h3>
+  return conds + wk + s.audits.slice().reverse().map(a => `<h3>Cycle ${a.cycle} · ${esc(WD("noun", s.doc ? "document" : "site"))} v${a.version} · ${a.all_pass ? '<span class="pass">all pass</span>' : '<span class="fail">failing</span>'}</h3>
     ${a.read ? `<p class="empty">Audit read: ${esc(a.read)}</p>` : ""}
     <table><tr><th>Criterion</th><th>Result</th><th>Evidence</th></tr>${a.results.concat(a.extra_issues||[]).map(r => `<tr><td>${r.id ? `<b>${esc(r.id)}</b> ` : ""}${r.item ? r.item + ". " : "extra: "}${esc(r.criterion)}</td>
     <td class="${r.pass?"pass":"fail"}">${esc(r.verdict || (r.pass?"PASS":"FAIL"))}</td><td>${esc(r.note)}</td></tr>`).join("")}</table>
-    ${(a.rubric || []).length ? `<h3>${s.doc ? "Document rubric" : "Design and usability rubric"}</h3><table><tr><th>Item</th><th>Result</th><th>Evidence</th></tr>${a.rubric.map(r =>
+    ${(a.rubric || []).length ? `<h3>${esc(WD("rubric", s.doc ? "Document rubric" : "Design and usability rubric"))}</h3><table><tr><th>Item</th><th>Result</th><th>Evidence</th></tr>${a.rubric.map(r =>
       `<tr><td><b>${esc(r.id)}</b> ${esc(r.criterion)}</td><td class="${r.pass?"pass":"fail"}">${esc(r.verdict)}</td><td>${esc(r.note)}</td></tr>`).join("")}</table>` : ""}
     ${a.screenshot ? `<details data-key="shot-v${a.version}"><summary>Screenshot Audit looked at (360px left, 1280px right)</summary><img alt="Site v${a.version} at 360px and 1280px" style="max-width:100%;border:1px solid var(--line)" src="shot/${a.version}${runQ().replace("&", "?")}"></details>` : ""}`).join("");
 }
 const ROLE = {identity:"J2.a charter, J2.d rulings, J2.h workable?", adaptation:"J2.b proposes, disputes, saves lessons",
-  priority:"J2.c prices, checks run limits", coordination:"J2.f schedules, holds the write lock", audit:"J2.g checks the site",
+  priority:"J2.c prices, checks run limits", coordination:"J2.f schedules, holds the write lock", get audit(){ return "J2.g checks the " + WD("noun", "site"); },
   validator:"J2.e code: checks and registers workflows"};
 const stepTag = (s, n) => s.steps[n] ? s.steps[n].split(" ")[0] : "";
 function renderLanes(s){
@@ -806,7 +807,7 @@ function decided(m){
   if (m.accept !== undefined) return m.accept ? "accepts" : "pushes back";
   if (m.attempt) return m.agree ? "agrees" : "holds";
   if (m.to_user) return "asks you";
-  if (m.version) return "site v" + m.version;
+  if (m.version) return WD("noun", "site") + " v" + m.version;
   return "";
 }
 function renderTimeline(s){
@@ -849,7 +850,7 @@ async function openDetail(id){
 }
 function renderStyle(s){
   const g = s.style;
-  if (!g) return `<p class="empty">The first workflow that runs writes the style guide (palette, fonts, spacing, buttons, cards) before any section is built. Every workflow agent follows it.</p>`;
+  if (!g) return `<p class="empty">${esc(WD("style_empty", "The first workflow that runs writes the style guide (palette, fonts, spacing, buttons, cards) before any section is built. Every workflow agent follows it."))}</p>`;
   const sw = Object.entries(g.palette || {}).map(([k, v]) => `<div style="display:inline-block;margin:0 10px 10px 0;text-align:center;font-size:12px"><div style="width:64px;height:44px;border-radius:8px;border:1px solid var(--line);background:${esc(v)}"></div>${esc(k)}<br><span class="empty">${esc(v)}</span></div>`).join("");
   // values were checked by code (no <, >, { or }), so they are safe as inline styles
   return `<h3>Style guide</h3><p>${esc(g.notes || "")}</p><div>${sw}</div>
@@ -862,7 +863,7 @@ function renderStyle(s){
       <div style="margin-top:12px;color:${esc(g.palette.text)};${esc(g.card || "")}">A card in this style</div></div>`;
 }
 function renderPlaybooks(s){
-  if (!s.memory) return `<p class="empty">Memory is off (J2_MEMORY=0): no playbooks are read or saved in this run.</p>`;
+  if (!s.memory) return `<p class="empty">${esc(WD("memory_off", "Memory is off (J2_MEMORY=0): no playbooks are read or saved in this run."))}</p>`;
   const pbs = s.playbooks || [], used = new Set((s.playbooks_used || []).map(x => x.playbook));
   const byType = {};
   pbs.filter(p => !p.test).forEach(p => (byType[p.business_type] = byType[p.business_type] || []).push(p));
@@ -881,7 +882,7 @@ function renderPlaybooks(s){
     ${rows ? `<table><tr><th>Playbook</th><th>Type</th><th>Sections in build order</th><th>Watch out</th><th>Outcome</th></tr>${rows}</table>` : ""}`;
 }
 function renderLessons(s){
-  if (!s.memory) return `<p class="empty">Memory is off (J2_MEMORY=0): no lessons are read or saved in this run.</p>`;
+  if (!s.memory) return `<p class="empty">${esc(WD("memory_off", "Memory is off (J2_MEMORY=0): no lessons are read or saved in this run."))}</p>`;
   const used = new Set(s.lessons_used.map(x => x.lesson)), saved = new Set(s.lessons_saved);
   const rows = s.lessons.slice().reverse().map(l => `<tr><td><b>${esc(l.id)}</b>${saved.has(l.id) ? ' <span class="pill done">new this run</span>' : ""}${used.has(l.id) ? ' <span class="pill running">used this run</span>' : ""}${l.test ? ' <span class="pill" style="color:var(--bad)">test lesson</span>' : ""}<br><span class="empty">${esc(l.t || "")}</span></td>
     <td>${esc(l.problem)}</td><td>${esc(l.cause)}</td><td>${esc(l.fix)}</td><td>${esc(l.run)}</td></tr>`).join("");
@@ -925,7 +926,7 @@ function parseAsk(text){   // "@Requester say\n1. question\n   Option 1: text" -
 function optLabel(kind, o){ return plain(o); }   // options say what you get, amounts included, in plain words
 function askBubble(m, live){
   const a = parseAsk(m.text), kind = m.pause;
-  let body = `<small>Your website team</small>${esc(plain(a.say))}`;
+  let body = `<small>${esc(WD("team", "Your website team"))}</small>${esc(plain(a.say))}`;
   if (a.qs.length === 1 || a.qs.some(q => q.opts.length)){
     // a question with options: the question once, then its buttons (no numbered list)
     a.qs.forEach((q, i) => { body += `<p class="sq">${esc(plain(q.q))}</p>` + (live && q.opts.length ? optButtons(a, i, kind) : ""); });
@@ -940,9 +941,9 @@ function renderSimple(s){
   const st = stage(s);
   $("sprog").innerHTML = STAGES.map((x, i) => `<div class="${i < st ? "done" : i === st ? "on" : ""}"><i></i>${x}</div>`).join("");
   let out = "", lastAsk = null;
-  if (!s.allChat.length) out = `<div class="sb team"><small>${s.doc ? "Your document team" : "Your website team"}</small>
-    <div><label>What should we make? <select class="outsel" aria-label="What to build">${outOptions(s)}</select></label></div>
-    ${s.doc ? "Describe the product. We'll ask for any facts we need, then write the PRD." : "Describe the website you want. We'll ask a few questions, then build it."}
+  if (!s.allChat.length) out = `<div class="sb team"><small>${esc(WD("team", s.doc ? "Your document team" : "Your website team"))}</small>
+    ${WD("pick", true) ? `<div><label>What should we make? <select class="outsel" aria-label="What to build">${outOptions(s)}</select></label></div>` : ""}
+    ${esc(WD("start", s.doc ? "Describe the product. We'll ask for any facts we need, then write the PRD." : "Describe the website you want. We'll ask a few questions, then build it."))}
     <div class="cards">${examples(s).map(t => `<button type="button" data-brief="${esc(t)}">${esc(t)}</button>`).join("")}</div></div>`;
   s.allChat.forEach(m => {
     if (m.who === "user"){
@@ -953,28 +954,28 @@ function renderSimple(s){
       out += `<div class="sb team"><small>Owner override</small>${esc(plain(m.text))}</div>`;
     } else if (m.who === "identity" && m.to_user){   // only messages for you; never one for an agent
       if (m.act === "ASK_REQUESTER"){ lastAsk = m; out += askBubble(m, s.paused && s.paused.msg === m.id && s.status !== "running"); }
-      else out += `<div class="sb team"><small>Your website team</small>${esc(plain(m.text))}</div>`;
+      else out += `<div class="sb team"><small>${esc(WD("team", "Your website team"))}</small>${esc(plain(m.text))}</div>`;
     }
   });
-  if (isReady(s)) out += `<div class="ready"><h2>${(s.docset || []).length > 1 ? "Your design documents are ready" : `Your ${s.doc ? "document" : "website"} is ready`}${/^Done with open items/.test(s.outcome) ? " (some things were left as they are)" : ""}</h2>
-    <div class="acts"><a href="site/latest${runQ().replace("&", "?")}" target="_blank" rel="noopener">Open full screen</a>
-    ${(s.docset || []).length > 1 ? plainDocLinks(s) : ""}${s.doc && (s.docset || []).length < 2 ? fileLinks(s) : s.doc ? "" : `<a href="site/latest${runQ().replace("&", "?")}" download="my-website.html">Download the HTML file</a>`}
+  if (isReady(s)) out += `<div class="ready"><h2>${(s.docset || []).length > 1 ? "Your design documents are ready" : `${esc(WD("ready", `Your ${s.doc ? "document" : "website"} is ready`))}`}${/^Done with open items/.test(s.outcome) ? " (some things were left as they are)" : ""}</h2>
+    <div class="acts">${WD("can_open", true) ? `<a href="site/latest${runQ().replace("&", "?")}" target="_blank" rel="noopener">Open full screen</a>` : ""}
+    ${(s.docset || []).length > 1 ? plainDocLinks(s) : ""}${s.doc && (s.docset || []).length < 2 ? fileLinks(s) : s.doc ? "" : (WD("can_download", true) ? `<a href="site/latest${runQ().replace("&", "?")}" download="my-website.html">Download the HTML file</a>` : "")}
     <button type="button" id="sask-change">Ask for a change</button></div></div>`;
-  if (failed(s)) out += `<div class="oops">Something went wrong. Try again.<div class="acts" style="margin-top:8px"><button type="button" class="ghost" id="sretry">Start over</button></div></div>`;
+  if (failed(s)) out += `<div class="oops">Something went wrong. Try again.<div class="acts" style="margin-top:8px"><button type="button" class="ghost" id="sretry">${esc(WD("retry", "Start over"))}</button></div></div>`;
   if (out !== simpleHTML){ simpleHTML = out; $("smsgs").innerHTML = out;
     const end = () => { $("smsgs").scrollTop = $("smsgs").scrollHeight; };   // again after layout and fonts settle
     end(); requestAnimationFrame(end); setTimeout(end, 300); }
   const w = s.workflows.find(x => x.id === s.thinking || x.status === "running");
-  $("stitle").textContent = s.doc ? "Your document team" : "Your website team";
+  $("stitle").textContent = WD("team", s.doc ? "Your document team" : "Your website team");
   $("sotype").textContent = s.doc ? `· ${s.output_label}` : "";
   $("sstatus").textContent = s.status !== "running" ? "" : w ? `Building your ${plain(w.name).toLowerCase()}…`
-    : ["Reading your request…", "Reading your request…", "Planning your website…", "Planning your website…", "Planning your website…",
-       "Planning your website…", "Building your website…", "Checking everything works on phones and computers…", "Almost there…"][s.step || 0];
+    : WD("steps", ["Reading your request…", "Reading your request…", "Planning your website…", "Planning your website…", "Planning your website…",
+       "Planning your website…", "Building your website…", "Checking everything works on phones and computers…", "Almost there…"])[s.step || 0];
   if (s.doc) $("sstatus").textContent = $("sstatus").textContent.replace("your website", "your document")
     .replace("everything works on phones and computers", "the document");
   const busy = s.status === "running" || !!s.saved;
   $("sbox").disabled = $("ssend").disabled = busy;
-  $("sbox").placeholder = s.paused ? "Or type your own answer…" : isReady(s) ? "Describe a change…" : s.allChat.length ? "Write a message…" : s.doc ? "Describe the product…" : "Describe the website you want…";
+  $("sbox").placeholder = s.paused ? "Or type your own answer…" : isReady(s) ? "Describe a change…" : s.allChat.length ? "Write a message…" : WD("describe", s.doc ? "Describe the product…" : "Describe the website you want…");
   if (s.versions !== sversions){ sversions = s.versions; $("sframe").src = `site/latest?t=${Date.now()}${runQ()}`; }
   document.body.classList.toggle("has-site", s.versions > 0);
   if (!s.versions) document.body.classList.remove("sp-preview");
@@ -993,7 +994,7 @@ $("smsgs").addEventListener("click", async e => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.brief) return sendText(b.dataset.brief);
   if (b.id === "sask-change"){ $("sbox").focus(); return; }
-  if (b.id === "sretry"){ await fetch("api/reset", {method:"POST"}); location.reload(); return; }
+  if (b.id === "sretry"){ if (WD("retry", null) != null){ const u = (s => (s.allChat || []).filter(x => x.who === "user").pop())(CTX || {}); if (u) await sendText(u.text); return; } await fetch("api/reset", {method:"POST"}); location.reload(); return; }
   const g = b.closest(".opts"); if (!g) return;
   if (g.dataset.n === "1") return sendText(`Option ${b.dataset.opt}`);   // one question: send at once
   $("sbox").value += `${$("sbox").value ? "; " : ""}${g.dataset.q}. Option ${b.dataset.opt}`; $("sbox").focus();
@@ -1023,7 +1024,7 @@ function renderReport(s){
     <h3>Measured by code</h3>
     <dl><dt>run</dt><dd>${m.ai_calls} AI calls · ${m.cycles} cycles · ${m.minutes} min · ${esc(m.model || "mock")}</dd>
     <dt>budget</dt><dd>${m.budget.spent} of ${m.budget.total} · started ${m.budget.start ?? m.budget.total}${(m.budget.raises||[]).length ? ` · raised on your approval ${m.budget.raises.map(r => r.from+"→"+r.to).join(", ")} (cap ${m.budget.cap})` : ""} · rate card ${m.budget.rate_card ? "on" : "off"}</dd>
-    <dt>site</dt><dd>${m.site_versions} versions · ${(m.site_bytes/1000).toFixed(0)} KB</dd>
+    <dt>${esc(WD("noun", "site"))}</dt><dd>${m.site_versions} versions · ${(m.site_bytes/1000).toFixed(0)} KB</dd>
     <dt>negotiation</dt><dd>${n.proposals} proposals · ${n.grants} GRANT / ${n.counters} COUNTER / ${n.refuses} REFUSE${n.refuses_converted_by_code ? ` (${n.refuses_converted_by_code} by code)` : ""} · ${n.parks} parked</dd>
     <dt>conflicts</dt><dd>${cf.total} · ${cf.settled_by_agents} settled by the agents · ${cf.resolved_by_identity} by Identity from the charter · ${cf.asked_requester} needed you</dd>
     <dt>questions to you</dt><dd>${m.requester_questions.total}${Object.entries(m.requester_questions.by_kind).map(([k,v]) => ` · ${esc(k)} ${v}`).join("")}</dd>
@@ -1041,7 +1042,7 @@ function renderReport(s){
 function quick(s){
   let items = [];
   if (!s.total) items = examples(s);
-  else if (s.status === "waiting" && s.done && !s.paused) items = ["Add a section for visiting hours", "Looks good"];
+  else if (s.status === "waiting" && s.done && !s.paused) items = WD("follow_ups", ["Add a section for visiting hours", "Looks good"]);
   $("quick").innerHTML = items.map(t => `<button type="button">${esc(t)}</button>`).join("");
   [...$("quick").children].forEach(b => b.onclick = () => { $("box").value = b.textContent; send(); });
 }
@@ -1062,7 +1063,7 @@ async function poll(){
     $("waiting").hidden = !p || busy;
     if (p) $("waiting").innerHTML = `<b>Identity is waiting on your answer</b> · ${esc(p.label)} <span class="empty">(message ${p.msg})</span>`
       + (p.questions.length ? `<ol>${p.questions.map(q => `<li>${esc(q.question)}${q.options.map((o,i) => `<div class="opt">Option ${i+1}: ${esc(o)}</div>`).join("")}</li>`).join("")}</ol>` : "");
-    $("box").placeholder = p ? "Answer Identity's question…" : s.total ? "Ask for a change…" : "Describe the website you want. The agents take it from there…";
+    $("box").placeholder = p ? "Answer Identity's question…" : s.total ? "Ask for a change…" : WD("describe_long", "Describe the website you want. The agents take it from there…");
     $("box").disabled = busy; $("send").disabled = busy;
     $("mode").textContent = (s.mock ? "mock functions" : `model: ${s.model}`) + ` · ${s.calls} AI calls · cycle ${s.cycle}`;
     $("fixes").textContent = s.fixes ? "J2_FIXES=1 (fixes)" : "J2_FIXES=0 (baseline, as in the diagram)";
@@ -1072,7 +1073,7 @@ async function poll(){
     $("doclinks").hidden = !(s.doc || (s.docset || []).length) || !(s.files || []).length;
     $("pane-preview").classList.toggle("has-links", !$("doclinks").hidden);
     if (!$("doclinks").hidden) paint($("doclinks"), (s.docset || []).length > 1 ? `<b>Design documents</b> ${docLinks(s)}` : `<b>${esc(s.output_label)}</b> ${fileLinks(s)}`);
-    $("tab-board").hidden = !s.has_board;
+    $("tab-board").hidden = !s.has_board; WD("hide_tabs", []).forEach(t => { const b = document.querySelector(`.tabs [data-tab="${t}"]`); if (b) b.hidden = true; }); { const ft = WD("frame_title", null), tm = WD("team", null), nt = WD("new_task", null); if (ft != null){ $("sframe").title = ft; $("frame").title = ft; } if (tm != null) $("stitle").textContent = tm; if (nt != null) $("reset").textContent = nt; }
     $("forced").hidden = !s.force_audit_fail;
     $("testles").hidden = !s.test_lessons;
     $("forced").textContent = `TEST: J2_FORCE_AUDIT_FAIL=${s.force_audit_fail} (cycle 1 Audit result forced)`;
@@ -1083,7 +1084,7 @@ async function poll(){
     paint($("needs"), renderNeeds(s)); $("needs").classList.toggle("on", needsYou(s).length > 0);
     if (s.versions !== versions){
       versions = s.versions;
-      $("ver").innerHTML = Array.from({length:versions}, (_,i) => `<option value="v${i+1}">v${i+1}</option>`).join("") || "<option>no site yet</option>";
+      $("ver").innerHTML = Array.from({length:versions}, (_,i) => `<option value="v${i+1}">v${i+1}</option>`).join("") || "<option>no " + esc(WD("noun", "site")) + " yet</option>";
       $("ver").value = versions ? "v"+versions : ""; $("frame").src = `site/${versions ? "v"+versions : "latest"}?t=${Date.now()}${runQ()}`;
     }
     paint($("pane-goal"), renderGoal(s)); paint($("pane-workflows"), renderWorkflows(s));
@@ -1134,7 +1135,7 @@ function focusQuestion(id){
 $("needs").addEventListener("click", e => { const b = e.target.closest("[data-needmsg]"); if (b) focusQuestion(b.dataset.needmsg); const g = e.target.closest("[data-gotab]"); if (g) showTab(g.dataset.gotab); });
 const TABHINT = {preview: "What the team has built so far.", goal: "What you asked for and what the team took from it.",
   workflows: "The jobs the work was split into, and the budget.", conflicts: "Where the agents disagreed and how it was settled.",
-  timeline: "Every message, in order.", audit: "The checks run on each version of the site.", charter: "The list of things you confirmed.",
+  timeline: "Every message, in order.", get audit(){ return "The checks run on each version of the " + WD("noun", "site") + "."; }, charter: "The list of things you confirmed.",
   docs: "The design documents the team wrote.", artifacts: "The files and records this run produced.",
   map: "Who worked with whom, and what each made.", style: "The look and feel the team agreed on.",
   lessons: "What the team learned from earlier runs.", playbooks: "Plans reused from earlier runs of the same kind.",
@@ -1244,7 +1245,7 @@ function mapShape(kind, st, c, x, y, w, h, col, thin){      // the ring of a dot
 function mapBadge(st, x, y){ return st === "fault" || isWait(st) ? `<g><circle cx="${x}" cy="${y}" r="8" fill="${st === "fault" ? "var(--bad)" : "var(--validator)"}"/><text x="${x}" y="${y + 4}" text-anchor="middle" style="fill:var(--on);font-weight:700">${st === "fault" ? "!" : "?"}</text></g>` : ""; }
 function mapLabelLines(t){ const w = String(t).split(" "), out = [""]; w.forEach(x => { const l = out[out.length - 1]; if (l && (l + " " + x).length > 17 && out.length < 2) out.push(x); else out[out.length - 1] = l ? l + " " + x : x; }); return out; }
 const mapGoLabel = n => n.status === "waiting_on_you" ? "Answer in Chat" : n.kind === "person" ? "Show what needs you" : n.kind === "engine" ? "Open these workflows"
-  : n.kind === "function" ? (n.id === "fn:identity" ? "Open Chat" : n.id === "fn:audit" ? "Open Audit findings" : "Show messages and calls") : n.tag === "Site" || n.id === "work:website" ? "Open the site preview" : n.id === "work:charter" ? "Open the Charter" : "Open the document";
+  : n.kind === "function" ? (n.id === "fn:identity" ? "Open Chat" : n.id === "fn:audit" ? "Open Audit findings" : "Show messages and calls") : n.tag === "Site" || n.id === "work:website" ? WD("go_preview", "Open the site preview") : n.id === "work:charter" ? "Open the Charter" : "Open the document";
 const mapById = m => Object.fromEntries((m.nodes || []).map(n => [n.id, n]));
 const mapStepTo = (m, n) => { const e = (m.edges || []).find(x => x.kind === "step" && x.from === n.id); return e ? mapById(m)[e.to] : null; };      // the deliverable a step leads to
 const mapStepVerb = (m, n) => MAPLABEL.verb[n.label] || (mapStepTo(m, n) && MAPLABEL.verbTag[mapStepTo(m, n).tag]) || "working on";
@@ -1718,7 +1719,7 @@ $("pane-lessons").addEventListener("click", async e => {
   await fetch("api/lessons/clear", {method:"POST"});
 });
 $("box").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }});
-$("reset").onclick = async () => { await fetch("api/reset", {method:"POST"}); location.search = ""; };
+$("reset").onclick = async () => { if (WD("new_task", null) != null){ ($("sbox").offsetParent ? $("sbox") : $("box")).focus(); return; } await fetch("api/reset", {method:"POST"}); location.search = ""; };
 poll();
 </script>
 </body>

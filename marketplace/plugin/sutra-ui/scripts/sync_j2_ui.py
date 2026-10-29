@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""sync_j2_ui.py -- copy the J2 prototype's page into the app, changing it by three documented substitutions only.
+"""sync_j2_ui.py -- copy the J2 prototype's page into the app, changing it by five documented substitutions only.
 
 The owner's ruling (2026-10-26): "Take latest pull from J2 prototype and implement UI in the exact same fashion, no
 change." The department screen is the prototype's page `j2_ui.html`, served from `j2ui_assets/` and fed by an adapter
@@ -20,17 +20,22 @@ What is written (all under the app root, the folder above scripts/):
     j2ui_assets/RAW_INTERP.json     the page's template interpolations that carry no escape call (guard 5)
     test_fixtures/j2ui/j2_ui_render.js   byte for byte (a node test harness, never served)
 
-The permitted substitutions, the only differences from the prototype's bytes in j2_ui.html:
+The permitted substitutions, the only differences from the prototype's bytes in j2_ui.html (S4 and S5, A5.1.3, are kind-neutral
+wording: scripts/j2ui_words_table.py holds the table, and each is the original text again when a department sets no word):
     S1  path   a quote, apostrophe or backtick followed by /api/, /site/, /file/ or /shot/ loses that first slash, so
                every URL is relative to /j2ui/{ref}/ (the page is served at a directory-style URL)
     S2  line   `<script src="j2host.js"></script>` inserted directly after the viewport meta line
     S3  fonts  the one external stylesheet's href becomes fonts/fonts.css, only when j2ui_assets/fonts/fonts.css exists
                (scripts/fetch_j2_fonts.py makes it) and --no-local-fonts is not given
+    S4  words  the table WORDS of (id, original, replacement): each original occurs exactly once and is wrapped in WD(key, original)
+               or escaped like it (two rows, S4.35b and S4.36b, are behaviour edits: New run and Start over)
+    S5  line   `const WD = (k, d) => ...` inserted directly after `const $ = id => document.getElementById(id);`
 
 Guards (exit 1 with a message): 1 a root-absolute URL other than api, site, file, shot; 2 S1 matched nothing; 3 an
 external URL other than the one font stylesheet; 4 the viewport anchor is not found exactly once; 5 a template
 interpolation without esc(, md( or plain( that RAW_INTERP.json does not hold (--accept-raw-interp acknowledges it, after
-the hostile-string render test passed on the new page); 6 the page reads an api/<name> the adapter has no route for, or
+the hostile-string render test passed on the new page); 7 an S4 original does not occur exactly once; 8 a WD( in a template
+interpolation that is not wrapped in esc( and is not a boolean or list key (SAFE_KEYS); 6 the page reads an api/<name> the adapter has no route for, or
 a state key it does not know (a warning; exit 1 only with --strict; skipped when the adapter modules are absent).
 
 --check writes nothing and exits 1 when the app copy differs from transform(prototype at the pinned commit).
@@ -49,10 +54,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 UI = HERE.parent
+sys.path.insert(0, str(HERE))
+import j2ui_words_table as WT  # noqa: E402 -- S4 and S5, kept beside this script
 
 PAGE, SCHEMA, RENDERER = "j2_ui.html", "j2_schema.py", "j2_ui_render.js"
 SOURCES = (PAGE, SCHEMA, RENDERER)
-PIN_SCHEMA = "j2ui-pin/1"
+PIN_SCHEMA = "j2ui-pin/2"
 RAW_SCHEMA = "j2ui-rawinterp/1"
 
 #: S1: the quote that opens a URL, then a slash, then the first segment the adapter answers under /j2ui/{ref}/
@@ -65,6 +72,8 @@ ROOTS = (b"api", b"site", b"file", b"shot")
 S2_LINE = b'<script src="j2host.js"></script>'
 S2_RULE = "insert a script line for j2host.js directly after the viewport meta line"
 FONT_HREF = re.compile(rb'href="(https://fonts\.googleapis\.com/css2\?[^"]*)"')
+S4_RULE = "kind-neutral wording: each listed original is wrapped in WD(key, original) or escaped like it; defaults are the originals"
+S5_RULE = "insert the WD line directly after the const $ line"
 S3_NEW = b"fonts/fonts.css"
 S3_RULE = "the href of the one external stylesheet becomes fonts/fonts.css (vendored fonts)"
 URL = re.compile(rb"https?://[^\s\"'`)<>]+")
@@ -114,8 +123,8 @@ def _line_col(b, offset):
 
 
 def transform(html, local_fonts=False):
-    """The page after S1, S3 (when local_fonts) and S2, as bytes, with a report of what changed and where. Works on
-    bytes only, so every byte it does not name is kept. Raises SyncError for guards 1 to 4."""
+    """The page after S1, S4, S3 (when local_fonts), S5 and S2, as bytes, with a report of what changed and where. Works on
+    bytes only, so every byte it does not name is kept. Raises SyncError for guards 1 to 4, 7 and 8."""
     for m in GUARD.finditer(html):
         if m.group(2) not in ROOTS:
             ln, col = _line_col(html, m.start())
@@ -126,13 +135,14 @@ def transform(html, local_fonts=False):
         raise SyncError("guard 2: S1 matched nothing; the page no longer calls /api/, /site/, /file/ or /shot/ in quotes")
     positions = [list(_line_col(html, m.start() + 1)) for m in hits]
     out = S1.sub(rb"\1\2/", html)
+    out, s4 = apply_words(out)
     ext = [m.group(0) for m in URL.finditer(html)]
     extra = [u for u in ext if not FONT_HREF.search(b'href="' + u + b'"')]
     if extra:
         raise SyncError("guard 3: a new external resource, %s; the page's only external URL is its font stylesheet"
                         % extra[0].decode("utf-8", "replace"))
     report = {"s1": {"count": len(hits), "lines": sorted({p[0] for p in positions}), "positions": positions},
-              "external": [u.decode("utf-8") for u in ext], "s3": None}
+              "external": [u.decode("utf-8") for u in ext], "s3": None, "s4": s4}
     if local_fonts:
         found = list(FONT_HREF.finditer(out))
         if len(found) != 1:
@@ -151,7 +161,50 @@ def transform(html, local_fonts=False):
         lines[i] += eol
     lines.insert(i + 1, S2_LINE + eol)
     report["s2"] = {"line": i + 1, "text": S2_LINE.decode()}
+    anchor = [k for k, ln in enumerate(lines) if ln.rstrip(b"\r\n") == WT.S5_ANCHOR]
+    if len(anchor) != 1:
+        raise SyncError("guard 4: the line %r was found %d times; the WD line goes after it, so it must be found exactly once"
+                        % (WT.S5_ANCHOR.decode(), len(anchor)))
+    k = anchor[0]
+    lines.insert(k + 1, WT.S5_LINE + eol)
+    report["s5"] = {"line": k, "text": WT.S5_LINE.decode()}       # the anchor's line in the prototype's page (S2 sits above it)
     return b"".join(lines), report
+
+
+def _in_interpolation(text, pos):
+    """True when `pos` is inside a ${ ... of `text` that no } has closed since (a heuristic that is exact for the table)."""
+    at = text.rfind(b"${", 0, pos)
+    return at >= 0 and b"}" not in text[at:pos]
+
+
+def word_problems(rows=None):
+    """Guard 8 over the table: the WD( calls that sit in a template interpolation without esc( and are not a SAFE_KEYS key."""
+    out = []
+    for wid, _, new in (WT.WORDS if rows is None else rows):
+        for m in re.finditer(rb'WD\("([a-z_]+)"', new):
+            if _in_interpolation(new, m.start()) and not new[:m.start()].endswith(b"esc(") and m.group(1).decode() not in WT.SAFE_KEYS:
+                out.append("guard 8: %s puts WD(%s in a template without esc(" % (wid, m.group(1).decode()))
+    return out
+
+
+def apply_words(page, rows=None):
+    """S4 on the S1-applied page: every original exactly once (guard 7), then guard 8. Returns (page, items) where an item is
+    {id, line, original, replacement} with the line of the original in the prototype's page (S1 moves no line)."""
+    rows = WT.WORDS if rows is None else rows
+    bad = word_problems(rows)
+    if bad:
+        raise SyncError(bad[0])
+    items = []
+    for wid, old, new in rows:
+        n = page.count(old)
+        if n != 1:
+            raise SyncError("guard 7: %s: its original text was found %d times, it must be found exactly once: %r"
+                            % (wid, n, old[:70].decode("utf-8", "replace")))
+        items.append({"id": wid, "line": page.count(b"\n", 0, page.index(old)) + 1, "original": old.decode("utf-8"),
+                      "replacement": new.decode("utf-8")})
+    for wid, old, new in rows:
+        page = page.replace(old, new, 1)
+    return page, items
 
 
 def raw_interpolations(html):
@@ -307,8 +360,11 @@ def sync(root, repo, rev, local_fonts, accept, strict, out=print):
         ack = commit
     subs = [{"id": "S1", "rule": S1_RULE, "count": rep["s1"]["count"], "lines": rep["s1"]["lines"], "positions": rep["s1"]["positions"]},
             {"id": "S2", "rule": S2_RULE, "line": rep["s2"]["line"], "text": rep["s2"]["text"]}]
+    subs_extra = [{"id": "S4", "rule": S4_RULE, "count": len(rep["s4"]), "items": rep["s4"]},
+                  {"id": "S5", "rule": S5_RULE, "line": rep["s5"]["line"], "text": rep["s5"]["text"]}]
     if rep["s3"]:
         subs.append(dict({"id": "S3", "rule": S3_RULE}, **{k: rep["s3"][k] for k in ("original_href", "new_href", "line")}))
+    subs += subs_extra
     pin = {"schema": PIN_SCHEMA,
            "source": {"path": str(repo), "commit": commit, "files": {n: digest(src[n]) for n in SOURCES}},
            "app": {"files": {rel: digest(b) for rel, b in sorted(app.items())}},
@@ -326,6 +382,7 @@ def sync(root, repo, rev, local_fonts, accept, strict, out=print):
     moved = sum(max(i2 - i1, j2 - j1) for tag, i1, i2, j1, j2 in ops if tag != "equal")
     out("S1 count %d on %d lines" % (rep["s1"]["count"], len(rep["s1"]["lines"])))
     out("S2 j2host.js after line %d" % rep["s2"]["line"])
+    out("S4 %d words, S5 after line %d" % (len(rep["s4"]), rep["s5"]["line"]))
     out("S3 fonts %s" % ("vendored (%s)" % ", ".join(sorted(fonts)) if rep["s3"] else "off"))
     out("%s" % ("%d line(s) differ from the previous copy" % moved if before else "first copy of the page"))
     was = (prev.get("source") or {}).get("commit")
@@ -378,7 +435,7 @@ def check_latest(root, repo, out=print):
 
 
 def main(argv=None, out=print):
-    ap = argparse.ArgumentParser(prog="sync_j2_ui.py", description="Copy the J2 prototype's page into the app (S1, S2, S3 only).")
+    ap = argparse.ArgumentParser(prog="sync_j2_ui.py", description="Copy the J2 prototype's page into the app (S1 to S5 only).")
     ap.add_argument("--from", dest="src", help="the prototype repo (else the environment variable J2_PROTOTYPE)")
     ap.add_argument("--rev", default="HEAD", help="the prototype revision to copy (default HEAD)")
     ap.add_argument("--root", help="the app folder to write under (default: the folder above scripts/; for tests)")
