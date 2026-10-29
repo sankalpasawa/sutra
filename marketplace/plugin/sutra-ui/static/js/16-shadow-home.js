@@ -5637,6 +5637,8 @@ function shadowKeepNode(el){
 function shadowHoldsKeep(el){
   if (!el || el.nodeType !== 1) return false;
   if (shadowKeepNode(el)) return true;
+  /* the Shadow graph (27-shadow-graph.js): the node a keyboard user stands on is recursed into, never replaced wholesale */
+  if (typeof sgHoldsFocus === "function" && sgHoldsFocus(el)) return true;
   if (!el.querySelector) return false;
   return !!el.querySelector("#scBody,[data-shnewhost],[data-shnewtalk]");
 }
@@ -6582,6 +6584,8 @@ function shadowHomeHtml(){
              header stopped being one of them. The RUNNING pill still says
              the task is alive, and the activity row in the stream still
              says how long the current turn has been going. */""}
+          ${!newOpen ? `<button class="btn" type="button" data-shgraph="1" title="How Shadow's work connects">Graph</button>` : ""}
+          ${!newOpen && sel && sel.id ? `<button class="btn" type="button" data-shdetail="${escAttr(sel.id)}" title="This task's graph and details">Details</button>` : ""}
           ${!newOpen && face ? shadowTaskPillHtml(face) : ""}
           ${!newOpen && sel ? shadowTaskCostHtml(sel) : ""}
           ${/* THE WORKER CHAT LIVES BEHIND THIS BUTTON AND NOWHERE ELSE.
@@ -6858,7 +6862,7 @@ let _shHomeRead = null;
    being abandoned here. */
 function shadowHomeOnScreen(){
   const S_ = (typeof S !== "undefined") ? S : {};
-  return S_.screen === "shadow" || S_.screen === "shadowwatching";
+  return S_.screen === "shadow" || S_.screen === "shadowwatching" || S_.screen === "shadowgraph";
 }
 
 /* ── PUTTING THE SAVED CONVERSATIONS BACK ───────────────────────────────

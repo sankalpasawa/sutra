@@ -516,6 +516,16 @@ function shadowRouteDeepLink(link){
       if (typeof render === "function") render();
       return true;
     }
+    /* A5.2.5: the Shadow graph, and one task's detail on it. Before the mission arm, so "graph" is never read as a task. */
+    let gr = l.match(/^sutra:\/\/shadow\/graph(?:\/(m-[0-9a-f]{12}))?\/?$/);
+    if (gr){
+      if (typeof S !== "undefined") S.shadowGraphFocus = gr[1] || null;
+      if (typeof lsSet === "function") lsSet("sutra.shadow.graph", gr[1] || null);
+      if (typeof goDest === "function") goDest("focus");
+      if (typeof openScreen === "function") openScreen("shadowgraph");
+      if (typeof render === "function") render();
+      return true;
+    }
     let m = l.match(/^sutra:\/\/shadow\/(?:mission\/)?(m-[a-z0-9]+)/);
     if (m){
       if (typeof S !== "undefined"){
