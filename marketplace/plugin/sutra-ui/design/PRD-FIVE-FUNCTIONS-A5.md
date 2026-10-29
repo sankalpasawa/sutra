@@ -325,7 +325,7 @@ Built 2026-10-29, merged one at a time into main on a green gate. P5 is the veri
 | P2 a5-j2all | M13.3, M13.4, M13.5 | `284fe6e2`, fix round `1631b39d` | `test_j2ui_*.py`, `test_j2view.js`, `sync_j2_ui.py --check` and `--check-latest` (prototype `f9ceba1`, unmoved), `test_j2ui_verbatim.py` |
 | P3 a5-decide | M13.6, M13.7 | `d0146616` (and `e2ba16da`) | `test_shadow_dept*.py`, `test_mission_engine.py`, `test_dept_list_api.py` |
 | P4 a5-graph | M13.8, M13.9 | `ec3dce19` | `test_shadow_graph_build.py`, `test_shadow_graph_api.py`, `test_shadow_graph.js`, `test_panel.js`, `test_nav.js` |
-| P5 a5-verify | M13.10 | branch `prd/a5-verify` (merged by the integrator) | `qa/walks/a5-e2e.sh` (routes and browser walk), `test_a5_verify.py`, `qa/shots/a5/` |
+| P5 a5-verify | M13.10 | branch `prd/a5-verify` (merged by the integrator, merge 69608869) | `qa/walks/a5-e2e.sh` (routes and browser walk), `test_a5_verify.py`, `qa/shots/a5/` |
 
 What P5 measured and found:
 
