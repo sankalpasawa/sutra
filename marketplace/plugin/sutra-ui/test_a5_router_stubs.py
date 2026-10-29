@@ -8,7 +8,7 @@ HERE = Path(__file__).resolve().parent
 STUBS = ("dept_list_api", "shadow_dept_api", "shadow_graph_api")
 
 
-@pytest.mark.parametrize("name", STUBS)
+@pytest.mark.parametrize("name", [n for n in STUBS if n != "shadow_graph_api"])      # P4 filled the graph router (test_shadow_graph_api.py)
 def test_the_stub_is_an_empty_router(name):
     import importlib
     from fastapi import APIRouter
@@ -25,4 +25,4 @@ def test_app_includes_the_three_and_the_department_list_comes_before_the_ref_rou
     assert all(src.count("app.include_router(%s.router)" % n) == 1 for n in STUBS)
     import app
     paths = {getattr(r, "path", "") for r in app.app.routes}
-    assert not [p for p in paths if p.startswith("/api/native/_departments") or p.startswith("/api/shadow/graph")], "the stubs add no route"
+    assert not [p for p in paths if p.startswith("/api/native/_departments") ], "the stubs add no route"
