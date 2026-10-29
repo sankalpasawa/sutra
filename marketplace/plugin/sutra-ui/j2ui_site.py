@@ -13,15 +13,33 @@ What the department's model or engines wrote is shown, never run: every tuple ca
 sandbox, no script, no object, no base, no form), so a built page cannot read the panel it is previewed in. The router
 (j2ui_api) adds the same headers; they are set here as well so this module alone is safe to test and to call.
 """
+import html
 import posixpath
 import re
 
 import website_dept as W
 import website_api
-from j2ui_artifacts import inline_css, previewable
+from j2ui_artifacts import MAX_BYTES, inline_css, previewable, primary
 
 SAFE_HEADERS = dict(website_api.SAFE)
-NOT_YET = "<p style='font:15px system-ui;color:#667;padding:24px'>Your website will appear here once it's built.</p>"
+_NOTE = "<p style='font:15px system-ui;color:#667;padding:24px'>%s</p>"
+NOT_YET = _NOTE % "Your website will appear here once it's built."
+NOTHING_FILED = _NOTE % "Nothing has been filed here yet."
+
+
+def not_yet(ctx):
+    """The page while nothing is built: a website keeps the prototype's sentence, any other kind says nothing has been filed."""
+    return NOT_YET if getattr(ctx, "kind", "website") == "website" else NOTHING_FILED
+
+
+def text_page(files):
+    """A version with no index.html shown as text: its primary file, escaped, in <pre> (the sandbox of SAFE_HEADERS stays)."""
+    prim = primary(files)
+    text = files.get(prim)
+    if not isinstance(text, str):
+        return None
+    return ("<!doctype html><meta charset=utf-8><title>%s</title><pre style='font:14px/1.5 ui-monospace,monospace;white-space:pre-wrap;"
+            "padding:24px;margin:0'>%s</pre>") % (html.escape(prim), html.escape(text[:MAX_BYTES]))
 _KEY = re.compile(r"v?(\d+)")
 
 
@@ -72,9 +90,14 @@ def site(ctx, key, path=""):
         k = str(key or "").strip()
         if not path:
             if not have:
-                return _out(200, NOT_YET, "text/html") if k == "latest" or _KEY.fullmatch(k) else _gone()
-            if _version(k, have) is None:
+                return _out(200, not_yet(ctx), "text/html") if k == "latest" or _KEY.fullmatch(k) else _gone()
+            v0 = _version(k, have)
+            if v0 is None:
                 return _gone()
+            held = W.read_files(ctx.ref, name, v0)
+            if held and "index.html" not in held:                  # a version that is not a page: its main file, as safe text
+                shown = text_page(held)
+                return _out(200, shown, "text/html") if shown else _gone()
             return _out(302, b"", "text/plain", Location="%s/index.html" % k)         # relative: the links inside stay in the version
         v, rel = _version(k, have), _clean_path(path)
         if v is None or rel is None:

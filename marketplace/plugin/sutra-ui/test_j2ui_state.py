@@ -177,7 +177,7 @@ def test_c31_a_running_engine_with_a_stamp_waiting_still_says_waiting(mods):
 # ---- C3-2: the keys, the idle shape, the goal --------------------------------------------------------------------------------
 def test_c32_a_department_with_nothing_in_it_is_the_pages_idle_shape(mods):
     c, s = read(mods)
-    assert list(s) == list(C.STATE_KEYS) and len(s) == 56
+    assert list(s) == list(C.STATE_KEYS) and len(s) == 57 and s["words"] == {}
     idle = C.EMPTY_STATE()
     for k in ("chat", "total", "status", "thinking", "step", "goal", "stamped", "conflicts", "audits", "versions", "cycle",
               "calls", "error", "done", "turn", "paused", "outcome", "style", "model", "fixes", "has_board", "memory", "output",
