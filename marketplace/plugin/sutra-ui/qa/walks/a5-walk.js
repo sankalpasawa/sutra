@@ -32,6 +32,7 @@ const get = url => new Promise((res, rej) => http.get(url, r => { let b = ""; r.
 const results = [];
 const check = (name, ok, detail) => { results.push({ name, ok: !!ok }); console.log((ok ? "PASS " : "FAIL ") + name + (ok || !detail ? "" : "  -- " + detail)); };
 const BIG = { w: 1280, h: 900, mobile: false, tag: "1280" }, SMALL = { w: 390, h: 844, mobile: true, tag: "390" };
+const NARROW = { w: 390, h: 844, mobile: false, tag: "390" };       // the app's own screens (no viewport meta of their own) are laid out at the width, not scaled to 980
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
@@ -189,11 +190,14 @@ const BIG = { w: 1280, h: 900, mobile: false, tag: "1280" }, SMALL = { w: 390, h
 
   check("walk: no script exception in the app", exceptions.length === 0, exceptions.slice(0, 2).join(" | "));
   // ---- 4. screenshots at 390 and the J2 page of default, organic and root ---------------------------------------------------
-  await viewport(SMALL);
+  await viewport(NARROW);
   await run(`render()`);
+  await waitFor(`window.innerWidth === 390 && !!document.querySelector('.sgfocus')`, 10000);
   await shot("graph-focus-390.png");
   await run(`S.shadowGraphFocus = null; sgSetFocus(null); sgReset(); openScreen('shadowgraph'); render()`);
-  await waitFor(`document.querySelectorAll('[data-sgnode]').length > 1`, 15000);
+  await waitFor(`document.querySelectorAll('[data-sgnode]').length > 1 && !document.querySelector('.sgfocus')`, 15000);
+  const phone = JSON.parse(await run(`JSON.stringify({ nodes: document.querySelectorAll('[data-sgnode]').length, small: [...document.querySelectorAll('[data-sgnode]')].filter(b => b.getBoundingClientRect().height < 44).length, over: document.documentElement.scrollWidth > window.innerWidth + 1 })`));
+  check("phone: the graph is a list of 44 px targets with no sideways scroll", phone.nodes > 1 && phone.small === 0 && !phone.over, JSON.stringify(phone));
   await shot("graph-overview-390.png");
   for (const kind of ["default", "organic", "root"]) {
     for (const vp of [BIG, SMALL]) {
