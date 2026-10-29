@@ -13,6 +13,8 @@
    COLLECTS its listeners so a synthetic click can be dispatched at them.
    Run: node test_dept.js */
 "use strict";
+// The fixtures carry times written for IST (10:23 and the like); a CI runner is on UTC. Pin the zone so the same text prints on every machine.
+process.env.TZ = "Asia/Kolkata";
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
