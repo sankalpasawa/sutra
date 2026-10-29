@@ -16,7 +16,7 @@
 
    Settings and records is the classic list and its panes (a function's Settings with its instructions, an engine, filed
    work, People, Human Sutra), so nothing the page has no screen for is lost. Only a department of the first build, a ref the map
-   does not know, or one switched to Settings and records (S.ui.j2off[ref], for the page's life) keeps the classic screens. The
+   does not know, or one on its Settings and records tab (the stored tab `records`, the escape hatch) keeps the classic screens. The
    organisation row keeps Root's classic chat (J2_ROOT_DEFAULT = false); Root's page is one click away from it.
    `?j2view=off` in the address turns the page off everywhere (kept in localStorage through lsSet); `?j2view=on` back on.
 
@@ -53,15 +53,6 @@ function j2vEligible(ref){
   const m = (typeof wbS === "function" && ref) ? wbS().map[ref] : null;
   return !!(m && m.j2 === true);
 }
-/* The explicit per-department switch to the classic screens ('Settings and records' as the escape hatch), for the page's life. */
-function j2vOff(ref){
-  return !!(typeof S !== "undefined" && S.ui && S.ui.j2off && S.ui.j2off[ref]);
-}
-function j2vSetOff(ref, on){
-  if (typeof S === "undefined" || !S.ui || !ref) return;
-  if (!S.ui.j2off) S.ui.j2off = {};
-  if (on) S.ui.j2off[ref] = true; else delete S.ui.j2off[ref];
-}
 /* Does the stored tab leave the department on the page? Nothing chosen yet, or one of the six that the page folds. A Root keeps its
    own chat unless it was sent to the page (tab `j2`) or J2_ROOT_DEFAULT says the page is its default. */
 function j2vWants(ref){
@@ -70,12 +61,12 @@ function j2vWants(ref){
   return t === undefined || J2V_TABS.indexOf(t) >= 0;
 }
 function j2vOn(ref){
-  return j2vEnabled() && j2vEligible(ref) && !j2vOff(ref) && j2vWants(ref);
+  return j2vEnabled() && j2vEligible(ref) && j2vWants(ref);
 }
 /* What wbTab answers for this department: `j2` for the page, `records` for Settings and records, null to let wbTab answer
    as it always did (any other tab is the classic screen's own: an engine, a filed work, Human Sutra, a function's pane). */
 function j2vTab(ref){
-  if (!j2vEnabled() || !j2vEligible(ref) || j2vOff(ref)) return null;
+  if (!j2vEnabled() || !j2vEligible(ref)) return null;
   if (j2vWants(ref)) return "j2";
   return wbS().tab[ref] === "records" ? "records" : null;
 }
@@ -97,7 +88,7 @@ function j2vRecordsHtml(n){
 }
 /* The list's first group in records mode: one row back to the page where Chat, Map, Board and Agent activity were. */
 function j2vTop(ref, m){
-  if (!j2vEnabled() || !j2vEligible(ref) || j2vOff(ref) || j2vOn(ref)) return null;
+  if (!j2vEnabled() || !j2vEligible(ref) || j2vOn(ref)) return null;
   return `<div class="o2g dpg wb">` + dpRow("Department view", `data-wbtab="j2"`, false) + `</div>`;
 }
 
