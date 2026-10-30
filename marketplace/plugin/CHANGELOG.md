@@ -2,6 +2,60 @@
 
 **status**: active · **updated**: 2026-09-28
 
+## 2.307.1 (2026-10-30)
+
+- Released from v2.307.0-desktop..HEAD: 48 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - release gates: the Shadow graph screen is a registered screen id, and its suite is wired into the Mac build
+  - suites: skip the known-red chat stop test by name, since --deselect no longer matched its path
+  - PRD P5.3: fix: the real Setup walk in the J2 page run with a model: PASS
+  - PRD P5.2: fix: edge tags clear every node, no count at rest in the graph header, no two nodes overlap
+  - PRD P5.2: fix: a Root's J2 page shows its own chat, not its child departments' says
+  - PRD a5-verify: fix after merge: record the merge sha in the Build status table
+  - PRD P4.1: fix: key the Shadow graph memo on the real departments signature
+  - PRD P5.6: the A5 status table, M13 status, decision log, A1 and A4 notes, release notes
+  - PRD P5.5: A5 verification tests and the gate lane
+  - PRD P5.4: the app's phone shots are laid out at 390, the phone list is checked
+  - PRD P5.4: screenshots of the graph and the J2 page at 1280 and 390
+  - PRD P5.3: the Root Setup walk in the J2 page, opt-in; the classic default stays
+  - PRD P5.2: A5 browser walk, and a department node opens the Org screen
+  - PRD P5.1: A5 end-to-end seed and route checks
+  - PRD A5.3.6: fix: test the _delegate_spawn decision hook
+  - PRD P2.6: fix: remove dead j2off switch; the records tab is the escape hatch
+  - PRD a5-decide: fix after merge: put the modules back as collected, not reloaded, so later shadow suites keep their registry
+  - PRD P3.3: the decision tests leave no event loop or module state behind
+  - PRD P1.4: fix: DeptChoice.done_items defaults to an empty list
+  - PRD P3.6: the task route, the feed key and the spawn hook
+  - PRD P3.5: missions carry department_decision and department_ref
+  - PRD P3.4: apply (founding.spawn once, S-18 hold) and birth_ask_applies
+  - PRD P3.3: shadow_dept parse_choice, decide, the DR-1 to DR-8 covering, record
+  - PRD P3.2: the create-or-reuse question and TaskChat.dept_choice
+  - PRD P3.1: dept_read rows and candidates, the listing and decision routes
+  - PRD P2.7: End-to-end walks for default, organic and root
+  - PRD P2.6: Frontend: the J2 page for every kind the server names
+  - PRD P2.5: Tests for the words, the pin and the wording edits
+  - PRD P2.4: Sync script S4 words, S5 helper line, pin schema j2ui-pin/2
+  - PRD A5 P4.6: navigation, deep links and Home buttons
+  - PRD A5 P4.5: Details button on the chat strip
+  - PRD A5 P4.3: Shadow graph screen and task detail mode
+  - PRD P2.3: Per-kind adapters, 57th state key, map j2 flag
+  - PRD P2.2: words_for(dept), the neutral wording of the page
+  - PRD P2.1: Route matrix and scope for every department kind
+  - PRD A5 P4.2: graph routes
+  - PRD A5 P4.1: shadow graph builder
+  - PRD P2.0: export o2OpenDept for the graph
+  - PRD A5 P1.8: router stubs
+  - PRD A5 P1.7: the Shadow graph sample fixture
+  - PRD A5 P1.6: the Models editor lists the 17 as sealed built-ins
+  - PRD A5 P1.5: register the 17 definitions, equivalence proof, samples
+  - PRD A5 P1.1: instructions.json keeps its own version; tests follow version 2
+  - PRD A5 P1.3: Shadow graph and task detail models
+  - PRD A5 P1.4: department listing and create-or-reuse models
+  - PRD A5 P1.2: shared A5 scalars and the page words
+  - PRD A5 P1.1: schema version 2 alone
+  - sutra-ui design: amendment A5, the J2 page for every department, the Shadow graph, create or reuse
+- Changed: 145 file(s), +29128/-314
+- New test suites: test_a5_router_stubs.py test_a5_verify.py test_dept_list_api.py test_j2ui_words.py test_layer_models_a5_defs.py test_layer_models_a5_depts.py test_layer_models_a5_graph.py test_layer_models_a5_sample.py test_layer_models_a5_words.py test_shadow_dept.py test_shadow_dept_apply.py test_shadow_dept_spawn.py test_shadow_graph.js test_shadow_graph_api.py test_shadow_graph_build.py
+
 ## 2.307.0 (2026-10-29)
 
 - Released from v2.306.25-desktop..HEAD: 599 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
