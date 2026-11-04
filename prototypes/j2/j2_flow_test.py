@@ -10651,6 +10651,34 @@ def template_library(demo=False):
                     assert d["rule"] in ("0", "e") and (d["rule"] == "e" or (empty(d) and d["reason"] == L.NOTHING_TO_SPECIALISE)), d
                 assert set(d) >= {"workflow", "atom", "artifact", "section", "action", "template", "version", "score",
                                   "reason"}, d
+        # (b2) every generator call is logged to template_calls.jsonl beside calls.jsonl: the workflow, the time, the
+        # meta schema's sha and the raw reply, one line per call, only for the workflows the router asked about
+        tcalls = list(j2._jsonl(r1.dir, "template_calls.jsonl"))
+        asked = {d["workflow"] for d in d1 if d["artifact"] != "design" and not empty(d)}
+        assert tcalls and {c["workflow"] for c in tcalls} == asked, ({c["workflow"] for c in tcalls}, asked)
+        for c in tcalls:
+            assert c["schema_sha"] == L.sha_of(L.meta_schema()) and c["model"] is None and c["seconds"] >= 0, c
+            assert json.loads(c["raw"])["action"] in ("reuse", "extend", "create") and c["t"] and c["prompt"], c
+        assert not any(c.get("fn") == "template generator" for c in calls_file(r1)), "the builders' call log is as it was"
+        # (b3) a router that crashes never blocks a run: every needy decision is the generic template with the error
+        # as its reason, the builders fill the generic one and the run still ends Done
+        keep_route = L.route
+
+        def boom(need, ctx, ask=None):
+            raise RuntimeError("planted router crash")
+        L.route = boom
+        try:
+            crashed = lib_run(BOUTIQUE_BRIEF)
+        finally:
+            L.route = keep_route
+        assert crashed.outcome.startswith("Done"), crashed.outcome
+        dc = [d for d in tpl_decisions(crashed) if d["artifact"] != "design"]
+        assert dc and all(d["action"] == "generic" and d["rule"] == "e" and d["kind"] == "generic"
+                          and d["reason"] == "the router could not run (RuntimeError: planted router crash)"
+                          for d in dc), [(d["workflow"], d["action"], d["reason"]) for d in dc][:3]
+        assert all(m["text"].startswith(f"{d['workflow']} template: generic ") for d in dc
+                   for m in crashed.chat if m["who"] == "system" and m["text"].startswith(f"{d['workflow']} template:"))
+        assert not [x for x in art_recs(crashed) if not x["pass"]], "the generic templates still pass every layer"
         # (c) extend: the same need plus a fact naming one more field makes v2; v1 is unchanged and still compiles
         need0 = L.make_need("prd", "Requirements", rs.context.business_type, rs.context.facts_used, "Still Point Yoga")
         assert need0["fingerprint"] == rs.context.fingerprint
@@ -10859,7 +10887,7 @@ def template_library(demo=False):
           f"Thread & Loom created {len(made1)} templates, run 2 reused all of them (rule a, no new version, used_by both "
           f"runs); Still Point Yoga created its own ({req['template']} with classes day/time/price) and reused no "
           f"boutique template; the fingerprint holds the needed fields, rule (a) reuses only a template with every needed field, a "
-          f"need with no facts and no fields is generic; an extra field extends to v2 with v1 unchanged; an extend of a candidate under 0.5 is overruled to a create with that coverage as its score, reason and chat line, and 0.5 and 0.8 stay extends; six bad specs refused and never stored; "
+          f"need with no facts and no fields is generic; every generator call is logged to template_calls.jsonl and a crashing router leaves every decision generic with the error as its reason; an extra field extends to v2 with v1 unchanged; an extend of a candidate under 0.5 is overruled to a create with that coverage as its score, reason and chat line, and 0.5 and 0.8 stay extends; six bad specs refused and never stored; "
           f"an invalid generator falls back to generic twice and the run ends Done; {n} model.py files match their "
           "runtime classes; every builder's schema sha is its template's schema.json; the committed library/ is "
           "unchanged; every flagged run keeps its own copy of each template it used (created, extended, reused and generic, once "
