@@ -1630,15 +1630,40 @@ def to_requester(text, question=True, keep=""):
     return " ".join(said + asked)
 
 
+NEGATION = re.compile(r"\b(?:don'?t|do not|never|not|no)\b", re.I)
+OPTION_WORDS = {"stop": r"\bstop\b", "ship": r"\bship\b|\bas is\b|\bfinish|\bgo live\b",
+                "continue": r"\badd\b|\bkeep (?:going|working)\b|\bcontinue\b|\bcarry on\b|\bmore\b",
+                "drop": r"\bleave (?:\S+ )?out\b|\bdrop\b|\bwithout\b|\bskip\b|\bremove\b"}
+
+
+def affirmed(answer):
+    """(the answer with its negated clauses blanked, {the options those clauses name}). A clause runs between
+    . , ; and/but/or; one with don't, do not, not, never or no in it is negated: "Add the credits and keep working.
+    Don't leave anything out and don't finish as it is." -> ("Add the credits and keep working. ...", {drop, ship})."""
+    kept, negated = [], set()
+    for i, part in enumerate(re.split(r"([.,;!?]|\b(?:and|but|or)\b)", answer)):
+        if i % 2 == 0 and NEGATION.search(part):
+            negated |= {o for o, pat in OPTION_WORDS.items() if re.search(pat, part, re.I)}
+            part = ""
+        kept.append(part)
+    return "".join(kept), negated
+
+
 def parse_decision(answer, q, choices, crit, nums=None):
     """The Requester's answer to the decision question, as code reads it: {"decision", "add", "drop_items"}.
     "2. Add 25 more. Leave out the lookbook and reviews" -> continue, add 25, drop the two items by name.
-    nums: each item's run-long number (what the Requester sees); drop_items are those numbers, never positions."""
+    A negated option never selects that option ("don't finish as it is" is not a finish); what the rest of the
+    answer affirms is read as before; nothing affirmed is None, so the question is asked again. A bare number is
+    that option. nums: each item's run-long number (what the Requester sees); drop_items are those numbers, never
+    positions."""
     answer, nums = str(answer or ""), nums or list(range(1, len(crit) + 1))
+    if ONLY_PICK.fullmatch(answer):
+        i = option_picked(q, answer) if q.get("options") else None
+        return {"decision": choices[i] if i is not None and i < len(choices) else None, "add": None, "drop_items": []}
+    answer, negated = affirmed(answer)
     i = option_picked(q, answer) if q.get("options") else None
     picked = choices[i] if i is not None and i < len(choices) else None
-    if ONLY_PICK.fullmatch(answer):
-        return {"decision": picked, "add": None, "drop_items": []}
+    said = {o for o, pat in OPTION_WORDS.items() if re.search(pat, answer, re.I)} - negated
     amount = re.search(r"\badd\s+(\d+)|(\d+)\s*(?:more|units?|extra|(?:work )?credits?)\b", answer, re.I)  # "add 25"
     add = int(amount.group(1) or amount.group(2)) if amount else None
     drops = {int(n) for n in re.findall(r"\bitems? (\d+)|\bF-(\d+)", answer, re.I) for n in n if n}
@@ -1647,13 +1672,13 @@ def parse_decision(answer, q, choices, crit, nums=None):
         part = re.sub(r"^\s*(the|a|an)\s+", "", part.strip(), flags=re.I).strip().lower()
         drops |= {nums[j] for j, c in enumerate(crit) if len(part) > 2 and part in c.lower()}
     drops = sorted(n for n in drops if n in nums)
-    if "stop" in choices and re.search(r"\bstop\b", answer, re.I) and not add:
+    if "stop" in choices and "stop" in said and not add:
         decision = "stop"
-    elif re.search(r"\bship\b|as is|\bfinish|go live", answer, re.I) and not add:
+    elif "ship" in said and not add:
         decision = "ship"
-    elif add or picked == "continue":
+    elif add or "continue" in said or picked == "continue":
         decision = "continue"
-    elif drops or m or picked == "drop":
+    elif drops or m or "drop" in said or picked == "drop":
         decision = "drop"
     else:
         decision = picked

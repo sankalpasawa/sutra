@@ -2699,6 +2699,38 @@ def readable_decision():
     assert len(re_ask) == 4 and all(ln.startswith("   Option ") for ln in re_ask[1:]), re_ask
 
 
+def decision_negation():
+    """runs/j2-20261103-184249: "Add the credits and keep working. Don't leave anything out and don't finish as it
+    is." read as finish. parse_decision now reads negation: a negated option never selects that option; one option
+    affirmed with the others negated picks the affirmed one; all negated, or unclear, is None (asked again); a bare
+    number still picks that option."""
+    q = {"options": ["Add 40 work credits and keep going: you get more of what you asked for built. Or type your own "
+                     "number, up to 200", "Leave out item 2 Opening hours are listed: you get the site without it.",
+                     "Finish as it is: you get the site as it is now, with 2 things still not right"]}
+    choices, crit = ["continue", "drop", "ship"], ["The menu with prices is shown", "Opening hours are listed",
+                                                   "The address and a map link are shown"]
+    P = lambda a: j2.parse_decision(a, q, choices, crit)
+    assert P("Add the credits and keep working. Don't leave anything out and don't finish as it is.")["decision"] \
+        == "continue"
+    assert P("2") == {"decision": "drop", "add": None, "drop_items": []}
+    assert P("finish as it is")["decision"] == "ship"
+    assert P("don't add more, finish") == {"decision": "ship", "add": None, "drop_items": []}
+    assert P("Don't finish as it is and don't leave anything out")["decision"] is None, "all negated: asked again"
+    assert P("hmm, not sure")["decision"] is None and P("")["decision"] is None, "unclear: asked again"
+    assert P("not 2, and not finish")["decision"] is None, "a number in a negated clause is not a pick"
+    assert P("don't leave out the opening hours; finish") == {"decision": "ship", "add": None, "drop_items": []}
+    assert P("2. Add 25 more. Leave out the opening hours") == {"decision": "continue", "add": 25, "drop_items": [2]}
+    assert P("don't add 25 more; leave out the opening hours") == {"decision": "drop", "add": None, "drop_items": [2]}
+    assert P("no more credits, finish as it is")["decision"] == "ship"
+    assert j2.parse_decision("don't stop, keep going", q, ["continue", "stop"], crit)["decision"] == "continue"
+    assert j2.parse_decision("stop", {"options": ["Keep going", "Stop the whole run here"]}, ["continue", "stop"],
+                             crit)["decision"] == "stop"
+    assert j2.affirmed("Add the credits and keep working. Don't leave anything out and don't finish as it is.") == \
+        ("Add the credits and keep working.and.", {"drop", "ship"})
+    print("decision negation: a negated option never selects it, one affirmed with the rest negated picks the "
+          "affirmed one, all negated or unclear asks again, a bare number still picks ok")
+
+
 PRD_BRIEF = ("Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. Users: "
              "patients at small clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on "
              "average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS "
@@ -11095,6 +11127,7 @@ if __name__ == "__main__":
     open_list()
     covers_by_text()
     readable_decision()
+    decision_negation()
     simple_messages()
     owner_override()
     form_submit()
