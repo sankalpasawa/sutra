@@ -5587,11 +5587,11 @@ def artifact_schema_failures():
     # (g) no usable structured output: both cases are failed attempts, with the subtype as the evidence
     import llm
     class FakeRun:
-        def __init__(self, payload):
-            self.payload, self.returncode, self.stderr = payload, 0, ""
+        def __init__(self, payload, returncode=0, stderr="", stdout=None):
+            self.payload, self.returncode, self.stderr, self._stdout = payload, returncode, stderr, stdout
         @property
         def stdout(self):
-            return json.dumps(self.payload)
+            return json.dumps(self.payload) if self._stdout is None else self._stdout
     for payload, want in (({"subtype": "error_max_structured_output_retries", "result": "", "is_error": True},
                            "error_max_structured_output_retries"),
                           ({"subtype": "success", "result": "{}", "is_error": False}, "no structured_output")):
@@ -5607,6 +5607,37 @@ def artifact_schema_failures():
             llm.subprocess.run = keep
         assert raised and want in raised, (want, raised)
         assert (llm.LAST_META.get("structured") or {}).get("subtype") == payload["subtype"], llm.LAST_META
+    # (h) the CLI refused the schema itself and never called the model (runs/j2-20261103-184249, W-24 to W-35: exit 1,
+    # nothing on stdout, the reason on stderr): the failure names the exit code, the empty stdout and the stderr
+    # text, never a bare "subtype None"
+    err = "Error: --json-schema is not a valid JSON Schema: can't resolve reference #/definitions/Palette from id #"
+    keep = llm.subprocess.run
+    llm.subprocess.run = lambda *a, **k: FakeRun({}, returncode=1, stderr=err + "\n", stdout="")
+    try:
+        raised = None
+        try:
+            llm._run_claude_cli(["claude"], None, "hi", {}, lambda e: None, {"type": "object"})
+        except RuntimeError as e:
+            raised = str(e)
+    finally:
+        llm.subprocess.run = keep
+    assert raised and "exit 1" in raised and "no stdout" in raised and "#/definitions/Palette" in raised \
+        and "subtype None" not in raised, raised
+    st = llm.LAST_META.get("structured") or {}
+    assert st.get("exit") == 1 and st.get("present") is False and "#/definitions/Palette" in st.get("stderr", ""), st
+    # and the cause: Design's transport schema keeps its definitions, which the first page builder's reply schema
+    # used to carry inside its "design" property; now every extra field is written with its definitions in place,
+    # so every $ref in the reply schema resolves at the root, with the model's section or a library's in its place
+    web = AM.model_for("website", "Section")
+    design = {k: v for k, v in AM.transport_schema(AM.Design).items() if k != "$schema"}
+    assert set(design["definitions"]) >= {"Palette", "Fonts"} and '"$ref"' in json.dumps(design), design.keys()
+    first = AM.reply_schema(web, {"design": design})
+    for sch in (first, j2.J2Run._with_section(first, AM.transport_schema(web)), AM.reply_schema(web, {})):
+        refs = set(re.findall(r'"#/definitions/(\w+)"', json.dumps(sch)))
+        assert refs <= set(sch.get("definitions") or {}), (refs, sorted(sch.get("definitions") or {}))
+        assert not any("definitions" in v for v in sch["properties"].values() if isinstance(v, dict)), sch["properties"].keys()
+    assert first["properties"]["design"]["properties"]["palette"]["type"] == "object", "Palette written in place"
+    assert set(first["properties"]["design"]["properties"]["palette"]["required"]) >= {"primary", "text"}
     # and in a run: the builder's first call brings nothing usable, the next one does
     state = {"done": False}
 
@@ -5626,7 +5657,8 @@ def artifact_schema_failures():
     print("artifact schema failures: a missing field fails the shape layer and the retry carries Pydantic's words; a "
           "component covering R9 fails the rules layer with that evidence and the retry fixes it (and a gap that "
           "stays goes to Adaptation); a reply with subtype error_max_structured_output_retries, and one with success "
-          "but no structured_output, are failed attempts with the subtype as the evidence ok")
+          "but no structured_output, are failed attempts with the subtype as the evidence; a refused --json-schema is reported "
+          "with its exit code and stderr, and the first page builder's reply schema has every $ref resolvable ok")
 
 
 def bad_ids_mock(target="W-9", skip=2, attempts=(1,)):
