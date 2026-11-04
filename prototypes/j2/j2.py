@@ -49,6 +49,7 @@ import time
 
 import j2_artifacts
 import j2_artifact_models
+import j2_backend
 import j2_board
 import j2_change
 import j2_check
@@ -737,6 +738,8 @@ def run_check(c, site_dir, page, doc=False):
     t, target, expect = c.get("type"), c.get("target"), c.get("expect")
     if t == "deed-send":      # reads the send receipt in this run's receipts.jsonl; never sends
         return j2_send.check(c, os.path.dirname(site_dir))
+    if t in j2_backend.CHECK_TYPES:      # J2_BACKEND=1: the generated backend's own checks (j2_backend.py)
+        return j2_backend.check(c, os.path.dirname(site_dir), page)
     if doc:
         return doc_check(c, page)
     try:

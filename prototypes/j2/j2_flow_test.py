@@ -10952,6 +10952,402 @@ def library_page(run, lib):
           "\"from this run\", the atom card links it ok")
 
 
+# ---- J2_BACKEND=1 (backend-checks/1, j2_backend.py): the checks on a generated server.py, each on a good file and
+# on bad ones. The good server is the fixture below (what the backend builder is expected to write for the Still
+# Point Yoga test brief, docs/backend-design.md section 10); the bad ones are one-line edits of it.
+GOOD_SERVER = '''import argparse
+import json
+import os
+import sqlite3
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIELDS = ("name", "email", "class", "preferred_date")
+COLUMNS = ("id",) + FIELDS + ("created_at",)
+
+
+def db_connect(path):
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE IF NOT EXISTS bookings (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, "
+                "email TEXT NOT NULL, class TEXT NOT NULL, preferred_date TEXT NOT NULL, created_at TEXT NOT NULL)")
+    con.commit()
+    return con
+
+
+class Handler(BaseHTTPRequestHandler):
+    db = None
+
+    def _json(self, status, obj):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        p = urlparse(self.path).path
+        if p in ("/", "/index.html"):
+            try:
+                with open(os.path.join(HERE, "index.html"), "rb") as f:
+                    data = f.read()
+            except OSError:
+                return self._json(404, {"error": "no index.html"})
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
+        if p == "/api/bookings":
+            con = db_connect(self.db)
+            rows = con.execute("SELECT id, name, email, class, preferred_date, created_at FROM bookings ORDER BY id").fetchall()
+            con.close()
+            return self._json(200, [dict(zip(COLUMNS, r)) for r in rows])
+        return self._json(404, {"error": "not found"})
+
+    def do_POST(self):
+        p = urlparse(self.path).path
+        if p != "/api/bookings":
+            return self._json(404 if not p.startswith("/api/") else 405, {"error": "not found"})
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            data = json.loads(self.rfile.read(n) or b"{}")
+        except ValueError:
+            return self._json(400, {"error": "body is not JSON"})
+        missing = [k for k in FIELDS if not str(data.get(k) or "").strip()]
+        if missing:
+            return self._json(400, {"error": "missing: " + ", ".join(missing)})
+        con = db_connect(self.db)
+        cur = con.execute("INSERT INTO bookings (name, email, class, preferred_date, created_at) VALUES (?, ?, ?, ?, "
+                          "datetime('now'))", tuple(str(data[k]).strip() for k in FIELDS))
+        con.commit()
+        bid = cur.lastrowid
+        con.close()
+        return self._json(201, {"id": bid, **{k: str(data[k]).strip() for k in FIELDS}})
+
+    def log_message(self, *args):
+        pass
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, required=True)
+    ap.add_argument("--db", default=os.path.join(HERE, "bookings.sqlite"))
+    a = ap.parse_args()
+    Handler.db = a.db
+    db_connect(a.db).close()
+    ThreadingHTTPServer(("127.0.0.1", a.port), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()
+'''
+E2E_PAGE = '''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Still Point Yoga</title></head><body><main><h1>Still Point Yoga</h1>
+<form id="booking" action="/api/bookings" method="post">
+<label>Name <input name="name" type="text" required></label>
+<label>Email <input name="email" type="email" required></label>
+<label>Class <select name="class" required><option value="">Choose a class</option><option value="Gentle Flow">Gentle Flow</option>
+<option value="Strength Yoga">Strength Yoga</option></select></label>
+<label>Preferred date <input name="preferred_date" type="date" required></label>
+<button type="submit">Book</button></form>
+<p id="booking-done" hidden></p></main>
+<script>
+document.getElementById("booking").addEventListener("submit", async e => { e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target).entries()), p = document.getElementById("booking-done");
+  try { const r = await fetch("/api/bookings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data)});
+    const j = await r.json(); p.textContent = r.ok ? "Booked #" + j.id : "Error: " + j.error; p.hidden = false; }
+  catch (err) { p.textContent = "Could not send the booking"; p.hidden = false; } });
+</script></body></html>
+'''
+BACKEND_ENDPOINTS = [
+    {"id": "A1", "method": "POST", "path": "/api/bookings", "expected_status": 201,
+     "expected_fields": ["id", "name", "email", "class", "preferred_date"],
+     "example_request": json.dumps({"name": "Test Person", "email": "test@stillpoint.example", "class": "Gentle Flow",
+                                    "preferred_date": "2026-11-10"})},
+    {"id": "A2", "method": "GET", "path": "/api/bookings", "expected_status": 200, "expected_fields": ["id", "name"]}]
+BACKEND_FIELDS = [{"name": "name", "type": "text"}, {"name": "email", "type": "email"}, {"name": "class", "type": "select"},
+                  {"name": "preferred_date", "type": "date"}]
+
+
+def backend_fixture(server=GOOD_SERVER, page=E2E_PAGE):
+    """A run folder with site/index.html and site/server.py, like a run's after the page builders and the backend
+    builder wrote them."""
+    d = tempfile.mkdtemp(prefix="j2-backend-")
+    os.makedirs(os.path.join(d, "site"))
+    with open(os.path.join(d, "site", "index.html"), "w", encoding="utf-8") as f:
+        f.write(page)
+    with open(os.path.join(d, "site", "server.py"), "w", encoding="utf-8") as f:
+        f.write(server)
+    return d
+
+
+def backend_up(server=GOOD_SERVER, page=E2E_PAGE):
+    """(run folder, start result) with the server scanned and started."""
+    import j2_backend as B
+    d = backend_fixture(server, page)
+    s = B.safety_check(os.path.join(d, "site", "server.py"), d)
+    assert s["pass"], s
+    return d, B.start_check(d)
+
+
+def backend_compile_check():
+    """backend-compile: py_compile of server.py, the bytecode thrown away; a syntax error fails with the file, the
+    line and Python's own message; a missing file fails; the dispatcher in j2.run_check reaches it."""
+    import j2_backend as B
+    d = backend_fixture()
+    r = B.compile_check(os.path.join(d, "site", "server.py"))
+    assert r["pass"] is True and "compiles" in r["evidence"], r
+    assert not os.path.exists(os.path.join(d, "site", "__pycache__")), "no bytecode is left in the run"
+    bad = backend_fixture(GOOD_SERVER.replace("def main():", "def main(:"))
+    r = B.compile_check(os.path.join(bad, "site", "server.py"))
+    assert r["pass"] is False and r["evidence"].startswith("SyntaxError: server.py:") and "invalid syntax" in r["evidence"], r
+    line = int(r["evidence"].split(":")[2])
+    assert GOOD_SERVER.splitlines()[line - 1].startswith("def main"), (line, r)
+    r = B.compile_check(os.path.join(bad, "site", "nothing.py"))
+    assert r["pass"] is False and "not found" in r["evidence"], r
+    r = j2.run_check({"type": "backend-compile", "target": "site/server.py", "expect": True}, os.path.join(d, "site"), E2E_PAGE)
+    assert r["pass"] is True, r
+    r = j2.run_check({"type": "backend-compile", "target": "site/server.py", "expect": True}, os.path.join(bad, "site"), E2E_PAGE)
+    assert r["pass"] is False and "SyntaxError" in r["evidence"], r
+    print("backend compile check: good file compiles, no bytecode left, syntax error named with file, line and message, "
+          "missing file, run_check dispatch ok")
+
+
+def backend_safety_check():
+    """backend-safety: the AST scan. The good server passes (and is remembered, so backend-start may run it); each
+    blocked thing fails naming its line and what it is: subprocess, os.system, eval, socket, urllib.request,
+    http.client, requests, a file write, a database path outside the run, a 0.0.0.0 bind, a non-literal bind,
+    from os import system, a relative import, getattr; a file with no server at all."""
+    import j2_backend as B
+    d = backend_fixture()
+    r = B.safety_check(os.path.join(d, "site", "server.py"), d)
+    assert r["pass"] is True and "127.0.0.1" in r["evidence"] and B._SAFE.get(d), r
+    cases = [("import subprocess\n", "import subprocess is not allowed"),
+             ("import socket\n", "import socket is not allowed"),
+             ("import urllib.request\n", "import urllib.request is not allowed"),
+             ("import urllib\n", "import urllib is not allowed"),
+             ("import http.client\n", "import http.client is not allowed"),
+             ("import requests\n", "import requests is not allowed"),
+             ("from os import system\n", "from os import system is not allowed"),
+             ("from http import client\n", "from http import client is not allowed"),
+             ("from . import helpers\n", "a relative import is not allowed"),
+             ("import shutil\n", "import shutil is not allowed")]
+    for ins, want in cases:
+        src = GOOD_SERVER.replace("import argparse\n", "import argparse\n" + ins, 1)
+        bad = B.safety_problems(src)
+        assert bad and want in bad[0] and bad[0].startswith("line 2:"), (ins, bad)
+    inline = [('    os.system("ls")\n', "os.system is not allowed"),
+              ('    eval("1")\n', "eval is not allowed"),
+              ('    exec("x = 1")\n', "exec is not allowed"),
+              ('    getattr(os, "system")("ls")\n', "getattr is not allowed"),
+              ('    open("x.txt", "w").close()\n', "open(..., 'w') writes a file"),
+              ('    open("x.txt", mode="a").close()\n', "open(..., 'a') writes a file"),
+              ('    open("x.txt", "r+").close()\n', "open(..., 'r+') writes a file"),
+              ('    open("x.txt", mode).close()\n', "open() needs a literal read mode"),
+              ('    sqlite3.connect("/tmp/x.db").close()\n', "sqlite3.connect('/tmp/x.db') points outside the run folder"),
+              ('    sqlite3.connect("../x.db").close()\n', "sqlite3.connect('../x.db') points outside the run folder"),
+              ('    os.remove("x")\n', "os.remove is not allowed"),
+              ('    print(os.environ)\n', "os.environ is not allowed"),
+              ('    __import__("subprocess")\n', "__import__ is not allowed")]
+    main_at = GOOD_SERVER.index("    ap = argparse.ArgumentParser()")
+    main_line = GOOD_SERVER[:main_at].count("\n") + 1
+    for ins, want in inline:
+        src = GOOD_SERVER[:main_at] + ins + GOOD_SERVER[main_at:]
+        bad = B.safety_problems(src)
+        assert bad and want in bad[0] and bad[0].startswith(f"line {main_line}:"), (ins, bad)
+    bad = B.safety_problems(GOOD_SERVER.replace('("127.0.0.1", a.port)', '("0.0.0.0", a.port)'))
+    assert any('"0.0.0.0" binds every interface' in x for x in bad) and any("binds '0.0.0.0'" in x for x in bad), bad
+    bad = B.safety_problems(GOOD_SERVER.replace('("127.0.0.1", a.port)', '("", a.port)'))
+    assert any("binds ''; it must bind 127.0.0.1 only" in x for x in bad), bad
+    bad = B.safety_problems(GOOD_SERVER.replace('("127.0.0.1", a.port)', 'addr'))
+    assert any('must be the literal ("127.0.0.1", port)' in x for x in bad), bad
+    bad = B.safety_problems(GOOD_SERVER.replace("    ThreadingHTTPServer((\"127.0.0.1\", a.port), Handler).serve_forever()\n", "    pass\n"))
+    assert bad == ["no HTTPServer, ThreadingHTTPServer or TCPServer is constructed, so there is nothing to start"], bad
+    # a subclass with its own name still counts as the server
+    sub = GOOD_SERVER.replace("ThreadingHTTPServer((\"127.0.0.1\", a.port), Handler)", "BookingServer((\"127.0.0.1\", a.port), Handler)") \
+        .replace("def main():", "class BookingServer(ThreadingHTTPServer):\n    allow_reuse_address = True\n\n\ndef main():")
+    assert B.safety_problems(sub) == [], B.safety_problems(sub)
+    # the result of a failed scan, and run_check's dispatch; a failed scan forgets the file, so start refuses it
+    badd = backend_fixture(GOOD_SERVER.replace("import argparse\n", "import argparse\nimport subprocess\n", 1))
+    r = j2.run_check({"type": "backend-safety", "target": "site/server.py", "expect": True}, os.path.join(badd, "site"), E2E_PAGE)
+    assert r["pass"] is False and r["evidence"].startswith("line 2: import subprocess is not allowed") and r["actual"], r
+    assert badd not in B._SAFE
+    r = B.start_check(badd)
+    assert r["pass"] is False and "backend-safety has not passed" in r["evidence"], r
+    assert not B._LIVE.get(badd), "a file the scan refused is never started"
+    print(f"backend safety check: good file passes and is remembered; {len(cases)} import cases, {len(inline)} call cases, three bind "
+          "cases, no server, a subclass server, the refused file is not started ok")
+
+
+def backend_start_check():
+    """backend-start: `python -I server.py --port P --db backend/check-n.sqlite` in the run folder with a fresh
+    environment, GET / within the timeout with index.html's bytes; the receipt carries port, pid, log and seconds;
+    backend-files stops it and reports what it wrote. Failures: exits at once (code and log tail), never answers
+    (timeout), serves another page, writes a second file."""
+    import j2_backend as B
+    d, r = backend_up()
+    try:
+        assert r["pass"] is True and r["actual"]["port"] and r["actual"]["pid"] and r["actual"]["log"] == "backend/start-1.log", r
+        assert "answered GET / with site/index.html" in r["evidence"] and f"127.0.0.1:{r['actual']['port']}" in r["evidence"], r
+        h = B._LIVE[d]
+        assert h["proc"].poll() is None and os.path.isfile(os.path.join(d, "backend", "start-1.log")), "the server stays up for the next checks"
+        assert os.path.isfile(os.path.join(d, "backend", "check-1.sqlite")), "the check's own database, in the run folder"
+        status, body = B._get(f"http://127.0.0.1:{h['port']}/")
+        assert status == 200 and body.decode() == E2E_PAGE, status
+        # start again: the first server is stopped first; attempt 2 gets its own log and database
+        r2 = B.start_check(d)
+        assert r2["pass"] is True and r2["actual"]["log"] == "backend/start-2.log" and h["proc"].poll() is not None, r2
+        assert B._LIVE[d] is not h
+        f = B.files_check(d)
+        assert f["pass"] is True and "check-2.sqlite" in f["evidence"] and d not in B._LIVE, f
+        assert B._LIVE.get(d) is None and B.files_check(d)["pass"] is False, "files after the stop: nothing to compare"
+    finally:
+        B.stop(d)
+    # exits at once
+    d2, r = backend_up(GOOD_SERVER.replace("    a = ap.parse_args()\n", "    a = ap.parse_args()\n    print('refusing to serve')\n    sys.exit(3)\n"))
+    assert r["pass"] is False and "exited with code 3" in r["evidence"] and "refusing to serve" in r["evidence"], r
+    assert d2 not in B._LIVE
+    # never answers (a sleep before serving): the timeout, shortened for the test
+    keep = B.START_TIMEOUT
+    B.START_TIMEOUT = 2
+    try:
+        d3, r = backend_up(GOOD_SERVER.replace("import sys\n", "import sys\nimport time\n", 1)
+                           .replace("    Handler.db = a.db\n", "    time.sleep(30)\n    Handler.db = a.db\n"))
+    finally:
+        B.START_TIMEOUT = keep
+    assert r["pass"] is False and "did not answer on 127.0.0.1" in r["evidence"] and "within 2 s" in r["evidence"], r
+    assert d3 not in B._LIVE and not any(os.path.exists(f"/proc/{p}") for p in [])      # stopped (checked by the handle)
+    # serves another page: the server is up (so the endpoint checks can still run) but the check fails
+    d4, r = backend_up(GOOD_SERVER.replace("                    data = f.read()\n", "                    data = b'<p>hello</p>'\n"))
+    try:
+        assert r["pass"] is False and "are not site/index.html" in r["evidence"] and d4 in B._LIVE, r
+    finally:
+        B.stop(d4)
+    # writes a second file: start passes, backend-files names it
+    d5, r = backend_up(GOOD_SERVER.replace("    db_connect(a.db).close()\n", "    db_connect(a.db).close()\n    sqlite3.connect('extra.sqlite').close()\n"))
+    try:
+        assert r["pass"] is True, r
+        f = B.files_check(d5)
+        assert f["pass"] is False and "the server wrote extra.sqlite outside its database backend/check-1.sqlite" in f["evidence"], f
+    finally:
+        B.stop(d5)
+    # the environment the server gets is built from scratch and the interpreter is isolated (-I): a server that
+    # prints both and exits shows it in its log
+    os.environ["J2_TEST_SECRET"] = "never"
+    try:
+        d6, r = backend_up(GOOD_SERVER.replace("    a = ap.parse_args()\n", "    a = ap.parse_args()\n    print('isolated', sys.flags.isolated, "
+                                               "'secret', os.getenv('J2_TEST_SECRET'), 'path', os.getenv('PATH'))\n    sys.exit(4)\n"))
+    finally:
+        os.environ.pop("J2_TEST_SECRET", None)
+    assert r["pass"] is False and "exited with code 4" in r["evidence"] and "isolated 1 secret None path /usr/bin:/bin" in r["evidence"], r
+    print("backend start check: starts on a free port in the run folder, answers index.html, keeps running, restart "
+          "stops the first, files check stops and compares; exit code with log tail, timeout, wrong page, extra file ok")
+
+
+def backend_endpoint_check():
+    """backend-endpoint: each LLD endpoint's example request; page-calls-known-endpoints: the page's /api/ calls."""
+    import j2_backend as B
+    d, r = backend_up()
+    try:
+        assert r["pass"]
+        a1 = B.endpoint_check(d, BACKEND_ENDPOINTS[0])
+        assert a1["pass"] is True and a1["evidence"].startswith("A1 POST /api/bookings: 201") and "id, name" in a1["evidence"], a1
+        a2 = B.endpoint_check(d, BACKEND_ENDPOINTS[1])
+        assert a2["pass"] is True and a2["evidence"].startswith("A2 GET /api/bookings: 200"), a2
+        assert a2["actual"]["status"] == 200 and "Test Person" in a2["actual"]["body"], a2
+        r = j2.run_check({"type": "backend-endpoint", "target": "A1", "expect": True, "spec": BACKEND_ENDPOINTS[0]}, os.path.join(d, "site"), E2E_PAGE)
+        assert r["pass"] is True, r
+        r = B.endpoint_check(d, {"id": "A3", "method": "GET", "path": "/api/none", "expected_status": 200})
+        assert r["pass"] is False and "A3 GET /api/none: expected 200, got 404" in r["evidence"], r
+        r = B.endpoint_check(d, {"id": "A4", "method": "GET", "path": "/bookings", "expected_status": 200})
+        assert r["pass"] is False and "does not start with /api/" in r["evidence"], r
+        r = B.endpoint_check(d, {**BACKEND_ENDPOINTS[0], "example_request": "{}"})
+        assert r["pass"] is False and "expected 201, got 400" in r["evidence"] and "missing: name" in r["evidence"], r
+    finally:
+        B.stop(d)
+    r = B.endpoint_check(d, BACKEND_ENDPOINTS[0])
+    assert r["pass"] is False and "the server is not running" in r["evidence"], r
+    # wrong status
+    d2, r = backend_up(GOOD_SERVER.replace("self._json(201,", "self._json(200,"))
+    try:
+        r = B.endpoint_check(d2, BACKEND_ENDPOINTS[0])
+        assert r["pass"] is False and "A1 POST /api/bookings: expected 201, got 200" in r["evidence"], r
+    finally:
+        B.stop(d2)
+    # missing endpoint
+    d3, r = backend_up(GOOD_SERVER.replace('        if p == "/api/bookings":\n            con = db_connect', '        if p == "/api/none":\n            con = db_connect'))
+    try:
+        r = B.endpoint_check(d3, BACKEND_ENDPOINTS[1])
+        assert r["pass"] is False and "A2 GET /api/bookings: expected 200, got 404" in r["evidence"], r
+    finally:
+        B.stop(d3)
+    # missing field in the reply
+    d4, r = backend_up(GOOD_SERVER.replace('self._json(201, {"id": bid, **', 'self._json(201, {**'))
+    try:
+        r = B.endpoint_check(d4, BACKEND_ENDPOINTS[0])
+        assert r["pass"] is False and "201 but the reply lacks fields: id" in r["evidence"], r
+        r = B.endpoint_check(d4, {**BACKEND_ENDPOINTS[1], "expected_fields": ["id", "created_by"]})
+        assert r["pass"] is False and "200 but the reply lacks fields: created_by" in r["evidence"], r
+    finally:
+        B.stop(d4)
+    # an empty list: the status passes and the item fields are not checked
+    d5, r = backend_up()
+    try:
+        r = B.endpoint_check(d5, BACKEND_ENDPOINTS[1])
+        assert r["pass"] is True and "the list is empty" in r["evidence"], r
+    finally:
+        B.stop(d5)
+    # the page's calls
+    r = B.page_calls_check(E2E_PAGE, BACKEND_ENDPOINTS)
+    assert r["pass"] is True and "the page calls /api/bookings (2 place(s))" in r["evidence"], r
+    r = B.page_calls_check(E2E_PAGE.replace('fetch("/api/bookings"', 'fetch("/api/book?x=1"'), BACKEND_ENDPOINTS)
+    assert r["pass"] is False and "the page calls /api/book, which no LLD endpoint has" in r["evidence"], r
+    r = B.page_calls_check("<form action='mailto:x@y.example'></form>", BACKEND_ENDPOINTS)
+    assert r["pass"] is False and "calls no /api/ path" in r["evidence"], r
+    assert B.page_calls("x.open('POST', '/api/bookings'); fetch(`/api/list`)") == ["/api/bookings", "/api/list"]
+    r = j2.run_check({"type": "page-calls-known-endpoints", "target": "index.html", "expect": True, "spec": BACKEND_ENDPOINTS}, os.path.join(d, "site"), E2E_PAGE)
+    assert r["pass"] is True, r
+    print("backend endpoint check: A1 201 with fields, A2 200 list, 404 for a missing endpoint, non-/api/ path, 400 on an empty "
+          "body, wrong status, missing endpoint, missing reply field, empty list; page calls known, unknown and none ok")
+
+
+def backend_e2e_check():
+    """backend-e2e: the form filled and submitted in headless Chrome through the same-origin proxy, the booking read
+    back from GET /api/bookings. --fast without --browser: could not run (pass None), never a failure."""
+    import j2_backend as B
+    d, r = backend_up()
+    spec = {"form": "#booking", "fields": BACKEND_FIELDS, "list_endpoint": {"method": "GET", "path": "/api/bookings"},
+            "confirm": "#booking-done"}
+    try:
+        assert r["pass"]
+        r = j2.run_check({"type": "backend-e2e", "target": "#booking", "expect": True, "spec": spec}, os.path.join(d, "site"), E2E_PAGE)
+        if not j2.j2_check.find_chrome():
+            assert r["pass"] is None and r["evidence"].startswith("could not run: Chrome not found"), r
+            print("backend e2e check: could not run without Chrome (pass None), server stopped ok")
+            return
+        assert r["pass"] is True, r
+        assert "test@stillpoint.example" in r["evidence"] and '"class": "Gentle Flow"' in r["evidence"] and "(1 row(s))" in r["evidence"], r
+        assert r["actual"]["row"]["name"] == "Test Person" and r["actual"]["row"]["id"] == 1, r["actual"]
+        # the page posts somewhere the server doesn't have: the page shows its error, the list stays empty, the check fails
+        d2, r2 = backend_up(page=E2E_PAGE.replace('fetch("/api/bookings"', 'fetch("/api/none"'))
+        try:
+            r2 = B.e2e_check(d2, E2E_PAGE.replace('fetch("/api/bookings"', 'fetch("/api/none"'), "#booking", BACKEND_FIELDS,
+                             {"method": "GET", "path": "/api/bookings"}, confirm="#booking-done")
+            assert r2["pass"] is False and "GET /api/bookings returned 0 row(s), none with" in r2["evidence"], r2
+        finally:
+            B.stop(d2)
+        # a confirmation element that never shows: the browser step fails and names it
+        r3 = B.e2e_check(d, E2E_PAGE, "#booking", BACKEND_FIELDS, {"method": "GET", "path": "/api/bookings"}, confirm="#never")
+        assert r3["pass"] is False and "did not submit in the browser" in r3["evidence"], r3
+    finally:
+        B.stop(d)
+    print("backend e2e check: form filled and submitted in Chrome through the proxy, booking read back; unknown path "
+          "fails on the empty list; a missing confirmation fails on the step ok")
+
+
 if __name__ == "__main__":
     if "--template-demo" in sys.argv:
         # python3 j2_flow_test.py --fast --template-demo: the three template-library demo runs (template_library's
@@ -11077,6 +11473,11 @@ if __name__ == "__main__":
             artifact_schema_failures()
             rules_split()
             template_library()
+            backend_compile_check()
+            backend_safety_check()
+            backend_start_check()
+            backend_endpoint_check()
+            backend_e2e_check()
         board_disabled()
         board_functions_off()
         os.environ["J2_BOARD"] = "1"
