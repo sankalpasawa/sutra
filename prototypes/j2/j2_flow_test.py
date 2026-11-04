@@ -10644,6 +10644,36 @@ def template_library(demo=False):
         assert L.transport(v1) == json.load(open(os.path.join(v1_dir, "schema.json"), encoding="utf-8")), "v1 compiles"
         again, rec2 = L.route(need, {"run": "extend-test-2", "workflow": "W-4", "atom": "W-4.a1"})
         assert rec2["action"] == "reused" and again.version == 2, rec2
+        # (c2) the extend threshold: an "extend" the generator sends for a candidate covering under 0.5 is overruled
+        # to a create, with that coverage as the record's score, in its reason and in the chat line; at 0.5 and above
+        # it stays an extend with the same number
+        keep_cands, gen_req = L.candidates, L.generic("prd", "Requirements")
+        made = []
+        for sc, want in ((0.08, "created"), (0.5, "extended"), (0.8, "extended")):
+            L.candidates = lambda n, sc=sc: [{**c, "score": sc, "fingerprint_match": False}
+                                             for c in keep_cands(n) if c["name"] == rs.name][:1]
+            try:
+                cands = L.candidates(need)
+                ref = f"{cands[0]['name']}@{cands[0]['version']}"
+                ext = L.mock_generator(need, gen_req, cands, "extend")
+                assert ext["action"] == "extend" and ext["template"] == ref, ext
+                tX, rX = L.route(need, {"run": "threshold-test", "workflow": "W-4", "atom": "W-4.a1"},
+                                 ask=lambda system, user, mock, schema: json.dumps(ext))
+            finally:
+                L.candidates = keep_cands
+            assert rX["action"] == want and rX["score"] == sc, (sc, rX["action"], rX["score"], rX["reason"])
+            line = j2.template_line("W-4", rX)
+            if want == "created":
+                assert rX["reason"].startswith(f"overruled: coverage {sc} < 0.5") and rX["overruled"] is True \
+                    and rX["rule"] == "d", rX
+                assert tX.name != rs.name and tX.version == 1 and tX.name.startswith(rs.name), tX.name
+                assert line == f"W-4 template: created {tX.name} v1 ({rX['reason']})", line
+                made.append(tX)
+            else:
+                assert "overruled" not in rX and "overruled" not in rX["reason"] and rX["rule"] == "c", rX
+                assert tX.name == rs.name and line.startswith(f"W-4 template: extended {rs.name} v") \
+                    and f"covers {len(need['facts'])} of {len(need['facts'])} facts" in line, line
+        assert len(made) == 1 and L.get(f"{made[0].name}@1", "prd", "Requirements") is not None, "the create is stored"
         # fix 1: the fingerprint includes the sorted needed field names
         fa = L.fingerprint("website", "Section", "boutique", ["f1"], ["form_fields", "elements"])
         assert fa == L.fingerprint("website", "Section", "boutique", ["f1"], ["elements", "form_fields"]), "sorted"
@@ -10797,7 +10827,7 @@ def template_library(demo=False):
           f"Thread & Loom created {len(made1)} templates, run 2 reused all of them (rule a, no new version, used_by both "
           f"runs); Still Point Yoga created its own ({req['template']} with classes day/time/price) and reused no "
           f"boutique template; the fingerprint holds the needed fields, rule (a) reuses only a template with every needed field, a "
-          f"need with no facts and no fields is generic; an extra field extends to v2 with v1 unchanged; six bad specs refused and never stored; "
+          f"need with no facts and no fields is generic; an extra field extends to v2 with v1 unchanged; an extend of a candidate under 0.5 is overruled to a create with that coverage as its score, reason and chat line, and 0.5 and 0.8 stay extends; six bad specs refused and never stored; "
           f"an invalid generator falls back to generic twice and the run ends Done; {n} model.py files match their "
           "runtime classes; every builder's schema sha is its template's schema.json; the committed library/ is "
           "unchanged; every flagged run keeps its own copy of each template it used (created, extended, reused and generic, once "

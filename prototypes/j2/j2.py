@@ -1660,6 +1660,16 @@ def parse_decision(answer, q, choices, crit, nums=None):
     return {"decision": decision, "add": add, "drop_items": drops}
 
 
+def template_line(wid, rec):
+    """The one chat line for a workflow's template decision: what was reused, extended or created and how much of
+    the need it covers; an overruled extend shows the coverage that overruled it; the generic template, its reason."""
+    verb = {"reused": "reused", "extended": "extended", "created": "created"}.get(rec["action"])
+    if not verb:
+        return f"{wid} template: generic {rec['template']} ({rec['reason']})"
+    why = rec["reason"] if rec.get("overruled") else rec.get("covers") or rec["reason"]
+    return f"{wid} template: {verb} {rec['template']} v{rec['version']} ({why})"
+
+
 def brief_list(pos):
     """A final position as one line: workflow names and costs, or the text itself."""
     if isinstance(pos, list):
@@ -8322,10 +8332,7 @@ class J2Run:
                     self._event("system", "template_save", f"{wid}: {type(e).__name__}: {e}")
         self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
                                      "decisions": self.tpl_decisions})
-        verb = {"reused": "reused", "extended": "extended", "created": "created"}.get(rec["action"])
-        line = (f"{wid} template: {verb} {rec['template']} v{rec['version']} ({rec.get('covers') or rec['reason']})"
-                if verb else f"{wid} template: generic {rec['template']} ({rec['reason']})")
-        self.post("system", line, template_route={k: rec.get(k) for k in ("workflow", "atom", "action", "template",
+        self.post("system", template_line(wid, rec), template_route={k: rec.get(k) for k in ("workflow", "atom", "action", "template",
                                                                           "version", "score")})
         self.tpl_cur = {"template": t, "rec": rec, "need": need}
         return t
