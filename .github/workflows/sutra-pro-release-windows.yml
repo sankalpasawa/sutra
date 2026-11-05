@@ -274,6 +274,32 @@ jobs:
           for _ in $(seq 1 60); do [ -e "$RUNNER_TEMP/installed/Sutra Pro.exe" ] || break; sleep 1; done
           [ ! -e "$RUNNER_TEMP/installed/Sutra Pro.exe" ] || { echo "::error::the uninstaller left the app behind"; exit 1; }
 
+      # An earlier Sutra Pro is replaced in place (the installer keeps the 0.1.x AppId): the real 0.1.0 installer is installed, the published one goes over it,
+      # the old layout must be gone, and the new app must prove itself. Skipped, loudly, when the 0.1.0 release is no longer there to download.
+      - name: The published installer upgrades a 0.1.0 install in place
+        env:
+          MSYS2_ARG_CONV_EXCL: "*"
+        run: |
+          set -euo pipefail
+          version="${TAG#sutra-pro-v}"
+          version="${version%-beta.*}"
+          if ! gh release download sutra-pro-v0.1.0 --repo "$GITHUB_REPOSITORY" --dir old --pattern 'Sutra-Pro-Setup-x64.exe'; then
+            echo "::notice::the 0.1.0 installer is not on its release any more: the upgrade is not proved this time"
+            exit 0
+          fi
+          target="$(cygpath -w "$RUNNER_TEMP/upgraded")"
+          old/Sutra-Pro-Setup-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- "/DIR=$target" "/LOG=$(cygpath -w "$RUNNER_TEMP/old-setup.log")"
+          [ -f "$RUNNER_TEMP/upgraded/python/SutraPro.exe" ] || { cat "$RUNNER_TEMP/old-setup.log"; echo "::error::the 0.1.0 installer did not install the 0.1.0 layout"; exit 1; }
+          released/Sutra-Pro-Setup-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- "/DIR=$target" "/LOG=$(cygpath -w "$RUNNER_TEMP/new-setup.log")"
+          [ -f "$RUNNER_TEMP/upgraded/Sutra Pro.exe" ] || { cat "$RUNNER_TEMP/new-setup.log"; echo "::error::the upgrade installed nothing"; exit 1; }
+          for leftover in python "Sutra Pro.cmd" "Quit Sutra Pro.cmd" icon; do
+            [ ! -e "$RUNNER_TEMP/upgraded/$leftover" ] || { echo "::error::the upgrade left the 0.1.0 layout behind: $leftover"; exit 1; }
+          done
+          python scripts/prove_desktop_app.py --app "$RUNNER_TEMP/upgraded" --version "$version"
+          "$RUNNER_TEMP/upgraded/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          for _ in $(seq 1 60); do [ -e "$RUNNER_TEMP/upgraded/Sutra Pro.exe" ] || break; sleep 1; done
+          [ ! -e "$RUNNER_TEMP/upgraded/Sutra Pro.exe" ] || { echo "::error::the uninstaller left the upgraded app behind"; exit 1; }
+
       - name: The published zip unpacks to the same app
         run: |
           set -euo pipefail

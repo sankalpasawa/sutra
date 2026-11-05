@@ -55,7 +55,7 @@ Exactly as the Mac release, there is one tag: see `docs/RELEASE.md`. What the `s
 |---|---|
 | `guard` (ubuntu) | `scripts/check_release_tag.py` compares the tag with `pyproject.toml`; a dispatched tag must exist. Seconds, no costly runner. |
 | `exe` (windows-latest) | builds the wheel and sets up Node 22; `scripts/build_desktop_app.py --target win-x64` makes `Sutra Pro/`; **proves the folder runs**; compiles the installer with Inno Setup; **proves the installer** (silent install, the installed copy proved, silent uninstall, nothing left); zips the folder; writes a checksum per file; attaches all four files to the release |
-| `verify` (windows-latest) | downloads what was **published**, checks the checksums and the sizes, installs the published installer and proves the installed copy, uninstalls it, unzips the published zip and proves that too |
+| `verify` (windows-latest) | downloads what was **published**, checks the checksums and the sizes, installs the published installer and proves the installed copy, uninstalls it, **installs the real 0.1.0 installer and the published one over it** (the old layout must be gone and the new app must prove itself; skipped with a notice if the 0.1.0 release is no longer there), unzips the published zip and proves that too |
 
 The proof (`scripts/prove_desktop_app.py`, D109) runs the app the way the Start menu entry does, offline, with every proxy pointing at a closed port. First the
 window: `Sutra Pro.exe` starts with `SUTRA_PRO_SELFTEST=1`, starts its server on `resources\python\python.exe`, draws the page, and the app asks the page whether it

@@ -929,6 +929,19 @@ def test_the_exe_job_sets_up_node_22_caches_electron_and_keeps_the_proofs_pictur
     assert keep["if"] == "always()" and keep["with"]["path"] == "sutra-pro/proof/" and keep["with"]["name"] == "proof-win-x64"
 
 
+def test_verify_also_proves_an_upgrade_of_the_real_0_1_0_installer_and_skips_loudly_when_it_is_gone(win):
+    step = next(s for s in steps_of(win["jobs"]["verify"]) if s.get("name") == "The published installer upgrades a 0.1.0 install in place")
+    run = step["run"]
+    assert step["env"]["MSYS2_ARG_CONV_EXCL"] == "*", "Git Bash must not rewrite /VERYSILENT and /DIR= as paths"
+    assert "gh release download sutra-pro-v0.1.0" in run and "::notice::the 0.1.0 installer is not on its release any more" in run
+    order = [run.index(marker) for marker in ("old/Sutra-Pro-Setup-x64.exe /VERYSILENT", "released/Sutra-Pro-Setup-x64.exe /VERYSILENT", "prove_desktop_app.py", "unins000.exe")]
+    assert order == sorted(order), "the old one first, the published one over it, then the proof, then the uninstall"
+    for leftover in ('python "Sutra Pro.cmd" "Quit Sutra Pro.cmd" icon',):
+        assert leftover in run, "the 0.1.x layout must be gone after the upgrade"
+    names = [s.get("name") for s in steps_of(win["jobs"]["verify"])]
+    assert names.index(step["name"]) < names.index("The published zip unpacks to the same app")
+
+
 def test_release_windows_uses_no_secret_but_the_workflow_token():
     assert [text for text in strings(named("release-windows.yml")) if "secrets." in text] == []
 
