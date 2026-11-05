@@ -1,0 +1,21 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "coordination",
+   "kind": "schedule"
+  },
+  "posted": [
+   {
+    "id": 9,
+    "who": "coordination",
+    "text": "Hand-off by code: Audit checks",
+    "next": "audit"
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "posted 1 message to Audit"
+ }
+}

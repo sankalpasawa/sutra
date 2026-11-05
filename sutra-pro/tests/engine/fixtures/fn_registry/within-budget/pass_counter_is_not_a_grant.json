@@ -1,0 +1,35 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "call": {
+   "inputs": [
+    [
+     "ledger",
+     "budget 20/100 used, 80 left"
+    ]
+   ]
+  },
+  "reply": {
+   "say": "@Adaptation Granted.",
+   "decision": "COUNTER",
+   "next": "Adaptation",
+   "workflows": [
+    {
+     "name": "Build menu",
+     "cost": 500,
+     "envelope": {
+      "money_limit": 500
+     }
+    }
+   ]
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "COUNTER: nothing granted"
+ }
+}

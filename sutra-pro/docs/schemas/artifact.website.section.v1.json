@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "anchor": {
+      "default": "",
+      "description": "the id attribute of the section element, with the #; \"\" when this workflow writes page-head tags only",
+      "maxLength": 40,
+      "title": "Anchor",
+      "type": "string"
+    },
+    "facts_used": {
+      "description": "the charter facts this section shows, copied exactly",
+      "items": {
+        "maxLength": 4000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Facts Used",
+      "type": "array"
+    },
+    "head": {
+      "default": "",
+      "description": "page-head tags this section needs (meta, link, style or script only); \"\" when it needs none",
+      "maxLength": 200000,
+      "title": "Head",
+      "type": "string"
+    },
+    "html": {
+      "default": "",
+      "description": "the section's HTML only: no <html>, <head> or <body> tags; \"\" when this workflow writes page-head tags only",
+      "maxLength": 200000,
+      "title": "Html",
+      "type": "string"
+    },
+    "id": {
+      "description": "the section id of this workflow, as the task gives it",
+      "maxLength": 40,
+      "title": "Id",
+      "type": "string"
+    },
+    "implements": {
+      "description": "the LLD section ids this builds; empty when the run has no LLD",
+      "items": {
+        "maxLength": 40,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Implements",
+      "type": "array"
+    },
+    "selectors_used": {
+      "description": "the ids and classes you used",
+      "items": {
+        "maxLength": 300,
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Selectors Used",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "title": "WebsiteSection",
+  "type": "object"
+}

@@ -1,0 +1,38 @@
+{
+ "brief_sha": "b953c24d60ff",
+ "budget": null,
+ "env": {
+  "J2_FIXES": "0",
+  "J2_MEMORY": "0",
+  "J2_OUTPUT": "prd",
+  "J2_REALIZATION": "0",
+  "STUDIO_MOCK": "1"
+ },
+ "j2_commit": "33aeeda639cd7bf828d5361273a8a153ebc63a36",
+ "outcome": "Done: the PRD is workable. Every done-when item, rubric item and necessary condition passes.",
+ "scenario": "prd",
+ "schema": "prompts-golden/1",
+ "sections": "d12cae5577cd",
+ "site": "79992aec90b7",
+ "spent": 98,
+ "workflows": "6e3901842d15",
+ "calls": [
+  ["identity", "d00dc9f4f494", "1bd9a5af0d59"],
+  ["adaptation", "6bb5d5618e38", "4b65c470654c"],
+  ["priority", "7af3b8409ce8", "0d08f64e4884"],
+  ["coordination", "e001ef14ca86", "d8e3d576bd48"],
+  ["W-1", "a7310c67e3e1", "3b7b55caaf08"],
+  ["coordination", "e001ef14ca86", "ad16b297417d"],
+  ["W-2", "7b5bc60619bc", "f907b2ed3877"],
+  ["coordination", "e001ef14ca86", "a2f3e9900200"],
+  ["W-3", "64c66db69548", "536200290fa9"],
+  ["coordination", "e001ef14ca86", "a2db5a6214ce"],
+  ["W-4", "9284dce6a146", "30330bbba80b"],
+  ["coordination", "e001ef14ca86", "112a2641f805"],
+  ["W-5", "fe234789f143", "59e83cea2864"],
+  ["coordination", "e001ef14ca86", "8948d7714995"],
+  ["W-6", "b3b12402f732", "abb96a9dcba2"],
+  ["audit", "b3f3461d327c", "109b71e4dfa7"],
+  ["identity", "6be87dd3a8ce", "75f8bc4c4f2e"]
+ ]
+}

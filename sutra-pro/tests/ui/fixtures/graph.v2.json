@@ -1,0 +1,234 @@
+{
+  "version": 42,
+  "chart_version": 2,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "root",
+      "label": "Root",
+      "status": "waiting_on_you",
+      "detail": "",
+      "chat_session_id": "cs_org",
+      "org_node_id": "root",
+      "dept_id": null,
+      "task_id": null,
+      "fn": null,
+      "step_ref": null,
+      "version": 3,
+      "meta": {}
+    },
+    {
+      "id": "web",
+      "kind": "department",
+      "label": "Web",
+      "status": "waiting_on_you",
+      "detail": "Identity asks about the menu",
+      "chat_session_id": "cs_5e0a77b19c3d",
+      "org_node_id": "web",
+      "dept_id": "web",
+      "task_id": null,
+      "fn": null,
+      "step_ref": null,
+      "version": 9,
+      "meta": {
+        "run_id": "j2-20261104-100004-7f3a"
+      }
+    },
+    {
+      "id": "web.identity",
+      "kind": "function",
+      "label": "Identity",
+      "status": "waiting_on_you",
+      "detail": "last seen: asked about the menu",
+      "chat_session_id": "cs_77aa10c2e9b4",
+      "org_node_id": null,
+      "dept_id": "web",
+      "task_id": null,
+      "fn": "identity",
+      "step_ref": null,
+      "version": 4,
+      "meta": {
+        "stats": {
+          "calls": 16,
+          "seconds": 52.0,
+          "tokens_in": 9600,
+          "tokens_out": 2880,
+          "atoms_open": 1,
+          "atoms_closed": 1,
+          "atoms_failed": 1,
+          "atoms_total": 5
+        },
+        "wait_on": "you"
+      }
+    },
+    {
+      "id": "web.adaptation",
+      "kind": "function",
+      "label": "Adaptation",
+      "status": "idle",
+      "detail": "",
+      "chat_session_id": "cs_b37b2000ef36",
+      "org_node_id": null,
+      "dept_id": "web",
+      "task_id": null,
+      "fn": "adaptation",
+      "step_ref": null,
+      "version": 1,
+      "meta": {
+        "stats": {
+          "calls": 0,
+          "seconds": 0.0,
+          "tokens_in": 0,
+          "tokens_out": 0,
+          "atoms_open": 0,
+          "atoms_closed": 0,
+          "atoms_failed": 0,
+          "atoms_total": 0
+        },
+        "wait_on": null
+      }
+    },
+    {
+      "id": "web.priority",
+      "kind": "function",
+      "label": "Priority",
+      "status": "idle",
+      "detail": "",
+      "chat_session_id": "cs_7731b1a82306",
+      "org_node_id": null,
+      "dept_id": "web",
+      "task_id": null,
+      "fn": "priority",
+      "step_ref": null,
+      "version": 1,
+      "meta": {
+        "stats": {
+          "calls": 0,
+          "seconds": 0.0,
+          "tokens_in": 0,
+          "tokens_out": 0,
+          "atoms_open": 0,
+          "atoms_closed": 0,
+          "atoms_failed": 0,
+          "atoms_total": 0
+        },
+        "wait_on": null
+      }
+    },
+    {
+      "id": "web.coordination",
+      "kind": "function",
+      "label": "Coordination",
+      "status": "idle",
+      "detail": "",
+      "chat_session_id": "cs_0a584a5e9e60",
+      "org_node_id": null,
+      "dept_id": "web",
+      "task_id": null,
+      "fn": "coordination",
+      "step_ref": null,
+      "version": 1,
+      "meta": {
+        "stats": {
+          "calls": 0,
+          "seconds": 0.0,
+          "tokens_in": 0,
+          "tokens_out": 0,
+          "atoms_open": 0,
+          "atoms_closed": 0,
+          "atoms_failed": 0,
+          "atoms_total": 0
+        },
+        "wait_on": null
+      }
+    },
+    {
+      "id": "web.audit",
+      "kind": "function",
+      "label": "Audit",
+      "status": "idle",
+      "detail": "",
+      "chat_session_id": "cs_e1acceab39f9",
+      "org_node_id": null,
+      "dept_id": "web",
+      "task_id": null,
+      "fn": "audit",
+      "step_ref": null,
+      "version": 1,
+      "meta": {
+        "stats": {
+          "calls": 0,
+          "seconds": 0.0,
+          "tokens_in": 0,
+          "tokens_out": 0,
+          "atoms_open": 0,
+          "atoms_closed": 0,
+          "atoms_failed": 0,
+          "atoms_total": 0
+        },
+        "wait_on": null
+      }
+    },
+    {
+      "id": "s-3f9a1c2b7d",
+      "kind": "step",
+      "label": "Coffee shop landing page",
+      "status": "waiting_on_you",
+      "detail": "",
+      "chat_session_id": "cs_0c91d4aa3e77",
+      "org_node_id": null,
+      "dept_id": "web",
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "fn": null,
+      "step_ref": "task",
+      "version": 2,
+      "meta": {
+        "run_id": "j2-20261104-100004-7f3a"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "src": "root",
+      "dst": "web",
+      "kind": "contains",
+      "label": ""
+    },
+    {
+      "src": "web",
+      "dst": "web.identity",
+      "kind": "has_function",
+      "label": ""
+    },
+    {
+      "src": "web",
+      "dst": "web.adaptation",
+      "kind": "has_function",
+      "label": ""
+    },
+    {
+      "src": "web",
+      "dst": "web.priority",
+      "kind": "has_function",
+      "label": ""
+    },
+    {
+      "src": "web",
+      "dst": "web.coordination",
+      "kind": "has_function",
+      "label": ""
+    },
+    {
+      "src": "web",
+      "dst": "web.audit",
+      "kind": "has_function",
+      "label": ""
+    },
+    {
+      "src": "web",
+      "dst": "s-3f9a1c2b7d",
+      "kind": "has_step",
+      "label": ""
+    }
+  ]
+}

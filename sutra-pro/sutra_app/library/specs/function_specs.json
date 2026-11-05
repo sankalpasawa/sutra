@@ -1,0 +1,656 @@
+{
+  "kind": "function_specs",
+  "specs": {
+    "identity": {
+      "function": "identity",
+      "role": "J2.a charter, J2.d rulings, J2.h workable?",
+      "goal": "charter guardian and conflict closer",
+      "yields": "charter, rule, question",
+      "stages": [
+        "J2.a",
+        "J2.d",
+        "J2.h"
+      ],
+      "reads": [
+        "charter",
+        "proposals",
+        "findings",
+        "alarms",
+        "recorded rules"
+      ],
+      "writes": [
+        "identity decisions",
+        "questions to the Requester",
+        "done verdicts",
+        "split registrations"
+      ],
+      "may_not": [
+        "invent a new goal or rule",
+        "choose tools or implementation steps",
+        "increase an envelope",
+        "choose which workflow runs first",
+        "rewrite a proposal to make it acceptable",
+        "ask the Requester merely because agents disagree",
+        "design, allocate, schedule, execute or audit",
+        "see budget, rate card, workflow costs, estimates or envelopes",
+        "mix what is for the Requester with what is for the agents in one reply"
+      ],
+      "task_kinds": [
+        {
+          "kind": "intake",
+          "summary": "reads the brief and writes the charter, or asks the owner what is missing",
+          "reply_family": "identity",
+          "reply_kind": "intake"
+        },
+        {
+          "kind": "stage_decision",
+          "summary": "decides what happens at a stage boundary",
+          "reply_family": "",
+          "reply_kind": ""
+        },
+        {
+          "kind": "resolve",
+          "summary": "rules on a conflict between Adaptation and Priority",
+          "reply_family": "identity",
+          "reply_kind": "ruling"
+        },
+        {
+          "kind": "approval",
+          "summary": "answers whether an over-limit run is approved",
+          "reply_family": "identity",
+          "reply_kind": "approval|approval_ask"
+        },
+        {
+          "kind": "audit",
+          "summary": "decides whether the goal is reached and the site is workable",
+          "reply_family": "identity",
+          "reply_kind": "done"
+        },
+        {
+          "kind": "requester_answered",
+          "summary": "reads the owner's answer and passes it on",
+          "reply_family": "identity",
+          "reply_kind": "heard"
+        },
+        {
+          "kind": "ruling_budget",
+          "summary": "reads the owner's answer about adding budget for a ruling",
+          "reply_family": "",
+          "reply_kind": ""
+        },
+        {
+          "kind": "limit",
+          "summary": "tells the owner a safety limit was hit and what the options are",
+          "reply_family": "",
+          "reply_kind": ""
+        },
+        {
+          "kind": "send_confirm",
+          "summary": "reads the owner's answer to the live-send question",
+          "reply_family": "",
+          "reply_kind": ""
+        },
+        {
+          "kind": "question",
+          "summary": "answers a policy question from the charter, or asks the owner",
+          "reply_family": "",
+          "reply_kind": ""
+        }
+      ],
+      "atom_templates": [
+        {
+          "name": "intake",
+          "goal": "The brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "identity",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "charter-stamp",
+              "args": []
+            },
+            {
+              "name": "audience-split",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "audit",
+          "goal": "The goal is declared reached only if code finds the site workable",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "identity",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "workable",
+              "args": []
+            },
+            {
+              "name": "audience-split",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "requester_answered",
+          "goal": "The owner's answer is read and passed on",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "identity",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "audience-split",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "approval",
+          "goal": "The owner's answer is read and passed on",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "identity",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "audience-split",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "ruling_budget",
+          "goal": "The owner's answer is read and passed on",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "identity",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "audience-split",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "answer",
+          "goal": "The owner's answer to the first question is recorded",
+          "work": {
+            "dispatch_kind": "manual",
+            "agent": "owner",
+            "steps": "",
+            "how_kind": "code"
+          },
+          "work_hint": "manual",
+          "checks": [
+            {
+              "name": "answer-recorded",
+              "args": [
+                "{question_message_id}"
+              ]
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "generic",
+          "goal": "The {function} answers the hand-off {kind} with a reply that follows its rules",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "identity",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [],
+          "touches": []
+        }
+      ],
+      "version": 1
+    },
+    "adaptation": {
+      "function": "adaptation",
+      "role": "J2.b proposes, disputes, saves lessons",
+      "goal": "sense the goal gap and propose how to close it",
+      "yields": "proposal with its checks",
+      "stages": [
+        "J2.b"
+      ],
+      "reads": [
+        "charter",
+        "record",
+        "results",
+        "findings",
+        "constraints",
+        "capability catalogue"
+      ],
+      "writes": [
+        "proposals",
+        "revisions",
+        "conflict positions"
+      ],
+      "may_not": [
+        "grant your own resources",
+        "claim a workflow passed validation",
+        "schedule a run",
+        "declare your result correct",
+        "ask the Requester directly",
+        "hide a capability or permission dependency",
+        "expand scope to make a proposal appear more valuable"
+      ],
+      "task_kinds": [
+        {
+          "kind": "propose",
+          "summary": "proposes workflows that close the goal gap",
+          "reply_family": "adaptation",
+          "reply_kind": "propose"
+        },
+        {
+          "kind": "respond",
+          "summary": "accepts, revises or parks a workflow after Priority's counter",
+          "reply_family": "adaptation",
+          "reply_kind": "respond"
+        },
+        {
+          "kind": "dispute",
+          "summary": "answers a disagreement raised by another function",
+          "reply_family": "",
+          "reply_kind": ""
+        },
+        {
+          "kind": "atom_failed",
+          "summary": "judges whether a failed atom's check or its build was wrong",
+          "reply_family": "adaptation",
+          "reply_kind": "atom_verdict"
+        },
+        {
+          "kind": "change",
+          "summary": "re-plans after the owner asked for a change",
+          "reply_family": "",
+          "reply_kind": ""
+        }
+      ],
+      "atom_templates": [
+        {
+          "name": "propose",
+          "goal": "Workflows are proposed whose work atoms follow the atom rules",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "adaptation",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "atom-rules",
+              "args": []
+            },
+            {
+              "name": "judge-gate",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "respond",
+          "goal": "Workflows are proposed whose work atoms follow the atom rules",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "adaptation",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "atom-rules",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "generic",
+          "goal": "The {function} answers the hand-off {kind} with a reply that follows its rules",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "adaptation",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [],
+          "touches": []
+        }
+      ],
+      "version": 1
+    },
+    "priority": {
+      "function": "priority",
+      "role": "J2.c prices, checks run limits",
+      "goal": "resource bargain and envelope authority",
+      "yields": "GRANT, COUNTER, REFUSE",
+      "stages": [
+        "J2.c",
+        "J2.f"
+      ],
+      "reads": [
+        "proposals",
+        "available resources",
+        "current envelopes",
+        "reported spend"
+      ],
+      "writes": [
+        "grants",
+        "counters",
+        "refusals",
+        "envelope changes",
+        "conflict positions"
+      ],
+      "may_not": [
+        "say which accepted workflow runs first",
+        "reject a proposal because you dislike its method when it fits the envelope",
+        "grant undeclared or unlimited resources",
+        "change the department goal",
+        "ask the Requester directly",
+        "convert a resource decision into a policy decision",
+        "choose strategy, design workflows or judge content quality"
+      ],
+      "task_kinds": [
+        {
+          "kind": "price",
+          "summary": "prices a proposal GRANT, COUNTER or REFUSE with an envelope",
+          "reply_family": "priority",
+          "reply_kind": "price"
+        },
+        {
+          "kind": "dispute",
+          "summary": "answers a disagreement raised by another function",
+          "reply_family": "",
+          "reply_kind": ""
+        },
+        {
+          "kind": "envelope",
+          "summary": "checks a registered workflow's run envelope before it runs",
+          "reply_family": "priority",
+          "reply_kind": "envelope_check"
+        },
+        {
+          "kind": "ruling",
+          "summary": "prices again after Identity's ruling",
+          "reply_family": "priority",
+          "reply_kind": "price"
+        }
+      ],
+      "atom_templates": [
+        {
+          "name": "price",
+          "goal": "The proposal is priced GRANT, COUNTER or REFUSE with a limit, within the budget left",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "priority",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "price-kept",
+              "args": []
+            },
+            {
+              "name": "within-budget",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "ruling",
+          "goal": "The proposal is priced GRANT, COUNTER or REFUSE with a limit, within the budget left",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "priority",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "price-kept",
+              "args": []
+            },
+            {
+              "name": "within-budget",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "envelope",
+          "goal": "The run envelope of the workflow is checked, it runs only within its limits",
+          "work": {
+            "dispatch_kind": "bash",
+            "agent": "priority",
+            "steps": "",
+            "how_kind": "code"
+          },
+          "work_hint": "bash",
+          "checks": [
+            {
+              "name": "within-budget",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "generic",
+          "goal": "The {function} answers the hand-off {kind} with a reply that follows its rules",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "priority",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [],
+          "touches": []
+        }
+      ],
+      "version": 1
+    },
+    "coordination": {
+      "function": "coordination",
+      "role": "J2.f schedules, holds the write lock",
+      "goal": "ordering, dependencies, handoffs and collision prevention",
+      "yields": "rule, order, holds",
+      "stages": [
+        "J2.f"
+      ],
+      "reads": [
+        "registered workflows",
+        "envelopes",
+        "triggers",
+        "dependencies",
+        "locks",
+        "schedule"
+      ],
+      "writes": [
+        "schedule decisions",
+        "holds",
+        "handoffs",
+        "alarms"
+      ],
+      "may_not": [
+        "increase an envelope",
+        "decide that an expensive workflow is not worthwhile",
+        "resolve a policy conflict",
+        "modify the workflow steps",
+        "mark a result correct",
+        "ask the Requester directly",
+        "allocate budgets, decide the goal or judge result quality"
+      ],
+      "task_kinds": [
+        {
+          "kind": "schedule",
+          "summary": "orders the registered workflows and names holds",
+          "reply_family": "coordination",
+          "reply_kind": "schedule"
+        },
+        {
+          "kind": "dispute",
+          "summary": "answers a disagreement raised by another function",
+          "reply_family": "",
+          "reply_kind": ""
+        }
+      ],
+      "atom_templates": [
+        {
+          "name": "schedule",
+          "goal": "Registered workflows get an order and named holds",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "coordination",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "order-registered",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "generic",
+          "goal": "The {function} answers the hand-off {kind} with a reply that follows its rules",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "coordination",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [],
+          "touches": []
+        }
+      ],
+      "version": 1
+    },
+    "audit": {
+      "function": "audit",
+      "role": "J2.g checks the site",
+      "goal": "independent evidence-based check",
+      "yields": "one finding per item",
+      "stages": [
+        "J2.g"
+      ],
+      "reads": [
+        "charter",
+        "registered workflow",
+        "run record",
+        "result artifact",
+        "sources"
+      ],
+      "writes": [
+        "findings"
+      ],
+      "may_not": [
+        "design the workflow",
+        "repair the result",
+        "assign resources",
+        "schedule rework",
+        "decide policy",
+        "pre-approve a proposed workflow because its output could be audited",
+        "invent evidence",
+        "report a score without naming the failed criterion"
+      ],
+      "task_kinds": [
+        {
+          "kind": "audit",
+          "summary": "checks the result against every done-when item",
+          "reply_family": "audit",
+          "reply_kind": "report"
+        },
+        {
+          "kind": "dispute",
+          "summary": "answers a disagreement raised by another function",
+          "reply_family": "",
+          "reply_kind": ""
+        }
+      ],
+      "atom_templates": [
+        {
+          "name": "audit",
+          "goal": "Every done-when item has a finding with evidence",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "audit",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [
+            {
+              "name": "finding-per-item",
+              "args": []
+            },
+            {
+              "name": "pass-needs-proof",
+              "args": []
+            },
+            {
+              "name": "code-measure-wins",
+              "args": []
+            }
+          ],
+          "touches": []
+        },
+        {
+          "name": "generic",
+          "goal": "The {function} answers the hand-off {kind} with a reply that follows its rules",
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "audit",
+            "steps": "",
+            "how_kind": "AI"
+          },
+          "work_hint": "llm",
+          "checks": [],
+          "touches": []
+        }
+      ],
+      "version": 1
+    }
+  }
+}

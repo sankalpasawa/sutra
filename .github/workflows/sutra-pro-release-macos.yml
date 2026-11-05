@@ -1,0 +1,425 @@
+# Build Sutra Pro.app and the installable DMG for each Mac architecture and attach them to a GitHub Release of the Sutra repository
+# (D98, D100), modelled on the old
+# Sutra repo's release-dmg.yml. How to cut a release and what a downloader sees: docs/RELEASE-macos.md (the wheel is release-wheel.yml).
+#
+# THE ASSETS (stable, version-free names; the link is /releases/download/<tag>/<name>, because the release is never "Latest", D100)
+#   Sutra-Pro-arm64.dmg    Sutra-Pro-arm64.dmg.sha256      Apple Silicon, built natively on macos-15
+#   Sutra-Pro-x86_64.dmg   Sutra-Pro-x86_64.dmg.sha256     Intel, built natively on macos-15-intel
+# Each leg writes the checksum of the DMG it built (a hand-uploaded aggregate goes stale silently when a re-run replaces a DMG).
+# The release BODY is not set here: release-wheel.yml owns it, and two workflows writing one body would overwrite each other.
+#
+# WHAT THE APP IS (D12: there is no desktop shell). scripts/build_macos_app.py makes `Sutra Pro.app` = a bash launcher + a bundled
+# python-build-standalone CPython 3.11 + the wheel installed into it, at BUILD time. The launcher starts `python -m sutra_app`, opens the
+# browser and stops the server when the app quits. The bundle is built natively: installing the wheel RUNS the bundled interpreter, and
+# a cross-built one needs Rosetta, which the runners do not have.
+#
+# SIGNING. Without secrets the app is signed AD HOC: it installs and runs, but a first launch on another Mac needs right-click -> Open.
+# With ALL FIVE secrets the same workflow signs with Developer ID (hardened runtime), notarizes the app and the DMG, and staples both:
+#   APPLE_CERT_P12        base64 of a Developer ID Application .p12
+#   APPLE_CERT_PASSWORD   its password
+#   APPLE_NOTARY_KEY      base64 of an App Store Connect .p8 key
+#   APPLE_NOTARY_KEY_ID / APPLE_NOTARY_ISSUER
+# Some but not all of them is a configuration error and fails the build, never a quiet downgrade to ad hoc. A step's own `if:` cannot
+# read the `secrets` context (GitHub rejects the whole file), so ONE step ("Check the signing secrets") reads them and publishes the
+# boolean `enabled` as a step output; the secrets appear only in the `env:` of the three steps that use them.
+#
+# LABELS ROT, AND A DEAD ONE DOES NOT FAIL, IT HANGS: a job asking for a retired runner label stays `queued` forever while the rest of
+# the run reports success, so the release quietly carries one architecture. `verify` exists to catch that. Current labels (actions/
+# runner-images): arm64 macos-15 / macos-26 / macos-latest; Intel macos-15-intel / macos-26-intel. The -large / -xlarge ones need a paid plan.
+#
+# THE TAG IS A CLAIM ABOUT THE TREE, AND THE TREE MUST AGREE: `guard` runs first, on ubuntu, and compares the tag with pyproject.toml. A tag
+# comes from a push or a dispatch input and may hold shell metacharacters, so it reaches scripts only through `env:`.
+name: sutra-pro-release-macos
+
+on:
+  push:
+    tags: ["sutra-pro-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to attach the DMGs to (must already exist)"
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: sutra-pro
+
+concurrency:
+  group: sutra-pro-release-macos-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release_name: ${{ steps.tag.outputs.release_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Create the virtual environment (scripts/py needs it)
+        run: uv venv .venv --python 3.11
+
+      - name: Tag must match pyproject.toml
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: scripts/py scripts/check_release_tag.py "$TAG" --github-output "$GITHUB_OUTPUT"
+
+      - name: A dispatched tag must already exist
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "::error::tag $TAG does not exist in this repository. Create and push the tag first."
+            exit 1
+          fi
+
+  dmg:
+    name: dmg (${{ matrix.arch }})
+    needs: guard
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: write        # create or update the release and upload its assets
+    strategy:
+      fail-fast: false       # an Intel failure must not delete the arm64 build
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15           # Apple Silicon
+          - arch: x86_64
+            runner: macos-15-intel     # Intel
+    env:
+      ARCH: ${{ matrix.arch }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Create the virtual environment (scripts/py needs it)
+        run: uv venv .venv --python 3.11
+
+      - name: Build the wheel
+        run: |
+          set -euo pipefail
+          uv build --wheel
+          scripts/py scripts/check_wheel.py dist/*.whl
+
+      # The interpreter archive is verified against its sha256 on every use, so a poisoned cache entry cannot get into a DMG.
+      - name: Cache the CPython download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sutra-pro-bundle
+          key: sutra-pro-bundle-${{ runner.os }}-${{ matrix.arch }}-v1
+
+      - name: Check the signing secrets
+        id: signing
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          set -euo pipefail
+          present=0
+          missing=""
+          for name in APPLE_CERT_P12 APPLE_CERT_PASSWORD APPLE_NOTARY_KEY APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER; do
+            if [ -n "${!name:-}" ]; then present=$((present + 1)); else missing="$missing $name"; fi
+          done
+          if [ "$present" -eq 0 ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "no signing secrets: the build is signed ad hoc (first launch needs right-click, Open)"
+          elif [ "$present" -eq 5 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "all five signing secrets are present: Developer ID signing and notarization"
+          else
+            echo "::error::some but not all signing secrets are set; missing:$missing. Set all five or none."
+            exit 1
+          fi
+
+      - name: Import the signing certificate
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/sutra-pro.keychain-db"
+          keychain_password="$(uuidgen)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          printf '%s' "$APPLE_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychain -d user -s "$keychain" login.keychain-db
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application:.*\)"$/\1/p' | head -1)"
+          if [ -z "$identity" ]; then
+            echo "::error::the certificate holds no 'Developer ID Application' identity"
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      # The wheel name must carry the version the tag promises (a beta publishes the wheel of its X.Y.Z), as in release-wheel.yml.
+      - name: Build Sutra Pro.app
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          [ "${#wheels[@]}" -eq 1 ] || { echo "::error::expected exactly one wheel in dist/, found ${#wheels[@]}"; exit 1; }
+          want="${TAG#sutra-pro-v}"
+          want="${want%-beta.*}"
+          [ "$(basename "${wheels[0]}")" = "sutra_pro-$want-py3-none-any.whl" ] \
+            || { echo "::error::the build made $(basename "${wheels[0]}") but tag $TAG promises sutra_pro-$want-py3-none-any.whl"; exit 1; }
+          scripts/py scripts/build_macos_app.py --wheel "${wheels[0]}" --arch "$ARCH" --out build
+
+      # INSIDE OUT: every Mach-O file first, the bundle last (codesign seals the contents into the bundle's own signature).
+      # Developer ID adds the hardened runtime and a secure timestamp; ad hoc (identity "-") is what an Apple Silicon Mac needs to run it.
+      - name: Sign the app
+        run: |
+          set -euo pipefail
+          app="build/Sutra Pro.app"
+          identity="${SIGN_IDENTITY:--}"
+          cat > "$RUNNER_TEMP/entitlements.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <!-- CPython loads its extension modules with dlopen; library validation would reject any that the loading binary
+                 does not recognise on every macOS version. ctypes and libffi closures need executable memory. Nothing else. -->
+            <key>com.apple.security.cs.disable-library-validation</key>
+            <true/>
+            <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+          args=(--force --sign "$identity")
+          if [ "$identity" != "-" ]; then
+            args+=(--timestamp --options runtime --entitlements "$RUNNER_TEMP/entitlements.plist")
+          fi
+          count=0
+          while IFS= read -r -d '' file; do
+            kind="$(file -b "$file")"
+            if [[ "$kind" == *Mach-O* ]]; then
+              codesign "${args[@]}" "$file"
+              count=$((count + 1))
+            fi
+          done < <(find "$app/Contents/Resources" -type f \( -name '*.so' -o -name '*.dylib' -o -perm -u+x \) -print0)
+          echo "signed $count Mach-O files"
+          codesign "${args[@]}" "$app"
+          codesign --verify --deep --strict --verbose=1 "$app"
+
+      # The proof that matters: the SIGNED bundle runs its OWN interpreter and answers /api/health, with the network cut (any outbound
+      # request goes to a closed proxy port and fails at once), through the real launcher, and quitting stops the server.
+      - name: Prove the bundle runs offline
+        run: |
+          set -euo pipefail
+          app="$PWD/build/Sutra Pro.app"
+          work="$RUNNER_TEMP/prove"
+          rm -rf "$work"
+          mkdir -p "$work/bin" "$work/data"
+          cat > "$work/bin/open" <<'SH'
+          #!/bin/sh
+          echo "$1" >> "$PROVE_DIR/opened.txt"
+          SH
+          chmod +x "$work/bin/open"
+          export PROVE_DIR="$work"
+          export PATH="$work/bin:$PATH"
+          export HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 PIP_NO_INDEX=1
+          export SUTRA_OFFLINE=1 SUTRA_NO_DIALOG=1 SUTRA_DATA_DIR="$work/data"
+          "$app/Contents/MacOS/SutraPro" &
+          launcher=$!
+          for _ in $(seq 1 240); do
+            [ -s "$work/opened.txt" ] && break
+            kill -0 "$launcher" 2>/dev/null || { echo "::error::the launcher exited before the server answered"; cat "$work/data/logs/app.log"; exit 1; }
+            sleep 0.5
+          done
+          [ -s "$work/opened.txt" ] || { echo "::error::no /api/health answer within 120 s"; cat "$work/data/logs/app.log"; kill "$launcher" || true; exit 1; }
+          url="$(head -1 "$work/opened.txt")"
+          curl -fsS --noproxy '*' --max-time 10 "${url}api/health" > "$work/health.json"
+          cat "$work/health.json"; echo
+          "$app/Contents/Resources/python/bin/python3" -I -c '
+          import json, sys
+          health = json.load(open(sys.argv[1]))
+          info = json.load(open(sys.argv[2]))
+          assert health.get("ok") is True, health
+          assert health.get("version") == info["version"], (health.get("version"), info["version"])
+          ' "$work/health.json" "$app/Contents/Resources/build-info.json"
+          kill -TERM "$launcher"
+          wait "$launcher" || true
+          if curl -fsS --noproxy '*' --max-time 3 "${url}api/health" > /dev/null 2>&1; then
+            echo "::error::the server kept running after the app quit"
+            exit 1
+          fi
+          # running it must not have changed one byte of what was signed
+          codesign --verify --deep --strict "$app"
+
+      - name: Notarize and staple the app
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/notary.p8"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$APPLE_NOTARY_KEY" | base64 --decode > "$key"
+          ditto -c -k --keepParent "build/Sutra Pro.app" "$RUNNER_TEMP/app.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/app.zip" --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --wait
+          xcrun stapler staple "build/Sutra Pro.app"
+
+      - name: Make the DMG
+        run: |
+          set -euo pipefail
+          app="build/Sutra Pro.app"
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          stage="$RUNNER_TEMP/dmg-stage"
+          rm -rf "$stage" release
+          mkdir -p "$stage" release
+          ditto "$app" "$stage/Sutra Pro.app"
+          ln -s /Applications "$stage/Applications"
+          dmg="release/Sutra-Pro-$ARCH.dmg"
+          for attempt in 1 2 3; do
+            if hdiutil create -volname "Sutra Pro $version" -srcfolder "$stage" -ov -format UDZO "$dmg"; then break; fi
+            echo "hdiutil create failed (attempt $attempt), retrying"
+            sleep 5
+          done
+          [ -s "$dmg" ] || { echo "::error::hdiutil did not produce $dmg"; exit 1; }
+          hdiutil verify "$dmg"
+          ls -l release
+
+      - name: Notarize and staple the DMG
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/notary.p8"
+          trap 'rm -f "$key"' EXIT
+          dmg="release/Sutra-Pro-$ARCH.dmg"
+          codesign --force --timestamp --sign "$SIGN_IDENTITY" "$dmg"
+          printf '%s' "$APPLE_NOTARY_KEY" | base64 --decode > "$key"
+          xcrun notarytool submit "$dmg" --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --wait
+          xcrun stapler staple "$dmg"
+
+      # A release must never CLAIM notarization it did not get: when the secrets were supplied, both tickets must be stapled.
+      - name: A signed build must actually be notarized
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          xcrun stapler validate "release/Sutra-Pro-$ARCH.dmg" || { echo "::error::the DMG is not stapled although signing secrets were supplied"; exit 1; }
+          xcrun stapler validate "build/Sutra Pro.app" || { echo "::error::the app is not stapled although signing secrets were supplied"; exit 1; }
+          spctl --assess --type execute --verbose "build/Sutra Pro.app"
+
+      - name: Write the checksum
+        working-directory: sutra-pro/release
+        run: |
+          set -euo pipefail
+          shasum -a 256 "Sutra-Pro-$ARCH.dmg" > "Sutra-Pro-$ARCH.dmg.sha256"
+          shasum -a 256 -c "Sutra-Pro-$ARCH.dmg.sha256"
+          ls -l
+
+      # NEVER REPLACE A NOTARIZED ASSET WITH AN AD-HOC ONE. The upload replaces by design (a re-run must be able to fix a bad asset), so
+      # an unsigned build checks what this architecture's DMG on the release is: a stapled ticket means notarized, and then it stays.
+      - name: Refuse to downgrade a notarized release
+        if: steps.signing.outputs.enabled != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          existing="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name] | join(" ")' 2>/dev/null || true)"
+          case " $existing " in
+            *" Sutra-Pro-$ARCH.dmg "*)
+              rm -rf existing
+              gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "Sutra-Pro-$ARCH.dmg" --dir existing
+              if xcrun stapler validate "existing/Sutra-Pro-$ARCH.dmg" > /dev/null 2>&1; then
+                echo "::error::release $TAG carries a NOTARIZED Sutra-Pro-$ARCH.dmg and this build is ad hoc signed. Uploading would reinstate the Gatekeeper block for every downloader. Add the signing secrets or cut a new tag."
+                exit 1
+              fi
+              echo "the DMG on $TAG is not notarized: replacing it is allowed" ;;
+            *) echo "no Sutra-Pro-$ARCH.dmg on $TAG yet: an ad-hoc first upload is allowed" ;;
+          esac
+
+      - name: Attach the DMG and its checksum to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ needs.guard.outputs.release_name }}
+          # NEVER "Latest": the old product's site and updater read /releases/latest (D100)
+          make_latest: "false"
+          # A -beta.N tag is a PRERELEASE.
+          prerelease: ${{ contains(inputs.tag || github.ref_name, '-beta.') }}
+          fail_on_unmatched_files: true
+          files: |
+            sutra-pro/release/Sutra-Pro-${{ matrix.arch }}.dmg
+            sutra-pro/release/Sutra-Pro-${{ matrix.arch }}.dmg.sha256
+
+  # Both architectures must be on the release, and the bytes must match their checksums. Runs even when a leg failed (that is the
+  # point: a retired runner label queues forever), but never after the guard refused, which would read as a misleading "missing assets".
+  verify:
+    needs: [guard, dmg]
+    if: always() && needs.guard.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # no checkout here, so the workflow's sutra-pro default would not exist
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+      DMG_RESULT: ${{ needs.dmg.result }}
+    steps:
+      - name: Both legs must have succeeded
+        run: |
+          set -euo pipefail
+          if [ "$DMG_RESULT" != "success" ]; then
+            echo "::error::the dmg job finished as '$DMG_RESULT': a leg failed, was cancelled, or never got a runner. Check the runner labels first."
+            exit 1
+          fi
+
+      - name: Both architectures are on the release
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          printf '%s\n' "$assets" | sed 's/^/  /'
+          missing=""
+          for want in Sutra-Pro-arm64.dmg Sutra-Pro-arm64.dmg.sha256 Sutra-Pro-x86_64.dmg Sutra-Pro-x86_64.dmg.sha256; do
+            printf '%s\n' "$assets" | grep -qx "$want" || missing="$missing $want"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::release $TAG is missing:$missing. A one-architecture release is not shippable."
+            exit 1
+          fi
+
+      - name: The published bytes match their checksums
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir released --pattern 'Sutra-Pro-*'
+          cd released
+          shasum -a 256 -c Sutra-Pro-arm64.dmg.sha256 Sutra-Pro-x86_64.dmg.sha256
+          for dmg in Sutra-Pro-arm64.dmg Sutra-Pro-x86_64.dmg; do
+            [ "$(wc -c < "$dmg")" -gt 20000000 ] || { echo "::error::$dmg is smaller than 20 MB: a DMG with a CPython inside is not"; exit 1; }
+          done
+          ls -l

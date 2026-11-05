@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "Page": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "P1, P2, ... in order",
+          "maxLength": 40,
+          "title": "Id",
+          "type": "string"
+        },
+        "implements": {
+          "description": "the PRD requirement ids this page carries",
+          "items": {
+            "maxLength": 40,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Implements",
+          "type": "array"
+        },
+        "name": {
+          "description": "the page name",
+          "maxLength": 300,
+          "title": "Name",
+          "type": "string"
+        },
+        "purpose": {
+          "description": "what the page is for",
+          "maxLength": 4000,
+          "title": "Purpose",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "purpose"
+      ],
+      "title": "Page",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assumptions": {
+      "items": {
+        "maxLength": 4000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "pages": {
+      "description": "the pages, P1, P2, ... in order",
+      "items": {
+        "$ref": "#/$defs/Page"
+      },
+      "maxItems": 300,
+      "title": "Pages",
+      "type": "array"
+    }
+  },
+  "required": [
+    "pages"
+  ],
+  "title": "HLDPages",
+  "type": "object"
+}

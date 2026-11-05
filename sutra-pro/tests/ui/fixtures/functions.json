@@ -1,0 +1,290 @@
+{
+  "schema": "fake-functions/1",
+  "meta": {
+    "identity": {
+      "goal": "Keep the department aligned with its goal, done-when condition, rules and authority boundary",
+      "task": "J2.a charter, J2.d rulings, J2.h workable?",
+      "context": [
+        "charter",
+        "proposals",
+        "findings",
+        "alarms",
+        "recorded rules"
+      ],
+      "constraints": [
+        "invent a new goal or rule",
+        "choose tools or implementation steps",
+        "increase an envelope",
+        "choose which workflow runs first",
+        "rewrite a proposal to make it acceptable",
+        "ask the CEO merely because agents disagree"
+      ],
+      "hands_to": [
+        "adaptation",
+        "priority",
+        "coordination",
+        "audit"
+      ]
+    },
+    "adaptation": {
+      "goal": "Read the current state, compare it with the charter's goal and propose the smallest useful workflow or change that reduces the gap",
+      "task": "J2.b proposes, disputes, saves lessons",
+      "context": [
+        "charter",
+        "record",
+        "results",
+        "findings",
+        "constraints",
+        "capability catalogue"
+      ],
+      "constraints": [
+        "grant your own resources",
+        "claim a workflow passed validation",
+        "schedule a run",
+        "declare your result correct",
+        "ask the CEO directly",
+        "hide a capability or permission dependency",
+        "expand scope to make your proposal appear more valuable"
+      ],
+      "hands_to": [
+        "priority",
+        "identity",
+        "audit",
+        "coordination"
+      ]
+    },
+    "priority": {
+      "goal": "Decide whether a proposal deserves resources now and define the envelope inside which it may operate",
+      "task": "J2.c prices, checks run limits",
+      "context": [
+        "proposals",
+        "available resources",
+        "current envelopes",
+        "reported spend"
+      ],
+      "constraints": [
+        "say which accepted workflow runs first",
+        "reject a proposal because you dislike its method when it fits the envelope",
+        "grant undeclared or unlimited resources",
+        "change the department goal",
+        "ask the CEO directly",
+        "convert a resource decision into a policy decision"
+      ],
+      "hands_to": [
+        "adaptation",
+        "identity",
+        "coordination"
+      ]
+    },
+    "coordination": {
+      "goal": "Decide which registered and funded workflow is ready, what must happen before it, and how simultaneous work avoids collisions",
+      "task": "J2.f schedules, holds the write lock",
+      "context": [
+        "registered workflows",
+        "envelopes",
+        "triggers",
+        "dependencies",
+        "locks",
+        "schedule"
+      ],
+      "constraints": [
+        "increase an envelope",
+        "decide that an expensive workflow is not worthwhile",
+        "resolve a policy conflict",
+        "modify the workflow steps",
+        "mark a result correct",
+        "ask the CEO directly"
+      ],
+      "hands_to": [
+        "priority",
+        "adaptation",
+        "identity",
+        "audit"
+      ]
+    },
+    "audit": {
+      "goal": "Evaluate observable results against the charter, workflow completion check, rules and source evidence",
+      "task": "J2.g checks the site",
+      "context": [
+        "charter",
+        "registered workflow",
+        "run record",
+        "result artifact",
+        "sources"
+      ],
+      "constraints": [
+        "design the workflow",
+        "repair the result",
+        "assign resources",
+        "schedule rework",
+        "decide policy"
+      ],
+      "hands_to": [
+        "identity"
+      ]
+    }
+  },
+  "atom_templates": {
+    "identity": {
+      "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+      "steps": "J2.a Identity takes the brief",
+      "model": "sonnet",
+      "outputs": [
+        "goal.json"
+      ],
+      "checks": [
+        {
+          "template": "reply-valid",
+          "args": [
+            "identity",
+            "intake"
+          ]
+        },
+        {
+          "template": "turn-posted",
+          "args": []
+        },
+        {
+          "template": "charter-stamp",
+          "args": []
+        },
+        {
+          "template": "audience-split",
+          "args": []
+        }
+      ]
+    },
+    "adaptation": {
+      "goal": "workflows are proposed whose work atoms follow the atom rules",
+      "steps": "J2.b Adaptation proposes workflows",
+      "model": "sonnet",
+      "outputs": [
+        "workflows.json"
+      ],
+      "checks": [
+        {
+          "template": "reply-valid",
+          "args": [
+            "adaptation",
+            "propose"
+          ]
+        },
+        {
+          "template": "turn-posted",
+          "args": []
+        },
+        {
+          "template": "atom-rules",
+          "args": []
+        },
+        {
+          "template": "judge-gate",
+          "args": []
+        }
+      ]
+    },
+    "priority": {
+      "goal": "the proposal is priced GRANT, COUNTER or REFUSE with a limit, within the budget left",
+      "steps": "J2.c Priority prices the proposal",
+      "model": "sonnet",
+      "outputs": [
+        "rates.json"
+      ],
+      "checks": [
+        {
+          "template": "reply-valid",
+          "args": [
+            "priority",
+            "price"
+          ]
+        },
+        {
+          "template": "turn-posted",
+          "args": []
+        },
+        {
+          "template": "price-kept",
+          "args": []
+        },
+        {
+          "template": "within-budget",
+          "args": []
+        }
+      ]
+    },
+    "coordination": {
+      "goal": "registered workflows get an order and named holds",
+      "steps": "J2.f Coordination schedules the workflows",
+      "model": "sonnet",
+      "outputs": [
+        "schedule"
+      ],
+      "checks": [
+        {
+          "template": "reply-valid",
+          "args": [
+            "coordination",
+            "schedule"
+          ]
+        },
+        {
+          "template": "turn-posted",
+          "args": []
+        },
+        {
+          "template": "order-registered",
+          "args": []
+        }
+      ]
+    },
+    "audit": {
+      "goal": "every done-when item has a finding with evidence",
+      "steps": "J2.g Audit checks the site",
+      "model": "sonnet",
+      "outputs": [
+        "audits.json"
+      ],
+      "checks": [
+        {
+          "template": "reply-valid",
+          "args": [
+            "audit",
+            "report"
+          ]
+        },
+        {
+          "template": "turn-posted",
+          "args": []
+        },
+        {
+          "template": "finding-per-item",
+          "args": []
+        },
+        {
+          "template": "pass-needs-proof",
+          "args": []
+        },
+        {
+          "template": "code-measure-wins",
+          "args": []
+        }
+      ]
+    }
+  },
+  "check_text": {
+    "reply-valid": "the reply has the shape this function must send",
+    "turn-posted": "the turn posted a message or saved a record, to a route this function may use",
+    "charter-stamp": "the charter has a statement and at least 3 done-when items that can be checked",
+    "audience-split": "the text to the owner names no file, code or agent",
+    "atom-rules": "every proposed workflow follows the atom rules",
+    "judge-gate": "the plan reaches the confidence gate of 0.80",
+    "price-kept": "every granted workflow keeps a price and a money limit",
+    "within-budget": "the grant stays within the budget left",
+    "order-registered": "only registered workflows are scheduled, each once",
+    "finding-per-item": "every done-when item has exactly one finding",
+    "pass-needs-proof": "no PASS row is without evidence",
+    "code-measure-wins": "what code measured beats what Audit said",
+    "workable": "code finds the site workable",
+    "answer-recorded": "the owner's answer is recorded"
+  }
+}

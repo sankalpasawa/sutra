@@ -1,0 +1,17 @@
+{
+ "args": [
+  "coordination",
+  "schedule"
+ ],
+ "evidence": {
+  "turn": {
+   "function": "coordination",
+   "kind": "schedule"
+  }
+ },
+ "expect": {
+  "ok": true,
+  "na": true,
+  "evidence": "the turn made no call by this function"
+ }
+}

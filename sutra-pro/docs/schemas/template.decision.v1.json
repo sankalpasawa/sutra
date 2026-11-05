@@ -1,0 +1,341 @@
+{
+  "$defs": {
+    "TemplateCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "fingerprint_match": {
+          "title": "Fingerprint Match",
+          "type": "boolean"
+        },
+        "has_fields": {
+          "title": "Has Fields",
+          "type": "boolean"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "version": {
+          "maximum": 999999,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "score",
+        "fingerprint_match",
+        "has_fields"
+      ],
+      "title": "TemplateCandidate",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One routing decision of templates.json. `saved` (J2 33aeeda) is the path of the run's own copy of the template,\nrelative to the run folder (`run_tpl_rel`), or null when the copy could not be made; absent on older runs. The keys\nafter `reason` are those the router adds on some paths only.",
+  "properties": {
+    "action": {
+      "enum": [
+        "reused",
+        "extended",
+        "created",
+        "generic"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "artifact": {
+      "enum": [
+        "prd",
+        "hld",
+        "lld",
+        "design",
+        "website"
+      ],
+      "title": "Artifact",
+      "type": "string"
+    },
+    "atom": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Atom"
+    },
+    "attempts": {
+      "anyOf": [
+        {
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempts"
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/TemplateCandidate"
+      },
+      "maxItems": 10,
+      "title": "Candidates",
+      "type": "array"
+    },
+    "covers": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Covers"
+    },
+    "facts": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Facts"
+    },
+    "fields": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fields"
+    },
+    "fingerprint": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fingerprint"
+    },
+    "kind": {
+      "enum": [
+        "generic",
+        "specialised"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "needed_enums": {
+      "additionalProperties": {
+        "items": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "maxItems": 300,
+        "type": "array"
+      },
+      "propertyNames": {
+        "maxLength": 80
+      },
+      "title": "Needed Enums",
+      "type": "object"
+    },
+    "needed_fields": {
+      "items": {
+        "maxLength": 80,
+        "type": "string"
+      },
+      "maxItems": 100,
+      "title": "Needed Fields",
+      "type": "array"
+    },
+    "reason": {
+      "maxLength": 2000,
+      "title": "Reason",
+      "type": "string"
+    },
+    "refused": {
+      "anyOf": [
+        {
+          "items": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Refused"
+    },
+    "rule": {
+      "anyOf": [
+        {
+          "maxLength": 8,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rule"
+    },
+    "run": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run"
+    },
+    "saved": {
+      "anyOf": [
+        {
+          "pattern": "^templates/[a-z0-9-]{1,40}/[a-z0-9-]{1,100}/[a-z0-9-]{1,200}@v[0-9]{1,6}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Saved"
+    },
+    "schema_sha": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Schema Sha"
+    },
+    "score": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Score"
+    },
+    "section": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Section",
+      "type": "string"
+    },
+    "t": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "T"
+    },
+    "template": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Template",
+      "type": "string"
+    },
+    "version": {
+      "anyOf": [
+        {
+          "maximum": 999999,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Version"
+    },
+    "workflow": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow"
+    }
+  },
+  "required": [
+    "artifact",
+    "section",
+    "action",
+    "template",
+    "kind",
+    "reason"
+  ],
+  "title": "TemplateDecision",
+  "type": "object"
+}

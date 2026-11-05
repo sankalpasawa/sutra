@@ -1,0 +1,546 @@
+{
+  "$defs": {
+    "Attempt": {
+      "additionalProperties": false,
+      "description": "One attempt of a function to settle a conflict (J2:4948). `n` is 0 for the opening message.",
+      "properties": {
+        "agree": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agree"
+        },
+        "msg": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Msg"
+        },
+        "n": {
+          "minimum": 0,
+          "title": "N",
+          "type": "integer"
+        },
+        "position": {
+          "default": "",
+          "maxLength": 20000,
+          "title": "Position",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 20000,
+          "title": "Text",
+          "type": "string"
+        },
+        "who": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Who",
+          "type": "string"
+        }
+      },
+      "required": [
+        "n",
+        "who"
+      ],
+      "title": "Attempt",
+      "type": "object"
+    },
+    "IdentityTurn": {
+      "additionalProperties": false,
+      "description": "One time Identity ruled on a conflict (J2:4256).",
+      "properties": {
+        "after_user": {
+          "default": false,
+          "title": "After User",
+          "type": "boolean"
+        },
+        "clause": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clause"
+        },
+        "resolved": {
+          "title": "Resolved",
+          "type": "boolean"
+        },
+        "ruling": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ruling"
+        },
+        "say": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Say"
+        }
+      },
+      "required": [
+        "resolved"
+      ],
+      "title": "IdentityTurn",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "Question": {
+      "additionalProperties": false,
+      "description": "One question Identity puts to the Requester. J2 shows at most 3 options; the reply may carry 4 (J2:4027).",
+      "properties": {
+        "options": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Options",
+          "type": "array"
+        },
+        "question": {
+          "maxLength": 400,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "Question",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A disagreement between two functions and how it ended (J2:4936-4941, 4256; conflicts.json). Besides the keys the\ndesign lists it carries the ones J2's code sets as the conflict is settled (`attempts_used`, the final positions, the\nrepricing and the document-mode rounds); a key J2 adds later fails the golden-run test, which is how the list stays complete.",
+  "properties": {
+    "about": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "About"
+    },
+    "adaptation_final": {
+      "default": [],
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "maxItems": 20,
+      "title": "Adaptation Final",
+      "type": "array"
+    },
+    "attempts": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Attempt"
+      },
+      "maxItems": 20,
+      "title": "Attempts",
+      "type": "array"
+    },
+    "attempts_before_escalation": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempts Before Escalation"
+    },
+    "attempts_used": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempts Used"
+    },
+    "between": {
+      "items": {
+        "enum": [
+          "identity",
+          "adaptation",
+          "priority",
+          "coordination",
+          "audit"
+        ],
+        "type": "string"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "title": "Between",
+      "type": "array"
+    },
+    "cut": {
+      "default": [],
+      "items": {
+        "maxLength": 200,
+        "type": "string"
+      },
+      "maxItems": 40,
+      "title": "Cut",
+      "type": "array"
+    },
+    "cycle": {
+      "minimum": 0,
+      "title": "Cycle",
+      "type": "integer"
+    },
+    "detail": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Detail"
+    },
+    "escalated": {
+      "default": false,
+      "title": "Escalated",
+      "type": "boolean"
+    },
+    "escalated_because": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Escalated Because"
+    },
+    "escalated_to_user": {
+      "default": false,
+      "title": "Escalated To User",
+      "type": "boolean"
+    },
+    "id": {
+      "pattern": "^C-[0-9]{1,6}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "identity": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/IdentityTurn"
+      },
+      "maxItems": 10,
+      "title": "Identity",
+      "type": "array"
+    },
+    "kind": {
+      "const": "conflict",
+      "default": "conflict",
+      "title": "Kind",
+      "type": "string"
+    },
+    "objections": {
+      "default": [],
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "maxItems": 100,
+      "title": "Objections",
+      "type": "array"
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Outcome"
+    },
+    "pending_winner": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pending Winner"
+    },
+    "priority_final": {
+      "default": [],
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "maxItems": 20,
+      "title": "Priority Final",
+      "type": "array"
+    },
+    "registered": {
+      "default": [],
+      "items": {
+        "maxLength": 200,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Registered",
+      "type": "array"
+    },
+    "repriced": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Repriced"
+    },
+    "repricing": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Repricing"
+    },
+    "resend": {
+      "default": [],
+      "items": {
+        "maxLength": 200,
+        "type": "string"
+      },
+      "maxItems": 40,
+      "title": "Resend",
+      "type": "array"
+    },
+    "resend_asks": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resend Asks"
+    },
+    "resolved_by": {
+      "anyOf": [
+        {
+          "enum": [
+            "agents",
+            "identity",
+            "identity_after_user",
+            "default"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resolved By"
+    },
+    "rounds": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rounds"
+    },
+    "ruled_wfs": {
+      "default": [],
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "maxItems": 20,
+      "title": "Ruled Wfs",
+      "type": "array"
+    },
+    "rulings": {
+      "default": [],
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "maxItems": 100,
+      "title": "Rulings",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "open",
+        "escalated",
+        "repricing",
+        "settled"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "subject": {
+      "default": "",
+      "maxLength": 600,
+      "title": "Subject",
+      "type": "string"
+    },
+    "topic": {
+      "enum": [
+        "proposal",
+        "finding",
+        "hold"
+      ],
+      "title": "Topic",
+      "type": "string"
+    },
+    "user_answer": {
+      "anyOf": [
+        {
+          "maxLength": 20000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "User Answer"
+    },
+    "user_question": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Question"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "winner": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Winner"
+    }
+  },
+  "required": [
+    "id",
+    "cycle",
+    "topic",
+    "between",
+    "status"
+  ],
+  "title": "Conflict",
+  "type": "object"
+}

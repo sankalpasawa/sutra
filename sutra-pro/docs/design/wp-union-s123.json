@@ -1,0 +1,1096 @@
+{
+ "work_packages": [
+  {
+   "id": "E0",
+   "title": "Contracts, shim, settings, paths (node event builder gains wait_on and tokens)",
+   "owns": [
+    "sutra_app/engine/__init__.py",
+    "sutra_app/engine/port.py",
+    "sutra_app/engine/llm.py",
+    "sutra_app/engine/hooks.py",
+    "sutra_app/engine/events.py",
+    "sutra_app/engine/spec.py",
+    "sutra_app/engine/paths.py",
+    "sutra_app/engine/features.py",
+    "tests/engine/conftest.py",
+    "tests/engine/test_engine_llm_shim.py",
+    "tests/engine/test_engine_port_contract.py",
+    "tests/engine/test_engine_spec.py",
+    "tests/engine/test_engine_paths.py",
+    "tests/engine/test_engine_events.py",
+    "docs/notes/E0.md"
+   ],
+   "depends_on": [
+    "L1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_llm_shim.py tests/engine/test_engine_port_contract.py tests/engine/test_engine_spec.py tests/engine/test_engine_paths.py tests/engine/test_engine_events.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "E1",
+   "title": "APPEND: rehydrate conditions without realization, restore real*",
+   "owns": [
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/j2_agent.py",
+    "sutra_app/engine/j2_artifact_models.py",
+    "sutra_app/engine/j2_artifacts.py",
+    "sutra_app/engine/j2_board.py",
+    "sutra_app/engine/j2_change.py",
+    "sutra_app/engine/j2_check.py",
+    "sutra_app/engine/j2_map.py",
+    "sutra_app/engine/j2_realization.py",
+    "sutra_app/engine/j2_rules.py",
+    "sutra_app/engine/j2_schema.py",
+    "sutra_app/engine/j2_send.py",
+    "sutra_app/engine/j2_story.py",
+    "sutra_app/engine/j2_template_lib.py",
+    "sutra_app/engine/rehydrate.py",
+    "sutra_app/engine/agents/",
+    "sutra_app/engine/conditions/",
+    "sutra_app/engine/artifacts/",
+    "sutra_app/engine/templates/",
+    "sutra_app/engine/seed/",
+    "sutra_app/engine/VENDORED.md",
+    "MANIFEST.in",
+    "docs/reference/j2/",
+    "scripts/vendor_j2.py",
+    "tests/engine/test_engine_vendor.py",
+    "tests/engine/test_engine_patches.py",
+    "tests/engine/test_engine_features.py",
+    "tests/engine/test_engine_library_lock.py",
+    "tests/engine/test_engine_rehydrate.py",
+    "docs/notes/E1.md"
+   ],
+   "depends_on": [
+    "E0"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_rehydrate.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "E2",
+   "title": "Views (30 handlers) and the stdlib adapter (query-safe POST routing)",
+   "owns": [
+    "sutra_app/engine/views.py",
+    "sutra_app/engine/j2_server.py",
+    "scripts/record_api_shapes.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_views.py",
+    "docs/notes/E2.md"
+   ],
+   "depends_on": [
+    "E1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_views.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "E3",
+   "title": "Host process (publisher fills wait_on and tokens from the map function node)",
+   "owns": [
+    "sutra_app/engine/__main__.py",
+    "sutra_app/engine/host/__init__.py",
+    "sutra_app/engine/host/loop.py",
+    "sutra_app/engine/host/inbox.py",
+    "sutra_app/engine/host/publisher.py",
+    "sutra_app/engine/host/heartbeat.py",
+    "tests/engine/test_engine_host.py",
+    "tests/engine/test_engine_host_process.py",
+    "tests/engine/test_engine_publisher.py",
+    "tests/engine/test_engine_crash.py",
+    "tests/engine/test_engine_live.py",
+    "docs/notes/E3.md"
+   ],
+   "depends_on": [
+    "E0",
+    "E1",
+    "E2"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_host_process.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "E4",
+   "title": "FastAPI routes at the root with ?dept=, sandbox and security headers, and mount()",
+   "owns": [
+    "sutra_app/engine/api/__init__.py",
+    "sutra_app/engine/api/ports.py",
+    "sutra_app/engine/api/ctx.py",
+    "sutra_app/engine/api/reply.py",
+    "sutra_app/engine/api/state.py",
+    "sutra_app/engine/api/run_views.py",
+    "sutra_app/engine/api/library.py",
+    "sutra_app/engine/api/files.py",
+    "sutra_app/engine/api/commands.py",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/engine/test_engine_api_commands.py",
+    "tests/engine/test_engine_api_redact.py",
+    "tests/engine/test_engine_api_headers.py",
+    "docs/notes/E4.md"
+   ],
+   "depends_on": [
+    "E2"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_api_scope.py tests/engine/test_engine_api_commands.py tests/engine/test_engine_api_redact.py tests/engine/test_engine_api_headers.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "E5",
+   "title": "Legacy suites as subprocesses and prompt goldens",
+   "owns": [
+    "tests/engine/legacy/",
+    "tests/engine/test_engine_legacy.py",
+    "tests/engine/test_engine_prompts.py",
+    "tests/engine/golden/prompts_*.json",
+    "scripts/record_engine_golden.py",
+    "scripts/engine_gate.sh",
+    "docs/notes/E5.md"
+   ],
+   "depends_on": [
+    "E1",
+    "E2",
+    "E3"
+   ],
+   "acceptance": [
+    "SUTRA_SLOW=1 scripts/py -m pytest tests/engine/test_engine_legacy.py tests/engine/test_engine_prompts.py -q",
+    "Whole engine: SUTRA_SLOW=1 scripts/py -m pytest tests/engine -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "CN-1",
+   "title": "Foundations: errors, models, env allowlist, process runner, JSON helpers, schema helpers",
+   "owns": [
+    "sutra_app/connectors/__init__.py",
+    "sutra_app/connectors/errors.py",
+    "sutra_app/connectors/models.py",
+    "sutra_app/connectors/env.py",
+    "sutra_app/connectors/process.py",
+    "sutra_app/connectors/jsonio.py",
+    "sutra_app/connectors/schema.py",
+    "tests/connectors/test_errors.py",
+    "tests/connectors/test_models.py",
+    "tests/connectors/test_env_process.py",
+    "tests/connectors/test_jsonio.py",
+    "tests/connectors/test_schema.py",
+    "docs/notes/CN-1.md"
+   ],
+   "depends_on": [
+    "E0",
+    "L1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_errors.py tests/connectors/test_models.py tests/connectors/test_env_process.py tests/connectors/test_jsonio.py tests/connectors/test_schema.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-2",
+   "title": "Fake CLIs, test harness and fixtures",
+   "owns": [
+    "tests/fakes/fake_cli.py",
+    "tests/fakes/claude",
+    "tests/fakes/codex",
+    "tests/fakes/gh",
+    "tests/connectors/conftest.py",
+    "tests/connectors/test_fakes.py",
+    "tests/fixtures/connectors/",
+    "scripts/capture_connector_fixtures.py",
+    "docs/notes/CN-2.md"
+   ],
+   "depends_on": [],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_fakes.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-3",
+   "title": "ModelConnector base class and ClaudeConnector",
+   "owns": [
+    "sutra_app/connectors/base.py",
+    "sutra_app/connectors/claude.py",
+    "tests/connectors/test_claude_parse.py",
+    "tests/connectors/test_claude_connector.py",
+    "tests/connectors/test_claude_errors.py",
+    "docs/notes/CN-3.md"
+   ],
+   "depends_on": [
+    "CN-1",
+    "CN-2"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_claude_parse.py tests/connectors/test_claude_connector.py tests/connectors/test_claude_errors.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-4",
+   "title": "APPEND: api_key billing refused in probe_auth",
+   "owns": [
+    "sutra_app/connectors/codex.py",
+    "tests/connectors/test_codex_parse.py",
+    "tests/connectors/test_codex_connector.py",
+    "tests/connectors/test_codex_errors.py",
+    "docs/notes/CN-4.md"
+   ],
+   "depends_on": [
+    "CN-3"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_codex_connector.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-5",
+   "title": "StubConnector",
+   "owns": [
+    "sutra_app/connectors/stub.py",
+    "tests/connectors/test_stub.py",
+    "docs/notes/CN-5.md"
+   ],
+   "depends_on": [
+    "CN-3"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_stub.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-6",
+   "title": "APPEND: policy without allow_api_key_billing",
+   "owns": [
+    "sutra_app/connectors/policy.py",
+    "sutra_app/connectors/policy.default.json",
+    "sutra_app/connectors/health.py",
+    "sutra_app/connectors/usage.py",
+    "tests/connectors/test_policy.py",
+    "tests/connectors/test_health.py",
+    "tests/connectors/test_usage.py",
+    "docs/notes/CN-6.md"
+   ],
+   "depends_on": [
+    "CN-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_policy.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-7",
+   "title": "APPEND: AsyncConnector tag mapping",
+   "owns": [
+    "sutra_app/connectors/transcript.py",
+    "sutra_app/connectors/router.py",
+    "sutra_app/connectors/engine_port.py",
+    "sutra_app/connectors/orchestrator_port.py",
+    "tests/connectors/test_transcript.py",
+    "tests/connectors/test_router_plan.py",
+    "tests/connectors/test_router_attempts.py",
+    "tests/connectors/test_router_gate.py",
+    "tests/connectors/test_router_json.py",
+    "tests/connectors/test_router_chat.py",
+    "tests/connectors/test_engine_port.py",
+    "tests/connectors/test_orchestrator_port.py",
+    "docs/notes/CN-7.md"
+   ],
+   "depends_on": [
+    "CN-4",
+    "CN-5",
+    "CN-6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_orchestrator_port.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-8",
+   "title": "Tool connectors: MCP server, Sutra read tools, GitHub over gh, shown-only Claude-held connectors",
+   "owns": [
+    "sutra_app/connectors/tools/__init__.py",
+    "sutra_app/connectors/tools/profiles.py",
+    "sutra_app/connectors/tools/mcp_server.py",
+    "sutra_app/connectors/tools/sutra_tools.py",
+    "sutra_app/connectors/tools/github_tools.py",
+    "sutra_app/connectors/tools/mediated.py",
+    "tests/connectors/test_tools_mcp.py",
+    "tests/connectors/test_tools_github.py",
+    "tests/connectors/test_mediated.py",
+    "docs/notes/CN-8.md"
+   ],
+   "depends_on": [
+    "CN-1",
+    "CN-2"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_tools_mcp.py tests/connectors/test_tools_github.py tests/connectors/test_mediated.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-9",
+   "title": "Factory, HTTP API (required write_guard, ORCH error envelope) and live tests",
+   "owns": [
+    "sutra_app/connectors/factory.py",
+    "sutra_app/connectors/api.py",
+    "tests/connectors/test_factory.py",
+    "tests/connectors/test_api.py",
+    "tests/connectors/test_live.py",
+    "docs/notes/CN-9.md"
+   ],
+   "depends_on": [
+    "CN-7",
+    "CN-8"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_factory.py tests/connectors/test_api.py -q",
+    "scripts/py -m pytest tests/connectors -q",
+    "SUTRA_LIVE=1 scripts/py -m pytest tests/connectors/test_live.py -q -m live"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "L1",
+   "title": "Foundations, registry, gate, replies, schema export, id helpers",
+   "owns": [
+    "sutra_app/library/__init__.py",
+    "sutra_app/library/types.py",
+    "sutra_app/library/base.py",
+    "sutra_app/library/registry.py",
+    "sutra_app/library/gate.py",
+    "sutra_app/library/replies.py",
+    "sutra_app/library/export.py",
+    "tests/library/conftest.py",
+    "tests/library/test_lib_base.py",
+    "tests/library/test_lib_registry.py",
+    "tests/library/test_lib_gate.py",
+    "tests/library/test_lib_replies.py",
+    "tests/library/test_lib_transport.py",
+    "tests/library/test_lib_atom_ids.py",
+    "docs/notes/L1.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_base.py tests/library/test_lib_registry.py tests/library/test_lib_gate.py tests/library/test_lib_replies.py tests/library/test_lib_transport.py tests/library/test_lib_atom_ids.py -q"
+   ],
+   "depends_on": [],
+   "section": "library"
+  },
+  {
+   "id": "L2",
+   "title": "Org chart and chart changes",
+   "owns": [
+    "sutra_app/library/org_chart.py",
+    "tests/library/factories_org.py",
+    "tests/library/test_lib_org_chart.py",
+    "tests/library/test_lib_chart_change.py",
+    "tests/library/test_lib_chart_transport.py",
+    "docs/notes/L2.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_org_chart.py tests/library/test_lib_chart_change.py tests/library/test_lib_chart_transport.py -q"
+   ],
+   "depends_on": [
+    "L1"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L3",
+   "title": "Goal, Department, Evaluation, chat message meta",
+   "owns": [
+    "sutra_app/library/goal.py",
+    "sutra_app/library/department.py",
+    "sutra_app/library/evaluation.py",
+    "sutra_app/library/chat.py",
+    "tests/library/test_lib_goal.py",
+    "tests/library/test_lib_department.py",
+    "tests/library/test_lib_evaluation.py",
+    "tests/library/test_lib_chat.py",
+    "docs/notes/L3.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_goal.py tests/library/test_lib_department.py tests/library/test_lib_evaluation.py tests/library/test_lib_chat.py -q"
+   ],
+   "depends_on": [
+    "L1"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L4",
+   "title": "Atom, lifecycle, ledger row, cards, atom/1 view, display state",
+   "owns": [
+    "sutra_app/library/atom.py",
+    "tests/library/factories_atom.py",
+    "tests/library/test_lib_atom.py",
+    "tests/library/test_lib_atom_lifecycle.py",
+    "tests/library/test_lib_atom_view.py",
+    "tests/library/test_lib_atom_display.py",
+    "tests/library/fixtures/atom/",
+    "docs/notes/L4.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_atom.py tests/library/test_lib_atom_lifecycle.py tests/library/test_lib_atom_view.py tests/library/test_lib_atom_display.py -q"
+   ],
+   "depends_on": [
+    "L1"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L5",
+   "title": "Workflow, Step and the five function models",
+   "owns": [
+    "sutra_app/library/workflow.py",
+    "sutra_app/library/functions.py",
+    "tests/library/test_lib_workflow.py",
+    "tests/library/test_lib_functions.py",
+    "docs/notes/L5.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_workflow.py tests/library/test_lib_functions.py -q"
+   ],
+   "depends_on": [
+    "L1",
+    "L3",
+    "L4"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L6",
+   "title": "Node family, graph edges, function-spec plug-in (FunctionNode.task is a string; HANDOFFS table of S3-web-04)",
+   "owns": [
+    "sutra_app/library/node.py",
+    "tests/library/factories_node.py",
+    "tests/library/test_lib_node.py",
+    "docs/notes/L6.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_node.py -q"
+   ],
+   "depends_on": [
+    "L1",
+    "L2",
+    "L4"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L7",
+   "title": "Artifact models, rules as data, templates",
+   "owns": [
+    "sutra_app/library/artifacts/__init__.py",
+    "sutra_app/library/artifacts/models.py",
+    "sutra_app/library/artifacts/rules.py",
+    "sutra_app/library/artifacts/render.py",
+    "sutra_app/library/templates.py",
+    "tests/library/test_lib_artifacts.py",
+    "tests/library/test_lib_rules.py",
+    "tests/library/test_lib_templates.py",
+    "tests/library/fixtures/artifacts/",
+    "docs/notes/L7.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_artifacts.py tests/library/test_lib_rules.py tests/library/test_lib_templates.py -q"
+   ],
+   "depends_on": [
+    "L1"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L8",
+   "title": "Integration: J2 record catalogue and gate hook, schema API at /api/schemas (guarded POST, ORCH error envelope), generated schemas",
+   "owns": [
+    "sutra_app/library/records.py",
+    "sutra_app/library/api.py",
+    "sutra_app/library/all.py",
+    "docs/schemas/",
+    "tests/library/test_lib_records.py",
+    "tests/library/test_lib_api.py",
+    "tests/library/test_lib_schema_drift.py",
+    "tests/library/test_lib_write_paths.py",
+    "tests/library/test_lib_live_transport.py",
+    "tests/library/test_lib_engine_parity.py",
+    "tests/library/write_allowlist.txt",
+    "tests/library/write_paths.txt",
+    "tests/library/parity_allowlist.json",
+    "docs/notes/L8.md"
+   ],
+   "acceptance": [
+    "scripts/py -m sutra_app.library.export --check",
+    "scripts/py -m pytest tests/library -q",
+    "scripts/py -m pytest tests/library/test_lib_engine_parity.py -q (skips when sutra_app.engine is not importable)",
+    "SUTRA_LIVE=1 scripts/py -m pytest tests/library/test_lib_live_transport.py -q (live marker, on request only)"
+   ],
+   "depends_on": [
+    "L1",
+    "L2",
+    "L3",
+    "L4",
+    "L5",
+    "L6",
+    "L7",
+    "L10"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L9",
+   "title": "J2 wire documents (after the engine package exists)",
+   "owns": [
+    "sutra_app/library/wire.py",
+    "tests/library/test_lib_wire.py",
+    "docs/notes/L9.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_wire.py tests/library/test_lib_records.py -q"
+   ],
+   "depends_on": [
+    "L1",
+    "L4",
+    "L5"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "ORCH-1",
+   "title": "Foundation (chart_changes gains task_title and result_json; node event accepts wait_on and tokens)",
+   "owns": [
+    "sutra_app/config.py",
+    "sutra_app/orchestrator/__init__.py",
+    "sutra_app/orchestrator/errors.py",
+    "sutra_app/orchestrator/ids.py",
+    "sutra_app/orchestrator/redact.py",
+    "sutra_app/orchestrator/textutil.py",
+    "sutra_app/orchestrator/db.py",
+    "sutra_app/orchestrator/schema.py",
+    "sutra_app/orchestrator/records.py",
+    "sutra_app/orchestrator/models.py",
+    "sutra_app/orchestrator/services.py",
+    "sutra_app/orchestrator/api/__init__.py",
+    "sutra_app/orchestrator/api/deps.py",
+    "sutra_app/orchestrator/testing/__init__.py",
+    "tests/orchestrator/__init__.py",
+    "tests/orchestrator/conftest.py",
+    "tests/orchestrator/test_config.py",
+    "tests/orchestrator/test_schema.py",
+    "tests/orchestrator/test_records.py",
+    "tests/orchestrator/test_textutil.py",
+    "docs/notes/ORCH-1.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_config.py tests/orchestrator/test_schema.py tests/orchestrator/test_records.py tests/orchestrator/test_textutil.py -q"
+   ],
+   "depends_on": [
+    "L1",
+    "L3",
+    "L4"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-2",
+   "title": "Event bus and SSE route (control events without id, restart/gap resync, connector.* topics)",
+   "owns": [
+    "sutra_app/orchestrator/events.py",
+    "sutra_app/orchestrator/api/events.py",
+    "tests/orchestrator/test_events_bus.py",
+    "tests/orchestrator/test_events_sse.py",
+    "docs/notes/ORCH-2.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_events_bus.py -q"
+   ],
+   "depends_on": [
+    "ORCH-1"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-3",
+   "title": "APPEND: ChatTranscripts and ChatStore.note_provider",
+   "owns": [
+    "sutra_app/orchestrator/chats.py",
+    "sutra_app/orchestrator/atoms.py",
+    "sutra_app/orchestrator/usage.py",
+    "sutra_app/orchestrator/api/chat.py",
+    "sutra_app/orchestrator/api/atoms.py",
+    "sutra_app/orchestrator/api/usage.py",
+    "tests/orchestrator/test_chat_store.py",
+    "tests/orchestrator/test_atoms_usage.py",
+    "tests/orchestrator/test_api_chat_read.py",
+    "docs/notes/ORCH-3.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_chat_store.py -q"
+   ],
+   "depends_on": [
+    "CN-6"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-4",
+   "title": "Workflow graph store and routes (pre-order, function meta {stats, wait_on} in the view, full meta in NodeDetail)",
+   "owns": [
+    "sutra_app/orchestrator/graph.py",
+    "sutra_app/orchestrator/api/graph.py",
+    "tests/orchestrator/test_graph_store.py",
+    "tests/orchestrator/test_api_graph.py",
+    "docs/notes/ORCH-4.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_graph_store.py tests/orchestrator/test_api_graph.py -q"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "L6"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-5",
+   "title": "Global org chart store, rules, departments and node linker (ChartChangeOut lists and task_title)",
+   "owns": [
+    "sutra_app/orchestrator/chart_rules.py",
+    "sutra_app/orchestrator/chart.py",
+    "sutra_app/orchestrator/departments.py",
+    "sutra_app/orchestrator/nodes.py",
+    "sutra_app/orchestrator/api/chart.py",
+    "sutra_app/orchestrator/api/departments.py",
+    "tests/orchestrator/test_chart_rules.py",
+    "tests/orchestrator/test_chart_store.py",
+    "tests/orchestrator/test_departments.py",
+    "tests/orchestrator/test_api_chart.py",
+    "docs/notes/ORCH-5.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_chart_rules.py tests/orchestrator/test_chart_store.py tests/orchestrator/test_departments.py tests/orchestrator/test_api_chart.py -q"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-4",
+    "L2",
+    "L3",
+    "L6"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-6",
+   "title": "Tasks, run launcher and watcher, projector (node event: wait_on and stats; no goal/task/context writes)",
+   "owns": [
+    "sutra_app/orchestrator/tasks.py",
+    "sutra_app/orchestrator/runs.py",
+    "sutra_app/orchestrator/projector.py",
+    "sutra_app/orchestrator/api/tasks.py",
+    "sutra_app/orchestrator/testing/fake_engine.py",
+    "tests/orchestrator/test_tasks.py",
+    "tests/orchestrator/test_projector.py",
+    "tests/orchestrator/test_projector_fnodes.py",
+    "tests/orchestrator/test_api_tasks.py",
+    "docs/notes/ORCH-6.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_tasks.py tests/orchestrator/test_projector.py tests/orchestrator/test_projector_fnodes.py tests/orchestrator/test_api_tasks.py -q"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-4",
+    "ORCH-5",
+    "L4",
+    "L6",
+    "E3",
+    "E6"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-7",
+   "title": "Chat agent: staged structured calls, turn runner, prompts, agent routes",
+   "owns": [
+    "sutra_app/orchestrator/agent/__init__.py",
+    "sutra_app/orchestrator/agent/ports.py",
+    "sutra_app/orchestrator/agent/replies.py",
+    "sutra_app/orchestrator/agent/prompts.py",
+    "sutra_app/orchestrator/agent/planner.py",
+    "sutra_app/orchestrator/agent/agent.py",
+    "sutra_app/orchestrator/agent/runner.py",
+    "sutra_app/orchestrator/agent/templates/decide.md",
+    "sutra_app/orchestrator/agent/templates/change.md",
+    "sutra_app/orchestrator/agent/templates/assign.md",
+    "sutra_app/orchestrator/agent/templates/retry.md",
+    "sutra_app/orchestrator/api/agent.py",
+    "sutra_app/orchestrator/testing/scripted.py",
+    "tests/orchestrator/test_chat_agent.py",
+    "tests/orchestrator/test_turn_runner.py",
+    "tests/orchestrator/test_api_agent.py",
+    "tests/orchestrator/live/__init__.py",
+    "tests/orchestrator/live/test_live_chat_agent.py",
+    "docs/notes/ORCH-7.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_chat_agent.py tests/orchestrator/test_turn_runner.py tests/orchestrator/test_api_agent.py -q"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "ORCH-2",
+    "ORCH-3",
+    "ORCH-5",
+    "ORCH-6",
+    "L1",
+    "CN-7"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-8",
+   "title": "App shell: wiring, create_app, CLI, health, and the cross-package scenario and packaging tests",
+   "owns": [
+    "sutra_app/main.py",
+    "sutra_app/__main__.py",
+    "sutra_app/orchestrator/wiring.py",
+    "sutra_app/orchestrator/api/system.py",
+    "tests/orchestrator/test_api_security.py",
+    "tests/orchestrator/test_startup.py",
+    "tests/orchestrator/test_scripted_conversation.py",
+    "tests/test_packaging.py",
+    "docs/notes/ORCH-8.md"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator -q",
+    "scripts/py -m pytest tests/test_packaging.py -q",
+    "scripts/py -m sutra_app --help"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "ORCH-2",
+    "ORCH-3",
+    "ORCH-4",
+    "ORCH-5",
+    "ORCH-6",
+    "ORCH-7",
+    "CN-9",
+    "E4"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "UI-1",
+   "title": "Serving and boot (hash-based script-src, page headers)",
+   "owns": [
+    "sutra_app/ui/__init__.py",
+    "sutra_app/ui/boot.py",
+    "sutra_app/ui/routes.py",
+    "tests/ui/test_serve.py",
+    "docs/notes/UI-1.md"
+   ],
+   "depends_on": [],
+   "acceptance": [
+    ".venv/bin/python -m pytest tests/ui/test_serve.py -q"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-3",
+   "title": "Client core (exact J2_PATHS, SutraCtx.currentTab, fetch wrapper, events)",
+   "owns": [
+    "sutra_app/ui/static/js/sutra_ctx.js",
+    "sutra_app/ui/static/js/sutra_events.js",
+    "tests/ui/js/ctx.test.js",
+    "tests/ui/js/events.test.js",
+    "tests/ui/test_node_suite.py",
+    "docs/notes/UI-3.md"
+   ],
+   "depends_on": [],
+   "acceptance": [
+    "node --test tests/ui/js/ctx.test.js tests/ui/js/events.test.js"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-4",
+   "title": "Graph pure core (J2 status words, edge kinds handoff/depends_on/speaks_to, same-kind loops)",
+   "owns": [
+    "sutra_app/ui/static/js/graph_layout.js",
+    "sutra_app/ui/static/js/chart_marks.js",
+    "sutra_app/ui/static/js/graph_render.js",
+    "tests/ui/js/graph_layout.test.js",
+    "tests/ui/js/graph_render.test.js",
+    "tests/ui/js/chart_marks.test.js",
+    "docs/notes/UI-4.md"
+   ],
+   "depends_on": [
+    "UI-3"
+   ],
+   "acceptance": [
+    "node --test tests/ui/js/graph_layout.test.js tests/ui/js/graph_render.test.js tests/ui/js/chart_marks.test.js"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-0",
+   "title": "Test tooling (fixtures and fake backend use LIB ids, J2 status words, atom state)",
+   "owns": [
+    "tests/ui/conftest.py",
+    "tests/ui/cdp.py",
+    "tests/ui/fake_backend.py",
+    "tests/ui/fixtures/",
+    "tests/ui/screens/.gitignore",
+    "tests/ui/test_fake_backend.py",
+    "scripts/capture_j2_fixtures.py",
+    "docs/notes/UI-0.md"
+   ],
+   "depends_on": [
+    "UI-1"
+   ],
+   "acceptance": [
+    ".venv/bin/python -m pytest tests/ui/test_fake_backend.py -q",
+    ".venv/bin/python tests/ui/cdp.py --self-test"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-2",
+   "title": "Port of the J2 page (13 edits incl. E13 wording and sandbox attribute, harness copies, parity)",
+   "owns": [
+    "scripts/port_j2_ui.py",
+    "sutra_app/ui/pages/j2_ui.html",
+    "sutra_app/ui/pages/j2_ui_render.js",
+    "sutra_app/ui/pages/j2_graph_layout.js",
+    "sutra_app/ui/static/css/j2.css",
+    "sutra_app/ui/static/vendor/d3.min.js",
+    "sutra_app/ui/static/vendor/d3-LICENSE",
+    "sutra_app/ui/static/vendor/README.md",
+    "tests/ui/test_port_edits.py",
+    "tests/ui/js/page_render.test.js",
+    "docs/notes/UI-2.md"
+   ],
+   "depends_on": [
+    "UI-3",
+    "UI-0"
+   ],
+   "acceptance": [
+    ".venv/bin/python scripts/port_j2_ui.py --j2 ~/Desktop/development/J2_Prototype --check",
+    ".venv/bin/python -m pytest tests/ui/test_port_edits.py -q",
+    "node --test tests/ui/js/page_render.test.js"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-5",
+   "title": "Workflow graph and org chart views",
+   "owns": [
+    "sutra_app/ui/static/js/graph_view.js",
+    "sutra_app/ui/static/js/orgchart_view.js",
+    "sutra_app/ui/static/css/sutra-graph.css",
+    "tests/ui/test_view_graph.py",
+    "docs/notes/UI-5.md"
+   ],
+   "depends_on": [
+    "UI-0",
+    "UI-3",
+    "UI-4"
+   ],
+   "acceptance": [
+    "SUTRA_BROWSER=1 .venv/bin/python -m pytest tests/ui/test_view_graph.py -q"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-6",
+   "title": "Node panel: function-node drawer (final spec labels, Identity chip opens the department chat, Go-to-tab) and per-node chat",
+   "owns": [
+    "sutra_app/ui/static/js/fnode_view.js",
+    "sutra_app/ui/static/js/chat_view.js",
+    "sutra_app/ui/static/js/node_panel.js",
+    "sutra_app/ui/static/css/sutra-panel.css",
+    "tests/ui/js/fnode_view.test.js",
+    "tests/ui/js/chat_view.test.js",
+    "tests/ui/test_view_panel.py",
+    "docs/notes/UI-6.md"
+   ],
+   "depends_on": [
+    "UI-0",
+    "UI-3"
+   ],
+   "acceptance": [
+    "node --test tests/ui/js/fnode_view.test.js tests/ui/js/chat_view.test.js",
+    "SUTRA_BROWSER=1 .venv/bin/python -m pytest tests/ui/test_view_panel.py -q"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-7",
+   "title": "APPEND: Connectors Test and Codex Sign in",
+   "owns": [
+    "sutra_app/ui/pages/home.html",
+    "sutra_app/ui/static/js/home.js",
+    "sutra_app/ui/static/css/sutra-shell.css",
+    "tests/ui/test_home.py",
+    "docs/notes/UI-7.md"
+   ],
+   "depends_on": [
+    "UI-0",
+    "UI-3",
+    "UI-4",
+    "UI-5",
+    "UI-6"
+   ],
+   "acceptance": [
+    "node --test tests/ui/js/settings_connectors.test.js"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-8",
+   "title": "Department page glue (init mounts the ?tab= view, archived class)",
+   "owns": [
+    "sutra_app/ui/static/js/dept_ext.js",
+    "tests/ui/test_dept_page.py",
+    "docs/notes/UI-8.md"
+   ],
+   "depends_on": [
+    "UI-0",
+    "UI-2",
+    "UI-5",
+    "UI-6"
+   ],
+   "acceptance": [
+    "SUTRA_BROWSER=1 .venv/bin/python -m pytest tests/ui/test_dept_page.py -q"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-9",
+   "title": "Scripted smoke, visual checks, token contrast",
+   "owns": [
+    "tests/ui/test_browser_smoke.py",
+    "tests/ui/test_visual.py",
+    "tests/ui/js/contrast.test.js",
+    "docs/notes/UI-9.md"
+   ],
+   "depends_on": [
+    "UI-0",
+    "UI-1",
+    "UI-2",
+    "UI-3",
+    "UI-4",
+    "UI-5",
+    "UI-6",
+    "UI-7",
+    "UI-8"
+   ],
+   "acceptance": [
+    "node --test tests/ui/js/contrast.test.js",
+    "SUTRA_BROWSER=1 .venv/bin/python -m pytest tests/ui/test_browser_smoke.py tests/ui/test_visual.py -q"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "CT-1",
+   "owns": [
+    "tests/contracts/__init__.py",
+    "tests/contracts/test_contract_*.py",
+    "docs/notes/CT-1.md"
+   ],
+   "depends_on": [
+    "E0",
+    "E4",
+    "CN-7",
+    "CN-9",
+    "ORCH-1",
+    "ORCH-6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/contracts -q  (the modules import the sections they compare unconditionally; CT-1 merges after those sections, like the unconditional contract test of S2-models-07)"
+   ],
+   "title": "Cross-section contract tests (route table, events, usage, settings, env, JSON extractors)",
+   "section": "orchestrator"
+  },
+  {
+   "id": "L10",
+   "owns": [
+    "sutra_app/library/specs/function_specs.json",
+    "tests/library/test_lib_function_specs.py",
+    "docs/notes/L10.md"
+   ],
+   "depends_on": [
+    "L1",
+    "L4",
+    "L5",
+    "L6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_function_specs.py -q"
+   ],
+   "title": "Function specs: seed data for the five functions and its tests",
+   "section": "library"
+  },
+  {
+   "id": "E6",
+   "owns": [
+    "sutra_app/engine/fnodes/__init__.py",
+    "sutra_app/engine/fnodes/ids.py",
+    "sutra_app/engine/fnodes/declare.py",
+    "sutra_app/engine/fnodes/checks.py",
+    "sutra_app/engine/fnodes/layer.py",
+    "tests/engine/test_engine_fn_declare.py",
+    "tests/engine/test_engine_fn_checks.py",
+    "tests/engine/test_engine_fn_layer.py",
+    "docs/notes/E6.md"
+   ],
+   "depends_on": [
+    "E0",
+    "L4",
+    "L5",
+    "L6",
+    "L10"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_fn_declare.py tests/engine/test_engine_fn_checks.py tests/engine/test_engine_fn_layer.py -q"
+   ],
+   "title": "Function-node layer: turn to work atom, code checks, transitions, events",
+   "section": "engine"
+  },
+  {
+   "id": "E7",
+   "owns": [
+    "tests/engine/test_engine_fn_golden.py",
+    "tests/engine/test_engine_events_contract.py",
+    "tests/engine/golden/fn_atoms_brewlab.json",
+    "tests/engine/golden/run_events.jsonl",
+    "scripts/record_fn_golden.py",
+    "docs/notes/E7.md"
+   ],
+   "depends_on": [
+    "E3",
+    "E6",
+    "ORCH-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_fn_golden.py tests/engine/test_engine_events_contract.py -q"
+   ],
+   "title": "Function nodes in a whole run: golden atoms, event contract, prompts unchanged",
+   "section": "engine"
+  }
+ ]
+}

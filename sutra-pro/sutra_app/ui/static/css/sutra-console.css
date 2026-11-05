@@ -1,0 +1,97 @@
+/* sutra-console.css - the owner console at /console (work package GAP-CONSOLE; docs/design/gaps.md G11, G12).
+
+   Loaded after j2.css and sutra-panel.css. Only J2's tokens (--ink --muted --ok --bad --validator --accent on --bg --panel --panel2, lines --line), so the light, dark and
+   system themes need nothing here. No web font, no external file.
+
+     .cmain .cpanel   the page: one scrolling column, three panels (Usage and cost, Atom log, Health)
+     .cbar .ctiles .cdays .ctable   the period picker, the three totals, a bar per day, the tables
+     .cfilters .clog .cpager .ccard the Atom log: filters, the table, paging and the opened card
+     .cfacts .cchecks               Health: the facts and the doctor's checks */
+
+body.console { height: auto; min-height: 100%; }
+.shead { flex-wrap: wrap; }
+.cjump { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.cjump a { color: var(--muted); }
+.cjump a:hover, .cjump a:focus-visible { color: var(--ink); }
+.cmain { flex: 1; width: 100%; max-width: 1100px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.cpanel { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 14px 16px; min-width: 0; scroll-margin-top: 8px; }
+.cpanel:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cpanel h2 { margin: 0 0 10px; font: 700 17px var(--display); }
+.cpanel h3 { margin: 14px 0 6px; font: 600 11px var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.cnote, .cempty { color: var(--muted); font-size: 12.5px; margin: 4px 0 8px; }
+.cerr { color: var(--bad); font-size: 13.5px; margin: 0 0 8px; }
+.cpanel code { font: 500 12px var(--mono); overflow-wrap: anywhere; }
+.cpanel button:focus-visible, .cpanel select:focus-visible, .cpanel input:focus-visible, .cpanel a:focus-visible, .shead a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cpanel a { color: var(--accent); }
+
+/* ---------------------------------------------------------------- usage and cost */
+.cbar { display: inline-flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-right: 14px; }
+.cbar button { border: 0; border-right: 1px solid var(--line); background: var(--panel2); color: var(--muted); padding: 6px 12px; border-radius: 0; }
+.cbar button:last-child { border-right: 0; }
+.cbar button[aria-pressed="true"] { color: var(--ink); background: color-mix(in srgb, var(--accent) 18%, var(--panel2)); font-weight: 600; }
+.cstub { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.cstub input { accent-color: var(--accent); margin-right: 4px; }
+.ctiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 14px 0; }
+.ctile { border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.clabel { font: 600 11px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.cvalue { font: 700 22px var(--display); overflow-wrap: anywhere; }
+.ctile .cnote { margin: 0; }
+.cdays { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.cday { display: grid; grid-template-columns: 6.5em minmax(60px, 1fr) minmax(8em, auto); align-items: center; gap: 8px; font-size: 12.5px; }
+.cdate { font: 500 12px var(--mono); color: var(--muted); }
+.ctrack { height: 12px; border-radius: 6px; background: var(--panel2); overflow: hidden; }
+.cfill { display: block; height: 100%; border-radius: 6px; background: var(--accent); }
+.cdval { text-align: right; overflow-wrap: anywhere; }
+.ctable { width: 100%; border-collapse: collapse; margin: 14px 0 6px; font-size: 13px; display: block; overflow-x: auto; }
+.ctable caption { text-align: left; font: 600 11px var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 0 0 6px; }
+.ctable th, .ctable td { text-align: left; padding: 5px 10px 5px 0; border-top: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
+.ctable thead th { font-weight: 600; color: var(--muted); border-top: 0; }
+.ctable tbody th { font-weight: 500; }
+.ctable td:nth-child(n+2), .ctable thead th:nth-child(n+2) { text-align: right; }
+.catoms td:nth-child(2), .catoms thead th:nth-child(2), .catoms td:last-child, .catoms thead th:last-child { text-align: left; }
+.clog td:nth-child(n+2), .clog thead th:nth-child(n+2) { text-align: left; }
+.cteam th { font-weight: 700; }
+.cfn th { font-weight: 400; color: var(--muted); padding-left: 14px; }
+.cconn { margin-top: 18px; border-top: 1px solid var(--line); }
+.crow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.crow:first-of-type { border-top: 0; }
+.crow .cnote { margin: 0; }
+.creset { font-size: 13.5px; margin: 8px 0 0; }
+.cchip { display: inline-block; border: 1px solid var(--line); border-radius: 12px; padding: 0 9px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.cchip.st-ok, .cchip.st-closed { color: var(--ok); border-color: var(--ok); }
+.cchip.st-signed_out, .cchip.st-warn, .cchip.st-cooldown, .cchip.st-quota, .cchip.st-refused, .cchip.st-abandoned { color: var(--validator); border-color: var(--validator); }
+.cchip.st-missing, .cchip.st-fail, .cchip.st-breaker, .cchip.st-verify_failed { color: var(--bad); border-color: var(--bad); }
+
+/* ---------------------------------------------------------------- the Atom log */
+.cfilters { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 14px; margin: 4px 0; }
+.cfilter { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); min-width: 0; }
+.cfilter select, .cfilter input { background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; font: inherit; font-size: 13px; max-width: 100%; }
+.lrow { cursor: pointer; }
+.lrow:hover { background: var(--panel2); }
+.lrow[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.lrow .linkbtn { color: var(--accent); background: none; border: 0; padding: 0; text-decoration: underline; font: 500 12.5px var(--mono); }
+.cgoal { white-space: normal; min-width: 14em; max-width: 36em; }
+.cpager { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; font-size: 13px; }
+.cpager button:disabled { opacity: .45; cursor: default; }
+.ccard { margin-top: 8px; }
+.ccard:empty { display: none; }
+.ledgercard { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--panel2); }
+.ledgercard .ablock { margin: 4px 0; }
+
+/* ---------------------------------------------------------------- health */
+.cfacts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 18px; margin: 0 0 6px; }
+.cfacts div { min-width: 0; }
+.cfacts dt { font: 600 11px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.cfacts dd { margin: 0; font: 500 13px var(--mono); overflow-wrap: anywhere; }
+.cchecks { list-style: none; margin: 0 0 8px; padding: 0; }
+.cchk { padding: 5px 0; border-top: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
+.cchk:first-child { border-top: 0; }
+.cfix { color: var(--muted); }
+.cacts { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+
+@media (max-width: 600px) {
+  .cmain { padding: 12px 16px; }
+  .cday { grid-template-columns: 5.5em minmax(40px, 1fr); }
+  .cdval { grid-column: 1 / -1; text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) { .cpanel * { animation: none !important; transition: none !important; } }

@@ -1,0 +1,34 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "adaptation",
+   "kind": "propose"
+  },
+  "replies": [
+   {
+    "say": "@Priority",
+    "act": "PROPOSE",
+    "next": "Priority",
+    "workflows": [
+     {
+      "name": "Build menu"
+     },
+     {
+      "name": "Build hours"
+     },
+     {
+      "name": "Hero"
+     }
+    ]
+   }
+  ],
+  "outcome": {
+   "result": "ok"
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "3 workflows, atoms complete"
+ }
+}

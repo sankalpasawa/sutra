@@ -1,0 +1,72 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "audit",
+   "kind": "audit"
+  },
+  "records": {
+   "goal.json": {
+    "statement": "s",
+    "done_when": [
+     "a",
+     "b",
+     "c"
+    ]
+   },
+   "audits.json": [
+    {
+     "cycle": 1,
+     "version": 1,
+     "results": [
+      {
+       "id": "F-1",
+       "item": 1,
+       "criterion": "Item 1",
+       "verdict": "PASS",
+       "note": "seen on the page",
+       "pass": true
+      },
+      {
+       "id": "F-2",
+       "item": 2,
+       "criterion": "Item 2",
+       "verdict": "PASS",
+       "note": "",
+       "pass": true
+      },
+      {
+       "id": "F-3",
+       "item": 3,
+       "criterion": "Item 3",
+       "verdict": "PASS",
+       "note": "seen on the page",
+       "pass": true
+      }
+     ],
+     "rubric": [],
+     "conditions": [],
+     "mechanical": {
+      "available": true,
+      "phone": {
+       "width": 360,
+       "overflow_px": 0
+      },
+      "desktop": {
+       "width": 1280,
+       "overflow_px": 0
+      },
+      "js_errors": [],
+      "broken_in_page_links": [],
+      "form_results": []
+     }
+    }
+   ]
+  },
+  "before": {}
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "F-2 PASS without evidence"
+ }
+}

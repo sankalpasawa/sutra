@@ -1,0 +1,21 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "A J2 run file that is one JSON object whose keys no package has modelled: bounded open JSON (500 keys, 32 levels,\nfinite numbers). `content` is the file.",
+  "properties": {
+    "content": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Content",
+      "type": "object"
+    }
+  },
+  "required": [
+    "content"
+  ],
+  "title": "RunObject",
+  "type": "object"
+}

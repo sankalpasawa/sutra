@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Run the project's Python with THIS checkout's code first, whichever git worktree you are in.
+# The virtualenv (.venv) lives in this project folder; a worktree of the monorepo falls back to the main checkout's project folder.
+# PYTHONPATH makes this checkout's sutra_app win over the editable install.
+set -euo pipefail
+HERE=$(cd "$(dirname "$0")/.." && pwd)
+
+# the python of the .venv in folder $1: a POSIX venv has bin/python, a Windows one Scripts/python.exe
+venv_python() {
+  for candidate in "$1/.venv/bin/python" "$1/.venv/Scripts/python.exe"; do
+    if [ -x "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! PYBIN=$(venv_python "$HERE"); then
+  prefix=$(git -C "$HERE" rev-parse --show-prefix 2>/dev/null || true)
+  common=$(git -C "$HERE" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+  if [ -z "$common" ] || ! PYBIN=$(venv_python "$(dirname "$common")/${prefix%/}"); then
+    echo "scripts/py: there is no .venv in $HERE. Create it: uv venv .venv --python 3.11 && uv pip install --python .venv/bin/python -e \".[dev]\"" >&2
+    exit 1
+  fi
+fi
+export PYTHONPATH="$HERE${PYTHONPATH:+:$PYTHONPATH}"
+# temp files (pytest tmp_path, test servers) go under /tmp, the same place for every worker
+if [ -d /tmp ]; then export TMPDIR=/tmp; fi
+exec "$PYBIN" "$@"

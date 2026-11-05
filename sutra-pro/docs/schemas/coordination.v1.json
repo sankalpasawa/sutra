@@ -1,0 +1,94 @@
+{
+  "$defs": {
+    "HoldRow": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 12,
+          "pattern": "^W-[0-9]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "missing": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Missing",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "missing"
+      ],
+      "title": "HoldRow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "J2.f (J2:6838-6841, 6854-6855; ROLE:coordination): order the registered workflows and name the holds.",
+  "properties": {
+    "holds": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/HoldRow"
+      },
+      "maxItems": 40,
+      "title": "Holds",
+      "type": "array"
+    },
+    "kind": {
+      "const": "schedule",
+      "default": "schedule",
+      "title": "Kind",
+      "type": "string"
+    },
+    "next": {
+      "enum": [
+        "Priority",
+        "Adaptation"
+      ],
+      "title": "Next",
+      "type": "string"
+    },
+    "order": {
+      "default": [],
+      "items": {
+        "maxLength": 12,
+        "pattern": "^W-[0-9]+$",
+        "type": "string"
+      },
+      "maxItems": 40,
+      "title": "Order",
+      "type": "array"
+    },
+    "reason": {
+      "default": "",
+      "maxLength": 600,
+      "title": "Reason",
+      "type": "string"
+    },
+    "rule": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Rule",
+      "type": "string"
+    },
+    "say": {
+      "default": "",
+      "maxLength": 4000,
+      "title": "Say",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "rule",
+    "next"
+  ],
+  "title": "Schedule",
+  "type": "object"
+}

@@ -1,0 +1,198 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "One line of calls.jsonl: J2's `rec` of `_log_call` plus the three texts of the call (`system`, `prompt`, `raw`).\n`usd`, `model` and `provider` are None in mock mode; `atom` and `artifact_schema` appear on some calls only.",
+  "properties": {
+    "artifact_schema": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Artifact Schema"
+    },
+    "atom": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Atom"
+    },
+    "chars": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Chars",
+      "type": "object"
+    },
+    "cycle": {
+      "maximum": 9999,
+      "minimum": 0,
+      "title": "Cycle",
+      "type": "integer"
+    },
+    "fn": {
+      "maxLength": 40,
+      "minLength": 1,
+      "title": "Fn",
+      "type": "string"
+    },
+    "id": {
+      "minimum": 0,
+      "title": "Id",
+      "type": "integer"
+    },
+    "inputs": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "maxItems": 200,
+      "title": "Inputs",
+      "type": "array"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "prompt": {
+      "default": "",
+      "maxLength": 500000,
+      "title": "Prompt",
+      "type": "string"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider"
+    },
+    "raw": {
+      "default": "",
+      "maxLength": 500000,
+      "title": "Raw",
+      "type": "string"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "maxLength": 100000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "reply": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reply"
+    },
+    "seconds": {
+      "minimum": 0,
+      "title": "Seconds",
+      "type": "number"
+    },
+    "step": {
+      "maximum": 99,
+      "minimum": 0,
+      "title": "Step",
+      "type": "integer"
+    },
+    "system": {
+      "default": "",
+      "maxLength": 500000,
+      "title": "System",
+      "type": "string"
+    },
+    "t": {
+      "maxLength": 40,
+      "minLength": 1,
+      "title": "T",
+      "type": "string"
+    },
+    "tokens": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tokens"
+    },
+    "usd": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Usd"
+    }
+  },
+  "required": [
+    "id",
+    "fn",
+    "step",
+    "cycle",
+    "t",
+    "seconds",
+    "chars"
+  ],
+  "title": "CallLog",
+  "type": "object"
+}

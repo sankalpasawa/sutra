@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mount: node panel</title>
+<!--SUTRA-BOOT-->
+<link rel="stylesheet" href="/ui/css/j2.css">
+<link rel="stylesheet" href="/ui/css/sutra-panel.css">
+<script src="/ui/js/sutra_ctx.js"></script>
+<script src="/ui/js/sutra_events.js"></script>
+<script src="/ui/js/fnode_view.js"></script>
+<script src="/ui/js/chat_view.js"></script>
+<script src="/ui/js/node_panel.js"></script>
+</head>
+<body class="simple">
+<!--
+  Test page of UI-0. It loads the node panel (the #nodepanel drawer) alone, on the full graph.
+  Query: ?open=<node id>&tab=chat|details opens a node as soon as the graph is loaded; ?dept=<id> makes it a department page.
+  What a test can use: #nodepanel, window.panel (the handle), window.graph (the last GraphView), window.openNode(id, tab),
+  window.refetch(), window.mounted (true once the graph is loaded), window.mountErrors, window.navigated (the last URL the
+  panel asked to open), window.events (event names that arrived).
+-->
+<aside id="nodepanel" class="agentdrawer" hidden role="dialog" aria-labelledby="nptitle"></aside>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  window.mounted = false;
+  window.mountErrors = [];
+  window.events = [];
+  window.navigated = null;
+  window.graph = null;
+  function fail(e) { window.mountErrors.push(String(e && e.message || e)); }
+  window.addEventListener("error", function (e) { fail(e.error || e.message); });
+  window.addEventListener("unhandledrejection", function (e) { fail(e.reason); });
+
+  async function refetch() {
+    try {
+      window.graph = await SutraCtx.api.get("/api/graph", { level: "full" });
+      window.mounted = true;
+    } catch (e) { fail(e); }
+  }
+  window.refetch = refetch;
+  window.openNode = function (id, tab) { return window.panel.open(id, tab || "chat"); };
+
+  try {
+    window.panel = NodePanel.mount(document.getElementById("nodepanel"), {
+      getGraph: function () { return window.graph; },
+      navigate: function (url) { window.navigated = url; },
+    });
+    refetch().then(function () {
+      if (q.get("open")) window.openNode(q.get("open"), q.get("tab") || "chat");
+    });
+    var coalesced = SutraEvents.coalesce(refetch, 100);
+    SutraEvents.connect({
+      url: "/api/events",
+      onEvent: function (type) {
+        window.events.push(type);
+        if (type === "graph.updated" || type === "server.resync" || type === "server.hello") coalesced();
+      },
+      onState: function () {},
+    });
+  } catch (e) { fail(e); }
+})();
+</script>
+</body>
+</html>

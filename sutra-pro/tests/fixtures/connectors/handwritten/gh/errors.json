@@ -1,0 +1,41 @@
+{
+ "not_found": {
+  "http": 404,
+  "body": {
+   "message": "Not Found",
+   "documentation_url": "https://docs.github.com/rest",
+   "status": "404"
+  },
+  "stderr": "gh: Not Found (HTTP 404)\n"
+ },
+ "rate_limit": {
+  "http": 403,
+  "body": {
+   "message": "API rate limit exceeded for user ID 1.",
+   "documentation_url": "https://docs.github.com/rest/overview/rate-limits-for-the-rest-api",
+   "status": "403"
+  },
+  "stderr": "gh: API rate limit exceeded for user ID 1. (HTTP 403)\n"
+ },
+ "unauthorized": {
+  "http": 401,
+  "body": {
+   "message": "Bad credentials",
+   "documentation_url": "https://docs.github.com/rest",
+   "status": "401"
+  },
+  "stderr": "gh: Bad credentials (HTTP 401)\ntry authenticating with:  gh auth login\n"
+ },
+ "server_error": {
+  "http": 502,
+  "body": {
+   "message": "Server Error"
+  },
+  "stderr": "gh: Server Error (HTTP 502)\n"
+ },
+ "network": {
+  "http": null,
+  "body": null,
+  "stderr": "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com\n"
+ }
+}

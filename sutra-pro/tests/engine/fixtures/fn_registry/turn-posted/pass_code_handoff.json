@@ -1,0 +1,22 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "posted": [
+   {
+    "id": 9,
+    "who": "priority",
+    "text": "Envelope check",
+    "next": "W-1",
+    "auto": true
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "posted 1 message to W-1"
+ }
+}

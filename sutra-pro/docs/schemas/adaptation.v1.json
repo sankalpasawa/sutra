@@ -1,0 +1,2076 @@
+{
+  "$defs": {
+    "AIStep": {
+      "additionalProperties": false,
+      "description": "A work atom done by a model (J2 `how.kind` AI): dispatched as llm or skill.",
+      "properties": {
+        "atom": {
+          "$ref": "#/$defs/AtomDraft"
+        },
+        "depends_on": {
+          "default": [],
+          "items": {
+            "maxLength": 20,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Depends On",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 20,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "ai",
+          "default": "ai",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "on_failure": {
+          "anyOf": [
+            {
+              "enum": [
+                "rollback",
+                "escalate",
+                "pause",
+                "abort",
+                "continue"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Failure"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "atom"
+      ],
+      "title": "AIStep",
+      "type": "object"
+    },
+    "Analysis": {
+      "additionalProperties": false,
+      "description": "The analyze zone's working: the options weighed and the one chosen.",
+      "properties": {
+        "assumptions": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "chosen": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Chosen",
+          "type": "string"
+        },
+        "options": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Options",
+          "type": "array"
+        },
+        "why": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chosen"
+      ],
+      "title": "Analysis",
+      "type": "object"
+    },
+    "AtomDraft": {
+      "additionalProperties": false,
+      "description": "What the layer declares before the work. A draft is not validated against the plugin's rules: `open_atom` is, and a\ndraft that breaks them becomes a stored refused atom.",
+      "properties": {
+        "constraints": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Constraint"
+          },
+          "maxItems": 20,
+          "title": "Constraints",
+          "type": "array"
+        },
+        "context": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Context",
+          "type": "array"
+        },
+        "depends_on": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AtomEdge"
+          },
+          "maxItems": 40,
+          "title": "Depends On",
+          "type": "array"
+        },
+        "effort": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effort"
+        },
+        "expected": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExpectedItem"
+          },
+          "maxItems": 20,
+          "title": "Expected",
+          "type": "array"
+        },
+        "goal": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Goal",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "outputs": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Outputs",
+          "type": "array"
+        },
+        "supersedes": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Supersedes"
+        },
+        "touches": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Touches",
+          "type": "array"
+        },
+        "verify": {
+          "$ref": "#/$defs/Verify"
+        },
+        "work": {
+          "$ref": "#/$defs/Work"
+        }
+      },
+      "required": [
+        "work"
+      ],
+      "title": "AtomDraft",
+      "type": "object"
+    },
+    "AtomEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "atom": {
+          "maxLength": 40,
+          "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+          "title": "Atom",
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "atom",
+        "why"
+      ],
+      "title": "AtomEdge",
+      "type": "object"
+    },
+    "AtomVerdict": {
+      "additionalProperties": false,
+      "description": "J2 (J2:8802-8806): a work atom failed its checks. Is the check wrong (send the corrected checks) or the build?",
+      "properties": {
+        "affordable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Affordable"
+        },
+        "atom": {
+          "maxLength": 40,
+          "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+          "title": "Atom",
+          "type": "string"
+        },
+        "build_wrong_reason": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Wrong Reason"
+        },
+        "kind": {
+          "const": "atom_verdict",
+          "default": "atom_verdict",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "say": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Say",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "verdict": {
+          "enum": [
+            "CHECK_WRONG",
+            "BUILD_WRONG"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "verification": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Check"
+          },
+          "maxItems": 12,
+          "title": "Verification",
+          "type": "array"
+        }
+      },
+      "required": [
+        "verdict",
+        "atom"
+      ],
+      "title": "AtomVerdict",
+      "type": "object"
+    },
+    "Certainty": {
+      "additionalProperties": false,
+      "description": "Adaptation's reading of how certain the goal is. The zone may not contradict its own signals.",
+      "properties": {
+        "rationale": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "signals": {
+          "$ref": "#/$defs/Signals"
+        },
+        "zone": {
+          "enum": [
+            "operate",
+            "analyze",
+            "experiment",
+            "stabilize"
+          ],
+          "title": "Zone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "zone",
+        "signals"
+      ],
+      "title": "Certainty",
+      "type": "object"
+    },
+    "Check": {
+      "additionalProperties": false,
+      "description": "One declared check. `text` is the plain sentence people read; `relevance` says why the check tests the goal (None =\nnot given: `open_atom` fills in a default); `results` has one entry per close run.",
+      "properties": {
+        "args": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Args",
+          "type": "array"
+        },
+        "expect": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expect"
+        },
+        "relevance": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Relevance"
+        },
+        "relevance_source": {
+          "default": "declared",
+          "enum": [
+            "declared",
+            "default"
+          ],
+          "title": "Relevance Source",
+          "type": "string"
+        },
+        "results": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          },
+          "maxItems": 3,
+          "title": "Results",
+          "type": "array"
+        },
+        "target_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Sha256"
+        },
+        "template": {
+          "enum": [
+            "file-exists",
+            "grep-count",
+            "named-test",
+            "element-count",
+            "facts-present",
+            "tap-targets",
+            "behavior-steps",
+            "heading-present",
+            "section-not-empty",
+            "ids-unique",
+            "lld-slice",
+            "deed-send",
+            "reply-valid",
+            "turn-posted",
+            "charter-stamp",
+            "workable",
+            "audience-split",
+            "atom-rules",
+            "judge-gate",
+            "price-kept",
+            "within-budget",
+            "order-registered",
+            "finding-per-item",
+            "pass-needs-proof",
+            "code-measure-wins",
+            "answer-recorded"
+          ],
+          "title": "Template",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "title": "Check",
+      "type": "object"
+    },
+    "CheckResult": {
+      "additionalProperties": false,
+      "description": "What running one check once gave. exit_code 0 passes; 1 fails; 97 a pinned test changed; 127 the runner or CLI\nis missing (or the name is unknown). `attempt` is the close run this belongs to (1 to 3).",
+      "properties": {
+        "attempt": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "evidence": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "exit_code": {
+          "title": "Exit Code",
+          "type": "integer"
+        },
+        "ts": {
+          "minimum": 0,
+          "title": "Ts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "attempt",
+        "exit_code",
+        "ts"
+      ],
+      "title": "CheckResult",
+      "type": "object"
+    },
+    "CodeStep": {
+      "additionalProperties": false,
+      "description": "A work atom done by code or by the owner (J2 `how.kind` code; a send deed is a code step, AS:69-75).",
+      "properties": {
+        "atom": {
+          "$ref": "#/$defs/AtomDraft"
+        },
+        "depends_on": {
+          "default": [],
+          "items": {
+            "maxLength": 20,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Depends On",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 20,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "code",
+          "default": "code",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "on_failure": {
+          "anyOf": [
+            {
+              "enum": [
+                "rollback",
+                "escalate",
+                "pause",
+                "abort",
+                "continue"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Failure"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "atom"
+      ],
+      "title": "CodeStep",
+      "type": "object"
+    },
+    "Constraint": {
+      "additionalProperties": false,
+      "description": "What the work may not do; `check` is an optional sentence a check can use (the plugin sets it to null).",
+      "properties": {
+        "check": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Check"
+        },
+        "text": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "Constraint",
+      "type": "object"
+    },
+    "Deferred": {
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Item",
+          "type": "string"
+        },
+        "until": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Until",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "until"
+      ],
+      "title": "Deferred",
+      "type": "object"
+    },
+    "Dispute": {
+      "additionalProperties": false,
+      "description": "Adaptation disagrees with an open Audit finding or a Coordination HOLD. `with` is a Python keyword, hence the alias.",
+      "properties": {
+        "about": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "About",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "with": {
+          "enum": [
+            "Audit",
+            "Coordination"
+          ],
+          "title": "With",
+          "type": "string"
+        }
+      },
+      "required": [
+        "with",
+        "about",
+        "reason"
+      ],
+      "title": "Dispute",
+      "type": "object"
+    },
+    "Envelope": {
+      "additionalProperties": false,
+      "description": "What Priority grants a workflow to spend (J2:5190, 166). ROLE:priority also lists proposal_id and valid_until; J2's\ncode has neither, so they are omitted.",
+      "properties": {
+        "model_call_limit": {
+          "default": 2,
+          "minimum": 0,
+          "title": "Model Call Limit",
+          "type": "integer"
+        },
+        "money_limit": {
+          "minimum": 0,
+          "title": "Money Limit",
+          "type": "integer"
+        },
+        "retry_limit": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Retry Limit",
+          "type": "integer"
+        },
+        "stop_loss": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Stop Loss",
+          "type": "string"
+        },
+        "time_limit_minutes": {
+          "default": 10,
+          "minimum": 0,
+          "title": "Time Limit Minutes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "money_limit"
+      ],
+      "title": "Envelope",
+      "type": "object"
+    },
+    "ExpectedItem": {
+      "additionalProperties": false,
+      "description": "One thing that must exist when the atom is done (J2's `expected_output`, J2:5128-5129). `heading`, `ids` and `send`\nare the kinds J2's document and deed atoms use; `met` is what J2's code sets after the checks ran.",
+      "properties": {
+        "count": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "section",
+            "element",
+            "facts",
+            "file",
+            "test",
+            "tap",
+            "behavior",
+            "heading",
+            "ids",
+            "send"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "met": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Met"
+        },
+        "steps": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Steps",
+          "type": "array"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "items": {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 20,
+              "type": "array"
+            }
+          ],
+          "title": "Target"
+        },
+        "text": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "kind",
+        "target"
+      ],
+      "title": "ExpectedItem",
+      "type": "object"
+    },
+    "Experiment": {
+      "additionalProperties": false,
+      "description": "A probe in the experiment zone (JZ:94-135): what is tried, what is watched, when it is dropped, how far it goes.",
+      "properties": {
+        "fails_if": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Fails If",
+          "type": "string"
+        },
+        "hypothesis": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Hypothesis",
+          "type": "string"
+        },
+        "limit": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Limit",
+          "type": "string"
+        },
+        "signal": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Signal",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hypothesis",
+        "signal",
+        "fails_if",
+        "limit"
+      ],
+      "title": "Experiment",
+      "type": "object"
+    },
+    "Factor": {
+      "additionalProperties": false,
+      "description": "A factor of the realization plan (RS:13-100): where it comes from decides what it must carry.",
+      "properties": {
+        "citation": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Citation"
+        },
+        "name": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote"
+        },
+        "source": {
+          "enum": [
+            "brief",
+            "general",
+            "research",
+            "budget"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "stages": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+            "type": "string"
+          },
+          "maxItems": 35,
+          "title": "Stages",
+          "type": "array"
+        },
+        "why": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "why"
+      ],
+      "title": "Factor",
+      "type": "object"
+    },
+    "LeftOut": {
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "minimum": 1,
+          "title": "Item",
+          "type": "integer"
+        },
+        "reason": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "reason"
+      ],
+      "title": "LeftOut",
+      "type": "object"
+    },
+    "LessonDraft": {
+      "additionalProperties": false,
+      "description": "One lesson as Adaptation writes it (J2:9294).",
+      "properties": {
+        "cause": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Cause",
+          "type": "string"
+        },
+        "fix": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Fix",
+          "type": "string"
+        },
+        "problem": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Problem",
+          "type": "string"
+        }
+      },
+      "required": [
+        "problem",
+        "fix"
+      ],
+      "title": "LessonDraft",
+      "type": "object"
+    },
+    "LessonReply": {
+      "additionalProperties": false,
+      "description": "J2 (J2:9287-9300): one lesson per problem Audit confirmed fixed.",
+      "properties": {
+        "kind": {
+          "const": "lesson",
+          "default": "lesson",
+          "title": "Kind",
+          "type": "string"
+        },
+        "lessons": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LessonDraft"
+          },
+          "maxItems": 10,
+          "title": "Lessons",
+          "type": "array"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "say": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Say",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "title": "LessonReply",
+      "type": "object"
+    },
+    "NotReady": {
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "enum": [
+            "identity",
+            "priority",
+            "left_out"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        },
+        "stop_reason": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Stop Reason",
+          "type": "string"
+        },
+        "weakest": {
+          "enum": [
+            "inputs",
+            "method",
+            "done_test",
+            "factors",
+            "zone_fit",
+            "size"
+          ],
+          "title": "Weakest",
+          "type": "string"
+        },
+        "workflow": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow",
+        "score",
+        "weakest",
+        "stop_reason",
+        "route"
+      ],
+      "title": "NotReady",
+      "type": "object"
+    },
+    "OpenFact": {
+      "additionalProperties": false,
+      "properties": {
+        "blocking": {
+          "title": "Blocking",
+          "type": "boolean"
+        },
+        "fact": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Fact",
+          "type": "string"
+        },
+        "handling": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Handling",
+          "type": "string"
+        },
+        "workflow": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fact",
+        "workflow",
+        "blocking"
+      ],
+      "title": "OpenFact",
+      "type": "object"
+    },
+    "PlanStage": {
+      "additionalProperties": false,
+      "properties": {
+        "done_test": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Done Test",
+          "type": "string"
+        },
+        "goal": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "inputs_from": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+            "type": "string"
+          },
+          "maxItems": 35,
+          "title": "Inputs From",
+          "type": "array"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "owns_factors": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 60,
+          "title": "Owns Factors",
+          "type": "array"
+        },
+        "thinking": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Thinking",
+          "type": "string"
+        },
+        "tiers": {
+          "items": {
+            "enum": [
+              "strategy",
+              "capability",
+              "architecture",
+              "feature",
+              "contract",
+              "implementation"
+            ],
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 1,
+          "title": "Tiers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "thinking",
+        "tiers",
+        "goal",
+        "done_test"
+      ],
+      "title": "PlanStage",
+      "type": "object"
+    },
+    "Propose": {
+      "additionalProperties": false,
+      "description": "J2.b (J2:5396-5402; ROLE:adaptation): propose workflows, ask Identity a policy question, or dispute a finding.",
+      "properties": {
+        "act": {
+          "enum": [
+            "PROPOSE",
+            "POLICY_QUESTION",
+            "DISPUTE"
+          ],
+          "title": "Act",
+          "type": "string"
+        },
+        "analysis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Analysis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "certainty_assessment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Certainty"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deferred": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Deferred"
+          },
+          "maxItems": 20,
+          "title": "Deferred",
+          "type": "array"
+        },
+        "dispute": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Dispute"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "factors": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Factor"
+          },
+          "maxItems": 60,
+          "title": "Factors",
+          "type": "array"
+        },
+        "kind": {
+          "const": "propose",
+          "default": "propose",
+          "title": "Kind",
+          "type": "string"
+        },
+        "left_out": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LeftOut"
+          },
+          "maxItems": 60,
+          "title": "Left Out",
+          "type": "array"
+        },
+        "lesson_used": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lesson Used"
+        },
+        "next": {
+          "enum": [
+            "Priority",
+            "Identity",
+            "Audit",
+            "Coordination"
+          ],
+          "title": "Next",
+          "type": "string"
+        },
+        "not_ready": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/NotReady"
+          },
+          "maxItems": 60,
+          "title": "Not Ready",
+          "type": "array"
+        },
+        "open_facts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/OpenFact"
+          },
+          "maxItems": 60,
+          "title": "Open Facts",
+          "type": "array"
+        },
+        "playbook_changes": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Playbook Changes"
+        },
+        "playbook_used": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Playbook Used"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "say": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Say",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "stages": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PlanStage"
+          },
+          "maxItems": 35,
+          "title": "Stages",
+          "type": "array"
+        },
+        "unplaced": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Unplaced"
+          },
+          "maxItems": 60,
+          "title": "Unplaced",
+          "type": "array"
+        },
+        "workflows": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProposedWorkflow"
+          },
+          "maxItems": 20,
+          "title": "Workflows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "act",
+        "next"
+      ],
+      "title": "Propose",
+      "type": "object"
+    },
+    "ProposedWorkflow": {
+      "additionalProperties": false,
+      "description": "Adaptation's proposal, or Priority's grant of it (then `envelope` is set). The realization plan fields (RS:56-84)\nappear only when J2_REALIZATION is on.",
+      "properties": {
+        "approach": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approach"
+        },
+        "authority_touched": {
+          "anyOf": [
+            {
+              "enum": [
+                "local",
+                "cross_department",
+                "external"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Authority Touched"
+        },
+        "capabilities": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "certainty": {
+          "anyOf": [
+            {
+              "enum": [
+                "operate",
+                "analyze",
+                "experiment",
+                "stabilize"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Certainty"
+        },
+        "certainty_signals": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Certainty Signals",
+          "type": "array"
+        },
+        "completion_check": {
+          "maxLength": 400,
+          "minLength": 1,
+          "title": "Completion Check",
+          "type": "string"
+        },
+        "covers": {
+          "default": [],
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 60,
+          "title": "Covers",
+          "type": "array"
+        },
+        "delivers": {
+          "default": [],
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 60,
+          "title": "Delivers",
+          "type": "array"
+        },
+        "dependencies": {
+          "default": [],
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Dependencies",
+          "type": "array"
+        },
+        "done_test": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Done Test"
+        },
+        "envelope": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Envelope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "estimated_resources": {
+          "$ref": "#/$defs/Resources"
+        },
+        "expected_outcome": {
+          "default": "",
+          "maxLength": 400,
+          "title": "Expected Outcome",
+          "type": "string"
+        },
+        "experiment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Experiment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "failure_policy": {
+          "default": "escalate",
+          "enum": [
+            "rollback",
+            "escalate",
+            "pause",
+            "abort",
+            "continue"
+          ],
+          "title": "Failure Policy",
+          "type": "string"
+        },
+        "fixes": {
+          "default": [],
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Fixes",
+          "type": "array"
+        },
+        "goal_gap": {
+          "maxLength": 400,
+          "minLength": 1,
+          "title": "Goal Gap",
+          "type": "string"
+        },
+        "hold": {
+          "anyOf": [
+            {
+              "enum": [
+                "waiting_on_identity",
+                "waiting_on_dependency"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hold"
+        },
+        "id": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "informs": {
+          "default": [],
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 60,
+          "title": "Informs",
+          "type": "array"
+        },
+        "inputs": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "inputs_from": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Inputs From",
+          "type": "array"
+        },
+        "kind": {
+          "const": "proposed",
+          "default": "proposed",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "output": {
+          "default": "website",
+          "enum": [
+            "website",
+            "prd",
+            "hld",
+            "lld"
+          ],
+          "title": "Output",
+          "type": "string"
+        },
+        "outputs": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Outputs",
+          "type": "array"
+        },
+        "parts": {
+          "default": [],
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 60,
+          "title": "Parts",
+          "type": "array"
+        },
+        "research": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Research"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "revises": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revises"
+        },
+        "risks": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Risks",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stage"
+        },
+        "steps": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "ai": "#/$defs/AIStep",
+                "code": "#/$defs/CodeStep"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AIStep"
+              },
+              {
+                "$ref": "#/$defs/CodeStep"
+              }
+            ]
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        },
+        "trigger": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trigger"
+        }
+      },
+      "required": [
+        "name",
+        "steps",
+        "goal_gap",
+        "outputs",
+        "completion_check",
+        "id"
+      ],
+      "title": "ProposedWorkflow",
+      "type": "object"
+    },
+    "Research": {
+      "additionalProperties": false,
+      "description": "A research workflow (realization.md): it finds sources and delivers no done-when item (RS:27-30, 71-83).",
+      "properties": {
+        "feeds": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Feeds",
+          "type": "string"
+        },
+        "min_sources": {
+          "minimum": 3,
+          "title": "Min Sources",
+          "type": "integer"
+        },
+        "output": {
+          "pattern": "^research\\.md#R-[0-9]{1,6}$",
+          "title": "Output",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question",
+        "feeds",
+        "min_sources",
+        "output"
+      ],
+      "title": "Research",
+      "type": "object"
+    },
+    "Resources": {
+      "additionalProperties": false,
+      "description": "Adaptation's estimate of what a workflow needs (J2 `estimated_resources`).",
+      "properties": {
+        "calls": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "money": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Money",
+          "type": "integer"
+        },
+        "time_minutes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Time Minutes",
+          "type": "integer"
+        }
+      },
+      "title": "Resources",
+      "type": "object"
+    },
+    "Respond": {
+      "additionalProperties": false,
+      "description": "J2 (J2:6285-6288): Adaptation answers Priority's decision on its proposal.",
+      "properties": {
+        "act": {
+          "enum": [
+            "ACCEPT",
+            "REVISE",
+            "PARK"
+          ],
+          "title": "Act",
+          "type": "string"
+        },
+        "kind": {
+          "const": "respond",
+          "default": "respond",
+          "title": "Kind",
+          "type": "string"
+        },
+        "next": {
+          "enum": [
+            "Priority",
+            "Identity"
+          ],
+          "title": "Next",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "say": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Say",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "workflows": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProposedWorkflow"
+          },
+          "maxItems": 20,
+          "title": "Workflows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "act",
+        "next"
+      ],
+      "title": "Respond",
+      "type": "object"
+    },
+    "Signal": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ],
+          "title": "Answer",
+          "type": "string"
+        },
+        "evidence": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Evidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "answer"
+      ],
+      "title": "Signal",
+      "type": "object"
+    },
+    "Signals": {
+      "additionalProperties": false,
+      "description": "All five signals the Certainty rule reads.",
+      "properties": {
+        "broken": {
+          "$ref": "#/$defs/Signal"
+        },
+        "facts_given": {
+          "$ref": "#/$defs/Signal"
+        },
+        "known_pattern": {
+          "$ref": "#/$defs/Signal"
+        },
+        "open_choices": {
+          "$ref": "#/$defs/Signal"
+        },
+        "reaction": {
+          "$ref": "#/$defs/Signal"
+        }
+      },
+      "required": [
+        "broken",
+        "reaction",
+        "facts_given",
+        "known_pattern",
+        "open_choices"
+      ],
+      "title": "Signals",
+      "type": "object"
+    },
+    "Unplaced": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "why"
+      ],
+      "title": "Unplaced",
+      "type": "object"
+    },
+    "Verify": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Check"
+          },
+          "maxItems": 12,
+          "title": "Checks",
+          "type": "array"
+        }
+      },
+      "title": "Verify",
+      "type": "object"
+    },
+    "Work": {
+      "additionalProperties": false,
+      "description": "How the atom is done: `dispatch_kind` is the plugin's, `how_kind` and `agent` are J2's `how` (J2:5126).",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent"
+        },
+        "dispatch_kind": {
+          "enum": [
+            "llm",
+            "skill",
+            "bash",
+            "manual"
+          ],
+          "title": "Dispatch Kind",
+          "type": "string"
+        },
+        "how_kind": {
+          "default": "AI",
+          "enum": [
+            "AI",
+            "code"
+          ],
+          "title": "How Kind",
+          "type": "string"
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ref"
+        },
+        "steps": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Steps",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dispatch_kind"
+      ],
+      "title": "Work",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "atom_verdict": "#/$defs/AtomVerdict",
+      "lesson": "#/$defs/LessonReply",
+      "propose": "#/$defs/Propose",
+      "respond": "#/$defs/Respond"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Propose"
+    },
+    {
+      "$ref": "#/$defs/Respond"
+    },
+    {
+      "$ref": "#/$defs/AtomVerdict"
+    },
+    {
+      "$ref": "#/$defs/LessonReply"
+    }
+  ]
+}

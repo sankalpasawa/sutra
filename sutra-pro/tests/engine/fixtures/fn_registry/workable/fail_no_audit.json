@@ -1,0 +1,18 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "audit"
+  },
+  "outcome": {
+   "result": "ok",
+   "next": null
+  },
+  "records": {}
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "missing: no audit in audits.json"
+ }
+}

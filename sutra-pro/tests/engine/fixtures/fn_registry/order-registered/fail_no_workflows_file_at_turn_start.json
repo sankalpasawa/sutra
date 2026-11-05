@@ -1,0 +1,17 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "coordination",
+   "kind": "schedule"
+  },
+  "reply": {
+   "order": []
+  },
+  "before": {}
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "missing: workflows.json at turn start"
+ }
+}

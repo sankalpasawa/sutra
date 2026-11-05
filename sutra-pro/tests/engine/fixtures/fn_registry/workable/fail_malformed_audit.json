@@ -1,0 +1,30 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "audit"
+  },
+  "outcome": {
+   "result": "ok",
+   "next": null
+  },
+  "records": {
+   "audits.json": [
+    {
+     "results": [
+      {
+       "id": "F-1"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "expect": {
+  "ok": false,
+  "evidence_has": [
+   "the audit record is malformed"
+  ]
+ }
+}

@@ -1,0 +1,309 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "One line of J2's chat.jsonl (the message dict of `J2Run.post`, J2:3008): the base keys, then the meta keys at the\ntop level. `step` is J2's step number (0 to 8), `calls` the ids of the AI calls behind the message (calls.jsonl),\n`board_read` the board ids the author had just read.",
+  "properties": {
+    "accept": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "act": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "affected": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "agree": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "artifact": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "atom": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "attempt": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "audience": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "audit": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "auto": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "board_read": {
+      "default": [],
+      "items": {
+        "maxLength": 40,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 100,
+      "title": "Board Read",
+      "type": "array"
+    },
+    "calls": {
+      "default": [],
+      "items": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "maxItems": 200,
+      "title": "Calls",
+      "type": "array"
+    },
+    "change": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "charged": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "checks": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "conflict": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "cycle": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "decision": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "done": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "envelope": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "exchange": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "forced_test": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "gaps": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "gaps_title": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "handoff": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "human_output": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "id": {
+      "minimum": 1,
+      "title": "Id",
+      "type": "integer"
+    },
+    "keep": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "lesson_test": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "lesson_used": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "lessons": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "lessons_offered": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "mechanical": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "next": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "options_only": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "override": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "pause": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "playbook": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "playbook_changes": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "playbook_used": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "playbooks_offered": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "proposal": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "reader": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "realization": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "redirect": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "register": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "rejected": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "relay": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "requester_only": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "schedule": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "section": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "shaped": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "stamp": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "step": {
+      "anyOf": [
+        {
+          "maximum": 99,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Step"
+    },
+    "t": {
+      "pattern": "^[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+      "title": "T",
+      "type": "string"
+    },
+    "template_route": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "test": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "text": {
+      "maxLength": 100000,
+      "title": "Text",
+      "type": "string"
+    },
+    "to": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "to_user": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "version": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "warning": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "who": {
+      "maxLength": 60,
+      "minLength": 1,
+      "title": "Who",
+      "type": "string"
+    },
+    "workable": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "workflow": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "workflow_cost": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    }
+  },
+  "required": [
+    "id",
+    "t",
+    "who",
+    "text"
+  ],
+  "title": "RunMessage",
+  "type": "object"
+}

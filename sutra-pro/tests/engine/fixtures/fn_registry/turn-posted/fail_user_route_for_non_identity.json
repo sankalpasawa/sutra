@@ -1,0 +1,21 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "posted": [
+   {
+    "id": 5,
+    "who": "priority",
+    "text": "@Requester",
+    "next": "user"
+   }
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "next=requester is no route of priority"
+ }
+}

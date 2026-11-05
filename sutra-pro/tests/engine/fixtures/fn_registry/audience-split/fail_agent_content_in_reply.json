@@ -1,0 +1,18 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "reply": {
+   "to_requester": "Priority will price W-2 soon.",
+   "to_agents": "@Adaptation Charter recorded.",
+   "enough": true
+  }
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "to_requester has agent content ('Priority')"
+ }
+}

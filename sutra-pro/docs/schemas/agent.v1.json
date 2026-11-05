@@ -1,0 +1,595 @@
+{
+  "$defs": {
+    "AgentCall": {
+      "additionalProperties": false,
+      "description": "One AI call as a card: what the agent was given, its stated reason, its reply.",
+      "properties": {
+        "atom": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Atom"
+        },
+        "cycle": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle"
+        },
+        "given": {
+          "items": {
+            "items": {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "maxItems": 200,
+          "title": "Given",
+          "type": "array"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "reply": {
+          "$ref": "#/$defs/AgentReply"
+        },
+        "seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seconds"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step"
+        },
+        "t": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "T"
+        },
+        "technical": {
+          "$ref": "#/$defs/Technical"
+        },
+        "tokens": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CallTokens"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "given",
+        "reply",
+        "technical"
+      ],
+      "title": "AgentCall",
+      "type": "object"
+    },
+    "AgentMessage": {
+      "additionalProperties": false,
+      "description": "One chat line a function sent or received (`sent` tells which).",
+      "properties": {
+        "from": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "From",
+          "type": "string"
+        },
+        "id": {
+          "minimum": 1,
+          "title": "Id",
+          "type": "integer"
+        },
+        "sent": {
+          "title": "Sent",
+          "type": "boolean"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step"
+        },
+        "t": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "T"
+        },
+        "text": {
+          "maxLength": 100000,
+          "title": "Text",
+          "type": "string"
+        },
+        "to": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "To",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "text",
+        "sent"
+      ],
+      "title": "AgentMessage",
+      "type": "object"
+    },
+    "AgentMost": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "with": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "With"
+        }
+      },
+      "required": [
+        "with",
+        "count"
+      ],
+      "title": "AgentMost",
+      "type": "object"
+    },
+    "AgentReply": {
+      "additionalProperties": false,
+      "description": "A reply as sentences and labelled lines (j2_agent._reply).",
+      "properties": {
+        "fields": {
+          "items": {
+            "items": {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "maxItems": 200,
+          "title": "Fields",
+          "type": "array"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "text": {
+          "items": {
+            "maxLength": 100000,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Text",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text",
+        "fields"
+      ],
+      "title": "AgentReply",
+      "type": "object"
+    },
+    "AgentSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "messages": {
+          "minimum": 0,
+          "title": "Messages",
+          "type": "integer"
+        },
+        "models": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Models",
+          "type": "array"
+        },
+        "most": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentMost"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "seconds": {
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        },
+        "tokens": {
+          "$ref": "#/$defs/Tokens"
+        }
+      },
+      "required": [
+        "calls",
+        "seconds",
+        "models",
+        "tokens",
+        "messages"
+      ],
+      "title": "AgentSummary",
+      "type": "object"
+    },
+    "AgentTalk": {
+      "additionalProperties": false,
+      "description": "The conversation with one counterpart (`with` is None for lines posted with no one named).",
+      "properties": {
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/AgentMessage"
+          },
+          "maxItems": 5000,
+          "title": "Messages",
+          "type": "array"
+        },
+        "with": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "With"
+        }
+      },
+      "required": [
+        "with",
+        "count",
+        "messages"
+      ],
+      "title": "AgentTalk",
+      "type": "object"
+    },
+    "CallTokens": {
+      "additionalProperties": false,
+      "description": "Tokens of one AI call: J2 records None for the one the connector did not report.",
+      "properties": {
+        "input": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output"
+        }
+      },
+      "title": "CallTokens",
+      "type": "object"
+    },
+    "Technical": {
+      "additionalProperties": false,
+      "description": "Prompt, system text and raw output, each cut to 40,000 characters (j2_agent.TECH_MAX).",
+      "properties": {
+        "prompt": {
+          "maxLength": 40000,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "raw": {
+          "maxLength": 40000,
+          "title": "Raw",
+          "type": "string"
+        },
+        "system": {
+          "maxLength": 40000,
+          "title": "System",
+          "type": "string"
+        }
+      },
+      "required": [
+        "system",
+        "prompt",
+        "raw"
+      ],
+      "title": "Technical",
+      "type": "object"
+    },
+    "Tokens": {
+      "additionalProperties": false,
+      "description": "Tokens summed over a function's calls (a map box).",
+      "properties": {
+        "input": {
+          "minimum": 0,
+          "title": "Input",
+          "type": "integer"
+        },
+        "output": {
+          "minimum": 0,
+          "title": "Output",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "title": "Tokens",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "agent/1: who one agent (a function id or a workflow id) talked to and how it decided. For a run that is not there, or\nan empty `who`, J2 answers `{schema, who, found: false}` and nothing else; for an agent the run never heard of the\nparts are there and empty.",
+  "properties": {
+    "conversations": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/AgentTalk"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Conversations"
+    },
+    "found": {
+      "title": "Found",
+      "type": "boolean"
+    },
+    "names": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxProperties": 1000,
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Names"
+    },
+    "schema": {
+      "const": "agent/1",
+      "default": "agent/1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentSummary"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "thinking": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/AgentCall"
+          },
+          "maxItems": 2000,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Thinking"
+    },
+    "who": {
+      "maxLength": 200,
+      "title": "Who",
+      "type": "string"
+    }
+  },
+  "required": [
+    "who",
+    "found"
+  ],
+  "title": "AgentDoc",
+  "type": "object"
+}

@@ -1,0 +1,22 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "coordination",
+   "kind": "schedule"
+  },
+  "before": {
+   "workflows.json": [
+    {
+     "id": "W-0",
+     "status": "done"
+    }
+   ]
+  }
+ },
+ "expect": {
+  "ok": true,
+  "na": true,
+  "evidence": "no workflow is registered, nothing to schedule"
+ }
+}

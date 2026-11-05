@@ -1,0 +1,17 @@
+{
+ "args": [
+  "coordination",
+  "schedule"
+ ],
+ "evidence": {
+  "turn": {
+   "function": "coordination",
+   "kind": "schedule"
+  },
+  "call": {}
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "missing: the call has no reply"
+ }
+}

@@ -1,0 +1,54 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "adaptation",
+   "kind": "propose"
+  },
+  "replies": [
+   {
+    "say": "@Priority",
+    "act": "PROPOSE",
+    "next": "Priority",
+    "workflows": [
+     {
+      "name": "Build menu"
+     }
+    ]
+   },
+   {
+    "say": "@Priority",
+    "act": "PROPOSE",
+    "next": "Priority",
+    "workflows": [
+     {
+      "name": "Build menu"
+     }
+    ]
+   }
+  ],
+  "outcome": {
+   "result": "ok"
+  },
+  "posted": [
+   {
+    "id": 7,
+    "who": "system",
+    "text": "Validator rejected 'Build menu': no check.",
+    "rejected": "Build menu",
+    "after_reply": 1
+   },
+   {
+    "id": 8,
+    "who": "system",
+    "text": "Validator rejected 'Build menu': no check.",
+    "rejected": "Build menu",
+    "after_reply": 2
+   }
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "rejected: Build menu (no check)"
+ }
+}

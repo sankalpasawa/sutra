@@ -1,0 +1,21 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "audit",
+   "kind": "dispute"
+  },
+  "posted": [
+   {
+    "id": 5,
+    "who": "audit",
+    "text": "@Adaptation I dispute",
+    "next": "adaptation"
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "posted 1 message to Adaptation"
+ }
+}

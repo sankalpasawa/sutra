@@ -1,0 +1,1192 @@
+{
+  "$defs": {
+    "JsonValue": {},
+    "PlanAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "default": [],
+          "items": {
+            "maxLength": 100000,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "chosen": {
+          "default": "",
+          "maxLength": 100000,
+          "title": "Chosen",
+          "type": "string"
+        },
+        "options": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 20,
+          "title": "Options",
+          "type": "array"
+        },
+        "why": {
+          "default": "",
+          "maxLength": 100000,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "title": "PlanAnalysis",
+      "type": "object"
+    },
+    "PlanCertainty": {
+      "additionalProperties": false,
+      "properties": {
+        "rationale": {
+          "default": "",
+          "maxLength": 100000,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "signals": {
+          "$ref": "#/$defs/PlanSignals"
+        },
+        "zone": {
+          "enum": [
+            "operate",
+            "analyze",
+            "experiment",
+            "stabilize"
+          ],
+          "title": "Zone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "zone",
+        "signals"
+      ],
+      "title": "PlanCertainty",
+      "type": "object"
+    },
+    "PlanChange": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Axis"
+        },
+        "remedy": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remedy"
+        },
+        "weakest": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weakest"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow"
+      ],
+      "title": "PlanChange",
+      "type": "object"
+    },
+    "PlanDeferred": {
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "maxLength": 100000,
+          "title": "Item",
+          "type": "string"
+        },
+        "until": {
+          "maxLength": 100000,
+          "title": "Until",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "until"
+      ],
+      "title": "PlanDeferred",
+      "type": "object"
+    },
+    "PlanExperiment": {
+      "additionalProperties": false,
+      "properties": {
+        "fails_if": {
+          "maxLength": 100000,
+          "title": "Fails If",
+          "type": "string"
+        },
+        "hypothesis": {
+          "maxLength": 100000,
+          "title": "Hypothesis",
+          "type": "string"
+        },
+        "limit": {
+          "maxLength": 100000,
+          "title": "Limit",
+          "type": "string"
+        },
+        "signal": {
+          "maxLength": 100000,
+          "title": "Signal",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hypothesis",
+        "signal",
+        "fails_if",
+        "limit"
+      ],
+      "title": "PlanExperiment",
+      "type": "object"
+    },
+    "PlanFactor": {
+      "additionalProperties": false,
+      "description": "A factor of the plan: where it comes from decides what it must carry (realization-schema.json, allOf).",
+      "properties": {
+        "citation": {
+          "anyOf": [
+            {
+              "pattern": "^research\\.md#R-[0-9]{1,6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Citation"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote"
+        },
+        "source": {
+          "enum": [
+            "brief",
+            "general",
+            "research",
+            "budget"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "stages": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+            "type": "string"
+          },
+          "maxItems": 35,
+          "title": "Stages",
+          "type": "array"
+        },
+        "why": {
+          "maxLength": 100000,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "why"
+      ],
+      "title": "PlanFactor",
+      "type": "object"
+    },
+    "PlanNotReady": {
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "enum": [
+            "identity",
+            "priority",
+            "left_out"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        },
+        "stop_reason": {
+          "maxLength": 100000,
+          "title": "Stop Reason",
+          "type": "string"
+        },
+        "weakest": {
+          "enum": [
+            "inputs",
+            "method",
+            "done_test",
+            "factors",
+            "zone_fit",
+            "size"
+          ],
+          "title": "Weakest",
+          "type": "string"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow",
+        "score",
+        "weakest",
+        "stop_reason",
+        "route"
+      ],
+      "title": "PlanNotReady",
+      "type": "object"
+    },
+    "PlanOpenFact": {
+      "additionalProperties": false,
+      "properties": {
+        "blocking": {
+          "title": "Blocking",
+          "type": "boolean"
+        },
+        "fact": {
+          "maxLength": 100000,
+          "title": "Fact",
+          "type": "string"
+        },
+        "handling": {
+          "default": "",
+          "maxLength": 100000,
+          "title": "Handling",
+          "type": "string"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fact",
+        "workflow",
+        "blocking"
+      ],
+      "title": "PlanOpenFact",
+      "type": "object"
+    },
+    "PlanResearch": {
+      "additionalProperties": false,
+      "properties": {
+        "feeds": {
+          "maxLength": 100000,
+          "title": "Feeds",
+          "type": "string"
+        },
+        "min_sources": {
+          "minimum": 3,
+          "title": "Min Sources",
+          "type": "integer"
+        },
+        "output": {
+          "pattern": "^research\\.md#R-[0-9]{1,6}$",
+          "title": "Output",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 100000,
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question",
+        "feeds",
+        "min_sources",
+        "output"
+      ],
+      "title": "PlanResearch",
+      "type": "object"
+    },
+    "PlanRound": {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/PlanChange"
+          },
+          "maxItems": 100,
+          "title": "Changes",
+          "type": "array"
+        },
+        "judge_faults": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Judge Faults"
+        },
+        "plan": {
+          "$ref": "#/$defs/RealizationPlan"
+        },
+        "plan_faults": {
+          "items": {
+            "maxLength": 100000,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Plan Faults",
+          "type": "array"
+        },
+        "round": {
+          "minimum": 0,
+          "title": "Round",
+          "type": "integer"
+        },
+        "scores": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/PlanScore"
+              },
+              "maxProperties": 200,
+              "propertyNames": {
+                "maxLength": 200,
+                "minLength": 1
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scores"
+        }
+      },
+      "required": [
+        "round",
+        "plan",
+        "plan_faults",
+        "changes"
+      ],
+      "title": "PlanRound",
+      "type": "object"
+    },
+    "PlanScore": {
+      "additionalProperties": false,
+      "description": "The confidence judge's mark for one workflow.",
+      "properties": {
+        "capped": {
+          "title": "Capped",
+          "type": "boolean"
+        },
+        "checks": {
+          "additionalProperties": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxProperties": 20,
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "title": "Checks",
+          "type": "object"
+        },
+        "compare": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compare"
+        },
+        "failed": {
+          "items": {
+            "maxLength": 100000,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Failed",
+          "type": "array"
+        },
+        "missing": {
+          "items": {
+            "maxLength": 100000,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Missing",
+          "type": "array"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        },
+        "weakest": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weakest"
+        }
+      },
+      "required": [
+        "score",
+        "capped",
+        "checks",
+        "missing",
+        "failed"
+      ],
+      "title": "PlanScore",
+      "type": "object"
+    },
+    "PlanSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ],
+          "title": "Answer",
+          "type": "string"
+        },
+        "evidence": {
+          "default": "",
+          "maxLength": 100000,
+          "title": "Evidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "answer"
+      ],
+      "title": "PlanSignal",
+      "type": "object"
+    },
+    "PlanSignals": {
+      "additionalProperties": false,
+      "properties": {
+        "broken": {
+          "$ref": "#/$defs/PlanSignal"
+        },
+        "facts_given": {
+          "$ref": "#/$defs/PlanSignal"
+        },
+        "known_pattern": {
+          "$ref": "#/$defs/PlanSignal"
+        },
+        "open_choices": {
+          "$ref": "#/$defs/PlanSignal"
+        },
+        "reaction": {
+          "$ref": "#/$defs/PlanSignal"
+        }
+      },
+      "required": [
+        "broken",
+        "reaction",
+        "facts_given",
+        "known_pattern",
+        "open_choices"
+      ],
+      "title": "PlanSignals",
+      "type": "object"
+    },
+    "PlanStageRow": {
+      "additionalProperties": false,
+      "properties": {
+        "done_test": {
+          "maxLength": 100000,
+          "title": "Done Test",
+          "type": "string"
+        },
+        "goal": {
+          "maxLength": 100000,
+          "title": "Goal",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "inputs_from": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+            "type": "string"
+          },
+          "maxItems": 35,
+          "title": "Inputs From",
+          "type": "array"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "owns_factors": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Owns Factors",
+          "type": "array"
+        },
+        "thinking": {
+          "maxLength": 100000,
+          "title": "Thinking",
+          "type": "string"
+        },
+        "tiers": {
+          "items": {
+            "enum": [
+              "strategy",
+              "capability",
+              "architecture",
+              "feature",
+              "contract",
+              "implementation"
+            ],
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 1,
+          "title": "Tiers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "thinking",
+        "tiers",
+        "goal",
+        "done_test"
+      ],
+      "title": "PlanStageRow",
+      "type": "object"
+    },
+    "PlanUnplaced": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 100000,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "why"
+      ],
+      "title": "PlanUnplaced",
+      "type": "object"
+    },
+    "PlanWorkflow": {
+      "additionalProperties": false,
+      "properties": {
+        "approach": {
+          "default": "",
+          "maxLength": 100000,
+          "title": "Approach",
+          "type": "string"
+        },
+        "certainty": {
+          "enum": [
+            "operate",
+            "analyze",
+            "experiment",
+            "stabilize"
+          ],
+          "title": "Certainty",
+          "type": "string"
+        },
+        "certainty_signals": {
+          "default": [],
+          "items": {
+            "maxLength": 100000,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Certainty Signals",
+          "type": "array"
+        },
+        "delivers": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 100,
+          "title": "Delivers",
+          "type": "array"
+        },
+        "done_test": {
+          "maxLength": 100000,
+          "title": "Done Test",
+          "type": "string"
+        },
+        "experiment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanExperiment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "goal": {
+          "maxLength": 100000,
+          "title": "Goal",
+          "type": "string"
+        },
+        "hold": {
+          "anyOf": [
+            {
+              "enum": [
+                "waiting_on_identity",
+                "waiting_on_dependency"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hold"
+        },
+        "informs": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 100,
+          "title": "Informs",
+          "type": "array"
+        },
+        "inputs_from": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Inputs From",
+          "type": "array"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "research": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanResearch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "stage": {
+          "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "stage",
+        "certainty",
+        "goal",
+        "done_test",
+        "delivers",
+        "informs",
+        "inputs_from"
+      ],
+      "title": "PlanWorkflow",
+      "type": "object"
+    },
+    "RealizationPlan": {
+      "additionalProperties": false,
+      "description": "realization/1: the plan Adaptation makes by stage and certainty (docs/reference/j2/docs/realization-schema.json),\nthe `plan` of a realization.json. J2 sends a plan with faults back once, so an empty list is not refused here:\n`plan_faults` of the record says what is wrong.",
+      "properties": {
+        "analysis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanAnalysis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "certainty_assessment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanCertainty"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "changes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PlanChange"
+          },
+          "maxItems": 100,
+          "title": "Changes",
+          "type": "array"
+        },
+        "deferred": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PlanDeferred"
+          },
+          "maxItems": 100,
+          "title": "Deferred",
+          "type": "array"
+        },
+        "factors": {
+          "items": {
+            "$ref": "#/$defs/PlanFactor"
+          },
+          "maxItems": 100,
+          "title": "Factors",
+          "type": "array"
+        },
+        "not_ready": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PlanNotReady"
+          },
+          "maxItems": 100,
+          "title": "Not Ready",
+          "type": "array"
+        },
+        "open_facts": {
+          "items": {
+            "$ref": "#/$defs/PlanOpenFact"
+          },
+          "maxItems": 100,
+          "title": "Open Facts",
+          "type": "array"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/PlanStageRow"
+          },
+          "maxItems": 35,
+          "title": "Stages",
+          "type": "array"
+        },
+        "unplaced": {
+          "items": {
+            "$ref": "#/$defs/PlanUnplaced"
+          },
+          "maxItems": 100,
+          "title": "Unplaced",
+          "type": "array"
+        },
+        "workflows": {
+          "items": {
+            "$ref": "#/$defs/PlanWorkflow"
+          },
+          "maxItems": 200,
+          "title": "Workflows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "factors",
+        "unplaced",
+        "stages",
+        "workflows",
+        "open_facts"
+      ],
+      "title": "RealizationPlan",
+      "type": "object"
+    },
+    "StageConfidence": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "zone": {
+          "enum": [
+            "operate",
+            "analyze",
+            "experiment",
+            "stabilize"
+          ],
+          "title": "Zone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "confidence",
+        "zone"
+      ],
+      "title": "StageConfidence",
+      "type": "object"
+    },
+    "WaitingOnIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "ask": {
+          "items": {
+            "anyOf": [
+              {
+                "maxLength": 100000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxItems": 50,
+          "title": "Ask",
+          "type": "array"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow",
+        "ask"
+      ],
+      "title": "WaitingOnIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "realization.json: the whole planning record of a run (j2_realization.plan_goal).",
+  "properties": {
+    "calls": {
+      "minimum": 0,
+      "title": "Calls",
+      "type": "integer"
+    },
+    "checklist": {
+      "items": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "maxItems": 200,
+      "title": "Checklist",
+      "type": "array"
+    },
+    "goal": {
+      "anyOf": [
+        {
+          "maxLength": 100000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Goal"
+    },
+    "held": {
+      "additionalProperties": {
+        "enum": [
+          "waiting_on_identity",
+          "not_ready",
+          "waiting_on_dependency"
+        ],
+        "type": "string"
+      },
+      "maxProperties": 200,
+      "propertyNames": {
+        "maxLength": 200,
+        "minLength": 1
+      },
+      "title": "Held",
+      "type": "object"
+    },
+    "history": {
+      "additionalProperties": {
+        "items": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "maxItems": 20,
+        "type": "array"
+      },
+      "maxProperties": 200,
+      "propertyNames": {
+        "maxLength": 200,
+        "minLength": 1
+      },
+      "title": "History",
+      "type": "object"
+    },
+    "mock": {
+      "title": "Mock",
+      "type": "boolean"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "not_ready": {
+      "items": {
+        "$ref": "#/$defs/PlanNotReady"
+      },
+      "maxItems": 200,
+      "title": "Not Ready",
+      "type": "array"
+    },
+    "plan": {
+      "$ref": "#/$defs/RealizationPlan"
+    },
+    "plan_confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Plan Confidence",
+      "type": "number"
+    },
+    "plan_faults": {
+      "items": {
+        "maxLength": 100000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Plan Faults",
+      "type": "array"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider"
+    },
+    "rounds": {
+      "items": {
+        "$ref": "#/$defs/PlanRound"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Rounds",
+      "type": "array"
+    },
+    "scores": {
+      "additionalProperties": {
+        "$ref": "#/$defs/PlanScore"
+      },
+      "maxProperties": 200,
+      "propertyNames": {
+        "maxLength": 200,
+        "minLength": 1
+      },
+      "title": "Scores",
+      "type": "object"
+    },
+    "seconds": {
+      "minimum": 0,
+      "title": "Seconds",
+      "type": "number"
+    },
+    "stages": {
+      "additionalProperties": {
+        "$ref": "#/$defs/StageConfidence"
+      },
+      "maxProperties": 35,
+      "propertyNames": {
+        "maxLength": 200,
+        "minLength": 1
+      },
+      "title": "Stages",
+      "type": "object"
+    },
+    "waiting_on_identity": {
+      "items": {
+        "$ref": "#/$defs/WaitingOnIdentity"
+      },
+      "maxItems": 200,
+      "title": "Waiting On Identity",
+      "type": "array"
+    },
+    "web": {
+      "title": "Web",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "web",
+    "mock",
+    "checklist",
+    "plan",
+    "scores",
+    "history",
+    "rounds",
+    "not_ready",
+    "held",
+    "waiting_on_identity",
+    "stages",
+    "plan_confidence",
+    "plan_faults",
+    "calls",
+    "seconds"
+  ],
+  "title": "RealizationDoc",
+  "type": "object"
+}

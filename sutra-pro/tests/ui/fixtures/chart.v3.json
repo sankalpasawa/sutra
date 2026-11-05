@@ -1,0 +1,45 @@
+{
+  "version": 4,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "root",
+      "name": "Root",
+      "purpose": "",
+      "parent_id": null,
+      "position": 0
+    },
+    {
+      "id": "web",
+      "kind": "department",
+      "name": "Web",
+      "purpose": "Websites and landing pages",
+      "parent_id": "root",
+      "position": 0
+    },
+    {
+      "id": "faq",
+      "kind": "division",
+      "name": "FAQ",
+      "purpose": "Questions people ask",
+      "parent_id": "web",
+      "position": 0
+    },
+    {
+      "id": "content",
+      "kind": "department",
+      "name": "Content",
+      "purpose": "Words and pictures for pages",
+      "parent_id": "root",
+      "position": 1
+    },
+    {
+      "id": "menu",
+      "kind": "division",
+      "name": "Menu",
+      "purpose": "The coffee menu",
+      "parent_id": "content",
+      "position": 0
+    }
+  ]
+}

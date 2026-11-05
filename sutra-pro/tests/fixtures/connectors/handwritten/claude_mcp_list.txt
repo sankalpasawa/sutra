@@ -1,0 +1,6 @@
+Checking MCP server health...
+
+claude.ai Gmail: https://gmail.mcp.claude.com/mcp - ✔ Connected
+claude.ai Google Drive: https://drivemcp.googleapis.com/mcp/v1 - ! Needs authentication
+claude.ai Slack: https://mcp.slack.com/mcp - Connected · tools fetch failed
+playwright: npx @playwright/mcp@latest - ✔ Connected

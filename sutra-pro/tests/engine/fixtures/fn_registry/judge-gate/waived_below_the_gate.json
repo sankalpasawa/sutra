@@ -1,0 +1,49 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "adaptation",
+   "kind": "propose"
+  },
+  "records": {
+   "realization.json": {
+    "plan_confidence": 0.74,
+    "rounds": [
+     {
+      "round": 0,
+      "scores": {
+       "W-a": {
+        "score": 0.5
+       },
+       "W-b": {
+        "score": 0.95
+       }
+      }
+     },
+     {
+      "round": 1,
+      "scores": {
+       "W-a": {
+        "score": 0.74
+       },
+       "W-b": {
+        "score": 0.95
+       }
+      }
+     }
+    ],
+    "not_ready": [
+     {
+      "workflow": "W-a",
+      "score": 0.74
+     }
+    ]
+   }
+  }
+ },
+ "expect": {
+  "ok": true,
+  "waived": true,
+  "evidence": "plan 0.74 < 0.80; not ready: W-a"
+ }
+}

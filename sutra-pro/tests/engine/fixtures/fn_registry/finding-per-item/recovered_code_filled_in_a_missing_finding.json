@@ -1,0 +1,75 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "audit",
+   "kind": "audit"
+  },
+  "records": {
+   "goal.json": {
+    "statement": "s",
+    "done_when": [
+     "a",
+     "b",
+     "c"
+    ]
+   },
+   "audits.json": [
+    {
+     "cycle": 1,
+     "version": 1,
+     "results": [
+      {
+       "id": "F-1",
+       "item": 1,
+       "criterion": "Item 1",
+       "verdict": "PASS",
+       "note": "seen on the page",
+       "pass": true
+      },
+      {
+       "id": "F-2",
+       "item": 2,
+       "criterion": "Item 2",
+       "verdict": "PASS",
+       "note": "seen on the page",
+       "pass": true
+      },
+      {
+       "id": "F-3",
+       "item": 3,
+       "criterion": "Item 3",
+       "verdict": "BLOCKED_BY_EVIDENCE",
+       "note": "Audit filed no finding for this item.",
+       "pass": false
+      }
+     ],
+     "rubric": [],
+     "conditions": [],
+     "mechanical": {
+      "available": true,
+      "phone": {
+       "width": 360,
+       "overflow_px": 0
+      },
+      "desktop": {
+       "width": 1280,
+       "overflow_px": 0
+      },
+      "js_errors": [],
+      "broken_in_page_links": [],
+      "form_results": []
+     }
+    }
+   ]
+  },
+  "before": {}
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "3 items, 3 findings; item 3 had no finding: recorded BLOCKED_BY_EVIDENCE (F-3)",
+  "changed": [
+   "item 3 had no finding: recorded BLOCKED_BY_EVIDENCE (F-3)"
+  ]
+ }
+}

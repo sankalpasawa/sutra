@@ -1,0 +1,25 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "A J2 run file that is a list of JSON objects: the same bounds for each row.",
+  "properties": {
+    "content": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "maxItems": 5000,
+      "title": "Content",
+      "type": "array"
+    }
+  },
+  "required": [
+    "content"
+  ],
+  "title": "RunList",
+  "type": "object"
+}

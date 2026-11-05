@@ -1,0 +1,22 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "records": {
+   "goal.json": {
+    "done_when": [
+     "a",
+     "b",
+     "c"
+    ]
+   }
+  }
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "goal has no statement"
+ }
+}

@@ -1,0 +1,430 @@
+{
+  "$defs": {
+    "AnsweredFrom": {
+      "additionalProperties": false,
+      "description": "Where an answer came from: a function, or a workflow with the version of its output.",
+      "properties": {
+        "function": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Function"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "title": "AnsweredFrom",
+      "type": "object"
+    },
+    "ArtifactUpdate": {
+      "additionalProperties": false,
+      "description": "What an answer changed. A workflow's own section carries `body`; a document carries `doc`, `section` and the versions;\na model's raw proposal may carry `text` and `why` (J2 `_board_doc_update`).",
+      "properties": {
+        "body": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Body"
+        },
+        "doc": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Doc"
+        },
+        "from_version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Version"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "to_version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Version"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Why"
+        }
+      },
+      "title": "ArtifactUpdate",
+      "type": "object"
+    },
+    "BoardEntry": {
+      "additionalProperties": false,
+      "description": "One question of the message board (j2_board.new_entry, then the fields the answer path adds).",
+      "properties": {
+        "about": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "About"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Answer"
+        },
+        "answered_by": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Answered By"
+        },
+        "answered_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnsweredFrom"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "artifact_update": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "asked_by": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Asked By",
+          "type": "string"
+        },
+        "asked_by_role": {
+          "enum": [
+            "function",
+            "builder"
+          ],
+          "title": "Asked By Role",
+          "type": "string"
+        },
+        "atom": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Atom"
+        },
+        "attempt": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt"
+        },
+        "cycle": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "impact": {
+          "items": {
+            "$ref": "#/$defs/Impact"
+          },
+          "maxItems": 500,
+          "title": "Impact",
+          "type": "array"
+        },
+        "question": {
+          "maxLength": 100000,
+          "title": "Question",
+          "type": "string"
+        },
+        "sent_to_identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SentToIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "unanswered",
+            "refused",
+            "routed to Identity"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "to": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "To",
+          "type": "string"
+        },
+        "used_by": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Used By",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "asked_by",
+        "to",
+        "question",
+        "status",
+        "used_by",
+        "asked_by_role",
+        "impact"
+      ],
+      "title": "BoardEntry",
+      "type": "object"
+    },
+    "Impact": {
+      "additionalProperties": false,
+      "properties": {
+        "atom": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Atom",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "passed",
+            "failed"
+          ],
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "atom",
+        "result"
+      ],
+      "title": "Impact",
+      "type": "object"
+    },
+    "SentToIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Doc",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 2000,
+          "title": "Reason",
+          "type": "string"
+        },
+        "section": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Section",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc",
+        "section",
+        "reason"
+      ],
+      "title": "SentToIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "board/1: a shared message board; `entries` in the order the questions were asked.",
+  "properties": {
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/BoardEntry"
+      },
+      "maxItems": 1000,
+      "title": "Entries",
+      "type": "array"
+    },
+    "schema": {
+      "const": "board/1",
+      "default": "board/1",
+      "title": "Schema",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entries"
+  ],
+  "title": "BoardDoc",
+  "type": "object"
+}

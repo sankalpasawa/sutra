@@ -1,0 +1,212 @@
+# Build the sutra-pro wheel and attach it to a GitHub Release of the Sutra repository (D98, D100). Modelled on the old Sutra repo's release-dmg.yml.
+# How to cut a release: docs/RELEASE.md.
+#
+# THE ASSETS (names are stable, the versioned one is what installers need)
+#   sutra_pro-<version>-py3-none-any.whl    the wheel; `uv tool install <its url>` works because the name carries the version
+#   sutra_pro-py3-none-any.whl              the SAME file under a stable, version-free name, so a link such as
+#                                           /releases/download/<tag>/sutra_pro-py3-none-any.whl keeps one shape for scripts
+#                                           Installers refuse that name (a wheel name must hold a version); download it.
+#   <each of the two>.sha256                written by the job that built the wheel, one per asset. A hand-uploaded aggregate
+#                                           file goes stale silently when a re-run replaces a wheel, and `shasum -c` then reports
+#                                           a corrupt download that is only bookkeeping; per-asset files cannot do that.
+#
+# TAGS AND "LATEST" (D100). The tag is sutra-pro-vX.Y.Z (or sutra-pro-vX.Y.Z-beta.N): the old product in this repository triggers on
+# `v*` and its website and updater read /releases/latest, so a Sutra Pro tag never starts with a v and a Sutra Pro release is
+# NEVER marked Latest (`make_latest: false` on every upload step). Download links therefore carry the tag.
+# A tag sutra-pro-vX.Y.Z-beta.N is a PRERELEASE.
+#
+# THE TAG IS A CLAIM ABOUT THE TREE, AND THE TREE MUST AGREE. `guard` runs first, on ubuntu, and compares the tag with
+# [project].version of pyproject.toml, so a mismatched tag costs seconds. On a workflow_dispatch the build uses the DISPATCHED
+# ref's tree, not the tag's commit; comparing that tree against the tag is exactly the assertion wanted: the tag must describe
+# what ships. Consequence for REPAIR runs: once main's version moves past a tag, a repair dispatched from main refuses (as it
+# should; it would ship a newer tree under an old name). Dispatch repairs from the tag's own ref:
+#   gh workflow run sutra-pro-release-wheel -f tag=sutra-pro-vX.Y.Z --ref sutra-pro-vX.Y.Z
+#
+# A tag comes from a push or from a dispatch input and may hold shell metacharacters (git allows most of them in a tag name), so
+# it reaches a script only through `env:` and is quoted there, never written into the script text as ${{ ... }}.
+name: sutra-pro-release-wheel
+
+on:
+  push:
+    tags: ["sutra-pro-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to attach the wheel to (must already exist)"
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: sutra-pro
+
+concurrency:
+  group: sutra-pro-release-wheel-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release_name: ${{ steps.tag.outputs.release_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Create the virtual environment (scripts/py needs it)
+        run: uv venv .venv --python 3.11
+
+      - name: Tag must match pyproject.toml
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: scripts/py scripts/check_release_tag.py "$TAG" --github-output "$GITHUB_OUTPUT"
+
+      # Pushing a tag proves it exists. A dispatch input proves nothing, and the release action would create a missing tag at the
+      # head of the default branch. After the check above, TAG holds only vX.Y.Z[-beta.N], so it is safe to print.
+      - name: A dispatched tag must already exist
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "::error::tag $TAG does not exist in this repository. Create and push the tag first."
+            exit 1
+          fi
+
+  build:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write        # create or update the release and upload its assets
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Create the virtual environment (scripts/py needs it)
+        run: uv venv .venv --python 3.11
+
+      - name: Build the sdist and the wheel
+        run: uv build
+
+      - name: Check what is inside the wheel
+        run: scripts/py scripts/check_wheel.py dist/*.whl
+
+      # The wheel is also checked against the tag, not only the tree: the name of the file the build produced must carry the
+      # version the tag promises. Betas are published under the stable version's wheel name (one target version, several betas),
+      # each on its own release.
+      - name: Name the assets and write a checksum for each
+        id: assets
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          [ "${#wheels[@]}" -eq 1 ] || { echo "::error::expected exactly one wheel in dist/, found ${#wheels[@]}"; exit 1; }
+          wheel="$(basename "${wheels[0]}")"
+          want="${TAG#sutra-pro-v}"
+          want="${want%-beta.*}"
+          [ "$wheel" = "sutra_pro-$want-py3-none-any.whl" ] \
+            || { echo "::error::the build made $wheel but tag $TAG promises sutra_pro-$want-py3-none-any.whl"; exit 1; }
+          mkdir release
+          cp "dist/$wheel" "release/$wheel"
+          cp "dist/$wheel" release/sutra_pro-py3-none-any.whl
+          cd release
+          for asset in "$wheel" sutra_pro-py3-none-any.whl; do
+            shasum -a 256 "$asset" > "$asset.sha256"
+          done
+          ls -l
+          echo "wheel=$wheel" >> "$GITHUB_OUTPUT"
+
+      - name: Attach the assets to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ needs.guard.outputs.release_name }}
+          # NEVER "Latest": the old product's site and updater read /releases/latest (D100)
+          make_latest: "false"
+          # A -beta.N tag is a prerelease.
+          prerelease: ${{ contains(inputs.tag || github.ref_name, '-beta.') }}
+          fail_on_unmatched_files: true
+          files: |
+            sutra-pro/release/*.whl
+            sutra-pro/release/*.whl.sha256
+          body: |
+            Install with [uv](https://docs.astral.sh/uv/) (it fetches Python 3.11 if the machine has none):
+
+                uv tool install https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/${{ steps.assets.outputs.wheel }}
+
+            | Asset | What it is |
+            |---|---|
+            | `${{ steps.assets.outputs.wheel }}` | The wheel. Installers need this exact name. |
+            | `sutra_pro-py3-none-any.whl` | The same file under a stable name, for scripts that know only the tag. It has no version in its name, so `uv` and `pip` refuse to install it by that name: download it, or use the line above. |
+            | `*.sha256` | SHA-256 of each wheel. Check with `shasum -a 256 -c <file>.sha256` in the folder you downloaded to. |
+
+  # The release is only real if it installs. This downloads what was PUBLISHED (not what the build job had on disk), checks the
+  # checksums, installs the wheel in a fresh environment and starts the command, on both systems the app is for.
+  verify:
+    name: verify (${{ matrix.os }})
+    needs: [guard, build]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    # no checkout here (only released files are used), so the workflow's sutra-pro default would not exist
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+    steps:
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Download the released assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir released --pattern '*.whl' --pattern '*.whl.sha256'
+          ls -l released
+
+      - name: Checksums match and the stable name is the same wheel
+        working-directory: released
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # shasum on Linux and macOS, sha256sum where there is no shasum (Git Bash on Windows): the same file format
+          check() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 -c "$@"; else sha256sum -c "$@"; fi; }
+          checksums=(*.sha256)
+          [ "${#checksums[@]}" -eq 2 ] || { echo "::error::expected two checksum files, found ${#checksums[@]}"; exit 1; }
+          check "${checksums[@]}"
+          versioned=(sutra_pro-[0-9]*.whl)
+          [ "${#versioned[@]}" -eq 1 ] || { echo "::error::expected exactly one versioned wheel, found ${#versioned[@]}"; exit 1; }
+          cmp "${versioned[0]}" sutra_pro-py3-none-any.whl
+
+      - name: Install the released wheel in a fresh environment and run it
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(released/sutra_pro-[0-9]*.whl)
+          [ "${#wheels[@]}" -eq 1 ] || { echo "::error::expected exactly one versioned wheel, found ${#wheels[@]}"; exit 1; }
+          uv venv "$RUNNER_TEMP/fresh" --python 3.11
+          bindir=bin
+          if [ "$RUNNER_OS" = Windows ]; then bindir=Scripts; fi
+          uv pip install --python "$RUNNER_TEMP/fresh/$bindir/python" "${wheels[0]}"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/fresh/$bindir/sutra-pro" --help

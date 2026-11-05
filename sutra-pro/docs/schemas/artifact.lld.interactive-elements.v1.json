@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "Element": {
+      "additionalProperties": false,
+      "properties": {
+        "behaviour": {
+          "description": "what happens then",
+          "maxLength": 4000,
+          "title": "Behaviour",
+          "type": "string"
+        },
+        "id": {
+          "description": "E1, E2, ... in order",
+          "maxLength": 40,
+          "title": "Id",
+          "type": "string"
+        },
+        "section": {
+          "description": "the section id it sits in, e.g. \"S1\"",
+          "maxLength": 40,
+          "title": "Section",
+          "type": "string"
+        },
+        "selector": {
+          "description": "its selector, e.g. \"#book-now\"",
+          "maxLength": 300,
+          "title": "Selector",
+          "type": "string"
+        },
+        "trigger": {
+          "description": "what the visitor does, e.g. \"click\"",
+          "maxLength": 300,
+          "title": "Trigger",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "section",
+        "selector",
+        "trigger",
+        "behaviour"
+      ],
+      "title": "Element",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assumptions": {
+      "items": {
+        "maxLength": 4000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "elements": {
+      "description": "every interactive element, E1, E2, ... in order",
+      "items": {
+        "$ref": "#/$defs/Element"
+      },
+      "maxItems": 300,
+      "title": "Elements",
+      "type": "array"
+    }
+  },
+  "required": [
+    "elements"
+  ],
+  "title": "LLDElements",
+  "type": "object"
+}

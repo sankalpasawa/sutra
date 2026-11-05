@@ -1,0 +1,18 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "reply": {
+   "decision": "GRANT",
+   "workflows": []
+  },
+  "prompt": "ON THE TABLE: [] (cost 30, remaining budget 80). COST PER ..."
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "GRANT 30 of 80 left"
+ }
+}

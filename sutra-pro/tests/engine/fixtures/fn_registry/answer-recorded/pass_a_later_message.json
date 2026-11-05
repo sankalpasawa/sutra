@@ -1,0 +1,27 @@
+{
+ "args": [
+  "14"
+ ],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "posted": [
+   {
+    "id": 13,
+    "who": "user",
+    "text": "old"
+   },
+   {
+    "id": 20,
+    "who": "user",
+    "text": "Drop them"
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "answer recorded as message 20: \"Drop them\""
+ }
+}

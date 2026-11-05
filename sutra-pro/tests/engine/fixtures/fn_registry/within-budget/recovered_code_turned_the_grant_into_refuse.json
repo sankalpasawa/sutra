@@ -1,0 +1,46 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "call": {
+   "inputs": [
+    [
+     "ledger",
+     "budget 20/100 used, 80 left"
+    ]
+   ]
+  },
+  "reply": {
+   "say": "@Adaptation Granted.",
+   "decision": "GRANT",
+   "next": "Adaptation",
+   "workflows": [
+    {
+     "name": "Build menu",
+     "cost": 120,
+     "envelope": {
+      "money_limit": 120
+     }
+    }
+   ]
+  },
+  "posted": [
+   {
+    "id": 4,
+    "who": "priority",
+    "text": "@Adaptation No.",
+    "decision": "refuse"
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "GRANT 120 > 80 left, posted REFUSE",
+  "changed": [
+   "GRANT turned into REFUSE"
+  ]
+ }
+}

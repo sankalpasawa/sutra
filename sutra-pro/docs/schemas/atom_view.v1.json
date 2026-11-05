@@ -1,0 +1,378 @@
+{
+  "$defs": {
+    "AtomEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "atom": {
+          "maxLength": 40,
+          "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+          "title": "Atom",
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "atom",
+        "why"
+      ],
+      "title": "AtomEdge",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "OutputItem": {
+      "additionalProperties": false,
+      "description": "What the work produced: `make` gives an artifact, `do` a deed; `form` is an open list (AS:42-55).",
+      "properties": {
+        "form": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Form",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "ref": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Ref",
+          "type": "string"
+        },
+        "verb": {
+          "enum": [
+            "make",
+            "do"
+          ],
+          "title": "Verb",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verb",
+        "name",
+        "form",
+        "ref"
+      ],
+      "title": "OutputItem",
+      "type": "object"
+    },
+    "ViewCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "applies_to": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applies To"
+        },
+        "check": {
+          "enum": [
+            "exists",
+            "valid",
+            "meets the defined output",
+            "receipt"
+          ],
+          "title": "Check",
+          "type": "string"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence"
+        },
+        "met": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Met"
+        },
+        "method": {
+          "maxLength": 400,
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check",
+        "method"
+      ],
+      "title": "ViewCheck",
+      "type": "object"
+    },
+    "ViewHow": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent"
+        },
+        "kind": {
+          "enum": [
+            "AI",
+            "code"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "steps": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Steps",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ViewHow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The atom/1 document (payload `atom_view` v1): the shape J2's page reads, so the J2 UI is unchanged (D6). `stale` and\n`rechecked` are board/1 additions; `wire()` leaves them out when unset, as J2 does.",
+  "properties": {
+    "attempt": {
+      "anyOf": [
+        {
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempt"
+    },
+    "constraints": {
+      "default": [],
+      "items": {
+        "maxLength": 300,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Constraints",
+      "type": "array"
+    },
+    "context": {
+      "default": [],
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 40,
+      "title": "Context",
+      "type": "array"
+    },
+    "defined_output": {
+      "default": [],
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "maxItems": 20,
+      "title": "Defined Output",
+      "type": "array"
+    },
+    "depends_on": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/AtomEdge"
+      },
+      "maxItems": 200,
+      "title": "Depends On",
+      "type": "array"
+    },
+    "details": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "default": {},
+      "title": "Details",
+      "type": "object"
+    },
+    "goal": {
+      "anyOf": [
+        {
+          "maxLength": 600,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Goal"
+    },
+    "how": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ViewHow"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "id": {
+      "maxLength": 40,
+      "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 300,
+      "title": "Name",
+      "type": "string"
+    },
+    "notes": {
+      "default": "",
+      "maxLength": 600,
+      "title": "Notes",
+      "type": "string"
+    },
+    "output": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/OutputItem"
+      },
+      "maxItems": 40,
+      "title": "Output",
+      "type": "array"
+    },
+    "owner": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Owner"
+    },
+    "rechecked": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rechecked"
+    },
+    "schema": {
+      "const": "atom/1",
+      "default": "atom/1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "stale": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stale"
+    },
+    "status": {
+      "enum": [
+        "open",
+        "closed",
+        "verify_failed",
+        "abandoned"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "used_by": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/AtomEdge"
+      },
+      "maxItems": 200,
+      "title": "Used By",
+      "type": "array"
+    },
+    "verification": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ViewCheck"
+      },
+      "maxItems": 36,
+      "title": "Verification",
+      "type": "array"
+    },
+    "workflow": {
+      "maxLength": 40,
+      "minLength": 1,
+      "title": "Workflow",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "workflow",
+    "name",
+    "status"
+  ],
+  "title": "AtomView",
+  "type": "object"
+}

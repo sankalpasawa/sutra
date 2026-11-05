@@ -1,0 +1,1517 @@
+{
+ "version": 1,
+ "gate_on_review": [
+  "L1",
+  "E0"
+ ],
+ "work_packages": [
+  {
+   "id": "E0",
+   "title": "Contracts, shim, settings, paths (bind_atom keeps the run overhead key; node event builder gains wait_on and tokens)",
+   "owns": [
+    "sutra_app/engine/__init__.py",
+    "sutra_app/engine/port.py",
+    "sutra_app/engine/llm.py",
+    "sutra_app/engine/hooks.py",
+    "sutra_app/engine/events.py",
+    "sutra_app/engine/spec.py",
+    "sutra_app/engine/features.py",
+    "tests/engine/conftest.py",
+    "tests/engine/test_engine_llm_shim.py",
+    "tests/engine/test_engine_port_contract.py",
+    "tests/engine/test_engine_spec.py",
+    "tests/engine/test_engine_paths.py",
+    "tests/engine/test_engine_events.py",
+    "docs/notes/E0.md"
+   ],
+   "depends_on": [
+    "L1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_llm_shim.py tests/engine/test_engine_port_contract.py tests/engine/test_engine_spec.py tests/engine/test_engine_paths.py tests/engine/test_engine_events.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "E1",
+   "title": "Vendor J2, patches P1-P11, rehydrate (conditions without realization, restores real*)",
+   "owns": [
+    "sutra_app/engine/j2_agent.py",
+    "sutra_app/engine/j2_artifact_models.py",
+    "sutra_app/engine/j2_artifacts.py",
+    "sutra_app/engine/j2_board.py",
+    "sutra_app/engine/j2_change.py",
+    "sutra_app/engine/j2_check.py",
+    "sutra_app/engine/j2_map.py",
+    "sutra_app/engine/j2_realization.py",
+    "sutra_app/engine/j2_rules.py",
+    "sutra_app/engine/j2_schema.py",
+    "sutra_app/engine/j2_send.py",
+    "sutra_app/engine/j2_story.py",
+    "sutra_app/engine/j2_template_lib.py",
+    "sutra_app/engine/agents/",
+    "sutra_app/engine/conditions/",
+    "sutra_app/engine/artifacts/",
+    "sutra_app/engine/templates/",
+    "sutra_app/engine/seed/",
+    "sutra_app/engine/VENDORED.md",
+    "MANIFEST.in",
+    "docs/reference/j2/",
+    "scripts/vendor_j2.py",
+    "tests/engine/test_engine_vendor.py",
+    "tests/engine/test_engine_patches.py",
+    "tests/engine/test_engine_features.py",
+    "tests/engine/test_engine_library_lock.py",
+    "docs/notes/E1.md"
+   ],
+   "depends_on": [
+    "E0"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_vendor.py tests/engine/test_engine_patches.py tests/engine/test_engine_features.py tests/engine/test_engine_library_lock.py tests/engine/test_engine_rehydrate.py -q",
+    "! grep -rnE '^\\s*(import|from) (j2|llm)\\b' sutra_app/engine"
+   ],
+   "section": "engine",
+   "spec": "J2 SYNC (2026-11-04): the J2 prototype moved from ce2631f to 33aeeda (PR #30, a run keeps its own copy of every template it used). Vendor from 33aeeda, record that commit in VENDORED.md, and locate patches P1-P11 by anchor text (j2.py lines after 8313 moved by +7). Read docs/design/j2-sync.md first."
+  },
+  {
+   "id": "E2",
+   "title": "Views (30 handlers) and the stdlib adapter (query-safe POST routing)",
+   "owns": [
+    "sutra_app/engine/views.py",
+    "sutra_app/engine/j2_server.py",
+    "scripts/record_api_shapes.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_views.py",
+    "docs/notes/E2.md"
+   ],
+   "depends_on": [
+    "E1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_views.py -q"
+   ],
+   "section": "engine",
+   "spec": "J2 SYNC (2026-11-04): GET /api/library/<art>/<section>/<slug>/v<N> now passes run_dir to template_view, and GET /api/run-templates answers j2_template_lib.run_templates(run_dir) (each decision plus source). Port both handlers from J2 33aeeda and record the shapes in the api goldens. Read docs/design/j2-sync.md first."
+  },
+  {
+   "id": "E3",
+   "title": "Host process (binds the run overhead key; publisher fills wait_on and tokens from the map function node)",
+   "owns": [
+    "sutra_app/engine/__main__.py",
+    "sutra_app/engine/host/__init__.py",
+    "sutra_app/engine/host/inbox.py",
+    "sutra_app/engine/host/publisher.py",
+    "sutra_app/engine/host/heartbeat.py",
+    "tests/engine/test_engine_host.py",
+    "tests/engine/test_engine_host_process.py",
+    "tests/engine/test_engine_publisher.py",
+    "tests/engine/test_engine_crash.py",
+    "tests/engine/test_engine_live.py",
+    "docs/notes/E3.md"
+   ],
+   "depends_on": [
+    "E0",
+    "E1",
+    "E2"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_host.py tests/engine/test_engine_host_process.py tests/engine/test_engine_publisher.py tests/engine/test_engine_crash.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "E4",
+   "title": "FastAPI routes at the root with ?dept=, engine settings routes, sandbox and security headers, and mount()",
+   "owns": [
+    "sutra_app/engine/api/__init__.py",
+    "sutra_app/engine/api/ports.py",
+    "sutra_app/engine/api/ctx.py",
+    "sutra_app/engine/api/reply.py",
+    "sutra_app/engine/api/state.py",
+    "sutra_app/engine/api/run_views.py",
+    "sutra_app/engine/api/library.py",
+    "sutra_app/engine/api/files.py",
+    "sutra_app/engine/api/commands.py",
+    "sutra_app/engine/api/settings.py",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/engine/test_engine_api_commands.py",
+    "tests/engine/test_engine_api_redact.py",
+    "tests/engine/test_engine_api_headers.py",
+    "tests/engine/test_engine_api_settings.py",
+    "docs/notes/E4.md"
+   ],
+   "depends_on": [
+    "E2"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_api_scope.py tests/engine/test_engine_api_commands.py tests/engine/test_engine_api_redact.py tests/engine/test_engine_api_headers.py tests/engine/test_engine_api_settings.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "E5",
+   "title": "Legacy suites as subprocesses and prompt goldens",
+   "owns": [
+    "tests/engine/legacy/",
+    "tests/engine/test_engine_legacy.py",
+    "tests/engine/test_engine_prompts.py",
+    "tests/engine/golden/prompts_*.json",
+    "scripts/record_engine_golden.py",
+    "scripts/engine_gate.sh",
+    "docs/notes/E5.md"
+   ],
+   "depends_on": [
+    "E1",
+    "E2",
+    "E3"
+   ],
+   "acceptance": [
+    "SUTRA_SLOW=1 scripts/py -m pytest tests/engine/test_engine_legacy.py tests/engine/test_engine_prompts.py -q",
+    "SUTRA_SLOW=1 scripts/py -m pytest tests/engine -q"
+   ],
+   "section": "engine",
+   "spec": "J2 SYNC (2026-11-04): vendor j2_flow_test.py from J2 33aeeda (it gained checks for per-run template copies). Prompt goldens are unaffected. Read docs/design/j2-sync.md."
+  },
+  {
+   "id": "E6",
+   "title": "Function-node layer: turn to work atom, check runner, manual atom, transitions, events",
+   "owns": [
+    "sutra_app/engine/fnodes/ids.py",
+    "sutra_app/engine/fnodes/declare.py",
+    "sutra_app/engine/fnodes/checks.py",
+    "tests/engine/test_engine_fn_declare.py",
+    "tests/engine/test_engine_fn_checks.py",
+    "tests/engine/test_engine_fn_layer.py",
+    "docs/notes/E6.md"
+   ],
+   "depends_on": [
+    "E0",
+    "L4",
+    "L5",
+    "L6",
+    "L10",
+    "E8"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_fn_declare.py tests/engine/test_engine_fn_checks.py tests/engine/test_engine_fn_layer.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "E7",
+   "title": "Function nodes in a whole run: golden atoms for each function, event contract, prompts unchanged, no usage line without an atom",
+   "owns": [
+    "tests/engine/test_engine_events_contract.py",
+    "scripts/record_fn_golden.py",
+    "docs/notes/E7.md"
+   ],
+   "depends_on": [
+    "E3",
+    "E6",
+    "ORCH-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_fn_golden.py tests/engine/test_engine_events_contract.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "E8",
+   "title": "Verify registry: 14 named checks, the evidence reader, fixtures, parity and mutation tests",
+   "owns": [
+    "sutra_app/engine/fnodes/__init__.py",
+    "sutra_app/engine/fnodes/evidence.py",
+    "tests/engine/test_engine_fn_registry.py",
+    "tests/engine/test_engine_fn_mutations.py",
+    "tests/engine/fixtures/fn_registry/",
+    "docs/notes/E8.md"
+   ],
+   "depends_on": [
+    "E0",
+    "E1",
+    "L4",
+    "L5"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_fn_registry.py tests/engine/test_engine_fn_mutations.py -q"
+   ],
+   "section": "engine"
+  },
+  {
+   "id": "CN-1",
+   "title": "Foundations: errors, models, env allowlist (PASS_NAMES exported), process runner, JSON helpers (imported from the library), schema helpers",
+   "owns": [
+    "sutra_app/connectors/__init__.py",
+    "sutra_app/connectors/errors.py",
+    "sutra_app/connectors/models.py",
+    "sutra_app/connectors/env.py",
+    "sutra_app/connectors/process.py",
+    "sutra_app/connectors/jsonio.py",
+    "sutra_app/connectors/schema.py",
+    "tests/connectors/test_errors.py",
+    "tests/connectors/test_models.py",
+    "tests/connectors/test_env_process.py",
+    "tests/connectors/test_jsonio.py",
+    "tests/connectors/test_schema.py",
+    "docs/notes/CN-1.md"
+   ],
+   "depends_on": [
+    "E0",
+    "L1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_errors.py tests/connectors/test_models.py tests/connectors/test_env_process.py tests/connectors/test_jsonio.py tests/connectors/test_schema.py -q",
+    "scripts/py -m pytest tests/connectors/test_env_process.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-2",
+   "title": "Fake CLIs, test harness and fixtures",
+   "owns": [
+    "tests/fakes/fake_cli.py",
+    "tests/fakes/claude",
+    "tests/fakes/codex",
+    "tests/fakes/gh",
+    "tests/connectors/conftest.py",
+    "tests/connectors/test_fakes.py",
+    "tests/fixtures/connectors/",
+    "scripts/capture_connector_fixtures.py",
+    "docs/notes/CN-2.md"
+   ],
+   "depends_on": [],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_fakes.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-3",
+   "title": "ModelConnector base class and ClaudeConnector",
+   "owns": [
+    "sutra_app/connectors/base.py",
+    "tests/connectors/test_claude_parse.py",
+    "tests/connectors/test_claude_connector.py",
+    "tests/connectors/test_claude_errors.py",
+    "docs/notes/CN-3.md"
+   ],
+   "depends_on": [
+    "CN-1",
+    "CN-2"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_claude_parse.py tests/connectors/test_claude_connector.py tests/connectors/test_claude_errors.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-4",
+   "title": "CodexConnector (an API-key login is refused in probe_auth)",
+   "owns": [
+    "tests/connectors/test_codex_parse.py",
+    "tests/connectors/test_codex_connector.py",
+    "tests/connectors/test_codex_errors.py",
+    "docs/notes/CN-4.md"
+   ],
+   "depends_on": [
+    "CN-3"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_codex_parse.py tests/connectors/test_codex_connector.py tests/connectors/test_codex_errors.py -q",
+    "scripts/py -m pytest tests/connectors/test_codex_connector.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-5",
+   "title": "StubConnector",
+   "owns": [
+    "sutra_app/connectors/stub.py",
+    "tests/connectors/test_stub.py",
+    "docs/notes/CN-5.md"
+   ],
+   "depends_on": [
+    "CN-3"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_stub.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-6",
+   "title": "Routing policy (no allow_api_key_billing), health book, usage normalisation (UsageIn with step and atom_id)",
+   "owns": [
+    "sutra_app/connectors/policy.py",
+    "sutra_app/connectors/policy.default.json",
+    "sutra_app/connectors/health.py",
+    "sutra_app/connectors/usage.py",
+    "tests/connectors/test_policy.py",
+    "tests/connectors/test_health.py",
+    "tests/connectors/test_usage.py",
+    "docs/notes/CN-6.md"
+   ],
+   "depends_on": [
+    "CN-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_policy.py tests/connectors/test_health.py tests/connectors/test_usage.py -q",
+    "scripts/py -m pytest tests/connectors/test_usage.py -q",
+    "scripts/py -m pytest tests/connectors/test_policy.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-7",
+   "title": "Router, transcript carry-over, engine and orchestrator ports (make_port(spec: PortSpec, *, usage_sink: UsageSink | None = None); AsyncConnector tag mapping incl. context.atom_id -> CallTag.atom)",
+   "owns": [
+    "sutra_app/connectors/transcript.py",
+    "sutra_app/connectors/router.py",
+    "sutra_app/connectors/engine_port.py",
+    "sutra_app/connectors/orchestrator_port.py",
+    "tests/connectors/test_transcript.py",
+    "tests/connectors/test_router_plan.py",
+    "tests/connectors/test_router_attempts.py",
+    "tests/connectors/test_router_gate.py",
+    "tests/connectors/test_router_json.py",
+    "tests/connectors/test_router_chat.py",
+    "tests/connectors/test_engine_port.py",
+    "tests/connectors/test_orchestrator_port.py",
+    "docs/notes/CN-7.md"
+   ],
+   "depends_on": [
+    "CN-4",
+    "CN-5",
+    "CN-6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_transcript.py tests/connectors/test_router_plan.py tests/connectors/test_router_attempts.py tests/connectors/test_router_gate.py tests/connectors/test_router_json.py tests/connectors/test_router_chat.py tests/connectors/test_engine_port.py tests/connectors/test_orchestrator_port.py -q",
+    "scripts/py -m pytest tests/connectors/test_engine_port.py -q",
+    "scripts/py -m pytest tests/connectors/test_orchestrator_port.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-8",
+   "title": "Tool connectors: MCP server, Sutra read tools, GitHub over gh, shown-only Claude-held connectors",
+   "owns": [
+    "sutra_app/connectors/tools/__init__.py",
+    "sutra_app/connectors/tools/mcp_server.py",
+    "sutra_app/connectors/tools/sutra_tools.py",
+    "sutra_app/connectors/tools/github_tools.py",
+    "sutra_app/connectors/tools/mediated.py",
+    "tests/connectors/test_tools_mcp.py",
+    "tests/connectors/test_tools_github.py",
+    "tests/connectors/test_mediated.py",
+    "docs/notes/CN-8.md"
+   ],
+   "depends_on": [
+    "CN-1",
+    "CN-2"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_tools_mcp.py tests/connectors/test_tools_github.py tests/connectors/test_mediated.py -q"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "CN-9",
+   "title": "Factory, HTTP API (required write_guard, ORCH error envelope) and live tests",
+   "owns": [
+    "sutra_app/connectors/api.py",
+    "tests/connectors/test_factory.py",
+    "tests/connectors/test_api.py",
+    "tests/connectors/test_live.py",
+    "docs/notes/CN-9.md"
+   ],
+   "depends_on": [
+    "CN-7",
+    "CN-8"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_factory.py tests/connectors/test_api.py -q",
+    "scripts/py -m pytest tests/connectors -q",
+    "SUTRA_LIVE=1 scripts/py -m pytest tests/connectors/test_live.py -q -m live"
+   ],
+   "section": "connectors"
+  },
+  {
+   "id": "L1",
+   "title": "Foundations, registry, gate, replies, schema export, id helpers (overhead_atom_id)",
+   "owns": [
+    "sutra_app/library/__init__.py",
+    "sutra_app/library/types.py",
+    "sutra_app/library/base.py",
+    "sutra_app/library/registry.py",
+    "sutra_app/library/gate.py",
+    "sutra_app/library/replies.py",
+    "sutra_app/library/export.py",
+    "tests/library/conftest.py",
+    "tests/library/test_lib_base.py",
+    "tests/library/test_lib_registry.py",
+    "tests/library/test_lib_gate.py",
+    "tests/library/test_lib_replies.py",
+    "tests/library/test_lib_transport.py",
+    "tests/library/test_lib_atom_ids.py",
+    "docs/notes/L1.md"
+   ],
+   "depends_on": [],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_base.py tests/library/test_lib_registry.py tests/library/test_lib_gate.py tests/library/test_lib_replies.py tests/library/test_lib_transport.py tests/library/test_lib_atom_ids.py -q"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L2",
+   "title": "Org chart and chart changes",
+   "owns": [
+    "sutra_app/library/org_chart.py",
+    "tests/library/factories_org.py",
+    "tests/library/test_lib_org_chart.py",
+    "tests/library/test_lib_chart_change.py",
+    "tests/library/test_lib_chart_transport.py",
+    "docs/notes/L2.md"
+   ],
+   "depends_on": [
+    "L1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_org_chart.py tests/library/test_lib_chart_change.py tests/library/test_lib_chart_transport.py -q"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L3",
+   "title": "Goal, Department, Evaluation, chat message meta",
+   "owns": [
+    "sutra_app/library/goal.py",
+    "sutra_app/library/department.py",
+    "sutra_app/library/evaluation.py",
+    "sutra_app/library/chat.py",
+    "tests/library/test_lib_goal.py",
+    "tests/library/test_lib_department.py",
+    "tests/library/test_lib_evaluation.py",
+    "tests/library/test_lib_chat.py",
+    "docs/notes/L3.md"
+   ],
+   "depends_on": [
+    "L1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_goal.py tests/library/test_lib_department.py tests/library/test_lib_evaluation.py tests/library/test_lib_chat.py -q"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L4",
+   "title": "Atom, lifecycle, ledger row, cards, atom/1 view, display state (abandon_code, Seen, 14 check names, verify_failed log row, ledger_row_from_view)",
+   "owns": [
+    "sutra_app/library/atom.py",
+    "tests/library/factories_atom.py",
+    "tests/library/test_lib_atom.py",
+    "tests/library/test_lib_atom_lifecycle.py",
+    "tests/library/test_lib_atom_view.py",
+    "tests/library/test_lib_atom_display.py",
+    "tests/library/fixtures/atom/",
+    "docs/notes/L4.md"
+   ],
+   "depends_on": [
+    "L1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_atom.py tests/library/test_lib_atom_lifecycle.py tests/library/test_lib_atom_view.py tests/library/test_lib_atom_display.py -q"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L5",
+   "title": "Workflow, Step and the five function models",
+   "owns": [
+    "sutra_app/library/workflow.py",
+    "tests/library/test_lib_workflow.py",
+    "tests/library/test_lib_functions.py",
+    "docs/notes/L5.md"
+   ],
+   "depends_on": [
+    "L1",
+    "L3",
+    "L4"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_workflow.py tests/library/test_lib_functions.py -q"
+   ],
+   "section": "library",
+   "spec": "From the L1 review (cross-package): reply classes with optional model or union fields (goal draft, Question, Certainty, dispute, analysis) get a single-member anyOf without null in the transport schema (kept for J2 sha parity; is_transport_safe does not flag it). Put each such field in TRANSPORT_OPTIONAL and make the model omit the field rather than send null."
+  },
+  {
+   "id": "L6",
+   "title": "Node family, graph edges, function-spec plug-in (FunctionNode: goal, task string, context, open_atom, atom_count, wait_on, stats, spec_version; refresh_function_nodes; HANDOFFS table of S3-web-04)",
+   "owns": [
+    "sutra_app/library/node.py",
+    "tests/library/factories_node.py",
+    "tests/library/test_lib_node.py",
+    "docs/notes/L6.md"
+   ],
+   "depends_on": [
+    "L1",
+    "L2",
+    "L4"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_node.py -q"
+   ],
+   "section": "library",
+   "spec": "From the L1 review (cross-package): REGISTRY.verify_refs() verifies nothing until specs are bound. Call REGISTRY.bind_function_specs(...) and bind_check_arity(...) (see docs/notes/L1.md) so verify_refs checks every FunctionSpec task kind and check name, and test that it checked a non-empty set."
+  },
+  {
+   "id": "L7",
+   "title": "Artifact models, rules as data, templates",
+   "owns": [
+    "sutra_app/library/artifacts/__init__.py",
+    "sutra_app/library/artifacts/models.py",
+    "sutra_app/library/artifacts/rules.py",
+    "sutra_app/library/artifacts/render.py",
+    "sutra_app/library/templates.py",
+    "tests/library/test_lib_artifacts.py",
+    "tests/library/test_lib_rules.py",
+    "tests/library/test_lib_templates.py",
+    "tests/library/fixtures/artifacts/",
+    "docs/notes/L7.md"
+   ],
+   "depends_on": [
+    "L1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_artifacts.py tests/library/test_lib_rules.py tests/library/test_lib_templates.py -q"
+   ],
+   "section": "library",
+   "spec": "From the L1 review (cross-package): after the L1 fix for TRANSPORT_OPTIONAL (it no longer leaks across classes), set TRANSPORT_OPTIONAL = frozenset(OPTIONAL_FIELDS) once on the Artifact base class so all 22 J2 artifact models keep their schema shas.\nJ2 SYNC (2026-11-04): a run folder now holds templates/<artifact>/<section-slug>/<slug>@v<N>/{spec.json,schema.json,meta.json,model.py} (J2 33aeeda save_into_run); template metadata gets used_by and kind 'generic' for generic copies. Read docs/design/j2-sync.md."
+  },
+  {
+   "id": "L8",
+   "title": "Integration: J2 record catalogue and gate hook, schema API at /api/schemas (guarded POST, ORCH error envelope), generated schemas",
+   "owns": [
+    "sutra_app/library/records.py",
+    "sutra_app/library/api.py",
+    "sutra_app/library/all.py",
+    "docs/schemas/",
+    "tests/library/test_lib_records.py",
+    "tests/library/test_lib_api.py",
+    "tests/library/test_lib_schema_drift.py",
+    "tests/library/test_lib_write_paths.py",
+    "tests/library/test_lib_live_transport.py",
+    "tests/library/test_lib_engine_parity.py",
+    "tests/library/write_allowlist.txt",
+    "tests/library/write_paths.txt",
+    "tests/library/parity_allowlist.json",
+    "docs/notes/L8.md"
+   ],
+   "depends_on": [
+    "L1",
+    "L2",
+    "L3",
+    "L4",
+    "L5",
+    "L6",
+    "L7",
+    "L10"
+   ],
+   "acceptance": [
+    "scripts/py -m sutra_app.library.export --check",
+    "scripts/py -m pytest tests/library -q",
+    "scripts/py -m pytest tests/library/test_lib_engine_parity.py -q"
+   ],
+   "section": "library",
+   "spec": "From the L1 review (cross-package): add a sweep over the full REGISTRY for unbounded str/list fields and non-keyword aliases (design rules 3 and 7 of library.md 3.1) in test_lib_records.py or all.py, and assert that REGISTRY.verify_refs() checked a non-empty set of specs.\nJ2 SYNC (2026-11-04): templates.json decisions carry a new optional key `saved` (str or null; path of the run's copy) and /api/run-templates adds `source` ('from this run' | 'from library' | 'not recorded'); the record catalogue and gate_record must accept the per-run template files (log mode first). Read docs/design/j2-sync.md."
+  },
+  {
+   "id": "L9",
+   "title": "J2 wire documents (after the engine package exists)",
+   "owns": [
+    "sutra_app/library/wire.py",
+    "tests/library/test_lib_wire.py",
+    "docs/notes/L9.md"
+   ],
+   "depends_on": [
+    "L1",
+    "L4",
+    "L5"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_wire.py tests/library/test_lib_records.py -q"
+   ],
+   "section": "library"
+  },
+  {
+   "id": "L10",
+   "title": "Function specs: seed data (templates with named checks, yields, work hints) and its tests",
+   "owns": [
+    "tests/library/test_lib_function_specs.py",
+    "docs/notes/L10.md"
+   ],
+   "depends_on": [
+    "L1",
+    "L4",
+    "L5",
+    "L6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_lib_function_specs.py -q"
+   ],
+   "section": "library",
+   "spec": "From the L1 review (cross-package): REGISTRY.verify_refs() verifies nothing until specs are bound. Call REGISTRY.bind_function_specs(...) and bind_check_arity(...) (see docs/notes/L1.md) when the seed FunctionSpecs load, and test that verify_refs checked a non-empty set."
+  },
+  {
+   "id": "ORCH-1",
+   "title": "Foundation: settings (token of at least 16 characters, override key, max_live), database (StoreContext), schema (chart_changes task_title and result_json; atoms.display and the Atom log DDL), records, wire models (RunEvent union; node event wait_on and tokens), require_token (header token and Origin check) in api/deps.py; plain_check removed",
+   "owns": [
+    "sutra_app/orchestrator/__init__.py",
+    "sutra_app/orchestrator/errors.py",
+    "sutra_app/orchestrator/ids.py",
+    "sutra_app/orchestrator/redact.py",
+    "sutra_app/orchestrator/textutil.py",
+    "sutra_app/orchestrator/db.py",
+    "sutra_app/orchestrator/schema.py",
+    "sutra_app/orchestrator/records.py",
+    "sutra_app/orchestrator/models.py",
+    "sutra_app/orchestrator/services.py",
+    "sutra_app/orchestrator/api/__init__.py",
+    "sutra_app/orchestrator/api/deps.py",
+    "sutra_app/orchestrator/testing/__init__.py",
+    "tests/orchestrator/__init__.py",
+    "tests/orchestrator/conftest.py",
+    "tests/orchestrator/test_config.py",
+    "tests/orchestrator/test_schema.py",
+    "tests/orchestrator/test_records.py",
+    "tests/orchestrator/test_textutil.py",
+    "docs/notes/ORCH-1.md"
+   ],
+   "depends_on": [
+    "L1",
+    "L3",
+    "L4"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_config.py tests/orchestrator/test_schema.py tests/orchestrator/test_records.py tests/orchestrator/test_textutil.py -q"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-2",
+   "title": "Event bus (publish, publish_one) and SSE route (control events without id, restart/gap resync, connector.* topics)",
+   "owns": [
+    "sutra_app/orchestrator/events.py",
+    "sutra_app/orchestrator/api/events.py",
+    "tests/orchestrator/test_events_bus.py",
+    "tests/orchestrator/test_events_sse.py",
+    "docs/notes/ORCH-2.md"
+   ],
+   "depends_on": [
+    "ORCH-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_events_bus.py tests/orchestrator/test_events_sse.py -q"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-3",
+   "title": "Chats, atoms and usage stores with their read routes (ChatTranscripts, note_provider, apply_links; AtomStore display column and Atom log: append_ledger, GET /api/atoms/log; UsageStore with step and atom_id)",
+   "owns": [
+    "sutra_app/orchestrator/chats.py",
+    "sutra_app/orchestrator/atoms.py",
+    "sutra_app/orchestrator/usage.py",
+    "sutra_app/orchestrator/api/chat.py",
+    "sutra_app/orchestrator/api/atoms.py",
+    "sutra_app/orchestrator/api/usage.py",
+    "tests/orchestrator/test_chat_store.py",
+    "tests/orchestrator/test_atoms_usage.py",
+    "tests/orchestrator/test_api_chat_read.py",
+    "docs/notes/ORCH-3.md"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "L2",
+    "L4",
+    "CN-6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_chat_store.py tests/orchestrator/test_atoms_usage.py tests/orchestrator/test_api_chat_read.py -q"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-4",
+   "title": "Workflow graph store and routes (pre-order, function meta {stats, wait_on} in the view, full meta with atoms_failed and atoms_total in NodeDetail)",
+   "owns": [
+    "sutra_app/orchestrator/graph.py",
+    "sutra_app/orchestrator/api/graph.py",
+    "tests/orchestrator/test_graph_store.py",
+    "tests/orchestrator/test_api_graph.py",
+    "docs/notes/ORCH-4.md"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "L6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_graph_store.py tests/orchestrator/test_api_graph.py -q"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-5",
+   "title": "Global org chart store, rules, departments and node linker (ChartChangeOut lists and task_title)",
+   "owns": [
+    "sutra_app/orchestrator/chart_rules.py",
+    "sutra_app/orchestrator/chart.py",
+    "sutra_app/orchestrator/departments.py",
+    "sutra_app/orchestrator/nodes.py",
+    "sutra_app/orchestrator/api/chart.py",
+    "sutra_app/orchestrator/api/departments.py",
+    "tests/orchestrator/test_chart_rules.py",
+    "tests/orchestrator/test_chart_store.py",
+    "tests/orchestrator/test_departments.py",
+    "tests/orchestrator/test_api_chart.py",
+    "docs/notes/ORCH-5.md"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-4",
+    "L2",
+    "L3",
+    "L6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_chart_rules.py tests/orchestrator/test_chart_store.py tests/orchestrator/test_departments.py tests/orchestrator/test_api_chart.py -q"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-6",
+   "title": "Tasks, run launcher and watcher, projector (function atoms, builder ledger rows, node event wait_on and stats, no goal/task/context writes; run folder and child environment from PASS_NAMES; stop ladder; reconcile)",
+   "owns": [
+    "sutra_app/orchestrator/tasks.py",
+    "sutra_app/orchestrator/runs.py",
+    "sutra_app/orchestrator/projector.py",
+    "sutra_app/orchestrator/api/tasks.py",
+    "sutra_app/orchestrator/testing/fake_engine.py",
+    "tests/orchestrator/test_tasks.py",
+    "tests/orchestrator/test_projector.py",
+    "tests/orchestrator/test_projector_fnodes.py",
+    "tests/orchestrator/test_api_tasks.py",
+    "docs/notes/ORCH-6.md"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-4",
+    "ORCH-5",
+    "L4",
+    "L6",
+    "CN-1",
+    "E3",
+    "E6",
+    "E7"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_tasks.py tests/orchestrator/test_projector.py tests/orchestrator/test_projector_fnodes.py tests/orchestrator/test_api_tasks.py -q"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-7",
+   "title": "Chat agent: staged structured calls without prose, code template lines, request overhead key, turn runner, prompts, agent routes",
+   "owns": [
+    "sutra_app/orchestrator/agent/__init__.py",
+    "sutra_app/orchestrator/agent/ports.py",
+    "sutra_app/orchestrator/agent/replies.py",
+    "sutra_app/orchestrator/agent/prompts.py",
+    "sutra_app/orchestrator/agent/planner.py",
+    "sutra_app/orchestrator/agent/agent.py",
+    "sutra_app/orchestrator/agent/runner.py",
+    "sutra_app/orchestrator/agent/templates/decide.md",
+    "sutra_app/orchestrator/agent/templates/change.md",
+    "sutra_app/orchestrator/agent/templates/assign.md",
+    "sutra_app/orchestrator/agent/templates/retry.md",
+    "sutra_app/orchestrator/api/agent.py",
+    "sutra_app/orchestrator/testing/scripted.py",
+    "tests/orchestrator/test_chat_agent.py",
+    "tests/orchestrator/test_turn_runner.py",
+    "tests/orchestrator/test_api_agent.py",
+    "tests/orchestrator/live/__init__.py",
+    "tests/orchestrator/live/test_live_chat_agent.py",
+    "docs/notes/ORCH-7.md"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "ORCH-2",
+    "ORCH-3",
+    "ORCH-5",
+    "ORCH-6",
+    "L1",
+    "L5",
+    "CN-7"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_chat_agent.py tests/orchestrator/test_turn_runner.py tests/orchestrator/test_api_agent.py -q"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "ORCH-8",
+   "title": "App shell: wiring, create_app, CLI, health, and the cross-package scenario and packaging tests",
+   "owns": [
+    "sutra_app/orchestrator/api/system.py",
+    "tests/orchestrator/test_api_security.py",
+    "tests/orchestrator/test_startup.py",
+    "tests/orchestrator/test_scripted_conversation.py",
+    "tests/test_packaging.py",
+    "docs/notes/ORCH-8.md"
+   ],
+   "depends_on": [
+    "ORCH-1",
+    "ORCH-2",
+    "ORCH-3",
+    "ORCH-4",
+    "ORCH-5",
+    "ORCH-6",
+    "ORCH-7",
+    "CN-9",
+    "E4"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator -q",
+    "scripts/py -m pytest tests/test_packaging.py -q",
+    "scripts/py -m sutra_app --help"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "CT-1",
+   "title": "Cross-section contract tests (route table, events, usage with atom ids, settings, env, JSON extractors, diagram strings)",
+   "owns": [
+    "tests/contracts/__init__.py",
+    "tests/contracts/test_contract_*.py",
+    "docs/notes/CT-1.md"
+   ],
+   "depends_on": [
+    "E0",
+    "E4",
+    "CN-7",
+    "CN-9",
+    "ORCH-1",
+    "ORCH-6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/contracts -q"
+   ],
+   "section": "orchestrator"
+  },
+  {
+   "id": "UI-1",
+   "title": "Serving and boot (Services.department lookup, no sutra_app/web.py alias, hash-based script-src, page headers)",
+   "owns": [
+    "sutra_app/ui/__init__.py",
+    "tests/ui/test_serve.py",
+    "docs/notes/UI-1.md"
+   ],
+   "depends_on": [],
+   "acceptance": [
+    "scripts/py -m pytest tests/ui/test_serve.py -q"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-3",
+   "title": "Client core (exact J2_PATHS, SutraCtx.currentTab, fetch wrapper with api.put and api.del, events: 14 names, hello-resync rule)",
+   "owns": [
+    "sutra_app/ui/static/js/sutra_ctx.js",
+    "sutra_app/ui/static/js/sutra_events.js",
+    "tests/ui/js/ctx.test.js",
+    "tests/ui/js/events.test.js",
+    "tests/ui/test_node_suite.py",
+    "docs/notes/UI-3.md"
+   ],
+   "depends_on": [],
+   "acceptance": [
+    "node --test tests/ui/js/ctx.test.js tests/ui/js/events.test.js"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-4",
+   "title": "Graph pure core (J2 status words, edge kinds handoff/depends_on/speaks_to, same-kind loops, function chip with atom counts)",
+   "owns": [
+    "sutra_app/ui/static/js/graph_layout.js",
+    "sutra_app/ui/static/js/chart_marks.js",
+    "sutra_app/ui/static/js/graph_render.js",
+    "tests/ui/js/graph_layout.test.js",
+    "tests/ui/js/graph_render.test.js",
+    "tests/ui/js/chart_marks.test.js",
+    "docs/notes/UI-4.md"
+   ],
+   "depends_on": [
+    "UI-3"
+   ],
+   "acceptance": [
+    "node --test tests/ui/js/graph_layout.test.js tests/ui/js/graph_render.test.js tests/ui/js/chart_marks.test.js"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-0",
+   "title": "Test tooling (fixtures and fake backend use LIB ids, J2 status words, five atom words, a division lens and whoLabel cases)",
+   "owns": [
+    "tests/ui/conftest.py",
+    "tests/ui/cdp.py",
+    "tests/ui/fake_backend.py",
+    "tests/ui/fixtures/",
+    "tests/ui/screens/.gitignore",
+    "tests/ui/test_fake_backend.py",
+    "scripts/capture_j2_fixtures.py",
+    "docs/notes/UI-0.md"
+   ],
+   "depends_on": [
+    "UI-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/ui/test_fake_backend.py -q",
+    "scripts/py tests/ui/cdp.py --self-test"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-2",
+   "title": "Port of the J2 page (13 edits incl. E13 wording and sandbox attribute, harness copies, parity)",
+   "owns": [
+    "scripts/port_j2_ui.py",
+    "sutra_app/ui/pages/j2_ui.html",
+    "sutra_app/ui/pages/j2_ui_render.js",
+    "sutra_app/ui/pages/j2_graph_layout.js",
+    "sutra_app/ui/static/css/j2.css",
+    "sutra_app/ui/static/vendor/d3.min.js",
+    "sutra_app/ui/static/vendor/d3-LICENSE",
+    "sutra_app/ui/static/vendor/README.md",
+    "tests/ui/test_port_edits.py",
+    "tests/ui/js/page_render.test.js",
+    "docs/notes/UI-2.md"
+   ],
+   "depends_on": [
+    "UI-3",
+    "UI-0"
+   ],
+   "acceptance": [
+    "scripts/py scripts/port_j2_ui.py --j2 ~/Desktop/development/J2_Prototype --check",
+    "scripts/py -m pytest tests/ui/test_port_edits.py -q",
+    "node --test tests/ui/js/page_render.test.js"
+   ],
+   "section": "ui",
+   "spec": "J2 SYNC (2026-11-04): port from J2 33aeeda (the Library view gained a From column and a source in the template viewer); run scripts/port_j2_ui.py --check: all 12 anchors must still match their stated counts. Read docs/design/j2-sync.md."
+  },
+  {
+   "id": "UI-5",
+   "title": "Workflow graph and org chart views",
+   "owns": [
+    "sutra_app/ui/static/js/graph_view.js",
+    "sutra_app/ui/static/js/orgchart_view.js",
+    "sutra_app/ui/static/css/sutra-graph.css",
+    "tests/ui/test_view_graph.py",
+    "docs/notes/UI-5.md"
+   ],
+   "depends_on": [
+    "UI-0",
+    "UI-3",
+    "UI-4"
+   ],
+   "acceptance": [
+    "SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_view_graph.py -q"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-6",
+   "title": "Node panel: function-node drawer (final labels, five atom states, tries, legend), division lens panel, whoLabel, Identity chip opens the department chat, Go-to-tab, per-node chat",
+   "owns": [
+    "sutra_app/ui/static/js/fnode_view.js",
+    "sutra_app/ui/static/js/chat_view.js",
+    "sutra_app/ui/static/js/node_panel.js",
+    "sutra_app/ui/static/css/sutra-panel.css",
+    "tests/ui/js/fnode_view.test.js",
+    "tests/ui/js/chat_view.test.js",
+    "tests/ui/test_view_panel.py",
+    "docs/notes/UI-6.md"
+   ],
+   "depends_on": [
+    "UI-0",
+    "UI-3"
+   ],
+   "acceptance": [
+    "node --test tests/ui/js/fnode_view.test.js tests/ui/js/chat_view.test.js",
+    "SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_view_panel.py -q"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-7",
+   "title": "Home page: start page, org chat, rail, panes; Settings with the Engine group, Connectors Test and Codex Sign in",
+   "owns": [
+    "sutra_app/ui/static/js/settings_view.js",
+    "sutra_app/ui/static/css/sutra-shell.css",
+    "tests/ui/test_home.py",
+    "tests/ui/js/settings_engine.test.js",
+    "tests/ui/js/settings_connectors.test.js",
+    "docs/notes/UI-7.md"
+   ],
+   "depends_on": [
+    "UI-0",
+    "UI-3",
+    "UI-4",
+    "UI-5",
+    "UI-6"
+   ],
+   "acceptance": [
+    "SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_home.py -q",
+    "node --test tests/ui/js/settings_engine.test.js",
+    "node --test tests/ui/js/settings_connectors.test.js"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-8",
+   "title": "Department page glue (init mounts the ?tab= view, archived class)",
+   "owns": [
+    "sutra_app/ui/static/js/dept_ext.js",
+    "tests/ui/test_dept_page.py",
+    "docs/notes/UI-8.md"
+   ],
+   "depends_on": [
+    "UI-0",
+    "UI-2",
+    "UI-5",
+    "UI-6"
+   ],
+   "acceptance": [
+    "SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -q"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "UI-9",
+   "title": "Scripted smoke, visual checks, token contrast",
+   "owns": [
+    "tests/ui/test_browser_smoke.py",
+    "tests/ui/test_visual.py",
+    "tests/ui/js/contrast.test.js",
+    "docs/notes/UI-9.md"
+   ],
+   "depends_on": [
+    "UI-0",
+    "UI-1",
+    "UI-2",
+    "UI-3",
+    "UI-4",
+    "UI-5",
+    "UI-6",
+    "UI-7",
+    "UI-8"
+   ],
+   "acceptance": [
+    "node --test tests/ui/js/contrast.test.js",
+    "SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_browser_smoke.py tests/ui/test_visual.py -q"
+   ],
+   "section": "ui"
+  },
+  {
+   "id": "REL-1",
+   "title": "GitHub CI and wheel release workflows (modelled on the old repo's)",
+   "section": "release",
+   "owns": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/release-wheel.yml",
+    "scripts/check_release_tag.py",
+    "scripts/check_wheel.py",
+    "tests/release/test_release_tag.py",
+    "tests/release/test_check_wheel.py",
+    "tests/release/test_workflows_yaml.py",
+    "docs/RELEASE.md",
+    "docs/notes/REL-1.md"
+   ],
+   "depends_on": [],
+   "acceptance": [
+    "scripts/py -m pytest tests/release/test_release_tag.py tests/release/test_check_wheel.py tests/release/test_workflows_yaml.py -q"
+   ],
+   "spec": "GitHub builds for the new app, modelled on the old Sutra repo's workflows (READ-ONLY reference, never edit that repo: ~/Desktop/development/sutra/.github/workflows/test-native.yml, plugin-release-gate.yml, release-dmg.yml). The distribution is named sutra-pro with the console command sutra-pro (D88, D89; the chassis renames it before you start). Write:\n1. .github/workflows/ci.yml: name ci; on push to main, pull_request and workflow_dispatch (input slow: boolean); top-level permissions contents read; concurrency group ci-${{ github.ref }} with cancel-in-progress; job test on a matrix of ubuntu-latest and macos-15; pinned major versions only: actions/checkout@v4, astral-sh/setup-uv@v5, actions/setup-node@v4 (node 20); uv venv .venv --python 3.11; uv pip install --python .venv/bin/python -e \".[dev]\"; scripts/py scripts/plan_tools.py check; scripts/gate.sh (the same gate as local merges: pytest and the node tests); with the slow input also SUTRA_SLOW=1 scripts/py -m pytest. Job package (ubuntu): uv build; scripts/py scripts/check_wheel.py dist/*.whl; install the wheel in a clean venv and run sutra-pro --help; upload dist as an artifact. Live, slow and browser suites never run by default.\n2. .github/workflows/release-wheel.yml: on push of tags v* and workflow_dispatch (input tag); job guard (ubuntu, first): the tag must match [project].version of pyproject.toml via scripts/check_release_tag.py (accepts vX.Y.Z and vX.Y.Z-beta.N and compares X.Y.Z; beta suffix allowed; anything else exits 1 with an ::error:: line, like the old guard); job build: uv build, scripts/check_wheel.py, sha256 written per asset by the same job, upload with softprops/action-gh-release@v2 under the versioned wheel name plus a stable alias name sutra_pro-py3-none-any.whl, prerelease true for beta tags; job verify (ubuntu and macos): install the released wheel in a fresh venv and run sutra-pro --help.\n3. scripts/check_release_tag.py: pure function check(tag, version) -> (ok, message) plus a CLI (exit 0 ok, 1 not); scripts/check_wheel.py: opens the wheel with zipfile and asserts that every glob of [tool.setuptools.package-data] in pyproject.toml matches at least one member whose source file exists in the tree, that entry_points.txt declares sutra-pro = sutra_app.__main__:main, and that METADATA Name is sutra-pro.\n4. Tests (no network): tag guard cases (valid, beta, mismatch, wrong prefix, empty, v-less); the wheel checker against a wheel built in a tmp dir from a tiny fixture project and, when the build tooling exists, against the real project; workflow YAML structure with pyyaml (add it to the dev extra only if the chassis has not: check pyproject first and report a need otherwise): every workflow parses; every uses: is pinned to a version tag, never a branch; every workflow sets top-level permissions; ci.yml runs scripts/gate.sh; release-wheel.yml triggers on tags v* and its first job runs check_release_tag.py; no run: step echoes a secret.\n5. docs/RELEASE.md: how to cut a release (bump version in pyproject, tag vX.Y.Z, push the tag), what each workflow does, asset names, the checks, how to install a release (uv tool install <wheel url>) and what is not built yet (the macOS app and DMG are REL-2; Windows only on request)."
+  },
+  {
+   "id": "REL-2",
+   "title": "macOS app bundle, DMG and its GitHub release workflow",
+   "section": "release",
+   "owns": [
+    "scripts/build_macos_app.py",
+    "scripts/macos/launcher.sh",
+    "scripts/macos/Info.plist.tmpl",
+    ".github/workflows/release-macos.yml",
+    "tests/release/test_macos_bundle.py",
+    "docs/RELEASE-macos.md",
+    "docs/notes/REL-2.md"
+   ],
+   "depends_on": [
+    "REL-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/release/test_macos_bundle.py -q"
+   ],
+   "spec": "macOS app and DMG, modelled on the old repo's release-dmg.yml (READ-ONLY reference at ~/Desktop/development/sutra/.github/workflows/release-dmg.yml; never edit that repo). There is no desktop shell (D12), so the app is a thin bundle: Sutra Pro.app = launcher + bundled CPython + the wheel installed into the bundle. Write: scripts/build_macos_app.py (standard library only; flags --wheel, --arch arm64|x86_64, --out, --python-archive for offline use and tests; gets a python-build-standalone CPython 3.11 archive for the arch with a pinned checksum, cached; creates Contents/MacOS, Contents/Resources, Contents/Info.plist; installs the wheel with the bundled interpreter; writes the launcher; never signs); scripts/macos/launcher.sh (pick a free port 8780-8799 as sutra-pro does, SUTRA_DATA_DIR default ~/.sutra-pro, start the bundled python -m sutra_app --no-browser, wait for /api/health, open the default browser, stop the server when the app quits, log to ~/.sutra-pro/logs/app.log); scripts/macos/Info.plist.tmpl (CFBundleName Sutra Pro, a reverse-DNS identifier you decide and record in docs/notes/REL-2.md, version taken from the wheel); .github/workflows/release-macos.yml with jobs guard (tag must match pyproject via scripts/check_release_tag.py, first, on ubuntu), dmg (matrix arm64 on macos-15 and x86_64 on macos-15-intel, built natively; hdiutil create; ad-hoc codesign when the four APPLE_* secrets of the old workflow (APPLE_CERT_P12, APPLE_CERT_PASSWORD, APPLE_NOTARY_KEY, APPLE_NOTARY_KEY_ID/APPLE_NOTARY_ISSUER) are absent, Developer ID sign + notarize + staple when present; prove the bundle by running the bundled interpreter offline and requesting /api/health; stable asset names Sutra-Pro-<arch>.dmg plus a .sha256 written by the same leg), verify (both architectures must be on the release). Tests need no macOS tools: the bundle builder with a fake python archive and a fake wheel in tmp dirs, the Info.plist rendering, bash -n and quoting checks of the launcher, and workflow YAML structure (pinned actions, guard first, secrets only in the env of the signing steps). docs/RELEASE-macos.md holds the macOS section (docs/RELEASE.md belongs to REL-1)."
+  },
+  {
+   "id": "GAP-W1",
+   "title": "Integration defect fixes: host/layer hook wiring, stop abandons open atoms, default .env beside the data folder, Sutra tools database name, function_specs.json in the wheel (test)",
+   "owns": [
+    "tests/integration/test_wiring_defects.py",
+    "docs/notes/GAP-W1.md",
+    "sutra_app/engine/host/loop.py",
+    "sutra_app/engine/fnodes/layer.py",
+    "sutra_app/config.py",
+    "sutra_app/engine/paths.py",
+    "sutra_app/connectors/claude.py",
+    "sutra_app/connectors/codex.py",
+    "sutra_app/connectors/tools/profiles.py",
+    "tests/engine/test_engine_fn_golden.py"
+   ],
+   "depends_on": [
+    "E3",
+    "E6",
+    "E7",
+    "ORCH-1",
+    "E0",
+    "CN-3",
+    "CN-4",
+    "CN-8"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/integration/test_wiring_defects.py tests/engine/test_engine_fn_golden.py tests/engine/test_engine_host.py tests/engine/test_engine_fn_layer.py tests/connectors -q"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-W1 Integration defect fixes (G01, G02 test, G03 rule, G04)\n- **Owns (new).** `tests/integration/test_wiring_defects.py`, `docs/notes/GAP-W1.md`.\n- **Transfers (from merged packages).** `sutra_app/engine/host/loop.py` (E3), `sutra_app/engine/fnodes/layer.py` (E6), `sutra_app/config.py` (ORCH-1), `sutra_app/engine/paths.py` (E0), `sutra_app/connectors/claude.py` (CN-3), `sutra_app/connectors/codex.py` (CN-4), `sutra_app/connectors/tools/profiles.py` (CN-8), `tests/engine/test_engine_fn_golden.py` (E7: remove the two `xfail` marks).\n- **Chassis edit.** `pyproject.toml`: add `\"library/specs/*.json\"` to the `sutra_app` package-data list (G02), by hand, first.\n- **Spec.**\n  1. G01a. Make the host and the layer agree: `layer.factory` accepts `spec` as the name of the `TaskSpec` (keep `task` as an alias for the E7 tests; if both are given raise `TypeError`). Add a test that builds the hooks through `Host._make_hooks` with no `SUTRA_HOOKS` override and asserts the result is a `FunctionNodeHooks`, and that a swallowed hook error is no longer silent: the host writes the `publish.error` line **and** a `system` line \"function nodes are off: <reason>\" into `chat.jsonl` unless `SUTRA_NODES=off`.\n  2. G01b. On a `stop` line (inbox) and on SIGTERM the host calls `hooks.abandon_open(\"stopped\")` before it writes `run.ended`, so no atom is open at the end; the strict `xfail` becomes a passing test.\n  3. G03. `default_env_file()` in `config.py` and in `engine/paths.py` returns `<project>/.env` only when `project_root()/pyproject.toml` exists (a checkout); otherwise `default_data_dir() / \".env\"`. `SUTRA_ENV_FILE` still wins. The macOS launcher needs no change.\n  4. G04. One constant `DB_FILENAME = \"db.sqlite3\"` in `config.py`; `Settings.db_path`, the two connectors' MCP entry and `profiles.mcp_servers` use it. The test migrates a database with `Database.migrate()`, inserts the root chart through the real store, starts the MCP server in a subprocess with the entry the connector builds, and reads the chart through the Sutra tool.\n  5. G02. The test builds a wheel (`uv build --wheel`, offline, skip with a printed reason if uv cannot) and asserts `sutra_app/library/specs/function_specs.json` is a member.\n- **Acceptance.** `scripts/py -m pytest tests/integration/test_wiring_defects.py tests/engine/test_engine_fn_golden.py tests/engine/test_engine_host.py tests/engine/test_engine_fn_layer.py tests/connectors -q` and `scripts/py -m pytest tests/test_packaging.py -q` (after ORCH-8).\n- **Depends on.** E3, E6, E7, ORCH-1, E0, CN-3, CN-4, CN-8.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-W1.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
+  },
+  {
+   "id": "GAP-OPS-1",
+   "title": "Operator CLI: doctor, status, stop, config, instance lock, logging setup, browser choice, run and stop scripts",
+   "owns": [
+    "sutra_app/ops/__init__.py",
+    "sutra_app/ops/lock.py",
+    "sutra_app/ops/doctor.py",
+    "sutra_app/ops/logsetup.py",
+    "sutra_app/ops/cli.py",
+    "sutra_app/ops/envfile.py",
+    "sutra_app/ops/browser.py",
+    "scripts/run.sh",
+    "scripts/stop.sh",
+    "tests/ops/test_lock.py",
+    "tests/ops/test_doctor.py",
+    "tests/ops/test_logsetup.py",
+    "tests/ops/test_cli.py",
+    "tests/ops/test_envfile.py",
+    "tests/ops/test_browser.py",
+    "docs/notes/GAP-OPS-1.md",
+    "sutra_app/__main__.py",
+    "sutra_app/main.py"
+   ],
+   "depends_on": [
+    "ORCH-8",
+    "CN-9",
+    "E4",
+    "E0",
+    "GAP-W1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/ops -q",
+    "scripts/py -m sutra_app doctor --offline --json",
+    "scripts/py -m sutra_app config init --help",
+    "sh scripts/run.sh --help"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-OPS-1 Operator CLI, instance lock, logging, scripts (G03, G08, G09, G10, G11)\n- **Owns (new).** `sutra_app/ops/__init__.py`, `sutra_app/ops/lock.py`, `sutra_app/ops/doctor.py`, `sutra_app/ops/logsetup.py`, `sutra_app/ops/cli.py`, `sutra_app/ops/envfile.py`, `sutra_app/ops/browser.py`, `scripts/run.sh`, `scripts/stop.sh`, `tests/ops/test_lock.py`, `tests/ops/test_doctor.py`, `tests/ops/test_logsetup.py`, `tests/ops/test_cli.py`, `tests/ops/test_envfile.py`, `tests/ops/test_browser.py`, `docs/notes/GAP-OPS-1.md`.\n- **Transfers (after ORCH-8 merges).** `sutra_app/__main__.py` and `sutra_app/main.py` (ORCH-8): `main()` becomes a thin dispatcher and `create_app` gains the lock and the logging call.\n- **Spec.**\n  1. **CLI.** `sutra-pro [serve] [flags]` is unchanged (no subcommand = serve; the macOS launcher and CI `--help` keep working). New subcommands, each with `--json` and exit codes 0 ok / 1 problem found / 2 usage: `doctor`, `status`, `stop`, `config show|set|init|sync-library`, `open`. `backup`, `restore`, `export`, `prune`, `usage` are registered by GAP-DATA through `cli.COMMANDS` (a dict filled lazily by `importlib.import_module(\"sutra_app.ops.<mod>\").register(sub)` when the module exists), so this package does not depend on it.\n  2. **Instance lock.** `lock.py`: `InstanceLock(data_dir)` holds `fcntl.flock(LOCK_EX|LOCK_NB)` on `<data>/app.lock` and writes `{pid, port, started, version}` JSON into `<data>/app.pid` (same file name the macOS launcher already uses, so both agree; the launcher's check \"pid port\" becomes read-compatible by writing `\"<pid> <port>\"` as the first line). `serve` takes the lock before `create_app`; if held: print \"Sutra Pro is already running on http://127.0.0.1:<port>/ (pid N)\", open the browser on it (unless `--no-browser`) and exit 0. A stale pid file with no lock is replaced. `stop` reads `app.pid`, sends SIGTERM, waits up to 20 s for the lock to free (the app's own ladder takes 12 s at most), then reports; never SIGKILLs the server (a server killed hard is repaired by reconcile, but the CLI does not cause it).\n  3. **Doctor.** `doctor` runs 14 checks and prints one line each with a fix hint: Python >= 3.11; data dir exists or can be created, writable, free space >= 1 GB, mode 0700; database opens and `user_version` is known (never newer than this build); `.env` present or absent, mode 0600 if present; `claude` on PATH, version against 2.1.308, signed in via `claude auth status` (no model call), login method `claude.ai` (an API-key login is refused, D34); `codex` the same (0.146.0, `codex login status`); `gh` and `gh auth status` (optional); Chrome found (`J2_CHROME`, the standard macOS paths) because Audit screenshots need it, else \"Audit will judge from code only\"; port range 8780 to 8799 has a free port; no second instance; seed library complete (G24); default browser is Chrome-based (G10); locked settings sane (`send_mode=live` needs `J2_SMTP_*` present). `--offline` skips the CLI and browser checks. It reuses `connectors.factory` status probes (`build_router(...).status()`) and `engine.paths` helpers; it starts no server.\n  4. **First run.** `serve` with an empty data folder prints the doctor summary (failures only) before the URL, and the app's Home start page shows the existing X1 banner. Nothing is installed (D34).\n  5. **Config.** `config show` prints the effective `Settings.public()` and the engine layers (defaults, global `engine.json`, department files) with the source of each value; secrets never printed. `config set <field> <value> [--dept D]` validates with `EngineSettings` and writes `engine.json` atomically (the only way to set locked fields). `config init` writes `<data>/.env` from a commented template (names: `J2_OVERRIDE_KEY`, `J2_SMTP_HOST/PORT/USER/PASSWORD/FROM`, `SUTRA_*` as comments) with mode 0600 and a freshly generated override key if asked (`--generate-override-key`); it refuses to overwrite.\n  6. **Browser.** `browser.py`: `open_url(url, prefer)`: on macOS `open -a \"Google Chrome\" url` when Chrome exists and `--browser` is `auto|chrome`; else `webbrowser`. `--browser default` and `SUTRA_BROWSER_APP` override. Decision D92.\n  7. **Logging.** `logsetup.configure(settings)`: root logger `INFO`; `RotatingFileHandler(<data>/logs/server.log, 5 MB x 5)`; `RedactingFilter` applies `orchestrator.redact.Redactor` (token, override key, `.env` values, secret-named environment values) to the message and arguments; format `ts level logger request_id message`; uvicorn access log goes to the same file with the query string removed; a middleware sets `X-Request-Id` (12 hex) on every response and in a context variable the filter prints. Exceptions are logged with the traceback but redacted. `sutra-pro --verbose` sets DEBUG. Called once from `create_app` (transfer of `main.py`).\n  8. **Scripts.** `scripts/run.sh` (checkout use, D12): finds `.venv` (creates it with `uv venv --python 3.11` and installs `-e \".[dev]\"` if absent, prints what it does), runs `python -m sutra_app doctor --offline` then `python -m sutra_app \"$@\"`. `scripts/stop.sh`: `python -m sutra_app stop`.\n- **Acceptance.** `scripts/py -m pytest tests/ops -q`; `scripts/py -m sutra_app doctor --offline --json`; `scripts/py -m sutra_app config init --help`; `sh scripts/run.sh --help`.\n- **Depends on.** ORCH-8, CN-9, E4, E0, GAP-W1.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-OPS-1.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green.\n\nSCHEDULER NOTE: create_app also mounts the router of sutra_app.ops.api (GAP-CONSOLE builds it, after you) when that module exists: find_spec('sutra_app.ops.api'), then app.include_router(module.router). GAP-CONSOLE does not edit main.py. sutra_app/__main__.py and sutra_app/main.py are transferred to you from ORCH-8 (merged before you start)."
+  },
+  {
+   "id": "GAP-E2E",
+   "title": "End-to-end scenarios with the stub connector and the real engine process: new team from one chat message to a finished workflow and an audit verdict, the seven draw.io steps, restart, stop, parallel teams, CLI boot",
+   "owns": [
+    "tests/e2e/conftest.py",
+    "tests/e2e/harness.py",
+    "tests/e2e/test_scenario_new_team.py",
+    "tests/e2e/test_scenario_fake_cli.py",
+    "tests/e2e/test_scenario_followup.py",
+    "tests/e2e/test_scenario_restart_stop.py",
+    "tests/e2e/test_scenario_parallel.py",
+    "tests/e2e/test_cli_boot.py",
+    "docs/notes/GAP-E2E.md"
+   ],
+   "depends_on": [
+    "ORCH-8",
+    "CT-1",
+    "E7",
+    "CN-9",
+    "GAP-W1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/e2e -q",
+    "SUTRA_SLOW=1 scripts/py -m pytest tests/e2e -q"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-E2E End-to-end scenarios with the stub connector (G05)\n- **Owns (new).** `tests/e2e/conftest.py`, `tests/e2e/harness.py`, `tests/e2e/test_scenario_new_team.py`, `tests/e2e/test_scenario_fake_cli.py`, `tests/e2e/test_scenario_followup.py`, `tests/e2e/test_scenario_restart_stop.py`, `tests/e2e/test_scenario_parallel.py`, `tests/e2e/test_cli_boot.py`, `docs/notes/GAP-E2E.md`.\n- **Spec.** One harness (`harness.py`) starts the **real** `create_app(settings)` with a real `ProcessLauncher` (SUTRA_ENGINE=process) on a temp data dir through a real uvicorn thread (so SSE and the token header are real), with `--offline` semantics for the engine (J2 mock mode, `ScriptedPort`, Chrome faked via `SUTRA_HOOKS` is NOT used: the default hooks must run, which G01 makes possible), and a client that records the SSE stream. Scenarios (each asserts the database, the files and the SSE order, and names the draw.io step it covers in its test name, `test_step1_...` to `test_step7_...`):\n  1. `test_scenario_new_team`: one chat message, \"I need a landing page for my coffee shop\", with the chat agent served by `ScriptedConnector` (decide: add; change: department `web`; assign: one assignment). Steps 1 and 2: the stage prompts carry the chart digest and the schema digest. Then: chart change #2 applied with chained shas; five function nodes with sessions; the real engine process runs the Brew Lab mock to `Done`; function atoms exist for every function with cards in the function sessions and one ledger row per terminal atom; Identity asks, `needs-you` lists it, the owner answers in the department chat, the run continues; usage rows each carry an atom id and the sum equals the engine's `usage` events; `GET /api/graph` has every node with a `chat_session_id` that resolves (steps 4, 5, 7); the SSE order is `graph.updated`/`atom.updated` during the run (step 6); `summary.json` has `status=done`, the Audit record is `pass`, the `done` card is in `cs_org`, and the task is `done`.\n  2. `test_scenario_fake_cli`: the same first message but with the real `build_router` over `tests/fakes/claude` (`FAKE_REPLY_JSON` carries the stage replies), proving step 3 (`claude cli + python models`) through `AsyncConnector`, the policy, the usage sink and `connector.*` events; plus one case with the fake `codex` after the fake `claude` reports `quota`.\n  3. `test_scenario_followup`: \"Also write a menu page\" -> reuse; a second task; a follow-up after Done rehydrates (`seed_from`) and ends Done again; a document-chain source falls back to fresh with the fixed system line (until GAP-E1B).\n  4. `test_scenario_restart_stop`: kill the server mid-run (stop uvicorn without the ladder), start a new one on the same data folder: `reconcile` re-attaches, every event is projected once; a real `stop` ends the engine through the ladder with no atom open (G01b); a hung engine (SIGSTOP) is declared crashed after 30 s of silence (shortened by `SUTRA_WATCH_MS` and a clock hook).\n  5. `test_scenario_parallel`: two departments run at once under `max_runs=2`; a third queues; the usage and atom tables are consistent; one live task per department.\n  6. `test_cli_boot`: `python -m sutra_app --offline --no-browser --port 0` as a subprocess against a temp `SUTRA_DATA_DIR`: `/api/health` answers, `GET /` serves the Home page with a CSP header, a message posts, the process stops on SIGTERM within 15 s and leaves no child.\n  Tests that would take over 30 s are marked `slow`; the default set must stay under 3 minutes.\n- **Acceptance.** `scripts/py -m pytest tests/e2e -q`; `SUTRA_SLOW=1 scripts/py -m pytest tests/e2e -q`.\n- **Depends on.** ORCH-8, CT-1, E7, CN-9, GAP-W1.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-E2E.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
+  },
+  {
+   "id": "GAP-E2E-UI",
+   "title": "Browser walk against the real app: smoke, restart resync, stale-token page",
+   "owns": [
+    "tests/e2e/test_browser_real_app.py",
+    "tests/e2e/test_browser_resync.py",
+    "docs/notes/GAP-E2E-UI.md"
+   ],
+   "depends_on": [
+    "ORCH-8",
+    "UI-9",
+    "GAP-E2E"
+   ],
+   "acceptance": [
+    "SUTRA_BROWSER=1 scripts/py -m pytest tests/e2e/test_browser_real_app.py tests/e2e/test_browser_resync.py -q"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-E2E-UI Browser walk against the real app (G06)\n- **Owns (new).** `tests/e2e/test_browser_real_app.py`, `tests/e2e/test_browser_resync.py`, `docs/notes/GAP-E2E-UI.md`.\n- **Spec.** Reuse `tests/ui/cdp.py` and the GAP-E2E harness. Walk, with zero console errors and zero failed requests after each step: Home start page; send a brief; progress, `chart_change` and `task` cards; the graph draws the new team; open a function node (read-only chat, atoms, goal/task/context/constraints); Identity's question card; answer it; the node turns green in the same document from `atom.updated` + `graph.updated`; `Done` card; open `/d/web/` (J2 page, Detailed view, Map, Library tab with the run's template copies); Workflow graph and Org chart tabs; Settings Engine group edit and Connectors Test (stub). Second test: stop the server process and restart it on the same data folder: the page shows `\u25cb polling`, then the hello/resync refetch restores the graph and the chat without a reload. Third: a page opened before the restart gets 401 on a write and shows the \"reload from the app\" sentence.\n- **Acceptance.** `SUTRA_BROWSER=1 scripts/py -m pytest tests/e2e/test_browser_real_app.py tests/e2e/test_browser_resync.py -q`.\n- **Depends on.** ORCH-8, UI-9, GAP-E2E.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-E2E-UI.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
+  },
+  {
+   "id": "GAP-LIVE",
+   "title": "Live smoke test of the whole app with the real Claude and Codex CLIs, with cost ceilings and a report on the open design fallbacks",
+   "owns": [
+    "scripts/live_smoke.py",
+    "tests/live/test_live_app_smoke.py",
+    "docs/notes/GAP-LIVE.md"
+   ],
+   "depends_on": [
+    "GAP-E2E",
+    "GAP-W1",
+    "GAP-OPS-1",
+    "ORCH-8",
+    "CT-1",
+    "CN-9"
+   ],
+   "acceptance": [
+    "scripts/py scripts/live_smoke.py --fakes --max-usd 0",
+    "scripts/py -m pytest tests/live -q",
+    "SUTRA_LIVE=1 scripts/py scripts/live_smoke.py --max-usd 5"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-LIVE Live smoke with the real CLIs (G07)\n- **Owns (new).** `scripts/live_smoke.py`, `tests/live/test_live_app_smoke.py`, `docs/notes/GAP-LIVE.md`.\n- **Spec.** Not run unless the owner asks (D8); the package is written and checked against the fake CLIs (`--fakes`). `live_smoke.py` runs, against a temp data folder and the owner's real logins: (1) `doctor`; (2) the four existing live suites in one process (`SUTRA_LIVE=1`: connectors, chat agent, library transport, engine); (3) the whole app: \"I need a one-page site for a small coffee shop\" through the real chat agent, Claude connector and the engine with `J2_BUDGET=40`, answering Identity's questions from a fixed list; it records time, calls, usd (Claude), tokens (Codex), atoms by state, `verify_failed` count by check, `touches_miss`, the Audit verdict and whether the site renders; (4) J2 test-plan branches T1, T9, T13 and T14 as three short runs; (5) a rehydrated follow-up with realization on; (6) one image-input call per CLI; (7) one tool call per CLI through the Sutra MCP tools (needs G04); (8) a quota failure is NOT provoked. A hard ceiling: `--max-usd` (default 5) and `--max-calls` (default 120), checked after every call through the usage sink, aborting the run cleanly. Output: a JSON report and a markdown table written to `docs/notes/GAP-LIVE.md` with the eight open items of G07 each marked `confirmed`, `fallback needed` (and which switch to flip: `CHART_OPS_TRANSPORT`, `realization == 0` in `rehydrate.py`, loosen L5 classes, ...) or `not testable`. `tests/live/test_live_app_smoke.py` is the same run as a `live` test with the assertions: Done or done-with-open-items, at least one atom per function, no atom open at the end, usage rows carry atom ids, cost within the ceiling.\n- **Acceptance.** `scripts/py scripts/live_smoke.py --fakes --max-usd 0` (dry run, exit 0); `scripts/py -m pytest tests/live -q` (skips without `SUTRA_LIVE=1`, printing why); on the owner's go: `SUTRA_LIVE=1 scripts/py scripts/live_smoke.py --max-usd 5`.\n- **Depends on.** GAP-E2E, GAP-W1, GAP-OPS-1, ORCH-8, CT-1, CN-9.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-LIVE.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
+  },
+  {
+   "id": "GAP-CONSOLE",
+   "title": "Owner console: usage and cost view, Atom log browser, health, diagnostics download, HTML error pages",
+   "owns": [
+    "sutra_app/ops/api.py",
+    "sutra_app/ui/pages/console.html",
+    "sutra_app/ui/static/js/console_view.js",
+    "sutra_app/ui/static/css/sutra-console.css",
+    "tests/ops/test_api_ops.py",
+    "tests/ui/js/console_view.test.js",
+    "tests/ui/test_console.py",
+    "docs/notes/GAP-CONSOLE.md",
+    "sutra_app/ui/boot.py",
+    "sutra_app/ui/routes.py",
+    "sutra_app/ui/pages/home.html",
+    "sutra_app/ui/static/js/home.js"
+   ],
+   "depends_on": [
+    "ORCH-8",
+    "UI-7",
+    "UI-9",
+    "GAP-OPS-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/ops/test_api_ops.py tests/ui/test_console.py -q",
+    "scripts/py -m pytest tests/ui/test_node_suite.py -q"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-CONSOLE Owner console: usage and cost, Atom log, health, diagnostics (G11, G12)\n- **Owns (new).** `sutra_app/ops/api.py`, `sutra_app/ui/pages/console.html`, `sutra_app/ui/static/js/console_view.js`, `sutra_app/ui/static/css/sutra-console.css`, `tests/ops/test_api_ops.py`, `tests/ui/js/console_view.test.js`, `tests/ui/test_console.py`, `docs/notes/GAP-CONSOLE.md`.\n- **Transfers.** `sutra_app/ui/boot.py` and `sutra_app/ui/routes.py` (UI-1: a third page `console`, `GET /console`, same boot, CSP hash and headers as the other two), `sutra_app/ui/pages/home.html` and `sutra_app/ui/static/js/home.js` (UI-7: one rail link \"Usage and log\", `data-pane` not needed, a plain link), `sutra_app/main.py` (mount of the ops router, after GAP-OPS-1).\n- **Spec.** Page `/console`, J2 look, the existing `sutra-shell.css` tokens, no CDN. Panels, each from existing routes unless noted: **Usage and cost** from `/api/usage/summary?by=day|dept|fn|provider|atom` (period picker: today, 7 days, 30 days, all; stub rows excluded unless the toggle is on): totals in calls, usd (Claude, labelled \"notional, subscription\" when `usd_basis` says so), tokens (Codex), a bar per day, a table by team and function, top ten atoms by cost with a link to `/d/{dept}/?tab=...` and the node drawer; the connectors' health and the next quota reset time from `/api/connectors/status`. **Atom log** from `/api/atoms/log` (paged, filter by node, state, check, date; columns as the ledger row; a row opens its card text). **Health** from the doctor (`GET /api/ops/doctor`, runs the doctor checks without model calls, cached 30 s) and `GET /api/ops/info` (version, schema version, data dir, db size, free space, uptime, live tasks, engine settings source). **Diagnostics**: `GET /api/ops/diagnostics` returns a zip (token-guarded, GET with the header): `info.json`, doctor result, last 2 000 redacted lines of `server.log`, settings (`public()`), schema versions, the list of department folders with sizes, and **no** chats, prompts, site files or secrets; the redaction test plants a fake key and a fake token and asserts neither appears. Also: an HTML error page (404 and 500) for requests whose `Accept` starts with `text/html`: the app name, the request id, a link Home, the log path; JSON requests keep the envelope. Updates by `usage.recorded` (coalesced, 1 s) and the 2 s polling fallback like the other views.\n- **Acceptance.** `scripts/py -m pytest tests/ops/test_api_ops.py tests/ui/test_console.py -q` and the node test `scripts/py -m pytest tests/ui/test_node_suite.py -q`.\n- **Depends on.** ORCH-8, UI-7, UI-9, GAP-OPS-1.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-CONSOLE.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green.\n\nSCHEDULER NOTE: sutra_app/main.py belongs to GAP-OPS-1 (merged before you start); it mounts sutra_app.ops.api.router when your module exists. Expose a module-level FastAPI APIRouter named router in sutra_app/ops/api.py and do NOT edit main.py."
+  },
+  {
+   "id": "GAP-DATA",
+   "title": "Data lifecycle: backup, restore, pre-upgrade backup, export of chart and team deliverables, prune of bulky run files",
+   "owns": [
+    "sutra_app/ops/backup.py",
+    "sutra_app/ops/retention.py",
+    "sutra_app/ops/exporter.py",
+    "tests/ops/test_backup.py",
+    "tests/ops/test_retention.py",
+    "tests/ops/test_exporter.py",
+    "docs/notes/GAP-DATA.md"
+   ],
+   "depends_on": [
+    "GAP-OPS-1",
+    "ORCH-8",
+    "E3",
+    "GAP-E2E"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/ops/test_backup.py tests/ops/test_retention.py tests/ops/test_exporter.py -q"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-DATA Backup, restore, export, retention (G13)\n- **Owns (new).** `sutra_app/ops/backup.py`, `sutra_app/ops/retention.py`, `sutra_app/ops/exporter.py`, `tests/ops/test_backup.py`, `tests/ops/test_retention.py`, `tests/ops/test_exporter.py`, `docs/notes/GAP-DATA.md`.\n- **Spec.** All commands register through GAP-OPS-1's `cli.COMMANDS`.\n  1. `sutra-pro backup [--to DIR] [--no-runs]` writes `sutra-pro-backup-<UTC>.tar.gz` (default `<data>/backups/`, mode 0600): a consistent copy of `db.sqlite3` made with `sqlite3.Connection.backup()` (works while the server runs; WAL-safe), `departments/**` (without `run.stdout.log`/`run.stderr.log` older than 7 days), `library/`, `agents/`, `connectors/policy.json`, `engine.json`, never `.env`, `app.lock`, `app.pid` or `logs/` (an option `--include-env` is refused with a printed reason), and a `MANIFEST.json` (app version, `user_version`, file list with sha256, UTC time). Keeps the newest 7 automatic backups.\n  2. `sutra-pro restore FILE` refuses while the instance lock is held, refuses a manifest whose `user_version` is newer than this build, verifies every sha256, restores into a staging folder, then swaps (the current folder is moved to `<data>.before-restore-<UTC>`, never deleted).\n  3. **Automatic backup before an upgrade.** `ops.backup.before_upgrade(settings)` is called by `serve` before `create_app`: if `db.sqlite3` exists and its `PRAGMA user_version` is lower than the migrations of this build, a backup (database only) is written to `<data>/backups/pre-upgrade-v<old>-to-v<new>.sqlite3` first. Failure to back up stops the start with the doctor-style message.\n  4. `sutra-pro export chart [--out FILE]` writes the head org chart and the change log as JSON (library `OrgChart` / `ChartChange` models, schema versions in the file); `sutra-pro export team <dept> [--out DIR]` copies the department's charter (`goal.json`), the last finished run's `site/`, `documents`, `summary.json` and the atom ledger rows of that department as JSONL; `export usage --csv`. Export is read-only.\n  5. `sutra-pro prune [--older-than 90d] [--dry-run]` (dry run is the default; `--yes` applies): removes only bulky evidence of **finished** runs older than the age: screenshots, `trace.jsonl`, `events.jsonl` (after the task's `events_offset` equals its size), `run.std*.log`, old backups beyond 7. It never deletes `summary.json`, `goal.json`, site versions, documents, `chat.jsonl`, `calls.jsonl`, or any database row. The Atom log and the usage table are append-only (D60) and stay; `prune` prints their row counts and sizes and runs `VACUUM` only offline (lock check). Retention of database rows is explicitly **not** done in v1 (decision D93, section 6): the E7 golden run measures 31 atoms and 30 usage rows for a whole mock run, so the tables grow by about 100 KB per run.\n- **Acceptance.** `scripts/py -m pytest tests/ops/test_backup.py tests/ops/test_retention.py tests/ops/test_exporter.py -q`. The backup test starts the real app (stub), runs the Brew Lab scenario, backs up while it is live, restores into a new folder, starts a second app on it and compares the chart, the graph, the chats and the atom log row by row.\n- **Depends on.** GAP-OPS-1, ORCH-8, E3, GAP-E2E (harness).\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-DATA.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
+  },
+  {
+   "id": "GAP-TUNE",
+   "title": "Tune the closed reply classes and write-scope names on the golden run: zero unexplained verify_failed and touches_miss",
+   "owns": [
+    "tests/engine/test_engine_fn_tuning.py",
+    "docs/notes/GAP-TUNE.md",
+    "sutra_app/library/functions.py",
+    "sutra_app/library/specs/function_specs.json",
+    "sutra_app/engine/fnodes/registry.py",
+    "tests/engine/golden/fn_atoms_brewlab.json",
+    "tests/engine/golden/run_events.jsonl"
+   ],
+   "depends_on": [
+    "E7",
+    "E8",
+    "L5",
+    "L10",
+    "GAP-W1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_fn_tuning.py tests/engine/test_engine_fn_golden.py tests/engine/test_engine_prompts.py tests/library/test_lib_functions.py tests/library/test_lib_function_specs.py -q",
+    "scripts/py scripts/record_fn_golden.py --check"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-TUNE Reply classes and write scope tuned on the golden run (G14)\n- **Owns (new).** `tests/engine/test_engine_fn_tuning.py`, `docs/notes/GAP-TUNE.md`.\n- **Transfers.** `sutra_app/library/functions.py` (L5), `sutra_app/library/specs/function_specs.json` (L10), `sutra_app/engine/fnodes/registry.py` (E8, only `WRITE_TERMS` and the `touches` parser), `tests/engine/golden/fn_atoms_brewlab.json` and `golden/run_events.jsonl` (E7, re-recorded).\n- **Spec.** (1) For each of the 9 `verify_failed` atoms of `golden/fn_atoms_brewlab.json` find the violated field (`ReplyParser` messages) and loosen the reply class (optional field, wider enum, tolerant alias) in L5, never the `reply-valid` check and never a J2 prompt (prompt goldens must stay equal). Each loosening needs a unit test with the J2 reply that was refused. (2) Name the 12 legitimate writes in `FunctionSpec.writes` / `WRITE_TERMS` (`conflicts.json` for Adaptation and Priority, `workflows.json` for Identity, and any other the re-recorded run shows) until the golden has `touches_miss == 0`. (3) Add `scripts/py scripts/record_fn_golden.py --report` output (a table: check, atoms judged, failed, recovered, waived) to the notes, and make the test fail when the mock run has any `verify_failed` that is not listed in a small allow-list with a reason (the intended `refused` and `abandoned` examples). (4) Keep `SUTRA_NODES=enforce` reserved (G18).\n- **Acceptance.** `scripts/py -m pytest tests/engine/test_engine_fn_tuning.py tests/engine/test_engine_fn_golden.py tests/engine/test_engine_prompts.py tests/library/test_lib_functions.py tests/library/test_lib_function_specs.py -q` and `scripts/py scripts/record_fn_golden.py --check`.\n- **Depends on.** E7, E8, L5, L10, GAP-W1.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-TUNE.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
+  },
+  {
+   "id": "GAP-E1B",
+   "title": "Follow-up after a finished document chain (E1-b): rehydrate PRD/HLD/LLD runs",
+   "owns": [
+    "tests/engine/test_engine_rehydrate_chain.py",
+    "docs/notes/GAP-E1B.md",
+    "sutra_app/engine/rehydrate.py",
+    "sutra_app/engine/j2.py",
+    "tests/engine/test_engine_rehydrate.py"
+   ],
+   "depends_on": [
+    "E1",
+    "E3",
+    "E5"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/engine/test_engine_rehydrate.py tests/engine/test_engine_rehydrate_chain.py tests/engine/test_engine_prompts.py -q"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-E1B Follow-up after a finished document chain (G15)\n- **Owns (new).** `tests/engine/test_engine_rehydrate_chain.py`, `docs/notes/GAP-E1B.md`.\n- **Transfers.** `sutra_app/engine/rehydrate.py` and the document-chain part of `sutra_app/engine/j2.py` (`J2Run.rehydrate`; E1), `tests/engine/test_engine_rehydrate.py` (E1: the strict `xfail` becomes a pass).\n- **Spec.** Lift the refusal for a source with `documents.json` / `stage-*.json`: `rehydrate` restores `docset`, `stages`, `stage` (the last index), `doc` versions and `documents.json` as J2 holds them after Done, so the change request runs `_turn_change` and the document stage list continues (a new version of the affected document, not a new chain). Keep the other refusals (unfinished, stopped, crashed, unreadable). Realization stays allowed. Prompt goldens are untouched (rehydrate adds no prompt line except the existing two system lines). The test runs the mock design-docs scenario to Done, then rehydrates and applies \"make the HLD mention a CDN\", checks the new document version, the old files kept, and the `Continuing from run <id>` line.\n- **Acceptance.** `scripts/py -m pytest tests/engine/test_engine_rehydrate.py tests/engine/test_engine_rehydrate_chain.py tests/engine/test_engine_prompts.py -q`.\n- **Depends on.** E1, E3, E5.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-E1B.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
+  },
+  {
+   "id": "GAP-DOCS",
+   "title": "Getting started, operations, environment and troubleshooting documents with a doc checker",
+   "owns": [
+    "docs/GETTING-STARTED.md",
+    "docs/OPERATIONS.md",
+    "docs/TROUBLESHOOTING.md",
+    "docs/ENVIRONMENT.md",
+    "scripts/check_docs.py",
+    "tests/test_docs.py",
+    "docs/notes/GAP-DOCS.md"
+   ],
+   "depends_on": [
+    "ORCH-8",
+    "GAP-OPS-1",
+    "GAP-DATA",
+    "GAP-CONSOLE"
+   ],
+   "acceptance": [
+    "scripts/py scripts/check_docs.py",
+    "scripts/py -m pytest tests/test_docs.py -q"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-DOCS Getting started, operations and troubleshooting (G16)\n- **Owns (new).** `docs/GETTING-STARTED.md`, `docs/OPERATIONS.md`, `docs/TROUBLESHOOTING.md`, `docs/ENVIRONMENT.md`, `scripts/check_docs.py`, `tests/test_docs.py`, `docs/notes/GAP-DOCS.md`.\n- **Chassis edits (by hand).** `README.md`: what it is (5 lines), install from a checkout and from a release, `sutra-pro doctor`, `sutra-pro`, where data lives, links to the four documents. `docs/DESIGN.md`: the overview (one page: purpose, the five layers, the owner rules with the decision that implements each, the packages by section, links to the five sections, the settlements and `function-nodes.md`). `docs/TRACEABILITY.md` (and `traceability.json`): a matrix from each owner rule, each draw.io step, each of the 15 chips and 30 endpoints and each D-number to a module and a test, generated by a script from the plan and `FEATURES`.\n- **Spec.** `GETTING-STARTED.md`: prerequisites (uv, Claude CLI signed in with a subscription, Codex CLI, Chrome, node only for development), install, first run, the first message, what the graph, the atom cards and the drawer mean, answering a team's question, stopping. `OPERATIONS.md`: data folder layout (the tree of `orchestrator.md` 4.2 with sizes), backup and restore, upgrade, prune, logs, usage and cost console, instance lock, ports, offline mode. `TROUBLESHOOTING.md`: one entry per failure code of F1 to F10 and per doctor check. `ENVIRONMENT.md`: every `SUTRA_*` name, `J2_OVERRIDE_KEY`, `J2_SMTP_*`, every engine setting with default and whether locked. `check_docs.py` fails when a documented command or flag is missing from the real `--help` output, an environment name in `ENV_NAMES` or `EngineSettings` is undocumented, or a relative link is dead.\n- **Acceptance.** `scripts/py scripts/check_docs.py` and `scripts/py -m pytest tests/test_docs.py -q`.\n- **Depends on.** ORCH-8, GAP-OPS-1, GAP-DATA, GAP-CONSOLE.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-DOCS.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
+  },
+  {
+   "id": "GAP-INSTALL",
+   "title": "Install, run and remove the installed sutra-pro app: scripts and an installed-copy acceptance test",
+   "owns": [
+    "scripts/install_local.sh",
+    "scripts/uninstall_local.sh",
+    "tests/release/test_installed_app.py",
+    "docs/notes/GAP-INSTALL.md"
+   ],
+   "depends_on": [
+    "ORCH-8",
+    "REL-1",
+    "REL-2",
+    "GAP-OPS-1",
+    "GAP-W1",
+    "GAP-E2E"
+   ],
+   "acceptance": [
+    "SUTRA_SLOW=1 scripts/py -m pytest tests/release/test_installed_app.py -q",
+    "sh scripts/install_local.sh --dry-run"
+   ],
+   "section": "gaps",
+   "spec": "### GAP-INSTALL Install, run and remove the real installed app (G17)\n- **Owns (new).** `scripts/install_local.sh`, `scripts/uninstall_local.sh`, `tests/release/test_installed_app.py`, `docs/notes/GAP-INSTALL.md`.\n- **Spec.** `install_local.sh`: `uv build --wheel`, `scripts/check_wheel.py`, `uv tool install --reinstall dist/*.whl` (non-editable, D88), then verify: `sutra-pro --help`, `sutra-pro doctor --offline`, and a 20-second offline start on a throw-away `SUTRA_DATA_DIR` and a free port that fetches `/api/health`, `/`, posts one chat message, and stops with `sutra-pro stop`; prints the installed version and the data folder (`~/.sutra-pro`). `uninstall_local.sh`: `uv tool uninstall sutra-pro`, leaves `~/.sutra-pro` and says so. `test_installed_app.py` (marked `slow`; skips with a printed reason without uv): installs the wheel into a temporary `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR`, runs the same checks from that copy with a cleaned environment, and asserts that the installed copy finds `function_specs.json`, the seed library, the page files and the default `.env` location `<data>/.env`.\n- **Acceptance.** `SUTRA_SLOW=1 scripts/py -m pytest tests/release/test_installed_app.py -q`; `sh scripts/install_local.sh --dry-run`.\n- **Depends on.** ORCH-8, REL-1, REL-2, GAP-OPS-1, GAP-W1, GAP-E2E.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-INSTALL.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
+  },
+  {
+   "id": "GAP-DEMO",
+   "title": "Offline demo: the chat agent works with --offline (decide, change and assign answered from the message) so a team can be created and run with no CLI",
+   "owns": [
+    "sutra_app/orchestrator/agent/demo.py",
+    "tests/orchestrator/test_agent_demo.py",
+    "tests/integration/test_offline_demo.py",
+    "docs/notes/GAP-DEMO.md",
+    "sutra_app/connectors/factory.py",
+    "sutra_app/orchestrator/wiring.py"
+   ],
+   "depends_on": [
+    "ORCH-7",
+    "ORCH-8",
+    "CN-9",
+    "GAP-W1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_agent_demo.py tests/integration/test_offline_demo.py -q"
+   ],
+   "section": "gaps",
+   "spec": "GAP-DEMO Offline demo (found by the scheduler's own smoke run, 2026-11-04; not in the coverage critic's list).\n\nPROBLEM. `sutra-pro --offline` starts and answers /api/health, but the first chat message ends with: \"I can't reach Claude or Codex right now (no usable answer and no team to fall back on). Nothing was changed.\" (server log: \"stage decide failed (attempts): keyword fallback\"). The offline router is stub-only and the StubConnector answers a schema with example_from_schema(): a valid but meaningless object, so every stage of the chat agent (decide, change, assign, retry) fails its semantic checks and the keyword fallback has no team to route to. J2's own mock mode works offline end to end; the app's offline mode must too, so that the owner can try the whole app (graph, function nodes, atoms, a finished run) without any login, and so that the install smoke test is meaningful.\n\nGOAL. With `--offline` (SUTRA_OFFLINE=1) a message such as \"A website for my cafe\" creates a team (a department in the one global chart), the engine runs J2's mock scenario, the graph shows the five function nodes with atoms, and the run ends Done. A second message about the same topic reuses the team; a message about something else adds another team. No model, no CLI, no network.\n\nSPEC.\n1. sutra_app/orchestrator/agent/demo.py: a reply book for every stage of the chat agent keyed by the call tag (function, stage). Read connectors/stub.py (ReplyBook, the `scripted` callable, the reply order) and orchestrator/agent/{agent,planner,prompts,replies}.py first. Replies are computed from the prompt text (the user's message and the chart digest the prompt carries), deterministic: decide = reuse a department of the digest when the message shares a keyword with its name or goal, otherwise add; change = a ChartChangeRequest adding ONE department under the root named from the message topic (2 to 4 words), built with the closed models of library L2 (library/org_chart.py, tests/library/factories_org.py); assign = one assignment whose goal is the message and whose target is the department the change added or the reused one; retry = the same as the stage it retries. Closed library models only; nothing invented.\n2. Wiring: connectors/factory.build_router takes an optional `replybook`; orchestrator/wiring.py passes the demo book when settings.offline is true and only then (SUTRA_CONNECTOR=stub without offline, and every existing test, keep the plain stub). The engine's own calls keep the engine's mock mode (ScriptedPort); do not route them through this book.\n3. Tests: unit tests that each stage reply validates against its reply class and that decide/change/assign agree with each other; a test that runs the real ChatAgent over the stub with the demo book for three messages (new team, same topic reuses, other topic adds); an integration test that builds create_app with offline settings over a temp data dir (the FakeLauncher is fine; if the real engine process is cheap enough use it with a short timeout), posts \"A website for my cafe\" through the HTTP API and asserts: a department node, its five function nodes with chat sessions, an assignment/task, the reply text in the Sutra chat, and no 'can't reach' message.\n4. Notes (docs/notes/GAP-DEMO.md): what offline can and cannot do (stub usage rows with provider stub, no Claude or Codex, the Test and sign-in buttons refuse with the offline message).\nDo not change any prompt, a reply class of the chat agent, or the engine. Keep the demo book small (under 250 lines).\n\nRIDERS (set by the scheduler): (1) the two transferred files (sutra_app/connectors/factory.py from CN-9, sutra_app/orchestrator/wiring.py from ORCH-8) now belong to THIS package; you may update existing tests of those modules when an intended change breaks them, never weakening them, and list each in the notes. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler, not by you. (3) J2 prompts and route paths do not change; the prompt goldens and CT-1's route table stay green."
+  },
+  {
+   "id": "GAP-TRACE",
+   "title": "Design overview and traceability matrix (docs/DESIGN.md, docs/TRACEABILITY.md, generator and test)",
+   "owns": [
+    "scripts/build_traceability.py",
+    "tests/test_traceability.py",
+    "docs/design/traceability.json",
+    "docs/notes/GAP-TRACE.md"
+   ],
+   "depends_on": [
+    "ORCH-8",
+    "GAP-W1",
+    "GAP-TUNE",
+    "GAP-DEMO",
+    "GAP-OPS-1",
+    "CT-1",
+    "UI-9",
+    "E5"
+   ],
+   "acceptance": [
+    "scripts/py scripts/build_traceability.py --check",
+    "scripts/py -m pytest tests/test_traceability.py -q"
+   ],
+   "section": "gaps",
+   "spec": "GAP-TRACE The two deferred chassis documents: the design overview (docs/DESIGN.md) and the traceability matrix (docs/TRACEABILITY.md), with a generator and a test (scheduler's package; the coverage critic listed them under GAP-DOCS chassis edits).\n\n1. docs/DESIGN.md (one page, at most 250 lines). Purpose; the five tiers of the architecture (Experience, Orchestration, Department runtime, Connector layer, server contents) each with the modules that implement it AS BUILT (read docs/notes/*.md and list sutra_app/); the owner rules (a new app with no relation to the old sutra-ui and the J2 prototype's design; ONE global org chart; five function nodes with goal, constraints, context and work atom with verify as the teeth; a connector layer with a Claude and a Codex connector, CLI first; everything in J2 present; local only; every decision documented), each with the decision numbers and the modules that implement it; the as-built deviations that matter (from the 'deviations' sections of the notes: 15 to 25 bullets, each naming its package); known limits (docs/design/gaps.md findings G18 to G27, the offline demo limits in docs/notes/GAP-DEMO.md); how to run (plain paths; mention README.md and the docs of GAP-DOCS only as plain text, they may not exist yet); the packages by section; the links to docs/design/{engine,connectors,library,orchestrator,ui}.md, settlements/, function-nodes.md, DECISIONS.md, BUILD-PLAN.md, gaps.md and j2-sync.md.\n2. scripts/build_traceability.py reads docs/build-plan.json, docs/DECISIONS.md (every '## D<n>' heading), docs/notes/*.md, sutra_app/engine/features.py (FEATURES), the route table that the contract tests use (tests/contracts, CT-1), docs/diagram/decisions.json and docs/diagram/gen.py, and writes docs/design/traceability.json and docs/TRACEABILITY.md. Rows: (a) each owner rule -> decisions -> modules -> tests; (b) each of the seven draw.io steps -> module -> test (start from the table in docs/design/gaps.md section 4 and update it with the tests that exist now; later tests under tests/e2e/test_step* are referenced by pattern); (c) each of the 15 chips of the runtime strip -> module; (d) each of the 30 J2 endpoints -> handler -> golden test; (e) each D-number in DECISIONS.md -> the packages it touches -> status (implemented, documented only, rejected); (f) each work package -> its owned paths -> its notes file -> its merge commit (git log --grep). Deterministic and sorted. `--check` verifies that docs/design/traceability.json parses, that every path or test file it names exists, that every D-number in DECISIONS.md has a row, and prints the first 20 problems with exit 1. It must NOT require the committed file to equal a fresh run: later packages add files and decisions, and their merges must not fail because of this test.\n3. tests/test_traceability.py runs the --check on the real repository and unit-tests the parsers on small fixtures (a decision heading, a notes file, a plan entry); a dead path in a fixture must be reported.\n4. Write docs/TRACEABILITY.md from the generator; docs/DESIGN.md by hand from the notes and sections.\nDo not edit anything else.\n\nRIDERS (set by the scheduler): the chassis files docs/DESIGN.md and docs/TRACEABILITY.md (no package may own them) are authorized for you to create; nothing else outside your owns. J2 prompts and route paths do not change."
+  }
+ ],
+ "review_only": [
+  "L1",
+  "E0"
+ ],
+ "review_lenses": [
+  "spec"
+ ]
+}

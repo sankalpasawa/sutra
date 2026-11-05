@@ -1,0 +1,76 @@
+[
+ {
+  "url": "https://api.github.com/repos/__OWNER__/__REPO__/pulls/2",
+  "id": 1100002,
+  "number": 2,
+  "state": "open",
+  "locked": false,
+  "title": "Add the connector layer",
+  "user": {
+   "login": "octocat",
+   "id": 583231,
+   "type": "User",
+   "html_url": "https://github.com/octocat"
+  },
+  "body": "Adds the router, the Claude and Codex connectors and the usage row.\n\nCloses #3.",
+  "created_at": "2026-11-02T09:00:00Z",
+  "updated_at": "2026-11-03T08:30:00Z",
+  "closed_at": null,
+  "merged_at": null,
+  "draft": false,
+  "head": {
+   "ref": "feature/connectors",
+   "sha": "1111111111111111111111111111111111111111"
+  },
+  "base": {
+   "ref": "main",
+   "sha": "2222222222222222222222222222222222222222"
+  },
+  "html_url": "https://github.com/__OWNER__/__REPO__/pull/2",
+  "labels": [
+   {
+    "name": "enhancement"
+   }
+  ],
+  "comments": 2,
+  "commits": 6,
+  "additions": 812,
+  "deletions": 14,
+  "changed_files": 9
+ },
+ {
+  "url": "https://api.github.com/repos/__OWNER__/__REPO__/pulls/1",
+  "id": 1100001,
+  "number": 1,
+  "state": "closed",
+  "locked": false,
+  "title": "Initial commit",
+  "user": {
+   "login": "hubot",
+   "id": 583232,
+   "type": "User",
+   "html_url": "https://github.com/hubot"
+  },
+  "body": "First import.",
+  "created_at": "2026-10-20T09:00:00Z",
+  "updated_at": "2026-10-21T08:30:00Z",
+  "closed_at": "2026-10-21T08:30:00Z",
+  "merged_at": "2026-10-21T08:30:00Z",
+  "draft": false,
+  "head": {
+   "ref": "init",
+   "sha": "3333333333333333333333333333333333333333"
+  },
+  "base": {
+   "ref": "main",
+   "sha": "4444444444444444444444444444444444444444"
+  },
+  "html_url": "https://github.com/__OWNER__/__REPO__/pull/1",
+  "labels": [],
+  "comments": 0,
+  "commits": 1,
+  "additions": 120,
+  "deletions": 0,
+  "changed_files": 4
+ }
+]

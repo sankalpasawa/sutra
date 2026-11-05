@@ -1,0 +1,22 @@
+{
+ "args": [
+  "14"
+ ],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "posted": [
+   {
+    "id": 14,
+    "who": "user",
+    "text": "same id"
+   }
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "no answer to message 14 yet"
+ }
+}

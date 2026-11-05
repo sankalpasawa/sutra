@@ -1,0 +1,603 @@
+{
+  "$defs": {
+    "Context": {
+      "additionalProperties": false,
+      "properties": {
+        "business_type": {
+          "maxLength": 300,
+          "title": "Business Type",
+          "type": "string"
+        },
+        "facts_used": {
+          "items": {
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "maxItems": 300,
+          "title": "Facts Used",
+          "type": "array"
+        },
+        "fingerprint": {
+          "maxLength": 128,
+          "title": "Fingerprint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "business_type",
+        "facts_used",
+        "fingerprint"
+      ],
+      "title": "Context",
+      "type": "object"
+    },
+    "FieldSpec": {
+      "additionalProperties": false,
+      "description": "One field: a name, an allowed type, required or not, its description, and an enum when it is narrowed.",
+      "properties": {
+        "description": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Description",
+          "type": "string"
+        },
+        "enum": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 500,
+                "type": "string"
+              },
+              "maxItems": 300,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enum"
+        },
+        "name": {
+          "maxLength": 80,
+          "title": "Name",
+          "type": "string"
+        },
+        "nullable": {
+          "default": false,
+          "title": "Nullable",
+          "type": "boolean"
+        },
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        },
+        "type": {
+          "maxLength": 80,
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "required"
+      ],
+      "title": "FieldSpec",
+      "type": "object"
+    },
+    "GenericTemplate": {
+      "additionalProperties": false,
+      "description": "The generic layer: one per (artifact, section), built from the section model and RULES.",
+      "properties": {
+        "artifact": {
+          "enum": [
+            "prd",
+            "hld",
+            "lld",
+            "design",
+            "website"
+          ],
+          "title": "Artifact",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Description",
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/FieldSpec"
+          },
+          "maxItems": 60,
+          "title": "Fields",
+          "type": "array"
+        },
+        "kind": {
+          "const": "generic",
+          "default": "generic",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "objects": {
+          "items": {
+            "$ref": "#/$defs/ObjectSpec"
+          },
+          "maxItems": 40,
+          "title": "Objects",
+          "type": "array"
+        },
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/RuleSpec"
+          },
+          "maxItems": 60,
+          "title": "Rules",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "section": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Section",
+          "type": "string"
+        },
+        "sha": {
+          "default": "",
+          "pattern": "^([0-9a-f]{64})?$",
+          "title": "Sha",
+          "type": "string"
+        },
+        "version": {
+          "default": 1,
+          "maximum": 999999,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "artifact",
+        "section",
+        "fields"
+      ],
+      "title": "GenericTemplate",
+      "type": "object"
+    },
+    "MadeBy": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "maxLength": 200,
+          "title": "Agent",
+          "type": "string"
+        },
+        "atom": {
+          "maxLength": 200,
+          "title": "Atom",
+          "type": "string"
+        },
+        "run": {
+          "maxLength": 200,
+          "title": "Run",
+          "type": "string"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "workflow",
+        "atom",
+        "agent"
+      ],
+      "title": "MadeBy",
+      "type": "object"
+    },
+    "ObjectSpec": {
+      "additionalProperties": false,
+      "description": "An object type defined inside the spec, used as <Object> or list[<Object>].",
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/FieldSpec"
+          },
+          "maxItems": 60,
+          "title": "Fields",
+          "type": "array"
+        },
+        "name": {
+          "maxLength": 80,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "fields"
+      ],
+      "title": "ObjectSpec",
+      "type": "object"
+    },
+    "RuleSpec": {
+      "additionalProperties": false,
+      "description": "One rule as data: the J2 dict shape (the wire key `from` is `from_` in Python). A spec that a rule type cannot\nrun (a missing key, a list where one path is needed, a target outside this/prd/hld/lld) is refused when it is\nbuilt, with J2's wording; whether its paths resolve to a field is a `Template` check (`templates.resolve`).",
+      "properties": {
+        "anchor_path": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor Path"
+        },
+        "fail_text": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fail Text"
+        },
+        "from": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "From",
+          "type": "string"
+        },
+        "html_path": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Html Path"
+        },
+        "missing_text": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Missing Text"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "prefix": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prefix"
+        },
+        "required_target": {
+          "default": false,
+          "title": "Required Target",
+          "type": "boolean"
+        },
+        "rule": {
+          "enum": [
+            "ids_sequential",
+            "ids_unique",
+            "ref_exists",
+            "enum",
+            "hex",
+            "css_safe",
+            "html_no_page_tags",
+            "anchor_selector",
+            "anchor_in_html",
+            "not_empty",
+            "one_of_present",
+            "url_prefix"
+          ],
+          "title": "Rule",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        },
+        "values": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Values"
+        }
+      },
+      "required": [
+        "rule",
+        "name",
+        "from"
+      ],
+      "title": "RuleSpec",
+      "type": "object"
+    },
+    "SpecialisedTemplate": {
+      "additionalProperties": false,
+      "description": "A workflow's own template: extends one generic and keeps every required field of it.",
+      "properties": {
+        "artifact": {
+          "enum": [
+            "prd",
+            "hld",
+            "lld",
+            "design",
+            "website"
+          ],
+          "title": "Artifact",
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/Context"
+        },
+        "description": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Description",
+          "type": "string"
+        },
+        "extends": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Extends",
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/FieldSpec"
+          },
+          "maxItems": 60,
+          "title": "Fields",
+          "type": "array"
+        },
+        "kind": {
+          "const": "specialised",
+          "default": "specialised",
+          "title": "Kind",
+          "type": "string"
+        },
+        "made_by": {
+          "$ref": "#/$defs/MadeBy"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "objects": {
+          "items": {
+            "$ref": "#/$defs/ObjectSpec"
+          },
+          "maxItems": 40,
+          "title": "Objects",
+          "type": "array"
+        },
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/RuleSpec"
+          },
+          "maxItems": 60,
+          "title": "Rules",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "section": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Section",
+          "type": "string"
+        },
+        "sha": {
+          "default": "",
+          "pattern": "^([0-9a-f]{64})?$",
+          "title": "Sha",
+          "type": "string"
+        },
+        "used_by": {
+          "items": {
+            "$ref": "#/$defs/Use"
+          },
+          "maxItems": 5000,
+          "title": "Used By",
+          "type": "array"
+        },
+        "version": {
+          "default": 1,
+          "maximum": 999999,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "artifact",
+        "section",
+        "fields",
+        "extends",
+        "made_by",
+        "context"
+      ],
+      "title": "SpecialisedTemplate",
+      "type": "object"
+    },
+    "Use": {
+      "additionalProperties": false,
+      "description": "One use of a template version: who asked for it, and whether it was reused, extended or created.",
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Action"
+        },
+        "atom": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Atom"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "title": "Use",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "generic": "#/$defs/GenericTemplate",
+      "specialised": "#/$defs/SpecialisedTemplate"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/GenericTemplate"
+    },
+    {
+      "$ref": "#/$defs/SpecialisedTemplate"
+    }
+  ]
+}

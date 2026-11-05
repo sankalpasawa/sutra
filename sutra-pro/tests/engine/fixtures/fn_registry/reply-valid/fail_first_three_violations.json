@@ -1,0 +1,25 @@
+{
+ "args": [
+  "priority",
+  "price"
+ ],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "call": {},
+  "reply": {
+   "decision": "MAYBE",
+   "workflows": "x",
+   "next": "Nobody"
+  }
+ },
+ "expect": {
+  "ok": false,
+  "evidence_has": [
+   "decision:",
+   "workflows"
+  ]
+ }
+}

@@ -1,0 +1,27 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "reply": {
+   "say": "@Adaptation Granted.",
+   "decision": "GRANT",
+   "next": "Adaptation",
+   "workflows": [
+    {
+     "name": "Build menu",
+     "cost": 12,
+     "envelope": {
+      "money_limit": 12
+     }
+    }
+   ]
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "GRANT priced: Build menu 12"
+ }
+}

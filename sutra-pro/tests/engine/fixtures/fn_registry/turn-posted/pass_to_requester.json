@@ -1,0 +1,21 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "posted": [
+   {
+    "id": 2,
+    "who": "identity",
+    "text": "@Requester hi",
+    "next": "user"
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "posted 1 message to Requester"
+ }
+}

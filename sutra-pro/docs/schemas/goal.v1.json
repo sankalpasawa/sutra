@@ -1,0 +1,549 @@
+{
+  "$defs": {
+    "DocGoal": {
+      "additionalProperties": false,
+      "description": "The stored document charter. Besides the draft it carries, for an HLD or LLD, `chain`: the earlier documents'\nagent_output and their ids (`stage_goal`, J2:2184).",
+      "properties": {
+        "audience": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Audience",
+          "type": "string"
+        },
+        "business_type": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Business Type",
+          "type": "string"
+        },
+        "chain": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Chain",
+          "type": "object"
+        },
+        "charter_items": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Charter Items",
+          "type": "array"
+        },
+        "confirmed_facts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ToBeConfirmed"
+          },
+          "maxItems": 200,
+          "title": "Confirmed Facts",
+          "type": "array"
+        },
+        "constraints": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Constraints",
+          "type": "array"
+        },
+        "core": {
+          "default": [],
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 40,
+          "title": "Core",
+          "type": "array"
+        },
+        "core_items": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Core Items",
+          "type": "array"
+        },
+        "done_when": {
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "minItems": 1,
+          "title": "Done When",
+          "type": "array"
+        },
+        "dropped_by_requester": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Dropped By Requester",
+          "type": "array"
+        },
+        "dropped_from_brief": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Dropped From Brief",
+          "type": "array"
+        },
+        "dropped_reasons": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DroppedReason"
+          },
+          "maxItems": 200,
+          "title": "Dropped Reasons",
+          "type": "array"
+        },
+        "facts": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 60,
+          "title": "Facts",
+          "type": "array"
+        },
+        "features": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Features",
+          "type": "array"
+        },
+        "kind": {
+          "const": "doc",
+          "default": "doc",
+          "title": "Kind",
+          "type": "string"
+        },
+        "problem": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Problem",
+          "type": "string"
+        },
+        "product_name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Product Name",
+          "type": "string"
+        },
+        "requester_answers": {
+          "default": [],
+          "items": {
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Requester Answers",
+          "type": "array"
+        },
+        "rules": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Rules",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "site_name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Site Name",
+          "type": "string"
+        },
+        "standards": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Standards",
+          "type": "array"
+        },
+        "statement": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "success_measures": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Success Measures",
+          "type": "array"
+        },
+        "to_be_confirmed": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ToBeConfirmed"
+          },
+          "maxItems": 40,
+          "title": "To Be Confirmed",
+          "type": "array"
+        },
+        "user_groups": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/UserGroup"
+          },
+          "maxItems": 20,
+          "title": "User Groups",
+          "type": "array"
+        },
+        "users": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Users",
+          "type": "string"
+        },
+        "visitor_needs": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Visitor Needs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "statement",
+        "done_when",
+        "product_name"
+      ],
+      "title": "DocGoal",
+      "type": "object"
+    },
+    "DroppedReason": {
+      "additionalProperties": false,
+      "description": "Why a done-when item was left out: code writes it when the Requester (or the owner override) drops one.",
+      "properties": {
+        "criterion": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Criterion",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 20000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "criterion",
+        "reason"
+      ],
+      "title": "DroppedReason",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "SiteGoal": {
+      "additionalProperties": false,
+      "description": "The stored website charter: goal.json of a website run.",
+      "properties": {
+        "audience": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Audience",
+          "type": "string"
+        },
+        "business_type": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Business Type",
+          "type": "string"
+        },
+        "charter_items": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Charter Items",
+          "type": "array"
+        },
+        "confirmed_facts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ToBeConfirmed"
+          },
+          "maxItems": 200,
+          "title": "Confirmed Facts",
+          "type": "array"
+        },
+        "core": {
+          "default": [],
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 40,
+          "title": "Core",
+          "type": "array"
+        },
+        "core_items": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Core Items",
+          "type": "array"
+        },
+        "done_when": {
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "minItems": 1,
+          "title": "Done When",
+          "type": "array"
+        },
+        "dropped_by_requester": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Dropped By Requester",
+          "type": "array"
+        },
+        "dropped_from_brief": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Dropped From Brief",
+          "type": "array"
+        },
+        "dropped_reasons": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DroppedReason"
+          },
+          "maxItems": 200,
+          "title": "Dropped Reasons",
+          "type": "array"
+        },
+        "facts": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 60,
+          "title": "Facts",
+          "type": "array"
+        },
+        "kind": {
+          "const": "site",
+          "default": "site",
+          "title": "Kind",
+          "type": "string"
+        },
+        "requester_answers": {
+          "default": [],
+          "items": {
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Requester Answers",
+          "type": "array"
+        },
+        "rules": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Rules",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "site_name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Site Name",
+          "type": "string"
+        },
+        "standards": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Standards",
+          "type": "array"
+        },
+        "statement": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "to_be_confirmed": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ToBeConfirmed"
+          },
+          "maxItems": 40,
+          "title": "To Be Confirmed",
+          "type": "array"
+        },
+        "visitor_needs": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Visitor Needs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "statement",
+        "done_when",
+        "site_name"
+      ],
+      "title": "SiteGoal",
+      "type": "object"
+    },
+    "ToBeConfirmed": {
+      "additionalProperties": false,
+      "description": "The stored form of the same fact, keyed by the criterion TEXT (numbers shift when items are dropped, J2:4155).",
+      "properties": {
+        "criterion": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Criterion",
+          "type": "string"
+        },
+        "fact": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Fact",
+          "type": "string"
+        }
+      },
+      "required": [
+        "criterion",
+        "fact"
+      ],
+      "title": "ToBeConfirmed",
+      "type": "object"
+    },
+    "UserGroup": {
+      "additionalProperties": false,
+      "description": "A user group of a document charter, with what the group does (empty when the Requester did not say).",
+      "properties": {
+        "actions": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Actions",
+          "type": "array"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "UserGroup",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "doc": "#/$defs/DocGoal",
+      "site": "#/$defs/SiteGoal"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SiteGoal"
+    },
+    {
+      "$ref": "#/$defs/DocGoal"
+    }
+  ]
+}

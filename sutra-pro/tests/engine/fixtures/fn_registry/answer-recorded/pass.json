@@ -1,0 +1,22 @@
+{
+ "args": [
+  "14"
+ ],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "posted": [
+   {
+    "id": 15,
+    "who": "user",
+    "text": "Keep them in scope"
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "answer recorded as message 15: \"Keep them in scope\""
+ }
+}

@@ -1,0 +1,30 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "reply": {
+   "to_requester": "Thanks, I have what I need.",
+   "to_agents": "@Adaptation Charter recorded.",
+   "enough": true
+  },
+  "outcome": {
+   "result": "ok"
+  },
+  "posted": [
+   {
+    "id": 3,
+    "who": "identity",
+    "text": "@Requester The workflow W-2 is next.",
+    "to_user": true,
+    "audience": "user"
+   }
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "to_requester has agent content ('workflow')"
+ }
+}

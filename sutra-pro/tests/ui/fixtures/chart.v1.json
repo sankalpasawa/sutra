@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "root",
+      "name": "Root",
+      "purpose": "",
+      "parent_id": null,
+      "position": 0
+    }
+  ]
+}

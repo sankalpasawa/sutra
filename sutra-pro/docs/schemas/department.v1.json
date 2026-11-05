@@ -1,0 +1,40 @@
+{
+  "additionalProperties": false,
+  "description": "`home_dir` is `departments/<id>` as the store writes it; this class only guarantees it is a safe relative path.",
+  "properties": {
+    "home_dir": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Home Dir",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "const": "department",
+      "default": "department",
+      "title": "Kind",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "ts_created": {
+      "minimum": 0,
+      "title": "Ts Created",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "home_dir",
+    "ts_created"
+  ],
+  "title": "Department",
+  "type": "object"
+}

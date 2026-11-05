@@ -1,0 +1,425 @@
+{
+  "$defs": {
+    "TreeCode": {
+      "additionalProperties": false,
+      "properties": {
+        "deck": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Deck",
+          "type": "string"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        }
+      },
+      "required": [
+        "deck"
+      ],
+      "title": "TreeCode",
+      "type": "object"
+    },
+    "TreeGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "collapsed": {
+          "title": "Collapsed",
+          "type": "boolean"
+        },
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "id": {
+          "enum": [
+            "plan",
+            "specs",
+            "deliverables",
+            "proof"
+          ],
+          "title": "Id",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TreeItem"
+          },
+          "maxItems": 2000,
+          "title": "Items",
+          "type": "array"
+        },
+        "label": {
+          "maxLength": 2000,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "count",
+        "collapsed",
+        "items"
+      ],
+      "title": "TreeGroup",
+      "type": "object"
+    },
+    "TreeItem": {
+      "additionalProperties": false,
+      "description": "A row of the Artifacts tree: a file, or a folder of rows (`children`, with a `count`). Group rows such as\n\"Sections\" carry only a name, a count and their children.",
+      "properties": {
+        "children": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/TreeItem"
+              },
+              "maxItems": 2000,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Children"
+        },
+        "code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TreeCode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "collapsed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collapsed"
+        },
+        "count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Count"
+        },
+        "file": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File"
+        },
+        "made_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TreeMaker"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "maxLength": 2000,
+          "title": "Name",
+          "type": "string"
+        },
+        "node": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Node"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "open": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Open"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output"
+        },
+        "read_by": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Read By"
+        },
+        "rewritten": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TreeRewrite"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "section": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "shots": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shots"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "workflows": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflows"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "TreeItem",
+      "type": "object"
+    },
+    "TreeMaker": {
+      "additionalProperties": false,
+      "description": "Who made an artifact: a function (`function`), or a team of workflows (`persona`, `workflows`).",
+      "properties": {
+        "function": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Function"
+        },
+        "persona": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Persona"
+        },
+        "workflows": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 500,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflows"
+        }
+      },
+      "title": "TreeMaker",
+      "type": "object"
+    },
+    "TreeRewrite": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "By",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 2000,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "name"
+      ],
+      "title": "TreeRewrite",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "artifacts-tree/1: the Artifacts tab as a tree in four groups (plan, specs, deliverables, proof), or no group for a\nrun that is not there.",
+  "properties": {
+    "groups": {
+      "items": {
+        "$ref": "#/$defs/TreeGroup"
+      },
+      "maxItems": 4,
+      "title": "Groups",
+      "type": "array"
+    },
+    "schema": {
+      "const": "artifacts-tree/1",
+      "default": "artifacts-tree/1",
+      "title": "Schema",
+      "type": "string"
+    }
+  },
+  "required": [
+    "groups"
+  ],
+  "title": "ArtifactsTreeDoc",
+  "type": "object"
+}

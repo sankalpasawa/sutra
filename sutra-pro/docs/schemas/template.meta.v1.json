@@ -1,0 +1,171 @@
+{
+  "$defs": {
+    "Use": {
+      "additionalProperties": false,
+      "description": "One use of a template version: who asked for it, and whether it was reused, extended or created.",
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Action"
+        },
+        "atom": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Atom"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "title": "Use",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "meta.json of one template version (a library version or a run's copy). A generic copy says `kind: \"generic\"` and\nhas `used_by: []`; a specialised one has no `kind` key in J2, and carries the class name, the creation time and the\nfingerprints of the needs it answered.",
+  "properties": {
+    "class": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Class"
+    },
+    "created": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created"
+    },
+    "fingerprints": {
+      "anyOf": [
+        {
+          "items": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fingerprints"
+    },
+    "kind": {
+      "anyOf": [
+        {
+          "enum": [
+            "generic",
+            "specialised"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Kind"
+    },
+    "model_sha": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Model Sha",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "schema_sha": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Schema Sha",
+      "type": "string"
+    },
+    "sha": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sha",
+      "type": "string"
+    },
+    "used_by": {
+      "items": {
+        "$ref": "#/$defs/Use"
+      },
+      "maxItems": 5000,
+      "title": "Used By",
+      "type": "array"
+    },
+    "version": {
+      "maximum": 999999,
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "sha",
+    "schema_sha",
+    "model_sha"
+  ],
+  "title": "TemplateMeta",
+  "type": "object"
+}

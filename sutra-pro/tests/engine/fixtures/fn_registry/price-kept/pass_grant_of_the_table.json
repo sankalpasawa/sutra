@@ -1,0 +1,17 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "reply": {
+   "decision": "GRANT",
+   "workflows": []
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "GRANT of the table: its prices are code's"
+ }
+}

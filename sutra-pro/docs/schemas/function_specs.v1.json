@@ -1,0 +1,361 @@
+{
+  "$defs": {
+    "AtomTemplate": {
+      "additionalProperties": false,
+      "description": "What a turn declares before its work: the goal sentence (it may name {function} {kind} {step_label} {task}), how\nthe work is predicted to be done, the named checks (declare adds the floor checks) and the paths it touches.",
+      "properties": {
+        "checks": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CheckRef"
+          },
+          "maxItems": 6,
+          "title": "Checks",
+          "type": "array"
+        },
+        "goal": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "touches": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Touches",
+          "type": "array"
+        },
+        "work": {
+          "$ref": "#/$defs/Work"
+        },
+        "work_hint": {
+          "default": "llm",
+          "enum": [
+            "llm",
+            "bash",
+            "manual"
+          ],
+          "title": "Work Hint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "goal",
+        "work"
+      ],
+      "title": "AtomTemplate",
+      "type": "object"
+    },
+    "CheckRef": {
+      "additionalProperties": false,
+      "description": "A named check of the verify registry and its arguments. The name and argument count are judged by verify_refs.",
+      "properties": {
+        "args": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Args",
+          "type": "array"
+        },
+        "name": {
+          "enum": [
+            "file-exists",
+            "grep-count",
+            "named-test",
+            "element-count",
+            "facts-present",
+            "tap-targets",
+            "behavior-steps",
+            "heading-present",
+            "section-not-empty",
+            "ids-unique",
+            "lld-slice",
+            "deed-send",
+            "reply-valid",
+            "turn-posted",
+            "charter-stamp",
+            "workable",
+            "audience-split",
+            "atom-rules",
+            "judge-gate",
+            "price-kept",
+            "within-budget",
+            "order-registered",
+            "finding-per-item",
+            "pass-needs-proof",
+            "code-measure-wins",
+            "answer-recorded"
+          ],
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "CheckRef",
+      "type": "object"
+    },
+    "FunctionSpec": {
+      "additionalProperties": false,
+      "description": "The standing design of one function: its TASK line (`role`), its goal sentence, what it yields, reads, writes and\nmay not do, the task kinds it takes and an atom template per kind. One template is named `generic`: it serves any\ntask kind without its own template.",
+      "properties": {
+        "atom_templates": {
+          "items": {
+            "$ref": "#/$defs/AtomTemplate"
+          },
+          "maxItems": 10,
+          "title": "Atom Templates",
+          "type": "array"
+        },
+        "function": {
+          "enum": [
+            "identity",
+            "adaptation",
+            "priority",
+            "coordination",
+            "audit"
+          ],
+          "title": "Function",
+          "type": "string"
+        },
+        "goal": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "may_not": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "May Not",
+          "type": "array"
+        },
+        "reads": {
+          "default": [],
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Reads",
+          "type": "array"
+        },
+        "role": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Role",
+          "type": "string"
+        },
+        "stages": {
+          "default": [],
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Stages",
+          "type": "array"
+        },
+        "task_kinds": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TaskKind"
+          },
+          "maxItems": 20,
+          "title": "Task Kinds",
+          "type": "array"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "writes": {
+          "default": [],
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Writes",
+          "type": "array"
+        },
+        "yields": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Yields",
+          "type": "string"
+        }
+      },
+      "required": [
+        "function",
+        "role",
+        "goal",
+        "yields",
+        "atom_templates",
+        "version"
+      ],
+      "title": "FunctionSpec",
+      "type": "object"
+    },
+    "TaskKind": {
+      "additionalProperties": false,
+      "description": "One kind of turn a function takes (a J2 dispatcher case) and the reply it answers with. `reply_kind` may list\nalternatives as \"a|b\"; a turn with no reply names neither family nor kind.",
+      "properties": {
+        "kind": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "reply_family": {
+          "default": "",
+          "maxLength": 60,
+          "title": "Reply Family",
+          "type": "string"
+        },
+        "reply_kind": {
+          "default": "",
+          "maxLength": 100,
+          "title": "Reply Kind",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "summary"
+      ],
+      "title": "TaskKind",
+      "type": "object"
+    },
+    "Work": {
+      "additionalProperties": false,
+      "description": "How the atom is done: `dispatch_kind` is the plugin's, `how_kind` and `agent` are J2's `how` (J2:5126).",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent"
+        },
+        "dispatch_kind": {
+          "enum": [
+            "llm",
+            "skill",
+            "bash",
+            "manual"
+          ],
+          "title": "Dispatch Kind",
+          "type": "string"
+        },
+        "how_kind": {
+          "default": "AI",
+          "enum": [
+            "AI",
+            "code"
+          ],
+          "title": "How Kind",
+          "type": "string"
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ref"
+        },
+        "steps": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Steps",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dispatch_kind"
+      ],
+      "title": "Work",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The five FunctionSpecs, keyed by function (the key is the spec's own `function`).",
+  "properties": {
+    "kind": {
+      "const": "function_specs",
+      "default": "function_specs",
+      "title": "Kind",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "specs": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FunctionSpec"
+      },
+      "propertyNames": {
+        "enum": [
+          "identity",
+          "adaptation",
+          "priority",
+          "coordination",
+          "audit"
+        ]
+      },
+      "title": "Specs",
+      "type": "object"
+    }
+  },
+  "required": [
+    "specs"
+  ],
+  "title": "FunctionSpecs",
+  "type": "object"
+}

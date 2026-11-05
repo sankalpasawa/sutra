@@ -1,0 +1,43 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "replies": [
+   {
+    "to_requester": "Priority will price W-2 soon.",
+    "to_agents": "@Adaptation Charter recorded.",
+    "enough": true
+   },
+   {
+    "to_requester": "Thanks, I have what I need.",
+    "to_agents": "@Adaptation Charter recorded.",
+    "enough": true
+   }
+  ],
+  "outcome": {
+   "result": "ok"
+  },
+  "posted": [
+   {
+    "id": 3,
+    "who": "identity",
+    "text": "@Requester Thanks, I have everything I need.",
+    "to_user": true,
+    "audience": "user"
+   },
+   {
+    "id": 4,
+    "who": "identity",
+    "text": "@Adaptation Charter is ready.",
+    "audience": "adaptation"
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "to_requester is plain"
+ }
+}

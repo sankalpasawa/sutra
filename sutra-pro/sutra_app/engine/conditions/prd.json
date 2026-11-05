@@ -1,0 +1,14 @@
+{
+  "_note": "Necessary conditions for a PRD (J2_OUTPUT=prd). Code checks each one on prd.md after every build; the PRD is workable only when all are met and Audit accepts. \"check\" names the code check in j2.condition_met(). \"severity\": \"warn\" shows the result on the Audit tab and in conditions.json but never blocks workable(); every other condition blocks.",
+  "output": "prd",
+  "conditions": [
+    {"id": "P1", "text": "All six sections are present and not empty", "check": "sections-present", "min_words": 1},
+    {"id": "P2", "text": "Requirement ids are unique and sequential (R1, R2, ...)", "check": "ids-sequential", "section": "Requirements", "prefix": "R"},
+    {"id": "P3", "text": "Every brief fact appears exactly", "check": "facts-present-all"},
+    {"id": "P4", "text": "No invented facts: every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line", "check": "no-invented-facts", "names": true},
+    {"id": "P5", "text": "Nothing is \"to be confirmed\"", "check": "nothing-to-be-confirmed"},
+    {"id": "P6", "text": "Every goal has a matching success metric", "check": "ids-covered", "from": "Goals", "prefix": "G", "in": "Success metrics"},
+    {"id": "P7", "text": "Every user group named in the charter appears in Requirements or in a \"no actions in this version\" statement", "check": "groups-covered", "section": "Requirements"},
+    {"id": "P8", "text": "Each numeric success metric states its measurement window, or says \"measurement window not set\"", "check": "metric-window", "section": "Success metrics", "severity": "warn"}
+  ]
+}

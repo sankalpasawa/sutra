@@ -1,0 +1,2809 @@
+{
+ "j2_commit": "33aeeda",
+ "cases": [
+  {
+   "name": "website_section_closed",
+   "source": "j2-20261016-160511 W-26.a1",
+   "j2_atom": {
+    "id": "W-26.a1",
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "attempts": 1,
+    "status": "passed",
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "expect": true
+     }
+    ],
+    "results": [
+     {
+      "check": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "pass": true,
+      "evidence": "1 element(s) match '#menu', expected 1",
+      "attempt": 1
+     },
+     {
+      "check": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "pass": true,
+      "evidence": "7 element(s) match '.menu-item', expected 7",
+      "attempt": 1
+     },
+     {
+      "check": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "pass": true,
+      "evidence": "all 7 fact(s) on the page",
+      "attempt": 1
+     },
+     {
+      "check": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "pass": true,
+      "evidence": "all 1 spec item(s) are on the page as written",
+      "attempt": 1
+     }
+    ],
+    "human_output": {
+     "text": "Visitors now see your full menu with all seven items and their prices in rupees, in a warm coffee-shop look."
+    },
+    "agent_output": {
+     "anchor": "menu",
+     "files": [
+      "site/v1.html",
+      "site/index.html"
+     ],
+     "section": "W-26",
+     "ids": [
+      "menu",
+      "menu-heading"
+     ],
+     "selectors": [
+      "#menu",
+      "#menu-heading",
+      ".menu-wrap",
+      ".j2-card",
+      ".menu-note",
+      ".menu-list",
+      ".menu-item"
+     ],
+     "attempt": 1,
+     "section_names": [
+      "Site Menu section"
+     ]
+    }
+   },
+   "workflow": {
+    "name": "Site Menu section",
+    "status": "done"
+   },
+   "edges": [],
+   "ended": false,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-26.a1",
+    "workflow": "W-26",
+    "name": "Site Menu section",
+    "owner": "Builder",
+    "status": "closed",
+    "attempt": 1,
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "defined_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "check": "exists",
+      "applies_to": "Site Menu section",
+      "method": "element-count: One #menu section is on the page",
+      "met": true,
+      "evidence": "1 element(s) match '#menu', expected 1"
+     },
+     {
+      "check": "exists",
+      "applies_to": "Site Menu section",
+      "method": "element-count: Seven .menu-item elements are on the page",
+      "met": true,
+      "evidence": "7 element(s) match '.menu-item', expected 7"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Site Menu section",
+      "method": "facts-present: All seven items and prices appear",
+      "met": true,
+      "evidence": "all 7 fact(s) on the page"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Site Menu section",
+      "method": "lld-slice: The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "met": true,
+      "evidence": "all 1 spec item(s) are on the page as written"
+     }
+    ],
+    "output": [
+     {
+      "verb": "make",
+      "name": "Site Menu section",
+      "form": "page",
+      "ref": "site/index.html#menu"
+     },
+     {
+      "verb": "make",
+      "name": "site/v1.html",
+      "form": "page",
+      "ref": "site/v1.html"
+     },
+     {
+      "verb": "make",
+      "name": "site/index.html",
+      "form": "page",
+      "ref": "site/index.html"
+     }
+    ],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "Visitors now see your full menu with all seven items and their prices in rupees, in a warm coffee-shop look.",
+    "details": {
+     "selectors": [
+      "#menu",
+      "#menu-heading",
+      ".menu-wrap",
+      ".j2-card",
+      ".menu-note",
+      ".menu-list",
+      ".menu-item"
+     ],
+     "ids": [
+      "menu",
+      "menu-heading"
+     ],
+     "section": "W-26",
+     "anchor": "menu",
+     "elements": [
+      ".menu-item"
+     ]
+    }
+   }
+  },
+  {
+   "name": "document_section_closed",
+   "source": "j2-20261016-160511 W-1.a1",
+   "j2_atom": {
+    "id": "W-1.a1",
+    "goal": "The Problem section states that people cannot see the menu or order ahead at Brew Lab.",
+    "constraints": [
+     "Use only brief facts",
+     "No to be confirmed"
+    ],
+    "context": [
+     "charter item 1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "W-1 Builder",
+     "steps": "Write the section '## Problem' in plain words: a specialty coffee shop in Indiranagar, Bengaluru, where people cannot see the menu or order ahead."
+    },
+    "expected_output": [
+     {
+      "text": "A Problem heading",
+      "kind": "heading",
+      "target": "Problem",
+      "met": true
+     },
+     {
+      "text": "Brief facts about the shop",
+      "kind": "facts",
+      "target": [
+       "Brew Lab",
+       "Indiranagar, Bengaluru",
+       "specialty coffee shop"
+      ],
+      "met": true
+     }
+    ],
+    "attempts": 1,
+    "status": "passed",
+    "verification": [
+     {
+      "text": "Problem heading present",
+      "type": "heading-present",
+      "target": "Problem",
+      "expect": true,
+      "item": 1
+     },
+     {
+      "text": "Problem section has content",
+      "type": "section-not-empty",
+      "target": "Problem",
+      "expect": 20
+     },
+     {
+      "text": "Shop facts appear",
+      "type": "facts-present",
+      "target": [
+       "Brew Lab",
+       "Indiranagar, Bengaluru",
+       "specialty coffee shop"
+      ],
+      "expect": true,
+      "item": 2
+     }
+    ],
+    "results": [
+     {
+      "check": "Problem heading present",
+      "type": "heading-present",
+      "target": "Problem",
+      "pass": true,
+      "evidence": "heading 'Problem' found in the document",
+      "attempt": 1
+     },
+     {
+      "check": "Problem section has content",
+      "type": "section-not-empty",
+      "target": "Problem",
+      "pass": true,
+      "evidence": "section 'Problem' has 54 word(s), needs 20",
+      "attempt": 1
+     },
+     {
+      "check": "Shop facts appear",
+      "type": "facts-present",
+      "target": [
+       "Brew Lab",
+       "Indiranagar, Bengaluru",
+       "specialty coffee shop"
+      ],
+      "pass": true,
+      "evidence": "all 3 fact(s) in the document",
+      "attempt": 1
+     }
+    ],
+    "human_output": {
+     "text": "This part explains the problem in plain words: people cannot see Brew Lab's menu or order a coffee before they arrive."
+    },
+    "agent_output": {
+     "anchor": null,
+     "files": [
+      "site/v1.md",
+      "prd.md"
+     ],
+     "section": "W-1",
+     "ids": [],
+     "selectors": [],
+     "kind": "doc",
+     "file": "prd.md",
+     "attempt": 1,
+     "section_names": [
+      "PRD Problem section"
+     ]
+    }
+   },
+   "workflow": {
+    "name": "PRD Problem section",
+    "status": "done"
+   },
+   "edges": [],
+   "ended": false,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-1.a1",
+    "workflow": "W-1",
+    "name": "PRD Problem section",
+    "owner": "W-1 Builder",
+    "status": "closed",
+    "attempt": 1,
+    "goal": "The Problem section states that people cannot see the menu or order ahead at Brew Lab.",
+    "how": {
+     "kind": "AI",
+     "agent": "W-1 Builder",
+     "steps": "Write the section '## Problem' in plain words: a specialty coffee shop in Indiranagar, Bengaluru, where people cannot see the menu or order ahead."
+    },
+    "constraints": [
+     "Use only brief facts",
+     "No to be confirmed"
+    ],
+    "context": [
+     "charter item 1"
+    ],
+    "defined_output": [
+     {
+      "text": "A Problem heading",
+      "kind": "heading",
+      "target": "Problem",
+      "met": true
+     },
+     {
+      "text": "Brief facts about the shop",
+      "kind": "facts",
+      "target": [
+       "Brew Lab",
+       "Indiranagar, Bengaluru",
+       "specialty coffee shop"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "check": "exists",
+      "applies_to": "PRD Problem section",
+      "method": "heading-present: Problem heading present",
+      "met": true,
+      "evidence": "heading 'Problem' found in the document"
+     },
+     {
+      "check": "exists",
+      "applies_to": "PRD Problem section",
+      "method": "section-not-empty: Problem section has content",
+      "met": true,
+      "evidence": "section 'Problem' has 54 word(s), needs 20"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "PRD Problem section",
+      "method": "facts-present: Shop facts appear",
+      "met": true,
+      "evidence": "all 3 fact(s) in the document"
+     }
+    ],
+    "output": [
+     {
+      "verb": "make",
+      "name": "PRD Problem section",
+      "form": "doc",
+      "ref": "prd.md#Problem"
+     },
+     {
+      "verb": "make",
+      "name": "site/v1.md",
+      "form": "doc",
+      "ref": "site/v1.md"
+     },
+     {
+      "verb": "make",
+      "name": "prd.md",
+      "form": "doc",
+      "ref": "prd.md"
+     }
+    ],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "This part explains the problem in plain words: people cannot see Brew Lab's menu or order a coffee before they arrive.",
+    "details": {
+     "section": "W-1"
+    }
+   }
+  },
+  {
+   "name": "behaviour_steps_closed",
+   "source": "j2-20261022-123744 W-37.a1",
+   "j2_atom": {
+    "id": "W-37.a1",
+    "goal": "The top section has one clear Pre-order button that jumps to the pre-order form.",
+    "constraints": [
+     "Keep Brew Lab and the address as text, with no map",
+     "Create only #hero-preorder with class j2-btn",
+     "Add no hours, shop phone number or new facts"
+    ],
+    "context": [
+     "charter item 1",
+     "section W-32",
+     "section S1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Inside #shop-identity add one link #hero-preorder with class j2-btn, text 'Pre-order' and href '#pre-order'. Leave #shop-name and #shop-address unchanged."
+    },
+    "expected_output": [
+     {
+      "text": "The Pre-order button in the top section",
+      "kind": "element",
+      "target": "#hero-preorder",
+      "met": true
+     },
+     {
+      "text": "Name and address still shown",
+      "kind": "facts",
+      "target": [
+       "Brew Lab",
+       "12, 100 Feet Road, Indiranagar, Bengaluru 560038"
+      ],
+      "met": true
+     },
+     {
+      "text": "Clicking the button brings the pre-order section into view",
+      "kind": "behavior",
+      "target": "#pre-order",
+      "steps": [
+       "click #hero-preorder",
+       "expect-visible #pre-order"
+      ],
+      "met": true
+     }
+    ],
+    "attempts": 1,
+    "status": "passed",
+    "verification": [
+     {
+      "text": "One Pre-order button",
+      "type": "element-count",
+      "target": "#hero-preorder",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Name and address still appear",
+      "type": "facts-present",
+      "target": [
+       "Brew Lab",
+       "12, 100 Feet Road, Indiranagar, Bengaluru 560038"
+      ],
+      "expect": true,
+      "item": 2
+     },
+     {
+      "text": "In-page links resolve",
+      "type": "named-test",
+      "target": "links-resolve",
+      "expect": true
+     },
+     {
+      "text": "Top section buttons are big enough to tap",
+      "type": "tap-targets",
+      "target": "#shop-identity",
+      "expect": 44
+     },
+     {
+      "text": "Clicking the button brings the pre-order section into view",
+      "type": "behavior-steps",
+      "target": [
+       "click #hero-preorder",
+       "expect-visible #pre-order"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "expect": true
+     }
+    ],
+    "results": [
+     {
+      "check": "One Pre-order button",
+      "type": "element-count",
+      "target": "#hero-preorder",
+      "pass": true,
+      "evidence": "1 element(s) match '#hero-preorder', expected 1",
+      "attempt": 1
+     },
+     {
+      "check": "Name and address still appear",
+      "type": "facts-present",
+      "target": [
+       "Brew Lab",
+       "12, 100 Feet Road, Indiranagar, Bengaluru 560038"
+      ],
+      "pass": true,
+      "evidence": "all 2 fact(s) on the page",
+      "attempt": 1
+     },
+     {
+      "check": "In-page links resolve",
+      "type": "named-test",
+      "target": "links-resolve",
+      "pass": true,
+      "evidence": "every in-page link resolves",
+      "attempt": 1
+     },
+     {
+      "check": "Top section buttons are big enough to tap",
+      "type": "tap-targets",
+      "target": "#shop-identity",
+      "pass": true,
+      "evidence": "all 1 tap target(s) in '#shop-identity' at least 44x44px at 360px",
+      "attempt": 1
+     },
+     {
+      "check": "Clicking the button brings the pre-order section into view",
+      "type": "behavior-steps",
+      "target": [
+       "click #hero-preorder",
+       "expect-visible #pre-order"
+      ],
+      "pass": true,
+      "evidence": "all 2 step(s) behaved as expected",
+      "attempt": 1
+     },
+     {
+      "check": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "pass": true,
+      "evidence": "all 1 spec item(s) are on the page as written",
+      "attempt": 1
+     }
+    ],
+    "human_output": {
+     "text": "The top of the page now has a Pre-order button that takes customers straight to the order form. The shop name and address are still shown as text."
+    },
+    "agent_output": {
+     "anchor": "shop-identity",
+     "files": [
+      "site/v9.html",
+      "site/index.html"
+     ],
+     "section": "W-32",
+     "ids": [
+      "shop-identity",
+      "shop-name",
+      "shop-address",
+      "hero-preorder"
+     ],
+     "selectors": [
+      "#shop-identity",
+      "#shop-name",
+      "#shop-address",
+      "#hero-preorder",
+      ".shop-identity-inner",
+      ".shop-kicker",
+      ".j2-btn"
+     ],
+     "attempt": 1,
+     "section_names": [
+      "Hero Pre-order button"
+     ]
+    }
+   },
+   "workflow": {
+    "name": "Hero Pre-order button",
+    "status": "done"
+   },
+   "edges": [],
+   "ended": false,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-37.a1",
+    "workflow": "W-37",
+    "name": "Hero Pre-order button",
+    "owner": "Builder",
+    "status": "closed",
+    "attempt": 1,
+    "goal": "The top section has one clear Pre-order button that jumps to the pre-order form.",
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Inside #shop-identity add one link #hero-preorder with class j2-btn, text 'Pre-order' and href '#pre-order'. Leave #shop-name and #shop-address unchanged."
+    },
+    "constraints": [
+     "Keep Brew Lab and the address as text, with no map",
+     "Create only #hero-preorder with class j2-btn",
+     "Add no hours, shop phone number or new facts"
+    ],
+    "context": [
+     "charter item 1",
+     "section W-32",
+     "section S1"
+    ],
+    "defined_output": [
+     {
+      "text": "The Pre-order button in the top section",
+      "kind": "element",
+      "target": "#hero-preorder",
+      "met": true
+     },
+     {
+      "text": "Name and address still shown",
+      "kind": "facts",
+      "target": [
+       "Brew Lab",
+       "12, 100 Feet Road, Indiranagar, Bengaluru 560038"
+      ],
+      "met": true
+     },
+     {
+      "text": "Clicking the button brings the pre-order section into view",
+      "kind": "behavior",
+      "target": "#pre-order",
+      "steps": [
+       "click #hero-preorder",
+       "expect-visible #pre-order"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "check": "exists",
+      "applies_to": "Hero Pre-order button",
+      "method": "element-count: One Pre-order button",
+      "met": true,
+      "evidence": "1 element(s) match '#hero-preorder', expected 1"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Hero Pre-order button",
+      "method": "facts-present: Name and address still appear",
+      "met": true,
+      "evidence": "all 2 fact(s) on the page"
+     },
+     {
+      "check": "valid",
+      "applies_to": "Hero Pre-order button",
+      "method": "named-test: In-page links resolve",
+      "met": true,
+      "evidence": "every in-page link resolves"
+     },
+     {
+      "check": "valid",
+      "applies_to": "Hero Pre-order button",
+      "method": "tap-targets: Top section buttons are big enough to tap",
+      "met": true,
+      "evidence": "all 1 tap target(s) in '#shop-identity' at least 44x44px at 360px"
+     },
+     {
+      "check": "receipt",
+      "applies_to": "Clicking the button brings the pre-order section into view",
+      "method": "behavior-steps: Clicking the button brings the pre-order section into view",
+      "met": true,
+      "evidence": "W-37.a1:1"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Hero Pre-order button",
+      "method": "lld-slice: The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "met": true,
+      "evidence": "all 1 spec item(s) are on the page as written"
+     }
+    ],
+    "output": [
+     {
+      "verb": "make",
+      "name": "Hero Pre-order button",
+      "form": "page",
+      "ref": "site/index.html#shop-identity"
+     },
+     {
+      "verb": "make",
+      "name": "site/v9.html",
+      "form": "page",
+      "ref": "site/v9.html"
+     },
+     {
+      "verb": "make",
+      "name": "site/index.html",
+      "form": "page",
+      "ref": "site/index.html"
+     },
+     {
+      "verb": "do",
+      "name": "Clicking the button brings the pre-order section into view",
+      "form": "behaviour",
+      "ref": "W-37.a1:1"
+     }
+    ],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "The top of the page now has a Pre-order button that takes customers straight to the order form. The shop name and address are still shown as text.",
+    "details": {
+     "selectors": [
+      "#shop-identity",
+      "#shop-name",
+      "#shop-address",
+      "#hero-preorder",
+      ".shop-identity-inner",
+      ".shop-kicker",
+      ".j2-btn"
+     ],
+     "ids": [
+      "shop-identity",
+      "shop-name",
+      "shop-address",
+      "hero-preorder"
+     ],
+     "section": "W-32",
+     "anchor": "shop-identity",
+     "elements": [
+      "#hero-preorder"
+     ],
+     "scope": "self"
+    }
+   }
+  },
+  {
+   "name": "failed_try_workflow_failed",
+   "source": "j2-20261016-160511 W-26.a1 with a failing result",
+   "j2_atom": {
+    "id": "W-26.a1",
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "attempts": 1,
+    "status": "failed",
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "expect": true
+     }
+    ],
+    "results": [
+     {
+      "check": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "pass": false,
+      "evidence": "'#hero' found 0 time(s) in index.html, expected 1",
+      "attempt": 1
+     },
+     {
+      "check": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "pass": true,
+      "evidence": "7 element(s) match '.menu-item', expected 7",
+      "attempt": 1
+     },
+     {
+      "check": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "pass": true,
+      "evidence": "all 7 fact(s) on the page",
+      "attempt": 1
+     },
+     {
+      "check": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "pass": true,
+      "evidence": "all 1 spec item(s) are on the page as written",
+      "attempt": 1
+     }
+    ],
+    "human_output": {
+     "text": "Visitors now see your full menu with all seven items and their prices in rupees, in a warm coffee-shop look."
+    },
+    "agent_output": {
+     "anchor": "menu",
+     "files": [
+      "site/v1.html",
+      "site/index.html"
+     ],
+     "section": "W-26",
+     "ids": [
+      "menu",
+      "menu-heading"
+     ],
+     "selectors": [
+      "#menu",
+      "#menu-heading",
+      ".menu-wrap",
+      ".j2-card",
+      ".menu-note",
+      ".menu-list",
+      ".menu-item"
+     ],
+     "attempt": 1,
+     "section_names": [
+      "Site Menu section"
+     ]
+    }
+   },
+   "workflow": {
+    "name": "Site Menu section",
+    "status": "failed"
+   },
+   "edges": [],
+   "ended": false,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-26.a1",
+    "workflow": "W-26",
+    "name": "Site Menu section",
+    "owner": "Builder",
+    "status": "verify_failed",
+    "attempt": 1,
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "defined_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "check": "exists",
+      "applies_to": "Site Menu section",
+      "method": "element-count: One #menu section is on the page",
+      "met": false,
+      "evidence": "'#hero' found 0 time(s) in index.html, expected 1"
+     },
+     {
+      "check": "exists",
+      "applies_to": "Site Menu section",
+      "method": "element-count: Seven .menu-item elements are on the page",
+      "met": true,
+      "evidence": "7 element(s) match '.menu-item', expected 7"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Site Menu section",
+      "method": "facts-present: All seven items and prices appear",
+      "met": true,
+      "evidence": "all 7 fact(s) on the page"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Site Menu section",
+      "method": "lld-slice: The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "met": true,
+      "evidence": "all 1 spec item(s) are on the page as written"
+     }
+    ],
+    "output": [
+     {
+      "verb": "make",
+      "name": "Site Menu section",
+      "form": "page",
+      "ref": "site/index.html#menu"
+     },
+     {
+      "verb": "make",
+      "name": "site/v1.html",
+      "form": "page",
+      "ref": "site/v1.html"
+     },
+     {
+      "verb": "make",
+      "name": "site/index.html",
+      "form": "page",
+      "ref": "site/index.html"
+     }
+    ],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "Visitors now see your full menu with all seven items and their prices in rupees, in a warm coffee-shop look.",
+    "details": {
+     "selectors": [
+      "#menu",
+      "#menu-heading",
+      ".menu-wrap",
+      ".j2-card",
+      ".menu-note",
+      ".menu-list",
+      ".menu-item"
+     ],
+     "ids": [
+      "menu",
+      "menu-heading"
+     ],
+     "section": "W-26",
+     "anchor": "menu",
+     "elements": [
+      ".menu-item"
+     ]
+    }
+   }
+  },
+  {
+   "name": "failed_try_workflow_running",
+   "source": "j2-20261016-160511 W-26.a1 with a failing result",
+   "j2_atom": {
+    "id": "W-26.a1",
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "attempts": 1,
+    "status": "failed",
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "expect": true
+     }
+    ],
+    "results": [
+     {
+      "check": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "pass": false,
+      "evidence": "'#hero' found 0 time(s) in index.html, expected 1",
+      "attempt": 1
+     },
+     {
+      "check": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "pass": true,
+      "evidence": "7 element(s) match '.menu-item', expected 7",
+      "attempt": 1
+     },
+     {
+      "check": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "pass": true,
+      "evidence": "all 7 fact(s) on the page",
+      "attempt": 1
+     },
+     {
+      "check": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "pass": true,
+      "evidence": "all 1 spec item(s) are on the page as written",
+      "attempt": 1
+     }
+    ],
+    "human_output": {
+     "text": "Visitors now see your full menu with all seven items and their prices in rupees, in a warm coffee-shop look."
+    },
+    "agent_output": {
+     "anchor": "menu",
+     "files": [
+      "site/v1.html",
+      "site/index.html"
+     ],
+     "section": "W-26",
+     "ids": [
+      "menu",
+      "menu-heading"
+     ],
+     "selectors": [
+      "#menu",
+      "#menu-heading",
+      ".menu-wrap",
+      ".j2-card",
+      ".menu-note",
+      ".menu-list",
+      ".menu-item"
+     ],
+     "attempt": 1,
+     "section_names": [
+      "Site Menu section"
+     ]
+    }
+   },
+   "workflow": {
+    "name": "Site Menu section",
+    "status": "running"
+   },
+   "edges": [],
+   "ended": false,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-26.a1",
+    "workflow": "W-26",
+    "name": "Site Menu section",
+    "owner": "Builder",
+    "status": "open",
+    "attempt": 1,
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "defined_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "check": "exists",
+      "applies_to": "Site Menu section",
+      "method": "element-count: One #menu section is on the page",
+      "met": false,
+      "evidence": "'#hero' found 0 time(s) in index.html, expected 1"
+     },
+     {
+      "check": "exists",
+      "applies_to": "Site Menu section",
+      "method": "element-count: Seven .menu-item elements are on the page",
+      "met": true,
+      "evidence": "7 element(s) match '.menu-item', expected 7"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Site Menu section",
+      "method": "facts-present: All seven items and prices appear",
+      "met": true,
+      "evidence": "all 7 fact(s) on the page"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Site Menu section",
+      "method": "lld-slice: The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "met": true,
+      "evidence": "all 1 spec item(s) are on the page as written"
+     }
+    ],
+    "output": [
+     {
+      "verb": "make",
+      "name": "Site Menu section",
+      "form": "page",
+      "ref": "site/index.html#menu"
+     },
+     {
+      "verb": "make",
+      "name": "site/v1.html",
+      "form": "page",
+      "ref": "site/v1.html"
+     },
+     {
+      "verb": "make",
+      "name": "site/index.html",
+      "form": "page",
+      "ref": "site/index.html"
+     }
+    ],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "Visitors now see your full menu with all seven items and their prices in rupees, in a warm coffee-shop look.",
+    "details": {
+     "selectors": [
+      "#menu",
+      "#menu-heading",
+      ".menu-wrap",
+      ".j2-card",
+      ".menu-note",
+      ".menu-list",
+      ".menu-item"
+     ],
+     "ids": [
+      "menu",
+      "menu-heading"
+     ],
+     "section": "W-26",
+     "anchor": "menu",
+     "elements": [
+      ".menu-item"
+     ]
+    }
+   }
+  },
+  {
+   "name": "escalated",
+   "source": "j2-20261016-160511 W-26.a1 escalated",
+   "j2_atom": {
+    "id": "W-26.a1",
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "attempts": 1,
+    "status": "escalated",
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "expect": true
+     }
+    ],
+    "results": [
+     {
+      "check": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "pass": false,
+      "evidence": "'#hero' found 0 time(s) in index.html, expected 1",
+      "attempt": 1
+     },
+     {
+      "check": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "pass": true,
+      "evidence": "7 element(s) match '.menu-item', expected 7",
+      "attempt": 1
+     },
+     {
+      "check": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "pass": true,
+      "evidence": "all 7 fact(s) on the page",
+      "attempt": 1
+     },
+     {
+      "check": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "pass": true,
+      "evidence": "all 1 spec item(s) are on the page as written",
+      "attempt": 1
+     }
+    ],
+    "human_output": {
+     "text": "Visitors now see your full menu with all seven items and their prices in rupees, in a warm coffee-shop look."
+    },
+    "agent_output": {
+     "anchor": "menu",
+     "files": [
+      "site/v1.html",
+      "site/index.html"
+     ],
+     "section": "W-26",
+     "ids": [
+      "menu",
+      "menu-heading"
+     ],
+     "selectors": [
+      "#menu",
+      "#menu-heading",
+      ".menu-wrap",
+      ".j2-card",
+      ".menu-note",
+      ".menu-list",
+      ".menu-item"
+     ],
+     "attempt": 1,
+     "section_names": [
+      "Site Menu section"
+     ]
+    }
+   },
+   "workflow": {
+    "name": "Site Menu section",
+    "status": "done"
+   },
+   "edges": [],
+   "ended": false,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-26.a1",
+    "workflow": "W-26",
+    "name": "Site Menu section",
+    "owner": "Builder",
+    "status": "verify_failed",
+    "attempt": 1,
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "defined_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "check": "exists",
+      "applies_to": "Site Menu section",
+      "method": "element-count: One #menu section is on the page",
+      "met": false,
+      "evidence": "'#hero' found 0 time(s) in index.html, expected 1"
+     },
+     {
+      "check": "exists",
+      "applies_to": "Site Menu section",
+      "method": "element-count: Seven .menu-item elements are on the page",
+      "met": true,
+      "evidence": "7 element(s) match '.menu-item', expected 7"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Site Menu section",
+      "method": "facts-present: All seven items and prices appear",
+      "met": true,
+      "evidence": "all 7 fact(s) on the page"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Site Menu section",
+      "method": "lld-slice: The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "met": true,
+      "evidence": "all 1 spec item(s) are on the page as written"
+     }
+    ],
+    "output": [
+     {
+      "verb": "make",
+      "name": "Site Menu section",
+      "form": "page",
+      "ref": "site/index.html#menu"
+     },
+     {
+      "verb": "make",
+      "name": "site/v1.html",
+      "form": "page",
+      "ref": "site/v1.html"
+     },
+     {
+      "verb": "make",
+      "name": "site/index.html",
+      "form": "page",
+      "ref": "site/index.html"
+     }
+    ],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "Visitors now see your full menu with all seven items and their prices in rupees, in a warm coffee-shop look.",
+    "details": {
+     "selectors": [
+      "#menu",
+      "#menu-heading",
+      ".menu-wrap",
+      ".j2-card",
+      ".menu-note",
+      ".menu-list",
+      ".menu-item"
+     ],
+     "ids": [
+      "menu",
+      "menu-heading"
+     ],
+     "section": "W-26",
+     "anchor": "menu",
+     "elements": [
+      ".menu-item"
+     ]
+    }
+   }
+  },
+  {
+   "name": "never_checked_open",
+   "source": "j2-20261016-160511 W-26.a1 before any check",
+   "j2_atom": {
+    "id": "W-26.a1",
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "expect": true
+     }
+    ],
+    "results": []
+   },
+   "workflow": {
+    "name": "Site Menu section",
+    "status": "registered"
+   },
+   "edges": [],
+   "ended": false,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-26.a1",
+    "workflow": "W-26",
+    "name": "Site Menu section",
+    "owner": "Builder",
+    "status": "open",
+    "attempt": null,
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "defined_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [],
+    "output": [],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "",
+    "details": {
+     "elements": [
+      ".menu-item"
+     ]
+    }
+   }
+  },
+  {
+   "name": "never_built_run_ended",
+   "source": "j2-20261016-160511 W-26.a1 before any check",
+   "j2_atom": {
+    "id": "W-26.a1",
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "expect": true
+     }
+    ],
+    "results": []
+   },
+   "workflow": {
+    "name": "Site Menu section",
+    "status": "held"
+   },
+   "edges": [],
+   "ended": true,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-26.a1",
+    "workflow": "W-26",
+    "name": "Site Menu section",
+    "owner": "Builder",
+    "status": "abandoned",
+    "attempt": null,
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "defined_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [],
+    "output": [],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "",
+    "details": {
+     "elements": [
+      ".menu-item"
+     ]
+    }
+   }
+  },
+  {
+   "name": "never_funded",
+   "source": "j2-20261016-160511 W-26.a1 before any check",
+   "j2_atom": {
+    "id": "W-26.a1",
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "expect": true
+     }
+    ],
+    "results": []
+   },
+   "workflow": {
+    "name": "Site Menu section",
+    "status": "unfunded"
+   },
+   "edges": [],
+   "ended": false,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-26.a1",
+    "workflow": "W-26",
+    "name": "Site Menu section",
+    "owner": "Builder",
+    "status": "abandoned",
+    "attempt": null,
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "defined_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [],
+    "output": [],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "",
+    "details": {
+     "elements": [
+      ".menu-item"
+     ]
+    }
+   }
+  },
+  {
+   "name": "done_workflow_run_ended",
+   "source": "j2-20261016-160511 W-26.a1 before any check",
+   "j2_atom": {
+    "id": "W-26.a1",
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "expect": true
+     }
+    ],
+    "results": []
+   },
+   "workflow": {
+    "name": "Site Menu section",
+    "status": "done"
+   },
+   "edges": [],
+   "ended": true,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-26.a1",
+    "workflow": "W-26",
+    "name": "Site Menu section",
+    "owner": "Builder",
+    "status": "open",
+    "attempt": null,
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "defined_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [],
+    "output": [],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "",
+    "details": {
+     "elements": [
+      ".menu-item"
+     ]
+    }
+   }
+  },
+  {
+   "name": "edges_and_board_marks",
+   "source": "j2-20261016-160511 W-26.a1 with edges and board marks",
+   "j2_atom": {
+    "id": "W-26.a1",
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "attempts": 1,
+    "status": "passed",
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "expect": true
+     }
+    ],
+    "results": [
+     {
+      "check": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "pass": true,
+      "evidence": "1 element(s) match '#menu', expected 1",
+      "attempt": 1
+     },
+     {
+      "check": "Seven .menu-item elements are on the page",
+      "type": "element-count",
+      "target": ".menu-item",
+      "pass": true,
+      "evidence": "7 element(s) match '.menu-item', expected 7",
+      "attempt": 1
+     },
+     {
+      "check": "All seven items and prices appear",
+      "type": "facts-present",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "pass": true,
+      "evidence": "all 7 fact(s) on the page",
+      "attempt": 1
+     },
+     {
+      "check": "The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "type": "lld-slice",
+      "target": "S1",
+      "pass": true,
+      "evidence": "all 1 spec item(s) are on the page as written",
+      "attempt": 1
+     }
+    ],
+    "human_output": {
+     "text": "Visitors now see your full menu with all seven items and their prices in rupees, in a warm coffee-shop look."
+    },
+    "agent_output": {
+     "anchor": "menu",
+     "files": [
+      "site/v1.html",
+      "site/index.html"
+     ],
+     "section": "W-26",
+     "ids": [
+      "menu",
+      "menu-heading"
+     ],
+     "selectors": [
+      "#menu",
+      "#menu-heading",
+      ".menu-wrap",
+      ".j2-card",
+      ".menu-note",
+      ".menu-list",
+      ".menu-item"
+     ],
+     "attempt": 1,
+     "section_names": [
+      "Site Menu section"
+     ]
+    },
+    "board_stale": "Q-3",
+    "board_rechecked": "Q-4"
+   },
+   "workflow": {
+    "name": "Site Menu section",
+    "status": "done"
+   },
+   "edges": [
+    {
+     "atom": "W-2.a1",
+     "why": "its section, anchor and selectors were listed in this builder's prompt"
+    },
+    {
+     "atom": "W-3.a1",
+     "why": "LLD slice hero"
+    },
+    {
+     "atom": "W-2.a1",
+     "why": "its section, anchor and selectors were listed in this builder's prompt"
+    }
+   ],
+   "ended": false,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-26.a1",
+    "workflow": "W-26",
+    "name": "Site Menu section",
+    "owner": "Builder",
+    "status": "closed",
+    "attempt": 1,
+    "goal": "Visitors see the menu with all seven items and their prices in rupees.",
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create section #menu with a heading and seven elements of class .menu-item, one per item. Each shows the item name and price as one plain text string, copied exactly from the charter."
+    },
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu and the class .menu-item",
+     "Each .menu-item holds one plain text line like 'Filter coffee 90' with no inner tags",
+     "No invented items, prices or descriptions"
+    ],
+    "context": [
+     "charter item 2",
+     "section S1"
+    ],
+    "defined_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu",
+      "met": true
+     },
+     {
+      "text": "Seven menu items",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 7,
+      "met": true
+     },
+     {
+      "text": "All seven items with prices",
+      "kind": "facts",
+      "target": [
+       "Filter coffee 90",
+       "Cappuccino 160",
+       "Latte 180",
+       "Cold brew 200",
+       "Masala chai 80",
+       "Almond croissant 140",
+       "Banana bread slice 120"
+      ],
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "check": "exists",
+      "applies_to": "Site Menu section",
+      "method": "element-count: One #menu section is on the page",
+      "met": true,
+      "evidence": "1 element(s) match '#menu', expected 1"
+     },
+     {
+      "check": "exists",
+      "applies_to": "Site Menu section",
+      "method": "element-count: Seven .menu-item elements are on the page",
+      "met": true,
+      "evidence": "7 element(s) match '.menu-item', expected 7"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Site Menu section",
+      "method": "facts-present: All seven items and prices appear",
+      "met": true,
+      "evidence": "all 7 fact(s) on the page"
+     },
+     {
+      "check": "meets the defined output",
+      "applies_to": "Site Menu section",
+      "method": "lld-slice: The page matches LLD section(s) S1: ids, selectors and form fields as specified",
+      "met": true,
+      "evidence": "all 1 spec item(s) are on the page as written"
+     }
+    ],
+    "output": [
+     {
+      "verb": "make",
+      "name": "Site Menu section",
+      "form": "page",
+      "ref": "site/index.html#menu"
+     },
+     {
+      "verb": "make",
+      "name": "site/v1.html",
+      "form": "page",
+      "ref": "site/v1.html"
+     },
+     {
+      "verb": "make",
+      "name": "site/index.html",
+      "form": "page",
+      "ref": "site/index.html"
+     }
+    ],
+    "depends_on": [
+     {
+      "atom": "W-2.a1",
+      "why": "its section, anchor and selectors were listed in this builder's prompt"
+     },
+     {
+      "atom": "W-3.a1",
+      "why": "LLD slice hero"
+     }
+    ],
+    "used_by": [],
+    "notes": "Visitors now see your full menu with all seven items and their prices in rupees, in a warm coffee-shop look.",
+    "details": {
+     "selectors": [
+      "#menu",
+      "#menu-heading",
+      ".menu-wrap",
+      ".j2-card",
+      ".menu-note",
+      ".menu-list",
+      ".menu-item"
+     ],
+     "ids": [
+      "menu",
+      "menu-heading"
+     ],
+     "section": "W-26",
+     "anchor": "menu",
+     "elements": [
+      ".menu-item"
+     ]
+    },
+    "stale": "Q-3",
+    "rechecked": "Q-4"
+   }
+  },
+  {
+   "name": "send_deed_closed",
+   "source": "crafted after j2.py send_deed (a deed atom)",
+   "j2_atom": {
+    "id": "W-9.a1",
+    "goal": "Send the milestone email about prd.md",
+    "how": {
+     "kind": "code",
+     "agent": "code",
+     "steps": ""
+    },
+    "constraints": [
+     "only to the target in J2_TEST_EMAIL",
+     "built by code, no model"
+    ],
+    "context": [
+     "prd.md"
+    ],
+    "expected_output": [
+     {
+      "text": "The milestone email reaches the configured test target",
+      "kind": "send",
+      "target": "send_email",
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "text": "The milestone email was sent to the configured test target",
+      "type": "deed-send",
+      "target": "send_email",
+      "expect": true,
+      "item": 1
+     }
+    ],
+    "results": [
+     {
+      "check": "The milestone email was sent to the configured test target",
+      "type": "deed-send",
+      "target": "send_email",
+      "pass": true,
+      "evidence": "sent in mock mode",
+      "attempt": 1
+     }
+    ],
+    "attempts": 1,
+    "status": "passed",
+    "human_output": {
+     "text": "The email was sent in test mode to the mock recorder only."
+    },
+    "deed": {
+     "channel": "email",
+     "mode": "mock",
+     "sent": true
+    }
+   },
+   "workflow": {
+    "name": "Send the milestone email",
+    "status": "done"
+   },
+   "edges": [],
+   "ended": false,
+   "view": {
+    "schema": "atom/1",
+    "id": "W-9.a1",
+    "workflow": "W-9",
+    "name": "Send the milestone email",
+    "owner": "code",
+    "status": "closed",
+    "attempt": 1,
+    "goal": "Send the milestone email about prd.md",
+    "how": {
+     "kind": "code",
+     "agent": "code",
+     "steps": ""
+    },
+    "constraints": [
+     "only to the target in J2_TEST_EMAIL",
+     "built by code, no model"
+    ],
+    "context": [
+     "prd.md"
+    ],
+    "defined_output": [
+     {
+      "text": "The milestone email reaches the configured test target",
+      "kind": "send",
+      "target": "send_email",
+      "met": true
+     }
+    ],
+    "verification": [
+     {
+      "check": "receipt",
+      "applies_to": "The milestone email was sent to the configured test target",
+      "method": "deed-send: The milestone email was sent to the configured test target",
+      "met": true,
+      "evidence": "W-9.a1:1"
+     }
+    ],
+    "output": [
+     {
+      "verb": "do",
+      "name": "The milestone email was sent to the configured test target",
+      "form": "send",
+      "ref": "W-9.a1:1"
+     }
+    ],
+    "depends_on": [],
+    "used_by": [],
+    "notes": "The email was sent in test mode to the mock recorder only.",
+    "details": {
+     "scope": "external",
+     "channel": "email",
+     "mode": "mock",
+     "sent": true
+    }
+   }
+  }
+ ]
+}

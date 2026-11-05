@@ -1,0 +1,11 @@
+# The store files whose public write methods must take a Checked object (library design 14, D41).
+# One path per line, relative to the repository root. A path followed by `pending` belongs to a work package that is not
+# merged yet: it is skipped while the file is missing and scanned like any other as soon as it exists.
+sutra_app/orchestrator/chart.py
+sutra_app/orchestrator/chats.py
+sutra_app/orchestrator/atoms.py
+sutra_app/orchestrator/usage.py
+sutra_app/orchestrator/graph.py
+sutra_app/orchestrator/tasks.py pending
+sutra_app/orchestrator/departments.py
+sutra_app/orchestrator/nodes.py

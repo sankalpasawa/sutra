@@ -1,0 +1,119 @@
+# Continuous integration for sutra-pro, which lives in the sutra/sutra-pro folder of the Sutra repository (D98). Modelled on the old Sutra repo's test-native.yml and plugin-release-gate.yml.
+#
+# THE GATE IS THE LOCAL GATE. `test` runs scripts/gate.sh, the very command every local merge (scripts/wt.sh merge) must pass:
+# pytest, then the node tests. A green run here means the same thing as a green merge on the owner's machine, on three systems (Linux, macOS, Windows).
+# The old pipeline made macOS a first-class leg because a GNU-only assumption is green on ubuntu and dead on the owner's Mac;
+# the same reasoning applies here (paths, tmp dirs, process groups), so macos-15 is a leg of the matrix, and fail-fast is off so
+# a macOS-only break is never hidden by the ubuntu leg going red first.
+#
+# `package` builds the sdist and the wheel the way a release does, looks inside the wheel (scripts/check_wheel.py), installs it in
+# a clean environment and starts the command. It proves the wheel carries every data file and the `sutra-pro` command (D86, D88).
+#
+# LIVE, SLOW AND BROWSER SUITES NEVER RUN BY DEFAULT. tests/conftest.py skips them unless SUTRA_LIVE, SUTRA_SLOW or
+# SUTRA_BROWSER is 1. This file never sets SUTRA_LIVE or SUTRA_BROWSER, and sets SUTRA_SLOW only in the one step that a manual
+# run with slow=true switches on. Nothing here calls a real claude or codex.
+name: sutra-pro-ci
+
+# Only changes to this product (or to this file) run it: the old product shares the repository and has its own workflows.
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "sutra-pro/**"
+      - ".github/workflows/sutra-pro-ci.yml"
+  pull_request:
+    paths:
+      - "sutra-pro/**"
+      - ".github/workflows/sutra-pro-ci.yml"
+  workflow_dispatch:
+    inputs:
+      slow:
+        description: "Also run the slow suites (SUTRA_SLOW=1)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: sutra-pro
+
+concurrency:
+  group: sutra-pro-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Create the virtual environment
+        run: uv venv .venv --python 3.11
+
+      - name: Install the project and its dev tools
+        run: uv pip install -e ".[dev]"
+
+      - name: The build plan is consistent
+        run: scripts/py scripts/plan_tools.py check
+
+      - name: Gate (pytest and the node tests)
+        run: scripts/gate.sh
+
+      - name: Slow suites (a manual run with slow=true only)
+        if: ${{ inputs.slow }}
+        run: SUTRA_SLOW=1 scripts/py -m pytest
+
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Create the virtual environment (scripts/py needs it)
+        run: uv venv .venv --python 3.11
+
+      # uv build makes the sdist first and then the wheel FROM that sdist, so a file missing from the sdist is missing here too.
+      - name: Build the sdist and the wheel
+        run: uv build
+
+      - name: Check what is inside the wheel
+        run: scripts/py scripts/check_wheel.py dist/*.whl
+
+      # Outside the checkout, so nothing of the source tree can answer for the wheel.
+      - name: Install the wheel in a clean environment and run it
+        run: |
+          set -euo pipefail
+          uv venv "$RUNNER_TEMP/clean" --python 3.11
+          uv pip install --python "$RUNNER_TEMP/clean/bin/python" dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/clean/bin/sutra-pro" --help
+
+      - name: Keep the built distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error

@@ -1,0 +1,177 @@
+{
+  "$defs": {
+    "FunctionIds": {
+      "additionalProperties": false,
+      "description": "The ids of a department's five function nodes, one field per function: `<department id>.<function>`.",
+      "properties": {
+        "adaptation": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Adaptation",
+          "type": "string"
+        },
+        "audit": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Audit",
+          "type": "string"
+        },
+        "coordination": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Coordination",
+          "type": "string"
+        },
+        "identity": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Identity",
+          "type": "string"
+        },
+        "priority": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Priority",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identity",
+        "adaptation",
+        "priority",
+        "coordination",
+        "audit"
+      ],
+      "title": "FunctionIds",
+      "type": "object"
+    },
+    "OrgEdge": {
+      "additionalProperties": false,
+      "description": "A `contains` edge: `parent` holds `child`. The chart is one tree.",
+      "properties": {
+        "child": {
+          "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+          "title": "Child",
+          "type": "string"
+        },
+        "parent": {
+          "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+          "title": "Parent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "parent",
+        "child"
+      ],
+      "title": "OrgEdge",
+      "type": "object"
+    },
+    "OrgNode": {
+      "additionalProperties": false,
+      "description": "One node of the chart. Only a department carries `functions`; `added_in` is the revision that made the node.",
+      "properties": {
+        "added_in": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Added In",
+          "type": "integer"
+        },
+        "functions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FunctionIds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "root",
+            "department",
+            "division"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "purpose": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Purpose",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name"
+      ],
+      "title": "OrgNode",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The org chart: one tree of nodes with a revision. Edges are kept sorted, nodes in change order.",
+  "properties": {
+    "edges": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/OrgEdge"
+      },
+      "maxItems": 500,
+      "title": "Edges",
+      "type": "array"
+    },
+    "kind": {
+      "const": "org_chart",
+      "default": "org_chart",
+      "title": "Kind",
+      "type": "string"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/OrgNode"
+      },
+      "maxItems": 500,
+      "minItems": 1,
+      "title": "Nodes",
+      "type": "array"
+    },
+    "revision": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "updated_ts": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Updated Ts",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "nodes"
+  ],
+  "title": "OrgChart",
+  "type": "object"
+}

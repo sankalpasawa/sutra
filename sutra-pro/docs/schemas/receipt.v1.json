@@ -1,0 +1,243 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "One line of receipts.jsonl, written by code only (J2 `_receipt`, `_expected_receipts`; `[U]` beyond the golden runs).\nTwo shapes share the file: a CHECK receipt (`check`, `type`, `expect`, `actual`, `pass`, `evidence`) and an OUTPUT\nreceipt (`expected`, `kind`, `met`, `checks`). The keys after `by` are the ones a template routing adds. J2's send record\n(`type: deed-send-record`) is not a Receipt: the catalogue checks it as bounded open JSON.",
+  "properties": {
+    "actual": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "atom": {
+      "maxLength": 40,
+      "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+      "title": "Atom",
+      "type": "string"
+    },
+    "attempt": {
+      "maximum": 99,
+      "minimum": 0,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "by": {
+      "const": "code",
+      "title": "By",
+      "type": "string"
+    },
+    "check": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Check"
+    },
+    "checks": {
+      "anyOf": [
+        {
+          "items": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Checks"
+    },
+    "evidence": {
+      "anyOf": [
+        {
+          "maxLength": 100000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence"
+    },
+    "expect": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "expected": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expected"
+    },
+    "kind": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Kind"
+    },
+    "met": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Met"
+    },
+    "of": {
+      "maximum": 99,
+      "minimum": 1,
+      "title": "Of",
+      "type": "integer"
+    },
+    "pass": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pass"
+    },
+    "rules": {
+      "anyOf": [
+        {
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "type": "object"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rules"
+    },
+    "t": {
+      "maxLength": 40,
+      "minLength": 1,
+      "title": "T",
+      "type": "string"
+    },
+    "target": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target"
+    },
+    "template": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Template"
+    },
+    "template_route": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Template Route"
+    },
+    "template_version": {
+      "anyOf": [
+        {
+          "maximum": 999999,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Template Version"
+    },
+    "type": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Type"
+    }
+  },
+  "required": [
+    "atom",
+    "attempt",
+    "of",
+    "t",
+    "by"
+  ],
+  "title": "Receipt",
+  "type": "object"
+}

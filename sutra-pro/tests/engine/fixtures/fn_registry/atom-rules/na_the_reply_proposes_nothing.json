@@ -1,0 +1,20 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "adaptation",
+   "kind": "respond"
+  },
+  "replies": [
+   {
+    "act": "ACCEPT",
+    "next": "Priority"
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "na": true,
+  "evidence": "the reply proposes no workflows"
+ }
+}

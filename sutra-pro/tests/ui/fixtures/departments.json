@@ -1,0 +1,169 @@
+{
+  "1": [],
+  "2": [
+    {
+      "id": "web",
+      "name": "Web",
+      "purpose": "Websites and landing pages",
+      "node_status": "waiting_on_you",
+      "live_task_id": "tsk_a1b2c3d4e5f6",
+      "session_id": "cs_5e0a77b19c3d",
+      "functions": [
+        {
+          "id": "web.identity",
+          "fn": "identity",
+          "status": "waiting_on_you",
+          "chat_session_id": "cs_77aa10c2e9b4"
+        },
+        {
+          "id": "web.adaptation",
+          "fn": "adaptation",
+          "status": "idle",
+          "chat_session_id": "cs_b37b2000ef36"
+        },
+        {
+          "id": "web.priority",
+          "fn": "priority",
+          "status": "idle",
+          "chat_session_id": "cs_7731b1a82306"
+        },
+        {
+          "id": "web.coordination",
+          "fn": "coordination",
+          "status": "idle",
+          "chat_session_id": "cs_0a584a5e9e60"
+        },
+        {
+          "id": "web.audit",
+          "fn": "audit",
+          "status": "idle",
+          "chat_session_id": "cs_e1acceab39f9"
+        }
+      ]
+    }
+  ],
+  "3": [
+    {
+      "id": "web",
+      "name": "Web",
+      "purpose": "Websites and landing pages",
+      "node_status": "running",
+      "live_task_id": "tsk_a1b2c3d4e5f6",
+      "session_id": "cs_5e0a77b19c3d",
+      "functions": [
+        {
+          "id": "web.identity",
+          "fn": "identity",
+          "status": "idle",
+          "chat_session_id": "cs_77aa10c2e9b4"
+        },
+        {
+          "id": "web.adaptation",
+          "fn": "adaptation",
+          "status": "running",
+          "chat_session_id": "cs_b37b2000ef36"
+        },
+        {
+          "id": "web.priority",
+          "fn": "priority",
+          "status": "idle",
+          "chat_session_id": "cs_7731b1a82306"
+        },
+        {
+          "id": "web.coordination",
+          "fn": "coordination",
+          "status": "idle",
+          "chat_session_id": "cs_0a584a5e9e60"
+        },
+        {
+          "id": "web.audit",
+          "fn": "audit",
+          "status": "idle",
+          "chat_session_id": "cs_e1acceab39f9"
+        }
+      ]
+    }
+  ],
+  "full": [
+    {
+      "id": "web",
+      "name": "Web",
+      "purpose": "Websites and landing pages",
+      "node_status": "waiting_on_you",
+      "live_task_id": "tsk_a1b2c3d4e5f6",
+      "session_id": "cs_5e0a77b19c3d",
+      "functions": [
+        {
+          "id": "web.identity",
+          "fn": "identity",
+          "status": "waiting_on_you",
+          "chat_session_id": "cs_77aa10c2e9b4"
+        },
+        {
+          "id": "web.adaptation",
+          "fn": "adaptation",
+          "status": "running",
+          "chat_session_id": "cs_b37b2000ef36"
+        },
+        {
+          "id": "web.priority",
+          "fn": "priority",
+          "status": "waiting",
+          "chat_session_id": "cs_7731b1a82306"
+        },
+        {
+          "id": "web.coordination",
+          "fn": "coordination",
+          "status": "idle",
+          "chat_session_id": "cs_0a584a5e9e60"
+        },
+        {
+          "id": "web.audit",
+          "fn": "audit",
+          "status": "fault",
+          "chat_session_id": "cs_e1acceab39f9"
+        }
+      ]
+    },
+    {
+      "id": "content",
+      "name": "Content",
+      "purpose": "Words and pictures for pages",
+      "node_status": "idle",
+      "live_task_id": null,
+      "session_id": "cs_6c0ffee1b2a3",
+      "functions": [
+        {
+          "id": "content.identity",
+          "fn": "identity",
+          "status": "idle",
+          "chat_session_id": "cs_5d8b37864b86"
+        },
+        {
+          "id": "content.adaptation",
+          "fn": "adaptation",
+          "status": "idle",
+          "chat_session_id": "cs_f9f82cda99d9"
+        },
+        {
+          "id": "content.priority",
+          "fn": "priority",
+          "status": "idle",
+          "chat_session_id": "cs_21c625a75f8a"
+        },
+        {
+          "id": "content.coordination",
+          "fn": "coordination",
+          "status": "idle",
+          "chat_session_id": "cs_e277921221b1"
+        },
+        {
+          "id": "content.audit",
+          "fn": "audit",
+          "status": "idle",
+          "chat_session_id": "cs_a91aafad2692"
+        }
+      ]
+    }
+  ]
+}

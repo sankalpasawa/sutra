@@ -1,0 +1,1 @@
+{"schema": "agent/1", "who": "nobody", "found": false, "names": {"W-1": "Plan", "W-2": "Build item 1", "W-3": "Build item 2", "W-4": "Build item 3", "W-5": "Build item 4", "W-6": "Build item 5"}, "summary": {"calls": 0, "seconds": 0, "models": [], "tokens": {"input": 0, "output": 0}, "messages": 0, "most": null}, "conversations": [], "thinking": []}

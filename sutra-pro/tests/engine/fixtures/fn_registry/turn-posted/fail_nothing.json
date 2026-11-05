@@ -1,0 +1,13 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  }
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "no message, no record"
+ }
+}

@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a1a2b8-6719-7e71-83fa-bcf21c8c1649"}
+{"type":"turn.started"}
+{"type":"error","message":"Reconnecting... 2/5 (unexpected status 500 Internal Server Error, url: https://api.openai.com/v1/responses)"}
+{"type":"turn.failed","error":{"message":"exceeded retry limit, last status: 500 Internal Server Error"}}

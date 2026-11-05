@@ -1,0 +1,38 @@
+{
+ "id": 1296269,
+ "node_id": "R_kgDOEXAMPLE",
+ "name": "__REPO__",
+ "full_name": "__OWNER__/__REPO__",
+ "private": false,
+ "owner": {
+  "login": "__OWNER__",
+  "id": 583231,
+  "type": "Organization",
+  "html_url": "https://github.com/__OWNER__"
+ },
+ "html_url": "https://github.com/__OWNER__/__REPO__",
+ "description": "A fixture repository served by the fake gh",
+ "fork": false,
+ "created_at": "2026-01-02T03:04:05Z",
+ "updated_at": "2026-11-03T10:11:12Z",
+ "pushed_at": "2026-11-03T10:11:12Z",
+ "default_branch": "main",
+ "language": "Python",
+ "stargazers_count": 42,
+ "watchers_count": 42,
+ "forks_count": 5,
+ "open_issues_count": 3,
+ "visibility": "public",
+ "archived": false,
+ "disabled": false,
+ "has_issues": true,
+ "license": {
+  "key": "mit",
+  "name": "MIT License",
+  "spdx_id": "MIT"
+ },
+ "topics": [
+  "fixture",
+  "sutra"
+ ]
+}

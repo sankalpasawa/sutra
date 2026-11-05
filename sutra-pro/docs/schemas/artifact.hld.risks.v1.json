@@ -1,0 +1,53 @@
+{
+  "$defs": {
+    "Risk": {
+      "additionalProperties": false,
+      "properties": {
+        "mitigation": {
+          "description": "what is done about it",
+          "maxLength": 4000,
+          "title": "Mitigation",
+          "type": "string"
+        },
+        "risk": {
+          "description": "the risk, one line",
+          "maxLength": 4000,
+          "title": "Risk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "risk",
+        "mitigation"
+      ],
+      "title": "Risk",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assumptions": {
+      "items": {
+        "maxLength": 4000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "risks": {
+      "description": "each risk with its mitigation",
+      "items": {
+        "$ref": "#/$defs/Risk"
+      },
+      "maxItems": 300,
+      "title": "Risks",
+      "type": "array"
+    }
+  },
+  "required": [
+    "risks"
+  ],
+  "title": "HLDRisks",
+  "type": "object"
+}

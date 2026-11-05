@@ -1,0 +1,143 @@
+{
+  "$defs": {
+    "EdgeSource": {
+      "additionalProperties": false,
+      "description": "The record an edge was drawn from: \"no line without a record\" (map-schema). `value` is the text of the field.",
+      "properties": {
+        "field": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Field",
+          "type": "string"
+        },
+        "file": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "File",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 300,
+          "title": "Value",
+          "type": "string"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "required": [
+        "file",
+        "field",
+        "value"
+      ],
+      "title": "EdgeSource",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A line between two nodes. `status` is the map/1 word the line is drawn in; `n` counts what the line stands for.",
+  "properties": {
+    "from_id": {
+      "pattern": "^[^>\\s]{1,80}$",
+      "title": "From Id",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^[a-z_]{1,20}:[^>\\s]{1,80}>[^>\\s]{1,80}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "contains",
+        "has_function",
+        "has_step",
+        "handoff",
+        "step",
+        "speaks_to",
+        "depends_on"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "label": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Label",
+      "type": "string"
+    },
+    "n": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EdgeSource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "status": {
+      "default": "idle",
+      "enum": [
+        "filed",
+        "running",
+        "waiting",
+        "waiting_on_you",
+        "fault",
+        "not_made",
+        "idle"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "to_id": {
+      "pattern": "^[^>\\s]{1,80}$",
+      "title": "To Id",
+      "type": "string"
+    },
+    "version": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "kind",
+    "id",
+    "from_id",
+    "to_id"
+  ],
+  "title": "GraphEdge",
+  "type": "object"
+}

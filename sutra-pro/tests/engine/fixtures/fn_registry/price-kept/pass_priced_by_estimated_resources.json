@@ -1,0 +1,24 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "reply": {
+   "decision": "GRANT",
+   "workflows": [
+    {
+     "name": "Hero",
+     "estimated_resources": {
+      "money": 8
+     }
+    }
+   ]
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "GRANT priced: Hero 8"
+ }
+}

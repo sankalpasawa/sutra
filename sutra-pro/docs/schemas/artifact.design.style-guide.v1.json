@@ -1,0 +1,182 @@
+{
+  "$defs": {
+    "Buttons": {
+      "additionalProperties": false,
+      "properties": {
+        "primary": {
+          "description": "css declarations for the primary button",
+          "maxLength": 2000,
+          "title": "Primary",
+          "type": "string"
+        },
+        "secondary": {
+          "description": "css declarations for the secondary button",
+          "maxLength": 2000,
+          "title": "Secondary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "primary",
+        "secondary"
+      ],
+      "title": "Buttons",
+      "type": "object"
+    },
+    "Fonts": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "description": "a css font-family",
+          "maxLength": 2000,
+          "title": "Body",
+          "type": "string"
+        },
+        "google_fonts_url": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a https://fonts.googleapis.com/ url, or null",
+          "title": "Google Fonts Url"
+        },
+        "heading": {
+          "description": "a css font-family",
+          "maxLength": 2000,
+          "title": "Heading",
+          "type": "string"
+        }
+      },
+      "required": [
+        "heading",
+        "body"
+      ],
+      "title": "Fonts",
+      "type": "object"
+    },
+    "Palette": {
+      "additionalProperties": false,
+      "properties": {
+        "accent": {
+          "maxLength": 2000,
+          "title": "Accent",
+          "type": "string"
+        },
+        "background": {
+          "maxLength": 2000,
+          "title": "Background",
+          "type": "string"
+        },
+        "muted": {
+          "maxLength": 2000,
+          "title": "Muted",
+          "type": "string"
+        },
+        "primary": {
+          "maxLength": 2000,
+          "title": "Primary",
+          "type": "string"
+        },
+        "secondary": {
+          "maxLength": 2000,
+          "title": "Secondary",
+          "type": "string"
+        },
+        "surface": {
+          "maxLength": 2000,
+          "title": "Surface",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 2000,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "primary",
+        "secondary",
+        "accent",
+        "background",
+        "surface",
+        "text",
+        "muted"
+      ],
+      "title": "Palette",
+      "type": "object"
+    },
+    "Spacing": {
+      "additionalProperties": false,
+      "properties": {
+        "section": {
+          "description": "the space between sections, e.g. \"64px\"",
+          "maxLength": 2000,
+          "title": "Section",
+          "type": "string"
+        },
+        "unit": {
+          "description": "the base spacing, e.g. \"8px\"",
+          "maxLength": 2000,
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "section"
+      ],
+      "title": "Spacing",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "buttons": {
+      "$ref": "#/$defs/Buttons"
+    },
+    "card": {
+      "description": "css declarations for a card",
+      "maxLength": 2000,
+      "title": "Card",
+      "type": "string"
+    },
+    "fonts": {
+      "$ref": "#/$defs/Fonts"
+    },
+    "notes": {
+      "default": "",
+      "description": "one line: why this suits the business",
+      "maxLength": 4000,
+      "title": "Notes",
+      "type": "string"
+    },
+    "palette": {
+      "$ref": "#/$defs/Palette"
+    },
+    "radius": {
+      "description": "the corner radius, e.g. \"12px\"",
+      "maxLength": 2000,
+      "title": "Radius",
+      "type": "string"
+    },
+    "spacing": {
+      "$ref": "#/$defs/Spacing"
+    }
+  },
+  "required": [
+    "palette",
+    "fonts",
+    "spacing",
+    "radius",
+    "buttons",
+    "card"
+  ],
+  "title": "Design",
+  "type": "object"
+}

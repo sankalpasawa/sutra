@@ -1,0 +1,27 @@
+{
+ "args": [
+  "coordination",
+  "schedule"
+ ],
+ "evidence": {
+  "turn": {
+   "function": "coordination",
+   "kind": "schedule"
+  },
+  "call": {},
+  "reply": {
+   "say": "@Priority Schedule W-1, W-2.",
+   "rule": "dependencies first",
+   "order": [
+    "W-1",
+    "W-2"
+   ],
+   "holds": [],
+   "next": "Priority"
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "ok"
+ }
+}

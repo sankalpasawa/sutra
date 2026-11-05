@@ -1,0 +1,4240 @@
+{
+ "schema": "traceability/1",
+ "counts": {
+  "decisions": 97,
+  "packages": 62,
+  "endpoints": 30,
+  "chips": 15,
+  "steps": 7,
+  "owner_rules": 7
+ },
+ "max_decision": 97,
+ "owner_rules": [
+  {
+   "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
+   "source": "owner, 2026-11-03",
+   "decisions": [
+    "D1",
+    "D4",
+    "D6",
+    "D13",
+    "D89",
+    "D90",
+    "D91"
+   ],
+   "modules": [
+    "sutra_app/engine/VENDORED.md",
+    "sutra_app/engine/j2.py",
+    "sutra_app/ui/pages/j2_ui.html",
+    "sutra_app/ui/routes.py",
+    "scripts/vendor_j2.py",
+    "scripts/port_j2_ui.py"
+   ],
+   "tests": [
+    "tests/engine/test_engine_vendor.py",
+    "tests/engine/test_engine_patches.py",
+    "tests/ui/test_port_edits.py",
+    "tests/ui/test_serve.py"
+   ]
+  },
+  {
+   "rule": "There is ONE global org chart; tasks reuse, add to or rearrange it on need. Never one chart per workflow.",
+   "source": "owner, 2026-11-03",
+   "decisions": [
+    "D26",
+    "D42",
+    "D43",
+    "D44",
+    "D67",
+    "D68",
+    "D70"
+   ],
+   "modules": [
+    "sutra_app/library/org_chart.py",
+    "sutra_app/orchestrator/chart.py",
+    "sutra_app/orchestrator/chart_rules.py",
+    "sutra_app/orchestrator/agent/planner.py",
+    "sutra_app/orchestrator/graph.py"
+   ],
+   "tests": [
+    "tests/library/test_lib_org_chart.py",
+    "tests/library/test_lib_chart_change.py",
+    "tests/orchestrator/test_chart_store.py",
+    "tests/orchestrator/test_chart_rules.py",
+    "tests/orchestrator/test_chat_agent.py"
+   ]
+  },
+  {
+   "rule": "Everything in the J2 prototype is present in the app.",
+   "source": "owner, 2026-11-03",
+   "decisions": [
+    "D4",
+    "D13",
+    "D25",
+    "D46",
+    "D47",
+    "D84",
+    "D90",
+    "D91"
+   ],
+   "modules": [
+    "sutra_app/engine/features.py",
+    "sutra_app/engine/views.py",
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/api/__init__.py",
+    "sutra_app/ui/pages/j2_ui.html",
+    "docs/reference/"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py",
+    "tests/engine/test_engine_views.py",
+    "tests/engine/test_engine_prompts.py",
+    "tests/engine/test_engine_legacy.py",
+    "tests/contracts/test_contract_route_table.py",
+    "tests/library/test_lib_engine_parity.py"
+   ]
+  },
+  {
+   "rule": "Each of the five functions is an agentic graph node with the Sutra plugin's goal, task, context and work-atom behaviour inside.",
+   "source": "owner, 2026-11-03",
+   "decisions": [
+    "D49",
+    "D50",
+    "D51",
+    "D52",
+    "D53",
+    "D54",
+    "D55",
+    "D56",
+    "D57",
+    "D58",
+    "D59",
+    "D60",
+    "D61",
+    "D62",
+    "D63",
+    "D64",
+    "D65",
+    "D66"
+   ],
+   "modules": [
+    "sutra_app/engine/fnodes/layer.py",
+    "sutra_app/engine/fnodes/declare.py",
+    "sutra_app/engine/fnodes/registry.py",
+    "sutra_app/engine/fnodes/checks.py",
+    "sutra_app/engine/fnodes/evidence.py",
+    "sutra_app/library/node.py",
+    "sutra_app/library/atom.py",
+    "sutra_app/library/functions.py",
+    "sutra_app/orchestrator/atoms.py",
+    "sutra_app/orchestrator/nodes.py"
+   ],
+   "tests": [
+    "tests/engine/test_engine_fn_layer.py",
+    "tests/engine/test_engine_fn_checks.py",
+    "tests/engine/test_engine_fn_declare.py",
+    "tests/engine/test_engine_fn_registry.py",
+    "tests/engine/test_engine_fn_mutations.py",
+    "tests/engine/test_engine_fn_golden.py",
+    "tests/library/test_lib_node.py",
+    "tests/library/test_lib_atom.py",
+    "tests/library/test_lib_functions.py",
+    "tests/contracts/test_contract_fnodes.py",
+    "tests/orchestrator/test_projector_fnodes.py",
+    "tests/orchestrator/test_atoms_usage.py"
+   ]
+  },
+  {
+   "rule": "Model calls go through a connector layer using the Claude and Codex connectors.",
+   "source": "owner, 2026-11-03",
+   "decisions": [
+    "D7",
+    "D17",
+    "D27",
+    "D28",
+    "D29",
+    "D30",
+    "D31",
+    "D32",
+    "D33",
+    "D34",
+    "D35",
+    "D36",
+    "D37",
+    "D38"
+   ],
+   "modules": [
+    "sutra_app/connectors/base.py",
+    "sutra_app/connectors/router.py",
+    "sutra_app/connectors/claude.py",
+    "sutra_app/connectors/codex.py",
+    "sutra_app/connectors/stub.py",
+    "sutra_app/connectors/policy.py",
+    "sutra_app/connectors/factory.py",
+    "sutra_app/connectors/health.py",
+    "sutra_app/connectors/usage.py",
+    "sutra_app/connectors/orchestrator_port.py",
+    "sutra_app/connectors/engine_port.py"
+   ],
+   "tests": [
+    "tests/connectors/test_claude_connector.py",
+    "tests/connectors/test_codex_connector.py",
+    "tests/connectors/test_router_plan.py",
+    "tests/connectors/test_router_attempts.py",
+    "tests/connectors/test_stub.py",
+    "tests/connectors/test_policy.py",
+    "tests/connectors/test_live.py"
+   ]
+  },
+  {
+   "rule": "Decide autonomously; document each decision in the design and in the architecture diagram.",
+   "source": "owner, 2026-11-04",
+   "decisions": [
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5",
+    "D6",
+    "D7",
+    "D8",
+    "D9",
+    "D10",
+    "D11",
+    "D12",
+    "D13",
+    "D14",
+    "D15",
+    "D16",
+    "D17",
+    "D18",
+    "D19",
+    "D20",
+    "D21",
+    "D22",
+    "D23",
+    "D24",
+    "D25",
+    "D26",
+    "D27",
+    "D28",
+    "D29",
+    "D30",
+    "D31",
+    "D32",
+    "D33",
+    "D34",
+    "D35",
+    "D36",
+    "D37",
+    "D38",
+    "D39",
+    "D40",
+    "D41",
+    "D42",
+    "D43",
+    "D44",
+    "D45",
+    "D46",
+    "D47",
+    "D48",
+    "D49",
+    "D50",
+    "D51",
+    "D52",
+    "D53",
+    "D54",
+    "D55",
+    "D56",
+    "D57",
+    "D58",
+    "D59",
+    "D60",
+    "D61",
+    "D62",
+    "D63",
+    "D64",
+    "D65",
+    "D66",
+    "D67",
+    "D68",
+    "D69",
+    "D70",
+    "D71",
+    "D72",
+    "D73",
+    "D74",
+    "D75",
+    "D76",
+    "D77",
+    "D78",
+    "D79",
+    "D80",
+    "D81",
+    "D82",
+    "D83",
+    "D84",
+    "D85",
+    "D86",
+    "D87",
+    "D88",
+    "D89",
+    "D90",
+    "D91",
+    "D92",
+    "D93",
+    "D94",
+    "D95",
+    "D96",
+    "D97"
+   ],
+   "modules": [
+    "docs/DECISIONS.md",
+    "docs/DESIGN.md",
+    "docs/diagram/decisions.json",
+    "docs/diagram/gen.py",
+    "docs/design/decision-index.json",
+    "scripts/build_traceability.py"
+   ],
+   "tests": [
+    "tests/contracts/test_contract_diagram_strings.py",
+    "tests/test_traceability.py"
+   ]
+  },
+  {
+   "rule": "Keep merging locally; never push, never open PRs.",
+   "source": "owner, standing rule",
+   "decisions": [
+    "D1",
+    "D89"
+   ],
+   "modules": [
+    "scripts/wt.sh",
+    "scripts/gate.sh",
+    "scripts/py",
+    "scripts/plan_tools.py",
+    "docs/BUILD-PLAN.md"
+   ],
+   "tests": [
+    "tests/test_build_plan.py",
+    "tests/test_layout.py"
+   ]
+  }
+ ],
+ "steps": [
+  {
+   "step": "1 Chat agent reads the chart; does the requirement fit the org",
+   "modules": [
+    "sutra_app/orchestrator/agent/agent.py",
+    "sutra_app/orchestrator/agent/prompts.py",
+    "sutra_app/orchestrator/chart.py"
+   ],
+   "tests": [
+    "tests/orchestrator/test_chat_agent.py",
+    "tests/orchestrator/test_agent_demo.py",
+    "tests/integration/test_offline_demo.py",
+    "tests/e2e/test_scenario_new_team.py"
+   ],
+   "later_tests": "tests/e2e/test_step1_*",
+   "gap": "run end to end by tests/e2e (GAP-E2E); a real model reading the digest is the live smoke (GAP-LIVE, run on the owner's say-so)"
+  },
+  {
+   "step": "2 For a new department or workflow the agent references the models library",
+   "modules": [
+    "sutra_app/orchestrator/agent/planner.py",
+    "sutra_app/library/registry.py",
+    "sutra_app/library/wire.py"
+   ],
+   "tests": [
+    "tests/orchestrator/test_chat_agent.py",
+    "tests/library/test_lib_registry.py",
+    "tests/library/test_lib_transport.py",
+    "tests/e2e/test_scenario_new_team.py"
+   ],
+   "later_tests": "tests/e2e/test_step2_*",
+   "gap": "prompt content is tested in the e2e scenario; a model that reads the schema is the live smoke (GAP-LIVE)"
+  },
+  {
+   "step": "3 claude cli + python models build structured workflows and a visual graph",
+   "modules": [
+    "sutra_app/connectors/router.py",
+    "sutra_app/connectors/claude.py",
+    "sutra_app/connectors/orchestrator_port.py",
+    "sutra_app/library/workflow.py",
+    "sutra_app/orchestrator/tasks.py",
+    "sutra_app/orchestrator/graph.py"
+   ],
+   "tests": [
+    "tests/connectors/test_orchestrator_port.py",
+    "tests/connectors/test_claude_connector.py",
+    "tests/connectors/test_router_json.py",
+    "tests/library/test_lib_workflow.py",
+    "tests/orchestrator/test_scripted_conversation.py",
+    "tests/e2e/test_scenario_fake_cli.py"
+   ],
+   "later_tests": "tests/e2e/test_step3_*",
+   "gap": "run through the real router over the fake claude and codex (GAP-E2E); the real CLIs are the live smoke (GAP-LIVE)"
+  },
+  {
+   "step": "4 The graph is visible",
+   "modules": [
+    "sutra_app/orchestrator/api/graph.py",
+    "sutra_app/orchestrator/graph.py",
+    "sutra_app/ui/static/js/graph_render.js"
+   ],
+   "tests": [
+    "tests/orchestrator/test_api_graph.py",
+    "tests/orchestrator/test_graph_store.py",
+    "tests/ui/test_view_graph.py",
+    "tests/ui/js/graph_render.test.js",
+    "tests/ui/js/graph_layout.test.js",
+    "tests/e2e/test_scenario_new_team.py",
+    "tests/e2e/test_browser_real_app.py"
+   ],
+   "later_tests": "tests/e2e/test_step4_*",
+   "gap": "the browser walk against the real app runs with SUTRA_BROWSER=1 (GAP-E2E-UI)"
+  },
+  {
+   "step": "5 Each node is linked to its chat session",
+   "modules": [
+    "sutra_app/orchestrator/nodes.py",
+    "sutra_app/orchestrator/chats.py",
+    "sutra_app/ui/static/js/fnode_view.js"
+   ],
+   "tests": [
+    "tests/orchestrator/test_graph_store.py",
+    "tests/orchestrator/test_chat_store.py",
+    "tests/ui/test_view_panel.py",
+    "tests/ui/js/fnode_view.test.js",
+    "tests/e2e/test_scenario_new_team.py"
+   ],
+   "later_tests": "tests/e2e/test_step5_*",
+   "gap": "the e2e scenario resolves every node's chat session from the real graph (GAP-E2E)"
+  },
+  {
+   "step": "6 The graph updates dynamically from agent interaction",
+   "modules": [
+    "sutra_app/engine/host/publisher.py",
+    "sutra_app/orchestrator/projector.py",
+    "sutra_app/orchestrator/events.py",
+    "sutra_app/orchestrator/api/events.py",
+    "sutra_app/ui/static/js/sutra_events.js"
+   ],
+   "tests": [
+    "tests/orchestrator/test_projector.py",
+    "tests/orchestrator/test_projector_fnodes.py",
+    "tests/orchestrator/test_events_sse.py",
+    "tests/ui/js/events.test.js",
+    "tests/integration/test_offline_demo.py",
+    "tests/e2e/test_scenario_new_team.py",
+    "tests/e2e/test_scenario_restart_stop.py",
+    "tests/e2e/test_browser_resync.py"
+   ],
+   "later_tests": "tests/e2e/test_step6_*",
+   "gap": "the live chain, engine to browser, is run by GAP-E2E and GAP-E2E-UI"
+  },
+  {
+   "step": "7 Each department and division is linked to its chat",
+   "modules": [
+    "sutra_app/orchestrator/departments.py",
+    "sutra_app/orchestrator/chats.py",
+    "sutra_app/ui/static/js/chat_view.js"
+   ],
+   "tests": [
+    "tests/orchestrator/test_departments.py",
+    "tests/orchestrator/test_chat_store.py",
+    "tests/ui/test_view_panel.py",
+    "tests/ui/js/chat_view.test.js",
+    "tests/e2e/test_scenario_new_team.py"
+   ],
+   "later_tests": "tests/e2e/test_step7_*",
+   "gap": "as step 5"
+  }
+ ],
+ "chips": [
+  {
+   "id": "builders",
+   "chip": "Workflow builder agents",
+   "diagram_label": "Workflow builder agents",
+   "modules": [
+    "sutra_app/engine/agents/j2/builder.md",
+    "sutra_app/engine/j2.py"
+   ],
+   "flags": [
+    "template_library"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "validator",
+   "chip": "Code validator",
+   "diagram_label": "Code validator",
+   "modules": [
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/j2_artifact_models.py",
+    "sutra_app/engine/j2_rules.py"
+   ],
+   "flags": [
+    "artifact_schema"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "judge",
+   "chip": "Confidence judge",
+   "diagram_label": "Confidence judge",
+   "modules": [
+    "sutra_app/engine/agents/j2/confidence-judge.md",
+    "sutra_app/engine/agents/j2/stages.json",
+    "sutra_app/engine/j2_change.py",
+    "sutra_app/engine/j2_realization.py"
+   ],
+   "flags": [
+    "change",
+    "realization"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "budget",
+   "chip": "Budget and rate card",
+   "diagram_label": "Budget and rate card",
+   "modules": [
+    "sutra_app/engine/agents/j2/rates.json",
+    "sutra_app/engine/j2.py"
+   ],
+   "flags": [
+    "budget",
+    "rates"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "memory",
+   "chip": "Memory",
+   "diagram_label": "Memory",
+   "modules": [
+    "sutra_app/engine/j2.py"
+   ],
+   "flags": [
+    "memory"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "board",
+   "chip": "Message board",
+   "diagram_label": "Message board",
+   "modules": [
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/j2_board.py"
+   ],
+   "flags": [
+    "board"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "documents",
+   "chip": "Document chain",
+   "diagram_label": "Document chain",
+   "modules": [
+    "sutra_app/engine/conditions/hld.json",
+    "sutra_app/engine/conditions/lld.json",
+    "sutra_app/engine/conditions/prd.json",
+    "sutra_app/engine/j2.py"
+   ],
+   "flags": [],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "site",
+   "chip": "Site build and checks",
+   "diagram_label": "Site build + checks",
+   "modules": [
+    "sutra_app/engine/conditions/website.json",
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/j2_check.py"
+   ],
+   "flags": [
+    "chrome",
+    "tap_min"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "sends",
+   "chip": "Sends and deeds",
+   "diagram_label": "Sends / deeds",
+   "modules": [
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/j2_send.py"
+   ],
+   "flags": [
+    "milestone_emails",
+    "send_cap",
+    "send_mode"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "views",
+   "chip": "Run views",
+   "diagram_label": "Run views",
+   "modules": [
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/j2_map.py",
+    "sutra_app/engine/j2_schema.py"
+   ],
+   "flags": [],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "library",
+   "chip": "Template library",
+   "diagram_label": "Template library",
+   "modules": [
+    "sutra_app/engine/j2_template_lib.py",
+    "sutra_app/engine/seed/library/",
+    "sutra_app/engine/templates/"
+   ],
+   "flags": [
+    "template_library"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "change",
+   "chip": "Charter change",
+   "diagram_label": "Charter change",
+   "modules": [
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/j2_change.py"
+   ],
+   "flags": [
+    "change"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "schemas",
+   "chip": "Artifact schemas",
+   "diagram_label": "Artifact schemas",
+   "modules": [
+    "sutra_app/engine/artifacts/types.json",
+    "sutra_app/engine/j2_artifact_models.py",
+    "sutra_app/engine/j2_artifacts.py",
+    "sutra_app/engine/j2_rules.py"
+   ],
+   "flags": [
+    "artifact_schema"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "story",
+   "chip": "Story and agent views",
+   "diagram_label": "Story + agent views",
+   "modules": [
+    "sutra_app/engine/j2_agent.py",
+    "sutra_app/engine/j2_story.py"
+   ],
+   "flags": [],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "plan",
+   "chip": "Plan and priorities",
+   "diagram_label": "Plan + priorities",
+   "modules": [
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/j2_map.py"
+   ],
+   "flags": [],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  }
+ ],
+ "endpoints": [
+  {
+   "n": 1,
+   "name": "index",
+   "method": "GET",
+   "path": "/",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/ui/routes.py",
+   "in_ui_list": false,
+   "golden_keys": [],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 2,
+   "name": "vendor",
+   "method": "GET",
+   "path": "/vendor/d3.min.js",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/ui/routes.py",
+   "in_ui_list": false,
+   "golden_keys": [],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 3,
+   "name": "state",
+   "method": "GET",
+   "path": "/api/state",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/state.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "state",
+    "state_since"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 4,
+   "name": "runs",
+   "method": "GET",
+   "path": "/api/runs",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/state.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "runs"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 5,
+   "name": "call",
+   "method": "GET",
+   "path": "/api/call",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/state.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "call",
+    "call_missing"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 6,
+   "name": "preview",
+   "method": "GET",
+   "path": "/api/preview",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/run_views.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "preview"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 7,
+   "name": "docs",
+   "method": "GET",
+   "path": "/api/docs",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/run_views.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "docs"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 8,
+   "name": "map",
+   "method": "GET",
+   "path": "/api/map",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/run_views.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "map"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 9,
+   "name": "plan",
+   "method": "GET",
+   "path": "/api/plan",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/run_views.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "plan"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 10,
+   "name": "library",
+   "method": "GET",
+   "path": "/api/library",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/library.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "library",
+    "library_missing"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 11,
+   "name": "library_item",
+   "method": "GET",
+   "path": "/api/library/{artifact}/{section}/{slug}/{version}",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/library.py",
+   "in_ui_list": false,
+   "golden_keys": [
+    "library_item"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 12,
+   "name": "run_templates",
+   "method": "GET",
+   "path": "/api/run-templates",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/library.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "run_templates"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 13,
+   "name": "artifacts",
+   "method": "GET",
+   "path": "/api/artifacts",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "artifacts"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 14,
+   "name": "agent",
+   "method": "GET",
+   "path": "/api/agent",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/run_views.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "agent"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 15,
+   "name": "code",
+   "method": "GET",
+   "path": "/api/code",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "code",
+    "code_missing"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 16,
+   "name": "artifacts_tree",
+   "method": "GET",
+   "path": "/api/artifacts/tree",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "artifacts_tree"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 17,
+   "name": "artifact",
+   "method": "GET",
+   "path": "/api/artifact",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "artifact",
+    "artifact_missing"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 18,
+   "name": "story",
+   "method": "GET",
+   "path": "/api/story",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/run_views.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "story"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 19,
+   "name": "board",
+   "method": "GET",
+   "path": "/api/board",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/run_views.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "board"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 20,
+   "name": "audits",
+   "method": "GET",
+   "path": "/api/audits",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/state.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "audits"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 21,
+   "name": "refs",
+   "method": "GET",
+   "path": "/api/refs",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/state.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "refs"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 22,
+   "name": "shot",
+   "method": "GET",
+   "path": "/shot/{n}",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": false,
+   "golden_keys": [
+    "shot_missing"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 23,
+   "name": "file",
+   "method": "GET",
+   "path": "/file/{name}",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": false,
+   "golden_keys": [
+    "file_missing"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 24,
+   "name": "site (saved)",
+   "method": "GET",
+   "path": "/site/{key}?run=",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": false,
+   "golden_keys": [
+    "site_latest",
+    "site_v1",
+    "site_v99"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 25,
+   "name": "site (live)",
+   "method": "GET",
+   "path": "/site/{key}",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": false,
+   "golden_keys": [
+    "site_latest",
+    "site_v1",
+    "site_v99"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 26,
+   "name": "say",
+   "method": "POST",
+   "path": "/api/say",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/commands.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "say",
+    "say_empty"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 27,
+   "name": "playbooks_clear",
+   "method": "POST",
+   "path": "/api/playbooks/clear",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/commands.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "playbooks_clear"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 28,
+   "name": "lessons_clear",
+   "method": "POST",
+   "path": "/api/lessons/clear",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/commands.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "lessons_clear"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 29,
+   "name": "output",
+   "method": "POST",
+   "path": "/api/output",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/commands.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "output_late",
+    "output_prd"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 30,
+   "name": "reset",
+   "method": "POST",
+   "path": "/api/reset",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/commands.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "reset"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "id": "D1",
+   "title": "Own repository, local git only",
+   "packages": [
+    "E1",
+    "E5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "none (repository fact), listed in the key."
+  },
+  {
+   "id": "D2",
+   "title": "Python 3.11 in a uv-managed `.venv`",
+   "packages": [
+    "E1",
+    "E5",
+    "ORCH-4"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key."
+  },
+  {
+   "id": "D3",
+   "title": "FastAPI + Uvicorn + pydantic v2",
+   "packages": [
+    "E1",
+    "E5",
+    "L3",
+    "UI-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "Interface library box and server column carry badge D3."
+  },
+  {
+   "id": "D4",
+   "title": "The department runtime is the J2 engine, vendored and adapted, not rewritten",
+   "packages": [
+    "E0",
+    "E1",
+    "E5",
+    "L4",
+    "ORCH-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "Department runtime band, badge D4."
+  },
+  {
+   "id": "D5",
+   "title": "Persistence: SQLite for structured stores, files for run folders and blobs",
+   "packages": [
+    "GAP-DATA",
+    "L8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "Server contents column, badge D5."
+  },
+  {
+   "id": "D6",
+   "title": "UI is the J2 UI, served by the app, with new views added in J2's design language",
+   "packages": [
+    "L4",
+    "L9",
+    "UI-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "Experience band, badge D6."
+  },
+  {
+   "id": "D7",
+   "title": "Connectors are CLI-first: Claude CLI and Codex CLI on the owner's own logins; a stub connector for tests",
+   "packages": [
+    "CN-1",
+    "CN-4",
+    "CN-6",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "Connector layer, badge D7."
+  },
+  {
+   "id": "D8",
+   "title": "Tests: pytest with the stub connector and fake CLIs; live runs only on request",
+   "packages": [
+    "CN-2",
+    "CN-5",
+    "GAP-LIVE",
+    "UI-0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key."
+  },
+  {
+   "id": "D9",
+   "title": "One run is one task of one department, executed in its own subprocess",
+   "packages": [
+    "E0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "Department runtime band, badge D9."
+  },
+  {
+   "id": "D10",
+   "title": "Live updates over Server-Sent Events",
+   "packages": [
+    "ORCH-2",
+    "UI-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "arrow \"live\" to the workflow graph view, badge D10."
+  },
+  {
+   "id": "D11",
+   "title": "The server binds to 127.0.0.1 only",
+   "packages": [
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key."
+  },
+  {
+   "id": "D12",
+   "title": "A web app started by one command; no desktop shell yet",
+   "packages": [
+    "GAP-OPS-1",
+    "ORCH-8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key."
+  },
+  {
+   "id": "D13",
+   "title": "The J2 engine is copied in place and changed only by eleven numbered patches",
+   "packages": [
+    "E1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"vendored from J2 ce2631f · patches P1-P11\" with badge D13 on J2 chips."
+  },
+  {
+   "id": "D14",
+   "title": "One process per run, speaking only through files; the server makes the run folder",
+   "packages": [
+    "CN-1",
+    "E0",
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"process per run · files only · server makes the folder\" with badge D14 on Department runtime."
+  },
+  {
+   "id": "D15",
+   "title": "The run-event stream is a closed list of eight types",
+   "packages": [
+    "CT-1",
+    "E0",
+    "GAP-TRACE",
+    "L6",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-4",
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"events: run.started · say · node · step · atom · usage\" with badge D15 on Department runtime."
+  },
+  {
+   "id": "D16",
+   "title": "The server is the only SQLite writer; a watcher projects the run files",
+   "packages": [
+    "ORCH-1",
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"SQLite written by the server only\" with badge D16 on Server contents."
+  },
+  {
+   "id": "D17",
+   "title": "One model seam: ModelPort, with PortSpec in the engine and make_port in the connectors",
+   "packages": [
+    "CN-1",
+    "CN-6",
+    "CN-7",
+    "CT-1",
+    "E0",
+    "GAP-TRACE",
+    "L1",
+    "ORCH-3",
+    "ORCH-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"one seam: make_port(PortSpec) -> ModelPort\" with badge D17 on Router."
+  },
+  {
+   "id": "D18",
+   "title": "Engine flags: three layers, seven task keys, two files, edited in Settings",
+   "packages": [
+    "CT-1",
+    "E0",
+    "E4",
+    "GAP-CONSOLE",
+    "ORCH-1",
+    "ORCH-5",
+    "UI-0",
+    "UI-3",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"settings: 2 files + 7 task keys · edit in Settings\" with badge D18 on J2 chips."
+  },
+  {
+   "id": "D19",
+   "title": "Failure semantics: one visible end state per failure, retries only in the router",
+   "packages": [
+    "CN-1",
+    "E0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"run.ended: done · stopped · crashed\" with badge D19 on Department runtime."
+  },
+  {
+   "id": "D20",
+   "title": "Owner messages reach a run through an inbox queue; user_says never blocks",
+   "packages": [
+    "E3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"answers queue while a run finishes its turn\" with badge D20 on Department runtime."
+  },
+  {
+   "id": "D21",
+   "title": "A follow-up is a new task that continues from the old run folder when it can",
+   "packages": [
+    "GAP-E1B"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"follow-up: rehydrate, else fresh with old files\" with badge D21 on Department records."
+  },
+  {
+   "id": "D22",
+   "title": "One live task per department, and two caps on processes",
+   "packages": [
+    "ORCH-1",
+    "ORCH-8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"max runs counts working teams; waiting ones idle\" with badge D22 on Department runtime."
+  },
+  {
+   "id": "D23",
+   "title": "One stop ladder for stop, reset and app shutdown",
+   "packages": [
+    "E4",
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"shutdown: stop · 8 s · SIGTERM · 4 s · SIGKILL\" with badge D23 on Department runtime."
+  },
+  {
+   "id": "D24",
+   "title": "Crash detection: a heartbeat every 5 s, and a reconcile pass at server start",
+   "packages": [
+    "E3",
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"crash = process gone, or silent 30 s at app start\" with badge D24 on Department runtime."
+  },
+  {
+   "id": "D25",
+   "title": "The J2 data routes have one implementation behind two thin adapters",
+   "packages": [
+    "E2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"same /api paths, per department, live from files\" with badge D25 on Department runtime."
+  },
+  {
+   "id": "D26",
+   "title": "Memory is per department; the template library is one global store behind a file lock",
+   "packages": [
+    "E0",
+    "E3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"global, file-locked · memory per department\" with badge D26 on Template library."
+  },
+  {
+   "id": "D27",
+   "title": "Every CLI call is its own subprocess with a clean environment",
+   "packages": [
+    "CN-1",
+    "CN-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"own process group · env allowlist\" with badge D27 on ModelConnector base."
+  },
+  {
+   "id": "D28",
+   "title": "Claude is driven in stream-json and the result line decides",
+   "packages": [
+    "CN-3",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"stream-json · result line decides · error map\" with badge D28 on Claude connector."
+  },
+  {
+   "id": "D29",
+   "title": "Codex is driven with a fixed read-only flag set and a login check first",
+   "packages": [
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"login status first · read-only sandbox\" with badge D29 on Codex connector."
+  },
+  {
+   "id": "D30",
+   "title": "Routing is a policy file validated by pydantic, not code",
+   "packages": [
+    "CN-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"policy table (data)\" with badge D30 on Router."
+  },
+  {
+   "id": "D31",
+   "title": "Sign-in and quota are known before a call, with no credentials and no model call",
+   "packages": [
+    "CN-6",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"checks sign-in and quota first (no model call)\" with badge D31 on Router."
+  },
+  {
+   "id": "D32",
+   "title": "Chat sessions: one process per turn, resumed, with a carry-over on a provider switch",
+   "packages": [
+    "CN-1",
+    "CN-3",
+    "CN-7",
+    "CN-9",
+    "GAP-CONSOLE",
+    "GAP-DEMO",
+    "ORCH-3",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"carries the transcript on a switch\" with badge D32 on Router."
+  },
+  {
+   "id": "D33",
+   "title": "Structured replies: native schema first, tolerant parse, strict check, two repair rounds at most",
+   "packages": [
+    "CN-1",
+    "CN-3",
+    "CN-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"asks for structured JSON · schema from the model class\" with badge D33 on Router."
+  },
+  {
+   "id": "D34",
+   "title": "API-key logins are refused; Codex sign-in is started by the app; Sutra installs nothing",
+   "packages": [
+    "CN-6",
+    "CT-1",
+    "GAP-OPS-1",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"your ChatGPT login, never an API key\" with badge D34 on Codex connector."
+  },
+  {
+   "id": "D35",
+   "title": "Tools: read-only Sutra tools and GitHub through gh; Gmail, Drive and Slack are shown, not built",
+   "packages": [
+    "CN-8",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Sutra tools · GitHub via gh (read) · others shown only\" with badge D35 on Tool connectors."
+  },
+  {
+   "id": "D36",
+   "title": "The stub connector runs only on purpose; there is no silent offline mode",
+   "packages": [
+    "CN-5",
+    "CN-7",
+    "E0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Stub connector (tests, offline demo)\" with badge D36 on Connector layer."
+  },
+  {
+   "id": "D37",
+   "title": "Usage: one row per request, built by the router, stored as a per-call delta",
+   "packages": [
+    "CN-3",
+    "CN-6",
+    "CN-7",
+    "CT-1",
+    "E0",
+    "GAP-TRACE",
+    "L1",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"router builds one row per call · server writes it\" with badge D37 on Usage and cost ledger."
+  },
+  {
+   "id": "D38",
+   "title": "The caller owns its budget; the router enforces only its own ceiling",
+   "packages": [
+    "CN-7",
+    "E0",
+    "E1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"envelope kept by caller · router ceiling 6\" with badge D38 on Router."
+  },
+  {
+   "id": "D39",
+   "title": "Every library structure is a closed, strict, frozen pydantic class in three tiers",
+   "packages": [
+    "L1",
+    "L5",
+    "L7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"closed · strict · frozen\" with badge D39 on Interface library."
+  },
+  {
+   "id": "D40",
+   "title": "A registry keyed by family and version exports every schema; a breaking change is a new class",
+   "packages": [
+    "L1",
+    "L8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"registry · name/version · schema export\" with badge D40 on Interface library."
+  },
+  {
+   "id": "D41",
+   "title": "One write gate: stores accept only checked objects",
+   "packages": [
+    "L2",
+    "L8",
+    "ORCH-5",
+    "ORCH-7",
+    "UI-4",
+    "UI-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Gate.check at every write\" with badge D41 on Interface library."
+  },
+  {
+   "id": "D42",
+   "title": "The library owns the org chart; one ChartChange record covers reuse, add and rearrange",
+   "packages": [
+    "L2",
+    "L3",
+    "ORCH-1",
+    "ORCH-5",
+    "ORCH-7",
+    "UI-4",
+    "UI-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"ids kept · 5 function nodes per department\" with badge D42 on ONE global org chart."
+  },
+  {
+   "id": "D43",
+   "title": "Chart ops go to the model as a union (anyOf); a flat class waits on a live check",
+   "packages": [
+    "CN-7",
+    "L2",
+    "L8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"chart ops: union via anyOf, flat fallback\" with badge D43 on Interface library."
+  },
+  {
+   "id": "D44",
+   "title": "Graph nodes mirror the chart: library ids, nine J2 states, seven edge kinds, derived tree edges",
+   "packages": [
+    "L6",
+    "ORCH-4",
+    "UI-0",
+    "UI-4",
+    "UI-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"ids sales · sales.identity · edges derived\" with badge D44 on Workflow graph store."
+  },
+  {
+   "id": "D45",
+   "title": "Workflow and Step are two-level base classes; a request becomes a TaskWorkflow of assignment steps",
+   "packages": [
+    "L5",
+    "ORCH-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"request -> TaskWorkflow -> step nodes\" with badge D45 on Interface library."
+  },
+  {
+   "id": "D46",
+   "title": "J2's artifact models are ported to the library; the engine keeps a gated copy until parity is proved",
+   "packages": [
+    "CN-1",
+    "CT-1",
+    "E0",
+    "L1",
+    "L8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"one definition in the library, engine gated\" with badge D46 on Interface library."
+  },
+  {
+   "id": "D47",
+   "title": "J2's run files are checked on save through one catalogue; chat has two message shapes",
+   "packages": [
+    "L3",
+    "L8",
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"records checked on save\" with badge D47 on Department records."
+  },
+  {
+   "id": "D48",
+   "title": "A Department record holds only its id, home folder and creation time",
+   "packages": [
+    "E4",
+    "L3",
+    "L9",
+    "ORCH-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Department record: id · home dir\" with badge D48 on Department records."
+  },
+  {
+   "id": "D49",
+   "title": "The final function-node spec FN-1 to FN-28 is adopted as written, except where S4 supersedes it",
+   "packages": [
+    "CN-6",
+    "CN-7",
+    "CT-1",
+    "E0",
+    "GAP-CONSOLE",
+    "L1",
+    "L4",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-5",
+    "ORCH-6",
+    "ORCH-7",
+    "UI-0",
+    "UI-6",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"function nodes: FN-1..FN-28 (final spec)\" with badge D49 on the five function cards."
+  },
+  {
+   "id": "D50",
+   "title": "Code names: FunctionNode and Atom; AgentNode and WorkAtom are prose only",
+   "packages": [
+    "L4",
+    "L5",
+    "L6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"FunctionNode · Atom · AtomView\" with badge D50 on Interface library."
+  },
+  {
+   "id": "D51",
+   "title": "The function-node layer runs inside the engine process; the server only stores",
+   "packages": [
+    "CT-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"function layer inside the engine process\" with badge D51 on Department runtime."
+  },
+  {
+   "id": "D52",
+   "title": "Version 1 observes: J2 stays byte-identical, and 'hard' means a node closes only through passing checks",
+   "packages": [
+    "CT-1",
+    "L4"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"observe: J2 unchanged · scope warns\" with badge D52 on the five function cards."
+  },
+  {
+   "id": "D53",
+   "title": "One work atom per function turn, of AI, code or a question to you, declared before the work",
+   "packages": [
+    "L4"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"1 turn = 1 atom: AI, code or you\" with badge D53 on the INSIDE EVERY NODE strip."
+  },
+  {
+   "id": "D54",
+   "title": "The VERIFY registry: fourteen named checks, each a pure Python function",
+   "packages": [
+    "E8",
+    "GAP-TUNE",
+    "L4",
+    "UI-0",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"verify registry: 14 named checks\" with badge D54 on the five function cards."
+  },
+  {
+   "id": "D55",
+   "title": "Atom ids: `a-<sid>-<nn>` for function atoms, run-qualified `W-n.aK` for J2's",
+   "packages": [
+    "CT-1",
+    "L1",
+    "L4",
+    "ORCH-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"atom ids a-sid-nn · W-n.ak\" with badge D55 on Atom log."
+  },
+  {
+   "id": "D56",
+   "title": "A refused open is stored, ledgered and carded; the turn goes on",
+   "packages": [
+    "CT-1",
+    "L1",
+    "L4",
+    "ORCH-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"refused: logged, no work run\" with badge D56 on the INSIDE EVERY NODE strip."
+  },
+  {
+   "id": "D57",
+   "title": "Atoms are stored in four states and shown in five words",
+   "packages": [
+    "E0",
+    "GAP-CONSOLE",
+    "L4",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-6",
+    "UI-0",
+    "UI-3",
+    "UI-4",
+    "UI-5",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"stored 4, shown 5 atom words\" with badge D57 on the five function cards."
+  },
+  {
+   "id": "D58",
+   "title": "Atom events, tables and cards: the server stores forward moves only",
+   "packages": [
+    "CN-6",
+    "CN-7",
+    "CT-1",
+    "E0",
+    "L1",
+    "ORCH-3",
+    "ORCH-7",
+    "UI-0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"atom events -> atoms · ledger · cards\" with badge D58 on Workflow graph store."
+  },
+  {
+   "id": "D59",
+   "title": "Every model call is charged to exactly one atom id",
+   "packages": [
+    "CN-3",
+    "CN-6",
+    "CN-7",
+    "CT-1",
+    "E0",
+    "L1",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"every call has an atom id\" with badge D59 on Router."
+  },
+  {
+   "id": "D60",
+   "title": "The Atom log is the atom_ledger table: append-only, one row per atom, builders included",
+   "packages": [
+    "E0",
+    "GAP-DATA",
+    "ORCH-1",
+    "ORCH-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Atom log: every atom once\" with badge D60 on Atom log."
+  },
+  {
+   "id": "D61",
+   "title": "A function node is one stored record whose goal, task and context are set when it is made",
+   "packages": [
+    "CT-1",
+    "E0",
+    "GAP-TRACE",
+    "L6",
+    "ORCH-1",
+    "ORCH-4",
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"node: goal · task · context (static)\" with badge D61 on the five function cards."
+  },
+  {
+   "id": "D62",
+   "title": "The graph chip and the node drawer show fixed fields from named sources",
+   "packages": [
+    "E0",
+    "L6",
+    "ORCH-1",
+    "ORCH-4",
+    "ORCH-6",
+    "UI-4",
+    "UI-5",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"chip: atoms open/closed · calls\" with badge D62 on the five function cards."
+  },
+  {
+   "id": "D63",
+   "title": "Chat sessions: one per node, a division is a lens, Identity's chip opens the department chat",
+   "packages": [
+    "ORCH-3",
+    "ORCH-5",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"1 chat per node · division = lens\" with badge D63 on Chat sessions."
+  },
+  {
+   "id": "D64",
+   "title": "Prose reaches the owner only from an Identity; Sutra is code",
+   "packages": [
+    "GAP-CONSOLE",
+    "L2",
+    "ORCH-1",
+    "ORCH-5",
+    "ORCH-7",
+    "UI-0",
+    "UI-4",
+    "UI-5",
+    "UI-6",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"prose only from Identity\" with badge D64 on Chat sessions."
+  },
+  {
+   "id": "D65",
+   "title": "The department's goal is its charter file; no table copies it",
+   "packages": [
+    "L3",
+    "ORCH-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"charter = goal.json, no copy\" with badge D65 on Department records."
+  },
+  {
+   "id": "D66",
+   "title": "Function nodes are proved by registry fixtures, mutation of every check, a golden run and server replay",
+   "packages": [
+    "UI-9"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"golden + mutation tests per check\"."
+  },
+  {
+   "id": "D67",
+   "title": "One chart, one writer, one log",
+   "packages": [
+    "ORCH-5",
+    "UI-4",
+    "UI-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"every change logged (before/after sha)\" with badge D67 on ONE global org chart."
+  },
+  {
+   "id": "D68",
+   "title": "The model proposes, code decides: reuse first; merging or splitting divisions asks the owner",
+   "packages": [
+    "ORCH-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"reuses, adds or rearranges (merge, split ask first)\" with badge D68 on Chat agent."
+  },
+  {
+   "id": "D69",
+   "title": "The chat agent works in three staged structured calls with a keyword fallback",
+   "packages": [
+    "ORCH-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"decide · change · assign, 3 tries each, keyword fallback\" with badge D69 on Chat agent."
+  },
+  {
+   "id": "D70",
+   "title": "Merging or splitting divisions files old chats under the survivor; no chat is dropped",
+   "packages": [
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"merge: old chat archived under survivor\" with badge D70 on Chat sessions."
+  },
+  {
+   "id": "D71",
+   "title": "The server holds the owner-override key; the engine only sees the command",
+   "packages": [
+    "E0",
+    "E4",
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"override key stays on the server\" with badge D71 on Orchestration."
+  },
+  {
+   "id": "D72",
+   "title": "Home at /, the J2 page at /d/{dept}/; only the UI package serves pages",
+   "packages": [
+    "CT-1",
+    "E4",
+    "GAP-CONSOLE",
+    "ORCH-1",
+    "ORCH-5",
+    "UI-1",
+    "UI-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Home / · org chat + graph · team page /d/{dept}/\" with badge D72 on Experience."
+  },
+  {
+   "id": "D73",
+   "title": "J2's data routes sit at the root and the team is named in ?dept=",
+   "packages": [
+    "CT-1",
+    "E0",
+    "E4",
+    "UI-0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"J2 paths at root · ?dept= picks the team\" with badge D73 on Experience."
+  },
+  {
+   "id": "D74",
+   "title": "One stylesheet for both pages, no CDN and no web fonts",
+   "packages": [
+    "UI-2",
+    "UI-9"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"no CDN, one stylesheet\"."
+  },
+  {
+   "id": "D75",
+   "title": "The graph and org chart views are drawn by pure layout functions; the org chart is read-only",
+   "packages": [
+    "UI-4",
+    "UI-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"pure layout · SVG · live · org chart read-only\" with badge D75 on Experience."
+  },
+  {
+   "id": "D76",
+   "title": "The J2 page port: twelve edits plus four additions found by re-checking against J2",
+   "packages": [
+    "UI-2",
+    "UI-8",
+    "UI-9"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"?tab= deep link mounts new views\" with badge D76 on Experience."
+  },
+  {
+   "id": "D77",
+   "title": "The wire adds change lists, a fixed node order and function-node hands_to",
+   "packages": [
+    "E0",
+    "L6",
+    "ORCH-1",
+    "ORCH-4",
+    "ORCH-6",
+    "UI-4",
+    "UI-5",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"wire: change lists · node order · fn meta\" with badge D77 on Workflow graph store."
+  },
+  {
+   "id": "D78",
+   "title": "Wire words follow the library: ids, J2 map statuses, edge kinds, atom state, chat POST errors",
+   "packages": [
+    "GAP-CONSOLE",
+    "L4",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-6",
+    "UI-0",
+    "UI-3",
+    "UI-4",
+    "UI-5",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"wire words: J2 map statuses, LIB ids\" with badge D78 on Workflow graph store."
+  },
+  {
+   "id": "D79",
+   "title": "New routes share one error envelope; library schemas move to /api/schemas; J2 paths match exactly",
+   "packages": [
+    "CN-9",
+    "E4",
+    "L8",
+    "ORCH-1",
+    "ORCH-8",
+    "UI-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"errors: {error:{code,message,details}}\"."
+  },
+  {
+   "id": "D80",
+   "title": "Live updates: SSE with replay and resync; the page refetches and polls when the stream drops",
+   "packages": [
+    "GAP-CONSOLE",
+    "ORCH-2",
+    "UI-0",
+    "UI-3",
+    "UI-5",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"SSE: event, then refetch · polls if the stream drops\" with badge D80 on Experience."
+  },
+  {
+   "id": "D81",
+   "title": "Writes need a per-launch token in a header, with Host and Origin checks; no cookie anywhere",
+   "packages": [
+    "CN-9",
+    "CT-1",
+    "GAP-CONSOLE",
+    "GAP-E2E-UI",
+    "GAP-W1",
+    "L8",
+    "ORCH-1",
+    "ORCH-8",
+    "UI-0",
+    "UI-1",
+    "UI-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"loopback + token header + Host/Origin check\"."
+  },
+  {
+   "id": "D82",
+   "title": "A script-hash CSP on both pages; no CDN and no fonts",
+   "packages": [
+    "GAP-CONSOLE",
+    "UI-1",
+    "UI-9"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"CSP: script hashes · no CDN · no fonts\"."
+  },
+  {
+   "id": "D83",
+   "title": "Generated sites are served sandboxed so they cannot read the page token",
+   "packages": [
+    "E4",
+    "ORCH-8",
+    "UI-0",
+    "UI-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"generated sites sandboxed\" with badge D83 on Artifacts."
+  },
+  {
+   "id": "D84",
+   "title": "The three J2 test scripts run as subprocess suites; goldens replace git-checkpoint comparisons",
+   "packages": [
+    "UI-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"J2 scripts as subprocess suites · goldens\"."
+  },
+  {
+   "id": "D85",
+   "title": "UI tests use only what is installed: node, headless Chrome over CDP and a fake backend",
+   "packages": [
+    "UI-0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"UI tests: node + Chrome over CDP + fake backend\"."
+  },
+  {
+   "id": "D86",
+   "title": "The wheel carries every data file, and a test keeps it true",
+   "packages": [
+    "L10",
+    "ORCH-8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"wheel carries every data file (tested)\"."
+  },
+  {
+   "id": "D87",
+   "title": "Build rule: each section uses the others' contracts as they stand",
+   "packages": [
+    "GAP-TRACE"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"each section uses the others' contracts as they stand\"."
+  },
+  {
+   "id": "D88",
+   "title": "The finished app is installed on the owner's Mac as `sutra-pro`",
+   "packages": [
+    "GAP-DATA",
+    "GAP-DEMO",
+    "GAP-INSTALL",
+    "GAP-TRACE",
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"installed locally as sutra-pro (uv tool)\"."
+  },
+  {
+   "id": "D89",
+   "title": "The repository is `sutra-pro`; the old repositories are read-only; GitHub builds mirror the old Sutra's",
+   "packages": [
+    "REL-1",
+    "REL-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"repo sutra-pro · CI and release builds like the old Sutra\"."
+  },
+  {
+   "id": "D90",
+   "title": "The J2 baseline moves to `33aeeda`; a run keeps its own copy of every template it used",
+   "packages": [
+    "E1",
+    "E2",
+    "E5",
+    "L7",
+    "L8",
+    "UI-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"J2 baseline 33aeeda · runs keep template copies\" on the Template library box."
+  },
+  {
+   "id": "D91",
+   "title": "Excluded J2 material is recorded: \"everything in J2\" means the loop, its data, its page and its tests",
+   "packages": [
+    "GAP-TRACE"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"excluded J2 material recorded\"."
+  },
+  {
+   "id": "D92",
+   "title": "The app opens Chrome when it is installed",
+   "packages": [
+    "GAP-LIVE",
+    "GAP-OPS-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"opens Chrome (the measured browser)\"."
+  },
+  {
+   "id": "D93",
+   "title": "No retention of database rows in version 1",
+   "packages": [
+    "GAP-DATA",
+    "GAP-DOCS",
+    "GAP-TRACE"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"no row retention in v1\"."
+  },
+  {
+   "id": "D94",
+   "title": "One instance per data folder",
+   "packages": [
+    "GAP-DATA",
+    "GAP-OPS-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"one instance per data folder\"."
+  },
+  {
+   "id": "D95",
+   "title": "The default `.env` sits beside the data, not beside the package",
+   "packages": [
+    "GAP-INSTALL",
+    "GAP-OPS-1",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"default .env beside the data\"."
+  },
+  {
+   "id": "D96",
+   "title": "The coverage critic's outcome: 11 follow-up packages, ten limits recorded",
+   "packages": [
+    "GAP-CONSOLE",
+    "GAP-DATA",
+    "GAP-DOCS",
+    "GAP-E1B",
+    "GAP-E2E",
+    "GAP-E2E-UI",
+    "GAP-INSTALL",
+    "GAP-LIVE",
+    "GAP-OPS-1",
+    "GAP-TRACE",
+    "GAP-TUNE",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"coverage critic: 11 follow-up packages\"."
+  },
+  {
+   "id": "D97",
+   "title": "`--offline` is a working demo: the stub answers the chat agent from the message",
+   "packages": [
+    "GAP-DEMO",
+    "GAP-TRACE"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"offline demo works\"."
+  }
+ ],
+ "packages": [
+  {
+   "id": "CN-1",
+   "title": "Foundations: errors, models, env allowlist (PASS_NAMES exported), process runner, JSON helpers (imported from the library), schema helpers",
+   "section": "connectors",
+   "depends_on": [
+    "E0",
+    "L1"
+   ],
+   "owns": [
+    "docs/notes/CN-1.md",
+    "sutra_app/connectors/__init__.py",
+    "sutra_app/connectors/env.py",
+    "sutra_app/connectors/errors.py",
+    "sutra_app/connectors/jsonio.py",
+    "sutra_app/connectors/models.py",
+    "sutra_app/connectors/process.py",
+    "sutra_app/connectors/schema.py",
+    "tests/connectors/test_env_process.py",
+    "tests/connectors/test_errors.py",
+    "tests/connectors/test_jsonio.py",
+    "tests/connectors/test_models.py",
+    "tests/connectors/test_schema.py"
+   ],
+   "notes": "docs/notes/CN-1.md",
+   "notes_lines": 40,
+   "decisions_cited": [],
+   "merge_commits": [
+    "373e973"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "CN-2",
+   "title": "Fake CLIs, test harness and fixtures",
+   "section": "connectors",
+   "depends_on": [],
+   "owns": [
+    "docs/notes/CN-2.md",
+    "scripts/capture_connector_fixtures.py",
+    "tests/connectors/conftest.py",
+    "tests/connectors/test_fakes.py",
+    "tests/fakes/claude",
+    "tests/fakes/codex",
+    "tests/fakes/fake_cli.py",
+    "tests/fakes/gh",
+    "tests/fixtures/connectors/"
+   ],
+   "notes": "docs/notes/CN-2.md",
+   "notes_lines": 40,
+   "decisions_cited": [],
+   "merge_commits": [
+    "32ce236"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "CN-3",
+   "title": "ModelConnector base class and ClaudeConnector",
+   "section": "connectors",
+   "depends_on": [
+    "CN-1",
+    "CN-2"
+   ],
+   "owns": [
+    "docs/notes/CN-3.md",
+    "sutra_app/connectors/base.py",
+    "tests/connectors/test_claude_connector.py",
+    "tests/connectors/test_claude_errors.py",
+    "tests/connectors/test_claude_parse.py"
+   ],
+   "notes": "docs/notes/CN-3.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "031b14d"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "CN-4",
+   "title": "CodexConnector (an API-key login is refused in probe_auth)",
+   "section": "connectors",
+   "depends_on": [
+    "CN-3"
+   ],
+   "owns": [
+    "docs/notes/CN-4.md",
+    "tests/connectors/test_codex_connector.py",
+    "tests/connectors/test_codex_errors.py",
+    "tests/connectors/test_codex_parse.py"
+   ],
+   "notes": "docs/notes/CN-4.md",
+   "notes_lines": 41,
+   "decisions_cited": [
+    "D7"
+   ],
+   "merge_commits": [
+    "ced924a"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "CN-5",
+   "title": "StubConnector",
+   "section": "connectors",
+   "depends_on": [
+    "CN-3"
+   ],
+   "owns": [
+    "docs/notes/CN-5.md",
+    "sutra_app/connectors/stub.py",
+    "tests/connectors/test_stub.py"
+   ],
+   "notes": "docs/notes/CN-5.md",
+   "notes_lines": 41,
+   "decisions_cited": [],
+   "merge_commits": [
+    "62b3f1d"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "CN-6",
+   "title": "Routing policy (no allow_api_key_billing), health book, usage normalisation (UsageIn with step and atom_id)",
+   "section": "connectors",
+   "depends_on": [
+    "CN-1"
+   ],
+   "owns": [
+    "docs/notes/CN-6.md",
+    "sutra_app/connectors/health.py",
+    "sutra_app/connectors/policy.default.json",
+    "sutra_app/connectors/policy.py",
+    "sutra_app/connectors/usage.py",
+    "tests/connectors/test_health.py",
+    "tests/connectors/test_policy.py",
+    "tests/connectors/test_usage.py"
+   ],
+   "notes": "docs/notes/CN-6.md",
+   "notes_lines": 38,
+   "decisions_cited": [],
+   "merge_commits": [
+    "e6cfb5a"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "CN-7",
+   "title": "Router, transcript carry-over, engine and orchestrator ports (make_port(spec: PortSpec, *, usage_sink: UsageSink | None = None); AsyncConnector tag mapping incl. context.atom_id -> CallTag.atom)",
+   "section": "connectors",
+   "depends_on": [
+    "CN-4",
+    "CN-5",
+    "CN-6"
+   ],
+   "owns": [
+    "docs/notes/CN-7.md",
+    "sutra_app/connectors/engine_port.py",
+    "sutra_app/connectors/orchestrator_port.py",
+    "sutra_app/connectors/router.py",
+    "sutra_app/connectors/transcript.py",
+    "tests/connectors/test_engine_port.py",
+    "tests/connectors/test_orchestrator_port.py",
+    "tests/connectors/test_router_attempts.py",
+    "tests/connectors/test_router_chat.py",
+    "tests/connectors/test_router_gate.py",
+    "tests/connectors/test_router_json.py",
+    "tests/connectors/test_router_plan.py",
+    "tests/connectors/test_transcript.py"
+   ],
+   "notes": "docs/notes/CN-7.md",
+   "notes_lines": 39,
+   "decisions_cited": [],
+   "merge_commits": [
+    "839bbdb"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "CN-8",
+   "title": "Tool connectors: MCP server, Sutra read tools, GitHub over gh, shown-only Claude-held connectors",
+   "section": "connectors",
+   "depends_on": [
+    "CN-1",
+    "CN-2"
+   ],
+   "owns": [
+    "docs/notes/CN-8.md",
+    "sutra_app/connectors/tools/__init__.py",
+    "sutra_app/connectors/tools/github_tools.py",
+    "sutra_app/connectors/tools/mcp_server.py",
+    "sutra_app/connectors/tools/mediated.py",
+    "sutra_app/connectors/tools/sutra_tools.py",
+    "tests/connectors/test_mediated.py",
+    "tests/connectors/test_tools_github.py",
+    "tests/connectors/test_tools_mcp.py"
+   ],
+   "notes": "docs/notes/CN-8.md",
+   "notes_lines": 39,
+   "decisions_cited": [],
+   "merge_commits": [
+    "b6b17f6"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "CN-9",
+   "title": "Factory, HTTP API (required write_guard, ORCH error envelope) and live tests",
+   "section": "connectors",
+   "depends_on": [
+    "CN-7",
+    "CN-8"
+   ],
+   "owns": [
+    "docs/notes/CN-9.md",
+    "sutra_app/connectors/api.py",
+    "tests/connectors/test_api.py",
+    "tests/connectors/test_factory.py",
+    "tests/connectors/test_live.py"
+   ],
+   "notes": "docs/notes/CN-9.md",
+   "notes_lines": 39,
+   "decisions_cited": [],
+   "merge_commits": [
+    "0915a0d"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "CT-1",
+   "title": "Cross-section contract tests (route table, events, usage with atom ids, settings, env, JSON extractors, diagram strings)",
+   "section": "orchestrator",
+   "depends_on": [
+    "CN-7",
+    "CN-9",
+    "E0",
+    "E4",
+    "ORCH-1",
+    "ORCH-6"
+   ],
+   "owns": [
+    "docs/notes/CT-1.md",
+    "tests/contracts/__init__.py",
+    "tests/contracts/test_contract_*.py"
+   ],
+   "notes": "docs/notes/CT-1.md",
+   "notes_lines": 41,
+   "decisions_cited": [],
+   "merge_commits": [
+    "3b8323c"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "E0",
+   "title": "Contracts, shim, settings, paths (bind_atom keeps the run overhead key; node event builder gains wait_on and tokens)",
+   "section": "engine",
+   "depends_on": [
+    "L1"
+   ],
+   "owns": [
+    "docs/notes/E0.md",
+    "sutra_app/engine/__init__.py",
+    "sutra_app/engine/events.py",
+    "sutra_app/engine/features.py",
+    "sutra_app/engine/hooks.py",
+    "sutra_app/engine/llm.py",
+    "sutra_app/engine/port.py",
+    "sutra_app/engine/spec.py",
+    "tests/engine/conftest.py",
+    "tests/engine/test_engine_events.py",
+    "tests/engine/test_engine_llm_shim.py",
+    "tests/engine/test_engine_paths.py",
+    "tests/engine/test_engine_port_contract.py",
+    "tests/engine/test_engine_spec.py"
+   ],
+   "notes": "docs/notes/E0.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "abd0151"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "E1",
+   "title": "Vendor J2, patches P1-P11, rehydrate (conditions without realization, restores real*)",
+   "section": "engine",
+   "depends_on": [
+    "E0"
+   ],
+   "owns": [
+    "MANIFEST.in",
+    "docs/notes/E1.md",
+    "docs/reference/j2/",
+    "scripts/vendor_j2.py",
+    "sutra_app/engine/VENDORED.md",
+    "sutra_app/engine/agents/",
+    "sutra_app/engine/artifacts/",
+    "sutra_app/engine/conditions/",
+    "sutra_app/engine/j2_agent.py",
+    "sutra_app/engine/j2_artifact_models.py",
+    "sutra_app/engine/j2_artifacts.py",
+    "sutra_app/engine/j2_board.py",
+    "sutra_app/engine/j2_change.py",
+    "sutra_app/engine/j2_check.py",
+    "sutra_app/engine/j2_map.py",
+    "sutra_app/engine/j2_realization.py",
+    "sutra_app/engine/j2_rules.py",
+    "sutra_app/engine/j2_schema.py",
+    "sutra_app/engine/j2_send.py",
+    "sutra_app/engine/j2_story.py",
+    "sutra_app/engine/j2_template_lib.py",
+    "sutra_app/engine/seed/",
+    "sutra_app/engine/templates/",
+    "tests/engine/test_engine_features.py",
+    "tests/engine/test_engine_library_lock.py",
+    "tests/engine/test_engine_patches.py",
+    "tests/engine/test_engine_vendor.py"
+   ],
+   "notes": "docs/notes/E1.md",
+   "notes_lines": 39,
+   "decisions_cited": [],
+   "merge_commits": [
+    "8f0fcd1"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "E2",
+   "title": "Views (30 handlers) and the stdlib adapter (query-safe POST routing)",
+   "section": "engine",
+   "depends_on": [
+    "E1"
+   ],
+   "owns": [
+    "docs/notes/E2.md",
+    "scripts/record_api_shapes.py",
+    "sutra_app/engine/j2_server.py",
+    "sutra_app/engine/views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_views.py"
+   ],
+   "notes": "docs/notes/E2.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "847ec25"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "E3",
+   "title": "Host process (binds the run overhead key; publisher fills wait_on and tokens from the map function node)",
+   "section": "engine",
+   "depends_on": [
+    "E0",
+    "E1",
+    "E2"
+   ],
+   "owns": [
+    "docs/notes/E3.md",
+    "sutra_app/engine/__main__.py",
+    "sutra_app/engine/host/__init__.py",
+    "sutra_app/engine/host/heartbeat.py",
+    "sutra_app/engine/host/inbox.py",
+    "sutra_app/engine/host/publisher.py",
+    "tests/engine/test_engine_crash.py",
+    "tests/engine/test_engine_host.py",
+    "tests/engine/test_engine_host_process.py",
+    "tests/engine/test_engine_live.py",
+    "tests/engine/test_engine_publisher.py"
+   ],
+   "notes": "docs/notes/E3.md",
+   "notes_lines": 46,
+   "decisions_cited": [],
+   "merge_commits": [
+    "bf95f3f"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "E4",
+   "title": "FastAPI routes at the root with ?dept=, engine settings routes, sandbox and security headers, and mount()",
+   "section": "engine",
+   "depends_on": [
+    "E2"
+   ],
+   "owns": [
+    "docs/notes/E4.md",
+    "sutra_app/engine/api/__init__.py",
+    "sutra_app/engine/api/commands.py",
+    "sutra_app/engine/api/ctx.py",
+    "sutra_app/engine/api/files.py",
+    "sutra_app/engine/api/library.py",
+    "sutra_app/engine/api/ports.py",
+    "sutra_app/engine/api/reply.py",
+    "sutra_app/engine/api/run_views.py",
+    "sutra_app/engine/api/settings.py",
+    "sutra_app/engine/api/state.py",
+    "tests/engine/test_engine_api_commands.py",
+    "tests/engine/test_engine_api_headers.py",
+    "tests/engine/test_engine_api_redact.py",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/engine/test_engine_api_settings.py"
+   ],
+   "notes": "docs/notes/E4.md",
+   "notes_lines": 43,
+   "decisions_cited": [],
+   "merge_commits": [
+    "7591373"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "E5",
+   "title": "Legacy suites as subprocesses and prompt goldens",
+   "section": "engine",
+   "depends_on": [
+    "E1",
+    "E2",
+    "E3"
+   ],
+   "owns": [
+    "docs/notes/E5.md",
+    "scripts/engine_gate.sh",
+    "scripts/record_engine_golden.py",
+    "tests/engine/golden/prompts_*.json",
+    "tests/engine/legacy/",
+    "tests/engine/test_engine_legacy.py",
+    "tests/engine/test_engine_prompts.py"
+   ],
+   "notes": "docs/notes/E5.md",
+   "notes_lines": 40,
+   "decisions_cited": [],
+   "merge_commits": [
+    "fdff65c"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "E6",
+   "title": "Function-node layer: turn to work atom, check runner, manual atom, transitions, events",
+   "section": "engine",
+   "depends_on": [
+    "E0",
+    "E8",
+    "L4",
+    "L5",
+    "L6",
+    "L10"
+   ],
+   "owns": [
+    "docs/notes/E6.md",
+    "sutra_app/engine/fnodes/checks.py",
+    "sutra_app/engine/fnodes/declare.py",
+    "sutra_app/engine/fnodes/ids.py",
+    "tests/engine/test_engine_fn_checks.py",
+    "tests/engine/test_engine_fn_declare.py",
+    "tests/engine/test_engine_fn_layer.py"
+   ],
+   "notes": "docs/notes/E6.md",
+   "notes_lines": 47,
+   "decisions_cited": [],
+   "merge_commits": [
+    "0c0d52f"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "E7",
+   "title": "Function nodes in a whole run: golden atoms for each function, event contract, prompts unchanged, no usage line without an atom",
+   "section": "engine",
+   "depends_on": [
+    "E3",
+    "E6",
+    "ORCH-1"
+   ],
+   "owns": [
+    "docs/notes/E7.md",
+    "scripts/record_fn_golden.py",
+    "tests/engine/test_engine_events_contract.py"
+   ],
+   "notes": "docs/notes/E7.md",
+   "notes_lines": 44,
+   "decisions_cited": [],
+   "merge_commits": [
+    "c75857b"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "E8",
+   "title": "Verify registry: 14 named checks, the evidence reader, fixtures, parity and mutation tests",
+   "section": "engine",
+   "depends_on": [
+    "E0",
+    "E1",
+    "L4",
+    "L5"
+   ],
+   "owns": [
+    "docs/notes/E8.md",
+    "sutra_app/engine/fnodes/__init__.py",
+    "sutra_app/engine/fnodes/evidence.py",
+    "tests/engine/fixtures/fn_registry/",
+    "tests/engine/test_engine_fn_mutations.py",
+    "tests/engine/test_engine_fn_registry.py"
+   ],
+   "notes": "docs/notes/E8.md",
+   "notes_lines": 37,
+   "decisions_cited": [],
+   "merge_commits": [
+    "9d71ee9"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-CONSOLE",
+   "title": "Owner console: usage and cost view, Atom log browser, health, diagnostics download, HTML error pages",
+   "section": "gaps",
+   "depends_on": [
+    "GAP-OPS-1",
+    "ORCH-8",
+    "UI-7",
+    "UI-9"
+   ],
+   "owns": [
+    "docs/notes/GAP-CONSOLE.md",
+    "sutra_app/ops/api.py",
+    "sutra_app/ui/boot.py",
+    "sutra_app/ui/pages/console.html",
+    "sutra_app/ui/pages/home.html",
+    "sutra_app/ui/routes.py",
+    "sutra_app/ui/static/css/sutra-console.css",
+    "sutra_app/ui/static/js/console_view.js",
+    "sutra_app/ui/static/js/home.js",
+    "tests/ops/test_api_ops.py",
+    "tests/ui/js/console_view.test.js",
+    "tests/ui/test_console.py"
+   ],
+   "notes": "docs/notes/GAP-CONSOLE.md",
+   "notes_lines": 43,
+   "decisions_cited": [],
+   "merge_commits": [
+    "80dd160"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-DATA",
+   "title": "Data lifecycle: backup, restore, pre-upgrade backup, export of chart and team deliverables, prune of bulky run files",
+   "section": "gaps",
+   "depends_on": [
+    "E3",
+    "GAP-E2E",
+    "GAP-OPS-1",
+    "ORCH-8"
+   ],
+   "owns": [
+    "docs/notes/GAP-DATA.md",
+    "sutra_app/ops/backup.py",
+    "sutra_app/ops/exporter.py",
+    "sutra_app/ops/retention.py",
+    "tests/ops/test_backup.py",
+    "tests/ops/test_exporter.py",
+    "tests/ops/test_retention.py"
+   ],
+   "notes": "docs/notes/GAP-DATA.md",
+   "notes_lines": 44,
+   "decisions_cited": [],
+   "merge_commits": [
+    "f562e8c"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-DEMO",
+   "title": "Offline demo: the chat agent works with --offline (decide, change and assign answered from the message) so a team can be created and run with no CLI",
+   "section": "gaps",
+   "depends_on": [
+    "CN-9",
+    "GAP-W1",
+    "ORCH-7",
+    "ORCH-8"
+   ],
+   "owns": [
+    "docs/notes/GAP-DEMO.md",
+    "sutra_app/connectors/factory.py",
+    "sutra_app/orchestrator/agent/demo.py",
+    "sutra_app/orchestrator/wiring.py",
+    "tests/integration/test_offline_demo.py",
+    "tests/orchestrator/test_agent_demo.py"
+   ],
+   "notes": "docs/notes/GAP-DEMO.md",
+   "notes_lines": 36,
+   "decisions_cited": [
+    "D88",
+    "D97"
+   ],
+   "merge_commits": [
+    "133ea64"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-DOCS",
+   "title": "Getting started, operations, environment and troubleshooting documents with a doc checker",
+   "section": "gaps",
+   "depends_on": [
+    "GAP-CONSOLE",
+    "GAP-DATA",
+    "GAP-OPS-1",
+    "ORCH-8"
+   ],
+   "owns": [
+    "docs/ENVIRONMENT.md",
+    "docs/GETTING-STARTED.md",
+    "docs/OPERATIONS.md",
+    "docs/TROUBLESHOOTING.md",
+    "docs/notes/GAP-DOCS.md",
+    "scripts/check_docs.py",
+    "tests/test_docs.py"
+   ],
+   "notes": "docs/notes/GAP-DOCS.md",
+   "notes_lines": 44,
+   "decisions_cited": [
+    "D93"
+   ],
+   "merge_commits": [
+    "e2e6013"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-E1B",
+   "title": "Follow-up after a finished document chain (E1-b): rehydrate PRD/HLD/LLD runs",
+   "section": "gaps",
+   "depends_on": [
+    "E1",
+    "E3",
+    "E5"
+   ],
+   "owns": [
+    "docs/notes/GAP-E1B.md",
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/rehydrate.py",
+    "tests/engine/test_engine_rehydrate.py",
+    "tests/engine/test_engine_rehydrate_chain.py"
+   ],
+   "notes": "docs/notes/GAP-E1B.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "2af7170"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-E2E",
+   "title": "End-to-end scenarios with the stub connector and the real engine process: new team from one chat message to a finished workflow and an audit verdict, the seven draw.io steps, restart, stop, parallel teams, CLI boot",
+   "section": "gaps",
+   "depends_on": [
+    "CN-9",
+    "CT-1",
+    "E7",
+    "GAP-W1",
+    "ORCH-8"
+   ],
+   "owns": [
+    "docs/notes/GAP-E2E.md",
+    "tests/e2e/conftest.py",
+    "tests/e2e/harness.py",
+    "tests/e2e/test_cli_boot.py",
+    "tests/e2e/test_scenario_fake_cli.py",
+    "tests/e2e/test_scenario_followup.py",
+    "tests/e2e/test_scenario_new_team.py",
+    "tests/e2e/test_scenario_parallel.py",
+    "tests/e2e/test_scenario_restart_stop.py"
+   ],
+   "notes": "docs/notes/GAP-E2E.md",
+   "notes_lines": 42,
+   "decisions_cited": [],
+   "merge_commits": [
+    "18b003a"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-E2E-UI",
+   "title": "Browser walk against the real app: smoke, restart resync, stale-token page",
+   "section": "gaps",
+   "depends_on": [
+    "GAP-E2E",
+    "ORCH-8",
+    "UI-9"
+   ],
+   "owns": [
+    "docs/notes/GAP-E2E-UI.md",
+    "tests/e2e/test_browser_real_app.py",
+    "tests/e2e/test_browser_resync.py"
+   ],
+   "notes": "docs/notes/GAP-E2E-UI.md",
+   "notes_lines": 43,
+   "decisions_cited": [],
+   "merge_commits": [
+    "c13401f"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-INSTALL",
+   "title": "Install, run and remove the installed sutra-pro app: scripts and an installed-copy acceptance test",
+   "section": "gaps",
+   "depends_on": [
+    "GAP-E2E",
+    "GAP-OPS-1",
+    "GAP-W1",
+    "ORCH-8",
+    "REL-1",
+    "REL-2"
+   ],
+   "owns": [
+    "docs/notes/GAP-INSTALL.md",
+    "scripts/install_local.sh",
+    "scripts/uninstall_local.sh",
+    "tests/release/test_installed_app.py"
+   ],
+   "notes": "docs/notes/GAP-INSTALL.md",
+   "notes_lines": 20,
+   "decisions_cited": [
+    "D88"
+   ],
+   "merge_commits": [
+    "4578eed"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-LIVE",
+   "title": "Live smoke test of the whole app with the real Claude and Codex CLIs, with cost ceilings and a report on the open design fallbacks",
+   "section": "gaps",
+   "depends_on": [
+    "CN-9",
+    "CT-1",
+    "GAP-E2E",
+    "GAP-OPS-1",
+    "GAP-W1",
+    "ORCH-8"
+   ],
+   "owns": [
+    "docs/notes/GAP-LIVE.md",
+    "scripts/live_smoke.py",
+    "tests/live/test_live_app_smoke.py"
+   ],
+   "notes": "docs/notes/GAP-LIVE.md",
+   "notes_lines": 45,
+   "decisions_cited": [
+    "D8"
+   ],
+   "merge_commits": [
+    "6fbbec7"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-OPS-1",
+   "title": "Operator CLI: doctor, status, stop, config, instance lock, logging setup, browser choice, run and stop scripts",
+   "section": "gaps",
+   "depends_on": [
+    "CN-9",
+    "E0",
+    "E4",
+    "GAP-W1",
+    "ORCH-8"
+   ],
+   "owns": [
+    "docs/notes/GAP-OPS-1.md",
+    "scripts/run.sh",
+    "scripts/stop.sh",
+    "sutra_app/__main__.py",
+    "sutra_app/main.py",
+    "sutra_app/ops/__init__.py",
+    "sutra_app/ops/browser.py",
+    "sutra_app/ops/cli.py",
+    "sutra_app/ops/doctor.py",
+    "sutra_app/ops/envfile.py",
+    "sutra_app/ops/lock.py",
+    "sutra_app/ops/logsetup.py",
+    "tests/ops/test_browser.py",
+    "tests/ops/test_cli.py",
+    "tests/ops/test_doctor.py",
+    "tests/ops/test_envfile.py",
+    "tests/ops/test_lock.py",
+    "tests/ops/test_logsetup.py"
+   ],
+   "notes": "docs/notes/GAP-OPS-1.md",
+   "notes_lines": 46,
+   "decisions_cited": [
+    "D95"
+   ],
+   "merge_commits": [
+    "8620c1a"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-TRACE",
+   "title": "Design overview and traceability matrix (docs/DESIGN.md, docs/TRACEABILITY.md, generator and test)",
+   "section": "gaps",
+   "depends_on": [
+    "CT-1",
+    "E5",
+    "GAP-DEMO",
+    "GAP-OPS-1",
+    "GAP-TUNE",
+    "GAP-W1",
+    "ORCH-8",
+    "UI-9"
+   ],
+   "owns": [
+    "docs/design/traceability.json",
+    "docs/notes/GAP-TRACE.md",
+    "scripts/build_traceability.py",
+    "tests/test_traceability.py"
+   ],
+   "notes": "docs/notes/GAP-TRACE.md",
+   "notes_lines": 45,
+   "decisions_cited": [
+    "D87",
+    "D88",
+    "D91",
+    "D93",
+    "D96",
+    "D97"
+   ],
+   "merge_commits": [
+    "00a3c6c"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-TUNE",
+   "title": "Tune the closed reply classes and write-scope names on the golden run: zero unexplained verify_failed and touches_miss",
+   "section": "gaps",
+   "depends_on": [
+    "E7",
+    "E8",
+    "GAP-W1",
+    "L5",
+    "L10"
+   ],
+   "owns": [
+    "docs/notes/GAP-TUNE.md",
+    "sutra_app/engine/fnodes/registry.py",
+    "sutra_app/library/functions.py",
+    "sutra_app/library/specs/function_specs.json",
+    "tests/engine/golden/fn_atoms_brewlab.json",
+    "tests/engine/golden/run_events.jsonl",
+    "tests/engine/test_engine_fn_tuning.py"
+   ],
+   "notes": "docs/notes/GAP-TUNE.md",
+   "notes_lines": 44,
+   "decisions_cited": [],
+   "merge_commits": [
+    "abb50fa"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "GAP-W1",
+   "title": "Integration defect fixes: host/layer hook wiring, stop abandons open atoms, default .env beside the data folder, Sutra tools database name, function_specs.json in the wheel (test)",
+   "section": "gaps",
+   "depends_on": [
+    "CN-3",
+    "CN-4",
+    "CN-8",
+    "E0",
+    "E3",
+    "E6",
+    "E7",
+    "ORCH-1"
+   ],
+   "owns": [
+    "docs/notes/GAP-W1.md",
+    "sutra_app/config.py",
+    "sutra_app/connectors/claude.py",
+    "sutra_app/connectors/codex.py",
+    "sutra_app/connectors/tools/profiles.py",
+    "sutra_app/engine/fnodes/layer.py",
+    "sutra_app/engine/host/loop.py",
+    "sutra_app/engine/paths.py",
+    "tests/engine/test_engine_fn_golden.py",
+    "tests/integration/test_wiring_defects.py"
+   ],
+   "notes": "docs/notes/GAP-W1.md",
+   "notes_lines": 39,
+   "decisions_cited": [],
+   "merge_commits": [
+    "544b657"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "L1",
+   "title": "Foundations, registry, gate, replies, schema export, id helpers (overhead_atom_id)",
+   "section": "library",
+   "depends_on": [],
+   "owns": [
+    "docs/notes/L1.md",
+    "sutra_app/library/__init__.py",
+    "sutra_app/library/base.py",
+    "sutra_app/library/export.py",
+    "sutra_app/library/gate.py",
+    "sutra_app/library/registry.py",
+    "sutra_app/library/replies.py",
+    "sutra_app/library/types.py",
+    "tests/library/conftest.py",
+    "tests/library/test_lib_atom_ids.py",
+    "tests/library/test_lib_base.py",
+    "tests/library/test_lib_gate.py",
+    "tests/library/test_lib_registry.py",
+    "tests/library/test_lib_replies.py",
+    "tests/library/test_lib_transport.py"
+   ],
+   "notes": "docs/notes/L1.md",
+   "notes_lines": 114,
+   "decisions_cited": [],
+   "merge_commits": [
+    "f02e448"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "L2",
+   "title": "Org chart and chart changes",
+   "section": "library",
+   "depends_on": [
+    "L1"
+   ],
+   "owns": [
+    "docs/notes/L2.md",
+    "sutra_app/library/org_chart.py",
+    "tests/library/factories_org.py",
+    "tests/library/test_lib_chart_change.py",
+    "tests/library/test_lib_chart_transport.py",
+    "tests/library/test_lib_org_chart.py"
+   ],
+   "notes": "docs/notes/L2.md",
+   "notes_lines": 42,
+   "decisions_cited": [],
+   "merge_commits": [
+    "16a3612"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "L3",
+   "title": "Goal, Department, Evaluation, chat message meta",
+   "section": "library",
+   "depends_on": [
+    "L1"
+   ],
+   "owns": [
+    "docs/notes/L3.md",
+    "sutra_app/library/chat.py",
+    "sutra_app/library/department.py",
+    "sutra_app/library/evaluation.py",
+    "sutra_app/library/goal.py",
+    "tests/library/test_lib_chat.py",
+    "tests/library/test_lib_department.py",
+    "tests/library/test_lib_evaluation.py",
+    "tests/library/test_lib_goal.py"
+   ],
+   "notes": "docs/notes/L3.md",
+   "notes_lines": 42,
+   "decisions_cited": [],
+   "merge_commits": [
+    "bb72dae"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "L4",
+   "title": "Atom, lifecycle, ledger row, cards, atom/1 view, display state (abandon_code, Seen, 14 check names, verify_failed log row, ledger_row_from_view)",
+   "section": "library",
+   "depends_on": [
+    "L1"
+   ],
+   "owns": [
+    "docs/notes/L4.md",
+    "sutra_app/library/atom.py",
+    "tests/library/factories_atom.py",
+    "tests/library/fixtures/atom/",
+    "tests/library/test_lib_atom.py",
+    "tests/library/test_lib_atom_display.py",
+    "tests/library/test_lib_atom_lifecycle.py",
+    "tests/library/test_lib_atom_view.py"
+   ],
+   "notes": "docs/notes/L4.md",
+   "notes_lines": 40,
+   "decisions_cited": [],
+   "merge_commits": [
+    "b177f4f"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "L5",
+   "title": "Workflow, Step and the five function models",
+   "section": "library",
+   "depends_on": [
+    "L1",
+    "L3",
+    "L4"
+   ],
+   "owns": [
+    "docs/notes/L5.md",
+    "sutra_app/library/workflow.py",
+    "tests/library/test_lib_functions.py",
+    "tests/library/test_lib_workflow.py"
+   ],
+   "notes": "docs/notes/L5.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "70eca3d"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "L6",
+   "title": "Node family, graph edges, function-spec plug-in (FunctionNode: goal, task string, context, open_atom, atom_count, wait_on, stats, spec_version; refresh_function_nodes; HANDOFFS table of S3-web-04)",
+   "section": "library",
+   "depends_on": [
+    "L1",
+    "L2",
+    "L4"
+   ],
+   "owns": [
+    "docs/notes/L6.md",
+    "sutra_app/library/node.py",
+    "tests/library/factories_node.py",
+    "tests/library/test_lib_node.py"
+   ],
+   "notes": "docs/notes/L6.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "1e668e3"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "L7",
+   "title": "Artifact models, rules as data, templates",
+   "section": "library",
+   "depends_on": [
+    "L1"
+   ],
+   "owns": [
+    "docs/notes/L7.md",
+    "sutra_app/library/artifacts/__init__.py",
+    "sutra_app/library/artifacts/models.py",
+    "sutra_app/library/artifacts/render.py",
+    "sutra_app/library/artifacts/rules.py",
+    "sutra_app/library/templates.py",
+    "tests/library/fixtures/artifacts/",
+    "tests/library/test_lib_artifacts.py",
+    "tests/library/test_lib_rules.py",
+    "tests/library/test_lib_templates.py"
+   ],
+   "notes": "docs/notes/L7.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "14ea587",
+    "5fb0229"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "L8",
+   "title": "Integration: J2 record catalogue and gate hook, schema API at /api/schemas (guarded POST, ORCH error envelope), generated schemas",
+   "section": "library",
+   "depends_on": [
+    "L1",
+    "L2",
+    "L3",
+    "L4",
+    "L5",
+    "L6",
+    "L7",
+    "L10"
+   ],
+   "owns": [
+    "docs/notes/L8.md",
+    "docs/schemas/",
+    "sutra_app/library/all.py",
+    "sutra_app/library/api.py",
+    "sutra_app/library/records.py",
+    "tests/library/parity_allowlist.json",
+    "tests/library/test_lib_api.py",
+    "tests/library/test_lib_engine_parity.py",
+    "tests/library/test_lib_live_transport.py",
+    "tests/library/test_lib_records.py",
+    "tests/library/test_lib_schema_drift.py",
+    "tests/library/test_lib_write_paths.py",
+    "tests/library/write_allowlist.txt",
+    "tests/library/write_paths.txt"
+   ],
+   "notes": "docs/notes/L8.md",
+   "notes_lines": 42,
+   "decisions_cited": [],
+   "merge_commits": [
+    "c62f92b"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "L9",
+   "title": "J2 wire documents (after the engine package exists)",
+   "section": "library",
+   "depends_on": [
+    "L1",
+    "L4",
+    "L5"
+   ],
+   "owns": [
+    "docs/notes/L9.md",
+    "sutra_app/library/wire.py",
+    "tests/library/test_lib_wire.py"
+   ],
+   "notes": "docs/notes/L9.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "37ea0db"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "L10",
+   "title": "Function specs: seed data (templates with named checks, yields, work hints) and its tests",
+   "section": "library",
+   "depends_on": [
+    "L1",
+    "L4",
+    "L5",
+    "L6"
+   ],
+   "owns": [
+    "docs/notes/L10.md",
+    "tests/library/test_lib_function_specs.py"
+   ],
+   "notes": "docs/notes/L10.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "337942a"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "ORCH-1",
+   "title": "Foundation: settings (token of at least 16 characters, override key, max_live), database (StoreContext), schema (chart_changes task_title and result_json; atoms.display and the Atom log DDL), records, wire models (RunEvent union; node event wait_on and tokens), require_token (header token and Origin check) in api/deps.py; plain_check removed",
+   "section": "orchestrator",
+   "depends_on": [
+    "L1",
+    "L3",
+    "L4"
+   ],
+   "owns": [
+    "docs/notes/ORCH-1.md",
+    "sutra_app/orchestrator/__init__.py",
+    "sutra_app/orchestrator/api/__init__.py",
+    "sutra_app/orchestrator/api/deps.py",
+    "sutra_app/orchestrator/db.py",
+    "sutra_app/orchestrator/errors.py",
+    "sutra_app/orchestrator/ids.py",
+    "sutra_app/orchestrator/models.py",
+    "sutra_app/orchestrator/records.py",
+    "sutra_app/orchestrator/redact.py",
+    "sutra_app/orchestrator/schema.py",
+    "sutra_app/orchestrator/services.py",
+    "sutra_app/orchestrator/testing/__init__.py",
+    "sutra_app/orchestrator/textutil.py",
+    "tests/orchestrator/__init__.py",
+    "tests/orchestrator/conftest.py",
+    "tests/orchestrator/test_config.py",
+    "tests/orchestrator/test_records.py",
+    "tests/orchestrator/test_schema.py",
+    "tests/orchestrator/test_textutil.py"
+   ],
+   "notes": "docs/notes/ORCH-1.md",
+   "notes_lines": 45,
+   "decisions_cited": [
+    "D88"
+   ],
+   "merge_commits": [
+    "1e5561d"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "ORCH-2",
+   "title": "Event bus (publish, publish_one) and SSE route (control events without id, restart/gap resync, connector.* topics)",
+   "section": "orchestrator",
+   "depends_on": [
+    "ORCH-1"
+   ],
+   "owns": [
+    "docs/notes/ORCH-2.md",
+    "sutra_app/orchestrator/api/events.py",
+    "sutra_app/orchestrator/events.py",
+    "tests/orchestrator/test_events_bus.py",
+    "tests/orchestrator/test_events_sse.py"
+   ],
+   "notes": "docs/notes/ORCH-2.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "018b8da",
+    "bfdbb76"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "ORCH-3",
+   "title": "Chats, atoms and usage stores with their read routes (ChatTranscripts, note_provider, apply_links; AtomStore display column and Atom log: append_ledger, GET /api/atoms/log; UsageStore with step and atom_id)",
+   "section": "orchestrator",
+   "depends_on": [
+    "CN-6",
+    "L2",
+    "L4",
+    "ORCH-1"
+   ],
+   "owns": [
+    "docs/notes/ORCH-3.md",
+    "sutra_app/orchestrator/api/atoms.py",
+    "sutra_app/orchestrator/api/chat.py",
+    "sutra_app/orchestrator/api/usage.py",
+    "sutra_app/orchestrator/atoms.py",
+    "sutra_app/orchestrator/chats.py",
+    "sutra_app/orchestrator/usage.py",
+    "tests/orchestrator/test_api_chat_read.py",
+    "tests/orchestrator/test_atoms_usage.py",
+    "tests/orchestrator/test_chat_store.py"
+   ],
+   "notes": "docs/notes/ORCH-3.md",
+   "notes_lines": 40,
+   "decisions_cited": [],
+   "merge_commits": [
+    "ba87364"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "ORCH-4",
+   "title": "Workflow graph store and routes (pre-order, function meta {stats, wait_on} in the view, full meta with atoms_failed and atoms_total in NodeDetail)",
+   "section": "orchestrator",
+   "depends_on": [
+    "L6",
+    "ORCH-1"
+   ],
+   "owns": [
+    "docs/notes/ORCH-4.md",
+    "sutra_app/orchestrator/api/graph.py",
+    "sutra_app/orchestrator/graph.py",
+    "tests/orchestrator/test_api_graph.py",
+    "tests/orchestrator/test_graph_store.py"
+   ],
+   "notes": "docs/notes/ORCH-4.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "edfaa2b"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "ORCH-5",
+   "title": "Global org chart store, rules, departments and node linker (ChartChangeOut lists and task_title)",
+   "section": "orchestrator",
+   "depends_on": [
+    "L2",
+    "L3",
+    "L6",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-4"
+   ],
+   "owns": [
+    "docs/notes/ORCH-5.md",
+    "sutra_app/orchestrator/api/chart.py",
+    "sutra_app/orchestrator/api/departments.py",
+    "sutra_app/orchestrator/chart.py",
+    "sutra_app/orchestrator/chart_rules.py",
+    "sutra_app/orchestrator/departments.py",
+    "sutra_app/orchestrator/nodes.py",
+    "tests/orchestrator/test_api_chart.py",
+    "tests/orchestrator/test_chart_rules.py",
+    "tests/orchestrator/test_chart_store.py",
+    "tests/orchestrator/test_departments.py"
+   ],
+   "notes": "docs/notes/ORCH-5.md",
+   "notes_lines": 42,
+   "decisions_cited": [],
+   "merge_commits": [
+    "c9f267f"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "ORCH-6",
+   "title": "Tasks, run launcher and watcher, projector (function atoms, builder ledger rows, node event wait_on and stats, no goal/task/context writes; run folder and child environment from PASS_NAMES; stop ladder; reconcile)",
+   "section": "orchestrator",
+   "depends_on": [
+    "CN-1",
+    "E3",
+    "E6",
+    "E7",
+    "L4",
+    "L6",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-4",
+    "ORCH-5"
+   ],
+   "owns": [
+    "docs/notes/ORCH-6.md",
+    "sutra_app/orchestrator/api/tasks.py",
+    "sutra_app/orchestrator/projector.py",
+    "sutra_app/orchestrator/runs.py",
+    "sutra_app/orchestrator/tasks.py",
+    "sutra_app/orchestrator/testing/fake_engine.py",
+    "tests/orchestrator/test_api_tasks.py",
+    "tests/orchestrator/test_projector.py",
+    "tests/orchestrator/test_projector_fnodes.py",
+    "tests/orchestrator/test_tasks.py"
+   ],
+   "notes": "docs/notes/ORCH-6.md",
+   "notes_lines": 39,
+   "decisions_cited": [],
+   "merge_commits": [
+    "9a7dc6c"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "ORCH-7",
+   "title": "Chat agent: staged structured calls without prose, code template lines, request overhead key, turn runner, prompts, agent routes",
+   "section": "orchestrator",
+   "depends_on": [
+    "CN-7",
+    "L1",
+    "L5",
+    "ORCH-1",
+    "ORCH-2",
+    "ORCH-3",
+    "ORCH-5",
+    "ORCH-6"
+   ],
+   "owns": [
+    "docs/notes/ORCH-7.md",
+    "sutra_app/orchestrator/agent/__init__.py",
+    "sutra_app/orchestrator/agent/agent.py",
+    "sutra_app/orchestrator/agent/planner.py",
+    "sutra_app/orchestrator/agent/ports.py",
+    "sutra_app/orchestrator/agent/prompts.py",
+    "sutra_app/orchestrator/agent/replies.py",
+    "sutra_app/orchestrator/agent/runner.py",
+    "sutra_app/orchestrator/agent/templates/assign.md",
+    "sutra_app/orchestrator/agent/templates/change.md",
+    "sutra_app/orchestrator/agent/templates/decide.md",
+    "sutra_app/orchestrator/agent/templates/retry.md",
+    "sutra_app/orchestrator/api/agent.py",
+    "sutra_app/orchestrator/testing/scripted.py",
+    "tests/orchestrator/live/__init__.py",
+    "tests/orchestrator/live/test_live_chat_agent.py",
+    "tests/orchestrator/test_api_agent.py",
+    "tests/orchestrator/test_chat_agent.py",
+    "tests/orchestrator/test_turn_runner.py"
+   ],
+   "notes": "docs/notes/ORCH-7.md",
+   "notes_lines": 43,
+   "decisions_cited": [],
+   "merge_commits": [
+    "e8ed343"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "ORCH-8",
+   "title": "App shell: wiring, create_app, CLI, health, and the cross-package scenario and packaging tests",
+   "section": "orchestrator",
+   "depends_on": [
+    "CN-9",
+    "E4",
+    "ORCH-1",
+    "ORCH-2",
+    "ORCH-3",
+    "ORCH-4",
+    "ORCH-5",
+    "ORCH-6",
+    "ORCH-7"
+   ],
+   "owns": [
+    "docs/notes/ORCH-8.md",
+    "sutra_app/orchestrator/api/system.py",
+    "tests/orchestrator/test_api_security.py",
+    "tests/orchestrator/test_scripted_conversation.py",
+    "tests/orchestrator/test_startup.py",
+    "tests/test_packaging.py"
+   ],
+   "notes": "docs/notes/ORCH-8.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "1f5cf6e"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "REL-1",
+   "title": "GitHub CI and wheel release workflows (modelled on the old repo's)",
+   "section": "release",
+   "depends_on": [],
+   "owns": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/release-wheel.yml",
+    "docs/RELEASE.md",
+    "docs/notes/REL-1.md",
+    "scripts/check_release_tag.py",
+    "scripts/check_wheel.py",
+    "tests/release/test_check_wheel.py",
+    "tests/release/test_release_tag.py",
+    "tests/release/test_workflows_yaml.py"
+   ],
+   "notes": "docs/notes/REL-1.md",
+   "notes_lines": 59,
+   "decisions_cited": [
+    "D89"
+   ],
+   "merge_commits": [
+    "2c3fe08"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "REL-2",
+   "title": "macOS app bundle, DMG and its GitHub release workflow",
+   "section": "release",
+   "depends_on": [
+    "REL-1"
+   ],
+   "owns": [
+    ".github/workflows/release-macos.yml",
+    "docs/RELEASE-macos.md",
+    "docs/notes/REL-2.md",
+    "scripts/build_macos_app.py",
+    "scripts/macos/Info.plist.tmpl",
+    "scripts/macos/launcher.sh",
+    "tests/release/test_macos_bundle.py"
+   ],
+   "notes": "docs/notes/REL-2.md",
+   "notes_lines": 38,
+   "decisions_cited": [
+    "D89"
+   ],
+   "merge_commits": [
+    "2910e7b"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "UI-0",
+   "title": "Test tooling (fixtures and fake backend use LIB ids, J2 status words, five atom words, a division lens and whoLabel cases)",
+   "section": "ui",
+   "depends_on": [
+    "UI-1"
+   ],
+   "owns": [
+    "docs/notes/UI-0.md",
+    "scripts/capture_j2_fixtures.py",
+    "tests/ui/cdp.py",
+    "tests/ui/conftest.py",
+    "tests/ui/fake_backend.py",
+    "tests/ui/fixtures/",
+    "tests/ui/screens/.gitignore",
+    "tests/ui/test_fake_backend.py"
+   ],
+   "notes": "docs/notes/UI-0.md",
+   "notes_lines": 52,
+   "decisions_cited": [
+    "D73",
+    "D85"
+   ],
+   "merge_commits": [
+    "e6d0868"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "UI-1",
+   "title": "Serving and boot (Services.department lookup, no sutra_app/web.py alias, hash-based script-src, page headers)",
+   "section": "ui",
+   "depends_on": [],
+   "owns": [
+    "docs/notes/UI-1.md",
+    "sutra_app/ui/__init__.py",
+    "tests/ui/test_serve.py"
+   ],
+   "notes": "docs/notes/UI-1.md",
+   "notes_lines": 51,
+   "decisions_cited": [
+    "D72",
+    "D81",
+    "D82"
+   ],
+   "merge_commits": [
+    "7c7cded"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "UI-2",
+   "title": "Port of the J2 page (13 edits incl. E13 wording and sandbox attribute, harness copies, parity)",
+   "section": "ui",
+   "depends_on": [
+    "UI-0",
+    "UI-3"
+   ],
+   "owns": [
+    "docs/notes/UI-2.md",
+    "scripts/port_j2_ui.py",
+    "sutra_app/ui/pages/j2_graph_layout.js",
+    "sutra_app/ui/pages/j2_ui.html",
+    "sutra_app/ui/pages/j2_ui_render.js",
+    "sutra_app/ui/static/css/j2.css",
+    "sutra_app/ui/static/vendor/README.md",
+    "sutra_app/ui/static/vendor/d3-LICENSE",
+    "sutra_app/ui/static/vendor/d3.min.js",
+    "tests/ui/js/page_render.test.js",
+    "tests/ui/test_port_edits.py"
+   ],
+   "notes": "docs/notes/UI-2.md",
+   "notes_lines": 44,
+   "decisions_cited": [
+    "D6",
+    "D74",
+    "D76",
+    "D84"
+   ],
+   "merge_commits": [
+    "00ee22a"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "UI-3",
+   "title": "Client core (exact J2_PATHS, SutraCtx.currentTab, fetch wrapper with api.put and api.del, events: 14 names, hello-resync rule)",
+   "section": "ui",
+   "depends_on": [],
+   "owns": [
+    "docs/notes/UI-3.md",
+    "sutra_app/ui/static/js/sutra_ctx.js",
+    "sutra_app/ui/static/js/sutra_events.js",
+    "tests/ui/js/ctx.test.js",
+    "tests/ui/js/events.test.js",
+    "tests/ui/test_node_suite.py"
+   ],
+   "notes": "docs/notes/UI-3.md",
+   "notes_lines": 57,
+   "decisions_cited": [
+    "D80",
+    "D81"
+   ],
+   "merge_commits": [
+    "7753624"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "UI-4",
+   "title": "Graph pure core (J2 status words, edge kinds handoff/depends_on/speaks_to, same-kind loops, function chip with atom counts)",
+   "section": "ui",
+   "depends_on": [
+    "UI-3"
+   ],
+   "owns": [
+    "docs/notes/UI-4.md",
+    "sutra_app/ui/static/js/chart_marks.js",
+    "sutra_app/ui/static/js/graph_layout.js",
+    "sutra_app/ui/static/js/graph_render.js",
+    "tests/ui/js/chart_marks.test.js",
+    "tests/ui/js/graph_layout.test.js",
+    "tests/ui/js/graph_render.test.js"
+   ],
+   "notes": "docs/notes/UI-4.md",
+   "notes_lines": 55,
+   "decisions_cited": [
+    "D75"
+   ],
+   "merge_commits": [
+    "73ec1d2"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "UI-5",
+   "title": "Workflow graph and org chart views",
+   "section": "ui",
+   "depends_on": [
+    "UI-0",
+    "UI-3",
+    "UI-4"
+   ],
+   "owns": [
+    "docs/notes/UI-5.md",
+    "sutra_app/ui/static/css/sutra-graph.css",
+    "sutra_app/ui/static/js/graph_view.js",
+    "sutra_app/ui/static/js/orgchart_view.js",
+    "tests/ui/test_view_graph.py"
+   ],
+   "notes": "docs/notes/UI-5.md",
+   "notes_lines": 45,
+   "decisions_cited": [
+    "D44",
+    "D75",
+    "D80"
+   ],
+   "merge_commits": [
+    "130d132"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "UI-6",
+   "title": "Node panel: function-node drawer (final labels, five atom states, tries, legend), division lens panel, whoLabel, Identity chip opens the department chat, Go-to-tab, per-node chat",
+   "section": "ui",
+   "depends_on": [
+    "UI-0",
+    "UI-3"
+   ],
+   "owns": [
+    "docs/notes/UI-6.md",
+    "sutra_app/ui/static/css/sutra-panel.css",
+    "sutra_app/ui/static/js/chat_view.js",
+    "sutra_app/ui/static/js/fnode_view.js",
+    "sutra_app/ui/static/js/node_panel.js",
+    "tests/ui/js/chat_view.test.js",
+    "tests/ui/js/fnode_view.test.js",
+    "tests/ui/test_view_panel.py"
+   ],
+   "notes": "docs/notes/UI-6.md",
+   "notes_lines": 45,
+   "decisions_cited": [
+    "D62",
+    "D63",
+    "D64"
+   ],
+   "merge_commits": [
+    "54bdf00"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "UI-7",
+   "title": "Home page: start page, org chat, rail, panes; Settings with the Engine group, Connectors Test and Codex Sign in",
+   "section": "ui",
+   "depends_on": [
+    "UI-0",
+    "UI-3",
+    "UI-4",
+    "UI-5",
+    "UI-6"
+   ],
+   "owns": [
+    "docs/notes/UI-7.md",
+    "sutra_app/ui/static/css/sutra-shell.css",
+    "sutra_app/ui/static/js/settings_view.js",
+    "tests/ui/js/settings_connectors.test.js",
+    "tests/ui/js/settings_engine.test.js",
+    "tests/ui/test_home.py"
+   ],
+   "notes": "docs/notes/UI-7.md",
+   "notes_lines": 42,
+   "decisions_cited": [
+    "D18"
+   ],
+   "merge_commits": [
+    "ae758ca"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "UI-8",
+   "title": "Department page glue (init mounts the ?tab= view, archived class)",
+   "section": "ui",
+   "depends_on": [
+    "UI-0",
+    "UI-2",
+    "UI-5",
+    "UI-6"
+   ],
+   "owns": [
+    "docs/notes/UI-8.md",
+    "sutra_app/ui/static/js/dept_ext.js",
+    "tests/ui/test_dept_page.py"
+   ],
+   "notes": "docs/notes/UI-8.md",
+   "notes_lines": 45,
+   "decisions_cited": [],
+   "merge_commits": [
+    "4d14bc2"
+   ],
+   "status": "merged"
+  },
+  {
+   "id": "UI-9",
+   "title": "Scripted smoke, visual checks, token contrast",
+   "section": "ui",
+   "depends_on": [
+    "UI-0",
+    "UI-1",
+    "UI-2",
+    "UI-3",
+    "UI-4",
+    "UI-5",
+    "UI-6",
+    "UI-7",
+    "UI-8"
+   ],
+   "owns": [
+    "docs/notes/UI-9.md",
+    "tests/ui/js/contrast.test.js",
+    "tests/ui/test_browser_smoke.py",
+    "tests/ui/test_visual.py"
+   ],
+   "notes": "docs/notes/UI-9.md",
+   "notes_lines": 44,
+   "decisions_cited": [],
+   "merge_commits": [
+    "a741091"
+   ],
+   "status": "merged"
+  }
+ ]
+}

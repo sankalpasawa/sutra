@@ -1,0 +1,55 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "coordination",
+   "kind": "schedule"
+  },
+  "before": {
+   "workflows.json": [
+    {
+     "id": "W-0",
+     "status": "done"
+    },
+    {
+     "id": "W-1",
+     "status": "registered"
+    },
+    {
+     "id": "W-2",
+     "status": "registered"
+    },
+    {
+     "id": "W-3",
+     "status": "held"
+    }
+   ]
+  },
+  "reply": {
+   "order": [
+    "W-1"
+   ],
+   "holds": [
+    {
+     "id": "W-3",
+     "missing": "waits for W-2"
+    }
+   ]
+  },
+  "posted": [
+   {
+    "id": 11,
+    "who": "coordination",
+    "text": "@Priority Schedule",
+    "next": "priority",
+    "schedule": [
+     "W-1"
+    ]
+   }
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "W-2 is neither scheduled nor held"
+ }
+}

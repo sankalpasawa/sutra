@@ -1,0 +1,123 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "audit",
+   "kind": "audit"
+  },
+  "records": {
+   "goal.json": {
+    "statement": "s",
+    "done_when": [
+     "a",
+     "b",
+     "c"
+    ]
+   },
+   "audits.json": [
+    {
+     "cycle": 1,
+     "version": 1,
+     "results": [
+      {
+       "id": "F-1",
+       "item": 1,
+       "criterion": "Item 1",
+       "verdict": "PASS",
+       "note": "seen on the page",
+       "pass": true
+      }
+     ],
+     "rubric": [
+      {
+       "id": "R-2",
+       "item": "R-2",
+       "criterion": "Rubric R-2",
+       "verdict": "NEEDS_REVISION",
+       "note": "Measured by code: phone: 2 text element(s) below WCAG AA contrast, e.g. a on b; a on b",
+       "rubric": true,
+       "pass": false
+      },
+      {
+       "id": "R-3",
+       "item": "R-3",
+       "criterion": "Rubric R-3",
+       "verdict": "PASS",
+       "note": "seen",
+       "rubric": true,
+       "pass": true
+      },
+      {
+       "id": "R-6",
+       "item": "R-6",
+       "criterion": "Rubric R-6",
+       "verdict": "NEEDS_REVISION",
+       "note": "Measured by code: 3 tap target(s) under 44x44px at 360px, e.g. a.btn",
+       "rubric": true,
+       "pass": false
+      }
+     ],
+     "conditions": [],
+     "mechanical": {
+      "available": true,
+      "phone": {
+       "width": 360,
+       "overflow_px": 0
+      },
+      "desktop": {
+       "width": 1280,
+       "overflow_px": 0
+      },
+      "js_errors": [],
+      "broken_in_page_links": [],
+      "form_results": [],
+      "design": {
+       "phone": {
+        "contrast": {
+         "low_count": 2,
+         "low": [
+          "a on b",
+          "a on b"
+         ]
+        },
+        "headings": {
+         "h1": 1,
+         "skipped_levels": 0
+        },
+        "images_without_alt": [],
+        "small_tap_targets": {
+         "count": 3,
+         "min_px": 44,
+         "examples": [
+          "a.btn",
+          "a.btn",
+          "a.btn"
+         ]
+        }
+       },
+       "desktop": {
+        "contrast": {
+         "low_count": 2,
+         "low": [
+          "a on b",
+          "a on b"
+         ]
+        },
+        "headings": {
+         "h1": 1,
+         "skipped_levels": 0
+        },
+        "images_without_alt": []
+       }
+      }
+     }
+    }
+   ]
+  },
+  "before": {}
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "R-2, R-6 measured, recorded NEEDS_REVISION"
+ }
+}

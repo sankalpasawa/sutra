@@ -1,0 +1,251 @@
+{
+ "captured_with": [
+  "claude 2.1.308",
+  "codex-cli 0.146.0"
+ ],
+ "date": "2026-11-04",
+ "probes": [
+  {
+   "id": "claude_auth_status_signed_in",
+   "argv": [
+    "claude",
+    "auth",
+    "status"
+   ],
+   "exit": 0,
+   "stream": "stdout",
+   "body": "claude/auth_status_signed_in.json",
+   "seconds": 0.5
+  },
+  {
+   "id": "claude_auth_status_signed_out",
+   "argv": [
+    "claude",
+    "auth",
+    "status"
+   ],
+   "env": "empty CLAUDE_CONFIG_DIR",
+   "exit": 1,
+   "stream": "stdout",
+   "body": "claude/auth_status_signed_out.json"
+  },
+  {
+   "id": "codex_login_status_signed_in",
+   "argv": [
+    "codex",
+    "login",
+    "status"
+   ],
+   "exit": 0,
+   "stream": "stderr",
+   "stdout": "",
+   "stderr": "Logged in using ChatGPT",
+   "seconds": 0.1
+  },
+  {
+   "id": "codex_login_status_signed_out",
+   "argv": [
+    "codex",
+    "login",
+    "status"
+   ],
+   "env": "empty CODEX_HOME",
+   "exit": 1,
+   "stream": "stderr",
+   "stdout": "",
+   "stderr": "Not logged in"
+  },
+  {
+   "id": "claude_unknown_option",
+   "argv": [
+    "claude",
+    "-p",
+    "hi",
+    "--no-such-flag"
+   ],
+   "exit": 1,
+   "stdout": "",
+   "stderr": "error: unknown option '--no-such-flag'\n"
+  },
+  {
+   "id": "codex_unknown_argument",
+   "argv": [
+    "codex",
+    "exec",
+    "--no-such-flag",
+    "hi"
+   ],
+   "exit": 2,
+   "stdout": "",
+   "stderr": "error: unexpected argument '--no-such-flag' found\n\n  tip: to pass '--no-such-flag' as a value, use '-- --no-such-flag'\n\nUsage: codex exec [OPTIONS] [PROMPT]\n       codex exec [OPTIONS] <COMMAND> [ARGS]\n\nFor more information, try '--help'.\n"
+  },
+  {
+   "id": "claude_unknown_effort_value",
+   "argv": [
+    "claude",
+    "-p",
+    "hi",
+    "--effort",
+    "turbo"
+   ],
+   "exit": null,
+   "stderr": "Warning: Unknown --effort value 'turbo' — ignoring it and using the default effort. Valid values: low, medium, high, xhigh, max.\n",
+   "note": "a warning only: the CLI ignores the value and runs. The connector must validate effort itself."
+  },
+  {
+   "id": "claude_invalid_json_schema",
+   "argv": [
+    "claude",
+    "-p",
+    "hi",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--json-schema",
+    "{not json"
+   ],
+   "exit": 1,
+   "stdout": "",
+   "stderr": "Error: --json-schema is not valid JSON: JSON Parse error: Expected '}'\n",
+   "seconds": 0.2
+  },
+  {
+   "id": "codex_output_schema_file_invalid",
+   "argv": [
+    "codex",
+    "exec",
+    "--output-schema",
+    "<file with {not json>",
+    "hi"
+   ],
+   "exit": 1,
+   "stdout": "",
+   "stderr": "Reading additional input from stdin...\nOutput schema file <file> is not valid JSON: key must be a string at line 1 column 2\n",
+   "seconds": 0.4
+  },
+  {
+   "id": "codex_output_schema_file_missing",
+   "argv": [
+    "codex",
+    "exec",
+    "--output-schema",
+    "<missing file>",
+    "hi"
+   ],
+   "exit": 1,
+   "stdout": "",
+   "stderr": "Reading additional input from stdin...\nFailed to read output schema file <file>: No such file or directory (os error 2)\n"
+  },
+  {
+   "id": "codex_missing_working_directory",
+   "argv": [
+    "codex",
+    "exec",
+    "-C",
+    "<missing dir>",
+    "hi"
+   ],
+   "exit": 1,
+   "stdout": "",
+   "stderr": "Error: No such file or directory (os error 2)\n"
+  },
+  {
+   "id": "claude_resume_unknown_session",
+   "argv": [
+    "claude",
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--resume",
+    "<unknown uuid>"
+   ],
+   "exit": 1,
+   "stdout_fixture": "claude/stream_resume_unknown_session.jsonl",
+   "stderr": "No conversation found with session ID: <id>\n",
+   "seconds": 2.5,
+   "note": "stdout holds one result line: subtype error_during_execution, is_error true, num_turns 0. No model request was made."
+  },
+  {
+   "id": "codex_resume_unknown_thread",
+   "argv": [
+    "codex",
+    "exec",
+    "resume",
+    "--json",
+    "<unknown uuid>",
+    "-"
+   ],
+   "exit": 1,
+   "stdout": "",
+   "stderr": "Error: thread/resume: thread/resume failed: no rollout found for thread id <id> (code -32600)\n",
+   "seconds": 0.7
+  },
+  {
+   "id": "claude_system_prompt_file_missing",
+   "argv": [
+    "claude",
+    "-p",
+    "hi",
+    "--output-format",
+    "json",
+    "--tools",
+    "",
+    "--no-session-persistence",
+    "--system-prompt-file",
+    "<missing file>"
+   ],
+   "exit": 1,
+   "stdout": "",
+   "stderr": "Error: System prompt file not found: <path>\n",
+   "seconds": 0.2,
+   "note": "--system-prompt-file works with an existing file although it is not in --help; J2 uses it above 20,000 characters (llm.py:117-123)"
+  }
+ ],
+ "signals": [
+  {
+   "id": "claude_idle_stream_input_sigterm",
+   "target": "process group of an idle `claude -p --input-format stream-json`",
+   "signal": "SIGTERM",
+   "exit": 143,
+   "seconds_to_exit": 2.87,
+   "orphans": 0
+  },
+  {
+   "id": "claude_idle_stream_input_sigint",
+   "signal": "SIGINT",
+   "exit": 0,
+   "seconds_to_exit": 1.33,
+   "orphans": 0
+  },
+  {
+   "id": "codex_exec_sigterm_during_401_retries",
+   "signal": "SIGTERM to process group (python killpg)",
+   "exit": -15,
+   "orphans": 0,
+   "note": "the MCP child server was killed with the group"
+  },
+  {
+   "id": "claude_control_request_interrupt",
+   "stdin": "{\"type\":\"control_request\",\"request_id\":\"req_1\",\"request\":{\"subtype\":\"interrupt\"}}",
+   "stdout_fixture": "claude/control_interrupt_response.jsonl",
+   "exit": 0,
+   "note": "answered with no model call; works with --input-format stream-json"
+  }
+ ],
+ "verified_flags": {
+  "claude": {
+   "--safe-mode": "DROPS servers given with --mcp-config (init.mcp_servers == []): never combine with tools",
+   "--restricted": "keeps --mcp-config servers (init.mcp_servers[0].status == 'connected'); tool names are mcp__<server>__<tool>",
+   "--setting-sources ''": "accepted (the empty string loads no settings)",
+   "--json-schema": "reply arrives as result.structured_output; init.tools == ['StructuredOutput']",
+   "--session-id <uuid> / --resume <uuid>": "same session_id on resume, context carried; modelUsage and total_cost_usd are cumulative, result.usage is per turn"
+  },
+  "codex": {
+   "-c mcp_servers.<name>.command/args/env": "starts that MCP server for this invocation (initialize, notifications/initialized, tools/list seen)",
+   "--ignore-user-config --ignore-rules": "accepted by exec and exec resume; auth still read from CODEX_HOME",
+   "exec resume <thread_id> -": "same thread_id; turn.completed.usage is CUMULATIVE for the thread",
+   "-s on resume": "not accepted by `exec resume`; use -c sandbox_mode=\"read-only\" (accepted)"
+  }
+ }
+}

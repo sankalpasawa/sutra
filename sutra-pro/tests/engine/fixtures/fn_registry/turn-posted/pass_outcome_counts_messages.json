@@ -1,0 +1,19 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "outcome": {
+   "result": "ok",
+   "messages": [
+    4
+   ]
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "posted 1 message"
+ }
+}

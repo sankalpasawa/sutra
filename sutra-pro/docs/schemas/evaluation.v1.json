@@ -1,0 +1,893 @@
+{
+  "$defs": {
+    "AgentReview": {
+      "additionalProperties": false,
+      "description": "The reviewer's score (1 to 5) for one agent, with its note.",
+      "properties": {
+        "note": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Note",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Score",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "score"
+      ],
+      "title": "AgentReview",
+      "type": "object"
+    },
+    "ConditionResult": {
+      "additionalProperties": false,
+      "description": "A necessary condition checked by code (conditions/*.json, J2:1296 `check_conditions`). A \"warn\" condition is shown\nand never blocks. `check` names the code check, or several of them.",
+      "properties": {
+        "assumptions": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 600,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Assumptions"
+        },
+        "check": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "items": {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Check"
+        },
+        "evidence": {
+          "maxLength": 2000,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 8,
+          "pattern": "^[A-Z][0-9]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "met": {
+          "title": "Met",
+          "type": "boolean"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "const": "warn",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "met",
+        "evidence"
+      ],
+      "title": "ConditionResult",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "One row of Audit's result: a done-when item (`item` set, `pass` set) or an extra issue (no `pass`: J2 treats an\nextra issue as failing whatever its verdict says). Ids are F-<item number>, F-missing-<n> for an item Audit skipped,\nand `audit_id` keeps Audit's own id when code renamed it (J2:8908).",
+      "properties": {
+        "audit_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audit Id"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "criterion": {
+          "maxLength": 600,
+          "title": "Criterion",
+          "type": "string"
+        },
+        "forced_test": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Forced Test"
+        },
+        "id": {
+          "pattern": "^F-[A-Za-z0-9-]{1,20}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item"
+        },
+        "needs_requester_fact": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Needs Requester Fact"
+        },
+        "note": {
+          "maxLength": 2000,
+          "title": "Note",
+          "type": "string"
+        },
+        "pass": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pass"
+        },
+        "real_verdict": {
+          "anyOf": [
+            {
+              "maxLength": 2100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Real Verdict"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "critical"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        },
+        "verdict": {
+          "enum": [
+            "PASS",
+            "PASS_WITH_WARNING",
+            "NEEDS_REVISION",
+            "BLOCKED_BY_EVIDENCE",
+            "POLICY_CONCERN",
+            "TO_BE_CONFIRMED",
+            "UNPAID",
+            "WITHDRAWN"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "criterion",
+        "verdict",
+        "note"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "JudgeAnswer": {
+      "additionalProperties": false,
+      "description": "The judge's answer to one yes/no question, with its note (required by the judge's prompt for a \"no\").",
+      "properties": {
+        "answer": {
+          "enum": [
+            "yes",
+            "no",
+            "n/a"
+          ],
+          "title": "Answer",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "answer"
+      ],
+      "title": "JudgeAnswer",
+      "type": "object"
+    },
+    "LldComparison": {
+      "additionalProperties": false,
+      "description": "The finished page against the whole LLD, by code: section ids that match, and those that do not.",
+      "properties": {
+        "dropped": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LldMismatch"
+          },
+          "maxItems": 100,
+          "title": "Dropped",
+          "type": "array"
+        },
+        "matches": {
+          "default": [],
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Matches",
+          "type": "array"
+        },
+        "mismatches": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LldMismatch"
+          },
+          "maxItems": 100,
+          "title": "Mismatches",
+          "type": "array"
+        }
+      },
+      "title": "LldComparison",
+      "type": "object"
+    },
+    "LldMismatch": {
+      "additionalProperties": false,
+      "description": "An LLD section that the page does not match, or that no workflow built (J2:8992 `_lld_compare`).",
+      "properties": {
+        "evidence": {
+          "maxLength": 2000,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "section": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Section",
+          "type": "string"
+        }
+      },
+      "required": [
+        "section",
+        "evidence"
+      ],
+      "title": "LldMismatch",
+      "type": "object"
+    },
+    "PlanEvaluation": {
+      "additionalProperties": false,
+      "description": "The confidence judge's result for one planned workflow: code turned the answers into `score` (settle(), 0.95 less\nthe weight of each \"no\"), and the gate is PLAN_GATE. `weakest` is the check that lost most; None when nothing was lost.\n`round` counts the revision rounds after the first judgement (0 to 3).",
+      "properties": {
+        "answers": {
+          "maxProperties": 200,
+          "patternProperties": {
+            "^[A-Z][0-9]{1,3}$": {
+              "$ref": "#/$defs/JudgeAnswer"
+            }
+          },
+          "title": "Answers",
+          "type": "object"
+        },
+        "kind": {
+          "const": "plan",
+          "default": "plan",
+          "title": "Kind",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "round": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Round",
+          "type": "integer"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        },
+        "weakest": {
+          "anyOf": [
+            {
+              "enum": [
+                "inputs",
+                "method",
+                "done_test",
+                "factors",
+                "zone_fit",
+                "size",
+                "fits"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weakest"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow",
+        "round",
+        "score",
+        "passed",
+        "answers"
+      ],
+      "title": "PlanEvaluation",
+      "type": "object"
+    },
+    "RecheckEvaluation": {
+      "additionalProperties": false,
+      "description": "The entry J2 adds to audits.json when a board answer changed a document and the atoms built from it were checked\nagain (J2:7928). `trigger` is the board question, `doc` the document kind, `t` J2's local time stamp.",
+      "properties": {
+        "doc": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Doc",
+          "type": "string"
+        },
+        "kind": {
+          "const": "recheck",
+          "default": "recheck",
+          "title": "Kind",
+          "type": "string"
+        },
+        "results": {
+          "items": {
+            "$ref": "#/$defs/RecheckResult"
+          },
+          "maxItems": 500,
+          "title": "Results",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "t": {
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+          "title": "T",
+          "type": "string"
+        },
+        "trigger": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Trigger",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 0,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "trigger",
+        "doc",
+        "version",
+        "t",
+        "results"
+      ],
+      "title": "RecheckEvaluation",
+      "type": "object"
+    },
+    "RecheckResult": {
+      "additionalProperties": false,
+      "description": "One check of an atom, run again (a receipt, J2:8712). `pass` is None when the check could not run.",
+      "properties": {
+        "atom": {
+          "maxLength": 40,
+          "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+          "title": "Atom",
+          "type": "string"
+        },
+        "check": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Check"
+        },
+        "evidence": {
+          "maxLength": 2000,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "pass": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pass"
+        }
+      },
+      "required": [
+        "atom",
+        "evidence"
+      ],
+      "title": "RecheckResult",
+      "type": "object"
+    },
+    "ResultEvaluation": {
+      "additionalProperties": false,
+      "description": "Audit's check of one build: the entry J2 appends to audits.json (J2:8966). `all_pass` may not lie.",
+      "properties": {
+        "accepted": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Accepted",
+          "type": "array"
+        },
+        "all_pass": {
+          "title": "All Pass",
+          "type": "boolean"
+        },
+        "conditions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ConditionResult"
+          },
+          "maxItems": 40,
+          "title": "Conditions",
+          "type": "array"
+        },
+        "cycle": {
+          "minimum": 1,
+          "title": "Cycle",
+          "type": "integer"
+        },
+        "extra_issues": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "maxItems": 100,
+          "title": "Extra Issues",
+          "type": "array"
+        },
+        "kind": {
+          "const": "result",
+          "default": "result",
+          "title": "Kind",
+          "type": "string"
+        },
+        "lld": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LldComparison"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mechanical": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Mechanical",
+          "type": "object"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "enum": [
+                "website",
+                "prd",
+                "hld",
+                "lld"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output"
+        },
+        "read": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Read"
+        },
+        "results": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "maxItems": 200,
+          "title": "Results",
+          "type": "array"
+        },
+        "rubric": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RubricResult"
+          },
+          "maxItems": 20,
+          "title": "Rubric",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "screenshot": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Screenshot"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cycle",
+        "version",
+        "results",
+        "all_pass"
+      ],
+      "title": "ResultEvaluation",
+      "type": "object"
+    },
+    "RubricResult": {
+      "additionalProperties": false,
+      "description": "One row of the design rubric (R-1 to R-7, a website) or the document rubric (D-1 to D-5), as code stores it\n(J2:9186). `item` repeats the id, `criterion` is the rubric text, `rubric` is true, `severity` is \"medium\".",
+      "properties": {
+        "criterion": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Criterion"
+        },
+        "id": {
+          "maxLength": 12,
+          "pattern": "^[RD]-[0-9]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "maxLength": 12,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item"
+        },
+        "note": {
+          "maxLength": 2000,
+          "title": "Note",
+          "type": "string"
+        },
+        "pass": {
+          "title": "Pass",
+          "type": "boolean"
+        },
+        "rubric": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rubric"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "critical"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        },
+        "verdict": {
+          "enum": [
+            "PASS",
+            "PASS_WITH_WARNING",
+            "NEEDS_REVISION",
+            "BLOCKED_BY_EVIDENCE",
+            "WITHDRAWN"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "verdict",
+        "note",
+        "pass"
+      ],
+      "title": "RubricResult",
+      "type": "object"
+    },
+    "RunReview": {
+      "additionalProperties": false,
+      "description": "The reviewer's verdict on a finished run (REVIEW_FMT). A review written while the run is paused holds the verdict\nalone; a reply that was not JSON holds the verdict and the start of the reply in `raw` (J2:9534).",
+      "properties": {
+        "agents": {
+          "default": {},
+          "maxProperties": 40,
+          "patternProperties": {
+            "^[A-Za-z0-9_.:-]{1,40}$": {
+              "$ref": "#/$defs/AgentReview"
+            }
+          },
+          "title": "Agents",
+          "type": "object"
+        },
+        "kind": {
+          "const": "run",
+          "default": "run",
+          "title": "Kind",
+          "type": "string"
+        },
+        "learnings": {
+          "default": [],
+          "items": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Learnings",
+          "type": "array"
+        },
+        "problems": {
+          "default": [],
+          "items": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Problems",
+          "type": "array"
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "verdict": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Verdict",
+          "type": "string"
+        },
+        "went_well": {
+          "default": [],
+          "items": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Went Well",
+          "type": "array"
+        }
+      },
+      "required": [
+        "verdict"
+      ],
+      "title": "RunReview",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "plan": "#/$defs/PlanEvaluation",
+      "recheck": "#/$defs/RecheckEvaluation",
+      "result": "#/$defs/ResultEvaluation",
+      "run": "#/$defs/RunReview"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ResultEvaluation"
+    },
+    {
+      "$ref": "#/$defs/RecheckEvaluation"
+    },
+    {
+      "$ref": "#/$defs/PlanEvaluation"
+    },
+    {
+      "$ref": "#/$defs/RunReview"
+    }
+  ]
+}

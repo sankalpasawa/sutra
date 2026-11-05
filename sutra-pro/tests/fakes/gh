@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "${SUTRA_FAKE_PYTHON:-${FAKE_PYTHON:-python3}}" -E -S "$(dirname "$0")/fake_cli.py" gh "$@"

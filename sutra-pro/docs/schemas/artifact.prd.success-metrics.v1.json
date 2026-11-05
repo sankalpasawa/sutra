@@ -1,0 +1,67 @@
+{
+  "$defs": {
+    "SuccessMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "goal": {
+          "description": "the goal id this metric measures, e.g. \"G1\"",
+          "maxLength": 40,
+          "title": "Goal",
+          "type": "string"
+        },
+        "metric": {
+          "description": "what is measured",
+          "maxLength": 4000,
+          "title": "Metric",
+          "type": "string"
+        },
+        "target": {
+          "default": "",
+          "description": "the number or state to reach",
+          "maxLength": 4000,
+          "title": "Target",
+          "type": "string"
+        },
+        "window": {
+          "default": "",
+          "description": "the measurement window, e.g. \"in the first 30 days\"; write \"measurement window not set\" when the brief doesn't say",
+          "maxLength": 4000,
+          "title": "Window",
+          "type": "string"
+        }
+      },
+      "required": [
+        "goal",
+        "metric"
+      ],
+      "title": "SuccessMetric",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assumptions": {
+      "items": {
+        "maxLength": 4000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "success_metrics": {
+      "description": "one metric per goal",
+      "items": {
+        "$ref": "#/$defs/SuccessMetric"
+      },
+      "maxItems": 300,
+      "title": "Success Metrics",
+      "type": "array"
+    }
+  },
+  "required": [
+    "success_metrics"
+  ],
+  "title": "PRDSuccessMetrics",
+  "type": "object"
+}

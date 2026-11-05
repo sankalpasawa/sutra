@@ -1,0 +1,175 @@
+{
+  "$defs": {
+    "ArtifactRow": {
+      "additionalProperties": false,
+      "description": "One thing the run made, a deliverable (`kind` type) or a record (j2_artifacts.rows).",
+      "properties": {
+        "changed_by": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 500,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Changed By"
+        },
+        "deliverable": {
+          "title": "Deliverable",
+          "type": "boolean"
+        },
+        "depends_on": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Depends On",
+          "type": "array"
+        },
+        "file": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "File",
+          "type": "string"
+        },
+        "form": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Form",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "type",
+            "record"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 2000,
+          "title": "Name",
+          "type": "string"
+        },
+        "rechecked_after": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 500,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rechecked After"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time"
+        },
+        "type": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Type",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "workflows": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Workflows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "kind",
+        "form",
+        "file",
+        "deliverable",
+        "workflows",
+        "depends_on"
+      ],
+      "title": "ArtifactRow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "artifacts/1: what a run made (artifacts.json). A deliverable depends only on deliverable types that were built.",
+  "properties": {
+    "rows": {
+      "items": {
+        "$ref": "#/$defs/ArtifactRow"
+      },
+      "maxItems": 2000,
+      "title": "Rows",
+      "type": "array"
+    },
+    "schema": {
+      "const": "artifacts/1",
+      "default": "artifacts/1",
+      "title": "Schema",
+      "type": "string"
+    }
+  },
+  "required": [
+    "rows"
+  ],
+  "title": "ArtifactsDoc",
+  "type": "object"
+}

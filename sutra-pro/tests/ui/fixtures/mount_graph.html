@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mount: graph and org chart views</title>
+<!--SUTRA-BOOT-->
+<link rel="stylesheet" href="/ui/css/j2.css">
+<link rel="stylesheet" href="/ui/css/sutra-graph.css">
+<script src="/ui/js/sutra_ctx.js"></script>
+<script src="/ui/js/sutra_events.js"></script>
+<script src="/ui/js/graph_layout.js"></script>
+<script src="/ui/js/chart_marks.js"></script>
+<script src="/ui/js/graph_render.js"></script>
+<script src="/ui/js/graph_view.js"></script>
+<script src="/ui/js/orgchart_view.js"></script>
+</head>
+<body class="simple">
+<!--
+  Test page of UI-0. It loads the graph view or the org chart view alone, fetches what the page controllers would fetch
+  and keeps the view live. Query: ?mode=graph|chart (default graph) &level=chart|full (default full) &dept=<id>.
+  What a test can use: #host (the pane), window.view (the handle), window.refetch(), window.mounted (true after the first
+  draw), window.mountErrors (anything that threw), window.opened (the last node the view asked to open),
+  window.liveState (live, polling or offline), window.events (a log of the event names that arrived).
+-->
+<div id="host" class="pane" style="height: 100vh"></div>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var mode = q.get("mode") === "chart" ? "chart" : "graph";
+  var level = q.get("level") === "chart" ? "chart" : "full";
+  var dept = q.get("dept") || "";
+  window.mounted = false;
+  window.mountErrors = [];
+  window.events = [];
+  window.opened = null;
+  window.liveState = "";
+  function fail(e) { window.mountErrors.push(String(e && e.message || e)); }
+  window.addEventListener("error", function (e) { fail(e.error || e.message); });
+  window.addEventListener("unhandledrejection", function (e) { fail(e.reason); });
+
+  async function fetchGraph() {
+    var query = { level: level };
+    if (dept) query.dept = dept;
+    return SutraCtx.api.get("/api/graph", query);
+  }
+  async function refetch() {
+    try {
+      if (mode === "chart") {
+        var pair = await Promise.all([SutraCtx.api.get("/api/chart"), SutraCtx.api.get("/api/chart/changes", { limit: 50 })]);
+        window.view.update(pair[0], pair[1]);
+      } else {
+        window.view.update(await fetchGraph());
+      }
+      window.mounted = true;
+    } catch (e) { fail(e); }
+  }
+  window.refetch = refetch;
+
+  try {
+    var host = document.getElementById("host");
+    var onOpen = function (node) { window.opened = node; };
+    window.view = mode === "chart"
+      ? OrgChartView.create(host, { onOpen: onOpen, dept: dept || undefined })
+      : GraphView.create(host, { mode: "graph", scope: dept ? "this" : "all", level: level, onOpen: onOpen, onSelect: function () {} });
+    refetch();
+    var coalesced = SutraEvents.coalesce(refetch, 100);
+    window.events_handle = SutraEvents.connect({
+      url: "/api/events",
+      onEvent: function (type) {
+        window.events.push(type);
+        if (type === "graph.updated" || type === "chart.changed" || type === "server.resync" || type === "server.hello") coalesced();
+      },
+      onState: function (state) {
+        window.liveState = state;
+        if (window.view && window.view.setLive) window.view.setLive(state);
+      },
+    });
+  } catch (e) { fail(e); }
+})();
+</script>
+</body>
+</html>

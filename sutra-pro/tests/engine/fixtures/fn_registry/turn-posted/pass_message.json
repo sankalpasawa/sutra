@@ -1,0 +1,27 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "posted": [
+   {
+    "id": 5,
+    "who": "priority",
+    "text": "@Adaptation ok",
+    "next": "adaptation"
+   },
+   {
+    "id": 6,
+    "who": "system",
+    "text": "note",
+    "next": "audit"
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "posted 2 messages to Adaptation"
+ }
+}

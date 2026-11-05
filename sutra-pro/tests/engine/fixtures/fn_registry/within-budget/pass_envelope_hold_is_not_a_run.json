@@ -1,0 +1,21 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "envelope"
+  },
+  "posted": [
+   {
+    "id": 6,
+    "who": "priority",
+    "text": "@Coordination hold",
+    "envelope": "hold"
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "envelope hold: the run does not start"
+ }
+}

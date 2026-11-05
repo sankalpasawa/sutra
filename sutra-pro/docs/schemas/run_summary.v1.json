@@ -1,0 +1,1408 @@
+{
+  "$defs": {
+    "ConditionTally": {
+      "additionalProperties": false,
+      "description": "`conditions` and `necessary_conditions`: how many are met, the warnings, and the list.",
+      "properties": {
+        "list": {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 200,
+          "title": "List",
+          "type": "array"
+        },
+        "met": {
+          "minimum": 0,
+          "title": "Met",
+          "type": "integer"
+        },
+        "total": {
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "warnings": {
+          "minimum": 0,
+          "title": "Warnings",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "met",
+        "total",
+        "warnings",
+        "list"
+      ],
+      "title": "ConditionTally",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "SummaryAgent": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent"
+        },
+        "calls": {
+          "minimum": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "retries": {
+          "minimum": 0,
+          "title": "Retries",
+          "type": "integer"
+        },
+        "revises": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revises"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "status": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "calls",
+        "retries"
+      ],
+      "title": "SummaryAgent",
+      "type": "object"
+    },
+    "SummaryAudit": {
+      "additionalProperties": false,
+      "properties": {
+        "all_pass": {
+          "title": "All Pass",
+          "type": "boolean"
+        },
+        "cycle": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle"
+        },
+        "verdicts": {
+          "items": {
+            "$ref": "#/$defs/SummaryVerdict"
+          },
+          "maxItems": 500,
+          "title": "Verdicts",
+          "type": "array"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "all_pass",
+        "verdicts"
+      ],
+      "title": "SummaryAudit",
+      "type": "object"
+    },
+    "SummaryBudget": {
+      "additionalProperties": false,
+      "description": "The budget of a run, read from summary.json (S2-models-14): what it started with, what is granted now, what is used,\nand each raise. This is the department's budget: Department itself holds none.",
+      "properties": {
+        "granted": {
+          "minimum": 0,
+          "title": "Granted",
+          "type": "integer"
+        },
+        "raises": {
+          "items": {
+            "$ref": "#/$defs/SummaryRaise"
+          },
+          "maxItems": 100,
+          "title": "Raises",
+          "type": "array"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "used": {
+          "minimum": 0,
+          "title": "Used",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "granted",
+        "used",
+        "raises"
+      ],
+      "title": "SummaryBudget",
+      "type": "object"
+    },
+    "SummaryConflict": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "minimum": 0,
+          "title": "Attempts",
+          "type": "integer"
+        },
+        "escalated": {
+          "title": "Escalated",
+          "type": "boolean"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome"
+        },
+        "pair": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Pair",
+          "type": "array"
+        },
+        "repriced": {
+          "title": "Repriced",
+          "type": "boolean"
+        },
+        "resolved_by": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved By"
+        },
+        "subject": {
+          "maxLength": 2000,
+          "title": "Subject",
+          "type": "string"
+        },
+        "topic": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Topic",
+          "type": "string"
+        },
+        "user_answer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "user_question": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Question"
+        }
+      },
+      "required": [
+        "id",
+        "pair",
+        "topic",
+        "subject",
+        "attempts",
+        "escalated",
+        "repriced"
+      ],
+      "title": "SummaryConflict",
+      "type": "object"
+    },
+    "SummaryDocuments": {
+      "additionalProperties": false,
+      "properties": {
+        "chain": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "files": {
+          "additionalProperties": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "maxProperties": 10,
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "title": "Files",
+          "type": "object"
+        },
+        "lld_compare": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "lld_revisions": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "requested": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Requested",
+          "type": "array"
+        },
+        "stages": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Stages",
+          "type": "array"
+        }
+      },
+      "required": [
+        "requested",
+        "stages",
+        "files"
+      ],
+      "title": "SummaryDocuments",
+      "type": "object"
+    },
+    "SummaryDoneWhen": {
+      "additionalProperties": false,
+      "properties": {
+        "criterion": {
+          "maxLength": 100000,
+          "title": "Criterion",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item"
+        },
+        "pass": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pass"
+        }
+      },
+      "required": [
+        "criterion",
+        "pass"
+      ],
+      "title": "SummaryDoneWhen",
+      "type": "object"
+    },
+    "SummaryExport": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "File",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "written": {
+          "title": "Written",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file",
+        "written"
+      ],
+      "title": "SummaryExport",
+      "type": "object"
+    },
+    "SummaryHold": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "By",
+          "type": "string"
+        },
+        "cycle": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle"
+        },
+        "detail": {
+          "maxLength": 100000,
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "detail"
+      ],
+      "title": "SummaryHold",
+      "type": "object"
+    },
+    "SummaryMemory": {
+      "additionalProperties": false,
+      "properties": {
+        "memory": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory"
+        },
+        "saved": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Saved",
+          "type": "array"
+        },
+        "used": {
+          "$ref": "#/$defs/JsonValue",
+          "default": []
+        }
+      },
+      "title": "SummaryMemory",
+      "type": "object"
+    },
+    "SummaryPlaybooks": {
+      "additionalProperties": false,
+      "properties": {
+        "saved": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "used": {
+          "$ref": "#/$defs/JsonValue",
+          "default": []
+        }
+      },
+      "title": "SummaryPlaybooks",
+      "type": "object"
+    },
+    "SummaryRaise": {
+      "additionalProperties": false,
+      "description": "A budget raise the Requester granted (J2 `raises`).",
+      "properties": {
+        "asked": {
+          "title": "Asked",
+          "type": "integer"
+        },
+        "cycle": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle"
+        },
+        "from": {
+          "title": "From",
+          "type": "integer"
+        },
+        "to": {
+          "title": "To",
+          "type": "integer"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Why"
+        }
+      },
+      "required": [
+        "asked",
+        "from",
+        "to"
+      ],
+      "title": "SummaryRaise",
+      "type": "object"
+    },
+    "SummaryRealization": {
+      "additionalProperties": false,
+      "description": "`realization`: whether the plan was applied, then what the planning kept (j2.real_summary).",
+      "properties": {
+        "applied": {
+          "title": "Applied",
+          "type": "boolean"
+        },
+        "calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calls"
+        },
+        "left_out": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 200,
+          "title": "Left Out",
+          "type": "array"
+        },
+        "not_ready": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 200,
+          "title": "Not Ready",
+          "type": "array"
+        },
+        "plan_confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Confidence"
+        },
+        "plan_faults": {
+          "default": [],
+          "items": {
+            "maxLength": 100000,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Plan Faults",
+          "type": "array"
+        },
+        "proposal_brief": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 200,
+          "title": "Proposal Brief",
+          "type": "array"
+        },
+        "proposed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rounds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rounds"
+        },
+        "seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seconds"
+        },
+        "stages": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 35,
+          "title": "Stages",
+          "type": "array"
+        },
+        "waiting_on_identity": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 200,
+          "title": "Waiting On Identity",
+          "type": "array"
+        },
+        "workflows": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflows"
+        }
+      },
+      "required": [
+        "applied"
+      ],
+      "title": "SummaryRealization",
+      "type": "object"
+    },
+    "SummaryRejection": {
+      "additionalProperties": false,
+      "properties": {
+        "cycle": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle"
+        },
+        "reason": {
+          "maxLength": 100000,
+          "title": "Reason",
+          "type": "string"
+        },
+        "workflow": {
+          "maxLength": 2000,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow",
+        "reason"
+      ],
+      "title": "SummaryRejection",
+      "type": "object"
+    },
+    "SummaryRouteViolation": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Agent",
+          "type": "string"
+        },
+        "cycle": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle"
+        },
+        "detail": {
+          "maxLength": 100000,
+          "title": "Detail",
+          "type": "string"
+        },
+        "msg": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Msg"
+        }
+      },
+      "required": [
+        "agent",
+        "detail"
+      ],
+      "title": "SummaryRouteViolation",
+      "type": "object"
+    },
+    "SummaryRubric": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "pass": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pass"
+        },
+        "verdict": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "pass",
+        "verdict"
+      ],
+      "title": "SummaryRubric",
+      "type": "object"
+    },
+    "SummaryRulings": {
+      "additionalProperties": false,
+      "properties": {
+        "counter": {
+          "minimum": 0,
+          "title": "Counter",
+          "type": "integer"
+        },
+        "grant": {
+          "minimum": 0,
+          "title": "Grant",
+          "type": "integer"
+        },
+        "refuse": {
+          "minimum": 0,
+          "title": "Refuse",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "grant",
+        "counter",
+        "refuse"
+      ],
+      "title": "SummaryRulings",
+      "type": "object"
+    },
+    "SummarySection": {
+      "additionalProperties": false,
+      "properties": {
+        "heading": {
+          "maxLength": 2000,
+          "title": "Heading",
+          "type": "string"
+        },
+        "words": {
+          "minimum": 0,
+          "title": "Words",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "heading",
+        "words"
+      ],
+      "title": "SummarySection",
+      "type": "object"
+    },
+    "SummaryVerdict": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item"
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verdict"
+        }
+      },
+      "title": "SummaryVerdict",
+      "type": "object"
+    },
+    "SummaryVerification": {
+      "additionalProperties": false,
+      "properties": {
+        "checks_run": {
+          "minimum": 0,
+          "title": "Checks Run",
+          "type": "integer"
+        },
+        "could_not_run": {
+          "minimum": 0,
+          "title": "Could Not Run",
+          "type": "integer"
+        },
+        "escalated": {
+          "minimum": 0,
+          "title": "Escalated",
+          "type": "integer"
+        },
+        "failed": {
+          "minimum": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "passed": {
+          "minimum": 0,
+          "title": "Passed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "passed",
+        "failed",
+        "escalated",
+        "could_not_run",
+        "checks_run"
+      ],
+      "title": "SummaryVerification",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "summary.json: how a run ended, written by code when it ends (j2._write_summary). It has no `schema` key.",
+  "properties": {
+    "ai_calls": {
+      "minimum": 0,
+      "title": "Ai Calls",
+      "type": "integer"
+    },
+    "audits": {
+      "items": {
+        "$ref": "#/$defs/SummaryAudit"
+      },
+      "maxItems": 200,
+      "title": "Audits",
+      "type": "array"
+    },
+    "brief": {
+      "maxLength": 100000,
+      "title": "Brief",
+      "type": "string"
+    },
+    "budget": {
+      "$ref": "#/$defs/SummaryBudget"
+    },
+    "business_type": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Business Type"
+    },
+    "change_requests": {
+      "items": {
+        "maxLength": 100000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Change Requests",
+      "type": "array"
+    },
+    "conditions": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ConditionTally"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "conflicts": {
+      "items": {
+        "$ref": "#/$defs/SummaryConflict"
+      },
+      "maxItems": 500,
+      "title": "Conflicts",
+      "type": "array"
+    },
+    "cycles": {
+      "minimum": 0,
+      "title": "Cycles",
+      "type": "integer"
+    },
+    "design_documents": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SummaryDocuments"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "done_when": {
+      "items": {
+        "$ref": "#/$defs/SummaryDoneWhen"
+      },
+      "maxItems": 200,
+      "title": "Done When",
+      "type": "array"
+    },
+    "dropped_by_requester": {
+      "items": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "maxItems": 200,
+      "title": "Dropped By Requester",
+      "type": "array"
+    },
+    "export": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SummaryExport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "force_audit_fail": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "force_question": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Force Question"
+    },
+    "has_board": {
+      "title": "Has Board",
+      "type": "boolean"
+    },
+    "holds": {
+      "items": {
+        "$ref": "#/$defs/SummaryHold"
+      },
+      "maxItems": 500,
+      "title": "Holds",
+      "type": "array"
+    },
+    "identity_to_requester_decisions": {
+      "minimum": 0,
+      "title": "Identity To Requester Decisions",
+      "type": "integer"
+    },
+    "identity_to_requester_facts": {
+      "minimum": 0,
+      "title": "Identity To Requester Facts",
+      "type": "integer"
+    },
+    "j2_fixes": {
+      "minimum": 0,
+      "title": "J2 Fixes",
+      "type": "integer"
+    },
+    "lessons": {
+      "$ref": "#/$defs/SummaryMemory"
+    },
+    "limits_hit": {
+      "items": {
+        "maxLength": 100000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Limits Hit",
+      "type": "array"
+    },
+    "links": {
+      "additionalProperties": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "maxProperties": 500,
+      "propertyNames": {
+        "maxLength": 200,
+        "minLength": 1
+      },
+      "title": "Links",
+      "type": "object"
+    },
+    "milestone_emails": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Milestone Emails"
+    },
+    "mock": {
+      "title": "Mock",
+      "type": "boolean"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "necessary_conditions": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ConditionTally"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "outcome": {
+      "maxLength": 100000,
+      "title": "Outcome",
+      "type": "string"
+    },
+    "output_type": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Output Type",
+      "type": "string"
+    },
+    "playbooks": {
+      "$ref": "#/$defs/SummaryPlaybooks"
+    },
+    "priority_rulings": {
+      "$ref": "#/$defs/SummaryRulings"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider"
+    },
+    "questions_to_user": {
+      "items": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "maxItems": 200,
+      "title": "Questions To User",
+      "type": "array"
+    },
+    "realization": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SummaryRealization"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "route_check_violations": {
+      "items": {
+        "$ref": "#/$defs/SummaryRouteViolation"
+      },
+      "maxItems": 500,
+      "title": "Route Check Violations",
+      "type": "array"
+    },
+    "rubric": {
+      "items": {
+        "$ref": "#/$defs/SummaryRubric"
+      },
+      "maxItems": 200,
+      "title": "Rubric",
+      "type": "array"
+    },
+    "run": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Run",
+      "type": "string"
+    },
+    "sections": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/SummarySection"
+          },
+          {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        ]
+      },
+      "maxItems": 500,
+      "title": "Sections",
+      "type": "array"
+    },
+    "site_versions": {
+      "minimum": 0,
+      "title": "Site Versions",
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "done",
+        "done_with_open_items",
+        "stopped",
+        "crashed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "style_guide": {
+      "title": "Style Guide",
+      "type": "boolean"
+    },
+    "test_lessons": {
+      "$ref": "#/$defs/JsonValue",
+      "default": false
+    },
+    "to_be_confirmed": {
+      "items": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "maxItems": 200,
+      "title": "To Be Confirmed",
+      "type": "array"
+    },
+    "validator_rejections": {
+      "items": {
+        "$ref": "#/$defs/SummaryRejection"
+      },
+      "maxItems": 1000,
+      "title": "Validator Rejections",
+      "type": "array"
+    },
+    "verification": {
+      "$ref": "#/$defs/SummaryVerification"
+    },
+    "workable": {
+      "anyOf": [
+        {
+          "items": {
+            "maxLength": 100000,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workable"
+    },
+    "workflow_agents": {
+      "items": {
+        "$ref": "#/$defs/SummaryAgent"
+      },
+      "maxItems": 500,
+      "title": "Workflow Agents",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run",
+    "output_type",
+    "j2_fixes",
+    "sections",
+    "has_board",
+    "mock",
+    "brief",
+    "change_requests",
+    "status",
+    "outcome",
+    "budget",
+    "ai_calls",
+    "cycles",
+    "links",
+    "verification",
+    "identity_to_requester_decisions",
+    "identity_to_requester_facts",
+    "priority_rulings",
+    "questions_to_user",
+    "conflicts",
+    "validator_rejections",
+    "holds",
+    "audits",
+    "site_versions",
+    "to_be_confirmed",
+    "dropped_by_requester",
+    "workflow_agents",
+    "limits_hit",
+    "lessons",
+    "playbooks",
+    "style_guide",
+    "rubric",
+    "done_when",
+    "route_check_violations"
+  ],
+  "title": "RunSummary",
+  "type": "object"
+}

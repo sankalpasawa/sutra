@@ -1,0 +1,162 @@
+/* sutra-panel.css - the node panel (#nodepanel), the function drawer, atom cards, chat cards and the department rail additions
+   (work package UI-6; docs/design/ui.md sections 3.3, 6.4, 6.5, 6.7).
+
+   Only J2's tokens (j2.css): text uses --ink --muted --ok --bad --validator --accent on --bg --panel --panel2, lines use --line, so the light, dark and
+   system themes need nothing here. The panel is J2's Agent drawer (.agentdrawer: fixed right, 50vw, 100vw on a phone); the bubbles are J2's .sb.team and
+   .sb.me, the answer buttons J2's .opts, the cards J2's .ready and .oops. No web font and no url(): the page works offline. */
+
+/* ---- the drawer: a column (head, tabs, body), the body scrolls */
+#nodepanel{display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+#nodepanel[hidden]{display:none}
+body.nodeopen #pane-map .mappanel{display:none}
+#nodepanel :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.nphead{flex:0 0 auto;flex-wrap:wrap}
+.npname{min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;flex:1 1 auto}
+.npname h3{margin:0}
+.npsub{color:var(--muted);font-size:13px}
+.nstatus{border:1px solid var(--line);border-radius:12px;padding:1px 10px;font-size:12px;white-space:nowrap;color:var(--ink)}
+.nstatus.st-running,.nstatus.st-waiting,.nstatus.st-waiting_on_you,.nstatus.st-done_unchecked{border-color:var(--validator);color:var(--validator);font-weight:600}
+.nstatus.st-fault{border-color:var(--bad);color:var(--bad);font-weight:600}
+.nstatus.st-filed{border-color:var(--ok);color:var(--ok)}
+.nstatus.st-left_open,.nstatus.st-not_made,.nstatus.st-idle{color:var(--muted)}
+.npprovider{font:500 11px var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.npnote{margin:6px 0 0;color:var(--muted);font-size:13px}
+.nptabs{flex:0 0 auto;display:flex;gap:2px;margin:10px 0 0;border-bottom:1px solid var(--line)}
+.nptabs button{border:0;background:none;color:var(--muted);padding:8px 14px;border-bottom:2px solid transparent;font:inherit;cursor:pointer}
+.nptabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+.npbody{flex:1 1 auto;min-height:0;overflow:auto;padding:12px 0 14px}
+.nempty{margin:8px 0}
+
+/* ---- the Chat tab */
+.nchat{display:flex;flex-direction:column;height:100%;min-height:0}
+.nlens{flex:0 0 auto;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;background:var(--panel2);padding:8px 12px;margin:0 0 10px;font-size:13.5px}
+.nlens[hidden],.nlinks[hidden],.nearlier[hidden],.nbanner[hidden],.ncomposer[hidden],.nnote[hidden]{display:none}
+.nlenstext{margin:0 0 4px;overflow-wrap:anywhere}
+.nlinks,.nearlier{flex:0 0 auto;margin:0 0 8px;font-size:13px}
+.nearlier summary{cursor:pointer;color:var(--muted)}
+.nearlier ul{margin:4px 0 0;padding-left:18px}
+.nmsgs{flex:1 1 auto;min-height:140px;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:2px 2px 10px}
+.nmsg{overflow-wrap:anywhere}
+.nmsg.sb{max-width:92%}
+.nmsg.sb small{display:block;margin-bottom:2px;font-weight:600;color:var(--accent)}
+.nmsg.pending{opacity:.6}
+.nmsg[data-kind="card"]{align-self:stretch;max-width:100%;background:none;border:0;padding:0}
+.nmsg[data-kind="card"]>small{margin:0 0 3px 2px}
+.nmsg[data-kind="card"] .ncard{max-width:100%}
+.nmsg.failed{outline:1px solid var(--bad)}
+.nmsg .nerr{margin-top:6px;font-size:13px}
+.nmsg.note,.nmsg.sys{align-self:center;max-width:96%;color:var(--muted);font-size:13px;text-align:center}
+.nmsg.sys{font-family:var(--mono);font-size:12px}
+.nmsg.oops{align-self:stretch;border:2px solid var(--bad);border-radius:12px;padding:10px 12px;background:var(--panel)}
+.nmsg .sq{margin:6px 0 0}
+.nmsg ol{margin:6px 0 0;padding-left:20px}
+.nmsg code{font:12.5px var(--mono);background:var(--panel2);border-radius:4px;padding:0 4px}
+.nbanner{flex:0 0 auto;margin:0 0 8px;padding:6px 10px;border:1px solid var(--bad);border-radius:8px;background:var(--panel2);color:var(--bad);font-size:13px}
+.ncomposer{flex:0 0 auto;border-top:1px solid var(--line);padding:10px 0 4px;background:var(--panel)}
+.ncomposer .nbox{min-width:0}
+.nnote{flex:0 0 auto;margin:6px 0 0;color:var(--muted);font-size:13px}
+
+/* ---- the cards of a chat (task, chart change, question, hand-over, atom) */
+.ncard{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel)}
+.ncard.ready{border:2px solid var(--ok);border-radius:12px}
+.ncard.ready.warn{border-color:var(--validator)}
+.ncard.ready h2,.ncard.oops h2{font:700 16px var(--display);margin:0 0 6px}
+.ncard.warn h2{color:var(--validator)}
+.ncard.bad{border:2px solid var(--bad);border-radius:12px}
+.ncard.bad h2{color:var(--bad)}
+.ncard .ctitle{margin:0 0 6px}
+.ncard .cstat{font:600 11px var(--mono);color:var(--muted);margin-left:6px}
+.ncard .csum{margin:0 0 4px}
+.ncard .clist{margin:4px 0 6px;padding-left:18px;font-size:13.5px}
+.ncard .cpend,.ncard .canswer{margin:6px 0 0;color:var(--muted);font-size:13.5px}
+.ncard .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ncard .cask{font:700 15px var(--display);margin:0 0 6px;color:var(--validator)}
+.ncard .cans{margin-top:8px}
+.ncard .alabel{margin:0 0 4px;font:700 11px var(--mono);letter-spacing:.04em}
+.ncard .agoal{margin:0 0 4px}
+.ncard dl{margin:4px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;font-size:13px}
+.ncard dt{color:var(--muted)}
+.ncard dd{margin:0;overflow-wrap:anywhere}
+.ncard.o-closed .alabel{color:var(--ok)}
+.ncard.o-verify_failed .alabel,.ncard.o-abandoned .alabel{color:var(--bad)}
+.ncard.o-refused .alabel,.ncard.o-opened .alabel{color:var(--validator)}
+.lbtn{display:inline-block;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:8px;padding:7px 11px;font-size:13.5px;text-decoration:none;cursor:pointer}
+.lbtn:hover{border-color:var(--accent)}
+
+/* ---- the Details tab: the function drawer */
+.fndetail .fnsec{margin:0 0 14px}
+.fnsec h4{margin:0 0 6px}
+.fntitle{display:inline-block;margin:0 8px 0 0;font-size:15px}
+.fnp{font-weight:600}
+.fnn{color:var(--muted)}
+.fncounts,.fnusage,.fnnow{margin:4px 0;color:var(--muted);font-size:13px}
+.fnwork,.fnwait,.fntask{margin:4px 0}
+.fnlist{margin:2px 0 0;padding-left:20px}
+.fnchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.fnfromlab{margin:8px 0 4px;color:var(--muted);font-size:13px}
+.fnchip{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:5px 10px;font-size:13px;cursor:pointer;text-align:left}
+.fnchip:hover{background:var(--panel2);border-color:var(--accent)}
+.fnchip.st-fault{border-color:var(--bad)}
+.fnchip.st-waiting,.fnchip.st-waiting_on_you,.fnchip.st-running{border-color:var(--validator)}
+.fnchip .fnst{margin-left:6px;color:var(--muted);font-size:12px}
+.fnyou{color:var(--muted);font-style:italic;padding:0 4px}
+.fngo{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:6px 11px;cursor:pointer}
+.fngo:hover{border-color:var(--accent)}
+.fntail{margin-top:6px}
+.fnfull,.fnlinks,.fnpart{margin:10px 0;color:var(--muted);font-size:13.5px}
+.nkind{color:var(--muted);font-size:12px;margin-right:6px}
+.fnagent{margin-top:12px}
+.fnagent .adhead,.fnagent .adnote{display:none}
+.fnmore{margin-top:4px}
+
+/* ---- work atoms: J2's atom-card layout, with the status line */
+.atomlegend{margin:0 0 8px;font:500 12px var(--mono);color:var(--muted)}
+details.atomcard{border:1px solid var(--line);border-left:4px solid var(--line);border-radius:8px;padding:6px 10px;margin:6px 0;background:var(--panel)}
+details.atomcard[data-state="open"]{border-left-color:var(--accent)}
+details.atomcard[data-state="closed"]{border-left-color:var(--ok)}
+details.atomcard[data-state="verify_failed"]{border-left-color:var(--bad)}
+details.atomcard[data-state="refused"]{border-left-color:var(--validator)}
+details.atomcard[data-state="abandoned"]{border-left-style:dashed}
+details.atomcard>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px}
+.astate{font:700 11px var(--mono);letter-spacing:.04em;padding:1px 7px;border-radius:5px;background:var(--panel2);color:var(--muted)}
+.astate.st-open{color:var(--accent)}
+.astate.st-closed{color:var(--ok)}
+.astate.st-verify_failed{color:var(--bad)}
+.astate.st-refused{color:var(--validator)}
+.aattempt{color:var(--muted);font-size:12px}
+.agoal{flex:1 1 12em;min-width:0;overflow-wrap:anywhere}
+.ablock{margin:8px 0}
+.ablock>b{display:block;font-size:12.5px;color:var(--muted)}
+.ablock>div{overflow-wrap:anywhere}
+.alist{margin:2px 0 0;padding-left:18px}
+.acheck{margin:4px 0 6px}
+.asent{margin:0 0 2px}
+.atries{list-style:none;margin:0;padding-left:12px}
+.try-failed{color:var(--bad)}
+.try-passed{color:var(--ok)}
+.try-pending,.try-deferred,.try-unrun{color:var(--muted)}
+.apill{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:0 9px;font-size:12.5px}
+.apill.st-closed{border-color:var(--ok);color:var(--ok)}
+.apill.st-verify_failed{border-color:var(--bad);color:var(--bad)}
+.apill.st-open{border-color:var(--accent);color:var(--accent)}
+.apill.st-refused{border-color:var(--validator);color:var(--validator)}
+.arow{margin:4px 0 0;font-size:13px}
+.arow>b{color:var(--muted);margin-right:4px}
+.acost{color:var(--muted)}
+
+/* ---- a team that was merged away: its page keeps the history but takes no new line (docs/design/ui.md 6.7) */
+body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #box,body.archived #send,body.archived .outsel{display:none}
+
+/* ---- the department page's rail: back to all teams, and which team this is */
+.railhome{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:8px 12px 10px;border-bottom:1px solid var(--line)}
+.railhome a{color:var(--muted);font-size:13px;text-decoration:none}
+.railhome a:hover,.railhome a:focus-visible{color:var(--ink);text-decoration:underline}
+.railhome b{font:700 14px var(--display);color:var(--ink);overflow-wrap:anywhere}
+
+@media (max-width:700px){
+  .nmsg.sb{max-width:96%}
+  .nptabs button{flex:1}
+}
+@media (prefers-reduced-motion:reduce){
+  #nodepanel *{animation:none!important;transition:none!important}
+}

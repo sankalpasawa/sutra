@@ -1,0 +1,812 @@
+{
+  "schema": "fake-script/1",
+  "samples": {
+    "server.hello": {
+      "version": "0.1.0",
+      "chart_version": 2,
+      "graph_version": 42
+    },
+    "server.resync": {
+      "reason": "gap"
+    },
+    "chat.turn": {
+      "session_id": "cs_org",
+      "turn": 1,
+      "phase": "planning",
+      "detail": "Planning"
+    },
+    "chat.message": {
+      "session_id": "cs_org",
+      "message": {
+        "id": 3,
+        "session_id": "cs_org",
+        "role": "agent",
+        "who": "sutra",
+        "kind": "text",
+        "text": "I set up a Web team and gave it your request.",
+        "card": null,
+        "pause": null,
+        "answered_by": null,
+        "task_id": null,
+        "state": "ok",
+        "at": "2026-11-04T10:00:03Z"
+      }
+    },
+    "chart.changed": {
+      "revision": 2,
+      "change_id": "chg-0002",
+      "kind": "add",
+      "added": [
+        "web"
+      ],
+      "moved": [],
+      "merged": [],
+      "version": 2,
+      "summary": "Added the Web team",
+      "archived": []
+    },
+    "chart.approval": {
+      "change_id": "chg-0006",
+      "summary": "Merge FAQ into Menu",
+      "message_id": 20
+    },
+    "graph.updated": {
+      "version": 43,
+      "nodes": [
+        {
+          "id": "web.identity",
+          "kind": "function",
+          "label": "Identity",
+          "status": "running",
+          "detail": "reading the answer",
+          "chat_session_id": "cs_77aa10c2e9b4",
+          "org_node_id": null,
+          "dept_id": "web",
+          "task_id": null,
+          "fn": "identity",
+          "step_ref": null,
+          "version": 5,
+          "meta": {
+            "stats": {
+              "calls": 16,
+              "seconds": 52.0,
+              "tokens_in": 9600,
+              "tokens_out": 2880,
+              "atoms_open": 1,
+              "atoms_closed": 1,
+              "atoms_failed": 1,
+              "atoms_total": 5
+            },
+            "wait_on": null
+          }
+        }
+      ],
+      "edges_added": 0,
+      "edges_removed": 0
+    },
+    "task.updated": {
+      "task": {
+        "id": "tsk_a1b2c3d4e5f6",
+        "dept_id": "web",
+        "dept_name": "Web",
+        "scope_node_id": null,
+        "title": "Coffee shop landing page",
+        "status": "running",
+        "run_id": "j2-20261104-100004-7f3a",
+        "parent_task_id": null,
+        "depends_on": [],
+        "outcome": null,
+        "created_at": "2026-11-04T10:00:03Z",
+        "started_at": "2026-11-04T10:00:06Z",
+        "ended_at": null,
+        "usage": {
+          "calls": 16,
+          "usd": 0.56,
+          "tokens_in": 9600,
+          "tokens_out": 2880
+        }
+      }
+    },
+    "atom.updated": {
+      "atom_id": "a-a810960e61-05",
+      "node_id": "web.identity",
+      "outcome": "closed",
+      "state": "closed",
+      "atom": {
+        "id": "a-a810960e61-05",
+        "schema": "work-atom/0.3",
+        "node_id": "web.identity",
+        "task_id": "tsk_a1b2c3d4e5f6",
+        "state": "closed",
+        "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+        "attempt": 3,
+        "ts_open": "2026-11-04T10:00:40Z",
+        "ts_closed": "2026-11-04T10:02:15Z",
+        "body": {
+          "constraints": [
+            {
+              "text": "invent a new goal or rule",
+              "check": null
+            },
+            {
+              "text": "choose tools or implementation steps",
+              "check": null
+            }
+          ],
+          "context": [
+            "brief: A website for my cafe",
+            "charter: none yet"
+          ],
+          "work": {
+            "dispatch_kind": "llm",
+            "agent": "identity",
+            "steps": "J2.a Identity takes the brief",
+            "how_kind": "AI"
+          },
+          "model": "sonnet",
+          "verify": {
+            "checks": [
+              {
+                "template": "reply-valid",
+                "args": [
+                  "identity",
+                  "intake"
+                ],
+                "text": "the reply has the shape this function must send",
+                "relevance": "declared: reply-valid",
+                "relevance_source": "declared",
+                "results": [
+                  {
+                    "attempt": 1,
+                    "exit_code": 1,
+                    "evidence": "enough: field required"
+                  },
+                  {
+                    "attempt": 2,
+                    "exit_code": 1,
+                    "evidence": "questions: at least 1 is needed when enough is false"
+                  }
+                ]
+              },
+              {
+                "template": "turn-posted",
+                "args": [],
+                "text": "the turn posted a message or saved a record, to a route this function may use",
+                "relevance": "declared: turn-posted",
+                "relevance_source": "declared",
+                "results": [
+                  {
+                    "attempt": 1,
+                    "exit_code": 0,
+                    "evidence": "deferred: judged when the turn ends"
+                  },
+                  {
+                    "attempt": 2,
+                    "exit_code": 0,
+                    "evidence": "deferred: judged when the turn ends"
+                  }
+                ]
+              },
+              {
+                "template": "charter-stamp",
+                "args": [],
+                "text": "the charter has a statement and at least 3 done-when items that can be checked",
+                "relevance": "declared: charter-stamp",
+                "relevance_source": "declared",
+                "results": [
+                  {
+                    "attempt": 1,
+                    "exit_code": 0,
+                    "evidence": "deferred: judged when the turn ends"
+                  },
+                  {
+                    "attempt": 2,
+                    "exit_code": 0,
+                    "evidence": "deferred: judged when the turn ends"
+                  }
+                ]
+              },
+              {
+                "template": "audience-split",
+                "args": [],
+                "text": "the text to the owner names no file, code or agent",
+                "relevance": "declared: audience-split",
+                "relevance_source": "declared",
+                "results": [
+                  {
+                    "attempt": 1,
+                    "exit_code": 1,
+                    "evidence": "to_requester names goal.json"
+                  },
+                  {
+                    "attempt": 2,
+                    "exit_code": 0,
+                    "evidence": "to_requester is plain"
+                  }
+                ]
+              }
+            ]
+          },
+          "outputs": [
+            "goal.json"
+          ],
+          "touches": []
+        },
+        "usage": {
+          "calls": 7,
+          "usd": 0.25,
+          "tokens_in": 4200,
+          "tokens_out": 1300
+        }
+      }
+    },
+    "usage.recorded": {
+      "row": {
+        "provider": "claude",
+        "model": "sonnet",
+        "purpose": "agent_turn",
+        "session_id": null,
+        "node_id": "web.identity",
+        "task_id": "tsk_a1b2c3d4e5f6",
+        "dept_id": "web",
+        "fn": "identity",
+        "step": "J2.a",
+        "atom_id": "a-a810960e61-05",
+        "usd": 0.012,
+        "tokens_in": 3100,
+        "tokens_out": 240,
+        "seconds": 6.2,
+        "ok": true,
+        "how": "native",
+        "call_ref": "j2-20261104-100004-7f3a:1",
+        "detail": null,
+        "id": 1,
+        "at": "2026-11-04T10:00:41Z"
+      },
+      "task_total": {
+        "calls": 16,
+        "usd": 0.56,
+        "tokens_in": 9600,
+        "tokens_out": 2880
+      }
+    },
+    "needs_you.changed": {
+      "count": 1
+    },
+    "connector.health": {
+      "provider": "codex",
+      "state": "signed_out",
+      "until": null,
+      "reason": "not signed in"
+    },
+    "connector.switch": {
+      "session_id": "cs_org",
+      "from": "claude",
+      "to": "codex",
+      "reason": "claude is cooling down"
+    },
+    "connector.mode": {
+      "mode": "live"
+    }
+  },
+  "flows": {
+    "first_task": {
+      "on": "post",
+      "session": "cs_org",
+      "steps": [
+        {
+          "reveal": {
+            "session": "cs_org",
+            "upto": 2
+          },
+          "text_from_post": true
+        },
+        {
+          "emit": "chat.turn",
+          "data": {
+            "session_id": "cs_org",
+            "turn": 1,
+            "phase": "reading_chart",
+            "detail": "Reading the org chart"
+          }
+        },
+        {
+          "emit": "chat.turn",
+          "data": {
+            "session_id": "cs_org",
+            "turn": 1,
+            "phase": "consulting_library",
+            "detail": "Checking the model library"
+          }
+        },
+        {
+          "emit": "chat.turn",
+          "data": {
+            "session_id": "cs_org",
+            "turn": 1,
+            "phase": "planning",
+            "detail": "Planning"
+          }
+        },
+        {
+          "emit": "chat.turn",
+          "data": {
+            "session_id": "cs_org",
+            "turn": 1,
+            "phase": "applying",
+            "detail": "Setting up the team"
+          }
+        },
+        {
+          "fixture": {
+            "name": "chart",
+            "version": "2"
+          }
+        },
+        {
+          "emit": "chart.changed",
+          "data": {
+            "revision": 2,
+            "change_id": "chg-0002",
+            "kind": "add",
+            "added": [
+              "web"
+            ],
+            "moved": [],
+            "merged": [],
+            "version": 2,
+            "summary": "Added the Web team",
+            "archived": []
+          }
+        },
+        {
+          "fixture": {
+            "name": "graph",
+            "version": "2"
+          }
+        },
+        {
+          "emit": "graph.updated",
+          "data": {
+            "version": 42,
+            "nodes": [
+              {
+                "id": "root",
+                "kind": "root",
+                "label": "Root",
+                "status": "waiting_on_you",
+                "detail": "",
+                "chat_session_id": "cs_org",
+                "org_node_id": "root",
+                "dept_id": null,
+                "task_id": null,
+                "fn": null,
+                "step_ref": null,
+                "version": 3,
+                "meta": {}
+              },
+              {
+                "id": "web",
+                "kind": "department",
+                "label": "Web",
+                "status": "waiting_on_you",
+                "detail": "Identity asks about the menu",
+                "chat_session_id": "cs_5e0a77b19c3d",
+                "org_node_id": "web",
+                "dept_id": "web",
+                "task_id": null,
+                "fn": null,
+                "step_ref": null,
+                "version": 9,
+                "meta": {
+                  "run_id": "j2-20261104-100004-7f3a"
+                }
+              },
+              {
+                "id": "web.identity",
+                "kind": "function",
+                "label": "Identity",
+                "status": "waiting_on_you",
+                "detail": "last seen: asked about the menu",
+                "chat_session_id": "cs_77aa10c2e9b4",
+                "org_node_id": null,
+                "dept_id": "web",
+                "task_id": null,
+                "fn": "identity",
+                "step_ref": null,
+                "version": 4,
+                "meta": {
+                  "stats": {
+                    "calls": 16,
+                    "seconds": 52.0,
+                    "tokens_in": 9600,
+                    "tokens_out": 2880,
+                    "atoms_open": 1,
+                    "atoms_closed": 1,
+                    "atoms_failed": 1,
+                    "atoms_total": 5
+                  },
+                  "wait_on": "you"
+                }
+              },
+              {
+                "id": "web.adaptation",
+                "kind": "function",
+                "label": "Adaptation",
+                "status": "idle",
+                "detail": "",
+                "chat_session_id": "cs_b37b2000ef36",
+                "org_node_id": null,
+                "dept_id": "web",
+                "task_id": null,
+                "fn": "adaptation",
+                "step_ref": null,
+                "version": 1,
+                "meta": {
+                  "stats": {
+                    "calls": 0,
+                    "seconds": 0.0,
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "atoms_open": 0,
+                    "atoms_closed": 0,
+                    "atoms_failed": 0,
+                    "atoms_total": 0
+                  },
+                  "wait_on": null
+                }
+              },
+              {
+                "id": "web.priority",
+                "kind": "function",
+                "label": "Priority",
+                "status": "idle",
+                "detail": "",
+                "chat_session_id": "cs_7731b1a82306",
+                "org_node_id": null,
+                "dept_id": "web",
+                "task_id": null,
+                "fn": "priority",
+                "step_ref": null,
+                "version": 1,
+                "meta": {
+                  "stats": {
+                    "calls": 0,
+                    "seconds": 0.0,
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "atoms_open": 0,
+                    "atoms_closed": 0,
+                    "atoms_failed": 0,
+                    "atoms_total": 0
+                  },
+                  "wait_on": null
+                }
+              },
+              {
+                "id": "web.coordination",
+                "kind": "function",
+                "label": "Coordination",
+                "status": "idle",
+                "detail": "",
+                "chat_session_id": "cs_0a584a5e9e60",
+                "org_node_id": null,
+                "dept_id": "web",
+                "task_id": null,
+                "fn": "coordination",
+                "step_ref": null,
+                "version": 1,
+                "meta": {
+                  "stats": {
+                    "calls": 0,
+                    "seconds": 0.0,
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "atoms_open": 0,
+                    "atoms_closed": 0,
+                    "atoms_failed": 0,
+                    "atoms_total": 0
+                  },
+                  "wait_on": null
+                }
+              },
+              {
+                "id": "web.audit",
+                "kind": "function",
+                "label": "Audit",
+                "status": "idle",
+                "detail": "",
+                "chat_session_id": "cs_e1acceab39f9",
+                "org_node_id": null,
+                "dept_id": "web",
+                "task_id": null,
+                "fn": "audit",
+                "step_ref": null,
+                "version": 1,
+                "meta": {
+                  "stats": {
+                    "calls": 0,
+                    "seconds": 0.0,
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "atoms_open": 0,
+                    "atoms_closed": 0,
+                    "atoms_failed": 0,
+                    "atoms_total": 0
+                  },
+                  "wait_on": null
+                }
+              },
+              {
+                "id": "s-3f9a1c2b7d",
+                "kind": "step",
+                "label": "Coffee shop landing page",
+                "status": "waiting_on_you",
+                "detail": "",
+                "chat_session_id": "cs_0c91d4aa3e77",
+                "org_node_id": null,
+                "dept_id": "web",
+                "task_id": "tsk_a1b2c3d4e5f6",
+                "fn": null,
+                "step_ref": "task",
+                "version": 2,
+                "meta": {
+                  "run_id": "j2-20261104-100004-7f3a"
+                }
+              }
+            ],
+            "edges_added": 7,
+            "edges_removed": 0
+          }
+        },
+        {
+          "emit": "chat.turn",
+          "data": {
+            "session_id": "cs_org",
+            "turn": 1,
+            "phase": "handing_off",
+            "detail": "Handing the request over"
+          }
+        },
+        {
+          "reveal": {
+            "session": "cs_org",
+            "upto": 5
+          }
+        },
+        {
+          "emit": "task.updated",
+          "data": {
+            "task": {
+              "id": "tsk_a1b2c3d4e5f6",
+              "dept_id": "web",
+              "dept_name": "Web",
+              "scope_node_id": null,
+              "title": "Coffee shop landing page",
+              "status": "running",
+              "run_id": "j2-20261104-100004-7f3a",
+              "parent_task_id": null,
+              "depends_on": [],
+              "outcome": null,
+              "created_at": "2026-11-04T10:00:03Z",
+              "started_at": "2026-11-04T10:00:06Z",
+              "ended_at": null,
+              "usage": {
+                "calls": 16,
+                "usd": 0.56,
+                "tokens_in": 9600,
+                "tokens_out": 2880
+              }
+            }
+          }
+        },
+        {
+          "reveal": {
+            "session": "cs_5e0a77b19c3d",
+            "upto": 2
+          }
+        },
+        {
+          "reveal": {
+            "session": "cs_org",
+            "upto": 6
+          }
+        },
+        {
+          "emit": "needs_you.changed",
+          "data": {
+            "count": 1
+          }
+        },
+        {
+          "emit": "chat.turn",
+          "data": {
+            "session_id": "cs_org",
+            "turn": 1,
+            "phase": "done",
+            "detail": ""
+          }
+        }
+      ]
+    },
+    "answer": {
+      "on": "post",
+      "session": "cs_5e0a77b19c3d",
+      "steps": [
+        {
+          "reveal": {
+            "session": "cs_5e0a77b19c3d",
+            "upto": 3
+          },
+          "text_from_post": true
+        },
+        {
+          "reveal": {
+            "session": "cs_5e0a77b19c3d",
+            "upto": 4
+          }
+        },
+        {
+          "fixture": {
+            "name": "graph",
+            "version": "3"
+          },
+          "only_stage": [
+            "2"
+          ]
+        },
+        {
+          "reveal": {
+            "session": "cs_b37b2000ef36",
+            "upto": 3
+          },
+          "only_stage": [
+            "3"
+          ]
+        },
+        {
+          "emit": "graph.updated",
+          "data": {
+            "version": 57,
+            "nodes": [
+              {
+                "id": "root",
+                "kind": "root",
+                "label": "Root",
+                "status": "running",
+                "detail": "",
+                "chat_session_id": "cs_org",
+                "org_node_id": "root",
+                "dept_id": null,
+                "task_id": null,
+                "fn": null,
+                "step_ref": null,
+                "version": 4,
+                "meta": {}
+              },
+              {
+                "id": "web",
+                "kind": "department",
+                "label": "Web",
+                "status": "running",
+                "detail": "Adaptation proposes workflows",
+                "chat_session_id": "cs_5e0a77b19c3d",
+                "org_node_id": "web",
+                "dept_id": "web",
+                "task_id": null,
+                "fn": null,
+                "step_ref": null,
+                "version": 12,
+                "meta": {
+                  "run_id": "j2-20261104-100004-7f3a"
+                }
+              },
+              {
+                "id": "web.identity",
+                "kind": "function",
+                "label": "Identity",
+                "status": "idle",
+                "detail": "last seen: charter accepted",
+                "chat_session_id": "cs_77aa10c2e9b4",
+                "org_node_id": null,
+                "dept_id": "web",
+                "task_id": null,
+                "fn": "identity",
+                "step_ref": null,
+                "version": 6,
+                "meta": {
+                  "stats": {
+                    "calls": 16,
+                    "seconds": 52.0,
+                    "tokens_in": 9600,
+                    "tokens_out": 2880,
+                    "atoms_open": 0,
+                    "atoms_closed": 2,
+                    "atoms_failed": 1,
+                    "atoms_total": 5
+                  },
+                  "wait_on": null
+                }
+              },
+              {
+                "id": "web.adaptation",
+                "kind": "function",
+                "label": "Adaptation",
+                "status": "running",
+                "detail": "proposing workflows",
+                "chat_session_id": "cs_b37b2000ef36",
+                "org_node_id": null,
+                "dept_id": "web",
+                "task_id": null,
+                "fn": "adaptation",
+                "step_ref": null,
+                "version": 2,
+                "meta": {
+                  "stats": {
+                    "calls": 3,
+                    "seconds": 12.5,
+                    "tokens_in": 4100,
+                    "tokens_out": 1200,
+                    "atoms_open": 1,
+                    "atoms_closed": 0,
+                    "atoms_failed": 0,
+                    "atoms_total": 1
+                  },
+                  "wait_on": null
+                }
+              },
+              {
+                "id": "s-3f9a1c2b7d",
+                "kind": "step",
+                "label": "Coffee shop landing page",
+                "status": "running",
+                "detail": "",
+                "chat_session_id": "cs_0c91d4aa3e77",
+                "org_node_id": null,
+                "dept_id": "web",
+                "task_id": "tsk_a1b2c3d4e5f6",
+                "fn": null,
+                "step_ref": "task",
+                "version": 3,
+                "meta": {
+                  "run_id": "j2-20261104-100004-7f3a"
+                }
+              }
+            ],
+            "edges_added": 2,
+            "edges_removed": 0
+          },
+          "only_stage": [
+            "3"
+          ]
+        },
+        {
+          "emit": "task.updated",
+          "data": {
+            "task": {
+              "id": "tsk_a1b2c3d4e5f6",
+              "dept_id": "web",
+              "dept_name": "Web",
+              "scope_node_id": null,
+              "title": "Coffee shop landing page",
+              "status": "running",
+              "run_id": "j2-20261104-100004-7f3a",
+              "parent_task_id": null,
+              "depends_on": [],
+              "outcome": null,
+              "created_at": "2026-11-04T10:00:03Z",
+              "started_at": "2026-11-04T10:00:06Z",
+              "ended_at": null,
+              "usage": {
+                "calls": 16,
+                "usd": 0.56,
+                "tokens_in": 9600,
+                "tokens_out": 2880
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

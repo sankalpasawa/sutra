@@ -1,0 +1,18 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "adaptation",
+   "kind": "propose"
+  },
+  "records": {
+   "realization.json": {
+    "rounds": []
+   }
+  }
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "missing: realization.json has no plan_confidence"
+ }
+}

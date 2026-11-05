@@ -1,0 +1,59 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "adaptation",
+   "kind": "propose"
+  },
+  "replies": [
+   {
+    "say": "@Priority",
+    "act": "PROPOSE",
+    "next": "Priority",
+    "workflows": [
+     {
+      "name": "Build menu"
+     },
+     {
+      "name": "Build hours"
+     },
+     {
+      "name": "Hero"
+     }
+    ]
+   },
+   {
+    "say": "@Priority",
+    "act": "PROPOSE",
+    "next": "Priority",
+    "workflows": [
+     {
+      "name": "Build menu"
+     },
+     {
+      "name": "Build hours"
+     },
+     {
+      "name": "Hero"
+     }
+    ]
+   }
+  ],
+  "outcome": {
+   "result": "ok"
+  },
+  "posted": [
+   {
+    "id": 7,
+    "who": "system",
+    "text": "Validator rejected 'Build menu': missing completion_check.",
+    "rejected": "Build menu",
+    "after_reply": 1
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "3 workflows, atoms complete after a retry"
+ }
+}

@@ -1,0 +1,413 @@
+{
+  "session": {
+    "id": "cs_77aa10c2e9b4",
+    "node_id": "web.identity",
+    "kind": "function",
+    "title": "Identity",
+    "writable": false,
+    "status": "active",
+    "filed_under": null,
+    "connector": "claude",
+    "model": "sonnet",
+    "provider_session_id": null,
+    "last_message_id": 0,
+    "note": ""
+  },
+  "messages": [
+    {
+      "id": 1,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "system",
+      "kind": "text",
+      "text": "The team started on your request.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:06Z"
+    },
+    {
+      "id": 2,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-01",
+        "outcome": "refused",
+        "label": "ATOM REFUSED",
+        "goal": "done",
+        "rows": [
+          {
+            "label": "Reason",
+            "text": "goal is banal ('done'): state the observable outcome"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:12Z"
+    },
+    {
+      "id": 3,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-02",
+        "outcome": "opened",
+        "label": "WORK ATOM OPEN",
+        "goal": "the owner's answer is read and passed on",
+        "rows": [
+          {
+            "label": "Done when",
+            "text": "the text to the owner names no file, code or agent"
+          },
+          {
+            "label": "Done by",
+            "text": "code: reply-valid, turn-posted, audience-split"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:21Z"
+    },
+    {
+      "id": 4,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-02",
+        "outcome": "verify_failed",
+        "label": "VERIFY FAILED",
+        "goal": "the owner's answer is read and passed on",
+        "rows": [
+          {
+            "label": "Result",
+            "text": "attempt 1 of 3: to_requester names goal.json"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:27Z"
+    },
+    {
+      "id": 5,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-02",
+        "outcome": "closed",
+        "label": "WORK ATOM CLOSED",
+        "goal": "the owner's answer is read and passed on",
+        "rows": [
+          {
+            "label": "Result",
+            "text": "attempt 2 of 3: RECOVERED: template, the bad part became the default text"
+          },
+          {
+            "label": "Proof",
+            "text": "audience-split: exit 0"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:33Z"
+    },
+    {
+      "id": 6,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "identity",
+      "kind": "text",
+      "text": "@Adaptation Charter recorded from the brief; it had enough to work.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:34Z"
+    },
+    {
+      "id": 7,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-03",
+        "outcome": "opened",
+        "label": "WORK ATOM OPEN",
+        "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+        "rows": [
+          {
+            "label": "Done when",
+            "text": "the charter has a statement and at least 3 done-when items that can be checked"
+          },
+          {
+            "label": "Done by",
+            "text": "code: reply-valid, turn-posted, charter-stamp, audience-split"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:34Z"
+    },
+    {
+      "id": 8,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "validator",
+      "kind": "text",
+      "text": "Validator: the charter has 2 done-when items, 3 are needed.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:36Z"
+    },
+    {
+      "id": 9,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-03",
+        "outcome": "verify_failed",
+        "label": "VERIFY FAILED",
+        "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+        "rows": [
+          {
+            "label": "Result",
+            "text": "attempt 2 of 3: Charter rejected: fewer than 3 'done when' criteria."
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:37Z"
+    },
+    {
+      "id": 10,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-03",
+        "outcome": "abandoned",
+        "label": "WORK ATOM ABANDONED",
+        "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+        "rows": [
+          {
+            "label": "Reason",
+            "text": "verify failed: charter-stamp: Charter rejected: fewer than 3 'done when' criteria."
+          },
+          {
+            "label": "Why",
+            "text": "the check did not pass, so nothing is marked done"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:38Z"
+    },
+    {
+      "id": 11,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-04",
+        "outcome": "opened",
+        "label": "WORK ATOM OPEN",
+        "goal": "the owner's answer is read and passed on",
+        "rows": [
+          {
+            "label": "Done by",
+            "text": "code: reply-valid, turn-posted, audience-split"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:39Z"
+    },
+    {
+      "id": 12,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-04",
+        "outcome": "abandoned",
+        "label": "WORK ATOM ABANDONED",
+        "goal": "the owner's answer is read and passed on",
+        "rows": [
+          {
+            "label": "Reason",
+            "text": "replaced: a newer turn opened on this node"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:40Z"
+    },
+    {
+      "id": 13,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-05",
+        "outcome": "opened",
+        "label": "WORK ATOM OPEN",
+        "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+        "rows": [
+          {
+            "label": "Done when",
+            "text": "the charter has a statement and at least 3 done-when items that can be checked"
+          },
+          {
+            "label": "Done by",
+            "text": "code: reply-valid, turn-posted, charter-stamp, audience-split"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:40Z"
+    },
+    {
+      "id": 14,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-05",
+        "outcome": "verify_failed",
+        "label": "VERIFY FAILED",
+        "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+        "rows": [
+          {
+            "label": "Result",
+            "text": "attempt 1 of 3: enough: field required"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:43Z"
+    },
+    {
+      "id": 15,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "atom",
+        "atom_id": "a-a810960e61-05",
+        "outcome": "verify_failed",
+        "label": "VERIFY FAILED",
+        "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+        "rows": [
+          {
+            "label": "Result",
+            "text": "attempt 2 of 3: questions: at least 1 is needed when enough is false"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:46Z"
+    },
+    {
+      "id": 16,
+      "session_id": "cs_77aa10c2e9b4",
+      "role": "agent",
+      "who": "system",
+      "kind": "text",
+      "text": "Paused: Identity is waiting on the Requester (Should the menu show prices?).",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:47Z"
+    }
+  ],
+  "initial_visible": 0,
+  "visible_at": {
+    "1": 0,
+    "2": 16,
+    "3": 16,
+    "full": 16
+  }
+}

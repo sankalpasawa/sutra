@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Usage and log - Sutra</title>
+<link rel="stylesheet" href="/ui/css/j2.css">
+<link rel="stylesheet" href="/ui/css/sutra-panel.css"><link rel="stylesheet" href="/ui/css/sutra-console.css">
+<!--SUTRA-BOOT-->
+<script src="/ui/js/sutra_ctx.js"></script>
+<script>/* the viewer's Appearance before the first paint (Home's Settings sets it): light, dark or system; dark by default; one choice for every page */
+try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset.theme = tp === "light" ? "light" : tp === "system" && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } catch (e) { document.documentElement.dataset.theme = "dark"; }</script>
+</head>
+<body class="console">
+<!-- The owner console: what the work cost, the Atom log, the health of the app and a diagnostics download. Every panel is filled by console_view.js from the routes it names;
+     the page holds no data of its own. -->
+<header class="shead"><a class="ghost" href="/">&larr; Home</a><b id="stitle">Usage and log</b><span class="meta" id="cstate" role="status">Not connected</span><span class="spacer"></span>
+  <nav class="cjump" aria-label="On this page"><a href="#c-usage">Usage and cost</a><a href="#c-log">Atom log</a><a href="#c-health">Health</a></nav></header>
+<main class="cmain" id="console-root">
+  <section class="cpanel" id="c-usage" aria-label="Usage and cost" tabindex="-1"><h2>Usage and cost</h2><p class="cempty">Loading&hellip;</p></section>
+  <section class="cpanel" id="c-log" aria-label="Atom log" tabindex="-1"><h2>Atom log</h2><p class="cempty">Loading&hellip;</p></section>
+  <section class="cpanel" id="c-health" aria-label="Health" tabindex="-1"><h2>Health</h2><p class="cempty">Loading&hellip;</p></section>
+</main>
+<script src="/ui/js/sutra_events.js"></script>
+<script src="/ui/js/fnode_view.js"></script>
+<script src="/ui/js/console_view.js"></script>
+</body>
+</html>

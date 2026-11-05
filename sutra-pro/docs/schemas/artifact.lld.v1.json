@@ -1,0 +1,246 @@
+{
+  "$defs": {
+    "Element": {
+      "additionalProperties": false,
+      "properties": {
+        "behaviour": {
+          "description": "what happens then",
+          "maxLength": 4000,
+          "title": "Behaviour",
+          "type": "string"
+        },
+        "id": {
+          "description": "E1, E2, ... in order",
+          "maxLength": 40,
+          "title": "Id",
+          "type": "string"
+        },
+        "section": {
+          "description": "the section id it sits in, e.g. \"S1\"",
+          "maxLength": 40,
+          "title": "Section",
+          "type": "string"
+        },
+        "selector": {
+          "description": "its selector, e.g. \"#book-now\"",
+          "maxLength": 300,
+          "title": "Selector",
+          "type": "string"
+        },
+        "trigger": {
+          "description": "what the visitor does, e.g. \"click\"",
+          "maxLength": 300,
+          "title": "Trigger",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "section",
+        "selector",
+        "trigger",
+        "behaviour"
+      ],
+      "title": "Element",
+      "type": "object"
+    },
+    "FileEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "the file path, e.g. \"index.html\"",
+          "maxLength": 300,
+          "title": "Path",
+          "type": "string"
+        },
+        "purpose": {
+          "description": "what it holds",
+          "maxLength": 4000,
+          "title": "Purpose",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "purpose"
+      ],
+      "title": "FileEntry",
+      "type": "object"
+    },
+    "FormField": {
+      "additionalProperties": false,
+      "properties": {
+        "form": {
+          "description": "the form's selector, e.g. \"#booking\"",
+          "maxLength": 300,
+          "title": "Form",
+          "type": "string"
+        },
+        "id": {
+          "description": "F1, F2, ... in order",
+          "maxLength": 40,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "description": "the field name attribute",
+          "maxLength": 300,
+          "title": "Name",
+          "type": "string"
+        },
+        "required": {
+          "description": "true when the visitor must fill it in",
+          "title": "Required",
+          "type": "boolean"
+        },
+        "section": {
+          "default": "",
+          "description": "the section id the form sits in, e.g. \"S1\"",
+          "maxLength": 40,
+          "title": "Section",
+          "type": "string"
+        },
+        "type": {
+          "description": "one of text, email, tel, url, number, date, time, select, textarea, checkbox, radio, password, file",
+          "enum": [
+            "text",
+            "email",
+            "tel",
+            "url",
+            "number",
+            "date",
+            "time",
+            "select",
+            "textarea",
+            "checkbox",
+            "radio",
+            "password",
+            "file"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "validation": {
+          "default": "",
+          "description": "the validation rule in one line",
+          "maxLength": 4000,
+          "title": "Validation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "form",
+        "name",
+        "type",
+        "required"
+      ],
+      "title": "FormField",
+      "type": "object"
+    },
+    "LLDSection": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor": {
+          "description": "the id attribute on the page, with the #, e.g. \"#classes\"",
+          "maxLength": 40,
+          "title": "Anchor",
+          "type": "string"
+        },
+        "id": {
+          "description": "S1, S2, ... in order",
+          "maxLength": 40,
+          "title": "Id",
+          "type": "string"
+        },
+        "implements": {
+          "description": "the HLD component ids this section implements",
+          "items": {
+            "maxLength": 40,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Implements",
+          "type": "array"
+        },
+        "page": {
+          "default": "",
+          "description": "the page id, e.g. \"P1\"",
+          "maxLength": 40,
+          "title": "Page",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "anchor"
+      ],
+      "title": "LLDSection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accessibility_rules": {
+      "items": {
+        "maxLength": 4000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Accessibility Rules",
+      "type": "array"
+    },
+    "assumptions": {
+      "items": {
+        "maxLength": 4000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "elements": {
+      "items": {
+        "$ref": "#/$defs/Element"
+      },
+      "maxItems": 300,
+      "title": "Elements",
+      "type": "array"
+    },
+    "files": {
+      "items": {
+        "$ref": "#/$defs/FileEntry"
+      },
+      "maxItems": 1000,
+      "title": "Files",
+      "type": "array"
+    },
+    "form_fields": {
+      "items": {
+        "$ref": "#/$defs/FormField"
+      },
+      "maxItems": 300,
+      "title": "Form Fields",
+      "type": "array"
+    },
+    "responsive_rules": {
+      "items": {
+        "maxLength": 4000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Responsive Rules",
+      "type": "array"
+    },
+    "sections": {
+      "items": {
+        "$ref": "#/$defs/LLDSection"
+      },
+      "maxItems": 300,
+      "title": "Sections",
+      "type": "array"
+    }
+  },
+  "title": "LLD",
+  "type": "object"
+}

@@ -1,0 +1,76 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "audit",
+   "kind": "audit"
+  },
+  "records": {
+   "goal.json": {
+    "statement": "s",
+    "done_when": [
+     "a",
+     "b",
+     "c"
+    ]
+   },
+   "audits.json": [
+    {
+     "cycle": 1,
+     "version": 1,
+     "results": [
+      {
+       "id": "F-1",
+       "item": 1,
+       "criterion": "Item 1",
+       "verdict": "PASS",
+       "note": "seen on the page",
+       "pass": true
+      },
+      {
+       "id": "F-2",
+       "item": 2,
+       "criterion": "Item 2",
+       "verdict": "PASS",
+       "note": "seen on the page",
+       "pass": true,
+       "atom": "a-1234567890-01"
+      },
+      {
+       "id": "F-3",
+       "item": 3,
+       "criterion": "Item 3",
+       "verdict": "PASS",
+       "note": "seen on the page",
+       "pass": true
+      }
+     ],
+     "rubric": [],
+     "conditions": [],
+     "mechanical": {
+      "available": true,
+      "phone": {
+       "width": 360,
+       "overflow_px": 0
+      },
+      "desktop": {
+       "width": 1280,
+       "overflow_px": 0
+      },
+      "js_errors": [],
+      "broken_in_page_links": [],
+      "form_results": []
+     }
+    }
+   ]
+  },
+  "before": {},
+  "owners": {
+   "a-1234567890-01": "web.adaptation"
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "3 items, 3 findings"
+ }
+}

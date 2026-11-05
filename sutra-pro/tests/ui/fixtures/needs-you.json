@@ -1,0 +1,34 @@
+{
+  "1": [],
+  "2": [
+    {
+      "message_id": 2,
+      "session_id": "cs_5e0a77b19c3d",
+      "kind": "question",
+      "dept_id": "web",
+      "dept_name": "Web",
+      "text": "@Requester Should the menu show prices?\n   Option 1: Yes, show the prices\n   Option 2: No, names only",
+      "options": [
+        "Yes, show the prices",
+        "No, names only"
+      ],
+      "asked_at": "2026-11-04T10:00:41Z"
+    }
+  ],
+  "3": [],
+  "full": [
+    {
+      "message_id": 2,
+      "session_id": "cs_5e0a77b19c3d",
+      "kind": "question",
+      "dept_id": "web",
+      "dept_name": "Web",
+      "text": "@Requester Should the menu show prices?\n   Option 1: Yes, show the prices\n   Option 2: No, names only",
+      "options": [
+        "Yes, show the prices",
+        "No, names only"
+      ],
+      "asked_at": "2026-11-04T10:00:41Z"
+    }
+  ]
+}

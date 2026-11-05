@@ -1,0 +1,1134 @@
+{
+  "$defs": {
+    "AdaptationNode": {
+      "additionalProperties": false,
+      "properties": {
+        "atom_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Atom Count",
+          "type": "integer"
+        },
+        "chat_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Session Id"
+        },
+        "context": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Context",
+          "type": "array"
+        },
+        "department_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Department Id"
+        },
+        "detail": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Detail",
+          "type": "string"
+        },
+        "edge_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z_]{1,20}:[^>\\s]{1,80}>[^>\\s]{1,80}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Edge Ids",
+          "type": "array"
+        },
+        "goal": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 60,
+          "pattern": "^[a-z][a-z0-9_-]{1,39}(\\.[a-z]{1,16})?$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "adaptation",
+          "default": "adaptation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "open_atom": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Open Atom"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "spec_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Spec Version",
+          "type": "integer"
+        },
+        "state": {
+          "default": "idle",
+          "enum": [
+            "idle",
+            "running",
+            "waiting",
+            "waiting_on_you",
+            "fault",
+            "filed",
+            "done_unchecked",
+            "left_open",
+            "not_made"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "stats": {
+          "$ref": "#/$defs/NodeStats"
+        },
+        "task": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Task",
+          "type": "string"
+        },
+        "ts_created": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Created",
+          "type": "integer"
+        },
+        "ts_updated": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Updated",
+          "type": "integer"
+        },
+        "version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "wait_on": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wait On"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "goal",
+        "task"
+      ],
+      "title": "AdaptationNode",
+      "type": "object"
+    },
+    "AuditNode": {
+      "additionalProperties": false,
+      "properties": {
+        "atom_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Atom Count",
+          "type": "integer"
+        },
+        "chat_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Session Id"
+        },
+        "context": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Context",
+          "type": "array"
+        },
+        "department_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Department Id"
+        },
+        "detail": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Detail",
+          "type": "string"
+        },
+        "edge_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z_]{1,20}:[^>\\s]{1,80}>[^>\\s]{1,80}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Edge Ids",
+          "type": "array"
+        },
+        "goal": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 60,
+          "pattern": "^[a-z][a-z0-9_-]{1,39}(\\.[a-z]{1,16})?$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "audit",
+          "default": "audit",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "open_atom": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Open Atom"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "spec_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Spec Version",
+          "type": "integer"
+        },
+        "state": {
+          "default": "idle",
+          "enum": [
+            "idle",
+            "running",
+            "waiting",
+            "waiting_on_you",
+            "fault",
+            "filed",
+            "done_unchecked",
+            "left_open",
+            "not_made"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "stats": {
+          "$ref": "#/$defs/NodeStats"
+        },
+        "task": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Task",
+          "type": "string"
+        },
+        "ts_created": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Created",
+          "type": "integer"
+        },
+        "ts_updated": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Updated",
+          "type": "integer"
+        },
+        "version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "wait_on": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wait On"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "goal",
+        "task"
+      ],
+      "title": "AuditNode",
+      "type": "object"
+    },
+    "CoordinationNode": {
+      "additionalProperties": false,
+      "properties": {
+        "atom_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Atom Count",
+          "type": "integer"
+        },
+        "chat_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Session Id"
+        },
+        "context": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Context",
+          "type": "array"
+        },
+        "department_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Department Id"
+        },
+        "detail": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Detail",
+          "type": "string"
+        },
+        "edge_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z_]{1,20}:[^>\\s]{1,80}>[^>\\s]{1,80}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Edge Ids",
+          "type": "array"
+        },
+        "goal": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 60,
+          "pattern": "^[a-z][a-z0-9_-]{1,39}(\\.[a-z]{1,16})?$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "coordination",
+          "default": "coordination",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "open_atom": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Open Atom"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "spec_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Spec Version",
+          "type": "integer"
+        },
+        "state": {
+          "default": "idle",
+          "enum": [
+            "idle",
+            "running",
+            "waiting",
+            "waiting_on_you",
+            "fault",
+            "filed",
+            "done_unchecked",
+            "left_open",
+            "not_made"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "stats": {
+          "$ref": "#/$defs/NodeStats"
+        },
+        "task": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Task",
+          "type": "string"
+        },
+        "ts_created": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Created",
+          "type": "integer"
+        },
+        "ts_updated": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Updated",
+          "type": "integer"
+        },
+        "version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "wait_on": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wait On"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "goal",
+        "task"
+      ],
+      "title": "CoordinationNode",
+      "type": "object"
+    },
+    "IdentityNode": {
+      "additionalProperties": false,
+      "properties": {
+        "atom_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Atom Count",
+          "type": "integer"
+        },
+        "chat_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Session Id"
+        },
+        "context": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Context",
+          "type": "array"
+        },
+        "department_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Department Id"
+        },
+        "detail": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Detail",
+          "type": "string"
+        },
+        "edge_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z_]{1,20}:[^>\\s]{1,80}>[^>\\s]{1,80}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Edge Ids",
+          "type": "array"
+        },
+        "goal": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 60,
+          "pattern": "^[a-z][a-z0-9_-]{1,39}(\\.[a-z]{1,16})?$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "identity",
+          "default": "identity",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "open_atom": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Open Atom"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "spec_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Spec Version",
+          "type": "integer"
+        },
+        "state": {
+          "default": "idle",
+          "enum": [
+            "idle",
+            "running",
+            "waiting",
+            "waiting_on_you",
+            "fault",
+            "filed",
+            "done_unchecked",
+            "left_open",
+            "not_made"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "stats": {
+          "$ref": "#/$defs/NodeStats"
+        },
+        "task": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Task",
+          "type": "string"
+        },
+        "ts_created": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Created",
+          "type": "integer"
+        },
+        "ts_updated": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Updated",
+          "type": "integer"
+        },
+        "version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "wait_on": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wait On"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "goal",
+        "task"
+      ],
+      "title": "IdentityNode",
+      "type": "object"
+    },
+    "NodeStats": {
+      "additionalProperties": false,
+      "description": "What a function node has used so far (from its node events).",
+      "properties": {
+        "calls": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "seconds": {
+          "default": 0.0,
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        },
+        "tokens": {
+          "$ref": "#/$defs/NodeTokens"
+        }
+      },
+      "title": "NodeStats",
+      "type": "object"
+    },
+    "NodeTokens": {
+      "additionalProperties": false,
+      "description": "Tokens a node's calls used.",
+      "properties": {
+        "input": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Input",
+          "type": "integer"
+        },
+        "output": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Output",
+          "type": "integer"
+        }
+      },
+      "title": "NodeTokens",
+      "type": "object"
+    },
+    "PriorityNode": {
+      "additionalProperties": false,
+      "properties": {
+        "atom_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Atom Count",
+          "type": "integer"
+        },
+        "chat_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Session Id"
+        },
+        "context": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Context",
+          "type": "array"
+        },
+        "department_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Department Id"
+        },
+        "detail": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Detail",
+          "type": "string"
+        },
+        "edge_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z_]{1,20}:[^>\\s]{1,80}>[^>\\s]{1,80}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Edge Ids",
+          "type": "array"
+        },
+        "goal": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 60,
+          "pattern": "^[a-z][a-z0-9_-]{1,39}(\\.[a-z]{1,16})?$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "priority",
+          "default": "priority",
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "open_atom": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Open Atom"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "spec_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Spec Version",
+          "type": "integer"
+        },
+        "state": {
+          "default": "idle",
+          "enum": [
+            "idle",
+            "running",
+            "waiting",
+            "waiting_on_you",
+            "fault",
+            "filed",
+            "done_unchecked",
+            "left_open",
+            "not_made"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "stats": {
+          "$ref": "#/$defs/NodeStats"
+        },
+        "task": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Task",
+          "type": "string"
+        },
+        "ts_created": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Created",
+          "type": "integer"
+        },
+        "ts_updated": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Updated",
+          "type": "integer"
+        },
+        "version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "wait_on": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wait On"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "goal",
+        "task"
+      ],
+      "title": "PriorityNode",
+      "type": "object"
+    },
+    "StructuralNode": {
+      "additionalProperties": false,
+      "description": "A node that mirrors the chart (root, department, division) or one step of a task (`task_id` + `step_ref`).\nA chart node uses four states; a step uses all nine.",
+      "properties": {
+        "chat_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Session Id"
+        },
+        "department_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Department Id"
+        },
+        "detail": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Detail",
+          "type": "string"
+        },
+        "edge_ids": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z_]{1,20}:[^>\\s]{1,80}>[^>\\s]{1,80}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Edge Ids",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 60,
+          "pattern": "^[a-z][a-z0-9_-]{1,39}(\\.[a-z]{1,16})?$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "root",
+            "department",
+            "division",
+            "step"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Id"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "state": {
+          "default": "idle",
+          "enum": [
+            "idle",
+            "running",
+            "waiting",
+            "waiting_on_you",
+            "fault",
+            "filed",
+            "done_unchecked",
+            "left_open",
+            "not_made"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "step_ref": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Ref"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        },
+        "ts_created": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Created",
+          "type": "integer"
+        },
+        "ts_updated": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Ts Updated",
+          "type": "integer"
+        },
+        "version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "label"
+      ],
+      "title": "StructuralNode",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "adaptation": "#/$defs/AdaptationNode",
+      "audit": "#/$defs/AuditNode",
+      "coordination": "#/$defs/CoordinationNode",
+      "department": "#/$defs/StructuralNode",
+      "division": "#/$defs/StructuralNode",
+      "identity": "#/$defs/IdentityNode",
+      "priority": "#/$defs/PriorityNode",
+      "root": "#/$defs/StructuralNode",
+      "step": "#/$defs/StructuralNode"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/StructuralNode"
+    },
+    {
+      "$ref": "#/$defs/IdentityNode"
+    },
+    {
+      "$ref": "#/$defs/AdaptationNode"
+    },
+    {
+      "$ref": "#/$defs/PriorityNode"
+    },
+    {
+      "$ref": "#/$defs/CoordinationNode"
+    },
+    {
+      "$ref": "#/$defs/AuditNode"
+    }
+  ]
+}

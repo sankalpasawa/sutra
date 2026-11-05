@@ -1,0 +1,5 @@
+{
+ "README.md": "# __REPO__\n\nA fixture repository served by the fake gh.\n\n## Usage\n\nRun `make test`.\n",
+ "docs/guide.md": "# Guide\n\nThis page is served by the fake gh for the file tool tests.\n",
+ "src/app.py": "def main():\n    print(\"hello from __REPO__\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+}

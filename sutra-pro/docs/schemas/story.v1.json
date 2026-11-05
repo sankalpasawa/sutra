@@ -1,0 +1,964 @@
+{
+  "$defs": {
+    "AnsweredFrom": {
+      "additionalProperties": false,
+      "description": "Where an answer came from: a function, or a workflow with the version of its output.",
+      "properties": {
+        "function": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Function"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "title": "AnsweredFrom",
+      "type": "object"
+    },
+    "SentToIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Doc",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 2000,
+          "title": "Reason",
+          "type": "string"
+        },
+        "section": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Section",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc",
+        "section",
+        "reason"
+      ],
+      "title": "SentToIdentity",
+      "type": "object"
+    },
+    "StoryAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "By"
+        },
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnsweredFrom"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sent_to_identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SentToIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "text": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "updated_own_section": {
+          "title": "Updated Own Section",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "updated_own_section"
+      ],
+      "title": "StoryAnswer",
+      "type": "object"
+    },
+    "StoryAsk": {
+      "additionalProperties": false,
+      "properties": {
+        "about": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "About"
+        },
+        "atom": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Atom"
+        },
+        "deliverable": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deliverable"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "title": "StoryAsk",
+      "type": "object"
+    },
+    "StoryChange": {
+      "additionalProperties": false,
+      "properties": {
+        "doc": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Doc",
+          "type": "string"
+        },
+        "from_version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Version"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
+        },
+        "to_version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Version"
+        }
+      },
+      "required": [
+        "doc"
+      ],
+      "title": "StoryChange",
+      "type": "object"
+    },
+    "StoryDoubt": {
+      "additionalProperties": false,
+      "properties": {
+        "asked_by": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asked By"
+        },
+        "atom": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Atom"
+        },
+        "deliverable": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deliverable"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "enum": [
+                "function",
+                "builder"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "title": "StoryDoubt",
+      "type": "object"
+    },
+    "StoryEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "$ref": "#/$defs/StoryAnswer"
+        },
+        "ask": {
+          "$ref": "#/$defs/StoryAsk"
+        },
+        "change": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StoryChange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cycle": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle"
+        },
+        "doubt": {
+          "$ref": "#/$defs/StoryDoubt"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "impact": {
+          "items": {
+            "$ref": "#/$defs/StoryImpact"
+          },
+          "maxItems": 500,
+          "title": "Impact",
+          "type": "array"
+        },
+        "recheck": {
+          "$ref": "#/$defs/StoryRecheck"
+        },
+        "reused_by": {
+          "items": {
+            "$ref": "#/$defs/StoryReuse"
+          },
+          "maxItems": 500,
+          "title": "Reused By",
+          "type": "array"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "open",
+                "answered",
+                "unanswered",
+                "refused",
+                "routed to Identity"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        }
+      },
+      "required": [
+        "id",
+        "doubt",
+        "ask",
+        "answer",
+        "recheck",
+        "impact",
+        "reused_by"
+      ],
+      "title": "StoryEntry",
+      "type": "object"
+    },
+    "StoryFacts": {
+      "additionalProperties": false,
+      "properties": {
+        "cycles": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycles"
+        },
+        "has_board": {
+          "default": false,
+          "title": "Has Board",
+          "type": "boolean"
+        },
+        "questions": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Questions",
+          "type": "integer"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "versions": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default": {},
+          "maxProperties": 50,
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "title": "Versions",
+          "type": "object"
+        }
+      },
+      "title": "StoryFacts",
+      "type": "object"
+    },
+    "StoryFlags": {
+      "additionalProperties": false,
+      "properties": {
+        "force_question": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Force Question"
+        },
+        "mock": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mock"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        }
+      },
+      "title": "StoryFlags",
+      "type": "object"
+    },
+    "StoryImpact": {
+      "additionalProperties": false,
+      "properties": {
+        "atom": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Atom"
+        },
+        "deliverable": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deliverable"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "title": "StoryImpact",
+      "type": "object"
+    },
+    "StoryNumbers": {
+      "additionalProperties": false,
+      "properties": {
+        "duplicate_edges": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Duplicate Edges",
+          "type": "integer"
+        },
+        "questions": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Questions",
+          "type": "integer"
+        },
+        "receipts": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Receipts",
+          "type": "integer"
+        },
+        "rechecked": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Rechecked",
+          "type": "integer"
+        }
+      },
+      "title": "StoryNumbers",
+      "type": "object"
+    },
+    "StoryRecheck": {
+      "additionalProperties": false,
+      "properties": {
+        "atoms": {
+          "minimum": 0,
+          "title": "Atoms",
+          "type": "integer"
+        },
+        "failed": {
+          "minimum": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "passed": {
+          "minimum": 0,
+          "title": "Passed",
+          "type": "integer"
+        },
+        "receipts": {
+          "minimum": 0,
+          "title": "Receipts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "atoms",
+        "passed",
+        "failed",
+        "receipts"
+      ],
+      "title": "StoryRecheck",
+      "type": "object"
+    },
+    "StoryReuse": {
+      "additionalProperties": false,
+      "properties": {
+        "atom": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Atom"
+        },
+        "deliverable": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deliverable"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "StoryReuse",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "story/1: what each message-board question did, step by step, read from what the run recorded. A run with no board\nhas `has_board: false` and no entries; a run that is not there has `run: null` and `facts` and `flags` empty.",
+  "properties": {
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/StoryEntry"
+      },
+      "maxItems": 1000,
+      "title": "Entries",
+      "type": "array"
+    },
+    "facts": {
+      "$ref": "#/$defs/StoryFacts"
+    },
+    "flags": {
+      "$ref": "#/$defs/StoryFlags"
+    },
+    "has_board": {
+      "title": "Has Board",
+      "type": "boolean"
+    },
+    "not_recorded": {
+      "items": {
+        "maxLength": 2000,
+        "type": "string"
+      },
+      "maxItems": 100,
+      "title": "Not Recorded",
+      "type": "array"
+    },
+    "numbers": {
+      "$ref": "#/$defs/StoryNumbers"
+    },
+    "run": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run"
+    },
+    "schema": {
+      "const": "story/1",
+      "default": "story/1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "steps": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Steps",
+      "type": "array"
+    }
+  },
+  "required": [
+    "has_board",
+    "entries",
+    "numbers",
+    "facts",
+    "flags",
+    "steps",
+    "not_recorded"
+  ],
+  "title": "StoryDoc",
+  "type": "object"
+}

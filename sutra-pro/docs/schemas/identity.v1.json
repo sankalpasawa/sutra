@@ -1,0 +1,950 @@
+{
+  "$defs": {
+    "Approval": {
+      "additionalProperties": false,
+      "description": "J2:4317: the Requester's answer to 'run this over its envelope?'. J2 uses `budget_increase` only when approved.",
+      "properties": {
+        "approved": {
+          "title": "Approved",
+          "type": "boolean"
+        },
+        "budget_increase": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Budget Increase"
+        },
+        "kind": {
+          "const": "approval",
+          "default": "approval",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "say": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Say",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "approved"
+      ],
+      "title": "Approval",
+      "type": "object"
+    },
+    "ApprovalAsk": {
+      "additionalProperties": false,
+      "description": "J2:4329: Priority asks for approval; Identity may not raise an envelope, so it denies or asks. J2's own mock sends\nASK with no question (J2:4334-4335), so the question is not required.",
+      "properties": {
+        "clause": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Clause",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "DENY",
+            "ASK"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "kind": {
+          "const": "approval_ask",
+          "default": "approval_ask",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "say": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Say",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "user_question": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Question"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "decision"
+      ],
+      "title": "ApprovalAsk",
+      "type": "object"
+    },
+    "DocGoalDraft": {
+      "additionalProperties": false,
+      "description": "A document charter (PRD, HLD, LLD): PRD_CHARTER_FMT, J2:2258. J2 sets `site_name`, `business_type` and\n`visitor_needs` on the charter of every output (J2:4099, and its mock PRD charter already carries them), so a draft\nmay hold them; the model is not asked for them.",
+      "properties": {
+        "audience": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Audience",
+          "type": "string"
+        },
+        "business_type": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Business Type",
+          "type": "string"
+        },
+        "constraints": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Constraints",
+          "type": "array"
+        },
+        "core": {
+          "default": [],
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 40,
+          "title": "Core",
+          "type": "array"
+        },
+        "done_when": {
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "minItems": 1,
+          "title": "Done When",
+          "type": "array"
+        },
+        "dropped_from_brief": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Dropped From Brief",
+          "type": "array"
+        },
+        "facts": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 60,
+          "title": "Facts",
+          "type": "array"
+        },
+        "features": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Features",
+          "type": "array"
+        },
+        "kind": {
+          "const": "doc",
+          "default": "doc",
+          "title": "Kind",
+          "type": "string"
+        },
+        "problem": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Problem",
+          "type": "string"
+        },
+        "product_name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Product Name",
+          "type": "string"
+        },
+        "rules": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Rules",
+          "type": "array"
+        },
+        "site_name": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Site Name",
+          "type": "string"
+        },
+        "standards": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Standards",
+          "type": "array"
+        },
+        "statement": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "success_measures": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Success Measures",
+          "type": "array"
+        },
+        "to_be_confirmed": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TbcAnswer"
+          },
+          "maxItems": 40,
+          "title": "To Be Confirmed",
+          "type": "array"
+        },
+        "user_groups": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/UserGroup"
+          },
+          "maxItems": 20,
+          "title": "User Groups",
+          "type": "array"
+        },
+        "users": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Users",
+          "type": "string"
+        },
+        "visitor_needs": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Visitor Needs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "statement",
+        "done_when",
+        "product_name"
+      ],
+      "title": "DocGoalDraft",
+      "type": "object"
+    },
+    "Done": {
+      "additionalProperties": false,
+      "description": "J2.h (J2:4892-4896, 1504-1506): is the goal reached? The Requester hears it when it is done or when only they can help.",
+      "properties": {
+        "budget_needed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Budget Needed"
+        },
+        "clause": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Clause",
+          "type": "string"
+        },
+        "done": {
+          "title": "Done",
+          "type": "boolean"
+        },
+        "instruction_to_adaptation": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instruction To Adaptation"
+        },
+        "kind": {
+          "const": "done",
+          "default": "done",
+          "title": "Kind",
+          "type": "string"
+        },
+        "needs_decision": {
+          "default": false,
+          "title": "Needs Decision",
+          "type": "boolean"
+        },
+        "needs_requester": {
+          "default": false,
+          "title": "Needs Requester",
+          "type": "boolean"
+        },
+        "next": {
+          "enum": [
+            "Requester",
+            "Adaptation"
+          ],
+          "title": "Next",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "requester_questions": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Requester Questions",
+          "type": "array"
+        },
+        "say": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Say",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "done",
+        "next"
+      ],
+      "title": "Done",
+      "type": "object"
+    },
+    "Heard": {
+      "additionalProperties": false,
+      "description": "J2:4396-4402, DECISION_FMT (J2:1508): what the Requester's answer settles. J2 applies `add` unless the decision is\nship (J2:4484), so these are ranges only.",
+      "properties": {
+        "add": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Add"
+        },
+        "clause": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Clause",
+          "type": "string"
+        },
+        "confirmed": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TbcAnswer"
+          },
+          "maxItems": 40,
+          "title": "Confirmed",
+          "type": "array"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "continue",
+                "drop",
+                "ship",
+                "stop"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision"
+        },
+        "drop_items": {
+          "default": [],
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 40,
+          "title": "Drop Items",
+          "type": "array"
+        },
+        "instruction_to_adaptation": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instruction To Adaptation"
+        },
+        "kind": {
+          "const": "heard",
+          "default": "heard",
+          "title": "Kind",
+          "type": "string"
+        },
+        "next": {
+          "enum": [
+            "Audit",
+            "Adaptation"
+          ],
+          "title": "Next",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "say": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Say",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "still_to_be_confirmed": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TbcAnswer"
+          },
+          "maxItems": 40,
+          "title": "Still To Be Confirmed",
+          "type": "array"
+        }
+      },
+      "required": [
+        "next"
+      ],
+      "title": "Heard",
+      "type": "object"
+    },
+    "Intake": {
+      "additionalProperties": false,
+      "description": "J2.a (J2:4027-4032; ROLE:identity): is there enough to write the charter? Enough: the charter and no questions,\nhanded to Adaptation. Not enough: 1 to 4 questions and no charter, handed to the Requester.",
+      "properties": {
+        "enough": {
+          "title": "Enough",
+          "type": "boolean"
+        },
+        "goal": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "doc": "#/$defs/DocGoalDraft",
+                  "site": "#/$defs/SiteGoalDraft"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/SiteGoalDraft"
+                },
+                {
+                  "$ref": "#/$defs/DocGoalDraft"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Goal"
+        },
+        "kind": {
+          "const": "intake",
+          "default": "intake",
+          "title": "Kind",
+          "type": "string"
+        },
+        "next": {
+          "enum": [
+            "Requester",
+            "Adaptation"
+          ],
+          "title": "Next",
+          "type": "string"
+        },
+        "questions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Question"
+          },
+          "maxItems": 4,
+          "title": "Questions",
+          "type": "array"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "say": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Say",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "to_agents": {
+          "default": "",
+          "maxLength": 600,
+          "title": "To Agents",
+          "type": "string"
+        },
+        "to_requester": {
+          "default": "",
+          "maxLength": 600,
+          "title": "To Requester",
+          "type": "string"
+        }
+      },
+      "required": [
+        "enough",
+        "next"
+      ],
+      "title": "Intake",
+      "type": "object"
+    },
+    "Question": {
+      "additionalProperties": false,
+      "description": "One question Identity puts to the Requester. J2 shows at most 3 options; the reply may carry 4 (J2:4027).",
+      "properties": {
+        "options": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Options",
+          "type": "array"
+        },
+        "question": {
+          "maxLength": 400,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "Question",
+      "type": "object"
+    },
+    "Ruling": {
+      "additionalProperties": false,
+      "description": "J2.d (J2:4206-4213): Identity rules on a conflict two agents could not settle, or asks the Requester.",
+      "properties": {
+        "clause": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Clause",
+          "type": "string"
+        },
+        "facts": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Facts",
+          "type": "array"
+        },
+        "instruction": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Instruction",
+          "type": "string"
+        },
+        "kind": {
+          "const": "ruling",
+          "default": "ruling",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "resolved": {
+          "title": "Resolved",
+          "type": "boolean"
+        },
+        "ruling": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ruling"
+        },
+        "say": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Say",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "user_question": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Question"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "workflows": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Workflows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "clause",
+        "resolved"
+      ],
+      "title": "Ruling",
+      "type": "object"
+    },
+    "SiteGoalDraft": {
+      "additionalProperties": false,
+      "description": "A website charter.",
+      "properties": {
+        "audience": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Audience",
+          "type": "string"
+        },
+        "business_type": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Business Type",
+          "type": "string"
+        },
+        "core": {
+          "default": [],
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 40,
+          "title": "Core",
+          "type": "array"
+        },
+        "done_when": {
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "minItems": 1,
+          "title": "Done When",
+          "type": "array"
+        },
+        "dropped_from_brief": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Dropped From Brief",
+          "type": "array"
+        },
+        "facts": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 60,
+          "title": "Facts",
+          "type": "array"
+        },
+        "kind": {
+          "const": "site",
+          "default": "site",
+          "title": "Kind",
+          "type": "string"
+        },
+        "rules": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Rules",
+          "type": "array"
+        },
+        "site_name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Site Name",
+          "type": "string"
+        },
+        "standards": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Standards",
+          "type": "array"
+        },
+        "statement": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "to_be_confirmed": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TbcAnswer"
+          },
+          "maxItems": 40,
+          "title": "To Be Confirmed",
+          "type": "array"
+        },
+        "visitor_needs": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Visitor Needs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "statement",
+        "done_when",
+        "site_name"
+      ],
+      "title": "SiteGoalDraft",
+      "type": "object"
+    },
+    "TbcAnswer": {
+      "additionalProperties": false,
+      "description": "A fact only the Requester can give and has said they cannot give yet, named by the NUMBER of the done-when item\nit blocks (what Identity returns; the number is a position in the charter).",
+      "properties": {
+        "fact": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Fact",
+          "type": "string"
+        },
+        "item": {
+          "minimum": 1,
+          "title": "Item",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "item",
+        "fact"
+      ],
+      "title": "TbcAnswer",
+      "type": "object"
+    },
+    "UserGroup": {
+      "additionalProperties": false,
+      "description": "A user group of a document charter, with what the group does (empty when the Requester did not say).",
+      "properties": {
+        "actions": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Actions",
+          "type": "array"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "UserGroup",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "approval": "#/$defs/Approval",
+      "approval_ask": "#/$defs/ApprovalAsk",
+      "done": "#/$defs/Done",
+      "heard": "#/$defs/Heard",
+      "intake": "#/$defs/Intake",
+      "ruling": "#/$defs/Ruling"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Intake"
+    },
+    {
+      "$ref": "#/$defs/Ruling"
+    },
+    {
+      "$ref": "#/$defs/Heard"
+    },
+    {
+      "$ref": "#/$defs/Done"
+    },
+    {
+      "$ref": "#/$defs/Approval"
+    },
+    {
+      "$ref": "#/$defs/ApprovalAsk"
+    }
+  ]
+}

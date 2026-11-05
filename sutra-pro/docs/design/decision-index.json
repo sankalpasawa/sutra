@@ -1,0 +1,876 @@
+[
+ {
+  "id": "D13",
+  "title": "The J2 engine is copied in place and changed only by eleven numbered patches",
+  "sources": [
+   "ENG-D1"
+  ],
+  "section": "engine",
+  "box": "J2 chips",
+  "label": "vendored from J2 ce2631f · patches P1-P11"
+ },
+ {
+  "id": "D14",
+  "title": "One process per run, speaking only through files; the server makes the run folder",
+  "sources": [
+   "ENG-D2",
+   "S1-contracts-11"
+  ],
+  "section": "cross",
+  "box": "Department runtime",
+  "label": "process per run · files only · server makes the folder"
+ },
+ {
+  "id": "D15",
+  "title": "The run-event stream is a closed list of eight types",
+  "sources": [
+   "S1-contracts-09"
+  ],
+  "section": "cross",
+  "box": "Department runtime",
+  "label": "events: run.started · say · node · step · atom · usage"
+ },
+ {
+  "id": "D16",
+  "title": "The server is the only SQLite writer; a watcher projects the run files",
+  "sources": [
+   "ORCH-D5"
+  ],
+  "section": "orchestrator",
+  "box": "Server contents",
+  "label": "SQLite written by the server only"
+ },
+ {
+  "id": "D17",
+  "title": "One model seam: ModelPort, with PortSpec in the engine and make_port in the connectors",
+  "sources": [
+   "ENG-D3",
+   "S1-contracts-02",
+   "S1-contracts-07"
+  ],
+  "section": "cross",
+  "box": "Router",
+  "label": "one seam: make_port(PortSpec) -> ModelPort"
+ },
+ {
+  "id": "D18",
+  "title": "Engine flags: three layers, seven task keys, two files, edited in Settings",
+  "sources": [
+   "ENG-D9",
+   "S1-contracts-03"
+  ],
+  "section": "cross",
+  "box": "J2 chips",
+  "label": "settings: 2 files + 7 task keys · edit in Settings"
+ },
+ {
+  "id": "D19",
+  "title": "Failure semantics: one visible end state per failure, retries only in the router",
+  "sources": [
+   "ENG-D10"
+  ],
+  "section": "engine",
+  "box": "Department runtime",
+  "label": "run.ended: done · stopped · crashed"
+ },
+ {
+  "id": "D20",
+  "title": "Owner messages reach a run through an inbox queue; user_says never blocks",
+  "sources": [
+   "S1-contracts-13"
+  ],
+  "section": "cross",
+  "box": "Department runtime",
+  "label": "answers queue while a run finishes its turn"
+ },
+ {
+  "id": "D21",
+  "title": "A follow-up is a new task that continues from the old run folder when it can",
+  "sources": [
+   "ENG-D11",
+   "S1-contracts-12"
+  ],
+  "section": "cross",
+  "box": "Department records",
+  "label": "follow-up: rehydrate, else fresh with old files"
+ },
+ {
+  "id": "D22",
+  "title": "One live task per department, and two caps on processes",
+  "sources": [
+   "ORCH-D7",
+   "S1-contracts-14"
+  ],
+  "section": "cross",
+  "box": "Department runtime",
+  "label": "max runs counts working teams; waiting ones idle"
+ },
+ {
+  "id": "D23",
+  "title": "One stop ladder for stop, reset and app shutdown",
+  "sources": [
+   "S1-contracts-15",
+   "S1-contracts-04"
+  ],
+  "section": "cross",
+  "box": "Department runtime",
+  "label": "shutdown: stop · 8 s · SIGTERM · 4 s · SIGKILL"
+ },
+ {
+  "id": "D24",
+  "title": "Crash detection: a heartbeat every 5 s, and a reconcile pass at server start",
+  "sources": [
+   "S1-contracts-16"
+  ],
+  "section": "cross",
+  "box": "Department runtime",
+  "label": "crash = process gone, or silent 30 s at app start"
+ },
+ {
+  "id": "D25",
+  "title": "The J2 data routes have one implementation behind two thin adapters",
+  "sources": [
+   "ENG-D5",
+   "S3-web-07"
+  ],
+  "section": "engine",
+  "box": "Department runtime",
+  "label": "same /api paths, per department, live from files"
+ },
+ {
+  "id": "D26",
+  "title": "Memory is per department; the template library is one global store behind a file lock",
+  "sources": [
+   "ENG-D7"
+  ],
+  "section": "engine",
+  "box": "Template library",
+  "label": "global, file-locked · memory per department"
+ },
+ {
+  "id": "D27",
+  "title": "Every CLI call is its own subprocess with a clean environment",
+  "sources": [
+   "CD2"
+  ],
+  "section": "connectors",
+  "box": "ModelConnector base",
+  "label": "own process group · env allowlist"
+ },
+ {
+  "id": "D28",
+  "title": "Claude is driven in stream-json and the result line decides",
+  "sources": [
+   "CD3"
+  ],
+  "section": "connectors",
+  "box": "Claude connector",
+  "label": "stream-json · result line decides · error map"
+ },
+ {
+  "id": "D29",
+  "title": "Codex is driven with a fixed read-only flag set and a login check first",
+  "sources": [
+   "CD4"
+  ],
+  "section": "connectors",
+  "box": "Codex connector",
+  "label": "login status first · read-only sandbox"
+ },
+ {
+  "id": "D30",
+  "title": "Routing is a policy file validated by pydantic, not code",
+  "sources": [
+   "CD7"
+  ],
+  "section": "connectors",
+  "box": "Router",
+  "label": "policy table (data)"
+ },
+ {
+  "id": "D31",
+  "title": "Sign-in and quota are known before a call, with no credentials and no model call",
+  "sources": [
+   "CD8"
+  ],
+  "section": "connectors",
+  "box": "Router",
+  "label": "checks sign-in and quota first (no model call)"
+ },
+ {
+  "id": "D32",
+  "title": "Chat sessions: one process per turn, resumed, with a carry-over on a provider switch",
+  "sources": [
+   "CD9",
+   "S1-contracts-08"
+  ],
+  "section": "connectors",
+  "box": "Router",
+  "label": "carries the transcript on a switch"
+ },
+ {
+  "id": "D33",
+  "title": "Structured replies: native schema first, tolerant parse, strict check, two repair rounds at most",
+  "sources": [
+   "CD12",
+   "DL4"
+  ],
+  "section": "connectors",
+  "box": "Router",
+  "label": "asks for structured JSON · schema from the model class"
+ },
+ {
+  "id": "D34",
+  "title": "API-key logins are refused; Codex sign-in is started by the app; Sutra installs nothing",
+  "sources": [
+   "CD13",
+   "CD17",
+   "S1-contracts-17"
+  ],
+  "section": "connectors",
+  "box": "Codex connector",
+  "label": "your ChatGPT login, never an API key"
+ },
+ {
+  "id": "D35",
+  "title": "Tools: read-only Sutra tools and GitHub through gh; Gmail, Drive and Slack are shown, not built",
+  "sources": [
+   "CD14",
+   "CD15",
+   "CD16"
+  ],
+  "section": "connectors",
+  "box": "Tool connectors",
+  "label": "Sutra tools · GitHub via gh (read) · others shown only"
+ },
+ {
+  "id": "D36",
+  "title": "The stub connector runs only on purpose; there is no silent offline mode",
+  "sources": [
+   "CD11",
+   "CD18"
+  ],
+  "section": "connectors",
+  "box": "Connector layer",
+  "label": "Stub connector (tests, offline demo)"
+ },
+ {
+  "id": "D37",
+  "title": "Usage: one row per request, built by the router, stored as a per-call delta",
+  "sources": [
+   "CD5",
+   "CD6",
+   "S1-contracts-05",
+   "ENG-D3"
+  ],
+  "section": "connectors",
+  "box": "Usage and cost ledger",
+  "label": "router builds one row per call · server writes it"
+ },
+ {
+  "id": "D38",
+  "title": "The caller owns its budget; the router enforces only its own ceiling",
+  "sources": [
+   "CD10",
+   "S1-contracts-06"
+  ],
+  "section": "connectors",
+  "box": "Router",
+  "label": "envelope kept by caller · router ceiling 6"
+ },
+ {
+  "id": "D39",
+  "title": "Every library structure is a closed, strict, frozen pydantic class in three tiers",
+  "sources": [
+   "DL1"
+  ],
+  "section": "library",
+  "box": "Interface library",
+  "label": "closed · strict · frozen"
+ },
+ {
+  "id": "D40",
+  "title": "A registry keyed by family and version exports every schema; a breaking change is a new class",
+  "sources": [
+   "DL2"
+  ],
+  "section": "library",
+  "box": "Interface library",
+  "label": "registry · name/version · schema export"
+ },
+ {
+  "id": "D41",
+  "title": "One write gate: stores accept only checked objects",
+  "sources": [
+   "DL3",
+   "S2-models-01"
+  ],
+  "section": "library",
+  "box": "Interface library",
+  "label": "Gate.check at every write"
+ },
+ {
+  "id": "D42",
+  "title": "The library owns the org chart; one ChartChange record covers reuse, add and rearrange",
+  "sources": [
+   "DL5",
+   "S2-models-01"
+  ],
+  "section": "library",
+  "box": "ONE global org chart",
+  "label": "ids kept · 5 function nodes per department"
+ },
+ {
+  "id": "D43",
+  "title": "Chart ops go to the model as a union (anyOf); a flat class waits on a live check",
+  "sources": [
+   "S2-models-04"
+  ],
+  "section": "library",
+  "box": "Interface library",
+  "label": "chart ops: union via anyOf, flat fallback"
+ },
+ {
+  "id": "D44",
+  "title": "Graph nodes mirror the chart: library ids, nine J2 states, seven edge kinds, derived tree edges",
+  "sources": [
+   "DL7",
+   "S2-models-02",
+   "S2-models-03",
+   "ORCH-D6"
+  ],
+  "section": "library",
+  "box": "Workflow graph store",
+  "label": "ids sales · sales.identity · edges derived"
+ },
+ {
+  "id": "D45",
+  "title": "Workflow and Step are two-level base classes; a request becomes a TaskWorkflow of assignment steps",
+  "sources": [
+   "DL8",
+   "S2-models-13"
+  ],
+  "section": "library",
+  "box": "Interface library",
+  "label": "request -> TaskWorkflow -> step nodes"
+ },
+ {
+  "id": "D46",
+  "title": "J2's artifact models are ported to the library; the engine keeps a gated copy until parity is proved",
+  "sources": [
+   "DL9",
+   "S2-models-12",
+   "S1-contracts-18"
+  ],
+  "section": "library",
+  "box": "Interface library",
+  "label": "one definition in the library, engine gated"
+ },
+ {
+  "id": "D47",
+  "title": "J2's run files are checked on save through one catalogue; chat has two message shapes",
+  "sources": [
+   "DL10",
+   "S2-models-15",
+   "ENG-D8"
+  ],
+  "section": "library",
+  "box": "Department records",
+  "label": "records checked on save"
+ },
+ {
+  "id": "D48",
+  "title": "A Department record holds only its id, home folder and creation time",
+  "sources": [
+   "S2-models-14"
+  ],
+  "section": "library",
+  "box": "Department records",
+  "label": "Department record: id · home dir"
+ },
+ {
+  "id": "D49",
+  "title": "The final function-node spec FN-1 to FN-28 is adopted as written, except where S4 supersedes it",
+  "sources": [
+   "FN-1",
+   "FN-2",
+   "FN-3",
+   "FN-4",
+   "FN-5",
+   "FN-6",
+   "FN-7",
+   "FN-8",
+   "FN-9",
+   "FN-10",
+   "FN-11",
+   "FN-12",
+   "FN-13",
+   "FN-14",
+   "FN-15",
+   "FN-16",
+   "FN-17",
+   "FN-18",
+   "FN-19",
+   "FN-20",
+   "FN-21",
+   "FN-22",
+   "FN-23",
+   "FN-24",
+   "FN-25",
+   "FN-26",
+   "FN-27",
+   "FN-28",
+   "S4-fnodes-01",
+   "S4-fnodes-03",
+   "S4-fnodes-04",
+   "S4-fnodes-05",
+   "S4-fnodes-06",
+   "S4-fnodes-07",
+   "S4-fnodes-08",
+   "S4-fnodes-12"
+  ],
+  "section": "function-nodes",
+  "box": "the five function cards",
+  "label": "function nodes: FN-1..FN-28 (final spec)"
+ },
+ {
+  "id": "D50",
+  "title": "Code names: FunctionNode and Atom; AgentNode and WorkAtom are prose only",
+  "sources": [
+   "S4-fnodes-01",
+   "S2-models-08"
+  ],
+  "section": "function-nodes",
+  "box": "Interface library",
+  "label": "FunctionNode · Atom · AtomView"
+ },
+ {
+  "id": "D51",
+  "title": "The function-node layer runs inside the engine process; the server only stores",
+  "sources": [
+   "S2-models-05",
+   "ENG-D8",
+   "ORCH-D10"
+  ],
+  "section": "function-nodes",
+  "box": "Department runtime",
+  "label": "function layer inside the engine process"
+ },
+ {
+  "id": "D52",
+  "title": "Version 1 observes: J2 stays byte-identical, and 'hard' means a node closes only through passing checks",
+  "sources": [
+   "S4-fnodes-04"
+  ],
+  "section": "function-nodes",
+  "box": "the five function cards",
+  "label": "observe: J2 unchanged · scope warns"
+ },
+ {
+  "id": "D53",
+  "title": "One work atom per function turn, of AI, code or a question to you, declared before the work",
+  "sources": [
+   "S4-fnodes-03",
+   "S2-models-06"
+  ],
+  "section": "function-nodes",
+  "box": "the INSIDE EVERY NODE strip",
+  "label": "1 turn = 1 atom: AI, code or you"
+ },
+ {
+  "id": "D54",
+  "title": "The VERIFY registry: fourteen named checks, each a pure Python function",
+  "sources": [
+   "S4-fnodes-02",
+   "FN-11",
+   "FN-12"
+  ],
+  "section": "function-nodes",
+  "box": "the five function cards",
+  "label": "verify registry: 14 named checks"
+ },
+ {
+  "id": "D55",
+  "title": "Atom ids: `a-<sid>-<nn>` for function atoms, run-qualified `W-n.aK` for J2's",
+  "sources": [
+   "S2-models-10"
+  ],
+  "section": "function-nodes",
+  "box": "Atom log",
+  "label": "atom ids a-sid-nn · W-n.ak"
+ },
+ {
+  "id": "D56",
+  "title": "A refused open is stored, ledgered and carded; the turn goes on",
+  "sources": [
+   "S4-fnodes-05",
+   "S2-models-10"
+  ],
+  "section": "function-nodes",
+  "box": "the INSIDE EVERY NODE strip",
+  "label": "refused: logged, no work run"
+ },
+ {
+  "id": "D57",
+  "title": "Atoms are stored in four states and shown in five words",
+  "sources": [
+   "S4-fnodes-08",
+   "DL6"
+  ],
+  "section": "function-nodes",
+  "box": "the five function cards",
+  "label": "stored 4, shown 5 atom words"
+ },
+ {
+  "id": "D58",
+  "title": "Atom events, tables and cards: the server stores forward moves only",
+  "sources": [
+   "S2-models-07",
+   "S1-contracts-10"
+  ],
+  "section": "function-nodes",
+  "box": "Workflow graph store",
+  "label": "atom events -> atoms · ledger · cards"
+ },
+ {
+  "id": "D59",
+  "title": "Every model call is charged to exactly one atom id",
+  "sources": [
+   "S4-fnodes-07",
+   "FN-13"
+  ],
+  "section": "function-nodes",
+  "box": "Router",
+  "label": "every call has an atom id"
+ },
+ {
+  "id": "D60",
+  "title": "The Atom log is the atom_ledger table: append-only, one row per atom, builders included",
+  "sources": [
+   "S4-fnodes-09",
+   "FN-19"
+  ],
+  "section": "function-nodes",
+  "box": "Atom log",
+  "label": "Atom log: every atom once"
+ },
+ {
+  "id": "D61",
+  "title": "A function node is one stored record whose goal, task and context are set when it is made",
+  "sources": [
+   "S4-fnodes-14",
+   "S2-models-08",
+   "FN-4",
+   "FN-5"
+  ],
+  "section": "function-nodes",
+  "box": "the five function cards",
+  "label": "node: goal · task · context (static)"
+ },
+ {
+  "id": "D62",
+  "title": "The graph chip and the node drawer show fixed fields from named sources",
+  "sources": [
+   "S4-fnodes-10",
+   "S3-web-05",
+   "S2-models-09",
+   "UI-D6"
+  ],
+  "section": "function-nodes",
+  "box": "the five function cards",
+  "label": "chip: atoms open/closed · calls"
+ },
+ {
+  "id": "D63",
+  "title": "Chat sessions: one per node, a division is a lens, Identity's chip opens the department chat",
+  "sources": [
+   "S4-fnodes-06"
+  ],
+  "section": "function-nodes",
+  "box": "Chat sessions",
+  "label": "1 chat per node · division = lens"
+ },
+ {
+  "id": "D64",
+  "title": "Prose reaches the owner only from an Identity; Sutra is code",
+  "sources": [
+   "S4-fnodes-12",
+   "ORCH-D1"
+  ],
+  "section": "function-nodes",
+  "box": "Chat sessions",
+  "label": "prose only from Identity"
+ },
+ {
+  "id": "D65",
+  "title": "The department's goal is its charter file; no table copies it",
+  "sources": [
+   "S4-fnodes-13"
+  ],
+  "section": "function-nodes",
+  "box": "Department records",
+  "label": "charter = goal.json, no copy"
+ },
+ {
+  "id": "D66",
+  "title": "Function nodes are proved by registry fixtures, mutation of every check, a golden run and server replay",
+  "sources": [
+   "S4-fnodes-11"
+  ],
+  "section": "function-nodes",
+  "box": "Key",
+  "label": "golden + mutation tests per check"
+ },
+ {
+  "id": "D67",
+  "title": "One chart, one writer, one log",
+  "sources": [
+   "ORCH-D2"
+  ],
+  "section": "orchestrator",
+  "box": "ONE global org chart",
+  "label": "every change logged (before/after sha)"
+ },
+ {
+  "id": "D68",
+  "title": "The model proposes, code decides: reuse first; merging or splitting divisions asks the owner",
+  "sources": [
+   "ORCH-D3"
+  ],
+  "section": "orchestrator",
+  "box": "Chat agent",
+  "label": "reuses, adds or rearranges (merge, split ask first)"
+ },
+ {
+  "id": "D69",
+  "title": "The chat agent works in three staged structured calls with a keyword fallback",
+  "sources": [
+   "ORCH-D4"
+  ],
+  "section": "orchestrator",
+  "box": "Chat agent",
+  "label": "decide · change · assign, 3 tries each, keyword fallback"
+ },
+ {
+  "id": "D70",
+  "title": "Merging or splitting divisions files old chats under the survivor; no chat is dropped",
+  "sources": [
+   "S2-models-11"
+  ],
+  "section": "orchestrator",
+  "box": "Chat sessions",
+  "label": "merge: old chat archived under survivor"
+ },
+ {
+  "id": "D71",
+  "title": "The server holds the owner-override key; the engine only sees the command",
+  "sources": [
+   "S1-contracts-19"
+  ],
+  "section": "orchestrator",
+  "box": "Orchestration",
+  "label": "override key stays on the server"
+ },
+ {
+  "id": "D72",
+  "title": "Home at /, the J2 page at /d/{dept}/; only the UI package serves pages",
+  "sources": [
+   "UI-D1",
+   "S3-web-01",
+   "S3-web-02"
+  ],
+  "section": "ui",
+  "box": "Experience",
+  "label": "Home / · org chat + graph · team page /d/{dept}/"
+ },
+ {
+  "id": "D73",
+  "title": "J2's data routes sit at the root and the team is named in ?dept=",
+  "sources": [
+   "UI-D2",
+   "ENG-D4",
+   "S1-contracts-01",
+   "S3-web-12"
+  ],
+  "section": "ui",
+  "box": "Experience",
+  "label": "J2 paths at root · ?dept= picks the team"
+ },
+ {
+  "id": "D74",
+  "title": "One stylesheet for both pages, no CDN and no web fonts",
+  "sources": [
+   "UI-D3"
+  ],
+  "section": "ui",
+  "box": "Key",
+  "label": "no CDN, one stylesheet"
+ },
+ {
+  "id": "D75",
+  "title": "The graph and org chart views are drawn by pure layout functions; the org chart is read-only",
+  "sources": [
+   "UI-D4",
+   "UI-D7",
+   "S3-web-11"
+  ],
+  "section": "ui",
+  "box": "Experience",
+  "label": "pure layout · SVG · live · org chart read-only"
+ },
+ {
+  "id": "D76",
+  "title": "The J2 page port: twelve edits plus four additions found by re-checking against J2",
+  "sources": [
+   "S3-web-10"
+  ],
+  "section": "ui",
+  "box": "Experience",
+  "label": "?tab= deep link mounts new views"
+ },
+ {
+  "id": "D77",
+  "title": "The wire adds change lists, a fixed node order and function-node hands_to",
+  "sources": [
+   "S3-web-04"
+  ],
+  "section": "ui",
+  "box": "Workflow graph store",
+  "label": "wire: change lists · node order · fn meta"
+ },
+ {
+  "id": "D78",
+  "title": "Wire words follow the library: ids, J2 map statuses, edge kinds, atom state, chat POST errors",
+  "sources": [
+   "S3-web-13"
+  ],
+  "section": "ui",
+  "box": "Workflow graph store",
+  "label": "wire words: J2 map statuses, LIB ids"
+ },
+ {
+  "id": "D79",
+  "title": "New routes share one error envelope; library schemas move to /api/schemas; J2 paths match exactly",
+  "sources": [
+   "S3-web-15"
+  ],
+  "section": "ui",
+  "box": "Key",
+  "label": "errors: {error:{code,message,details}}"
+ },
+ {
+  "id": "D80",
+  "title": "Live updates: SSE with replay and resync; the page refetches and polls when the stream drops",
+  "sources": [
+   "ORCH-D8",
+   "S3-web-06",
+   "UI-D5"
+  ],
+  "section": "orchestrator",
+  "box": "Experience",
+  "label": "SSE: event, then refetch · polls if the stream drops"
+ },
+ {
+  "id": "D81",
+  "title": "Writes need a per-launch token in a header, with Host and Origin checks; no cookie anywhere",
+  "sources": [
+   "ORCH-D9",
+   "S3-web-03",
+   "UI-D9"
+  ],
+  "section": "orchestrator",
+  "box": "Key",
+  "label": "loopback + token header + Host/Origin check"
+ },
+ {
+  "id": "D82",
+  "title": "A script-hash CSP on both pages; no CDN and no fonts",
+  "sources": [
+   "S3-web-09"
+  ],
+  "section": "ui",
+  "box": "Key",
+  "label": "CSP: script hashes · no CDN · no fonts"
+ },
+ {
+  "id": "D83",
+  "title": "Generated sites are served sandboxed so they cannot read the page token",
+  "sources": [
+   "S3-web-14"
+  ],
+  "section": "ui",
+  "box": "Artifacts",
+  "label": "generated sites sandboxed"
+ },
+ {
+  "id": "D84",
+  "title": "The three J2 test scripts run as subprocess suites; goldens replace git-checkpoint comparisons",
+  "sources": [
+   "ENG-D6"
+  ],
+  "section": "repo",
+  "box": "Key",
+  "label": "J2 scripts as subprocess suites · goldens"
+ },
+ {
+  "id": "D85",
+  "title": "UI tests use only what is installed: node, headless Chrome over CDP and a fake backend",
+  "sources": [
+   "UI-D8"
+  ],
+  "section": "repo",
+  "box": "Key",
+  "label": "UI tests: node + Chrome over CDP + fake backend"
+ },
+ {
+  "id": "D86",
+  "title": "The wheel carries every data file, and a test keeps it true",
+  "sources": [
+   "S3-web-08"
+  ],
+  "section": "repo",
+  "box": "Key",
+  "label": "wheel carries every data file (tested)"
+ },
+ {
+  "id": "D87",
+  "title": "Build rule: each section uses the others' contracts as they stand",
+  "sources": [
+   "ORCH-D11"
+  ],
+  "section": "repo",
+  "box": "Key",
+  "label": "each section uses the others' contracts as they stand"
+ },
+ {
+  "id": "D88",
+  "title": "The finished app is installed on the owner's Mac as sutra-pro",
+  "sources": [
+   "owner request 2026-11-04"
+  ],
+  "section": "repo",
+  "box": "Key",
+  "label": "installed locally as sutra-pro (uv tool)"
+ },
+ {
+  "id": "D89",
+  "title": "The repository is sutra-pro; old repos read-only; GitHub builds mirror the old Sutra's",
+  "sources": [
+   "owner request 2026-11-04"
+  ],
+  "section": "repo",
+  "box": "Key",
+  "label": "repo sutra-pro · CI and release builds like old Sutra"
+ },
+ {
+  "id": "D90",
+  "title": "The J2 baseline moves to 33aeeda; a run keeps its own copy of every template it used",
+  "sources": [
+   "owner request 2026-11-04",
+   "J2 PR #30"
+  ],
+  "section": "engine",
+  "box": "Template library",
+  "label": "J2 baseline 33aeeda · runs keep template copies"
+ }
+]

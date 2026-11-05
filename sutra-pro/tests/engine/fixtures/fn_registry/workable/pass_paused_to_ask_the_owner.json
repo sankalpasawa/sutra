@@ -1,0 +1,59 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "audit"
+  },
+  "outcome": {
+   "result": "paused",
+   "next": null
+  },
+  "records": {
+   "audits.json": [
+    {
+     "cycle": 1,
+     "version": 1,
+     "results": [
+      {
+       "id": "F-1",
+       "item": 1,
+       "criterion": "Item 1",
+       "verdict": "PASS",
+       "note": "seen on the page",
+       "pass": true
+      },
+      {
+       "id": "F-2",
+       "item": 2,
+       "criterion": "Item 2",
+       "verdict": "NEEDS_REVISION",
+       "note": "no hours",
+       "pass": false
+      }
+     ],
+     "rubric": [],
+     "conditions": [],
+     "mechanical": {
+      "available": true,
+      "phone": {
+       "width": 360,
+       "overflow_px": 0
+      },
+      "desktop": {
+       "width": 1280,
+       "overflow_px": 0
+      },
+      "js_errors": [],
+      "broken_in_page_links": [],
+      "form_results": []
+     }
+    }
+   ]
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "not workable: 1 problem, back to J2.b"
+ }
+}

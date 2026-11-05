@@ -1,0 +1,24 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "adaptation",
+   "kind": "propose"
+  },
+  "records": {
+   "realization.json": {
+    "plan_confidence": 0.5
+   }
+  },
+  "before": {
+   "realization.json": {
+    "plan_confidence": 0.5
+   }
+  }
+ },
+ "expect": {
+  "ok": true,
+  "na": true,
+  "evidence": "no plan saved this turn"
+ }
+}

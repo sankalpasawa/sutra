@@ -1,0 +1,22 @@
+{
+ "args": [
+  "identity",
+  "approval|approval_ask"
+ ],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "approval"
+  },
+  "call": {},
+  "reply": {
+   "clause": "c",
+   "decision": "ASK",
+   "say": "ask"
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "ok"
+ }
+}

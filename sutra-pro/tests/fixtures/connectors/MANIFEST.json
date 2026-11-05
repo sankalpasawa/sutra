@@ -1,0 +1,434 @@
+{
+ "note": "origin=captured files are real output of the CLIs named, scrubbed (no identity, no path, no secret) and, for claude init events, trimmed to the keys a connector reads. origin=derived files are captured streams with the listed fields edited; their wording is only as verified as wording_source says. origin=handwritten files are written by hand from the CLIs' documented or observed formats; nothing in them was captured, and their wording is only as verified as wording_source says. recorded_after names the fixture whose session this one continues: its counters (Claude total_cost_usd and modelUsage, Codex turn.completed.usage) are cumulative for the session, and the fake CLIs subtract that fixture to get the per-turn amounts (a derived file inherits it from its base).",
+ "files": [
+  {
+   "path": "claude/stream_structured_ok.jsonl",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "claude -p --output-format stream-json --verbose --include-partial-messages --json-schema {answer} --tools '' --strict-mcp-config --disable-slash-commands --setting-sources '' --model sonnet --effort low --session-id <uuid>; prompt on stdin; env allowlist",
+   "shows": "full successful stream with partial messages: init, status, stream_event, assistant(tool_use StructuredOutput), user(tool_result), rate_limit_event, result.structured_output, total_cost_usd"
+  },
+  {
+   "path": "claude/stream_resume_plain_ok.jsonl",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "same flags without schema and partials, --resume <uuid>",
+   "shows": "resume: same session_id; result.usage per turn but modelUsage/total_cost_usd cumulative",
+   "recorded_after": "claude/stream_structured_ok.jsonl"
+  },
+  {
+   "path": "claude/stream_not_logged_in.jsonl",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "claude -p ... with an EMPTY CLAUDE_CONFIG_DIR (no credential, no model reachable)",
+   "shows": "signed-out: assistant.error == authentication_failed; result.is_error true but subtype still 'success'; exit code 1"
+  },
+  {
+   "path": "claude/stream_mcp_server_connected.jsonl",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "empty CLAUDE_CONFIG_DIR + --mcp-config <stdio server> --strict-mcp-config",
+   "shows": "init.mcp_servers == [{name: sutra, status: connected, source: dynamic}], init.tools == [mcp__sutra__ping]"
+  },
+  {
+   "path": "claude/control_interrupt_response.jsonl",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "stdin control_request {subtype: interrupt} with --input-format stream-json",
+   "shows": "interrupt protocol answers success"
+  },
+  {
+   "path": "claude/auth_status_signed_in.json",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "claude auth status (identity scrubbed)",
+   "shows": "stdout JSON, exit 0"
+  },
+  {
+   "path": "claude/auth_status_signed_out.json",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "claude auth status with an empty CLAUDE_CONFIG_DIR",
+   "shows": "stdout JSON, exit 1"
+  },
+  {
+   "path": "codex/exec_structured_ok.jsonl",
+   "origin": "captured",
+   "cli": "codex-cli 0.146.0",
+   "command": "codex exec --json --skip-git-repo-check --ignore-user-config --ignore-rules -s read-only -C <dir> -m gpt-5.6-luna -c model_reasoning_effort=\"low\" --output-schema schema.json -  (prompt on stdin)",
+   "shows": "four-line success stream; usage has input_tokens (12168 for a one-word prompt), cached_input_tokens, cache_write_input_tokens, output_tokens, reasoning_output_tokens; no cost"
+  },
+  {
+   "path": "codex/exec_resume_plain_ok.jsonl",
+   "origin": "captured",
+   "cli": "codex-cli 0.146.0",
+   "command": "codex exec resume --json ... -c sandbox_mode=\"read-only\" <thread_id> -",
+   "shows": "resume: same thread_id; usage is cumulative for the thread (24342 = 12168 + 12174)",
+   "recorded_after": "codex/exec_structured_ok.jsonl"
+  },
+  {
+   "path": "codex/exec_not_signed_in.jsonl",
+   "origin": "captured",
+   "cli": "codex-cli 0.146.0",
+   "command": "codex exec --json ... with an EMPTY CODEX_HOME (no credential)",
+   "shows": "error events 'Reconnecting... n/5 (unexpected status 401 ...)' for about 18 s, then turn.failed; exit 1. Check login status BEFORE calling"
+  },
+  {
+   "path": "codex/login_device_auth.txt",
+   "origin": "captured",
+   "cli": "codex-cli 0.146.0",
+   "command": "codex login --device-auth in a temporary CODEX_HOME, killed after the code was printed",
+   "shows": "device sign-in text with ANSI colours: link, one-time code (scrubbed), 15-minute expiry"
+  },
+  {
+   "path": "codex/models_excerpt.json",
+   "origin": "captured",
+   "cli": "codex-cli 0.146.0",
+   "command": "codex debug models (excerpt: no instructions text)",
+   "shows": "model catalog: slug, visibility list|hide, supported_reasoning_levels, context_window"
+  },
+  {
+   "path": "codex/rollout_token_count.jsonl",
+   "origin": "captured",
+   "cli": "codex-cli 0.146.0",
+   "command": "token_count events from the rollout file of the thread above",
+   "shows": "total_token_usage vs last_token_usage, and rate_limits {primary.used_percent, window_minutes, resets_at, plan_type}: not in the --json stream"
+  },
+  {
+   "path": "mcp/claude_client_requests.jsonl",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "what the probe MCP server received from claude",
+   "shows": "server/discover first (answer -32601), then initialize 2025-11-25, notifications/initialized, tools/list"
+  },
+  {
+   "path": "mcp/codex_client_requests.jsonl",
+   "origin": "captured",
+   "cli": "codex-cli 0.146.0",
+   "command": "what the probe MCP server received from codex",
+   "shows": "initialize 2025-06-18, notifications/initialized, tools/list"
+  },
+  {
+   "path": "cli_errors.json",
+   "origin": "captured",
+   "cli": "claude 2.1.308; codex-cli 0.146.0",
+   "command": "see the probe list inside",
+   "shows": "exit codes and stderr texts of the failures that need no model call; signal behaviour"
+  },
+  {
+   "path": "derived/claude_quota_rejected.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_not_logged_in.jsonl",
+   "change": "error=rate_limit, api_error_status=429, rate_limit_event status=rejected with resetsAt",
+   "wording_source": "\"You've hit your limit\" is in the binary; assistant.error enum and result subtypes are from the CLI's own message schema (binary strings); the text after the dash is NOT verified"
+  },
+  {
+   "path": "derived/claude_billing_error.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_not_logged_in.jsonl",
+   "change": "error=billing_error, status 400, text 'Credit balance is too low' (text is in the binary)",
+   "wording_source": "assistant.error enum and result subtypes are from the CLI's own message schema (binary strings); the text after the dash is NOT verified"
+  },
+  {
+   "path": "derived/claude_overloaded.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_not_logged_in.jsonl",
+   "change": "error=overloaded, status 529",
+   "wording_source": "assistant.error enum and result subtypes are from the CLI's own message schema (binary strings); the text after the dash is NOT verified"
+  },
+  {
+   "path": "derived/claude_server_error.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_not_logged_in.jsonl",
+   "change": "error=server_error, status 500",
+   "wording_source": "assistant.error enum and result subtypes are from the CLI's own message schema (binary strings); the text after the dash is NOT verified"
+  },
+  {
+   "path": "derived/claude_invalid_request.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_not_logged_in.jsonl",
+   "change": "error=invalid_request, status 400, 'Prompt is too long' (text is in the binary)",
+   "wording_source": "assistant.error enum and result subtypes are from the CLI's own message schema (binary strings); the text after the dash is NOT verified"
+  },
+  {
+   "path": "derived/claude_model_not_found.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_not_logged_in.jsonl",
+   "change": "error=model_not_found, status 404",
+   "wording_source": "assistant.error enum and result subtypes are from the CLI's own message schema (binary strings); the text after the dash is NOT verified"
+  },
+  {
+   "path": "derived/claude_login_expired.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_not_logged_in.jsonl",
+   "change": "error=authentication_failed, 'Login expired · Please run /login' (text is in the binary)",
+   "wording_source": "assistant.error enum and result subtypes are from the CLI's own message schema (binary strings); the text after the dash is NOT verified"
+  },
+  {
+   "path": "derived/claude_structured_failed.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_structured_ok.jsonl",
+   "change": "result.subtype=error_max_structured_output_retries, is_error true, no structured_output",
+   "wording_source": "subtype name is in the CLI's result schema"
+  },
+  {
+   "path": "derived/claude_error_during_execution.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_resume_plain_ok.jsonl",
+   "change": "result.subtype=error_during_execution, is_error true",
+   "wording_source": "subtype name is in the CLI's result schema"
+  },
+  {
+   "path": "derived/claude_truncated_no_result.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_resume_plain_ok.jsonl",
+   "change": "cut after the first assistant line: no result line (the fake exits 137)",
+   "wording_source": "n/a"
+  },
+  {
+   "path": "derived/claude_plain_not_json.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_resume_plain_ok.jsonl",
+   "change": "reply text is a cut-off JSON object",
+   "wording_source": "n/a"
+  },
+  {
+   "path": "derived/claude_plain_json_in_fence.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_resume_plain_ok.jsonl",
+   "change": "reply text is a fenced json block",
+   "wording_source": "n/a"
+  },
+  {
+   "path": "derived/claude_plain_json_wrong_shape.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_resume_plain_ok.jsonl",
+   "change": "reply is valid JSON of the wrong shape",
+   "wording_source": "n/a"
+  },
+  {
+   "path": "derived/claude_noise_lines.jsonl",
+   "origin": "derived",
+   "base": "claude/stream_resume_plain_ok.jsonl",
+   "change": "a non-JSON line and a blank line after init",
+   "wording_source": "n/a"
+  },
+  {
+   "path": "derived/codex_usage_limit.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_structured_ok.jsonl",
+   "change": "turn.failed with the usage-limit sentence",
+   "wording_source": "\"You've hit your usage limit\" and the purchase-credits sentence are in the binary"
+  },
+  {
+   "path": "derived/codex_rate_limited_429.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_not_signed_in.jsonl",
+   "change": "401 retries replaced by 429, final 'exceeded retry limit, last status: 429 Too Many Requests'",
+   "wording_source": "'exceeded retry limit, last status:' is in the binary; the status text after it is NOT verified"
+  },
+  {
+   "path": "derived/codex_server_error_500.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_not_signed_in.jsonl",
+   "change": "same with 500",
+   "wording_source": "as above"
+  },
+  {
+   "path": "derived/codex_schema_rejected_400.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_not_signed_in.jsonl",
+   "change": "turn.failed 400 with a schema complaint",
+   "wording_source": "UNVERIFIED wording; the connector matches on '400' and 'schema'"
+  },
+  {
+   "path": "derived/codex_model_unsupported_400.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_not_signed_in.jsonl",
+   "change": "turn.failed 400 about the model",
+   "wording_source": "UNVERIFIED wording; the connector matches on '400' and 'model'"
+  },
+  {
+   "path": "derived/codex_reply_not_json.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_structured_ok.jsonl",
+   "change": "agent_message text is a cut-off JSON object",
+   "wording_source": "n/a"
+  },
+  {
+   "path": "derived/codex_reply_wrong_shape.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_structured_ok.jsonl",
+   "change": "valid JSON, wrong shape",
+   "wording_source": "n/a"
+  },
+  {
+   "path": "derived/codex_reply_in_fence.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_structured_ok.jsonl",
+   "change": "fenced json block",
+   "wording_source": "n/a"
+  },
+  {
+   "path": "derived/codex_truncated_no_turn_end.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_structured_ok.jsonl",
+   "change": "only thread.started and turn.started (the fake exits 137)",
+   "wording_source": "n/a"
+  },
+  {
+   "path": "derived/codex_empty_reply.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_structured_ok.jsonl",
+   "change": "turn.completed without any agent_message",
+   "wording_source": "n/a"
+  },
+  {
+   "path": "derived/codex_unknown_item_type.jsonl",
+   "origin": "derived",
+   "base": "codex/exec_structured_ok.jsonl",
+   "change": "a command_execution item before the agent_message",
+   "wording_source": "item type names are in the binary; its field names are NOT verified, so the parser must only rely on item.type"
+  },
+  {
+   "path": "claude/stream_resume_unknown_session.jsonl",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "claude -p --output-format stream-json --verbose --resume <unknown uuid> (fails while loading the session; no model request)",
+   "shows": "lost provider session: exit 1, result.subtype error_during_execution with num_turns 0, stderr 'No conversation found with session ID'"
+  },
+  {
+   "path": "claude/help.txt",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "claude --help",
+   "shows": "flag list used by the capability probe (feature detection instead of a version table)"
+  },
+  {
+   "path": "codex/exec_help.txt",
+   "origin": "captured",
+   "cli": "codex-cli 0.146.0",
+   "command": "codex exec --help",
+   "shows": "flag list used by the capability probe"
+  },
+  {
+   "path": "codex/exec_resume_help.txt",
+   "origin": "captured",
+   "cli": "codex-cli 0.146.0",
+   "command": "codex exec resume --help",
+   "shows": "resume accepts no -s and no -C; accepts --output-schema, --json, -c, -m, -i"
+  },
+  {
+   "path": "claude/stream_tool_profile_init.jsonl",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "empty CLAUDE_CONFIG_DIR + --tools '' --strict-mcp-config --mcp-config <0600 file> --restricted --allowedTools 'mcp__sutra__*' --permission-mode dontAsk --permission-prompts none",
+   "shows": "the tool-profile flag set is accepted: init.permissionMode == dontAsk, mcp server connected, tool mcp__sutra__ping. An actual tool call by a model is NOT verified"
+  },
+  {
+   "path": "handwritten/claude_version.txt",
+   "origin": "handwritten",
+   "source": "the usual `claude --version` line",
+   "shows": "what `claude --version` prints",
+   "wording_source": "UNVERIFIED: written from memory of the format; nothing was run to produce it"
+  },
+  {
+   "path": "handwritten/codex_version.txt",
+   "origin": "handwritten",
+   "source": "the usual `codex --version` line",
+   "shows": "what `codex --version` prints",
+   "wording_source": "UNVERIFIED: written from memory of the format; nothing was run to produce it"
+  },
+  {
+   "path": "handwritten/codex_help.txt",
+   "origin": "handwritten",
+   "source": "`codex exec --help` command list and the Codex CLI's usual top-level help",
+   "shows": "top-level `codex --help` (only exec and exec resume help were captured)",
+   "wording_source": "UNVERIFIED: written from memory of the format; nothing was run to produce it"
+  },
+  {
+   "path": "handwritten/claude_mcp_list.txt",
+   "origin": "handwritten",
+   "source": "ADR-035 of the Sutra plugin (statuses seen on claude 2.1.212: Connected, Needs authentication, Connected + tools fetch failed)",
+   "shows": "`claude mcp list` with claude.ai rows and one local row; the command was NOT run because it rewrites Claude's state",
+   "wording_source": "UNVERIFIED: row layout after ADR-035; the 2.1.308 output was not captured"
+  },
+  {
+   "path": "handwritten/claude_mcp_list_local.txt",
+   "origin": "handwritten",
+   "source": "as above",
+   "shows": "`claude mcp list` with a local row only: no claude.ai row, so absence is not provable",
+   "wording_source": "UNVERIFIED, as above"
+  },
+  {
+   "path": "handwritten/claude_mcp_list_empty.txt",
+   "origin": "handwritten",
+   "source": "ADR-035 finding M5 (\"No MCP servers configured.\", exit 0)",
+   "shows": "`claude mcp list` offline or with nothing configured",
+   "wording_source": "UNVERIFIED, as above"
+  },
+  {
+   "path": "handwritten/gh/version.txt",
+   "origin": "handwritten",
+   "source": "`gh --version` as printed by the gh installed on the author's Mac (2.87.3)",
+   "shows": "gh version banner",
+   "wording_source": "format observed on gh 2.87.3; the command ran, no network"
+  },
+  {
+   "path": "handwritten/gh/auth_status_signed_in.txt",
+   "origin": "handwritten",
+   "source": "gh's usual `gh auth status` text",
+   "shows": "signed-in status (exit 0); the token is masked",
+   "wording_source": "UNVERIFIED: written from memory of the format; nothing was run to produce it"
+  },
+  {
+   "path": "handwritten/gh/auth_status_signed_out.txt",
+   "origin": "handwritten",
+   "source": "gh's usual text",
+   "shows": "signed-out status (exit 1, stderr)",
+   "wording_source": "UNVERIFIED: written from memory of the format; nothing was run to produce it"
+  },
+  {
+   "path": "handwritten/gh/auth_required.txt",
+   "origin": "handwritten",
+   "source": "gh's usual text",
+   "shows": "what `gh api` prints without any login (exit 4)",
+   "wording_source": "UNVERIFIED: written from memory of the format; nothing was run to produce it"
+  },
+  {
+   "path": "handwritten/gh/errors.json",
+   "origin": "handwritten",
+   "source": "GitHub REST error bodies and gh's stderr lines",
+   "shows": "not found, rate limit, bad credentials, server error and network failure as `gh api` shows them",
+   "wording_source": "UNVERIFIED: written from memory of the format; nothing was run to produce it"
+  },
+  {
+   "path": "handwritten/gh/repo.json",
+   "origin": "handwritten",
+   "source": "GitHub REST `GET /repos/{owner}/{repo}`, trimmed; __OWNER__ and __REPO__ are filled in by the fake",
+   "shows": "repository object",
+   "wording_source": "field names from the REST docs; values invented"
+  },
+  {
+   "path": "handwritten/gh/pulls.json",
+   "origin": "handwritten",
+   "source": "GitHub REST `GET /repos/{owner}/{repo}/pulls`, trimmed",
+   "shows": "two pull requests (one open, one merged); also served one by one",
+   "wording_source": "field names from the REST docs; values invented"
+  },
+  {
+   "path": "handwritten/gh/issues.json",
+   "origin": "handwritten",
+   "source": "GitHub REST `GET /repos/{owner}/{repo}/issues`, trimmed",
+   "shows": "two issues; issue 3 carries a prompt-injection sentence for the untrusted-content wrapper tests",
+   "wording_source": "field names from the REST docs; values invented"
+  },
+  {
+   "path": "handwritten/gh/files.json",
+   "origin": "handwritten",
+   "source": "file texts for `GET /repos/{owner}/{repo}/contents/{path}`",
+   "shows": "README.md, docs/guide.md and src/app.py; `big.txt` is generated by the fake",
+   "wording_source": "invented"
+  }
+ ]
+}

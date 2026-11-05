@@ -1,0 +1,32 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "price"
+  },
+  "reply": {
+   "decision": "GRANT",
+   "workflows": [
+    {
+     "name": "Build menu"
+    },
+    {
+     "name": "Hero",
+     "cost": 5
+    }
+   ]
+  },
+  "posted": [
+   {
+    "id": 9,
+    "who": "system",
+    "text": "Priority's GRANT has no cost or envelope for Build menu, and the proposal it was shown has no price either. Priority is asked once more; the workflow is not rejected for that."
+   }
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "no price for Build menu after the second ask"
+ }
+}

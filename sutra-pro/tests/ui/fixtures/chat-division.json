@@ -1,0 +1,67 @@
+{
+  "session": {
+    "id": "cs_3e11bad0c0de",
+    "node_id": "menu",
+    "kind": "division",
+    "title": "Menu",
+    "writable": true,
+    "status": "active",
+    "filed_under": null,
+    "connector": null,
+    "model": null,
+    "provider_session_id": null,
+    "last_message_id": 0,
+    "note": ""
+  },
+  "messages": [
+    {
+      "id": 1,
+      "session_id": "cs_3e11bad0c0de",
+      "role": "agent",
+      "who": "system",
+      "kind": "note",
+      "text": "Menu is a division of Content. This chat shows Content's work for Menu.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:31:06Z"
+    },
+    {
+      "id": 2,
+      "session_id": "cs_3e11bad0c0de",
+      "role": "user",
+      "who": "user",
+      "kind": "text",
+      "text": "Write the menu page copy",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": "tsk_b7c8d9e0f1a2",
+      "state": "ok",
+      "at": "2026-11-04T10:31:30Z"
+    },
+    {
+      "id": 3,
+      "session_id": "cs_3e11bad0c0de",
+      "role": "agent",
+      "who": "identity",
+      "kind": "text",
+      "text": "@Requester Done. The menu page copy is ready for you to read.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": "tsk_b7c8d9e0f1a2",
+      "state": "ok",
+      "at": "2026-11-04T10:36:00Z"
+    }
+  ],
+  "initial_visible": 0,
+  "visible_at": {
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "full": 3
+  }
+}

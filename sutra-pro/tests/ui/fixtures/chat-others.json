@@ -1,0 +1,301 @@
+{
+  "sessions": [
+    {
+      "session": {
+        "id": "cs_6c0ffee1b2a3",
+        "node_id": "content",
+        "kind": "department",
+        "title": "Content",
+        "writable": true,
+        "status": "active",
+        "filed_under": null,
+        "connector": "claude",
+        "model": "sonnet",
+        "provider_session_id": null,
+        "last_message_id": 0,
+        "note": ""
+      },
+      "messages": [
+        {
+          "id": 1,
+          "session_id": "cs_6c0ffee1b2a3",
+          "role": "user",
+          "who": "user",
+          "kind": "text",
+          "text": "Write the menu page copy",
+          "card": null,
+          "pause": null,
+          "answered_by": null,
+          "task_id": "tsk_b7c8d9e0f1a2",
+          "state": "ok",
+          "at": "2026-11-04T10:31:30Z"
+        },
+        {
+          "id": 2,
+          "session_id": "cs_6c0ffee1b2a3",
+          "role": "agent",
+          "who": "identity",
+          "kind": "text",
+          "text": "@Requester Done. The menu page copy is ready for you to read.",
+          "card": null,
+          "pause": null,
+          "answered_by": null,
+          "task_id": "tsk_b7c8d9e0f1a2",
+          "state": "ok",
+          "at": "2026-11-04T10:36:00Z"
+        }
+      ],
+      "initial_visible": 0,
+      "visible_at": {
+        "full": 2
+      }
+    },
+    {
+      "session": {
+        "id": "cs_b37b2000ef36",
+        "node_id": "web.adaptation",
+        "kind": "function",
+        "title": "Adaptation",
+        "writable": false,
+        "status": "active",
+        "filed_under": null,
+        "connector": "claude",
+        "model": "sonnet",
+        "provider_session_id": null,
+        "last_message_id": 0,
+        "note": ""
+      },
+      "messages": [
+        {
+          "id": 1,
+          "session_id": "cs_b37b2000ef36",
+          "role": "agent",
+          "who": "adaptation",
+          "kind": "text",
+          "text": "@Priority Proposing 3 workflows: Plan, Build the hero and menu, Build the opening hours.",
+          "card": null,
+          "pause": null,
+          "answered_by": null,
+          "task_id": null,
+          "state": "ok",
+          "at": "2026-11-04T10:02:40Z"
+        },
+        {
+          "id": 2,
+          "session_id": "cs_b37b2000ef36",
+          "role": "agent",
+          "who": "validator",
+          "kind": "text",
+          "text": "Validator rejected 'Build the opening hours': missing completion_check.",
+          "card": null,
+          "pause": null,
+          "answered_by": null,
+          "task_id": null,
+          "state": "ok",
+          "at": "2026-11-04T10:02:44Z"
+        },
+        {
+          "id": 3,
+          "session_id": "cs_b37b2000ef36",
+          "role": "agent",
+          "who": "adaptation",
+          "kind": "text",
+          "text": "@Priority Revised: 3 workflows, each with a completion check.",
+          "card": null,
+          "pause": null,
+          "answered_by": null,
+          "task_id": null,
+          "state": "ok",
+          "at": "2026-11-04T10:02:52Z"
+        }
+      ],
+      "initial_visible": 0,
+      "visible_at": {
+        "3": 3,
+        "full": 3
+      }
+    },
+    {
+      "session": {
+        "id": "cs_7731b1a82306",
+        "node_id": "web.priority",
+        "kind": "function",
+        "title": "Priority",
+        "writable": false,
+        "status": "active",
+        "filed_under": null,
+        "connector": "claude",
+        "model": "sonnet",
+        "provider_session_id": null,
+        "last_message_id": 0,
+        "note": ""
+      },
+      "messages": [
+        {
+          "id": 1,
+          "session_id": "cs_7731b1a82306",
+          "role": "agent",
+          "who": "priority",
+          "kind": "text",
+          "text": "@Adaptation GRANT: 3 workflows priced, 24 credits of 100.",
+          "card": null,
+          "pause": null,
+          "answered_by": null,
+          "task_id": null,
+          "state": "ok",
+          "at": "2026-11-04T10:03:10Z"
+        }
+      ],
+      "initial_visible": 0,
+      "visible_at": {
+        "full": 1
+      }
+    },
+    {
+      "session": {
+        "id": "cs_0a584a5e9e60",
+        "node_id": "web.coordination",
+        "kind": "function",
+        "title": "Coordination",
+        "writable": false,
+        "status": "active",
+        "filed_under": null,
+        "connector": "claude",
+        "model": "sonnet",
+        "provider_session_id": null,
+        "last_message_id": 0,
+        "note": ""
+      },
+      "messages": [
+        {
+          "id": 1,
+          "session_id": "cs_0a584a5e9e60",
+          "role": "agent",
+          "who": "coordination",
+          "kind": "text",
+          "text": "@Priority Schedule: W-1, then W-2 and W-3. No holds.",
+          "card": null,
+          "pause": null,
+          "answered_by": null,
+          "task_id": null,
+          "state": "ok",
+          "at": "2026-11-04T10:03:30Z"
+        }
+      ],
+      "initial_visible": 0,
+      "visible_at": {
+        "full": 1
+      }
+    },
+    {
+      "session": {
+        "id": "cs_e1acceab39f9",
+        "node_id": "web.audit",
+        "kind": "function",
+        "title": "Audit",
+        "writable": false,
+        "status": "active",
+        "filed_under": null,
+        "connector": "claude",
+        "model": "sonnet",
+        "provider_session_id": null,
+        "last_message_id": 0,
+        "note": ""
+      },
+      "messages": [
+        {
+          "id": 1,
+          "session_id": "cs_e1acceab39f9",
+          "role": "agent",
+          "who": "audit",
+          "kind": "text",
+          "text": "@Identity All criteria pass; done-when may hold.",
+          "card": null,
+          "pause": null,
+          "answered_by": null,
+          "task_id": null,
+          "state": "ok",
+          "at": "2026-11-04T10:09:12Z"
+        }
+      ],
+      "initial_visible": 0,
+      "visible_at": {
+        "full": 1
+      }
+    },
+    {
+      "session": {
+        "id": "cs_0c91d4aa3e77",
+        "node_id": "s-3f9a1c2b7d",
+        "kind": "step",
+        "title": "Coffee shop landing page",
+        "writable": false,
+        "status": "active",
+        "filed_under": null,
+        "connector": "claude",
+        "model": "sonnet",
+        "provider_session_id": null,
+        "last_message_id": 0,
+        "note": ""
+      },
+      "messages": [
+        {
+          "id": 1,
+          "session_id": "cs_0c91d4aa3e77",
+          "role": "agent",
+          "who": "system",
+          "kind": "text",
+          "text": "Task started: Coffee shop landing page.",
+          "card": null,
+          "pause": null,
+          "answered_by": null,
+          "task_id": null,
+          "state": "ok",
+          "at": "2026-11-04T10:00:06Z"
+        }
+      ],
+      "initial_visible": 0,
+      "visible_at": {
+        "2": 1,
+        "3": 1,
+        "full": 1
+      }
+    },
+    {
+      "session": {
+        "id": "cs_662ce41c63ee",
+        "node_id": "s-1a2d9a66b0",
+        "kind": "step",
+        "title": "Plan the page",
+        "writable": false,
+        "status": "active",
+        "filed_under": null,
+        "connector": "claude",
+        "model": "sonnet",
+        "provider_session_id": null,
+        "last_message_id": 0,
+        "note": ""
+      },
+      "messages": [
+        {
+          "id": 1,
+          "session_id": "cs_662ce41c63ee",
+          "role": "agent",
+          "who": "W-1",
+          "kind": "text",
+          "text": "Built the plan: a hero, the menu, the opening hours and a map.",
+          "card": null,
+          "pause": null,
+          "answered_by": null,
+          "task_id": null,
+          "state": "ok",
+          "at": "2026-11-04T10:04:00Z"
+        }
+      ],
+      "initial_visible": 0,
+      "visible_at": {
+        "full": 1
+      }
+    }
+  ]
+}

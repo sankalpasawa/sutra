@@ -1,0 +1,126 @@
+{
+  "additionalProperties": false,
+  "description": "A lesson saved for future runs (J2:9300; memory/lessons.jsonl): the problem, its cause and the fix that worked, with\nwhere it was learnt. J2's lines have no `kind`: the catalogue supplies it.",
+  "properties": {
+    "cause": {
+      "default": "",
+      "maxLength": 600,
+      "title": "Cause",
+      "type": "string"
+    },
+    "cycle": {
+      "minimum": 0,
+      "title": "Cycle",
+      "type": "integer"
+    },
+    "fix": {
+      "maxLength": 600,
+      "minLength": 1,
+      "title": "Fix",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^L-[A-Za-z0-9_.-]{1,60}-[0-9]{1,6}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "const": "lesson",
+      "default": "lesson",
+      "title": "Kind",
+      "type": "string"
+    },
+    "mock": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mock"
+    },
+    "output": {
+      "anyOf": [
+        {
+          "maxLength": 20,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Output"
+    },
+    "problem": {
+      "maxLength": 600,
+      "minLength": 1,
+      "title": "Problem",
+      "type": "string"
+    },
+    "run": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Run",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "t": {
+      "maxLength": 40,
+      "minLength": 1,
+      "title": "T",
+      "type": "string"
+    },
+    "test": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Test"
+    },
+    "versions": {
+      "items": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "title": "Versions",
+      "type": "array"
+    },
+    "workflows": {
+      "default": [],
+      "items": {
+        "maxLength": 12,
+        "pattern": "^W-[0-9]+$",
+        "type": "string"
+      },
+      "maxItems": 40,
+      "title": "Workflows",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "problem",
+    "fix",
+    "run",
+    "cycle",
+    "versions",
+    "t"
+  ],
+  "title": "Lesson",
+  "type": "object"
+}

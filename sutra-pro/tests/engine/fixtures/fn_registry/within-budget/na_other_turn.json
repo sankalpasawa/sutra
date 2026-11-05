@@ -1,0 +1,14 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "dispute"
+  }
+ },
+ "expect": {
+  "ok": true,
+  "na": true,
+  "evidence": "no price or envelope in this turn"
+ }
+}

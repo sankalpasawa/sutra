@@ -1,0 +1,1462 @@
+{
+  "$defs": {
+    "CallRange": {
+      "additionalProperties": false,
+      "description": "The ids of the first and last AI call that made a document (documents.json).",
+      "properties": {
+        "from": {
+          "minimum": 0,
+          "title": "From",
+          "type": "integer"
+        },
+        "to": {
+          "minimum": 0,
+          "title": "To",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "CallRange",
+      "type": "object"
+    },
+    "Checks": {
+      "additionalProperties": false,
+      "description": "`{passed, run}`: how many of the checks that ran passed.",
+      "properties": {
+        "passed": {
+          "minimum": 0,
+          "title": "Passed",
+          "type": "integer"
+        },
+        "run": {
+          "minimum": 0,
+          "title": "Run",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "passed",
+        "run"
+      ],
+      "title": "Checks",
+      "type": "object"
+    },
+    "Constellation": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/$defs/ConstellationInput"
+          },
+          "maxItems": 500,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "label": {
+          "maxLength": 2000,
+          "title": "Label",
+          "type": "string"
+        },
+        "slots": {
+          "items": {
+            "$ref": "#/$defs/Slot"
+          },
+          "maxItems": 500,
+          "title": "Slots",
+          "type": "array"
+        },
+        "workflows": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ConstellationFlow"
+          },
+          "maxProperties": 500,
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "title": "Workflows",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "slots",
+        "workflows",
+        "inputs"
+      ],
+      "title": "Constellation",
+      "type": "object"
+    },
+    "ConstellationFlow": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 2000,
+          "title": "Name",
+          "type": "string"
+        },
+        "output": {
+          "title": "Output",
+          "type": "boolean"
+        },
+        "ran": {
+          "title": "Ran",
+          "type": "boolean"
+        },
+        "rank": {
+          "minimum": 0,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "reads": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Reads",
+          "type": "array"
+        },
+        "role": {
+          "enum": [
+            "builder",
+            "fix"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "t": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "T"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "rank",
+        "ran",
+        "output",
+        "reads"
+      ],
+      "title": "ConstellationFlow",
+      "type": "object"
+    },
+    "ConstellationInput": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 2000,
+          "title": "Label",
+          "type": "string"
+        },
+        "section": {
+          "title": "Section",
+          "type": "boolean"
+        },
+        "team": {
+          "maxLength": 2000,
+          "title": "Team",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "section",
+        "team"
+      ],
+      "title": "ConstellationInput",
+      "type": "object"
+    },
+    "LegendItem": {
+      "additionalProperties": false,
+      "properties": {
+        "drawn": {
+          "title": "Drawn",
+          "type": "boolean"
+        },
+        "key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 2000,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "drawn"
+      ],
+      "title": "LegendItem",
+      "type": "object"
+    },
+    "MadeBy": {
+      "additionalProperties": false,
+      "description": "Which functions made a step: only where documents.json recorded the call range.",
+      "properties": {
+        "basis": {
+          "const": "recorded",
+          "title": "Basis",
+          "type": "string"
+        },
+        "calls": {
+          "$ref": "#/$defs/CallRange"
+        },
+        "functions": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxProperties": 5,
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "title": "Functions",
+          "type": "object"
+        }
+      },
+      "required": [
+        "calls",
+        "functions",
+        "basis"
+      ],
+      "title": "MadeBy",
+      "type": "object"
+    },
+    "MapEdge": {
+      "additionalProperties": false,
+      "description": "A line of the Map. No line without a record: `source` says where it was drawn from (map-schema.md, Edges).",
+      "properties": {
+        "basis": {
+          "const": "recorded",
+          "title": "Basis",
+          "type": "string"
+        },
+        "from": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "From",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "handoff",
+            "step",
+            "speaks_to",
+            "asks",
+            "uses",
+            "draws_on"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "n": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N"
+        },
+        "readers": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 500,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Readers"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "sources": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Source"
+              },
+              "maxItems": 1000,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sources"
+        },
+        "to": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "kind",
+        "basis",
+        "source"
+      ],
+      "title": "MapEdge",
+      "type": "object"
+    },
+    "MapNode": {
+      "additionalProperties": false,
+      "description": "One box of the Map. The keys depend on the kind (map-schema.md, Nodes): a function box has `tab`, `calls`, `seconds`\nand `tokens`; a work box has `note`, `output`, `send`, `lane` and `team_reads`; an engine box (a step) has `team`,\n`unchecked`, `made_by` and `persona`.",
+      "properties": {
+        "calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calls"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "file": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "person",
+            "work",
+            "engine",
+            "function",
+            "know"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 2000,
+          "title": "Label",
+          "type": "string"
+        },
+        "lane": {
+          "anyOf": [
+            {
+              "enum": [
+                "trunk",
+                "branch"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lane"
+        },
+        "made_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MadeBy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output"
+        },
+        "persona": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Persona"
+        },
+        "row": {
+          "enum": [
+            "people",
+            "functions",
+            "work",
+            "knows"
+          ],
+          "title": "Row",
+          "type": "string"
+        },
+        "seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seconds"
+        },
+        "send": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Send"
+        },
+        "status": {
+          "enum": [
+            "idle",
+            "running",
+            "waiting",
+            "waiting_on_you",
+            "fault",
+            "filed",
+            "done_unchecked",
+            "left_open",
+            "not_made"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tab"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Team"
+        },
+        "team_reads": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TeamReads"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tokens": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Tokens"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "unchecked": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 500,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unchecked"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "wait_on": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wait On"
+        },
+        "workflows": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Workflows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "row",
+        "label",
+        "status"
+      ],
+      "title": "MapNode",
+      "type": "object"
+    },
+    "MapStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "$ref": "#/$defs/Checks"
+        },
+        "state": {
+          "maxLength": 2000,
+          "title": "State",
+          "type": "string"
+        },
+        "state_status": {
+          "enum": [
+            "idle",
+            "running",
+            "waiting",
+            "waiting_on_you",
+            "fault",
+            "filed",
+            "done_unchecked",
+            "left_open",
+            "not_made"
+          ],
+          "title": "State Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "state_status",
+        "checks"
+      ],
+      "title": "MapStatus",
+      "type": "object"
+    },
+    "MapWorkflow": {
+      "additionalProperties": false,
+      "description": "One workflow of the Tree view's circle (presentation only).",
+      "properties": {
+        "atoms": {
+          "anyOf": [
+            {
+              "enum": [
+                "verify_failed",
+                "open",
+                "abandoned",
+                "closed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Atoms"
+        },
+        "box": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Box"
+        },
+        "checks": {
+          "$ref": "#/$defs/Checks"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 2000,
+          "title": "Name",
+          "type": "string"
+        },
+        "out": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Out",
+          "type": "array"
+        },
+        "reads": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Reads",
+          "type": "array"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "checks",
+        "reads",
+        "out"
+      ],
+      "title": "MapWorkflow",
+      "type": "object"
+    },
+    "Slot": {
+      "additionalProperties": false,
+      "properties": {
+        "builder": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Builder",
+          "type": "string"
+        },
+        "empty": {
+          "title": "Empty",
+          "type": "boolean"
+        },
+        "fixes": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Fixes",
+          "type": "array"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        }
+      },
+      "required": [
+        "builder",
+        "fixes",
+        "empty"
+      ],
+      "title": "Slot",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "description": "The record an edge or a placement was drawn from (map-schema.md, Edges): `{file, workflow, field, value}`.",
+      "properties": {
+        "field": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "file": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "File",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "title": "Source",
+      "type": "object"
+    },
+    "Team": {
+      "additionalProperties": false,
+      "description": "The open-team view: one bipartite graph per team (j2_map.team_graphs).",
+      "properties": {
+        "columns": {
+          "minimum": 0,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "cycles": {
+          "items": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "maxItems": 100,
+          "title": "Cycles",
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/TeamEdge"
+          },
+          "maxItems": 10000,
+          "title": "Edges",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 2000,
+          "title": "Label",
+          "type": "string"
+        },
+        "loops": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Loops",
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/TeamNode"
+          },
+          "maxItems": 2000,
+          "title": "Nodes",
+          "type": "array"
+        },
+        "unresolved": {
+          "items": {
+            "$ref": "#/$defs/Unresolved"
+          },
+          "maxItems": 2000,
+          "title": "Unresolved",
+          "type": "array"
+        },
+        "workflows": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Workflows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "workflows",
+        "columns",
+        "nodes",
+        "edges",
+        "unresolved",
+        "cycles",
+        "loops"
+      ],
+      "title": "Team",
+      "type": "object"
+    },
+    "TeamEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "From",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "makes",
+            "reads"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "loop": {
+          "title": "Loop",
+          "type": "boolean"
+        },
+        "to": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "To",
+          "type": "string"
+        },
+        "via": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 500,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Via"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "kind",
+        "loop"
+      ],
+      "title": "TeamEdge",
+      "type": "object"
+    },
+    "TeamNode": {
+      "additionalProperties": false,
+      "description": "A workflow (`wf`) or an artifact or section (`artifact`) in a team's bipartite graph.",
+      "properties": {
+        "col": {
+          "minimum": 0,
+          "title": "Col",
+          "type": "integer"
+        },
+        "file": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File"
+        },
+        "from_team": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "maxItems": 50,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Team"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "input": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input"
+        },
+        "kind": {
+          "enum": [
+            "wf",
+            "artifact"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 2000,
+          "title": "Label",
+          "type": "string"
+        },
+        "row": {
+          "minimum": 0,
+          "title": "Row",
+          "type": "integer"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "col",
+        "row"
+      ],
+      "title": "TeamNode",
+      "type": "object"
+    },
+    "TeamReads": {
+      "additionalProperties": false,
+      "description": "An artifact one of a team's workflows made and others of the same team read.",
+      "properties": {
+        "made_by": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Made By",
+          "type": "array"
+        },
+        "read_by": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Read By",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/Source"
+          },
+          "maxItems": 1000,
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "made_by",
+        "read_by",
+        "sources"
+      ],
+      "title": "TeamReads",
+      "type": "object"
+    },
+    "Tokens": {
+      "additionalProperties": false,
+      "description": "Tokens summed over a function's calls (a map box).",
+      "properties": {
+        "input": {
+          "minimum": 0,
+          "title": "Input",
+          "type": "integer"
+        },
+        "output": {
+          "minimum": 0,
+          "title": "Output",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "title": "Tokens",
+      "type": "object"
+    },
+    "Unresolved": {
+      "additionalProperties": false,
+      "properties": {
+        "read": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Read"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "why": {
+          "maxLength": 2000,
+          "title": "Why",
+          "type": "string"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow",
+        "why",
+        "source"
+      ],
+      "title": "Unresolved",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "map/1: the Map of a run (docs/map-schema.md). An empty map (a run that is not there) has no teams, constellations\nor workflows.",
+  "properties": {
+    "built_from": {
+      "items": {
+        "maxLength": 2000,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Built From",
+      "type": "array"
+    },
+    "constellations": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Constellation"
+      },
+      "default": {},
+      "maxProperties": 100,
+      "propertyNames": {
+        "maxLength": 200,
+        "minLength": 1
+      },
+      "title": "Constellations",
+      "type": "object"
+    },
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/MapEdge"
+      },
+      "maxItems": 20000,
+      "title": "Edges",
+      "type": "array"
+    },
+    "legend": {
+      "items": {
+        "$ref": "#/$defs/LegendItem"
+      },
+      "maxItems": 100,
+      "title": "Legend",
+      "type": "array"
+    },
+    "live": {
+      "title": "Live",
+      "type": "boolean"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/MapNode"
+      },
+      "maxItems": 2000,
+      "title": "Nodes",
+      "type": "array"
+    },
+    "not_recorded": {
+      "items": {
+        "maxLength": 2000,
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Not Recorded",
+      "type": "array"
+    },
+    "run": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run"
+    },
+    "schema": {
+      "const": "map/1",
+      "default": "map/1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/MapStatus"
+    },
+    "teams": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Team"
+      },
+      "maxItems": 100,
+      "title": "Teams",
+      "type": "array"
+    },
+    "workflows": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/MapWorkflow"
+      },
+      "maxItems": 500,
+      "title": "Workflows",
+      "type": "array"
+    }
+  },
+  "required": [
+    "live",
+    "status",
+    "nodes",
+    "edges",
+    "legend",
+    "built_from",
+    "not_recorded"
+  ],
+  "title": "MapDoc",
+  "type": "object"
+}

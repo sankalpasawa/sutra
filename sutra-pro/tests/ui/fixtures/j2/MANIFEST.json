@@ -1,0 +1,162 @@
+{
+  "schema": "j2-fixtures/1",
+  "j2_commit": "ce2631fb04ac29883bf0149f1552118655eef785",
+  "mock": true,
+  "brief": "A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for pickup. It should feel warm and modern and work well on a phone.",
+  "clock": 1793786404,
+  "harness": {
+    "page": "j2_ui.html",
+    "render": [
+      "state.json",
+      "previews.json",
+      "render-docs.json"
+    ],
+    "layout": [
+      "maps.json"
+    ],
+    "goldens": [
+      "golden-simple.json",
+      "golden-sprog.json",
+      "golden-workflows.json",
+      "golden-rail.json",
+      "golden-needs.json",
+      "golden-map.json",
+      "golden-agent.json",
+      "golden-layout.json"
+    ]
+  },
+  "files": {
+    "agent-W-1.json": {
+      "bytes": 24175,
+      "sha256": "b01406191702f64590a9b79c4dcb32ca6240852189a81a8cd42dc36ddf3889d5"
+    },
+    "agent-adaptation.json": {
+      "bytes": 103109,
+      "sha256": "7de40d7cd9276f8afe5e135b7363d4205adf0f90d1dc4fc871c9cc352c001673"
+    },
+    "agent-audit.json": {
+      "bytes": 76481,
+      "sha256": "966a063ca9d3a349d1ee0dd94b3153314975a06938bdd1a0e4b90075e0869385"
+    },
+    "agent-coordination.json": {
+      "bytes": 182373,
+      "sha256": "bd4e14aa221015dbcabf7610310e49aa8babceede529b9a32de20ff131bbbb40"
+    },
+    "agent-identity.json": {
+      "bytes": 79352,
+      "sha256": "4518633577b1c3c565fa688e6b5d637a30ba8d444b5c5a7a29cb40bb91e1f81e"
+    },
+    "agent-priority.json": {
+      "bytes": 34535,
+      "sha256": "37471dc955606f0cb7dea10fd83a048285550dffc70a58365f0b3e919722a6d7"
+    },
+    "agent-unknown.json": {
+      "bytes": 351,
+      "sha256": "b45afd5e2a54db0b190ed75616bc4dd1949dbfeaa02b419fb4cb8540a60654a0"
+    },
+    "artifacts-tree.json": {
+      "bytes": 5943,
+      "sha256": "3963ef18d14d3a09ab8600598787a887f83f6e4761f4b87b90c3a76ca04ee8c5"
+    },
+    "artifacts.json": {
+      "bytes": 4068,
+      "sha256": "f416130d3fe17011812ea2cb04f5dbc2b110db6a4b4af75ab21277fd033d275a"
+    },
+    "audits.json": {
+      "bytes": 2,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "board.json": {
+      "bytes": 36,
+      "sha256": "b429ba025aeeb8963f98b408bbcea1ac1ddfc3b44b3a9cb085449c869ad6e208"
+    },
+    "docs.json": {
+      "bytes": 168,
+      "sha256": "8ec3135c1f4624db617785ced22785e61f0c045ef229d46eaef4e822621a274a"
+    },
+    "golden-agent.json": {
+      "bytes": 94524,
+      "sha256": "5dadfe0de68dcb8a371e5e7739bcb0be0aafbd2b611636212c310811dec39fe6"
+    },
+    "golden-layout.json": {
+      "bytes": 24794,
+      "sha256": "665ebf33105d69863a39652243d797cf08f1383baa673a24e0fb40f6b5c63580"
+    },
+    "golden-map.json": {
+      "bytes": 47765,
+      "sha256": "685316688508e90d5446ba8097436a0412fd96e29d77d27f321f7859ecfe732a"
+    },
+    "golden-needs.json": {
+      "bytes": 381,
+      "sha256": "814e644632d0e513ae5076503c6098a2765e89c744aca2330ed55d8d8e5f879d"
+    },
+    "golden-rail.json": {
+      "bytes": 2369,
+      "sha256": "33c02e451610eafd3c7c0da84f2f4f71b91019c2299075066ce69fe2cbaaf6a3"
+    },
+    "golden-simple.json": {
+      "bytes": 968,
+      "sha256": "0a81085c47a2b41e9d1289a8c18acb059e14eeba371d27896a7ac29fb478fb4a"
+    },
+    "golden-sprog.json": {
+      "bytes": 216,
+      "sha256": "804ed4f19a2c1390f6e2b967c56cbcd6af1361600382c36c81034fee1993205b"
+    },
+    "golden-workflows.json": {
+      "bytes": 45708,
+      "sha256": "47c25eeeadd563673c4310e51047870851aa792fc5bec9e53e225edfc6ed3a66"
+    },
+    "library.json": {
+      "bytes": 45211,
+      "sha256": "87e2f2d5eb5721ba08b0a9b3d489b0b2540451ce042da0d0b0abc1b37753a0ef"
+    },
+    "map.json": {
+      "bytes": 19642,
+      "sha256": "2011b47b3bc2ae44e7793b31030a1170781ce06ab9509999633f08b114bc1c98"
+    },
+    "maps.json": {
+      "bytes": 17740,
+      "sha256": "2a0376d6427d0797b5473686966ffb298debba48856ca0594da5ef2ac07949dc"
+    },
+    "plan.json": {
+      "bytes": 604,
+      "sha256": "61e903ed7e98d68d05273458de55c1071ac4388923883feb68f9f4f965c9d8f7"
+    },
+    "preview-replies.json": {
+      "bytes": 2040,
+      "sha256": "a5bc3b7c1d6229d83649f00e10af8d774b43b74f92651a2cd7ee687b54a2a58e"
+    },
+    "previews.json": {
+      "bytes": 2075,
+      "sha256": "7a2f84ea54ff2b44fad0267045e40d88fc5fce15ca696e88fb329f4de6bef2d2"
+    },
+    "refs.json": {
+      "bytes": 3270,
+      "sha256": "24facb6b461d164ffb3ffb30b492c603b625445f41e0e92521d0fee988e26782"
+    },
+    "render-docs.json": {
+      "bytes": 106848,
+      "sha256": "9e426e58f89510694d45a61ae2d267528c8ff600f42b89aeb4af7ce6ba71d9a2"
+    },
+    "run-templates.json": {
+      "bytes": 17,
+      "sha256": "1672e9728a2079c90e1a3de3b2279d199f0bc1a90b366656915700a3922c7f18"
+    },
+    "runs.json": {
+      "bytes": 227,
+      "sha256": "706de3de9a7ea10fd4c385f08f9e36e0a018bf64da28234689b4f79936f90a68"
+    },
+    "site-latest.html": {
+      "bytes": 3048,
+      "sha256": "dac57d43aa835999c178b5a886ae2aa278ae4dcc96524f54d75cd9537430e196"
+    },
+    "state.json": {
+      "bytes": 117974,
+      "sha256": "72fc183f4249ef24f43f11b4b4d3dbacccfef338dae50d64d92e70cbbdc5a762"
+    },
+    "story.json": {
+      "bytes": 463,
+      "sha256": "8175b808983dd120d2de11086a6a94fc523a6730becd8fddfdabb43002275355"
+    }
+  }
+}

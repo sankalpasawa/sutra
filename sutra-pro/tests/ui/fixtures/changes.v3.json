@@ -1,0 +1,119 @@
+[
+  {
+    "seq": 1,
+    "id": "chg-0001",
+    "at": "2026-11-04T09:59:58Z",
+    "actor": "system",
+    "decision": "add",
+    "status": "applied",
+    "summary": "Started the org chart",
+    "reason": "The chart starts with the root",
+    "task_id": "req-0",
+    "task_title": "",
+    "revision": 1,
+    "added": [
+      "root"
+    ],
+    "moved": [],
+    "archived": [],
+    "reused": []
+  },
+  {
+    "seq": 2,
+    "id": "chg-0002",
+    "at": "2026-11-04T10:00:03Z",
+    "actor": "chat_agent",
+    "decision": "add",
+    "status": "applied",
+    "summary": "Added the Web team",
+    "reason": "No team makes websites",
+    "task_id": "req-17",
+    "task_title": "Coffee shop landing page",
+    "revision": 2,
+    "added": [
+      "web"
+    ],
+    "moved": [],
+    "archived": [],
+    "reused": []
+  },
+  {
+    "seq": 3,
+    "id": "chg-0003",
+    "at": "2026-11-04T10:12:40Z",
+    "actor": "chat_agent",
+    "decision": "reuse",
+    "status": "applied",
+    "summary": "Reused the Web team",
+    "reason": "Web already makes websites",
+    "task_id": "req-18",
+    "task_title": "Menu page",
+    "revision": 2,
+    "added": [],
+    "moved": [],
+    "archived": [],
+    "reused": [
+      "web"
+    ]
+  },
+  {
+    "seq": 4,
+    "id": "chg-0004",
+    "at": "2026-11-04T10:20:11Z",
+    "actor": "chat_agent",
+    "decision": "add",
+    "status": "applied",
+    "summary": "Added the Menu and FAQ divisions to Web",
+    "reason": "Menu and FAQ are pieces of the website",
+    "task_id": "req-19",
+    "task_title": "Menu as its own division",
+    "revision": 3,
+    "added": [
+      "faq",
+      "menu"
+    ],
+    "moved": [],
+    "archived": [],
+    "reused": []
+  },
+  {
+    "seq": 5,
+    "id": "chg-0005",
+    "at": "2026-11-04T10:31:05Z",
+    "actor": "chat_agent",
+    "decision": "rearrange",
+    "status": "applied",
+    "summary": "Added the Content team and moved Menu into it",
+    "reason": "Menu belongs with the words and pictures",
+    "task_id": "req-20",
+    "task_title": "Move Menu to a Content team",
+    "revision": 4,
+    "added": [
+      "content"
+    ],
+    "moved": [
+      "menu"
+    ],
+    "archived": [],
+    "reused": []
+  },
+  {
+    "seq": 6,
+    "id": "chg-0006",
+    "at": "2026-11-04T10:40:22Z",
+    "actor": "chat_agent",
+    "decision": "rearrange",
+    "status": "pending_approval",
+    "summary": "Merge FAQ into Menu",
+    "reason": "FAQ and Menu answer the same questions",
+    "task_id": "req-22",
+    "task_title": "Merge FAQ into Menu",
+    "revision": null,
+    "added": [],
+    "moved": [],
+    "archived": [
+      "faq"
+    ],
+    "reused": []
+  }
+]

@@ -1,0 +1,58 @@
+{
+  "additionalProperties": false,
+  "description": "One row of chain.json: requirement -> HLD component -> LLD section -> built atoms (J2 `_chain_record`; None when a link\nis missing).",
+  "properties": {
+    "atoms": {
+      "default": [],
+      "items": {
+        "maxLength": 40,
+        "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+        "type": "string"
+      },
+      "maxItems": 500,
+      "title": "Atoms",
+      "type": "array"
+    },
+    "component": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Component"
+    },
+    "lld_section": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lld Section"
+    },
+    "requirement": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requirement"
+    }
+  },
+  "title": "ChainRow",
+  "type": "object"
+}

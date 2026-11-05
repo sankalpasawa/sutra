@@ -1,0 +1,27 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "audit",
+   "kind": "audit"
+  },
+  "records": {
+   "goal.json": {
+    "statement": "s",
+    "done_when": [
+     "a",
+     "b",
+     "c"
+    ]
+   },
+   "audits.json": []
+  },
+  "saved": [
+   "audits.json"
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "missing: no audit in audits.json"
+ }
+}

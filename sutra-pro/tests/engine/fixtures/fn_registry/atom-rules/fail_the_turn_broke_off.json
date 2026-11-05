@@ -1,0 +1,66 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "adaptation",
+   "kind": "propose"
+  },
+  "replies": [
+   {
+    "say": "@Priority",
+    "act": "PROPOSE",
+    "next": "Priority",
+    "workflows": [
+     {
+      "name": "Build menu"
+     },
+     {
+      "name": "Build hours"
+     },
+     {
+      "name": "Hero"
+     }
+    ]
+   },
+   {
+    "say": "@Priority",
+    "act": "PROPOSE",
+    "next": "Priority",
+    "workflows": [
+     {
+      "name": "Build menu"
+     },
+     {
+      "name": "Build hours"
+     },
+     {
+      "name": "Hero"
+     }
+    ]
+   }
+  ],
+  "outcome": {
+   "result": "error"
+  },
+  "posted": [
+   {
+    "id": 7,
+    "who": "system",
+    "text": "Validator rejected 'Hero': no check.",
+    "rejected": "Hero",
+    "after_reply": 1
+   },
+   {
+    "id": 8,
+    "who": "system",
+    "text": "Validator rejected 'Hero': no check.",
+    "rejected": "Hero",
+    "after_reply": 2
+   }
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "rejected: Hero (no check)"
+ }
+}

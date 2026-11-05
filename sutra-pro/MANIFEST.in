@@ -1,0 +1,14 @@
+# The source distribution carries the same non-Python files as the wheel (pyproject.toml, [tool.setuptools.package-data]).
+# The wheel is what the app ships as (D86); this file only keeps `uv build --sdist` from dropping the data on the way.
+include README.md
+include sutra_app/engine/VENDORED.md
+recursive-include sutra_app/engine/agents *
+recursive-include sutra_app/engine/conditions *
+recursive-include sutra_app/engine/artifacts *
+recursive-include sutra_app/engine/templates *
+recursive-include sutra_app/engine/seed *
+recursive-include sutra_app/ui/pages *
+recursive-include sutra_app/ui/static *
+recursive-include sutra_app/orchestrator/agent/templates *.md
+include sutra_app/connectors/policy.default.json
+global-exclude __pycache__ *.py[cod] .DS_Store

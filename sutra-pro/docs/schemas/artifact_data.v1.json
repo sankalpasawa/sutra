@@ -1,0 +1,55 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "<kind>.json and site/<kind>-vN.json: the data beside a document, written by code from what the builders sent\n(J2 `_save_artifact_data`). `schema` is checked and not stored (a field of that name would need an alias that is not a\nPython keyword, design rule 7); `to_json()` puts it back. Each section is checked as the library model of that section.",
+  "properties": {
+    "artifact": {
+      "enum": [
+        "prd",
+        "hld",
+        "lld",
+        "design",
+        "website"
+      ],
+      "title": "Artifact",
+      "type": "string"
+    },
+    "sections": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "maxProperties": 40,
+      "propertyNames": {
+        "maxLength": 80,
+        "minLength": 1
+      },
+      "title": "Sections",
+      "type": "object"
+    },
+    "template": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Template",
+      "type": "string"
+    },
+    "version": {
+      "maximum": 999999,
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "template",
+    "artifact",
+    "version",
+    "sections"
+  ],
+  "title": "ArtifactData",
+  "type": "object"
+}

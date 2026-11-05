@@ -1,0 +1,21 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "audit",
+   "kind": "dispute"
+  },
+  "posted": [
+   {
+    "id": 5,
+    "who": "audit",
+    "text": "@Priority I dispute",
+    "next": "priority"
+   }
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "next=priority is no route of audit"
+ }
+}

@@ -1,0 +1,21 @@
+[
+  {
+    "seq": 1,
+    "id": "chg-0001",
+    "at": "2026-11-04T09:59:58Z",
+    "actor": "system",
+    "decision": "add",
+    "status": "applied",
+    "summary": "Started the org chart",
+    "reason": "The chart starts with the root",
+    "task_id": "req-0",
+    "task_title": "",
+    "revision": 1,
+    "added": [
+      "root"
+    ],
+    "moved": [],
+    "archived": [],
+    "reused": []
+  }
+]

@@ -1,0 +1,50 @@
+{
+  "test": {
+    "claude": {
+      "ok": true,
+      "seconds": 3.2,
+      "tokens_in": 12,
+      "tokens_out": 2,
+      "usd": 0.0031
+    },
+    "codex": {
+      "ok": true,
+      "seconds": 4.8,
+      "tokens_in": 15,
+      "tokens_out": 2,
+      "usd": null
+    }
+  },
+  "test_error": {
+    "error": {
+      "code": "provider_unavailable",
+      "message": "Codex is not signed in. Use Sign in on the Codex row.",
+      "details": {
+        "kind": "auth"
+      }
+    }
+  },
+  "sign_in": {
+    "start": {
+      "id": "si_4f7a9c1e",
+      "url": "https://auth.openai.com/codex/device",
+      "code": "WXYZ-1234",
+      "expires_in": 900
+    },
+    "sequences": {
+      "success": [
+        "pending",
+        "pending",
+        "signed_in"
+      ],
+      "failed": [
+        "pending",
+        "failed"
+      ],
+      "expired": [
+        "pending",
+        "expired"
+      ]
+    }
+  }
+}

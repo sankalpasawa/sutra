@@ -1,0 +1,81 @@
+{
+  "session": {
+    "id": "cs_5e0a77b19c3d",
+    "node_id": "web",
+    "kind": "department",
+    "title": "Web",
+    "writable": true,
+    "status": "active",
+    "filed_under": null,
+    "connector": "claude",
+    "model": "sonnet",
+    "provider_session_id": null,
+    "last_message_id": 0,
+    "note": ""
+  },
+  "messages": [
+    {
+      "id": 1,
+      "session_id": "cs_5e0a77b19c3d",
+      "role": "user",
+      "who": "user",
+      "kind": "text",
+      "text": "A website for my cafe",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "ok",
+      "at": "2026-11-04T10:00:02Z"
+    },
+    {
+      "id": 2,
+      "session_id": "cs_5e0a77b19c3d",
+      "role": "agent",
+      "who": "identity",
+      "kind": "question",
+      "text": "@Requester Should the menu show prices?\n   Option 1: Yes, show the prices\n   Option 2: No, names only",
+      "card": null,
+      "pause": "info",
+      "answered_by": 3,
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "ok",
+      "at": "2026-11-04T10:00:41Z"
+    },
+    {
+      "id": 3,
+      "session_id": "cs_5e0a77b19c3d",
+      "role": "user",
+      "who": "user",
+      "kind": "text",
+      "text": "Option 1",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "ok",
+      "at": "2026-11-04T10:02:11Z"
+    },
+    {
+      "id": 4,
+      "session_id": "cs_5e0a77b19c3d",
+      "role": "agent",
+      "who": "identity",
+      "kind": "text",
+      "text": "@Requester Thanks. I have what I need and the team is starting.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "ok",
+      "at": "2026-11-04T10:02:20Z"
+    }
+  ],
+  "initial_visible": 0,
+  "visible_at": {
+    "1": 0,
+    "2": 2,
+    "3": 4,
+    "full": 2
+  }
+}

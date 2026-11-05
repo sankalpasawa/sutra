@@ -1,0 +1,354 @@
+{
+  "adaptation": {
+    "1": [
+      "propose",
+      "respond",
+      "atom_verdict",
+      "lesson"
+    ]
+  },
+  "agent": {
+    "1": [
+      "agent"
+    ]
+  },
+  "artifact.design.style-guide": {
+    "1": [
+      "artifact.design.style-guide"
+    ]
+  },
+  "artifact.hld": {
+    "1": [
+      "artifact.hld"
+    ]
+  },
+  "artifact.hld.components": {
+    "1": [
+      "artifact.hld.components"
+    ]
+  },
+  "artifact.hld.data-flow": {
+    "1": [
+      "artifact.hld.data-flow"
+    ]
+  },
+  "artifact.hld.hosting-and-deployment": {
+    "1": [
+      "artifact.hld.hosting-and-deployment"
+    ]
+  },
+  "artifact.hld.pages": {
+    "1": [
+      "artifact.hld.pages"
+    ]
+  },
+  "artifact.hld.purpose-and-scope": {
+    "1": [
+      "artifact.hld.purpose-and-scope"
+    ]
+  },
+  "artifact.hld.risks": {
+    "1": [
+      "artifact.hld.risks"
+    ]
+  },
+  "artifact.lld": {
+    "1": [
+      "artifact.lld"
+    ]
+  },
+  "artifact.lld.file-structure": {
+    "1": [
+      "artifact.lld.file-structure"
+    ]
+  },
+  "artifact.lld.form-fields": {
+    "1": [
+      "artifact.lld.form-fields"
+    ]
+  },
+  "artifact.lld.interactive-elements": {
+    "1": [
+      "artifact.lld.interactive-elements"
+    ]
+  },
+  "artifact.lld.pages-and-sections": {
+    "1": [
+      "artifact.lld.pages-and-sections"
+    ]
+  },
+  "artifact.lld.responsive-and-accessibility-rules": {
+    "1": [
+      "artifact.lld.responsive-and-accessibility-rules"
+    ]
+  },
+  "artifact.prd": {
+    "1": [
+      "artifact.prd"
+    ]
+  },
+  "artifact.prd.goals": {
+    "1": [
+      "artifact.prd.goals"
+    ]
+  },
+  "artifact.prd.out-of-scope": {
+    "1": [
+      "artifact.prd.out-of-scope"
+    ]
+  },
+  "artifact.prd.problem": {
+    "1": [
+      "artifact.prd.problem"
+    ]
+  },
+  "artifact.prd.requirements": {
+    "1": [
+      "artifact.prd.requirements"
+    ]
+  },
+  "artifact.prd.success-metrics": {
+    "1": [
+      "artifact.prd.success-metrics"
+    ]
+  },
+  "artifact.prd.users": {
+    "1": [
+      "artifact.prd.users"
+    ]
+  },
+  "artifact.website.section": {
+    "1": [
+      "artifact.website.section"
+    ]
+  },
+  "artifact_data": {
+    "1": [
+      "artifact_data"
+    ]
+  },
+  "artifacts": {
+    "1": [
+      "artifacts"
+    ]
+  },
+  "artifacts_tree": {
+    "1": [
+      "artifacts_tree"
+    ]
+  },
+  "atom": {
+    "1": [
+      "atom"
+    ]
+  },
+  "atom_ledger_row": {
+    "1": [
+      "atom_ledger_row"
+    ]
+  },
+  "atom_view": {
+    "1": [
+      "atom_view"
+    ]
+  },
+  "audit": {
+    "1": [
+      "report"
+    ]
+  },
+  "board": {
+    "1": [
+      "board"
+    ]
+  },
+  "call_log": {
+    "1": [
+      "call_log"
+    ]
+  },
+  "chain_row": {
+    "1": [
+      "chain_row"
+    ]
+  },
+  "chart_change": {
+    "1": [
+      "reuse",
+      "add",
+      "rearrange"
+    ]
+  },
+  "chart_change_request": {
+    "1": [
+      "chart_change_request"
+    ]
+  },
+  "condition_result": {
+    "1": [
+      "condition_result"
+    ]
+  },
+  "conflict": {
+    "1": [
+      "conflict"
+    ]
+  },
+  "coordination": {
+    "1": [
+      "schedule"
+    ]
+  },
+  "department": {
+    "1": [
+      "department"
+    ]
+  },
+  "edge": {
+    "1": [
+      "contains",
+      "has_function",
+      "has_step",
+      "handoff",
+      "step",
+      "speaks_to",
+      "depends_on"
+    ]
+  },
+  "evaluation": {
+    "1": [
+      "result",
+      "recheck",
+      "plan",
+      "run"
+    ]
+  },
+  "function_specs": {
+    "1": [
+      "function_specs"
+    ]
+  },
+  "goal": {
+    "1": [
+      "site",
+      "doc"
+    ]
+  },
+  "identity": {
+    "1": [
+      "intake",
+      "ruling",
+      "heard",
+      "done",
+      "approval",
+      "approval_ask"
+    ]
+  },
+  "lesson": {
+    "1": [
+      "lesson"
+    ]
+  },
+  "map": {
+    "1": [
+      "map"
+    ]
+  },
+  "node": {
+    "1": [
+      "root",
+      "department",
+      "division",
+      "step",
+      "identity",
+      "adaptation",
+      "priority",
+      "coordination",
+      "audit"
+    ]
+  },
+  "org_chart": {
+    "1": [
+      "org_chart"
+    ]
+  },
+  "priority": {
+    "1": [
+      "price",
+      "envelope_check"
+    ]
+  },
+  "realization": {
+    "1": [
+      "realization"
+    ]
+  },
+  "realization_plan": {
+    "1": [
+      "realization_plan"
+    ]
+  },
+  "receipt": {
+    "1": [
+      "receipt"
+    ]
+  },
+  "run_file.list": {
+    "1": [
+      "run_file.list"
+    ]
+  },
+  "run_file.object": {
+    "1": [
+      "run_file.object"
+    ]
+  },
+  "run_message": {
+    "1": [
+      "run_message"
+    ]
+  },
+  "run_summary": {
+    "1": [
+      "run_summary"
+    ]
+  },
+  "story": {
+    "1": [
+      "story"
+    ]
+  },
+  "template": {
+    "1": [
+      "generic",
+      "specialised"
+    ]
+  },
+  "template.decision": {
+    "1": [
+      "template.decision"
+    ]
+  },
+  "template.file": {
+    "1": [
+      "template.file"
+    ]
+  },
+  "template.meta": {
+    "1": [
+      "template.meta"
+    ]
+  },
+  "template.run": {
+    "1": [
+      "template.run"
+    ]
+  },
+  "workflow": {
+    "1": [
+      "task",
+      "proposed",
+      "registered"
+    ]
+  }
+}

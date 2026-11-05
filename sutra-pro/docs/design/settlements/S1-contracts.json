@@ -1,0 +1,942 @@
+{
+  "batch": "S1-contracts",
+  "title": "Process and wire contracts among the engine, the orchestrator and the connectors",
+  "settlements": [
+    {
+      "id": "S1-contracts-01",
+      "topic": "J2 routes: root paths with ?dept=, and who serves the J2 page",
+      "decision": "J2's 28 data routes (23 GET, 5 POST; J2's own index and d3 routes belong to the UI) keep J2's paths at the ROOT of the app and are mounted ONCE. The department is named only by the query parameter ?dept=<department id>, the run only by ?run=<run id> (J2's rule: ?run= is always a read-only disk view). There is no /d/{dept}/api/... copy, no X-Sutra-Dept header and no sutra_dept cookie. A missing or malformed dept gives 400 {'error':'dept_required'}; an unknown department 404 {'error':'not_found'}; a run of another department 404. The J2 PAGE is served only by the UI package: GET / is Home, GET /d/{dept}/ is the J2 page with its boot block, GET /?dept=<id> answers 308 to /d/<id>/. The engine package registers no HTML or static route and has no pages module (its stdlib adapter j2_server.py still serves J2's own page, for the legacy tests only). One constant DEPT_ID_RE = ^[a-z][a-z0-9-]{1,39}$ (ORCH's department-id rule, no underscore) is used by the route dependency, TaskSpec.dept_id and the UI route. The Protocol EngineServices that the routes call is defined only in sutra_app/engine/api/ports.py; ORCH's Services satisfies it.",
+      "why": "UI-D2 measured it: J2's page builds root-relative URLs at 28 fetch sites and 15 URL-in-HTML sites, so root paths need ONE fetch wrapper and ONE runQ edit, while a /d/{dept}/api prefix needs 43 edits or a base tag that changes how the 14 href=# anchors resolve. /d/{dept}/ is already the HTML page. J2 assigns location.search on run change and reset (j2_ui.html:3212, 3222), which would drop a ?dept= on the PAGE url, so the department lives in the page PATH and in the API QUERY. One mount means one route table (the engine's double mount registers 56 routes for 28 handlers and doubles the scope tests). ORCH 5.6 and ORCH-D7 as now written already accept ?dept= and ?run=. D6 says the J2 /api/* read endpoints keep their paths so the page works as it did. Checked: no ORCH, LIB or CN route collides with a J2 path (J2 GET /api/runs vs ORCH GET /api/runs/{run_id}; J2 /api/library/{artifact}/{section}/{slug}/v{N} has four segments after /api/library, LIB's /api/library/schemas/{family}/{version} has three); a route-table test keeps it that way.",
+      "rejected": "Mounting both (engine 7.2): twice the routes and tests, and the 'delete one line later' decision stays open. Only /d/{dept}/api/... (the ORCH E-1 reading): 43 UI edits or a base tag. An X-Sutra-Dept header or a sutra_dept cookie: invisible state, two tabs on two teams would collide on a cookie. The engine serving the page (engine rows 1-2 and a pages module): the page needs the UI's boot block, CSP and token injection.",
+      "affects": [
+        {
+          "target": "engine",
+          "where": "§1 'In' (route sentence); §2 table (the two rows that say ORCH and UI disagree); §4.0 picture; §4.9 Agreements (Orchestrator item 2 and the UI paragraph); §6 F1 step 4, F2, F3, F9",
+          "change": "Replace every route written as /d/<dept>/api/... or /d/web/api/... with the root path plus the query: GET /api/state?dept=web&since=n, POST /api/say?dept=web, POST /api/output?dept=web, POST /api/reset?dept=web. In §1 delete the clause 'mounted both under /d/{dept}/ (ORCH-D7) and at the root with dept as a query (UI-D2), because those two sections disagree (7.2)' and write 'mounted once at the root, the department in ?dept= (S1-contracts-01)'. In §2 delete the two sentences that say ORCH and UI disagree. In §4.9 delete 'ORCH-D7 and UI-D2 disagree on where the J2 routes live; 7.2 mounts both and the consolidator deletes one include_router line' and write 'J2 routes live at the root with ?dept=; the UI serves the pages (S1-contracts-01)'."
+        },
+        {
+          "target": "engine",
+          "where": "§7 heading and §7.2 paragraph 'Where the routes live'; §7.1 closing sentence",
+          "change": "Change the §7 heading to 'mounted at the root, department in ?dept=, 7.2'. Rewrite 'Where the routes live' as: mount(app, services) calls app.include_router(router) once. The dependency dept_dep reads ?dept= only and fullmatches DEPT_ID_RE (^[a-z][a-z0-9-]{1,39}$, defined in engine/spec.py and also used by TaskSpec.dept_id); absent or malformed gives 400 {'error':'dept_required'}; services.department(dept) returning None gives 404 {'error':'not_found'}. Delete the path parameter, the X-Sutra-Dept header, the second include_router and the sentence 'The consolidator keeps one mount and deletes the other line'. Every J2 route, including GET /api/refs and GET /api/library, requires ?dept= (the page's fetch wrapper adds it to all J2 paths), so no route is special-cased."
+        },
+        {
+          "target": "engine",
+          "where": "§3.1 row 'j2_ui.html, j2_ui_render.js, j2_graph_layout.js, vendor/*'; §9 test_engine_api_scope.py row; §10 E4 title; §11 ENG-D4; §12 risks (row 'ORCH and UI disagree…')",
+          "change": "Legacy blocks that need J2's page or harness files read them only from SUTRA_J2_CHECKOUT (J2's unported originals); delete every statement that they come from paths.ui_dir() or sutra_app.ui.PAGES_DIR. test_engine_api_scope.py asserts every row of 7.1 at the root with ?dept=, 400 without it, 404 for another team's ?run=, and that no registered path starts with /d/. E4 title becomes 'FastAPI routes (root paths, ?dept=) and mount()'. ENG-D4: replace 'both mounts, because ORCH-D7 and UI-D2 differ' with '?dept= only' and add 'a second mount under /d/{dept}/' to the Rejected cell. Delete the risk row about the two sections disagreeing."
+        },
+        {
+          "target": "orchestrator",
+          "where": "§1.3 bullet 'ENG adopted' (Open E-1); §3.5 code block 'class EngineServices(Protocol)'; §5.6 'How a run is addressed'; §10 Risks item 1",
+          "change": "Close E-1: write 'J2 routes live at the root with ?dept= and ?run= (S1-contracts-01)'. In §5.6 replace 'from the department in ?dept= or in the /d/{dept}/ prefix' with 'from the department in ?dept='. In §3.5 delete the class EngineServices(Protocol) block and write 'Services satisfies sutra_app.engine.api.ports.EngineServices (data_dir, require_token, redact, resolve_run, department, deliver_to_department, stop_live)'. In §10 item 1 remove E-1 from the list of open items."
+        },
+        {
+          "target": "ui",
+          "where": "§0 bullets 'ENG §7.1 and §7.2' and 'Who serves the J2 page'; §4.1 route table (dept pattern); §4.2; §13 request 8",
+          "change": "Replace 'the department is dept=<id> (query), then header X-Sutra-Dept, then cookie sutra_dept' with 'the department is ?dept=<id> only'. Delete 'ENG's pages.py is dropped or calls render_page', 'paths.ui_dir() is sutra_app.ui.PAGES_DIR' and request 8. Keep GET /?dept=<id> -> 308 /d/<id>/. Replace the pattern ^org_[0-9a-f]{12}$ by DEPT_ID_RE ^[a-z][a-z0-9-]{1,39}$ in the /d/{dept} route, lookup_dept and sutra_ctx.js."
+        },
+        {
+          "target": "repo",
+          "where": "tests/contracts/test_contract_route_table.py (new, package CT-1)",
+          "change": "Build create_app with the engine, UI, connectors and library routers mounted; assert that (method, path template) pairs are unique, that every J2 path of engine.md 7.1 exists exactly once at the root, that no path starts with /d/ except the UI page routes /d/{dept} and /d/{dept}/, and that /api/library/schemas/{family}/{version} does not shadow a J2 path."
+        },
+        {
+          "target": "diagram",
+          "where": "arrow 'department views (read)' (gen.py label(736, 207, ...))",
+          "change": "Add the label 'J2 paths at root · ?dept= picks the team' on that arrow and a badge for this decision."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "E4",
+          "section": "engine",
+          "title": "APPEND: one root mount, department from ?dept= only (no /d/{dept}/ routes)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/engine/test_engine_api_scope.py -q  (400 without dept, 404 foreign run, no path under /d/)"
+          ]
+        },
+        {
+          "action": "add",
+          "id": "CT-1",
+          "section": "orchestrator",
+          "title": "Cross-section contract tests (route table, events, usage, settings, env, JSON extractors)",
+          "owns": [
+            "tests/contracts/__init__.py",
+            "tests/contracts/test_contract_*.py"
+          ],
+          "depends_on": [
+            "E0",
+            "E4",
+            "CN-7",
+            "CN-9",
+            "ORCH-1",
+            "ORCH-6"
+          ],
+          "acceptance": [
+            "scripts/py -m pytest tests/contracts -q  (the modules import the sections they compare unconditionally; CT-1 merges after those sections, like the unconditional contract test of S2-models-07)"
+          ]
+        }
+      ],
+      "diagram_label": "J2 paths at root · ?dept= picks the team"
+    },
+    {
+      "id": "S1-contracts-02",
+      "topic": "make_port, PortSpec and Allowance: one signature, one owner, one place",
+      "decision": "PortSpec and Allowance are defined in sutra_app/engine/port.py (E0), next to CallTag, CompletionRequest, CompletionResult and ModelPort, because the connector layer already imports that module and must not import engine.spec. make_port lives only in sutra_app/connectors/engine_port.py (CN-7) with the signature make_port(spec: PortSpec, *, usage_sink: UsageSink | None = None) -> ModelPort. PortSpec (closed, frozen): mock: bool; connector: Literal['auto','claude','codex','stub'] = 'auto'; run_id: str; dept_id: str; task_id: str | None = None; data_dir: str. Allowance (closed): max_calls: int | None (>=0); max_usd: float | None (>=0); deadline: float | None (epoch seconds); envelope_id: str | None. CompletionRequest.allowance is typed Allowance | None, not dict. RunSpec appears nowhere in the connector layer. Mock selection stays with the engine host: mock is true for --mock, SUTRA_MOCK=1, SUTRA_OFFLINE=1, STUDIO_MOCK=1 or task.connector == 'stub'; then the host builds ScriptedPort(usage_sink=sink) (J2 byte-identical, connectors package not imported); otherwise make_port(PortSpec(mock=False, connector=task.connector, run_id, dept_id, task_id, data_dir), usage_sink=sink) followed by port.preflight(). make_port still accepts mock=True or connector='stub' and returns a stub-only Router port; tests use it, and test_engine_port_contract.py runs one assertion set against ScriptedPort and that port to prove the twin.",
+      "why": "connectors.md 3.10 names RunSpec and spec.model.mode, but RunSpec is the orchestrator's task.json model and has no model field; engine.md 4.4 puts PortSpec in spec.py, which would make the connectors import the settings module. port.py is already the seam both sides import. Two mock implementations exist on purpose (ScriptedPort lets the engine be built and tested before the connectors and keeps ENG-01); each has one owner and a parity test.",
+      "rejected": "make_port(spec: RunSpec) with spec.model.mode; PortSpec in engine/spec.py; a dict-typed allowance (the router would have to re-validate it); making the host always call make_port (engine tests would need the connectors package).",
+      "affects": [
+        {
+          "target": "connectors",
+          "where": "§3.10 first bullet (Engine); §2 table row '…/engine_port.py'; §3.1 models (Allowance); §9 A1 bullet",
+          "change": "Replace 'make_port(spec: RunSpec) -> ModelPort builds a Router (stub when spec.mock or spec.model.mode == 'stub')' with 'make_port(spec: PortSpec, *, usage_sink: UsageSink | None = None) -> ModelPort builds a Router over the connectors that the policy and spec.connector allow; spec.mock or spec.connector == 'stub' gives a stub-only Router. PortSpec and Allowance are imported from sutra_app.engine.port; RunSpec never appears in this package.' In §3.1 replace the class Allowance(M) definition by 're-exported from sutra_app.engine.port (single definition, fields unchanged)'. In §9 A1 replace 'optional allowance on CompletionRequest' with 'CompletionRequest.allowance: Allowance | None'."
+        },
+        {
+          "target": "engine",
+          "where": "§4.1 closing paragraph and CompletionRequest code; §4.4 (PortSpec line); §4.7 step 5",
+          "change": "Move class PortSpec from spec.py to port.py (closed, frozen) with exactly: mock: bool; connector: Literal['auto','claude','codex','stub'] = 'auto'; run_id: str; dept_id: str; task_id: str | None = None; data_dir: str. Add class Allowance(BaseModel) (extra='forbid') to port.py: max_calls: int | None (ge=0); max_usd: float | None (ge=0); deadline: float | None; envelope_id: str | None. Change CompletionRequest.allowance from Optional[dict] to Optional[Allowance]. Replace 'CN's text reads spec.mock or spec.model.mode == 'stub', which becomes spec.mock' with 'make_port(spec: PortSpec, *, usage_sink=...) is the only signature'. In §4.7 step 5 write: 'mock (any of --mock, SUTRA_MOCK, SUTRA_OFFLINE, STUDIO_MOCK, task.connector == 'stub') -> ScriptedPort(usage_sink=sink); else make_port(PortSpec(mock=False, connector=task.connector, run_id, dept_id, task_id, data_dir), usage_sink=sink), then port.preflight()'."
+        },
+        {
+          "target": "repo",
+          "where": "tests/engine/test_engine_port_contract.py (E0) and tests/contracts/test_contract_make_port.py (CT-1)",
+          "change": "Assert: PortSpec importable from sutra_app.engine.port with the listed fields and extra='forbid'; inspect.signature(make_port) equals (spec: PortSpec, *, usage_sink=None); Allowance is the same class object in engine.port and connectors.models; the same assertion set passes for ScriptedPort and make_port(PortSpec(mock=True, ...))."
+        },
+        {
+          "target": "diagram",
+          "where": "arrow 'every AI step' (runtime to Connector router, gen.py label(283, 820, ...))",
+          "change": "Add the label 'one seam: make_port(PortSpec) -> ModelPort'."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "E0",
+          "section": "engine",
+          "title": "APPEND: PortSpec and Allowance in port.py; allowance typed",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/engine/test_engine_port_contract.py -q  (PortSpec fields, allowance is None for every engine tag in a mock run)"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "CN-7",
+          "section": "connectors",
+          "title": "APPEND: make_port(spec: PortSpec, *, usage_sink) signature",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/connectors/test_engine_port.py -q  (signature, PortSpec import path, stub-only Router for mock=True)"
+          ]
+        }
+      ],
+      "diagram_label": "one seam: make_port(PortSpec) -> ModelPort"
+    },
+    {
+      "id": "S1-contracts-03",
+      "topic": "RunSpec.settings and engine flags: who decides what a run gets, and how the owner changes it in Settings",
+      "decision": "Three layers, each with one owner and one file. (1) Global defaults: data/engine.json (a partial EngineSettings). (2) Department overrides: data/departments/<dept>/engine.json (partial). (3) Task overrides: RunSpec.settings, a closed set of SEVEN keys (J2_OUTPUT, J2_BUDGET, J2_BUDGET_CAP, J2_FIXES, J2_MEMORY, J2_SLIM, J2_RATES), written by the orchestrator from the start-page output choice (page.json.next_settings, J2_OUTPUT only) and from POST /api/tasks {settings}; TaskService.create validates keys and values (J2_OUTPUT in website|prd|hld|lld; J2_BUDGET and J2_BUDGET_CAP integers 1..100000; the other four '0' or '1') and answers anything else with 422 validation. The ENGINE HOST resolves the effective EngineSettings with EngineSettings.layered(env, global_file, dept_file, task_settings) (order: defaults < data/engine.json < process J2_* env (dev and tests only) < department engine.json < task settings), because only the engine owns the fields and J2's defaults; the orchestrator never reads engine.json. The host writes the effective non-secret values to <run>/settings.json at start; a live run never re-reads files. Every other flag (realization, change, board, template_library, artifact_schema, send_*, chrome, test switches) is reachable only through the two files, never through a task, a model reply or an API field. The owner changes them in Settings through two routes of the engine adapter (api/settings.py, outside J2_PATHS): GET /api/engine/settings[?dept=<id>] returns {schema:'engine-settings/1', defaults, global, department (only with dept), effective, editable:[fields], locked:[fields]}; PUT /api/engine/settings[?dept=<id>] (X-Sutra-Token) takes {set:{field:value}, unset:[field]}, validates with EngineSettings (extra='forbid', secrets are not fields), writes the file atomically (temp file and rename, mode 0600) and answers like GET; unknown, locked or invalid fields give 422 validation. LOCKED_FIELDS (editable only by editing the file by hand): send_mode, send_cap, milestone_emails, test_email, test_slack_target, chrome, force_audit_fail, force_audit_note, force_question, memory_test_lessons. A change applies to the NEXT run of that scope only. The Home Settings pane gets an 'Engine' group (toggles and number fields for the editable fields, locked ones read-only).",
+      "why": "J2's defaults stay in one place (EngineSettings) and every J2 flag stays reachable (everything in J2 is present). The seven-key allowlist keeps the dangerous switches (live email, a Chrome path, forced audit failures) out of anything a model reply or a web request can set. The owner needs a way to change flags that is not an environment variable. Only the engine host knows which settings the process really uses, so it must resolve them.",
+      "rejected": "Allowing every EngineSettings field in RunSpec.settings; an orchestrator copy of J2's flag defaults (two sources of truth); environment variables only (J2's way, no change from Settings); a SQLite settings table (J2 code and the legacy tests read env and files); letting PUT write the locked fields (a web request could enable live email).",
+      "affects": [
+        {
+          "target": "engine",
+          "where": "§4.4 (EngineSettings); §4.7 step 4; §5 data tree; §7.1 after row 30; §9 tests; §10 E4",
+          "change": "§4.4: add the module constant LOCKED_FIELDS = ('send_mode','send_cap','milestone_emails','test_email','test_slack_target','chrome','force_audit_fail','force_audit_note','force_question','memory_test_lessons'); to_env and layered are unchanged. §4.7 step 4: after layered() write <run>/settings.json (the effective EngineSettings.model_dump(), no secrets). §5: add 'settings.json' to the run-folder list. §7.1: add two rows that are not J2 paths (so ?dept= is optional and means 'this department's file'): 31 settings_get GET /api/engine/settings and 32 settings_put PUT /api/engine/settings, shapes as in the decision; both live in api/settings.py. §9: add tests/engine/test_engine_api_settings.py (GET shape; PUT validates; locked field 422; atomic write; mode 0600; unknown department 404; token required; a PUT during a live run leaves that run's settings.json unchanged and changes the next run's). §10 E4 owns += sutra_app/engine/api/settings.py and the test file."
+        },
+        {
+          "target": "orchestrator",
+          "where": "§3.3 RunSpec row; §3.4 TaskService.create; §6.2 POST /api/tasks row; §4.2 files tree",
+          "change": "RunSpec.settings is the closed set of the seven keys; TaskService.create(settings=...) validates keys and values as listed in the decision and raises a 422 validation error otherwise (also for POST /api/tasks). §4.2: add the engine-owned entries data/engine.json, data/departments/<dept>/engine.json, data/departments/<dept>/page.json ({since_run, next_settings}), data/departments/<dept>/memory/, data/library/ and data/agents/j2/; the orchestrator never reads them, and DepartmentStore.sweep never deletes a department folder that holds any of them."
+        },
+        {
+          "target": "ui",
+          "where": "§6.6 Home, bullet 'Rail' (section Settings), and the §8 endpoint table",
+          "change": "Add a group 'Engine' to the Settings pane fed by GET /api/engine/settings and saved with PUT /api/engine/settings?dept=<id> (no dept = all teams): toggles and number fields for the editable fields; locked fields shown read-only with the note 'edit data/engine.json'; a line 'changes apply to the next run'. Add the two routes to the §8 endpoint table. These paths are outside J2_PATHS, so the fetch wrapper does not add dept; the pane passes it explicitly."
+        },
+        {
+          "target": "repo",
+          "where": "tests/contracts/test_contract_settings.py (CT-1)",
+          "change": "Assert: every key of RunSpec.settings is one of the names EngineSettings.to_env() can produce; TaskService.create rejects J2_REALIZATION, J2_SEND_MODE, J2_CHROME and J2_BUDGET='abc'; PUT of a locked field is 422; the host's settings.json equals EngineSettings.layered(...) for the four layers."
+        },
+        {
+          "target": "diagram",
+          "where": "note under the chip band ('flags are department settings')",
+          "change": "Reword to 'settings: 2 files + 7 task keys · edit in Settings' with a badge."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "E4",
+          "section": "engine",
+          "title": "APPEND: engine settings routes",
+          "owns": [
+            "sutra_app/engine/api/settings.py",
+            "tests/engine/test_engine_api_settings.py"
+          ],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/engine/test_engine_api_settings.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "UI-7",
+          "section": "ui",
+          "title": "APPEND: Engine group in the Settings pane",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "node --test tests/ui/js/settings_engine.test.js  (renders editable and locked fields from a fixture, PUT body is {set, unset})"
+          ]
+        }
+      ],
+      "diagram_label": "settings: 2 files + 7 task keys · edit in Settings"
+    },
+    {
+      "id": "S1-contracts-04",
+      "topic": "stop_live: what the orchestrator does and what the engine does on reset",
+      "decision": "stop_live(dept_id) -> bool is a plain (sync) method of Services, called only by POST /api/reset?dept=. Semantics: (1) a live task in waiting_user is stopped through the normal stop ladder (S1-contracts-15) and ends 'stopped' with outcome 'reset by you'; (2) the department's queued and blocked tasks are cancelled ('reset by you'); (3) it returns True when no task of the department is starting or running afterwards (including when there was nothing to stop) and False when a task is starting or running, in which case NOTHING is touched; (4) it may block the calling worker thread for at most the stop ladder (12 s) and drives the async stop with anyio.from_thread.run. The engine adapter's reset handler: stop_live False -> 409 {'ok':false} (J2: j2_server.py:264); True -> write page.json.since_run = the department's latest run id (atomic) and answer 200 {'ok':true}. History (tasks, run folders, the department chat in SQLite) is never deleted; the J2 page shows idle until the next task. The engine process does nothing special: it receives the ordinary {'kind':'stop'} inbox line.",
+      "why": "Both sections already agreed on the name and the bool. What was missing: the no-task case (J2's 'Try again' button calls reset after a crash, j2_ui.html:1152), queued tasks (a reset page must not start a queued task later), and sync versus async (the engine's routes are plain def run in a thread pool).",
+      "rejected": "stop_live killing a running task (J2 refuses; the owner would lose work); reset deleting run folders or chat rows (history); an async stop_live (the engine routes are sync handlers).",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "§3.4 TaskService.stop_live comment; §5.5 last paragraph; §7 test_tasks.py row",
+          "change": "Replace the comment with: 'True when no task of the department is starting or running afterwards; stops a waiting_user task (outcome reset by you) and cancels queued and blocked tasks of the department; False, touching nothing, when a task is starting or running; blocks at most the stop ladder'. test_tasks.py adds test_stop_live_waiting, test_stop_live_running_untouched, test_stop_live_nothing_live_true, test_stop_live_cancels_queued."
+        },
+        {
+          "target": "engine",
+          "where": "§4.9 EngineServices comment on stop_live; §6 F9; §7.1 row 30",
+          "change": "Write: 'stop_live(dept_id) -> bool: True when nothing of the department is starting or running afterwards, False when a task is starting or running (S1-contracts-04)'. F9 reset: stop_live False -> 409 {'ok':false}; True -> page.json.since_run = latest run id, 200 {'ok':true}; no other state is cleared. test_engine_api_commands.py asserts both branches with a fake services object."
+        }
+      ],
+      "work_packages": [],
+      "diagram_label": "reset stops a waiting team, never a running one"
+    },
+    {
+      "id": "S1-contracts-05",
+      "topic": "Usage rows: who builds them, who writes the ledger, call_ref, detail, tokens versus usd",
+      "decision": "ONE builder, TWO sinks, ONE ledger writer. The connector Router builds exactly one UsageIn per request (success or failure) and hands it to a UsageSink; nothing else builds usage rows. In the server process the sink is UsageStore, which writes usage_ledger directly: that covers the chat agent (AsyncConnector.records_usage = True, so TurnRunner and node panels write no rows of their own) and any server-side call. In an engine process the sink is EventUsageSink (engine/events.py, E0), which appends one 'usage' line to events.jsonl; the server's Projector turns that line into the same ledger row. SQLite is written by the server only (ORCH-D5). The engine host passes the sink to make_port(spec, usage_sink=...) and to ScriptedPort(usage_sink=...), so the helper calls (chat summary, template generator, reviewer, planner, judge) and failed requests are counted too; the plan to emit usage only from call_finished is dropped. UsageIn and UsageSink are defined once, in sutra_app/connectors/usage.py (CN-6), with fields: provider, model, purpose, session_id, node_id, task_id, dept_id, fn, step, atom_id, usd, tokens_in, tokens_out, seconds, ok, how, call_ref, detail; ORCH imports them and keeps only UsageOut. usage_ledger gains step TEXT and atom_id TEXT (no foreign key: a usage line can reach the server before its atom line) with index usage_atom(atom_id); detail_json (nullable) already exists, so connectors agreement A2 on the column is accepted. call_ref = '{run_id}:{call_no}' when tag.call_no > 0 (the id in calls.jsonl), otherwise 'r:{request_id}'; the unique index (task_id, call_ref) with INSERT ... ON CONFLICT DO NOTHING makes any replay harmless. Projector mapping: task_id and dept_id from the task; node_id from fn (function node <dept>.<fn>) or from step (the W-n step node), NULL when that node does not exist yet; session_id from the node; atom_id is stored as given for a function atom and as '<run_id>:<atom id>' for a J2 workflow atom, because J2 atom ids restart at W-1 in every run (S2-models-10). Tokens are the comparable unit and are stored for every provider; usd is stored where the provider reports it (Claude: the list-price estimate, taken as a delta per call) and is NULL for Codex unless the owner filled rates; stub rows are stored with provider 'stub' and excluded from totals (an include_stub=1 query flag shows them); J2 work credits are never converted to usd or tokens. UsageStore.record also calls ChatStore.note_provider so a session's provider chip shows the last provider and model used. CompletionResult.detail carries UsageIn.detail (attempts[{provider, model, effort, code or 'ok', usd, tokens_in, tokens_out, seconds}], cached_in, cache_write, reasoning, usd_basis, billing, cli_version, envelope_id, note, request_id) for callers that want it; ConnectorError.detail carries the same keys for a failed request.",
+      "why": "(1) One place builds the row, so attempts, fallbacks, ok=false and detail are right for every caller. (2) The engine's call_finished fires from _log_call, i.e. only for J2Run.call; the other llm.ask sites (j2.py:3113 summary, :8372 template generator, :9514 reviewer, j2_realization.py:685 planner and judge) never reach it, so dozens of calls per realization run would be missing from the ledger. (3) ORCH-D5 stays true. (4) connectors.md 3.8 and engine.md 4.1 already agreed on call_ref; the connectors risk 11 ('ENG and ORCH both say the router writes the ledger') is a misreading and is removed.",
+      "rejected": "Usage events built in the llm shim from call_finished (a second builder that misses helper calls and failures); the engine writing SQLite (ORCH-D5); a router without a sink in the engine and the server guessing rows from calls.jsonl; a second UsageIn class in ORCH (two definitions).",
+      "affects": [
+        {
+          "target": "connectors",
+          "where": "§2 row '…/usage.py'; §3.8 (paragraph 'Who writes' and the UsageIn table); §3.10; §9 A1 bullet; §10 risk 11",
+          "change": "§3.8: add the rows step ('J2 step label such as J2.c, or the builder id W-3; from tag.step label') and atom_id (tag.atom, plain id); state 'UsageIn and UsageSink are defined here and imported by ORCH and the engine'; replace 'In an engine host the router gets usage_sink=None: the engine's call_finished hook already emits the usage event' with 'In an engine host the router gets usage_sink=EventUsageSink, which writes the usage event instead of SQLite; the server writes the ledger'. §3.10: make_port takes usage_sink. §9 A1: 'CompletionRequest.allowance and CompletionResult.detail accepted; engine hosts use EventUsageSink'. §10: delete risk 11."
+        },
+        {
+          "target": "engine",
+          "where": "§4.1 paragraph after the code block; §4.3 EventHooks paragraph; §4.5 usage row; §6 F1 step 3; §4.9 Orchestrator item 4; §11 ENG-D3",
+          "change": "§4.1: replace 'built with no usage sink: the engine reports usage as usage events' with 'built with usage_sink=EventUsageSink(writer): the Router writes one usage event per request, the server writes the ledger'. §4.3: EventHooks no longer writes usage events or session events; call_finished stays for calls.jsonl (provider and usd are added there) and for the function-node layer. §4.5 usage row: fields as in S1-contracts-09, produced by 'EventUsageSink (Router) or ScriptedPort, for every model request, helper calls and failures included'. F1 step 3: 'every model request becomes one usage event'. ENG-D3 and §4.9 item 4: 'its router's sink writes usage events (not SQLite)'. events.py: add EventUsageSink with record(row: UsageIn | Mapping) -> int (appends the usage event; returns a local counter). ScriptedPort builds the same row as StubConnector: provider 'stub', model 'scripted', tokens_in and tokens_out = characters / 4, usd 0.0, how 'stub', ok true."
+        },
+        {
+          "target": "orchestrator",
+          "where": "§3.3 table row 'UsageIn / UsageOut'; §3.5 'UsageSink' block; §4.1 DDL usage_ledger; §5.6 usage row; §2 module map row usage.py",
+          "change": "§3.3: UsageIn is imported from sutra_app.connectors.usage; ORCH defines only UsageOut (= UsageIn fields + id, at, detail parsed). §3.5: delete the UsageSink Protocol block (imported). DDL: add 'step TEXT, atom_id TEXT' to usage_ledger and 'CREATE INDEX usage_atom ON usage_ledger(atom_id) WHERE atom_id IS NOT NULL;'. §5.6 usage row projection: 'UsageStore.record(UsageIn built from the event + task) with the mapping of S1-contracts-05; INSERT ... ON CONFLICT(task_id, call_ref) DO NOTHING; then ChatStore.note_provider'. ORCH-3 depends_on += CN-6. This replaces the UsageIn part of the change that S2-models-07 makes to the same row (UsageIn now comes from CN-6 with step and atom_id; UsageOut gains step and atom_id)."
+        },
+        {
+          "target": "repo",
+          "where": "tests/contracts/test_contract_usage.py (CT-1) and tests/connectors/test_usage.py (CN-6)",
+          "change": "Round trip: a stub Router with EventUsageSink writes a usage line for a success, a failed request (ok=false) and an uncounted helper call (call_no 0 -> call_ref 'r:<id>'); the line validates against RunEvent; Projector + UsageStore produce a ledger row equal to the Router's UsageIn; replaying the line adds no row; atom_id is stored as '<run_id>:<atom>' for a W-n.aK builder atom and unchanged for a function atom; Codex usd stays NULL; stub rows are excluded from /api/usage/summary."
+        },
+        {
+          "target": "diagram",
+          "where": "box 'Usage and cost ledger' (gen.py box(1042, 844, ...))",
+          "change": "Add the line 'router builds the row · server writes it' and the label."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "CN-6",
+          "section": "connectors",
+          "title": "APPEND: UsageIn/UsageSink single definition with step and atom_id",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/connectors/test_usage.py -q  (fields, call_ref rule, detail keys, failed request ok=false)"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "E0",
+          "section": "engine",
+          "title": "APPEND: EventUsageSink in events.py; ScriptedPort(usage_sink)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/engine/test_engine_events.py tests/engine/test_engine_port_contract.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "ORCH-3",
+          "section": "orchestrator",
+          "title": "APPEND: usage_ledger step and atom_id; UsageStore imports UsageIn; note_provider",
+          "owns": [],
+          "depends_on": [
+            "CN-6"
+          ],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_atoms_usage.py tests/orchestrator/test_schema.py -q"
+          ]
+        }
+      ],
+      "diagram_label": "router builds one row per call · server writes it"
+    },
+    {
+      "id": "S1-contracts-06",
+      "topic": "Allowance: how the per-call budget is computed and passed",
+      "decision": "Priority's envelope is enforced by the caller that owns it. The engine (J2Run) keeps enforcing money (credits), model_call_limit and retry_limit in its own accounting (j2.py:6896-7120, :7274) and sends allowance=None on every request in v1; the router applies only its own per-request ceiling (max_calls_per_request = 6, policy) and the call timeout. J2 credits are never converted to usd or tokens, so Allowance.max_usd is never derived from an envelope. Allowance stays an optional capability: whoever owns a budget computes it and passes it in CompletionRequest.allowance (engine) or RouteContext.allowance (server); an over-allowance request raises EnvelopeExceededError (kind quota, no fallback) before any process is spawned. The chat agent sends none either (its limits are 3 attempts per stage, 6 requests per owner message, 120 s per call). The function-node layer may later pass Allowance(max_calls=3, envelope_id=<atom id>) per atom; nothing in the wire changes when it does.",
+      "why": "Keeps J2's behaviour: J2 counts its own calls against model_call_limit and never counted the llm layer's internal retry; time_limit_minutes and stop_loss are recorded in the envelope but not enforced by J2 code, so enforcing them in the router would change behaviour. Two counters (J2Run and router) would be two truths (connectors CD10 already says so).",
+      "rejected": "Passing max_calls = remaining J2 calls (it would forbid the router's one retry and break J2 parity); converting credits to usd; a second independent counter inside the router.",
+      "affects": [
+        {
+          "target": "connectors",
+          "where": "§3.6 'Attempts' bullet 'Allowance is enforced per request…'; §9 CD10",
+          "change": "Write: 'In v1 no caller sends an Allowance (the engine keeps J2's own accounting; the chat agent has its own caps); the gate is exercised by tests and by future callers. The label on the router box is true as: the caller keeps the envelope, the router adds a ceiling of 6 invocations per request.' Delete 'Engine calls carry no allowance until CompletionRequest gets one (A1)'."
+        },
+        {
+          "target": "engine",
+          "where": "§4.1 CompletionRequest comment on allowance; §9 test_engine_port_contract.py row",
+          "change": "Comment: 'the engine sends None: J2Run keeps the envelope (calls_used, retries_used, credits)'. The contract test asserts req.allowance is None for every tag in a Brew Lab mock run."
+        },
+        {
+          "target": "diagram",
+          "where": "Connector router box line 'stays inside Priority's envelope'",
+          "change": "Keep the line and add the badge label 'envelope kept by caller · router ceiling 6'."
+        }
+      ],
+      "work_packages": [],
+      "diagram_label": "envelope kept by caller · router ceiling 6"
+    },
+    {
+      "id": "S1-contracts-07",
+      "topic": "CallTag and AsyncConnector field mapping (purpose, step, stage)",
+      "decision": "CallTag.purpose is an open string matching ^[a-z_]{1,24}$ with the documented set agent_turn, summary, template, review, plan, judge, change, chat_plan, chat (no Literal). CallTag.step stays the J2 step number (int, 0 when unknown) and is never fed from ORCH's string argument. AsyncConnector.call_json(prompt, schema, tools, timeout, function, step, context) maps: function -> CallTag.function ('chat_agent'); the string step (decide, change, assign) -> CallTag.stage; context.purpose -> CallTag.purpose; context.session_id and node_id -> RouteContext.session_id and node_id; context.task_id (if any) -> CallTag.task_id. CallTag.function values are documented as identity, adaptation, priority, coordination, audit, W-<n>, validator, reviewer, summariser, template, chat_agent. Router policy matches stay exact on purpose.",
+      "why": "ORCH passes step as a string and purpose='chat_plan'; CallTag.step is an int and CallTag.purpose a Literal without 'chat_plan', so the adapter could not build a valid tag. The ledger column purpose is free text already.",
+      "rejected": "Adding chat_plan to the Literal (the vocabulary would need an edit for every new caller); making CallTag.step a string (J2's step numbers and the STEPS table are ints).",
+      "affects": [
+        {
+          "target": "engine",
+          "where": "§4.1 CallTag",
+          "change": "Change 'purpose: Literal[...]' to 'purpose: str = 'agent_turn'  # pattern ^[a-z_]{1,24}$; documented set: agent_turn, summary, template, review, plan, judge, change, chat_plan, chat' and add function 'chat_agent' to the function comment."
+        },
+        {
+          "target": "connectors",
+          "where": "§3.10 Orchestrator bullet; §3.1 RouteContext comment",
+          "change": "Add: 'AsyncConnector maps step -> tag.stage, function -> tag.function, context.purpose -> tag.purpose, context.task_id -> tag.task_id; it never writes tag.step.'"
+        },
+        {
+          "target": "repo",
+          "where": "tests/connectors/test_orchestrator_port.py (CN-7)",
+          "change": "Assert the tag built for call_json(function='chat_agent', step='decide', context={'purpose':'chat_plan','session_id':'cs_org','node_id':'root'}) equals CallTag(function='chat_agent', stage='decide', purpose='chat_plan') with RouteContext.session_id 'cs_org'."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "CN-7",
+          "section": "connectors",
+          "title": "APPEND: AsyncConnector tag mapping",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/connectors/test_orchestrator_port.py -q"
+          ]
+        }
+      ],
+      "diagram_label": ""
+    },
+    {
+      "id": "S1-contracts-08",
+      "topic": "Connector agreements A2-A4: set_provider, session hook, TranscriptSource, build_api_router, Connectors controls",
+      "decision": "A2 is accepted as the orchestrator already wired it, with five exact corrections. (1) The session hook is called positionally as (session_id, provider, model, provider_session_id) and is ChatStore.set_provider(session_id, connector, model, provider_session_id) (already has the model). ChatStore also gets note_provider(tx, session_id, connector, model), which sets connector and model only and never touches provider_session_id; UsageStore.record calls it, so one-shot calls fill the provider chip without erasing a stored provider session id. (2) transcripts= is NOT the ChatStore: ORCH adds class ChatTranscripts(chats) in orchestrator/chats.py with messages(session_id, limit=20) -> list[connectors.models.Message] (role agent becomes assistant; only kinds text and question with state ok; the newest `limit` in order); ResumeInfo stays for diagnostics. ChatStore.provider_session_id is a mirror for display; the router's session.json is authoritative, and a missing session.json means a new provider session with the carry-over. (3) events= is lambda type, data: bus.publish_one(type, data), with EventBus.publish_one(type, data) added to ORCH-2 (thread-safe, assigns seq and at); the SSE table gains connector.health {provider, state, until, reason}, connector.switch {session_id, from, to, reason} and connector.mode {mode}, filterable by topic 'connector'. (4) ORCH-8 wiring mounts app.include_router(build_api_router(router=router, write_guard=require_token)) (the CN router carries the /api/connectors prefix); the write guard is ORCH 6.1 (header X-Sutra-Token or cookie sutra_token), so the connectors text '(ENG §4.8)' is a wrong reference and is corrected, and the dangling '/api/engine/preflight' is deleted (the preflight is the ModelPort method plus /api/health). (5) build_router(settings, *, usage_sink, events, transcripts, session_hook) reads from settings only data_dir, connector and offline (Settings satisfies it). A3 is accepted unchanged (schemas from transport_schema, ReplyParser stays the caller's). A4 is narrowed: UI-7 adds a Test button per provider (POST /api/connectors/{provider}/test) and, for Codex only, Sign in (POST /api/connectors/codex/sign-in, then poll GET .../sign-in/{id}), showing the server's user_message(); the session pin control is not built in v1. The session API (start, send, stream, stop, resume, carry-over on a switch) stays because the owner's diagram names it, but v1 has no caller: the chat agent keeps its one-shot call_json (ORCH-D4) and the engine's calls are one-shot and stateless like J2's. The first feature that needs a model-backed node chat uses the finished wiring without a new contract.",
+      "why": "Checked against what the orchestrator calls (orchestrator.md 3.5): usage_sink, events, transcripts, session_hook and build_api_router are all passed, but transcripts=chats passes an object whose messages() has another signature and return type; the SSE table lacks the connector topics; the guard reference points at the engine's rehydrate section. The diagram lists 'start · send · stream · stop · resume' and 'carries the transcript on a switch', so deleting the session API is not allowed, and wiring it costs nothing at run time.",
+      "rejected": "Passing ChatStore as TranscriptSource (wrong signature); deleting the session machinery now (against the diagram, and the first model-backed node chat would need a new contract); letting set_provider overwrite provider_session_id from one-shot calls.",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "§3.4 ChatStore (set_provider, resume_info); §3.5 plug-in sentence; §6.3 SSE table; §2 module map rows chats.py and events.py",
+          "change": "§3.4: add 'def note_provider(self, tx, session_id, connector, model) -> None  # connector and model only' and 'class ChatTranscripts: def __init__(self, chats: ChatStore); def messages(self, session_id: str, limit: int = 20) -> list[Message]  # Message from sutra_app.connectors.models'. §3.5: replace 'transcripts=chats' by 'transcripts=ChatTranscripts(chats)' and 'events=...' by 'events=lambda t, d: bus.publish_one(t, d)'; add 'ChatStore.provider_session_id is a mirror, the router's session.json is authoritative'. §4.2: add the connectors-owned optional file data/connectors/policy.json. §6.3: add rows connector.health, connector.switch, connector.mode. ORCH-2 EventBus gains publish_one(type: str, data: dict) -> None (thread-safe, assigns seq and at). test_chat_store.py adds ChatTranscripts (role mapping, kinds, limit) and note_provider (keeps provider_session_id)."
+        },
+        {
+          "target": "connectors",
+          "where": "§6 first paragraph; §9 A2/A3/A4 bullets; §3.6 Router signature comments; §10 risks 9 and 11",
+          "change": "§6: replace '(ENG §4.8)' with '(ORCH 6.1: header X-Sutra-Token or cookie sutra_token)' and replace the sentence 'Routes that stay with their owners: /api/health…, /api/engine/preflight, /api/usage*' with 'Routes that stay with their owners: /api/health (uses status()), /api/usage*, /api/engine/settings'. §9: A2 'accepted with ChatTranscripts, note_provider, publish_one (S1-contracts-08)'; A3 'accepted'; A4 'Test and Codex Sign in only; no pin control in v1'. §3.6: document the positional session_hook order and that TranscriptSource is implemented by ORCH's ChatTranscripts. §10: update risk 9 to 'the wiring is complete; the first caller of chat_send is a later feature' and delete risk 11."
+        },
+        {
+          "target": "ui",
+          "where": "§6.6 and §8 (Settings, Connectors rows)",
+          "change": "Connectors rows in Settings: add a 'Test' button (POST /api/connectors/{provider}/test, shows seconds or the error's user_message) and, for codex only, 'Sign in' (POST /api/connectors/codex/sign-in shows link and one-time code; poll GET /api/connectors/codex/sign-in/{id}; DELETE to cancel). No pin control."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "ORCH-2",
+          "section": "orchestrator",
+          "title": "APPEND: EventBus.publish_one",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_events_bus.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "ORCH-3",
+          "section": "orchestrator",
+          "title": "APPEND: ChatTranscripts and ChatStore.note_provider",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_chat_store.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "ORCH-8",
+          "section": "orchestrator",
+          "title": "APPEND: wiring passes events, ChatTranscripts, session_hook and mounts build_api_router",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_startup.py -q  (/api/connectors/status answers; a switch publishes connector.switch)"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "UI-7",
+          "section": "ui",
+          "title": "APPEND: Connectors Test and Codex Sign in",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "node --test tests/ui/js/settings_connectors.test.js"
+          ]
+        }
+      ],
+      "diagram_label": "sessions: set_provider + transcript hook wired"
+    },
+    {
+      "id": "S1-contracts-09",
+      "topic": "The final run-event list (the closed RunEvent union on t)",
+      "decision": "events.jsonl carries EIGHT event types; every line is one JSON object with t and at (ISO-8601 UTC 'Z', seconds). (1) run.started {pid:int, schema:'events/1', mock:bool, seed:'none'|'rehydrated'|'fresh'}. (2) say {id:int>=1, who:str, text:str, to_user:bool, act:str|null, pause:str|null, questions:list|null, next:str|null}; who is identity|adaptation|priority|coordination|audit|validator|system|W-<n>|team:<role>, never 'user'; this is also how node chat messages travel. (3) node {exactly one of fn:identity|adaptation|priority|coordination|audit or step:W-<n>|team:<role>; status: the nine map/1 words idle|running|waiting|waiting_on_you|fault|filed|done_unchecked|left_open|not_made (a function node uses the first five); detail:str; calls:int; seconds:float; optional task:{id:'t-<turn_no>', kind:str|null, summary:str (<=300), state:'running'|'done', set_by:str}, context:[str] ('<kind>: <summary>', <=200 characters, <=40 items), wait_on:str|null, tokens:{input,output}}; there is NO goal field (a function node's standing goal comes from its FunctionSpec, S2-models-08); a running function node carries task, a waiting one carries wait_on; a function turn starts when task.state is running and ends when it is done; the server derives last_seen from detail while the node is idle and stats from calls, seconds and tokens. (4) step {step:W-<n>|team:<role>, name, parent:str|null, status, handoff:[ref], reads:[ref], rework:ref|null}. (5) atom {node:str, atom:{id, schema:'atom/1'|'work-atom/0.3', goal, work_kind:'llm'|'skill'|'bash'|'manual', verify_template:str|null, status, attempt:0..3, closed_by:'verify'|'manual-override'|null, reason:str|null, body:object, ts_open:int, ts_closed:int|null}} with ts in epoch seconds (library Ts); status is open|closed|verify_failed|abandoned for atom/1 (J2's view) and open|closed|refused|abandoned for work-atom/0.3 (the stored state); for work-atom/0.3 ONLY three more optional fields exist, exactly as S2-models-07 defines them: outcome:'opened'|'verify_failed'|'closed'|'refused'|'abandoned', card:object (library Card) and ledger:object|null (library LedgerRow, null while the atom stays open); updates are forward-only. (6) usage {fn:str, step:str|null, atom:str|null, provider:'claude'|'codex'|'stub', model:str, purpose:str, usd:float|null, tokens_in:int|null, tokens_out:int|null, seconds:float, ok:bool, how:str, call_ref:str, detail:object|null}. (7) heartbeat {} every 5 s. (8) run.ended {status:'done'|'done_with_open_items'|'stopped'|'crashed', outcome:str, code:str|null}, where code is the ModelError code, 'start_failed' or 'internal' for crashed and null otherwise; it is the last line. The session event is REMOVED (J2 calls are one-shot and stateless, so there is no provider session to report; the provider chip comes from usage rows, S1-contracts-05). Producers: run.started and run.ended by the host; say by message_posted; node, step and atom(atom/1) by the StatePublisher (at most every 250 ms, always at turn boundaries, emitted in the order node, step, atom); atom(work-atom/0.3) synchronously by the function-node layer; usage by the Router/ScriptedPort sink; heartbeat by a daemon thread. The host emits run.started AFTER the seed decision (S1-contracts-12); early failures (invalid task.json, failed preflight) emit run.ended only. The Projector applies lines in file order, parses with unknown fields ignored (noted once per run) and unknown types skipped with a note; tests parse strict (extra='forbid'). Projection notes: validator lines go to the session of the function named in next (else Identity's); system lines to Identity's; a speaks_to edge <dept>.<who> -> <dept>.<next> with a message count is projected from every say where both are function names (source {file:'chat.jsonl', field:'next', value:<id>}).",
+      "why": "Compared field by field, the engine table (4.5) and ORCH 5.6 agreed on the nine events, but five gaps remained: no timestamp (a replay after downtime would stamp every message with the replay time and reconcile could not judge heartbeat age); the session event fires on every one-shot call (each has a new CLI session id) and carries nothing resumable; usage lacked ok, how, detail and atom; atom status lacked refused (the function-node lifecycle has open, close, refuse, abandon); run.ended lacked a machine-readable code, so the UI could not tell a sign-in problem from a crash.",
+      "rejected": "A separate turn event (the node event's task.state already marks start and end and the atom events mark the step; a second source of the same fact); keeping the session event (noise with no resumable id); a seq field (offsets already order the file); a closed-in-production union (a long-lived engine across a server upgrade would lose every event that gained a field).",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "§3.3 table row 'RunEvent'; §5.6 event table and the paragraph after it; §6.3 not affected",
+          "change": "Replace the nine-event table by the eight rows of the decision: add 'at' to all; run.started + schema, mock, seed; node: the nine map words, task{id,kind,summary,state,set_by} with id 't-<turn_no>', context strings, wait_on, tokens and NO goal (S2-models-08); step ids W-<n> or team:<role>; atom: epoch-second ts, status per schema and, for work-atom/0.3, outcome, card, ledger (S2-models-07); usage + step, atom, ok, how, detail; run.ended + code; delete the session row. Add the Projector notes (validator routing, speaks_to projection, unknown-field policy). models.py exports RUN_EVENT_TYPES = ('run.started','say','node','step','atom','usage','heartbeat','run.ended') and parse_event(line, strict=False): with strict=False it drops the keys a variant does not declare (noting them once per run) before validating, so the variants themselves can stay closed Values (S2-models-01); with strict=True it raises. The task's last_event_at is the 'at' of the newest applied line."
+        },
+        {
+          "target": "engine",
+          "where": "§4.5 event table and the paragraph after it; §3.3 row events.py; §4.3 EventHooks paragraph; §4.6 publisher paragraph (1 s map throttle); §4.7 host steps; §11 ENG-D8, ENG-D10 diagram text",
+          "change": "Replace the event table by the eight rows of the decision. EventWriter stamps 'at' on every line (UTC now, seconds). Delete the session event, its hook output and its test. The node row follows S2-models-08 (function-node task and context forms, no goal) and the atom row follows S2-models-07. The publisher builds node, step and atom(atom/1) events at most every 250 ms (not 1 s) and on every turn boundary, in the order node, step, atom. Host step order: run.started is emitted after the seed decision (step 8) and carries seed; invalid task.json or failed preflight emit run.ended only. events.py exposes EVENT_TYPES = the same tuple as ORCH's RUN_EVENT_TYPES. Diagram text 'events.jsonl: say, node, step, atom, usage' stays."
+        },
+        {
+          "target": "repo",
+          "where": "tests/engine/test_engine_events_contract.py (E7, S2-models-07) and tests/contracts/test_contract_run_events.py (CT-1)",
+          "change": "Extend S2's unconditional contract test, and mirror it in CT-1 when E7 is not built: for every builder in sutra_app.engine.events the sample line validates strict against orchestrator.models.RunEvent; EVENT_TYPES equals RUN_EVENT_TYPES; a line with an extra field fails strict and passes tolerant; a line without 'at' fails; the type 'session' does not exist; the example transcript of engine.md 5 replays through the Projector and produces the expected rows."
+        },
+        {
+          "target": "diagram",
+          "where": "orchestrator arrow 'runtime to Workflow graph store' (label 'events.jsonl: say, node, step, atom, usage')",
+          "change": "Relabel 'events.jsonl: say · node · step · atom · usage' and add the badge."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "ORCH-1",
+          "section": "orchestrator",
+          "title": "APPEND: final RunEvent union, RUN_EVENT_TYPES, parse_event",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_records.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "E0",
+          "section": "engine",
+          "title": "APPEND: event builders for the eight types with 'at'",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/engine/test_engine_events.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "ORCH-6",
+          "section": "orchestrator",
+          "title": "APPEND: Projector rows for the eight types; no session row",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_projector.py -q"
+          ]
+        }
+      ],
+      "diagram_label": "events: run.started · say · node · step · atom · usage"
+    },
+    {
+      "id": "S1-contracts-10",
+      "topic": "What the function-node runtime needs on the wire (turn, atom lines, cost per atom, run end)",
+      "decision": "Function nodes add no event type (S2-models-07 agrees). A function turn starts and ends as the node event's task.state running -> done (task id 't-<turn_no>', S2-models-08). Each function turn is one work-atom/0.3 record (S2-models-06). The layer (sutra_app/engine/fnodes/layer.py, selected by SUTRA_HOOKS, S2-models-05) writes every transition as one 'atom' line, synchronously and with the library's outcome, card and ledger row (S2-models-07); the 250 ms publisher writes only atom/1 lines. Every model request of the turn, helper calls included, carries tag.atom = the atom id: the layer binds it with llm.bind_atom(atom_id) right after open_atom and clears it with llm.bind_atom(None) at turn_finished and on every run end path (a process makes one model call at a time, so a module-level binding is safe). The Router builds UsageIn.atom_id from the tag and the usage line carries it as 'atom'; CallInfo.atom reads the same tag. Usage is NOT built from call_finished (S1-contracts-05), so S2-models-07's 'the layer sets CallInfo.atom' is satisfied by the tag. Atom ids and storage keys are S2-models-10's: the library helpers atom_sid and function_atom_id mint function atom ids; J2 workflow atom ids W-n.aK are stored as '<run_id>:<id>' in atoms.id, atom_ledger.atom_id and usage_ledger.atom_id, function atom ids as they are. The Projector fills only what the server knows (session_id, department_id), gates the body, accepts forward moves only, stores the card as a chat message (kind 'card', ChatCard type 'atom') in the node's own session with src_ref '<run_id>#atom:<atom_id>:<outcome>:<attempt>', appends the ledger row when present, and, when a task ends in any way (run.ended, or reconcile marking it crashed or stopped), abandons the task's still-open function atoms with reason 'run ended: <status>' (library abandon_atom). The engine layer abandons its own open atom on the normal and error paths through the existing run_status and run_error hooks; there is no new run_ended hook. A refused open warns and the turn proceeds in v1 (S2-models-06, observe mode).",
+      "why": "S2-models-05 to 10 settle the layer's layout, the lifecycle grain, the ids and the atom fields, and S1 must not contradict them; this settlement fixes only the wire points that belong to the process contract. The tag-bound atom id is needed because usage rows are built by the Router (S1-contracts-05), not from call_finished; helper calls (planner, judge, summary) are then charged to the atom that triggered them, as the critics asked.",
+      "rejected": "A second event for function atoms; the server minting ids or rendering cards; a new run_ended hook (run_status and run_error already carry the end); usage built from CallInfo.",
+      "affects": [
+        {
+          "target": "engine",
+          "where": "§4.2 llm.py API list; §4.3 hooks.py last sentence; §4.5 usage row",
+          "change": "Add llm.bind_atom(atom_id: str | None) -> None: ask() copies the bound id into tag.atom when the tag has none; the layer calls it after open_atom and with None at turn_finished and on every run end path. CallInfo.atom is read from the current tag. The hooks are selected by SUTRA_HOOKS=module:factory (default and layout: S2-models-05). usage row: 'atom' comes from UsageIn.atom_id (the tag), not from CallInfo."
+        },
+        {
+          "target": "orchestrator",
+          "where": "§5.6 table rows 'usage' and 'run.ended' and the paragraph after the table; §4.1 DDL atoms, atom_ledger, usage_ledger",
+          "change": "usage row: atom_id as in S1-contracts-05 (unchanged for a function atom, '<run_id>:<id>' for atom/1). run.ended and reconcile abandon the task's open function atoms with reason 'run ended: <status>'. Card message src_ref is '<run_id>#atom:<atom_id>:<outcome>:<attempt>' (S2-models-07). Everything else about atoms, cards, ledger rows and AtomOut.state is S2-models-07 and S2-models-10."
+        },
+        {
+          "target": "repo",
+          "where": "tests/engine/test_engine_llm_shim.py (E0) and tests/contracts/test_contract_usage.py (CT-1)",
+          "change": "Shim: bind_atom fills tag.atom for a request, None clears it, an explicit tag.atom wins. Contract: with a fake layer that binds an atom around two requests (one agent turn, one helper), both usage lines carry the same 'atom' and the ledger sums per atom_id."
+        },
+        {
+          "target": "diagram",
+          "where": "the five function cards / arrow 'every AI step'",
+          "change": "Label 'every call tagged with its atom · cost per atom'."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "E0",
+          "section": "engine",
+          "title": "APPEND: llm.bind_atom",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/engine/test_engine_llm_shim.py -q  (bind_atom fills tag.atom)"
+          ]
+        }
+      ],
+      "diagram_label": "every call tagged with its atom · cost per atom"
+    },
+    {
+      "id": "S1-contracts-11",
+      "topic": "Run lifecycle: who creates the run directory, one process per run (D9), spawn and environment",
+      "decision": "D9 is CONFIRMED: every task runs in its own process 'python -m sutra_app.engine --run-dir <dir>', started by the orchestrator in a new session, speaking only through files (task.json and inbox.jsonl in; events.jsonl, snapshot.json, live.json and J2's own files out); the process exits right after it writes run.ended; a run that waits for the owner stays alive; a follow-up is a new process. The ORCHESTRATOR creates the run directory: TaskService.start allocates run_id (j2-YYYYMMDD-HHMMSS-<4 hex>, retried on collision), creates data/departments/<dept>/runs/<run_id>/ with mode 0700 (exist_ok=False), writes task.json atomically (temp file and rename, 0600), creates empty inbox.jsonl and events.jsonl (0600, O_CREAT|O_EXCL), then spawns. The engine NEVER creates its run directory: when --run-dir is missing, is not <data>/departments/<dept>/runs/<run_id>, or task.json fails validation (task.run_id must equal the folder name, task.dept_id the parent folder) the host exits 2, writing run.ended{crashed, code 'start_failed', outcome 'could not start: <reason>'} whenever events.jsonl can be opened and only a stderr line otherwise; J2Run(run_dir=..., run_id=...) never builds a timestamp folder (P3). The engine writes only inside its run folder, plus the department's memory/ folder and the global data/library/ (file-locked, P10). The launcher's child environment is ONE allowlist shared with the connectors: sutra_app.connectors.env.PASS_NAMES (PATH HOME USER LOGNAME LANG LC_ALL LC_CTYPE TMPDIR SSL_CERT_FILE SSL_CERT_DIR the proxy variables and their lower-case twins XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME CLAUDE_CONFIG_DIR CODEX_HOME) plus SHELL, TERM, PYTHONPATH (worktree runs), every SUTRA_* except SUTRA_TOKEN, and the seven RunSpec.settings keys; never a *_API_KEY, *TOKEN* or *SECRET* name. The connectors' own child env for the CLIs then drops every SUTRA_* again. RunSpec (orchestrator, writer, strict) and TaskSpec (engine, reader, extra='ignore') stay two classes of one document; a contract test proves every RunSpec field exists in TaskSpec and a RunSpec dump validates.",
+      "why": "Both sections already say the orchestrator creates the folder (engine F1, orchestrator 5.6) and the engine confirms D9 with measurements (a second run in one process flipped item_kind; module globals NAMES, ROUTES, RATES, OUTPUT, llm.LAST_META). The unnoticed bug: the orchestrator's launcher allowlist (PATH HOME USER LOGNAME SHELL LANG LC_* TERM TMPDIR) is narrower than the connectors' (CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_*, proxy and certificate variables); an engine host started without them would hand its CLI children a different login directory and no proxy, so a team could fail to sign in only when run through the app. PYTHONPATH is needed because the repo's scripts/py runs worktrees that way.",
+      "rejected": "The engine creating or choosing its folder (race with task.json, needs the data-dir logic twice); threads in the server (shared globals, D9's reason); pipes or RPC to the process (lost on a server restart); two separate allowlists; passing the whole environment (secrets).",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "§5.6 first paragraph (TaskService.start, ProcessLauncher env); §3.5 RunLauncher comment; §7 test_tasks.py row",
+          "change": "Replace the environment sentence with: 'child environment = sutra_app.connectors.env.PASS_NAMES + SHELL, TERM, PYTHONPATH + every SUTRA_* except SUTRA_TOKEN + the seven RunSpec.settings keys; never a *_API_KEY, *TOKEN* or *SECRET* name'. Add: 'the run folder is created 0700 with exist_ok=False (new run_id on collision), task.json is written by temp file and rename (0600), inbox.jsonl and events.jsonl are created empty (0600) before the spawn'. test_tasks.py adds test_child_env_allowlist (contains CODEX_HOME, CLAUDE_CONFIG_DIR, PYTHONPATH; lacks SUTRA_TOKEN, ANTHROPIC_API_KEY, GITHUB_TOKEN) and test_run_folder_modes."
+        },
+        {
+          "target": "engine",
+          "where": "§4.7 step 1-2 and exit codes; §3.4 P3; §11 ENG-D2",
+          "change": "§4.7 step 1-2: add 'the run directory must already exist and equal <data>/departments/<dept>/runs/<run_id>; otherwise run.ended{crashed, code 'start_failed', outcome 'could not start: <reason>'} and exit 2 (the engine never creates it)'. ENG-D2 gains the words 'confirmed as the decision labelled D9 in DECISIONS.md'. P3 stays."
+        },
+        {
+          "target": "connectors",
+          "where": "§2 row '…/env.py'; §4 'Child environment'",
+          "change": "env.py exports PASS_NAMES (tuple of the names listed in §4 'Passed') and child_env(provider, extra) builds from it minus every SUTRA_*; ORCH's launcher imports PASS_NAMES. Add test_env_process.py case: PASS_NAMES contains no name matching KEY, TOKEN, SECRET or PASSWORD."
+        },
+        {
+          "target": "repo",
+          "where": "tests/contracts/test_contract_env_and_spec.py (CT-1)",
+          "change": "Assert launcher env names are a superset of PASS_NAMES and exclude every secret-looking name; every RunSpec field is a TaskSpec field and TaskSpec.model_validate(RunSpec(...).model_dump()) succeeds; DataPaths.from_run_dir rejects a directory outside the layout."
+        },
+        {
+          "target": "diagram",
+          "where": "band 'DEPARTMENT RUNTIME (J2 ENGINE)' subtitle",
+          "change": "Subtitle 'process per run · files only · folder made by the server', badge D9."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "CN-1",
+          "section": "connectors",
+          "title": "APPEND: env.PASS_NAMES exported",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/connectors/test_env_process.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "ORCH-6",
+          "section": "orchestrator",
+          "title": "APPEND: run folder creation and child env from PASS_NAMES",
+          "owns": [],
+          "depends_on": [
+            "CN-1"
+          ],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_tasks.py -q"
+          ]
+        }
+      ],
+      "diagram_label": "process per run · files only · server makes the folder"
+    },
+    {
+      "id": "S1-contracts-12",
+      "topic": "Follow-ups after a run ends: rehydrate versus fresh, and the realization-on pause explained",
+      "decision": "A follow-up is always a NEW task: new run id, new folder, new process; the old folder is never written again. seed_from is set (together with parent_run_id) in exactly two places: deliver and deliver_to_department with no live task, which use the department's latest run that has a folder, and TaskService.create(follows=<task of the same department>), which serves the chat agent's AssignmentDraft.follows and POST /api/tasks with a 'follows' field; retry sets parent_run_id only (a retry starts fresh, no files). The engine host decides how to use seed_from: it tries rehydrate(run, src_dir) and falls back to a fresh run with the old files in upstream/<old run id>/ and one plain system line; neither is an error. Rehydrate is allowed when the source summary.json status is done or done_with_open_items, the chat.jsonl header says output website, the source has no document chain (no documents.json, no stage-*.json) and goal.json and workflows.json exist. Realization on or off is NO LONGER a condition. The earlier pause had a cause, found and measured: it is not a rehydrate defect. With J2_REALIZATION on, j2.py:2893 loads NO rate card (load_rates(..., card=False)); the mock Adaptation reply for a change after Done (the feedback branch of mock_plain in _turn_adaptation) gives parts but no estimated_resources, so every workflow costs 0, _register refuses it ('its cost is 0', j2.py:6652) twice, and two empty cycles end in Identity's limit question (j2.py:3465-3469). The same pause happens WITHOUT rehydrate when the same J2Run continues after Done in mock mode; with the rate card put back, the rehydrated run reaches Done (workflows 8 to 9, sites 7 to 8). A real Adaptation fills estimated_resources.money (the format at j2.py:5125 asks for it) and Priority's GRANT carries money_limit, so the real path is expected to work (unverified live). Rehydrate additionally restores real, real_base (a deep copy of goal), real_summary (summary.json realization block minus applied) and real_asked=True when realization.json exists (needed only for J2_CHANGE=1). Refusals stay for: unfinished or stopped or crashed runs, document chains, unreadable files. The system lines are fixed: 'Continuing from run <id>: the team keeps its charter, workflows, findings and site and treats your message as a change request.' / 'Starting a new run. Your earlier files from run <id> are in upstream/<id>/ for reference. Reason: <reason>.' Orphaned question rule: when the owner answers a question whose task has already ended (for example after the app was closed), deliver_to_department creates the follow-up with framing = 'Earlier the team asked the owner: <question text with its options>' and marks that question answered by the new first user line. seed_from must be a run of the SAME department; otherwise it is treated as plain upstream. upstream[].files are paths relative to data/departments/<dept_id>/runs/<run_id>/ of that upstream run; the host resolves them under its data dir, refuses absolute paths, '..' and symlinks that leave the folder, and copies each into upstream/<run_id>/.",
+      "why": "J2's change-after-Done flow ('Tell us if you want changes') needs the old state; process-per-run needs a way to bring it back; rehydrate is proven for the classic path and the diagnosis removes the only observed obstacle, while the fresh path keeps every other case working. Probes ran in a scratch copy of J2 ce2631f (rehydrate_probe.py variants under the session scratchpad s1/j2/): realization on, same object, no rehydrate: paused; realization on, rehydrated, rate card restored: Done; with and without restoring real*: Done.",
+      "rejected": "Keeping the process alive in standby after Done (81 MB each, breaks the terminal task state); pickling J2Run; refusing follow-ups; a J2 patch P12 that makes the mock reply carry estimated_resources (changes mock prompts and spends the diff budget); always rehydrating regardless of status.",
+      "affects": [
+        {
+          "target": "engine",
+          "where": "§2 Facts last row ('Continuing a finished run'); §4.8; §6 F4; §10 E1-b paragraph; §12 risk 'rehydrate is proven only for the classic path…'",
+          "change": "§4.8: replace the sentence 'It raises RehydrateRefused(reason) unless … realization == 0 in the chat.jsonl header, no docset (the only kind verified)' with the conditions of the decision (realization is not a condition) and add the restore of real, real_base, real_summary, real_asked. Replace 'the cause of the realization pause was not found' in §2, §12 and the summary by the measured cause. §10: E1-b becomes 'document chains only'. §6 F4: the two system lines are fixed as in the decision. test_engine_rehydrate.py: (1) classic mock Brew Lab change reaches Done with one more workflow; (2) realization on with a scripted Adaptation reply that carries estimated_resources.money reaches Done and its files are copied; (3) control: realization on, same-process continuation with the unmodified mock pauses with 'its cost is 0' (xfail-style assertion documenting J2); (4) refusals for unfinished, stopped, crashed and document-chain sources; (5) xfail for the document chain. test_engine_live.py (SUTRA_LIVE=1) adds one rehydrated follow-up with a real model."
+        },
+        {
+          "target": "orchestrator",
+          "where": "§5.5 third bullet ('No live task'); §6.2 POST /api/tasks/{id}/retry row; §3.4 TaskService.create",
+          "change": "Add: 'seed_from is set only by deliver / deliver_to_department follow-ups and by create(follows=...) for a task of the same department (and POST /api/tasks accepts an optional follows); never by retry, which sets parent_run_id only'. Add the orphaned question rule: framing = 'Earlier the team asked the owner: <question text and options>' and mark the question answered_by the new first user line. test_tasks.py adds test_followup_seed_from, test_retry_has_no_seed, test_orphaned_question_framing."
+        },
+        {
+          "target": "repo",
+          "where": "tests/engine/test_engine_rehydrate.py (E1) and tests/orchestrator/test_tasks.py (ORCH-6)",
+          "change": "As listed under engine and orchestrator."
+        },
+        {
+          "target": "diagram",
+          "where": "box 'Department records'",
+          "change": "Line 'follow-up: rehydrate, else fresh with old files'."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "E1",
+          "section": "engine",
+          "title": "APPEND: rehydrate conditions without realization, restore real*",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/engine/test_engine_rehydrate.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "ORCH-6",
+          "section": "orchestrator",
+          "title": "APPEND: seed_from rules and the orphaned question framing",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_tasks.py -q"
+          ]
+        }
+      ],
+      "diagram_label": "follow-up: rehydrate, else fresh with old files"
+    },
+    {
+      "id": "S1-contracts-13",
+      "topic": "Non-blocking user_says (P4), the inbox FIFO and stop precedence",
+      "decision": "P4 is accepted. J2's user_says takes 'with self.lock' BEFORE it looks at status, and the run thread holds that lock for the whole run, so a call mid-run waits (measured 1.21 s) and then starts a new turn instead of returning False. The vendored method becomes: if not self.lock.acquire(blocking=False): return False (released in finally), plus apply_override(cmd) with the same non-blocking rule. In the app nobody calls user_says from an HTTP thread: the orchestrator answers 409 busy from the task row (starting or running) without asking the engine. The only caller is the host's tick (150 ms), and there the False result is a NORMAL path, not an edge case: the say event of a question is written before the run thread has finished its last steps (summary, report) and set status 'waiting', so an immediate answer must wait. Host rule: inbox lines are read in n order into a FIFO; each tick delivers the head (user -> run.user_says, override -> run.apply_override); False leaves it at the head and writes one trace line inbox.deferred; a stop line is handled the moment it is READ, ahead of the FIFO, and discards everything queued behind it; lines that arrive after run.ended are never read. A user line is delivered only when run.status == 'waiting' (paused or finished-but-not-yet-ended).",
+      "why": "It keeps the intent of J2's own check (status == 'running' returns False) which the lock order defeated, and it makes the answer race deterministic instead of lossy.",
+      "rejected": "Blocking on the lock in the host (freezes heartbeats and stop handling); dropping a line that finds the run busy (lost answers); letting the orchestrator send lines to a running task (it answers 409 itself).",
+      "affects": [
+        {
+          "target": "engine",
+          "where": "§3.4 P4; §4.5 paragraph after the event table (inbox sentence); §4.7 step 10; §9 test_engine_patches.py and test_engine_host.py rows; §12 risk on P4",
+          "change": "Add to P4 the reason (lock order) and to §4.5/§4.7 the FIFO rule of the decision, including stop precedence and the trace line inbox.deferred. test_engine_host.py adds: an answer appended right after the question's say event is delivered once the run reaches waiting (no loss, no duplicate); a stop line behind queued user lines discards them; a user line arriving after run.ended is never read."
+        },
+        {
+          "target": "orchestrator",
+          "where": "§5.5 first two bullets",
+          "change": "Add: 'The 409 for a running or starting task is decided from the task row; an answer to a waiting_user task is appended to inbox.jsonl at once, even if the run thread has not yet reached waiting: the host queues it.'"
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "E3",
+          "section": "engine",
+          "title": "APPEND: inbox FIFO with deferral and stop precedence",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/engine/test_engine_host.py -q"
+          ]
+        }
+      ],
+      "diagram_label": "answers queue while a run finishes its turn"
+    },
+    {
+      "id": "S1-contracts-14",
+      "topic": "SUTRA_MAX_RUNS and the 81 MB idle cost",
+      "decision": "Two caps with two reasons. SUTRA_MAX_RUNS (default 3) bounds tasks that are starting or running (CPU and provider-plan concurrency). SUTRA_MAX_LIVE (new, default 12) bounds every live process, including those waiting for the owner (memory: about 81 MB idle each, so about 1 GB at the cap). A run that pauses for the owner (waiting_user) FREES its MAX_RUNS slot, and the Projector calls start_ready() when it does; the owner's answer resumes the same process and is never queued, so MAX_RUNS is a soft limit by at most the number of resumed waiting runs. start_ready starts queued tasks FIFO while running < MAX_RUNS and live < MAX_LIVE; a task that is held back shows the step-node detail 'waiting for a free slot (N teams working)' and GET /api/config exposes both numbers. There is no idle reaper in v1; the owner frees a slot with POST /api/tasks/{id}/stop, and a waiting team is listed with its asked_at in needs-you.",
+      "why": "With the cap counting waiting runs, the usual case (the chat agent hands up to five assignments to five teams, and every Identity asks questions at once) would hold three slots idle and starve the other two until a whole run finished. The 81 MB is real (engine.md 2, measured), so memory still needs a bound, but a separate one.",
+      "rejected": "Counting waiting runs against MAX_RUNS (starvation); no cap on live processes; a reaper that kills waiting runs after N hours (loses the question context, adds a timer); hibernating a paused run (J2Run cannot be restored from files while paused).",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "§3.4 TaskService.start_ready comment; §5.6 first paragraph; §6.4 env table; §6.2 GET /api/config; §7 test_tasks.py row; §10 Risks (add: waiting teams hold about 81 MB each until answered or stopped)",
+          "change": "start_ready: 'start queued tasks FIFO while count(status in starting,running) < SUTRA_MAX_RUNS and count(status in starting,running,waiting_user) < SUTRA_MAX_LIVE'. Env table: SUTRA_MAX_RUNS 3 (starting or running) and new SUTRA_MAX_LIVE 12 (all live). Settings gains max_live. The Projector calls start_ready() after the say with act ASK_REQUESTER marks a task waiting_user. test_tasks.py adds test_waiting_run_frees_slot, test_answer_never_queued, test_max_live_holds_back, test_queue_reason_detail."
+        },
+        {
+          "target": "engine",
+          "where": "§2 Facts row 'Cost: import j2 0.30 s; idle J2Run 81 MB'; §12 risk 'Idle open runs cost about 81 MB'",
+          "change": "Replace 'the orchestrator's SUTRA_MAX_RUNS bounds it' by 'SUTRA_MAX_LIVE bounds it (S1-contracts-14)'."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "ORCH-1",
+          "section": "orchestrator",
+          "title": "APPEND: Settings.max_live and env SUTRA_MAX_LIVE",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_config.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "ORCH-6",
+          "section": "orchestrator",
+          "title": "APPEND: start_ready counting rule",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_tasks.py -q"
+          ]
+        }
+      ],
+      "diagram_label": "max runs counts working teams; waiting ones idle"
+    },
+    {
+      "id": "S1-contracts-15",
+      "topic": "Graceful server shutdown and the single stop ladder",
+      "decision": "One stop ladder for 'stop this task' and for server shutdown, with two constants in orchestrator/runs.py: STOP_GRACE_S = 8 and TERM_GRACE_S = 4. Steps: append {'kind':'stop'} to inbox.jsonl; wait up to STOP_GRACE_S for run.ended (the watcher keeps projecting); then SIGTERM to the process group; wait TERM_GRACE_S; then SIGKILL to the group. Worst case 12 s. At shutdown the ladders of all live tasks (waiting runs included) run in parallel; after each process is gone the watcher drains events.jsonl one last time; the task takes the status of run.ended if one was written, otherwise it becomes stopped with outcome 'the app was closed' (not crashed: the app caused it); then the watchers are cancelled and PRAGMA wal_checkpoint(TRUNCATE) runs. The engine's own budget for a stop line is 6 s: port.close() (Router.close kills the CLI children; SIGINT first, so about 1.3 s measured), the host sets stopping so _run_safe's crash path skips the reviewer call and the report, rewrites summary.json to stopped, final publish, run.ended{stopped}, exit 0. SIGTERM does the same without waiting and exits 143. A stopped run is continued by a follow-up (S1-contracts-12): a run stopped while it waited for the owner cannot be rehydrated, so the follow-up is fresh with the old files and the orphaned-question rule.",
+      "why": "The three places that gave numbers differed (engine F6 and ORCH 5.1: 5 s then 5 s; ORCH 5.6: 10 s then 5 s). The engine's real work on stop is small (Claude exited in 1.3 s on SIGINT, 2.9 s on SIGTERM), so a single ladder of 8 s and 4 s covers a CLI that ignores SIGINT for its 5 s window and still keeps the app's exit under 12 s.",
+      "rejected": "Leaving waiting runs alive when the app closes (invisible idle processes for days, and a stale pid problem); a different ladder for shutdown (two code paths, two tests); SIGKILL first.",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "§5.1 'Shutdown'; §5.6 'stop(task)' sentence; §7 test_tasks.py and test_startup.py rows",
+          "change": "Replace '5 s, SIGTERM to its process group, 5 s, SIGKILL' (§5.1) and '10 s for run.ended, SIGTERM to the process group, 5 s, SIGKILL' (§5.6) by 'stop line, STOP_GRACE_S = 8 s, SIGTERM to the process group, TERM_GRACE_S = 4 s, SIGKILL'. Shutdown: ladders in parallel, final drain, status from run.ended else stopped ('the app was closed'). test_tasks.py adds test_stop_ladder_order (fake process that ignores stop, then SIGTERM, then dies by SIGKILL) and test_startup.py adds test_shutdown_stops_waiting_runs."
+        },
+        {
+          "target": "engine",
+          "where": "§6 F5 and F6; §4.7 exit codes and signals",
+          "change": "F5/F6: replace '5 s, SIGTERM, 5 s, SIGKILL' by 'the ladder of S1-contracts-15 (8 s, 4 s)'. Add: 'on stop the host sets stopping before closing the port, so J2Run's crash path skips the reviewer and report; the whole stop must finish inside 6 s'. test_engine_host_process.py asserts a stop line ends the process with run.ended{stopped} in under 6 s in mock mode with a slow scripted call."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "ORCH-6",
+          "section": "orchestrator",
+          "title": "APPEND: single stop ladder (STOP_GRACE_S, TERM_GRACE_S) and shutdown",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_tasks.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "E3",
+          "section": "engine",
+          "title": "APPEND: stop within 6 s, stopping flag",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/engine/test_engine_host_process.py -q"
+          ]
+        }
+      ],
+      "diagram_label": "shutdown: stop · 8 s · SIGTERM · 4 s · SIGKILL"
+    },
+    {
+      "id": "S1-contracts-16",
+      "topic": "Crash detection by heartbeat and stale-run recovery at server start",
+      "decision": "Heartbeat: a daemon thread in the engine writes a heartbeat event every 5 s (SUTRA_HEARTBEAT_S overrides, tests use 0.2), starting after run.started, even while the run thread is blocked in a model call; it proves the PROCESS lives, not that the run progresses. Every event carries at, and tasks.last_event_at is the 'at' of the newest applied line (event time, not receipt time). Rule while the server runs: a task is crashed when no terminal event exists and launcher.alive(pid) is False after one final drain (outcome 'the team process stopped unexpectedly', exit code when known, redacted stderr tail up to 2 KB); a silent but alive process is NOT killed (a sleeping laptop freezes both sides); the step node detail shows 'no signal for N s' after 30 s. Rule at server start, reconcile(), for each task in starting, running, waiting_user: (1) drain events.jsonl from events_offset, applying complete lines in batches (the heartbeats written while the server was down refresh last_event_at); (2) a terminal event settles the task through the normal projection; (3) else, pid alive and now - last_event_at <= 30 s: re-attach the watcher from events_offset; (4) else, pid alive but silent over 30 s: only if 'ps -p <pid> -o command=' contains 'sutra_app.engine --run-dir <that dir>' run the stop ladder, otherwise signal nothing (pid reuse); then crashed ('the app was closed while it ran and the team stopped answering'); (5) pid gone: crashed ('the app was closed while it ran'); (6) starting with no pid: crashed ('could not start'); starting with a live pid and no event within 30 s of the spawn (last_event_at is seeded with the spawn time): the same as rule (4). Every crashed task also abandons its open work atoms (S1-contracts-10). reconcile runs after migrate and bootstrap and before start_ready(); it ends by publishing server.resync {reason:'restart'}.",
+      "why": "Orchestrator 5.1 gave the rule only in outline (pid gone or heartbeat older than 30 s) and judged age from receipt time, which is wrong after downtime; with 'at' on every line the age is the engine's own. The identity check avoids killing an unrelated process that reused the pid.",
+      "rejected": "Killing silent-but-alive processes while the server runs (false positives on sleep, long model calls still beat); judging staleness by the time the server reads the line; trusting the pid alone.",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "§5.1 step 6 (reconcile); §5.6 last paragraph ('No terminal event and the process gone'); §7 test_projector.py and test_startup.py rows",
+          "change": "Replace step 6 by the six numbered rules of the decision; replace the last sentence of 5.6 by the running-server rule. launcher.alive(pid) uses the Process handle when the server spawned it (returncode None means alive) and os.kill(pid, 0) otherwise. test_projector.py adds test_crash_pid_gone, test_silent_alive_not_killed_but_flagged; test_startup.py adds test_reconcile_reattach, test_reconcile_stale_alive_with_identity, test_reconcile_pid_reuse_not_signalled, test_reconcile_starting_without_events."
+        },
+        {
+          "target": "engine",
+          "where": "§4.5 heartbeat row; §4.7 main loop; §6 F7 d",
+          "change": "Heartbeat row: 'a daemon thread, every SUTRA_HEARTBEAT_S (default 5) seconds, first one right after run.started'. F7 d: 'the heartbeat stops with the process; the orchestrator marks the task crashed by the rules of S1-contracts-16'."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "ORCH-6",
+          "section": "orchestrator",
+          "title": "APPEND: crash detection and reconcile rules",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_projector.py tests/orchestrator/test_startup.py -q"
+          ]
+        }
+      ],
+      "diagram_label": "crash = process gone, or silent 30 s at app start"
+    },
+    {
+      "id": "S1-contracts-17",
+      "topic": "Diagram text for the Codex connector and the Codex CLI box (CD13, CD17), and the billing guard",
+      "decision": "Exact new text. Connector layer, Codex connector box, line 2: replace 'ChatGPT login or API key in the keychain' with 'your ChatGPT login, never an API key' (36 characters, parallel to the Claude box's 'your subscription login, never an API key'). Providers band, Codex CLI box: replace 'installed and signed in through Sutra' with 'on this Mac · signed in via Sutra' (33 characters). The Claude CLI box 'signed in on this Mac' stays. The billing guard (CD13) is made stricter to match: an API-key login is REFUSED, with no escape hatch: allow_api_key_billing is removed from the policy file and from probe_auth; AuthStatus.billing keeps the values subscription|api_key|unknown for display; a provider whose status positively says api_key (Codex status text containing 'API key'; Claude authMethod containing 'api' or 'console') is dropped at plan time with the reason 'API-key login refused (D7): sign in with your subscription'; an unknown or other method is allowed (the only values observed are Claude 'claude.ai' and Codex 'Logged in using ChatGPT', and the child-environment allowlist already keeps every *_API_KEY variable away from both CLIs). Sutra never installs a CLI and never reads or stores either login; Codex sign-in is launched by the app through the device flow (CD17).",
+      "why": "D7 says no API keys are used or stored and the Claude box already says 'never an API key'; the old Codex line contradicted both. A flag that re-allows API billing would contradict a diagram line that says 'never'. The old Provider-box line claimed Sutra installs Codex, which it does not; the new line says where the CLI lives and who starts the sign-in. Both new lines are within the 41-character width of the existing lines in boxes of 285 px.",
+      "rejected": "'ChatGPT login (an API-key login is refused unless allowed)' (56 characters, does not fit, and keeps an escape hatch); 'installed on this Mac · signed in through Sutra' (47 characters, does not fit); keeping the original wording (contradicts D7 and CD17).",
+      "affects": [
+        {
+          "target": "diagram",
+          "where": "Connector layer: box 'Codex connector (extends base)', second line (gen.py box(725, 934, ...))",
+          "change": "Replace the string 'ChatGPT login or API key in the keychain' with 'your ChatGPT login, never an API key'."
+        },
+        {
+          "target": "diagram",
+          "where": "Providers band: box 'Codex CLI' (gen.py box(725, 1050, ...))",
+          "change": "Replace the string 'installed and signed in through Sutra' with 'on this Mac · signed in via Sutra'."
+        },
+        {
+          "target": "connectors",
+          "where": "§3.5 last bullet (probe_auth); §3.6 policy JSON ('allow_api_key_billing'); §3.6 Plan bullet 'billing api_key without permission'; §9 CD13",
+          "change": "Delete the key 'allow_api_key_billing' from policy.default.json and from the Plan drop list wording 'billing api_key without permission' (it becomes 'billing api_key'). probe_auth returns billing 'api_key' for an API-key login and the Router drops that provider with the reason above. CD13 text: 'An API-key login is refused (no override). Diagram: Codex connector line becomes your ChatGPT login, never an API key.' CD17 text: 'Diagram: Codex CLI box becomes on this Mac · signed in via Sutra.' test_policy.py asserts the key is absent and a policy file containing it fails validation; test_codex_connector.py asserts an api_key status makes the provider unavailable with the reason."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "CN-6",
+          "section": "connectors",
+          "title": "APPEND: policy without allow_api_key_billing",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/connectors/test_policy.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "CN-4",
+          "section": "connectors",
+          "title": "APPEND: api_key billing refused in probe_auth",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/connectors/test_codex_connector.py -q"
+          ]
+        }
+      ],
+      "diagram_label": "your ChatGPT login, never an API key"
+    },
+    {
+      "id": "S1-contracts-18",
+      "topic": "Copies of extract_json and close_json (settled by S2-models-12; S1 adds only a check)",
+      "decision": "Adopt S2-models-12 unchanged: the library's replies.py holds the single copy of extract_json and close_json; engine/llm.py re-exports it and connectors/jsonio.py imports it; E0 and CN-1 depend on L1. S1 adds only the check that the names in the three places are the same objects.",
+      "why": "S2-models-12 decides the ownership of shared helpers together with the import-direction rule (the library imports nothing from engine, connectors, orchestrator or ui); an S1 patch on the same lines would contradict it. The first S1 draft kept a verbatim engine copy with a parity test; that is withdrawn.",
+      "rejected": "A separate S1 rule (verbatim engine copy plus parity test); a connectors-owned copy.",
+      "affects": [
+        {
+          "target": "repo",
+          "where": "tests/contracts/test_contract_json_extract_parity.py (CT-1)",
+          "change": "Assert engine.llm.extract_json is connectors.jsonio.extract_json is library.replies.extract_json, and the same for close_json."
+        }
+      ],
+      "work_packages": [],
+      "diagram_label": ""
+    },
+    {
+      "id": "S1-contracts-19",
+      "topic": "Owner override key and the .env file: the server holds the key, the engine only sees the command",
+      "decision": "The SERVER owns J2_OVERRIDE_KEY. Settings gets override_key (secret: never serialised, never in /api/config, logs, events or stored text), read from the process environment or from the .env file named by SUTRA_ENV_FILE (default <project>/.env). deliver() and deliver_to_department() strip the text; if it starts with the key (hmac.compare_digest on the prefix, as J2 matches the start, j2.py:3368) the line is an OVERRIDE: it is accepted only for a live task in waiting_user (otherwise 409 busy, a system note 'Owner override needs a team that is waiting for you.' in the department session, and NO task is ever created from it); the inbox receives {n, kind:'override', cmd:<text after the key>, at}; the department session stores only 'Owner override sent'. The engine host never sees the key: its child environment has no J2_OVERRIDE_KEY, load_env_file loads only J2_SMTP_* into the engine, and apply_override (P4) runs the command; J2's own system line ('Owner override applied: ...') comes back as a say event. redact (ORCH-1) builds its secret set exactly like j2_server.py:29-43: every value of an environment variable whose name contains KEY, TOKEN, SECRET, PASSWORD or AUTH, plus every value in the .env file, minimum length 8, longest first; it is applied to every API body, SSE payload, log line, stored chat text and stderr tail.",
+      "why": "Engine 4.4 says 'the server checks the key' and ORCH 5.5 says the same, but ORCH's Settings (closed, extra forbid) has no field for the key and no section loads .env, so J2's owner override (budget +N, ship, drop) could not work and redaction could not find the .env secrets. SUTRA_ENV_FILE is already in the engine's variable list but missing from ORCH's env table.",
+      "rejected": "The engine checking the key (it would need the secret in a child process); storing the key in SQLite or under data/; matching the key anywhere in the text (J2 matches the start); creating a follow-up task from an override line that has no waiting team.",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "§3.1 Settings class line; §6.4 env table; §5.5 first bullet; §2 row redact.py",
+          "change": "Settings gains override_key: SecretStr | None and env_file: Path (env SUTRA_ENV_FILE, default <project>/.env); env table row 'SUTRA_ENV_FILE | <project>/.env | file read for J2_OVERRIDE_KEY and for redaction'. §5.5: add the acceptance rule (only waiting_user; otherwise 409 busy plus the system note; never a task), the stored text 'Owner override sent', and 'the key is compared with hmac.compare_digest'. redact.py: secret set built as in the decision. test_tasks.py adds test_override_waiting_only, test_override_never_creates_task, test_override_key_not_stored; test_api_security.py asserts the key and an .env value never appear in any response."
+        },
+        {
+          "target": "engine",
+          "where": "§4.4 environment table rows 'J2_OVERRIDE_KEY' and 'J2_SMTP_*'",
+          "change": "Keep 'not used by the engine: the server checks the key and sends override lines'; add 'the key is not in the engine's environment (the launcher passes no J2_* except the seven task keys) and load_env_file reads only J2_SMTP_* from SUTRA_ENV_FILE'."
+        },
+        {
+          "target": "diagram",
+          "where": "arrow 'department views (read)' / Simple view box (override is an owner control)",
+          "change": "Optional small tag 'override key stays on the server'."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "ORCH-1",
+          "section": "orchestrator",
+          "title": "APPEND: Settings.override_key and env_file; redact secret set",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_config.py tests/orchestrator/test_api_security.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "ORCH-6",
+          "section": "orchestrator",
+          "title": "APPEND: override routing in deliver",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": [
+            "scripts/py -m pytest tests/orchestrator/test_tasks.py -q"
+          ]
+        }
+      ],
+      "diagram_label": "override key stays on the server"
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "Function-node spec (spec-function-nodes.json) was not final",
+      "why_not_settled": "Only the architect draft and three critic reports exist. S1 and S2-models settle the wire and the layer from what they agree on; the open points are whether an atom is one turn or one step, whether a refused open blocks the turn (enforce mode), the card labels and the final FunctionNode.task shape.",
+      "fallback": "Atom = one function turn; a refused open warns and the turn proceeds; the engine ships outcome, card and ledger; node.task carries id, kind, summary, state, set_by. The wire does not change if the spec moves these points: only the layer (engine/fnodes) and the Projector's card rule change, and tests/engine/test_engine_events_contract.py and tests/orchestrator/test_projector_fnodes.py (S2-models-07) fail first."
+    },
+    {
+      "topic": "Realization-on follow-up with a real model",
+      "why_not_settled": "The cause of the pause was found and measured in mock mode only (rate card off, mock change proposal without estimated_resources). Whether a real Adaptation and Priority always supply estimated_resources.money and envelope.money_limit for a post-Done change is expected from the prompt format (j2.py:5125) but not verified live, and no model call was spent here.",
+      "fallback": "Rehydrate stays allowed. test_engine_live.py (SUTRA_LIVE=1) runs one rehydrated follow-up; if it pauses, add the one condition 'realization == 0' back in rehydrate.py (the system line and fresh path already exist) and keep the xfail-style control test."
+    },
+    {
+      "topic": "Process identity check at reconcile on other platforms",
+      "why_not_settled": "ps -p <pid> -o command= was reasoned for macOS and Linux but not run against a live engine here, and POSIX only is in scope (Windows is out).",
+      "fallback": "If the command cannot be read, treat a silent-but-alive pid as dead WITHOUT signalling it (the safe side of pid reuse); test_reconcile_pid_reuse_not_signalled covers it."
+    },
+    {
+      "topic": "Quota and cooldown knowledge is per process",
+      "why_not_settled": "Each engine process has its own HealthBook, so a Claude quota window learned by one run is not known by the next run or by the chat agent; sharing it needs a small file under data/connectors/ that was not designed.",
+      "fallback": "Each process re-learns it with one failed call and the policy fallback to Codex ('claude out of quota, answered by codex' note); test_router_attempts.py covers that path. Revisit if quota windows cause visible delays."
+    }
+  ]
+}

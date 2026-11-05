@@ -1,0 +1,857 @@
+{
+  "batch": "S4-fnodes",
+  "title": "The one function-node design: names, verify registry, atom grain, mode, refuse, sessions, cost, statuses, Atom log, chip and drawer, tests, voices, department goal, node record. Convention for work_packages: action=change replaces each NON-EMPTY owns/depends_on/acceptance list (and the title); an empty list means unchanged; apply after S1, S2 and S3.",
+  "settlements": [
+    {
+      "id": "S4-fnodes-01",
+      "topic": "Code names: FunctionNode and Atom against the diagram's AgentNode, WorkAtom and BuilderAtom (point 1)",
+      "decision": "The code names are the library's: FunctionNode with IdentityNode, AdaptationNode, PriorityNode, CoordinationNode and AuditNode; Atom (with AtomDraft, Transition, LedgerRow, Card); AtomView (payload atom_view, J2 atom/1); FunctionSpec and FunctionSpecs. AgentNode, WorkAtom and BuilderAtom are not code names; 'agentic graph node' and 'work atom' stay as prose. Builders keep J2's atom dicts, validated by gate_record and shown through AtomView, so no second stored atom model exists and the figure's 'child: BuilderAtom (J2 atom/1)' becomes 'AtomView: J2 atom/1 (for builders)'. The Interface library box is redrawn with the twelve lines of docs/design/function-nodes.md section 12 (lh 15.5, ly 41, widest line 38 characters, so it ends at 212 of 224 px as the final spec measured). S2-models-08 (the name map) is unchanged; this settlement only fixes the picture and says so in the library.",
+      "why": "Stores, wire, tests and four sections already use the library names (S2-models-08). No code exists yet, but a rename would touch every section for no change in behaviour, while the figure is one box. The BuilderAtom claim cannot be true without a second stored model that would drift from J2's dicts.",
+      "rejected": "Renaming the library to AgentNode and WorkAtom (churn in five sections); a stored BuilderAtom subclass (a second atom model); keeping the figure's names and mapping them only in prose (the picture would name classes that do not exist).",
+      "affects": [
+        {
+          "target": "diagram",
+          "where": "box 'Interface library (Python models)' (x=740, y=OT, 270 x 224)",
+          "change": "Replace the twelve text lines (keep the title, lh=15.5, ly=41) by exactly: `FunctionNode (base), children <X>Node:` / `Identity · Adaptation · Priority` / `Coordination · Audit` / `Atom (base): goal, constraints,` / `context, work, verify, state` / `AtomView: J2 atom/1 (for builders)` / `Departments · Goal · Evaluation` / `Org chart · Chart change` / `Also base: Workflow · Step · Template` / `Artifact models + rules as data` / `closed models, checked at every write,` / `including every org chart change`. gen.py's E() escapes the angle brackets of <X>. Badge/label: see diagram_label."
+        },
+        {
+          "target": "library",
+          "where": "section 1 'Purpose and scope', the bullet that starts 'the Atom (the plugin's behaviour'",
+          "change": "Append: 'Code names: FunctionNode with IdentityNode, AdaptationNode, PriorityNode, CoordinationNode, AuditNode; Atom; AtomView. The function-node spec's AgentNode, WorkAtom and BuilderAtom are prose names for these (docs/design/function-nodes.md section 2.1).'"
+        },
+        {
+          "target": "library",
+          "where": "section 8.1, the paragraph that starts '`state` is J2's map vocabulary'",
+          "change": "Append: 'FunctionNode is the spec's AgentNode; its five children are the spec's Identity, Adaptation, Priority, Coordination and Audit. There is no BuilderAtom class: a builder's atom is J2's dict, gated by gate_record, shown through AtomView.'"
+        },
+        {
+          "target": "repo",
+          "where": "docs/design/function-nodes-spec.json",
+          "change": "Read-only history of the drawing spec: do not edit. docs/design/function-nodes.md section 2.1 is the name map every reader uses."
+        }
+      ],
+      "work_packages": [],
+      "diagram_label": "FunctionNode · Atom · AtomView"
+    },
+    {
+      "id": "S4-fnodes-02",
+      "topic": "The VERIFY registry: named checks, pure functions, observable evidence only (point 2, spec FN-11)",
+      "decision": "A registry of 14 named checks, one pure Python function each: the twelve names of FN-11 (charter-stamp, workable, audience-split, atom-rules, judge-gate, price-kept, within-budget, order-registered, finding-per-item, pass-needs-proof, code-measure-wins, answer-recorded) plus the two floors of S2-models-06 (reply-valid, turn-posted). Each is fn(ev: Evidence, args) -> Outcome(ok, evidence<=2000, changed, na, waived). Evidence is built by the layer from hook data only: the node's replies (CallInfo.reply), the chat messages posted in the turn with their meta (message_posted), the latest data of goal.json, workflows.json, audits.json, realization.json and conflicts.json as saved this turn (record_saved) or read at turn start, the TurnInfo and the TurnOutcome, plus owners (atom id -> owner node, from the layer's own opens and J2's builder ids). No change to j2.py, no new hook. Phases: reply (judged on each reply, a failure is a live try), turn (judged once at turn end), event (answer-recorded). Kinds: gate (J2 retries) and override (J2's code corrects and the check proves the outcome). For each name the inputs, pass rule, evidence text, function turn and J2 stage, attempt budget and J2's recovery are in docs/design/function-nodes.md section 4; J2's recovery stays the default and the plugin's cap of 3 close runs is the ceiling. Recovery closes the atom with 'RECOVERED:' (repair, template, drop) or 'WAIVED:' (J2 accepts a concern) at the start of the last evidence; an unrecovered failure is verify_failed (S4-fnodes-08). FN-10 (the Audit independence backstop) is a clause of finding-per-item: a result row that names an atom owned by this department's Audit fails; J2's rows carry no atom today, so it never fires. FN-12: the judge's and planner's calls are charged to the Adaptation atom, and judge-gate only reads realization.json, so it needs no time budget. Where a thing is not observable the check reads J2's own posted note instead (atom-rules reads the 'Validator rejected' posts, price-kept the two Priority notes, the charter acceptance note) and a golden pins those strings. All five VERIFY lines of the cards are true as drawn, so no card text changes. The registry lives in the engine (new WP E8: registry.py, evidence.py); the library only lists the names in CheckTemplate. Supersedes S2-models-06: 'Version 1 check set: reply-valid and turn-posted', 'Not in v1: J2's named code checks as atom checks', the REJECTED clause 'J2's named code checks as atom checks in v1', and the generic template's single check turn-posted.",
+      "why": "The cards promise five verify lines; with only two generic checks they would be words. Every J2 check the cards name is decidable from what the hooks already see, so the teeth can be real without touching j2.py. Pure functions with recorded fixtures are testable offline and mutation-testable, which the generic pair was not.",
+      "rejected": "Only reply-valid and turn-posted (the cards would overstate); re-implementing J2's stateful _atom_problems purely (it needs the run's state, the output kind and the built page); parsing prompts for numbers where a posted meta or ledger input exists; a new _event hook in j2.py (outside the P8 budget); a shell runner with the plugin's 30 s alarm (pure checks need no subprocess).",
+      "affects": [
+        {
+          "target": "library",
+          "where": "section 7, the line that starts 'CheckTemplate = Literal[' and the Validators block (V3)",
+          "change": "Extend CheckTemplate with the 14 registry names: reply-valid, turn-posted, charter-stamp, workable, audience-split, atom-rules, judge-gate, price-kept, within-budget, order-registered, finding-per-item, pass-needs-proof, code-measure-wins, answer-recorded. Argument rules (replace the two rules S2-models-06 added): reply-valid takes exactly 2 args [family, kind] (kind may list alternatives joined by '|'); answer-recorded takes exactly 1 arg [question message id]; the other twelve take none. None needs target_sha256; V4 ignores them. The default relevance of a registry check is its own text. Check.text carries the plain sentence the UI shows (docs/design/function-nodes.md section 4). Exit codes: 0 pass, 1 fail, 127 unknown name."
+        },
+        {
+          "target": "library",
+          "where": "section 8.4 (FunctionSpec, AtomTemplate) and the seed table",
+          "change": "AtomTemplate: replace 'checks: [Check] 1..12' by 'checks: [CheckRef]<=6' with CheckRef(name: registry name, args: [S]); a template lists named checks only, declare adds the floors (reply-valid when the TaskKind names a reply family and kind, turn-posted always for llm and bash, none for manual). FunctionSpec gains yields: S(1,60): identity 'charter, rule, question', adaptation 'proposal with its checks', priority 'GRANT, COUNTER, REFUSE', coordination 'rule, order, holds', audit 'one finding per item' (the WORK ATOM YIELDS lines of the cards). Replace S2-models-06's generic template ('one check turn-posted') by 'no named check'. The seed content is the template table of docs/design/function-nodes.md section 3."
+        },
+        {
+          "target": "library",
+          "where": "section 14 test table, row test_lib_function_specs.py (added by S2-models-06)",
+          "change": "Add: every CheckRef name is a CheckTemplate member and its arg count matches; every template opens without refusal for a sample TurnInfo of its kind; yields is non-empty; every goal template is non-banal after filling."
+        },
+        {
+          "target": "engine",
+          "where": "section 3.3 table, the rows added by S2-models-05 for fnodes/",
+          "change": "fnodes/__init__.py is owned by E8 (docstring only). Add rows (WP E8): fnodes/registry.py (the 14 pure checks, CheckSpec, Outcome, REGISTRY frozen at import), fnodes/evidence.py (Evidence and the read-only run-folder reader). Change the row checks.py (WP E6) to: CheckRunner, builds Evidence from the hooks, runs reply-phase and turn-phase checks, produces library CheckResult values, applies RECOVERED/WAIVED, decides closed or verify_failed."
+        },
+        {
+          "target": "engine",
+          "where": "section 4.3a 'The function-node layer' (written from S2-models-06), the paragraphs on checks, exit codes and 'Not in v1'",
+          "change": "Replace them by: 'Checks are the registry of docs/design/function-nodes.md section 4: 14 names, pure functions, evidence from the hooks only. Exit codes 0, 1, 127.' Delete the sentence 'Not in v1: ... J2's named code checks as atom checks'. Keep the rest of 4.3a pointing to docs/design/function-nodes.md sections 5 and 6."
+        },
+        {
+          "target": "engine",
+          "where": "section 9 test table (rows added by S2-models-06) and section 10 order line",
+          "change": "Add rows test_engine_fn_registry.py and test_engine_fn_mutations.py (WP E8) with the fixtures directory tests/engine/fixtures/fn_registry/. test_engine_fn_checks.py (E6) now tests the runner only. Order line: 'E8 after E0, E1, L4, L5; E6 after E8'."
+        },
+        {
+          "target": "ui",
+          "where": "section 6.4 (c) item 5 (Work atoms), the 'Verification' row (it was 'Done when' before S3-web-05)",
+          "change": "A check's sentence is Check.text; show it first, then every try. verifySentence keeps its cases for file-exists, grep-count and named-test (plugin atoms) and uses Check.text when present; an unknown template shows its name."
+        },
+        {
+          "target": "diagram",
+          "where": "five function cards, VERIFY compartments",
+          "change": "No text change: the five lines are true. Label per diagram_label."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "add",
+          "id": "E8",
+          "section": "engine",
+          "title": "Verify registry: 14 named checks, the evidence reader, fixtures, parity and mutation tests",
+          "owns": [
+            "sutra_app/engine/fnodes/__init__.py",
+            "sutra_app/engine/fnodes/registry.py",
+            "sutra_app/engine/fnodes/evidence.py",
+            "tests/engine/test_engine_fn_registry.py",
+            "tests/engine/test_engine_fn_mutations.py",
+            "tests/engine/fixtures/fn_registry/",
+            "docs/notes/E8.md"
+          ],
+          "depends_on": [
+            "E0",
+            "E1",
+            "L4",
+            "L5"
+          ],
+          "acceptance": [
+            "scripts/py -m pytest tests/engine/test_engine_fn_registry.py tests/engine/test_engine_fn_mutations.py -q"
+          ]
+        },
+        {
+          "action": "change",
+          "id": "E6",
+          "section": "engine",
+          "title": "Function-node layer: turn to work atom, check runner, manual atom, transitions, events",
+          "owns": [
+            "sutra_app/engine/fnodes/ids.py",
+            "sutra_app/engine/fnodes/declare.py",
+            "sutra_app/engine/fnodes/checks.py",
+            "sutra_app/engine/fnodes/layer.py",
+            "tests/engine/test_engine_fn_declare.py",
+            "tests/engine/test_engine_fn_checks.py",
+            "tests/engine/test_engine_fn_layer.py",
+            "docs/notes/E6.md"
+          ],
+          "depends_on": [
+            "E0",
+            "L4",
+            "L5",
+            "L6",
+            "L10",
+            "E8"
+          ],
+          "acceptance": []
+        },
+        {
+          "action": "change",
+          "id": "L10",
+          "section": "library",
+          "title": "Function specs: seed data (templates with named checks, yields, work hints) and its tests",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        }
+      ],
+      "diagram_label": "verify registry: 14 named checks"
+    },
+    {
+      "id": "S4-fnodes-03",
+      "topic": "Atom grain: one atom per function turn, with llm, bash and manual work (point 3, FN-2 against S2-models-06)",
+      "decision": "One work atom per function turn, from turn_started to turn_finished of the five function names. J2's re-asks inside the turn are tries (attempt) of the same atom; planner, judge, summariser, reviewer and template-spec calls are charged to the open atom and are not atoms. The work kind is llm when the turn calls a model, bash when it does not (Priority's envelope check within limits, Coordination's queue-empty hand-off to Audit, the charter-change Relay) and manual for the owner's question: a turn that ends paused is followed by one manual atom of the same node (always Identity's) whose check answer-recorded runs when the owner's message arrives. The declared kind is the template's prediction, from a file or the template and never from a reply: envelope is bash; schedule is bash iff workflows.json at turn start holds no registered or held workflow. Seen.work corrects a wrong guess at the first transition after the work (the stored work.dispatch_kind is replaced and notes gets 'declared bash, did llm'). Builders, the code validator and the confidence judge open no function atom. Words: the strip caption '1 step = 1 atom' becomes '1 turn = 1 atom' ('step' means a J2 loop step or a graph step node elsewhere); the label 'every AI step = one atom' becomes 'every call has an atom id'; the ledger line 'one record per atom attempt' becomes 'one row per call, by atom'; the router line 'cost per atom: usd and tokens' stays true (the sum over the atom's calls). Supersedes S2-models-06: the sentence 'a turn without any agent_turn call is closed once with the check turn-posted' (that turn is a bash atom, its check is still turn-posted) and the absence of any question atom; FN-2's 'an llm atom is one router call' (an atom has one or more calls).",
+      "why": "J2's unit of work is the turn: the cards' WORK ATOM YIELDS lines (a charter, a verdict, a schedule, a finding) are one turn's yield, the engine hooks and ORCH-D10 say 'atom per turn', and re-asks map onto the plugin's attempts without changing J2. The strip promises 'AI call, code step, or a question to you', so bash and manual atoms must exist, but a question is not a model call and a code step is not a turn of its own.",
+      "rejected": "One atom per router call (planner and judge calls are not steps; the strip's 'a TASK runs as atoms' would explode into hundreds); keeping code-only actions outside the atom loop (the floor and the graph counts would miss them); predicting the kind from the model reply; opening atoms lazily at the first call (it would break 'declared before the work').",
+      "affects": [
+        {
+          "target": "engine",
+          "where": "section 4.3a (written from S2-models-06), paragraphs 'Grain', 'Declare', 'Open', 'Attempts', 'Turn end', 'Run end'",
+          "change": "Replace the five paragraphs by one: 'One atom per function turn; rules in docs/design/function-nodes.md section 5 (grain 5.1, hooks 5.2). Work kinds llm, bash, manual; the manual atom follows a turn that ends paused.' Keep the hook list: run_started, turn_started, call_finished, message_posted, record_saved, turn_finished, run_status, run_error."
+        },
+        {
+          "target": "library",
+          "where": "section 7, the Lifecycle block (open_atom, close_atom, abandon_atom signatures)",
+          "change": "Add Seen(Value): work: Literal[llm, bash, manual]? · model: S(1,80)? · note: S(0,200) = ''. Signatures: close_atom(atom, results, now, *, pins_now={}, seen: Seen | None = None) and abandon_atom(atom, reason, now, *, code='manual', seen=None). Rule: when seen.work is set and differs from atom.work.dispatch_kind, the returned atom has work.dispatch_kind = seen.work and notes = (notes + ' declared <old>, did <new>').strip(); seen.model fills Atom.model when empty. Nothing else about the atom changes after open."
+        },
+        {
+          "target": "library",
+          "where": "section 8.4, AtomTemplate",
+          "change": "Add work_hint: Literal[llm, bash, manual] = 'llm'. Seed values: priority/envelope 'bash'; identity/'the owner's question' (template name 'answer') 'manual'; coordination/schedule 'llm' with the declare rule 'bash iff workflows.json has no registered or held workflow'."
+        },
+        {
+          "target": "ui",
+          "where": "section 6.4 (c) item 5, the 'How' row (it was 'Done by' before S3-web-05)",
+          "change": "Atom card row How: llm = the model(s) from AtomOut.usage (for example 'Claude (sonnet)'), bash = 'code, no AI call', manual = 'you'."
+        },
+        {
+          "target": "diagram",
+          "where": "strip caption, arrow label, ledger box, aria-label",
+          "change": "Strip caption line 1: '1 turn = 1 atom' (was '1 step = 1 atom'). Arrow 'runtime to router' label: 'every call has an atom id' (was 'every AI step = one atom'; 25 characters, ends clear of x=430). Usage and cost ledger line 2: 'one row per call, by atom' (was 'one record per atom attempt'). Aria-label: 'every step of a node is one work atom' becomes 'every turn of a node is one work atom'. The work cell ('AI call, code step,' / 'or a question to you') stays and is now true."
+        }
+      ],
+      "work_packages": [],
+      "diagram_label": "1 turn = 1 atom: AI, code or you"
+    },
+    {
+      "id": "S4-fnodes-04",
+      "topic": "Mode: what 'hard' means when J2 already enforces replies and routes (point 4, FN-9 against S2-models-06)",
+      "decision": "Version 1 observes and J2 stays byte-identical. 'Hard' is made precise in four parts. (1) An atom closes only through passing checks: the library's close_atom is the only place state becomes closed, and no flag or caller can skip a card or a ledger row. (2) Replies and routes are enforced by J2's own code today (re-ask once, repair, drop, template, _pick) and that stays the default; the closed reply models (reply-valid) and HANDOFFS (turn-posted) are the oracle the registry judges the outcome by, so a violation can no longer pass unseen but J2's behaviour is not changed. (3) The write-scope floor is warn-and-log: at message_posted a message by a function with no open atom, and at record_saved a record outside FunctionSpec.writes, writes one trace.jsonl line 'layer.touches_miss' and blocks nothing; it flips to hard only when the golden runs show none (a later decision). (4) SUTRA_NODES=on|off|enforce: on is the default, off selects EventHooks, enforce is reserved and the factory raises ValueError (S2-models-05 stands). Every hook body of the layer is wrapped: an error becomes a 'layer.error' trace line and never reaches J2 (no fatal flag is ever set). Changes to J2 behaviour: none listed; system_addendum stays empty, so the prompt goldens are byte-identical. Clarifies S2-models-05/06 (observe only) and FN-9; changes S2-models-06 only in that FunctionSpec.writes is 'recorded and warn-logged, not enforced' instead of 'recorded, not enforced'.",
+      "why": "J2's code already re-asks, repairs and re-routes; making the layer block or retry would change D4's 'behaviour the owner sees in J2 stays' and the prompt goldens. A check that decides the atom's fate, never the turn's, is hard enough to make a violation visible and permanent in the Atom log, which is what the owner asked for ('verify is the teeth').",
+      "rejected": "Blocking or re-asking a turn when a check fails in v1 (changes J2's recovery); hard write scope from day one (it would block legitimate J2 moves such as Priority re-pricing a ruling with J2_FIXES=1); a j2.py patch beyond P8; an enforce mode that is half built.",
+      "affects": [
+        {
+          "target": "engine",
+          "where": "section 4.3a, the paragraph on observe mode and 'what is not in v1'",
+          "change": "Replace by the four parts of this decision in two sentences each and a pointer to docs/design/function-nodes.md section 5.4. Delete 'write-scope enforcement' from the 'not in v1' list and write 'write scope: warn-and-log in v1'."
+        },
+        {
+          "target": "engine",
+          "where": "section 4.5, the list of trace.jsonl types (S2-models-06 added atom.refused and layer.error)",
+          "change": "Add layer.touches_miss {fn, atom, target, reason}."
+        },
+        {
+          "target": "library",
+          "where": "section 8.4, the FunctionSpec line (after the stages and may_not changes of S2-models-06)",
+          "change": "Append: 'writes is recorded on the spec and checked by the engine layer in warn-and-log mode (layer.touches_miss); no library rule enforces it'. S2-models-06 said \"recorded, not enforced\"; write this instead."
+        },
+        {
+          "target": "engine",
+          "where": "section 9 test table, row test_engine_fn_layer.py",
+          "change": "Add: a message by a function without an open atom and a record outside writes each write one layer.touches_miss line and change no outcome; an exception raised inside every hook body reaches neither J2 nor the events."
+        },
+        {
+          "target": "diagram",
+          "where": "five function cards",
+          "change": "Label per diagram_label (no text change)."
+        }
+      ],
+      "work_packages": [],
+      "diagram_label": "observe: J2 unchanged · scope warns"
+    },
+    {
+      "id": "S4-fnodes-05",
+      "topic": "Refuse: stored and carded, or nothing written (point 5, FN-3/FN-16 against S2-models-10)",
+      "decision": "A refused open is stored (state refused, attempt 0), ledgered (Atom log status refused, reason = the refusal message) and carded (one line, ATOM REFUSED) in the node's own session, as S2-models-10 and library DL6 say. The v1 turn goes on without an atom (observe mode, S1-contracts-10). Production templates never refuse (tests prove every template opens), so a refusal means a template or registry bug made visible. The strip's refuse cell is rewritten to be true: title 'exit: refuse' (unchanged), line 1 'bad goal or check:' (unchanged), line 2 'logged as refused' (was 'nothing is written'; 17 characters, inside the cell width the old 18-character line used). Abandon keeps its cell ('reason required;' / 'no check, log row'). Supersedes FN-3 and FN-16 where they say 'nothing is written' (the plugin's silent stderr refusal).",
+      "why": "The owner named four verbs with cards and a ledger row; a hidden refusal would make a missing atom look like a bug (S2-models-10). Storing it is also less code than special-casing a non-write, because the library already returns a stored refused atom with a Card.",
+      "rejected": "The plugin's behaviour (a stderr line, no row, no card), which FN-16 itself calls a promise the code does not keep; hiding refused atoms as abandoned (S3-web-13(d), superseded by S4-fnodes-08).",
+      "affects": [
+        {
+          "target": "diagram",
+          "where": "strip cell 'exit: refuse' (x=764, w=118, dashed)",
+          "change": "Second line: 'logged as refused' (was 'nothing is written'). Nothing else in the strip changes except the caption (S4-fnodes-03)."
+        },
+        {
+          "target": "library",
+          "where": "section 16 DL6 and the section 7 bullet that starts '`refused` is stored only for an open-time refusal'",
+          "change": "Append to DL6: 'FN-3 and FN-16 (nothing is written) are superseded by S4-fnodes-05: a refusal is stored, ledgered and carded.' No other change."
+        },
+        {
+          "target": "ui",
+          "where": "section 6.4 (c) item 5, pills",
+          "change": "The REFUSED status line and the pill 'not started: <refusal.message>' stay (S2-models-09); the fixtures contain one refused atom (UI-0)."
+        },
+        {
+          "target": "engine",
+          "where": "section 4.3a, the sentence on an open-time refusal",
+          "change": "Keep: 'a refused open is stored, ledgered and carded and the turn goes on'; add the trace type atom.refused with the refusal code."
+        }
+      ],
+      "work_packages": [],
+      "diagram_label": "refused: logged, no work run"
+    },
+    {
+      "id": "S4-fnodes-06",
+      "topic": "Chat sessions of function nodes and divisions; what a division click shows (point 6, FN-6/FN-7 against S2-models-11)",
+      "decision": "One session per graph node stays (S2-models-11, draw.io steps 5 and 7), with these kinds: cs_org (the root, writable by the owner), department (writable, Identity's voice), division (a lens), function (read-only working log, five per department), step (read-only). Function nodes exist per department only; a division has none. A division's session keeps no conversation of its own, only notes ('Merged into X', 'Took in Y'): its transcript is the department session filtered to the tasks scoped to the division, plus those notes (ORCH-D1's filtered view), and a line written there is delivered to the department's Identity with scope_node_id (ORCH 5.5): one conversation, one writable voice. Identity's chat for the owner is the department session: the Identity chip and the department node open it (S3-web-05); Identity's own function session is its read-only working log and holds its atom cards, which the drawer lists from the atoms table. Only Identity ever receives the owner's words. Departments never move, merge or split (DL5), so no function node changes owner; a division merge or split touches no function node. What the UI shows on a division click: the node panel on the Chat tab with the lens header '<Division> is part of <Department>. This is <Department>'s Identity, showing the work for <Division>' and the link 'Show everything for <Department>' (opens the department session), the composer on; the Details tab shows 'Functions of <Department>' with five chips that open the department's function panels, and no goal, task or atoms. Supersedes the FN-6 sentence 'opens its department's Identity chat (a lens, not a second session)' in wording only: it is a lens with a session row; it does not change S2-models-11.",
+      "why": "The published Chat sessions box says 'one per node' and draw.io step 7 names the division; a lens row keeps every node linked and keeps merge, split and move working (notes, filed_under) without a special case. The meaning of FN-6 (no second conversation, only Identity hears you) holds.",
+      "rejected": "No session row for a division (FN-6 read literally: 'one per node' on the figure would be false, merge notes would have nowhere to live and carry_links would need a division exception); a separate writable conversation per division (two voices); opening the Identity working-log session on the Identity chip (rejected in S3-web-05).",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "section 1.1 table, rows 'Division chat' and 'Function chat (5 per department), step chat'",
+          "change": "Division chat: Voice 'the department's Identity (a lens)'; Shows 'the department session filtered to tasks scoped to the division, plus the division's own notes'; The owner's text goes to 'the department's Identity with scope_node_id (as the department chat)'. Function chat: Voice 'the node's own role'; Shows 'its working lines and its atom cards, read-only; Identity's log is not the owner's chat, the department session is'; text goes to 'nowhere (403 read_only)'."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 9 ORCH-D1, the Decision sentence",
+          "change": "Replace 'a division chat is a filtered view' by 'a division chat is a lens: no conversation of its own, the department's Identity through a filter and the division's notes'. Keep the rest (the voice sentence is rewritten by S4-fnodes-12)."
+        },
+        {
+          "target": "ui",
+          "where": "section 6.5 (d), the bullets that start '**Header**' and '**Who can write**'",
+          "change": "Add: 'Division panel: header \"<Division> is part of <Department>. This is <Department>'s Identity, showing the work for <Division>\" and the link \"Show everything for <Department>\" (selects the department session); composer on. The Identity chip opens the department session; the other four function chips open their own read-only logs.'"
+        },
+        {
+          "target": "ui",
+          "where": "section 6.4 (c), first paragraph",
+          "change": "Add: 'A division node has no function drawer: its Details tab lists \"Functions of <Department>\" as five chips that open <dept>.<fn> panels.'"
+        },
+        {
+          "target": "library",
+          "where": "section 8.3 'What the library does not decide', the sentence on chat_session_id",
+          "change": "Append: 'A division's session is a lens (S4-fnodes-06): it keeps notes only; its transcript is read through the department session.'"
+        },
+        {
+          "target": "diagram",
+          "where": "box 'Chat sessions'",
+          "change": "No text change: 'one per node' and 'only Identity speaks to you' are true. Label per diagram_label."
+        }
+      ],
+      "work_packages": [],
+      "diagram_label": "1 chat per node · division = lens"
+    },
+    {
+      "id": "S4-fnodes-07",
+      "topic": "Cost and ledger: one atom id on every call, overhead keys, column names (point 7, FN-13 against S1-contracts-05/07/10 and S2-models-07)",
+      "decision": "One rule: every model call is charged to exactly one atom id, written in usage_ledger.atom_id (TEXT, S1-contracts-05; index usage_atom(atom_id); no foreign key). (1) A call made inside an open function turn, helper calls (planner, judge, summariser, reviewer, template spec) included, carries that atom's id through llm.bind_atom. (2) A builder call carries J2's own tag.atom; the Projector stores it as '<run_id>:W-n.aK' (S2-models-10); an explicit tag wins over the binding. (3) Every other call carries an overhead key: the run's, for engine calls outside a turn (end-of-run review, template spec between turns), and the request's, for the chat agent. overhead_atom_id(owner_ref) = function_atom_id(atom_sid(owner_ref, 'overhead'), 1) in library types.py, owner_ref = the run id or 'req-<id>'; it matches the AtomId pattern, is not a third id scheme and has no atoms row (an accounting key, not a work atom: no goal, check, card or log row). The Router builds UsageIn.atom_id from tag.atom; the engine host binds the run overhead key at run_started and the layer rebinds it (not None) after every turn; AsyncConnector maps context.atom_id to CallTag.atom and the TurnRunner sets it to the request key on every call of the request. Invariants (contract tests): no provider usage row has atom_id NULL (stub rows carry it too); the per-atom sums equal the ledger total; the total with provider 'stub' excluded is the provider bill. AtomOut.usage sums usage_ledger by atom_id (S2-models-07). GET /api/usage/summary gains by=atom. Supersedes S1-contracts-10: 'clears it with llm.bind_atom(None) at turn_finished and on every run end path' (rebinds the run overhead key; None only in tests); S1-contracts-07: the context mapping list gains atom_id; S1-contracts-05: atom_id 'TEXT' nullable becomes 'never NULL for a row written by the engine host or the chat agent' (the connector layer still accepts an untagged call from other callers and stores NULL).",
+      "why": "FN-13 asks that the ledger sum to the provider bill and that every call be attributable; the engine and the chat agent are the only two callers, so a default binding and one context key close the gap with no router change. Overhead keys reuse the function-atom id form, so S2-models-10's 'no third scheme' holds.",
+      "rejected": "NULL for chat-agent and out-of-turn calls (the per-atom view would not add up); a real overhead atom row with a card and a log row (noise, and the chat agent must not write to the owner); building usage rows from call_finished (S1-contracts-05 already rejected it); a third atom id scheme.",
+      "affects": [
+        {
+          "target": "library",
+          "where": "section 3.2 types.py, after function_node_id",
+          "change": "Add overhead_atom_id(owner_ref: str) -> AtomId = function_atom_id(atom_sid(owner_ref, 'overhead'), 1) next to atom_sid and function_atom_id (S2-models-10). Test in test_lib_atom_ids.py: the result matches AtomId, equals itself on repeat, differs for different owners."
+        },
+        {
+          "target": "engine",
+          "where": "section 4.2 llm.py API list (the bind_atom line added by S1-contracts-10)",
+          "change": "Rewrite: 'bind_atom(atom_id: str | None) -> None: ask() copies the bound id into tag.atom when the tag has none. The host binds the run overhead key at run_started; the layer binds the turn atom after open_atom and binds the run overhead key again at turn_finished and on every run end path. None clears the binding and is used in tests only.' CallInfo.atom reads the current tag."
+        },
+        {
+          "target": "engine",
+          "where": "section 4.7 host step 6",
+          "change": "After llm.configure: llm.bind_atom(overhead_atom_id(run_id)). Test (test_engine_host.py): a call made before the first turn carries the run overhead key."
+        },
+        {
+          "target": "connectors",
+          "where": "section 3.10 'Orchestrator (ORCH §3.5)' bullet and S1-contracts-07's mapping text",
+          "change": "Add 'context.atom_id -> CallTag.atom' to the mapping list. Section 3.8 row atom_id: append 'The engine host and the chat agent always set it (S4-fnodes-07); the connector layer itself stores NULL for an untagged call'."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 5.2 steps T0 and T4",
+          "change": "TurnRunner computes atom_id = overhead_atom_id(request id 'req-<message id>') once per request and passes it in context={..., atom_id} on every call_json of the request (stages A, B, C, retries included)."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 4.1 DDL usage_ledger and section 6.2 route 'GET /api/usage/summary'",
+          "change": "Comment on atom_id: 'never NULL for rows written by the engine host and the chat agent'. Summary: by=dept|fn|provider|day|atom."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 7 test table, row test_atoms_usage.py",
+          "change": "Add: after a scripted conversation and a golden run replay, SELECT count(*) FROM usage_ledger WHERE provider != 'stub' AND atom_id IS NULL is 0; per-atom sums equal the total; a chat-agent call row has the request's overhead key and node_id 'root'."
+        },
+        {
+          "target": "repo",
+          "where": "tests/contracts/test_contract_usage.py (CT-1)",
+          "change": "Extend S1-contracts-10's contract: a fake layer binds an atom around two requests (one agent turn, one helper) and both lines carry 'atom'; a call made while only the run overhead key is bound carries that key; no usage line without 'atom'."
+        },
+        {
+          "target": "diagram",
+          "where": "arrow 'every AI step', Usage and cost ledger box",
+          "change": "Strings are set by S4-fnodes-03. Label per diagram_label."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "L1",
+          "section": "library",
+          "title": "Foundations, registry, gate, replies, schema export, id helpers (overhead_atom_id)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        },
+        {
+          "action": "change",
+          "id": "E0",
+          "section": "engine",
+          "title": "Contracts, shim, settings, paths (bind_atom keeps the run overhead key; node event builder gains wait_on and tokens)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        },
+        {
+          "action": "change",
+          "id": "E3",
+          "section": "engine",
+          "title": "Host process (binds the run overhead key; publisher fills wait_on and tokens from the map function node)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        },
+        {
+          "action": "change",
+          "id": "CN-7",
+          "section": "connectors",
+          "title": "APPEND: AsyncConnector tag mapping (context.atom_id -> CallTag.atom)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        }
+      ],
+      "diagram_label": "every call has an atom id"
+    },
+    {
+      "id": "S4-fnodes-08",
+      "topic": "Statuses: the final spec's four against the library's four, and the one mapping every surface uses (point 8, FN-18)",
+      "decision": "Stored states stay the library's (open, closed, refused, abandoned). One pure library function atom_display_state(atom) gives the five display words (open, verify_failed, closed, refused, abandoned) that the card, the Atom log, the chip counts and AtomOut.state all use; the mapping table is docs/design/function-nodes.md section 6.2. verify_failed is derived, not stored: an atom the layer ends because its checks failed is stored abandoned with the new field Atom.abandon_code = 'verify_failed' (other codes: run_ended, replaced, manual; abandon_atom(atom, reason, now, *, code='manual', seen=None)). The layer makes that end at turn end, or at once on the third failing reply, after the final failing close_atom, so the cards are VERIFY FAILED then WORK ATOM ABANDONED and the atom rests as verify_failed. A failed try with tries left leaves the atom open (display open, pill 'in progress, attempt n'); a try that J2 then retried successfully ends closed 'on attempt n'. The word refused is a wire word (AtomOut.state has all five); atom/1 rows keep J2's four words, which are the same display words. LedgerRow.status becomes closed, verify_failed, abandoned or refused with the rule: closed => verify exit 0; verify_failed => verify {template, last failing exit_code} and a reason; abandoned and refused => a reason, no verify. The orchestrator stores the display word in atoms.display (computed by AtomStore.upsert from the Checked body, never from the event) with a CHECK and the index atoms_node_display(node_id, display). Supersedes: S2-models-06 and S2-models-07 (the rule 'verify_failed iff state is open, attempt is 3 and the last result of some check is non-zero' and the sentence 'After the third failed attempt the atom stays open; atom_display_state reports verify_failed'); library DL6 and section 7 ('verify_failed is an outcome, never a stored state' stays true as 'never a stored state'); S3-web-13(d) ('refused never leaves the API').",
+      "why": "J2's retries are mostly one or two, not three, so a state defined at attempt 3 would never show; the failure that counts is 'tries used up and no recovery', which the layer knows at the turn end. Keeping the stored states the plugin's (ADR-038) and deriving the fifth word gives the spec's four statuses on every surface without a stored fifth state or a second SQL vocabulary for the same table.",
+      "rejected": "A stored verify_failed state for function atoms (against ADR-038 and library DL6, and a second per-schema CHECK); leaving the atom open at attempt 3 (it would block the node's next atom); hiding refused as abandoned (S3-web-13(d): a missing atom would look like a bug); computing the display word in the UI (three surfaces would drift).",
+      "affects": [
+        {
+          "target": "library",
+          "where": "section 7, the Atom block (after 'closed_by', 'reason', 'refusal')",
+          "change": "Add abandon_code: Literal[verify_failed, run_ended, replaced, manual]? (only when state is abandoned; V5 abandoned: abandon_code defaults to 'manual'). Add to the Lifecycle block: abandon_atom(atom, reason, now, *, code='manual', seen=None) -> Transition."
+        },
+        {
+          "target": "library",
+          "where": "section 7, the function atom_display_state(atom) added by S2-models-06 and the bullets 'After the third failed attempt', '`verify_failed` is an outcome'",
+          "change": "Replace the rule by: atom_display_state(atom) -> Literal[open, verify_failed, closed, refused, abandoned]: 'verify_failed' iff state is abandoned and abandon_code is 'verify_failed'; every other state is itself (open is always open). Rewrite the bullets: 'A failed try with tries left leaves the atom open. When the tries are used up and J2 has no recovery the layer abandons the atom with abandon_code verify_failed; atom_display_state reports verify_failed.' and 'verify_failed is derived, never a stored state (ADR-038)'."
+        },
+        {
+          "target": "library",
+          "where": "section 7, LedgerRow and the Card line",
+          "change": "LedgerRow.status: Literal[closed, verify_failed, abandoned, refused]. V: closed => verify with exit 0; verify_failed => verify {template, exit_code != 0} and reason; abandoned and refused => reason and no verify. ledger_row(atom) picks verify_failed from abandon_code. Card: the failed close gives label VERIFY FAILED, the abandon gives WORK ATOM ABANDONED with rows Reason and Why (the failing evidence)."
+        },
+        {
+          "target": "library",
+          "where": "section 7, AtomView mapping table",
+          "change": "Add the row: 'state abandoned with abandon_code verify_failed -> status verify_failed'. The row 'state refused -> abandoned, with details.refusal' stays for J2-format documents only."
+        },
+        {
+          "target": "library",
+          "where": "section 14 test table, row test_lib_atom_display.py (S2-models-06)",
+          "change": "Replace the cases by: each stored state and abandon_code gives the table of docs/design/function-nodes.md section 6.2; an open atom at attempt 3 is open; abandon with code verify_failed gives a verify_failed LedgerRow whose verify.exit_code is not 0; an abandoned atom with another code gives abandoned."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 4.1 DDL, table atoms (after S2-models-07)",
+          "change": "Add display TEXT NOT NULL CHECK (display IN ('open','verify_failed','closed','refused','abandoned')) and CREATE INDEX atoms_node_display ON atoms(node_id, display). Comment: 'display = library atom_display_state(body) for work-atom/0.3, = state for atom/1; set by AtomStore.upsert'. The state CHECK of S2-models-07 is unchanged."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 3.3 row AtomOut and section 5.6 row 'atom'",
+          "change": "AtomOut.state is the display word (five words for both schemas); delete S3-web-13(d)'s clause \"'refused' never leaves the API\". 5.6: forward moves are open to open with attempt + 1, open to closed, open to abandoned (delete 'to verify_failed')."
+        },
+        {
+          "target": "ui",
+          "where": "section 6.4 (c) item 5, pills and status lines",
+          "change": "Five pills as S2-models-09 (open 'in progress', verify_failed 'the check did not pass, so nothing is marked done', closed 'goal reached, and checked', refused 'not started: <refusal.message>', abandoned 'stopped on purpose, reason kept') and the status lines OPEN, CLOSED, VERIFY FAILED, ABANDONED, REFUSED. Fixtures use 'state' with the five words."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 7 test table, rows test_schema.py and test_atoms_usage.py",
+          "change": "test_schema.py: atoms.display accepts only the five words and the index atoms_node_display exists. test_atoms_usage.py: AtomStore.upsert stores display = atom_display_state(body); a verify_failed abandon stores display 'verify_failed' while state is 'abandoned'; counts by display."
+        },
+        {
+          "target": "engine",
+          "where": "section 4.5 event table, row 'atom'",
+          "change": "The body (the Checked[Atom] JSON) carries abandon_code; no new event field. Delete any mention of status verify_failed for work-atom/0.3 events (their status is the stored state)."
+        },
+        {
+          "target": "ui",
+          "where": "section 10 fixtures (WP UI-0: tests/ui/fixtures/ and fake_backend.py)",
+          "change": "node-identity.json and graph-full.json hold atoms in all five display states (one open at attempt 2, one verify_failed with two tries, one closed with a RECOVERED row, one refused, one abandoned) and a division node with its lens session; fake_backend serves GET /api/atoms/log."
+        },
+        {
+          "target": "diagram",
+          "where": "Atom log box and the strip",
+          "change": "No text change. Label per diagram_label."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "L4",
+          "section": "library",
+          "title": "Atom, lifecycle, ledger row, cards, atom/1 view, display state (abandon_code, Seen, 14 check names, verify_failed log row, ledger_row_from_view)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        },
+        {
+          "action": "change",
+          "id": "ORCH-1",
+          "section": "orchestrator",
+          "title": "Foundation (chart_changes gains task_title and result_json; node event accepts wait_on and tokens; atoms.display and the Atom log DDL; plain_check removed)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        },
+        {
+          "action": "change",
+          "id": "UI-0",
+          "section": "ui",
+          "title": "Test tooling (fixtures and fake backend use LIB ids, J2 status words, five atom words, a division lens and whoLabel cases)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        }
+      ],
+      "diagram_label": "stored 4, shown 5 atom words"
+    },
+    {
+      "id": "S4-fnodes-09",
+      "topic": "The Atom log box against the atom_ledger table; verify_failed rows too (point 9, FN-19)",
+      "decision": "The Atom log box of the figure is the atom_ledger table: append-only (triggers abort UPDATE and DELETE), one row per atom (UNIQUE atom_id), columns seq INTEGER PRIMARY KEY AUTOINCREMENT, atom_id TEXT NOT NULL UNIQUE, node_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('closed','verify_failed','abandoned','refused')) = the display word at the end of the atom (S4-fnodes-08), body TEXT NOT NULL = the library LedgerRow JSON, ts INTEGER NOT NULL. It is written only by AtomStore.append_ledger inside the Projector transaction, never by a node. A function atom brings its LedgerRow in the atom event at its terminal transition (field ledger, S2-models-07). For a builder atom (atom/1) the Projector builds the row with the library function ledger_row_from_view(view, node_id, department_id) the first time a view is terminal (closed, verify_failed or abandoned), so 'one row per atom' is true for builders too; the unique index makes a replay harmless. Per-try results stay on the atom (body.verify.checks[].results[], the 'what changed' lives in the evidence text), cost stays in usage_ledger by atom_id. New read route GET /api/atoms/log?node_id=&after=&limit= returns rows in seq order. Supersedes S2-models-07: 'append atom_ledger when ledger is present' (function atoms only) and the column list of ORCH 4.1 (seq, atom_id, status, body, ts); the unique index of S2-models-07 stays.",
+      "why": "FN-19 wants a slim append-only box with verify_failed rows beside the strip; the table already exists and only needed its terminal words, a node column for per-node reads and builders. One row per atom needs the builder rows, which only the Projector can write (the engine's publisher emits J2 views).",
+      "rejected": "A second table for the Atom log (two copies of one fact); a node writing its own log row (FN-17: the runtime writes it); logging only function atoms (the figure says one row per atom); a row for every failed try (tries live on the atom).",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "section 4.1 DDL, table atom_ledger (and the unique index added by S2-models-07)",
+          "change": "Replace the statement by: CREATE TABLE atom_ledger (seq INTEGER PRIMARY KEY AUTOINCREMENT, atom_id TEXT NOT NULL UNIQUE, node_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('closed','verify_failed','abandoned','refused')), body TEXT NOT NULL, ts INTEGER NOT NULL); CREATE TRIGGER atom_ledger_no_update BEFORE UPDATE ON atom_ledger BEGIN SELECT RAISE(ABORT, 'atom log is append-only'); END; CREATE TRIGGER atom_ledger_no_delete BEFORE DELETE ON atom_ledger BEGIN SELECT RAISE(ABORT, 'atom log is append-only'); END. Delete the separate CREATE UNIQUE INDEX atom_ledger_atom (the UNIQUE column replaces it)."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 5.6 table row 'atom' and the Projector rule of S2-models-07",
+          "change": "Ledger rule: a work-atom/0.3 event with a non-null ledger appends it once (INSERT OR IGNORE on atom_id); a schema atom/1 event whose status is closed, verify_failed or abandoned appends ledger_row_from_view(...) the first time. AtomStore.append_ledger is the only writer. Delete the sentence that limits ledger rows to function atoms."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 6.2 routes table, after 'GET /api/atoms/{id}', and section 3.3 wire models",
+          "change": "Add the route 'GET /api/atoms/log?node_id=&after=&limit=' returning AtomLogRow[] and the model AtomLogRow {seq, atom_id, node_id, status, body, ts}; read-only, open on loopback like the other reads. ORCH-3 owns api/atoms.py."
+        },
+        {
+          "target": "library",
+          "where": "section 7, after ledger_row(atom)",
+          "change": "Add ledger_row_from_view(view: AtomView, node_id: str, department_id: str | None) -> LedgerRow: status = view.status (closed, verify_failed, abandoned); verify = {template: the type before ':' in the first verification method, exit_code: 0 for closed else 1}; attempt = view.attempt or 0; model, effort, touches empty; reason from view.details or notes; ts from the caller. Test in test_lib_atom_view.py: each terminal J2 status gives a valid LedgerRow."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 7 test table, rows test_atoms_usage.py and test_projector_fnodes.py",
+          "change": "Add: UPDATE or DELETE on atom_ledger aborts; a second row for one atom_id is ignored; an atom/1 view that turns closed appends one row and a replay appends none; a verify_failed function atom appends one row with status verify_failed."
+        },
+        {
+          "target": "diagram",
+          "where": "box 'Atom log'",
+          "change": "Text unchanged ('append-only · one row per atom'), now true for every atom. Label per diagram_label."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "ORCH-3",
+          "section": "orchestrator",
+          "title": "APPEND: ChatTranscripts and ChatStore.note_provider; AtomStore display column and Atom log (append_ledger, GET /api/atoms/log)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        },
+        {
+          "action": "change",
+          "id": "ORCH-6",
+          "section": "orchestrator",
+          "title": "Tasks, run launcher and watcher, projector (function atoms, builder ledger rows, no goal/task/context writes)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        }
+      ],
+      "diagram_label": "Atom log: every atom once"
+    },
+    {
+      "id": "S4-fnodes-10",
+      "topic": "What the graph chip and the node drawer show, and where each field comes from (point 10, FN-14/FN-15 against S2-models-09, S3-web-05)",
+      "decision": "Chip: GraphNodeOut for a function node has id '<dept>.<fn>', label = the function name (the persona is a UI constant copied from J2), status = Node.state set by the node event, detail = the node event's detail (J2's 'last seen: ...' or what it is doing), chat_session_id = the node's own working-log session, and meta exactly {stats, wait_on}. Drawn: line 1 persona, line 2 '<Function> · <open> open · <closed> closed', J2's status outline (neutral colour), tooltip '12 calls · 41 s · 9,120 tokens · 1 failed'. stats = {calls, seconds, tokens_in, tokens_out} from the node event plus {atoms_open, atoms_closed, atoms_failed, atoms_total} counted over atoms.display (failed = verify_failed). Drawer (NodeDetail: node, session, atoms, usage_total, task, archived_chats): node.meta is exactly goal, task, context, constraints, wait_on, hands_to, stats. Order: head (persona and function, status chip, node.detail, usage line from usage_total, counts from stats); Goal = meta.goal; Task = meta.task, 'Working for: <title> (<status>)' from NodeDetail.task, 'Waiting on you|<persona>' from meta.wait_on; Context 'What this function is given' = meta.context; Work atoms (n = stats.atoms_total; the open atom first, then the 20 newest; 'Show all' = GET /api/atoms?node_id=&limit=100&offset=) under the strip's legend 'open > work > verify, close; exits: refuse, abandon'; Constraints = meta.constraints; Hands to = meta.hands_to; the J2 block and 'Go to the <function> tab' (department page only). Atom card (J2's labels): status line OPEN, CLOSED, VERIFY FAILED, ABANDONED or REFUSED with 'attempt n of 3'; Goal; Constraints; Context; How; Expected output = outputs[0]; Verification = per check its sentence and every try; Result = the pill text, a 'Concern on record' row when the last evidence starts RECOVERED or WAIVED, and the cost line from AtomOut.usage. AtomOut = id, schema, node_id, task_id, state (display word), goal, attempt, ts_open, ts_closed, body, usage. Supersedes S3-web-04(c): the exact stats list (adds atoms_failed and atoms_total); S2-models-09: 'node.meta.atom_count' (replaced by stats.atoms_total) and 'The Checked row shows attempt n of 3 and the last evidence' (every try); S3-web-05: the status line list (adds REFUSED) and the plain word 'limits' stays unused.",
+      "why": "FN-15 wants calls, seconds, tokens and atoms open/closed on the chip; counting failed and total keeps the numbers honest (open + closed + failed + others = total) and gives the drawer its list size without a second key. The drawer keeps J2's labels (S3-web-05), so only the new states, the tries and the legend are added.",
+      "rejected": "A live Task object or last_seen on the wire; atoms drawn as dots (FN-15); the plugin's Done when / Done by / Limits labels (S3-web-05); static strings on every graph node (a 125 KB refetch, S3-web-04); a separate atom_count key beside stats.",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "section 3.3 rows GraphNodeOut and NodeDetail (as rewritten by S3-web-04)",
+          "change": "Replace '{calls, seconds, tokens_in, tokens_out, atoms_open, atoms_closed}' by '{calls, seconds, tokens_in, tokens_out, atoms_open, atoms_closed, atoms_failed, atoms_total}' everywhere it appears; delete 'node.meta.atom_count' (S2-models-09). In GraphView and graph.updated a function node's meta stays exactly {stats, wait_on}; NodeDetail.node.meta is the seven keys of the decision. GraphStore.node() counts atoms_* with one GROUP BY display over atoms for the node."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 3.3 row AtomOut",
+          "change": "Fields: id, schema, node_id, task_id, state (display word, S4-fnodes-08), goal, attempt, ts_open, ts_closed, body, usage {calls, usd, tokens_in, tokens_out}. Work kind, verify template, closed_by and reason are read from body."
+        },
+        {
+          "target": "ui",
+          "where": "section 6.1 Shared rules, the paragraph '**Node look**' (the clause that starts 'function 150×50 (label = persona, sub = function name')",
+          "change": "Function chip: line 1 persona, line 2 '<Function> · <open> open · <closed> closed' (just the function name when atoms_total is 0), tooltip '<calls> calls · <seconds> s · <tokens> tokens' plus ' · <n> failed' when atoms_failed > 0. Status outline unchanged (J2 look)."
+        },
+        {
+          "target": "ui",
+          "where": "section 6.4 (c) items 1 to 7 (as rewritten by S3-web-05)",
+          "change": "Head line shows the counts 'N calls, S s, a atoms open, c closed' from meta.stats and adds ', f failed' when atoms_failed > 0. Work atoms (n): n = meta.stats.atoms_total; add the legend line under the heading. Atom card rows and status lines as in the decision (adds REFUSED and the list of every try under Verification; 'Concern on record' row). Delete the sentence 'The Checked row shows attempt n of 3 and the last evidence' (S2-models-09) and write 'Verification lists every try'."
+        },
+        {
+          "target": "ui",
+          "where": "section 7 FnodeView line and section 10 row fnode_view.test.js",
+          "change": "FnodeView.normalize accepts stats with atoms_failed and atoms_total (missing keys count as 0) and ignores atom_count. Test: the five states and status lines, tries, concern row, stats line with and without failures, the legend text, no 'Limits' label."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 7 test table, row test_graph_store.py (as extended by S3-web-04)",
+          "change": "Add: stats.atoms_open, atoms_closed, atoms_failed and atoms_total equal the counts over atoms.display for the node, and open + closed + failed + abandoned + refused = total."
+        },
+        {
+          "target": "diagram",
+          "where": "Workflow graph view box",
+          "change": "No text change: '5 function nodes, atom counts' is true. Label per diagram_label."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "ORCH-4",
+          "section": "orchestrator",
+          "title": "Workflow graph store and routes (pre-order, function meta {stats, wait_on} in the view, full meta with atoms_failed and atoms_total in NodeDetail)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        },
+        {
+          "action": "change",
+          "id": "UI-4",
+          "section": "ui",
+          "title": "Graph pure core (J2 status words, edge kinds handoff/depends_on/speaks_to, same-kind loops, function chip with atom counts)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        },
+        {
+          "action": "change",
+          "id": "UI-6",
+          "section": "ui",
+          "title": "Node panel: function-node drawer (final labels, five atom states, tries, legend), division lens panel, whoLabel, Identity chip opens the department chat, Go-to-tab, per-node chat",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        }
+      ],
+      "diagram_label": "chip: atoms open/closed · calls"
+    },
+    {
+      "id": "S4-fnodes-11",
+      "topic": "Tests: what proves the function nodes (point 11)",
+      "decision": "Six layers, each mapped to a work package (full list in docs/design/function-nodes.md section 9). Registry (E8): per check at least one pass, one fail and the na, override, recovered and waived cases as fixtures tests/engine/fixtures/fn_registry/<check>/<case>.json {evidence, expect}; purity (same result on a deep copy; open, time and sockets forbidden); parity with J2's own _stamp_check, workable, the audience regexes, design_problems and THRESHOLD. Mutation (E8): every check is replaced by always-ok and by always-fail and its cases must fail both ways; outcome mutants must flip their check (GRANT over budget posted as GRANT, a schedule with an unregistered id, a PASS row with an empty note, a rubric item measured but passed, a charter that fails the stamp). Layer (E6): hook sequences against fake J2 events (open, fail, close; refused; waived; recovered; abandon at run end; manual atom; overhead binding; errors swallowed; touches_miss only logs). Golden (E7): the mock Brew Lab through the stub connector with the layer on and with SUTRA_NODES=off gives identical [function, sha(system), sha(prompt)] lists; per function at least one atom of each kind it handles (Identity intake, audit and the manual atom; Adaptation propose; Priority price and envelope; Coordination schedule; Audit audit); one atom per turn; none open at run.ended; every atom has a check; ledger rows equal terminal atoms; no usage line without atom. Server (ORCH-6/ORCH-3): replay of the golden events gives atoms, display, atom_ledger (once per atom, append-only, atom/1 rows), cards, open_atom, atom_count and stats, and a second replay changes nothing; the org chat has no model prose. UI (UI-6): the drawer parse (fnode_view.test.js on the NodeDetail fixture), the whoLabel table (chat_view.test.js) and the browser test (Identity chip composer, four read-only chips, the division lens panel). Contract (CT-1): atom_id never NULL, node meta keys, and gen.py holding the strings of function-nodes.md section 12 (skipped with a printed reason until the diagram is patched).",
+      "why": "The owner's headline requirement is that the nodes have teeth; a check nobody can fail is decoration, so every check is tested from both sides and by mutation. The golden run proves the whole path without a model, and the prompt equality proves J2 did not change.",
+      "rejected": "Only a golden run (it passes with always-ok checks); live-model tests in the default suite (D8); testing the checks through a full J2 run only (slow and indirect).",
+      "affects": [
+        {
+          "target": "engine",
+          "where": "section 9 test table (rows added by S2-models-06/07)",
+          "change": "Add test_engine_fn_registry.py and test_engine_fn_mutations.py (E8). Extend test_engine_fn_golden.py (E7): per-function coverage of kinds and the invariants above. Extend test_engine_fn_layer.py (E6) with the listed sequences."
+        },
+        {
+          "target": "library",
+          "where": "section 14 test table",
+          "change": "Add the cases of S4-fnodes-02, 03, 07, 08, 09 to test_lib_atom*.py, test_lib_atom_ids.py and test_lib_function_specs.py."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 7 test table",
+          "change": "test_projector_fnodes.py (ORCH-6) replays the golden file tests/engine/golden/run_events.jsonl; test_atoms_usage.py (ORCH-3) holds the ledger and usage invariants; test_chat_agent.py gets the org-chat voice test (S4-fnodes-12)."
+        },
+        {
+          "target": "ui",
+          "where": "section 10 test table",
+          "change": "fnode_view.test.js, chat_view.test.js, test_view_panel.py as in the decision."
+        },
+        {
+          "target": "repo",
+          "where": "tests/contracts (CT-1)",
+          "change": "Add test_contract_diagram.py: docs/diagram/gen.py contains the exact strings of docs/design/function-nodes.md section 12; skip with a printed reason while it still holds the pre-S4 strings."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "E7",
+          "section": "engine",
+          "title": "Function nodes in a whole run: golden atoms for each function, event contract, prompts unchanged, no usage line without an atom",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        },
+        {
+          "action": "change",
+          "id": "CT-1",
+          "section": "orchestrator",
+          "title": "Cross-section contract tests (route table, events, usage with atom ids, settings, env, JSON extractors, diagram strings)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        }
+      ],
+      "diagram_label": "golden + mutation tests per check"
+    },
+    {
+      "id": "S4-fnodes-12",
+      "topic": "Who speaks to the owner: org chat, department chat, needs-you cards, and the 'who' labels (point 12, FN-8 against ORCH-D1)",
+      "decision": "One rule: the owner reads prose from one kind of author, an Identity, verbatim. Everything else the owner sees is a record written by code and labelled 'Sutra': cards, template lines, errors, the status report. The chat agent's model output is structure only (ChatDecision, the chart change, the assignments); none of its sentences is shown. Org-level messages with no department (status, smalltalk, clarify, no fit) are answered by code; there is no root Identity because the root is not a department (library DL5 gives function nodes to departments only). Consequences: org chat cs_org shows the owner's lines, per request one code template line (add 'I set up a {name} team and gave it your request.', reuse, move, merge, split, none, plus smalltalk 'Tell me what you need and I will give it to the right team.'), the cards (chart_change, task, approval, choice, done, error) and the needs_you cards, which are the team's Identity question verbatim and are answered in the department session; clarify becomes the F3 choice card 'Which team fits best?' with up to 3 candidates and 'None of these'. The department chat holds the owner's lines and Identity's to_user lines (J2's Simple view), no cards. Labels (ChatView.whoLabel): user 'You'; sutra 'Sutra'; identity 'Client Lead (Identity)', prefixed '<department name> · ' in the org chat and on cards; adaptation 'Strategist (Adaptation)'; priority 'Prioritiser (Priority)'; coordination 'Scheduler (Coordination)'; audit 'Quality Reviewer (Audit)'; W-n 'W-n Builder'; validator 'Validator'; system 'System' (the last six show only in function logs and the Detailed view). Code changes: ChatDecision loses reply and clarify, AssignmentPlan loses reply, the violation code not_plain, plain_check and the plain-words regeneration go, T8 posts the code template, the prompts lose their reply sentences. Supersedes ORCH-D1 ('The org chat talks to the chat agent', voice 'Sutra, the chat agent'), the T8 sentence 'Post the agent line (reply, or a code template ...)', S2-models-01 ruling (7) where it lists not_plain, and closes S3-web unresolved item 1; FN-8's clause 'org-level questions with no department go to the root department's Identity' is replaced by 'answered by code'.",
+      "why": "It makes 'Identity is the only voice' (owner rule 4, the Chat sessions box line 'only Identity speaks to you') true everywhere without a root Identity that the library cannot give, and it removes a model call's worth of prose, the plain-words check and its regeneration loop. The cards and template lines the owner already sees stay.",
+      "rejected": "Keeping the model-written Sutra reply (the org chat would be a second voice); a root department with five function nodes (changes DL5 and the chart); relaying or rewriting Identity's words in the org chat; showing Identity's non-question lines in the org chat (the department chat is one click away).",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "section 1.1 table row 'Org chat `cs_org`' and the sentence after the table",
+          "change": "Voice: 'Sutra = code: template lines, cards and errors; never a model sentence'. Shows: 'requests, template lines, cards, needs_you cards (the team's Identity question verbatim)'. After the table append: 'The chat agent's model output is structure only; none of its sentences is shown to the owner (S4-fnodes-12).'"
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 3.2 classes ChatDecision and AssignmentPlan",
+          "change": "ChatDecision: delete the fields reply and clarify; rule 'clarify => change none and no assignments; reuse_nodes may list up to 3 candidates'. AssignmentPlan: delete reply. Update the V lines accordingly and S2-models-13's flat-class text."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 3.3 row Violation and S2-models-01 ruling (7)",
+          "change": "Delete the code not_plain from 'our codes added to LIB's'."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 5.2 step T8 and the paragraph that starts 'Code templates (used when the reply fails `plain_check` twice)'",
+          "change": "T8: 'Post the code template line for the outcome (add, reuse, move, merge, split, none, status, smalltalk; who sutra) and the cards'. Templates: add smalltalk 'Tell me what you need and I will give it to the right team.'; clarify posts the choice card 'Which team fits best?' (candidates from reuse_nodes, else the top 3 by token overlap, plus 'None of these'). Delete '(used when the reply fails `plain_check` twice)'."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 5.3 files decide.md and assign.md",
+          "change": "decide.md: delete the line 'reply: everyday words, at most 3 short sentences, teams by name (never ids), none of these words: {banned}.' (keep 'Answer with ONE JSON object that matches SCHEMA.'). assign.md: 'Write the assignments (at most 5). Same rules for brief and follows.' ({banned} is no longer a placeholder of the chat agent)."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 7 test table, row test_chat_agent.py, and section 9 ORCH-D1",
+          "change": "Delete the case 'plain-words regeneration then template'. Add test_org_chat_has_no_model_prose: in a scripted conversation every message with who 'sutra' equals a code template or is a card, and no sentence of the scripted model's reply appears. ORCH-D1 Decision: replace 'The org chat talks to the chat agent' by 'The org chat is the owner's request line; the chat agent plans silently and the lines are code notices and cards'; keep the rest."
+        },
+        {
+          "target": "repo",
+          "where": "sutra_app/orchestrator/textutil.py and tests/orchestrator/test_textutil.py (ORCH-1)",
+          "change": "Delete plain_check and its tests: nothing reads it any more."
+        },
+        {
+          "target": "ui",
+          "where": "section 6.5 (d) the sentence 'names from the message `who`' and section 7 ChatView.whoLabel line",
+          "change": "Replace by the label table of the decision; whoLabel(who, ctx) takes the department name for the org chat and cards. Section 10 row chat_view.test.js: assert every label."
+        },
+        {
+          "target": "diagram",
+          "where": "box 'Chat sessions' line 3 and the Chat agent box",
+          "change": "No text change ('only Identity speaks to you' and 'hands the task to the department's Identity' are true). Label per diagram_label."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "ORCH-7",
+          "section": "orchestrator",
+          "title": "Chat agent: staged structured calls without prose, code template lines, request overhead key, turn runner, prompts, agent routes",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        }
+      ],
+      "diagram_label": "prose only from Identity"
+    },
+    {
+      "id": "S4-fnodes-13",
+      "topic": "The source of the department goal now that node events carry none (point 13, S3-web-04 unresolved)",
+      "decision": "There is no departments.goal: S2-models-14 already removed the column and the text 'an Identity goal also sets departments.goal'. The department's goal is its charter, <run folder>/goal.json (J2's file, family goal, validated by gate_record). Its readers are J2's own routes (the Goal tab, /api/state) and the function nodes' 'charter' context; no table copies it. The Projector reads no file and no event field for it. The closed charter-stamp atom of the Identity node (event atom, status closed, check charter-stamp) is the only signal that a charter exists or changed, and it is used for nothing but the graph.updated of the node. This closes S3-web-04's unresolved item and replaces its fallback ('leave departments.goal empty and fill it from goal.json when run.ended is projected') and S3-web unresolved item 3: there is no field to fill and no test about step labels.",
+      "why": "The charter is per run and changes with every intake; a copy in SQLite would be a second source that goes stale, and nothing in the UI or the chat agent reads it (the chart's purpose is the chart's own). The final spec says the charter is the reference every node reads, which is the file.",
+      "rejected": "A departments.goal column filled at run.ended (stale between runs, one more writer); a new event or event field for the goal (the event set is closed, S1-contracts-09); reading goal.json in the Projector on every Identity node event (file I/O in the one SQLite writer for no reader).",
+      "affects": [
+        {
+          "target": "orchestrator",
+          "where": "section 5.6 table row 'node' (as rewritten by S3-web-04)",
+          "change": "Append: 'The department's goal is the charter, <run folder>/goal.json; the Projector reads no file for it and no table copies it (S4-fnodes-13).'"
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 4.2 Files, the line for data/departments/<dept>/runs/<run id>/",
+          "change": "Append: 'goal.json is the department's charter; it is read through J2's routes, never copied to SQLite.'"
+        },
+        {
+          "target": "repo",
+          "where": "docs/design/settlements/S3-web.json unresolved item 3",
+          "change": "Do not edit the settlement file; the patchers treat the item as closed by this settlement."
+        }
+      ],
+      "work_packages": [],
+      "diagram_label": "charter = goal.json, no copy"
+    },
+    {
+      "id": "S4-fnodes-14",
+      "topic": "The FunctionNode shape against the final spec: one field list for the DB body, the wire and the drawer (point 14)",
+      "decision": "FunctionNode (body of graph_nodes) has the Node base (id '<dept>.<kind>', label = the function name, department_id, state in idle/running/waiting/waiting_on_you/fault, detail S(0,300), version, chat_session_id, edge_ids, ts_created, ts_updated) plus: kind; goal S(1,600) = FunctionSpec.goal (the J2 role sentence, standing); task S(1,200) = FunctionSpec.role (the J2 ROLE line such as 'J2.c prices, checks run limits', a string, no Task class); context [S(1,200)]<=40 = FunctionSpec.reads (names of the slice; Identity's has no money field); open_atom AtomId?; atom_count int>=0; wait_on null|'you'|function key|builder id; stats {calls, seconds, tokens{input, output}}; spec_version int>=1. goal, task, context and spec_version are written when the node is made (new_function_node) and by refresh_function_nodes(specs, nodes) at startup when FunctionSpec.version is higher; no event writes them. state, detail, wait_on and stats come from the node event; open_atom and atom_count from the atom events in the same transaction. Not stored: constraints (= FunctionSpec.may_not) and hands_to (= HANDOFFS[fn] as patched by S3-web-04) are read at request time, and stats.atoms_* are counted over atoms.display. last_seen does not exist (it is the node's detail). The spec's child extras (Identity blind_to and audiences, Adaptation memory and planning, Priority rate_card and bargain bounds, Coordination write_lock, Audit rubric) are not node fields: they are J2 behaviour held by j2.py and EngineSettings, and by FunctionSpec.reads and may_not, so the record is one shape for all five. The node event's optional task and context are trace-only and ignored by the Projector. The wire (S4-fnodes-10): meta {stats, wait_on} in GraphView; goal, task, context, constraints, wait_on, hands_to, stats in NodeDetail; stats.tokens_in/out = stats.tokens.input/output. The drawer reads exactly these keys. A test asserts meta.goal, task and context equal the stored body and constraints equal may_not. The spec's AgentNode.session_id map (provider -> id) is the connector's per-session provider id (S1-contracts-08); the node keeps one chat_session_id. Supersedes: S2-models-08 ('Node TASK = FunctionNode.task = Task{id, kind, summary, inputs, set_by, ts}', already replaced by S3-web-04), S1-contracts-09 ('the server derives last_seen from detail'), S3-web unresolved item 4.",
+      "why": "It gives one list that the library, the table body, the wire and the drawer all use, drops the two fields no source defines (last_seen, a live Task) and keeps the three standing strings with the node so a node record is self-contained and testable, while the two derived lists cannot go stale.",
+      "rejected": "A Task object on the node (the card shows the standing line; the live unit is the department's task and the atom's task_id); storing constraints and hands_to (they would duplicate FunctionSpec and HANDOFFS); building goal, task and context at read time only (the stored record would be incomplete); writing them from events (FN-4, FN-5).",
+      "affects": [
+        {
+          "target": "library",
+          "where": "section 8.1 FunctionNode block and its V line (as patched by S2-models-03 and S3-web-04)",
+          "change": "Final text: 'FunctionNode(Node) ABSTRACT, the agentic node: kind · goal: S(1,600) · task: S(1,200) · context: [S(1,200)]<=40 · open_atom: AtomId? · atom_count: int>=0 = 0 · wait_on: S? · stats: {calls: int>=0, seconds: float>=0, tokens: {input, output: int>=0}} · spec_version: int>=1 = 1'. V: department_id set and id == '<department_id>.<kind>' · waiting => wait_on. Delete last_seen, Task, atoms and every validator that names them."
+        },
+        {
+          "target": "library",
+          "where": "section 8.4, new_function_node and load_function_specs line",
+          "change": "new_function_node(dept_id, function, specs, now) -> FunctionNode sets goal = spec.goal, task = spec.role, context = spec.reads, spec_version = spec.version, state idle. Add refresh_function_nodes(specs, nodes) -> list[FunctionNode]: pure; returns the nodes whose spec_version is lower with the three fields and spec_version replaced; the orchestrator calls it at startup and stores the result through the gate."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 3.3 rows GraphNodeOut and NodeDetail (as rewritten by S3-web-04 and S4-fnodes-10)",
+          "change": "State once: stored = the FunctionNode fields of the decision; derived at request time = constraints, hands_to, stats.atoms_*; GraphStore.node() reads goal, task and context from the stored body and constraints from FunctionSpecs, hands_to from HANDOFFS."
+        },
+        {
+          "target": "orchestrator",
+          "where": "section 5.6 table row 'node' (as rewritten by S3-web-04)",
+          "change": "Append: 'The event's optional task and context are trace-only; the Projector ignores them. open_atom and atom_count are written by the atom events.'"
+        },
+        {
+          "target": "engine",
+          "where": "section 4.5 event table, row 'node' (as rewritten by S1-contracts-09)",
+          "change": "Append: 'task and context are hints for trace.jsonl only; no consumer stores them.' Delete any remaining 'goal.text = TurnInfo.goal'."
+        },
+        {
+          "target": "ui",
+          "where": "section 7 FnodeView line (as rewritten by S3-web-05)",
+          "change": "normalize reads exactly goal, task, context, constraints, wait_on, hands_to, stats (task as a string, or an object with summary); ignores unknown keys."
+        },
+        {
+          "target": "diagram",
+          "where": "Workflow graph store box",
+          "change": "No text change ('atoms filed under each node' is true). Label per diagram_label."
+        }
+      ],
+      "work_packages": [
+        {
+          "action": "change",
+          "id": "L6",
+          "section": "library",
+          "title": "Node family, graph edges, function-spec plug-in (FunctionNode: goal, task string, context, open_atom, atom_count, wait_on, stats, spec_version; refresh_function_nodes; HANDOFFS table of S3-web-04)",
+          "owns": [],
+          "depends_on": [],
+          "acceptance": []
+        }
+      ],
+      "diagram_label": "node: goal · task · context (static)"
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "Do real J2 replies pass the closed reply models, so that reply-valid rarely fails an atom that J2 accepted?",
+      "why_not_settled": "No real model was called (D8, the owner is asleep). The classes were written from J2's reply formats and mock fixtures, and a strict floor check on every llm atom turns any difference into a visible verify_failed atom.",
+      "fallback": "The atom is the only thing that fails; the run is unaffected. The E7 golden and the live test measure the rate; the classes are loosened in L5 (not the check) until the rate is low."
+    },
+    {
+      "topic": "Four checks read J2's own posted strings (atom-rules: 'Validator rejected', price-kept: the two Priority notes, the charter acceptance note, within-budget envelope: 'Budget N/M used').",
+      "why_not_settled": "The alternative is a structured event hook in j2.py (an `_event` hook), which is outside the P8 budget the owner's rules keep; the strings are J2's own and are vendored unchanged.",
+      "fallback": "A golden pins each string against the vendored j2.py; a vendoring update that changes one fails loudly. If the strings prove fragile, add one hook to P8 in E1 as a later, explicit decision."
+    },
+    {
+      "topic": "FN-8 as decided here: the chat agent's model sentences are not shown and there is no root Identity.",
+      "why_not_settled": "The sources do not say how a user message reaches Identity from the chat agent (spec risk, 'a default to confirm'); the owner may prefer a friendly Sutra voice.",
+      "fallback": "Reversible without touching anything else: restore ChatDecision.reply and AssignmentPlan.reply and post them under who 'sutra' (the label table already covers it). The needs_you cards and the department chat are unaffected."
+    },
+    {
+      "topic": "Division lens against FN-6 read literally ('a lens, not a second session').",
+      "why_not_settled": "The owner's draw.io step 7 and the published 'one per node' line support a session row per division; the spec's sentence supports none. Both cannot be literal.",
+      "fallback": "If vetoed: divisions get chat_session_id = the department's session, ensure_node creates no division session, carry_links/ChatStore.apply_links skip divisions and S2-models-11's archive rule applies to departments' function sessions only (a smaller design). The UI panel text is the same."
+    },
+    {
+      "topic": "Retention of atoms, cards, usage rows and Atom log rows (spec risk 1: hundreds of atoms per run).",
+      "why_not_settled": "No measurement exists; the E7 golden records the counts. The drawer already caps the list (open atom plus the 20 newest) and the log is paged.",
+      "fallback": "Keep everything in v1 (SQLite, local). A retention rule is a later decision once the golden counts and a real run's size are known."
+    },
+    {
+      "topic": "Atom.effort stays null: CallInfo has no effort field and the router's effort is not carried to the hook.",
+      "why_not_settled": "Adding it means a field in E0's CallInfo and the shim; the cards and the log work without it.",
+      "fallback": "Leave null; add effort to CallInfo and Seen in a later E0 change if the owner wants it on the card."
+    },
+    {
+      "topic": "The architecture diagram (docs/diagram/gen.py) is not patched here.",
+      "why_not_settled": "Outside this task's file list. The exact strings are in function-nodes.md section 12 and in S4-fnodes-01/03/05.",
+      "fallback": "The diagram patcher applies them; CT-1's test_contract_diagram.py skips until it has, then fails if a string is missing."
+    }
+  ]
+}

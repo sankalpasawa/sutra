@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "root",
+      "name": "Root",
+      "purpose": "",
+      "parent_id": null,
+      "position": 0
+    },
+    {
+      "id": "web",
+      "kind": "department",
+      "name": "Web",
+      "purpose": "Websites and landing pages",
+      "parent_id": "root",
+      "position": 0
+    }
+  ]
+}

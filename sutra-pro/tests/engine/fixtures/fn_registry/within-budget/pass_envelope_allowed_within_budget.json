@@ -1,0 +1,22 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "envelope"
+  },
+  "posted": [
+   {
+    "id": 6,
+    "who": "priority",
+    "text": "Envelope check for W-1: within limits (money 12, model calls 0/2, retries 0/1). Budget 40/100 used. Runs now.",
+    "envelope": "allowed",
+    "auto": true
+   }
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "allowed, budget 40/100 used"
+ }
+}

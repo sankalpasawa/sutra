@@ -1,0 +1,306 @@
+{
+  "$defs": {
+    "AddOp": {
+      "additionalProperties": false,
+      "description": "Add a department (under the root) or a division (under a department or a division).",
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/NewNode"
+        },
+        "op": {
+          "const": "add",
+          "default": "add",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node"
+      ],
+      "title": "AddOp",
+      "type": "object"
+    },
+    "ChildMove": {
+      "additionalProperties": false,
+      "description": "One child of the split division and the part (or the division itself) it goes to.",
+      "properties": {
+        "child": {
+          "pattern": "^(\\$[a-z][a-z0-9_]{0,15}|[a-z][a-z0-9_-]{1,39})$",
+          "title": "Child",
+          "type": "string"
+        },
+        "to": {
+          "pattern": "^(\\$[a-z][a-z0-9_]{0,15}|[a-z][a-z0-9_-]{1,39})$",
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "child",
+        "to"
+      ],
+      "title": "ChildMove",
+      "type": "object"
+    },
+    "MergeOp": {
+      "additionalProperties": false,
+      "description": "Merge divisions into another division; their children move to it and they disappear.",
+      "properties": {
+        "into": {
+          "pattern": "^(\\$[a-z][a-z0-9_]{0,15}|[a-z][a-z0-9_-]{1,39})$",
+          "title": "Into",
+          "type": "string"
+        },
+        "op": {
+          "const": "merge",
+          "default": "merge",
+          "title": "Op",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "pattern": "^(\\$[a-z][a-z0-9_]{0,15}|[a-z][a-z0-9_-]{1,39})$",
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "into",
+        "sources"
+      ],
+      "title": "MergeOp",
+      "type": "object"
+    },
+    "MoveOp": {
+      "additionalProperties": false,
+      "description": "Move a division under another department or division. A department cannot be moved.",
+      "properties": {
+        "node": {
+          "pattern": "^(\\$[a-z][a-z0-9_]{0,15}|[a-z][a-z0-9_-]{1,39})$",
+          "title": "Node",
+          "type": "string"
+        },
+        "op": {
+          "const": "move",
+          "default": "move",
+          "title": "Op",
+          "type": "string"
+        },
+        "to_parent": {
+          "pattern": "^(\\$[a-z][a-z0-9_]{0,15}|[a-z][a-z0-9_-]{1,39})$",
+          "title": "To Parent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "to_parent"
+      ],
+      "title": "MoveOp",
+      "type": "object"
+    },
+    "NewNode": {
+      "additionalProperties": false,
+      "description": "A team or sub-team to create. It gets a placeholder ref, never an id: code assigns the id.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "department",
+            "division"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "parent": {
+          "description": "the id of an existing node, or a $ref added by an earlier op",
+          "pattern": "^(\\$[a-z][a-z0-9_]{0,15}|[a-z][a-z0-9_-]{1,39})$",
+          "title": "Parent",
+          "type": "string"
+        },
+        "purpose": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Purpose",
+          "type": "string"
+        },
+        "ref": {
+          "description": "a placeholder such as $web; later ops may use it; it is never an id",
+          "pattern": "^\\$[a-z][a-z0-9_]{0,15}$",
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "name",
+        "parent"
+      ],
+      "title": "NewNode",
+      "type": "object"
+    },
+    "RenameOp": {
+      "additionalProperties": false,
+      "description": "Change the name or the purpose of a node; send null for the one you keep.",
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "node": {
+          "pattern": "^(\\$[a-z][a-z0-9_]{0,15}|[a-z][a-z0-9_-]{1,39})$",
+          "title": "Node",
+          "type": "string"
+        },
+        "op": {
+          "const": "rename",
+          "default": "rename",
+          "title": "Op",
+          "type": "string"
+        },
+        "purpose": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Purpose"
+        }
+      },
+      "required": [
+        "node"
+      ],
+      "title": "RenameOp",
+      "type": "object"
+    },
+    "SplitOp": {
+      "additionalProperties": false,
+      "description": "Split a division: new parts appear beside it under its parent; listed children move into a part.",
+      "properties": {
+        "moves": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ChildMove"
+          },
+          "maxItems": 20,
+          "title": "Moves",
+          "type": "array"
+        },
+        "node": {
+          "pattern": "^(\\$[a-z][a-z0-9_]{0,15}|[a-z][a-z0-9_-]{1,39})$",
+          "title": "Node",
+          "type": "string"
+        },
+        "op": {
+          "const": "split",
+          "default": "split",
+          "title": "Op",
+          "type": "string"
+        },
+        "parts": {
+          "items": {
+            "$ref": "#/$defs/NewNode"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Parts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "node",
+        "parts"
+      ],
+      "title": "SplitOp",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A change to the org chart: the reason, the existing nodes it reuses, and the ops to run in order.",
+  "properties": {
+    "ops": {
+      "default": [],
+      "description": "run in order; empty when the change only reuses",
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "add": "#/$defs/AddOp",
+            "merge": "#/$defs/MergeOp",
+            "move": "#/$defs/MoveOp",
+            "rename": "#/$defs/RenameOp",
+            "split": "#/$defs/SplitOp"
+          },
+          "propertyName": "op"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/AddOp"
+          },
+          {
+            "$ref": "#/$defs/MoveOp"
+          },
+          {
+            "$ref": "#/$defs/RenameOp"
+          },
+          {
+            "$ref": "#/$defs/MergeOp"
+          },
+          {
+            "$ref": "#/$defs/SplitOp"
+          }
+        ]
+      },
+      "maxItems": 8,
+      "title": "Ops",
+      "type": "array"
+    },
+    "reason": {
+      "description": "one short sentence: why",
+      "maxLength": 400,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "reuses": {
+      "default": [],
+      "description": "ids of existing nodes this change reuses",
+      "items": {
+        "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Reuses",
+      "type": "array"
+    }
+  },
+  "required": [
+    "reason"
+  ],
+  "title": "ChartChangeRequest",
+  "type": "object"
+}

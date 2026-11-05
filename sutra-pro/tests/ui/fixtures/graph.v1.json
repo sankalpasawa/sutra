@@ -1,0 +1,22 @@
+{
+  "version": 3,
+  "chart_version": 1,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "root",
+      "label": "Root",
+      "status": "idle",
+      "detail": "",
+      "chat_session_id": "cs_org",
+      "org_node_id": "root",
+      "dept_id": null,
+      "task_id": null,
+      "fn": null,
+      "step_ref": null,
+      "version": 3,
+      "meta": {}
+    }
+  ],
+  "edges": []
+}

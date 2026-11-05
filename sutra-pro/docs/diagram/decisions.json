@@ -1,0 +1,487 @@
+[
+ {
+  "id": "D1",
+  "label": "Own repo, local git only",
+  "anchor": null
+ },
+ {
+  "id": "D2",
+  "label": "Python 3.11 in a uv .venv",
+  "anchor": null
+ },
+ {
+  "id": "D3",
+  "label": "FastAPI + Uvicorn + pydantic v2",
+  "anchor": "Interface library (Python models)"
+ },
+ {
+  "id": "D4",
+  "label": "J2 engine vendored and adapted, not rewritten",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D5",
+  "label": "SQLite for stores, files for run folders",
+  "anchor": "Server contents"
+ },
+ {
+  "id": "D6",
+  "label": "J2 UI served as is, new views in its style",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D7",
+  "label": "CLI-first connectors, stub for tests",
+  "anchor": "band:CONNECTOR LAYER"
+ },
+ {
+  "id": "D8",
+  "label": "pytest + stub + fake CLIs; live on request",
+  "anchor": null
+ },
+ {
+  "id": "D9",
+  "label": "One run = one task = one subprocess",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D10",
+  "label": "Live updates over SSE",
+  "anchor": "Workflow graph store"
+ },
+ {
+  "id": "D11",
+  "label": "Server binds to 127.0.0.1 only",
+  "anchor": null
+ },
+ {
+  "id": "D12",
+  "label": "One command starts the web app",
+  "anchor": null
+ },
+ {
+  "id": "D13",
+  "label": "vendored from J2 ce2631f · patches P1-P11",
+  "anchor": "J2 chips"
+ },
+ {
+  "id": "D14",
+  "label": "process per run · files only · server makes the folder",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D15",
+  "label": "events: run.started · say · node · step · atom · usage",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D16",
+  "label": "SQLite written by the server only",
+  "anchor": "Server contents"
+ },
+ {
+  "id": "D17",
+  "label": "one seam: make_port(PortSpec) -> ModelPort",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D18",
+  "label": "settings: 2 files + 7 task keys · edit in Settings",
+  "anchor": "J2 chips"
+ },
+ {
+  "id": "D19",
+  "label": "run.ended: done · stopped · crashed",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D20",
+  "label": "answers queue while a run finishes its turn",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D21",
+  "label": "follow-up: rehydrate, else fresh with old files",
+  "anchor": "Department records"
+ },
+ {
+  "id": "D22",
+  "label": "max runs counts working teams; waiting ones idle",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D23",
+  "label": "shutdown: stop · 8 s · SIGTERM · 4 s · SIGKILL",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D24",
+  "label": "crash = process gone, or silent 30 s at app start",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D25",
+  "label": "same /api paths, per department, live from files",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D26",
+  "label": "global, file-locked · memory per department",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D27",
+  "label": "own process group · env allowlist",
+  "anchor": "ModelConnector (interface · base class)"
+ },
+ {
+  "id": "D28",
+  "label": "stream-json · result line decides · error map",
+  "anchor": "Claude connector (extends base)"
+ },
+ {
+  "id": "D29",
+  "label": "login status first · read-only sandbox",
+  "anchor": "Codex connector (extends base)"
+ },
+ {
+  "id": "D30",
+  "label": "policy table (data)",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D31",
+  "label": "checks sign-in and quota first (no model call)",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D32",
+  "label": "carries the transcript on a switch",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D33",
+  "label": "asks for structured JSON · schema from the model class",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D34",
+  "label": "your ChatGPT login, never an API key",
+  "anchor": "Codex connector (extends base)"
+ },
+ {
+  "id": "D35",
+  "label": "Sutra tools · GitHub via gh (read) · others shown only",
+  "anchor": "Tool connectors (MCP)"
+ },
+ {
+  "id": "D36",
+  "label": "Stub connector (tests, offline demo)",
+  "anchor": "band:CONNECTOR LAYER"
+ },
+ {
+  "id": "D37",
+  "label": "router builds one row per call · server writes it",
+  "anchor": "Usage and cost ledger"
+ },
+ {
+  "id": "D38",
+  "label": "envelope kept by caller · router ceiling 6",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D39",
+  "label": "closed · strict · frozen",
+  "anchor": "Interface library (Python models)"
+ },
+ {
+  "id": "D40",
+  "label": "registry · name/version · schema export",
+  "anchor": "Interface library (Python models)"
+ },
+ {
+  "id": "D41",
+  "label": "Gate.check at every write",
+  "anchor": "Interface library (Python models)"
+ },
+ {
+  "id": "D42",
+  "label": "ids kept · 5 function nodes per department",
+  "anchor": "One global org chart"
+ },
+ {
+  "id": "D43",
+  "label": "chart ops: union via anyOf, flat fallback",
+  "anchor": "Interface library (Python models)"
+ },
+ {
+  "id": "D44",
+  "label": "ids sales · sales.identity · edges derived",
+  "anchor": "Workflow graph store"
+ },
+ {
+  "id": "D45",
+  "label": "request -> TaskWorkflow -> step nodes",
+  "anchor": "Interface library (Python models)"
+ },
+ {
+  "id": "D46",
+  "label": "one definition in the library, engine gated",
+  "anchor": "Interface library (Python models)"
+ },
+ {
+  "id": "D47",
+  "label": "records checked on save",
+  "anchor": "Department records"
+ },
+ {
+  "id": "D48",
+  "label": "Department record: id · home dir",
+  "anchor": "Department records"
+ },
+ {
+  "id": "D49",
+  "label": "function nodes: FN-1..FN-28 (final spec)",
+  "anchor": "five function cards"
+ },
+ {
+  "id": "D50",
+  "label": "FunctionNode · Atom · AtomView",
+  "anchor": "Interface library (Python models)"
+ },
+ {
+  "id": "D51",
+  "label": "function layer inside the engine process",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D52",
+  "label": "observe: J2 unchanged · scope warns",
+  "anchor": "five function cards"
+ },
+ {
+  "id": "D53",
+  "label": "1 turn = 1 atom: AI, code or you",
+  "anchor": "strip"
+ },
+ {
+  "id": "D54",
+  "label": "verify registry: 14 named checks",
+  "anchor": "five function cards"
+ },
+ {
+  "id": "D55",
+  "label": "atom ids a-sid-nn · W-n.ak",
+  "anchor": "Atom log"
+ },
+ {
+  "id": "D56",
+  "label": "refused: logged, no work run",
+  "anchor": "strip"
+ },
+ {
+  "id": "D57",
+  "label": "stored 4, shown 5 atom words",
+  "anchor": "five function cards"
+ },
+ {
+  "id": "D58",
+  "label": "atom events -> atoms · ledger · cards",
+  "anchor": "Workflow graph store"
+ },
+ {
+  "id": "D59",
+  "label": "every call has an atom id",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D60",
+  "label": "Atom log: every atom once",
+  "anchor": "Atom log"
+ },
+ {
+  "id": "D61",
+  "label": "node: goal · task · context (static)",
+  "anchor": "five function cards"
+ },
+ {
+  "id": "D62",
+  "label": "chip: atoms open/closed · calls",
+  "anchor": "five function cards"
+ },
+ {
+  "id": "D63",
+  "label": "1 chat per node · division = lens",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D64",
+  "label": "prose only from Identity",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D65",
+  "label": "charter = goal.json, no copy",
+  "anchor": "Department records"
+ },
+ {
+  "id": "D66",
+  "label": "golden + mutation tests per check",
+  "anchor": null
+ },
+ {
+  "id": "D67",
+  "label": "every change logged (before/after sha)",
+  "anchor": "One global org chart"
+ },
+ {
+  "id": "D68",
+  "label": "reuses, adds or rearranges (merge, split ask first)",
+  "anchor": "Chat agent (orchestrator)"
+ },
+ {
+  "id": "D69",
+  "label": "decide · change · assign, 3 tries each, keyword fallback",
+  "anchor": "Chat agent (orchestrator)"
+ },
+ {
+  "id": "D70",
+  "label": "merge: old chat archived under survivor",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D71",
+  "label": "override key stays on the server",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D72",
+  "label": "Home / · org chat + graph · team page /d/{dept}/",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D73",
+  "label": "J2 paths at root · ?dept= picks the team",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D74",
+  "label": "no CDN, one stylesheet",
+  "anchor": null
+ },
+ {
+  "id": "D75",
+  "label": "pure layout · SVG · live · org chart read-only",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D76",
+  "label": "?tab= deep link mounts new views",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D77",
+  "label": "wire: change lists · node order · fn meta",
+  "anchor": "Workflow graph store"
+ },
+ {
+  "id": "D78",
+  "label": "wire words: J2 map statuses, LIB ids",
+  "anchor": "Workflow graph store"
+ },
+ {
+  "id": "D79",
+  "label": "errors: {error:{code,message,details}}",
+  "anchor": null
+ },
+ {
+  "id": "D80",
+  "label": "SSE: event, then refetch · polls if the stream drops",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D81",
+  "label": "loopback + token header + Host/Origin check",
+  "anchor": null
+ },
+ {
+  "id": "D82",
+  "label": "CSP: script hashes · no CDN · no fonts",
+  "anchor": null
+ },
+ {
+  "id": "D83",
+  "label": "generated sites sandboxed",
+  "anchor": "Artifacts and blobs"
+ },
+ {
+  "id": "D84",
+  "label": "J2 scripts as subprocess suites · goldens",
+  "anchor": null
+ },
+ {
+  "id": "D85",
+  "label": "UI tests: node + Chrome over CDP + fake backend",
+  "anchor": null
+ },
+ {
+  "id": "D86",
+  "label": "wheel carries every data file (tested)",
+  "anchor": null
+ },
+ {
+  "id": "D87",
+  "label": "each section uses the others' contracts as they stand",
+  "anchor": null
+ },
+ {
+  "id": "D88",
+  "label": "installed locally as sutra-pro (uv tool)",
+  "anchor": null
+ },
+ {
+  "id": "D89",
+  "label": "repo sutra-pro · CI and release builds",
+  "anchor": null
+ },
+ {
+  "id": "D90",
+  "label": "J2 baseline 33aeeda · runs keep template copies",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D91",
+  "label": "excluded J2 material recorded",
+  "anchor": null
+ },
+ {
+  "id": "D92",
+  "label": "opens Chrome (the measured browser)",
+  "anchor": "User chat interface · J2 Simple view"
+ },
+ {
+  "id": "D93",
+  "label": "no row retention in v1",
+  "anchor": null
+ },
+ {
+  "id": "D94",
+  "label": "one instance per data folder",
+  "anchor": "Operator"
+ },
+ {
+  "id": "D95",
+  "label": "default .env beside the data",
+  "anchor": "Operator"
+ },
+ {
+  "id": "D96",
+  "label": "coverage critic: 11 follow-up packages",
+  "anchor": null
+ },
+ {
+  "id": "D97",
+  "label": "offline demo works",
+  "anchor": "Stub connector (extends base)"
+ }
+]

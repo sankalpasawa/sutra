@@ -1,0 +1,18 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "reply": {
+   "to_requester": "Thanks, I have what I need.",
+   "to_agents": "@Adaptation Charter recorded.",
+   "enough": true
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "to_requester is plain"
+ }
+}

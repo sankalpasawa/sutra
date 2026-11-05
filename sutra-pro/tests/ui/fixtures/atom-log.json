@@ -1,0 +1,104 @@
+[
+  {
+    "seq": 1,
+    "atom_id": "a-a810960e61-01",
+    "node_id": "web.identity",
+    "status": "refused",
+    "body": {
+      "atom_id": "a-a810960e61-01",
+      "node_id": "web.identity",
+      "department_id": "web",
+      "session_id": "a810960e61",
+      "goal": "done",
+      "status": "refused",
+      "verify": null,
+      "attempt": 0,
+      "model": null,
+      "effort": null,
+      "touches": [],
+      "relevance": null,
+      "relevance_source": null,
+      "reason": "goal is banal ('done'): state the observable outcome",
+      "ts": 1793786412
+    },
+    "ts": "2026-11-04T10:00:12Z"
+  },
+  {
+    "seq": 2,
+    "atom_id": "a-a810960e61-02",
+    "node_id": "web.identity",
+    "status": "closed",
+    "body": {
+      "atom_id": "a-a810960e61-02",
+      "node_id": "web.identity",
+      "department_id": "web",
+      "session_id": "a810960e61",
+      "goal": "the owner's answer is read and passed on",
+      "status": "closed",
+      "verify": {
+        "template": "audience-split",
+        "exit_code": 0
+      },
+      "attempt": 2,
+      "model": "sonnet",
+      "effort": null,
+      "touches": [],
+      "relevance": null,
+      "relevance_source": null,
+      "reason": null,
+      "ts": 1793786433
+    },
+    "ts": "2026-11-04T10:00:33Z"
+  },
+  {
+    "seq": 3,
+    "atom_id": "a-a810960e61-03",
+    "node_id": "web.identity",
+    "status": "verify_failed",
+    "body": {
+      "atom_id": "a-a810960e61-03",
+      "node_id": "web.identity",
+      "department_id": "web",
+      "session_id": "a810960e61",
+      "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+      "status": "verify_failed",
+      "verify": {
+        "template": "charter-stamp",
+        "exit_code": 1
+      },
+      "attempt": 2,
+      "model": "sonnet",
+      "effort": null,
+      "touches": [],
+      "relevance": null,
+      "relevance_source": null,
+      "reason": "verify failed: charter-stamp: Charter rejected: fewer than 3 'done when' criteria.",
+      "ts": 1793786438
+    },
+    "ts": "2026-11-04T10:00:38Z"
+  },
+  {
+    "seq": 4,
+    "atom_id": "a-a810960e61-04",
+    "node_id": "web.identity",
+    "status": "abandoned",
+    "body": {
+      "atom_id": "a-a810960e61-04",
+      "node_id": "web.identity",
+      "department_id": "web",
+      "session_id": "a810960e61",
+      "goal": "the owner's answer is read and passed on",
+      "status": "abandoned",
+      "verify": null,
+      "attempt": 1,
+      "model": "sonnet",
+      "effort": null,
+      "touches": [],
+      "relevance": null,
+      "relevance_source": null,
+      "reason": "replaced: a newer turn opened on this node",
+      "ts": 1793786440
+    },
+    "ts": "2026-11-04T10:00:40Z"
+  }
+]

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Info.plist of Sutra Pro.app. scripts/build_macos_app.py fills the three fields written between at-signs (XML-escaped) and checks that none is left.
+       @VERSION@     X.Y.Z, read from the wheel's METADATA (a CFBundleVersion must be three integers)
+       @BUNDLE_ID@   reverse-DNS identifier, os.sutra.pro (docs/notes/REL-2.md)
+       @EXECUTABLE@  the launcher script in Contents/MacOS
+     Nothing here asks for a permission: the app has no sandbox entry, no usage-description keys, no Apple Events. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleName</key>
+	<string>Sutra Pro</string>
+	<key>CFBundleDisplayName</key>
+	<string>Sutra Pro</string>
+	<key>CFBundleIdentifier</key>
+	<string>@BUNDLE_ID@</string>
+	<key>CFBundleExecutable</key>
+	<string>@EXECUTABLE@</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@VERSION@</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Sutra Pro. The server listens on 127.0.0.1 only.</string>
+</dict>
+</plist>

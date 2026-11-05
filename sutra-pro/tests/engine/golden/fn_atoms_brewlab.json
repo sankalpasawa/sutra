@@ -1,0 +1,1158 @@
+{
+ "atoms": [
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "charter-stamp",
+    "audience-split"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a810960e61-01",
+   "ledger": "closed",
+   "node": "web.identity",
+   "step": "J2.a Enough information to work?",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "answer-recorded"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a810960e61-02",
+   "ledger": "closed",
+   "node": "web.identity",
+   "step": "J2.a Enough information to work?",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "manual"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "charter-stamp",
+    "audience-split"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a810960e61-03",
+   "ledger": "closed",
+   "node": "web.identity",
+   "step": "J2.a Enough information to work?",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "atom-rules",
+    "judge-gate"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a5c837cee8-01",
+   "ledger": "closed",
+   "node": "web.adaptation",
+   "step": "J2.b Adaptation proposes workflows",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "price-kept",
+    "within-budget"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-cfc75f3f46-01",
+   "ledger": "closed",
+   "node": "web.priority",
+   "step": "J2.c Priority prices the proposal",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "atom-rules"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a5c837cee8-02",
+   "ledger": "closed",
+   "node": "web.adaptation",
+   "step": "J2.b Adaptation proposes workflows",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "price-kept",
+    "within-budget"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-cfc75f3f46-02",
+   "ledger": "closed",
+   "node": "web.priority",
+   "step": "J2.c Priority prices the proposal",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "atom-rules"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a5c837cee8-03",
+   "ledger": "closed",
+   "node": "web.adaptation",
+   "step": "J2.b Adaptation proposes workflows",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a810960e61-04",
+   "ledger": "closed",
+   "node": "web.identity",
+   "step": "J2.d Identity resolves conflict",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "order-registered"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-1fdfdb1650-01",
+   "ledger": "closed",
+   "node": "web.coordination",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "turn-posted",
+    "within-budget"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-cfc75f3f46-03",
+   "ledger": "closed",
+   "node": "web.priority",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "bash"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "order-registered"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-1fdfdb1650-02",
+   "ledger": "closed",
+   "node": "web.coordination",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "turn-posted",
+    "within-budget"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-cfc75f3f46-04",
+   "ledger": "closed",
+   "node": "web.priority",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "bash"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a5c837cee8-04",
+   "ledger": "closed",
+   "node": "web.adaptation",
+   "step": "J2.b Adaptation proposes workflows",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "order-registered"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-1fdfdb1650-03",
+   "ledger": "closed",
+   "node": "web.coordination",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "turn-posted",
+    "within-budget"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-cfc75f3f46-05",
+   "ledger": "closed",
+   "node": "web.priority",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "bash"
+  },
+  {
+   "checks": [
+    "turn-posted",
+    "order-registered"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-1fdfdb1650-04",
+   "ledger": "closed",
+   "node": "web.coordination",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "bash"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "finding-per-item",
+    "pass-needs-proof",
+    "code-measure-wins"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-fa7470f5d8-01",
+   "ledger": "closed",
+   "node": "web.audit",
+   "step": "J2.g Audit checks result",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "workable",
+    "audience-split"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a810960e61-05",
+   "ledger": "closed",
+   "node": "web.identity",
+   "step": "J2.h Is the site workable?",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "atom-rules",
+    "judge-gate"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a5c837cee8-05",
+   "ledger": "closed",
+   "node": "web.adaptation",
+   "step": "J2.b Adaptation proposes workflows",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "turn-posted"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-fa7470f5d8-02",
+   "ledger": "closed",
+   "node": "web.audit",
+   "step": "J2.b Adaptation proposes workflows",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "turn-posted"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a5c837cee8-06",
+   "ledger": "closed",
+   "node": "web.adaptation",
+   "step": "J2.b Adaptation proposes workflows",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "atom-rules",
+    "judge-gate"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a5c837cee8-07",
+   "ledger": "closed",
+   "node": "web.adaptation",
+   "step": "J2.b Adaptation proposes workflows",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "price-kept",
+    "within-budget"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-cfc75f3f46-06",
+   "ledger": "closed",
+   "node": "web.priority",
+   "step": "J2.c Priority prices the proposal",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "order-registered"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-1fdfdb1650-05",
+   "ledger": "closed",
+   "node": "web.coordination",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "turn-posted",
+    "within-budget"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-cfc75f3f46-07",
+   "ledger": "closed",
+   "node": "web.priority",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "bash"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "order-registered"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-1fdfdb1650-06",
+   "ledger": "closed",
+   "node": "web.coordination",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "turn-posted",
+    "within-budget"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-cfc75f3f46-08",
+   "ledger": "closed",
+   "node": "web.priority",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "bash"
+  },
+  {
+   "checks": [
+    "turn-posted",
+    "order-registered"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-1fdfdb1650-07",
+   "ledger": "closed",
+   "node": "web.coordination",
+   "step": "J2.f Coordination schedules, workflow agents build",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "bash"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "finding-per-item",
+    "pass-needs-proof",
+    "code-measure-wins"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-fa7470f5d8-03",
+   "ledger": "closed",
+   "node": "web.audit",
+   "step": "J2.g Audit checks result",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  },
+  {
+   "checks": [
+    "reply-valid",
+    "turn-posted",
+    "workable",
+    "audience-split"
+   ],
+   "failing_check": null,
+   "final": {
+    "abandon_code": null,
+    "display": "closed",
+    "status": "closed"
+   },
+   "id": "a-a810960e61-06",
+   "ledger": "closed",
+   "node": "web.identity",
+   "step": "J2.h Is the site workable?",
+   "transitions": [
+    {
+     "attempt": 0,
+     "outcome": "opened",
+     "status": "open"
+    },
+    {
+     "attempt": 1,
+     "outcome": "closed",
+     "status": "closed"
+    }
+   ],
+   "work_kind": "llm"
+  }
+ ],
+ "per_function": {
+  "adaptation": {
+   "atoms": 7,
+   "steps": [
+    "J2.b Adaptation proposes workflows"
+   ],
+   "work_kinds": [
+    "llm"
+   ]
+  },
+  "audit": {
+   "atoms": 3,
+   "steps": [
+    "J2.g Audit checks result",
+    "J2.b Adaptation proposes workflows"
+   ],
+   "work_kinds": [
+    "llm"
+   ]
+  },
+  "coordination": {
+   "atoms": 7,
+   "steps": [
+    "J2.f Coordination schedules, workflow agents build"
+   ],
+   "work_kinds": [
+    "llm",
+    "bash"
+   ]
+  },
+  "identity": {
+   "atoms": 6,
+   "steps": [
+    "J2.a Enough information to work?",
+    "J2.d Identity resolves conflict",
+    "J2.h Is the site workable?"
+   ],
+   "work_kinds": [
+    "llm",
+    "manual"
+   ]
+  },
+  "priority": {
+   "atoms": 8,
+   "steps": [
+    "J2.c Priority prices the proposal",
+    "J2.f Coordination schedules, workflow agents build"
+   ],
+   "work_kinds": [
+    "llm",
+    "bash"
+   ]
+  }
+ },
+ "prompts": {
+  "calls": 29,
+  "digest": [
+   [
+    "identity",
+    "3bda97281748faa0",
+    "818eb5f71dfa7e97"
+   ],
+   [
+    "identity",
+    "3bda97281748faa0",
+    "a8f1bf9c0679c40c"
+   ],
+   [
+    "adaptation",
+    "685bdac12a8561a7",
+    "d541537e2e74a4c1"
+   ],
+   [
+    "priority",
+    "36b22bb9241243fc",
+    "e648cac1e4fc215e"
+   ],
+   [
+    "adaptation",
+    "ef7bc79a5931c375",
+    "3090c4345880e474"
+   ],
+   [
+    "priority",
+    "36b22bb9241243fc",
+    "fa21ce78fba39ed0"
+   ],
+   [
+    "adaptation",
+    "ef7bc79a5931c375",
+    "912d8ab8a977f36a"
+   ],
+   [
+    "identity",
+    "4114a808bc9be29d",
+    "51f481956611e6f9"
+   ],
+   [
+    "coordination",
+    "e001ef14ca864ee8",
+    "584995c87203b151"
+   ],
+   [
+    "W-1",
+    "c6dc441adc7cf37a",
+    "936713df19c20d37"
+   ],
+   [
+    "coordination",
+    "e001ef14ca864ee8",
+    "f6ce370edbdf78d7"
+   ],
+   [
+    "W-2",
+    "4541d605ef817a85",
+    "11bb6572c23fac4b"
+   ],
+   [
+    "W-2",
+    "4541d605ef817a85",
+    "74a50ef35eb829d9"
+   ],
+   [
+    "adaptation",
+    "2e50036a6462dfd1",
+    "e9d23a3b4884ac2f"
+   ],
+   [
+    "coordination",
+    "e001ef14ca864ee8",
+    "1f59ff52a46abdf1"
+   ],
+   [
+    "W-3",
+    "514a4fb181185f35",
+    "41ff44d3f63c6735"
+   ],
+   [
+    "audit",
+    "fb5f097bd050d320",
+    "a9005fbeea6a5c61"
+   ],
+   [
+    "identity",
+    "6be87dd3a8cefb2d",
+    "98e0648a0012576c"
+   ],
+   [
+    "adaptation",
+    "685bdac12a8561a7",
+    "91e32c53a3175390"
+   ],
+   [
+    "audit",
+    "f626ce6161002d78",
+    "96a2f05743e238d3"
+   ],
+   [
+    "adaptation",
+    "800838a0e6000176",
+    "1694930545a93dfd"
+   ],
+   [
+    "adaptation",
+    "685bdac12a8561a7",
+    "b0d099d1d00cb726"
+   ],
+   [
+    "priority",
+    "36b22bb9241243fc",
+    "387a0de6a5acca0c"
+   ],
+   [
+    "coordination",
+    "e001ef14ca864ee8",
+    "cc7fc56ee01dba1a"
+   ],
+   [
+    "W-4",
+    "828d0c3d6c45d5dd",
+    "174f8ddb76a69d96"
+   ],
+   [
+    "coordination",
+    "e001ef14ca864ee8",
+    "de180deb96a0a597"
+   ],
+   [
+    "W-5",
+    "11024e65b0d2eb80",
+    "6f61a421d0c6e2c4"
+   ],
+   [
+    "audit",
+    "fb5f097bd050d320",
+    "918899b536c794af"
+   ],
+   [
+    "identity",
+    "6be87dd3a8cefb2d",
+    "7b23a23952b0b3cc"
+   ]
+  ]
+ },
+ "scenario": {
+  "answers": [
+   "<the Brew Lab brief>"
+  ],
+  "dept": "web",
+  "mode": "mock (ScriptedPort), Chrome faked, fake clock, one answer per question",
+  "run_id": "j2-20261104-100004-7f3a",
+  "settings": {
+   "J2_MEMORY": "0",
+   "J2_REALIZATION": "0"
+  },
+  "user_text": "a website for my cafe"
+ },
+ "schema": "fn-atoms-golden/1",
+ "touches_miss": {},
+ "usage": {
+  "on_builder_atoms": 6,
+  "on_function_atoms": 23,
+  "on_other": 1,
+  "rows": 30
+ }
+}

@@ -1,0 +1,18 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "reply": {
+   "say": "Asking",
+   "enough": false
+  }
+ },
+ "expect": {
+  "ok": true,
+  "na": true,
+  "evidence": "the reply has no to_requester"
+ }
+}

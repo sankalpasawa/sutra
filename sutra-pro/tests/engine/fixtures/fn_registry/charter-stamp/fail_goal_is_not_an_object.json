@@ -1,0 +1,21 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "records": {
+   "goal.json": [
+    "x"
+   ]
+  },
+  "saved": [
+   "goal.json"
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "missing: goal.json holds no charter"
+ }
+}

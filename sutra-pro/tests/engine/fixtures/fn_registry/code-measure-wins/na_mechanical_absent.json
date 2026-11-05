@@ -1,0 +1,25 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "audit",
+   "kind": "audit"
+  },
+  "records": {
+   "audits.json": [
+    {
+     "results": [],
+     "rubric": []
+    }
+   ]
+  },
+  "saved": [
+   "audits.json"
+  ]
+ },
+ "expect": {
+  "ok": true,
+  "na": true,
+  "evidence": "no render measurements"
+ }
+}

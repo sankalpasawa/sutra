@@ -1,0 +1,25 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "records": {
+   "goal.json": {
+    "statement": "A one-page site for Brew Lab",
+    "done_when": [
+     "Menu with prices is shown",
+     "Opening hours are shown",
+     "Where to find us is shown",
+     "A pre-order form works"
+    ]
+   }
+  },
+  "before": {}
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "statement present, 4 done-when items"
+ }
+}

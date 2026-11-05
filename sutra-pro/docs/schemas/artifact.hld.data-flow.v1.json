@@ -1,0 +1,67 @@
+{
+  "$defs": {
+    "DataFlow": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "what is sent",
+          "maxLength": 4000,
+          "title": "Data",
+          "type": "string"
+        },
+        "from": {
+          "description": "where the data comes from",
+          "maxLength": 300,
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "description": "where it goes",
+          "maxLength": 300,
+          "title": "To",
+          "type": "string"
+        },
+        "trigger": {
+          "description": "what starts it",
+          "maxLength": 4000,
+          "title": "Trigger",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "data",
+        "trigger"
+      ],
+      "title": "DataFlow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assumptions": {
+      "items": {
+        "maxLength": 4000,
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "data_flows": {
+      "description": "every flow the pages need, including each form",
+      "items": {
+        "$ref": "#/$defs/DataFlow"
+      },
+      "maxItems": 300,
+      "title": "Data Flows",
+      "type": "array"
+    }
+  },
+  "required": [
+    "data_flows"
+  ],
+  "title": "HLDDataFlow",
+  "type": "object"
+}

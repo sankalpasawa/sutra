@@ -1,0 +1,33 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "coordination",
+   "kind": "schedule"
+  },
+  "before": {
+   "workflows.json": [
+    {
+     "id": "W-0",
+     "status": "done"
+    },
+    {
+     "id": "W-1",
+     "status": "registered"
+    },
+    {
+     "id": "W-2",
+     "status": "registered"
+    },
+    {
+     "id": "W-3",
+     "status": "held"
+    }
+   ]
+  }
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "missing: no Coordination reply"
+ }
+}

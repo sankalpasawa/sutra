@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Sutra</title>
+<link rel="stylesheet" href="/ui/css/j2.css">
+<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css"><link rel="stylesheet" href="/ui/css/sutra-shell.css">
+<!--SUTRA-BOOT-->
+<script src="/ui/js/sutra_ctx.js"></script>
+<script>/* the viewer's Appearance before the first paint (Settings sets it): light, dark or system; dark by default; one choice for Home and the team pages */
+try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset.theme = tp === "light" ? "light" : tp === "system" && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } catch (e) { document.documentElement.dataset.theme = "dark"; }</script>
+</head>
+<body class="simple home">
+<!-- Home: the J2 Simple skeleton. Left, the org chat with the chat agent (the Root node's session cs_org). Right, J2's preview slot (.sprev.sright): what needs you,
+     then one pane at a time: Workflow graph, Org chart or Settings, chosen from the rail. Phone: J2's Chat | Graph toggle (.stoggle, has-site, sp-preview). -->
+<div id="sview">
+  <header class="shead"><b id="stitle">Sutra</b><span class="meta" id="sotype">&middot; your teams</span><span class="spacer"></span></header>
+  <main class="smain">
+    <div class="stoggle" role="tablist" aria-label="Show"><button type="button" role="tab" data-show="chat" aria-selected="true">Chat</button><button type="button" role="tab" data-show="right" aria-selected="false">Graph</button></div>
+    <section class="schat" aria-label="Chat with Sutra">
+      <div class="sprog" id="sprog" aria-label="Progress" hidden></div>
+      <div class="smsgs" id="smsgs" aria-live="polite"></div>
+      <div class="sbanner" id="sbanner" role="alert" hidden></div>
+      <div class="sstatus" id="sstatus" role="status"></div>
+      <div class="snote" id="snote" hidden></div>
+      <div class="scompose" id="scompose"><div class="row"><textarea id="sbox" aria-label="Your message" placeholder="Tell Sutra what you need&hellip;"></textarea><button class="send" id="ssend" type="button">Send</button></div></div>
+    </section>
+    <section class="sprev sright" id="sright" aria-label="Teams and settings">
+      <section class="needs" id="needs" aria-label="Needs you" tabindex="-1"></section>
+      <div class="pane" id="pane-graph"></div>
+      <div class="pane" id="pane-chart" hidden></div>
+      <div class="pane" id="pane-settings" hidden>
+        <div id="set-appearance"></div>
+        <div id="set-connectors"></div>
+        <div id="set-engine"></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="dview">
+<button type="button" id="railtoggle" aria-controls="rail" aria-expanded="true" aria-label="Menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span class="barbadge" id="barbadge" hidden></span></button>
+<nav class="rail tabs" id="rail" aria-label="Sections">
+  <button type="button" id="gochat" aria-current="page"><span>Chat</span></button>
+  <button type="button" data-pane="graph" aria-current="true"><span>Workflow graph</span></button>
+  <button type="button" data-pane="chart"><span>Org chart</span></button>
+  <div class="railsec" aria-labelledby="rail-teams-h"><h3 class="railhead" id="rail-teams-h">Teams</h3><div id="railteams"></div></div>
+  <div class="railsec" aria-labelledby="rail-settings-h"><h3 class="railhead" id="rail-settings-h">Settings</h3>
+    <button type="button" data-pane="settings" data-group="appearance"><span>Appearance</span></button>
+    <button type="button" data-pane="settings" data-group="connectors"><span>Connectors</span></button>
+    <button type="button" data-pane="settings" data-group="engine"><span>Engine</span></button>
+  </div>
+  <div class="railsec" aria-labelledby="rail-owner-h"><h3 class="railhead" id="rail-owner-h">Owner</h3>
+    <a class="railteam" href="/console" id="goconsole"><span class="rtname">Usage and log</span><span class="rtstat">cost, Atom log, health</span></a>
+  </div>
+</nav>
+</div>
+<aside id="nodepanel" class="agentdrawer" hidden role="dialog" aria-labelledby="nptitle"></aside>
+<script src="/ui/js/sutra_events.js"></script>
+<script src="/ui/js/graph_layout.js"></script>
+<script src="/ui/js/chart_marks.js"></script>
+<script src="/ui/js/graph_render.js"></script>
+<script src="/ui/js/graph_view.js"></script>
+<script src="/ui/js/orgchart_view.js"></script>
+<script src="/ui/js/fnode_view.js"></script>
+<script src="/ui/js/chat_view.js"></script>
+<script src="/ui/js/node_panel.js"></script>
+<script src="/ui/js/settings_view.js"></script>
+<script src="/ui/js/home.js"></script>
+</body>
+</html>

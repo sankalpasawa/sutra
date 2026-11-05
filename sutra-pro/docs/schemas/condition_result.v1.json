@@ -1,0 +1,88 @@
+{
+  "additionalProperties": false,
+  "description": "A necessary condition checked by code (conditions/*.json, J2:1296 `check_conditions`). A \"warn\" condition is shown\nand never blocks. `check` names the code check, or several of them.",
+  "properties": {
+    "assumptions": {
+      "anyOf": [
+        {
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Assumptions"
+    },
+    "check": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Check"
+    },
+    "evidence": {
+      "maxLength": 2000,
+      "title": "Evidence",
+      "type": "string"
+    },
+    "id": {
+      "maxLength": 8,
+      "pattern": "^[A-Z][0-9]+$",
+      "title": "Id",
+      "type": "string"
+    },
+    "met": {
+      "title": "Met",
+      "type": "boolean"
+    },
+    "severity": {
+      "anyOf": [
+        {
+          "const": "warn",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Severity"
+    },
+    "text": {
+      "default": "",
+      "maxLength": 600,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "met",
+    "evidence"
+  ],
+  "title": "ConditionResult",
+  "type": "object"
+}

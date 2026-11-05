@@ -1,0 +1,2582 @@
+[
+ {
+  "file": "~/Desktop/development/sutra-pro/docs/design/engine.md",
+  "summary": "Wrote ~/Desktop/development/sutra-pro/docs/design/engine.md (500 lines, nothing else edited). Approach: the J2 engine (14 modules, 16.4k lines, baseline J2 ce2631f) is copied in place into sutra_app/engine/ with package-relative imports and eleven numbered patches (P1-P11); llm.py becomes a shim over one ModelPort.complete(CompletionRequest) seam whose call syntax is unchanged (ask(system, user, mock, max_tokens, effort, on_progress, json_mode, images, schema) plus a CallTag with run, department, function, stage, step, atom, purpose); J2's mock mode is the stub-connector path through the 'scripted' callable, with a built-in ScriptedPort so the engine can be built before the connectors. D9 is confirmed with evidence (module state measured: a second run in one process flipped item_kind from form to doc_section; NAMES, ROUTES, RATES, OUTPUT, llm.LAST_META are process globals). The process contract is the orchestrator's: python -m sutra_app.engine --run-dir, task.json and inbox.jsonl in, events.jsonl out with exactly the event types and fields of ORCH 5.6, a 5 s heartbeat, SQLite never touched. Because the process cannot be asked questions, it also publishes snapshot.json and live.json so the 25 GET and 5 POST J2 endpoints (one views.py, a FastAPI adapter and a stdlib adapter) read files; routes are mounted both under /d/{dept}/ and at the root with ?dept= because the orchestrator and UI sections disagree. Function nodes plug in through EngineHooks (observe-only; system_addendum is the only prompt-changing hook, empty by default). Tests: three legacy J2 scripts run as subprocess suites with guards (measured here on Python 3.11: change_test 192 checks, realization_test 97; the flow script cannot pass on the J2 checkout itself without its saved runs), plus recorded goldens for prompts and API shapes. Six work packages E0-E5; j2.py is owned by E1 alone. Key trade-offs: files instead of pipes (survives a server restart, matches ORCH, costs a 250 ms publish lag); finished-run follow-ups use rehydrate, proven only for the classic path in mock mode (realization-on, J2's default, paused in two attempts; cause not found), otherwise they start fresh with the old files as context; engine keeps its own vendored artifact models and rules next to the library's port, with a drift test. No question blocks development; the consolidator must settle: (1) /d/{dept} prefix vs ?dept= (both mounted), (2) one copy of artifact models/rules/template bases (engine vs library DL9), (3) make_port(PortSpec) wording in connectors.md (spec.mock instead of spec.model.mode), (4) the orchestrator's stop_live call and its seven-key RunSpec.settings allowlist.",
+  "modules": [
+   {
+    "path": "sutra_app/engine/__init__.py",
+    "responsibility": "Docstring only; imports nothing so the host can set the environment before engine.j2 is imported."
+   },
+   {
+    "path": "sutra_app/engine/__main__.py",
+    "responsibility": "python -m sutra_app.engine --run-dir <dir> [--mock]: calls host.loop.main()."
+   },
+   {
+    "path": "sutra_app/engine/port.py",
+    "responsibility": "Model seam contract: CallTag, CompletionRequest, CompletionResult, PortInfo, PreflightResult, ModelPort, ModelError family."
+   },
+   {
+    "path": "sutra_app/engine/llm.py",
+    "responsibility": "J2's llm API (ask, LAST_META, MOCK, extract_json, ...) over a ModelPort; ScriptedPort for mock mode; tagged()/current_tag()."
+   },
+   {
+    "path": "sutra_app/engine/hooks.py",
+    "responsibility": "EngineHooks protocol, NullHooks, EventHooks (say, usage, session events, trace, record validator, system_addendum), TurnInfo, TurnOutcome, CallInfo."
+   },
+   {
+    "path": "sutra_app/engine/events.py",
+    "responsibility": "Event line builders with exactly the fields of ORCH 5.6 and EventWriter (line-atomic append to events.jsonl and trace.jsonl)."
+   },
+   {
+    "path": "sutra_app/engine/spec.py",
+    "responsibility": "TaskSpec (the engine's view of task.json), PortSpec, EngineSettings with J2 defaults, to_env(), layered()."
+   },
+   {
+    "path": "sutra_app/engine/paths.py",
+    "responsibility": "DataPaths.from_run_dir(), load_env_file() (J2_SMTP_* only), pid_alive()."
+   },
+   {
+    "path": "sutra_app/engine/features.py",
+    "responsibility": "FEATURES: the 15 chips + J2.a-h + extras mapped to files and symbols, as data."
+   },
+   {
+    "path": "sutra_app/engine/rehydrate.py",
+    "responsibility": "Load a finished classic run's folder into a new J2Run so a follow-up is a change request; RehydrateRefused otherwise."
+   },
+   {
+    "path": "sutra_app/engine/j2.py",
+    "responsibility": "Vendored J2 loop, J2Run and all flow logic (9,581 lines); patched P1 P3 P4 P5 P7 P8 P9 P11 only."
+   },
+   {
+    "path": "sutra_app/engine/j2_agent.py",
+    "responsibility": "Vendored: agent view (agent/1) from chat.jsonl and calls.jsonl."
+   },
+   {
+    "path": "sutra_app/engine/j2_artifact_models.py",
+    "responsibility": "Vendored: pydantic artifact shapes (prd, hld, lld, design, website) and renderers."
+   },
+   {
+    "path": "sutra_app/engine/j2_artifacts.py",
+    "responsibility": "Vendored: artifact listing/tree/served files from artifacts/types.json."
+   },
+   {
+    "path": "sutra_app/engine/j2_board.py",
+    "responsibility": "Vendored: message board (board/1)."
+   },
+   {
+    "path": "sutra_app/engine/j2_change.py",
+    "responsibility": "Vendored: charter change planner."
+   },
+   {
+    "path": "sutra_app/engine/j2_check.py",
+    "responsibility": "Vendored: headless-Chrome render and design checks."
+   },
+   {
+    "path": "sutra_app/engine/j2_map.py",
+    "responsibility": "Vendored: the Map (map/1) and plan view; also feeds the node/step events."
+   },
+   {
+    "path": "sutra_app/engine/j2_realization.py",
+    "responsibility": "Vendored: realization axis, planner and confidence judge."
+   },
+   {
+    "path": "sutra_app/engine/j2_rules.py",
+    "responsibility": "Vendored: artifact rules as data."
+   },
+   {
+    "path": "sutra_app/engine/j2_schema.py",
+    "responsibility": "Vendored: atom/1 views."
+   },
+   {
+    "path": "sutra_app/engine/j2_send.py",
+    "responsibility": "Vendored: send deeds and milestone emails."
+   },
+   {
+    "path": "sutra_app/engine/j2_story.py",
+    "responsibility": "Vendored: board story view (story/1)."
+   },
+   {
+    "path": "sutra_app/engine/j2_template_lib.py",
+    "responsibility": "Vendored: template library, router, store (P10 adds a file lock)."
+   },
+   {
+    "path": "sutra_app/engine/agents/j2/",
+    "responsibility": "Role files (8 .md), rates.json, stages.json; read fresh on every call; J2_AGENTS_DIR overrides."
+   },
+   {
+    "path": "sutra_app/engine/conditions/",
+    "responsibility": "Necessary conditions: website, prd, hld, lld JSON."
+   },
+   {
+    "path": "sutra_app/engine/artifacts/types.json",
+    "responsibility": "Artifact type list read by j2_artifacts."
+   },
+   {
+    "path": "sutra_app/engine/templates/",
+    "responsibility": "Generic template JSON per artifact kind (5 files)."
+   },
+   {
+    "path": "sutra_app/engine/seed/library/",
+    "responsibility": "J2's committed demo template library (105 files, 26 templates), copied to data/library at first start."
+   },
+   {
+    "path": "sutra_app/engine/VENDORED.md",
+    "responsibility": "Baseline commit, per-file sha256, patch list P1-P11 with line ranges."
+   },
+   {
+    "path": "sutra_app/engine/views.py",
+    "responsibility": "Reply, RunCtx, the 30 J2 handlers as functions, VIEWS, live_state(), idle_snapshot(), read_published()."
+   },
+   {
+    "path": "sutra_app/engine/j2_server.py",
+    "responsibility": "Thin stdlib Handler/RUN/HERE/DOCX/redact/secrets over views: single-run dev server and legacy-test compatibility."
+   },
+   {
+    "path": "sutra_app/engine/host/loop.py",
+    "responsibility": "The process: main(), task.json handling, env setup, preflight, J2Run start, main loop, run.ended, signals."
+   },
+   {
+    "path": "sutra_app/engine/host/inbox.py",
+    "responsibility": "Tails inbox.jsonl (user, override, stop), FIFO for lines that arrive while running."
+   },
+   {
+    "path": "sutra_app/engine/host/publisher.py",
+    "responsibility": "StatePublisher: atomic snapshot.json/live.json, node/step/atom diffs from j2_map and atom/1 views."
+   },
+   {
+    "path": "sutra_app/engine/host/heartbeat.py",
+    "responsibility": "5 s heartbeat event thread."
+   },
+   {
+    "path": "sutra_app/engine/host/__init__.py",
+    "responsibility": "Package marker."
+   },
+   {
+    "path": "sutra_app/engine/api/__init__.py",
+    "responsibility": "mount(app, services): registers the J2 routes under /d/{dept} and at the root."
+   },
+   {
+    "path": "sutra_app/engine/api/ports.py",
+    "responsibility": "EngineServices protocol (resolve_run, deliver_to_department, stop_live, department, require_token, redact)."
+   },
+   {
+    "path": "sutra_app/engine/api/ctx.py",
+    "responsibility": "build_ctx: department from path/query/header, saved/live/idle mode, RunCtx from published files."
+   },
+   {
+    "path": "sutra_app/engine/api/reply.py",
+    "responsibility": "Reply to Response: charset, no-store, redaction."
+   },
+   {
+    "path": "sutra_app/engine/api/state.py",
+    "responsibility": "Routes /api/state, /api/runs, /api/call, /api/audits, /api/refs."
+   },
+   {
+    "path": "sutra_app/engine/api/run_views.py",
+    "responsibility": "Routes /api/preview, /api/docs, /api/map, /api/plan, /api/agent, /api/story, /api/board."
+   },
+   {
+    "path": "sutra_app/engine/api/library.py",
+    "responsibility": "Routes /api/library, /api/library/{...}, /api/run-templates."
+   },
+   {
+    "path": "sutra_app/engine/api/files.py",
+    "responsibility": "Routes /api/artifacts, /api/code, /api/artifacts/tree, /api/artifact, /shot/{n}, /file/{name}, /site/{key}."
+   },
+   {
+    "path": "sutra_app/engine/api/commands.py",
+    "responsibility": "POST /api/say, /api/playbooks/clear, /api/lessons/clear, /api/output, /api/reset."
+   },
+   {
+    "path": "scripts/vendor_j2.py",
+    "responsibility": "One-shot copy + import rewrite + patch application from a J2 checkout; writes VENDORED.md."
+   },
+   {
+    "path": "scripts/record_api_shapes.py",
+    "responsibility": "Records status, content type and key paths of every endpoint from a J2 checkout into golden/api_shapes.json."
+   },
+   {
+    "path": "scripts/record_engine_golden.py",
+    "responsibility": "Records the six prompt goldens from a J2 checkout."
+   },
+   {
+    "path": "scripts/engine_gate.sh",
+    "responsibility": "Runs the legacy flow script in two throw-away copies in parallel."
+   },
+   {
+    "path": "docs/reference/j2/",
+    "responsibility": "J2 README, SETUP and schema docs (atom, map, realization, handoff, prompts, test plan, charter-change spec)."
+   },
+   {
+    "path": "MANIFEST.in",
+    "responsibility": "Includes engine package data (md, json, html, seed library) in builds."
+   },
+   {
+    "path": "tests/engine/conftest.py",
+    "responsibility": "Fixtures (data_dir, scripted_port, clean_env, run_dir, fake_services), markers slow/live, ignores legacy/, skips slow unless SUTRA_SLOW=1."
+   },
+   {
+    "path": "tests/engine/test_engine_llm_shim.py",
+    "responsibility": "ask signature, mock path, LAST_META, tagged, extract_json helpers."
+   },
+   {
+    "path": "tests/engine/test_engine_port_contract.py",
+    "responsibility": "One assertion set for ScriptedPort and the connector stub port."
+   },
+   {
+    "path": "tests/engine/test_engine_spec.py",
+    "responsibility": "TaskSpec, EngineSettings defaults, to_env, layered."
+   },
+   {
+    "path": "tests/engine/test_engine_paths.py",
+    "responsibility": "DataPaths, load_env_file, pid_alive."
+   },
+   {
+    "path": "tests/engine/test_engine_events.py",
+    "responsibility": "Event lines match ORCH 5.6; whole lines under concurrent writers."
+   },
+   {
+    "path": "tests/engine/test_engine_vendor.py",
+    "responsibility": "No flat imports; modules import; data files present; hashes."
+   },
+   {
+    "path": "tests/engine/test_engine_patches.py",
+    "responsibility": "P3 P4 P5 P8 P9 behaviour; mock Brew Lab reaches Done in-process."
+   },
+   {
+    "path": "tests/engine/test_engine_features.py",
+    "responsibility": "Every FEATURES file and symbol exists."
+   },
+   {
+    "path": "tests/engine/test_engine_library_lock.py",
+    "responsibility": "Two-process template store keeps both index entries; LibraryBusy falls back to generic."
+   },
+   {
+    "path": "tests/engine/test_engine_rehydrate.py",
+    "responsibility": "Classic follow-up reaches Done; refusals; xfail for realization and document chains."
+   },
+   {
+    "path": "tests/engine/test_engine_views.py",
+    "responsibility": "30 handlers vs golden/api_shapes.json; adapter parity; idle_snapshot keys."
+   },
+   {
+    "path": "tests/engine/golden/api_shapes.json",
+    "responsibility": "Recorded J2 endpoint shapes."
+   },
+   {
+    "path": "tests/engine/test_engine_host.py",
+    "responsibility": "In-process main() with scripted inbox: events, answers, override, stop, bad task.json."
+   },
+   {
+    "path": "tests/engine/test_engine_host_process.py",
+    "responsibility": "Real subprocess runs: Brew Lab to Done, heartbeat, kill -9, SIGTERM, two departments isolated."
+   },
+   {
+    "path": "tests/engine/test_engine_publisher.py",
+    "responsibility": "Atomic publish, change-only events, final publish before run.ended."
+   },
+   {
+    "path": "tests/engine/test_engine_crash.py",
+    "responsibility": "Every ModelError code, preflight failure, thread death, torn inbox line."
+   },
+   {
+    "path": "tests/engine/test_engine_live.py",
+    "responsibility": "Marked live: one short real run through make_port."
+   },
+   {
+    "path": "tests/engine/test_engine_api_scope.py",
+    "responsibility": "Every row of 7.1 under both mounts; saved/live/idle; cross-department 404."
+   },
+   {
+    "path": "tests/engine/test_engine_api_commands.py",
+    "responsibility": "say busy 409, output and reset rules, clear lessons/playbooks."
+   },
+   {
+    "path": "tests/engine/test_engine_api_redact.py",
+    "responsibility": "A planted secret never leaves in any body."
+   },
+   {
+    "path": "tests/engine/test_engine_prompts.py",
+    "responsibility": "Six prompt goldens: outcome, spend, page hash, per-call function/system/prompt hashes."
+   },
+   {
+    "path": "tests/engine/golden/prompts_*.json",
+    "responsibility": "Recorded prompt hashes from J2 ce2631f."
+   },
+   {
+    "path": "tests/engine/test_engine_legacy.py",
+    "responsibility": "Runs change_test, realization_test and j2_flow_test --fast as subprocesses."
+   },
+   {
+    "path": "tests/engine/legacy/",
+    "responsibility": "Ported j2_flow_test.py, change_test.py, realization_test.py, j2_replay_size.py (guards only) and EXPECTED.json."
+   }
+  ],
+  "work_packages": [
+   {
+    "id": "E0",
+    "title": "Contracts, shim, settings, paths",
+    "owns": [
+     "sutra_app/engine/__init__.py",
+     "sutra_app/engine/port.py",
+     "sutra_app/engine/llm.py",
+     "sutra_app/engine/hooks.py",
+     "sutra_app/engine/events.py",
+     "sutra_app/engine/spec.py",
+     "sutra_app/engine/paths.py",
+     "sutra_app/engine/features.py",
+     "tests/engine/conftest.py",
+     "tests/engine/test_engine_llm_shim.py",
+     "tests/engine/test_engine_port_contract.py",
+     "tests/engine/test_engine_spec.py",
+     "tests/engine/test_engine_paths.py",
+     "tests/engine/test_engine_events.py"
+    ],
+    "depends_on": [],
+    "acceptance": [
+     "scripts/py -m pytest tests/engine/test_engine_llm_shim.py tests/engine/test_engine_port_contract.py tests/engine/test_engine_spec.py tests/engine/test_engine_paths.py tests/engine/test_engine_events.py -q"
+    ]
+   },
+   {
+    "id": "E1",
+    "title": "Vendor J2, apply patches P1-P11, rehydrate",
+    "owns": [
+     "sutra_app/engine/j2.py",
+     "sutra_app/engine/j2_agent.py",
+     "sutra_app/engine/j2_artifact_models.py",
+     "sutra_app/engine/j2_artifacts.py",
+     "sutra_app/engine/j2_board.py",
+     "sutra_app/engine/j2_change.py",
+     "sutra_app/engine/j2_check.py",
+     "sutra_app/engine/j2_map.py",
+     "sutra_app/engine/j2_realization.py",
+     "sutra_app/engine/j2_rules.py",
+     "sutra_app/engine/j2_schema.py",
+     "sutra_app/engine/j2_send.py",
+     "sutra_app/engine/j2_story.py",
+     "sutra_app/engine/j2_template_lib.py",
+     "sutra_app/engine/rehydrate.py",
+     "sutra_app/engine/agents/",
+     "sutra_app/engine/conditions/",
+     "sutra_app/engine/artifacts/",
+     "sutra_app/engine/templates/",
+     "sutra_app/engine/seed/",
+     "sutra_app/engine/VENDORED.md",
+     "MANIFEST.in",
+     "docs/reference/j2/",
+     "scripts/vendor_j2.py",
+     "tests/engine/test_engine_vendor.py",
+     "tests/engine/test_engine_patches.py",
+     "tests/engine/test_engine_features.py",
+     "tests/engine/test_engine_library_lock.py",
+     "tests/engine/test_engine_rehydrate.py"
+    ],
+    "depends_on": [
+     "E0"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/engine/test_engine_vendor.py tests/engine/test_engine_patches.py tests/engine/test_engine_features.py tests/engine/test_engine_library_lock.py tests/engine/test_engine_rehydrate.py -q",
+     "grep -rnE '^\\s*(import|from) (j2|llm)\\b' sutra_app/engine prints nothing"
+    ]
+   },
+   {
+    "id": "E2",
+    "title": "Views (30 handlers) and the stdlib adapter",
+    "owns": [
+     "sutra_app/engine/views.py",
+     "sutra_app/engine/j2_server.py",
+     "scripts/record_api_shapes.py",
+     "tests/engine/golden/api_shapes.json",
+     "tests/engine/test_engine_views.py"
+    ],
+    "depends_on": [
+     "E1"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/engine/test_engine_views.py -q"
+    ]
+   },
+   {
+    "id": "E3",
+    "title": "Host process: inbox, events, publisher, heartbeat, signals",
+    "owns": [
+     "sutra_app/engine/__main__.py",
+     "sutra_app/engine/host/__init__.py",
+     "sutra_app/engine/host/loop.py",
+     "sutra_app/engine/host/inbox.py",
+     "sutra_app/engine/host/publisher.py",
+     "sutra_app/engine/host/heartbeat.py",
+     "tests/engine/test_engine_host.py",
+     "tests/engine/test_engine_host_process.py",
+     "tests/engine/test_engine_publisher.py",
+     "tests/engine/test_engine_crash.py",
+     "tests/engine/test_engine_live.py"
+    ],
+    "depends_on": [
+     "E0",
+     "E1",
+     "E2"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/engine/test_engine_host.py tests/engine/test_engine_host_process.py tests/engine/test_engine_publisher.py tests/engine/test_engine_crash.py -q"
+    ]
+   },
+   {
+    "id": "E4",
+    "title": "FastAPI routes (path and ?dept= mounts) and mount()",
+    "owns": [
+     "sutra_app/engine/api/__init__.py",
+     "sutra_app/engine/api/ports.py",
+     "sutra_app/engine/api/ctx.py",
+     "sutra_app/engine/api/reply.py",
+     "sutra_app/engine/api/state.py",
+     "sutra_app/engine/api/run_views.py",
+     "sutra_app/engine/api/library.py",
+     "sutra_app/engine/api/files.py",
+     "sutra_app/engine/api/commands.py",
+     "tests/engine/test_engine_api_scope.py",
+     "tests/engine/test_engine_api_commands.py",
+     "tests/engine/test_engine_api_redact.py"
+    ],
+    "depends_on": [
+     "E2"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/engine/test_engine_api_scope.py tests/engine/test_engine_api_commands.py tests/engine/test_engine_api_redact.py -q"
+    ]
+   },
+   {
+    "id": "E5",
+    "title": "Legacy suites as subprocesses and prompt goldens",
+    "owns": [
+     "tests/engine/legacy/",
+     "tests/engine/test_engine_legacy.py",
+     "tests/engine/test_engine_prompts.py",
+     "tests/engine/golden/prompts_*.json",
+     "scripts/record_engine_golden.py",
+     "scripts/engine_gate.sh"
+    ],
+    "depends_on": [
+     "E1",
+     "E2",
+     "E3"
+    ],
+    "acceptance": [
+     "SUTRA_SLOW=1 scripts/py -m pytest tests/engine/test_engine_legacy.py tests/engine/test_engine_prompts.py -q",
+     "Whole engine: SUTRA_SLOW=1 scripts/py -m pytest tests/engine -q"
+    ]
+   }
+  ],
+  "decision_proposals": [
+   {
+    "id_hint": "ENG-D1",
+    "decision": "The J2 engine is copied in place: same module names under sutra_app/engine/, package-relative imports, every change one of eleven numbered patches (P1-P11) recorded in VENDORED.md with the J2 commit (ce2631f) and file hashes.",
+    "why": "16.4k lines of tested behaviour; diffable against the team repo; D4 says adapt, not rewrite; prompts stay byte-identical (proved by goldens).",
+    "rejected": "Renaming or splitting j2.py now; flat imports through sys.path; importing J2 as a dependency.",
+    "diagram_label": "Badge on the J2 loop strip: vendored from J2 ce2631f, patches P1-P11"
+   },
+   {
+    "id_hint": "ENG-D2",
+    "decision": "D9 is confirmed: one process per run (not per message), started by the orchestrator as python -m sutra_app.engine --run-dir, speaking only files (task.json, inbox.jsonl, events.jsonl); the engine also publishes snapshot.json and live.json so the J2 live views read files; the process exits at run.ended.",
+    "why": "Measured shared module state (NAMES, ROUTES, RATES, OUTPUT, llm.LAST_META, env constants at import; a second run in one process flipped item_kind); a Chrome child once hung 10+ minutes; files survive a server restart and match the orchestrator's contract.",
+    "rejected": "Threads in the server; a worker pool; stdin/stdout pipes with RPC (lost on server restart, not what the orchestrator specified).",
+    "diagram_label": "Label on the D9 band: process per run, files only; arrow runtime to server: events.jsonl, snapshot.json"
+   },
+   {
+    "id_hint": "ENG-D3",
+    "decision": "One model seam: llm.py is a shim over ModelPort.complete; every call carries a CallTag (run, department, function, stage, step, cycle, atom, purpose); J2's mock mode is the stub-connector path via the scripted callable, with ScriptedPort as the built-in twin; usage leaves as usage events and only the server writes the ledger.",
+    "why": "The five llm.ask call sites keep their syntax; router and ledger see run/department/function/stage/step; engine packages do not wait for connectors; the server stays the only SQLite writer (ORCH-D5).",
+    "rejected": "Engine importing the router directly; rewriting call sites to a new API; dropping mock; the router writing the ledger from inside the engine.",
+    "diagram_label": "Badge on the arrow 'every AI step': tagged call (run, dept, function, stage, step); stub connector = J2 mock mode"
+   },
+   {
+    "id_hint": "ENG-D4",
+    "decision": "Run selection: department from the path /d/{dept} or from ?dept= / X-Sutra-Dept (both mounted because ORCH-D7 and UI-D2 differ); the run from ?run= (always a read-only disk view, J2's rule), else the orchestrator's resolve_run; page.json carries the start-page output and the reset marker.",
+    "why": "One implementation of the contract the sibling sections already assume; no cookie, no hidden default department.",
+    "rejected": "A cookie scope (shared by tabs); one global live run as in j2_server.py:24; choosing one mount now (the consolidator's call).",
+    "diagram_label": "Badge on Department records: runs and memory per department; on the arrow 'department views (read)': same /api paths, per department"
+   },
+   {
+    "id_hint": "ENG-D5",
+    "decision": "One implementation of the 30 handlers (views.py) with two thin adapters (FastAPI api/, stdlib j2_server.py); live mode reads published files, saved mode reads the run folder.",
+    "why": "No copy of 25 branches to drift; the 134 legacy references to j2_server keep working; the page needs no running process to answer.",
+    "rejected": "An RPC into the process; rewriting the legacy tests to FastAPI; duplicating the branches.",
+    "diagram_label": "Badge on the arrow 'department views (read)'"
+   },
+   {
+    "id_hint": "ENG-D6",
+    "decision": "Tests: the three J2 scripts run as subprocess suites after small guards; git-checkpoint comparisons become recorded goldens (prompts, API shapes); the saved-run corpus and UI files are optional (SUTRA_J2_CHECKOUT); slow suites need SUTRA_SLOW=1.",
+    "why": "The scripts mutate module state and need saved runs and git history the repo cannot carry (measured: the flow script fails on the J2 checkout itself without them); the merge gate runs plain pytest -q.",
+    "rejected": "Porting 10k lines to pytest functions; copying the 138 MB runs/; making slow suites part of every merge.",
+    "diagram_label": "Key only"
+   },
+   {
+    "id_hint": "ENG-D7",
+    "decision": "Memory (lessons, playbooks) is per department; the template library is one global store guarded by a cross-process file lock (P10).",
+    "why": "Department records own their history; a library shared by departments is the diagram's server content; the library index is read-modify-write without a lock in J2.",
+    "rejected": "One memory pool; a library per department; a lock server.",
+    "diagram_label": "Badge on Template library: global, file-locked; on Department records: memory per department"
+   },
+   {
+    "id_hint": "ENG-D8",
+    "decision": "Function nodes plug in through EngineHooks; the default EventHooks already emits say, node, step, atom (atom/1), usage and session events; the function-node layer subclasses it to add work-atom/0.3 atoms; system_addendum is the only hook that can change a prompt and is empty by default; the library's gate_record is the record_saved validator.",
+    "why": "The function-node spec file was not available; prompts stay byte-identical until the node layer opts in; one hook point serves both the node layer and the library.",
+    "rejected": "Editing j2.py per function; a second channel from the process to the server.",
+    "diagram_label": "Badge on the five function cards and on the arrow runtime to Workflow graph store: node, step, atom events"
+   },
+   {
+    "id_hint": "ENG-D9",
+    "decision": "Every J2 flag is an EngineSettings field with J2's default (board, change, template library, artifact schema off; realization, memory, slim on); layered defaults, data/engine.json, J2_* env, department engine.json, task.json settings; delay defaults to 0.",
+    "why": "Everything in J2 is present; the off-by-default paths are not live-proven; the 2 s pacing was for free-tier APIs and the router paces now; the orchestrator's launcher only passes seven J2 keys, so other flags need engine.json files.",
+    "rejected": "Turning the off paths on; removing flags.",
+    "diagram_label": "Note under the chip band: flags are department settings"
+   },
+   {
+    "id_hint": "ENG-D10",
+    "decision": "Failure semantics: model errors are ModelError(RuntimeError) so J2's crash path (Stopped, summary crashed, waiting) is kept and ends as run.ended{crashed}; a missing CLI is caught by a preflight at startup; a dead process leaves the last snapshot plus a process-gone rule; no engine-side retry or restart.",
+    "why": "One visible end state per failure; retries belong to the router; ORCH F6/F7 already assume it.",
+    "rejected": "Engine-side retries; silently restarting a dead process.",
+    "diagram_label": "Label on the runtime-to-server arrow: run.ended done, stopped, crashed"
+   },
+   {
+    "id_hint": "ENG-D11",
+    "decision": "A follow-up after Done continues the old work by rehydrate (a new process loads the old run folder) when the run was classic; otherwise it starts fresh with the old files as upstream and says so; the process never lingers after run.ended.",
+    "why": "The orchestrator's state machine makes Done terminal; a probe proved the classic path in mock mode (change request reached a new Done, workflows 5 to 6); refusal is graceful so a follow-up never errors.",
+    "rejected": "Keeping the process alive in standby (breaks the terminal task); resuming by pickling J2Run; refusing follow-ups.",
+    "diagram_label": "Note on Department records: follow-ups continue from the old run folder"
+   }
+  ],
+  "diagram_items": [
+   {
+    "box": "DEPARTMENT RUNTIME (J2 ENGINE) band",
+    "what_to_show": "Subtitle 'one process per run, files only' with badges D9 and ENG-D2; label 'python -m sutra_app.engine --run-dir'."
+   },
+   {
+    "box": "J2 loop strip (a enough to start? ... h done)",
+    "what_to_show": "Badge ENG-D1 'vendored from J2 ce2631f, patches P1-P11' and ENG-D8 'turn hooks'."
+   },
+   {
+    "box": "The five function cards (Identity, Adaptation, Priority, Coordination, Audit)",
+    "what_to_show": "Badge ENG-D8: each turn is reported as node/atom events with goal, task, context."
+   },
+   {
+    "box": "Arrow 'every AI step' (runtime to Connector router)",
+    "what_to_show": "Label 'tagged: run, dept, function, stage, step' with ENG-D3; note 'mock mode = stub connector'."
+   },
+   {
+    "box": "Arrow 'department views (read)' (Detailed view to runtime)",
+    "what_to_show": "Label 'same /api paths, per department, live from files' with ENG-D4 and ENG-D5."
+   },
+   {
+    "box": "Department records",
+    "what_to_show": "Lines 'runs/<run>/ and memory per department' and 'follow-ups continue from the old run folder' with ENG-D4, ENG-D7, ENG-D11."
+   },
+   {
+    "box": "Template library",
+    "what_to_show": "'global, file-locked' with ENG-D7."
+   },
+   {
+    "box": "Orchestrator's arrow runtime to Workflow graph store",
+    "what_to_show": "Label 'events.jsonl: say, node, step, atom, usage' with ENG-D8 and ENG-D10; second label 'snapshot.json, live.json for the J2 pages'."
+   },
+   {
+    "box": "Usage and cost ledger",
+    "what_to_show": "Note 'rows come from usage events; the server writes them' with ENG-D3."
+   },
+   {
+    "box": "Chip band (15 chips)",
+    "what_to_show": "Note 'flags are department settings' with ENG-D9; every chip is named in section 8 of engine.md with its file."
+   },
+   {
+    "box": "Runtime to Department records arrow",
+    "what_to_show": "Label 'run folder: J2 files + task.json, inbox, events, snapshot, live'."
+   },
+   {
+    "box": "Key",
+    "what_to_show": "List ENG-D1 to ENG-D11 (the consolidator renumbers D13+); ENG-D6 appears here only."
+   }
+  ],
+  "open_risks": [
+   "Contracts with the orchestrator, library, UI and connector sections were written in parallel; the orchestrator's RunEvent union is closed, so any extra event field breaks its watcher (test_engine_events validates when the model imports).",
+   "ORCH-D7 (J2 routes under /d/{dept}/) and UI-D2 (root paths with ?dept=) disagree; mount() registers both and the consolidator deletes one include_router line.",
+   "Two copies of the artifact models, rules, template bases and certainty_zone (engine vendored copy vs library DL9 port); a drift test replaces 'one copy' until parity is proven.",
+   "rehydrate is proven only for the classic path in mock mode; with realization on (J2's default) a change request paused on 'validator registered nothing' in two attempts and the cause was not found, so most follow-ups start fresh until E1-b lifts the limit.",
+   "j2_flow_test.py cannot pass on the J2 checkout itself without its saved runs (fails at map_tab :9136 and graph_map :7924); the port adds guards and an optional SUTRA_J2_CHECKOUT, and the prompt/API goldens carry the regression value; determinism of four of the six prompt goldens is confirmed only when recorded.",
+   "The template library index race is inferred from code, not reproduced; fcntl locking is POSIX only (Windows out of scope).",
+   "snapshot.json is rewritten up to 4 times a second and reaches 365 KB on a long design-docs run; local SSD only, written only on change.",
+   "P4 makes user_says non-blocking: a message sent mid-run is refused instead of waiting for the run to end (measured: J2 blocked 1.21 s then started a new turn).",
+   "idle_snapshot builds a throw-away J2Run in the server process (lock plus restore of j2.RATES and j2.OUTPUT); the server must never run a real J2Run.",
+   "Unverified: Codex image input for Audit screenshots; claude -p --json-schema behaviour through the Claude connector; spec-function-nodes.json (absent); whether 'ref' values in node context events satisfy the UI.",
+   "connectors.md still reads make_port(spec: RunSpec) with spec.model.mode; engine.md defines PortSpec with spec.mock, so one line in connectors.md must change.",
+   "The orchestrator's launcher passes only seven J2 settings keys and no other J2_* env, so board/change/template-library/artifact-schema flags can only be enabled through data/engine.json files (engine-owned convention, new).",
+   "Idle open runs cost about 81 MB RSS each (measured); the orchestrator's SUTRA_MAX_RUNS bounds it; process-per-run also means a graceful server shutdown stops runs (follow-up continues them)."
+  ]
+ },
+ {
+  "file": "~/Desktop/development/sutra-pro/docs/design/connectors.md",
+  "summary": "Wrote the connectors section (511 lines) at ~/Desktop/development/sutra-pro/docs/design/connectors.md and 46 scrubbed fixtures under ~/Desktop/development/sutra-pro/tests/fixtures/connectors/ (21 captured from real claude 2.1.308 and codex-cli 0.146.0, 25 derived and labelled in MANIFEST.json; I spent two real calls per CLI, the rest needed no model). Nothing else in the repo was edited.\n\nApproach: one Router picks a provider per call from a versioned data policy (default = J2 behaviour: Claude first, Codex only as fallback), checks installed, signed-in and quota state without a model call, enforces a per-request Allowance computed by the caller, and runs a ModelConnector child (Claude: claude -p stream-json, Codex: codex exec --json, one process per call or turn, environment allowlist, prompt on stdin). Structured JSON goes native first (--json-schema, --output-schema through a strict-schema adapter), then prompted with a pydantic repair loop. The router emits one UsageIn per step into the orchestrator's UsageSink; tokens are the comparable unit, usd is Claude's list-price estimate (Codex only with owner-supplied rates). Tool connectors: one stdlib MCP server with read-only Sutra tools plus gh-backed GitHub read tools, usable by both CLIs; Claude-held Gmail, Drive and Slack are shown only (ADR-035). A StubConnector (honours J2's mock callable) and fake claude/codex/gh executables replay the fixtures. D7 is confirmed: the Anthropic-API and Gemini providers are not carried over (CD1).\n\nFindings that shaped the design (all probed): (1) usage counters are CUMULATIVE on resumed sessions in both CLIs (Claude total_cost_usd and modelUsage, Codex turn.completed.usage) while Claude result.usage is per turn, so the ledger must store deltas; (2) a signed-out Codex call retries 401 for about 18 s before failing, so sign-in is checked first and two 401 events abort early; (3) Claude marks failures with is_error true but subtype success, and classifies them in assistant.error; (4) --safe-mode drops --mcp-config servers while --restricted keeps them; (5) a bad --effort is only a warning; (6) codex exec resume takes no -s or -C; (7) this shell leaks about 30 CLAUDE_CODE_* variables and GITHUB_TOKEN, so an allowlist, not J2's denylist, is required.\n\nContracts aligned with the sibling sections as they stood: engine ModelPort/CallTag/ModelError and make_port, orchestrator ConnectorPort (including records_usage and set_provider with model) and UsageSink, library transport schemas, UI provider chip and 503 text. Proposed agreements A1-A4 are listed in section 9.\n\nQuestions for the owner or consolidator: (a) approve changing the diagram text \"ChatGPT login or API key in the keychain\" to \"ChatGPT login (API-key login refused unless allowed)\" (CD13) and \"installed and signed in through Sutra\" to \"installed on this Mac, signed in through Sutra\" (CD17); (b) A1/A2: who writes the usage row for engine runs (the engine's usage event versus the router's sink; both are idempotent through call_ref) and the nullable detail_json column; (c) final D-numbers for CD1-CD18. UNVERIFIED and left to live tests: Codex strict schema against the real API, Codex image input, real model tool calls over MCP on either CLI, --max-budget-usd behaviour, claude mcp list output (not run: it mutates Claude state). Probe leftovers outside the repo (two small sessions) are listed with their removal commands in section 1.2.",
+  "modules": [
+   {
+    "path": "sutra_app/connectors/__init__.py",
+    "responsibility": "Exports Router, build_router, make_port and the error classes."
+   },
+   {
+    "path": "sutra_app/connectors/errors.py",
+    "responsibility": "ConnectorError tree on the engine's ModelError: fine code, coarse kind (unavailable, auth, quota, timeout, bad_output), retryable, fallback_ok, user_message(); 23 codes mapped in the section."
+   },
+   {
+    "path": "sutra_app/connectors/models.py",
+    "responsibility": "Pydantic models: Message, Usage (disjoint token parts), Quota, Allowance, RouteContext (wraps the engine CallTag), AskRequest, JsonRequest, TurnResult, JsonResult, AuthStatus, ModelInfo, Capabilities, SessionSpec, SessionState, ConnectorEvent, ConnectorConfig."
+   },
+   {
+    "path": "sutra_app/connectors/env.py",
+    "responsibility": "child_env(): environment allowlist for the CLIs, secret-name guard for extra_env, never SUTRA_*."
+   },
+   {
+    "path": "sutra_app/connectors/process.py",
+    "responsibility": "ProcessRunner, Command, ExitInfo: own process group, stdin writer, line reader, total and idle deadlines, cancel ladder SIGINT then SIGTERM then SIGKILL."
+   },
+   {
+    "path": "sutra_app/connectors/jsonio.py",
+    "responsibility": "extract_json and close_json (verbatim J2 llm.py:268-295), parse, pydantic validate, repair prompt, prune_nulls."
+   },
+   {
+    "path": "sutra_app/connectors/schema.py",
+    "responsibility": "to_json_schema, strict_schema for Codex, minimal_validate for dict schemas, example_from_schema for the stub."
+   },
+   {
+    "path": "sutra_app/connectors/base.py",
+    "responsibility": "ModelConnector ABC (start, send, stream, stop, resume, forget, auth_status, models, usage, call_json, call_text) plus TurnPlan, LineParser, Hooks, CallRecord."
+   },
+   {
+    "path": "sutra_app/connectors/claude.py",
+    "responsibility": "ClaudeConnector: exact claude -p command lines, stream-json parsing, error map C1-C25, delta cost from total_cost_usd, rate_limit_event quota."
+   },
+   {
+    "path": "sutra_app/connectors/codex.py",
+    "responsibility": "CodexConnector: codex exec / exec resume command lines, JSONL parsing, error map X1-X18, cumulative usage delta, rollout quota read, device sign-in, model catalog from codex debug models."
+   },
+   {
+    "path": "sutra_app/connectors/stub.py",
+    "responsibility": "StubConnector and ReplyBook: deterministic replies keyed by function and stage, honours J2's mock callable, scripted failures, chunked streaming."
+   },
+   {
+    "path": "sutra_app/connectors/policy.py",
+    "responsibility": "RoutingPolicy models, loader (user file over packaged default), resolve(): first matching rule per function, stage, purpose, kind, images, tools."
+   },
+   {
+    "path": "sutra_app/connectors/policy.default.json",
+    "responsibility": "Shipped default policy: Claude first, Codex fallback, J2 effort and timeout defaults, null Codex rates."
+   },
+   {
+    "path": "sutra_app/connectors/health.py",
+    "responsibility": "HealthBook: installed and sign-in caches, cooldowns, Quota snapshots, crash breaker, all on an injected clock."
+   },
+   {
+    "path": "sutra_app/connectors/usage.py",
+    "responsibility": "Usage arithmetic, delta rules for both CLIs, Codex rate card, UsageIn builder (one row per step), UsageSink protocol, MemoryUsageSink, session.json read/write."
+   },
+   {
+    "path": "sutra_app/connectors/transcript.py",
+    "responsibility": "render_carry_over(): deterministic transcript preamble on a provider switch using J2's 60,000-char and 40-message constants."
+   },
+   {
+    "path": "sutra_app/connectors/router.py",
+    "responsibility": "Router, Plan, RouterStatus: plan, health gate, allowance gate, retry and fallback, JSON strategy and repair loop, chat sessions and switching, status, close."
+   },
+   {
+    "path": "sutra_app/connectors/engine_port.py",
+    "responsibility": "make_port(RunSpec) -> ModelPort and RouterPort: the engine seam (CompletionRequest to CompletionResult, describe, preflight, close)."
+   },
+   {
+    "path": "sutra_app/connectors/orchestrator_port.py",
+    "responsibility": "AsyncConnector implementing the orchestrator's ConnectorPort (async call_json, status, records_usage)."
+   },
+   {
+    "path": "sutra_app/connectors/factory.py",
+    "responsibility": "build_router(settings, usage_sink, events, transcripts, session_hook): policy load, connector creation, SUTRA_CONNECTOR and SUTRA_OFFLINE, capability probe, version warning."
+   },
+   {
+    "path": "sutra_app/connectors/api.py",
+    "responsibility": "build_api_router(): /api/connectors/status, models, policy, test, codex sign-in, session provider pin, tools, mediated."
+   },
+   {
+    "path": "sutra_app/connectors/tools/__init__.py",
+    "responsibility": "Package marker for tool connectors."
+   },
+   {
+    "path": "sutra_app/connectors/tools/profiles.py",
+    "responsibility": "Tool profiles none, sutra, sutra+github rendered per CLI: 0600 --mcp-config file for Claude, -c mcp_servers.* strings for Codex."
+   },
+   {
+    "path": "sutra_app/connectors/tools/mcp_server.py",
+    "responsibility": "Stdlib newline-delimited JSON-RPC MCP server; answers server/discover and unknown methods with -32601; read-only tools."
+   },
+   {
+    "path": "sutra_app/connectors/tools/sutra_tools.py",
+    "responsibility": "Read-only Sutra tools (chart, model list and schema, graph, atom) over a ReadModel protocol; default read-only SQLite."
+   },
+   {
+    "path": "sutra_app/connectors/tools/github_tools.py",
+    "responsibility": "GitHub read tools implemented over the owner's gh CLI with argument validation, 20 KB cap and untrusted wrapper."
+   },
+   {
+    "path": "sutra_app/connectors/tools/mediated.py",
+    "responsibility": "Shown-only status of Claude-held Gmail, Drive, Slack per ADR-035: manual refresh, 60 s limit, proof of presence, no account."
+   },
+   {
+    "path": "tests/fakes/fake_cli.py",
+    "responsibility": "Replay engine for fake claude, codex and gh: scenarios from fixtures plus hang, slow, slow401, crash, noise, bad_flag; cumulative counters per session; call log."
+   },
+   {
+    "path": "tests/fakes/claude",
+    "responsibility": "Two-line sh wrapper running fake_cli.py as claude."
+   },
+   {
+    "path": "tests/fakes/codex",
+    "responsibility": "Two-line sh wrapper running fake_cli.py as codex."
+   },
+   {
+    "path": "tests/fakes/gh",
+    "responsibility": "Two-line sh wrapper running fake_cli.py as gh."
+   },
+   {
+    "path": "tests/connectors/conftest.py",
+    "responsibility": "Fixtures dir, fake binaries on a temp PATH, ConnectorConfig builders, memory usage sink, router builders, live marker skip unless SUTRA_LIVE=1."
+   },
+   {
+    "path": "tests/connectors/",
+    "responsibility": "31 test files (test_errors through test_live) listed with their assertions in section 7."
+   },
+   {
+    "path": "tests/fixtures/connectors/",
+    "responsibility": "46 scrubbed fixtures (21 captured from the real CLIs, 25 derived and labelled) plus MANIFEST.json, README.md and cli_errors.json; already written by this section."
+   },
+   {
+    "path": "scripts/capture_connector_fixtures.py",
+    "responsibility": "Human-run re-capture of the live fixtures (at most two small calls per CLI, requires SUTRA_LIVE=1)."
+   }
+  ],
+  "work_packages": [
+   {
+    "id": "CN-1",
+    "title": "Foundations: errors, models, env allowlist, process runner, JSON helpers, schema helpers",
+    "owns": [
+     "sutra_app/connectors/__init__.py",
+     "sutra_app/connectors/errors.py",
+     "sutra_app/connectors/models.py",
+     "sutra_app/connectors/env.py",
+     "sutra_app/connectors/process.py",
+     "sutra_app/connectors/jsonio.py",
+     "sutra_app/connectors/schema.py",
+     "tests/connectors/test_errors.py",
+     "tests/connectors/test_models.py",
+     "tests/connectors/test_env_process.py",
+     "tests/connectors/test_jsonio.py",
+     "tests/connectors/test_schema.py"
+    ],
+    "depends_on": [
+     "ENG E0 (sutra_app/engine/port.py)"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/connectors/test_errors.py tests/connectors/test_models.py tests/connectors/test_env_process.py tests/connectors/test_jsonio.py tests/connectors/test_schema.py -q"
+    ]
+   },
+   {
+    "id": "CN-2",
+    "title": "Fake CLIs, test harness and fixtures",
+    "owns": [
+     "tests/fakes/fake_cli.py",
+     "tests/fakes/claude",
+     "tests/fakes/codex",
+     "tests/fakes/gh",
+     "tests/connectors/conftest.py",
+     "tests/connectors/test_fakes.py",
+     "tests/fixtures/connectors/",
+     "scripts/capture_connector_fixtures.py"
+    ],
+    "depends_on": [],
+    "acceptance": [
+     "scripts/py -m pytest tests/connectors/test_fakes.py -q"
+    ]
+   },
+   {
+    "id": "CN-3",
+    "title": "ModelConnector base class and ClaudeConnector",
+    "owns": [
+     "sutra_app/connectors/base.py",
+     "sutra_app/connectors/claude.py",
+     "tests/connectors/test_claude_parse.py",
+     "tests/connectors/test_claude_connector.py",
+     "tests/connectors/test_claude_errors.py"
+    ],
+    "depends_on": [
+     "CN-1",
+     "CN-2"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/connectors/test_claude_parse.py tests/connectors/test_claude_connector.py tests/connectors/test_claude_errors.py -q"
+    ]
+   },
+   {
+    "id": "CN-4",
+    "title": "CodexConnector",
+    "owns": [
+     "sutra_app/connectors/codex.py",
+     "tests/connectors/test_codex_parse.py",
+     "tests/connectors/test_codex_connector.py",
+     "tests/connectors/test_codex_errors.py"
+    ],
+    "depends_on": [
+     "CN-3"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/connectors/test_codex_parse.py tests/connectors/test_codex_connector.py tests/connectors/test_codex_errors.py -q"
+    ]
+   },
+   {
+    "id": "CN-5",
+    "title": "StubConnector",
+    "owns": [
+     "sutra_app/connectors/stub.py",
+     "tests/connectors/test_stub.py"
+    ],
+    "depends_on": [
+     "CN-3"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/connectors/test_stub.py -q"
+    ]
+   },
+   {
+    "id": "CN-6",
+    "title": "Routing policy, health book, usage normalisation",
+    "owns": [
+     "sutra_app/connectors/policy.py",
+     "sutra_app/connectors/policy.default.json",
+     "sutra_app/connectors/health.py",
+     "sutra_app/connectors/usage.py",
+     "tests/connectors/test_policy.py",
+     "tests/connectors/test_health.py",
+     "tests/connectors/test_usage.py"
+    ],
+    "depends_on": [
+     "CN-1"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/connectors/test_policy.py tests/connectors/test_health.py tests/connectors/test_usage.py -q"
+    ]
+   },
+   {
+    "id": "CN-7",
+    "title": "Router, transcript carry-over, engine and orchestrator ports",
+    "owns": [
+     "sutra_app/connectors/transcript.py",
+     "sutra_app/connectors/router.py",
+     "sutra_app/connectors/engine_port.py",
+     "sutra_app/connectors/orchestrator_port.py",
+     "tests/connectors/test_transcript.py",
+     "tests/connectors/test_router_plan.py",
+     "tests/connectors/test_router_attempts.py",
+     "tests/connectors/test_router_gate.py",
+     "tests/connectors/test_router_json.py",
+     "tests/connectors/test_router_chat.py",
+     "tests/connectors/test_engine_port.py",
+     "tests/connectors/test_orchestrator_port.py"
+    ],
+    "depends_on": [
+     "CN-4",
+     "CN-5",
+     "CN-6"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/connectors/test_transcript.py tests/connectors/test_router_plan.py tests/connectors/test_router_attempts.py tests/connectors/test_router_gate.py tests/connectors/test_router_json.py tests/connectors/test_router_chat.py tests/connectors/test_engine_port.py tests/connectors/test_orchestrator_port.py -q"
+    ]
+   },
+   {
+    "id": "CN-8",
+    "title": "Tool connectors: MCP server, Sutra read tools, GitHub over gh, shown-only Claude-held connectors",
+    "owns": [
+     "sutra_app/connectors/tools/__init__.py",
+     "sutra_app/connectors/tools/profiles.py",
+     "sutra_app/connectors/tools/mcp_server.py",
+     "sutra_app/connectors/tools/sutra_tools.py",
+     "sutra_app/connectors/tools/github_tools.py",
+     "sutra_app/connectors/tools/mediated.py",
+     "tests/connectors/test_tools_mcp.py",
+     "tests/connectors/test_tools_github.py",
+     "tests/connectors/test_mediated.py"
+    ],
+    "depends_on": [
+     "CN-1",
+     "CN-2"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/connectors/test_tools_mcp.py tests/connectors/test_tools_github.py tests/connectors/test_mediated.py -q"
+    ]
+   },
+   {
+    "id": "CN-9",
+    "title": "Factory, HTTP API and live tests",
+    "owns": [
+     "sutra_app/connectors/factory.py",
+     "sutra_app/connectors/api.py",
+     "tests/connectors/test_factory.py",
+     "tests/connectors/test_api.py",
+     "tests/connectors/test_live.py"
+    ],
+    "depends_on": [
+     "CN-7",
+     "CN-8"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/connectors/test_factory.py tests/connectors/test_api.py -q",
+     "scripts/py -m pytest tests/connectors -q",
+     "SUTRA_LIVE=1 scripts/py -m pytest tests/connectors/test_live.py -q -m live"
+    ]
+   }
+  ],
+  "decision_proposals": [
+   {
+    "id_hint": "CD1",
+    "decision": "Confirm D7: J2's Anthropic-API and Gemini providers are not carried over. Another provider later is a subclass implementing four hooks.",
+    "why": "The diagram's connector layer is two CLI children; a direct API call has no subprocess boundary, replay or per-step timeout (plugin ADR-005); API keys bill the API (D7); J2's Gemini path is built around free-tier pacing (SETUP.md:62). What survives as ideas: model fallback on 404/429/500/503 (now Router fallback), LAST_META (now CompletionResult), one retry (max_attempts 2).",
+    "rejected": "Keeping them behind a flag (untestable without keys, against D7).",
+    "diagram_label": "ModelConnector note: API-key providers dropped"
+   },
+   {
+    "id_hint": "CD2",
+    "decision": "One subprocess per call or turn, own process group, environment allowlist (never SUTRA_*, API keys, CLAUDE_CODE_*), prompt on stdin, explicit cwd, cancel ladder SIGINT then SIGTERM then SIGKILL.",
+    "why": "The probe shell carries about 30 CLAUDE_CODE_* variables, GITHUB_TOKEN and a base URL; ADR-035 section 8 chose an allowlist; both CLIs ran on five variables; measured cancel times 1.3 s (SIGINT) and 2.9 s (SIGTERM).",
+    "rejected": "J2's denylist (llm.py:114); prompts on argv.",
+    "diagram_label": "Badge on ModelConnector: own process group, env allowlist"
+   },
+   {
+    "id_hint": "CD3",
+    "decision": "Claude: always stream-json with --verbose; the result line decides; classify failures by assistant.error first, then result fields and stderr.",
+    "why": "One path yields progress, session id and rate_limit_event; probes show is_error true with subtype success for failed calls.",
+    "rejected": "--output-format json (J2 for text calls).",
+    "diagram_label": "Claude connector: stream-json, result line decides, error enum map"
+   },
+   {
+    "id_hint": "CD4",
+    "decision": "Codex: fixed flag set (exec --json --ignore-user-config --ignore-rules --skip-git-repo-check -s read-only -C), login status checked before the call, abort after two consecutive 401 events, strict-schema adapter for --output-schema, system text inline in the prompt, never danger-full-access.",
+    "why": "A signed-out codex exec retried 401 for 18 to 20 s; resume takes no -s or -C; flags for system text and the strict schema are unverified so the verified path is used.",
+    "rejected": "codex app-server (marked experimental), long-lived processes, developer_instructions or model_instructions_file flags.",
+    "diagram_label": "Codex connector: login status first, read-only sandbox"
+   },
+   {
+    "id_hint": "CD5",
+    "decision": "Usage is stored as a delta: Claude usd = max(0, total_cost_usd - session cumulative); Codex tokens = turn usage minus session cumulative.",
+    "why": "Verified on both CLIs: counters are cumulative on resumed sessions (Claude 0.019035 = 0.009746 + 0.009289; Codex 24,342 = 12,168 + 12,174) while Claude result.usage is per turn.",
+    "rejected": "Trusting total_cost_usd or usage as per-call values (double counting).",
+    "diagram_label": "Ledger note: per-call delta"
+   },
+   {
+    "id_hint": "CD6",
+    "decision": "The comparable unit in the ledger is tokens (always known); usd is Claude's reported list-price estimate and, for Codex, only a rate-card estimate if the owner supplies rates, else NULL. One UsageIn per step; the table and store stay with the orchestrator.",
+    "why": "Codex has no price on the wire; Claude's costBasis is list; the orchestrator already expects NULL usd for Codex and defines usage_ledger.",
+    "rejected": "Inventing Codex prices; converting to J2 credits (Priority's budget unit); a second usage table.",
+    "diagram_label": "Ledger: one record per step, tokens always, usd = Claude's list-price estimate"
+   },
+   {
+    "id_hint": "CD7",
+    "decision": "Routing policy is versioned JSON validated by pydantic, the only place that names models; rules match function, stage, role, purpose, kind, images, tools; default reproduces J2 (Claude first, Codex fallback, effort low for JSON and high for text); a soft avoid list lets an independent Audit be configured.",
+    "why": "Plugin precedent (os/routing-policy.json, ADR-038); the owner asked for provider choice per function and per step; defaults keep J2 behaviour.",
+    "rejected": "Routing in code; Audit on the other provider by default (changes J2).",
+    "diagram_label": "Badge on Connector router: policy table (data)"
+   },
+   {
+    "id_hint": "CD8",
+    "decision": "Health and quota are known before a call without credentials and without a model call: auth status or login status, Claude's rate_limit_event, Codex's own rollout rate_limits (best effort), error-driven cooldowns, crash breaker.",
+    "why": "Cheap (0.1 to 0.5 s) and avoids Codex's 18 s unauthenticated retry; ADR-035 section 3 forbids reading another program's credential store.",
+    "rejected": "The plugin's usage-guard approach that reads Claude's keychain token (bin/sutra-usage:73).",
+    "diagram_label": "Router line: checks sign-in and quota first (no model call)"
+   },
+   {
+    "id_hint": "CD9",
+    "decision": "Chat sessions: one process per turn with --resume or exec resume, a fixed work dir under the OS temp root, state in session.json, provider session treated as a cache of the app transcript; on a provider switch or lost session a new provider session starts with a deterministic carry-over (60,000 chars whole, else last 40 plus digest, J2 constants).",
+    "why": "Both CLIs resume verified; temp root keeps repo CLAUDE.md and AGENTS.md out; lost-session errors verified for both CLIs; no extra model call on a switch.",
+    "rejected": "A long-lived Claude stream-input process (lifecycle cost); a model-written summary on switch (cost, new failure mode).",
+    "diagram_label": "Router line: carries the transcript on a switch"
+   },
+   {
+    "id_hint": "CD10",
+    "decision": "Allowance gate: the caller computes what its Priority envelope allows (max_calls, max_usd, deadline); the router enforces it inside one request (retries, repairs, fallbacks count) and reports calls_made and usd_spent; the engine stays the accounting owner.",
+    "why": "J2 checks the envelope in engine code (j2.py:6896) and never counted the connector's internal retry; two counters would disagree.",
+    "rejected": "An independent call counter in the router.",
+    "diagram_label": "Badge on 'stays inside Priority's envelope'"
+   },
+   {
+    "id_hint": "CD11",
+    "decision": "No silent offline: the stub runs only for tests, SUTRA_OFFLINE=1 or --offline, SUTRA_CONNECTOR=stub, or RunSpec.mock; with nothing usable, calls raise NoProviderError listing why each provider was skipped.",
+    "why": "Orchestrator failure F1 and engine section 4.2 expect an error, not a mock; a silent mock misleads.",
+    "rejected": "J2's automatic mock when no provider is configured (llm.py:52).",
+    "diagram_label": "Header chip: Offline demo"
+   },
+   {
+    "id_hint": "CD12",
+    "decision": "JSON strategy: native schema first (Claude --json-schema, Codex --output-schema via strict_schema), switch to prompted on a structured error or schemas over 100,000 characters, then a stateless pydantic repair loop of at most 2 counted rounds using J2's extract_json and close_json; complete() never repairs; business rules stay with ReplyParser and the engine's retries.",
+    "why": "Keeps the engine's envelope accounting honest; the library already parses tolerantly and retries within the envelope.",
+    "rejected": "Hidden repair inside complete().",
+    "diagram_label": "Router line: asks for structured JSON when supported"
+   },
+   {
+    "id_hint": "CD13",
+    "decision": "Billing guard: a Codex login that uses an API key is refused unless allow_api_key_billing is set; Sutra never reads or stores either login.",
+    "why": "D7's reason is no API billing; the diagram text for the Codex connector allows an API key in the keychain.",
+    "rejected": "Silently using whatever codex login stored.",
+    "diagram_label": "Codex connector text becomes: ChatGPT login (API-key login refused unless allowed)"
+   },
+   {
+    "id_hint": "CD14",
+    "decision": "Tools: one stdlib JSON-RPC MCP server shared by both CLIs (Claude --mcp-config file with --restricted, Codex per-call -c mcp_servers.*); all tools read-only; the database is opened mode=ro; config files are 0600 and deleted after the call.",
+    "why": "Both CLIs verified to start the server and list tools; read-only keeps the write gate in the server; no new dependency.",
+    "rejected": "The mcp SDK (new dependency for five tools); write tools (chart changes are validated structured replies).",
+    "diagram_label": "Tool connectors: Sutra read tools; add dashed arrow to Codex CLI"
+   },
+   {
+    "id_hint": "CD15",
+    "decision": "GitHub tools are read-only wrappers around the owner's gh CLI with validated arguments, 20 KB output cap and an untrusted-data wrapper; present only when gh is signed in; no token in Sutra's env, argv or config.",
+    "why": "gh is installed and signed in here; plugin charter forbids handing credentials to prompts or treating provider content as instructions.",
+    "rejected": "Porting the plugin's GitHub App device-flow platform; a PAT in an MCP config.",
+    "diagram_label": "Tool connectors: GitHub via gh (read)"
+   },
+   {
+    "id_hint": "CD16",
+    "decision": "Claude-held Gmail, Drive and Slack are shown, not implemented: observed only by a manual, rate-limited claude mcp list refresh; absence asserted only with proof of presence; no account shown.",
+    "why": "ADR-035 (probe cost, state mutation, account not knowable) and the plugin's retired Slack spec.",
+    "rejected": "Implementing OAuth connectors for them.",
+    "diagram_label": "Dashed box keeps 'Claude-held Gmail, Drive, Slack (shown only)'"
+   },
+   {
+    "id_hint": "CD17",
+    "decision": "Sign-in and install boundary: Claude is detected only; Codex sign-in is launched by the app through codex login --device-auth with the link and code parsed and shown; Sutra never installs a CLI.",
+    "why": "Device-auth output format captured; installing software on the owner's machine is out of scope.",
+    "rejected": "Installing the CLIs from the app.",
+    "diagram_label": "Codex CLI text becomes: installed on this Mac, signed in through Sutra"
+   },
+   {
+    "id_hint": "CD18",
+    "decision": "StubConnector honours J2's mock callable and a ReplyBook keyed by function and stage; fake claude, codex and gh executables replay captured fixtures; derived fixtures are labelled and their unverified wording listed in MANIFEST.json.",
+    "why": "Deterministic default suite (D8) with every error mapping covered; honesty about what was and was not captured live.",
+    "rejected": "Mocking subprocess calls inline in tests.",
+    "diagram_label": "New dashed box: Stub connector (tests, offline demo)"
+   }
+  ],
+  "diagram_items": [
+   {
+    "box": "Connector router",
+    "what_to_show": "Badges CD7 (policy table as data), CD8 (sign-in and quota checked before the call, no model call), CD10 (stays inside Priority's envelope via an Allowance), CD11 (never silently offline), CD9 on the transcript line. Change the line 'cost normalised: usd and tokens' to 'tokens always, usd where known'."
+   },
+   {
+    "box": "ModelConnector (interface \u00b7 base class)",
+    "what_to_show": "Badge CD2 'own process group, env allowlist, prompt on stdin' and note CD1 'API-key providers (Anthropic API, Gemini) dropped'. Method list unchanged (start, send, stream, stop, resume, auth_status, usage, call_json) plus forget and models."
+   },
+   {
+    "box": "Claude connector (extends base)",
+    "what_to_show": "Badge CD3: 'stream-json, result line decides, error enum map, --json-schema to structured_output'."
+   },
+   {
+    "box": "Codex connector (extends base)",
+    "what_to_show": "Badges CD4 and CD13: replace 'ChatGPT login or API key in the keychain' with 'ChatGPT login (API-key login refused unless allowed)'; add 'login status first, read-only sandbox'."
+   },
+   {
+    "box": "Codex CLI",
+    "what_to_show": "Badge CD17: text 'installed on this Mac, signed in through Sutra'."
+   },
+   {
+    "box": "Usage and cost ledger",
+    "what_to_show": "Badges CD5 and CD6: 'one record per step, per-call delta, tokens always, usd = Claude's list-price estimate'; note that the table and store belong to the orchestrator and the router writes through UsageSink."
+   },
+   {
+    "box": "Tool connectors (MCP)",
+    "what_to_show": "Badges CD14, CD15, CD16: 'Sutra read tools, GitHub via gh (read), Claude-held Gmail, Drive, Slack shown only'. Add a dashed arrow from this box to Codex CLI (verified) next to the existing one to Claude CLI."
+   },
+   {
+    "box": "New dashed box under the Connector layer",
+    "what_to_show": "'Stub connector (tests, offline demo)' with badge CD18 and the text 'fake claude / codex / gh replay captured streams'; arrow from the Department runtime 'every AI step' labelled stub when SUTRA_OFFLINE=1."
+   },
+   {
+    "box": "Arrow Connector router to Usage and cost ledger",
+    "what_to_show": "Label 'one UsageIn per step' (arrow exists today from ModelConnector to the ledger; route it from the router instead)."
+   },
+   {
+    "box": "Detailed view \u00b7 J2 left rail (Settings)",
+    "what_to_show": "Add 'Connectors: status, Codex sign-in, test, provider pin' (A4); data from /api/connectors/*."
+   },
+   {
+    "box": "Key (compact decisions list)",
+    "what_to_show": "Add rows CD1 to CD18 with the one-line decisions, ids replaced by the final D numbers the consolidator assigns."
+   }
+  ],
+  "open_risks": [
+   "Cumulative-counter semantics could change in a CLI release; test_live asserts delta >= 0 and the rule takes a smaller counter whole.",
+   "UNVERIFIED because the two real calls per CLI were spent on schema and resume: Codex strict schema against the real API, Codex image input, Codex system text via flags, real model tool calls over MCP on either CLI (permission flags accepted, no call made), --max-budget-usd behaviour, Codex non-message item fields, Codex API-key status wording, claude mcp list output (not run: it mutates Claude state). test_live is meant to close the first five.",
+   "Derived fixtures (25) carry unverified wording for quota, overload, schema and model errors; matching is by substrings and falls back to provider_error. Listed in MANIFEST.json.",
+   "Codex adds a fixed prefix of about 12,000 input tokens per call, so short chatty calls should stay on Claude.",
+   "Concurrency limits are per process while runs are separate processes (D9); many parallel runs can exceed plan limits and surface as quota or rate_limited; a shared limiter is later work.",
+   "CLAUDE.md, AGENTS.md and user-level memory files are not provably disabled in -p mode; work dirs sit under the OS temp root; a user-level file would still apply.",
+   "The environment allowlist can break gateway or proxy setups (ANTHROPIC_BASE_URL is dropped); ConnectorConfig.extra_env is the escape hatch.",
+   "CLI version drift: unknown flags fail fast (claude exit 1, codex exit 2) and are mapped; --help feature detection warns instead of failing; tested versions are 2.1.308 and 0.146.0.",
+   "Both CLIs keep chat transcripts in their own folders (~/.claude/projects, ~/.codex/sessions); forget() removes them but only runs when the orchestrator wires it (A2).",
+   "Cross-section agreements A1 to A4 (CompletionRequest.allowance and CompletionResult.detail, usage_ledger.detail_json, session_hook with model, TranscriptSource over resume_info, mounting build_api_router) are proposals; engine and orchestrator both say the router writes the ledger, so until A1 is settled both paths are idempotent through call_ref.",
+   "The function-node spec file does not exist; CallTag is the only coupling and nothing in this layer changes when it lands.",
+   "Probe leftovers outside the repo and /tmp (two small persisted sessions: a Claude project directory and Codex thread 01a1a2b8-6719-7e71-83fa-bcf21c8c1649) were not removed because the task forbade changing state elsewhere; removal commands are in section 1.2 of the design file."
+  ]
+ },
+ {
+  "file": "~/Desktop/development/sutra-pro/docs/design/library.md",
+  "summary": "Wrote docs/design/library.md (about 625 lines, 18 sections). Approach: every structure is a closed pydantic v2 class in three tiers (Value, Record with kind + schema_version, registered Payload), strict and frozen, with evolve() as the only update. One registry keyed by (family, version) with kind as discriminator exports JSON Schemas to docs/schemas/ and diffs them in tests. One write gate (Gate.check -> Checked: strict validation, cross rules, canonical JSON, sha256, round trip) is the only way stores accept data, enforced by an AST test. Model output is parsed tolerantly (J2 extract_json, enum case, unknown keys dropped and recorded) and then validated strictly; transport schemas are generated from the same class with J2's const-dropping bug fixed (const becomes enum) and unions rewritten as anyOf. The org chart is one tree document; a single ChartChange (kind reuse/add/rearrange derived from ops and checked) uses $ref placeholders, code-assigned ids, ids kept on rearrange (merged ids become aliases), a department always carrying its five function node ids, and carry_links so no chat session is dropped. The Atom is the plugin's atom (goal, constraints, context, work, verify) plus J2's expected_output and checks, with states open, closed, refused, abandoned (verify_failed is an outcome, derived in the atom/1 view), a ledger row and cards; Node is an abstract base with StructuralNode and FunctionNode and five function children, with function specifics entering as data (FunctionSpecs) because spec-function-nodes.json did not exist (checked three times). Workflow/Step are two-level bases (TaskWorkflow of AssignmentSteps; DeptWorkflow of AIStep/CodeStep atoms); J2 artifact models and rules are ported strict+frozen and registered as 22 payloads; every J2 run file maps to a family through gate_record (log mode first, strict after a golden-run test). Core mechanics were prototyped on pydantic 2.14.2 and every rejection in the test table was observed. Key trade-offs: strictness against real model output (mitigated by the tolerant parser), stored refused atoms (extra to the plugin), one change class instead of three. Decisions needed before development: (1) spec-function-nodes.json still missing, FunctionSpec names are a proposal; (2) orchestrator.md plans its own Closed/OrgChart/ChartChange/gate() in the same paths (library/base.py, org_chart.py) with parent_id/archive/version and node ids f:<dept>:<fn>, edge kinds has_function/reads/rework, AtomOut.state verify_failed: the consolidator must pick one owner (recommended: the library's models, with section 18 listing every difference); (3) confirm the owner wants refused atoms stored and ledgered; (4) raise the pydantic pin to >=2.11 in pyproject; (5) a live test must confirm the Claude CLI accepts const-as-enum and anyOf of objects.",
+  "modules": [
+   {
+    "path": "sutra_app/library/__init__.py",
+    "responsibility": "docstring only; importing a library module registers its classes"
+   },
+   {
+    "path": "sutra_app/library/types.py",
+    "responsibility": "scalars and id patterns, FUNCTIONS, function_node_id (the one place that knows the id scheme), Violation, DomainEvent, JsonObject"
+   },
+   {
+    "path": "sutra_app/library/base.py",
+    "responsibility": "Value (closed, strict, frozen) and Record (kind + schema_version, evolve, canonical_json)"
+   },
+   {
+    "path": "sutra_app/library/registry.py",
+    "responsibility": "ModelRegistry/REGISTRY: register, register_payload, versions, upgrade, freeze, adapter, json_schema, transport_schema (const to enum, oneOf to anyOf, recursion refused), reply_schema, is_transport_safe, verify_refs"
+   },
+   {
+    "path": "sutra_app/library/gate.py",
+    "responsibility": "Gate.check -> Checked (unforgeable), GateError with stages, GateContext, CrossRule and the shipped cross rules"
+   },
+   {
+    "path": "sutra_app/library/replies.py",
+    "responsibility": "ReplyParser, ReplyInvalid, normalise_enums, J2 extract_json/close_json port: tolerant in, closed out"
+   },
+   {
+    "path": "sutra_app/library/export.py",
+    "responsibility": "python -m sutra_app.library.export [--check]: write or diff docs/schemas/"
+   },
+   {
+    "path": "sutra_app/library/org_chart.py",
+    "responsibility": "OrgNode, OrgEdge, OrgChart, NewNode and the five ops, ChartChangeRequest, ChartChange, derive_kind, apply_change, slug_id, carry_links, resolve_alias, seed_chart"
+   },
+   {
+    "path": "sutra_app/library/goal.py",
+    "responsibility": "Question, GoalDraft/SiteGoalDraft/DocGoalDraft and the stored SiteGoal/DocGoal"
+   },
+   {
+    "path": "sutra_app/library/department.py",
+    "responsibility": "Budget and Department records"
+   },
+   {
+    "path": "sutra_app/library/evaluation.py",
+    "responsibility": "Finding, RubricResult, ConditionResult and the evaluation kinds result, recheck, plan, run"
+   },
+   {
+    "path": "sutra_app/library/atom.py",
+    "responsibility": "AtomDraft, Atom, Check/Verify, open_rules, open_atom/close_atom/abandon_atom, LedgerRow, Card, AtomView and atom_view/run_views"
+   },
+   {
+    "path": "sutra_app/library/workflow.py",
+    "responsibility": "Resources, Envelope, Step (AIStep, CodeStep, AssignmentStep), Workflow (TaskWorkflow, DeptWorkflow with Proposed and Registered), to_j2/from_j2"
+   },
+   {
+    "path": "sutra_app/library/functions.py",
+    "responsibility": "The five function reply families (identity, adaptation, priority, coordination, audit), Conflict, Lesson, Certainty, certainty_zone, realization fields"
+   },
+   {
+    "path": "sutra_app/library/node.py",
+    "responsibility": "Node base, StructuralNode, FunctionNode and the five function-node children, Task, GraphEdge, HANDOFFS, check_graph, FunctionSpec(s), load_function_specs, new_function_node"
+   },
+   {
+    "path": "sutra_app/library/artifacts/__init__.py",
+    "responsibility": "SECTION_MODELS, DOC_MODELS, SECTION_CONDITIONS, model_for and payload registration of the 22 artifact models"
+   },
+   {
+    "path": "sutra_app/library/artifacts/models.py",
+    "responsibility": "Port of j2_artifact_models.py with Artifact deriving from Value (strict, frozen)"
+   },
+   {
+    "path": "sutra_app/library/artifacts/rules.py",
+    "responsibility": "Port of j2_rules.py: the 12 rule functions, run_rules/run_specs/failures, RuleSpec model, RULES validated at import"
+   },
+   {
+    "path": "sutra_app/library/artifacts/render.py",
+    "responsibility": "render_section, style_from_design, normalise, errors_of (unchanged from J2)"
+   },
+   {
+    "path": "sutra_app/library/templates.py",
+    "responsibility": "Template, GenericTemplate, SpecialisedTemplate and J2's pure shape/rule/keeps checks, from_model, generic, write_generic, generic_drift, build_model"
+   },
+   {
+    "path": "sutra_app/library/records.py",
+    "responsibility": "RECORD_FAMILIES (J2 run file to family catalogue), gate_record (log/strict), RecordRejected"
+   },
+   {
+    "path": "sutra_app/library/api.py",
+    "responsibility": "Read-only router: GET /api/library/schemas, GET /api/library/schemas/{family}/{version}, POST /api/library/validate"
+   },
+   {
+    "path": "sutra_app/library/all.py",
+    "responsibility": "Imports every library module (wire guarded until L9) and exposes REGISTRY and GATE"
+   },
+   {
+    "path": "sutra_app/library/wire.py",
+    "responsibility": "J2 wire documents: map/1, board/1, story/1, agent/1, artifacts/1, artifacts-tree/1, realization/1, run summary (later)"
+   },
+   {
+    "path": "docs/schemas/",
+    "responsibility": "Generated, committed JSON Schemas per family and version plus index.json (drift-tested)"
+   },
+   {
+    "path": "tests/library/",
+    "responsibility": "All library tests, files prefixed test_lib_, factories_* per package, fixtures/ per package"
+   }
+  ],
+  "work_packages": [
+   {
+    "id": "L1",
+    "title": "Foundations, registry, gate, replies, schema export",
+    "owns": [
+     "sutra_app/library/__init__.py",
+     "sutra_app/library/types.py",
+     "sutra_app/library/base.py",
+     "sutra_app/library/registry.py",
+     "sutra_app/library/gate.py",
+     "sutra_app/library/replies.py",
+     "sutra_app/library/export.py",
+     "tests/library/conftest.py",
+     "tests/library/test_lib_base.py",
+     "tests/library/test_lib_registry.py",
+     "tests/library/test_lib_gate.py",
+     "tests/library/test_lib_replies.py",
+     "tests/library/test_lib_transport.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/library/test_lib_base.py tests/library/test_lib_registry.py tests/library/test_lib_gate.py tests/library/test_lib_replies.py tests/library/test_lib_transport.py -q"
+    ],
+    "depends_on": []
+   },
+   {
+    "id": "L2",
+    "title": "Org chart and chart changes",
+    "owns": [
+     "sutra_app/library/org_chart.py",
+     "tests/library/factories_org.py",
+     "tests/library/test_lib_org_chart.py",
+     "tests/library/test_lib_chart_change.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/library/test_lib_org_chart.py tests/library/test_lib_chart_change.py -q"
+    ],
+    "depends_on": [
+     "L1"
+    ]
+   },
+   {
+    "id": "L3",
+    "title": "Goal, Department, Evaluation",
+    "owns": [
+     "sutra_app/library/goal.py",
+     "sutra_app/library/department.py",
+     "sutra_app/library/evaluation.py",
+     "tests/library/test_lib_goal.py",
+     "tests/library/test_lib_department.py",
+     "tests/library/test_lib_evaluation.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/library/test_lib_goal.py tests/library/test_lib_department.py tests/library/test_lib_evaluation.py -q"
+    ],
+    "depends_on": [
+     "L1"
+    ]
+   },
+   {
+    "id": "L4",
+    "title": "Atom, lifecycle, ledger row, cards, atom/1 view",
+    "owns": [
+     "sutra_app/library/atom.py",
+     "tests/library/factories_atom.py",
+     "tests/library/test_lib_atom.py",
+     "tests/library/test_lib_atom_lifecycle.py",
+     "tests/library/test_lib_atom_view.py",
+     "tests/library/fixtures/atom/"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/library/test_lib_atom.py tests/library/test_lib_atom_lifecycle.py tests/library/test_lib_atom_view.py -q"
+    ],
+    "depends_on": [
+     "L1"
+    ]
+   },
+   {
+    "id": "L5",
+    "title": "Workflow, Step and the five function models",
+    "owns": [
+     "sutra_app/library/workflow.py",
+     "sutra_app/library/functions.py",
+     "tests/library/test_lib_workflow.py",
+     "tests/library/test_lib_functions.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/library/test_lib_workflow.py tests/library/test_lib_functions.py -q"
+    ],
+    "depends_on": [
+     "L1",
+     "L3",
+     "L4"
+    ]
+   },
+   {
+    "id": "L6",
+    "title": "Node family, graph edges, function-spec plug-in",
+    "owns": [
+     "sutra_app/library/node.py",
+     "tests/library/factories_node.py",
+     "tests/library/test_lib_node.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/library/test_lib_node.py -q"
+    ],
+    "depends_on": [
+     "L1",
+     "L2",
+     "L4"
+    ]
+   },
+   {
+    "id": "L7",
+    "title": "Artifact models, rules as data, templates",
+    "owns": [
+     "sutra_app/library/artifacts/__init__.py",
+     "sutra_app/library/artifacts/models.py",
+     "sutra_app/library/artifacts/rules.py",
+     "sutra_app/library/artifacts/render.py",
+     "sutra_app/library/templates.py",
+     "tests/library/test_lib_artifacts.py",
+     "tests/library/test_lib_rules.py",
+     "tests/library/test_lib_templates.py",
+     "tests/library/fixtures/artifacts/"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/library/test_lib_artifacts.py tests/library/test_lib_rules.py tests/library/test_lib_templates.py -q"
+    ],
+    "depends_on": [
+     "L1"
+    ]
+   },
+   {
+    "id": "L8",
+    "title": "Integration: J2 record catalogue and gate hook, read-only API, generated schemas",
+    "owns": [
+     "sutra_app/library/records.py",
+     "sutra_app/library/api.py",
+     "sutra_app/library/all.py",
+     "docs/schemas/",
+     "tests/library/test_lib_records.py",
+     "tests/library/test_lib_api.py",
+     "tests/library/test_lib_schema_drift.py",
+     "tests/library/test_lib_write_paths.py",
+     "tests/library/test_lib_live_transport.py",
+     "tests/library/write_allowlist.txt"
+    ],
+    "acceptance": [
+     "scripts/py -m sutra_app.library.export --check",
+     "scripts/py -m pytest tests/library -q",
+     "SUTRA_LIVE=1 scripts/py -m pytest tests/library/test_lib_live_transport.py -q (live marker, on request only)"
+    ],
+    "depends_on": [
+     "L1",
+     "L2",
+     "L3",
+     "L4",
+     "L5",
+     "L6",
+     "L7"
+    ]
+   },
+   {
+    "id": "L9",
+    "title": "J2 wire documents (after the engine package exists)",
+    "owns": [
+     "sutra_app/library/wire.py",
+     "tests/library/test_lib_wire.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/library/test_lib_wire.py tests/library/test_lib_records.py -q"
+    ],
+    "depends_on": [
+     "L1",
+     "L4",
+     "L5"
+    ]
+   }
+  ],
+  "decision_proposals": [
+   {
+    "id_hint": "DL1",
+    "decision": "Every structure is a closed pydantic class in three tiers (Value, Record with kind + schema_version, registered Payload): strict (no coercion), frozen, extra=forbid, bounded, JSON-native types only; evolve() is the only update path.",
+    "why": "The owner asked for hardened closed models checked at every write (GEN:116-117); J2's artifact models are lax and not frozen (JM:48-52); strict mode was verified on pydantic 2.14.2.",
+    "rejected": "Lax coercion; mutable models with validate_assignment (in-place list edits slip through); dataclasses or TypedDict.",
+    "diagram_label": "badge on the Interface library box: closed \u00b7 strict \u00b7 frozen"
+   },
+   {
+    "id_hint": "DL2",
+    "decision": "One registry keyed (family, version) with kind as the discriminator inside a family; schemas exported to docs/schemas/ and diffed in tests; a breaking change is a new class with VERSION+1 and an upgrade function.",
+    "why": "Lookup by name and version is required; schema drift must be visible; J2 already versions its documents (atom/1, map/1, board/1).",
+    "rejected": "Version-less schemas; schemas generated only at run time.",
+    "diagram_label": "Interface library box: registry \u00b7 name/version \u00b7 schema export"
+   },
+   {
+    "id_hint": "DL3",
+    "decision": "One write gate: stores accept only Checked objects produced by Gate.check (strict validation, cross rules, canonical JSON, sha256, round-trip), enforced by an AST test over store write functions.",
+    "why": "Checked at every write must not depend on each store remembering to validate; one gate is one place to test.",
+    "rejected": "Validation inside each store; plain pydantic validation without cross rules.",
+    "diagram_label": "existing arrow 'validates records' (GEN:222): label 'Gate.check at every write'"
+   },
+   {
+    "id_hint": "DL4",
+    "decision": "Model output is parsed tolerantly (J2 extract_json, enum case, unknown keys dropped and recorded) and then validated strictly; transport schemas are generated from the same class with const kept as a one-value enum and oneOf rewritten as anyOf.",
+    "why": "J2 reads replies with .get so extra keys never failed a turn (fidelity, D4); J2's transport dropped const (observed), which would make a union unreadable.",
+    "rejected": "Rejecting unknown keys in raw model text; sending oneOf with a discriminator to --json-schema.",
+    "diagram_label": "connector layer line 'asks for structured JSON': add 'schema from the model class'"
+   },
+   {
+    "id_hint": "DL5",
+    "decision": "The org chart is one tree document with a revision. A change is one ChartChange record whose kind (reuse, add, rearrange) is derived from its ops and checked; the model proposes ops with $ref placeholders and code assigns ids. Ids are never reused, a merged-away id becomes an alias, a department is added with its five function node ids and can be neither moved nor merged, and chat links are keyed by node id and carried by carry_links.",
+    "why": "Owner rules: one chart, reuse/add/rearrange on need, a moved node keeps its chat (GEN:122); a model that invents ids collides and loops; one request class gives the agent one schema.",
+    "rejected": "One chart per workflow; three change classes the model must choose between; patch-style diffs that cannot prove ids are kept; moving departments.",
+    "diagram_label": "One global org chart box: badge on Rearrange, label 'ids kept \u00b7 5 function nodes per department'"
+   },
+   {
+    "id_hint": "DL6",
+    "decision": "Atom states are open, closed, refused, abandoned. verify_failed is an outcome derived in the atom/1 view after 3 attempts. refused is stored only for an open-time refusal and is also ledgered. One open atom per node.",
+    "why": "The plugin's transitions are open, close, refuse, abandon (SA:14, HK:4-5) and ADR-038 says open to closed or abandoned; the owner lists four states.",
+    "rejected": "Storing verify_failed as a state (the plugin leaves the atom open); dropping refused.",
+    "diagram_label": "function cards: 'work atom: open \u00b7 closed \u00b7 refused \u00b7 abandoned'"
+   },
+   {
+    "id_hint": "DL7",
+    "decision": "Node is an abstract base with StructuralNode and FunctionNode and five concrete function-node children; function specifics enter as data (FunctionSpecs); a node holds atom ids, not atoms; edges are separate GraphEdge records; check_graph proves the graph mirrors the chart.",
+    "why": "Owner: a function is an agentic node with goal, task, context, atoms; the function-node spec file is still missing; nodes mirror the org chart (GEN:121).",
+    "rejected": "One Node class with a function string (no per-function reply binding); embedding atoms in nodes.",
+    "diagram_label": "Workflow graph store box: 'check_graph: mirrors the chart'"
+   },
+   {
+    "id_hint": "DL8",
+    "decision": "Workflow and Step become abstract bases at two levels: TaskWorkflow of AssignmentSteps (the chat agent's plan across departments, the graph's step nodes) and DeptWorkflow (Proposed, Registered) of AIStep/CodeStep carrying work atoms. Template is ported as is. failure_policy uses ADR-011's five-set with default escalate.",
+    "why": "The owner names Workflow, Step, Template as base classes (GEN:114) and draws steps as graph nodes (GEN:67); J2 has only Template and keeps workflows as dicts; Native primitives/workflow.md and step.md are not in the plugin mirror.",
+    "rejected": "Keeping workflow dicts; a Step child per verb (J2 says atoms are not split by verb, AS:52-54); a single level.",
+    "diagram_label": "Interface library box line 'Base classes: Workflow \u00b7 Step \u00b7 Template': badge"
+   },
+   {
+    "id_hint": "DL9",
+    "decision": "J2 artifact models and rules are ported into the library, strict and frozen, registered as payloads artifact.<kind>.<section> (19 sections + 3 documents); rules stay data (RuleSpec) validated at import.",
+    "why": "'Artifact models + rules as data' is on the diagram (GEN:115); verified to run on pydantic 2.14.",
+    "rejected": "Rewriting them; leaving them inside the engine.",
+    "diagram_label": "chip 'Artifact schemas \u00b7 pydantic shape + rules' (GEN:151): badge"
+   },
+   {
+    "id_hint": "DL10",
+    "decision": "J2 run files are checked on save() through a file-to-family catalogue (gate_record), log mode first and strict after a golden-run test; chat message meta is a closed key set with open values.",
+    "why": "D4 keeps the engine's dict code; hardening must not break J2 behaviour; late-set keys must be found by a test, not by a crash.",
+    "rejected": "Rewriting J2Run state as models; unchecked saves.",
+    "diagram_label": "Department records box (GEN:140): 'records checked on save'"
+   }
+  ],
+  "diagram_items": [
+   {
+    "box": "Interface library (Python models) (GEN:109-117)",
+    "what_to_show": "Replace the eight text lines with the families: Value \u00b7 Record \u00b7 Payload (closed, strict, frozen); Registry: name + version, schema export; Write gate: Checked at every write; Identity \u00b7 Adaptation \u00b7 Priority \u00b7 Coordination \u00b7 Audit; Department \u00b7 Goal \u00b7 Evaluation; Org chart \u00b7 Chart change; Atom \u00b7 Node (5 function children); Workflow \u00b7 Step \u00b7 Template + artifact models and rules. Badges DL1 to DL4 and DL8."
+   },
+   {
+    "box": "One global org chart (GEN:84-107)",
+    "what_to_show": "Badge DL5 on the Rearrange legend and the label 'one ChartChange: kind derived from ops \u00b7 ids kept \u00b7 5 function nodes per department \u00b7 chat links carried'."
+   },
+   {
+    "box": "Five function cards in the Department runtime band (GEN:129-139)",
+    "what_to_show": "Badges DL6 and DL7 with the label 'node = goal \u00b7 task \u00b7 context \u00b7 atoms' and 'work atom: open \u00b7 closed \u00b7 refused \u00b7 abandoned'."
+   },
+   {
+    "box": "Workflow graph store (GEN:121)",
+    "what_to_show": "Label 'check_graph: mirrors the chart' and 'step nodes = TaskWorkflow assignments' (DL7, DL8)."
+   },
+   {
+    "box": "Arrow 'validates records' from the Interface library to the Department runtime (GEN:222)",
+    "what_to_show": "Relabel 'Gate.check at every write' with badge DL3."
+   },
+   {
+    "box": "Connector router box, line 'asks for structured JSON when supported' (GEN:167)",
+    "what_to_show": "Append 'schema from the model class (const kept as enum, unions as anyOf)' with badge DL4."
+   },
+   {
+    "box": "Chip 'Artifact schemas: pydantic shape + rules' (GEN:151) and 'Template library' (GEN:189)",
+    "what_to_show": "Badge DL9 on the chip; label the Template library 'Template = library base class'."
+   },
+   {
+    "box": "Department records (GEN:140)",
+    "what_to_show": "Label 'records checked on save (log, then strict)' with badge DL10 and 'Goal \u00b7 Budget \u00b7 Department models'."
+   }
+  ],
+  "open_risks": [
+   "spec-function-nodes.json was missing on three checks: FunctionSpec/FunctionSpecs names are a proposal and must be reconciled by the consolidator (only the plug-in types in node.py change).",
+   "The orchestrator section plans its own Closed/OrgNode/OrgChart/ChartChange/gate() in the same paths (library/base.py, library/org_chart.py) with parent_id/archive/version, node ids f:<dept>:<fn>, different edge kinds and AtomOut.state verify_failed; section 18 lists every difference and a recommendation, but the consolidator must pick one owner.",
+   "Strictness against real model output: closed classes may reject replies J2 accepted; mitigated by the tolerant parser, per-class transport schemas and retry text, but the Claude CLI accepting const-as-enum and anyOf of objects is unverified until test_lib_live_transport.py runs (fallback: one flat op class).",
+   "J2 record fidelity: closed models for vendored dicts may miss keys set late (workflow, goal, conflict, chat meta); log mode, the golden-run test and the AST key scan are the safety net; Evaluation.mechanical and Atom.details stay open blobs.",
+   "Frozen is shallow (lists can be edited in place); the gate re-validates at every write and an AST test checks store write paths.",
+   "pyproject pins pydantic>=2.8 but validate_by_name and serialize_by_alias need >=2.11 (installed 2.14.2).",
+   "Two atom id schemes (plugin a-<sid>-<nn> and J2 W-n.aK) share one pattern; refused atoms consume ids and add ledger rows the plugin does not write (owner to confirm).",
+   "Chat-link archive on merge needs the chat section to accept archived sessions under a node.",
+   "Native primitives/workflow.md and step.md are not in the plugin mirror: Step.on_failure and the default failure_policy (escalate) are unverified; numeric bounds (500 nodes, depth 6, 1 MiB) are my parameters.",
+   "J2 'could not run' is stored as exit 127 and consumes an attempt (plugin behaviour), so the atom/1 view may show verify_failed earlier than J2 would.",
+   "Not prototyped, tested only by J2-parity tests written in the plan: atom_view, to_j2/from_j2, the template port, gate_record, the router and FunctionSpecs."
+  ]
+ },
+ {
+  "file": "~/Desktop/development/sutra-pro/docs/design/orchestrator.md",
+  "summary": "Wrote docs/design/orchestrator.md (540 lines; module paths below are relative to ~/Desktop/development/sutra-pro). Approach: one org-chat session (cs_org) talks to the chat agent, which handles each owner request in at most three structured stages (decide, then the library's chart-change class, then assignments). Every reply is a flat class with its own transport schema, checked with ReplyParser, GATE and the library's apply_change dry run (all violations), plus our guards (reuse-first, retired id, busy). It retries up to 3 times per stage, then falls back to a keyword planner. ChartStore.apply is the single chart writer: it appends org_charts, projects org_nodes and org_edges, builds graph nodes and chat sessions together, and logs every decision (even a reuse) as a chart_changes row with a sha chain. The graph never stores the tree: contains, has_function and has_step are derived on read. Departments are fixed once created (library DL5); divisions move, merge and split, and merge and split ask the owner first. A department's chat is Identity only; its questions appear as needs_you cards in the org chat but are answered in the department session; function and step chats are read-only. Runs follow the protocol the engine section has adopted: task.json and inbox.jsonl in, events.jsonl out, one process per run, SQLite written by the server only. A RunWatcher projects events in one transaction with events_offset. The 14-table DDL, the reply classes and the SSE route were executed and verified (SQLite 3.51, pydantic 2.14, FastAPI 0.162). Key trade-offs: up to six model calls for a new team (one for a reuse); merge and split ask first (veto-able); statuses are J2 map words with a separate outcome column because the library's Node.state has only five words; one live task per department. No question blocks development; the open items for the consolidator are L-1, L-2, E-1, U-1 and U-2 (see open_risks), and the function-node spec file never landed (checked five times).",
+  "modules": [
+   {
+    "path": "sutra_app/config.py",
+    "responsibility": "Settings (closed pydantic, env SUTRA_*, loopback-only host check), data-dir layout helpers"
+   },
+   {
+    "path": "sutra_app/orchestrator/errors.py",
+    "responsibility": "AppError(code,status,message,details) and the error-envelope codes"
+   },
+   {
+    "path": "sutra_app/orchestrator/ids.py",
+    "responsibility": "IdFactory (tsk_, cs_, step s-<sha1>, change chg-NNNN, request req-N) and Clock; deterministic fakes for tests"
+   },
+   {
+    "path": "sutra_app/orchestrator/redact.py",
+    "responsibility": "secret redaction, a port of j2_server.py:29-43, used for responses, stored text and stderr tails"
+   },
+   {
+    "path": "sutra_app/orchestrator/textutil.py",
+    "responsibility": "slugify, tokens, jaccard, plain_check (J2 banned words, internal ids, sentence limit), parse_yes_no"
+   },
+   {
+    "path": "sutra_app/orchestrator/db.py",
+    "responsibility": "Database (WAL, thread-local connections, BEGIN IMMEDIATE tx) and Tx.emit (events delivered only after COMMIT); run_blocking"
+   },
+   {
+    "path": "sutra_app/orchestrator/schema.py",
+    "responsibility": "DDL v1 (14 tables, partial unique indexes for the tree, live task per department, open plugin atom per node) and MIGRATIONS via PRAGMA user_version"
+   },
+   {
+    "path": "sutra_app/orchestrator/records.py",
+    "responsibility": "library Records chat_session, chat_message (with MessageMeta closed key set), usage_record, work_task"
+   },
+   {
+    "path": "sutra_app/orchestrator/models.py",
+    "responsibility": "wire models (ChartView, GraphView, GraphNodeOut, ChatSessionOut, ChatMessageOut, ChatCard, TaskOut, AtomOut, UsageOut, NeedsYouOut), RunSpec (task.json), closed RunEvent union, Event"
+   },
+   {
+    "path": "sutra_app/orchestrator/services.py",
+    "responsibility": "Services dataclass: stores, bus, token, version and the attributes ENG's EngineServices and UI's mount read"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/deps.py",
+    "responsibility": "token check (header X-Sutra-Token or cookie), Host and Origin checks, error handlers, RedactedJSONResponse"
+   },
+   {
+    "path": "sutra_app/orchestrator/events.py",
+    "responsibility": "EventBus: monotonic seq, ring of 1000, thread-safe publish, resync on stale id"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/events.py",
+    "responsibility": "GET /api/events SSE on fastapi.sse.EventSourceResponse (hello, ping, Last-Event-ID, topics, once=1)"
+   },
+   {
+    "path": "sutra_app/orchestrator/chats.py",
+    "responsibility": "ChatStore: sessions and messages, division filtered view, needs_you, set_provider (CON session_hook), resume_info, archive, phase"
+   },
+   {
+    "path": "sutra_app/orchestrator/atoms.py",
+    "responsibility": "AtomStore: plugin work atoms (library Atom) and J2 atom/1 views, forward-only transitions, atom_ledger"
+   },
+   {
+    "path": "sutra_app/orchestrator/usage.py",
+    "responsibility": "UsageStore and UsageSink: one row per call, idempotent on (task_id, call_ref), totals and grouping"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/chat.py",
+    "responsibility": "GET chats, chat, messages; GET needs-you"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/atoms.py",
+    "responsibility": "GET /api/atoms"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/usage.py",
+    "responsibility": "GET /api/usage and /api/usage/summary"
+   },
+   {
+    "path": "sutra_app/orchestrator/graph.py",
+    "responsibility": "GraphStore: Node and GraphEdge bodies, view(level, dept, task), node detail, put_node/put_edge, aggregate; derives contains/has_function/has_step"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/graph.py",
+    "responsibility": "GET /api/graph and /api/graph/nodes/{id}"
+   },
+   {
+    "path": "sutra_app/orchestrator/chart_rules.py",
+    "responsibility": "ChartRules: library apply_change dry run plus reuse_candidate, retired_id, bad_id, busy, bad_assignment, not_plain; classify (merge/split need approval)"
+   },
+   {
+    "path": "sutra_app/orchestrator/chart.py",
+    "responsibility": "ChartStore: bootstrap, head, view, digest, check, apply (one transaction), decide (idempotent), history"
+   },
+   {
+    "path": "sutra_app/orchestrator/departments.py",
+    "responsibility": "DepartmentStore: Department record, home dir, orphan sweep, row() feeding ENG department() and UI lookup_dept"
+   },
+   {
+    "path": "sutra_app/orchestrator/nodes.py",
+    "responsibility": "ensure_node: the only creator of a graph node and its chat session"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/chart.py",
+    "responsibility": "GET /api/chart, /api/chart/changes; POST changes and decision"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/departments.py",
+    "responsibility": "GET /api/departments, department, runs"
+   },
+   {
+    "path": "sutra_app/orchestrator/tasks.py",
+    "responsibility": "TaskStore/TaskService: create, start_ready, deliver, deliver_to_department, stop_live, stop, retry, resolve_run"
+   },
+   {
+    "path": "sutra_app/orchestrator/runs.py",
+    "responsibility": "RunLauncher, ProcessLauncher (spawn python -m sutra_app.engine --run-dir, no API keys in env), RunWatcher (events_offset), reconcile"
+   },
+   {
+    "path": "sutra_app/orchestrator/projector.py",
+    "responsibility": "Projector: run events to graph, chat, atom and usage rows in one transaction"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/tasks.py",
+    "responsibility": "POST/GET tasks, stop, retry, GET /api/runs/{run_id}"
+   },
+   {
+    "path": "sutra_app/orchestrator/testing/fake_engine.py",
+    "responsibility": "FakeLauncher and a fake engine process replaying scripted RunEvents"
+   },
+   {
+    "path": "sutra_app/orchestrator/agent/ports.py",
+    "responsibility": "ConnectorPort (CON AsyncConnector shape), ConnectorFailure(kind)"
+   },
+   {
+    "path": "sutra_app/orchestrator/agent/replies.py",
+    "responsibility": "ChatDecision, AssignmentPlan, AssignmentDraft: flat transport-safe reply classes"
+   },
+   {
+    "path": "sutra_app/orchestrator/agent/prompts.py",
+    "responsibility": "template loader for agent/templates/{decide,change,assign,retry}.md"
+   },
+   {
+    "path": "sutra_app/orchestrator/agent/planner.py",
+    "responsibility": "fallback_plan (keyword scoring) and status_report"
+   },
+   {
+    "path": "sutra_app/orchestrator/agent/agent.py",
+    "responsibility": "ChatAgent.plan: stages A decide, B change, C assignments; 3 attempts per stage, 6 calls per request"
+   },
+   {
+    "path": "sutra_app/orchestrator/agent/runner.py",
+    "responsibility": "TurnRunner: queue, T0-T9, approval handling, completion hooks"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/agent.py",
+    "responsibility": "POST chat messages (org chat vs department delivery), retry, chart-change decision"
+   },
+   {
+    "path": "sutra_app/orchestrator/testing/scripted.py",
+    "responsibility": "ScriptedConnector test double implementing ConnectorPort"
+   },
+   {
+    "path": "sutra_app/orchestrator/wiring.py",
+    "responsibility": "build_services: connector router, launcher, stores, plug-in mounts"
+   },
+   {
+    "path": "sutra_app/orchestrator/api/system.py",
+    "responsibility": "GET /api/health and /api/config"
+   },
+   {
+    "path": "sutra_app/main.py",
+    "responsibility": "create_app(settings, connector, launcher, clock, ids): lifespan, routers, plug-ins, middleware"
+   },
+   {
+    "path": "sutra_app/__main__.py",
+    "responsibility": "python -m sutra_app: --port, --data-dir, --offline, --no-browser; uvicorn on 127.0.0.1"
+   },
+   {
+    "path": "tests/orchestrator/",
+    "responsibility": "22 test files plus conftest and live/ tests (marker live); scripted conversation in test_scripted_conversation.py"
+   }
+  ],
+  "work_packages": [
+   {
+    "id": "ORCH-1",
+    "title": "Foundation: settings, database, schema, records, wire models, auth helpers",
+    "owns": [
+     "sutra_app/config.py",
+     "sutra_app/orchestrator/__init__.py",
+     "sutra_app/orchestrator/errors.py",
+     "sutra_app/orchestrator/ids.py",
+     "sutra_app/orchestrator/redact.py",
+     "sutra_app/orchestrator/textutil.py",
+     "sutra_app/orchestrator/db.py",
+     "sutra_app/orchestrator/schema.py",
+     "sutra_app/orchestrator/records.py",
+     "sutra_app/orchestrator/models.py",
+     "sutra_app/orchestrator/services.py",
+     "sutra_app/orchestrator/api/__init__.py",
+     "sutra_app/orchestrator/api/deps.py",
+     "sutra_app/orchestrator/testing/__init__.py",
+     "tests/orchestrator/__init__.py",
+     "tests/orchestrator/conftest.py",
+     "tests/orchestrator/test_config.py",
+     "tests/orchestrator/test_schema.py",
+     "tests/orchestrator/test_records.py",
+     "tests/orchestrator/test_textutil.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/orchestrator/test_config.py tests/orchestrator/test_schema.py tests/orchestrator/test_records.py tests/orchestrator/test_textutil.py -q"
+    ],
+    "depends_on": [
+     "L1 (library foundations, registry, gate)"
+    ]
+   },
+   {
+    "id": "ORCH-2",
+    "title": "Event bus and SSE route",
+    "owns": [
+     "sutra_app/orchestrator/events.py",
+     "sutra_app/orchestrator/api/events.py",
+     "tests/orchestrator/test_events_bus.py",
+     "tests/orchestrator/test_events_sse.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/orchestrator/test_events_bus.py tests/orchestrator/test_events_sse.py -q"
+    ],
+    "depends_on": [
+     "ORCH-1"
+    ]
+   },
+   {
+    "id": "ORCH-3",
+    "title": "Chats, atoms and usage stores with their read routes",
+    "owns": [
+     "sutra_app/orchestrator/chats.py",
+     "sutra_app/orchestrator/atoms.py",
+     "sutra_app/orchestrator/usage.py",
+     "sutra_app/orchestrator/api/chat.py",
+     "sutra_app/orchestrator/api/atoms.py",
+     "sutra_app/orchestrator/api/usage.py",
+     "tests/orchestrator/test_chat_store.py",
+     "tests/orchestrator/test_atoms_usage.py",
+     "tests/orchestrator/test_api_chat_read.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/orchestrator/test_chat_store.py tests/orchestrator/test_atoms_usage.py tests/orchestrator/test_api_chat_read.py -q"
+    ],
+    "depends_on": [
+     "ORCH-1",
+     "L2",
+     "L4"
+    ]
+   },
+   {
+    "id": "ORCH-4",
+    "title": "Workflow graph store and routes",
+    "owns": [
+     "sutra_app/orchestrator/graph.py",
+     "sutra_app/orchestrator/api/graph.py",
+     "tests/orchestrator/test_graph_store.py",
+     "tests/orchestrator/test_api_graph.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/orchestrator/test_graph_store.py tests/orchestrator/test_api_graph.py -q"
+    ],
+    "depends_on": [
+     "ORCH-1",
+     "L6"
+    ]
+   },
+   {
+    "id": "ORCH-5",
+    "title": "Global org chart store, rules, departments and node linker",
+    "owns": [
+     "sutra_app/orchestrator/chart_rules.py",
+     "sutra_app/orchestrator/chart.py",
+     "sutra_app/orchestrator/departments.py",
+     "sutra_app/orchestrator/nodes.py",
+     "sutra_app/orchestrator/api/chart.py",
+     "sutra_app/orchestrator/api/departments.py",
+     "tests/orchestrator/test_chart_rules.py",
+     "tests/orchestrator/test_chart_store.py",
+     "tests/orchestrator/test_departments.py",
+     "tests/orchestrator/test_api_chart.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/orchestrator/test_chart_rules.py tests/orchestrator/test_chart_store.py tests/orchestrator/test_departments.py tests/orchestrator/test_api_chart.py -q"
+    ],
+    "depends_on": [
+     "ORCH-1",
+     "ORCH-3",
+     "ORCH-4",
+     "L2",
+     "L3",
+     "L6"
+    ]
+   },
+   {
+    "id": "ORCH-6",
+    "title": "Tasks, run launcher and watcher, projector (engine events to rows)",
+    "owns": [
+     "sutra_app/orchestrator/tasks.py",
+     "sutra_app/orchestrator/runs.py",
+     "sutra_app/orchestrator/projector.py",
+     "sutra_app/orchestrator/api/tasks.py",
+     "sutra_app/orchestrator/testing/fake_engine.py",
+     "tests/orchestrator/test_tasks.py",
+     "tests/orchestrator/test_projector.py",
+     "tests/orchestrator/test_api_tasks.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/orchestrator/test_tasks.py tests/orchestrator/test_projector.py tests/orchestrator/test_api_tasks.py -q"
+    ],
+    "depends_on": [
+     "ORCH-1",
+     "ORCH-3",
+     "ORCH-4",
+     "ORCH-5",
+     "L4",
+     "L6",
+     "E3 (engine host process)"
+    ]
+   },
+   {
+    "id": "ORCH-7",
+    "title": "Chat agent: staged structured calls, turn runner, prompts, agent routes",
+    "owns": [
+     "sutra_app/orchestrator/agent/__init__.py",
+     "sutra_app/orchestrator/agent/ports.py",
+     "sutra_app/orchestrator/agent/replies.py",
+     "sutra_app/orchestrator/agent/prompts.py",
+     "sutra_app/orchestrator/agent/planner.py",
+     "sutra_app/orchestrator/agent/agent.py",
+     "sutra_app/orchestrator/agent/runner.py",
+     "sutra_app/orchestrator/agent/templates/decide.md",
+     "sutra_app/orchestrator/agent/templates/change.md",
+     "sutra_app/orchestrator/agent/templates/assign.md",
+     "sutra_app/orchestrator/agent/templates/retry.md",
+     "sutra_app/orchestrator/api/agent.py",
+     "sutra_app/orchestrator/testing/scripted.py",
+     "tests/orchestrator/test_chat_agent.py",
+     "tests/orchestrator/test_turn_runner.py",
+     "tests/orchestrator/test_api_agent.py",
+     "tests/orchestrator/live/__init__.py",
+     "tests/orchestrator/live/test_live_chat_agent.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/orchestrator/test_chat_agent.py tests/orchestrator/test_turn_runner.py tests/orchestrator/test_api_agent.py -q"
+    ],
+    "depends_on": [
+     "ORCH-1",
+     "ORCH-2",
+     "ORCH-3",
+     "ORCH-5",
+     "ORCH-6",
+     "L1",
+     "CN-7 (connector router and ports)"
+    ]
+   },
+   {
+    "id": "ORCH-8",
+    "title": "App shell: wiring, create_app, CLI, health, and the cross-package scenario tests",
+    "owns": [
+     "sutra_app/main.py",
+     "sutra_app/__main__.py",
+     "sutra_app/orchestrator/wiring.py",
+     "sutra_app/orchestrator/api/system.py",
+     "tests/orchestrator/test_api_security.py",
+     "tests/orchestrator/test_startup.py",
+     "tests/orchestrator/test_scripted_conversation.py"
+    ],
+    "acceptance": [
+     "scripts/py -m pytest tests/orchestrator -q",
+     "scripts/py -m sutra_app --help"
+    ],
+    "depends_on": [
+     "ORCH-1",
+     "ORCH-2",
+     "ORCH-3",
+     "ORCH-4",
+     "ORCH-5",
+     "ORCH-6",
+     "ORCH-7",
+     "CN-9 (connector factory and api)",
+     "E4 (engine api mount)"
+    ]
+   }
+  ],
+  "decision_proposals": [
+   {
+    "id_hint": "ORCH-D1",
+    "decision": "Two kinds of chat, one voice each: the org chat (cs_org, the Root node's session) talks to the chat agent 'Sutra'; a department's chat is Identity only (the owner's lines and Identity's to_user lines, as J2's Simple view); team questions show as needs_you cards in the org chat but are answered in the department session, never by the chat agent; a division chat is a filtered view of its tasks' lines; function and step chats are read-only (403).",
+    "why": "J2 keeps Identity as the only voice that talks to the owner (docs/j2-handoff.md:31, README.md:164-165); the owner's flow step 5 and 7 want every node linked to a chat session.",
+    "rejected": "The chat agent relaying or rewriting Identity's words; one merged chat for everything; routing owner text into function agents (breaks the single voice).",
+    "diagram_label": "D1 on Chat sessions ('org chat \u00b7 team chats'), and on the Simple view box: 'team questions appear as cards, answered in the team chat'"
+   },
+   {
+    "id_hint": "ORCH-D2",
+    "decision": "One chart, one writer, one log: ChartStore.apply alone appends org_charts and writes the org_nodes/org_edges projections; every decision, even a reuse, is a chart_changes row with before/after shas; the graph store never stores the tree (contains, has_function and has_step are derived on read, and the schema forbids a stored contains); departments are fixed once created (library DL5), their ids immutable.",
+    "why": "The owner's rule of ONE global chart; a change log answers 'why is this node here'; invariants I1-I7 are testable.",
+    "rejected": "A tree inside the graph store (two charts that can drift); rebuilding the chart from the log; moving or merging departments (they own five function nodes, a goal and runs).",
+    "diagram_label": "D2 on 'One global org chart' ('every change logged') and on 'Workflow graph store' ('tree read from the chart, never copied')"
+   },
+   {
+    "id_hint": "ORCH-D3",
+    "decision": "The model proposes, code decides: order reuse, then add, then rearrange; the library's apply_change rules plus reuse-first (name+purpose Jaccard), retired-id, department-id and busy guards; merging or splitting divisions asks the owner first (ADR-018 GATE, ADR-009 approval pattern: pending row, idempotent decision); everything else is automatic.",
+    "why": "ADR-018 deterministic surface around a stochastic core; merge and split archive nodes, the one step that is hard to take back.",
+    "rejected": "The model writing rows through tools; asking the owner for every change; never asking.",
+    "diagram_label": "D3 on 'reuses, adds or rearranges' in the Chat agent box; '(merge, split ask first)' on the legend entry Rearrange"
+   },
+   {
+    "id_hint": "ORCH-D4",
+    "decision": "Staged structured calls: A decide (flat ChatDecision, assignments included for reuse), B the library's chart_change class for add or rearrange, C AssignmentPlan; up to 3 attempts per stage with violation text fed back, at most 6 calls per request, then a deterministic keyword fallback planner; failures follow ADR-011's closed five.",
+    "why": "The library refuses unions in transport schemas; ADR-029 D4 caps attempts at three; the common reuse case costs one call; a stub can script every stage.",
+    "rejected": "One big union reply; a multi-call tool-using agent loop (cost, hard to test).",
+    "diagram_label": "'decide \u00b7 change \u00b7 assign, 3 tries each, keyword fallback' with badge D4 in the Chat agent box"
+   },
+   {
+    "id_hint": "ORCH-D5",
+    "decision": "SQLite is written by the server process only: engine processes write run-folder files (events.jsonl); the RunWatcher projects them into graph, chat, atom and usage rows in one transaction together with the byte offset (ADR-029 D1: the orchestrator is the sole writer).",
+    "why": "One writer, exactly-once replays after a restart, a crashed run cannot corrupt the stores; matches the protocol the engine section adopted.",
+    "rejected": "Engine processes writing SQLite; HTTP callbacks from processes (lost when the server restarts).",
+    "diagram_label": "New arrow Department runtime -> Workflow graph store labelled 'events.jsonl -> watcher' (badge 6, D5) and the tag 'SQLite written by the server only' on the server panel"
+   },
+   {
+    "id_hint": "ORCH-D6",
+    "decision": "Library ids and states are stored; J2 words go on the wire: chart node ids are model-chosen library NodeIds (department ids also without '_'), function nodes are <dept>.<fn>, the wire status is outcome else state in J2 map/1 words; projections are idempotent by src_ref, call_ref and events_offset.",
+    "why": "One vocabulary from J2 through the library to the UI; replays are harmless.",
+    "rejected": "A private status set; server-made ids for chart nodes with a mapping layer.",
+    "diagram_label": "'ids sales \u00b7 sales.identity' on the Workflow graph store"
+   },
+   {
+    "id_hint": "ORCH-D7",
+    "decision": "Run addressing: global run id j2-YYYYMMDD-HHMMSS-<4 hex>; folder data/departments/<dept>/runs/<run id>/; the engine's J2 routes resolve a run through services.resolve_run(run_id, dept_id) from ?dept= and ?run=; at most one live task per department (a second is queued).",
+    "why": "J2's page already threads ?run= (j2_ui.html:467); one Identity conversation per department (J2's one-Requester rule).",
+    "rejected": "Several live runs per department; one global live run as in j2_server.py:24.",
+    "diagram_label": "'runs/<run id>/ task.json \u00b7 inbox.jsonl \u00b7 events.jsonl' on Department records; key entry D7"
+   },
+   {
+    "id_hint": "ORCH-D8",
+    "decision": "SSE refinement of D10: native fastapi.sse.EventSourceResponse, process-local seq, a ring of 1000 events replayed on Last-Event-ID, server.resync for stale ids, topics filter, once=1 for tests, and a cursor (after) on every list so polling works.",
+    "why": "Verified in FastAPI 0.162 (finite replay, live tail with Last-Event-ID, cross-thread publish); clients without SSE still work.",
+    "rejected": "WebSocket (one-way is enough); the sse-starlette package (a dependency for a built-in).",
+    "diagram_label": "Key entry D8 on the 'live' arrow"
+   },
+   {
+    "id_hint": "ORCH-D9",
+    "decision": "Local hardening refinement of D11: per-launch token in header X-Sutra-Token or cookie sutra_token for every write, Host allowlist (127.0.0.1, localhost), Origin check, RedactedJSONResponse, no CORS, loopback bind only.",
+    "why": "A loopback server that starts model CLIs is a DNS-rebinding and CSRF target; header and cookie paths are both required by the sibling sections.",
+    "rejected": "A token on reads (EventSource cannot send headers); cookie-only auth without an Origin check.",
+    "diagram_label": "Key entry D9 ('loopback + token + Host/Origin check')"
+   },
+   {
+    "id_hint": "ORCH-D10",
+    "decision": "Atoms are stored as the library defines them (plugin work-atom/0.3 and J2 atom/1 views arrive as atom events, forward-only, one open plugin atom per node); the host-side function-node layer decides when to open and close them, and it plugs in through the node, atom and session events.",
+    "why": "The owner asked for goal, task, context and work-atom behaviour per function; the lifecycle code belongs with the layer that sees the turns (ENG 4.3); the function-node spec is still missing.",
+    "rejected": "A second atom model; deciding atom boundaries on the server from chat lines.",
+    "diagram_label": "'work atom per turn \u00b7 D10' on the five function cards"
+   },
+   {
+    "id_hint": "ORCH-D11",
+    "decision": "The orchestrator uses the sibling sections' contracts as they stand (library models, gate and apply_change; the engine's process protocol and EngineServices; AsyncConnector and UsageSink) and defines only records, reply classes, stores and routes of its own.",
+    "why": "One copy of each rule; fewer places to drift.",
+    "rejected": "A parallel chart model or process launcher inside this section.",
+    "diagram_label": "none (a build rule)"
+   }
+  ],
+  "diagram_items": [
+   {
+    "box": "Chat agent (orchestrator)",
+    "what_to_show": "Add the lines 'decide \u00b7 change \u00b7 assign, 3 tries each, keyword fallback' (badge D4) and badge D3 beside 'reuses, adds or rearranges'; note '(merge, split ask first)'."
+   },
+   {
+    "box": "One global org chart",
+    "what_to_show": "Badge D2 and the line 'every change logged (before/after sha)'; keep the Reuse / Add / Rearrange legend and add 'rearrange = divisions only'."
+   },
+   {
+    "box": "Workflow graph store",
+    "what_to_show": "Badge D2 and D6: 'tree read from the chart, never copied', 'ids sales \u00b7 sales.identity', statuses in J2 map words."
+   },
+   {
+    "box": "Chat sessions",
+    "what_to_show": "Badge D1: 'org chat (Sutra) \u00b7 team chats (Identity only) \u00b7 function and step chats read-only'; one session per node, follows the node."
+   },
+   {
+    "box": "Arrow: Department runtime -> Workflow graph store",
+    "what_to_show": "New arrow labelled 'events.jsonl -> watcher' with badge 6 and D5; tag 'SQLite written by the server only' on the server panel."
+   },
+   {
+    "box": "User chat interface \u00b7 J2 Simple view",
+    "what_to_show": "Add 'team questions appear as cards, answered in the team chat' (D1)."
+   },
+   {
+    "box": "Department records",
+    "what_to_show": "Add 'runs/<run id>/ task.json \u00b7 inbox.jsonl \u00b7 events.jsonl' (D7)."
+   },
+   {
+    "box": "Function cards (Identity, Adaptation, Priority, Coordination, Audit)",
+    "what_to_show": "Add 'work atom per turn \u00b7 D10' and 'node: goal \u00b7 task \u00b7 context'."
+   },
+   {
+    "box": "Interface library (Python models)",
+    "what_to_show": "Add 'Chart change \u00b7 Chat-turn replies' (closed, checked by the gate at every write)."
+   },
+   {
+    "box": "Key (decisions)",
+    "what_to_show": "Add D7 run addressing, D8 SSE with resync and polling cursors, D9 loopback + token + Host/Origin check."
+   }
+  ],
+  "open_risks": [
+   "Cross-section contracts are agreements on paper and moved while this section was written; the consolidator must settle five open items: L-1 (library Node.state has 5 words, the wire needs J2's box results, kept in an outcome column), L-2 (ChartRearrange.ops is a union that the library's transport_schema refuses; the agent relies on the connector's prompted path), E-1 (ENG mounts J2 routes both under /d/{dept}/ and at the root with ?dept=; delete one include_router line), U-1 (UI department pattern ^org_[0-9a-f]{12}$ and n:/f: ids must follow library ids such as sales and sales.identity), U-2 (J2 team personas are step nodes team:<role>, only org-chart divisions are division nodes).",
+   "Reuse-versus-add quality depends on the model and on good purpose text; the live test measures it; code guards catch duplicates, not wrong merges.",
+   "A new team needs up to six model calls (about a minute with the CLIs); a reuse is one call.",
+   "One live task per department follows J2's one-Requester rule; parallelism inside a department is not offered.",
+   "SQLite has one writer; the watcher batches per run, WAL plus a 5 s busy timeout; heavy runs may delay API writes.",
+   "fastapi.sse is new and verified only in FastAPI 0.162; Starlette's TestClient with httpx prints a deprecation warning; browser EventSource reconnect with Last-Event-ID was not tested in a browser.",
+   "The host-side function-node layer does not exist and spec-function-nodes.json never landed: until then the atoms table holds J2 workflow atoms (atom/1) only and function nodes show state and task but no plugin atoms.",
+   "The engine never echoes owner lines, so this section stores them; lines sent through the J2 page's /api/say go through deliver_to_department, so both paths store a line once.",
+   "Asking a function a question directly is not designed (function chats are read-only).",
+   "The cookie path of the write guard relies on SameSite=Strict plus the Origin check; the token protects against web pages, not other local processes of the same user (D11's scope).",
+   "Asking before merge and split is my decision (ORCH-D3); the owner can veto it. The four agent template files need package-data in pyproject.toml for non-editable installs (a file owned elsewhere).",
+   "Unverified: the reply classes were checked on plain-pydantic equivalents because the library's Record is not merged yet; the library, engine, connector and UI sections were read as they stood at about 01:00 and may have changed since."
+  ]
+ },
+ {
+  "file": "~/Desktop/development/sutra-pro/docs/design/ui.md",
+  "summary": "Design section for the UI, 558 lines, written after reading J2 (page, server, harnesses, schemas), the plugin atom, draw.io page 3, gen.py and the orchestrator, library and engine sections. Approach: two pages in one look. A new Home page at `/` (J2's Simple skeleton) holds the org chat (session `cs_org`) on the left and the Workflow graph, Org chart and Settings on the right, with the rail listing the teams. The J2 page is copied once and served per department at `/d/{dept id}/` with 12 small, scripted, tested edits. J2's routes keep their root paths and a `fetch` wrapper adds `?dept=`, matching the orchestrator and engine sections. The graph and org chart are drawn by pure layout and SVG functions that reuse J2's edge CSS, tokens and look, with live updates from SSE events that trigger a refetch, and a polling fallback. One drawer, `#nodepanel`, built on J2's Agent-drawer pattern, holds the per-node chat and the function-node details (goal, task, context, work atoms with state and verify, who it hands to). Home's hand-over is the `task` card that links to the department's Simple view. Checked here: all 12 edits apply with the stated match counts; the ported page printed byte-identical output to J2's own two node harnesses (612,427 and 152,504 bytes); in headless Chrome 156 under `/d/org_\u2026/` there were zero CSP messages and zero failed loads, the Map drew, and every J2 call carried `dept=`. Chrome drives over CDP with `websockets` (already installed), and `node --test` needs a file list or a quoted glob (a directory argument fails). Main trade-offs: the department is in the page path (J2 rewrites `location.search`), J2's runtime edge router is not reused (it needs `getBBox` and is absent on Home), and fonts are not vendored. Needs a decision or reconciliation: who serves the J2 page (engine row 1 vs this UI), the `sutra_app.web` vs `sutra_app.ui` name, the write token as header or cookie, three small additions to the orchestrator payloads, and the still-missing function-node spec.",
+  "modules": [
+   {
+    "path": "sutra_app/ui/__init__.py",
+    "responsibility": "Exports mount(app, services) (the orchestrator's plug-in rule), build_router, mount_static, render_page, BootContext, DeptInfo, PAGES_DIR, STATIC_DIR."
+   },
+   {
+    "path": "sutra_app/web.py",
+    "responsibility": "One-line alias (from sutra_app.ui import mount) so the orchestrator's `import sutra_app.web` finds the UI."
+   },
+   {
+    "path": "sutra_app/ui/boot.py",
+    "responsibility": "Pydantic DeptInfo and BootContext (closed models with validators); render_page fills the single <!--SUTRA-BOOT--> marker with the escaped boot JSON (token, department id and label)."
+   },
+   {
+    "path": "sutra_app/ui/routes.py",
+    "responsibility": "Pages GET /, /d/{dept} (308), /d/{dept}/, /favicon.ico; GET /?dept= redirect; static mount /ui; no-store, nosniff and CSP headers; 404 page for an unknown department."
+   },
+   {
+    "path": "sutra_app/ui/pages/j2_ui.html",
+    "responsibility": "The J2 page after the 12 edits; produced by scripts/port_j2_ui.py, never hand-edited."
+   },
+   {
+    "path": "sutra_app/ui/pages/j2_ui_render.js",
+    "responsibility": "J2's node render harness with three changes (preload sutra_ctx.js, d3 path, d3 tag test); kept beside the page because the engine's legacy tests read it through paths.ui_dir()."
+   },
+   {
+    "path": "sutra_app/ui/pages/j2_graph_layout.js",
+    "responsibility": "J2's node layout harness with one change (preload sutra_ctx.js)."
+   },
+   {
+    "path": "sutra_app/ui/pages/home.html",
+    "responsibility": "Home page markup: J2 Simple skeleton with the org chat on the left, graph, org chart and settings panes on the right, the rail, and #nodepanel."
+   },
+   {
+    "path": "sutra_app/ui/static/css/j2.css",
+    "responsibility": "J2's <style> block moved byte for byte; the one token set for both pages and both themes."
+   },
+   {
+    "path": "sutra_app/ui/static/css/sutra-graph.css",
+    "responsibility": "Styles for .wgsvg, the org chart, change log, legend, live chip and the --e-org token, using J2 tokens only."
+   },
+   {
+    "path": "sutra_app/ui/static/css/sutra-panel.css",
+    "responsibility": "Styles for the node panel, function sections, atom cards, chat bubbles and the department rail additions."
+   },
+   {
+    "path": "sutra_app/ui/static/css/sutra-shell.css",
+    "responsibility": "Home-only deltas: .sright, start page, teams list, needs-you cards."
+   },
+   {
+    "path": "sutra_app/ui/static/js/sutra_ctx.js",
+    "responsibility": "Boot parsing, department from the page path, J2 fetch wrapper (adds ?dept= and X-Sutra-Token), api.get/post for orchestrator endpoints, esc, paint, guarded tab() event, iframe data-src loader."
+   },
+   {
+    "path": "sutra_app/ui/static/js/sutra_events.js",
+    "responsibility": "SSE client over /api/events with named event types, polling fallback every 2 s, backoff, resync, coalesce."
+   },
+   {
+    "path": "sutra_app/ui/static/js/graph_layout.js",
+    "responsibility": "Pure: validate a GraphView into a tree plus cross links, deterministic layered layout and edge paths, diff of two graphs."
+   },
+   {
+    "path": "sutra_app/ui/static/js/chart_marks.js",
+    "responsibility": "Pure: OrgChart to graph, reuse/add/move marks from a chart change, change-log html."
+   },
+   {
+    "path": "sutra_app/ui/static/js/graph_render.js",
+    "responsibility": "Pure: SVG string with J2-style nodes and edges, nested outline list, status look and words, persona names."
+   },
+   {
+    "path": "sutra_app/ui/static/js/graph_view.js",
+    "responsibility": "DOM: mounts the Workflow graph, d3 zoom and pan, Fit, Graph/List and Overview/Detail toggles, live region, select and open."
+   },
+   {
+    "path": "sutra_app/ui/static/js/orgchart_view.js",
+    "responsibility": "DOM: the one global org chart with marks and the change log."
+   },
+   {
+    "path": "sutra_app/ui/static/js/fnode_view.js",
+    "responsibility": "Pure: function-node drawer html (goal, task, context, work atoms with state and verify, hands to), atom cards, adapter normalize() for the function-node data."
+   },
+   {
+    "path": "sutra_app/ui/static/js/chat_view.js",
+    "responsibility": "Pure: transcript, chat cards (task, chart_change, approval, choice, needs_you, done), composer state, safe text."
+   },
+   {
+    "path": "sutra_app/ui/static/js/node_panel.js",
+    "responsibility": "DOM: #nodepanel drawer (Agent-drawer pattern) with Chat and Details tabs, send, focus and Esc handling."
+   },
+   {
+    "path": "sutra_app/ui/static/js/home.js",
+    "responsibility": "Home controller: org chat session cs_org, progress from chat.turn, cards, needs-you answers, rail, theme, panes, events."
+   },
+   {
+    "path": "sutra_app/ui/static/js/dept_ext.js",
+    "responsibility": "Department-page glue: lazy mounting of the graph and org chart tabs, department chip and title, archived banner, events for this department, one drawer at a time."
+   },
+   {
+    "path": "sutra_app/ui/static/vendor/d3.min.js",
+    "responsibility": "d3 7.9.0 copied from J2 vendor/ (with d3-LICENSE and README.md); used for zoom and the J2 Map."
+   },
+   {
+    "path": "scripts/port_j2_ui.py",
+    "responsibility": "Reproducible port: applies the 12 edits with expected match counts to J2's page, writes the page, j2.css, vendor files and the two harness copies; --check detects drift."
+   },
+   {
+    "path": "scripts/capture_j2_fixtures.py",
+    "responsibility": "Captures the J2 reads and the harness goldens from a J2 mock run into tests/ui/fixtures/j2/."
+   },
+   {
+    "path": "tests/ui/conftest.py",
+    "responsibility": "Registers the browser marker, fixtures for Chrome, the fake server and the browser; skip rules (SUTRA_BROWSER=1)."
+   },
+   {
+    "path": "tests/ui/cdp.py",
+    "responsibility": "Headless Chrome driver over the DevTools protocol using websockets: goto, js, wait_for, click, shot, theme and size control, console errors, failed requests; --self-test."
+   },
+   {
+    "path": "tests/ui/fake_backend.py",
+    "responsibility": "FastAPI fake of the orchestrator contract (paths, shapes, error envelope, scripted SSE) plus test-only /__fake controls; mounts the real UI router."
+   },
+   {
+    "path": "tests/ui/fixtures/",
+    "responsibility": "Chart, change, graph, node, chat, departments, needs-you, health and event-script JSON; mount pages; J2 captures and goldens."
+   },
+   {
+    "path": "tests/ui/test_fake_backend.py",
+    "responsibility": "The fake backend answers every contract path with the keys the UI uses and streams scripted events."
+   },
+   {
+    "path": "tests/ui/test_serve.py",
+    "responsibility": "Routes, boot block, redirects, 404s, headers and CSP, static caching, path traversal, offline (no external URLs)."
+   },
+   {
+    "path": "tests/ui/test_port_edits.py",
+    "responsibility": "String guards for each of the 12 edits and the page invariants."
+   },
+   {
+    "path": "tests/ui/js/page_render.test.js",
+    "responsibility": "Byte parity of the ported page with J2's own harness output; the new tabs and the sutra:tab event."
+   },
+   {
+    "path": "tests/ui/js/ctx.test.js",
+    "responsibility": "Context, J2_PATHS list, fetch wrapper behaviour, tab() guard, esc."
+   },
+   {
+    "path": "tests/ui/js/events.test.js",
+    "responsibility": "SSE client: event names, coalescing, polling fallback, resync, close."
+   },
+   {
+    "path": "tests/ui/test_node_suite.py",
+    "responsibility": "Runs node --test over every tests/ui/js/*.test.js; skipped when node is missing."
+   },
+   {
+    "path": "tests/ui/js/graph_layout.test.js",
+    "responsibility": "Parents from structural edges, determinism, no overlap, edge cases, performance, diff."
+   },
+   {
+    "path": "tests/ui/js/graph_render.test.js",
+    "responsibility": "Node and edge markup, status mapping, escaping, outline, summary."
+   },
+   {
+    "path": "tests/ui/js/chart_marks.test.js",
+    "responsibility": "Chart to graph, marks and tags, change statuses, log order."
+   },
+   {
+    "path": "tests/ui/test_view_graph.py",
+    "responsibility": "Browser: graph and org chart views against the fake backend (counts, clicks, updates keep zoom)."
+   },
+   {
+    "path": "tests/ui/js/fnode_view.test.js",
+    "responsibility": "Drawer sections, atom states, verify sentences, normalize tolerance, hands-to fallback."
+   },
+   {
+    "path": "tests/ui/js/chat_view.test.js",
+    "responsibility": "Chat cards, composer states, who labels, safe text."
+   },
+   {
+    "path": "tests/ui/test_view_panel.py",
+    "responsibility": "Browser: node panel chat and details."
+   },
+   {
+    "path": "tests/ui/test_home.py",
+    "responsibility": "Browser: Home start page, send, task card, needs-you answer, rail."
+   },
+   {
+    "path": "tests/ui/test_dept_page.py",
+    "responsibility": "Browser: the department page boots clean, new tabs work, Agent chips open the node panel."
+   },
+   {
+    "path": "tests/ui/test_browser_smoke.py",
+    "responsibility": "The scripted end-to-end walk, the SSE-drop run, and the real-app run when the server package exists."
+   },
+   {
+    "path": "tests/ui/test_visual.py",
+    "responsibility": "Screenshots to tests/ui/screens/ for pages x light, dark, system x 1440, 900, 390, with automatic overflow, console and contrast checks."
+   },
+   {
+    "path": "tests/ui/js/contrast.test.js",
+    "responsibility": "Computes token contrast for both themes from the CSS files."
+   },
+   {
+    "path": "tests/ui/screens/.gitignore",
+    "responsibility": "Ignores every screenshot so none is committed."
+   }
+  ],
+  "work_packages": [
+   {
+    "id": "UI-1",
+    "title": "Serving and boot",
+    "owns": [
+     "sutra_app/ui/__init__.py",
+     "sutra_app/ui/boot.py",
+     "sutra_app/ui/routes.py",
+     "sutra_app/web.py",
+     "tests/ui/test_serve.py"
+    ],
+    "depends_on": [],
+    "acceptance": [
+     ".venv/bin/python -m pytest tests/ui/test_serve.py -q"
+    ]
+   },
+   {
+    "id": "UI-3",
+    "title": "Client core (context, fetch wrapper, events)",
+    "owns": [
+     "sutra_app/ui/static/js/sutra_ctx.js",
+     "sutra_app/ui/static/js/sutra_events.js",
+     "tests/ui/js/ctx.test.js",
+     "tests/ui/js/events.test.js",
+     "tests/ui/test_node_suite.py"
+    ],
+    "depends_on": [],
+    "acceptance": [
+     "node --test tests/ui/js/ctx.test.js tests/ui/js/events.test.js"
+    ]
+   },
+   {
+    "id": "UI-4",
+    "title": "Graph pure core (layout, marks, render)",
+    "owns": [
+     "sutra_app/ui/static/js/graph_layout.js",
+     "sutra_app/ui/static/js/chart_marks.js",
+     "sutra_app/ui/static/js/graph_render.js",
+     "tests/ui/js/graph_layout.test.js",
+     "tests/ui/js/graph_render.test.js",
+     "tests/ui/js/chart_marks.test.js"
+    ],
+    "depends_on": [
+     "UI-3"
+    ],
+    "acceptance": [
+     "node --test tests/ui/js/graph_layout.test.js tests/ui/js/graph_render.test.js tests/ui/js/chart_marks.test.js"
+    ]
+   },
+   {
+    "id": "UI-0",
+    "title": "Test tooling (Chrome driver, fake backend, fixtures)",
+    "owns": [
+     "tests/ui/conftest.py",
+     "tests/ui/cdp.py",
+     "tests/ui/fake_backend.py",
+     "tests/ui/fixtures/",
+     "tests/ui/screens/.gitignore",
+     "tests/ui/test_fake_backend.py",
+     "scripts/capture_j2_fixtures.py"
+    ],
+    "depends_on": [
+     "UI-1"
+    ],
+    "acceptance": [
+     ".venv/bin/python -m pytest tests/ui/test_fake_backend.py -q",
+     ".venv/bin/python tests/ui/cdp.py --self-test"
+    ]
+   },
+   {
+    "id": "UI-2",
+    "title": "Port of the J2 page (12 edits, harness copies, parity)",
+    "owns": [
+     "scripts/port_j2_ui.py",
+     "sutra_app/ui/pages/j2_ui.html",
+     "sutra_app/ui/pages/j2_ui_render.js",
+     "sutra_app/ui/pages/j2_graph_layout.js",
+     "sutra_app/ui/static/css/j2.css",
+     "sutra_app/ui/static/vendor/d3.min.js",
+     "sutra_app/ui/static/vendor/d3-LICENSE",
+     "sutra_app/ui/static/vendor/README.md",
+     "tests/ui/test_port_edits.py",
+     "tests/ui/js/page_render.test.js"
+    ],
+    "depends_on": [
+     "UI-3",
+     "UI-0"
+    ],
+    "acceptance": [
+     ".venv/bin/python scripts/port_j2_ui.py --j2 ~/Desktop/development/J2_Prototype --check",
+     ".venv/bin/python -m pytest tests/ui/test_port_edits.py -q",
+     "node --test tests/ui/js/page_render.test.js"
+    ]
+   },
+   {
+    "id": "UI-5",
+    "title": "Workflow graph and org chart views",
+    "owns": [
+     "sutra_app/ui/static/js/graph_view.js",
+     "sutra_app/ui/static/js/orgchart_view.js",
+     "sutra_app/ui/static/css/sutra-graph.css",
+     "tests/ui/test_view_graph.py"
+    ],
+    "depends_on": [
+     "UI-0",
+     "UI-3",
+     "UI-4"
+    ],
+    "acceptance": [
+     "SUTRA_BROWSER=1 .venv/bin/python -m pytest tests/ui/test_view_graph.py -q"
+    ]
+   },
+   {
+    "id": "UI-6",
+    "title": "Node panel: function-node drawer and per-node chat",
+    "owns": [
+     "sutra_app/ui/static/js/fnode_view.js",
+     "sutra_app/ui/static/js/chat_view.js",
+     "sutra_app/ui/static/js/node_panel.js",
+     "sutra_app/ui/static/css/sutra-panel.css",
+     "tests/ui/js/fnode_view.test.js",
+     "tests/ui/js/chat_view.test.js",
+     "tests/ui/test_view_panel.py"
+    ],
+    "depends_on": [
+     "UI-0",
+     "UI-3"
+    ],
+    "acceptance": [
+     "node --test tests/ui/js/fnode_view.test.js tests/ui/js/chat_view.test.js",
+     "SUTRA_BROWSER=1 .venv/bin/python -m pytest tests/ui/test_view_panel.py -q"
+    ]
+   },
+   {
+    "id": "UI-7",
+    "title": "Home page (chat agent entry, hand-over, rail, settings)",
+    "owns": [
+     "sutra_app/ui/pages/home.html",
+     "sutra_app/ui/static/js/home.js",
+     "sutra_app/ui/static/css/sutra-shell.css",
+     "tests/ui/test_home.py"
+    ],
+    "depends_on": [
+     "UI-0",
+     "UI-3",
+     "UI-4",
+     "UI-5",
+     "UI-6"
+    ],
+    "acceptance": [
+     "SUTRA_BROWSER=1 .venv/bin/python -m pytest tests/ui/test_home.py -q"
+    ]
+   },
+   {
+    "id": "UI-8",
+    "title": "Department page glue",
+    "owns": [
+     "sutra_app/ui/static/js/dept_ext.js",
+     "tests/ui/test_dept_page.py"
+    ],
+    "depends_on": [
+     "UI-0",
+     "UI-2",
+     "UI-5",
+     "UI-6"
+    ],
+    "acceptance": [
+     "SUTRA_BROWSER=1 .venv/bin/python -m pytest tests/ui/test_dept_page.py -q"
+    ]
+   },
+   {
+    "id": "UI-9",
+    "title": "Scripted smoke, visual checks, token contrast",
+    "owns": [
+     "tests/ui/test_browser_smoke.py",
+     "tests/ui/test_visual.py",
+     "tests/ui/js/contrast.test.js"
+    ],
+    "depends_on": [
+     "UI-0",
+     "UI-1",
+     "UI-2",
+     "UI-3",
+     "UI-4",
+     "UI-5",
+     "UI-6",
+     "UI-7",
+     "UI-8"
+    ],
+    "acceptance": [
+     "node --test tests/ui/js/contrast.test.js",
+     "SUTRA_BROWSER=1 .venv/bin/python -m pytest tests/ui/test_browser_smoke.py tests/ui/test_visual.py -q"
+    ]
+   }
+  ],
+  "decision_proposals": [
+   {
+    "id_hint": "UI-D1",
+    "decision": "Two pages in one look: a new Home at / (org chat cs_org on the left, Workflow graph / Org chart / Settings on the right, teams in the rail) and the copied J2 page per department at /d/{dept id}/. Hand-over from the chat agent is the task card, whose Open the team button goes to the department's Simple view.",
+    "why": "The chat agent works above departments and the J2 page is a single-run page; Home reuses J2's Simple skeleton and CSS classes so the look is one and the phone toggle comes for free.",
+    "rejected": "A home mode inside the J2 page (guards in poll, loadMap, railPaint); an iframe shell; a front-end framework (against D6).",
+    "diagram_label": "Experience band: User chat interface box labelled 'Home / \u00b7 org chat + graph'; Detailed view box labelled '/d/{dept}/'; badge UI-D1"
+   },
+   {
+    "id_hint": "UI-D2",
+    "decision": "The department lives in the page path /d/{dept id}/; J2's API paths stay at the root and one fetch wrapper adds ?dept= (and X-Sutra-Token on non-GETs); one edit to runQ carries dept for every URL in HTML; the two iframes are set from JS.",
+    "why": "Matches the orchestrator's D19 and the engine's scope rules (J2 paths, ?run=, ?dept=) with 12 small page edits instead of 43 URL edits; J2's own location.search assignments (run picker, reset) cannot drop it; two tabs on two departments work.",
+    "rejected": "?dept= on the page URL (J2 rewrites location.search); <base href> (changes how the 14 href=# anchors resolve, gains nothing); prefixing all J2 API paths (clashes with D19); a dept cookie (two tabs collide).",
+    "diagram_label": "Arrow 'department views (read)': label '/api/\u2026?dept=&run=' with badge UI-D2"
+   },
+   {
+    "id_hint": "UI-D3",
+    "decision": "One stylesheet: J2's <style> block moved byte for byte to j2.css and shared by both pages, plus three small new CSS files; no CDN and no web fonts (the Google Fonts link is dropped, stacks fall back).",
+    "why": "One token set keeps both pages and all three themes in step; offline; a pure move is mechanical to re-port.",
+    "rejected": "Copying tokens into the Home page (drift); inline styles in the new page; vendoring fonts now (no grounded source).",
+    "diagram_label": "Key: 'no CDN, one stylesheet' badge UI-D3"
+   },
+   {
+    "id_hint": "UI-D4",
+    "decision": "The Workflow graph and org chart are drawn by pure functions (deterministic layered tree layout, SVG string) that use J2's edge CSS hooks, tokens and status look; J2's runtime edge router and spring engine are not reused; j2_graph_layout.js is a test harness, not a library; d3 is used only for zoom.",
+    "why": "Testable in node, works on Home where J2's page script is absent, and deterministic so live updates never reshuffle nodes.",
+    "rejected": "Registering with J2's EDGEV/MVIEWS tables (needs getBBox, absent on Home, couples to J2 globals); a force layout (nodes would move on every event).",
+    "diagram_label": "Workflow graph view box: 'pure layout \u00b7 SVG \u00b7 live' badge UI-D4"
+   },
+   {
+    "id_hint": "UI-D5",
+    "decision": "SSE events are invalidations: the page refetches the affected resource, coalesced; when the stream drops it polls every 2 s and refetches everything on resync.",
+    "why": "One source of truth (the GET) and no partial-state bugs; keeps D10 while still working by polling as J2 does.",
+    "rejected": "Applying event payloads as patches; WebSocket.",
+    "diagram_label": "Arrow 'live': add 'event, then refetch \u00b7 polls if SSE drops' badge UI-D5"
+   },
+   {
+    "id_hint": "UI-D6",
+    "decision": "One drawer #nodepanel in the Agent-drawer pattern with a Chat tab and a Details tab (function-node goal, task, context, work atoms with state and verify, who it hands to); the composer follows the session's writable flag; a department's panel links to the J2 Simple view.",
+    "why": "Owner steps 5 and 7 (every node linked to its chat) with J2's own drawer; function and step chats are read-only in the orchestrator; a department's real conversation already is the Simple view.",
+    "rejected": "Separate drawers per node kind; embedding the Simple view in an iframe (more edits, a later option).",
+    "diagram_label": "Arrow 'node opens its chat': label 'drawer \u00b7 chat or details' badge UI-D6"
+   },
+   {
+    "id_hint": "UI-D7",
+    "decision": "The org chart view is read-only; marks (reused, added, moved) and the change log come from the chart's change records, newest first; only the chat agent changes the chart.",
+    "why": "Owner rule: tasks reuse, add to or rearrange the one chart; the orchestrator keeps one writer.",
+    "rejected": "Drag-to-reparent in the UI; one chart per task.",
+    "diagram_label": "Experience band: fourth label 'Org chart view' with badge UI-D7"
+   },
+   {
+    "id_hint": "UI-D8",
+    "decision": "UI tests: node --test on pure modules, string guards on the 12 page edits, byte parity with J2's own two harnesses, headless Chrome over CDP with websockets, a fake backend that mirrors the orchestrator contract, screenshots under tests/ui/screens/ (not committed).",
+    "why": "Nothing new to install (Playwright and Selenium are absent), deterministic, protects the copied J2 page from drift, and lets the UI work packages build in parallel with the server.",
+    "rejected": "Playwright or Selenium (not installed, no offline install); manual checks only.",
+    "diagram_label": "Key: 'UI tests: node + Chrome over CDP + fake backend' badge UI-D8"
+   },
+   {
+    "id_hint": "UI-D9",
+    "decision": "Both pages are served through render_page, which injects a boot JSON block (page, token, department id and label) at one marker; the page sends the token as X-Sutra-Token on every non-GET.",
+    "why": "D11's per-launch token has to reach the page without a cookie, and the department label has to reach the title.",
+    "rejected": "Token in the URL; a /api/boot call before first paint.",
+    "diagram_label": "Key: 'loopback + token injected into pages' badge UI-D9"
+   }
+  ],
+  "diagram_items": [
+   {
+    "box": "User chat interface \u00b7 J2 Simple view (Experience band)",
+    "what_to_show": "Add 'Home page /': the org chat (one session, the chat agent's voice) on the left, Workflow graph / Org chart / Settings on the right, needs-you cards answered in place; the task card opens the department's Simple view at /d/{dept}/. Badge UI-D1."
+   },
+   {
+    "box": "Detailed view \u00b7 J2 left rail (Experience band)",
+    "what_to_show": "Add 'served per department at /d/{dept}/' and 'rail gains: All teams, Workflow graph, Org chart'. Badge UI-D1 and UI-D2."
+   },
+   {
+    "box": "Workflow graph view (Experience band)",
+    "what_to_show": "Lines: 'pure layout \u00b7 SVG \u00b7 Overview | Detail', 'click a node: drawer with its chat or its function-node details', 'live: event then refetch'. Badges UI-D4, UI-D6."
+   },
+   {
+    "box": "New small label in the Experience band: Org chart view",
+    "what_to_show": "'read-only \u00b7 reused, added, moved by the latest change \u00b7 change log'. Badge UI-D7."
+   },
+   {
+    "box": "Arrow 'department views (read)'",
+    "what_to_show": "Label '/api/\u2026?dept=&run=' (J2 routes keep their paths). Badge UI-D2."
+   },
+   {
+    "box": "Arrow 'live' (graph store to graph view)",
+    "what_to_show": "Label 'SSE event, then refetch \u00b7 polls every 2 s if the stream drops'. Badge UI-D5 (with D10)."
+   },
+   {
+    "box": "Arrow 'node opens its chat' (graph view to chat sessions)",
+    "what_to_show": "Label 'drawer: chat (read-only for function and step nodes) or details'. Badge UI-D6."
+   },
+   {
+    "box": "Key (bottom right)",
+    "what_to_show": "Three short entries: 'no CDN, one stylesheet' (UI-D3), 'UI tests: node + Chrome over CDP + fake backend' (UI-D8), 'loopback + token injected into pages' (UI-D9)."
+   }
+  ],
+  "open_risks": [
+   "Cross-section reconciliation needed: the engine section serves the J2 page at GET / with a sutra_dept cookie, while here GET / is Home and the J2 page is /d/{dept id}/ (GET /?dept= redirects there); the engine's pages.py should be dropped or call render_page, and paths.ui_dir() should return sutra_app.ui.PAGES_DIR.",
+   "The web package name (orchestrator imports sutra_app.web, the UI is sutra_app.ui; UI-1 ships a one-line alias), the boot injector name (inject_boot vs render_page), and the services attributes mount() reads (settings.token, version, a department lookup) are assumed and unconfirmed.",
+   "Write token: the orchestrator injects X-Sutra-Token into the page, the engine expects a cookie accepted by write_guard; the UI sends the header on every non-GET and the browser sends any cookie by itself, so the server must accept either.",
+   "Three small requests to the orchestrator (each with a UI fallback): ChartChangeOut gets task_title and the node-id lists added, moved, archived, reused; GraphView.nodes comes parents first with siblings in position order; a function node's meta carries goal, task, context, wait_on, last_seen and hands_to.",
+   "The function-node spec file (spec-function-nodes.json) was still absent at the last check; Goal, Task and Context rest on the library's FunctionNode fields and the open atom behind one adapter, FnodeView.normalize.",
+   "The copied J2 page will keep changing upstream (latest J2 commit 2026-11-03); the port script's per-edit match counts and --check detect drift, and the byte-parity test needs goldens captured once with J2 present from a small state fixture (a finished run's state is 856 KB).",
+   "J2's own stdlib server compares POST paths exactly, so a POST with ?dept= got 404 in my probe against J2's server; the engine's FastAPI routes accept the query, so this only matters when the page is served against J2's server.",
+   "Fonts are not vendored, so offline typography falls back to Arial and Menlo; the CSP needs 'unsafe-inline' for scripts and styles because the J2 page script is one 3,000-line inline script.",
+   "Browser tooling: Chrome 156 over CDP is the only browser tried; websockets 17 warns unless connect() is used as a context manager; the Playwright cached headless shell and safaridriver are untried; browser tests skip when Chrome is absent. node --test needs a file list or a quoted glob on Node 25 (a directory argument fails).",
+   "Two sources of one conversation (J2's run folder and the department session): if they differ in length the J2 pane and the node panel may differ; a graph above 500 nodes falls back to the List view without virtualisation; the department page keeps J2's 700 ms poll of a large state.",
+   "pyproject.toml has no package-data for sutra_app/ui/pages and ui/static, so a built wheel would miss the HTML, JS and CSS (editable installs work; file owned elsewhere).",
+   "Not designed: ?embed=1 (the Simple view inside Home), font vendoring, drag-to-pin in the new graph, and any chart editing from the page."
+  ]
+ }
+]

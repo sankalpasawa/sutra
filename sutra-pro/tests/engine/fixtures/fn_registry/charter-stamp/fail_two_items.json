@@ -1,0 +1,22 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "records": {
+   "goal.json": {
+    "statement": "A one-page site for Brew Lab",
+    "done_when": [
+     "a",
+     "b"
+    ]
+   }
+  }
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "fewer than 3 'done when' criteria"
+ }
+}

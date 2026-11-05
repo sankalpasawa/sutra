@@ -1,0 +1,13 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "envelope"
+  }
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "missing: no envelope post by Priority"
+ }
+}

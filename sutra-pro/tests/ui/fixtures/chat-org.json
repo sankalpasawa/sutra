@@ -1,0 +1,476 @@
+{
+  "session": {
+    "id": "cs_org",
+    "node_id": "root",
+    "kind": "org",
+    "title": "Sutra",
+    "writable": true,
+    "status": "active",
+    "filed_under": null,
+    "connector": "claude",
+    "model": "sonnet",
+    "provider_session_id": null,
+    "last_message_id": 0,
+    "note": ""
+  },
+  "messages": [
+    {
+      "id": 1,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "text",
+      "text": "Hello. Tell me what you need and I will find the right team.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:00Z"
+    },
+    {
+      "id": 2,
+      "session_id": "cs_org",
+      "role": "user",
+      "who": "user",
+      "kind": "text",
+      "text": "A website for my cafe",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:02Z"
+    },
+    {
+      "id": 3,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "text",
+      "text": "I set up a Web team and gave it your request.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:03Z"
+    },
+    {
+      "id": 4,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "chart_change",
+        "change_id": "chg-0002",
+        "decision": "add",
+        "summary": "Added the Web team",
+        "added": [
+          {
+            "id": "web",
+            "name": "Web",
+            "kind": "department"
+          }
+        ],
+        "moved": [],
+        "archived": [],
+        "pending": false
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:00:03Z"
+    },
+    {
+      "id": 5,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "task",
+        "task_id": "tsk_a1b2c3d4e5f6",
+        "dept_id": "web",
+        "dept_name": "Web",
+        "title": "Coffee shop landing page",
+        "status": "running"
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "ok",
+      "at": "2026-11-04T10:00:03Z"
+    },
+    {
+      "id": 6,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "identity",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "needs_you",
+        "dept_id": "web",
+        "dept_name": "Web",
+        "question_message_id": 2,
+        "text": "@Requester Should the menu show prices?\n   Option 1: Yes, show the prices\n   Option 2: No, names only",
+        "options": [
+          "Yes, show the prices",
+          "No, names only"
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "ok",
+      "at": "2026-11-04T10:00:41Z"
+    },
+    {
+      "id": 7,
+      "session_id": "cs_org",
+      "role": "user",
+      "who": "user",
+      "kind": "text",
+      "text": "Also write a menu page.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:12:38Z"
+    },
+    {
+      "id": 8,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "text",
+      "text": "I gave your request to the Web team.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:12:40Z"
+    },
+    {
+      "id": 9,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "chart_change",
+        "change_id": "chg-0003",
+        "decision": "reuse",
+        "summary": "Reused the Web team",
+        "added": [],
+        "moved": [],
+        "archived": [],
+        "pending": false
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:12:40Z"
+    },
+    {
+      "id": 10,
+      "session_id": "cs_org",
+      "role": "user",
+      "who": "user",
+      "kind": "text",
+      "text": "Make Menu its own division of Web.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:20:08Z"
+    },
+    {
+      "id": 11,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "text",
+      "text": "I added the Menu and FAQ divisions to Web.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:20:11Z"
+    },
+    {
+      "id": 12,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "chart_change",
+        "change_id": "chg-0004",
+        "decision": "add",
+        "summary": "Added the Menu and FAQ divisions to Web",
+        "added": [
+          {
+            "id": "faq",
+            "name": "FAQ",
+            "kind": "division"
+          },
+          {
+            "id": "menu",
+            "name": "Menu",
+            "kind": "division"
+          }
+        ],
+        "moved": [],
+        "archived": [],
+        "pending": false
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:20:11Z"
+    },
+    {
+      "id": 13,
+      "session_id": "cs_org",
+      "role": "user",
+      "who": "user",
+      "kind": "text",
+      "text": "Menu belongs in a new Content team; make it and move Menu there.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:31:02Z"
+    },
+    {
+      "id": 14,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "text",
+      "text": "I set up a Content team and moved Menu into it.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:31:05Z"
+    },
+    {
+      "id": 15,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "chart_change",
+        "change_id": "chg-0005",
+        "decision": "rearrange",
+        "summary": "Added the Content team and moved Menu into it",
+        "added": [
+          {
+            "id": "content",
+            "name": "Content",
+            "kind": "department"
+          }
+        ],
+        "moved": [
+          {
+            "id": "menu",
+            "name": "Menu",
+            "from_name": "Web",
+            "to_name": "Content"
+          }
+        ],
+        "archived": [],
+        "pending": false
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:31:05Z"
+    },
+    {
+      "id": 16,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "task",
+        "task_id": "tsk_b7c8d9e0f1a2",
+        "dept_id": "content",
+        "dept_name": "Content",
+        "title": "Menu page copy",
+        "status": "running"
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": "tsk_b7c8d9e0f1a2",
+      "state": "ok",
+      "at": "2026-11-04T10:31:06Z"
+    },
+    {
+      "id": 17,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "done",
+        "task_id": "tsk_b7c8d9e0f1a2",
+        "dept_name": "Content",
+        "title": "Menu page copy",
+        "status": "done",
+        "outcome": "Done: the menu page copy is ready."
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": "tsk_b7c8d9e0f1a2",
+      "state": "ok",
+      "at": "2026-11-04T10:36:00Z"
+    },
+    {
+      "id": 18,
+      "session_id": "cs_org",
+      "role": "user",
+      "who": "user",
+      "kind": "text",
+      "text": "Merge FAQ into Menu.",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:40:20Z"
+    },
+    {
+      "id": 19,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "chart_change",
+        "change_id": "chg-0006",
+        "decision": "rearrange",
+        "summary": "Merge FAQ into Menu",
+        "added": [],
+        "moved": [],
+        "archived": [
+          {
+            "id": "faq",
+            "name": "FAQ",
+            "into_name": "Menu"
+          }
+        ],
+        "pending": true
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:40:22Z"
+    },
+    {
+      "id": 20,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "approval",
+        "change_id": "chg-0006",
+        "question": "Merge FAQ into Menu? FAQ's chat is filed under Menu.",
+        "options": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:40:22Z"
+    },
+    {
+      "id": 21,
+      "session_id": "cs_org",
+      "role": "user",
+      "who": "user",
+      "kind": "text",
+      "text": "Write a newsletter",
+      "card": null,
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:45:00Z"
+    },
+    {
+      "id": 22,
+      "session_id": "cs_org",
+      "role": "agent",
+      "who": "sutra",
+      "kind": "card",
+      "text": "",
+      "card": {
+        "type": "choice",
+        "question": "Which team fits best?",
+        "options": [
+          {
+            "id": "web",
+            "label": "Web"
+          },
+          {
+            "id": "content",
+            "label": "Content"
+          },
+          {
+            "id": "none",
+            "label": "None of these"
+          }
+        ]
+      },
+      "pause": null,
+      "answered_by": null,
+      "task_id": null,
+      "state": "ok",
+      "at": "2026-11-04T10:45:01Z"
+    }
+  ],
+  "initial_visible": 1,
+  "visible_at": {
+    "1": 1,
+    "2": 6,
+    "3": 6,
+    "full": 22
+  }
+}

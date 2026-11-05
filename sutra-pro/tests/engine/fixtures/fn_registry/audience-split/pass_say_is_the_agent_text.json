@@ -1,0 +1,18 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "identity",
+   "kind": "intake"
+  },
+  "reply": {
+   "to_requester": "All set.",
+   "say": "@Adaptation go",
+   "enough": true
+  }
+ },
+ "expect": {
+  "ok": true,
+  "evidence": "to_requester is plain"
+ }
+}

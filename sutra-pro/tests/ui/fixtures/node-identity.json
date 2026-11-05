@@ -1,0 +1,548 @@
+{
+  "node": {
+    "id": "web.identity",
+    "kind": "function",
+    "label": "Identity",
+    "status": "waiting_on_you",
+    "detail": "last seen: asked about the menu",
+    "chat_session_id": "cs_77aa10c2e9b4",
+    "org_node_id": null,
+    "dept_id": "web",
+    "task_id": null,
+    "fn": "identity",
+    "step_ref": null,
+    "version": 4,
+    "meta": {
+      "goal": "Keep the department aligned with its goal, done-when condition, rules and authority boundary",
+      "task": "J2.a charter, J2.d rulings, J2.h workable?",
+      "context": [
+        "charter",
+        "proposals",
+        "findings",
+        "alarms",
+        "recorded rules"
+      ],
+      "constraints": [
+        "invent a new goal or rule",
+        "choose tools or implementation steps",
+        "increase an envelope",
+        "choose which workflow runs first",
+        "rewrite a proposal to make it acceptable",
+        "ask the CEO merely because agents disagree"
+      ],
+      "wait_on": "you",
+      "hands_to": [
+        "adaptation",
+        "priority",
+        "coordination",
+        "audit"
+      ],
+      "stats": {
+        "calls": 16,
+        "seconds": 52.0,
+        "tokens_in": 9600,
+        "tokens_out": 2880,
+        "atoms_open": 1,
+        "atoms_closed": 1,
+        "atoms_failed": 1,
+        "atoms_total": 5
+      }
+    }
+  },
+  "session": {
+    "id": "cs_77aa10c2e9b4",
+    "node_id": "web.identity",
+    "kind": "function",
+    "title": "Identity",
+    "writable": false,
+    "status": "active",
+    "filed_under": null,
+    "connector": "claude",
+    "model": "sonnet",
+    "provider_session_id": null,
+    "last_message_id": 16,
+    "note": ""
+  },
+  "atoms": [
+    {
+      "id": "a-a810960e61-05",
+      "schema": "work-atom/0.3",
+      "node_id": "web.identity",
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "open",
+      "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+      "attempt": 2,
+      "ts_open": "2026-11-04T10:00:40Z",
+      "ts_closed": null,
+      "body": {
+        "constraints": [
+          {
+            "text": "invent a new goal or rule",
+            "check": null
+          },
+          {
+            "text": "choose tools or implementation steps",
+            "check": null
+          }
+        ],
+        "context": [
+          "brief: A website for my cafe",
+          "charter: none yet"
+        ],
+        "work": {
+          "dispatch_kind": "llm",
+          "agent": "identity",
+          "steps": "J2.a Identity takes the brief",
+          "how_kind": "AI"
+        },
+        "model": "sonnet",
+        "verify": {
+          "checks": [
+            {
+              "template": "reply-valid",
+              "args": [
+                "identity",
+                "intake"
+              ],
+              "text": "the reply has the shape this function must send",
+              "relevance": "declared: reply-valid",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 1,
+                  "evidence": "enough: field required"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 1,
+                  "evidence": "questions: at least 1 is needed when enough is false"
+                }
+              ]
+            },
+            {
+              "template": "turn-posted",
+              "args": [],
+              "text": "the turn posted a message or saved a record, to a route this function may use",
+              "relevance": "declared: turn-posted",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 0,
+                  "evidence": "deferred: judged when the turn ends"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 0,
+                  "evidence": "deferred: judged when the turn ends"
+                }
+              ]
+            },
+            {
+              "template": "charter-stamp",
+              "args": [],
+              "text": "the charter has a statement and at least 3 done-when items that can be checked",
+              "relevance": "declared: charter-stamp",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 0,
+                  "evidence": "deferred: judged when the turn ends"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 0,
+                  "evidence": "deferred: judged when the turn ends"
+                }
+              ]
+            },
+            {
+              "template": "audience-split",
+              "args": [],
+              "text": "the text to the owner names no file, code or agent",
+              "relevance": "declared: audience-split",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 1,
+                  "evidence": "to_requester names goal.json"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 0,
+                  "evidence": "to_requester is plain"
+                }
+              ]
+            }
+          ]
+        },
+        "outputs": [
+          "goal.json"
+        ],
+        "touches": []
+      },
+      "usage": {
+        "calls": 7,
+        "usd": 0.25,
+        "tokens_in": 4200,
+        "tokens_out": 1300
+      }
+    },
+    {
+      "id": "a-a810960e61-04",
+      "schema": "work-atom/0.3",
+      "node_id": "web.identity",
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "abandoned",
+      "goal": "the owner's answer is read and passed on",
+      "attempt": 1,
+      "ts_open": "2026-11-04T10:00:39Z",
+      "ts_closed": "2026-11-04T10:00:40Z",
+      "body": {
+        "constraints": [
+          {
+            "text": "invent a new goal or rule",
+            "check": null
+          },
+          {
+            "text": "choose tools or implementation steps",
+            "check": null
+          }
+        ],
+        "context": [
+          "answer: Option 1"
+        ],
+        "work": {
+          "dispatch_kind": "llm",
+          "agent": "identity",
+          "steps": "J2.a Identity reads the answer",
+          "how_kind": "AI"
+        },
+        "model": "sonnet",
+        "verify": {
+          "checks": [
+            {
+              "template": "reply-valid",
+              "args": [
+                "identity",
+                "requester_answered"
+              ],
+              "text": "the reply has the shape this function must send",
+              "relevance": "declared: reply-valid",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 0,
+                  "evidence": "ok"
+                }
+              ]
+            },
+            {
+              "template": "audience-split",
+              "args": [],
+              "text": "the text to the owner names no file, code or agent",
+              "relevance": "declared: audience-split",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 0,
+                  "evidence": "to_requester is plain"
+                }
+              ]
+            }
+          ]
+        },
+        "outputs": [
+          "to_user"
+        ],
+        "touches": [],
+        "closed_by": "manual-override",
+        "abandon_code": "replaced",
+        "reason": "replaced: a newer turn opened on this node"
+      },
+      "usage": {
+        "calls": 0,
+        "usd": null,
+        "tokens_in": null,
+        "tokens_out": null
+      }
+    },
+    {
+      "id": "a-a810960e61-03",
+      "schema": "work-atom/0.3",
+      "node_id": "web.identity",
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "verify_failed",
+      "goal": "the brief becomes a charter that passes the stamp, or the owner is asked what is missing",
+      "attempt": 2,
+      "ts_open": "2026-11-04T10:00:34Z",
+      "ts_closed": "2026-11-04T10:00:38Z",
+      "body": {
+        "constraints": [
+          {
+            "text": "invent a new goal or rule",
+            "check": null
+          },
+          {
+            "text": "choose tools or implementation steps",
+            "check": null
+          }
+        ],
+        "context": [
+          "brief: A website for my cafe"
+        ],
+        "work": {
+          "dispatch_kind": "llm",
+          "agent": "identity",
+          "steps": "J2.a Identity takes the brief",
+          "how_kind": "AI"
+        },
+        "model": "sonnet",
+        "verify": {
+          "checks": [
+            {
+              "template": "reply-valid",
+              "args": [
+                "identity",
+                "intake"
+              ],
+              "text": "the reply has the shape this function must send",
+              "relevance": "declared: reply-valid",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 1,
+                  "evidence": "enough: field required"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 0,
+                  "evidence": "ok"
+                }
+              ]
+            },
+            {
+              "template": "turn-posted",
+              "args": [],
+              "text": "the turn posted a message or saved a record, to a route this function may use",
+              "relevance": "declared: turn-posted",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 0,
+                  "evidence": "deferred: judged when the turn ends"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 0,
+                  "evidence": "posted 1 message to Adaptation"
+                }
+              ]
+            },
+            {
+              "template": "charter-stamp",
+              "args": [],
+              "text": "the charter has a statement and at least 3 done-when items that can be checked",
+              "relevance": "declared: charter-stamp",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 0,
+                  "evidence": "deferred: judged when the turn ends"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 1,
+                  "evidence": "Charter rejected: fewer than 3 'done when' criteria."
+                }
+              ]
+            },
+            {
+              "template": "audience-split",
+              "args": [],
+              "text": "the text to the owner names no file, code or agent",
+              "relevance": "declared: audience-split",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 0,
+                  "evidence": "to_requester is plain"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 0,
+                  "evidence": "to_requester is plain"
+                }
+              ]
+            }
+          ]
+        },
+        "outputs": [
+          "goal.json"
+        ],
+        "touches": [],
+        "closed_by": "manual-override",
+        "abandon_code": "verify_failed",
+        "reason": "verify failed: charter-stamp: Charter rejected: fewer than 3 'done when' criteria."
+      },
+      "usage": {
+        "calls": 4,
+        "usd": 0.14,
+        "tokens_in": 2600,
+        "tokens_out": 760
+      }
+    },
+    {
+      "id": "a-a810960e61-02",
+      "schema": "work-atom/0.3",
+      "node_id": "web.identity",
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "closed",
+      "goal": "the owner's answer is read and passed on",
+      "attempt": 2,
+      "ts_open": "2026-11-04T10:00:21Z",
+      "ts_closed": "2026-11-04T10:00:33Z",
+      "body": {
+        "constraints": [
+          {
+            "text": "invent a new goal or rule",
+            "check": null
+          },
+          {
+            "text": "choose tools or implementation steps",
+            "check": null
+          }
+        ],
+        "context": [
+          "answer: Option 1"
+        ],
+        "work": {
+          "dispatch_kind": "llm",
+          "agent": "identity",
+          "steps": "J2.a Identity reads the answer",
+          "how_kind": "AI"
+        },
+        "model": "sonnet",
+        "verify": {
+          "checks": [
+            {
+              "template": "reply-valid",
+              "args": [
+                "identity",
+                "requester_answered"
+              ],
+              "text": "the reply has the shape this function must send",
+              "relevance": "declared: reply-valid",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 0,
+                  "evidence": "ok"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 0,
+                  "evidence": "ok"
+                }
+              ]
+            },
+            {
+              "template": "turn-posted",
+              "args": [],
+              "text": "the turn posted a message or saved a record, to a route this function may use",
+              "relevance": "declared: turn-posted",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 0,
+                  "evidence": "deferred: judged when the turn ends"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 0,
+                  "evidence": "posted 1 message to you"
+                }
+              ]
+            },
+            {
+              "template": "audience-split",
+              "args": [],
+              "text": "the text to the owner names no file, code or agent",
+              "relevance": "declared: audience-split",
+              "relevance_source": "declared",
+              "results": [
+                {
+                  "attempt": 1,
+                  "exit_code": 1,
+                  "evidence": "to_requester names goal.json"
+                },
+                {
+                  "attempt": 2,
+                  "exit_code": 0,
+                  "evidence": "RECOVERED: template, the bad part became the default text"
+                }
+              ]
+            }
+          ]
+        },
+        "outputs": [
+          "to_user"
+        ],
+        "touches": [],
+        "closed_by": "verify"
+      },
+      "usage": {
+        "calls": 5,
+        "usd": 0.17,
+        "tokens_in": 2800,
+        "tokens_out": 820
+      }
+    },
+    {
+      "id": "a-a810960e61-01",
+      "schema": "work-atom/0.3",
+      "node_id": "web.identity",
+      "task_id": "tsk_a1b2c3d4e5f6",
+      "state": "refused",
+      "goal": "done",
+      "attempt": 0,
+      "ts_open": "2026-11-04T10:00:12Z",
+      "ts_closed": "2026-11-04T10:00:12Z",
+      "body": {
+        "refusal": {
+          "code": "goal_banal",
+          "message": "goal is banal ('done'): state the observable outcome"
+        }
+      },
+      "usage": {
+        "calls": 0,
+        "usd": null,
+        "tokens_in": null,
+        "tokens_out": null
+      }
+    }
+  ],
+  "usage_total": {
+    "calls": 16,
+    "usd": 0.56,
+    "tokens_in": 9600,
+    "tokens_out": 2880
+  },
+  "task": {
+    "id": "tsk_a1b2c3d4e5f6",
+    "title": "Coffee shop landing page",
+    "status": "waiting_user"
+  },
+  "archived_chats": []
+}

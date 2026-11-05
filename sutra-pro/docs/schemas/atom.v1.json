@@ -1,0 +1,758 @@
+{
+  "$defs": {
+    "AtomEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "atom": {
+          "maxLength": 40,
+          "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+          "title": "Atom",
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "atom",
+        "why"
+      ],
+      "title": "AtomEdge",
+      "type": "object"
+    },
+    "Check": {
+      "additionalProperties": false,
+      "description": "One declared check. `text` is the plain sentence people read; `relevance` says why the check tests the goal (None =\nnot given: `open_atom` fills in a default); `results` has one entry per close run.",
+      "properties": {
+        "args": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Args",
+          "type": "array"
+        },
+        "expect": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expect"
+        },
+        "relevance": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Relevance"
+        },
+        "relevance_source": {
+          "default": "declared",
+          "enum": [
+            "declared",
+            "default"
+          ],
+          "title": "Relevance Source",
+          "type": "string"
+        },
+        "results": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          },
+          "maxItems": 3,
+          "title": "Results",
+          "type": "array"
+        },
+        "target_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Sha256"
+        },
+        "template": {
+          "enum": [
+            "file-exists",
+            "grep-count",
+            "named-test",
+            "element-count",
+            "facts-present",
+            "tap-targets",
+            "behavior-steps",
+            "heading-present",
+            "section-not-empty",
+            "ids-unique",
+            "lld-slice",
+            "deed-send",
+            "reply-valid",
+            "turn-posted",
+            "charter-stamp",
+            "workable",
+            "audience-split",
+            "atom-rules",
+            "judge-gate",
+            "price-kept",
+            "within-budget",
+            "order-registered",
+            "finding-per-item",
+            "pass-needs-proof",
+            "code-measure-wins",
+            "answer-recorded"
+          ],
+          "title": "Template",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "title": "Check",
+      "type": "object"
+    },
+    "CheckResult": {
+      "additionalProperties": false,
+      "description": "What running one check once gave. exit_code 0 passes; 1 fails; 97 a pinned test changed; 127 the runner or CLI\nis missing (or the name is unknown). `attempt` is the close run this belongs to (1 to 3).",
+      "properties": {
+        "attempt": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "evidence": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "exit_code": {
+          "title": "Exit Code",
+          "type": "integer"
+        },
+        "ts": {
+          "minimum": 0,
+          "title": "Ts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "attempt",
+        "exit_code",
+        "ts"
+      ],
+      "title": "CheckResult",
+      "type": "object"
+    },
+    "Constraint": {
+      "additionalProperties": false,
+      "description": "What the work may not do; `check` is an optional sentence a check can use (the plugin sets it to null).",
+      "properties": {
+        "check": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Check"
+        },
+        "text": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "Constraint",
+      "type": "object"
+    },
+    "ExpectedItem": {
+      "additionalProperties": false,
+      "description": "One thing that must exist when the atom is done (J2's `expected_output`, J2:5128-5129). `heading`, `ids` and `send`\nare the kinds J2's document and deed atoms use; `met` is what J2's code sets after the checks ran.",
+      "properties": {
+        "count": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "section",
+            "element",
+            "facts",
+            "file",
+            "test",
+            "tap",
+            "behavior",
+            "heading",
+            "ids",
+            "send"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "met": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Met"
+        },
+        "steps": {
+          "default": [],
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Steps",
+          "type": "array"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "items": {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 20,
+              "type": "array"
+            }
+          ],
+          "title": "Target"
+        },
+        "text": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "kind",
+        "target"
+      ],
+      "title": "ExpectedItem",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "OutputItem": {
+      "additionalProperties": false,
+      "description": "What the work produced: `make` gives an artifact, `do` a deed; `form` is an open list (AS:42-55).",
+      "properties": {
+        "form": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Form",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "ref": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Ref",
+          "type": "string"
+        },
+        "verb": {
+          "enum": [
+            "make",
+            "do"
+          ],
+          "title": "Verb",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verb",
+        "name",
+        "form",
+        "ref"
+      ],
+      "title": "OutputItem",
+      "type": "object"
+    },
+    "Refusal": {
+      "additionalProperties": false,
+      "description": "Why an open (or a close, or an abandon) was refused: a short code and a sentence.",
+      "properties": {
+        "code": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "Refusal",
+      "type": "object"
+    },
+    "Verify": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Check"
+          },
+          "maxItems": 12,
+          "title": "Checks",
+          "type": "array"
+        }
+      },
+      "title": "Verify",
+      "type": "object"
+    },
+    "Work": {
+      "additionalProperties": false,
+      "description": "How the atom is done: `dispatch_kind` is the plugin's, `how_kind` and `agent` are J2's `how` (J2:5126).",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent"
+        },
+        "dispatch_kind": {
+          "enum": [
+            "llm",
+            "skill",
+            "bash",
+            "manual"
+          ],
+          "title": "Dispatch Kind",
+          "type": "string"
+        },
+        "how_kind": {
+          "default": "AI",
+          "enum": [
+            "AI",
+            "code"
+          ],
+          "title": "How Kind",
+          "type": "string"
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ref"
+        },
+        "steps": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Steps",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dispatch_kind"
+      ],
+      "title": "Work",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A work atom: the draft plus its life. Stored states are open, closed, refused and abandoned; `verify_failed` is\nnever stored, it is an atom abandoned with abandon_code \"verify_failed\" (see `atom_display_state`).",
+  "properties": {
+    "abandon_code": {
+      "anyOf": [
+        {
+          "enum": [
+            "verify_failed",
+            "run_ended",
+            "replaced",
+            "manual"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Abandon Code"
+    },
+    "attempt": {
+      "default": 0,
+      "maximum": 3,
+      "minimum": 0,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "closed_by": {
+      "anyOf": [
+        {
+          "enum": [
+            "verify",
+            "manual-override"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Closed By"
+    },
+    "constraints": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Constraint"
+      },
+      "maxItems": 20,
+      "title": "Constraints",
+      "type": "array"
+    },
+    "context": {
+      "default": [],
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 40,
+      "title": "Context",
+      "type": "array"
+    },
+    "department_id": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Department Id"
+    },
+    "depends_on": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/AtomEdge"
+      },
+      "maxItems": 40,
+      "title": "Depends On",
+      "type": "array"
+    },
+    "details": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "default": {},
+      "title": "Details",
+      "type": "object"
+    },
+    "effort": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Effort"
+    },
+    "expected": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ExpectedItem"
+      },
+      "maxItems": 20,
+      "title": "Expected",
+      "type": "array"
+    },
+    "goal": {
+      "default": "",
+      "maxLength": 600,
+      "title": "Goal",
+      "type": "string"
+    },
+    "id": {
+      "maxLength": 40,
+      "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "const": "atom",
+      "default": "atom",
+      "title": "Kind",
+      "type": "string"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "node_id": {
+      "maxLength": 60,
+      "minLength": 1,
+      "title": "Node Id",
+      "type": "string"
+    },
+    "notes": {
+      "default": "",
+      "maxLength": 600,
+      "title": "Notes",
+      "type": "string"
+    },
+    "outputs": {
+      "default": [],
+      "items": {
+        "maxLength": 300,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 40,
+      "title": "Outputs",
+      "type": "array"
+    },
+    "produced": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/OutputItem"
+      },
+      "maxItems": 40,
+      "title": "Produced",
+      "type": "array"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "maxLength": 600,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "refusal": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Refusal"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "session_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Session Id"
+    },
+    "state": {
+      "default": "open",
+      "enum": [
+        "open",
+        "closed",
+        "refused",
+        "abandoned"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "supersedes": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "pattern": "^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\\.a[0-9]+)$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Supersedes"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Id"
+    },
+    "touches": {
+      "default": [],
+      "items": {
+        "maxLength": 300,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 40,
+      "title": "Touches",
+      "type": "array"
+    },
+    "ts_closed": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ts Closed"
+    },
+    "ts_open": {
+      "minimum": 0,
+      "title": "Ts Open",
+      "type": "integer"
+    },
+    "verify": {
+      "$ref": "#/$defs/Verify"
+    },
+    "work": {
+      "$ref": "#/$defs/Work"
+    },
+    "workflow_id": {
+      "anyOf": [
+        {
+          "maxLength": 12,
+          "pattern": "^W-[0-9]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflow Id"
+    }
+  },
+  "required": [
+    "work",
+    "id",
+    "node_id",
+    "ts_open"
+  ],
+  "title": "Atom",
+  "type": "object"
+}

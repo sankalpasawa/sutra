@@ -1,0 +1,21 @@
+{
+ "args": [],
+ "evidence": {
+  "turn": {
+   "function": "priority",
+   "kind": "envelope"
+  },
+  "posted": [
+   {
+    "id": 6,
+    "who": "priority",
+    "text": "Runs now.",
+    "envelope": "allowed"
+   }
+  ]
+ },
+ "expect": {
+  "ok": false,
+  "evidence": "missing: the allowed post names no budget"
+ }
+}
