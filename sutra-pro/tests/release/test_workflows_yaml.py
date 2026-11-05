@@ -710,9 +710,9 @@ def test_verify_installs_the_published_wheel_not_the_one_the_build_made(rel):
         assert script.index("shopt -s nullglob") < script.index("=("), "an unmatched glob must count as zero, not as one"
     assert '[ "${#checksums[@]}" -eq 2 ]' in checksums and '[ "${#versioned[@]}" -eq 1 ]' in checksums
     assert '[ "${#wheels[@]}" -eq 1 ]' in install
-    assert 'if [ "$RUNNER_OS" = Windows ]; then bindir=Scripts; fi' in install, "a Windows environment keeps its programs in Scripts, not bin"
-    assert 'uv pip install --python "$RUNNER_TEMP/fresh/$bindir/python" "${wheels[0]}"' in install
-    assert install.index('cd "$RUNNER_TEMP"') < install.index('"$RUNNER_TEMP/fresh/$bindir/sutra-pro" --help')
+    assert 'if [ "$RUNNER_OS" = Windows ]; then bindir=Scripts; ext=.exe; fi' in install, "a Windows environment keeps its programs in Scripts, as .exe"
+    assert 'uv pip install --python "$RUNNER_TEMP/fresh/$bindir/python$ext" "${wheels[0]}"' in install, "uv wants the interpreter's real file name"
+    assert install.index('cd "$RUNNER_TEMP"') < install.index('"$RUNNER_TEMP/fresh/$bindir/sutra-pro$ext" --help')
 
 
 def test_verify_downloads_with_the_workflow_token_through_env(rel):

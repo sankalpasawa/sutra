@@ -14,12 +14,13 @@
 # a cross-built one needs Rosetta, which the runners do not have.
 #
 # SIGNING. Without secrets the app is signed AD HOC: it installs and runs, but a first launch on another Mac needs right-click -> Open.
-# With ALL FIVE secrets the same workflow signs with Developer ID (hardened runtime), notarizes the app and the DMG, and staples both:
+# With the four secrets that decide, the same workflow signs with Developer ID (hardened runtime), notarizes the app and the DMG, and staples
+# both (the old product's release-dmg.yml uses the same repository secrets):
 #   APPLE_CERT_P12        base64 of a Developer ID Application .p12
-#   APPLE_CERT_PASSWORD   its password
 #   APPLE_NOTARY_KEY      base64 of an App Store Connect .p8 key
 #   APPLE_NOTARY_KEY_ID / APPLE_NOTARY_ISSUER
-# Some but not all of them is a configuration error and fails the build, never a quiet downgrade to ad hoc. A step's own `if:` cannot
+#   APPLE_CERT_PASSWORD   the .p12's password: optional, a certificate may have none
+# Some but not all of the four is a configuration error and fails the build, never a quiet downgrade to ad hoc. A step's own `if:` cannot
 # read the `secrets` context (GitHub rejects the whole file), so ONE step ("Check the signing secrets") reads them and publishes the
 # boolean `enabled` as a step output; the secrets appear only in the `env:` of the three steps that use them.
 #
@@ -130,25 +131,26 @@ jobs:
         id: signing
         env:
           APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
-          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
           APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
           APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
         run: |
           set -euo pipefail
+          # Four values decide: the certificate and the three that notarize. APPLE_CERT_PASSWORD is not one of them: a .p12 may be exported
+          # without a password (this repository's is), so it is handed to the import step as it is and never required.
           present=0
           missing=""
-          for name in APPLE_CERT_P12 APPLE_CERT_PASSWORD APPLE_NOTARY_KEY APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER; do
+          for name in APPLE_CERT_P12 APPLE_NOTARY_KEY APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER; do
             if [ -n "${!name:-}" ]; then present=$((present + 1)); else missing="$missing $name"; fi
           done
           if [ "$present" -eq 0 ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "no signing secrets: the build is signed ad hoc (first launch needs right-click, Open)"
-          elif [ "$present" -eq 5 ]; then
+          elif [ "$present" -eq 4 ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "all five signing secrets are present: Developer ID signing and notarization"
+            echo "the four signing secrets are present: Developer ID signing and notarization"
           else
-            echo "::error::some but not all signing secrets are set; missing:$missing. Set all five or none."
+            echo "::error::some but not all signing secrets are set; missing:$missing. Set all four (APPLE_CERT_PASSWORD is optional) or none."
             exit 1
           fi
 

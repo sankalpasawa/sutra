@@ -46,13 +46,15 @@ release and the published bytes match their checksums. A runner label that has b
 
 | Secrets | Result |
 |---|---|
-| none of the five | ad-hoc signed app and DMG: installs and runs, first launch needs right-click, Open |
-| all five | Developer ID signed (hardened runtime), app and DMG notarized and stapled; the build fails if a ticket is missing |
+| none of the four | ad-hoc signed app and DMG: installs and runs, first launch needs right-click, Open |
+| all four | Developer ID signed (hardened runtime), app and DMG notarized and stapled; the build fails if a ticket is missing |
 | some | the build fails at once and names the missing ones |
 
-`APPLE_CERT_P12` (base64 of a Developer ID Application `.p12`), `APPLE_CERT_PASSWORD`, `APPLE_NOTARY_KEY` (base64 of the App Store
-Connect `.p8`), `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER`. They are read by three steps only (check, import, notarize x2) and never
-printed. An ad-hoc build refuses to replace a DMG on the release that is already notarized.
+`APPLE_CERT_P12` (base64 of a Developer ID Application `.p12`), `APPLE_NOTARY_KEY` (base64 of the App Store Connect `.p8`),
+`APPLE_NOTARY_KEY_ID` and `APPLE_NOTARY_ISSUER` decide; `APPLE_CERT_PASSWORD` is the `.p12`'s password and is optional, because a certificate
+can be exported without one (this repository's is: the first run said "missing: APPLE_CERT_PASSWORD" when all five were required). They are the
+repository's secrets, the same ones the old product's `release-dmg.yml` reads; they are read by three steps only (check, import, notarize x2) and
+never printed. An ad-hoc build refuses to replace a DMG on the release that is already notarized.
 
 ## Facts to know
 

@@ -132,7 +132,10 @@ jobs:
         run: |
           set -euo pipefail
           choco install innosetup --yes --no-progress --force
-          iscc="$(ls "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "/c/Program Files/Inno Setup 6/ISCC.exe" 2>/dev/null | head -1)"
+          iscc=""
+          for candidate in "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "/c/Program Files/Inno Setup 6/ISCC.exe"; do
+            if [ -f "$candidate" ]; then iscc="$candidate"; break; fi
+          done
           [ -n "$iscc" ] || { echo "::error::ISCC.exe was not found after installing Inno Setup"; exit 1; }
           echo "ISCC=$iscc" >> "$GITHUB_ENV"
 

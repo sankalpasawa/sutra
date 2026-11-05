@@ -206,7 +206,8 @@ jobs:
           [ "${#wheels[@]}" -eq 1 ] || { echo "::error::expected exactly one versioned wheel, found ${#wheels[@]}"; exit 1; }
           uv venv "$RUNNER_TEMP/fresh" --python 3.11
           bindir=bin
-          if [ "$RUNNER_OS" = Windows ]; then bindir=Scripts; fi
-          uv pip install --python "$RUNNER_TEMP/fresh/$bindir/python" "${wheels[0]}"
+          ext=""
+          if [ "$RUNNER_OS" = Windows ]; then bindir=Scripts; ext=.exe; fi
+          uv pip install --python "$RUNNER_TEMP/fresh/$bindir/python$ext" "${wheels[0]}"
           cd "$RUNNER_TEMP"
-          "$RUNNER_TEMP/fresh/$bindir/sutra-pro" --help
+          "$RUNNER_TEMP/fresh/$bindir/sutra-pro$ext" --help

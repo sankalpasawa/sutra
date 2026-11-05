@@ -953,6 +953,7 @@ def step_index(job, fragment):
 
 
 SECRETS = ["APPLE_CERT_P12", "APPLE_CERT_PASSWORD", "APPLE_NOTARY_KEY", "APPLE_NOTARY_KEY_ID", "APPLE_NOTARY_ISSUER"]
+REQUIRED = [name for name in SECRETS if name != "APPLE_CERT_PASSWORD"]      # a .p12 may be exported without a password
 SIGNING_STEPS = {"Check the signing secrets", "Import the signing certificate", "Notarize and staple the app", "Notarize and staple the DMG"}
 
 
@@ -1035,18 +1036,25 @@ def run_signing_check(tmp_path, present):
     return done, out.read_text()
 
 
-def test_the_signing_check_is_ad_hoc_without_secrets_and_signed_with_all_five(tmp_path):
+def test_the_signing_check_is_ad_hoc_without_secrets_and_signed_with_the_four_that_decide(tmp_path):
     done, output = run_signing_check(tmp_path, [])
     assert done.returncode == 0 and output == "enabled=false\n"
+    done, output = run_signing_check(tmp_path, REQUIRED)
+    assert done.returncode == 0 and output == "enabled=true\n", "the certificate's password is optional: this repository's .p12 has none"
     done, output = run_signing_check(tmp_path, SECRETS)
     assert done.returncode == 0 and output == "enabled=true\n"
 
 
-@pytest.mark.parametrize("missing", SECRETS)
+def test_a_password_alone_does_not_turn_signing_on(tmp_path):
+    done, output = run_signing_check(tmp_path, ["APPLE_CERT_PASSWORD"])
+    assert done.returncode == 0 and output == "enabled=false\n"
+
+
+@pytest.mark.parametrize("missing", REQUIRED)
 def test_some_but_not_all_secrets_fail_the_build_naming_the_missing_one(tmp_path, missing):
     done, output = run_signing_check(tmp_path, [s for s in SECRETS if s != missing])
     assert done.returncode == 1 and output == ""
-    assert f"missing: {missing}. Set all five or none." in done.stdout
+    assert f"missing: {missing}. Set all four (APPLE_CERT_PASSWORD is optional) or none." in done.stdout
 
 
 def test_an_empty_secret_counts_as_absent(tmp_path):
