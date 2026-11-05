@@ -74,7 +74,10 @@ cleanup() {
 }
 
 # ---- 1. the bundle and the data folder
-if ! mkdir -p "$LOG_DIR"; then fail "Cannot create the data folder $DATA_DIR."; fi
+# the data folder holds the user's work: private (0700), as the server makes it, not the 0755 a plain mkdir -p gives under the usual umask
+# (found by `sutra-pro doctor` right after the first real launch of the installed app)
+if ! (umask 077 && mkdir -p "$LOG_DIR"); then fail "Cannot create the data folder $DATA_DIR."; fi
+chmod 700 "$DATA_DIR" 2>/dev/null || true
 if [ -f "$LOG" ] && [ "$(wc -c < "$LOG" | tr -d ' ')" -gt 5242880 ]; then mv -f "$LOG" "$LOG.1"; fi
 exec < /dev/null >> "$LOG" 2>&1
 log "starting (bundle $HERE, data $DATA_DIR)"

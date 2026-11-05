@@ -1192,3 +1192,9 @@ def test_apples_ticket_calls_are_retried_because_cloudkit_drops_connections():
         run = step_named("dmg", job_step)["run"]
         assert needle in run and "retry()" in run, job_step
     assert "retry xcrun notarytool" not in wf().__str__()
+
+
+def test_the_launcher_makes_the_data_folder_private():
+    """Found by `sutra-pro doctor` after the first real launch: a plain `mkdir -p` under the usual umask made ~/.sutra-pro mode 755."""
+    text = LAUNCHER.read_text(encoding="utf-8")
+    assert '(umask 077 && mkdir -p "$LOG_DIR")' in text and 'chmod 700 "$DATA_DIR"' in text
