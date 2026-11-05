@@ -237,7 +237,8 @@ def test_child_argv_stdin_cwd_and_env(fake, tmp_path, monkeypatch):
     assert os.path.realpath(call["cwd"]) != os.path.realpath(str(tmp_path)) and call["cwd_entries"] == []
     assert not os.path.exists(call["cwd"])                                    # the empty working directory is removed afterwards
     visible = fake.visible_env_keys(call)
-    assert visible <= {"PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE"}
+    from sutra_app.connectors.env import PASS_NAMES
+    assert visible <= set(PASS_NAMES) | {"PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE"}, "only allowlisted names reach the child"
     assert not [k for k in visible if k.startswith(("ANTHROPIC", "GITHUB", "CLAUDE_CODE", "SUTRA"))]
 
 
