@@ -1,0 +1,22 @@
+{
+  "name": "sutra-pro-desktop",
+  "productName": "Sutra Pro",
+  "version": "0.2.0",
+  "description": "The desktop app of Sutra Pro: a window around the local server, which runs on the Python that ships inside the app.",
+  "main": "src/main.js",
+  "private": true,
+  "author": "Sutra",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "package": "node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "45.2.1"
+  },
+  "allowScripts": {
+    "electron@45.2.1": true
+  }
+}

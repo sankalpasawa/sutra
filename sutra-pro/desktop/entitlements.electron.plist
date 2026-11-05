@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- For every Electron process: the app, its GPU, renderer and plug-in helpers, the crash handler (scripts/sign_desktop_app.sh).
+
+	     Notarization requires the hardened runtime, and the hardened runtime blocks what V8 does: it compiles JavaScript to machine code while
+	     it runs. allow-jit and allow-unsigned-executable-memory are the two entitlements Electron's own signing documentation names for that.
+	     Without them a renderer is killed the moment it compiles its first function.
+
+	     NOT requested, on purpose: disable-library-validation (every library in the app is signed by us, so validation passes), DYLD environment
+	     variables, the app sandbox, camera, microphone, location, contacts, calendars, photos, Apple Events. Sutra Pro serves on 127.0.0.1 and
+	     reads its own folder; it has no business asking for any of them. The embedded Python has its own file, entitlements.python.plist. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+</dict>
+</plist>

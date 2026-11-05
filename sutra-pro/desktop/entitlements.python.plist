@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- For the interpreter inside the app (Contents/Resources/python/bin/python3.x) and nothing else (scripts/sign_desktop_app.sh).
+
+	     disable-library-validation
+	       CPython loads its extension modules (pydantic_core, _ssl, ...) with dlopen. They are signed by us, but library validation also needs the
+	       loading binary and the library to carry the same team identifier, and one file a signing pass misses, or a macOS that is stricter, turns
+	       that into a crash at `import`. The old Sutra's embedded Python carries the same entitlement for the same reason.
+
+	     allow-unsigned-executable-memory
+	       ctypes and libffi closures write machine code into memory they then run.
+
+	     NOT requested: the app sandbox, camera, microphone, location, contacts, calendars, photos, Apple Events. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+</dict>
+</plist>

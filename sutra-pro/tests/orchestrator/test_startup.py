@@ -18,6 +18,7 @@ from orchestrator.test_scripted_conversation import (
     HEADERS, TOKEN, ATOM, FixedClock, Scenario, SurvivingLauncher, asked, make_scenario, new_team,
 )
 
+import sutra_app
 from sutra_app import main as main_module
 from sutra_app.library import node as node_module
 from sutra_app.config import Settings
@@ -308,7 +309,7 @@ def test_health_reports_the_version_the_schema_and_the_connectors(tmp_path):
     app, _ = make_scenario(tmp_path)
     with TestClient(app, base_url=BASE) as client:
         body = client.get("/api/health").json()
-        assert body["ok"] is True and body["version"] == "0.1.0" and body["schema"] == 1 and set(body["connectors"]) == {"stub"}
+        assert body["ok"] is True and body["version"] == sutra_app.__version__ and body["schema"] == 1 and set(body["connectors"]) == {"stub"}
         assert body["connectors"]["stub"]["installed"] is True
 
 
