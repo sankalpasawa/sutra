@@ -12,3 +12,4 @@ recursive-include sutra_app/ui/static *
 recursive-include sutra_app/orchestrator/agent/templates *.md
 include sutra_app/connectors/policy.default.json
 global-exclude __pycache__ *.py[cod] .DS_Store
+recursive-include sutra_app/assets *

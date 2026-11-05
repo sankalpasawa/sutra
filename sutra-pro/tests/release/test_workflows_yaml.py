@@ -483,11 +483,12 @@ def ci():
 
 
 def test_ci_is_named_ci_and_runs_on_push_to_main_pull_requests_and_manual_dispatch(ci):
-    assert ci["name"] == "ci"
+    assert ci["name"] == "sutra-pro-ci"
     on = triggers(ci)
     assert set(on) == {"push", "pull_request", "workflow_dispatch"}
-    assert on["push"] == {"branches": ["main"]}, "a tag push must not run ci: the release workflow owns tags"
-    assert not on["pull_request"], "pull requests of every branch run ci, with no path filter"
+    paths = ["sutra-pro/**", ".github/workflows/sutra-pro-ci.yml"]
+    assert on["push"] == {"branches": ["**"], "paths": paths}, "branch pushes only (a tag push must not run ci: the release workflows own tags)"
+    assert on["pull_request"] == {"paths": paths}, "the Sutra repository holds another product: only a change to this one runs this ci"
     slow = on["workflow_dispatch"]["inputs"]["slow"]
     assert slow["type"] == "boolean" and slow["default"] is False and "SUTRA_SLOW" in slow["description"]
     assert list(on["workflow_dispatch"]["inputs"]) == ["slow"]
@@ -495,7 +496,7 @@ def test_ci_is_named_ci_and_runs_on_push_to_main_pull_requests_and_manual_dispat
 
 def test_ci_reads_the_repository_and_cancels_superseded_runs(ci):
     assert ci["permissions"] == {"contents": "read"}
-    assert ci["concurrency"] == {"group": "ci-${{ github.ref }}", "cancel-in-progress": True}
+    assert ci["concurrency"] == {"group": "sutra-pro-ci-${{ github.ref }}", "cancel-in-progress": True}
 
 
 def test_ci_has_a_test_job_and_a_package_job_with_time_limits(ci):
@@ -504,11 +505,11 @@ def test_ci_has_a_test_job_and_a_package_job_with_time_limits(ci):
         assert isinstance(job["timeout-minutes"], int) and 0 < job["timeout-minutes"] <= 60
 
 
-def test_ci_test_runs_on_ubuntu_and_macos_without_fail_fast(ci):
+def test_ci_test_runs_on_ubuntu_macos_and_windows_without_fail_fast(ci):
     job = ci["jobs"]["test"]
     assert job["runs-on"] == "${{ matrix.os }}"
-    assert job["strategy"]["matrix"] == {"os": ["ubuntu-latest", "macos-15"]}
-    assert job["strategy"]["fail-fast"] is False, "a macOS-only break must not be hidden by the ubuntu leg going red first"
+    assert job["strategy"]["matrix"] == {"os": ["ubuntu-latest", "macos-15", "windows-latest"]}
+    assert job["strategy"]["fail-fast"] is False, "a macOS-only or Windows-only break must not be hidden by the ubuntu leg going red first"
 
 
 def test_ci_test_sets_up_uv_and_node_20_with_pinned_majors(ci):
@@ -522,7 +523,7 @@ def test_ci_test_installs_checks_the_plan_and_runs_the_local_gate_in_that_order(
     run = commands(ci["jobs"]["test"])
     assert run == [
         "uv venv .venv --python 3.11",
-        'uv pip install --python .venv/bin/python -e ".[dev]"',
+        'uv pip install -e ".[dev]"',
         "scripts/py scripts/plan_tools.py check",
         "scripts/gate.sh",
         "SUTRA_SLOW=1 scripts/py -m pytest",
@@ -569,10 +570,10 @@ def rel():
 
 
 def test_release_wheel_triggers_on_v_tags_and_manual_dispatch_with_a_tag_input(rel):
-    assert rel["name"] == "release-wheel"
+    assert rel["name"] == "sutra-pro-release-wheel"
     on = triggers(rel)
     assert set(on) == {"push", "workflow_dispatch"}
-    assert on["push"] == {"tags": ["v*"]}, "tags only: a branch push must not release"
+    assert on["push"] == {"tags": ["sutra-pro-v*"]}, "tags only: a branch push must not release; and never `v*`, which is the old product's (D100)"
     tag = on["workflow_dispatch"]["inputs"]["tag"]
     assert tag["required"] is True and "already exist" in tag["description"]
     assert list(on["workflow_dispatch"]["inputs"]) == ["tag"]
@@ -580,15 +581,15 @@ def test_release_wheel_triggers_on_v_tags_and_manual_dispatch_with_a_tag_input(r
 
 def test_the_tag_filter_matches_release_tags_and_not_other_names(rel):
     pattern = triggers(rel)["push"]["tags"][0]
-    for tag in ("v0.1.0", "v1.2.3-beta.1", "v10.0.0"):
+    for tag in ("sutra-pro-v0.1.0", "sutra-pro-v1.2.3-beta.1", "sutra-pro-v10.0.0"):
         assert fnmatch.fnmatchcase(tag, pattern), tag
-    for tag in ("0.1.0", "release-0.1.0", "V0.1.0", "x"):
+    for tag in ("0.1.0", "release-0.1.0", "V0.1.0", "x", "v0.1.0", "v2.307.1-desktop", "v2.307.1-beta.1-desktop", "sutra-pro-0.1.0"):
         assert not fnmatch.fnmatchcase(tag, pattern), tag
 
 
 def test_release_wheel_defaults_to_read_only_and_never_cancels_a_release_in_flight(rel):
     assert rel["permissions"] == {"contents": "read"}
-    assert rel["concurrency"] == {"group": "release-wheel-${{ inputs.tag || github.ref_name }}", "cancel-in-progress": False}
+    assert rel["concurrency"] == {"group": "sutra-pro-release-wheel-${{ inputs.tag || github.ref_name }}", "cancel-in-progress": False}
 
 
 def test_release_wheel_has_the_jobs_guard_build_verify_in_that_order_with_time_limits(rel):
@@ -612,7 +613,7 @@ def test_the_guard_runs_check_release_tag_on_the_tag_through_env(rel):
     assert len(steps) == 1
     (step,) = steps
     assert step["env"] == {"TAG": "${{ inputs.tag || github.ref_name }}"}
-    assert step["run"].strip() == 'scripts/py scripts/check_release_tag.py "$TAG"'
+    assert step["run"].strip() == 'scripts/py scripts/check_release_tag.py "$TAG" --github-output "$GITHUB_OUTPUT"'
     assert "if" not in step, "the guard must run on pushes and on dispatches alike"
 
 
@@ -655,7 +656,7 @@ def test_the_build_builds_checks_the_wheel_and_writes_a_checksum_for_each_asset(
 def test_the_build_checks_the_wheel_name_against_the_tag_through_env(rel):
     stage = next(s for s in steps_of(rel["jobs"]["build"]) if s.get("id") == "assets")
     assert stage["env"] == {"TAG": "${{ inputs.tag || github.ref_name }}"}
-    assert 'want="${TAG#v}"' in stage["run"] and 'want="${want%-beta.*}"' in stage["run"]
+    assert 'want="${TAG#sutra-pro-v}"' in stage["run"] and 'want="${want%-beta.*}"' in stage["run"]
     assert '"sutra_pro-$want-py3-none-any.whl"' in stage["run"]
 
 
@@ -672,7 +673,9 @@ def test_the_build_uploads_the_wheels_and_their_checksums_under_the_tag(rel):
     with_ = upload["with"]
     assert with_["tag_name"] == "${{ inputs.tag || github.ref_name }}"
     assert with_["fail_on_unmatched_files"] is True
-    assert with_["files"].split() == ["release/*.whl", "release/*.whl.sha256"]
+    assert with_["files"].split() == ["sutra-pro/release/*.whl", "sutra-pro/release/*.whl.sha256"]
+    assert with_["make_latest"] == "false", "D100: the old product's site and updater read /releases/latest"
+    assert with_["name"] == "${{ needs.guard.outputs.release_name }}"
 
 
 def test_a_beta_tag_is_a_prerelease_and_a_stable_tag_is_not(rel):
@@ -687,10 +690,10 @@ def test_the_release_body_tells_how_to_install_and_names_the_assets(rel):
     assert "${{ steps.assets.outputs.wheel }}" in body and "sutra_pro-py3-none-any.whl" in body and "shasum -a 256 -c" in body
 
 
-def test_verify_runs_on_ubuntu_and_macos_without_fail_fast(rel):
+def test_verify_runs_on_ubuntu_macos_and_windows_without_fail_fast(rel):
     job = rel["jobs"]["verify"]
     assert job["runs-on"] == "${{ matrix.os }}"
-    assert job["strategy"]["matrix"] == {"os": ["ubuntu-latest", "macos-15"]}
+    assert job["strategy"]["matrix"] == {"os": ["ubuntu-latest", "macos-15", "windows-latest"]}
     assert job["strategy"]["fail-fast"] is False
 
 
@@ -700,14 +703,16 @@ def test_verify_installs_the_published_wheel_not_the_one_the_build_made(rel):
     download, checksums, install = commands(job)
     assert 'gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir released' in download
     assert "--pattern '*.whl'" in download and "--pattern '*.whl.sha256'" in download
-    assert 'shasum -a 256 -c "${checksums[@]}"' in checksums and 'cmp "${versioned[0]}" sutra_pro-py3-none-any.whl' in checksums
+    assert 'check "${checksums[@]}"' in checksums and "shasum -a 256 -c" in checksums and "sha256sum -c" in checksums, "shasum, or sha256sum on Windows"
+    assert 'cmp "${versioned[0]}" sutra_pro-py3-none-any.whl' in checksums
     assert 'uv venv "$RUNNER_TEMP/fresh" --python 3.11' in install
     for script in (checksums, install):
         assert script.index("shopt -s nullglob") < script.index("=("), "an unmatched glob must count as zero, not as one"
     assert '[ "${#checksums[@]}" -eq 2 ]' in checksums and '[ "${#versioned[@]}" -eq 1 ]' in checksums
     assert '[ "${#wheels[@]}" -eq 1 ]' in install
-    assert 'uv pip install --python "$RUNNER_TEMP/fresh/bin/python" "${wheels[0]}"' in install
-    assert install.index('cd "$RUNNER_TEMP"') < install.index('"$RUNNER_TEMP/fresh/bin/sutra-pro" --help')
+    assert 'if [ "$RUNNER_OS" = Windows ]; then bindir=Scripts; fi' in install, "a Windows environment keeps its programs in Scripts, not bin"
+    assert 'uv pip install --python "$RUNNER_TEMP/fresh/$bindir/python" "${wheels[0]}"' in install
+    assert install.index('cd "$RUNNER_TEMP"') < install.index('"$RUNNER_TEMP/fresh/$bindir/sutra-pro" --help')
 
 
 def test_verify_downloads_with_the_workflow_token_through_env(rel):
@@ -729,12 +734,13 @@ def test_neither_workflow_uses_a_secret_other_than_the_workflow_token():
 
 def test_the_release_doc_names_the_workflows_jobs_assets_and_commands_that_exist():
     doc = (ROOT / "docs" / "RELEASE.md").read_text()
-    for workflow, wf in (("ci", named("ci.yml")), ("release-wheel", named("release-wheel.yml"))):
+    for workflow, wf in (("sutra-pro-ci", named("ci.yml")), ("sutra-pro-release-wheel", named("release-wheel.yml")),
+                         ("sutra-pro-release-macos", named("release-macos.yml")), ("sutra-pro-release-windows", named("release-windows.yml"))):
         assert wf["name"] == workflow
         for job_id in wf["jobs"]:
             assert f"**{workflow} / {job_id}" in doc, f"docs/RELEASE.md does not describe {workflow} / {job_id}"
-    for needle in ("sutra_pro-py3-none-any.whl", "sutra_pro-X.Y.Z-py3-none-any.whl", "vX.Y.Z-beta.N", "uv tool install",
-                   "gh workflow run release-wheel -f tag=vX.Y.Z --ref vX.Y.Z", "shasum -a 256 -c", "REL-2", "check_wheel.py",
+    for needle in ("sutra_pro-py3-none-any.whl", "sutra_pro-X.Y.Z-py3-none-any.whl", "sutra-pro-vX.Y.Z-beta.N", "uv tool install",
+                   "gh workflow run sutra-pro-release-wheel -f tag=sutra-pro-vX.Y.Z --ref sutra-pro-vX.Y.Z", "shasum -a 256 -c", "REL-2", "check_wheel.py",
                    "check_release_tag.py", "SUTRA_SLOW=1"):
         assert needle in doc, f"docs/RELEASE.md does not mention {needle!r}"
     assert "sutra_pro-py3-none-any.whl" in (WORKFLOWS / "sutra-pro-release-wheel.yml").read_text()
@@ -742,5 +748,166 @@ def test_the_release_doc_names_the_workflows_jobs_assets_and_commands_that_exist
 
 def test_the_repair_command_in_the_doc_is_the_one_the_guard_prints():
     doc = (ROOT / "docs" / "RELEASE.md").read_text()
-    assert "gh workflow run release-wheel -f tag=vX.Y.Z --ref vX.Y.Z" in doc
-    assert "gh workflow run release-wheel -f tag=vX.Y.Z --ref vX.Y.Z" in (WORKFLOWS / "sutra-pro-release-wheel.yml").read_text()
+    repair = "gh workflow run sutra-pro-release-wheel -f tag=sutra-pro-vX.Y.Z --ref sutra-pro-vX.Y.Z"
+    assert repair in doc
+    assert repair in (WORKFLOWS / "sutra-pro-release-wheel.yml").read_text()
+
+
+# ---------------------------------------------------------------- the old product shares the repository (D100)
+
+RELEASE_WORKFLOWS = ("release-wheel.yml", "release-macos.yml", "release-windows.yml")
+OLD_PRODUCT_TAGS = ("v2.307.1-desktop", "v2.307.1-beta.1-desktop", "v2.0.0", "v0.1.0")
+OUR_TAGS = ("sutra-pro-v0.1.0", "sutra-pro-v1.2.3-beta.4")
+
+
+def uploads(wf):
+    for job_id, job in wf["jobs"].items():
+        for index, step in enumerate(steps_of(job)):
+            if str(step.get("uses", "")).startswith("softprops/action-gh-release@"):
+                yield f"jobs.{job_id}.steps[{index}]", step
+
+
+@pytest.mark.parametrize("name", RELEASE_WORKFLOWS)
+def test_every_release_upload_is_never_marked_latest_and_carries_the_release_name(name):
+    """The old product's website and updater read /releases/latest. The release action marks a release Latest unless told not to."""
+    found = list(uploads(named(name)))
+    assert found, f"{name} uploads nothing"
+    for where, step in found:
+        assert step["with"].get("make_latest") == "false", f"{name} {where}: a Sutra Pro release must never become Latest"
+        assert step["with"].get("name") == "${{ needs.guard.outputs.release_name }}", f"{name} {where}"
+        assert step["with"].get("fail_on_unmatched_files") is True, f"{name} {where}"
+
+
+@pytest.mark.parametrize("name", RELEASE_WORKFLOWS)
+def test_a_release_workflow_starts_only_on_this_products_tags(name):
+    patterns = triggers(named(name))["push"]["tags"]
+    assert patterns == ["sutra-pro-v*"]
+    for tag in OLD_PRODUCT_TAGS:
+        assert not any(fnmatch.fnmatchcase(tag, pattern) for pattern in patterns), f"{name} would start on the old product's tag {tag}"
+    for tag in OUR_TAGS:
+        assert all(fnmatch.fnmatchcase(tag, pattern) for pattern in patterns)
+
+
+@pytest.mark.parametrize("name", RELEASE_WORKFLOWS)
+def test_a_release_workflow_has_a_guard_that_runs_first_on_ubuntu_and_everything_waits_for_it(name):
+    wf = named(name)
+    assert list(wf["jobs"])[0] == "guard" and wf["jobs"]["guard"]["runs-on"] == "ubuntu-latest" and not needs_of(wf["jobs"]["guard"])
+    for job_id in wf["jobs"]:
+        if job_id != "guard":
+            assert "guard" in needs_closure(wf, job_id), f"{name}: {job_id} can run before the guard has passed"
+    assert wf["jobs"]["guard"]["outputs"] == {"release_name": "${{ steps.tag.outputs.release_name }}"}
+
+
+def test_the_old_products_release_workflows_do_not_start_on_this_products_tags():
+    """Read from the repository's own folder when the old workflows are there (they are in the Sutra repository)."""
+    checked = 0
+    for old in ("release-dmg.yml", "release-windows.yml"):
+        path = WORKFLOWS / old
+        if not path.is_file():
+            continue
+        checked += 1
+        patterns = triggers(load(path))["push"]["tags"]
+        for tag in OUR_TAGS:
+            assert not any(fnmatch.fnmatchcase(tag, pattern) for pattern in patterns), f"{old} would start on {tag}"
+    if not checked:
+        pytest.skip("the old product's workflows are not beside these (this is not the Sutra repository)")
+
+
+def test_the_old_products_workflows_do_not_start_on_a_change_that_only_touches_this_folder():
+    """Pushing sutra-pro/ to main must not run the old product's gates: each of its path-filtered workflows names its own folders."""
+    checked = 0
+    for old in ("plugin-release-gate.yml", "test-native.yml", "deploy-website.yml"):
+        path = WORKFLOWS / old
+        if not path.is_file():
+            continue
+        checked += 1
+        for event in ("push", "pull_request"):
+            filters = (triggers(load(path)).get(event) or {}).get("paths")
+            if event == "pull_request" and filters is None and "pull_request" not in triggers(load(path)):
+                continue
+            assert filters, f"{old} {event} has no path filter: it would start on any change, this folder's included"
+            assert not any(fnmatch.fnmatchcase("sutra-pro/sutra_app/main.py", pattern) for pattern in filters), old
+    if not checked:
+        pytest.skip("the old product's workflows are not beside these")
+
+
+# ---------------------------------------------------------------- sutra-pro-release-windows.yml
+
+@pytest.fixture(scope="module")
+def win():
+    return named("release-windows.yml")
+
+
+def test_release_windows_has_the_jobs_guard_exe_verify_and_only_exe_can_write(win):
+    assert win["name"] == "sutra-pro-release-windows"
+    assert list(win["jobs"]) == ["guard", "exe", "verify"]
+    assert win["permissions"] == {"contents": "read"}
+    assert win["jobs"]["exe"]["permissions"] == {"contents": "write"}
+    assert "permissions" not in win["jobs"]["guard"] and "permissions" not in win["jobs"]["verify"]
+    assert win["jobs"]["exe"]["runs-on"] == "windows-latest" and win["jobs"]["verify"]["runs-on"] == "windows-latest"
+    assert needs_of(win["jobs"]["exe"]) == ["guard"] and sorted(needs_of(win["jobs"]["verify"])) == ["exe", "guard"]
+    assert win["concurrency"] == {"group": "sutra-pro-release-windows-${{ inputs.tag || github.ref_name }}", "cancel-in-progress": False}
+    assert triggers(win)["workflow_dispatch"]["inputs"]["tag"]["required"] is True
+
+
+def test_release_windows_runs_bash_inside_the_product_folder_by_default(win):
+    assert win["defaults"] == {"run": {"shell": "bash", "working-directory": "sutra-pro"}}
+
+
+def test_the_exe_job_proves_the_folder_then_the_installer_before_it_uploads_anything(win):
+    texts = [s.get("run", s.get("uses", "")) for s in steps_of(win["jobs"]["exe"])]
+    order = ["uv build --wheel", "build_windows_app.py", "prove_windows_app.py --app \"build/Sutra Pro\"", "choco install innosetup",
+             "sutra-pro.iss", "Sutra-Pro-Setup-x64.exe /VERYSILENT", "make_archive", "sha256sum", "softprops/action-gh-release"]
+    positions = [next(i for i, text in enumerate(texts) if key in text) for key in order]
+    assert positions == sorted(positions), dict(zip(order, positions))
+
+
+def test_the_exe_job_names_what_it_publishes_and_checks_the_wheel_against_the_tag(win):
+    (upload,) = action_steps(win["jobs"]["exe"], "softprops/action-gh-release@")
+    assert upload["with"]["files"].split() == [
+        "sutra-pro/release/Sutra-Pro-Setup-x64.exe", "sutra-pro/release/Sutra-Pro-Setup-x64.exe.sha256",
+        "sutra-pro/release/Sutra-Pro-win-x64.zip", "sutra-pro/release/Sutra-Pro-win-x64.zip.sha256"]
+    assert upload["with"]["prerelease"] == "${{ contains(inputs.tag || github.ref_name, '-beta.') }}"
+    assert "body" not in upload["with"], "sutra-pro-release-wheel.yml owns the release text"
+    build = next(s for s in steps_of(win["jobs"]["exe"]) if "build_windows_app.py" in s.get("run", ""))
+    assert 'want="${TAG#sutra-pro-v}"' in build["run"] and "sutra_pro-$want-py3-none-any.whl" in build["run"]
+    assert win["jobs"]["exe"]["env"] == {"TAG": "${{ inputs.tag || github.ref_name }}"}
+
+
+def test_git_bash_does_not_rewrite_the_installers_slash_options(win):
+    """/VERYSILENT and /DAppVersion=... look like POSIX paths to Git Bash, which would turn them into C:/Program Files/Git/... first."""
+    for job_id in ("exe", "verify"):
+        for step in steps_of(win["jobs"][job_id]):
+            run = step.get("run", "")
+            if "/VERYSILENT" in run or "/DAppVersion" in run:
+                assert step.get("env", {}).get("MSYS2_ARG_CONV_EXCL") == "*", f"{job_id}: {step.get('name')}"
+
+
+def test_the_installer_is_run_silently_into_a_scratch_folder_and_uninstalled_again(win):
+    for job_id in ("exe", "verify"):
+        step = next(s for s in steps_of(win["jobs"][job_id]) if "/VERYSILENT" in s.get("run", ""))
+        run = step["run"]
+        assert "/SUPPRESSMSGBOXES" in run and "/NORESTART" in run and '"/DIR=$target"' in run
+        assert "prove_windows_app.py" in run and 'unins000.exe" /VERYSILENT' in run
+        assert run.index("prove_windows_app.py") < run.index("unins000.exe"), "prove the installed copy, then remove it"
+        assert "the uninstaller left the app behind" in run
+
+
+def test_verify_installs_what_was_published_and_not_what_the_build_job_had(win):
+    job = win["jobs"]["verify"]
+    assert job["env"]["EXE_RESULT"] == "${{ needs.exe.result }}" and job["if"] == "always() && needs.guard.result == 'success'"
+    download = next(s for s in steps_of(job) if "gh release download" in s.get("run", ""))
+    assert "--pattern 'Sutra-Pro-Setup-x64.exe*'" in download["run"] and "--pattern 'Sutra-Pro-win-x64.zip*'" in download["run"]
+    assert "sha256sum -c" in download["run"] and "20000000" in download["run"]
+    assert "released/Sutra-Pro-Setup-x64.exe /VERYSILENT" in next(s for s in steps_of(job) if "/VERYSILENT" in s.get("run", ""))["run"]
+    assert any("Sutra-Pro-win-x64.zip" in s.get("run", "") and "prove_windows_app.py" in s.get("run", "") for s in steps_of(job))
+
+
+def test_release_windows_uses_no_secret_but_the_workflow_token():
+    assert [text for text in strings(named("release-windows.yml")) if "secrets." in text] == []
+
+
+def test_the_installer_is_built_with_the_flags_the_script_requires(win):
+    step = next(s for s in steps_of(win["jobs"]["exe"]) if "sutra-pro.iss" in s.get("run", ""))
+    for define in ("/DAppVersion=$VERSION", "/DSourceDir=", "/DOutputDir=", "/DIconFile="):
+        assert define in step["run"], define

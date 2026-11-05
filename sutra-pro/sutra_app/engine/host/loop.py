@@ -24,6 +24,7 @@ import argparse
 import importlib
 import json
 import os
+from sutra_app import oslayer
 import re
 import shutil
 import signal
@@ -96,10 +97,10 @@ def main(argv=None, *, make_port: Optional[Callable[..., Any]] = None) -> int:
 
 def _atomic_write(path: Path, text: str) -> None:
     tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(tmp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)
-    os.replace(tmp, path)
+    oslayer.replace(tmp, path)
 
 
 def _stderr(text: str) -> None:
@@ -280,7 +281,7 @@ class Host:
         shutil.rmtree(tmp, ignore_errors=True)
         shutil.copytree(seed, tmp)
         try:
-            os.rename(tmp, target)
+            oslayer.replace(tmp, target)
         except OSError:
             shutil.rmtree(tmp, ignore_errors=True)
             if not target.exists():

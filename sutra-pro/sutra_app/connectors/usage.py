@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+from sutra_app import oslayer
 import re
 import secrets
 import tempfile
@@ -263,7 +264,7 @@ def save_session_state(state: SessionState) -> Path:
             handle.write(json.dumps(state.model_dump(mode="json"), indent=2))
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp, path)
+        oslayer.replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)

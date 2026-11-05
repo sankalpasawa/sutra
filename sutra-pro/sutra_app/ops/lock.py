@@ -12,21 +12,27 @@
 (`read -r pid port`) understands; a JSON line `{pid, port, started, version}` follows. The launcher rewrites the file with only the first line
 once the server is healthy (its own pid then), so a reader accepts both shapes. The LOCK, not the file, says whether a server is
 running: a pid file without a held lock is stale and is replaced by the next server. The kernel drops the lock when the process
-ends, however it ends. POSIX only (`fcntl`).
+ends, however it ends. The lock itself is `oslayer.try_lock` (`flock` on POSIX, `msvcrt.locking` on Windows).
+
+A stop can also be asked for with a file: `request_stop(data_dir)` creates `<data>/app.stop`, which the running server polls and answers
+by shutting down the way a SIGTERM does. It is how `sutra-pro stop` reaches a server on Windows, where a process with no console
+cannot be signalled. `stop_requested` and `clear_stop` are the server's side of it.
 """
 import contextlib
-import fcntl
 import json
 import os
+from sutra_app import oslayer
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-__all__ = ["InstanceLock", "Holder", "LOCK_NAME", "PID_NAME", "read_holder", "is_locked", "pid_alive"]
+__all__ = ["InstanceLock", "Holder", "LOCK_NAME", "PID_NAME", "STOP_NAME", "read_holder", "is_locked", "pid_alive", "request_stop",
+           "stop_requested", "clear_stop"]
 
 LOCK_NAME = "app.lock"
 PID_NAME = "app.pid"
+STOP_NAME = "app.stop"
 HOLDER_WAIT_S = 1.0          # a loser waits this long for the winner to write the pid file (it takes microseconds)
 
 
@@ -45,15 +51,24 @@ class Holder:
 
 
 def pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return oslayer.pid_alive(pid)
+
+
+def request_stop(data_dir: str | os.PathLike[str]) -> Path:
+    """Ask the server of this data folder to stop: create `<data>/app.stop`. The server removes it when it has seen it."""
+    path = Path(data_dir) / STOP_NAME
+    path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    return path
+
+
+def stop_requested(data_dir: str | os.PathLike[str]) -> bool:
+    return (Path(data_dir) / STOP_NAME).exists()
+
+
+def clear_stop(data_dir: str | os.PathLike[str]) -> None:
+    """Remove a stop request (the server does it at start, so a leftover from a crash never stops the next server)."""
+    with contextlib.suppress(OSError):
+        (Path(data_dir) / STOP_NAME).unlink()
 
 
 def read_holder(data_dir: str | os.PathLike[str]) -> Holder | None:
@@ -91,17 +106,15 @@ def is_locked(data_dir: str | os.PathLike[str]) -> bool:
     """True while some process holds the instance lock of this folder. Takes and drops the lock to find out, so call it only to look."""
     path = Path(data_dir) / LOCK_NAME
     try:
-        fd = os.open(path, os.O_RDWR)
+        fd = os.open(path, os.O_RDWR | oslayer.O_BINARY)
     except FileNotFoundError:
         return False
     except OSError:
         return False
     try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
+        if not oslayer.try_lock(fd):
             return True
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        oslayer.unlock(fd)
         return False
     finally:
         os.close(fd)
@@ -134,10 +147,8 @@ class InstanceLock:
         if self._fd is not None:
             return True
         self.data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT, 0o600)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
+        fd = os.open(self.lock_path, os.O_RDWR | oslayer.O_BINARY | os.O_CREAT, 0o600)
+        if not oslayer.try_lock(fd):
             os.close(fd)
             return False
         self._fd = fd
@@ -160,8 +171,7 @@ class InstanceLock:
         if holder is not None and holder.pid == os.getpid():
             with contextlib.suppress(OSError):
                 self.pid_path.unlink()
-        with contextlib.suppress(OSError):
-            fcntl.flock(fd, fcntl.LOCK_UN)
+        oslayer.unlock(fd)
         os.close(fd)
 
     def holder(self, *, wait: float = HOLDER_WAIT_S) -> Holder | None:
@@ -192,4 +202,4 @@ class InstanceLock:
             os.write(fd, body.encode("utf-8"))
         finally:
             os.close(fd)
-        os.replace(tmp, self.pid_path)
+        oslayer.replace(tmp, self.pid_path)

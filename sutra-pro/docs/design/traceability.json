@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 97,
+  "decisions": 102,
   "packages": 62,
   "endpoints": 30,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 97,
+ "max_decision": 102,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -286,7 +286,12 @@
     "D94",
     "D95",
     "D96",
-    "D97"
+    "D97",
+    "D98",
+    "D99",
+    "D100",
+    "D101",
+    "D102"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -2485,6 +2490,55 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "key only, label \"offline demo works\"."
+  },
+  {
+   "id": "D98",
+   "title": "sutra-pro lives inside the Sutra repository, in the folder `sutra-pro/`",
+   "packages": [
+    "REL-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"inside the Sutra repo\"."
+  },
+  {
+   "id": "D99",
+   "title": "The repository's ownership audit (D69) holds for this folder: no personal identifier in a tracked file",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key only, label \"no personal paths (D69)\"."
+  },
+  {
+   "id": "D100",
+   "title": "Release tags are `sutra-pro-vX.Y.Z[-beta.N]` and a release of this product is never \"Latest\"",
+   "packages": [
+    "REL-1",
+    "REL-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"tags sutra-pro-v*, never Latest\"."
+  },
+  {
+   "id": "D101",
+   "title": "Sutra Pro runs on Windows 10 and 11 (x64): one platform module, the same app, an installer and a zip",
+   "packages": [
+    "ORCH-8",
+    "REL-1",
+    "REL-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "Windows app box on the distribution band; key label \"Windows app\"."
+  },
+  {
+   "id": "D102",
+   "title": "The first builds are unsigned and have an icon; signing is wired where a certificate exists",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key only, label \"unsigned until a certificate (D102)\"."
   }
  ],
  "packages": [
@@ -2514,10 +2568,8 @@
    "notes": "docs/notes/CN-1.md",
    "notes_lines": 40,
    "decisions_cited": [],
-   "merge_commits": [
-    "373e973"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "CN-2",
@@ -2538,10 +2590,8 @@
    "notes": "docs/notes/CN-2.md",
    "notes_lines": 40,
    "decisions_cited": [],
-   "merge_commits": [
-    "32ce236"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "CN-3",
@@ -2561,10 +2611,8 @@
    "notes": "docs/notes/CN-3.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "031b14d"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "CN-4",
@@ -2584,10 +2632,8 @@
    "decisions_cited": [
     "D7"
    ],
-   "merge_commits": [
-    "ced924a"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "CN-5",
@@ -2604,10 +2650,8 @@
    "notes": "docs/notes/CN-5.md",
    "notes_lines": 41,
    "decisions_cited": [],
-   "merge_commits": [
-    "62b3f1d"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "CN-6",
@@ -2629,10 +2673,8 @@
    "notes": "docs/notes/CN-6.md",
    "notes_lines": 38,
    "decisions_cited": [],
-   "merge_commits": [
-    "e6cfb5a"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "CN-7",
@@ -2661,10 +2703,8 @@
    "notes": "docs/notes/CN-7.md",
    "notes_lines": 39,
    "decisions_cited": [],
-   "merge_commits": [
-    "839bbdb"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "CN-8",
@@ -2688,10 +2728,8 @@
    "notes": "docs/notes/CN-8.md",
    "notes_lines": 39,
    "decisions_cited": [],
-   "merge_commits": [
-    "b6b17f6"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "CN-9",
@@ -2711,10 +2749,8 @@
    "notes": "docs/notes/CN-9.md",
    "notes_lines": 39,
    "decisions_cited": [],
-   "merge_commits": [
-    "0915a0d"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "CT-1",
@@ -2736,10 +2772,8 @@
    "notes": "docs/notes/CT-1.md",
    "notes_lines": 41,
    "decisions_cited": [],
-   "merge_commits": [
-    "3b8323c"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "E0",
@@ -2767,10 +2801,8 @@
    "notes": "docs/notes/E0.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "abd0151"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "E1",
@@ -2811,10 +2843,8 @@
    "notes": "docs/notes/E1.md",
    "notes_lines": 39,
    "decisions_cited": [],
-   "merge_commits": [
-    "8f0fcd1"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "E2",
@@ -2834,10 +2864,8 @@
    "notes": "docs/notes/E2.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "847ec25"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "E3",
@@ -2864,10 +2892,8 @@
    "notes": "docs/notes/E3.md",
    "notes_lines": 46,
    "decisions_cited": [],
-   "merge_commits": [
-    "bf95f3f"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "E4",
@@ -2897,10 +2923,8 @@
    "notes": "docs/notes/E4.md",
    "notes_lines": 43,
    "decisions_cited": [],
-   "merge_commits": [
-    "7591373"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "E5",
@@ -2923,10 +2947,8 @@
    "notes": "docs/notes/E5.md",
    "notes_lines": 40,
    "decisions_cited": [],
-   "merge_commits": [
-    "fdff65c"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "E6",
@@ -2952,10 +2974,8 @@
    "notes": "docs/notes/E6.md",
    "notes_lines": 47,
    "decisions_cited": [],
-   "merge_commits": [
-    "0c0d52f"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "E7",
@@ -2974,10 +2994,8 @@
    "notes": "docs/notes/E7.md",
    "notes_lines": 44,
    "decisions_cited": [],
-   "merge_commits": [
-    "c75857b"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "E8",
@@ -3000,10 +3018,8 @@
    "notes": "docs/notes/E8.md",
    "notes_lines": 37,
    "decisions_cited": [],
-   "merge_commits": [
-    "9d71ee9"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-CONSOLE",
@@ -3032,10 +3048,8 @@
    "notes": "docs/notes/GAP-CONSOLE.md",
    "notes_lines": 43,
    "decisions_cited": [],
-   "merge_commits": [
-    "80dd160"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-DATA",
@@ -3059,10 +3073,8 @@
    "notes": "docs/notes/GAP-DATA.md",
    "notes_lines": 44,
    "decisions_cited": [],
-   "merge_commits": [
-    "f562e8c"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-DEMO",
@@ -3088,10 +3100,8 @@
     "D88",
     "D97"
    ],
-   "merge_commits": [
-    "133ea64"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-DOCS",
@@ -3117,10 +3127,8 @@
    "decisions_cited": [
     "D93"
    ],
-   "merge_commits": [
-    "e2e6013"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-E1B",
@@ -3141,10 +3149,8 @@
    "notes": "docs/notes/GAP-E1B.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "2af7170"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-E2E",
@@ -3171,10 +3177,8 @@
    "notes": "docs/notes/GAP-E2E.md",
    "notes_lines": 42,
    "decisions_cited": [],
-   "merge_commits": [
-    "18b003a"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-E2E-UI",
@@ -3193,10 +3197,8 @@
    "notes": "docs/notes/GAP-E2E-UI.md",
    "notes_lines": 43,
    "decisions_cited": [],
-   "merge_commits": [
-    "c13401f"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-INSTALL",
@@ -3221,10 +3223,8 @@
    "decisions_cited": [
     "D88"
    ],
-   "merge_commits": [
-    "4578eed"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-LIVE",
@@ -3248,10 +3248,8 @@
    "decisions_cited": [
     "D8"
    ],
-   "merge_commits": [
-    "6fbbec7"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-OPS-1",
@@ -3289,10 +3287,8 @@
    "decisions_cited": [
     "D95"
    ],
-   "merge_commits": [
-    "8620c1a"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-TRACE",
@@ -3324,10 +3320,8 @@
     "D96",
     "D97"
    ],
-   "merge_commits": [
-    "00a3c6c"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-TUNE",
@@ -3352,10 +3346,8 @@
    "notes": "docs/notes/GAP-TUNE.md",
    "notes_lines": 44,
    "decisions_cited": [],
-   "merge_commits": [
-    "abb50fa"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "GAP-W1",
@@ -3386,10 +3378,8 @@
    "notes": "docs/notes/GAP-W1.md",
    "notes_lines": 39,
    "decisions_cited": [],
-   "merge_commits": [
-    "544b657"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "L1",
@@ -3416,10 +3406,8 @@
    "notes": "docs/notes/L1.md",
    "notes_lines": 114,
    "decisions_cited": [],
-   "merge_commits": [
-    "f02e448"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "L2",
@@ -3439,10 +3427,8 @@
    "notes": "docs/notes/L2.md",
    "notes_lines": 42,
    "decisions_cited": [],
-   "merge_commits": [
-    "16a3612"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "L3",
@@ -3465,10 +3451,8 @@
    "notes": "docs/notes/L3.md",
    "notes_lines": 42,
    "decisions_cited": [],
-   "merge_commits": [
-    "bb72dae"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "L4",
@@ -3490,10 +3474,8 @@
    "notes": "docs/notes/L4.md",
    "notes_lines": 40,
    "decisions_cited": [],
-   "merge_commits": [
-    "b177f4f"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "L5",
@@ -3513,10 +3495,8 @@
    "notes": "docs/notes/L5.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "70eca3d"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "L6",
@@ -3536,10 +3516,8 @@
    "notes": "docs/notes/L6.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "1e668e3"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "L7",
@@ -3563,11 +3541,8 @@
    "notes": "docs/notes/L7.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "14ea587",
-    "5fb0229"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "L8",
@@ -3602,10 +3577,8 @@
    "notes": "docs/notes/L8.md",
    "notes_lines": 42,
    "decisions_cited": [],
-   "merge_commits": [
-    "c62f92b"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "L9",
@@ -3624,10 +3597,8 @@
    "notes": "docs/notes/L9.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "37ea0db"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "L10",
@@ -3646,10 +3617,8 @@
    "notes": "docs/notes/L10.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "337942a"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "ORCH-1",
@@ -3687,10 +3656,8 @@
    "decisions_cited": [
     "D88"
    ],
-   "merge_commits": [
-    "1e5561d"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "ORCH-2",
@@ -3709,11 +3676,8 @@
    "notes": "docs/notes/ORCH-2.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "018b8da",
-    "bfdbb76"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "ORCH-3",
@@ -3740,10 +3704,8 @@
    "notes": "docs/notes/ORCH-3.md",
    "notes_lines": 40,
    "decisions_cited": [],
-   "merge_commits": [
-    "ba87364"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "ORCH-4",
@@ -3763,10 +3725,8 @@
    "notes": "docs/notes/ORCH-4.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "edfaa2b"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "ORCH-5",
@@ -3796,10 +3756,8 @@
    "notes": "docs/notes/ORCH-5.md",
    "notes_lines": 42,
    "decisions_cited": [],
-   "merge_commits": [
-    "c9f267f"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "ORCH-6",
@@ -3832,10 +3790,8 @@
    "notes": "docs/notes/ORCH-6.md",
    "notes_lines": 39,
    "decisions_cited": [],
-   "merge_commits": [
-    "9a7dc6c"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "ORCH-7",
@@ -3875,10 +3831,8 @@
    "notes": "docs/notes/ORCH-7.md",
    "notes_lines": 43,
    "decisions_cited": [],
-   "merge_commits": [
-    "e8ed343"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "ORCH-8",
@@ -3906,10 +3860,8 @@
    "notes": "docs/notes/ORCH-8.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "1f5cf6e"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "REL-1",
@@ -3932,10 +3884,8 @@
    "decisions_cited": [
     "D89"
    ],
-   "merge_commits": [
-    "2c3fe08"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "REL-2",
@@ -3958,10 +3908,8 @@
    "decisions_cited": [
     "D89"
    ],
-   "merge_commits": [
-    "2910e7b"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "UI-0",
@@ -3986,10 +3934,8 @@
     "D73",
     "D85"
    ],
-   "merge_commits": [
-    "e6d0868"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "UI-1",
@@ -4008,10 +3954,8 @@
     "D81",
     "D82"
    ],
-   "merge_commits": [
-    "7c7cded"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "UI-2",
@@ -4042,10 +3986,8 @@
     "D76",
     "D84"
    ],
-   "merge_commits": [
-    "00ee22a"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "UI-3",
@@ -4066,10 +4008,8 @@
     "D80",
     "D81"
    ],
-   "merge_commits": [
-    "7753624"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "UI-4",
@@ -4092,10 +4032,8 @@
    "decisions_cited": [
     "D75"
    ],
-   "merge_commits": [
-    "73ec1d2"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "UI-5",
@@ -4120,10 +4058,8 @@
     "D75",
     "D80"
    ],
-   "merge_commits": [
-    "130d132"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "UI-6",
@@ -4150,10 +4086,8 @@
     "D63",
     "D64"
    ],
-   "merge_commits": [
-    "54bdf00"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "UI-7",
@@ -4179,10 +4113,8 @@
    "decisions_cited": [
     "D18"
    ],
-   "merge_commits": [
-    "ae758ca"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "UI-8",
@@ -4202,10 +4134,8 @@
    "notes": "docs/notes/UI-8.md",
    "notes_lines": 45,
    "decisions_cited": [],
-   "merge_commits": [
-    "4d14bc2"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   },
   {
    "id": "UI-9",
@@ -4231,10 +4161,8 @@
    "notes": "docs/notes/UI-9.md",
    "notes_lines": 44,
    "decisions_cited": [],
-   "merge_commits": [
-    "a741091"
-   ],
-   "status": "merged"
+   "merge_commits": [],
+   "status": "pending"
   }
  ]
 }

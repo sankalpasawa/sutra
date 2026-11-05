@@ -29,6 +29,7 @@ import contextlib
 import hashlib
 import json
 import os
+from sutra_app import oslayer
 import shutil
 import sqlite3
 import sys
@@ -230,7 +231,7 @@ def create_backup(settings: Settings, *, to: Path | None = None, include_runs: b
             scratch = Path(scratch_name)
             db_copy = scratch / DB_FILENAME
             user_version = snapshot_database(settings.db_path, db_copy)
-            fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, _FILE_MODE)
+            fd = os.open(part, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_TRUNC, _FILE_MODE)
             with os.fdopen(fd, "wb") as raw, tarfile.open(fileobj=raw, mode="w:gz") as tar:
                 def add(arcname: str, source: Path, mtime: float) -> None:
                     copy = scratch / "file.tmp"
@@ -257,7 +258,7 @@ def create_backup(settings: Settings, *, to: Path | None = None, include_runs: b
                 scratch_manifest.write_bytes(body)
                 with open(scratch_manifest, "rb") as handle:
                     tar.addfile(info, handle)
-        os.replace(part, final)
+        oslayer.replace(part, final)
     except BackupError:
         with contextlib.suppress(OSError):
             part.unlink()
@@ -298,7 +299,7 @@ def before_upgrade(settings: Settings) -> Path | None:
             part.unlink()
         snapshot_database(db_path, part)
         os.chmod(part, _FILE_MODE)
-        os.replace(part, final)
+        oslayer.replace(part, final)
     except (BackupError, OSError) as exc:
         with contextlib.suppress(OSError):
             part.unlink()
@@ -372,7 +373,7 @@ def _stage(archive: Path, files: dict[str, dict[str, Any]], staging: Path) -> No
             dest = staging / member.name
             dest.parent.mkdir(mode=_DIR_MODE, parents=True, exist_ok=True)
             digest, size = hashlib.sha256(), 0
-            fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _FILE_MODE)
+            fd = os.open(dest, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL, _FILE_MODE)
             with os.fdopen(fd, "wb") as out:
                 while chunk := source.read(1 << 20):
                     digest.update(chunk)

@@ -26,6 +26,7 @@ Direct use outside the Router is for tests. Every call is deterministic given th
 from __future__ import annotations
 
 import os
+from sutra_app import oslayer
 import re
 import shutil
 import tempfile
@@ -204,7 +205,7 @@ def prompted_prompt(prompt: str, schema: dict) -> str:
 
 def write_private_file(path: Path, text: str) -> None:
     """A new file of mode 0600 (never readable by others, not even for an instant)."""
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, _PRIVATE_FILE)
+    fd = os.open(str(path), os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL, _PRIVATE_FILE)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)
 
@@ -215,7 +216,7 @@ def write_state(state: SessionState) -> None:
     tmp = directory / f".session.{uuid.uuid4().hex[:8]}.tmp"
     try:
         write_private_file(tmp, state.model_dump_json(indent=2))
-        os.replace(tmp, directory / "session.json")
+        oslayer.replace(tmp, directory / "session.json")
     finally:
         try:
             tmp.unlink()

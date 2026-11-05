@@ -13,6 +13,7 @@ The client never sends a path: the run folder is `services.data_dir / ref.dir`, 
 """
 import json
 import os
+from sutra_app import oslayer
 import re
 import tempfile
 import threading
@@ -78,7 +79,7 @@ def write_page(data_dir, dept_id: str, **changes: Any) -> PageState:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump({"since_run": state.since_run, "next_settings": dict(state.next_settings)}, f)
             os.chmod(temp, 0o600)
-            os.replace(temp, target)
+            oslayer.replace(temp, target)
         finally:
             if os.path.exists(temp):
                 os.unlink(temp)

@@ -1,0 +1,255 @@
+# Build the Windows app of Sutra Pro, an installer and a portable zip, and attach them to the GitHub Release of the Sutra repository
+# (D98, D100, D101). The Windows counterpart of sutra-pro-release-macos.yml: the same guard, the same stable asset names, the same rules.
+#
+# THE ASSETS (stable, version-free names; the link is /releases/download/<tag>/<name>, because the release is never "Latest", D100)
+#   Sutra-Pro-Setup-x64.exe   Sutra-Pro-Setup-x64.exe.sha256     the installer (Inno Setup, per user, no administrator rights)
+#   Sutra-Pro-win-x64.zip     Sutra-Pro-win-x64.zip.sha256       the same app folder, portable: unzip anywhere, run "Sutra Pro.cmd"
+# Each is the checksum of the file this job built (see the wheel workflow for why the files are per asset). The release BODY is not set
+# here: sutra-pro-release-wheel.yml owns it, and two workflows writing one body would overwrite each other.
+#
+# WHAT THE APP IS (D12: there is no desktop shell). scripts/build_windows_app.py makes `Sutra Pro/` = a python-build-standalone CPython
+# 3.11 with the wheel (and the tray icon extra) installed into it, `python\SutraPro.exe` (a copy of pythonw.exe) and a few .cmd files.
+# The shortcut runs `SutraPro.exe -I -X utf8 -m sutra_app.desktop`: it starts the server, opens the browser and keeps an icon in the
+# notification area. Nothing in it is a native program, so there is nothing to compile and nothing for a virus scanner to guess at.
+#
+# UNSIGNED (D102). Windows SmartScreen says "Windows protected your PC" the first time: More info, then Run anyway. A code-signing
+# certificate would remove that and needs a paid account; the checksums on the release are the integrity check meanwhile.
+#
+# THE PROOFS. Before anything is uploaded the built folder is run (scripts/prove_windows_app.py: offline, network cut, a team runs its
+# first turn, a stop request ends it and leaves nothing running); then the INSTALLER is run silently into a scratch folder, the installed
+# copy is proved the same way, and the uninstaller must remove it. `verify` does the installer part again on the files that were
+# PUBLISHED, not on the ones the build job had on disk.
+#
+# A tag comes from a push or a dispatch input and may hold shell metacharacters, so it reaches scripts only through `env:`.
+name: sutra-pro-release-windows
+
+on:
+  push:
+    tags: ["sutra-pro-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to attach the Windows app to (must already exist)"
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: sutra-pro
+
+concurrency:
+  group: sutra-pro-release-windows-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release_name: ${{ steps.tag.outputs.release_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Create the virtual environment (scripts/py needs it)
+        run: uv venv .venv --python 3.11
+
+      - name: Tag must match pyproject.toml
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: scripts/py scripts/check_release_tag.py "$TAG" --github-output "$GITHUB_OUTPUT"
+
+      - name: A dispatched tag must already exist
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "::error::tag $TAG does not exist in this repository. Create and push the tag first."
+            exit 1
+          fi
+
+  exe:
+    name: exe (windows-x64)
+    needs: guard
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write        # create or update the release and upload its assets
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Create the virtual environment (scripts/py needs it)
+        run: uv venv .venv --python 3.11
+
+      - name: Build the wheel
+        run: |
+          set -euo pipefail
+          uv build --wheel
+          scripts/py scripts/check_wheel.py dist/*.whl
+
+      # The interpreter archive is verified against its sha256 on every use, so a poisoned cache entry cannot get into an installer.
+      - name: Cache the CPython download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/sutra-pro-bundle
+          key: sutra-pro-bundle-${{ runner.os }}-x64-v1
+
+      # The wheel name must carry the version the tag promises (a beta publishes the wheel of its X.Y.Z), as in the other workflows.
+      - name: Build the app folder
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          [ "${#wheels[@]}" -eq 1 ] || { echo "::error::expected exactly one wheel in dist/, found ${#wheels[@]}"; exit 1; }
+          want="${TAG#sutra-pro-v}"
+          want="${want%-beta.*}"
+          [ "$(basename "${wheels[0]}")" = "sutra_pro-$want-py3-none-any.whl" ] \
+            || { echo "::error::the build made $(basename "${wheels[0]}") but tag $TAG promises sutra_pro-$want-py3-none-any.whl"; exit 1; }
+          echo "VERSION=$want" >> "$GITHUB_ENV"
+          scripts/py scripts/build_windows_app.py --wheel "${wheels[0]}" --out build
+
+      # The proof that matters: the folder runs its OWN interpreter, offline, a team runs, a stop request ends everything.
+      - name: Prove the app folder runs
+        run: scripts/py scripts/prove_windows_app.py --app "build/Sutra Pro" --version "$VERSION"
+
+      # Inno Setup is on the runner image in some versions and not in others; the installer script needs 6.3 or later (x64compatible).
+      - name: Install Inno Setup
+        run: |
+          set -euo pipefail
+          choco install innosetup --yes --no-progress --force
+          iscc="$(ls "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "/c/Program Files/Inno Setup 6/ISCC.exe" 2>/dev/null | head -1)"
+          [ -n "$iscc" ] || { echo "::error::ISCC.exe was not found after installing Inno Setup"; exit 1; }
+          echo "ISCC=$iscc" >> "$GITHUB_ENV"
+
+      # MSYS2_ARG_CONV_EXCL: Git Bash would otherwise rewrite the /D... definitions as POSIX paths before the compiler sees them.
+      - name: Make the installer
+        env:
+          MSYS2_ARG_CONV_EXCL: "*"
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          "$ISCC" "/DAppVersion=$VERSION" "/DSourceDir=$(cygpath -w "$PWD/build/Sutra Pro")" "/DOutputDir=$(cygpath -w "$PWD/release")" \
+            "/DIconFile=$(cygpath -w "$PWD/assets/icon/sutra-pro.ico")" scripts/windows/sutra-pro.iss
+          ls -l release
+          [ -s release/Sutra-Pro-Setup-x64.exe ] || { echo "::error::the installer was not made"; exit 1; }
+
+      # The installer itself: silent, per user, into a scratch folder; the installed copy is proved; the uninstaller removes it.
+      # MSYS2_ARG_CONV_EXCL: Git Bash would otherwise rewrite /VERYSILENT and /DIR= as POSIX paths before Inno sees them.
+      - name: Prove the installer installs, runs and uninstalls
+        env:
+          MSYS2_ARG_CONV_EXCL: "*"
+        run: |
+          set -euo pipefail
+          target="$(cygpath -w "$RUNNER_TEMP/installed")"
+          release/Sutra-Pro-Setup-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- "/DIR=$target" "/LOG=$(cygpath -w "$RUNNER_TEMP/setup.log")"
+          [ -f "$RUNNER_TEMP/installed/python/SutraPro.exe" ] || { cat "$RUNNER_TEMP/setup.log"; echo "::error::the installer installed nothing"; exit 1; }
+          scripts/py scripts/prove_windows_app.py --app "$RUNNER_TEMP/installed" --version "$VERSION"
+          "$RUNNER_TEMP/installed/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          for _ in $(seq 1 60); do [ -e "$RUNNER_TEMP/installed/python/python.exe" ] || break; sleep 1; done
+          [ ! -e "$RUNNER_TEMP/installed/python/python.exe" ] || { echo "::error::the uninstaller left the app behind"; exit 1; }
+
+      - name: Make the portable zip
+        run: |
+          set -euo pipefail
+          scripts/py -c "import shutil, sys; shutil.make_archive('release/Sutra-Pro-win-x64', 'zip', 'build', 'Sutra Pro')"
+          ls -l release
+
+      - name: Write the checksums
+        working-directory: sutra-pro/release
+        run: |
+          set -euo pipefail
+          for asset in Sutra-Pro-Setup-x64.exe Sutra-Pro-win-x64.zip; do
+            sha256sum "$asset" > "$asset.sha256"
+            sha256sum -c "$asset.sha256"
+          done
+          ls -l
+
+      - name: Attach the installer, the zip and their checksums to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ needs.guard.outputs.release_name }}
+          # NEVER "Latest": the old product's site and updater read /releases/latest (D100)
+          make_latest: "false"
+          # A -beta.N tag is a PRERELEASE.
+          prerelease: ${{ contains(inputs.tag || github.ref_name, '-beta.') }}
+          fail_on_unmatched_files: true
+          files: |
+            sutra-pro/release/Sutra-Pro-Setup-x64.exe
+            sutra-pro/release/Sutra-Pro-Setup-x64.exe.sha256
+            sutra-pro/release/Sutra-Pro-win-x64.zip
+            sutra-pro/release/Sutra-Pro-win-x64.zip.sha256
+
+  # What was PUBLISHED must install and run: the files are downloaded from the release, their checksums checked, the installer run
+  # silently and the installed copy proved, then uninstalled. Runs even when the build failed (a missing asset is the finding),
+  # but never after the guard refused.
+  verify:
+    needs: [guard, exe]
+    if: always() && needs.guard.result == 'success'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+      EXE_RESULT: ${{ needs.exe.result }}
+    steps:
+      - name: Checkout (for the proof script only)
+        uses: actions/checkout@v4
+
+      - name: The build job must have succeeded
+        run: |
+          set -euo pipefail
+          if [ "$EXE_RESULT" != "success" ]; then
+            echo "::error::the exe job finished as '$EXE_RESULT'."
+            exit 1
+          fi
+
+      - name: Both files are on the release and the bytes match their checksums
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir released --pattern 'Sutra-Pro-Setup-x64.exe*' --pattern 'Sutra-Pro-win-x64.zip*'
+          cd released
+          ls -l
+          for asset in Sutra-Pro-Setup-x64.exe Sutra-Pro-win-x64.zip; do
+            [ -f "$asset" ] && [ -f "$asset.sha256" ] || { echo "::error::release $TAG is missing $asset or its checksum"; exit 1; }
+            sha256sum -c "$asset.sha256"
+            [ "$(wc -c < "$asset")" -gt 20000000 ] || { echo "::error::$asset is smaller than 20 MB: an app with a CPython inside is not"; exit 1; }
+          done
+
+      - name: The published installer installs, runs and uninstalls
+        env:
+          MSYS2_ARG_CONV_EXCL: "*"
+        run: |
+          set -euo pipefail
+          version="${TAG#sutra-pro-v}"
+          version="${version%-beta.*}"
+          target="$(cygpath -w "$RUNNER_TEMP/installed")"
+          released/Sutra-Pro-Setup-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- "/DIR=$target" "/LOG=$(cygpath -w "$RUNNER_TEMP/setup.log")"
+          [ -f "$RUNNER_TEMP/installed/python/SutraPro.exe" ] || { cat "$RUNNER_TEMP/setup.log"; echo "::error::the installer installed nothing"; exit 1; }
+          python scripts/prove_windows_app.py --app "$RUNNER_TEMP/installed" --version "$version"
+          "$RUNNER_TEMP/installed/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          for _ in $(seq 1 60); do [ -e "$RUNNER_TEMP/installed/python/python.exe" ] || break; sleep 1; done
+          [ ! -e "$RUNNER_TEMP/installed/python/python.exe" ] || { echo "::error::the uninstaller left the app behind"; exit 1; }
+
+      - name: The published zip unpacks to the same app
+        run: |
+          set -euo pipefail
+          version="${TAG#sutra-pro-v}"
+          version="${version%-beta.*}"
+          python -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" released/Sutra-Pro-win-x64.zip "$RUNNER_TEMP/portable"
+          python scripts/prove_windows_app.py --app "$RUNNER_TEMP/portable/Sutra Pro" --version "$version"

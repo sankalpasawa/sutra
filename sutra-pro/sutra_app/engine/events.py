@@ -19,6 +19,7 @@ This module imports nothing from the connectors, the orchestrator or the UI.
 import json
 import math
 import os
+from sutra_app import oslayer
 import re
 import threading
 import time
@@ -344,7 +345,7 @@ class EventWriter:
         self.trace_path = self.run_dir / self.TRACE_NAME
         self._clock = clock
         self._lock = threading.RLock()       # re-entrant: a signal handler that fires mid-write can still write run.ended
-        self._events_fd: Optional[int] = os.open(self.events_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        self._events_fd: Optional[int] = os.open(self.events_path, os.O_WRONLY | oslayer.O_BINARY | os.O_APPEND | os.O_CREAT, 0o600)
         self._trace_fd: Optional[int] = None
         self._seq = 0
         self._ended = False
@@ -397,7 +398,7 @@ class EventWriter:
             if self._closed:
                 raise EventError("the writer is closed")
             if self._trace_fd is None:
-                self._trace_fd = os.open(self.trace_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+                self._trace_fd = os.open(self.trace_path, os.O_WRONLY | oslayer.O_BINARY | os.O_APPEND | os.O_CREAT, 0o600)
             line = {"seq": self._seq + 1, "at": utc_iso(self._clock()), "type": type, "data": dict(data or {})}
             self._write_all(self._trace_fd, encode_line(line))
             self._seq += 1

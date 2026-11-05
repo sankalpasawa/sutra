@@ -14,6 +14,7 @@ import argparse
 import importlib
 import json
 import os
+from sutra_app import oslayer
 import signal
 import sys
 import time
@@ -153,14 +154,22 @@ def cmd_stop(args: argparse.Namespace) -> int:
         emit(args, payload, [f"Something holds {data_dir} but app.pid does not say what; stop it by hand."])
         return 1
     payload["pid"] = holder.pid
-    try:
-        os.kill(holder.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        emit(args, payload, [f"app.pid names pid {holder.pid}, which is gone, yet the data folder is still locked; not touching anything."])
-        return 1
-    except PermissionError:
-        emit(args, payload, [f"pid {holder.pid} belongs to another user; it was not signalled."])
-        return 1
+    if oslayer.IS_WINDOWS:
+        # a server with no console cannot be signalled (and os.kill would end it on the spot): ask through the file it polls
+        try:
+            lock.request_stop(data_dir)
+        except OSError as exc:
+            emit(args, payload, [f"could not ask pid {holder.pid} to stop: {exc.strerror or exc}"])
+            return 1
+    else:
+        try:
+            os.kill(holder.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            emit(args, payload, [f"app.pid names pid {holder.pid}, which is gone, yet the data folder is still locked; not touching anything."])
+            return 1
+        except PermissionError:
+            emit(args, payload, [f"pid {holder.pid} belongs to another user; it was not signalled."])
+            return 1
     if not getattr(args, "json", False):
         print(f"Stopping Sutra Pro (pid {holder.pid}); it can take up to 12 s to end its teams cleanly...", flush=True)
     deadline = time.monotonic() + args.wait
@@ -245,12 +254,12 @@ def _config_show(args: argparse.Namespace, settings: Settings) -> int:
 def _write_json_atomic(path: Path, document: dict[str, Any]) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(tmp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         os.write(fd, (json.dumps(document, indent=2) + "\n").encode("utf-8"))
     finally:
         os.close(fd)
-    os.replace(tmp, path)
+    oslayer.replace(tmp, path)
 
 
 def _config_set(args: argparse.Namespace, settings: Settings) -> int:

@@ -10,6 +10,8 @@ from collections.abc import Sequence
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    from sutra_app import oslayer
+    oslayer.setup_stdio()                      # Windows only: a console's legacy code page must not turn a message into an error
     from sutra_app.ops.cli import dispatch
     return dispatch(argv)
 

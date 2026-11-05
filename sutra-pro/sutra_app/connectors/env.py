@@ -14,7 +14,7 @@ import os
 import re
 from typing import Mapping, Optional
 
-__all__ = ["PASS_NAMES", "SECRET_PATTERN", "is_secret_name", "child_env"]
+__all__ = ["PASS_NAMES", "WINDOWS_PASS_NAMES", "SECRET_PATTERN", "is_secret_name", "child_env"]
 
 _PROXY = ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY")
 
@@ -25,6 +25,18 @@ PASS_NAMES: tuple[str, ...] = (
     "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
     "CLAUDE_CONFIG_DIR", "CODEX_HOME",
 )
+
+# What a Windows program needs to start at all (SYSTEMROOT above all: without it Python and Node fail in odd ways), to find its
+# own login folder (USERPROFILE, APPDATA, LOCALAPPDATA: both CLIs keep their sign-in under the user profile) and to run a .cmd
+# shim (COMSPEC, PATHEXT). None of these names is a secret. Added to the allowlist on Windows only, so POSIX is unchanged.
+WINDOWS_PASS_NAMES: tuple[str, ...] = (
+    "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "USERPROFILE", "USERNAME", "USERDOMAIN", "APPDATA", "LOCALAPPDATA",
+    "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "COMMONPROGRAMFILES", "COMMONPROGRAMFILES(X86)",
+    "COMMONPROGRAMW6432", "ALLUSERSPROFILE", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP", "PUBLIC", "PROCESSOR_ARCHITECTURE",
+    "NUMBER_OF_PROCESSORS", "OS", "PYTHONUTF8", "PYTHONIOENCODING",
+)
+if os.name == "nt":
+    PASS_NAMES = PASS_NAMES + WINDOWS_PASS_NAMES
 
 SECRET_PATTERN = re.compile(r"KEY|TOKEN|SECRET|PASSWORD", re.IGNORECASE)
 

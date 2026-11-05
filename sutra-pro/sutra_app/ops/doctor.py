@@ -15,6 +15,7 @@ warning; when neither works both fail. The CLI checks reuse the connector layer'
 """
 import json
 import os
+from sutra_app import oslayer
 import shutil
 import socket
 import sqlite3
@@ -146,7 +147,7 @@ def sync_seed_library(data_dir: str | os.PathLike[str], seed: Path | None = None
     if added:
         tmp = index_path.with_name(f".index.{os.getpid()}.tmp")
         tmp.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-        os.replace(tmp, index_path)
+        oslayer.replace(tmp, index_path)
     return added
 
 
@@ -290,7 +291,7 @@ def _check_gh(cfg: Any, offline: bool, env: Mapping[str, str], which: Callable[[
         return Check("gh", "gh", "skip", "not installed (optional: only the GitHub tool uses it)")
     child_env = {**env, **dict(cfg.extra_env)}
     try:
-        done = subprocess.run([exe, "auth", "status"], capture_output=True, text=True, timeout=GH_TIMEOUT_S, env=child_env,
+        done = subprocess.run([exe, "auth", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=GH_TIMEOUT_S, env=child_env,
                               stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:
         return Check("gh", "gh", "warn", f"installed, `gh auth status` did not run ({type(exc).__name__})", "run `gh auth status` by hand")

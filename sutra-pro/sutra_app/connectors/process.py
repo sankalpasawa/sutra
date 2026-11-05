@@ -15,12 +15,14 @@ OSError).
 
 Facts that bite (probed 2026-11-04, connectors design row 9):
 - The child is a session leader (`start_new_session`), so one `killpg` reaches the CLI and its MCP children. After the
-  child has ended, whatever is left in its group is killed with SIGKILL: no orphans.
+  child has ended, whatever is left in its group is killed with SIGKILL: no orphans. On Windows the same is a job object
+  (`oslayer.ProcessTree`): the child is put into one when it is created, and ending the job ends every process in it.
 - The cancel ladder is SIGINT (5 s), SIGTERM (5 s), SIGKILL (2 s): Claude exited in 1.3 s on SIGINT and 2.9 s on SIGTERM.
   The ladder stops at the first signal the child obeys; `ExitInfo.ladder` lists the signals that were sent.
 - stdin is written by its own thread and stderr is drained by another, so a 1 MB prompt cannot deadlock against a child
   that writes before it has read everything; only the last 8 KB of stderr are kept.
-- The environment is EXACTLY `Command.env`: nothing is inherited. POSIX only (Windows needs CREATE_NEW_PROCESS_GROUP).
+- The environment is EXACTLY `Command.env`: nothing is inherited. On Windows the program is looked up on the child's PATH with
+  PATHEXT first, because CreateProcess would find `claude.exe` but never the `claude.cmd` that npm installs.
 """
 from __future__ import annotations
 
@@ -35,11 +37,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator, Literal, Mapping, Optional, Sequence
 
+from sutra_app import oslayer
+
 from .errors import CliMissingError, InvalidRequestError, ProviderError
 
 __all__ = ["Command", "ExitInfo", "ProcessRunner", "RunningProcess", "LADDER", "STDERR_TAIL_BYTES", "MAX_LINE_BYTES"]
 
-LADDER: tuple[tuple[int, float], ...] = ((signal.SIGINT, 5.0), (signal.SIGTERM, 5.0), (signal.SIGKILL, 2.0))
+LADDER: tuple[tuple[int, float], ...] = ((signal.SIGINT, 5.0), (signal.SIGTERM, 5.0), (oslayer.SIGKILL, 2.0))
 STDERR_TAIL_BYTES = 8192
 MAX_LINE_BYTES = 8 * 1024 * 1024       # a longer stdout line is cut here (the rest of it is dropped)
 READER_GRACE_S = 2.0                   # after the child ended, wait this long for stdout to close (a stray grandchild)
@@ -90,10 +94,7 @@ class ExitInfo:
     @property
     def signal_name(self) -> Optional[str]:
         if self.returncode is not None and self.returncode < 0:
-            try:
-                return signal.Signals(-self.returncode).name
-            except ValueError:
-                return f"SIG{-self.returncode}"
+            return oslayer.signal_name(-self.returncode)
         return None
 
     @property
@@ -111,6 +112,7 @@ class RunningProcess:
         self._popen = popen
         self._clock = runner._clock
         self.pid = popen.pid
+        self._tree = oslayer.ProcessTree(popen)
         self._started = self._clock()
         self._total_deadline = None if timeout_s is None else self._started + timeout_s
         self._idle_s = idle_timeout_s
@@ -219,10 +221,7 @@ class RunningProcess:
 
     # ---- end of life -----------------------------------------------------------------------------------------------
     def _signal_group(self, sig: int) -> None:
-        try:
-            os.killpg(self.pid, sig)
-        except (ProcessLookupError, PermissionError):
-            pass
+        self._tree.send(sig)
 
     def _terminate(self, reason: Reason) -> bool:
         """The cancel ladder. True when this call found the child still running."""
@@ -233,7 +232,7 @@ class RunningProcess:
                 self._reason = reason
             for sig, wait_s in self._runner._ladder:
                 self._signal_group(sig)
-                self._sent.append(signal.Signals(sig).name)
+                self._sent.append(oslayer.signal_name(sig))
                 try:
                     self._popen.wait(timeout=wait_s)
                     break
@@ -254,7 +253,7 @@ class RunningProcess:
                     self._terminate("total_timeout")
                 elif self._idle_s is not None and now - self._last_activity >= self._idle_s:
                     self._terminate("idle_timeout")
-            self._signal_group(signal.SIGKILL)            # whatever the child left in its group dies with it
+            self._signal_group(oslayer.SIGKILL)           # whatever the child left in its group dies with it
             if not self._out_done.wait(READER_GRACE_S):   # a grandchild outside the group still holds stdout
                 self._abandoned = True
                 self._q.put(_EOF)
@@ -272,6 +271,7 @@ class RunningProcess:
             stderr_bytes=self._stderr_bytes)
         for path in self._cmd.cleanup:
             _remove(path)
+        self._tree.close()
         self._runner._forget(self)
         self._finished.set()
 
@@ -337,9 +337,14 @@ class ProcessRunner:
         if not Path(cmd.cwd).is_dir():
             _cleanup(cmd)
             raise InvalidRequestError(f"the working directory does not exist: {cmd.cwd}", provider=cmd.provider)
+        argv = list(cmd.argv)
+        if oslayer.IS_WINDOWS:
+            found = shutil.which(argv[0], path=cmd.env.get("PATH") or None)
+            if found:
+                argv[0] = found
         try:
             popen = subprocess.Popen(
-                list(cmd.argv), cwd=cmd.cwd, env=dict(cmd.env), bufsize=0, close_fds=True, start_new_session=True,
+                argv, cwd=cmd.cwd, env=dict(cmd.env), bufsize=0, close_fds=True, **oslayer.popen_group_kwargs(),
                 stdin=subprocess.PIPE if cmd.stdin_text is not None else subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except FileNotFoundError as e:

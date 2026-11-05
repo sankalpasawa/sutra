@@ -15,6 +15,7 @@ chart revision that adds it) and by nothing else. It is never archived, moved or
 import json
 import logging
 import os
+from sutra_app import oslayer
 import re
 import shutil
 import sqlite3
@@ -139,7 +140,7 @@ class DepartmentStore:
             target = folder / MIRROR_NAME
             temp = folder / (MIRROR_NAME + ".tmp")
             temp.write_text(json.dumps(body, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-            os.replace(temp, target)
+            oslayer.replace(temp, target)
             return True
         except (OSError, sqlite3.Error):
             log.warning("could not write the mirror of department %s", dept_id, exc_info=True)

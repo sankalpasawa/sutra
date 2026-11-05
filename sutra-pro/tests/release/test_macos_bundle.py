@@ -146,6 +146,8 @@ def test_the_info_plist_names_the_app_and_the_version_of_the_wheel(work):
     assert plist["CFBundleShortVersionString"] == plist["CFBundleVersion"] == "3.4.5"
     assert plist["CFBundlePackageType"] == "APPL"
     assert (app / "Contents" / "MacOS" / plist["CFBundleExecutable"]).is_file()
+    icon = app / "Contents" / "Resources" / (plist["CFBundleIconFile"] + ".icns")
+    assert icon.read_bytes() == (ROOT / "assets" / "icon" / "sutra-pro.icns").read_bytes(), "the bundle carries the icon its Info.plist names"
 
 
 def test_the_version_comes_from_the_wheels_metadata_not_its_file_name(work):
@@ -957,7 +959,7 @@ SIGNING_STEPS = {"Check the signing secrets", "Import the signing certificate", 
 def test_the_workflow_has_the_three_jobs_with_guard_first():
     data = wf()
     assert list(data["jobs"]) == ["guard", "dmg", "verify"]
-    assert data["name"] == "release-macos"
+    assert data["name"] == "sutra-pro-release-macos"
     assert "needs" not in data["jobs"]["guard"] and data["jobs"]["guard"]["runs-on"] == "ubuntu-latest"
     assert data["jobs"]["dmg"]["needs"] == "guard"
     assert set(data["jobs"]["verify"]["needs"]) == {"guard", "dmg"}
@@ -965,14 +967,14 @@ def test_the_workflow_has_the_three_jobs_with_guard_first():
 
 def test_the_triggers_are_a_version_tag_push_or_a_dispatch_with_a_tag():
     on = wf()[True]
-    assert on["push"] == {"tags": ["v*"]}
+    assert on["push"] == {"tags": ["sutra-pro-v*"]}
     assert on["workflow_dispatch"]["inputs"]["tag"]["required"] is True
 
 
 def test_the_guard_checks_the_tag_against_pyproject_before_anything_else_of_substance():
     guard = steps("guard")
     check = step_named("guard", "Tag must match pyproject")
-    assert check["run"] == 'scripts/py scripts/check_release_tag.py "$TAG"'
+    assert check["run"] == 'scripts/py scripts/check_release_tag.py "$TAG" --github-output "$GITHUB_OUTPUT"'
     assert check["env"]["TAG"] == "${{ inputs.tag || github.ref_name }}"
     assert [s.get("uses") for s in guard[:2]] == ["actions/checkout@v4", "astral-sh/setup-uv@v5"]
     assert guard.index(check) < guard.index(step_named("guard", "must already exist"))
@@ -1068,7 +1070,7 @@ def test_the_steps_run_in_the_order_that_makes_the_release_trustworthy():
 def test_the_build_uses_the_builder_natively_per_arch_and_checks_the_wheel_name_against_the_tag():
     build_step = step_named("dmg", "Build Sutra Pro.app")["run"]
     assert 'scripts/py scripts/build_macos_app.py --wheel "${wheels[0]}" --arch "$ARCH" --out build' in build_step
-    assert 'sutra_pro-$want-py3-none-any.whl' in build_step and "${TAG#v}" in build_step and "%-beta.*" in build_step
+    assert 'sutra_pro-$want-py3-none-any.whl' in build_step and "${TAG#sutra-pro-v}" in build_step and "%-beta.*" in build_step
     assert "--allow-foreign-arch" not in build_step and "--python-archive" not in build_step
     assert wf()["jobs"]["dmg"]["env"] == {"ARCH": "${{ matrix.arch }}", "TAG": "${{ inputs.tag || github.ref_name }}"}
 
@@ -1121,7 +1123,7 @@ def test_the_dmg_is_made_with_hdiutil_from_the_app_and_an_applications_link():
 
 def test_the_checksum_is_written_by_the_leg_that_built_the_dmg_after_signing():
     check = step_named("dmg", "Write the checksum")
-    assert check["working-directory"] == "release"
+    assert check["working-directory"] == "sutra-pro/release"          # a step's own directory is relative to the workspace, not to the default
     assert 'shasum -a 256 "Sutra-Pro-$ARCH.dmg" > "Sutra-Pro-$ARCH.dmg.sha256"' in check["run"]
     assert 'shasum -a 256 -c "Sutra-Pro-$ARCH.dmg.sha256"' in check["run"]
 
@@ -1129,9 +1131,11 @@ def test_the_checksum_is_written_by_the_leg_that_built_the_dmg_after_signing():
 def test_the_upload_names_the_stable_assets_sets_no_body_and_fails_on_a_missing_file():
     upload = step_named("dmg", "Attach the DMG")
     assert upload["uses"] == "softprops/action-gh-release@v2"
-    assert upload["with"]["files"].strip().splitlines() == ["release/Sutra-Pro-${{ matrix.arch }}.dmg", "release/Sutra-Pro-${{ matrix.arch }}.dmg.sha256"]
+    assert upload["with"]["files"].strip().splitlines() == ["sutra-pro/release/Sutra-Pro-${{ matrix.arch }}.dmg", "sutra-pro/release/Sutra-Pro-${{ matrix.arch }}.dmg.sha256"]
     assert upload["with"]["fail_on_unmatched_files"] is True
-    assert "body" not in upload["with"]                       # release-wheel.yml owns the release text
+    assert "body" not in upload["with"]                       # sutra-pro-release-wheel.yml owns the release text
+    assert upload["with"]["make_latest"] == "false"           # D100: the old product's site and updater read /releases/latest
+    assert upload["with"]["name"] == "${{ needs.guard.outputs.release_name }}"
     assert "'-beta.'" in upload["with"]["prerelease"]
 
 

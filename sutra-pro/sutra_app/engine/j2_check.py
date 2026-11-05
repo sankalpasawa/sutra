@@ -120,7 +120,9 @@ def run_chrome(cmd, timeout, text=True):
 
 
 def _chrome(cmd, timeout, text=True):
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, start_new_session=True)
+    # start_new_session is ignored on Windows. The output is decoded as UTF-8 whatever the console code page is.
+    decoding = {"encoding": "utf-8", "errors": "replace"} if text else {}
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, start_new_session=True, **decoding)
     try:
         out, err = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -136,7 +138,9 @@ def _chrome(cmd, timeout, text=True):
 def find_chrome():
     if os.getenv("J2_CHROME", "").lower() in ("none", "off", "0"):      # J2_CHROME=none: run as if Chrome is missing
         return None
-    for p in (os.getenv("J2_CHROME"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    windows = [os.path.join(root, "Google", "Chrome", "Application", "chrome.exe")
+               for root in (os.getenv(name) for name in ("PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "LOCALAPPDATA")) if root]
+    for p in (os.getenv("J2_CHROME"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", *windows,
               shutil.which("google-chrome"), shutil.which("chromium"), shutil.which("chromium-browser")):
         if p and os.path.exists(p):
             return p

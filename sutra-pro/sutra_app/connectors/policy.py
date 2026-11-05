@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+from sutra_app import oslayer
 import tempfile
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -334,7 +335,7 @@ def write_policy(data_dir: "str | Path", body: "str | bytes | Mapping[str, Any]"
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(json.dumps(policy.model_dump(mode="json"), indent=2) + "\n")
-        os.replace(tmp, path)
+        oslayer.replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)

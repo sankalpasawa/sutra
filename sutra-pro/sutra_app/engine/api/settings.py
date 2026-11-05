@@ -12,6 +12,7 @@ errors are the envelope `{error: {code, message, details}}`; an unreadable setti
 """
 import json
 import os
+from sutra_app import oslayer
 import tempfile
 import threading
 from pathlib import Path
@@ -121,7 +122,7 @@ def _write_atomic(path: Path, data: dict) -> None:
             f.flush()
             os.fsync(f.fileno())
         os.chmod(temp, 0o600)
-        os.replace(temp, path)
+        oslayer.replace(temp, path)
     finally:
         if os.path.exists(temp):
             os.unlink(temp)

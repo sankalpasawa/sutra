@@ -20,6 +20,7 @@ import argparse
 import asyncio
 import json
 import os
+from sutra_app import oslayer
 import sys
 import time
 from collections.abc import Callable, Mapping
@@ -49,7 +50,7 @@ def standard_script(*, outcome: str = "Done.", status: str = "done") -> list[dic
 
 def _append(path: Path, event: Mapping[str, Any]) -> None:
     data = (json.dumps(dict(event), ensure_ascii=True, separators=(",", ":")) + "\n").encode("utf-8")
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    fd = os.open(path, os.O_WRONLY | oslayer.O_BINARY | os.O_APPEND | os.O_CREAT, 0o600)
     try:
         os.write(fd, data)                                     # one write per line: the watcher never sees half of one
     finally:

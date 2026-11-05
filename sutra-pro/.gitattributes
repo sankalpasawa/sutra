@@ -1,0 +1,18 @@
+# Every text file is checked out with LF, on every system (D101). A shell script with CRLF endings does not run in Git Bash on a
+# Windows runner, and the golden files and fixtures of the tests are compared byte for byte. The one exception is a Windows batch
+# file, which belongs to Windows.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.gif binary
+*.woff binary
+*.woff2 binary
+*.whl binary
+*.zip binary
+*.gz binary
+*.db binary
+*.sqlite3 binary

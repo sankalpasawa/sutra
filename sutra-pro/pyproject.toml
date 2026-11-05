@@ -19,6 +19,11 @@ dependencies = [
 sutra-pro = "sutra_app.__main__:main"
 
 [project.optional-dependencies]
+# what the Windows app installs beside the wheel (D101): the notification-area icon of sutra_app.desktop. Nothing else needs it.
+desktop = [
+    "pystray>=0.19; sys_platform == 'win32'",
+    "pillow>=10; sys_platform == 'win32'",
+]
 dev = [
     "pytest>=8",
     "httpx>=0.27",
@@ -45,6 +50,7 @@ sutra_app = [
     "engine/seed/**/*",
     "orchestrator/agent/templates/*.md",
     "library/specs/*.json",
+    "assets/*",
     "connectors/policy.default.json",
 ]
 

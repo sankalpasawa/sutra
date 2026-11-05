@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+from sutra_app import oslayer
 import signal
 import subprocess
 import sys
@@ -83,7 +84,7 @@ def append_inbox(run_dir: Path, line: dict) -> int:
     n = inbox_line_count(run_dir) + 1
     body = {key: value for key, value in line.items() if key != "n"}
     data = (json.dumps({"n": n, **body}, ensure_ascii=True, separators=(",", ":")) + "\n").encode("utf-8")
-    fd = os.open(Path(run_dir) / "inbox.jsonl", os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    fd = os.open(Path(run_dir) / "inbox.jsonl", os.O_WRONLY | oslayer.O_BINARY | os.O_APPEND | os.O_CREAT, 0o600)
     try:
         os.write(fd, data)
     finally:
@@ -146,7 +147,7 @@ class ProcessLauncher:
         self._extra_env = dict(extra_env or {})
         self._stop_grace = stop_grace
         self._term_grace = term_grace
-        self._python = python or sys.executable
+        self._python = python or oslayer.console_python()
         self._handles: dict[int, asyncio.subprocess.Process] = {}
 
     # ---- starting ----------------------------------------------------------------------------------------------------
@@ -157,17 +158,22 @@ class ProcessLauncher:
 
     async def start(self, spec: RunSpec, run_dir: Path) -> int:
         run_dir = Path(run_dir)
-        out_fd = os.open(run_dir / "run.stdout.log", os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-        err_fd = os.open(run_dir / "run.stderr.log", os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        out_fd = os.open(run_dir / "run.stdout.log", os.O_WRONLY | oslayer.O_BINARY | os.O_APPEND | os.O_CREAT, 0o600)
+        err_fd = os.open(run_dir / "run.stderr.log", os.O_WRONLY | oslayer.O_BINARY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
             proc = await asyncio.create_subprocess_exec(
-                self._python, "-m", self.module, "--run-dir", str(run_dir), env=self.environment(spec),
-                stdin=asyncio.subprocess.DEVNULL, stdout=out_fd, stderr=err_fd, start_new_session=True, cwd=str(run_dir))
+                self._python, *self._interpreter_flags(), "-m", self.module, "--run-dir", str(run_dir), env=self.environment(spec),
+                stdin=asyncio.subprocess.DEVNULL, stdout=out_fd, stderr=err_fd, cwd=str(run_dir), **oslayer.popen_group_kwargs())
         finally:
             os.close(out_fd)
             os.close(err_fd)
         self._handles[proc.pid] = proc
         return proc.pid
+
+    @staticmethod
+    def _interpreter_flags() -> list[str]:
+        """Windows: UTF-8 mode, so every file the engine opens without an encoding is UTF-8, not the legacy code page."""
+        return ["-X", "utf8"] if oslayer.IS_WINDOWS else []
 
     # ---- the inbox -----------------------------------------------------------------------------------------------------
 
@@ -184,13 +190,7 @@ class ProcessLauncher:
         handle = self._handles.get(pid)
         if handle is not None:
             return handle.returncode is None
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        return True
+        return oslayer.pid_alive(pid)
 
     def exit_code(self, pid: int | None) -> int | None:
         handle = self._handles.get(pid or 0)
@@ -201,6 +201,8 @@ class ProcessLauncher:
         """`ps -p <pid> -o command=` (empty when there is no such process): the identity check of the reconcile pass."""
         if not pid or pid < 1:
             return ""
+        if oslayer.IS_WINDOWS:
+            return oslayer.process_command(pid)
         try:
             done = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=5)
         except (OSError, subprocess.SubprocessError):
@@ -208,6 +210,10 @@ class ProcessLauncher:
         return done.stdout.strip() if done.returncode == 0 else ""
 
     def _signal_group(self, pid: int, sig: int) -> None:
+        if oslayer.IS_WINDOWS:
+            # no signals to send to a process with no console: SIGTERM and SIGKILL both end the process and what it started
+            oslayer.kill_tree(pid)
+            return
         try:
             os.killpg(os.getpgid(pid), sig)
         except ProcessLookupError:

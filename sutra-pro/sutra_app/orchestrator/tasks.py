@@ -22,6 +22,7 @@ import hmac
 import json
 import logging
 import os
+from sutra_app import oslayer
 import shutil
 import sqlite3
 from collections.abc import Awaitable, Callable, Sequence
@@ -596,7 +597,7 @@ class TaskService:
             spec = self._run_spec(conn, row, run_id)
             _write_atomic(run_dir / "task.json", spec.model_dump_json(indent=2) + "\n")
             for name in ("inbox.jsonl", "events.jsonl"):
-                os.close(os.open(run_dir / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+                os.close(os.open(run_dir / name, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL, 0o600))
             now = tx.now()
             started = self.store.update(tx, row.id, status="starting", run_id=run_id, started_at=now, last_event_at=now)
             self.taskgraph.sync(tx, started)
@@ -881,13 +882,13 @@ class TaskService:
 def _write_atomic(path: Path, text: str) -> None:
     """Write a file with mode 0600 by temp file and rename (the engine reads `task.json` the moment it starts)."""
     tmp = path.with_name(f".{path.name}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd = os.open(tmp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp, path)
+        oslayer.replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)

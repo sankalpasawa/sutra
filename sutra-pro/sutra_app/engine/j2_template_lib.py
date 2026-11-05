@@ -24,11 +24,11 @@ Python 3.9: Optional/List/Dict.
 """
 import contextlib
 import copy
-import fcntl
 import hashlib
 import json
 import keyword
 import os
+from sutra_app import oslayer
 import re
 import shutil
 import tempfile
@@ -716,7 +716,7 @@ def _write(path, obj):
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)
-    os.replace(tmp, path)
+    oslayer.replace(tmp, path)
 
 
 def _read(path, default=None):
@@ -868,25 +868,21 @@ class LibraryBusy(RuntimeError):
 
 @contextlib.contextmanager
 def _library_lock():
-    """P10: one writer at a time, across processes: flock on <library>/.lock around a whole read-modify-write of the index.
+    """P10: one writer at a time, across processes: an exclusive lock on <library>/.lock around a whole read-modify-write of the index.
     J2 read the index, changed it and wrote it back with no lock, so two runs storing different templates could lose one
     entry. Waits at most LOCK_WAIT_S seconds, then raises LibraryBusy."""
     os.makedirs(lib_dir(), exist_ok=True)
-    fd = os.open(os.path.join(lib_dir(), ".lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    fd = os.open(os.path.join(lib_dir(), ".lock"), os.O_RDWR | oslayer.O_BINARY | os.O_CREAT, 0o600)
     try:
         deadline = time.monotonic() + LOCK_WAIT_S
-        while True:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if time.monotonic() >= deadline:
-                    raise LibraryBusy(f"the template library is locked by another run (waited {LOCK_WAIT_S:g} s)") from None
-                time.sleep(0.05)
+        while not oslayer.try_lock(fd):
+            if time.monotonic() >= deadline:
+                raise LibraryBusy(f"the template library is locked by another run (waited {LOCK_WAIT_S:g} s)") from None
+            time.sleep(0.05)
         try:
             yield
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            oslayer.unlock(fd)
     finally:
         os.close(fd)
 

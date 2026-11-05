@@ -11,6 +11,7 @@ There is no desktop shell: the app is a thin bundle. Layout of `<out>/Sutra Pro.
     Contents/MacOS/SutraPro          scripts/macos/launcher.sh (mode 0755)
     Contents/Resources/python/       the python-build-standalone CPython 3.11 (install_only_stripped), the wheel and its
                                      dependencies installed into its site-packages by that interpreter
+    Contents/Resources/sutra-pro.icns    the icon (assets/icon/sutra-pro.icns)
     Contents/Resources/build-info.json   what went in (version, arch, archive name and sha256, wheel name and sha256)
 
 The interpreter archive is fetched from the python-build-standalone release PBS_TAG for the arch, verified against a sha256
@@ -45,6 +46,7 @@ HERE = Path(__file__).resolve().parent
 TEMPLATE_DIR = HERE / "macos"
 INFO_PLIST_TEMPLATE = TEMPLATE_DIR / "Info.plist.tmpl"
 LAUNCHER = TEMPLATE_DIR / "launcher.sh"
+ICON = HERE.parent / "assets" / "icon" / "sutra-pro.icns"      # drawn by scripts/make_icons.py; Info.plist names it (CFBundleIconFile)
 
 APP_NAME = "Sutra Pro"
 APP_DIR = f"{APP_NAME}.app"
@@ -52,6 +54,8 @@ EXECUTABLE = "SutraPro"                      # no space: CFBundleExecutable name
 BUNDLE_ID = "os.sutra.pro"                   # reverse DNS, in the namespace of the old app (os.sutra.ui); docs/notes/REL-2.md
 DISTRIBUTION = "sutra-pro"                   # the Name: a wheel must carry
 ARCHES = {"arm64": "aarch64-apple-darwin", "x86_64": "x86_64-apple-darwin"}
+# every target the interpreter archive is looked up for: the two Macs, and the Windows app (scripts/build_windows_app.py, D101)
+TRIPLES = {**ARCHES, "win-x64": "x86_64-pc-windows-msvc"}
 
 PBS_REPO = "https://github.com/astral-sh/python-build-standalone/releases/download"
 PBS_TAG = "20260901"                         # the release the old Sutra's DMG pins (bundle-runtime.sh, checked there 2026-09-13)
@@ -176,7 +180,7 @@ def render_info_plist(template: str, *, version: str, bundle_id: str = BUNDLE_ID
 
 def archive_name_pattern(arch: str) -> re.Pattern[str]:
     return re.compile(
-        rf"cpython-({re.escape(PY_SERIES)}\.[0-9]+)\+{re.escape(PBS_TAG)}-{re.escape(ARCHES[arch])}-{FLAVOUR}\.tar\.gz"
+        rf"cpython-({re.escape(PY_SERIES)}\.[0-9]+)\+{re.escape(PBS_TAG)}-{re.escape(TRIPLES[arch])}-{FLAVOUR}\.tar\.gz"
     )
 
 
@@ -196,7 +200,7 @@ def pick_archive(sums: dict[str, str], arch: str) -> tuple[str, str]:
     found = [(tuple(int(p) for p in m.group(1).split(".")), name) for name in sums if (m := pattern.fullmatch(name))]
     if not found:
         raise BuildError(
-            f"python-build-standalone release {PBS_TAG} lists no CPython {PY_SERIES} {FLAVOUR} build for {ARCHES[arch]}"
+            f"python-build-standalone release {PBS_TAG} lists no CPython {PY_SERIES} {FLAVOUR} build for {TRIPLES[arch]}"
         )
     name = max(found)[1]
     return name, sums[name]
@@ -332,6 +336,8 @@ def build_app(
             "so build on a machine of the target architecture (the workflow does)"
         )
     info = read_wheel(wheel)
+    if not ICON.is_file():
+        raise BuildError(f"the icon is missing: {ICON}")
     template = INFO_PLIST_TEMPLATE.read_text(encoding="utf-8")
     plist = render_info_plist(template, version=info.version)         # fail before downloading anything
     if python_archive is not None:
@@ -356,6 +362,7 @@ def build_app(
         launcher = macos / EXECUTABLE
         shutil.copyfile(LAUNCHER, launcher)
         launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        shutil.copyfile(ICON, resources / ICON.name)
         (contents / "Info.plist").write_text(plist, encoding="utf-8")
         (contents / "PkgInfo").write_text("APPL????", encoding="ascii")
         (resources / "build-info.json").write_text(

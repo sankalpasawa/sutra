@@ -19,6 +19,7 @@ to 8799. The socket is bound before the app is built, so the port in `/api/confi
 """
 import argparse
 import asyncio
+import contextlib
 import importlib
 import importlib.util
 import logging
@@ -36,6 +37,7 @@ from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 import sutra_app
+from sutra_app import oslayer
 from sutra_app.config import LOOPBACK_HOSTS, Settings, SettingsError
 from sutra_app.orchestrator.api import agent, atoms, chart, chat, departments, graph, system, tasks, usage
 from sutra_app.orchestrator.api import events as events_api
@@ -54,6 +56,7 @@ __all__ = [
 log = logging.getLogger(__name__)
 FIRST_PORT = 8780
 LAST_PORT = 8799
+STOP_POLL_S = 0.5                # how often the server looks for a stop request (the app.stop file)
 GRACEFUL_SHUTDOWN_S = 5                 # open connections are cancelled after this; the stop ladders then run in the lifespan
 # the orchestrator's own routers, in include order: the agent router first (it owns POST /api/chats/{sid}/messages and the decision route)
 ROUTERS = (events_api, agent, chat, atoms, usage, graph, chart, departments, tasks, system)
@@ -181,7 +184,11 @@ def bind_socket(host: str, port: int, *, scan: bool, last: int = LAST_PORT) -> s
                     error = OSError(f"port {candidate} is in use")
                     continue
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if oslayer.IS_WINDOWS:
+            # SO_REUSEADDR on Windows lets a second program bind a port that is already in use (and take its connections)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind((host, candidate))
         except OSError as exc:
@@ -199,9 +206,11 @@ class AppServer(uvicorn.Server):
     graceful stop), and the browser opens once the app is up."""
 
     def __init__(self, config: uvicorn.Config, *, services: AppServices, url: str, open_browser: bool,
-                 opener: Callable[[str], Any] | None = None) -> None:
+                 opener: Callable[[str], Any] | None = None, stop_path: Path | None = None) -> None:
         super().__init__(config)
         self.services, self.url, self.open_browser = services, url, open_browser
+        self.stop_path = stop_path                                       # `app.stop`: its appearance is a request to shut down
+        self._stop_watch: asyncio.Task | None = None
         self.opener: Callable[[str], Any] = opener if opener is not None else ops_browser.open_url
         self.after_shutdown: Callable[[], Any] | None = None             # `run` sets it to the instance lock's release (see `shutdown`)
 
@@ -210,13 +219,28 @@ class AppServer(uvicorn.Server):
         if not self.started:
             return
         print(f"Sutra Pro is running at {self.url}  (Ctrl+C to stop)", flush=True)
+        if self.stop_path is not None:
+            self._stop_watch = asyncio.create_task(self._watch_stop_file(self.stop_path))
         if self.open_browser:
             try:
                 await asyncio.to_thread(self.opener, self.url)
             except Exception:                                             # noqa: BLE001  (no browser is not a failure)
                 log.warning("could not open the browser; open %s yourself", self.url)
 
+    async def _watch_stop_file(self, path: Path) -> None:
+        """A stop request is a file: the answer is the same as to a SIGTERM (uvicorn's `should_exit`), and the file is removed."""
+        while not self.should_exit:
+            if path.exists():
+                with contextlib.suppress(OSError):
+                    path.unlink()
+                log.info("stop requested through %s", path.name)
+                self.should_exit = True
+                return
+            await asyncio.sleep(STOP_POLL_S)
+
     async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        if self._stop_watch is not None:
+            self._stop_watch.cancel()
         self.services.bus.close()
         await super().shutdown(sockets=sockets)
         if self.after_shutdown is not None:
@@ -299,8 +323,11 @@ def _serve(args: argparse.Namespace, settings: Settings, instance: Any, cli: Any
     app = create_app(settings)
     url = f"http://127.0.0.1:{settings.port}/"
     config = uvicorn.Config(app, log_config=None, access_log=True, timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S)
+    from sutra_app.ops import lock as instance_lock
+    instance_lock.clear_stop(settings.data_dir)               # a request left by an earlier run must not stop this one
     server = AppServer(config, services=app.state.services, url=url, open_browser=not args.no_browser)
     server.opener = lambda target: ops_browser.open_url(target, args.browser)       # after construction: a test double needs no new argument
+    server.stop_path = settings.data_dir / instance_lock.STOP_NAME                   # likewise
     server.after_shutdown = instance.release
     server.run(sockets=[sock])
     return 0

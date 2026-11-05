@@ -115,9 +115,10 @@ These are optional, mostly for the Mac launcher, for development and for tests.
 | `SUTRA_J2_CHECKOUT` | `unset` | a J2 checkout whose own page the J2 server adapter may serve (development) |
 | `SUTRA_SCHEMA_DIR` | `unset` | where the schema export writes (default `docs/schemas`) |
 | `SUTRA_TEMPLATES_DIR` | `unset` | where the generated generic templates go (default `docs/schemas/templates`) |
-| `SUTRA_BUNDLE_CACHE` | `unset` | download cache of the Mac app builder |
+| `SUTRA_BUNDLE_CACHE` | `unset` | download cache of the Mac and Windows app builders |
 | `SUTRA_EXTRA_PATH` | `unset` | Mac launcher: extra folders appended to `PATH` so it finds `claude` and `codex` |
-| `SUTRA_NO_DIALOG` | `0` | Mac launcher: `1` shows no error dialog |
+| `SUTRA_NO_DIALOG` | `0` | Mac launcher and Windows app: `1` shows no error dialog |
+| `SUTRA_NO_TRAY` | `unset` | Windows app: `1` starts it without the notification-area icon (the server then owns the process; quit with `sutra-pro stop`) |
 | `SUTRA_PORT_MIN` | `8780` | Mac launcher: first port to try |
 | `SUTRA_PORT_MAX` | `8799` | Mac launcher: last port to try |
 | `SUTRA_START_TIMEOUT` | `60` | Mac launcher: seconds to wait for `/api/health` |

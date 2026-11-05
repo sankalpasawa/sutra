@@ -13,12 +13,13 @@ import binascii
 import json
 import os
 import re
-import signal
 import subprocess
 import tempfile
 import threading
 from typing import Any, Mapping, Optional
 from urllib.parse import quote
+
+from sutra_app import oslayer
 
 from ..env import child_env
 from .profiles import ToolError, ToolSpec
@@ -42,16 +43,16 @@ def gh_env(environ: Optional[Mapping[str, str]] = None) -> dict[str, str]:
 def _run(argv: list[str], env: Mapping[str, str], timeout_s: float, cwd: str) -> tuple[int, str, str]:
     """Run one `gh` child in its own process group; -> (returncode, stdout, stderr). Raises FileNotFoundError, TimeoutError."""
     proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dict(env), cwd=cwd,
-                            start_new_session=True)
+                            **oslayer.popen_group_kwargs())
+    tree = oslayer.ProcessTree(proc)
     try:
         out, err = proc.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except OSError:
-            pass
+        tree.send(oslayer.SIGKILL)
         proc.communicate()
         raise TimeoutError(f"gh did not answer within {timeout_s:g} s") from None
+    finally:
+        tree.close()
     return proc.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
 
 

@@ -1,7 +1,8 @@
 # Releasing and installing Sutra Pro for macOS
 
-The wheel release (`docs/RELEASE.md`, `release-wheel.yml`) and this one share a tag. Pushing `vX.Y.Z` (or `vX.Y.Z-beta.N`) runs both;
-`release-macos.yml` adds the app and the DMGs to the same GitHub Release. Nothing here runs locally by itself.
+The wheel release (`docs/RELEASE.md`, `sutra-pro-release-wheel.yml`), the Windows release (`docs/RELEASE-windows.md`) and this one share a tag.
+Pushing `sutra-pro-vX.Y.Z` (or `sutra-pro-vX.Y.Z-beta.N`) runs all three; `sutra-pro-release-macos.yml` adds the app and the DMGs to the same
+GitHub Release, which is never marked "Latest" (D100). Nothing here runs locally by itself.
 
 ## What a downloader gets
 
@@ -10,8 +11,9 @@ The wheel release (`docs/RELEASE.md`, `release-wheel.yml`) and this one share a 
 | `Sutra-Pro-arm64.dmg` and `Sutra-Pro-arm64.dmg.sha256` | Apple Silicon (M1 and later) |
 | `Sutra-Pro-x86_64.dmg` and `Sutra-Pro-x86_64.dmg.sha256` | Intel |
 
-The names carry no version, so `https://github.com/<owner>/<repo>/releases/latest/download/Sutra-Pro-arm64.dmg` always finds the newest
-stable release (a `-beta.N` tag is a pre-release and never answers `latest`). Not sure which Mac you have? Apple menu, About This Mac:
+The names carry no version, so the one thing that changes in a link is the tag:
+`https://github.com/sankalpasawa/sutra/releases/download/sutra-pro-vX.Y.Z/Sutra-Pro-arm64.dmg`. (`releases/latest` belongs to the old product in the
+same repository, D100.) Not sure which Mac you have? Apple menu, About This Mac:
 "Apple M..." is arm64. Check the download with `shasum -a 256 -c Sutra-Pro-<arch>.dmg.sha256` in the folder it is in.
 
 Open the DMG and drag **Sutra Pro** onto Applications. Opening the app starts the server on `127.0.0.1` (first free port from 8780 to 8799)
@@ -28,9 +30,9 @@ does not answer) and the server stops. Opening it again while it runs opens the 
 
 ## Cutting a release
 
-1. Bump `[project].version` in `pyproject.toml`, merge, tag `vX.Y.Z` (the guard compares the two and stops early on a mismatch).
+1. Bump `[project].version` in `pyproject.toml`, merge, tag `sutra-pro-vX.Y.Z` (the guard compares the two and stops early on a mismatch).
 2. Push the tag. `guard` (ubuntu) -> `dmg` (two legs in parallel, each built natively) -> `verify`.
-3. Repair an old tag: `gh workflow run release-macos -f tag=vX.Y.Z --ref vX.Y.Z` (dispatch from the tag's own ref).
+3. Repair an old tag: `gh workflow run sutra-pro-release-macos -f tag=sutra-pro-vX.Y.Z --ref sutra-pro-vX.Y.Z` (dispatch from the tag's own ref).
 
 What each `dmg` leg does: builds the wheel from the tag's tree; `scripts/build_macos_app.py` makes `Sutra Pro.app` (a launcher script, a
 python-build-standalone CPython 3.11 verified against its sha256 and cached, the wheel installed into it with the bundled
@@ -55,10 +57,10 @@ printed. An ad-hoc build refuses to replace a DMG on the release that is already
 ## Facts to know
 
 - Bundle identifier `os.sutra.pro`, name "Sutra Pro", executable `SutraPro` (a bash launcher, `scripts/macos/launcher.sh`), version = the
-  wheel's `X.Y.Z`. Minimum macOS 11.
+  wheel's `X.Y.Z`, icon `Contents/Resources/sutra-pro.icns` (drawn by `scripts/make_icons.py`, D102). Minimum macOS 11.
 - Build the bundle by hand (needs network for the dependencies): `scripts/py scripts/build_macos_app.py --wheel dist/sutra_pro-X.Y.Z-py3-none-any.whl --arch arm64 --out build`
   on an Apple Silicon Mac (use `x86_64` on an Intel Mac). `--python-archive FILE` uses a local interpreter archive instead of downloading one.
 - The interpreter pin: `PBS_TAG` and `PY_SERIES` in the script choose the release and the 3.11 patch; the archive is checked against the
   release's `SHA256SUMS`, and against `PINNED_SHA256` once a digest is listed there. The first CI build prints `pin candidate: ...`; copy
   that line into the table to make the pin independent of the release page.
-- Not done (decisions in `docs/notes/REL-2.md`): no icon, no auto-update, no Windows build.
+- Not done (decisions in `docs/notes/REL-2.md`): no auto-update. The icon (D102) and the Windows app (D101, `docs/RELEASE-windows.md`) came later.

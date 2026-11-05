@@ -483,5 +483,30 @@
   "id": "D97",
   "label": "offline demo works",
   "anchor": "Stub connector (extends base)"
+ },
+ {
+  "id": "D98",
+  "label": "inside the Sutra repo",
+  "anchor": null
+ },
+ {
+  "id": "D99",
+  "label": "no personal paths (D69)",
+  "anchor": null
+ },
+ {
+  "id": "D100",
+  "label": "tags sutra-pro-v*, never Latest",
+  "anchor": null
+ },
+ {
+  "id": "D101",
+  "label": "Windows app",
+  "anchor": "Operator"
+ },
+ {
+  "id": "D102",
+  "label": "unsigned until a certificate",
+  "anchor": null
  }
 ]

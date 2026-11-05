@@ -7,6 +7,7 @@ Only two kinds of names are read from the `.env` file: the owner override key (`
 lists them as comments so the owner has one place that names them all.
 """
 import os
+from sutra_app import oslayer
 import secrets
 from pathlib import Path
 
@@ -68,7 +69,7 @@ def create(path: str | os.PathLike[str], *, generate_override_key: bool = False)
     target = Path(path)
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     text = render_template(override_key=new_override_key() if generate_override_key else None)
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    fd = os.open(target, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
         os.write(fd, text.encode("utf-8"))
     finally:

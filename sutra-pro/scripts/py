@@ -24,7 +24,10 @@ if ! PYBIN=$(venv_python "$HERE"); then
     exit 1
   fi
 fi
-export PYTHONPATH="$HERE${PYTHONPATH:+:$PYTHONPATH}"
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) ;;     # Git Bash on Windows: the editable install is enough, and MSYS rewrites path lists unpredictably
+  *) export PYTHONPATH="$HERE${PYTHONPATH:+:$PYTHONPATH}" ;;
+esac
 # temp files (pytest tmp_path, test servers) go under /tmp, the same place for every worker
 if [ -d /tmp ]; then export TMPDIR=/tmp; fi
 exec "$PYBIN" "$@"

@@ -21,6 +21,7 @@ boundary is seen even when two of them fall inside one 250 ms window.
 """
 import json
 import os
+from sutra_app import oslayer
 import re
 import threading
 import time
@@ -46,11 +47,11 @@ TEAM_ORDER = ("fault", "running", "waiting_on_you", "waiting", "left_open", "don
 def _text_file_write(path: str, text: str) -> None:
     """Atomic: a temp file in the same folder, then rename. The page reads these files on every poll."""
     tmp = f"{path}.tmp-{os.getpid()}-{threading.get_ident()}"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(tmp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
-        os.replace(tmp, path)
+        oslayer.replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)

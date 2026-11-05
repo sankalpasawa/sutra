@@ -132,10 +132,10 @@ def test_every_vendored_file_is_listed_and_every_listed_file_exists():
     assert on_disk == listed
 
 
-def test_the_patch_table_has_p1_to_p11_without_p6():
+def test_the_patch_table_has_p1_to_p12_without_p6():
     table = MD.read_text(encoding="utf-8").split("## Files")[0]
     ids = re.findall(r"^\| (P\d+) \|", table, re.M)
-    assert ids == [f"P{n}" for n in range(1, 12) if n != 6]
+    assert ids == [f"P{n}" for n in range(1, 13) if n != 6]
     used = {p for _, _, patches, _, _ in rows() for p in patches.split(",") if p != "-"}
     assert used == set(ids)
 

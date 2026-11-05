@@ -3,8 +3,9 @@
     result = open_url("http://127.0.0.1:8780/", prefer="auto")        # auto | chrome | default
 
 Only Chrome is measured (hash CSP, EventSource reconnect, sandboxed frames, color-mix), so the app opens Chrome when it is installed.
-On macOS that is `open -a "Google Chrome" <url>`; everywhere else, and whenever Chrome is missing or the call fails, the system's
-`webbrowser`. `prefer="default"` (`--browser default`) always uses the system default. `SUTRA_BROWSER_APP` names another application
+On macOS that is `open -a "Google Chrome" <url>`; on Windows `chrome.exe <url>` from its standard install folders, started detached
+(the first instance of Chrome does not return until the browser is closed); everywhere else, and whenever Chrome is missing or the
+call fails, the system's `webbrowser`. `prefer="default"` (`--browser default`) always uses the system default. `SUTRA_BROWSER_APP` names another application
 (macOS: an app name for `open -a`; elsewhere: an executable) and beats `auto` and `chrome`, but not `default`. Nothing here raises for
 a missing browser: the result says what happened and the caller prints the URL.
 """
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-__all__ = ["open_url", "OpenResult", "find_chrome", "chrome_app_installed", "default_browser", "DefaultBrowser", "PREFER", "BROWSER_APP_ENV",
+__all__ = ["open_url", "OpenResult", "find_chrome", "windows_chrome_paths", "chrome_app_installed", "default_browser", "DefaultBrowser", "PREFER", "BROWSER_APP_ENV",
            "MAC_CHROME_PATHS", "MAC_CHROME_APPS"]
 
 PREFER = ("auto", "chrome", "default")
@@ -28,6 +29,9 @@ MAC_CHROME_APPS = ("/Applications/Google Chrome.app", "~/Applications/Google Chr
 MAC_CHROME_PATHS = tuple(app + "/Contents/MacOS/Google Chrome" for app in MAC_CHROME_APPS) + (
     "/Applications/Chromium.app/Contents/MacOS/Chromium", "~/Applications/Chromium.app/Contents/MacOS/Chromium")
 LINUX_CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser")
+# where Chrome installs on Windows, under each of these environment variables (all of them are optional)
+WINDOWS_CHROME_ROOTS = ("PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "LOCALAPPDATA")
+WINDOWS_CHROME_TAIL = ("Google", "Chrome", "Application", "chrome.exe")
 # LaunchServices bundle ids of browsers built on Chromium (they behave like the measured Chrome)
 CHROMIUM_BUNDLES = ("com.google.chrome", "org.chromium.chromium", "com.brave.browser", "com.microsoft.edgemac", "com.vivaldi.vivaldi",
                     "company.thebrowser.browser", "com.operasoftware.opera")
@@ -42,9 +46,16 @@ class OpenResult:
     detail: str = ""
 
 
+def windows_chrome_paths(environ: Mapping[str, str] | None = None) -> list[str]:
+    """The places `chrome.exe` is installed on Windows, for the environment variables that are set."""
+    env = os.environ if environ is None else environ
+    return [os.path.join(root, *WINDOWS_CHROME_TAIL) for root in (env.get(name) for name in WINDOWS_CHROME_ROOTS) if root]
+
+
 def find_chrome(environ: Mapping[str, str] | None = None, *, platform: str | None = None,
                 exists: Callable[[str], bool] = os.path.exists, which: Callable[[str], str | None] = shutil.which) -> str | None:
-    """A Chrome executable: `J2_CHROME` when it exists, then the standard macOS paths (or `google-chrome` and friends on PATH)."""
+    """A Chrome executable: `J2_CHROME` when it exists, then the standard macOS paths, the standard Windows folders (or
+    `google-chrome` and friends on PATH)."""
     env = os.environ if environ is None else environ
     named = (env.get("J2_CHROME") or "").strip()
     if named and exists(os.path.expanduser(named)):
@@ -52,6 +63,9 @@ def find_chrome(environ: Mapping[str, str] | None = None, *, platform: str | Non
     for path in MAC_CHROME_PATHS:
         if exists(os.path.expanduser(path)):
             return os.path.expanduser(path)
+    for path in windows_chrome_paths(env):
+        if exists(path):
+            return path
     for name in LINUX_CHROME_NAMES:
         found = which(name)
         if found:
@@ -70,15 +84,22 @@ def open_url(url: str, prefer: str = "auto", *, environ: Mapping[str, str] | Non
     if prefer not in PREFER:
         raise ValueError(f"browser must be one of {', '.join(PREFER)}, not {prefer!r}")
     env = os.environ if environ is None else environ
-    mac = (sys.platform if platform is None else platform) == "darwin"
+    system = sys.platform if platform is None else platform
+    mac, windows = system == "darwin", system == "win32"
     app = (env.get(BROWSER_APP_ENV) or "").strip()
+    chrome_exe = find_chrome(env, exists=exists) if windows else None
     notes = ""
     if prefer != "default":
         if app:
-            ok, why = _launch(run, ["open", "-a", app, url] if mac else [app, url])
+            ok, why = _spawn_detached([app, url]) if windows else _launch(run, ["open", "-a", app, url] if mac else [app, url])
             if ok:
                 return OpenResult(True, "app", app)
             notes = f"{BROWSER_APP_ENV}={app} did not open ({why}); "
+        elif windows and chrome_exe:
+            ok, why = _spawn_detached([chrome_exe, url])
+            if ok:
+                return OpenResult(True, "chrome", chrome_exe)
+            notes = f"Chrome did not open ({why}); "
         elif mac and chrome_app_installed(exists=exists):
             ok, why = _launch(run, ["open", "-a", "Google Chrome", url])
             if ok:
@@ -93,9 +114,19 @@ def open_url(url: str, prefer: str = "auto", *, environ: Mapping[str, str] | Non
     return OpenResult(opened, "default" if opened else "none", notes + ("the system default browser" if opened else "no browser could be opened"))
 
 
+def _spawn_detached(argv: list[str]) -> tuple[bool, str]:
+    """Start a program and do not wait for it (Windows: detached, no console, its own process group)."""
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, creationflags=flags)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, type(exc).__name__
+    return True, "started"
+
+
 def _launch(run: Callable[..., Any], argv: list[str]) -> tuple[bool, str]:
     try:
-        done = run(argv, capture_output=True, text=True, timeout=OPEN_TIMEOUT_S, stdin=subprocess.DEVNULL)
+        done = run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=OPEN_TIMEOUT_S, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, type(exc).__name__
     code = getattr(done, "returncode", 1)

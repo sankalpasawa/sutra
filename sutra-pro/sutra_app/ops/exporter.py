@@ -19,6 +19,7 @@ import csv
 import io
 import json
 import os
+from sutra_app import oslayer
 import re
 import shutil
 import sqlite3
@@ -68,7 +69,7 @@ def _refuse_existing(path: Path) -> None:
 def _write_text(path: Path, text: str) -> None:
     _refuse_existing(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd = os.open(path, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
         handle.write(text)
 
