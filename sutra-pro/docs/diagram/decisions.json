@@ -508,5 +508,15 @@
   "id": "D102",
   "label": "unsigned until a certificate",
   "anchor": null
+ },
+ {
+  "id": "D103",
+  "label": "signed and notarized",
+  "anchor": null
+ },
+ {
+  "id": "D104",
+  "label": "Windows tests named, not hidden",
+  "anchor": null
  }
 ]
