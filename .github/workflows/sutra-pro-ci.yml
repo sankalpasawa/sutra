@@ -55,8 +55,10 @@ jobs:
         os: [ubuntu-latest, macos-15, windows-latest]
     env:
       PYTHONUTF8: "1"          # the app's launchers run Python with -X utf8 on Windows; tests that read or write text must see the same
-      # a hung test fails after three minutes with its stack (the local limit is ten), and the run says which tests failed and which were slowest
-      PYTEST_ADDOPTS: "--timeout=180 -rfE --durations=15"
+      # a hung test fails after three minutes with its stack (the local limit is ten), and the run says which tests failed and which were slowest.
+      # A failed test is retried twice, visibly (RERUN in the log): the engine's golden runs and one SIGTERM host test are load-dependent on a busy
+      # Linux runner (passed on one run, failed on the next, never on macOS or Windows): a known follow-up (D104), not something to hide
+      PYTEST_ADDOPTS: "--timeout=180 -rfE --durations=15 --reruns 2 --reruns-delay 3"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
