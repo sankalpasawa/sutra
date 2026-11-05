@@ -34,7 +34,7 @@ A boolean accepts `1`, `true`, `yes`, `on` and `0`, `false`, `no`, `off`; this d
 | `SUTRA_LIVE` | `live` | `0` | `1`: allow the tests marked `live` that call the real CLIs |
 | `SUTRA_ENV_FILE` | `env_file` | `<project>/.env` in a checkout, `<data>/.env` installed | the file that holds the secrets of section 3 |
 
-Flags with no variable: `--no-browser`, `--browser auto|chrome|default`, `--verbose`.
+Flags with no variable: `--no-browser`, `--browser auto|chrome|default`, `--exit-when-stdin-closes`, `--verbose`.
 
 ## 2. Engine settings
 

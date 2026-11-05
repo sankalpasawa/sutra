@@ -3,6 +3,9 @@
 On Windows a server with no console cannot be signalled, so `sutra-pro stop` writes `<data>/app.stop` and the server, which polls
 for it, shuts down the way a SIGTERM would. The file works everywhere, so this test drives it on every system; the command is driven
 too, through whichever way the system it runs on takes (SIGTERM on POSIX, the file on Windows).
+
+The desktop app (D107) ends its server a third way: it holds the write end of the server's standard input, and `--exit-when-stdin-closes`
+makes the server stop when that pipe closes, so a killed app cannot leave a server running.
 """
 import os
 import re
@@ -22,13 +25,13 @@ STOP_WITHIN_S = 30
 
 
 class Running:
-    def __init__(self, data_dir) -> None:
+    def __init__(self, data_dir, *, args=(), stdin=None) -> None:
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(("SUTRA_", "J2_", "STUDIO_"))}
         self.env.update({"SUTRA_DATA_DIR": str(data_dir), "SUTRA_ENV_FILE": str(data_dir.parent / "none.env"), "PYTHONUTF8": "1"})
         self.data_dir = data_dir
         self.lines: list[str] = []
-        self.proc = subprocess.Popen([sys.executable, "-m", "sutra_app", "--offline", "--no-browser", "--port", "0"], cwd=str(REPO),
-                                     env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+        self.proc = subprocess.Popen([sys.executable, "-m", "sutra_app", "--offline", "--no-browser", "--port", "0", *args], cwd=str(REPO),
+                                     env=self.env, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                                      **oslayer.popen_group_kwargs())
         threading.Thread(target=self._read, daemon=True).start()
         self.base = self._wait_for_url()
@@ -98,3 +101,27 @@ def test_the_stop_command_ends_a_real_server(running):
     assert done.returncode == 0, done.stdout + done.stderr
     assert running.proc.wait(timeout=STOP_WITHIN_S) is not None
     assert not lock.is_locked(running.data_dir)
+
+
+def test_closing_standard_input_ends_a_server_that_was_asked_to_watch_it(tmp_path):
+    box = Running(tmp_path / "data", args=("--exit-when-stdin-closes",), stdin=subprocess.PIPE)
+    try:
+        assert box.health()
+        assert box.proc.poll() is None, "an open input keeps the server running"
+        box.proc.stdin.close()                           # what the desktop app's death does: the write end of the pipe goes away
+        assert box.proc.wait(timeout=STOP_WITHIN_S) == 0, "\n".join(box.lines)
+        assert not lock.is_locked(box.data_dir), "the instance lock went with the server"
+        assert not (box.data_dir / lock.PID_NAME).exists(), "the pid file is removed by the server that wrote it"
+    finally:
+        box.finish()
+
+
+def test_a_server_that_was_not_asked_to_watch_standard_input_ignores_its_closing(tmp_path):
+    box = Running(tmp_path / "data", stdin=subprocess.PIPE)
+    try:
+        assert box.health()
+        box.proc.stdin.close()
+        time.sleep(2.5)                                  # the watcher, had it been asked for, answers within a second
+        assert box.proc.poll() is None and box.health(), "the flag, not a pipe, is what makes a server follow its starter"
+    finally:
+        box.finish()

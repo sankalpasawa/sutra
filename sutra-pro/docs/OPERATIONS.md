@@ -22,7 +22,7 @@ sutra-pro export chart        # the org chart and its change log as JSON
 
 | Command | Flags | Notes |
 |---|---|---|
-| `sutra-pro serve` | `--port N`, `--data-dir D`, `--offline`, `--no-browser`, `--browser auto\|chrome\|default`, `--verbose` | no sub-command means serve |
+| `sutra-pro serve` | `--port N`, `--data-dir D`, `--offline`, `--no-browser`, `--browser auto\|chrome\|default`, `--exit-when-stdin-closes`, `--verbose` | no sub-command means serve; `--exit-when-stdin-closes` is for a program that starts the server and keeps its input open (the desktop app): the server stops when that input ends |
 | `sutra-pro doctor` | `--data-dir D`, `--json`, `--offline` | exit 0 when nothing failed, 1 when a check failed |
 | `sutra-pro status` | `--data-dir D`, `--json` | exit 0 running and healthy, 1 not running or unhealthy |
 | `sutra-pro stop` | `--data-dir D`, `--json`, `--wait S` | SIGTERM, then waits `S` seconds (default 20); never SIGKILL |
