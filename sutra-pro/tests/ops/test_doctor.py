@@ -93,7 +93,7 @@ def test_the_data_folder_is_ok_when_missing_but_creatable_or_private_and_warns_w
     assert list(settings.data_dir.iterdir()) == []                      # the write probe left nothing behind
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can write anywhere")
+@pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0, reason="root can write anywhere, and Windows has no POSIX permission bits")
 def test_a_data_folder_that_cannot_be_written_or_is_not_a_folder_fails(tmp_path):
     settings = make_settings(tmp_path)
     settings.data_dir.mkdir(mode=0o500)

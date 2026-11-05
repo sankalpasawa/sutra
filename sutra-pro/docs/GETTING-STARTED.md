@@ -33,14 +33,24 @@ scripts/run.sh
 
 `scripts/run.sh` checks the setup offline, then starts the server and opens the browser. It creates `.venv` itself when there is none.
 
-From a release (the wheel on the GitHub release page; see [RELEASE.md](RELEASE.md)):
+The apps need no Python and no uv. Download them from the [Sutra Pro releases](https://github.com/sankalpasawa/sutra/releases?q=sutra-pro)
+(the release is named by its tag `sutra-pro-vX.Y.Z`; it is never the repository's "Latest" one, D100):
+
+| System | Asset | What to do |
+|---|---|---|
+| macOS | `Sutra-Pro-arm64.dmg` (Apple silicon) or `Sutra-Pro-x86_64.dmg` (Intel) | open it, drag **Sutra Pro** onto Applications, open it; see [RELEASE-macos.md](RELEASE-macos.md) |
+| Windows 10 / 11 | `Sutra-Pro-Setup-x64.exe`, or `Sutra-Pro-win-x64.zip` to unzip anywhere | run it, start **Sutra Pro** from the Start menu; see [RELEASE-windows.md](RELEASE-windows.md) |
+
+Both are unsigned for now (D102), so the first launch needs one extra click: macOS "right-click, Open"; Windows "More info, Run anyway".
+An app starts the same server as the command and opens your browser; there is no window of its own. On Windows an icon in the notification area
+opens it again or quits it; on a Mac, quit it from the Dock.
+
+From a release as a command (the wheel on the same page; see [RELEASE.md](RELEASE.md)):
 
 ```bash
-uv tool install https://github.com/<owner>/sutra-pro/releases/download/vX.Y.Z/sutra_pro-X.Y.Z-py3-none-any.whl
+uv tool install https://github.com/sankalpasawa/sutra/releases/download/sutra-pro-vX.Y.Z/sutra_pro-X.Y.Z-py3-none-any.whl
 sutra-pro --help
 ```
-
-On a Mac there is also a drag-and-drop app ([RELEASE-macos.md](RELEASE-macos.md)); it starts the same server and opens your browser.
 
 Then look at the machine once:
 

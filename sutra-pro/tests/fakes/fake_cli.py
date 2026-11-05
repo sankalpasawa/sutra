@@ -65,7 +65,6 @@ import base64
 import contextlib
 import copy
 import datetime
-import fcntl
 import hashlib
 import json
 import os
@@ -454,6 +453,18 @@ def parse_sequence(spec):
 
 
 # ------------------------------------------------------------------------------------------------ state and the call log
+def _lock_blocking(fd):
+    """An exclusive lock on an open file, waiting for it: flock where there is one, else msvcrt (which retries for ten seconds)."""
+    try:
+        import fcntl
+    except ImportError:                                   # Windows
+        import msvcrt
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        return
+    fcntl.flock(fd, fcntl.LOCK_EX)
+
+
 class State:
     """The FAKE_CLI_STATE directory. Every read-modify-write happens inside locked()."""
 
@@ -469,7 +480,7 @@ class State:
             return
         fd = os.open(str(self.dir / "lock"), os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            _lock_blocking(fd)
             yield
         finally:
             os.close(fd)                              # closing releases the lock

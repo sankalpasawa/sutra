@@ -261,8 +261,14 @@ class FakeCli:
         (self.state_dir / "device_auth_approve").write_text("")
 
 
+POSIX_ONLY = ("the fake claude, codex and gh are POSIX shell wrappers whose expectations are POSIX signal semantics (D104); on Windows the "
+              "connector layer is covered by tests/connectors/test_process_portable.py and the packaged app by scripts/prove_windows_app.py")
+
+
 @pytest.fixture
 def fake(tmp_path):
+    if sys.platform == "win32":
+        pytest.skip(POSIX_ONLY)
     handle = FakeCli(tmp_path)
     yield handle
     handle.close()
@@ -271,6 +277,8 @@ def fake(tmp_path):
 @pytest.fixture(scope="module")
 def make_fake(tmp_path_factory):
     """For a module-scoped fixture that needs a FakeCli (the function-scoped `fake` cannot serve one): make_fake() -> a new handle."""
+    if sys.platform == "win32":
+        pytest.skip(POSIX_ONLY)
     handles = []
 
     def make(name="fake"):

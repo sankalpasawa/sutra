@@ -1112,6 +1112,9 @@ def test_the_signed_bundle_is_proved_through_the_real_launcher_with_the_network_
                    'kill -TERM "$launcher"', "build-info.json", 'codesign --verify --deep --strict "$app"'):
         assert needle in prove, needle
     assert prove.index("api/health") < prove.index('kill -TERM "$launcher"') < prove.rindex("codesign --verify")
+    # the bundled Python that checks the version is not the launcher's: without -B it writes .pyc files of the standard library into
+    # the signed bundle and the seal breaks (found by running the step on a real build, D98)
+    assert 'python/bin/python3" -B -I -c' in prove
 
 
 def test_the_dmg_is_made_with_hdiutil_from_the_app_and_an_applications_link():

@@ -99,7 +99,7 @@ def test_is_secret_name():
 # process runner
 # ===================================================================================================================
 
-FAST = ((signal.SIGINT, 0.6), (signal.SIGTERM, 0.6), (signal.SIGKILL, 3.0))
+FAST = ((signal.SIGINT, 0.6), (signal.SIGTERM, 0.6), (getattr(signal, "SIGKILL", 9), 3.0))
 
 
 @pytest.fixture

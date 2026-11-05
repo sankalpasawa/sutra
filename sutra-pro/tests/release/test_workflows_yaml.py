@@ -555,7 +555,7 @@ def test_ci_package_builds_checks_installs_and_keeps_the_distribution(ci):
     assert install.index("cd \"$RUNNER_TEMP\"") < install.index('"$RUNNER_TEMP/clean/bin/sutra-pro" --help'), "run it outside the checkout"
     assert len(run) == 4
     (upload,) = action_steps(job, "actions/upload-artifact@")
-    assert upload["with"]["path"] == "dist/" and upload["with"]["name"] == "dist" and upload["with"]["if-no-files-found"] == "error"
+    assert upload["with"]["path"] == "sutra-pro/dist/" and upload["with"]["name"] == "dist" and upload["with"]["if-no-files-found"] == "error"
 
 
 def test_ci_package_does_not_run_the_test_suites(ci):

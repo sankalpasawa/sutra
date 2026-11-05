@@ -43,7 +43,11 @@ from .errors import CliMissingError, InvalidRequestError, ProviderError
 
 __all__ = ["Command", "ExitInfo", "ProcessRunner", "RunningProcess", "LADDER", "STDERR_TAIL_BYTES", "MAX_LINE_BYTES"]
 
-LADDER: tuple[tuple[int, float], ...] = ((signal.SIGINT, 5.0), (signal.SIGTERM, 5.0), (oslayer.SIGKILL, 2.0))
+if oslayer.IS_WINDOWS:
+    # a child with no console cannot be interrupted (Ctrl+Break needs one), so a SIGINT step would only cost five seconds
+    LADDER: tuple[tuple[int, float], ...] = ((signal.SIGTERM, 5.0), (oslayer.SIGKILL, 2.0))
+else:
+    LADDER = ((signal.SIGINT, 5.0), (signal.SIGTERM, 5.0), (oslayer.SIGKILL, 2.0))
 STDERR_TAIL_BYTES = 8192
 MAX_LINE_BYTES = 8 * 1024 * 1024       # a longer stdout line is cut here (the rest of it is dropped)
 READER_GRACE_S = 2.0                   # after the child ended, wait this long for stdout to close (a stray grandchild)

@@ -62,8 +62,13 @@ PBS_TAG = "20260901"                         # the release the old Sutra's DMG p
 PY_SERIES = "3.11"
 FLAVOUR = "install_only_stripped"            # runtime only, no debug symbols: the variant meant for redistribution
 # Exact archive name -> sha256. A name listed here must match this table (a stronger pin than the release's own SHA256SUMS, which
-# a tampered release would change too). Empty until the first CI build prints its digest line ("pin candidate: ...").
-PINNED_SHA256: dict[str, str] = {}
+# a tampered release would change too). Added from the release's own SHA256SUMS and the first real build ("pin candidate: ..." matched
+# the arm64 line), 2026-11-05; the Windows app builder (scripts/build_windows_app.py) takes its archive from the same table.
+PINNED_SHA256: dict[str, str] = {
+    "cpython-3.11.16+20260901-aarch64-apple-darwin-install_only_stripped.tar.gz": "768f05cf200273bbdda9a5955a5a6892a4b22f2a0b1e4b0a9160f5c7fce86816",
+    "cpython-3.11.16+20260901-x86_64-apple-darwin-install_only_stripped.tar.gz": "908b381433f78b832c8d64960ced0f85871893cc8779f413f963e0c9e293c258",
+    "cpython-3.11.16+20260901-x86_64-pc-windows-msvc-install_only_stripped.tar.gz": "06cbe479e039f5b9cb5640c286d790074d63f549f92a32d599a3748293bd4510",
+}
 
 VERSION_RE = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")   # CFBundleVersion: three integers
 BUNDLE_ID_RE = re.compile(r"[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)+")

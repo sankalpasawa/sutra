@@ -255,7 +255,9 @@ jobs:
           url="$(head -1 "$work/opened.txt")"
           curl -fsS --noproxy '*' --max-time 10 "${url}api/health" > "$work/health.json"
           cat "$work/health.json"; echo
-          "$app/Contents/Resources/python/bin/python3" -I -c '
+          # -B: a Python that is not the launcher's has no PYTHONDONTWRITEBYTECODE, and writing .pyc files for the standard library into the
+          # signed bundle breaks its seal (found by running this step locally: "a sealed resource is missing or invalid")
+          "$app/Contents/Resources/python/bin/python3" -B -I -c '
           import json, sys
           health = json.load(open(sys.argv[1]))
           info = json.load(open(sys.argv[2]))
