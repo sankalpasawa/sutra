@@ -11214,6 +11214,282 @@ def backend_lld():
           "carries its endpoints ok")
 
 
+# The Phase 3 test brief (docs/backend-design.md section 10), kept as the scenario file so the two never drift.
+YOGA_BACKEND_BRIEF = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "scenarios",
+                                       "still-point-yoga-backend.md"), encoding="utf-8").read().strip()
+
+
+def backend_wf(run):
+    """The one backend workflow of a run (J2_BACKEND=1), or None."""
+    b = [w for w in run._all_wfs() if w.get("backend")]
+    assert len(b) <= 1, [w["id"] for w in b]
+    return b[0] if b else None
+
+
+def backend_in_run():
+    """Backend builder, Phase 3 (J2_BACKEND=1): a mock run of the backend brief builds the backend. The LLD has seven
+    sections with A1.. and T1..; after the last page workflow code registers W-n Backend (no proposal, priced 15 from
+    rates_backend, lld_sections = the A and T ids), Priority's envelope check hands it to its builder, whose system
+    prompt is backend.md and whose prompt carries the LLD's endpoints, tables and fields and the page's /api/ calls;
+    the reply follows Backend/1 · server.py (three layer receipts, five rules met); site/server.py is written and
+    passes the safety scan; every check kind of backend-checks/1 is a receipt of its atom, each passed, but backend-e2e
+    could not run without Chrome (with --browser it passes through the proxy); backend.json, summary.json and
+    report.md carry the record; the form builder's prompt carried the BACKEND sentence and the page posts only to LLD
+    paths; the run ends Done; no server is left running; the website stage's least cost counts the backend. With the
+    flag off the same brief builds no backend and no builder sees the sentence."""
+    import j2_backend
+    run = backend_run(YOGA_BACKEND_BRIEF)
+    assert run.outcome.startswith("Done"), run.outcome
+    heads = [h for lv, h, _ in j2.md_sections(open(os.path.join(run.dir, "lld.md"), encoding="utf-8").read()) if lv == 2]
+    assert heads[:7] == list(j2.LLD_SECTIONS_BACKEND), heads
+    eps, tables = run.blueprint["endpoints"], run.blueprint["tables"]
+    assert [e["id"] for e in eps] == [f"A{i}" for i in range(1, len(eps) + 1)] and len(eps) >= 2, eps
+    assert [t["id"] for t in tables] == [f"T{i}" for i in range(1, len(tables) + 1)] and tables, tables
+    b = backend_wf(run)
+    assert b, "the backend workflow exists"
+    pages = [w for w in run.workflows if w.get("lld_sections") and not w.get("backend")]
+    assert pages and all(int(b["id"][2:]) > int(w["id"][2:]) for w in pages), "registered after the page workflows"
+    assert b["proposal_id"] is None and b["cost"] == 15 and b["charged"] and b["status"] == "done" and b["section"] is None, b
+    assert b["lld_sections"] == [e["id"] for e in eps] + [t["id"] for t in tables] and b["outputs"] == ["site/server.py"]
+    assert b["version"] and b["artifact"] == "site/server.py" and b["calls_used"] == 1 and b["agent"] == f"{b['id']} Builder"
+    # the chat: code registered it, Priority let it run, it reported to Coordination, then Audit
+    texts = [m["text"] for m in run.chat]
+    i = next(k for k, t in enumerate(texts) if t.startswith(f"The page workflows are done. Code registers {b['id']} Backend"))
+    assert f"server.py for {len(eps)} endpoint(s) and {len(tables)} table(s) of the LLD, priced 15 from the rate card (rates_backend)" in texts[i]
+    assert any(m["who"] == "priority" and f"Envelope check for {b['id']}" in m["text"] and "money 15" in m["text"] for m in run.chat[i:])
+    assert any(m["who"] == b["id"] and m.get("human_output") and m.get("artifact") == "site/server.py" for m in run.chat[i:])
+    assert any(t.startswith("Queue empty") for t in texts[i:]) and not any("proposal" in m and m["who"] == "adaptation"
+                                                                             and "Backend" in m["text"] for m in run.chat), "code registered it; Audit followed"
+    # its builder's one call: backend.md as its role file, the reply schema, the LLD in the prompt
+    calls = [c for c in j2._jsonl(run.dir, "calls.jsonl") if c["fn"] == b["id"]]
+    assert len(calls) == 1, len(calls)
+    c = calls[0]
+    assert "# Backend agent (one per registered backend workflow" in c["system"] and "## What you do" in c["system"], c["system"][:300]
+    assert "builder.md" not in c["system"] and f"You are {b['id']} Builder." in c["system"]
+    for part in ("YOUR OUTPUT IS ONE FILE, site/server.py", "YOUR TEMPLATE: Backend/1 · server.py", "THE LLD'S API ENDPOINTS",
+                 "THE LLD'S DATA MODEL", "THE LLD'S FORM FIELDS", "THE PAGE'S /api/ CALLS", "CHARTER:"):
+        assert part in c["prompt"], part
+    assert all(e["path"] in c["prompt"] for e in eps) and all(t["name"] in c["prompt"] for t in tables)
+    assert c["artifact_schema"]["template"] == "Backend/1 · server.py" and c["artifact_schema"]["attempt"] == 1 and c["atom"] == b["atoms"][0]["id"]
+    log = next(x for x in run.call_log if x["fn"] == b["id"])      # the reply summary for the detail view (in memory, as for pages)
+    assert log["reply"]["endpoints_implemented"] == [e["id"] for e in eps] and log["reply"]["code_chars"] > 1000, log["reply"]
+    assert log["reply"]["check"] == "usable server.py" and log["reason"], log
+    # the receipts: every check kind, the three layers, each passed but e2e without Chrome; every one names the template
+    recs = [r for r in j2._jsonl(run.dir, "receipts.jsonl") if r.get("atom") == b["atoms"][0]["id"]]
+    kinds = [r["type"] for r in recs if "check" in r]
+    assert set(kinds) == set(j2_backend.CHECK_TYPES) | {"artifact-schema", "artifact-rules", "artifact-render"}, kinds
+    assert kinds.count("backend-endpoint") == len(eps) and kinds[:3] == ["backend-compile", "backend-safety", "backend-start"]
+    assert kinds[-4:] == ["backend-files", "artifact-schema", "artifact-rules", "artifact-render"], kinds
+    assert all(r["attempt"] == 1 and r["by"] == "code" and r["template"] == "Backend/1 · server.py" for r in recs if "check" in r)
+    chrome = bool(j2.j2_check.find_chrome())
+    bad = [(r["type"], r["evidence"]) for r in recs if "check" in r and r["pass"] is not True]
+    assert bad == ([] if chrome else [("backend-e2e", "could not run: Chrome not found (set J2_CHROME)")]), bad
+    e2e = next(r for r in recs if r.get("type") == "backend-e2e")
+    assert e2e["target"] == "#" + run.blueprint["fields"][0]["form"], e2e["target"]
+    if chrome:
+        assert "the form submitted in the browser and GET " in e2e["evidence"] and "Test Person" in e2e["evidence"], e2e
+    ends = [r for r in recs if r.get("type") == "backend-endpoint"]
+    assert all(str(r["expect"]) in r["evidence"] for r in ends), [(r["target"], r["evidence"]) for r in ends]
+    assert "every one an LLD endpoint" in next(r for r in recs if r.get("type") == "page-calls-known-endpoints")["evidence"]
+    rules = next(r for r in recs if r.get("type") == "artifact-rules")
+    assert len(rules["rules"]) == 5 and all(x["pass"] is True for x in rules["rules"]), [(x["name"], x["pass"], x["evidence"]) for x in rules["rules"]]
+    exp = [r for r in recs if "expected" in r]
+    assert [x["met"] for x in exp] == [True, True if chrome else None], [(x["expected"], x["met"]) for x in exp]
+    a = b["atoms"][0]
+    assert a["status"] == ("passed" if chrome else "could not run") and a["human_output"]["text"], (a["status"], a.get("human_output"))
+    if chrome:
+        assert a["agent_output"]["kind"] == "backend" and a["agent_output"]["file"] == "site/server.py" and a["agent_output"]["implements"] == b["lld_sections"]
+    # the file: what was sent, safe, every LLD path and table in it
+    src = open(os.path.join(run.dir, "site", "server.py"), encoding="utf-8").read()
+    assert 'ThreadingHTTPServer(("127.0.0.1", a.port)' in src and all(e["path"] in src for e in eps) and all(t["name"] in src for t in tables)
+    assert not j2_backend.safety_problems(src) and src.endswith("\n")
+    assert sorted(os.listdir(os.path.join(run.dir, "backend"))) == ["check-1.sqlite", "start-1.log"], os.listdir(os.path.join(run.dir, "backend"))
+    # the record, the summary, the report
+    bj = json.load(open(os.path.join(run.dir, "backend.json"), encoding="utf-8"))
+    assert bj["schema"] == "backend/1" and bj["workflow"] == b["id"] and bj["atom"] == a["id"] and bj["status"] == "done" and bj["attempts"] == 1
+    assert bj["endpoints_implemented"] == [e["id"] for e in eps] and bj["tables_created"] == [t["id"] for t in tables] and bj["written"]
+    assert [e["id"] for e in bj["endpoints"]] == [e["id"] for e in eps] and [t["name"] for t in bj["tables"]] == [t["name"] for t in tables]
+    assert bj["template"]["template"] == "Backend/1 · server.py" and bj["template"]["version"] == 1 and bj["template"]["kind"] == "generic" \
+        and bj["template"]["action"] == "generic" and bj["template"]["schema_sha"] == c["artifact_schema"]["schema_sha"], bj["template"]
+    assert bj["passed"] == len(kinds) - (0 if chrome else 1) and bj["failed"] == 0 and bj["could_not_run"] == (0 if chrome else 1), bj
+    assert [x["type"] for x in bj["checks"]] == kinds and bj["port_arg"] == "--port" and bj["db_arg"] == "--db" and bj["cost"] == 15
+    assert bj["run_it"] == f"python {os.path.join(run.dir, 'site', 'server.py')} --port 8790", bj["run_it"]
+    s = summary(run)
+    assert s["backend"] == {k: bj[k] for k in ("workflow", "status", "attempts", "passed", "failed", "could_not_run", "cost", "template", "run_it")}, s["backend"]
+    rep = open(os.path.join(run.dir, "report.md"), encoding="utf-8").read()
+    assert "## Backend (J2_BACKEND=1, counted by code)" in rep and f"- {b['id']} wrote site/server.py in 1 attempt(s), status done: {bj['passed']} check(s) passed, 0 failed" in rep
+    assert f"- {len(eps)} endpoint(s) and {len(tables)} table(s) from the LLD; run it with `{bj['run_it']}`" in rep
+    # the form builders were told to post; the page posts only to LLD paths, no mailto; nothing left running
+    forms = [w for w in run.workflows if any(c.get("type") == "lld-slice" and c["spec"].get("endpoints")
+                                            for c in (w.get("atoms") or [{}])[0].get("verification") or [])]
+    told = {c["fn"] for c in j2._jsonl(run.dir, "calls.jsonl") if "BACKEND: the form posts to the site's own API. Give the form action=\"/api/" in c["prompt"]}
+    assert forms and told == {w["id"] for w in forms}, (told, [w["id"] for w in forms])
+    page = run.sites[-1]
+    assert set(j2_backend.page_calls(page)) == {e["path"] for e in eps if e["method"] == "POST"} and "mailto:" not in page
+    assert all(f'action="{e["path"]}" method="post"' in page for e in eps if e["method"] == "POST")
+    assert not j2_backend._LIVE
+    os.environ["J2_BACKEND"] = "1"
+    try:
+        assert run._stage_cost("website") == 5 + 10 * 3 + 15 + 15, run._stage_cost("website")
+        assert j2.RATE_BACKEND() == 15 and j2.RATES_WEB().get("backend") is None, "its own key: the website parts are unchanged"
+    finally:
+        os.environ.pop("J2_BACKEND", None)
+    assert run._stage_cost("website") == 5 + 10 * 3 + 15
+    # the flag off: the same brief builds no backend, no builder is told to post, the mock form keeps its plain action
+    run2 = docs_run(YOGA_BACKEND_BRIEF, 1500)
+    finish(run2)
+    assert run2.outcome.startswith("Done") and backend_wf(run2) is None, run2.outcome
+    for rel in ("backend", "backend.json", os.path.join("site", "server.py")):
+        assert not os.path.exists(os.path.join(run2.dir, rel)), rel
+    assert not any("BACKEND: the form posts" in c["prompt"] or "backend.md" in c["system"] for c in j2._jsonl(run2.dir, "calls.jsonl"))
+    assert not j2_backend.page_calls(run2.sites[-1]) and 'action="/send"' in run2.sites[-1]
+    assert "backend" not in summary(run2) and "## Backend" not in open(os.path.join(run2.dir, "report.md"), encoding="utf-8").read()
+    print(f"backend in a run (J2_BACKEND=1): {b['id']} Backend registered by code after the page workflows, priced 15, built "
+          f"from backend.md with the reply schema, server.py written and {bj['passed']} check(s) passed"
+          + (" (e2e through the proxy)" if chrome else " (e2e could not run without Chrome)")
+          + ", backend.json, summary and report carry it, the form builders were told to post, the flag off builds none ok")
+
+
+def backend_retry():
+    """Backend builder, retries (J2_BACKEND=1): a planted first reply is refused and the second attempt's prompt carries
+    the exact evidence. (a) `import subprocess`: compile passes, backend-safety fails naming line 1, start and the
+    endpoint checks fail as not started, the page check still passes; attempt 2 passes; backend.json says 2 attempts.
+    (b) a reply that is not JSON: an artifact-schema receipt fails, the second prompt quotes it. (c) a reply naming an
+    endpoint the LLD lacks: artifact-rules fails on both rules, the file's own checks pass, attempt 2 passes. Every
+    run ends Done."""
+    import j2_backend
+
+    def planted(change):
+        seen = []
+
+        def patch(run, orig):
+            def call(fn, fmt, task, mock, *a, **kw):
+                if kw.get("builder") == "backend.md":
+                    seen.append(task)
+                    if len(seen) == 1:
+                        first = change(json.loads(mock()))
+                        return orig(fn, fmt, task, lambda: first if isinstance(first, str) else json.dumps(first), *a, **kw)
+                return orig(fn, fmt, task, mock, *a, **kw)
+            return call
+        run = backend_run(YOGA_BACKEND_BRIEF, patch=patch)
+        assert run.outcome.startswith("Done"), run.outcome
+        b = backend_wf(run)
+        recs = [r for r in j2._jsonl(run.dir, "receipts.jsonl") if r.get("atom") == b["atoms"][0]["id"] and "check" in r]
+        bj = json.load(open(os.path.join(run.dir, "backend.json"), encoding="utf-8"))
+        assert len(seen) == 2 and "ATTEMPT 2 OF 3. THESE CHECKS FAILED ON YOUR LAST ATTEMPT:" in seen[1] and "ATTEMPT" not in seen[0]
+        assert bj["attempts"] == 2 and bj["status"] == "done" and bj["failed"] == 0 and b["calls_used"] == 2, (bj["attempts"], bj["failed"])
+        assert all(r["pass"] is not False for r in recs if r["attempt"] == 2), [(r["type"], r["evidence"]) for r in recs if r["attempt"] == 2 and r["pass"] is False]
+        assert not j2_backend._LIVE
+        return run, seen, recs, bj
+
+    def unsafe(rep):
+        rep["section"]["code"] = "import subprocess\n" + rep["section"]["code"]
+        return rep
+    run, seen, recs, bj = planted(unsafe)
+    one = {r["type"]: r for r in recs if r["attempt"] == 1}
+    assert one["backend-compile"]["pass"] is True and one["backend-safety"]["pass"] is False
+    assert one["backend-safety"]["evidence"].startswith("line 1: import subprocess is not allowed"), one["backend-safety"]["evidence"]
+    assert one["backend-start"]["evidence"] == "not started: backend-safety has not passed for this server.py" and one["backend-start"]["pass"] is False
+    assert one["backend-endpoint"]["pass"] is False and "the server is not running" in one["backend-endpoint"]["evidence"]
+    assert one["page-calls-known-endpoints"]["pass"] is True and one["artifact-schema"]["pass"] is True and one["artifact-rules"]["pass"] is True
+    assert "- server.py imports only the standard library, writes no file but its database and binds 127.0.0.1 (backend-safety site/server.py, expect True): line 1: import subprocess is not allowed" in seen[1], seen[1][-1500:]
+    assert sorted(os.listdir(os.path.join(run.dir, "backend"))) == ["check-2.sqlite", "start-2.log"], "attempt 1 never started"
+    assert any(m["who"] == "system" and f"Code ran {bj['workflow']}'s checks on attempt 1 of 3" in m["text"] and "tries again" in m["text"] for m in run.chat)
+    run, seen, recs, bj = planted(lambda rep: "Here is the server:\n```python\nprint(1)\n```")
+    one = [r for r in recs if r["attempt"] == 1]
+    assert [(r["type"], r["pass"]) for r in one] == [("artifact-schema", False)], one
+    assert one[0]["evidence"] == "reply: the reply is not one JSON object" and one[0]["template"] == "Backend/1 · server.py"
+    assert "(artifact-schema Backend/1 · server.py, expect True): reply: the reply is not one JSON object" in seen[1], seen[1][-600:]
+    assert not os.path.exists(os.path.join(run.dir, "backend", "start-1.log")), "nothing was written or started on attempt 1"
+    assert any(m["who"] == "system" and f"{bj['workflow']} attempt 1 can't be used: the reply must be one JSON object following Backend/1 · server.py"
+               in m["text"] for m in run.chat)
+
+    def wrong_ids(rep):
+        rep["section"]["endpoints_implemented"] = ["A1", "A9"]
+        return rep
+    run, seen, recs, bj = planted(wrong_ids)
+    one = {r["type"]: r for r in recs if r["attempt"] == 1}
+    assert one["backend-start"]["pass"] is True and one["backend-endpoint"]["pass"] is True and one["artifact-schema"]["pass"] is True
+    assert one["artifact-rules"]["pass"] is False, one["artifact-rules"]
+    ev = one["artifact-rules"]["evidence"]
+    assert "endpoints_implemented names A9, which is not an endpoint of the LLD" in ev and "are not in endpoints_implemented" in ev, ev
+    assert [x["pass"] for x in one["artifact-rules"]["rules"]] == [True, False, False, True, True]
+    assert "(artifact-rules server.py, expect True): endpoints_implemented names A9" in seen[1], seen[1][-800:]
+    # (d) a fix of the backend, proposed by Adaptation as any fix (revises W-n): the validator accepts the A and T ids as
+    # LLD citations, code registers it as a backend workflow writing server.py with its own checks (the proposed check
+    # is replaced), and its turn is _run_backend again: the record moves to the fix
+    b = backend_wf(run)
+    prop = {"name": "Backend fix", "goal_gap": "server.py fails backend-start", "parts": ["fix"], "fixes": ["F-9"],
+            "revises": b["id"], "covers": [], "lld_sections": b["lld_sections"], "outputs": ["site/server.py"],
+            "completion_check": "server.py passes the backend checks", "cost": 8,
+            "envelope": {"money_limit": 8, "model_call_limit": 2, "retry_limit": 1},
+            "atoms": [{"goal": "server.py starts and serves the endpoints", "how": {"kind": "AI", "agent": "Builder"},
+                       "constraints": ["standard library only"], "context": ["the receipts"],
+                       "expected_output": [{"text": "server.py starts", "kind": "file", "target": "site/server.py"}],
+                       "verification": [{"text": "server.py exists", "type": "file-exists", "target": "site/server.py",
+                                         "expect": True}]}]}
+    assert run._lld_gaps([prop]) == [], run._lld_gaps([prop])
+    n = len(run.workflows)
+    run._register([prop])
+    fix = run.workflows[n:]
+    assert len(fix) == 1 and not run.rejections[n:], (fix, run.rejections[-1:])
+    fix = fix[0]
+    assert fix["backend"] is True and fix["revises"] == b["id"] and fix["outputs"] == ["site/server.py"] and fix["cost"] == 8
+    assert fix["lld_sections"] == b["lld_sections"] and [c["type"] for c in fix["atoms"][0]["verification"]] == \
+        [c["type"] for c in b["atoms"][0]["verification"]], "code's checks replace the proposed one"
+    run._handoff(fix["id"], kind="build", wid=fix["id"])
+    run._turn_workflow_agent(run.handoff)
+    assert fix["status"] == "done" and fix["artifact"] == "site/server.py" and run.turn == "coordination", (fix["status"], run.turn)
+    assert run.backend["workflow"] == fix["id"] and run.backend["attempts"] == 1 and run.backend["failed"] == 0
+    assert json.load(open(os.path.join(run.dir, "backend.json"), encoding="utf-8"))["workflow"] == fix["id"]
+    assert not j2_backend._LIVE
+    print("backend retry (J2_BACKEND=1): an unsafe first file, a reply that isn't JSON and a wrong endpoint id each fail attempt 1 "
+          "with their own receipt, the second prompt quotes the exact evidence, attempt 2 passes, backend.json says 2 attempts; "
+          "a fix that revises the backend is registered with code's checks and rebuilds server.py ok")
+
+
+def backend_schema():
+    """Backend builder, the schemas (J2_BACKEND=1): reply_schema of Backend/1 · server.py and of the two LLD sections
+    keep inline_definitions' invariants (definitions at the root only, every $ref resolvable there, every object
+    closed, reason first and section required), the backend's section has its six fields with code,
+    endpoints_implemented and tables_created required, and normalise keeps the code as sent. The live acceptance of
+    the backend schema by `claude -p --json-schema` is the scratchpad's live build (not in the suite)."""
+    import j2_artifact_models as AM
+
+    def walk(x, root, depth=0):
+        if isinstance(x, dict):
+            if "definitions" in x and depth > 0:
+                raise AssertionError("nested definitions")
+            ref = x.get("$ref")
+            if ref is not None:
+                assert ref.startswith("#/definitions/") and ref[len("#/definitions/"):] in (root.get("definitions") or {}), ref
+            if x.get("type") == "object" or "properties" in x:
+                assert x.get("additionalProperties") is False and isinstance(x.get("required"), list), x.get("properties", {}).keys()
+            for v in x.values():
+                walk(v, root, depth + 1)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v, root, depth + 1)
+    for model in (AM.BackendServer, AM.LLDEndpoints, AM.LLDDataModel):
+        sch = AM.reply_schema(model, {})
+        walk(sch, sch)
+        assert sch["required"][0] == "reason" and sch["required"][-1] == "section" and sch["$schema"].endswith("draft-07/schema#")
+        assert len(json.dumps(sch)) < 8000 and len(AM.schema_sha(sch)) == 64
+    sec = AM.reply_schema(AM.BackendServer, {})["properties"]["section"]
+    assert sorted(sec["properties"]) == ["code", "db_arg", "endpoints_implemented", "notes", "port_arg", "tables_created"]
+    assert sec["required"] == ["code", "endpoints_implemented", "tables_created"] and "definitions" not in AM.reply_schema(AM.BackendServer, {})
+    assert sec["properties"]["endpoints_implemented"]["type"] == "array" and sec["properties"]["code"]["type"] == "string"
+    assert AM.BackendServer.template() == "Backend/1 · server.py"
+    data = {"code": "import os\n", "endpoints_implemented": ["A1"], "tables_created": ["T1"]}
+    obj, errs = AM.validate(AM.BackendServer, AM.normalise(AM.BackendServer, data))
+    assert not errs and obj.port_arg == "--port" and obj.db_arg == "--db" and obj.notes == "" and obj.code == "import os", \
+        (errs, "the model strips outer whitespace, as every artifact field; _run_backend writes the newline back")
+    assert AM.validate(AM.BackendServer, {**data, "extra": 1})[1] and AM.validate(AM.BackendServer, {"code": "x"})[1]
+    assert AM.render_section("backend", "server.py", data) == "import os\n" and AM.render_section("backend", "other", data) is None
+    print("backend schemas (J2_BACKEND=1): Backend/1 · server.py and the two LLD section schemas keep the inline-definitions "
+          "invariants, the backend section has six fields with three required, validate and render as sent ok")
+
+
 def backend_fixture(server=GOOD_SERVER, page=E2E_PAGE):
     """A run folder with site/index.html and site/server.py, like a run's after the page builders and the backend
     builder wrote them."""
@@ -11617,6 +11893,9 @@ if __name__ == "__main__":
             template_library()
             backend_off()
             backend_lld()
+            backend_in_run()
+            backend_retry()
+            backend_schema()
             backend_compile_check()
             backend_safety_check()
             backend_start_check()

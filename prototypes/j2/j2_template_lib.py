@@ -113,7 +113,7 @@ class Template(BaseModel):
     model_config = ConfigDict(extra="forbid")
     KIND: ClassVar[str] = ""
     name: str
-    artifact: Literal["prd", "hld", "lld", "design", "website"]
+    artifact: Literal["prd", "hld", "lld", "design", "website", "backend"]      # backend: J2_BACKEND=1 (not in ARTIFACTS yet)
     section: str
     version: int = 1
     kind: Literal["generic", "specialised"]

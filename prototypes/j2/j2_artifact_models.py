@@ -42,7 +42,9 @@ OPTIONAL_FIELDS = {"assumptions", "google_fonts_url", "notes", "window", "target
                    "responsive_rules", "accessibility_rules", "out_of_scope", "risks", "data_flows", "files",
                    # J2_BACKEND=1: the LLD's API endpoints and Data model (fields the brief may say nothing about)
                    "called_by", "request_fields", "response_fields", "errors", "example_request", "expected_fields",
-                   "maps_to", "from_field", "nullable", "primary_key"}
+                   "maps_to", "from_field", "nullable", "primary_key",
+                   # J2_BACKEND=1: the backend builder's reply (Backend/1): the two flags have defaults
+                   "port_arg", "db_arg"}
 # The enums are shape: the model allows these values and no others, and the transport schema carries them.
 FIELD_TYPES = tuple(j2_rules.FIELD_TYPES)
 PRIORITIES = tuple(j2_rules.PRIORITIES)
@@ -376,6 +378,22 @@ class LLD(Artifact):
     tables: List[Table] = Field(default_factory=list)             # J2_BACKEND=1
 
 
+# ---------------------------------------------------------------- Backend/1 (J2_BACKEND=1, docs/backend-design.md section 3)
+class BackendServer(Artifact):
+    """The backend builder's reply: the whole server.py as one string, and which LLD endpoints and tables it
+    implements (checked against the LLD by the rules; the file itself by j2_backend's checks)."""
+    TEMPLATE: ClassVar[str] = "Backend/1"
+    SECTION: ClassVar[str] = "server.py"
+    code: str = Field(description="the whole server.py: standard library only; --port (required) and --db (default "
+                                  "bookings.sqlite beside the script); binds 127.0.0.1; GET / serves index.html from "
+                                  "its own folder; the LLD's endpoints under /api/ with JSON replies")
+    port_arg: str = Field(default="--port", description="the flag that sets the port")
+    db_arg: str = Field(default="--db", description="the flag that sets the SQLite file path")
+    endpoints_implemented: List[str] = Field(description="the LLD endpoint ids the file implements, e.g. [\"A1\", \"A2\"]")
+    tables_created: List[str] = Field(description="the LLD table ids the file creates at start, e.g. [\"T1\"]")
+    notes: str = Field(default="", description="anything a person running it should know (one or two sentences)")
+
+
 # ---------------------------------------------------------------- Design/1 (the style guide, STYLE_FMT as a model)
 class Palette(Artifact):
     primary: str
@@ -454,6 +472,7 @@ SECTION_MODELS = {
             "File structure": LLDFiles, "Responsive and accessibility rules": LLDRules},
     "design": {"Style guide": Design},
     "website": {"Section": WebsiteSection},
+    "backend": {"server.py": BackendServer},      # J2_BACKEND=1 only (j2._run_backend); not a library artifact yet
 }
 DOC_MODELS = {"prd": PRD, "hld": HLD, "lld": LLD, "design": Design, "website": WebsiteSection}
 # Which condition each section's rules come from, for the records (the conditions themselves stay in conditions/).
@@ -467,6 +486,7 @@ SECTION_CONDITIONS = {
             "File structure": ["L1"], "Responsive and accessibility rules": ["L1"]},
     "design": {"Style guide": []},
     "website": {"Section": ["N1", "N4", "N8"]},
+    "backend": {"server.py": []},      # J2_BACKEND=1: checked by backend-checks/1, not by a condition
 }
 
 
@@ -749,6 +769,8 @@ def render_section(kind, section, data):
         elif section == "Responsive and accessibility rules":
             body = "\n".join([f"- {x}" for x in d.get("responsive_rules") or []]
                              + [f"- {x}" for x in d.get("accessibility_rules") or []])
+    elif kind == "backend" and section == "server.py":      # J2_BACKEND=1: the file is the "section"; no heading
+        return str(d.get("code") or "")
     if body is None:
         return None
     return f"## {section}\n\n{body.strip()}{_assumptions(d)}\n"

@@ -20,5 +20,9 @@
   "rates_deed": {
     "send_email": 5,
     "send_slack_message": 5
+  },
+  "_note_backend": "PLACEHOLDER price of the backend workflow (J2_BACKEND=1 only, docs/backend-design.md section 3): 15, the same as a form, not measured. Its own key, so the website parts above are unchanged. J2_RATES=0 makes it free.",
+  "rates_backend": {
+    "backend": 15
   }
 }

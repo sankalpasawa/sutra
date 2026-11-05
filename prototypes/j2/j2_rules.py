@@ -397,6 +397,21 @@ RULES = {
          "target": "this.endpoints[].request_fields[].qualified",
          "fail_text": "{id} stores {bad}, which is not a request field (A1.name) of this document",
          "name": "maps_to names a request field of an endpoint", "from": "L8"}],
+    # J2_BACKEND=1: the backend builder's reply against the LLD (docs/backend-design.md section 3)
+    ("backend", "server.py"): [
+        {"rule": "not_empty", "path": "code", "name": "the file is not empty", "from": "backend-compile"},
+        {"rule": "ref_exists", "path": "endpoints_implemented", "target": "lld.endpoints[].id", "required_target": True,
+         "fail_text": "endpoints_implemented names {bad}, which is not an endpoint of the LLD",
+         "name": "every implemented endpoint is an LLD endpoint id", "from": "backend-endpoint"},
+        {"rule": "covers_all", "path": "endpoints_implemented", "target": "lld.endpoints[].id",
+         "fail_text": "LLD endpoint(s) {bad} are not in endpoints_implemented",
+         "name": "every LLD endpoint is implemented", "from": "backend-endpoint"},
+        {"rule": "ref_exists", "path": "tables_created", "target": "lld.tables[].id", "required_target": True,
+         "fail_text": "tables_created names {bad}, which is not a table of the LLD",
+         "name": "every created table is an LLD table id", "from": "backend-start"},
+        {"rule": "covers_all", "path": "tables_created", "target": "lld.tables[].id",
+         "fail_text": "LLD table(s) {bad} are not in tables_created",
+         "name": "every LLD table is created", "from": "backend-start"}],
     ("lld", "File structure"): [
         {"rule": "not_empty", "path": ["files[].path", "files[].purpose"],
          "name": "every file has a path and a purpose", "from": "L1"}],

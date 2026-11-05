@@ -211,6 +211,12 @@ def RATES_DEED():
     return _rate_card("rates_deed")
 
 
+def RATE_BACKEND():
+    """Price of the backend workflow (J2_BACKEND=1; rates.json "rates_backend", its own key so the website parts are
+    unchanged); 0, so free, with J2_RATES=0."""
+    return _rate_card("rates_backend").get("backend", 0)
+
+
 def price(w):
     """(rate-card cost, unknown parts) for a workflow's "parts"; (None, []) when the rate card is off or parts are missing."""
     parts = w.get("parts")
@@ -1849,8 +1855,21 @@ def lld_markup(sl, title=""):
                            f'{" required" if f.get("required") else ""} style="display:block;min-height:44px"></label>'
                            for f in fs)
             fid = f'id="{form}" ' if form else ""
-            inner += (f'<form {fid}action="/send">{rows}<button type="submit" '
-                      'style="min-height:44px;min-width:44px">Send</button></form>')
+            ep = next((e for e in sl.get("endpoints") or [] if f"#{form}" in (e.get("called_by") or [])
+                       and str(e.get("method") or "").upper() == "POST"), None) if form else None
+            if ep:      # J2_BACKEND=1 (the slice carries endpoints): the form posts JSON to its endpoint and shows the reply
+                inner += (f'<form {fid}action="{ep["path"]}" method="post">{rows}<button type="submit" '
+                          'style="min-height:44px;min-width:44px">Send</button></form>'
+                          f'<p id="{form}-done" hidden>Sent.</p>'
+                          f'<script>document.getElementById("{form}").addEventListener("submit",async function(e){{'
+                          f'e.preventDefault();var p=document.getElementById("{form}-done");try{{var r=await fetch("{ep["path"]}",'
+                          '{method:"POST",headers:{"Content-Type":"application/json"},'
+                          'body:JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))});var j=await r.json();'
+                          'p.textContent=r.ok?"Sent #"+j.id:"Error: "+(j.error||r.status);}catch(err){p.textContent="Could not send.";}'
+                          'p.hidden=false;});</script>')
+            else:
+                inner += (f'<form {fid}action="/send">{rows}<button type="submit" '
+                          'style="min-height:44px;min-width:44px">Send</button></form>')
         out += f'<section id="{s["anchor"]}">{inner}</section>'
     return out
 
@@ -2333,6 +2352,153 @@ def mock_tables(comps):
                           "maps_to": f"A{k}.name-{i}"},
                          {"name": "created_at", "type": "TEXT", "nullable": True, "primary_key": False, "maps_to": ""}]}
             for k, i in enumerate(range(1, len(comps) + 1, 2), 1)]
+
+
+MOCK_SERVER = '''import argparse
+import datetime
+import json
+import os
+import sqlite3
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+TABLES = __TABLES__
+ROUTES = __ROUTES__
+
+
+def quoted(name):
+    return '"' + name.replace('"', '""') + '"'
+
+
+def db_connect(path):
+    con = sqlite3.connect(path)
+    for t in TABLES:
+        cols = ", ".join(quoted(c["name"]) + " " + c["type"] + (" PRIMARY KEY AUTOINCREMENT" if c["primary_key"] else "")
+                         + ("" if c["nullable"] or c["primary_key"] else " NOT NULL") for c in t["columns"])
+        con.execute("CREATE TABLE IF NOT EXISTS " + quoted(t["name"]) + " (" + cols + ")")
+    con.commit()
+    return con
+
+
+class Handler(BaseHTTPRequestHandler):
+    db = None
+
+    def _json(self, status, obj):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _route(self, method):
+        p = urlparse(self.path).path
+        hit = [r for r in ROUTES if r["path"] == p]
+        if not hit:
+            return None, 404
+        r = next((x for x in hit if x["method"] == method), None)
+        return r, (405 if r is None else 200)
+
+    def do_GET(self):
+        p = urlparse(self.path).path
+        if p in ("/", "/index.html"):
+            try:
+                with open(os.path.join(HERE, "index.html"), "rb") as f:
+                    data = f.read()
+            except OSError:
+                return self._json(404, {"error": "no index.html"})
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
+        r, status = self._route("GET")
+        if r is None:
+            return self._json(status, {"error": "not found" if status == 404 else "method not allowed"})
+        if not r["table"]:
+            return self._json(r["status"], [])
+        con = db_connect(self.db)
+        rows = con.execute("SELECT " + ", ".join(quoted(c) for c in r["columns"]) + " FROM " + quoted(r["table"])
+                           + " ORDER BY 1").fetchall()
+        con.close()
+        return self._json(r["status"], [dict(zip(r["columns"], row)) for row in rows])
+
+    def do_POST(self):
+        r, status = self._route("POST")
+        if r is None:
+            return self._json(status, {"error": "not found" if status == 404 else "method not allowed"})
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            data = json.loads(self.rfile.read(n) or b"{}")
+        except ValueError:
+            return self._json(400, {"error": "body is not JSON"})
+        if not isinstance(data, dict):
+            return self._json(400, {"error": "body is not an object"})
+        missing = [f["name"] for f in r["fields"] if f["required"] and not str(data.get(f["name"]) or "").strip()]
+        if missing:
+            return self._json(400, {"error": "missing: " + ", ".join(missing)})
+        names = [f["column"] for f in r["fields"]]
+        values = [str(data.get(f["name"]) or "").strip() for f in r["fields"]]
+        if "created_at" in r["columns"] and "created_at" not in names:
+            names.append("created_at")
+            values.append(datetime.datetime.now().isoformat(timespec="seconds"))
+        con = db_connect(self.db)
+        cur = con.execute("INSERT INTO " + quoted(r["table"]) + " (" + ", ".join(quoted(c) for c in names) + ") VALUES ("
+                          + ", ".join("?" for _ in names) + ")", values)
+        con.commit()
+        row = {"id": cur.lastrowid}
+        row.update(zip(names, values))
+        con.close()
+        return self._json(r["status"], row)
+
+    def log_message(self, *args):
+        pass
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, required=True)
+    ap.add_argument("--db", default=os.path.join(HERE, "bookings.sqlite"))
+    a = ap.parse_args()
+    Handler.db = a.db
+    db_connect(a.db).close()
+    ThreadingHTTPServer(("127.0.0.1", a.port), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def mock_server(endpoints, tables):
+    """Mock only (J2_BACKEND=1): the server.py a scripted backend builder writes from the LLD's endpoints and tables,
+    nothing invented: standard library, --port and --db, binds 127.0.0.1, GET / serves index.html, one CREATE TABLE
+    IF NOT EXISTS per table, a POST stores its request fields in the table whose columns map to them (maps_to
+    "A1.name") and answers its expected status with the row, a GET lists that table. It faces j2_backend's checks
+    like a live one."""
+    def table_of(e):
+        t = next((t for t in tables or [] if any(str(c.get("maps_to") or "").startswith(e["id"] + ".")
+                                                   for c in t.get("columns") or [])), None)
+        if t is None and str(e.get("method") or "").upper() == "GET":      # a list endpoint: the table its POST fills
+            post = next((x for x in endpoints or [] if str(x.get("method") or "").upper() == "POST"
+                         and x.get("path") == e.get("path")), None)
+            t = table_of(post) if post else (tables[0] if tables else None)
+        return t
+    routes = []
+    for e in endpoints or []:
+        t = table_of(e)
+        cols = {str(c["maps_to"]).split(".", 1)[1]: c["name"] for c in (t or {}).get("columns") or []
+                if c.get("maps_to") and "." in str(c["maps_to"])}
+        routes.append({"id": e["id"], "method": str(e.get("method") or "GET").upper(), "path": e["path"],
+                       "table": t["name"] if t else None, "status": int(e.get("expected_status") or 200),
+                       "fields": [{"name": f["name"], "required": bool(f.get("required")), "column": cols.get(f["name"], f["name"])}
+                                  for f in e.get("request_fields") or []],
+                       "columns": [c["name"] for c in (t or {}).get("columns") or []]})
+    tdefs = [{"name": t["name"], "columns": [{"name": c["name"], "type": c["type"], "primary_key": bool(c.get("primary_key")),
+                                             "nullable": bool(c.get("nullable"))} for c in t.get("columns") or []]}
+             for t in tables or []]
+    return MOCK_SERVER.replace("__TABLES__", repr(tdefs)).replace("__ROUTES__", repr(routes))      # Python literals
 
 
 def doc_atom_for(secs, ids_in):
@@ -3044,6 +3210,7 @@ class J2Run:
         # J2_TEMPLATE_LIBRARY=1 (template-library/1): the template each workflow's builder fills, chosen by the router
         self.tpl_lib = j2_template_lib.enabled()
         self.tpl_routes, self.tpl_decisions, self.tpl_cur = {}, [], None
+        self.backend = None          # J2_BACKEND=1 (backend/1): the backend record (backend.json), once its workflow ran
         self.style = None                              # the style guide, written by the first workflow that runs
         self.playbooks_used, self.playbook_saved = [], None
         self.lessons_used, self.lessons_saved = [], []
@@ -3325,7 +3492,7 @@ class J2Run:
     REPLY_DEFAULTS = ("Thanks, got it. We're working on it now.", "Go ahead with the Requester's latest answer.")
 
     def call(self, fn, reply_format, task, mock, max_tokens=900, json_reply=True, images=None, defaults=None,
-             _retry=False, answer_only=False, schema=None):
+             _retry=False, answer_only=False, schema=None, builder=None):
         """One agent's AI call. Every JSON reply format gets a "reason" field. Each call is logged to calls.jsonl
         (inputs, reply, reason, tokens, time) and linked to the agent's next chat message for the detail view.
 
@@ -3340,7 +3507,7 @@ class J2Run:
         user = f"{self.context(fn)}\n\nYOUR TURN:\n{task}" + (self.PLAIN_TO_REQUESTER if fn == "identity" else "") \
             + (self._board_context() if board else "") \
             + (DOC_NOTE.format(label=self.out["label"]) if self.doc else "")
-        system = system_prompt(fn, reply_format, self.out["builder"])
+        system = system_prompt(fn, reply_format, builder or self.out["builder"])      # builder: J2_BACKEND=1, backend.md
         if self.calls and DELAY:
             time.sleep(DELAY)
         self.calls += 1
@@ -3822,7 +3989,8 @@ class J2Run:
             return RATES_DEED().get(kind, 0)
         if kind == "website":
             r, parts = RATES_WEB(), self.SITE_ESSENTIALS
-            return sum(r.get(k, 0) for k in parts)
+            return sum(r.get(k, 0) for k in parts) + (RATE_BACKEND() if j2_backend.enabled() and "lld" in (self.stages or [])
+                                                      else 0)      # J2_BACKEND=1: the backend follows an LLD
         r, n = RATES_DOC(), len(output_sections(kind))
         return r.get("doc_section", 0) * (n - 1) + r.get("requirements_section", 0)
 
@@ -6273,10 +6441,17 @@ class J2Run:
         out += [{"id": w.get("name"), "text": "no LLD citation", "why": f"workflow {w.get('name')!r} cites no LLD section "
                  "(lld_sections)"} for w in wfs if not w.get("lld_sections") and not w.get("revises")
                 and not set(w.get("parts") or ["x"]) <= {"styling", "fix"}]
+        known = self._blueprint_ids()
         out += [{"id": w.get("name"), "text": "unknown LLD section", "why": f"workflow {w.get('name')!r} cites "
-                 f"{[i for i in w.get('lld_sections') or [] if str(i) not in ids]}, which are not LLD sections"}
-                for w in wfs if any(str(i) not in ids for i in w.get("lld_sections") or [])]
+                 f"{[i for i in w.get('lld_sections') or [] if str(i) not in known]}, which are not LLD sections"}
+                for w in wfs if any(str(i) not in known for i in w.get("lld_sections") or [])]
         return out
+
+    def _blueprint_ids(self):
+        """Every id a workflow may cite in lld_sections: the LLD's sections, and with J2_BACKEND=1 its endpoints and
+        tables (the backend workflow cites those)."""
+        bp = self.blueprint or {}
+        return {x["id"] for x in bp.get("sections") or []} | {x["id"] for k in ("endpoints", "tables") for x in bp.get(k) or []}
 
     def _plan_checked(self, r, fmt, task, mock):
         """J2.e before building: a plan that leaves a necessary condition with no workflow is flagged and Adaptation
@@ -6825,7 +7000,7 @@ class J2Run:
             no_atom = self._atom_problems({"atoms": atoms, "outputs": w.get("outputs"),
                                            "dependencies": w.get("dependencies")}, batch)
             lld = [str(i) for i in (w.get("lld_sections") or self.proposed_lld.get(name) or [])] if self.blueprint else []
-            unknown_lld = [i for i in lld if i not in {x["id"] for x in self.blueprint["sections"]}] if self.blueprint else []
+            unknown_lld = [i for i in lld if i not in self._blueprint_ids()] if self.blueprint else []
             rc, unknown = price(w)
             reason = ("a check or report on the site is Audit's job, not a workflow" if self._audit_name(name)
                       else f"required field(s) missing: {', '.join(missing)}" if missing
@@ -6873,6 +7048,10 @@ class J2Run:
             wf["section"] = src["section"] if src and src["section"] in self.sections and src["section"] not in taken \
                 else wf["id"]
             wf["revises"] = rv if wf["section"] != wf["id"] else None
+            if src and src.get("backend") and wf["atoms"]:      # J2_BACKEND=1: a fix of the backend rewrites server.py
+                wf["backend"], wf["revises"], wf["outputs"] = True, rv, [j2_backend.SCRIPT]      # with code's checks
+                wf["lld_sections"] = list(src.get("lld_sections") or [])
+                wf["atoms"][0]["verification"] = self._backend_checks()
             if self.change and name in self.change["allowed"]:
                 wf["change"] = self.change["id"]
                 if name in (self.change.get("resend") or []):
@@ -7014,6 +7193,8 @@ class J2Run:
         if not todo:
             self.agent_turns["coordination"] -= 1
             self.cycle_turns -= 1
+            if self._backend_due():      # J2_BACKEND=1: the backend after the last page workflow, before Audit
+                return self._backend_stage()
             self.post("system", f"Queue empty: no registered work left in cycle {self.cycle}. Hand-off by code: Audit "
                                 f"checks site v{len(self.sites)}.")
             return self._handoff("audit", kind="audit")
@@ -7147,6 +7328,8 @@ class J2Run:
         self.atom = (w.get("atoms") or [{}])[0].get("id")     # its AI calls are tagged with the atom they build
         if self._file_wf(w):
             return self._run_artifact(w, brief, max_calls)
+        if w.get("backend"):      # J2_BACKEND=1: the backend workflow writes site/server.py; code runs its checks
+            return self._run_backend(w, brief, max_calls)
         art_kind, art_sec, art_model = None, None, None
         if self.schemas:      # J2_ARTIFACT_SCHEMA=1: this workflow's own template (a document section, or a page section)
             art_kind = self.output if self.doc else "website"
@@ -7566,6 +7749,13 @@ class J2Run:
                                                                              if (m := MD_HEADING.match(ln))][:6],
                     "checks": [{"check": r["check"], "type": r["type"], "target": r["target"], "pass": r["pass"]}
                                for r in recs]}
+        if w.get("backend"):      # J2_BACKEND=1: the file, the LLD ids it implements, this attempt's checks
+            recs = [r for r in self.receipts if r["atom"] == a["id"] and r["attempt"] == attempt and "check" in r]
+            return {"atom": a["id"], "attempt": attempt, "receipt": f"{a['id']}:{attempt}", "kind": "backend",
+                    "file": j2_backend.SCRIPT, "files": [j2_backend.SCRIPT], "section_names": [w["name"]],
+                    "implements": list(w.get("lld_sections") or []),
+                    "checks": [{"check": r["check"], "type": r["type"], "target": r["target"], "pass": r["pass"]}
+                               for r in recs]}
         return build_agent_output(w, a, attempt, (self.sections.get(w["section"]) or {}).get("body") or "", self.receipts,
                                   self.audits[-1] if self.audits else None, len(self.sites), self.doc, self.out.get("file"))
 
@@ -7606,6 +7796,260 @@ class J2Run:
         return ("\nHLD SUMMARY (components): " + json.dumps([{k: c[k] for k in ("id", "name", "responsibility")} for c in comps],
                                                             ensure_ascii=False)) if comps else ""
 
+    # ---- J2_BACKEND=1 (backend/1, docs/backend-design.md section 3): the backend workflow, registered by code after the
+    # last page workflow of the stage, like a send deed; its builder (agents/j2/backend.md) writes site/server.py as
+    # data (Backend/1 · server.py); code runs the section's rules and j2_backend's checks, each a receipt.
+    def _backend_due(self):
+        """The site is built from an LLD with endpoints, a page exists, and no backend workflow exists yet (one per
+        run; a fix of it is a revise)."""
+        return bool(j2_backend.enabled() and not self.doc and self.sites and (self.blueprint or {}).get("endpoints")
+                    and not any(w.get("backend") for w in self.workflows))
+
+    def _backend_e2e_spec(self, eps, fields):
+        """The backend-e2e check's spec from the LLD: the first form a POST endpoint is called by, its fields (with the
+        request field name each maps to) and the GET that lists what it stores. None when the LLD has no such form."""
+        for e in eps:
+            if str(e.get("method") or "").upper() != "POST":
+                continue
+            forms = [c[1:] for c in e.get("called_by") or [] if str(c).startswith("#")]
+            fs = [f for f in fields if f.get("form") in forms]
+            if not fs:
+                continue
+            req = {f["from_field"]: f["name"] for f in e.get("request_fields") or [] if f.get("from_field")}
+            gets = [x for x in eps if str(x.get("method") or "").upper() == "GET"]
+            lst = next((x for x in gets if x.get("path") == e.get("path")), gets[0] if gets else None)
+            if not lst:
+                return None
+            return {"form": "#" + fs[0]["form"],
+                    "fields": [{"name": f["name"], "type": f.get("type") or "text", "request_name": req.get(f["id"], f["name"])}
+                               for f in fs],
+                    "list_endpoint": {"method": "GET", "path": lst["path"]}}
+        return None
+
+    def _backend_checks(self):
+        """The backend atom's verification, built by code from the LLD (docs/backend-design.md section 4): compile,
+        safety, start, one call per endpoint, the page's /api/ calls, the form end to end, no file but the database.
+        Item 1 is the file, item 2 the API."""
+        bp = self.blueprint or {}
+        eps, fields, script = bp.get("endpoints") or [], bp.get("fields") or [], j2_backend.SCRIPT
+        out = [{"text": "server.py compiles", "type": "backend-compile", "target": script, "expect": True, "item": 1},
+               {"text": "server.py imports only the standard library, writes no file but its database and binds 127.0.0.1",
+                "type": "backend-safety", "target": script, "expect": True, "item": 1},
+               {"text": "server.py starts on a free port and answers GET / with index.html", "type": "backend-start",
+                "target": script, "expect": True, "item": 1}]
+        for e in eps:
+            out.append({"text": f"{e['id']} {e['method']} {e['path']} answers {e.get('expected_status')}"
+                                + (f" with {', '.join(e['expected_fields'])}" if e.get("expected_fields") else ""),
+                        "type": "backend-endpoint", "target": e["id"], "expect": e.get("expected_status"), "item": 2,
+                        "spec": {k: e.get(k) for k in ("id", "method", "path", "example_request", "expected_status",
+                                                       "expected_fields")}})
+        out.append({"text": "every /api/ call in index.html is an LLD endpoint", "type": "page-calls-known-endpoints",
+                    "target": j2_backend.INDEX, "expect": True, "item": 2,
+                    "spec": {"endpoints": [{"id": e["id"], "method": e["method"], "path": e["path"]} for e in eps]}})
+        e2e = self._backend_e2e_spec(eps, fields)
+        if e2e:
+            out.append({"text": f"the form {e2e['form']} submits in the browser and GET {e2e['list_endpoint']['path']} "
+                                "returns what was typed", "type": "backend-e2e", "target": e2e["form"], "expect": True,
+                        "item": 2, "spec": e2e})
+        out.append({"text": "the server wrote no file but its database", "type": "backend-files", "target": script,
+                    "expect": True, "item": 1})
+        return out
+
+    def _backend_stage(self):
+        """After the last page workflow and before Audit: code registers the backend workflow (one atom, the checks of
+        section 4, priced from rates.json "rates_backend"; Adaptation doesn't plan it, Priority doesn't price it), then
+        the usual envelope check hands it to its builder (or asks when the credits left can't cover it)."""
+        bp = self.blueprint or {}
+        eps, tables, cost = bp.get("endpoints") or [], bp.get("tables") or [], RATE_BACKEND()
+        wid = self._next_wf_id("Backend")
+        aid = f"{wid}.a1"
+        atom = {"id": aid, "goal": "server.py serves index.html and the LLD's API endpoints on 127.0.0.1 with one SQLite file",
+                "how": {"kind": "AI", "agent": f"{wid} Builder"},
+                "constraints": ["standard library only", "binds 127.0.0.1 only", "writes no file but its database",
+                                "implements the LLD's endpoints and tables exactly", "no invented facts"],
+                "context": ["the LLD's API endpoints and Data model", "the LLD's form fields", "the charter", "site/index.html"],
+                "expected_output": [{"text": "server.py compiles, passes the safety scan and serves index.html",
+                                     "kind": "file", "target": j2_backend.SCRIPT},
+                                    {"text": "every LLD endpoint answers as written and the page's form reaches it",
+                                     "kind": "api", "target": ", ".join(e["id"] for e in eps)}],
+                "verification": self._backend_checks()}
+        for c in atom["verification"]:
+            c["atom"] = aid
+        wf = {"id": wid, "proposal_id": None, "name": "Backend", "covers": [], "fixes": [], "covers_text": [],
+              "purpose": "The site's own API: the LLD's endpoints and tables, served by server.py", "cost": cost,
+              "estimate": cost, "envelope": {"money_limit": cost, "model_call_limit": ENVELOPE_DEFAULTS["model_call_limit"],
+                                             "retry_limit": 0},
+              "charged": False, "calls_used": 0, "retries_used": 0, "outputs": [j2_backend.SCRIPT],
+              "completion_check": "server.py passes the backend checks", "dependencies": [], "status": "registered",
+              "cycle": self.cycle, "section": None, "revises": None, "backend": True,
+              "lld_sections": [e["id"] for e in eps] + [t["id"] for t in tables], "atoms": [atom]}
+        add_workflow_agent(wid)
+        wf["agent"] = NAMES[wid]
+        self.workflows.append(wf)
+        self.save("workflows.json", self.workflows)
+        self.post("system", f"The page workflows are done. Code registers {wid} Backend: server.py for {len(eps)} "
+                            f"endpoint(s) and {len(tables)} table(s) of the LLD, priced {cost}"
+                            + (" from the rate card (rates_backend)" if _rate_card("rates_backend") else " (no rate card)")
+                            + ". Priority checks its envelope, then it builds; Audit follows.")
+        return self._handoff("priority", kind="envelope", wid=wid)
+
+    def _run_backend(self, w, brief, max_calls):
+        """The backend workflow's turn: its agent (backend.md) sends server.py as data (Backend/1 · server.py, one JSON
+        string field, with the reply schema); code validates the reply, writes site/server.py, runs the section's
+        rules and the backend checks (receipts), and sends every failure back verbatim, up to MAX_CHECK_ATTEMPTS
+        attempts (one AI call each). Then the normal hand-off to Coordination, or to Adaptation with the receipts."""
+        fn, model, kind, section = w["id"], j2_artifact_models.BackendServer, "backend", "server.py"
+        path = os.path.join(self.dir, j2_backend.SCRIPT)
+        self.tpl_cur = None      # the library's route for the backend template goes here (Phase 4)
+        bp, g = self.blueprint or {}, self.goal or {}
+        eps, tables, fields = bp.get("endpoints") or [], bp.get("tables") or [], bp.get("fields") or []
+        page = self.sites[-1] if self.sites else ""
+        charter = {k: g.get(k) for k in ("statement", "audience", "standards", "rules", "done_when", "facts",
+                                         "to_be_confirmed")}
+        schema = j2_artifact_models.reply_schema(model, {})
+        self.art_schema = {"template": model.template(), "version": j2_artifact_models.VERSION,
+                           "sha": j2_artifact_models.schema_sha(schema),
+                           "bytes": len(json.dumps(schema, ensure_ascii=False)), "attempt": 0}
+        fmt = self._artifact_reply_format(model, False)
+        task0 = (f"YOU ARE {NAMES[fn]}, the agent for one registered workflow: the backend of the site.\nYOUR WORKFLOW: "
+                 f"{json.dumps(brief, ensure_ascii=False)}\nYOUR OUTPUT IS ONE FILE, {j2_backend.SCRIPT}, sent whole as "
+                 "the \"code\" field of your reply. It serves site/index.html at / and the LLD's API endpoints under "
+                 "/api/, standard library only. Code saves it, scans it, starts it on a free port and runs every check "
+                 f"in your work atom's verification ({MAX_CHECK_ATTEMPTS} attempts).\nYOUR TEMPLATE: {model.template()}. "
+                 "Send the whole file as code, its flags as port_arg and db_arg, and the LLD ids you implement as "
+                 "endpoints_implemented and tables_created; code checks them against the LLD."
+                 f"\nTHE LLD'S API ENDPOINTS (implement exactly these): {json.dumps(eps, ensure_ascii=False)}"
+                 f"\nTHE LLD'S DATA MODEL (create exactly these tables): {json.dumps(tables, ensure_ascii=False)}"
+                 f"\nTHE LLD'S FORM FIELDS (what the page sends): {json.dumps(fields, ensure_ascii=False)}"
+                 f"\nTHE PAGE'S /api/ CALLS (site/index.html as built): {json.dumps(j2_backend.page_calls(page))}"
+                 f"\nCHARTER: {json.dumps(charter, ensure_ascii=False)}" + self._hld_summary())
+
+        def mock():
+            return json.dumps({"reason": "The backend follows the LLD's endpoints and tables.",
+                               "say": f"@Coordination {fn} wrote {j2_backend.SCRIPT} for "
+                                      f"{', '.join(e['id'] for e in eps) or 'no endpoint'}.",
+                               "human_output": "I wrote the small server that stores what the form sends and lists it back.",
+                               "atom_human_output": "This adds the part that keeps what the form sends.",
+                               "next": "Coordination",
+                               "section": {"code": mock_server(eps, tables), "port_arg": "--port", "db_arg": "--db",
+                                           "endpoints_implemented": [e["id"] for e in eps],
+                                           "tables_created": [t["id"] for t in tables],
+                                           "notes": "Mock: generated from the LLD's endpoints and tables."}},
+                              ensure_ascii=False)
+        attempt, evidence, text, data, meta, failed, prev_sig, early = 0, "", None, None, {}, [], set(), None
+        while attempt < MAX_CHECK_ATTEMPTS and w["calls_used"] < max_calls + attempt:
+            attempt += 1
+            w["calls_used"] += 1
+            self.art_schema["attempt"] = attempt
+            task = task0 + (f"\nATTEMPT {attempt} OF {MAX_CHECK_ATTEMPTS}. THESE CHECKS FAILED ON YOUR LAST ATTEMPT:\n"
+                            f"{evidence}\nFix the file so they pass." if evidence else "")
+            prov_err = None
+            try:
+                raw = self.call(fn, fmt, task, mock, max_tokens=16000, json_reply=False, schema=schema, builder="backend.md")
+            except RuntimeError as e:      # no usable structured output: a refusal, a cut-off, a bad subtype
+                raw, prov_err = "", str(e)
+            try:
+                if prov_err:
+                    self._artifact_provider_fail(w, attempt, prov_err)
+                    raise ValueError(prov_err)
+                parts, _ = self._read_artifact(w, raw, kind, section, model, section, False, attempt)
+            except ValueError as e:
+                w["last_check"] = str(e)      # the layer receipt was written (_artifact_layer_fail); it is the evidence
+                failed = [r for a in w["atoms"] for r in a.get("results") or []
+                          if r.get("attempt") == attempt and r["pass"] is False]
+                evidence = "\n".join(f"- {r['check']} ({r['type']} {r['target']}, expect {r['expect']}): {r['evidence']}"
+                                     for r in failed) or f"- the reply could not be used: {e}"
+                self.post("system", f"{fn} attempt {attempt} can't be used: {e}. "
+                                    + ("It gets the reason and tries again." if attempt < MAX_CHECK_ATTEMPTS else ""))
+                continue
+            try:
+                meta = llm.extract_json(raw)
+            except ValueError:
+                meta = {}
+            data = (self.art_state.get(w["atoms"][0]["id"]) or {}).get("data") or {}
+            text = parts[1] if parts[1].endswith("\n") else parts[1] + "\n"
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            w["last_check"] = "usable server.py"
+            log = next((c for c in reversed(self.call_log) if c["fn"] == fn), None)
+            if log:
+                log["reply"] = {"say": meta.get("say"), "next": meta.get("next"), "check": w["last_check"],
+                                "code_chars": len(text), "endpoints_implemented": data.get("endpoints_implemented"),
+                                "tables_created": data.get("tables_created")}
+                log["reason"] = meta.get("reason") or (self.MOCK_REASON if llm.MOCK else None)
+            for c in w["atoms"][0].get("verification") or []:
+                if c.get("type") == "backend-start":
+                    c["attempt"] = attempt      # names backend/check-<n>.sqlite and start-<n>.log
+            extra = {"template": model.template(), "template_version": self._tpl_version(),
+                     **({"template_route": self._tpl_ref()} if self.tpl_cur else {})}
+            failed = self._run_checks(w, attempt, page, **extra)
+            j2_backend.stop(self.dir)      # backend-files stopped it; never left running whatever happened
+            failed = self._artifact_receipts(w, attempt, kind, section, model) + failed
+            if not failed or attempt >= MAX_CHECK_ATTEMPTS:
+                break
+            sig = {(r["check"], r["evidence"]) for r in failed}
+            early = "the same check failed with the same evidence twice" if sig & prev_sig else None
+            prev_sig = sig
+            if early:
+                break
+            evidence = "\n".join(f"- {r['check']} ({r['type']} {r['target']}, expect {r['expect']}): {r['evidence']}"
+                                 for r in failed)
+            self.post("system", f"Code ran {fn}'s checks on attempt {attempt} of {MAX_CHECK_ATTEMPTS}: {len(failed)} "
+                                f"failed. {fn} gets the evidence and tries again.")
+        self.write_lock = self.atom = None
+        if text is None:
+            w["status"] = "failed"
+            self._write_backend(w, attempt, data, failed)
+            self._say(fn, f"@Coordination {fn} failed: no usable server.py after {attempt} attempt(s). "
+                          f"{j2_backend.SCRIPT} was not written.", "coordination", None, workflow=fn)
+            self._event(fn, "limit_fail", f"{fn}: no usable server.py")
+            self.save("workflows.json", self.workflows)
+            return self._handoff("coordination", kind="schedule")
+        human = self._human_output(w, meta, section)
+        self._atom_outputs(w, meta, attempt)
+        w["status"], w["version"], w["artifact"] = "done", len(self.sites), j2_backend.SCRIPT
+        self._write_backend(w, attempt, data, failed)
+        self.save("workflows.json", self.workflows)
+        self._say(fn, f"@Coordination {human}", "coordination", None, workflow=fn, human_output=human,
+                  version=len(self.sites), section=None, workflow_cost=w["cost"], artifact=j2_backend.SCRIPT)
+        if failed:
+            bad = sorted({r["atom"] for r in failed})
+            for a in w["atoms"]:
+                if a["id"] in bad:
+                    a["status"] = "failed"
+            self.post("system", f"{', '.join(bad)} failed its checks on " + (f"attempt {attempt}: {early}, so no more "
+                                "attempts." if early else f"all {MAX_CHECK_ATTEMPTS} attempts.") + " Code sends the "
+                                "receipts to Adaptation, which decides whether the check or the backend is wrong.")
+            return self._handoff("adaptation", kind="atom_failed", wid=fn, atoms=bad, attempt=attempt, owner_note="")
+        self._handoff("coordination", kind="schedule")
+
+    def _write_backend(self, w, attempt, data, failed):
+        """backend.json (backend/1): the backend record, written by code: what the LLD asked for, what the builder said
+        it implemented, the template and the sha of the schema sent, every check of the last attempt with its result,
+        and the one line a person types to run it."""
+        a = (w.get("atoms") or [{}])[0]
+        recs = [r for r in self.receipts if r["atom"] == a.get("id") and r.get("attempt") == attempt and "check" in r]
+        bp, d, art = self.blueprint or {}, data or {}, self.art_schema or {}
+        lib = art.get("library") or {}
+        rec = {"schema": "backend/1", "run": self.run_id, "workflow": w["id"], "atom": a.get("id"), "status": w["status"],
+               "attempts": attempt, "file": j2_backend.SCRIPT, "written": data is not None, "cost": w["cost"],
+               "endpoints": [{k: e.get(k) for k in ("id", "method", "path", "expected_status")} for e in bp.get("endpoints") or []],
+               "tables": [{"id": t.get("id"), "name": t.get("name")} for t in bp.get("tables") or []],
+               "endpoints_implemented": list(d.get("endpoints_implemented") or []),
+               "tables_created": list(d.get("tables_created") or []),
+               "port_arg": d.get("port_arg") or "--port", "db_arg": d.get("db_arg") or "--db", "notes": d.get("notes") or "",
+               "template": {"template": lib.get("template") or art.get("template"),
+                            "version": lib.get("version") or art.get("version"), "kind": lib.get("kind") or "generic",
+                            "action": lib.get("action") or "generic",
+                            "schema_sha": lib.get("sent_section_sha") or art.get("sha")},
+               "checks": [{k: r.get(k) for k in ("check", "type", "target", "expect", "pass", "evidence")} for r in recs],
+               "passed": sum(r["pass"] is True for r in recs), "failed": sum(r["pass"] is False for r in recs),
+               "could_not_run": sum(r["pass"] is None for r in recs),
+               "run_it": f"python {os.path.join(self.dir, j2_backend.SCRIPT)} --port 8790"}
+        self.backend = rec
+        self.save("backend.json", rec)
+
     def _page_context(self, w, prev):
         """What a builder sees of the rest of the site. Plain runs: the whole page (J2_SLIM=1: the manifest). With an
         LLD: its own slice of it (its spec) and a short HLD summary instead of the page; J2_SLIM=1 adds the manifest."""
@@ -7617,9 +8061,10 @@ class J2Run:
                            whole=not lld and not slim())
         board = self._board_context()
         if self.blueprint and w.get("lld_sections"):
+            sl = self._lld_slice_for(w)
             return ("\nYOUR SPEC (the LLD sections you implement: build exactly these ids, selectors and form fields with "
                     "their behaviour; if one can't be built as written, report it in spec_conflict, never deviate "
-                    f"silently): {json.dumps(self._lld_slice_for(w), ensure_ascii=False)}" + self._hld_summary()
+                    f"silently): {json.dumps(sl, ensure_ascii=False)}" + self._backend_note(sl) + self._hld_summary()
                     + (manifest if slim() else "") + board)
         if slim():
             return manifest + self._hld_summary() + board
@@ -7647,8 +8092,25 @@ class J2Run:
         sl = self._lld_slice_for(w) or {}
         ids = ", ".join(w.get("lld_sections") or [])
         return [{"atom": a, "why": f"LLD slice {ids}: its {h.lower()} were in this builder's prompt"}
-                for key, h in (("sections", "Pages and sections"), ("elements", "Interactive elements"), ("fields", "Form fields"))
+                for key, h in (("sections", "Pages and sections"), ("elements", "Interactive elements"), ("fields", "Form fields"),
+                               ("endpoints", "API endpoints"))      # endpoints: J2_BACKEND=1 only (lld_slice)
                 if sl.get(key) for a in self._doc_atoms("lld", h)]
+
+    def _backend_note(self, sl):
+        """J2_BACKEND=1: the one code-built sentence a page builder gets after its spec when the spec's form calls an
+        endpoint (docs/backend-design.md section 3): the form posts to the API with fetch(), no mailto. "" otherwise."""
+        if not j2_backend.enabled():
+            return ""
+        posts = [e for e in (sl or {}).get("endpoints") or [] if str(e.get("method") or "").upper() == "POST"]
+        if not posts:
+            return ""
+        e = posts[0]
+        names = ", ".join(str(f.get("name")) for f in e.get("request_fields") or [] if f.get("name"))
+        return (f"\nBACKEND: the form posts to the site's own API. Give the form action=\"{e['path']}\" method=\"post\" and "
+                "on submit prevent the default, send the fields as JSON with fetch() to that path"
+                + (f" (keys: {names})" if names else "") + ", then show the reply's confirmation (or its error) in an "
+                "element inside your section; catch a failed fetch and show a short message, never an uncaught error; "
+                "no mailto.")
 
     def _hld_edges(self):
         return [{"atom": a, "why": "the HLD component summary was in this builder's prompt"}
@@ -8682,9 +9144,12 @@ class J2Run:
             return (got.get("head") or "", got.get("html") or ""), guide
         body = j2_artifact_models.render_section(kind, section, got)
         if not body:
-            state["schema_errors"] = [f"section: no renderer for {kind} {section!r}"]
+            empty = kind == "backend"      # J2_BACKEND=1: the file is the section, so nothing to render means no code
+            state["schema_errors"] = ["section: the code field is empty" if empty else
+                                      f"section: no renderer for {kind} {section!r}"]
             self._artifact_layer_fail(w, attempt, model.template(), state["schema_errors"], "artifact-render")
-            raise ValueError(f"code cannot render {kind} {section!r}; the section name must be one of "
+            raise ValueError("the code field is empty" if empty else
+                             f"code cannot render {kind} {section!r}; the section name must be one of "
                              + ", ".join(j2_artifact_models.SECTION_MODELS[kind]))
         state["rendered"] = True
         return ("", body), guide
@@ -9625,6 +10090,9 @@ class J2Run:
             "status": status, "outcome": o,
             "budget": {"start": BUDGET, "granted": self.budget, "used": self.spent, "raises": self.raises},
             "ai_calls": self.calls, "cycles": self.cycle,
+            **({"backend": {k: self.backend.get(k) for k in ("workflow", "status", "attempts", "passed", "failed",
+                                                             "could_not_run", "cost", "template", "run_it")}}
+               if self.backend else {}),      # J2_BACKEND=1: the backend record's summary (backend.json has it all)
             "links": self._links(),
             "verification": {**{k: sum(a.get("status") == k for w in self._all_wfs() for a in w.get("atoms") or [])
                                 for k in ("passed", "failed", "escalated")},
@@ -9772,6 +10240,14 @@ class J2Run:
                                              f"{a['fail']} fail; mechanical: "
                                              + ("not run" if not a.get("mechanical_ran") else
                                                 ", ".join(a["mechanical"]) or "clean") for a in m["audits"]]
+        if self.backend:      # J2_BACKEND=1
+            b, t = self.backend, self.backend.get("template") or {}
+            out += ["", "## Backend (J2_BACKEND=1, counted by code)",
+                    f"- {b['workflow']} wrote {b['file']} in {b['attempts']} attempt(s), status {b['status']}: {b['passed']} "
+                    f"check(s) passed, {b['failed']} failed, {b['could_not_run']} could not run; template {t.get('template')} "
+                    f"v{t.get('version')} ({t.get('action')}); cost {b['cost']}",
+                    f"- {len(b['endpoints'])} endpoint(s) and {len(b['tables'])} table(s) from the LLD; run it with "
+                    f"`{b['run_it']}`"]
         for title, k in (("What went well", "went_well"), ("Problems", "problems"), ("Learnings", "learnings")):
             out += ["", f"## {title} (reviewer)"] + [f"- {x}" for x in r.get(k) or []]
         return "\n".join(out) + "\n"
