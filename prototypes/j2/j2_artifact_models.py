@@ -39,7 +39,10 @@ VERSION = 1
 OPTIONAL_FIELDS = {"assumptions", "google_fonts_url", "notes", "window", "target", "validation", "page", "head",
                    "anchor", "html",
                    "selectors_used", "facts_used", "implements", "covers", "goals", "actions", "needs",
-                   "responsive_rules", "accessibility_rules", "out_of_scope", "risks", "data_flows", "files"}
+                   "responsive_rules", "accessibility_rules", "out_of_scope", "risks", "data_flows", "files",
+                   # J2_BACKEND=1: the LLD's API endpoints and Data model (fields the brief may say nothing about)
+                   "called_by", "request_fields", "response_fields", "errors", "example_request", "expected_fields",
+                   "maps_to", "from_field", "nullable", "primary_key"}
 # The enums are shape: the model allows these values and no others, and the transport schema carries them.
 FIELD_TYPES = tuple(j2_rules.FIELD_TYPES)
 PRIORITIES = tuple(j2_rules.PRIORITIES)
@@ -296,6 +299,70 @@ class LLDRules(Artifact):
     assumptions: List[str] = Field(default_factory=list)
 
 
+# J2_BACKEND=1: the two sections a backend needs (docs/backend-design.md section 2). Ids A1.. and T1.. because E is
+# the elements' prefix. Every constraint (ids in order, /api/ paths, every form field mapped) is a rule in j2_rules.
+METHODS = ("GET", "POST", "PUT", "DELETE")
+COLUMN_TYPES = ("INTEGER", "TEXT", "REAL", "BLOB")
+
+
+class EndpointField(Artifact):
+    name: str = Field(description="the field name, e.g. \"email\"")
+    type: str = Field(description="string, integer, boolean, date or email")
+    required: bool = Field(description="true when the request must carry it")
+    from_field: str = Field(default="", description="the LLD form field id this request field carries, e.g. \"F3\"; "
+                                                    "\"\" for a response field")
+
+
+class EndpointError(Artifact):
+    status: int = Field(description="the HTTP status, e.g. 400")
+    when: str = Field(description="when it is returned, e.g. \"a required field is missing\"")
+
+
+class Endpoint(Artifact):
+    id: str = Field(description="A1, A2, ... in order")
+    method: Literal["GET", "POST", "PUT", "DELETE"] = Field(description="one of " + ", ".join(METHODS))
+    path: str = Field(description="the path, starting with /api/, e.g. \"/api/bookings\"")
+    purpose: str = Field(description="what it does, in one line")
+    called_by: List[str] = Field(default_factory=list, description="the LLD element selectors or form selectors that "
+                                                                   "call it, e.g. [\"#booking\"]")
+    request_fields: List[EndpointField] = Field(default_factory=list, description="the request body's fields")
+    response_fields: List[EndpointField] = Field(default_factory=list, description="the reply's fields")
+    errors: List[EndpointError] = Field(default_factory=list, description="the error replies")
+    example_request: str = Field(default="", description="one JSON object as text, from the charter's facts only")
+    expected_status: int = Field(description="the status the example request gets: 201 for a create, 200 for a list")
+    expected_fields: List[str] = Field(default_factory=list, description="response field names the example reply "
+                                                                         "must carry")
+
+
+class Column(Artifact):
+    name: str = Field(description="the column name")
+    type: Literal["INTEGER", "TEXT", "REAL", "BLOB"] = Field(description="one of " + ", ".join(COLUMN_TYPES))
+    nullable: bool = Field(default=False)
+    primary_key: bool = Field(default=False)
+    maps_to: str = Field(default="", description="the endpoint request field it stores, e.g. \"A1.email\"; \"\" "
+                                                 "for a column the server fills")
+
+
+class Table(Artifact):
+    id: str = Field(description="T1, T2, ... in order")
+    name: str = Field(description="the table name, e.g. \"bookings\"")
+    columns: List[Column] = Field(description="its columns, in order")
+
+
+class LLDEndpoints(Artifact):
+    TEMPLATE: ClassVar[str] = "LLD/1"
+    SECTION: ClassVar[str] = "API endpoints"
+    endpoints: List[Endpoint] = Field(description="every endpoint the pages call, A1, A2, ... in order")
+    assumptions: List[str] = Field(default_factory=list)
+
+
+class LLDDataModel(Artifact):
+    TEMPLATE: ClassVar[str] = "LLD/1"
+    SECTION: ClassVar[str] = "Data model"
+    tables: List[Table] = Field(description="every table the endpoints store in, T1, T2, ... in order")
+    assumptions: List[str] = Field(default_factory=list)
+
+
 class LLD(Artifact):
     TEMPLATE: ClassVar[str] = "LLD/1"
     sections: List[LLDSection] = Field(default_factory=list)
@@ -305,6 +372,8 @@ class LLD(Artifact):
     responsive_rules: List[str] = Field(default_factory=list)
     accessibility_rules: List[str] = Field(default_factory=list)
     assumptions: List[str] = Field(default_factory=list)
+    endpoints: List[Endpoint] = Field(default_factory=list)       # J2_BACKEND=1
+    tables: List[Table] = Field(default_factory=list)             # J2_BACKEND=1
 
 
 # ---------------------------------------------------------------- Design/1 (the style guide, STYLE_FMT as a model)
@@ -381,6 +450,7 @@ SECTION_MODELS = {
     "hld": {"Purpose and scope": HLDPurpose, "Pages": HLDPages, "Components": HLDComponents,
             "Data flow": HLDDataFlow, "Hosting and deployment": HLDHosting, "Risks": HLDRisks},
     "lld": {"Pages and sections": LLDSections, "Interactive elements": LLDElements, "Form fields": LLDFormFields,
+            "API endpoints": LLDEndpoints, "Data model": LLDDataModel,          # J2_BACKEND=1 only (j2.lld_sections)
             "File structure": LLDFiles, "Responsive and accessibility rules": LLDRules},
     "design": {"Style guide": Design},
     "website": {"Section": WebsiteSection},
@@ -393,8 +463,8 @@ SECTION_CONDITIONS = {
     "hld": {"Purpose and scope": ["H1"], "Pages": ["H1"], "Components": ["H1", "H3", "H4"], "Data flow": ["H1"],
             "Hosting and deployment": ["H1"], "Risks": ["H1"]},
     "lld": {"Pages and sections": ["L1", "L2", "L5"], "Interactive elements": ["L1", "L2", "L3"],
-            "Form fields": ["L1", "L2", "L4"], "File structure": ["L1"],
-            "Responsive and accessibility rules": ["L1"]},
+            "Form fields": ["L1", "L2", "L4"], "API endpoints": ["L1", "L2", "L7"], "Data model": ["L1", "L2", "L8"],
+            "File structure": ["L1"], "Responsive and accessibility rules": ["L1"]},
     "design": {"Style guide": []},
     "website": {"Section": ["N1", "N4", "N8"]},
 }
@@ -532,7 +602,7 @@ def normalise(model, data):
     if not isinstance(data, dict):
         return data
     d = copy.deepcopy(data)
-    enums = {"priority": PRIORITIES, "type": FIELD_TYPES}
+    enums = {"priority": PRIORITIES, "type": FIELD_TYPES + COLUMN_TYPES, "method": METHODS}
 
     def walk(node):
         if isinstance(node, list):
@@ -541,8 +611,8 @@ def normalise(model, data):
         elif isinstance(node, dict):
             for k, v in list(node.items()):
                 if k in enums and isinstance(v, str):
-                    low = v.strip().lower()
-                    node[k] = next((x for x in enums[k] if x.lower() == low), v)
+                    low = v.strip().lower()      # a value in the model's own casing stays ("TEXT" is a column type)
+                    node[k] = v.strip() if v.strip() in enums[k] else next((x for x in enums[k] if x.lower() == low), v)
                 else:
                     walk(v)
     walk(d)
@@ -561,6 +631,47 @@ def _lines(items, fmt):
 
 def _assumptions(data):
     return "".join(f"\nAssumption: {a}" for a in (data.get("assumptions") or []))
+
+
+def _field_text(f):
+    return (f"`{f.get('name')}` ({f.get('type') or 'string'}, {'required' if f.get('required') else 'optional'}"
+            + (f", {f['from_field']}" if f.get("from_field") else "") + ")")
+
+
+def render_endpoint(e):
+    """One API endpoint as the line parse_lld reads: id, method, path, purpose, then the labelled parts in a fixed
+    order. Statuses are written as "status 201" so the facts check can tell them from the brief's numbers."""
+    parts = [f"- **{e.get('id')}** {e.get('method')} `{e.get('path')}`: " + str(e.get("purpose") or "").rstrip(".") + "."]
+    if e.get("called_by"):
+        parts.append("Called by " + ", ".join(f"`{x}`" for x in e["called_by"]) + ".")
+    if e.get("request_fields"):
+        parts.append("Request: " + ", ".join(_field_text(f) for f in e["request_fields"]) + ".")
+    if e.get("response_fields"):
+        parts.append("Response: " + ", ".join(_field_text(f) for f in e["response_fields"]) + ".")
+    if e.get("errors"):
+        parts.append("Errors: " + "; ".join(f"status {x.get('status')} when {str(x.get('when') or '').rstrip('.')}"
+                                            for x in e["errors"]) + ".")
+    ex = str(e.get("example_request") or "").strip()
+    parts.append(f"Example: `{ex or '{}'}` gives status {e.get('expected_status')}"
+                 + (" with " + ", ".join(f"`{x}`" for x in e["expected_fields"]) if e.get("expected_fields") else "")
+                 + ".")
+    return " ".join(parts)
+
+
+def render_table(t):
+    cols = []
+    for c in t.get("columns") or []:
+        cols.append(f"`{c.get('name')}` {c.get('type')}" + (" primary key" if c.get("primary_key") else "")
+                    + (" nullable" if c.get("nullable") else "") + (f" ({c['maps_to']})" if c.get("maps_to") else ""))
+    return f"- **{t.get('id')}** `{t.get('name')}`: " + ", ".join(cols) + "."
+
+
+def qualified_endpoints(endpoints):
+    """The endpoints with each request field's "qualified" name ("A1.email"), the id a column's maps_to names. A copy:
+    the recorded data keeps the template's fields only."""
+    return [{**e, "request_fields": [{**f, "qualified": f"{e.get('id')}.{f.get('name')}"}
+                                     for f in (e.get("request_fields") or []) if isinstance(f, dict)]}
+            for e in endpoints or [] if isinstance(e, dict)]
 
 
 def render_section(kind, section, data):
@@ -629,6 +740,10 @@ def render_section(kind, section, data):
                           lambda i, f: f"- **{f['id']}** in {f.get('section') or 'S1'}, form `{f['form']}`: field "
                           f"`{f['name']}`, type {f['type']}, required {'yes' if f.get('required') else 'no'}"
                           + (f", validation {f['validation']}" if f.get("validation") else ""))
+        elif section == "API endpoints":
+            body = _lines(d.get("endpoints") or [], lambda i, e: render_endpoint(e))
+        elif section == "Data model":
+            body = _lines(d.get("tables") or [], lambda i, t: render_table(t))
         elif section == "File structure":
             body = "\n".join(f"- `{x['path']}`: {x['purpose']}" for x in d.get("files") or [])
         elif section == "Responsive and accessibility rules":

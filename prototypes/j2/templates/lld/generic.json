@@ -329,6 +329,377 @@
       "schema_sha": "8deb5be1d4805bf198cce529a963231dd126d0e451f2ed515c97057ff316c72a"
     },
     {
+      "name": "LLD/1 · API endpoints",
+      "artifact": "lld",
+      "section": "API endpoints",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic LLD/1 · API endpoints template: the fixed layout of every LLD API endpoints section, whatever the business",
+      "fields": [
+        {
+          "name": "endpoints",
+          "type": "list[Endpoint]",
+          "required": true,
+          "description": "every endpoint the pages call, A1, A2, ... in order",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "EndpointField",
+          "fields": [
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the field name, e.g. \"email\"",
+              "nullable": false
+            },
+            {
+              "name": "type",
+              "type": "string",
+              "required": true,
+              "description": "string, integer, boolean, date or email",
+              "nullable": false
+            },
+            {
+              "name": "required",
+              "type": "boolean",
+              "required": true,
+              "description": "true when the request must carry it",
+              "nullable": false
+            },
+            {
+              "name": "from_field",
+              "type": "string",
+              "required": false,
+              "description": "the LLD form field id this request field carries, e.g. \"F3\"; \"\" for a response field",
+              "nullable": false
+            }
+          ]
+        },
+        {
+          "name": "EndpointError",
+          "fields": [
+            {
+              "name": "status",
+              "type": "integer",
+              "required": true,
+              "description": "the HTTP status, e.g. 400",
+              "nullable": false
+            },
+            {
+              "name": "when",
+              "type": "string",
+              "required": true,
+              "description": "when it is returned, e.g. \"a required field is missing\"",
+              "nullable": false
+            }
+          ]
+        },
+        {
+          "name": "Endpoint",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "A1, A2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "method",
+              "type": "string",
+              "required": true,
+              "description": "one of GET, POST, PUT, DELETE",
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "path",
+              "type": "string",
+              "required": true,
+              "description": "the path, starting with /api/, e.g. \"/api/bookings\"",
+              "nullable": false
+            },
+            {
+              "name": "purpose",
+              "type": "string",
+              "required": true,
+              "description": "what it does, in one line",
+              "nullable": false
+            },
+            {
+              "name": "called_by",
+              "type": "list[string]",
+              "required": false,
+              "description": "the LLD element selectors or form selectors that call it, e.g. [\"#booking\"]",
+              "nullable": false
+            },
+            {
+              "name": "request_fields",
+              "type": "list[EndpointField]",
+              "required": false,
+              "description": "the request body's fields",
+              "nullable": false
+            },
+            {
+              "name": "response_fields",
+              "type": "list[EndpointField]",
+              "required": false,
+              "description": "the reply's fields",
+              "nullable": false
+            },
+            {
+              "name": "errors",
+              "type": "list[EndpointError]",
+              "required": false,
+              "description": "the error replies",
+              "nullable": false
+            },
+            {
+              "name": "example_request",
+              "type": "string",
+              "required": false,
+              "description": "one JSON object as text, from the charter's facts only",
+              "nullable": false
+            },
+            {
+              "name": "expected_status",
+              "type": "integer",
+              "required": true,
+              "description": "the status the example request gets: 201 for a create, 200 for a list",
+              "nullable": false
+            },
+            {
+              "name": "expected_fields",
+              "type": "list[string]",
+              "required": false,
+              "description": "response field names the example reply must carry",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "endpoints",
+          "prefix": "A",
+          "name": "ids A1, A2, ... unique and in order",
+          "from": "L2"
+        },
+        {
+          "rule": "enum",
+          "path": "endpoints[].method",
+          "values": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE"
+          ],
+          "name": "method is one of GET, POST, PUT, DELETE",
+          "from": "L7"
+        },
+        {
+          "rule": "prefix",
+          "path": "endpoints[].path",
+          "prefix": "/api/",
+          "name": "every path starts with /api/",
+          "from": "L7"
+        },
+        {
+          "rule": "not_empty",
+          "path": [
+            "endpoints[].purpose",
+            "endpoints[].example_request",
+            "endpoints[].expected_status"
+          ],
+          "name": "every endpoint has a purpose, an example request and an expected status",
+          "from": "L7"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "endpoints[].request_fields[].from_field",
+          "target": "this.form_fields[].id",
+          "fail_text": "request field {id} carries {bad}, which is not a form field of this document",
+          "name": "every request field's from_field is a form field id of this document",
+          "from": "L7"
+        },
+        {
+          "rule": "covers_all",
+          "path": "endpoints[].request_fields[].from_field",
+          "target": "this.form_fields[].id",
+          "fail_text": "form field(s) {bad} map to no request field",
+          "name": "every form field maps to a request field",
+          "from": "L7"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "endpoints[].called_by",
+          "target": [
+            "this.elements[].selector",
+            "this.form_fields[].form"
+          ],
+          "fail_text": "{id} is called by {bad}, which is not an element or form selector of this document",
+          "name": "called_by names an element or form selector of this document",
+          "from": "L7"
+        }
+      ],
+      "sha": "108988256eb8e32e33b97bc09401ddd14800db138e600aa021eb24440567a83b",
+      "schema_sha": "4deeccc26ad27a19561841211a40c15d5c98709711497934c58706a9514c271c"
+    },
+    {
+      "name": "LLD/1 · Data model",
+      "artifact": "lld",
+      "section": "Data model",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic LLD/1 · Data model template: the fixed layout of every LLD Data model section, whatever the business",
+      "fields": [
+        {
+          "name": "tables",
+          "type": "list[Table]",
+          "required": true,
+          "description": "every table the endpoints store in, T1, T2, ... in order",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Column",
+          "fields": [
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the column name",
+              "nullable": false
+            },
+            {
+              "name": "type",
+              "type": "string",
+              "required": true,
+              "description": "one of INTEGER, TEXT, REAL, BLOB",
+              "enum": [
+                "INTEGER",
+                "TEXT",
+                "REAL",
+                "BLOB"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "nullable",
+              "type": "boolean",
+              "required": false,
+              "description": "",
+              "nullable": false
+            },
+            {
+              "name": "primary_key",
+              "type": "boolean",
+              "required": false,
+              "description": "",
+              "nullable": false
+            },
+            {
+              "name": "maps_to",
+              "type": "string",
+              "required": false,
+              "description": "the endpoint request field it stores, e.g. \"A1.email\"; \"\" for a column the server fills",
+              "nullable": false
+            }
+          ]
+        },
+        {
+          "name": "Table",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "T1, T2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the table name, e.g. \"bookings\"",
+              "nullable": false
+            },
+            {
+              "name": "columns",
+              "type": "list[Column]",
+              "required": true,
+              "description": "its columns, in order",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "tables",
+          "prefix": "T",
+          "name": "ids T1, T2, ... unique and in order",
+          "from": "L2"
+        },
+        {
+          "rule": "not_empty",
+          "path": [
+            "tables[].name",
+            "tables[].columns[].name"
+          ],
+          "name": "every table has a name and named columns",
+          "from": "L8"
+        },
+        {
+          "rule": "enum",
+          "path": "tables[].columns[].type",
+          "values": [
+            "INTEGER",
+            "TEXT",
+            "REAL",
+            "BLOB"
+          ],
+          "name": "column type is one of INTEGER, TEXT, REAL, BLOB",
+          "from": "L8"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "tables[].columns[].maps_to",
+          "target": "this.endpoints[].request_fields[].qualified",
+          "fail_text": "{id} stores {bad}, which is not a request field (A1.name) of this document",
+          "name": "maps_to names a request field of an endpoint",
+          "from": "L8"
+        }
+      ],
+      "sha": "097f991a409ecad8b052b4863567cc5f1598481f96bee866c8e24c3ba376dcba",
+      "schema_sha": "188f17f284f1c1a249d3f53551e5c4543b3d9fb675957383fd460df4507ec5f8"
+    },
+    {
       "name": "LLD/1 · File structure",
       "artifact": "lld",
       "section": "File structure",

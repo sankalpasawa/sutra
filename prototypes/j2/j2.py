@@ -448,7 +448,7 @@ def artifact_schema_on():
     """J2_ARTIFACT_SCHEMA=1 (default off): a document, design or website builder answers with one JSON object that
     follows its artifact template (j2_artifact_models), code validates it, checks its references, renders the
     markdown and writes the data beside the document. Read per call so tests can switch it."""
-    return os.environ.get("J2_ARTIFACT_SCHEMA") == "1" or j2_template_lib.enabled()   # the library implies it
+    return os.environ.get("J2_ARTIFACT_SCHEMA") == "1" or j2_template_lib.enabled() or j2_backend.enabled()   # both imply it
 
 
 def slim():
@@ -1128,8 +1128,19 @@ TBC_WORDS = re.compile(r"to be confirmed|\bTB[CD]\b", re.I)
 
 
 def load_conditions(name):
+    """The conditions of one output. A condition with "flag" exists only when that env var is 1 (J2_BACKEND: L7, L8);
+    "backend_text" is the text L1 shows with that flag on. With the flag unset, the list is the file's as before."""
     with open(os.path.join(CONDITIONS_DIR, name), encoding="utf-8") as f:
-        return json.load(f)["conditions"]
+        conds = json.load(f)["conditions"]
+    out = []
+    for raw in conds:
+        if raw.get("flag") and os.environ.get(raw["flag"]) != "1":
+            continue
+        c = {k: v for k, v in raw.items() if k not in ("flag", "backend_text")} if ("flag" in raw or "backend_text" in raw) else raw
+        if j2_backend.enabled() and raw.get("backend_text"):
+            c["text"] = raw["backend_text"]
+        out.append(c)
+    return out
 
 
 PHONE = re.compile(r"\+?\d[\d\s().-]{6,}\d")
@@ -1143,9 +1154,16 @@ def doc_numbers(text):
     text = PHONE.sub(lambda m: " " if re.sub(r"\D", "", m.group(0)) in phones else m.group(0), str(text))
     text = re.sub(r"\b[A-Z]{1,3}-?\d+\b", " ", strip_md(text))
     text = re.sub(r"(?m)^\s*\d+[.)]\s", " ", text)
+    if j2_backend.enabled():        # "status 201" / "status 400 when ..." in the API endpoints section: code's words
+        text = STATUS_CODE.sub(" ", text)
     return set(re.findall(r"\d+(?:[.,]\d+)*", text)) | set(EMAIL.findall(text)) | phones
 
 
+STATUS_CODE = re.compile(r"\bstatus \d{3}\b")
+# J2_BACKEND=1: the words the API endpoints and Data model lines are written with (render_endpoint / render_table),
+# never a proper name of the document
+BACKEND_WORDS = {"api", "endpoints", "data", "model", "get", "post", "put", "delete", "integer", "text", "real", "blob",
+                 "called", "request", "response", "errors", "example", "status"}
 ASSUMPTION = re.compile(r"\bAssumption:\s*(.+)", re.I)
 ASSUMPTIONS_HEADING = "Assumptions to confirm"
 NO_ACTIONS = "have no actions in this version"
@@ -1176,6 +1194,8 @@ def doc_names(text):
     Ids (R1, G2), section headings and possessives are left out. ponytail: a capitalised common word mid-sentence
     ("the Requirements section") counts unless it is a section word; a real NER pass is the upgrade."""
     skip = {w.lower() for s in ALL_DOC_SECTIONS + (ASSUMPTIONS_HEADING,) for w in s.split()} | {"i", "assumption"}
+    if j2_backend.enabled():
+        skip |= BACKEND_WORDS
     out = set()
     for ln in strip_md(text).splitlines():
         if MD_HEADING.match(ln) or re.fullmatch(r"\s*\|?[\s|:-]*", ln):
@@ -1291,7 +1311,7 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
         return bool(comps) and not bad, ("no C1, C2, ... components" if not comps else
                                          f"no responsibility for {', '.join(bad)}" if bad else
                                          f"each of the {len(comps)} component(s) states its responsibility")
-    if k in ("lld-ids-unique", "lld-elements", "lld-fields"):
+    if k in ("lld-ids-unique", "lld-elements", "lld-fields", "lld-endpoints", "lld-tables"):
         return lld_condition(k, doc)
     return False, f"no code check named {k!r}"
 
@@ -1759,9 +1779,15 @@ def mock_charter(text):
 def lld_slice(spec, ids):
     """The part of the LLD (parse_lld data) for the given section ids: those sections and their elements and fields."""
     ids = [str(i) for i in ids or []]
-    return {"sections": [s for s in spec.get("sections") or [] if s["id"] in ids],
-            "elements": [e for e in spec.get("elements") or [] if e["section"] in ids],
-            "fields": [f for f in spec.get("fields") or [] if f["section"] in ids]}
+    out = {"sections": [s for s in spec.get("sections") or [] if s["id"] in ids],
+           "elements": [e for e in spec.get("elements") or [] if e["section"] in ids],
+           "fields": [f for f in spec.get("fields") or [] if f["section"] in ids]}
+    if "endpoints" in spec:      # J2_BACKEND=1: the endpoints called by this slice's elements, forms or sections
+        mine = ({"#" + s["anchor"] for s in out["sections"] if s.get("anchor")}
+                | {e["selector"] for e in out["elements"] if e.get("selector")}
+                | {"#" + f["form"] for f in out["fields"] if f.get("form")})
+        out["endpoints"] = [e for e in spec.get("endpoints") or [] if set(e.get("called_by") or []) & mine]
+    return out
 
 
 def _has_selector(page, sel):
@@ -2007,7 +2033,19 @@ def wants_site(*texts):
 HLD_SECTIONS = ("Purpose and scope", "Pages", "Components", "Data flow", "Hosting and deployment", "Risks")
 LLD_SECTIONS = ("Pages and sections", "Interactive elements", "Form fields", "File structure",
                 "Responsive and accessibility rules")
+# J2_BACKEND=1: the LLD also designs the backend (docs/backend-design.md): the two sections sit after Form fields
+LLD_SECTIONS_BACKEND = LLD_SECTIONS[:3] + ("API endpoints", "Data model") + LLD_SECTIONS[3:]
 ALL_DOC_SECTIONS = PRD_SECTIONS + HLD_SECTIONS + LLD_SECTIONS
+
+
+def lld_sections(backend=None):
+    """The LLD's sections for a run: the five, or the seven with J2_BACKEND=1 (read at each stage, like load_rates)."""
+    return LLD_SECTIONS_BACKEND if (j2_backend.enabled() if backend is None else backend) else LLD_SECTIONS
+
+
+def output_sections(kind):
+    """OUTPUTS[kind]["sections"] as the current flags make it (only the LLD's list depends on a flag)."""
+    return lld_sections() if kind == "lld" else OUTPUTS[kind]["sections"]
 
 HLD_RUBRIC = (("D-1", "Every component has one clear responsibility"),
               ("D-2", "The data flow names every form and integration the pages need"),
@@ -2054,12 +2092,19 @@ HLD_PLAN = ("\nTHE OUTPUT IS AN HLD DOCUMENT (markdown), not a website. Plan exa
             "writes (e.g. \"## Components\"). covers lists the done-when items about that section. The Components "
             "workflow must name every requirement id it covers (R1, R2, ...). Price them with the document rate card: "
             "doc_section, or requirements_section for Components; fixes with 'fix'. Components are C1, C2, ....")
-LLD_PLAN = ("\nTHE OUTPUT IS AN LLD DOCUMENT (markdown), not a website. Plan exactly one workflow per LLD section, in "
-            f"this order: {', '.join(LLD_SECTIONS)}; each has one work atom whose how.steps names the section heading it "
+def lld_plan(secs=LLD_SECTIONS):
+    return ("\nTHE OUTPUT IS AN LLD DOCUMENT (markdown), not a website. Plan exactly one workflow per LLD section, in "
+            f"this order: {', '.join(secs)}; each has one work atom whose how.steps names the section heading it "
             "writes (e.g. \"## Form fields\"). covers lists the done-when items about that section. The Pages and "
             "sections workflow must name every component id it implements (C1, C2, ...). Price them with the document "
             "rate card: doc_section, or requirements_section for Pages and sections; fixes with 'fix'. Sections are S1, "
-            "S2, ...; elements E1, ...; fields F1, ....")
+            "S2, ...; elements E1, ...; fields F1, ...."
+            + ("; endpoints A1, ...; tables T1, ...." if "API endpoints" in secs else ""))
+
+
+LLD_PLAN = lld_plan()
+LLD_IDS = {"Pages and sections": "S", "Interactive elements": "E", "Form fields": "F"}
+LLD_IDS_BACKEND = {**LLD_IDS, "API endpoints": "A", "Data model": "T"}
 
 
 def _md_list(doc, section):
@@ -2108,7 +2153,52 @@ def parse_lld(doc):
                          "name": fld[1] if fld else None, "type": ty[1].lower() if ty else None,
                          "required": (rq[1].lower() in ("yes", "true")) if rq else None,
                          "validation": va[1].strip(" .") if va else None})
-    return {"sections": secs, "elements": els, "fields": flds}
+    out = {"sections": secs, "elements": els, "fields": flds}
+    if j2_backend.enabled():
+        out["endpoints"] = [e for e in (parse_endpoint(ln) for ln in raw("API endpoints")) if e]
+        out["tables"] = [t for t in (parse_table(ln) for ln in raw("Data model")) if t]
+    return out
+
+
+ENDPOINT_LINE = re.compile(r"\s*(?:[-*+]\s+)?(?:\*\*)?(A\d+)(?:\*\*)?\s+(GET|POST|PUT|DELETE)\s+`([^`]+)`\s*:?\s*(.*)$")
+ENDPOINT_LABEL = re.compile(r"(?<=\. )(Called by|Request:|Response:|Errors:|Example:) ")
+ENDPOINT_FIELD = re.compile(r"`([^`]+)`\s*\((\w+),\s*(required|optional)(?:,\s*(F\d+))?\)")
+TABLE_LINE = re.compile(r"\s*(?:[-*+]\s+)?(?:\*\*)?(T\d+)(?:\*\*)?\s+`([^`]+)`\s*:?\s*(.*)$")
+COLUMN = re.compile(r"`([^`]+)`\s+(INTEGER|TEXT|REAL|BLOB)\b((?:\s+primary key)?)((?:\s+nullable)?)(?:\s+\(([^)]+)\))?")
+
+
+def parse_endpoint(ln):
+    """One API endpoints line (render_endpoint's shape) as data, None when the line is not one. A missing part stays
+    None or empty so L7 can name it."""
+    m = ENDPOINT_LINE.match(ln)
+    if not m:
+        return None
+    rest = m[4]
+    labels = list(ENDPOINT_LABEL.finditer(rest))
+    parts = {}
+    for i, lb in enumerate(labels):
+        end = labels[i + 1].start() if i + 1 < len(labels) else len(rest)
+        parts[lb[1]] = rest[lb.end():end].strip()
+    fields = lambda t: [{"name": n, "type": ty, "required": rq == "required", "from_field": ff or ""}
+                        for n, ty, rq, ff in ENDPOINT_FIELD.findall(t or "")]
+    ex = re.match(r"`(.*)` gives status (\d+)(?: with (.*))?$", parts.get("Example:", "").rstrip(". "), re.S)
+    return {"id": m[1], "method": m[2], "path": m[3],
+            "purpose": (rest[:labels[0].start()] if labels else rest).strip(" .") or None,
+            "called_by": re.findall(r"`([^`]+)`", parts.get("Called by", "")),
+            "request_fields": fields(parts.get("Request:")), "response_fields": fields(parts.get("Response:")),
+            "errors": [{"status": int(st), "when": wh.strip(" .")}
+                       for st, wh in re.findall(r"status (\d+) when ([^;]+)", parts.get("Errors:", ""))],
+            "example_request": ex[1] if ex else None, "expected_status": int(ex[2]) if ex else None,
+            "expected_fields": re.findall(r"`([^`]+)`", ex[3] or "") if ex else []}
+
+
+def parse_table(ln):
+    m = TABLE_LINE.match(ln)
+    if not m:
+        return None
+    return {"id": m[1], "name": m[2],
+            "columns": [{"name": n, "type": ty, "primary_key": bool(pk.strip()), "nullable": bool(nl.strip()),
+                         "maps_to": mt or ""} for n, ty, pk, nl, mt in COLUMN.findall(m[3])]}
 
 
 def doc_agent_output(kind, doc):
@@ -2139,6 +2229,30 @@ def lld_condition(k, doc):
             "no S1, S2, ... section entries" if not p["sections"] else
             f"repeated: {', '.join(dict.fromkeys(dup))}" if dup else f"section(s) without an id: {', '.join(bad)}" if bad else
             f"{len(ids)} entry ids and {len(sel)} selectors, all unique")
+    if k == "lld-endpoints":        # L7 (J2_BACKEND=1)
+        eps, fields = p.get("endpoints") or [], [f["id"] for f in p["fields"]]
+        missing = lambda e: [n for n, ok in (("/api/ path", str(e["path"]).startswith("/api/")),
+                                             ("example request", e["example_request"] not in (None, "", "{}")
+                                              or e["method"] == "GET"),
+                                             ("expected status", bool(e["expected_status"]))) if not ok]
+        bad = [f"{e['id']} (no {', '.join(m)})" for e in eps for m in [missing(e)] if m]
+        carried = {f["from_field"] for e in eps for f in e["request_fields"]}
+        unmapped = [f for f in fields if f not in carried]
+        if bad or unmapped:
+            return False, "; ".join(([f"incomplete: {'; '.join(bad)}"] if bad else [])
+                                    + ([f"form field(s) {', '.join(unmapped)} map to no request field"] if unmapped else []))
+        return True, (f"each of the {len(eps)} endpoint(s) has a method, an /api/ path, an example request and an expected "
+                      f"status; all {len(fields)} form field(s) map to a request field" if eps else
+                      "no endpoints and no form fields" if not fields else "no endpoints")
+    if k == "lld-tables":           # L8 (J2_BACKEND=1)
+        tables, eps = p.get("tables") or [], p.get("endpoints") or []
+        bad = [t["id"] for t in tables if not t["columns"]]
+        if bad:
+            return False, f"table(s) without typed columns: {', '.join(bad)}"
+        if not tables and eps:
+            return False, f"no T1, T2, ... table entries, but {len(eps)} endpoint(s) to store for"
+        return True, (f"each of the {len(tables)} table(s) has typed columns" if tables else
+                      "no tables (no endpoints need storage)")
     if k == "lld-elements":
         bad = [f"{x['id']} (no {', '.join(f for f in ('selector', 'trigger', 'behaviour') if not x[f])})"
                for x in p["elements"] if not (x["selector"] and x["trigger"] and x["behaviour"])]
@@ -2190,6 +2304,37 @@ def mock_lld_section(w, goal):
     return f"## {sec}\n\n{body}\n"
 
 
+def mock_endpoints(comps, name):
+    """Mock only (J2_BACKEND=1): one POST endpoint per mock form (F1 in S1, F2 in S3, ...) that stores the form's one
+    field, then one GET that lists them; every value from the charter (the product name) or code's own words."""
+    forms = list(range(1, len(comps) + 1, 2))
+    out = []
+    for k, i in enumerate(forms, 1):
+        out.append({"id": f"A{k}", "method": "POST", "path": f"/api/form-{i}", "purpose": f"stores what form-{i} sends",
+                    "called_by": [f"#form-{i}"],
+                    "request_fields": [{"name": f"name-{i}", "type": "string", "required": True, "from_field": f"F{k}"}],
+                    "response_fields": [{"name": "id", "type": "integer", "required": True, "from_field": ""},
+                                        {"name": f"name-{i}", "type": "string", "required": True, "from_field": ""}],
+                    "errors": [{"status": 400, "when": "a required field is missing"}],
+                    "example_request": json.dumps({f"name-{i}": name}), "expected_status": 201,
+                    "expected_fields": ["id", f"name-{i}"]})
+    if forms:
+        out.append({"id": f"A{len(forms) + 1}", "method": "GET", "path": f"/api/form-{forms[0]}",
+                    "purpose": "lists what was stored", "called_by": [], "request_fields": [],
+                    "response_fields": [{"name": "id", "type": "integer", "required": True, "from_field": ""}],
+                    "errors": [], "example_request": "{}", "expected_status": 200, "expected_fields": []})
+    return out
+
+
+def mock_tables(comps):
+    return [{"id": f"T{k}", "name": f"entries_{i}",
+             "columns": [{"name": "id", "type": "INTEGER", "nullable": False, "primary_key": True, "maps_to": ""},
+                         {"name": f"name-{i}", "type": "TEXT", "nullable": False, "primary_key": False,
+                          "maps_to": f"A{k}.name-{i}"},
+                         {"name": "created_at", "type": "TEXT", "nullable": True, "primary_key": False, "maps_to": ""}]}
+            for k, i in enumerate(range(1, len(comps) + 1, 2), 1)]
+
+
 def doc_atom_for(secs, ids_in):
     """mock_doc_atom's twin for any document: heading and not-empty checks, plus unique ids where the document has them."""
     def make(w):
@@ -2226,7 +2371,7 @@ def stage_goal(kind, base, chain):
     reqs = [r["id"] for r in (chain.get("prd") or {}).get("requirements") or []]
     comps = [c["id"] for c in (chain.get("hld") or {}).get("components") or []]
     items = []
-    for s in OUTPUTS[kind]["sections"]:
+    for s in output_sections(kind):
         extra = (f", and names every requirement ({', '.join(reqs)}) it covers" if s == "Components" and reqs else
                  f", and names every component ({', '.join(comps)}) it implements" if s == "Pages and sections" and comps
                  else "")
@@ -2360,8 +2505,7 @@ OUTPUTS["lld"] = {"label": "LLD document", "noun": "LLD", "sections": LLD_SECTIO
                   "intake": PRD_INTAKE.replace("PRD", "LLD"), "charter_fmt": PRD_CHARTER_FMT,
                   "mock_charter": mock_prd_charter,
                   "atom_rules": PRD_ATOM_RULES.replace("PRD", "LLD"), "mock_section": mock_lld_section,
-                  "mock_atom": doc_atom_for(LLD_SECTIONS, {"Pages and sections": "S", "Interactive elements": "E",
-                                                           "Form fields": "F"}),
+                  "mock_atom": doc_atom_for(LLD_SECTIONS, LLD_IDS),
                   "done": "Done: the LLD is workable. Every done-when item, rubric item and necessary condition passes."}
 OUTPUT = "website"     # the current run's output type (set by load_rates at each reset; one run at a time, like NAMES)
 
@@ -2927,6 +3071,9 @@ class J2Run:
         """Switch what is built (set_output before the first message; a design-document run at each stage)."""
         self.output = output_type(out)
         self.out, self.doc = OUTPUTS[self.output], bool(OUTPUTS[self.output]["sections"])
+        if self.output == "lld" and j2_backend.enabled():      # J2_BACKEND=1: seven sections (OUTPUTS itself is unchanged)
+            self.out = {**self.out, "sections": lld_sections(), "plan": lld_plan(lld_sections()),
+                        "mock_atom": doc_atom_for(lld_sections(), LLD_IDS_BACKEND)}
         # J2_REALIZATION: no rate card; Adaptation estimates each workflow's budget (estimated_resources.money)
         load_rates(self.output, card=not (getattr(self, "realization", None) or realization_on()))
         types = "|".join(f'"{t}"' for t in self.out["check_types"])
@@ -3676,7 +3823,7 @@ class J2Run:
         if kind == "website":
             r, parts = RATES_WEB(), self.SITE_ESSENTIALS
             return sum(r.get(k, 0) for k in parts)
-        r, n = RATES_DOC(), len(OUTPUTS[kind]["sections"])
+        r, n = RATES_DOC(), len(output_sections(kind))
         return r.get("doc_section", 0) * (n - 1) + r.get("requirements_section", 0)
 
     STAGE_WORDS = {"prd": "the product requirements", "hld": "the high-level design", "lld": "the low-level design",
@@ -7759,7 +7906,7 @@ class J2Run:
         aid = (target.get("atoms") or [{}])[0].get("id")
         if kind not in self.docs:
             return f"{kind or 'that document'} is not a document of this run"
-        if section not in OUTPUTS[kind]["sections"]:
+        if section not in output_sections(kind):
             return f"{section!r} is not a section of the {kind.upper()}"
         if not self._board_doc_owner(aid, kind, section):
             return f"{aid} doesn't own the {kind.upper()}'s {section} section"
@@ -7952,7 +8099,7 @@ class J2Run:
             text = f.read()
         goal = next((s["goal"] for s in reversed(self.stage_archive) if s.get("stage") == kind), self.goal)
         conds = check_conditions(load_conditions(OUTPUTS[kind]["conditions"]), text, goal,
-                                 self._fact_source(goal), OUTPUTS[kind]["sections"])
+                                 self._fact_source(goal), output_sections(kind))
         self.save(f"conditions-{kind}.json", conds)
         self.post("system", f"{kind.upper()} v{version} conditions after {qid} (checked by code): " + "; ".join(
             f"{c['id']} " + ("met" if c["met"] else f"NOT MET ({c['evidence']})") for c in conds), mechanical=True)
@@ -8150,7 +8297,7 @@ class J2Run:
         own section; a question about which requirement covers something names the requirement. The words are the
         brief's and the document's; nothing is invented, and "not recorded" when the run holds neither."""
         kind = self._doc_of_workflow(wid)
-        section = next((s for s in OUTPUTS[kind]["sections"] if squash(w.get("name") or "").endswith(squash(s))), None)
+        section = next((s for s in output_sections(kind) if squash(w.get("name") or "").endswith(squash(s))), None)
         aid = ((w or {}).get("atoms") or [{}])[0].get("id")
         body = (atom_section_body(self.dir, self._all_wfs(), aid) or "") if aid else ""
         body = re.sub(r"^\s*#{1,6}\s+[^\n]*\n?", "", body.strip("\n"), count=1).strip("\n")
@@ -8555,6 +8702,8 @@ class J2Run:
                     out["this"][key] = out["this"][key] + value
                 else:
                     out["this"][key] = value
+        if out["this"].get("endpoints"):      # J2_BACKEND=1: "A1.email", the id a Data model column's maps_to names
+            out["this"]["endpoints"] = j2_artifact_models.qualified_endpoints(out["this"]["endpoints"])
         for other in ("prd", "hld", "lld"):
             mine = {}
             for data in (self.art_data.get(other) or {}).values():
@@ -8716,8 +8865,13 @@ class J2Run:
                        {"id": f"F{(i + 1) // 2}", "section": f"S{i}", "form": f"#form-{i}", "name": f"name-{i}",
                         "type": "text", "required": True, "validation": "not empty"}
                        for i in range(1, len(cs) + 1, 2)]},
+                   "API endpoints": lambda: {"endpoints": mock_endpoints(cs, name)},
+                   "Data model": lambda: {"tables": mock_tables(cs)},
                    "File structure": lambda: {"files": [{"path": "index.html",
-                                                         "purpose": f"the single page of {name}"}]},
+                                                         "purpose": f"the single page of {name}"}]
+                                              + ([{"path": "server.py",
+                                                   "purpose": "the backend that serves the endpoints above"}]
+                                                 if j2_backend.enabled() else [])},
                    "Responsive and accessibility rules": lambda: {
                        "responsive_rules": ["Every button and field is big enough to tap on a phone."],
                        "accessibility_rules": ["Every field has a visible label."]},

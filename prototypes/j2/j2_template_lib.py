@@ -53,8 +53,10 @@ RULE_KEYS = {"rule", "name", "from", "path", "prefix", "target", "values", "anch
 RULE_NEEDS = {"ids_sequential": ("path", "prefix"), "ids_unique": ("path",), "ref_exists": ("path", "target"),
               "enum": ("path", "values"), "hex": ("path",), "css_safe": ("path",), "html_no_page_tags": ("path",),
               "anchor_selector": ("path",), "anchor_in_html": ("anchor_path", "html_path"), "not_empty": ("path",),
-              "one_of_present": ("path",), "url_prefix": ("path", "prefix")}
-SINGLE_PATH = {"ids_sequential", "ids_unique", "ref_exists", "enum", "hex", "anchor_selector", "url_prefix"}
+              "one_of_present": ("path",), "url_prefix": ("path", "prefix"),
+              "prefix": ("path", "prefix"), "covers_all": ("path", "target")}       # J2_BACKEND=1 (j2_rules)
+SINGLE_PATH = {"ids_sequential", "ids_unique", "ref_exists", "enum", "hex", "anchor_selector", "url_prefix", "prefix",
+               "covers_all"}
 NOT_RECORDED = "not recorded"
 
 
@@ -300,8 +302,10 @@ def rule_problems(t, rules):
             out.append(f"rule {n} ({typ}): path must be one path")
         if typ == "enum" and not (isinstance(r.get("values"), list) and all(isinstance(v, str) for v in r["values"])):
             out.append(f"rule {n} (enum): values must be a list of strings")
-        if typ == "ref_exists" and not re.match(r"^(this|prd|hld|lld)\.", str(r.get("target") or "")):
-            out.append(f"rule {n} (ref_exists): target must start with this., prd., hld. or lld.")
+        if typ in ("ref_exists", "covers_all"):      # ref_exists may name several targets (a list)
+            targets = r.get("target") if isinstance(r.get("target"), list) and typ == "ref_exists" else [r.get("target")]
+            if not targets or any(not re.match(r"^(this|prd|hld|lld)\.", str(x or "")) for x in targets):
+                out.append(f"rule {n} ({typ}): target must start with this., prd., hld. or lld.")
         for key in ("path", "anchor_path", "html_path"):
             v = r.get(key)
             for p in (v if isinstance(v, list) else [v] if v else []):

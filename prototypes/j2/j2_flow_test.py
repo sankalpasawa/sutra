@@ -5440,9 +5440,11 @@ def artifact_schemas():
     import subprocess
     import j2_artifact_models as AM
     # (e) the drift test: the templates are the code's own sections, in code order, with the conditions they come from
-    for kind, want in (("prd", j2.PRD_SECTIONS), ("hld", j2.HLD_SECTIONS), ("lld", j2.LLD_SECTIONS)):
+    for kind, want in (("prd", j2.PRD_SECTIONS), ("hld", j2.HLD_SECTIONS), ("lld", j2.lld_sections(True))):
         assert list(AM.SECTION_MODELS[kind]) == list(want), (kind, list(AM.SECTION_MODELS[kind]))
+        os.environ["J2_BACKEND"] = "1"      # the LLD's API endpoints and Data model templates name L7 and L8
         conds = {c["id"] for c in j2.load_conditions(kind + ".json")}
+        os.environ.pop("J2_BACKEND", None)
         for sec in want:
             named = AM.SECTION_CONDITIONS[kind][sec]
             assert named and set(named) <= conds, (kind, sec, named)
@@ -5456,6 +5458,9 @@ def artifact_schemas():
     assert list(AM.HLD.model_fields)[:6] == ["purpose", "pages", "components", "data_flows", "hosting", "risks"]
     assert list(AM.LLD.model_fields)[:6] == ["sections", "elements", "form_fields", "files", "responsive_rules",
                                              "accessibility_rules"]
+    assert list(AM.LLD.model_fields)[-2:] == ["endpoints", "tables"]      # J2_BACKEND=1
+    assert list(AM.SECTION_MODELS["lld"])[3:5] == ["API endpoints", "Data model"] and \
+        list(j2.LLD_SECTIONS) == [s for s in AM.SECTION_MODELS["lld"] if s not in ("API endpoints", "Data model")]
     assert list(AM.WebsiteSection.model_fields)[:3] == ["id", "anchor", "implements"]
     # (f) every transport schema: draft-07, closed objects, nothing the transport forbids, and the CLI accepts it
     chrome_free = ["minLength", "maxLength", "minItems", "maxItems", "pattern", "format", "$defs", "2020-12"]
@@ -5740,11 +5745,13 @@ def rules_split():
             for path in paths:
                 head = path.split(".")[0].replace("[]", "")
                 assert head in model.model_fields, (kind, section, path, sorted(model.model_fields))
-            if spec.get("target"):      # "this.<path>" or "<doc>.<path>", and the field must exist there
-                where, _, tpath = spec["target"].partition(".")
-                assert where in ("this", "prd", "hld", "lld"), spec["target"]
+            targets = spec["target"] if isinstance(spec.get("target"), list) else [spec["target"]] if spec.get("target") else []
+            for target in targets:      # "this.<path>" or "<doc>.<path>", and the field must exist there
+                where, _, tpath = target.partition(".")
+                assert where in ("this", "prd", "hld", "lld"), target
                 target_model = AM.DOC_MODELS[kind if where == "this" else where]
-                assert tpath.split(".")[0].replace("[]", "") in target_model.model_fields, (spec["target"], kind)
+                assert tpath.split(".")[0].replace("[]", "") in target_model.model_fields, (target, kind)
+            assert len(targets) <= 1 or spec["rule"] == "ref_exists", spec
             for key in ("prefix", "values", "prefix"):
                 if spec["rule"] in ("ids_sequential",) and key == "prefix":
                     assert spec.get("prefix"), spec
@@ -6622,6 +6629,8 @@ def artifact_types():
         for k in j2.DOC_SET:
             t, o = by[k], j2.OUTPUTS[k]
             chk(t["workflow"]["sections"] == list(o["sections"]), f"{k} sections")
+            if k == "lld":      # J2_BACKEND=1: the seven sections (j2.lld_sections(True))
+                chk(t["workflow"].get("backend_sections") == list(j2.lld_sections(True)), "lld backend sections")
             chk(t["file"] == o["file"] and t["export"] == "docx" and bool(o["export"]) and t["form"] == "doc", f"{k} file")
             chk(t["conditions"] == o["conditions"] and os.path.isfile(os.path.join(j2.CONDITIONS_DIR, t["conditions"])), f"{k} conditions")
             chk(getattr(j2, t["workflow"]["builder"].split(":", 1)[1], None) is o["builder"], f"{k} builder")
@@ -6648,6 +6657,7 @@ def artifact_types():
     assert problems(T) == [], problems(T)
     # drift on either side is caught
     for path, val in (("types.0.workflow.sections", ["Problem"]), ("types.1.color", "--x"), ("types.2.triggers", ["\\bLLD\\b"]),
+                      ("types.2.workflow.backend_sections", ["Data model"]),
                       ("types.3.cost.parts", {"form": 9}), ("types.0.file", "p.md"), ("types.1.tag", "H"), ("types.3.file", "x.html"),
                       ("types.2.conditions", "none.json"), ("groups.design-docs.members", ["prd"])):
         bent, node, keys = copy.deepcopy(T), None, path.split(".")
@@ -11072,6 +11082,138 @@ BACKEND_FIELDS = [{"name": "name", "type": "text"}, {"name": "email", "type": "e
                   {"name": "preferred_date", "type": "date"}]
 
 
+def backend_run(brief=YOGA_BRIEF, budget=1500, patch=None):
+    """A mock run with J2_BACKEND=1 only (it implies J2_ARTIFACT_SCHEMA=1), set around this run only."""
+    keep = {k: os.environ.get(k) for k in ("J2_BACKEND", "J2_ARTIFACT_SCHEMA")}
+    os.environ["J2_BACKEND"] = "1"
+    os.environ.pop("J2_ARTIFACT_SCHEMA", None)
+    try:
+        run = docs_run(brief, budget, patch=patch)
+        finish(run)
+    finally:
+        for k, v in keep.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    return run
+
+
+def backend_off():
+    """Backend builder, flag unset (J2_BACKEND): nothing of it exists. The LLD's lists are the import-time five, L1's
+    text is as before and L7/L8 are absent, parse_lld has its three keys, a library run of the Still Point brief writes
+    no backend/, backend.json or server.py, has no backend receipt and no backend template folder. plain_unchanged (in
+    the suite) guards the prompts against the checkpoint, prompt for prompt."""
+    import j2_backend
+    import j2_template_lib
+    os.environ.pop("J2_BACKEND", None)
+    assert not j2_backend.enabled() and not j2.artifact_schema_on()
+    assert j2.lld_sections() is j2.LLD_SECTIONS and j2.OUTPUTS["lld"]["sections"] is j2.LLD_SECTIONS
+    assert j2.output_sections("lld") is j2.LLD_SECTIONS and j2.OUTPUTS["lld"]["plan"] == j2.LLD_PLAN
+    assert "A1" not in j2.LLD_PLAN and "API endpoints" not in j2.LLD_PLAN
+    conds = j2.load_conditions("lld.json")
+    assert [c["id"] for c in conds] == [f"L{i}" for i in range(1, 7)], [c["id"] for c in conds]
+    assert conds[0]["text"] == "All five sections are present and not empty", conds[0]
+    assert not any(k in c for c in conds for k in ("flag", "backend_text")), "the flag keys never reach a reader"
+    run = lib_run(YOGA_BRIEF)
+    assert run.outcome.startswith("Done"), run.outcome
+    for rel in ("backend", "backend.json", os.path.join("site", "server.py")):
+        assert not os.path.exists(os.path.join(run.dir, rel)), rel
+    lld = open(os.path.join(run.dir, "lld.md"), encoding="utf-8").read()
+    heads = [h for lv, h, _ in j2.md_sections(lld) if lv == 2]
+    assert heads[:5] == list(j2.LLD_SECTIONS) and not {"API endpoints", "Data model"} & set(heads), heads
+    assert list(j2.parse_lld(lld)) == ["sections", "elements", "fields"]
+    assert list(run.chain["lld"]) == ["kind", "sections", "elements", "fields"], list(run.chain["lld"])
+    data = json.load(open(os.path.join(run.dir, "lld.json"), encoding="utf-8"))
+    assert list(data["sections"]) == list(j2.LLD_SECTIONS), list(data["sections"])
+    arch = json.load(open(os.path.join(run.dir, "stage-lld.json"), encoding="utf-8"))
+    assert [c["id"] for c in arch["audits"][-1]["conditions"]] == [f"L{i}" for i in range(1, 7)]
+    recs = j2._jsonl(run.dir, "receipts.jsonl")
+    assert recs and not [r for r in recs if str(r.get("type")).startswith("backend-")
+                         or r.get("type") == "page-calls-known-endpoints"]
+    assert not os.path.exists(os.path.join(j2_template_lib.GENERIC_DIR, "backend"))
+    assert run._stage_cost("lld") == 10 * 4 + 48, run._stage_cost("lld")
+    print("backend off: five LLD sections, L1-L6 as before, parse_lld's three keys, a library run of the Still Point "
+          "brief writes no backend file and no backend receipt ok")
+
+
+def backend_lld():
+    """Backend builder, Phase 2 (J2_BACKEND=1): the LLD designs the backend. A mock run of the Still Point brief writes
+    seven LLD sections in order with A1.. endpoints and T1.. tables, code renders both from the builders' data and
+    reads them back (parse_lld), L1-L8 are met (L1 counts seven), the two templates pass all three layers with their
+    own rules, the data sits in lld.json, the chain and the blueprint carry the endpoints, and the page workflow that
+    builds a form gets that form's endpoints in its LLD slice. The flag off again, the same document reads as before."""
+    import j2_artifact_models as AM
+    run = backend_run()
+    assert run.outcome.startswith("Done"), run.outcome
+    lld = open(os.path.join(run.dir, "lld.md"), encoding="utf-8").read()
+    heads = [h for lv, h, _ in j2.md_sections(lld) if lv == 2]
+    assert heads[:7] == list(j2.LLD_SECTIONS_BACKEND), heads
+    os.environ["J2_BACKEND"] = "1"
+    try:
+        p = j2.parse_lld(lld)
+        assert list(p) == ["sections", "elements", "fields", "endpoints", "tables"]
+        eps, tables, fids = p["endpoints"], p["tables"], [f["id"] for f in p["fields"]]
+        assert [e["id"] for e in eps] == [f"A{i}" for i in range(1, len(eps) + 1)] and len(eps) >= 2, eps
+        assert [t["id"] for t in tables] == [f"T{i}" for i in range(1, len(tables) + 1)] and tables, tables
+        assert all(e["path"].startswith("/api/") and e["expected_status"] and e["example_request"] for e in eps), eps
+        assert fids and {f["from_field"] for e in eps for f in e["request_fields"]} >= set(fids), (fids, eps)
+        assert all(c["type"] in AM.COLUMN_TYPES for t in tables for c in t["columns"]), tables
+        assert {c["maps_to"] for t in tables for c in t["columns"] if c["maps_to"]} <= \
+            {f"{e['id']}.{f['name']}" for e in eps for f in e["request_fields"]}, tables
+        # the conditions: L1 counts seven, L7 and L8 exist and are met
+        arch = json.load(open(os.path.join(run.dir, "stage-lld.json"), encoding="utf-8"))
+        conds = arch["audits"][-1]["conditions"]
+        assert [c["id"] for c in conds] == [f"L{i}" for i in range(1, 9)] and all(c["met"] for c in conds), \
+            [(c["id"], c["met"], c["evidence"]) for c in conds if not c["met"]]
+        assert conds[0]["text"] == "All seven sections are present and not empty" and "7 sections" in conds[0]["evidence"]
+        assert "endpoint(s)" in conds[6]["evidence"] and "table(s)" in conds[7]["evidence"], conds[6:]
+        # the L7 and L8 checks catch what they name, on this document
+        lg = j2.stage_goal("lld", run.stage_archive[0]["goal"], {k: v["agent_output"] for k, v in run.docs.items()})
+        assert [i for i in lg["done_when"] if "API endpoints" in i] and len(lg["done_when"]) == 7, lg["done_when"]
+        src = j2.squash(" ".join(j2.strings(lg) + [YOGA_BRIEF]))
+        chk = lambda text: {c["id"]: c for c in j2.check_conditions(j2.load_conditions("lld.json"), text, lg, src,
+                                                                    j2.lld_sections())}
+        assert all(c["met"] for c in chk(lld).values()), [(c["id"], c["evidence"]) for c in chk(lld).values() if not c["met"]]
+        assert not chk(lld.replace("`/api/", "`/", 1))["L7"]["met"]
+        assert "map to no request field" in chk(re.sub(r", F1\)", ")", lld))["L7"]["evidence"]
+        assert not chk(re.sub(r"(?m)^- \*\*T1\*\*.*$", "- **T1** `x`: .", lld))["L8"]["met"]
+        assert "Data model (missing)" in chk(lld.replace("## Data model", "## Storage"))["L1"]["evidence"]
+    finally:
+        os.environ.pop("J2_BACKEND", None)
+    # the two templates: each builder atom passed shape, rules (with the section's own rules) and render
+    recs = art_recs(run)
+    for tpl, n_rules in (("LLD/1 · API endpoints", 7), ("LLD/1 · Data model", 4)):
+        mine = [r for r in recs if r.get("template") == tpl]
+        assert mine and {r["type"] for r in mine} == {"artifact-schema", "artifact-rules", "artifact-render"}, tpl
+        assert all(r["pass"] is True for r in mine), [(r["type"], r["evidence"]) for r in mine if not r["pass"]]
+        rules = [r for r in mine if r["type"] == "artifact-rules"][-1]
+        assert len(rules["rules"]) == n_rules and all(x["pass"] is True for x in rules["rules"]), \
+            [(x["name"], x["pass"], x["evidence"]) for x in rules["rules"]]
+    data = json.load(open(os.path.join(run.dir, "lld.json"), encoding="utf-8"))
+    assert list(data["sections"]) == list(j2.LLD_SECTIONS_BACKEND), list(data["sections"])
+    assert data["sections"]["API endpoints"]["endpoints"][0]["id"] == "A1" and data["sections"]["Data model"]["tables"][0]["id"] == "T1"
+    assert "server.py" in [f["path"] for f in data["sections"]["File structure"]["files"]]
+    assert run._stage_cost("lld") == 10 * 4 + 48, "the flag is off again: the five-section cost"
+    # the chain and the blueprint carry the endpoints; the form's page workflow gets them in its slice
+    assert run.chain["lld"]["endpoints"] and run.blueprint["endpoints"] and run.blueprint["tables"]
+    forms = {"#" + f["form"] for f in run.blueprint["fields"]}
+    slices = [(w, c["spec"]) for w in run._all_wfs() if w.get("lld_sections")
+              for c in (w.get("atoms") or [{}])[0].get("verification") or [] if c.get("type") == "lld-slice"]
+    assert slices, "the page workflows carry an LLD slice"
+    with_form = [(w, sp) for w, sp in slices if sp.get("fields")]
+    assert with_form and all(sp["endpoints"] and {x for e in sp["endpoints"] for x in e["called_by"]} & forms
+                             for _, sp in with_form), [(w["id"], sp.get("endpoints")) for w, sp in with_form]
+    assert all(not sp["endpoints"] or {x for e in sp["endpoints"] for x in e["called_by"]}
+               for _, sp in slices if not sp.get("fields")), "a slice with no form carries no form's endpoint"
+    # the flag off: the same document reads as the five-section one, nothing else changes
+    assert list(j2.parse_lld(lld)) == ["sections", "elements", "fields"]
+    assert j2.load_conditions("lld.json")[0]["text"] == "All five sections are present and not empty"
+    print(f"backend LLD (J2_BACKEND=1): seven sections, {len(eps)} endpoints A1.. and {len(tables)} table(s) T1.. rendered "
+          "and read back by code, L1-L8 met, both templates pass shape, rules and render, the form workflow's slice "
+          "carries its endpoints ok")
+
+
 def backend_fixture(server=GOOD_SERVER, page=E2E_PAGE):
     """A run folder with site/index.html and site/server.py, like a run's after the page builders and the backend
     builder wrote them."""
@@ -11473,6 +11615,8 @@ if __name__ == "__main__":
             artifact_schema_failures()
             rules_split()
             template_library()
+            backend_off()
+            backend_lld()
             backend_compile_check()
             backend_safety_check()
             backend_start_check()
