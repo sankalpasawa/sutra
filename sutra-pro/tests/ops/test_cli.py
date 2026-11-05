@@ -510,7 +510,8 @@ def test_a_stale_pid_file_does_not_stop_a_start(tmp_path, monkeypatch):
 
 def test_the_lock_is_released_when_the_start_is_refused(tmp_path, monkeypatch, capsys):
     blocker = bind_socket("127.0.0.1", 0, scan=False)
-    port = blocker.getsockname()[1]
+    blocker.listen(1)          # a socket that is only bound does not block its port on Linux when the next one sets SO_REUSEADDR: run() then
+    port = blocker.getsockname()[1]       # served for ever and the CI's ubuntu leg hung here (found with a stack dump, D104)
     try:
         assert run(["--offline", "--no-browser", "--port", str(port), *data_args(tmp_path)]) == 2
     finally:
