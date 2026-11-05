@@ -1,122 +1,126 @@
 #!/usr/bin/env python3
-"""Draw the Sutra Pro icon and write every size the apps need (D102). The outputs are committed; this runs only when the drawing changes.
+"""Derive every Sutra Pro icon from the old Sutra's: the logo is the same (D106). The outputs are committed; this runs only when the old icon changes.
 
     uv run --no-project --with pillow python scripts/make_icons.py            # writes assets/icon/ and sutra_app/assets/icon.png
-    uv run --no-project --with pillow python scripts/make_icons.py --check    # exit 1 when the committed files are not what this draws
+    uv run --no-project --with pillow python scripts/make_icons.py --check    # exit 1 when a committed file is not what this derives
 
-The icon is a thread (sutra means thread) that makes an S through three nodes, on a rounded square: the app is a chat on top of an
-org chart whose nodes are joined by threads. The drawing is deterministic: the same Pillow gives the same bytes for the PNG, and the
-.icns is made from those PNGs with macOS `iconutil` when it exists (a Mac); elsewhere an existing .icns is left alone.
+The old product's icon is `marketplace/plugin/sutra-ui/electron/build/Sutra.icns` (the file inside the installed Sutra.app): a black rounded
+square with the gold lotus mark. Nothing is redrawn here:
+
+    assets/icon/sutra-pro.icns       the old file, byte for byte (what the Mac app and the DMG carry)
+    assets/icon/sutra-pro-1024.png   its 1024 px chunk (`ic10`), byte for byte
+    assets/icon/sutra-pro.ico        that PNG at 16, 24, 32, 48, 64, 128 and 256 px (what the Windows exe, installer and shortcuts carry)
+    sutra_app/assets/icon.png        that PNG at 256 px (the window and tray icon of the apps)
+
+Outside this repository (an sdist) the old icon is not there; the committed `sutra-pro.icns` is then the source, so the derived files can
+still be checked. With the old icon present, `--check` also fails when `sutra-pro.icns` differs from it: the two products keep one logo.
 """
 from __future__ import annotations
 
 import argparse
-import math
-import shutil
-import subprocess
+import struct
 import sys
-import tempfile
+from io import BytesIO
 from pathlib import Path
-
-from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "assets" / "icon"
+ICNS = OUT / "sutra-pro.icns"
+MASTER_PNG = OUT / "sutra-pro-1024.png"
+ICO = OUT / "sutra-pro.ico"
 TRAY = ROOT / "sutra_app" / "assets" / "icon.png"
+OLD_LOGO = ROOT.parent / "marketplace" / "plugin" / "sutra-ui" / "electron" / "build" / "Sutra.icns"
+MASTER_CHUNK = "ic10"                       # the 1024 x 1024 PNG (512 pt at 2x) inside an .icns
 MASTER = 1024
-SUPER = 2                                   # draw at 2x and shrink: smooth edges without a vector library
+TRAY_SIZE = 256
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
-ICONSET = {"icon_16x16.png": 16, "icon_16x16@2x.png": 32, "icon_32x32.png": 32, "icon_32x32@2x.png": 64, "icon_128x128.png": 128,
-           "icon_128x128@2x.png": 256, "icon_256x256.png": 256, "icon_256x256@2x.png": 512, "icon_512x512.png": 512,
-           "icon_512x512@2x.png": 1024}
-TOP, BOTTOM = (46, 38, 132), (124, 77, 255)         # deep indigo to violet
-THREAD, NODE = (255, 255, 255), (255, 214, 102)
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
-def draw_master() -> Image.Image:
-    size = MASTER * SUPER
-    # the background: a vertical gradient, then rounded to the macOS-style squircle-ish radius
-    gradient = Image.new("RGB", (size, size))
-    px = gradient.load()
-    for y in range(size):
-        t = y / (size - 1)
-        row = tuple(round(TOP[i] + (BOTTOM[i] - TOP[i]) * t) for i in range(3))
-        for x in range(size):
-            px[x, y] = row
-    mask = Image.new("L", (size, size), 0)
-    margin = round(size * 0.06)
-    ImageDraw.Draw(mask).rounded_rectangle((margin, margin, size - margin, size - margin), radius=round(size * 0.225), fill=255)
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    canvas.paste(gradient, (0, 0), mask)
-
-    # the thread: x = 0.5 + 0.2 cos(1.5 pi t) while y runs from 0.24 to 0.76 makes an S, a node at each end and one in the middle
-    draw = ImageDraw.Draw(canvas)
-    points = []
-    steps = 2400
-    for i in range(steps + 1):
-        t = i / steps
-        points.append((size * (0.5 + 0.2 * math.cos(3 * math.pi * t)), size * (0.24 + 0.52 * t)))
-    width = round(size * 0.075)
-    for x, y in points:                                       # a round brush stamped along the path: a smooth stroke, round caps
-        draw.ellipse((x - width / 2, y - width / 2, x + width / 2, y + width / 2), fill=THREAD)
-    for x, y in (points[0], points[steps // 2], points[-1]):  # the nodes
-        r = size * 0.058
-        draw.ellipse((x - r, y - r, x + r, y + r), fill=NODE, outline=THREAD, width=round(size * 0.012))
-    return canvas.resize((MASTER, MASTER), Image.LANCZOS)
+def icns_chunks(data: bytes) -> dict[str, bytes]:
+    """The chunks of an .icns file by their four-letter type: a header (`icns`, the total length), then (type, length incl. 8, data) records."""
+    if data[:4] != b"icns" or len(data) < 8 or struct.unpack(">I", data[4:8])[0] != len(data):
+        raise ValueError("not an .icns file (bad header or length)")
+    chunks: dict[str, bytes] = {}
+    position = 8
+    while position + 8 <= len(data):
+        kind = data[position:position + 4].decode("ascii", "replace")
+        length = struct.unpack(">I", data[position + 4:position + 8])[0]
+        if length < 8 or position + length > len(data):
+            raise ValueError(f"the {kind!r} chunk has a bad length")
+        chunks[kind] = data[position + 8:position + length]
+        position += length
+    return chunks
 
 
-def files(master: Image.Image, work: Path) -> dict[Path, bytes]:
-    """Every file this script owns, by path, as bytes, except the .icns (iconutil writes that one)."""
-    out: dict[Path, bytes] = {}
-    from io import BytesIO
+def master_png(icns: bytes) -> bytes:
+    """The 1024 px PNG of the icon, as stored (not re-encoded)."""
+    png = icns_chunks(icns).get(MASTER_CHUNK, b"")
+    if png[:8] != PNG_MAGIC or struct.unpack(">II", png[16:24]) != (MASTER, MASTER):
+        raise ValueError(f"the icon has no {MASTER} px PNG chunk ({MASTER_CHUNK})")
+    return png
 
-    def png(img: Image.Image) -> bytes:
-        buf = BytesIO()
-        img.save(buf, "PNG", optimize=True)
-        return buf.getvalue()
 
-    out[OUT / "sutra-pro-1024.png"] = png(master)
+def derive(icns: bytes) -> dict[Path, bytes]:
+    """Every file this script owns, by path, as bytes (the .icns itself included)."""
+    from PIL import Image                                       # only here: reading and checking the committed files needs no Pillow
+    png = master_png(icns)
+    image = Image.open(BytesIO(png)).convert("RGBA")
     ico = BytesIO()
-    master.save(ico, "ICO", sizes=[(s, s) for s in ICO_SIZES])
-    out[OUT / "sutra-pro.ico"] = ico.getvalue()
-    out[TRAY] = png(master.resize((256, 256), Image.LANCZOS))
-    iconset = work / "sutra-pro.iconset"
-    iconset.mkdir(parents=True)
-    for name, px_size in ICONSET.items():
-        (iconset / name).write_bytes(png(master.resize((px_size, px_size), Image.LANCZOS)))
-    return out
+    image.save(ico, "ICO", sizes=[(size, size) for size in ICO_SIZES])
+    tray = BytesIO()
+    image.resize((TRAY_SIZE, TRAY_SIZE), Image.LANCZOS).save(tray, "PNG", optimize=True)
+    return {ICNS: icns, MASTER_PNG: png, ICO: ico.getvalue(), TRAY: tray.getvalue()}
+
+
+def same_pixels(path: Path, data: bytes) -> bool:
+    """True when the committed image file shows the same picture as `data` (an encoder may order bytes differently; the pictures must match)."""
+    from PIL import Image
+    try:
+        committed, derived = Image.open(path), Image.open(BytesIO(data))
+        if path.suffix == ".ico":
+            if sorted(committed.ico.sizes()) != sorted(derived.ico.sizes()):
+                return False
+            return all(committed.ico.getimage(s).convert("RGBA").tobytes() == derived.ico.getimage(s).convert("RGBA").tobytes()
+                       for s in committed.ico.sizes())
+        return committed.size == derived.size and committed.convert("RGBA").tobytes() == derived.convert("RGBA").tobytes()
+    except (OSError, ValueError):
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Draw the Sutra Pro icon.")
+    parser = argparse.ArgumentParser(description="Derive the Sutra Pro icons from the old Sutra icon.")
     parser.add_argument("--check", action="store_true", help="compare with the committed files instead of writing")
     args = parser.parse_args(argv)
-    master = draw_master()
-    with tempfile.TemporaryDirectory() as tmp:
-        work = Path(tmp)
-        produced = files(master, work)
-        icns = OUT / "sutra-pro.icns"
-        built_icns = None
-        if shutil.which("iconutil"):
-            built_icns = work / "sutra-pro.icns"
-            subprocess.run(["iconutil", "-c", "icns", str(work / "sutra-pro.iconset"), "-o", str(built_icns)], check=True)
-        if args.check:
-            stale = [str(p.relative_to(ROOT)) for p, data in produced.items() if not p.is_file() or p.read_bytes() != data]
-            if not icns.is_file():
-                stale.append(str(icns.relative_to(ROOT)))
-            for name in stale:
-                print(f"stale or missing: {name}")
-            return 1 if stale else 0
+    if OLD_LOGO.is_file():
+        source, where = OLD_LOGO.read_bytes(), str(OLD_LOGO.relative_to(ROOT.parent))
+    elif ICNS.is_file():
+        source, where = ICNS.read_bytes(), str(ICNS.relative_to(ROOT))
+    else:
+        print(f"no source icon: neither {OLD_LOGO} nor {ICNS} exists", file=sys.stderr)
+        return 1
+    try:
+        produced = derive(source)
+    except ValueError as error:
+        print(f"{where}: {error}", file=sys.stderr)
+        return 1
+    if args.check:
+        stale = []
         for path, data in produced.items():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
-            print("wrote", path.relative_to(ROOT), f"({len(data)} bytes)")
-        if built_icns is not None:
-            shutil.copyfile(built_icns, icns)
-            print("wrote", icns.relative_to(ROOT), f"({icns.stat().st_size} bytes)")
-        elif not icns.is_file():
-            print("no iconutil here and no committed .icns: run this on a Mac", file=sys.stderr)
-            return 1
+            if not path.is_file():
+                stale.append(path)
+            elif path in (ICNS, MASTER_PNG):
+                if path.read_bytes() != data:
+                    stale.append(path)
+            elif not same_pixels(path, data):
+                stale.append(path)
+        for path in stale:
+            print(f"stale or missing: {path.relative_to(ROOT)} (derived from {where})")
+        return 1 if stale else 0
+    for path, data in produced.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        print("wrote", path.relative_to(ROOT), f"({len(data)} bytes)")
     return 0
 
 
