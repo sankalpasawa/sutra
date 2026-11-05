@@ -1,6 +1,10 @@
 'use strict';
 /* The server the window shows (D107): find the one that is running or start our own, wait until it answers, stop it when the app ends.
 
+   A SERVER WE ONLY ATTACHED TO has no process of ours to watch, so it is watched through its health: when it has not answered for `watchMisses` checks in a
+   row (3 s apart: 12 s, longer than any answer the server is slow to give) the supervisor reports it as it reports one of its own that died, and the window
+   offers Try Again, which attaches to whatever runs by then or starts a server of its own.
+
    ONE SERVER PER DATA FOLDER. The server holds a lock on <data>/app.lock and writes "<pid> <port>" to <data>/app.pid. When that file names a live
    server that answers /api/health (the command line's, a browser launcher's, an earlier run of this app that crashed), the app ATTACHES to it and
    leaves it running when the app quits. Otherwise it starts its own and stops it on the way out.
@@ -15,7 +19,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
-const DEFAULT_TIMEOUTS = { start: 60000, poll: 150, stdinGrace: 8000, hardKill: 15000, afterKill: 3000 };
+const DEFAULT_TIMEOUTS = { start: 60000, poll: 150, stdinGrace: 8000, hardKill: 15000, afterKill: 3000, watchPoll: 3000, watchMisses: 4 };
 const RECENT_LINES = 80;
 
 class StartError extends Error {
@@ -115,6 +119,7 @@ class Supervisor extends EventEmitter {
     this._starting = null;
     this._stopping = null;
     this._cancelled = false;
+    this._watcher = null;              // the interval that watches an attached server
   }
 
   get origin() {
@@ -136,9 +141,11 @@ class Supervisor extends EventEmitter {
     this.expected = false;
     this.url = null;
     this.owned = false;
+    this._unwatch();
     const attached = await this._attach();
     if (attached) {
       this.log(`attached to the server that is running at ${attached}`);
+      this._watch(attached);
       return { url: attached, owned: false };
     }
     const child = this._launch();
@@ -154,6 +161,7 @@ class Supervisor extends EventEmitter {
           const url = await this._attach();
           if (url) {
             this.log(`another server was already running: attached to ${url}`);
+            this._watch(url);
             return { url, owned: false };
           }
         }
@@ -172,6 +180,35 @@ class Supervisor extends EventEmitter {
       }
       await this.sleep(this.timeouts.poll);
     }
+  }
+
+  /* Watch an attached server through its health; see the head of this file. The timer never keeps the program alive. */
+  _watch(url) {
+    this._unwatch();
+    const port = Number(new URL(url).port);
+    let misses = 0;
+    let busy = false;
+    const timer = setInterval(async () => {
+      if (busy || this.expected) return;
+      busy = true;
+      try {
+        misses = (await this.health(port)) ? 0 : misses + 1;
+      } finally {
+        busy = false;
+      }
+      if (misses >= this.timeouts.watchMisses && this._watcher === timer) {
+        this._unwatch();
+        this.log(`the server at ${url} that this window attached to stopped answering`);
+        this.emit('exit', { code: null, signal: null, expected: this.expected, attached: true });
+      }
+    }, this.timeouts.watchPoll);
+    if (typeof timer.unref === 'function') timer.unref();
+    this._watcher = timer;
+  }
+
+  _unwatch() {
+    if (this._watcher) clearInterval(this._watcher);
+    this._watcher = null;
   }
 
   /* The URL of a live server that app.pid names and that answers, else null. */
@@ -242,6 +279,7 @@ class Supervisor extends EventEmitter {
   async _stop() {
     this.expected = true;
     this._cancelled = true;
+    this._unwatch();
     if (this._starting) await this._starting.catch(() => {});
     await this._stopOurs();
   }

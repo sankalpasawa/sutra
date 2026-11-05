@@ -123,6 +123,13 @@ test('a page that loaded, is the server\'s, drew something and answers health pa
   assert.deepEqual(judge({ probe: GOOD, owned: true, origin: 'http://127.0.0.1:8781', expectVersion: '0.2.0' }), { ok: true, failures: [] });
 });
 
+test('the window must carry the app\'s title, not the page\'s', () => {
+  const ask = (windowTitle) => judge({ probe: GOOD, owned: true, origin: 'http://127.0.0.1:8781', windowTitle });
+  assert.deepEqual(ask('Sutra Pro'), { ok: true, failures: [] });
+  assert.deepEqual(ask(undefined), { ok: true, failures: [] }, 'not asked: not checked');
+  assert.match(ask('Sutra').failures.join('|'), /titled "Sutra", not "Sutra Pro"/);
+});
+
 test('each way the page can be wrong is named', () => {
   const ask = (probe, extra = {}) => judge({ probe: { ...GOOD, ...probe }, owned: true, origin: 'http://127.0.0.1:8781', ...extra }).failures.join('|');
   assert.match(ask({ readyState: 'loading' }), /loading, not complete/);

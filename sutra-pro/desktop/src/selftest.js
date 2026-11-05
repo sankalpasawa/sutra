@@ -24,8 +24,9 @@ const PROBE = `(async () => {
 })()`;
 
 /* The verdict on one probe, as data: { ok, failures }. */
-function judge({ probe, owned, origin, expectVersion }) {
+function judge({ probe, owned, origin, expectVersion, windowTitle }) {
   const failures = [];
+  if (windowTitle !== undefined && windowTitle !== 'Sutra Pro') failures.push(`the window is titled ${JSON.stringify(windowTitle)}, not "Sutra Pro"`);
   if (!owned) failures.push('the app did not start its own server (it attached to one that was running)');
   if (!probe) {
     failures.push('the page did not answer the probe');
@@ -87,17 +88,18 @@ async function runSelftest({ win, supervisor, outDir, expectVersion, log, now = 
   };
   const give = now() + GIVE_UP_MS;
   let probe = await probeOnce();
-  let verdict = judge({ probe, owned: supervisor.owned, origin: supervisor.origin, expectVersion });
+  const judged = () => judge({ probe, owned: supervisor.owned, origin: supervisor.origin, expectVersion, windowTitle: win.getTitle() });
+  let verdict = judged();
   while (!verdict.ok && now() < give) {          // the page draws after it loads: ask again until it has, or time is up
     await sleep(POLL_MS);
     probe = await probeOnce();
-    verdict = judge({ probe, owned: supervisor.owned, origin: supervisor.origin, expectVersion });
+    verdict = judged();
   }
   await sleep(SETTLE_MS);
   const picture = await takePicture({ win, outDir, log, sleep });
   return record({
     outDir, log, result: {
-      ok: verdict.ok, failures: verdict.failures, probe, picture, owned: supervisor.owned, url: supervisor.url,
+      ok: verdict.ok, failures: verdict.failures, probe, picture, owned: supervisor.owned, url: supervisor.url, windowTitle: win.getTitle(),
       platform: process.platform, arch: process.arch, electron: process.versions.electron,
     },
   });

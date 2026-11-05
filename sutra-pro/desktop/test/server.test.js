@@ -235,6 +235,44 @@ test('it attaches to a server that is already running, and leaves it running whe
   t.diagnostic('attach works');
 });
 
+test('a server we attached to is watched: when it stops answering the app is told, once, as unexpected', async () => {
+  const dir = tempData();
+  let answering = true;
+  const s = new Supervisor({
+    dataDir: dir, command: 'python', args: [], env: {}, timeouts: { ...FAST, watchPoll: 15, watchMisses: 3 },
+    readHolder: () => ({ pid: process.pid, port: 8789 }), pidAlive: () => true, health: async () => (answering ? { ok: true } : null),
+  });
+  const events = [];
+  s.on('exit', (event) => events.push(event));
+  assert.deepEqual(await s.start(), { url: 'http://127.0.0.1:8789/', owned: false });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.deepEqual(events, [], 'a server that answers is left alone');
+  answering = false;
+  await eventually(() => events.length === 1);
+  assert.deepEqual(events[0], { code: null, signal: null, expected: false, attached: true });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(events.length, 1, 'reported once: the watch ends with the report');
+});
+
+test('a slow answer or two is not a death, and stopping ends the watch', async () => {
+  const dir = tempData();
+  let calls = 0;
+  const s = new Supervisor({
+    dataDir: dir, command: 'python', args: [], env: {}, timeouts: { ...FAST, watchPoll: 10, watchMisses: 3 },
+    readHolder: () => ({ pid: process.pid, port: 8788 }), pidAlive: () => true,
+    health: async () => ((++calls % 3 === 0) ? null : { ok: true }),          // every third answer is missing, never three in a row
+  });
+  const events = [];
+  s.on('exit', (event) => events.push(event));
+  await s.start();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.deepEqual(events, []);
+  await s.stop();
+  const seen = calls;
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(calls, seen, 'no check is made after stop');
+});
+
 test('a pid file whose process is gone is stale: it is ignored and a new server is started', async () => {
   const dir = tempData();
   fs.writeFileSync(path.join(dir, 'app.pid'), `${2 ** 22 - 3} 9\n`);

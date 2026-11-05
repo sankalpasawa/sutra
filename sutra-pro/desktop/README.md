@@ -37,7 +37,8 @@ lock) lives in `<data>/electron`, so a test run never meets the app you use ever
 - **It ends with the window.** The window holds the write end of the server's standard input. Closing it is the normal stop (the same on every system), and it is
   also what happens when the window is killed, so a crash leaves nothing running. If the server does not follow: SIGTERM (Windows: the `app.stop` file), then SIGKILL
   (Windows: `taskkill /T /F`).
-- **A failed start** shows what the server printed and offers Try Again, Show the Log and Quit.
+- **A failed start** shows what the server printed and offers Try Again, Show the Log and Quit. The same happens when the server dies later: one the window started is noticed through its process,
+  one it only attached to through its health (four checks, 3 s apart, without an answer).
 
 ## Environment
 

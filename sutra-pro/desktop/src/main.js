@@ -67,6 +67,7 @@ function createWindow() {
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false },
   });
   win.once('ready-to-show', () => win.show());
+  win.on('page-title-updated', (event) => event.preventDefault());       // the title is the app's: the pages say "Sutra", this app is Sutra Pro
   win.on('closed', () => {
     win = null;
   });
@@ -146,9 +147,11 @@ async function failed(error) {
   }
 }
 
-function onServerExit({ code, signal, expected }) {
+function onServerExit({ code, signal, expected, attached }) {
   if (expected || quitting) return;
-  failed(new Error(`The server stopped unexpectedly (${signal ? `signal ${signal}` : `exit status ${code}`}).`));
+  failed(new Error(attached
+    ? 'The server this window was showing is no longer answering (it was started by something else, so this app did not stop it).'
+    : `The server stopped unexpectedly (${signal ? `signal ${signal}` : `exit status ${code}`}).`));
 }
 
 function installMenu() {
