@@ -8,7 +8,7 @@
 Targets: mac-arm64 and mac-x64 (built on a Mac of that architecture) and win-x64 (built on Windows x64): the wheel is installed by RUNNING the
 bundled interpreter, which a foreign system or architecture cannot do. The steps:
 
-  1. `npm ci` in desktop/ (the exact versions of the lock file; `--skip-npm` when node_modules is already there)
+  1. `npm ci --ignore-scripts` in desktop/ (the exact versions of the lock file; `--skip-npm` when node_modules is already there)
   2. `node scripts/package.mjs`: the packager puts Electron and desktop/src into "Sutra Pro.app" (or the Windows folder)
   3. the interpreter archive of python-build-standalone is unpacked into the app's resources, verified against its sha256 like the other
      bundles (scripts/build_macos_app.py), the wheel and its dependencies are installed into it, and the install is proved by importing it
@@ -101,7 +101,9 @@ def run_tool(args: list[str], what: str, cwd: Path) -> subprocess.CompletedProce
 def package_window(target: Target, stage: Path, version: str, *, skip_npm: bool = False) -> Path:
     """Run `npm ci` and desktop/scripts/package.mjs; return the packaged app ("Sutra Pro.app" or the Windows folder), inside `stage`."""
     if not skip_npm:
-        run_tool([tool("npm"), "ci", "--no-audit", "--no-fund"], "npm ci", DESKTOP)
+        # --ignore-scripts: no dependency runs code during a release build. Electron's own install script only fetches its binary, which the packager fetches
+        # itself (and checks against the release's checksums) for the platform and architecture it builds for
+        run_tool([tool("npm"), "ci", "--ignore-scripts", "--no-audit", "--no-fund"], "npm ci", DESKTOP)
     elif not (DESKTOP / "node_modules").is_dir():
         raise BuildError("--skip-npm was given but desktop/node_modules is not there: run `npm ci` in desktop/")
     done = run_tool([tool("node"), "scripts/package.mjs", "--platform", target.platform, "--arch", target.arch, "--out", str(stage), "--version", version],

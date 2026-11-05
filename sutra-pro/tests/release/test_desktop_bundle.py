@@ -310,7 +310,7 @@ def test_the_packager_is_run_after_npm_ci_with_the_platform_the_architecture_and
     app = bda.package_window(bda.TARGETS["mac-x64"], tmp_path / "stage", "0.2.0")
     assert app == tmp_path / "pkg" / "Sutra Pro.app"
     assert [item[0] for item in ran] == ["npm", "node"]
-    assert ran[0][1] == ["ci", "--no-audit", "--no-fund"] and ran[0][3] == DESKTOP
+    assert ran[0][1] == ["ci", "--ignore-scripts", "--no-audit", "--no-fund"] and ran[0][3] == DESKTOP, "no dependency's install script runs in a release build"
     assert ran[1][1][:5] == ["scripts/package.mjs", "--platform", "darwin", "--arch", "x64"] and ran[1][1][-2:] == ["--version", "0.2.0"]
 
 
