@@ -116,12 +116,18 @@ These are optional, mostly for the Mac launcher, for development and for tests.
 | `SUTRA_SCHEMA_DIR` | `unset` | where the schema export writes (default `docs/schemas`) |
 | `SUTRA_TEMPLATES_DIR` | `unset` | where the generated generic templates go (default `docs/schemas/templates`) |
 | `SUTRA_BUNDLE_CACHE` | `unset` | download cache of the Mac and Windows app builders |
-| `SUTRA_EXTRA_PATH` | `unset` | Mac launcher: extra folders appended to `PATH` so it finds `claude` and `codex` |
+| `SUTRA_EXTRA_PATH` | `unset` | Mac launcher and desktop app: extra folders appended to `PATH` so it finds `claude` and `codex` |
 | `SUTRA_NO_DIALOG` | `0` | Mac launcher and Windows app: `1` shows no error dialog |
 | `SUTRA_NO_TRAY` | `unset` | Windows app: `1` starts it without the notification-area icon (the server then owns the process; quit with `sutra-pro stop`) |
 | `SUTRA_PORT_MIN` | `8780` | Mac launcher: first port to try |
 | `SUTRA_PORT_MAX` | `8799` | Mac launcher: last port to try |
 | `SUTRA_START_TIMEOUT` | `60` | Mac launcher: seconds to wait for `/api/health` |
+| `SUTRA_PRO_START_TIMEOUT` | `60` | desktop app: seconds to wait for the server to answer, 1 to 600 (a cold machine that is scanning a fresh install is slow) |
+| `SUTRA_PRO_PYTHON` | `unset` | desktop app run from a checkout (`npm start`): the Python that runs the server; default the checkout's `.venv`, else `python3`. An installed app always runs the Python inside it |
+| `SUTRA_PRO_DEVTOOLS` | `unset` | desktop app: `1` adds View, Toggle Developer Tools to an installed app (a checkout has it) |
+| `SUTRA_PRO_SELFTEST` | `unset` | desktop app: `1` runs the self-test and quits with its verdict as the exit status (`scripts/prove_desktop_app.py` does this on the packaged app) |
+| `SUTRA_PRO_SELFTEST_DIR` | `<data>/selftest` | desktop app: where the self-test writes `selftest.json` and `selftest.png` |
+| `SUTRA_PRO_EXPECT_VERSION` | `unset` | desktop app: the version the self-test requires the server to report |
 | `SUTRA_SLOW` | `unset` | `1`: the test suite also runs the tests marked `slow` |
 | `SUTRA_BROWSER` | `unset` | `1`: the test suite also runs the tests marked `browser` (they need Chrome) |
 

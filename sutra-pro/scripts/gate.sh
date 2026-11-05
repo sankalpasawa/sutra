@@ -11,4 +11,9 @@ if ls tests/js/*.mjs >/dev/null 2>&1; then
     node "$f"
   done
 fi
+# the desktop app's own tests, when its dependencies are installed (CI installs them in its `desktop` job: npm ci --ignore-scripts in desktop/)
+if [ -d desktop/node_modules ]; then
+  echo "npm test (desktop)"
+  (cd desktop && npm test)
+fi
 echo "gate: ok"

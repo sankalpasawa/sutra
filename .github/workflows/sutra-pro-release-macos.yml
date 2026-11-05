@@ -1,6 +1,5 @@
-# Build Sutra Pro.app and the installable DMG for each Mac architecture and attach them to a GitHub Release of the Sutra repository
-# (D98, D100), modelled on the old
-# Sutra repo's release-dmg.yml. How to cut a release and what a downloader sees: docs/RELEASE-macos.md (the wheel is release-wheel.yml).
+# Build Sutra Pro.app (the Electron desktop app) and the installable DMG for each Mac architecture and attach them to a GitHub Release of the Sutra
+# repository (D98, D100, D105, D108), modelled on the old Sutra repo's release-dmg.yml. How to cut a release and what a downloader sees: docs/RELEASE-macos.md (the wheel is release-wheel.yml).
 #
 # THE ASSETS (stable, version-free names; the link is /releases/download/<tag>/<name>, because the release is never "Latest", D100)
 #   Sutra-Pro-arm64.dmg    Sutra-Pro-arm64.dmg.sha256      Apple Silicon, built natively on macos-15
@@ -8,14 +7,16 @@
 # Each leg writes the checksum of the DMG it built (a hand-uploaded aggregate goes stale silently when a re-run replaces a DMG).
 # The release BODY is not set here: release-wheel.yml owns it, and two workflows writing one body would overwrite each other.
 #
-# WHAT THE APP IS (D12: there is no desktop shell). scripts/build_macos_app.py makes `Sutra Pro.app` = a bash launcher + a bundled
-# python-build-standalone CPython 3.11 + the wheel installed into it, at BUILD time. The launcher starts `python -m sutra_app`, opens the
-# browser and stops the server when the app quits. The bundle is built natively: installing the wheel RUNS the bundled interpreter, and
-# a cross-built one needs Rosetta, which the runners do not have.
+# WHAT THE APP IS (D105, D108). scripts/build_desktop_app.py makes `Sutra Pro.app` = the Electron window (sutra-pro/desktop) + a bundled
+# python-build-standalone CPython 3.11 + the wheel installed into it, at BUILD time. The window starts `python -m sutra_app` on the interpreter inside
+# the app, shows its page and stops the server when it closes. The app is built natively: installing the wheel RUNS the bundled interpreter, and a
+# cross-built one needs Rosetta, which the runners do not have. The 0.1.x apps were a bash launcher around the browser: the id (os.sutra.pro), the name
+# and the asset names are the same, so the new download replaces the old app in place. It needs macOS 13 or newer (Electron 45's own floor).
 #
 # SIGNING. Without secrets the app is signed AD HOC: it installs and runs, but a first launch on another Mac needs right-click -> Open.
 # With the four secrets that decide, the same workflow signs with Developer ID (hardened runtime), notarizes the app and the DMG, and staples
-# both (the old product's release-dmg.yml uses the same repository secrets):
+# both (the old product's release-dmg.yml uses the same repository secrets). The signing is scripts/sign_desktop_app.sh: inside out, one short
+# entitlements file for Electron and one for the Python, and an audit of every Mach-O file before the round trip to Apple:
 #   APPLE_CERT_P12        base64 of a Developer ID Application .p12
 #   APPLE_NOTARY_KEY      base64 of an App Store Connect .p8 key
 #   APPLE_NOTARY_KEY_ID / APPLE_NOTARY_ISSUER
@@ -98,11 +99,14 @@ jobs:
       matrix:
         include:
           - arch: arm64
+            target: mac-arm64
             runner: macos-15           # Apple Silicon
           - arch: x86_64
+            target: mac-x64
             runner: macos-15-intel     # Intel
     env:
       ARCH: ${{ matrix.arch }}
+      TARGET: ${{ matrix.target }}
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - name: Checkout
@@ -110,6 +114,12 @@ jobs:
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
+
+      # @electron/packager needs Node 22.12 or newer
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Create the virtual environment (scripts/py needs it)
         run: uv venv .venv --python 3.11
@@ -126,6 +136,13 @@ jobs:
         with:
           path: ~/.cache/sutra-pro-bundle
           key: sutra-pro-bundle-${{ runner.os }}-${{ matrix.arch }}-v1
+
+      # Electron's own download (the packager fetches the zip for the target, and checks it against the release's checksums); the lock file pins the version.
+      - name: Cache the Electron download
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron
+          key: sutra-pro-electron-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('sutra-pro/desktop/package-lock.json') }}
 
       - name: Check the signing secrets
         id: signing
@@ -189,91 +206,34 @@ jobs:
           want="${want%-beta.*}"
           [ "$(basename "${wheels[0]}")" = "sutra_pro-$want-py3-none-any.whl" ] \
             || { echo "::error::the build made $(basename "${wheels[0]}") but tag $TAG promises sutra_pro-$want-py3-none-any.whl"; exit 1; }
-          scripts/py scripts/build_macos_app.py --wheel "${wheels[0]}" --arch "$ARCH" --out build
+          echo "VERSION=$want" >> "$GITHUB_ENV"
+          scripts/py scripts/build_desktop_app.py --wheel "${wheels[0]}" --target "$TARGET" --out build
 
-      # INSIDE OUT: every Mach-O file first, the bundle last (codesign seals the contents into the bundle's own signature).
-      # Developer ID adds the hardened runtime and a secure timestamp; ad hoc (identity "-") is what an Apple Silicon Mac needs to run it.
+      # INSIDE OUT (scripts/sign_desktop_app.sh): the Python's Mach-O files, then Electron's nested binaries, helper apps and frameworks, the app last
+      # (codesign seals the contents into the bundle's own signature). Developer ID adds the hardened runtime, a secure timestamp and the audit that
+      # every Mach-O file carries both; ad hoc (no SIGN_IDENTITY) is what an Apple Silicon Mac needs to run it.
       - name: Sign the app
-        run: |
-          set -euo pipefail
-          app="build/Sutra Pro.app"
-          identity="${SIGN_IDENTITY:--}"
-          cat > "$RUNNER_TEMP/entitlements.plist" <<'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <!-- CPython loads its extension modules with dlopen; library validation would reject any that the loading binary
-                 does not recognise on every macOS version. ctypes and libffi closures need executable memory. Nothing else. -->
-            <key>com.apple.security.cs.disable-library-validation</key>
-            <true/>
-            <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-            <true/>
-          </dict>
-          </plist>
-          PLIST
-          args=(--force --sign "$identity")
-          if [ "$identity" != "-" ]; then
-            args+=(--timestamp --options runtime --entitlements "$RUNNER_TEMP/entitlements.plist")
-          fi
-          count=0
-          while IFS= read -r -d '' file; do
-            kind="$(file -b "$file")"
-            if [[ "$kind" == *Mach-O* ]]; then
-              codesign "${args[@]}" "$file"
-              count=$((count + 1))
-            fi
-          done < <(find "$app/Contents/Resources" -type f \( -name '*.so' -o -name '*.dylib' -o -perm -u+x \) -print0)
-          echo "signed $count Mach-O files"
-          codesign "${args[@]}" "$app"
-          codesign --verify --deep --strict --verbose=1 "$app"
+        run: scripts/sign_desktop_app.sh "build/Sutra Pro.app"
 
-      # The proof that matters: the SIGNED bundle runs its OWN interpreter and answers /api/health, with the network cut (any outbound
-      # request goes to a closed proxy port and fails at once), through the real launcher, and quitting stops the server.
+      # The proof that matters: the SIGNED app is run the way a person runs it (scripts/prove_desktop_app.py, D109). The real window opens, starts its
+      # server on the Python inside the app, draws the page, gets /api/health from inside the page, saves a picture and quits, which stops the server; then
+      # the server alone runs a team's first turn on that Python. No network (every proxy points at a closed port) and no model. The picture and the logs
+      # are kept as an artifact, so a failed run can be looked at, not guessed at.
       - name: Prove the bundle runs offline
         run: |
           set -euo pipefail
-          app="$PWD/build/Sutra Pro.app"
-          work="$RUNNER_TEMP/prove"
-          rm -rf "$work"
-          mkdir -p "$work/bin" "$work/data"
-          cat > "$work/bin/open" <<'SH'
-          #!/bin/sh
-          echo "$1" >> "$PROVE_DIR/opened.txt"
-          SH
-          chmod +x "$work/bin/open"
-          export PROVE_DIR="$work"
-          export PATH="$work/bin:$PATH"
-          export HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 PIP_NO_INDEX=1
-          export SUTRA_OFFLINE=1 SUTRA_NO_DIALOG=1 SUTRA_DATA_DIR="$work/data"
-          "$app/Contents/MacOS/SutraPro" &
-          launcher=$!
-          for _ in $(seq 1 240); do
-            [ -s "$work/opened.txt" ] && break
-            kill -0 "$launcher" 2>/dev/null || { echo "::error::the launcher exited before the server answered"; cat "$work/data/logs/app.log"; exit 1; }
-            sleep 0.5
-          done
-          [ -s "$work/opened.txt" ] || { echo "::error::no /api/health answer within 120 s"; cat "$work/data/logs/app.log"; kill "$launcher" || true; exit 1; }
-          url="$(head -1 "$work/opened.txt")"
-          curl -fsS --noproxy '*' --max-time 10 "${url}api/health" > "$work/health.json"
-          cat "$work/health.json"; echo
-          # -B: a Python that is not the launcher's has no PYTHONDONTWRITEBYTECODE, and writing .pyc files for the standard library into the
-          # signed bundle breaks its seal (found by running this step locally: "a sealed resource is missing or invalid")
-          "$app/Contents/Resources/python/bin/python3" -B -I -c '
-          import json, sys
-          health = json.load(open(sys.argv[1]))
-          info = json.load(open(sys.argv[2]))
-          assert health.get("ok") is True, health
-          assert health.get("version") == info["version"], (health.get("version"), info["version"])
-          ' "$work/health.json" "$app/Contents/Resources/build-info.json"
-          kill -TERM "$launcher"
-          wait "$launcher" || true
-          if curl -fsS --noproxy '*' --max-time 3 "${url}api/health" > /dev/null 2>&1; then
-            echo "::error::the server kept running after the app quit"
-            exit 1
-          fi
-          # running it must not have changed one byte of what was signed
-          codesign --verify --deep --strict "$app"
+          scripts/py scripts/prove_desktop_app.py --app "build/Sutra Pro.app" --version "$VERSION" --keep proof
+          # running it must not have changed one byte of what was signed (a .pyc written into the app would)
+          codesign --verify --deep --strict "build/Sutra Pro.app"
+
+      - name: Keep the proof's picture and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-${{ matrix.target }}
+          path: sutra-pro/proof/
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Notarize and staple the app
         if: steps.signing.outputs.enabled == 'true'

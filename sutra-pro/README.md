@@ -9,7 +9,7 @@ connector (CLI first, your own logins, never an API key). Everything runs on you
 This folder lives in the Sutra repository ([sankalpasawa/sutra](https://github.com/sankalpasawa/sutra)) beside the older Sutra product, which it does
 not touch (D98). Its workflows are the `.github/workflows/sutra-pro-*.yml` files at the root of the repository.
 
-- Architecture diagram (published, version 6): https://claude.ai/artifact/HweydYv8jVVoZBA9SkuxVB
+- Architecture diagram (published, version 8): https://claude.ai/artifact/HweydYv8jVVoZBA9SkuxVB
 - Design in one page: [docs/DESIGN.md](docs/DESIGN.md); the five sections are in [docs/design/](docs/design/)
 - Every decision with its why and what was rejected: [docs/DECISIONS.md](docs/DECISIONS.md)
 - Rule, step, endpoint and decision to module and test: [docs/TRACEABILITY.md](docs/TRACEABILITY.md)
@@ -21,16 +21,17 @@ see [all Sutra Pro releases](https://github.com/sankalpasawa/sutra/releases?q=su
 
 | System | Download | Notes |
 |---|---|---|
-| macOS, Apple silicon | `Sutra-Pro-arm64.dmg` | open it, drag **Sutra Pro** onto Applications ([details](docs/RELEASE-macos.md)) |
-| macOS, Intel | `Sutra-Pro-x86_64.dmg` | the same |
+| macOS 13 or newer, Apple silicon | `Sutra-Pro-arm64.dmg` | open it, drag **Sutra Pro** onto Applications ([details](docs/RELEASE-macos.md)) |
+| macOS 13 or newer, Intel | `Sutra-Pro-x86_64.dmg` | the same |
 | Windows 10 and 11, 64-bit | `Sutra-Pro-Setup-x64.exe` (installer) or `Sutra-Pro-win-x64.zip` (portable) | per user, no administrator rights ([details](docs/RELEASE-windows.md)) |
 
 ```
-https://github.com/sankalpasawa/sutra/releases/download/sutra-pro-v0.1.0/Sutra-Pro-arm64.dmg
+https://github.com/sankalpasawa/sutra/releases/download/sutra-pro-v0.2.0/Sutra-Pro-arm64.dmg
 ```
 
-The builds are not signed yet (D102): the first time, macOS says it cannot verify the app (right-click, Open) and Windows SmartScreen says "Windows protected
-your PC" (More info, Run anyway). Every file has a `.sha256` next to it. Opening the app starts the server and your browser opens on it; there is no window of its own.
+The Mac app is signed with a Developer ID and notarized by Apple; the Windows files are not signed yet (D102), so SmartScreen says "Windows protected your PC" the
+first time (More info, Run anyway). Every file has a `.sha256` next to it. The apps are **desktop apps** (D105): an Electron window around the local server, which
+runs on a Python that ships inside the app; closing the window stops it. The logo is the old Sutra's (D106).
 
 ## Install and run from the command line
 
@@ -38,7 +39,7 @@ You need [uv](https://docs.astral.sh/uv/) and Python 3.11. For real work you als
 in with your subscriptions; `sutra-pro doctor` tells you what is missing.
 
 ```bash
-uv tool install https://github.com/sankalpasawa/sutra/releases/download/sutra-pro-v0.1.0/sutra_pro-0.1.0-py3-none-any.whl
+uv tool install https://github.com/sankalpasawa/sutra/releases/download/sutra-pro-v0.2.0/sutra_pro-0.2.0-py3-none-any.whl
 sutra-pro doctor                   # checks Python, the data folder, the database, both CLIs, Chrome, the port
 sutra-pro                          # starts the app and opens Chrome at http://127.0.0.1:8780/
 sutra-pro --offline                # a demo with no model and no login: a message creates a team and a mock run finishes
@@ -68,6 +69,8 @@ Work happens on ordinary branches of the Sutra repository, gated by the `sutra-p
 `sutra-pro/`. The 62 work packages of the first build (`docs/BUILD-PLAN.md`) were merged in a repository of their own before the move; the worktree
 helper `scripts/wt.sh` is retired (D98). Opt-in suites: `SUTRA_SLOW=1` (long engine suites), `SUTRA_BROWSER=1` (headless Chrome walks of the real app),
 `SUTRA_LIVE=1` (the real CLIs; `scripts/live_smoke.py --max-usd 5` is the live smoke test and spends subscription quota).
+
+The desktop app's window is in [desktop/](desktop/README.md) (`cd desktop && npm ci && npm start` runs it on this checkout's Python).
 
 Releases (the wheel, the Mac DMGs, the Windows installer and zip) come from one tag and are built by CI only: [docs/RELEASE.md](docs/RELEASE.md),
 [docs/RELEASE-macos.md](docs/RELEASE-macos.md), [docs/RELEASE-windows.md](docs/RELEASE-windows.md).

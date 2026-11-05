@@ -499,8 +499,8 @@ def test_ci_reads_the_repository_and_cancels_superseded_runs(ci):
     assert ci["concurrency"] == {"group": "sutra-pro-ci-${{ github.ref }}", "cancel-in-progress": True}
 
 
-def test_ci_has_a_test_job_and_a_package_job_with_time_limits(ci):
-    assert list(ci["jobs"]) == ["test", "package"]
+def test_ci_has_a_test_job_a_desktop_job_and_a_package_job_with_time_limits(ci):
+    assert list(ci["jobs"]) == ["test", "desktop", "package"]
     for job in ci["jobs"].values():
         assert isinstance(job["timeout-minutes"], int) and 0 < job["timeout-minutes"] <= 60
 
@@ -528,6 +528,18 @@ def test_ci_test_installs_checks_the_plan_and_runs_the_local_gate_in_that_order(
         "scripts/gate.sh",
         "SUTRA_SLOW=1 scripts/py -m pytest",
     ]
+
+
+def test_ci_desktop_tests_the_window_on_three_systems_without_downloading_electron(ci):
+    job = ci["jobs"]["desktop"]
+    assert job["runs-on"] == "${{ matrix.os }}"
+    assert job["strategy"]["matrix"] == {"os": ["ubuntu-latest", "macos-15", "windows-latest"]} and job["strategy"]["fail-fast"] is False
+    assert [s["uses"] for s in steps_of(job) if "uses" in s] == ["actions/checkout@v4", "actions/setup-node@v4"]
+    (node,) = action_steps(job, "actions/setup-node@")
+    assert str(node["with"]["node-version"]) == "22", "@electron/packager needs Node 22.12 or newer"
+    runs = [(s["run"], s["working-directory"]) for s in steps_of(job) if "run" in s]
+    assert runs == [("npm ci --ignore-scripts --no-audit --no-fund", "sutra-pro/desktop"), ("npm test", "sutra-pro/desktop")], \
+        "--ignore-scripts keeps Electron's 100 MB download out of a job that never starts it"
 
 
 def test_ci_runs_the_gate_and_the_plan_check_unconditionally(ci):
@@ -856,8 +868,8 @@ def test_release_windows_runs_bash_inside_the_product_folder_by_default(win):
 
 def test_the_exe_job_proves_the_folder_then_the_installer_before_it_uploads_anything(win):
     texts = [s.get("run", s.get("uses", "")) for s in steps_of(win["jobs"]["exe"])]
-    order = ["uv build --wheel", "build_windows_app.py", "prove_windows_app.py --app \"build/Sutra Pro\"", "choco install innosetup",
-             "sutra-pro.iss", "Sutra-Pro-Setup-x64.exe /VERYSILENT", "make_archive", "sha256sum", "softprops/action-gh-release"]
+    order = ["uv build --wheel", "build_desktop_app.py", "prove_desktop_app.py --app \"build/Sutra Pro\"", "choco install innosetup",
+             "sutra-pro-desktop.iss", "Sutra-Pro-Setup-x64.exe /VERYSILENT", "make_archive", "sha256sum", "softprops/action-gh-release"]
     positions = [next(i for i, text in enumerate(texts) if key in text) for key in order]
     assert positions == sorted(positions), dict(zip(order, positions))
 
@@ -869,8 +881,9 @@ def test_the_exe_job_names_what_it_publishes_and_checks_the_wheel_against_the_ta
         "sutra-pro/release/Sutra-Pro-win-x64.zip", "sutra-pro/release/Sutra-Pro-win-x64.zip.sha256"]
     assert upload["with"]["prerelease"] == "${{ contains(inputs.tag || github.ref_name, '-beta.') }}"
     assert "body" not in upload["with"], "sutra-pro-release-wheel.yml owns the release text"
-    build = next(s for s in steps_of(win["jobs"]["exe"]) if "build_windows_app.py" in s.get("run", ""))
+    build = next(s for s in steps_of(win["jobs"]["exe"]) if "build_desktop_app.py" in s.get("run", ""))
     assert 'want="${TAG#sutra-pro-v}"' in build["run"] and "sutra_pro-$want-py3-none-any.whl" in build["run"]
+    assert "--target win-x64" in build["run"] and 'echo "VERSION=$want" >> "$GITHUB_ENV"' in build["run"]
     assert win["jobs"]["exe"]["env"] == {"TAG": "${{ inputs.tag || github.ref_name }}"}
 
 
@@ -888,8 +901,9 @@ def test_the_installer_is_run_silently_into_a_scratch_folder_and_uninstalled_aga
         step = next(s for s in steps_of(win["jobs"][job_id]) if "/VERYSILENT" in s.get("run", ""))
         run = step["run"]
         assert "/SUPPRESSMSGBOXES" in run and "/NORESTART" in run and '"/DIR=$target"' in run
-        assert "prove_windows_app.py" in run and 'unins000.exe" /VERYSILENT' in run
-        assert run.index("prove_windows_app.py") < run.index("unins000.exe"), "prove the installed copy, then remove it"
+        assert "prove_desktop_app.py" in run and 'unins000.exe" /VERYSILENT' in run
+        assert run.index("prove_desktop_app.py") < run.index("unins000.exe"), "prove the installed copy, then remove it"
+        assert '"$RUNNER_TEMP/installed/Sutra Pro.exe"' in run, "what the installer installs and the uninstaller removes is the Electron app"
         assert "the uninstaller left the app behind" in run
 
 
@@ -900,7 +914,19 @@ def test_verify_installs_what_was_published_and_not_what_the_build_job_had(win):
     assert "--pattern 'Sutra-Pro-Setup-x64.exe*'" in download["run"] and "--pattern 'Sutra-Pro-win-x64.zip*'" in download["run"]
     assert "sha256sum -c" in download["run"] and "20000000" in download["run"]
     assert "released/Sutra-Pro-Setup-x64.exe /VERYSILENT" in next(s for s in steps_of(job) if "/VERYSILENT" in s.get("run", ""))["run"]
-    assert any("Sutra-Pro-win-x64.zip" in s.get("run", "") and "prove_windows_app.py" in s.get("run", "") for s in steps_of(job))
+    assert any("Sutra-Pro-win-x64.zip" in s.get("run", "") and "prove_desktop_app.py" in s.get("run", "") for s in steps_of(job))
+
+
+def test_the_exe_job_sets_up_node_22_caches_electron_and_keeps_the_proofs_picture(win):
+    job = win["jobs"]["exe"]
+    (node,) = action_steps(job, "actions/setup-node@")
+    assert str(node["with"]["node-version"]) == "22"
+    cache = next(s for s in steps_of(job) if s.get("name") == "Cache the Electron download")
+    assert cache["uses"] == "actions/cache@v4" and "hashFiles('sutra-pro/desktop/package-lock.json')" in cache["with"]["key"]
+    proof = next(s for s in steps_of(job) if "prove_desktop_app.py --app \"build/Sutra Pro\"" in s.get("run", ""))
+    assert "--keep proof" in proof["run"]
+    (keep,) = action_steps(job, "actions/upload-artifact@")
+    assert keep["if"] == "always()" and keep["with"]["path"] == "sutra-pro/proof/" and keep["with"]["name"] == "proof-win-x64"
 
 
 def test_release_windows_uses_no_secret_but_the_workflow_token():
@@ -908,6 +934,6 @@ def test_release_windows_uses_no_secret_but_the_workflow_token():
 
 
 def test_the_installer_is_built_with_the_flags_the_script_requires(win):
-    step = next(s for s in steps_of(win["jobs"]["exe"]) if "sutra-pro.iss" in s.get("run", ""))
+    step = next(s for s in steps_of(win["jobs"]["exe"]) if "sutra-pro-desktop.iss" in s.get("run", ""))
     for define in ("/DAppVersion=$VERSION", "/DSourceDir=", "/DOutputDir=", "/DIconFile="):
         assert define in step["run"], define

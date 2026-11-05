@@ -29,6 +29,7 @@ const supervisor = new Supervisor({
   command: runtime.pythonPath({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, projectRoot: PROJECT_ROOT }),
   args: runtime.serverArgs({ dataDir: folder }),
   env: runtime.childEnv(process.env, { dataDir: folder }),
+  timeouts: { start: runtime.startTimeoutMs() },
   strictPid: app.isPackaged || process.platform !== 'win32',          // a venv's python.exe on Windows is a launcher: the server is its child
   log: (line) => log.write(line),
 });

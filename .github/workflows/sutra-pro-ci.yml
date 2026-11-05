@@ -6,6 +6,10 @@
 # the same reasoning applies here (paths, tmp dirs, process groups), so macos-15 is a leg of the matrix, and fail-fast is off so
 # a macOS-only break is never hidden by the ubuntu leg going red first.
 #
+# `desktop` runs the node tests of the Electron window (sutra-pro/desktop: the supervisor, the navigation guard, the pages, the packager options) on
+# the same three systems. Electron itself is NOT downloaded here (npm ci --ignore-scripts skips its install script, about 100 MB): none of these tests
+# starts it. That the packaged app really runs is proved by the release workflows on their runners (scripts/prove_desktop_app.py, D109).
+#
 # `package` builds the sdist and the wheel the way a release does, looks inside the wheel (scripts/check_wheel.py), installs it in
 # a clean environment and starts the command. It proves the wheel carries every data file and the `sutra-pro` command (D86, D88).
 #
@@ -86,6 +90,32 @@ jobs:
       - name: Slow suites (a manual run with slow=true only)
         if: ${{ inputs.slow }}
         run: SUTRA_SLOW=1 scripts/py -m pytest
+
+  desktop:
+    name: desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # @electron/packager needs Node 22.12 or newer
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the packager and Electron (without Electron's binary)
+        working-directory: sutra-pro/desktop
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Test the desktop app's modules
+        working-directory: sutra-pro/desktop
+        run: npm test
 
   package:
     name: package

@@ -12,7 +12,10 @@ bundled interpreter, which a foreign system or architecture cannot do. The steps
   2. `node scripts/package.mjs`: the packager puts Electron and desktop/src into "Sutra Pro.app" (or the Windows folder)
   3. the interpreter archive of python-build-standalone is unpacked into the app's resources, verified against its sha256 like the other
      bundles (scripts/build_macos_app.py), the wheel and its dependencies are installed into it, and the install is proved by importing it
-  4. build-info.json says what went in; every symbolic link is checked to stay inside the app
+  4. the whole library (the standard library and site-packages) is compiled to bytecode that is never checked against its source: the interpreter
+     ships with none, and the first Python process that imports without `-B` would write it INTO the signed app and break its seal (the release proof
+     found 42 files written by an engine process); with it the server also starts in a third of the time
+  5. build-info.json says what went in; every symbolic link is checked to stay inside the app
 
 Layout of `<out>/Sutra Pro.app`:  Contents/Resources/python/ (the interpreter and the app), Contents/Resources/build-info.json
 Layout of `<out>/Sutra Pro/`:     `Sutra Pro.exe`, resources/python/, resources/build-info.json (what the installer copies and the zip holds)
@@ -150,9 +153,29 @@ choose "More info", then "Run anyway". The file's SHA-256 is published next to i
 
 def write_windows_extras(app: Path, version: str) -> None:
     """The files beside `Sutra Pro.exe` that are not Electron's: `sutra-pro.cmd` (the command line of the Python inside the app; `-I` keeps a user's own
-    Python setup out of it, `-X utf8` makes a file opened without an encoding UTF-8) and README.txt. Both with the CRLF line endings of Windows."""
-    (app / "sutra-pro.cmd").write_bytes(b'@echo off\r\n"%~dp0resources\\python\\python.exe" -I -X utf8 -m sutra_app %*\r\n')
+    Python setup out of it, `-B` writes no bytecode into the installed folder, `-X utf8` makes a file opened without an encoding UTF-8) and README.txt. Both with the CRLF line endings of Windows."""
+    (app / "sutra-pro.cmd").write_bytes(b'@echo off\r\n"%~dp0resources\\python\\python.exe" -I -B -X utf8 -m sutra_app %*\r\n')
     (app / "README.txt").write_bytes(WINDOWS_READ_ME.format(version=version).replace("\n", "\r\n").encode("utf-8"))
+
+
+def precompile(interpreter: Path, *, windows: bool) -> None:
+    """Compile the interpreter's whole library to bytecode that is never checked against its source (`unchecked-hash`), so that nothing has to be written
+    into the app when it runs. python-build-standalone ships no bytecode, and pip, run here with PYTHONDONTWRITEBYTECODE, writes none. Without this every
+    start of the server compiles about a second of imports, and any Python process that is not told `-B` (an engine process, `sutra-pro doctor`) writes the
+    files into the app, which breaks the seal of a signed app. Nobody edits a source inside an app, so a hash that is not checked cannot go stale.
+    A file that does not compile is a warning, not a failure (a test fixture with deliberately bad syntax): what matters is that the library is there."""
+    series = common.PY_SERIES
+    root = interpreter.parent / "Lib" if windows else interpreter.parent.parent / "lib" / f"python{series}"
+    marker = root / "__pycache__" / f"os.cpython-{series.replace('.', '')}.pyc"
+    try:
+        common.run_bundled(interpreter, ["-I", "-m", "compileall", "-q", "-f", "--invalidation-mode", "unchecked-hash", "-j", "0", str(root)],
+                           "compiling the library")
+    except BuildError as error:
+        if not marker.is_file():
+            raise
+        print(f"warning: {error}", file=sys.stderr)
+    if not marker.is_file():
+        raise BuildError(f"compiling the library left no bytecode ({marker} is missing)")
 
 
 def check_links(root: Path) -> None:
@@ -202,6 +225,7 @@ def build_app(*, wheel: Path, target: str, out: Path, python_archive: Optional[P
         else:
             interpreter = common.extract_python(archive, resources)
             install_wheel(interpreter, info, scripts_dir=".")
+        precompile(interpreter, windows=spec.windows)
         if spec.windows:
             write_windows_extras(app, info.version)
         (resources / "build-info.json").write_text(json.dumps({

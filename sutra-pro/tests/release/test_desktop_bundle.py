@@ -19,7 +19,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
-from test_macos_bundle import make_archive as make_mac_archive
+import test_macos_bundle as macos_tests
 from test_macos_bundle import make_wheel
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -77,6 +77,10 @@ if args[:2] == ["-m", "pip"]:
     os.makedirs(os.path.join(root, "Scripts"), exist_ok=True)
     for script in ("sutra-pro.exe", "uvicorn.exe"):
         open(os.path.join(root, "Scripts", script), "w").write("MZ")
+elif args[:2] == ["-I", "-m"] and args[2] == "compileall":
+    lib = args[-1]
+    os.makedirs(os.path.join(lib, "__pycache__"), exist_ok=True)
+    open(os.path.join(lib, "__pycache__", "os.cpython-311.pyc"), "wb").write(b"pyc")
 elif "-c" in args:
     print("a warning line")
     print(open(os.path.join(root, "installed-version")).read())
@@ -95,6 +99,23 @@ def make_windows_archive(directory):
         info.size, info.mode = len(body), 0o755
         archive.addfile(info, io.BytesIO(body))
     return path
+
+
+COMPILE_BRANCH = '''elif args[:3] == ["-I", "-m", "compileall"]:
+    lib = args[-1]
+    os.makedirs(os.path.join(lib, "__pycache__"), exist_ok=True)
+    open(os.path.join(lib, "__pycache__", "os.cpython-311.pyc"), "wb").write(b"pyc")
+'''
+
+
+def make_mac_archive(directory, **kwargs):
+    """The macOS tests' fake interpreter archive, whose interpreter also makes the bytecode `python -m compileall` would."""
+    original = macos_tests.FAKE_PYTHON
+    macos_tests.FAKE_PYTHON = original.replace('elif "-c" in args:', COMPILE_BRANCH + 'elif "-c" in args:', 1)
+    try:
+        return macos_tests.make_archive(directory, **kwargs)
+    finally:
+        macos_tests.FAKE_PYTHON = original
 
 
 @pytest.fixture
@@ -195,11 +216,42 @@ def test_the_windows_app_has_the_python_in_resources_and_the_command_wrapper_bes
     assert (app / "resources" / "build-info.json").is_file()
     assert sorted(p.name for p in (app / "resources" / "python" / "Scripts").iterdir()) == [], "pip's .exe launchers name the build folder: removed"
     command = (app / "sutra-pro.cmd").read_bytes()
-    assert command == b'@echo off\r\n"%~dp0resources\\python\\python.exe" -I -X utf8 -m sutra_app %*\r\n'
+    assert command == b'@echo off\r\n"%~dp0resources\\python\\python.exe" -I -B -X utf8 -m sutra_app %*\r\n'
     readme = (app / "README.txt").read_bytes()
     assert b"Sutra Pro 0.2.0\r\n" in readme and b"\r\n" in readme and b"\n" not in readme.replace(b"\r\n", b""), "CRLF line endings"
     assert b"SmartScreen" in readme and b".sutra-pro" in readme
     assert not (app / "python").exists(), "the 0.1.x layout kept the interpreter in python\\; this one does not"
+
+
+@POSIX_ONLY
+def test_the_library_is_compiled_for_good_so_that_nothing_is_written_into_the_signed_app(work):
+    """Found by the proof: the interpreter ships no bytecode, so an engine process wrote 42 .pyc files into the signed app and broke its seal."""
+    mac = build(work, "mac-arm64")
+    python = mac / "Contents" / "Resources" / "python"
+    (compile_call,) = [json.loads(line)["args"] for line in (python / "calls.log").read_text().splitlines() if "compileall" in line]
+    assert compile_call[:3] == ["-I", "-m", "compileall"]
+    assert compile_call[compile_call.index("--invalidation-mode") + 1] == "unchecked-hash", "never checked against the source: it cannot go stale and is never rewritten"
+    assert compile_call[-1].endswith("Sutra Pro.app/Contents/Resources/python/lib/python3.11"), "the whole library, site-packages inside it (compiled in the staging folder)"
+    assert (python / "lib" / "python3.11" / "__pycache__" / "os.cpython-311.pyc").is_file()
+    shutil.rmtree(work / "out")
+    (work / "out").mkdir()
+    win = build(work, "win-x64")
+    (windows_call,) = [json.loads(line) for line in (win / "resources" / "python" / "calls.log").read_text().splitlines() if "compileall" in line]
+    assert windows_call[-1].endswith("Sutra Pro-win32-x64/resources/python/Lib")
+    assert (win / "resources" / "python" / "Lib" / "__pycache__" / "os.cpython-311.pyc").is_file()
+
+
+@POSIX_ONLY
+def test_a_library_that_was_not_compiled_at_all_fails_the_build(work):
+    """compileall may exit 1 for one bad file and still have done its job; an interpreter that compiled nothing must not ship."""
+    wheel = make_wheel(work / "in", version="0.2.0")
+    interpreter = work / "fake" / "python" / "bin" / "python3"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.write_text("#!/bin/sh\nexit 0\n")
+    interpreter.chmod(0o755)
+    with pytest.raises(BuildError, match="left no bytecode"):
+        bda.precompile(interpreter, windows=False)
+    assert wheel.is_file()
 
 
 def test_the_windows_wheel_is_installed_without_the_tray_extra(work):

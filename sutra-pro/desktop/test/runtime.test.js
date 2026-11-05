@@ -30,11 +30,20 @@ test('from a checkout: SUTRA_PRO_PYTHON, else the virtual environment, else the 
   assert.equal(runtime.pythonPath({ packaged: false, platform: 'win32', env: {}, projectRoot: root, exists: none }), 'python');
 });
 
-test('the server is started isolated, headless, tied to our input, on the data folder we name', () => {
+test('the server is started isolated, writing no bytecode, headless, tied to our input, on the data folder we name', () => {
   assert.deepEqual(runtime.serverArgs({ platform: 'darwin', dataDir: '/d' }),
-    ['-I', '-m', 'sutra_app', '--no-browser', '--exit-when-stdin-closes', '--data-dir', '/d']);
+    ['-I', '-B', '-m', 'sutra_app', '--no-browser', '--exit-when-stdin-closes', '--data-dir', '/d']);
   assert.deepEqual(runtime.serverArgs({ platform: 'win32', dataDir: 'C:\\d', extra: ['--offline'] }),
-    ['-I', '-X', 'utf8', '-m', 'sutra_app', '--no-browser', '--exit-when-stdin-closes', '--data-dir', 'C:\\d', '--offline']);
+    ['-I', '-B', '-X', 'utf8', '-m', 'sutra_app', '--no-browser', '--exit-when-stdin-closes', '--data-dir', 'C:\\d', '--offline']);
+});
+
+test('the wait for the server is 60 seconds unless SUTRA_PRO_START_TIMEOUT says 1 to 600', () => {
+  assert.equal(runtime.startTimeoutMs({}), 60000);
+  assert.equal(runtime.startTimeoutMs({ SUTRA_PRO_START_TIMEOUT: '170' }), 170000);
+  assert.equal(runtime.startTimeoutMs({ SUTRA_PRO_START_TIMEOUT: ' 5 ' }), 5000);
+  for (const odd of ['0', '-3', '601', 'soon', '', '1.5e3', '12s', '0x20']) {
+    assert.equal(runtime.startTimeoutMs({ SUTRA_PRO_START_TIMEOUT: odd }), 60000, odd);
+  }
 });
 
 test('the server\'s environment drops what reaches into Python or Electron and keeps the rest', () => {

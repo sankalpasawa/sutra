@@ -73,7 +73,7 @@ Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Description: "Start {#AppName}
 
 [UninstallRun]
 ; a server that outlives the window (one the command line started) holds its files: ask it to stop. If nothing is running this does nothing
-Filename: "{app}\resources\python\python.exe"; Parameters: "-I -X utf8 -m sutra_app stop --wait 20"; WorkingDir: "{app}"; Flags: runhidden; RunOnceId: "StopSutraPro"
+Filename: "{app}\resources\python\python.exe"; Parameters: "-I -B -X utf8 -m sutra_app stop --wait 20"; WorkingDir: "{app}"; Flags: runhidden; RunOnceId: "StopSutraPro"
 
 [Code]
 // An upgrade: stop a server that runs from the old files (the 0.1.x layout's, or this one's) and give it a moment to end, before the new files go over them.
@@ -82,7 +82,7 @@ var
   ResultCode: Integer;
 begin
   if FileExists(Python) then
-    Exec(Python, '-I -X utf8 -m sutra_app stop --wait 20', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(Python, '-I -B -X utf8 -m sutra_app stop --wait 20', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

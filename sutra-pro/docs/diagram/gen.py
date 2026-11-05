@@ -53,7 +53,7 @@ LOW = f'<g transform="translate(0,{DY})">'
 XP = 90                      # v6: the Experience band gains a second row for the Console page; everything under it moves down by this
 SH = 60                      # v6: the connector band gains the stub box; the providers band moves down by this
 OPX = 94                     # v6: the Operator box sits under the chat-flow key, in the server column
-KEYH = 366                   # height of the decisions key under the figure (97 entries in 4 columns of 25 rows)
+KEYH = 396                   # height of the decisions key under the figure (109 entries in 4 columns of 28 rows)
 W, H0 = 1300, 1140 + DY + EX + XP + OPX
 H = H0 + 8 + KEYH + 10
 a(f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sutra app architecture: the user chat interface and its Simple and Detailed J2 views and the Console page sit on a chat agent that, for every task, checks the one global org chart and reuses, adds to or rearranges it as the need arises, and hands the task to the Identity node of the department; the agent references the Python interface library and builds workflows and a graph through a connector layer; the department runtime runs the five J2 functions as agentic graph nodes, five per department, each with its own chat session and its own goal, task, context, work atom, verify and constraints, where every turn of a node is one work atom that opens, works, closes through a check run by code, or is refused or abandoned, and whose events update the workflow graph and the chat sessions and are kept in an append-only atom log; a connector router, which records cost per atom, picks between a Claude connector and a Codex connector, both children of a ModelConnector base class; server state holds the workflow graph with atoms per node, chat sessions, department records including the global org chart, the atom log, artifacts, the template library and a cost ledger; an Operator box lists the sutra-pro commands, and a stub connector with a demo reply book serves the offline mode.">')
@@ -88,6 +88,13 @@ box(1040, 40, 210, 150, "card hot", "Workflow graph view", [
 # v6: the third page, /console (sutra_app/ui/pages/console.html); sits between the two arrows that leave the row above
 box(392, 204, 320, 76, "card", "Console", [
     "usage and cost", "Atom log", "health and diagnostics"], ty=20, ly=38, lh=14.5)
+
+# v8: the desktop app (D105 to D109): the Mac and Windows apps are an Electron window around the local server, which the pages above are shown in.
+# It sits on the second row, inside the band (which ends at x=1020), right of the arrow that reads the runtime (x=728) and under its label.
+box(746, 216, 266, 68, "card", "Desktop app · Electron window", [
+    "Mac, Windows: a window on the server",
+    "attaches to a running one or starts one",
+    "old Sutra's logo · signed, notarized"], ty=20, ly=36, lh=13)
 
 # everything from the orchestration row down moves by XP (the Experience band grew a row)
 a(f'<g transform="translate(0,{XP})">')

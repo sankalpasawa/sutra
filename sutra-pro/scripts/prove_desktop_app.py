@@ -4,6 +4,7 @@
     python scripts/prove_desktop_app.py --app "build/Sutra Pro.app" --version 0.2.0            # a Mac
     python scripts/prove_desktop_app.py --app "build/Sutra Pro" --version 0.2.0                # Windows: the folder that holds `Sutra Pro.exe`
     python scripts/prove_desktop_app.py --app "/Applications/Sutra Pro.app" --version 0.2.0 --no-team
+    python scripts/prove_desktop_app.py --app "build/Sutra Pro.app" --version 0.2.0 --keep proof     # keep the picture and the logs in ./proof
 
 Two proofs, each in a throw-away data folder, with no network (every proxy points at a closed port) and no model (SUTRA_OFFLINE):
 
@@ -79,7 +80,8 @@ def port_answers(url: str) -> bool:
 def prove_window(exe: Path, version: str | None, work: Path) -> None:
     data, out = work / "window-data", work / "window-out"
     env = clean_environment(data)
-    env.update(SUTRA_PRO_SELFTEST="1", SUTRA_PRO_SELFTEST_DIR=str(out))
+    # a cold runner that is scanning a fresh install is slow to start Python: the server gets as long as the older proof gave it
+    env.update(SUTRA_PRO_SELFTEST="1", SUTRA_PRO_SELFTEST_DIR=str(out), SUTRA_PRO_START_TIMEOUT="170")
     if version:
         env["SUTRA_PRO_EXPECT_VERSION"] = version
     log = work / "electron.out"
@@ -121,7 +123,7 @@ def prove_window(exe: Path, version: str | None, work: Path) -> None:
 def prove_team(python: Path, version: str | None, work: Path) -> None:
     data = work / "team-data"
     env = clean_environment(data)
-    command = [str(python), "-I", *(["-X", "utf8"] if WINDOWS else []), "-m", "sutra_app", "--no-browser", "--port", "0"]
+    command = [str(python), "-I", "-B", *(["-X", "utf8"] if WINDOWS else []), "-m", "sutra_app", "--no-browser", "--port", "0"]
     proc = subprocess.Popen(command, cwd=str(python.parent), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             **popen_kwargs())
     try:
@@ -177,7 +179,7 @@ def prove_team(python: Path, version: str | None, work: Path) -> None:
             time.sleep(0.25)
         engines = processes_mentioning(str(data))
         check(len(engines) >= 2, f"expected the server and an engine process of this data folder, saw {engines}")
-        done = subprocess.run([str(python), "-I", *(["-X", "utf8"] if WINDOWS else []), "-m", "sutra_app", "stop", "--wait", str(STOP_TIMEOUT_S - 10)],
+        done = subprocess.run([str(python), "-I", "-B", *(["-X", "utf8"] if WINDOWS else []), "-m", "sutra_app", "stop", "--wait", str(STOP_TIMEOUT_S - 10)],
                               cwd=str(python.parent), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=STOP_TIMEOUT_S + 30)
         print(done.stdout + done.stderr, flush=True)
         check(done.returncode == 0, f"`sutra-pro stop` exited {done.returncode}")
@@ -197,7 +199,23 @@ def prove_team(python: Path, version: str | None, work: Path) -> None:
         kill_tree(proc)
 
 
-def prove(app: Path, version: str | None, *, team: bool = True) -> None:
+def keep_evidence(work: Path, keep: Path | None) -> None:
+    """Copy what a person reading a CI run needs, whether the proof held or not: the window's picture and result, what the app printed, the logs of both
+    data folders. Never raises: a missing file is just not there."""
+    if keep is None:
+        return
+    try:
+        keep.mkdir(parents=True, exist_ok=True)
+        for source, name in ((work / "window-out", "window"), (work / "window-data" / "logs", "window-logs"), (work / "team-data" / "logs", "team-logs")):
+            if source.is_dir():
+                shutil.copytree(source, keep / name, dirs_exist_ok=True)
+        if (work / "electron.out").is_file():
+            shutil.copy2(work / "electron.out", keep / "electron.out")
+    except OSError as error:
+        print(f"could not keep the evidence: {error}", flush=True)
+
+
+def prove(app: Path, version: str | None, *, team: bool = True, keep: Path | None = None) -> None:
     app = app.resolve()                    # a relative program path plus cwd= is resolved differently on Windows than on POSIX
     exe, python = layout(app)
     check(exe.is_file() and python.is_file(), f"{app} is not a desktop app: {exe} or {python} is missing")
@@ -208,6 +226,7 @@ def prove(app: Path, version: str | None, *, team: bool = True) -> None:
             prove_team(python, version, work)
         print("PROVED", flush=True)
     finally:
+        keep_evidence(work, keep)
         shutil.rmtree(work, ignore_errors=True)
 
 
@@ -216,9 +235,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--app", required=True, type=Path, help="'Sutra Pro.app' (a Mac), or the Windows folder that holds 'Sutra Pro.exe'")
     parser.add_argument("--version", default=None, help="the version the app and its server must report")
     parser.add_argument("--no-team", action="store_true", help="skip the second proof (the server alone, a team's first turn)")
+    parser.add_argument("--keep", type=Path, default=None, help="copy the window's picture and result and the logs into this folder (a CI run uploads it)")
     args = parser.parse_args(argv)
     try:
-        prove(args.app, args.version, team=not args.no_team)
+        prove(args.app, args.version, team=not args.no_team, keep=args.keep)
     except Failure as failure:
         print(f"NOT PROVED: {failure}", file=sys.stderr, flush=True)
         return 1

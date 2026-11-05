@@ -6,6 +6,8 @@ const os = require('node:os');
 const path = require('node:path');
 
 const DATA_DIR_NAME = '.sutra-pro';
+const DEFAULT_START_TIMEOUT_S = 60;
+const MAX_START_TIMEOUT_S = 600;
 
 /* The data folder: SUTRA_DATA_DIR, else ~/.sutra-pro. The server's own default is the same folder, and the app passes it with --data-dir
    anyway, so the app and the server cannot disagree about where app.pid is. */
@@ -30,12 +32,21 @@ function pythonPath({ packaged, resourcesPath, platform = process.platform, env 
   return exists(venv) ? venv : (win ? 'python' : 'python3');
 }
 
-/* The server's command line. -I: no PYTHON* variables and no user site, so a user's own Python setup cannot break the app. -X utf8 on Windows:
+/* The server's command line. -I: no PYTHON* variables and no user site, so a user's own Python setup cannot break the app. -B: write no bytecode
+   (-I ignores PYTHONDONTWRITEBYTECODE, so the flag is the only way): a .pyc written into the signed app would break its seal. -X utf8 on Windows:
    a file opened without an encoding is UTF-8, not the console's code page. --exit-when-stdin-closes: the server ends with this program, however
    this program ends. No --port: the server takes the first free port from 8780 to 8799 (or SUTRA_PORT) and writes it to app.pid. */
 function serverArgs({ platform = process.platform, dataDir: folder, extra = [] }) {
-  return ['-I', ...(platform === 'win32' ? ['-X', 'utf8'] : []), '-m', 'sutra_app', '--no-browser', '--exit-when-stdin-closes',
+  return ['-I', '-B', ...(platform === 'win32' ? ['-X', 'utf8'] : []), '-m', 'sutra_app', '--no-browser', '--exit-when-stdin-closes',
     '--data-dir', folder, ...extra];
+}
+
+/* How long the app waits for the server to answer before it gives up: SUTRA_PRO_START_TIMEOUT seconds (1 to 600), default 60. A cold machine that is
+   scanning a fresh install for viruses is slow to start Python, and the release proofs ask for more. */
+function startTimeoutMs(env = process.env) {
+  const text = String(env.SUTRA_PRO_START_TIMEOUT || '').trim();
+  const seconds = /^\d+$/.test(text) ? Number.parseInt(text, 10) : 0;       // digits only: parseInt would read '1.5e3' as 1
+  return (seconds >= 1 && seconds <= MAX_START_TIMEOUT_S ? seconds : DEFAULT_START_TIMEOUT_S) * 1000;
 }
 
 const DROPPED = /^(PYTHON|PIP_|VIRTUAL_ENV$|UV_|ELECTRON_)/i;
@@ -68,11 +79,11 @@ function childEnv(env, { platform = process.platform, home = os.homedir(), dataD
   const added = [...pathExtras({ platform, home, env }), ...(extra ? [extra] : [])].filter((dir) => dir && !seen.has(dir));
   out[key] = [current, ...added].filter(Boolean).join(separator);
   out.PYTHONNOUSERSITE = '1';          // the user's site-packages is not the bundle's
-  out.PYTHONDONTWRITEBYTECODE = '1';   // nothing is written into the signed app
+  out.PYTHONDONTWRITEBYTECODE = '1';   // nothing is written into the signed app (the engine's own Python processes get this one; -I would ignore it)
   out.PYTHONUNBUFFERED = '1';          // the server's lines reach the log as they happen
   if (platform === 'win32') out.PYTHONUTF8 = '1';
   out.SUTRA_DATA_DIR = folder;
   return out;
 }
 
-module.exports = { dataDir, pythonPath, serverArgs, childEnv, pathExtras, DATA_DIR_NAME };
+module.exports = { dataDir, pythonPath, serverArgs, childEnv, pathExtras, startTimeoutMs, DATA_DIR_NAME };
