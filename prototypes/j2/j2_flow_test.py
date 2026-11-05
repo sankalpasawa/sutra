@@ -11131,7 +11131,9 @@ def backend_off():
     recs = j2._jsonl(run.dir, "receipts.jsonl")
     assert recs and not [r for r in recs if str(r.get("type")).startswith("backend-")
                          or r.get("type") == "page-calls-known-endpoints"]
-    assert not os.path.exists(os.path.join(j2_template_lib.GENERIC_DIR, "backend"))
+    assert "backend" not in j2_template_lib.artifacts() and j2_template_lib.generic_drift() == [], "the library's five artifacts"
+    assert not [d for d in tpl_decisions(run) if d["artifact"] == "backend"] and \
+        not os.path.exists(os.path.join(run.dir, "templates", "backend")), "nothing of the backend was routed or copied"
     assert run._stage_cost("lld") == 10 * 4 + 48, run._stage_cost("lld")
     print("backend off: five LLD sections, L1-L6 as before, parse_lld's three keys, a library run of the Still Point "
           "brief writes no backend file and no backend receipt ok")
@@ -11488,6 +11490,143 @@ def backend_schema():
     assert AM.render_section("backend", "server.py", data) == "import os\n" and AM.render_section("backend", "other", data) is None
     print("backend schemas (J2_BACKEND=1): Backend/1 · server.py and the two LLD section schemas keep the inline-definitions "
           "invariants, the backend section has six fields with three required, validate and render as sent ok")
+
+
+def backend_lib_run(brief=None, budget=1500, patch=None):
+    """A mock run with J2_BACKEND=1 and J2_TEMPLATE_LIBRARY=1 (into the current J2_LIBRARY_DIR)."""
+    keep = os.environ.get("J2_BACKEND")
+    os.environ["J2_BACKEND"] = "1"
+    try:
+        return lib_run(brief or YOGA_BACKEND_BRIEF, budget, patch=patch)
+    finally:
+        if keep is None:
+            os.environ.pop("J2_BACKEND", None)
+        else:
+            os.environ["J2_BACKEND"] = keep
+
+
+def backend_templates():
+    """Backend builder, Phase 4 (J2_BACKEND=1 with J2_TEMPLATE_LIBRARY=1): the backend sections go through the template
+    library like every other section. With the flag the library has a sixth artifact, backend, whose generic file is
+    generated from the model and the rules (no drift, flag on or off); run 1 into an empty library creates "Still
+    Point Yoga API endpoints", "... Data model" and "... server.py" (v1 each, extending the generic), the backend
+    need carries the LLD's A and T ids as enums and the created template narrows endpoints_implemented and
+    tables_created to them; its builder's --json-schema section is that template's schema.json; every backend
+    receipt and backend.json name the template; run 2 with the same brief reuses all three (rule a, no new version,
+    used_by lists both runs); each run keeps its copies under templates/lld/api-endpoints, templates/lld/data-model
+    and templates/backend/server-py; the Library view groups the backend; the committed library/ is unchanged."""
+    import copy as copy_
+    import j2_template_lib as L
+    here = os.path.dirname(os.path.abspath(__file__))
+    real_lib = os.path.join(here, "library")
+    real_before = tree_sha(real_lib)
+    keep_lib = os.environ.get("J2_LIBRARY_DIR")
+    lib = tempfile.mkdtemp(prefix="j2-lib-backend-")
+    os.environ["J2_LIBRARY_DIR"] = lib
+    try:
+        assert L.artifacts() == L.ARTIFACTS and L.generic_drift() == [], "flag off: five artifacts, no drift"
+        os.environ["J2_BACKEND"] = "1"
+        try:
+            assert L.artifacts() == L.ARTIFACTS + ("backend",) and L.generic_drift() == [], L.generic_drift()
+            gen = json.load(open(os.path.join(L.GENERIC_DIR, "backend", "generic.json"), encoding="utf-8"))
+            assert gen["artifact"] == "backend" and [t["section"] for t in gen["templates"]] == ["server.py"]
+            g = L.generic("backend", "server.py")
+            assert g.name == "Backend/1 · server.py" and [f.name for f in g.fields] == \
+                ["code", "port_arg", "db_arg", "endpoints_implemented", "tables_created", "notes"] and len(g.rules) == 5
+            assert gen["templates"][0]["sha"] == g.sha and "backend" in L.library_view()["groups"]
+        finally:
+            os.environ.pop("J2_BACKEND", None)
+        r1 = backend_lib_run()
+        idx1 = copy_.deepcopy(L.index())
+        r2 = backend_lib_run()
+        idx2 = copy_.deepcopy(L.index())
+        n1, n2 = (os.path.basename(r.dir) for r in (r1, r2))
+        for r in (r1, r2):
+            assert r.outcome.startswith("Done") and r.schemas and r.tpl_lib, r.outcome
+            assert not [x for x in art_recs(r) if not x["pass"]], [x["evidence"] for x in art_recs(r) if not x["pass"]][:3]
+        eps, tables = r1.blueprint["endpoints"], r1.blueprint["tables"]
+        a_ids, t_ids = [e["id"] for e in eps], [t["id"] for t in tables]
+        mine = lambda r: {(d["artifact"], d["section"]): d for d in tpl_decisions(r)
+                          if (d["artifact"], d["section"]) in (("lld", "API endpoints"), ("lld", "Data model"), ("backend", "server.py"))}
+        d1, d2 = mine(r1), mine(r2)
+        assert len(d1) == len(d2) == 3, (list(d1), list(d2))
+        for key, name in ((("lld", "API endpoints"), "Still Point Yoga API endpoints"), (("lld", "Data model"), "Still Point Yoga Data model"),
+                          (("backend", "server.py"), "Still Point Yoga server.py")):
+            x, y = d1[key], d2[key]
+            assert x["action"] == "created" and x["rule"] == "d" and x["kind"] == "specialised" and x["template"] == name and x["version"] == 1, x
+            assert y["action"] == "reused" and y["rule"] == "a" and y["template"] == name and y["version"] == 1, y
+            assert x["saved"] == y["saved"] == L.run_tpl_rel(x), (x["saved"], y["saved"])
+            for r in (r1, r2):
+                sd = os.path.join(r.dir, x["saved"])
+                assert sorted(os.listdir(sd)) == ["meta.json", "model.py", "schema.json", "spec.json"], sd
+                spec = json.load(open(os.path.join(sd, "spec.json"), encoding="utf-8"))
+                assert spec["kind"] == "specialised" and spec["extends"] == L.generic_ref(*key) and spec["name"] == name, spec["extends"]
+        assert d1[("lld", "API endpoints")]["saved"].startswith("templates/lld/api-endpoints/")
+        assert d1[("lld", "Data model")]["saved"].startswith("templates/lld/data-model/")
+        assert d1[("backend", "server.py")]["saved"] == "templates/backend/server-py/still-point-yoga-server-py@v1"
+        # the backend need: the A and T ids as enum fields; the created template narrows the generic's two lists to them
+        b1 = d1[("backend", "server.py")]
+        assert b1["needed_fields"] == ["endpoints_implemented", "tables_created"] and \
+            b1["needed_enums"] == {"endpoints_implemented": a_ids, "tables_created": t_ids}, b1
+        assert b1["covers"] == "covers 0 of 0 facts and 2 of 2 fields", b1["covers"]
+        t = L.get(f"{b1['template']}@1", "backend", "server.py")
+        assert t and [f.name for f in t.fields] == [f.name for f in g.fields] and L.keeps_problems(g, t) == []
+        en = {f.name: f.enum for f in t.fields}
+        assert en["endpoints_implemented"] == a_ids and en["tables_created"] == t_ids and en["code"] is None, en
+        assert t.rules == [], "no fact to add a rule from in this mock charter; the generic's five apply through extends"
+        # its builder: the template's schema.json was the section sent; the receipts and backend.json name it
+        for r, d in ((r1, d1), (r2, d2)):
+            b = backend_wf(r)
+            c = next(x for x in j2._jsonl(r.dir, "calls.jsonl") if x["fn"] == b["id"])
+            lib_ = c["artifact_schema"]["library"]
+            assert lib_["template"] == "Still Point Yoga server.py" and lib_["version"] == 1 and lib_["kind"] == "specialised"
+            assert lib_["sent_section_sha"] == lib_["schema_sha"] == d[("backend", "server.py")]["schema_sha"] == L.sha_of(L.transport(t)), lib_
+            assert c["artifact_schema"]["template"] == "Still Point Yoga server.py v1", c["artifact_schema"]      # build_model's name
+            recs = [x for x in j2._jsonl(r.dir, "receipts.jsonl") if x.get("atom") == b["atoms"][0]["id"] and "check" in x]
+            assert recs and all(x.get("template_route") == {"template": "Still Point Yoga server.py", "version": 1, "kind": "specialised",
+                                                            "action": d[("backend", "server.py")]["action"]} for x in recs), \
+                [(x["type"], x.get("template_route")) for x in recs][:3]
+            assert all(x["template"] == "Still Point Yoga server.py v1" and x["template_version"] == 1 for x in recs), \
+                sorted({(x["template"], x["template_version"]) for x in recs})
+            rules = next(x for x in recs if x["type"] == "artifact-rules")
+            assert len(rules["rules"]) == 5 and all(x["pass"] is True for x in rules["rules"]), [(x["name"], x["evidence"]) for x in rules["rules"] if not x["pass"]]
+            bj = json.load(open(os.path.join(r.dir, "backend.json"), encoding="utf-8"))
+            assert bj["template"] == {"template": "Still Point Yoga server.py", "version": 1, "kind": "specialised",
+                                      "action": d[("backend", "server.py")]["action"], "schema_sha": lib_["sent_section_sha"]}, bj["template"]
+            assert bj["failed"] == 0 and bj["endpoints_implemented"] == a_ids and bj["tables_created"] == t_ids
+            assert any(m["who"] == "system" and m.get("template_route", {}).get("workflow") == b["id"] for m in r.chat), "one template line in the chat"
+        # the library: v1 each, run 2 made no new version, used_by lists both runs; the view groups the backend
+        vers = lambda idx: sorted((e["name"], v["version"], v["sha"]) for e in idx["templates"] for v in e["versions"])
+        assert vers(idx1) == vers(idx2), "run 2 made no new version"
+        be = [e for e in idx2["templates"] if e["artifact"] == "backend"]
+        assert len(be) == 1 and be[0]["section"] == "server.py" and be[0]["section_slug"] == "server-py" and \
+            [v["version"] for v in be[0]["versions"]] == [1] and {u["run"] for u in be[0]["versions"][0]["used_by"]} == {n1, n2}, be
+        assert be[0]["versions"][0]["enums"] == {"endpoints_implemented": a_ids, "tables_created": t_ids}
+        for sec in ("API endpoints", "Data model"):
+            e = next(e for e in idx2["templates"] if e["artifact"] == "lld" and e["section"] == sec)
+            assert [v["version"] for v in e["versions"]] == [1] and {u["run"] for u in e["versions"][0]["used_by"]} == {n1, n2}, e["name"]
+        os.environ["J2_BACKEND"] = "1"
+        try:
+            lv = L.library_view()
+            assert set(lv["groups"]) == set(L.ARTIFACTS) | {"backend"} and lv["groups"]["backend"]["server.py"]["generic"]["name"] == g.name
+            assert [e["name"] for e in lv["groups"]["backend"]["server.py"]["templates"]] == ["Still Point Yoga server.py"]
+            got = L.template_view("backend", "server-py", "still-point-yoga-server-py", 1, run_dir=r1.dir)
+            assert got and got["template"]["name"] == "Still Point Yoga server.py" and got["source"] == "from this run" and \
+                got["files"], (got or {}).get("template")
+            assert L.generic_drift() == []
+        finally:
+            os.environ.pop("J2_BACKEND", None)
+        assert L.generic_drift() == [] and "backend" not in L.artifacts()
+        assert tree_sha(real_lib) == real_before, "the committed library/ is unchanged by tests"
+        print(f"backend templates (J2_BACKEND=1 + library): a sixth artifact with the flag, generic file in step with the model, "
+              f"run 1 created the API endpoints, Data model and server.py templates (v1, enums {a_ids} / {t_ids}), the builder "
+              "got the template's schema, every backend receipt and backend.json name it, run 2 reused all three (rule a, "
+              "used_by both runs), copies under templates/lld/api-endpoints, data-model and backend/server-py, library/ unchanged ok")
+    finally:
+        if keep_lib is None:
+            os.environ.pop("J2_LIBRARY_DIR", None)
+        else:
+            os.environ["J2_LIBRARY_DIR"] = keep_lib
 
 
 def backend_fixture(server=GOOD_SERVER, page=E2E_PAGE):
@@ -11896,6 +12035,7 @@ if __name__ == "__main__":
             backend_in_run()
             backend_retry()
             backend_schema()
+            backend_templates()
             backend_compile_check()
             backend_safety_check()
             backend_start_check()

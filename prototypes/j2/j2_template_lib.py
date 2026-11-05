@@ -43,6 +43,7 @@ SCHEMA = "template-library/1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 GENERIC_DIR = os.path.join(HERE, "templates")
 ARTIFACTS = ("prd", "hld", "lld", "design", "website")
+ARTIFACTS_BACKEND = ARTIFACTS + ("backend",)      # J2_BACKEND=1: the backend's server.py is a library artifact too
 MAX_FIELDS = 25
 SCALARS = ("string", "integer", "boolean")
 NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
@@ -63,6 +64,12 @@ NOT_RECORDED = "not recorded"
 def enabled():
     """J2_TEMPLATE_LIBRARY=1 (default off). Read per call so tests can switch it."""
     return os.environ.get("J2_TEMPLATE_LIBRARY") == "1"
+
+
+def artifacts():
+    """The library's artifacts: the five, and the backend with J2_BACKEND=1 (its generic file, templates/backend/
+    generic.json, is generated with the flag on and ignored with it off). Read per call so tests can switch it."""
+    return ARTIFACTS_BACKEND if os.environ.get("J2_BACKEND") == "1" else ARTIFACTS
 
 
 def slug(text):
@@ -458,7 +465,7 @@ def generic_file(artifact):
 
 def write_generic(root=None):
     out = []
-    for a in ARTIFACTS:
+    for a in artifacts():
         p = os.path.join(root or GENERIC_DIR, a, "generic.json")
         os.makedirs(os.path.dirname(p), exist_ok=True)
         _write(p, generic_file(a))
@@ -469,7 +476,7 @@ def write_generic(root=None):
 def generic_drift():
     """Every disagreement between the committed generic.json files and the models + RULES ([] when none)."""
     out = []
-    for a in ARTIFACTS:
+    for a in artifacts():
         p = os.path.join(GENERIC_DIR, a, "generic.json")
         if not os.path.exists(p):
             out.append(f"{p} is missing")
@@ -1006,7 +1013,8 @@ def make_need(artifact, section, business_type, facts, site, extra_fields=(), wo
 
 # The sections that carry the business's offer: the facts' own lists become fields here (the requirements of the
 # product, and the page section that shows it). Elsewhere the facts narrow facts_used only.
-FACT_FIELD_SECTIONS = {("prd", "Requirements"), ("website", "Section")}
+FACT_FIELD_SECTIONS = {("prd", "Requirements"), ("website", "Section"),
+                       ("lld", "API endpoints"), ("backend", "server.py")}      # the last two: J2_BACKEND=1 (j2)
 
 
 def has_field(need, row, name):
@@ -1121,8 +1129,8 @@ def specialise(gen, need, base=None, name=None):
     names = {o.name for o in objects}
     for f, objs in need.get("_derived") or []:
         if f.name in have:
-            if f.enum and have[f.name].enum is not None:
-                have[f.name].enum = sorted(set(have[f.name].enum) | set(f.enum))
+            if f.enum:      # the need's values narrow the field (a generic string list becomes an enum: the LLD's ids)
+                have[f.name].enum = sorted(set(have[f.name].enum or []) | set(f.enum))
             continue
         fields.append(f.model_copy(deep=True))
         objects += [o.model_copy(deep=True) for o in objs if o.name not in names]
@@ -1370,7 +1378,7 @@ def rule_sentence(r):
 def library_view():
     """GET /api/library: every template grouped by artifact and section, the generic layer included."""
     groups = {}
-    for a in ARTIFACTS:
+    for a in artifacts():
         for sec in AM.SECTION_MODELS[a]:
             g = generic(a, sec)
             groups.setdefault(a, {})[sec] = {"generic": {"name": g.name, "version": g.version, "sha": g.sha,

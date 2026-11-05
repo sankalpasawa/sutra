@@ -1,0 +1,106 @@
+{
+  "schema": "template-library/1",
+  "artifact": "backend",
+  "kind": "generic",
+  "version": 1,
+  "from": "j2_artifact_models.SECTION_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
+  "templates": [
+    {
+      "name": "Backend/1 · server.py",
+      "artifact": "backend",
+      "section": "server.py",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Backend/1 · server.py template: the fixed layout of every backend server.py section, whatever the business",
+      "fields": [
+        {
+          "name": "code",
+          "type": "string",
+          "required": true,
+          "description": "the whole server.py: standard library only; --port (required) and --db (default bookings.sqlite beside the script); binds 127.0.0.1; GET / serves index.html from its own folder; the LLD's endpoints under /api/ with JSON replies",
+          "nullable": false
+        },
+        {
+          "name": "port_arg",
+          "type": "string",
+          "required": false,
+          "description": "the flag that sets the port",
+          "nullable": false
+        },
+        {
+          "name": "db_arg",
+          "type": "string",
+          "required": false,
+          "description": "the flag that sets the SQLite file path",
+          "nullable": false
+        },
+        {
+          "name": "endpoints_implemented",
+          "type": "list[string]",
+          "required": true,
+          "description": "the LLD endpoint ids the file implements, e.g. [\"A1\", \"A2\"]",
+          "nullable": false
+        },
+        {
+          "name": "tables_created",
+          "type": "list[string]",
+          "required": true,
+          "description": "the LLD table ids the file creates at start, e.g. [\"T1\"]",
+          "nullable": false
+        },
+        {
+          "name": "notes",
+          "type": "string",
+          "required": false,
+          "description": "anything a person running it should know (one or two sentences)",
+          "nullable": false
+        }
+      ],
+      "objects": [],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": "code",
+          "name": "the file is not empty",
+          "from": "backend-compile"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "endpoints_implemented",
+          "target": "lld.endpoints[].id",
+          "required_target": true,
+          "fail_text": "endpoints_implemented names {bad}, which is not an endpoint of the LLD",
+          "name": "every implemented endpoint is an LLD endpoint id",
+          "from": "backend-endpoint"
+        },
+        {
+          "rule": "covers_all",
+          "path": "endpoints_implemented",
+          "target": "lld.endpoints[].id",
+          "fail_text": "LLD endpoint(s) {bad} are not in endpoints_implemented",
+          "name": "every LLD endpoint is implemented",
+          "from": "backend-endpoint"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "tables_created",
+          "target": "lld.tables[].id",
+          "required_target": true,
+          "fail_text": "tables_created names {bad}, which is not a table of the LLD",
+          "name": "every created table is an LLD table id",
+          "from": "backend-start"
+        },
+        {
+          "rule": "covers_all",
+          "path": "tables_created",
+          "target": "lld.tables[].id",
+          "fail_text": "LLD table(s) {bad} are not in tables_created",
+          "name": "every LLD table is created",
+          "from": "backend-start"
+        }
+      ],
+      "sha": "f2819b360c4b53f015ac0acaa405cc863426dd660799dbc6c68481a44df1a7b0",
+      "schema_sha": "b2d87f22db093f040399a3d96947c8f25c1884ad631d77f7721d6ad7fb511490"
+    }
+  ]
+}

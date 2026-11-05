@@ -147,7 +147,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps(j2_template_lib.catalog_view(), ensure_ascii=False))
         if u.path.startswith("/api/library/"):      # one template version: /api/library/<artifact>/<section>/<slug>/v<N>
             parts = u.path[len("/api/library/"):].split("/")
-            ok = (len(parts) == 4 and parts[0] in j2_template_lib.ARTIFACTS
+            ok = (len(parts) == 4 and parts[0] in j2_template_lib.artifacts()
                   and all(re.fullmatch(r"[a-z0-9-]+", x) for x in parts[1:3]) and re.fullmatch(r"v\d+", parts[3]))
             d = j2.saved_dir(run) if run else RUN.dir
             d = d if d and os.path.isdir(d) else None

@@ -7899,17 +7899,29 @@ class J2Run:
         rules and the backend checks (receipts), and sends every failure back verbatim, up to MAX_CHECK_ATTEMPTS
         attempts (one AI call each). Then the normal hand-off to Coordination, or to Adaptation with the receipts."""
         fn, model, kind, section = w["id"], j2_artifact_models.BackendServer, "backend", "server.py"
-        path = os.path.join(self.dir, j2_backend.SCRIPT)
-        self.tpl_cur = None      # the library's route for the backend template goes here (Phase 4)
+        base_model, path = model, os.path.join(self.dir, j2_backend.SCRIPT)
+        self.tpl_cur, tpl, sec_schema = None, None, None
+        if self.tpl_lib:      # J2_TEMPLATE_LIBRARY=1: reuse, extend, create, or generic, like every section
+            tpl = self._route_template(w, kind, section)
+            if tpl is not None:
+                model, sec_schema = j2_template_lib.build_model(tpl), j2_template_lib.transport(tpl)
         bp, g = self.blueprint or {}, self.goal or {}
         eps, tables, fields = bp.get("endpoints") or [], bp.get("tables") or [], bp.get("fields") or []
         page = self.sites[-1] if self.sites else ""
         charter = {k: g.get(k) for k in ("statement", "audience", "standards", "rules", "done_when", "facts",
                                          "to_be_confirmed")}
         schema = j2_artifact_models.reply_schema(model, {})
+        if sec_schema is not None:      # the library template's schema.json is the section the builder fills
+            schema = self._with_section(schema, sec_schema)
         self.art_schema = {"template": model.template(), "version": j2_artifact_models.VERSION,
                            "sha": j2_artifact_models.schema_sha(schema),
                            "bytes": len(json.dumps(schema, ensure_ascii=False)), "attempt": 0}
+        if self.tpl_cur:      # the chosen template, and the sha of the section schema actually sent
+            rec = self.tpl_cur["rec"]
+            self.art_schema.update(version=rec.get("version") or j2_artifact_models.VERSION, library={
+                "template": rec.get("template"), "version": rec.get("version"), "kind": rec.get("kind"),
+                "action": rec.get("action"), "schema_sha": rec.get("schema_sha"),
+                "sent_section_sha": j2_template_lib.sha_of(self._sent_section(schema))})
         fmt = self._artifact_reply_format(model, False)
         task0 = (f"YOU ARE {NAMES[fn]}, the agent for one registered workflow: the backend of the site.\nYOUR WORKFLOW: "
                  f"{json.dumps(brief, ensure_ascii=False)}\nYOUR OUTPUT IS ONE FILE, {j2_backend.SCRIPT}, sent whole as "
@@ -7925,17 +7937,18 @@ class J2Run:
                  f"\nCHARTER: {json.dumps(charter, ensure_ascii=False)}" + self._hld_summary())
 
         def mock():
+            section_data = {"code": mock_server(eps, tables), "port_arg": "--port", "db_arg": "--db",
+                            "endpoints_implemented": [e["id"] for e in eps],
+                            "tables_created": [t["id"] for t in tables],
+                            "notes": "Mock: generated from the LLD's endpoints and tables."}
+            if tpl is not None:      # the specialised template's own fields, from the need's facts only
+                section_data = j2_template_lib.fill_mock(tpl, section_data, (self.tpl_cur or {}).get("need"))
             return json.dumps({"reason": "The backend follows the LLD's endpoints and tables.",
                                "say": f"@Coordination {fn} wrote {j2_backend.SCRIPT} for "
                                       f"{', '.join(e['id'] for e in eps) or 'no endpoint'}.",
                                "human_output": "I wrote the small server that stores what the form sends and lists it back.",
                                "atom_human_output": "This adds the part that keeps what the form sends.",
-                               "next": "Coordination",
-                               "section": {"code": mock_server(eps, tables), "port_arg": "--port", "db_arg": "--db",
-                                           "endpoints_implemented": [e["id"] for e in eps],
-                                           "tables_created": [t["id"] for t in tables],
-                                           "notes": "Mock: generated from the LLD's endpoints and tables."}},
-                              ensure_ascii=False)
+                               "next": "Coordination", "section": section_data}, ensure_ascii=False)
         attempt, evidence, text, data, meta, failed, prev_sig, early = 0, "", None, None, {}, [], set(), None
         while attempt < MAX_CHECK_ATTEMPTS and w["calls_used"] < max_calls + attempt:
             attempt += 1
@@ -8989,6 +9002,12 @@ class J2Run:
         else:
             name = j2_template_lib.words(site)
             about = j2_template_lib.words(" ".join(items + [str(w.get("name") or ""), str(w.get("purpose") or "")]))
+            if kind == "backend":      # J2_BACKEND=1: the LLD's own words (endpoints, tables, form fields) pick the facts
+                bp = self.blueprint or {}
+                about |= j2_template_lib.words(" ".join(
+                    [str(e.get(k) or "") for e in bp.get("endpoints") or [] for k in ("purpose", "path")]
+                    + [str(t.get("name") or "") for t in bp.get("tables") or []]
+                    + [str(f.get("name") or "") for f in bp.get("fields") or []]))
             facts = items + [f for f in charter if (j2_template_lib.words(f) - name) & about]
         atom = (w.get("atoms") or [{}])[0]
         extra = []
@@ -9006,9 +9025,17 @@ class J2Run:
                 extra.append((j2_template_lib.FieldSpec(
                     name="form_fields", type="list[string]", required=False, enum=list(dict.fromkeys(names)),
                     description="the form fields of the LLD this section builds, by name"), []))
+        if kind == "backend":      # J2_BACKEND=1: the LLD's endpoint and table ids are the values the file may name
+            bp = self.blueprint or {}
+            for key, fname, what in (("endpoints", "endpoints_implemented", "the LLD endpoint ids the file implements"),
+                                     ("tables", "tables_created", "the LLD table ids the file creates at start")):
+                ids = [str(x.get("id")) for x in bp.get(key) or [] if x.get("id")]
+                if ids:
+                    extra.append((j2_template_lib.FieldSpec(name=fname, type="list[string]", required=True, enum=ids,
+                                                            description=what), []))
         need = j2_template_lib.make_need(kind, section, g.get("business_type"), facts, site, extra, workflow=w["id"],
                                          atom=atom.get("id") or "")
-        need["label"] = re.sub(r"^(?:Write|Build)\s+", "", str(w.get("name") or section))
+        need["label"] = section if kind == "backend" else re.sub(r"^(?:Write|Build)\s+", "", str(w.get("name") or section))
         need["asks"] = {"goal": atom.get("goal"), "expected_output": [x.get("text") for x in atom.get("expected_output")
                                                                       or [] if isinstance(x, dict)],
                         "context": atom.get("context"), "constraints": atom.get("constraints")}
