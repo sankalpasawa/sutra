@@ -136,6 +136,10 @@ class Database:
 
     def conn(self) -> sqlite3.Connection:
         """This thread's connection (autocommit unless a `tx()` or `read()` block is open on this thread)."""
+        if self._closed:
+            # on every call, not only when a thread makes its first connection: a pooled worker thread that already has one must not start a
+            # statement on it while `close()` is closing it (an access violation on Windows, a segmentation fault on macOS)
+            raise SchemaError("the database is closed")
         found = getattr(self._local, "conn", None)
         if found is None:
             with self._lock:
