@@ -83,7 +83,8 @@ def test_the_stub_only_router_answers_like_the_engines_scripted_port(tmp_path):
         assert getattr(res_a, field) == getattr(res_b, field), field
     assert (res_a.provider, res_a.model, res_a.usd) == ("stub", "scripted", 0.0)
     assert len(rows_a) == len(rows_b) == 1
-    assert {key: rows_a[0][key] for key in DETAIL_FREE} == {key: rows_b[0][key] for key in DETAIL_FREE}
+    assert {key: rows_a[0][key] for key in DETAIL_FREE if key != "seconds"} == {key: rows_b[0][key] for key in DETAIL_FREE if key != "seconds"}
+    assert abs(rows_a[0]["seconds"] - rows_b[0]["seconds"]) < 0.05, "a measured duration: two clock readings a millisecond apart are the same row"
     seen["router"][2].close()
 
 

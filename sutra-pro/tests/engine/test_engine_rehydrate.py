@@ -104,7 +104,7 @@ def say(run, text, timeout=60.0):
 
 
 def tree_sha(folder: Path) -> dict:
-    return {str(p.relative_to(folder)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(Path(folder).rglob("*")) if p.is_file()}
+    return {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(Path(folder).rglob("*")) if p.is_file()}
 
 
 def lines(folder: Path, name: str) -> list:

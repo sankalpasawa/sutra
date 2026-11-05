@@ -193,7 +193,7 @@ console.log(JSON.stringify(out));
 def probe() -> dict:
     if NODE is None:
         pytest.skip("node is not installed")
-    script = PROBE.replace("__JS__", str(JS))
+    script = PROBE.replace("__JS__", JS.as_posix())
     done = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=60, cwd=REPO)
     assert done.returncode == 0, done.stderr[-3000:]
     return json.loads(done.stdout)

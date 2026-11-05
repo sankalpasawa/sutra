@@ -11,6 +11,7 @@
 `DataPaths` only computes paths; it creates nothing. The orchestrator makes a run's folder, the engine never does.
 """
 import os
+from sutra_app import oslayer
 from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -221,11 +222,6 @@ def pid_alive(pid) -> bool:
     if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
         return False
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+        return oslayer.pid_alive(pid)                  # never signals the process: os.kill(pid, 0) would end it on Windows
     except (OSError, OverflowError):
         return False
-    return True

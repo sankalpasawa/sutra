@@ -778,13 +778,13 @@ def load(artifact, section_slug, tslug, version):
 # ---------------------------------------------------------------- a run's own copy of the templates it used
 def run_tpl_rel(rec):
     """Where a run keeps its copy of one decision's template: templates/<artifact>/<section-slug>/<slug>@v<N>."""
-    return os.path.join("templates", rec["artifact"], slug(rec["section"]), f"{slug(rec['template'])}@v{rec['version']}")
+    return "/".join(("templates", rec["artifact"], slug(rec["section"]), f"{slug(rec['template'])}@v{rec['version']}"))     # P12: a path in a record is POSIX on every system
 
 
 def run_saved_dir(run_dir, rec):
     """The folder of a decision's saved copy when the run has one (its "saved" path, inside the run), else None."""
     rel = rec.get("saved")
-    if not rel or not run_dir or os.path.isabs(rel) or ".." in rel.split(os.sep):
+    if not rel or not run_dir or os.path.isabs(rel) or ".." in re.split(r"[\\/]", rel):          # P12: either separator, on every system
         return None
     d = os.path.join(run_dir, rel)
     return d if os.path.isfile(os.path.join(d, "spec.json")) else None

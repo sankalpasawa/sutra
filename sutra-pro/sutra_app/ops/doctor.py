@@ -181,6 +181,8 @@ def _check_data_dir(data_dir: Path) -> Check:
                      f"fix the permissions (`chmod u+rwx {anchor}`) or set SUTRA_DATA_DIR to another folder")
     if not data_dir.exists():
         return Check("data_dir", title, "ok", f"{data_dir} will be created at the first start")
+    if oslayer.IS_WINDOWS:
+        return Check("data_dir", title, "ok", f"{data_dir} (writable; Windows keeps a profile folder private to its user)")
     mode = data_dir.stat().st_mode & 0o777
     if mode & 0o077:
         return Check("data_dir", title, "warn", f"{data_dir} is mode {mode:03o}; it holds your work and should be private",

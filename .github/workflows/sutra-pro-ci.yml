@@ -53,6 +53,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-15, windows-latest]
+    env:
+      PYTHONUTF8: "1"          # the app's launchers run Python with -X utf8 on Windows; tests that read or write text must see the same
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -728,7 +728,7 @@ def test_alive_uses_the_handle_for_a_spawned_pid_and_kill_zero_for_others(tmp_pa
     launcher = ProcessLauncher()
     assert launcher.alive(None) is False and launcher.alive(0) is False and launcher.alive(2_000_000_000) is False
     assert launcher.alive(os.getpid()) is True                                  # not spawned by us: os.kill(pid, 0)
-    assert "python" in launcher.command_of(os.getpid()) and launcher.command_of(2_000_000_000) == ""
+    assert "python" in launcher.command_of(os.getpid()).lower() and launcher.command_of(2_000_000_000) == ""
 
 
 def test_send_numbers_the_inbox_lines(tmp_path):

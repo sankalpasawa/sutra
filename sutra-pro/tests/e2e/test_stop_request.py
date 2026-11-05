@@ -70,7 +70,8 @@ def running(tmp_path):
 def test_the_stop_file_ends_a_real_server_cleanly(running):
     assert running.health()
     holder = lock.read_holder(running.data_dir)
-    assert holder is not None and holder.pid == running.proc.pid and lock.is_locked(running.data_dir)
+    # on Windows the pid of the process we started is a venv launcher: the server is its child, and the pid file names the server
+    assert holder is not None and (oslayer.IS_WINDOWS or holder.pid == running.proc.pid) and lock.is_locked(running.data_dir)
     lock.request_stop(running.data_dir)
     assert running.proc.wait(timeout=STOP_WITHIN_S) == 0, "\n".join(running.lines)
     assert not lock.is_locked(running.data_dir), "the instance lock went with the server"

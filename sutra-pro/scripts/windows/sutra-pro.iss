@@ -41,7 +41,8 @@ UninstallDisplayIcon={app}\icon\sutra-pro.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-VersionInfoVersion={#AppVersion}
+; the version resource wants four numbers: X.Y.Z.0
+VersionInfoVersion={#AppVersion}.0
 VersionInfoDescription={#AppName} setup
 MinVersion=10.0
 

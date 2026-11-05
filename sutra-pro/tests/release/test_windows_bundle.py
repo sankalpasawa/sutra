@@ -92,6 +92,8 @@ def work(tmp_path):
 
 
 def build(work, *, wheel=None, archive=None, **kwargs):
+    if sys.platform == "win32":
+        pytest.skip("the fake interpreter is a shebang script; the real build runs in the release workflow")
     return bwa.build_app(wheel=wheel or make_wheel(work / "in"), out=work / "out", python_archive=archive or make_archive(work / "in"),
                          allow_foreign_host=True, **kwargs)
 

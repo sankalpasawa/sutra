@@ -264,7 +264,7 @@ class ProcessLauncher:
             self._signal_group(pid, signal.SIGTERM)
         if await self._wait(pid, term_s):
             return
-        self._signal_group(pid, signal.SIGKILL)
+        self._signal_group(pid, oslayer.SIGKILL)
         await self._wait(pid, 2.0)
 
 

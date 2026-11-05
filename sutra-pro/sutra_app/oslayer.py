@@ -125,6 +125,8 @@ def _pid_alive_windows(pid: int) -> bool:
     import ctypes
     from ctypes import wintypes
     process_query_limited_information, still_active, error_access_denied = 0x1000, 259, 5
+    if pid > 0xFFFFFFFF:
+        return False                                                  # not a DWORD, so not a process id
     k32 = _kernel32()
     handle = k32.OpenProcess(process_query_limited_information, False, pid)
     if not handle:
