@@ -145,7 +145,26 @@ jobs:
             sutra-pro/release/*.whl
             sutra-pro/release/*.whl.sha256
           body: |
-            Install with [uv](https://docs.astral.sh/uv/) (it fetches Python 3.11 if the machine has none):
+            Sutra Pro runs on your computer: one chat on top of one org chart, five function nodes per department, your own Claude and Codex
+            logins, nothing sent anywhere else. It listens on 127.0.0.1 only. This release is not the repository's "Latest" one on purpose: that belongs
+            to the older Sutra product.
+
+            ### Download the app
+
+            | System | Download |
+            |---|---|
+            | macOS, Apple silicon (M1 and later) | [`Sutra-Pro-arm64.dmg`](https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/Sutra-Pro-arm64.dmg) |
+            | macOS, Intel | [`Sutra-Pro-x86_64.dmg`](https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/Sutra-Pro-x86_64.dmg) |
+            | Windows 10 and 11, 64-bit | [`Sutra-Pro-Setup-x64.exe`](https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/Sutra-Pro-Setup-x64.exe) (installer, no administrator rights) or [`Sutra-Pro-win-x64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/Sutra-Pro-win-x64.zip) (portable) |
+
+            - **macOS:** open the DMG and drag **Sutra Pro** onto Applications. When the release was built with the repository's signing secrets the app is signed with a Developer ID and notarized by Apple; if macOS says it cannot verify the app, right-click it and choose Open.
+            - **Windows:** the files are not signed. SmartScreen says "Windows protected your PC": choose "More info", then "Run anyway".
+            - Opening the app starts the server and your browser opens on it. For real work you need the `claude` and/or `codex` command line tools signed in; `Sutra Pro Doctor` (Windows) or `sutra-pro doctor` says what is missing.
+            - Every file has a `.sha256` next to it: `shasum -a 256 -c <file>.sha256` (macOS, Linux) or `certutil -hashfile <file> SHA256` (Windows).
+
+            ### Or install the command with uv
+
+            Needs [uv](https://docs.astral.sh/uv/) (it fetches Python 3.11 if the machine has none):
 
                 uv tool install https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/${{ steps.assets.outputs.wheel }}
 
@@ -153,7 +172,7 @@ jobs:
             |---|---|
             | `${{ steps.assets.outputs.wheel }}` | The wheel. Installers need this exact name. |
             | `sutra_pro-py3-none-any.whl` | The same file under a stable name, for scripts that know only the tag. It has no version in its name, so `uv` and `pip` refuse to install it by that name: download it, or use the line above. |
-            | `*.sha256` | SHA-256 of each wheel. Check with `shasum -a 256 -c <file>.sha256` in the folder you downloaded to. |
+            | `*.sha256` | SHA-256 of each file. Check with `shasum -a 256 -c <file>.sha256` in the folder you downloaded to. |
 
   # The release is only real if it installs. This downloads what was PUBLISHED (not what the build job had on disk), checks the
   # checksums, installs the wheel in a fresh environment and starts the command, on both systems the app is for.
