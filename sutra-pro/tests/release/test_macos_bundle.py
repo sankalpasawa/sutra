@@ -1181,3 +1181,14 @@ def test_the_release_workflow_names_match_the_documented_asset_names():
     for name in ("Sutra-Pro-arm64.dmg", "Sutra-Pro-x86_64.dmg", "Sutra-Pro-arm64.dmg.sha256", "os.sutra.pro", "~/.sutra-pro/logs/app.log",
                  *SECRETS):
         assert name in doc, name
+
+
+def test_apples_ticket_calls_are_retried_because_cloudkit_drops_connections():
+    """Found on the first signed run: `stapler validate` died once with "The network connection was lost" while the same step passed on the
+    other architecture's leg. Staple and validate are retried; the notarization submit is not (a second submit would be a second ticket)."""
+    for job_step, needle in (("Notarize and staple the app", 'retry xcrun stapler staple "build/Sutra Pro.app"'),
+                             ("Notarize and staple the DMG", 'retry xcrun stapler staple "$dmg"'),
+                             ("A signed build must actually be notarized", 'retry xcrun stapler validate "release/Sutra-Pro-$ARCH.dmg"')):
+        run = step_named("dmg", job_step)["run"]
+        assert needle in run and "retry()" in run, job_step
+    assert "retry xcrun notarytool" not in wf().__str__()

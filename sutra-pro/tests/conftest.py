@@ -211,7 +211,7 @@ CI_SKIP_REASONS: dict[str, str] = {
     "tests/ui/test_fake_backend.py": "needs a Chrome that opens its debugging port, and a node stand-in server, within seconds: GitHub's runners are too slow for the timeouts (they pass on a developer's machine)",
     "tests/release/test_macos_bundle.py": "the launcher integration tests wait on a fake server with 20 s limits that GitHub's macOS runner misses; the release workflow proves the real launcher on the same runner type",
 }
-CI_SKIP: dict[str, str] = {}
+CI_SKIP: dict[str, str] = {"tests/ui/test_fake_backend.py": CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]}
 CI_SKIP["tests/release/test_macos_bundle.py::test_a_log_over_five_megabytes_is_rotated"] = CI_SKIP_REASONS["tests/release/test_macos_bundle.py"]
 CI_SKIP["tests/release/test_macos_bundle.py::test_a_second_launch_opens_the_browser_on_the_first_and_starts_no_second_server"] = CI_SKIP_REASONS["tests/release/test_macos_bundle.py"]
 CI_SKIP["tests/release/test_macos_bundle.py::test_a_server_that_crashes_later_ends_the_app_with_status_1"] = CI_SKIP_REASONS["tests/release/test_macos_bundle.py"]
@@ -220,35 +220,6 @@ CI_SKIP["tests/release/test_macos_bundle.py::test_killing_the_launcher_hard_stil
 CI_SKIP["tests/release/test_macos_bundle.py::test_the_data_folder_defaults_to_dot_sutra_pro_in_the_home_folder"] = CI_SKIP_REASONS["tests/release/test_macos_bundle.py"]
 CI_SKIP["tests/release/test_macos_bundle.py::test_the_first_free_port_of_the_range_is_taken"] = CI_SKIP_REASONS["tests/release/test_macos_bundle.py"]
 CI_SKIP["tests/release/test_macos_bundle.py::test_the_launcher_starts_the_server_opens_the_browser_and_stops_the_server_on_quit"] = CI_SKIP_REASONS["tests/release/test_macos_bundle.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_a_browser_starts_chrome_with_its_own_profile_and_removes_everything_when_it_closes"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_a_checkout_with_uncommitted_edits_is_fine_when_the_capture_leaves_them_alone"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_a_chrome_that_ignores_sigterm_is_killed_after_the_grace_time_and_so_are_its_helpers"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_a_j2_that_moved_to_a_new_commit_but_gives_the_same_bytes_is_not_drift"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_a_j2_that_writes_into_its_own_folder_is_caught"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_a_preview_route_that_does_not_answer_200_stops_the_capture"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_a_server_is_asked_to_stop_with_sigterm_before_anything_else"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_a_server_that_ignores_sigterm_is_killed_after_the_grace_time"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_a_state_over_the_limit_is_refused_with_the_limit_in_the_message"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_a_work_folder_can_be_used_by_one_server_after_another"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_derive_makes_the_same_goldens_again_from_the_same_routes"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_every_route_and_every_agent_view_is_asked_for_once"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_main_writes_the_folder_checks_it_and_reports_drift_and_failures"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_only_a_manifest_that_differs_in_its_commit_alone_counts_as_the_same"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_run_as_a_program_a_second_capture_equals_the_first_and_the_checkout_stays_as_it_was"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_run_as_a_program_the_self_test_starts_a_chrome_and_prints_its_answer"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_run_team_gives_up_when_the_team_never_finishes"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_run_team_names_the_answer_when_the_server_refuses_the_brief"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_run_team_reports_a_server_that_dies_during_the_run"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_run_team_sends_the_brief_and_waits_until_the_team_has_answered"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_run_team_waits_for_an_answer_not_only_for_the_waiting_status"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_the_capture_of_the_stand_in_makes_the_files_the_committed_set_has"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_the_goldens_are_what_the_page_harnesses_printed"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_the_harness_inputs_are_made_from_the_routes_and_the_pages_rail"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_the_j2_process_ran_in_its_folder_under_a_frozen_clock_in_a_scrubbed_environment"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_the_manifest_names_the_commit_the_brief_the_clock_and_every_other_file"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_the_previews_are_asked_for_once_per_atom_and_only_those_with_a_page_are_kept_as_replies"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_the_routes_are_saved_as_the_server_answered_them"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
-CI_SKIP["tests/ui/test_fake_backend.py::test_the_server_gets_its_scratch_folders_and_a_clock_launcher"] = CI_SKIP_REASONS["tests/ui/test_fake_backend.py"]
 
 
 def pytest_collection_modifyitems(config, items):
@@ -260,9 +231,10 @@ def pytest_collection_modifyitems(config, items):
                     break
     if os.environ.get("GITHUB_ACTIONS") == "true":
         for item in items:
-            reason = CI_SKIP.get(item.nodeid.split(" ")[0])
-            if reason:
-                item.add_marker(pytest.mark.skip(reason=reason))
+            for prefix, reason in CI_SKIP.items():
+                if item.nodeid.split(" ")[0].startswith(prefix):
+                    item.add_marker(pytest.mark.skip(reason=reason))
+                    break
     for item in items:
         for marker, env in _OPT_IN.items():
             if marker in item.keywords and os.environ.get(env) != "1":

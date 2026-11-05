@@ -287,8 +287,10 @@ jobs:
           trap 'rm -f "$key"' EXIT
           printf '%s' "$APPLE_NOTARY_KEY" | base64 --decode > "$key"
           ditto -c -k --keepParent "build/Sutra Pro.app" "$RUNNER_TEMP/app.zip"
+          # Apple's ticket service (CloudKit) drops connections now and then: staple and validate are retried, as Apple advises
+          retry() { for attempt in 1 2 3 4 5; do "$@" && return 0; echo "attempt $attempt of $* failed, retrying in 15 s"; sleep 15; done; return 1; }
           xcrun notarytool submit "$RUNNER_TEMP/app.zip" --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --wait
-          xcrun stapler staple "build/Sutra Pro.app"
+          retry xcrun stapler staple "build/Sutra Pro.app"
 
       - name: Make the DMG
         run: |
@@ -323,16 +325,19 @@ jobs:
           dmg="release/Sutra-Pro-$ARCH.dmg"
           codesign --force --timestamp --sign "$SIGN_IDENTITY" "$dmg"
           printf '%s' "$APPLE_NOTARY_KEY" | base64 --decode > "$key"
+          # Apple's ticket service (CloudKit) drops connections now and then: staple and validate are retried, as Apple advises
+          retry() { for attempt in 1 2 3 4 5; do "$@" && return 0; echo "attempt $attempt of $* failed, retrying in 15 s"; sleep 15; done; return 1; }
           xcrun notarytool submit "$dmg" --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --wait
-          xcrun stapler staple "$dmg"
+          retry xcrun stapler staple "$dmg"
 
       # A release must never CLAIM notarization it did not get: when the secrets were supplied, both tickets must be stapled.
       - name: A signed build must actually be notarized
         if: steps.signing.outputs.enabled == 'true'
         run: |
           set -euo pipefail
-          xcrun stapler validate "release/Sutra-Pro-$ARCH.dmg" || { echo "::error::the DMG is not stapled although signing secrets were supplied"; exit 1; }
-          xcrun stapler validate "build/Sutra Pro.app" || { echo "::error::the app is not stapled although signing secrets were supplied"; exit 1; }
+          retry() { for attempt in 1 2 3 4 5; do "$@" && return 0; echo "attempt $attempt of $* failed, retrying in 15 s"; sleep 15; done; return 1; }
+          retry xcrun stapler validate "release/Sutra-Pro-$ARCH.dmg" || { echo "::error::the DMG is not stapled although signing secrets were supplied"; exit 1; }
+          retry xcrun stapler validate "build/Sutra Pro.app" || { echo "::error::the app is not stapled although signing secrets were supplied"; exit 1; }
           spctl --assess --type execute --verbose "build/Sutra Pro.app"
 
       - name: Write the checksum

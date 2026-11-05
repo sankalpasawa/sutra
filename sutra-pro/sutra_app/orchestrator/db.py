@@ -148,9 +148,12 @@ class Database:
         return found
 
     def close(self) -> None:
-        """Close every thread's connection. Later use raises. Safe to call twice."""
+        """Close every thread's connection. Later use raises. Safe to call twice. Waits (up to 5 s) for store calls still running on worker threads."""
         with self._lock:
             self._closed = True
+        if not _wait_for_store_calls():
+            log.warning("closing the database while a store call is still running (waited 5 s)")
+        with self._lock:
             conns, self._all = self._all, []
         for conn in conns:
             try:
@@ -249,6 +252,26 @@ class Database:
         return self.version()
 
 
+_inflight = 0                                    # store calls running on worker threads right now (all databases of this process)
+_inflight_idle = threading.Condition()
+
+
 async def run_blocking(fn: Callable[..., Any], *args: Any) -> Any:
-    """Run a synchronous store call on a worker thread (each thread has its own connection)."""
-    return await anyio.to_thread.run_sync(fn, *args)
+    """Run a synchronous store call on a worker thread (each thread has its own connection). `Database.close` waits for the calls that are
+    still running: closing a SQLite connection that another thread is in the middle of a statement on is undefined, and on Windows it is
+    an access violation that takes the whole process down."""
+    global _inflight
+    with _inflight_idle:
+        _inflight += 1
+    try:
+        return await anyio.to_thread.run_sync(fn, *args)
+    finally:
+        with _inflight_idle:
+            _inflight -= 1
+            _inflight_idle.notify_all()
+
+
+def _wait_for_store_calls(seconds: float = 5.0) -> bool:
+    """True when no `run_blocking` call is running (after waiting up to `seconds` for the ones that are)."""
+    with _inflight_idle:
+        return _inflight_idle.wait_for(lambda: _inflight == 0, timeout=seconds)
