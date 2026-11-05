@@ -11,6 +11,7 @@ _OPT_IN = {"live": "SUTRA_LIVE", "slow": "SUTRA_SLOW", "browser": "SUTRA_BROWSER
 # Tests that cannot run on Windows, by the start of their node id (a file, a class or one test), each with the reason (D104). Every entry is
 # something Windows does differently by design, not a bug waiting: a POSIX mode bit, a signal's exit code, a shell script as a program.
 WINDOWS_SKIP: dict[str, str] = {
+    "tests/engine/test_engine_legacy.py": "the J2 legacy harness runs bash, and on Windows `bash` is the WSL stub (no distribution installed)",
     "tests/ui/test_fake_backend.py": "drives a fake server through POSIX process-group calls (killpg, ps, SIGKILL)",
     "tests/release/test_installed_app.py": "runs the shell install scripts (sh, bash)",
     "tests/connectors/test_env_process.py": "POSIX child-process semantics: signals, process groups, text-mode streams (the portable twin is tests/connectors/test_process_portable.py)",
@@ -206,6 +207,11 @@ for _reason, _ids in {
 
 # found by the second full run on Windows (D104)
 WINDOWS_SKIP.update({
+    "tests/ops/test_exporter.py::test_team_export_refuses_an_unknown_or_unsafe_team": "starts the app with the fake CLI shell wrappers (the e2e LiveApp)",
+    "tests/engine/test_engine_paths.py::test_a_folder_in_the_wrong_place_is_foreign": "POSIX pid semantics (another user's pid) and path strings",
+    "tests/release/test_macos_bundle.py::test_an_unsafe_archive_is_refused_before_anything_is_written": "runs the workflow's bash step with a minimal environment, which Windows' bash does not start in",
+
+
     "tests/engine/test_engine_library_lock.py::test_a_run_that_cannot_get_the_lock_falls_back_to_the_generic_template": "a child script takes the library lock with fcntl; the lock itself is oslayer.try_lock, proved by tests/ops/test_oslayer.py",
     "tests/engine/test_engine_library_lock.py::test_a_wait_that_ends_in_time_succeeds": "a child script takes the library lock with fcntl; the lock itself is oslayer.try_lock, proved by tests/ops/test_oslayer.py",
     "tests/engine/test_engine_library_lock.py::test_mark_used_gives_up_the_same_way": "a child script takes the library lock with fcntl; the lock itself is oslayer.try_lock, proved by tests/ops/test_oslayer.py",

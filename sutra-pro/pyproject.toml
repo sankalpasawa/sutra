@@ -26,6 +26,7 @@ desktop = [
 ]
 dev = [
     "pytest>=8",
+    "pytest-timeout>=2.3",
     "httpx>=0.27",
     "websockets>=13",
     "pyyaml>=6",
@@ -57,6 +58,8 @@ sutra_app = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# a test that has not ended after ten minutes has hung: it fails with its stack instead of holding the whole run (and a CI job) for an hour
+timeout = 600
 markers = [
     "live: talks to the real claude or codex CLI; runs only with SUTRA_LIVE=1",
     "slow: long engine suites (legacy J2 scripts, prompt goldens); runs only with SUTRA_SLOW=1",
