@@ -262,17 +262,22 @@ _inflight_idle = threading.Condition()
 
 async def run_blocking(fn: Callable[..., Any], *args: Any) -> Any:
     """Run a synchronous store call on a worker thread (each thread has its own connection). `Database.close` waits for the calls that are
-    still running: closing a SQLite connection that another thread is in the middle of a statement on is undefined, and on Windows it is
-    an access violation that takes the whole process down."""
-    global _inflight
-    with _inflight_idle:
-        _inflight += 1
-    try:
-        return await anyio.to_thread.run_sync(fn, *args)
-    finally:
+    still running: closing a SQLite connection that another thread is in the middle of a statement on is undefined, and on Windows and on macOS
+    it is a crash that takes the whole process down. The call is counted on the worker thread itself, around `fn`: a count kept by the
+    awaiting coroutine would leak whenever an event loop ends while a call is pending (a test's loop does), and `close` would then wait for
+    nothing and close under a live statement anyway."""
+    def counted() -> Any:
+        global _inflight
         with _inflight_idle:
-            _inflight -= 1
-            _inflight_idle.notify_all()
+            _inflight += 1
+        try:
+            return fn(*args)
+        finally:
+            with _inflight_idle:
+                _inflight -= 1
+                _inflight_idle.notify_all()
+
+    return await anyio.to_thread.run_sync(counted)
 
 
 def _wait_for_store_calls(seconds: float = 5.0) -> bool:

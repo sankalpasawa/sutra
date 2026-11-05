@@ -76,3 +76,23 @@ def test_a_thread_that_already_has_a_connection_cannot_use_it_once_the_database_
     assert seen["second"] == "refused"
     with pytest.raises(SchemaError):
         db.conn()
+
+
+def test_a_call_whose_event_loop_ended_before_it_did_does_not_leave_the_count_up(db):
+    """The leak that made close() wait five seconds and then close under a live statement: a loop that ends with a call pending never runs the
+    coroutine's `finally`. The count is kept on the worker thread now, so it returns to zero when the thread's call ends."""
+    started = threading.Event()
+
+    def slow():
+        db.conn().execute("SELECT 1").fetchall()
+        started.set()
+        time.sleep(0.3)
+
+    async def go():
+        task = asyncio.ensure_future(dbmod.run_blocking(slow))
+        await asyncio.sleep(0.05)
+        return task                                   # the loop ends here, with the call still pending
+
+    asyncio.run(go())
+    assert started.wait(10)
+    assert dbmod._wait_for_store_calls(10.0) is True, "the count must come back to zero once the worker thread's call has ended"

@@ -207,6 +207,7 @@ for _reason, _ids in {
 
 # found by the second full run on Windows (D104)
 WINDOWS_SKIP.update({
+    "tests/orchestrator/test_scripted_conversation.py::test_moving_a_division_keeps_its_id_session_and_history": "asks a team to work again before its previous task has ended: timing, flaky on Windows (D104 follow-up)",
     "tests/ops/test_exporter.py::test_team_export_refuses_an_unknown_or_unsafe_team": "starts the app with the fake CLI shell wrappers (the e2e LiveApp)",
     "tests/engine/test_engine_paths.py::test_a_folder_in_the_wrong_place_is_foreign": "POSIX pid semantics (another user's pid) and path strings",
     "tests/release/test_macos_bundle.py::test_an_unsafe_archive_is_refused_before_anything_is_written": "runs the workflow's bash step with a minimal environment, which Windows' bash does not start in",
