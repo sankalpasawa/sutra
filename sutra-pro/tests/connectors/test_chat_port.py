@@ -154,3 +154,15 @@ def test_attachments_are_refused_until_a_delivery_exists(tmp_path):
 def test_a_bad_session_id_is_refused(tmp_path):
     with pytest.raises(InvalidRequestError):
         make(tmp_path)[0].plan_switch("../x", "codex")
+
+
+def test_a_model_choice_is_applied_to_a_chat_that_already_has_a_session_or_refused_never_dropped(tmp_path):
+    port, router, history, cfg, claude, codex = make(tmp_path)
+    port.send(A, ChatTurnIn(text="hello"))                                      # claude now has a session.json
+    assert port.choose(A, "claude", "opus").model == "opus"
+    assert load_session_state(cfg.resolved_work_root() / A).model == "opus"
+    with pytest.raises(InvalidRequestError):
+        port.choose(A, "codex", "gpt-x")                                        # a switch would not use it
+    with pytest.raises(InvalidRequestError):
+        port.choose(B, None, "opus")                                            # a model needs its provider
+    assert load_session_state(cfg.resolved_work_root() / A).provider == "claude"

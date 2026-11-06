@@ -19,7 +19,7 @@ from .health import API_KEY_REFUSED
 from .router import TRANSCRIPT_LIMIT, Router
 from .tool_kinds import classify, title_of
 from .transcript import FULL_CHARS, TAIL_MESSAGES, render_carry_over
-from .usage import load_session_state
+from .usage import load_session_state, save_session_state
 
 __all__ = ["ChatPort", "RouterChatPort"]
 
@@ -97,8 +97,18 @@ class RouterChatPort:
                 raise InvalidRequestError(f"{provider} is not a provider you can choose")
             if not pill.ready:
                 raise InvalidRequestError(f"{provider} cannot run: {pill.why_not}", detail={"why_not": pill.why_not})
-        if model is not None and provider is not None and load_session_state(self._work_dir(session_id)) is None:
-            self.router.chat_start(SessionSpec(session_id=session_id, provider=provider, model=model), self._ctx)
+        if model is not None:
+            if provider is None:
+                raise InvalidRequestError("a model can be chosen only together with its provider")
+            existing = load_session_state(self._work_dir(session_id))
+            if existing is None:
+                self.router.chat_start(SessionSpec(session_id=session_id, provider=provider, model=model), self._ctx)
+            elif existing.provider == provider:
+                if existing.model != model:                  # the chat keeps its provider session; its next turn runs on this model
+                    existing.model = model
+                    save_session_state(existing)
+            else:                                            # a switch starts a fresh session on the provider's policy model: never silently ignored
+                raise InvalidRequestError(f"the model of {provider} cannot be set while this chat runs on {existing.provider}; choose the provider first")
         self.router.chat_pin(session_id, provider)
         stored = load_session_state(self._work_dir(session_id))
         return Choice(session_id=session_id, provider=provider, model=stored.model if stored is not None and provider else None)
