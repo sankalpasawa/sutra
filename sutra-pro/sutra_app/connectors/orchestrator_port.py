@@ -76,6 +76,6 @@ class AsyncConnector:
         for name in self.router.connectors:
             s = self.router.provider_summary(name)
             out[name] = {"installed": s.installed, "signed_in": s.signed_in, "detail": s.detail, "method": s.method,
-                         "billing": s.billing, "plan": s.plan, "version": s.version, "health": s.health.model_dump(mode="json"),
+                         "billing": s.billing, "plan": s.plan, "plan_label": s.plan_label, "version": s.version, "health": s.health.model_dump(mode="json"),
                          "quota": s.quota.model_dump(mode="json") if s.quota is not None else None}
         return out

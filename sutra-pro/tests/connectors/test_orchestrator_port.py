@@ -188,6 +188,7 @@ def test_status_is_a_per_provider_view(rig):
     assert (claude["installed"], claude["signed_in"], claude["detail"]) == (True, True, "ok")
     assert (claude["method"], claude["billing"], claude["plan"], claude["version"]) == ("claude.ai", "subscription", "max", "9.9")
     assert claude["health"] == {"state": "ok", "until": None, "reason": None} and claude["quota"] is None
+    assert claude["plan_label"] == "Claude Max"
     assert "account" not in claude
 
 

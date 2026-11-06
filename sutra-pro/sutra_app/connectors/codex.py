@@ -42,6 +42,7 @@ from .jsonio import prune_nulls
 from .models import AuthStatus, Capabilities, ConnectorConfig, ConnectorEvent, ModelInfo, Quota, SessionState, TurnResult, Usage
 from .policy import Rate
 from .process import Command, ExitInfo, ProcessRunner, RunningProcess
+from .quota_windows import window_key, windows_from_codex
 from .schema import strict_schema
 from .usage import cumulative_delta, rate_card_usd, usage_from_codex
 
@@ -99,17 +100,14 @@ def _fraction(value: Any) -> Optional[float]:
     return float(value) / 100.0 if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
-def _window_name(minutes: Any) -> Optional[str]:
-    if not isinstance(minutes, (int, float)) or isinstance(minutes, bool) or minutes <= 0:
-        return None
-    named = {300: "five_hour", 10080: "seven_day", 43200: "thirty_day"}
-    return named.get(int(minutes), f"{int(minutes)}_min")
+_window_name = window_key            # one table of window names (quota_windows.py)
 
 
 def quota_from_rate_limits(rate_limits: Mapping[str, Any]) -> Optional[Quota]:
-    """A rollout `rate_limits` object -> `Quota`. The window with the higher `used_percent` (primary or secondary) is shown.
-    `used` is a fraction (0.09 = 9 %, like Claude's utilization); `exhausted` when Codex names a reached limit or the window is
-    full, `warning` from 80 %. None when there is no window at all."""
+    """A rollout `rate_limits` object -> `Quota`. The window with the higher `used_percent` (primary or secondary) is the one the
+    router blocks on (`window`, `used`, `resets_at`); `windows` keeps both (GAP-providers). `used` is a fraction (0.09 = 9 %, like
+    Claude's utilization); `exhausted` when Codex names a reached limit or the window is full, `warning` from 80 %. None when there
+    is no window at all."""
     windows = [w for w in (rate_limits.get("primary"), rate_limits.get("secondary")) if isinstance(w, Mapping)]
     if not windows:
         return None
@@ -128,7 +126,7 @@ def quota_from_rate_limits(rate_limits: Mapping[str, Any]) -> Optional[Quota]:
     plan = rate_limits.get("plan_type")
     return Quota(status=status, window=_window_name(best.get("window_minutes")), used=_fraction(percent),
                  resets_at=float(resets) if isinstance(resets, (int, float)) and not isinstance(resets, bool) else None,
-                 plan=plan if isinstance(plan, str) else None, source="rollout")
+                 plan=plan if isinstance(plan, str) else None, source="rollout", windows=windows_from_codex(rate_limits))
 
 
 def parse_reset_time(text: str, now: float) -> Optional[float]:

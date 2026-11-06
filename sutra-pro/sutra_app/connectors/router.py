@@ -47,6 +47,7 @@ from .models import (
     SessionSpec, SessionState, TurnResult,
 )
 from .policy import Resolved, RoutingPolicy
+from .quota_windows import plan_label
 from .schema import fits_native, schema_sha, to_json_schema
 from .budget import carry_chars
 from .transcript import render_carry_over
@@ -134,6 +135,7 @@ class ProviderStatus(M):
     method: Optional[str] = None
     billing: str = "unknown"
     plan: Optional[str] = None
+    plan_label: Optional[str] = None          # the plan in words ("Claude Max", "ChatGPT Plus"; quota_windows.plan_label)
     account: Optional[str] = None
     detail: str = ""
     health: HealthState
@@ -923,9 +925,10 @@ class Router:
             counts = self._today.get(name)
         today_key = datetime.fromtimestamp(self._clock()).strftime("%Y-%m-%d")
         today = TodayCounts(calls=counts[1], tokens=counts[2], usd=round(counts[3], 9)) if counts and counts[0] == today_key else TodayCounts()
+        plan = auth.plan if auth else None
         return ProviderStatus(
             name=name, installed=installed, version=auth.version if auth else None, signed_in=auth.signed_in if auth else (True if name == "stub" else None),
-            method=auth.method if auth else None, billing=auth.billing if auth else "unknown", plan=auth.plan if auth else None,
+            method=auth.method if auth else None, billing=auth.billing if auth else "unknown", plan=plan, plan_label=plan_label(name, plan),
             account=auth.account if auth else None, detail=(auth.detail if auth else detail), health=health, quota=quota, models=listed,
             today=today)
 
