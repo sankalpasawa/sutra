@@ -24,6 +24,7 @@ from collections.abc import Mapping, Sequence
 from sutra_app.connectors.models import Message
 from sutra_app.library.gate import GATE, Checked
 from sutra_app.library.org_chart import LinkPlan
+from sutra_app.orchestrator.chat_v2 import ChatSegments
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.errors import NotFound
 from sutra_app.orchestrator.ids import iso_z
@@ -39,7 +40,7 @@ TURN_PHASES = ("reading", "planning", "building")
 PROVIDERS = ("claude", "codex", "stub", "")
 _MESSAGE_COLUMNS = "id, session_id, role, who, kind, text, card_json, pause, answered_by, task_id, state, at"
 _SESSION_COLUMNS = ("id, node_id, kind, title, writable, status, filed_under, connector, model, provider_session_id, "
-                    "last_message_id, note, created_at, updated_at")
+                    "last_message_id, note, created_at, updated_at, pinned")
 _OPEN_TASKS = ("blocked", "queued", "starting", "running", "waiting_user")
 _OPTION_LINE = re.compile(r"^[ \t]*Option[ \t]+[0-9]+:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
 _TRANSCRIPT_ROLES = {"user": "user", "agent": "assistant", "system": "system"}
@@ -62,7 +63,8 @@ def _session_record(row: sqlite3.Row) -> ChatSession:
     return ChatSession(
         kind=row["kind"], id=row["id"], node_id=row["node_id"], title=row["title"], writable=bool(row["writable"]), status=row["status"],
         filed_under=row["filed_under"], connector=row["connector"], model=row["model"], provider_session_id=row["provider_session_id"],
-        last_message_id=row["last_message_id"], note=row["note"], created_at=row["created_at"], updated_at=row["updated_at"])
+        last_message_id=row["last_message_id"], note=row["note"], created_at=row["created_at"], updated_at=row["updated_at"],
+        pinned=row["pinned"])
 
 
 def _message_out(row: sqlite3.Row) -> ChatMessageOut:
@@ -147,6 +149,11 @@ class ChatStore:
         row = self.db.conn().execute(f"SELECT {_MESSAGE_COLUMNS} FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
         return _message_out(row) if row is not None else None
 
+    def blocks(self, message_id: int) -> list[dict]:
+        """The typed blocks stored with a message, in order (empty for a message without any)."""
+        row = self.db.conn().execute("SELECT meta_json FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+        return list(json.loads(row["meta_json"]).get("blocks", [])) if row is not None else []
+
     def last_messages(self, session_id: str, limit: int = RESUME_MESSAGES, *, kinds: Sequence[str] | None = None,
                       ok_only: bool = False) -> list[ChatMessageOut]:
         """The newest `limit` messages of one session (its own rows only), oldest first; `kinds` and `ok_only` filter first."""
@@ -178,6 +185,9 @@ class ChatStore:
             return None
         card_json = json.dumps(msg.card, separators=(",", ":"), ensure_ascii=False, sort_keys=True) if msg.card is not None else None
         meta_json = msg.meta.model_dump_json()
+        if msg.blocks:                              # typed provider blocks ride in meta_json (absorb D108); MessageMeta itself is J2's and unchanged
+            meta_json = json.dumps({**json.loads(meta_json), "blocks": [b.model_dump(mode="json", exclude_defaults=True) for b in msg.blocks]},
+                                   separators=(",", ":"), ensure_ascii=False)
         cursor = conn.execute(
             "INSERT INTO chat_messages(session_id, role, who, kind, text, card_json, meta_json, pause, answered_by, task_id, src_ref, state, at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -264,6 +274,7 @@ class ChatStore:
                 log.debug("set_provider: no chat session %s", session_id)
                 return
             self._update_provider(tx, row, connector=connector, model=model, provider_session_id=provider_session_id or None)
+            ChatSegments.record(tx, session_id, connector, provider_session_id or None, row["last_message_id"])
 
     def note_provider(self, tx: Tx, session_id: str, connector: str, model: str) -> None:
         """Keep the session's chip current from a usage row: connector and model only, `provider_session_id` is never touched.

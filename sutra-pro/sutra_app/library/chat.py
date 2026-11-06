@@ -20,14 +20,14 @@ The first line of a chat.jsonl file is not a message: it is the run header `{"me
 `run_message`.
 """
 import warnings
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Literal
 
 from pydantic import AfterValidator, Field, JsonValue, StringConstraints, model_serializer
 
 from .base import Value
 from .registry import REGISTRY
 
-__all__ = ["MetaValue", "MessageMeta", "RunMessage", "BASE_KEYS", "META_KEYS"]
+__all__ = ["MetaValue", "MessageMeta", "RunMessage", "ChatBlock", "BASE_KEYS", "META_KEYS"]
 
 _MAX_DEPTH: Final = 32
 _MAX_TEXT: Final = 100_000          # a chat line: J2 shows a summary above 60,000 characters of chat (CHAT_FULL_CHARS)
@@ -49,6 +49,18 @@ def _bounded_json(value: Any) -> Any:
 
 
 MetaValue = Annotated[JsonValue, AfterValidator(_bounded_json)]
+
+
+class ChatBlock(Value):
+    """One typed block of a provider turn (absorb design 2.3): text, thinking, a tool call or its result. The set of types is closed.
+    `kind` says what a tool call was (for the fold); a cut text says it was cut (`truncated`)."""
+
+    type: Literal["text", "thinking", "tool_use", "tool_result"]
+    kind: Literal["read", "edit", "run", "search", "web", "other"] = "other"
+    name: Annotated[str, StringConstraints(max_length=200)] = ""
+    text: Annotated[str, StringConstraints(max_length=_MAX_TEXT)] = ""
+    truncated: bool = False
+    is_error: bool = False
 
 
 # A field called `register` shadows `ABCMeta.register` (every pydantic class has that metaclass). pydantic warns once, for

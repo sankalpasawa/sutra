@@ -55,13 +55,13 @@ def change(db, id_="chg-0001", **over):
 # ---- migrations and pragmas --------------------------------------------------------------------------------------
 
 def test_migrate_creates_every_table_and_sets_the_version(db):
-    assert db.version() == schema.SCHEMA_VERSION == 1
-    assert names(db) - {"sqlite_sequence"} == set(schema.TABLES)
+    assert db.version() == schema.SCHEMA_VERSION == 2
+    assert {n for n in names(db) if not n.startswith("chat_search")} - {"sqlite_sequence"} == set(schema.TABLES)      # chat_search is FTS5: it brings its shadow tables
 
 
 def test_migrate_again_is_a_no_op(db):
     sql(db, "INSERT INTO meta VALUES ('k','v')")
-    assert db.migrate() == 1
+    assert db.migrate() == 2
     assert sql(db, "SELECT count(*) FROM meta").fetchone()[0] == 1
 
 

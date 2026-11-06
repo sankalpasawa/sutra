@@ -89,7 +89,7 @@ def test_info_names_the_version_schema_folders_sizes_and_counts(done):
     info = done.client.get("/api/ops/info").json()
     settings = done.services.settings
     assert info["app"] == "Sutra Pro" and info["version"] == done.services.version
-    assert info["schema"] == info["schema_expected"] == 1
+    assert info["schema"] == info["schema_expected"] == 2
     assert info["data_dir"] == str(settings.data_dir) and info["db_path"] == str(settings.db_path) and info["log_path"] == str(settings.log_path)
     assert info["db_bytes"] >= settings.db_path.stat().st_size > 0
     assert info["free_bytes"] > 0 and info["uptime_s"] >= 0
@@ -348,7 +348,7 @@ def test_the_diagnostics_zip_holds_exactly_the_listed_members(done, quiet_doctor
     settings = json.loads(members["settings.json"])
     assert settings == done.services.settings.public() and "token" not in settings and "override_key" not in settings
     versions = json.loads(members["schema-versions.json"])
-    assert versions["database_user_version"] == 1 and versions["engine_settings"] == "engine-settings/1" and "atom" in versions["library"]
+    assert versions["database_user_version"] == 2 and versions["engine_settings"] == "engine-settings/1" and "atom" in versions["library"]
 
 
 def test_the_zip_lists_department_folders_with_their_sizes_and_no_file_content(done, quiet_doctor):

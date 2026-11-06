@@ -43,7 +43,7 @@ Ids = Annotated[list[Ident], Field(max_length=500)]
 Count = Annotated[int, Field(ge=0)]
 Seconds = Annotated[float, Field(ge=0)]
 TaskId = Annotated[str, StringConstraints(pattern=r"^tsk_[0-9a-f]{12}$")]
-SessionId = Annotated[str, StringConstraints(pattern=r"^(cs_[0-9a-f]{12}|cs_org)$")]
+SessionId = Annotated[str, StringConstraints(pattern=r"^(cs_[0-9a-f]{12}|cs_org|cs_old_[a-z0-9]{12})$")]      # cs_old_*: an imported old chat (D113)
 RunId = Annotated[str, StringConstraints(pattern=r"^" + RUN_ID_RE + r"$")]
 DeptId = Annotated[str, StringConstraints(pattern=DEPT_ID_RE)]
 StepId = Annotated[str, StringConstraints(pattern=r"^(W-[0-9]+|team:[^\x00-\x1f\x7f]{1,80})$")]
@@ -193,7 +193,7 @@ class UsageTotals(Value):
 class ChatSessionOut(Value):
     id: SessionId
     node_id: GraphNodeId
-    kind: Literal["org", "department", "division", "function", "step"]
+    kind: Literal["org", "department", "division", "function", "step", "legacy"]
     title: Name
     writable: bool
     status: Literal["active", "archived"]

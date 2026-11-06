@@ -1,0 +1,7 @@
+# ABS-6 as built
+
+`schema.MIGRATIONS[1]` (`_v2`, schema version 2): `chat_sessions` rebuilt (kind gains `legacy`, column `pinned`), `chat_segments`, FTS5 `chat_search` (message text and session titles, kept in step by triggers, backfilled). The rebuild copies the rows aside, drops and recreates the table and puts the rows back, with `defer_foreign_keys`: SQLite cannot turn foreign keys off inside the migration's transaction, and a plain copy-drop-rename leaves the dropped parent's children counted as violations at COMMIT (found by the populated-file test).
+`orchestrator/chat_v2.py`: `ChatSegments` (a row per provider change; `ChatStore.set_provider`, the Router's session hook, records them), `ChatSearch` (scope `all|node:<id>|dept:<id>` in SQL, archived only on request, at most 50, owner text becomes quoted FTS terms), `ChatArchive` (archive/unarchive; org chat, imported and merged chats refuse), `ChatChoices` (the persisted `pinned`). No delete.
+Riders: `library/chat.py` `ChatBlock` (closed); `records.ChatMessage.blocks` (optional, stored in `meta_json` under `blocks`; `ChatStore.blocks(message_id)` reads it; `MessageMeta` untouched); `records.ChatSession` kind `legacy` + `pinned`; `models.SessionId` also admits `cs_old_<12>` (imports, D113) and `ChatSessionOut.kind` admits `legacy`; `chats.py` post/blocks/segments.
+Tests whose hard-coded schema version 1 became 2 were updated (test_schema, startup, ops).
+`Router` does not read `pinned` yet: ABS-8.

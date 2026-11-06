@@ -65,7 +65,7 @@ def test_every_record_passes_the_gate_and_round_trips():
 
 
 def test_the_families_are_registered_with_their_kinds():
-    assert sorted(REGISTRY.kinds("chat_session")) == ["department", "division", "function", "org", "step"]
+    assert sorted(REGISTRY.kinds("chat_session")) == ["department", "division", "function", "legacy", "org", "step"]
     assert sorted(REGISTRY.kinds("chat_message")) == ["card", "error", "note", "question", "text"]
     assert list(REGISTRY.kinds("usage_record")) == ["usage_record"] and list(REGISTRY.kinds("work_task")) == ["work_task"]
 

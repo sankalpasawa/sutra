@@ -17,7 +17,7 @@ from pydantic import Field, StringConstraints, TypeAdapter, ValidationError, mod
 
 from sutra_app.engine.spec import DEPT_ID_RE
 from sutra_app.library.base import Record
-from sutra_app.library.chat import MessageMeta
+from sutra_app.library.chat import ChatBlock, MessageMeta
 from sutra_app.library.node import GraphNodeId
 from sutra_app.library.registry import record
 from sutra_app.library.types import JsonObject, NodeId, Ts
@@ -38,7 +38,7 @@ class ChatSession(Record):
     division's) is not writable and is filed under its survivor."""
 
     FAMILY = "chat_session"
-    kind: Literal["org", "department", "division", "function", "step"]
+    kind: Literal["org", "department", "division", "function", "step", "legacy"]
     id: SessionId
     node_id: GraphNodeId
     title: Annotated[str, StringConstraints(min_length=1, max_length=200)]
@@ -47,6 +47,7 @@ class ChatSession(Record):
     filed_under: GraphNodeId | None = None
     connector: Literal["claude", "codex", "stub", ""] = ""
     model: Annotated[str, StringConstraints(max_length=100)] = ""
+    pinned: Literal["claude", "codex", ""] = ""            # the owner's per-chat provider choice (ABS-6); "" = the policy decides
     provider_session_id: Annotated[str, StringConstraints(min_length=1, max_length=200)] | None = None
     last_message_id: Annotated[int, Field(ge=0)] = 0
     note: Annotated[str, StringConstraints(max_length=500)] = ""
@@ -59,6 +60,8 @@ class ChatSession(Record):
             raise ValueError("the org chat, and only the org chat, is the session cs_org")
         if self.kind == "org" and self.node_id != "root":
             raise ValueError("the org chat belongs to the root node")
+        if self.kind == "legacy" and (self.status != "archived" or self.writable):
+            raise ValueError("an imported old chat is archived and read only")
         if self.kind in ("function", "step") and self.writable:
             raise ValueError("a function or step session is a read-only log")
         if self.status == "archived" and self.writable:
@@ -83,6 +86,7 @@ class ChatMessage(Record):
     text: Annotated[str, StringConstraints(max_length=200_000)] = ""
     card: JsonObject | None = None
     meta: MessageMeta = MessageMeta()
+    blocks: list[ChatBlock] = []                            # typed provider blocks of a settled chat turn (ABS-6), stored in meta_json
     pause: Annotated[str, StringConstraints(min_length=1, max_length=60)] | None = None
     answered_by: Annotated[int, Field(ge=1)] | None = None
     task_id: TaskId | None = None

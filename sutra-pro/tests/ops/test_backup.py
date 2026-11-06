@@ -296,7 +296,7 @@ def test_before_upgrade_copies_the_database_when_it_is_older_than_this_build(dat
 
 def test_before_upgrade_names_both_versions(data, monkeypatch):
     monkeypatch.setattr(schema, "SCHEMA_VERSION", 4)
-    assert backup.before_upgrade(data).name == "pre-upgrade-v1-to-v4.sqlite3"
+    assert backup.before_upgrade(data).name == "pre-upgrade-v2-to-v4.sqlite3"
 
 
 def test_before_upgrade_replaces_an_older_copy_of_the_same_name(data):

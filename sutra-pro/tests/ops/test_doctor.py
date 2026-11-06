@@ -118,7 +118,7 @@ def test_the_database_may_be_absent_older_current_but_never_newer_or_broken(tmp_
     assert "none yet" in check(run(settings), "database").detail
     migrated_db(settings)
     current = check(run(settings), "database")
-    assert current.status == "ok" and "schema version 1" in current.detail
+    assert current.status == "ok" and "schema version 2" in current.detail
     conn = sqlite3.connect(settings.db_path)
     conn.execute("PRAGMA user_version = 99")
     conn.close()

@@ -151,10 +151,65 @@ DDL_V1: tuple[str, ...] = (
     "CREATE UNIQUE INDEX usage_call ON usage_ledger(task_id, call_ref) WHERE call_ref IS NOT NULL",
 )
 
+_SESSION_COLUMNS = ("id, node_id, kind, title, writable, status, filed_under, connector, model, provider_session_id, last_message_id, "
+                    "note, created_at, updated_at")
+
+
+def _v2(conn: Connection) -> None:
+    """Chat storage v2 (absorb design 2.3, D108), inside the migration's one transaction.
+
+    1. `chat_sessions` is rebuilt (SQLite cannot alter a CHECK): kind gains 'legacy', column `pinned` is added. The rows are copied aside, the table is
+       dropped and created again, and the rows are put back. Foreign keys cannot be switched off inside a transaction, so their check is
+       deferred to the commit, where each re-inserted session has cleared the `chat_messages` and `usage_ledger` rows that point at it.
+    2. `chat_segments`: one row per provider the session has run on.
+    3. `chat_search`: FTS5 over message text and session titles, kept in step by triggers and filled from what exists.
+    """
+    conn.execute("PRAGMA defer_foreign_keys = ON")
+    conn.execute("CREATE TABLE chat_sessions_copy AS SELECT * FROM chat_sessions")          # the rows wait here while the table is rebuilt
+    conn.execute("DROP TABLE chat_sessions")                                               # children now count as violations, deferred to COMMIT
+    conn.execute("""CREATE TABLE chat_sessions (
+  id TEXT PRIMARY KEY, node_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('org','department','division','function','step','legacy')), title TEXT NOT NULL,
+  writable INTEGER NOT NULL DEFAULT 0 CHECK (writable IN (0,1)),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+  filed_under TEXT,
+  connector TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', provider_session_id TEXT,
+  last_message_id INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  pinned TEXT NOT NULL DEFAULT '' CHECK (pinned IN ('','claude','codex')))""")
+    conn.execute(f"INSERT INTO chat_sessions({_SESSION_COLUMNS}) SELECT {_SESSION_COLUMNS} FROM chat_sessions_copy ORDER BY rowid")      # each insert clears its children
+    conn.execute("DROP TABLE chat_sessions_copy")
+    conn.execute("CREATE UNIQUE INDEX chat_sessions_active ON chat_sessions(node_id) WHERE status = 'active'")
+
+    conn.execute("""CREATE TABLE chat_segments (
+  session_id TEXT NOT NULL REFERENCES chat_sessions(id), seq INTEGER NOT NULL, connector TEXT NOT NULL,
+  provider_session_id TEXT, from_message_id INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL, PRIMARY KEY (session_id, seq))""")
+
+    # one row per message (message_id > 0) and one per session title (message_id = 0)
+    conn.execute("CREATE VIRTUAL TABLE chat_search USING fts5(body, session_id UNINDEXED, message_id UNINDEXED, tokenize='unicode61')")
+    conn.execute("INSERT INTO chat_search(body, session_id, message_id) SELECT title, id, 0 FROM chat_sessions")
+    conn.execute("INSERT INTO chat_search(body, session_id, message_id) SELECT text, session_id, id FROM chat_messages WHERE text <> ''")
+    for statement in _FTS_TRIGGERS:
+        conn.execute(statement)
+
+
+_FTS_TRIGGERS: tuple[str, ...] = (
+    "CREATE TRIGGER chat_search_msg_ai AFTER INSERT ON chat_messages WHEN new.text <> '' BEGIN "
+    "INSERT INTO chat_search(body, session_id, message_id) VALUES (new.text, new.session_id, new.id); END",
+    "CREATE TRIGGER chat_search_msg_au AFTER UPDATE OF text ON chat_messages BEGIN "
+    "DELETE FROM chat_search WHERE message_id = old.id; "
+    "INSERT INTO chat_search(body, session_id, message_id) SELECT new.text, new.session_id, new.id WHERE new.text <> ''; END",
+    "CREATE TRIGGER chat_search_msg_ad AFTER DELETE ON chat_messages BEGIN DELETE FROM chat_search WHERE message_id = old.id; END",
+    "CREATE TRIGGER chat_search_title_ai AFTER INSERT ON chat_sessions BEGIN "
+    "INSERT INTO chat_search(body, session_id, message_id) VALUES (new.title, new.id, 0); END",
+    "CREATE TRIGGER chat_search_title_au AFTER UPDATE OF title ON chat_sessions BEGIN "
+    "DELETE FROM chat_search WHERE message_id = 0 AND session_id = old.id; "
+    "INSERT INTO chat_search(body, session_id, message_id) VALUES (new.title, new.id, 0); END",
+)
+
 Migration = Sequence[str] | Callable[[Connection], None]
-MIGRATIONS: tuple[Migration, ...] = (DDL_V1,)
+MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2)
 SCHEMA_VERSION = len(MIGRATIONS)
 TABLES = (
     "meta", "org_charts", "chart_changes", "org_nodes", "org_edges", "departments", "tasks", "graph_nodes", "graph_edges",
-    "chat_sessions", "chat_messages", "atoms", "atom_ledger", "usage_ledger",
+    "chat_sessions", "chat_messages", "chat_segments", "atoms", "atom_ledger", "usage_ledger",
 )
