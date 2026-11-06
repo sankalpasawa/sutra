@@ -23,6 +23,8 @@ import cdp  # noqa: E402
 from sutra_app.orchestrator.api import chat_v2  # noqa: E402
 
 NOTE = "The cafe opens at seven. Closed on Mondays."
+# a 1x1 PNG: what a pasted screenshot is to the upload route (its bytes are sniffed)
+PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
 
 def q(css: str) -> str:
@@ -115,11 +117,19 @@ def test_the_direct_chat_composer_in_the_node_panel_and_on_home(app, browser, tm
     browser.wait_for("document.querySelectorAll('#nodepanel .ccfile').length === 0")                                                                     # the files went with the message
     browser.wait_for("!document.querySelector('#nodepanel .ccstream').hidden", timeout=20)
     assert "is writing" in label(browser, "#nodepanel .ccstream")
+    browser.click("[data-npclose]")                                     # closed while the model writes: the reply is stored with no panel open
+    browser.wait_for("document.getElementById('nodepanel').hidden")
     reply = agent_after(live, sid, 2)
+    browser.js("document.querySelector('#pane-graph g.wnode[data-id=\"web\"]').focus()")
+    browser.press("Enter")                                              # opened again: the stored reply ends the turn (Send, no writing row)
+    browser.wait_for("!document.getElementById('nodepanel').hidden && document.getElementById('nptitle').textContent === 'Web'")
+    present(browser, "#nodepanel .npill .cpill")
     assert reply["role"] == "agent" and reply["kind"] == "text" and reply["text"]
     browser.wait_for("document.querySelector('#nodepanel .ccstream').hidden && document.querySelector('.ncomposer .send').textContent === 'Send'", timeout=20)
     assert [m["role"] for m in live.messages(sid)] == ["user", "agent"]
     assert NOTE in json.dumps(cli.calls("claude")[0]), "the attached file reached the model"
+    assert live.messages(sid)[0]["text"] == "What time do we open?\n(attached: notes.txt)"      # the owner's line records what went with it
+    browser.wait_for("Array.from(document.querySelectorAll('.nchat .nmsg.me .cattached li')).some(e => e.textContent.includes('notes.txt'))")
     assert browser.count(".nchat .nmsg") >= 2
     clean(browser, "first direct turn")
 
@@ -142,9 +152,12 @@ def test_the_direct_chat_composer_in_the_node_panel_and_on_home(app, browser, tm
     live.until("the model to start", lambda: len(cli.calls("claude")) == 2)
     browser.click(".ncomposer .send")
     final = agent_after(live, sid, 6)
-    assert final["role"] == "agent"
+    assert final["role"] == "agent" and final["kind"] == "note"                  # Stop is a calm note (and what was written, if anything, is kept above it)
+    assert not [m for m in live.messages(sid) if m["kind"] == "error"]
     browser.wait_for("document.querySelector('.ncomposer .send').textContent === 'Send' && document.querySelector('#nodepanel .ccstream').hidden", timeout=30)
     assert browser.js("document.querySelector('.ncomposer .send').disabled") is False
+    present(browser, ".nchat .nmsg.note")
+    assert not browser.exists(".nchat .nmsg.oops")
     clean(browser, "stop")
 
     # 5. a settled reply with typed blocks is ONE folded row that opens into the cards
@@ -172,3 +185,25 @@ def test_the_direct_chat_composer_in_the_node_panel_and_on_home(app, browser, tm
     browser.wait_for("document.getElementById('ssend').textContent === 'Send' && document.getElementById('sstream').hidden", timeout=20)
     assert len(cli.calls("claude")) == 3 and not [m for m in live.messages(ORG) if m["kind"] == "card"]      # no team was planned: the staged path did not run
     clean(browser, "Home direct chat")
+
+    # 7. paste a screenshot into Home's box while it plans with Sutra: the box switches to the model with a note, the chip shows its thumbnail,
+    #    and the stored line names the pasted file (GAP-chat-comfort); a text paste stays text
+    browser.click('#sbar [data-mode="team"]')
+    browser.wait_for("document.querySelector('#sbar .ccmode-opt.on').textContent === 'Plan with Sutra'")
+    browser.js("""(() => { const dt = new DataTransfer(); dt.setData('text/plain', 'just words');
+                  document.getElementById('sbox').dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true})); })()""")
+    assert label(browser, "#sbar .ccmode-opt.on") == "Plan with Sutra" and not browser.exists("#sbar .ccfile")
+    browser.js(f"""(() => {{ const bytes = Uint8Array.from(atob({json.dumps(PNG_B64)}), c => c.charCodeAt(0));
+                  const dt = new DataTransfer(); dt.items.add(new File([bytes], 'image.png', {{type: 'image/png'}}));
+                  document.getElementById('sbox').dispatchEvent(new ClipboardEvent('paste', {{clipboardData: dt, bubbles: true, cancelable: true}})); }})()""")
+    browser.wait_for("document.querySelector('#sbar .ccmode-opt.on').textContent === 'Ask directly'")
+    present(browser, "#sbar .ccfile.ready .ccthumb")
+    assert label(browser, "#sbar .ccfile .ccname") == "pasted-image-1.png" and browser.js("document.querySelector('#sbar .ccthumb').src.startsWith('blob:')")
+    assert "Files go only to the model" in label(browser, "#sbar .ccnote")
+    browser.type("#sbox", "What is in this picture?")
+    browser.click("#ssend")
+    live.until("the pasted line and its reply", lambda: [m["role"] for m in live.messages(ORG)][-2:] == ["user", "agent"] and len(live.messages(ORG)) >= 4
+               and ORG not in chat_v2._running)
+    assert live.messages(ORG)[-2]["text"] == "What is in this picture?\n(attached: pasted-image-1.png)"
+    browser.wait_for("Array.from(document.querySelectorAll('#smsgs .nmsg.me .cattached li')).some(e => e.textContent.includes('pasted-image-1.png'))")
+    clean(browser, "paste on Home")

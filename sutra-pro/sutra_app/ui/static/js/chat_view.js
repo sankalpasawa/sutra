@@ -12,7 +12,7 @@
    script is on the page: escaped first too, then paragraphs, lists, code blocks, tables, headings and quotes, and still no link and no HTML.
    Every other line (the owner's, a team's, Sutra's, a note, an error, a card) keeps safeText.
 
-   Buttons carry data-act (open-team, show-node, show-change, choose, option, answer-option, answer, retry, retry-task) and the data they need; the page that
+   Buttons carry data-act (open-team, show-node, show-change, choose, option, answer-option, answer, retry, retry-task, retry-direct) and the data they need; the page that
    shows the transcript (the node panel, Home) listens for them. A link that opens a team page is a real <a href>, so it also works without a script.
 
    A classic script with ONE global, ChatView (see sutra_ctx.js for why); in node it is module.exports. */
@@ -67,6 +67,19 @@
     return escaped.split(/(`[^`\n]+`)/).map((part, i) => (i % 2 === 1 ? "<code>" + part.slice(1, -1) + "</code>" : part.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")))
       .join("").replace(/\r\n|\r|\n/g, "<br/>");
   }
+
+  // An owner's direct line that carried files ends with "(attached: a.png, b.pdf)" (orchestrator/direct_turns.py attached_line): attachedOf splits it
+  // into the words and the names, so the bubble shows the names as chips and a Retry sends the words alone.
+  const ATTACHED = /\n\(attached: ([^\n]+)\)$/;
+  function attachedOf(value) {
+    const t = text(value);
+    const m = ATTACHED.exec(t);
+    if (!m) return {text: t, names: []};
+    return {text: t.slice(0, m.index), names: m[1].split(", ").map(clean).filter(Boolean).slice(0, 10)};
+  }
+  const FILE_TILE = name => (/\.(png|jpe?g|gif|webp)$/i.test(name) || name === "an image" ? "IMG" : (/\.pdf$/i.test(name) || name === "a PDF" ? "PDF" : "TXT"));
+  const attachedHtml = names => (names.length === 0 ? "" : '<ul class="cattached" aria-label="Attached files">' +
+    names.map(n => '<li><span class="cctile" aria-hidden="true">' + FILE_TILE(n) + "</span>" + esc(n) + "</li>").join("") + "</ul>");
 
   // The agents address each other with a leading "@Name" (J2's chat). The owner reads the sentence, not the address, so the tag is dropped from
   // what the owner reads; a working log keeps it.
@@ -312,6 +325,10 @@
     const canAnswer = o.live !== false && s.writable !== false && clean(s.status) !== "archived";
     let lastOpen = -1;
     list.forEach((m, i) => { if (clean(m.kind) === "question" && (m.answered_by === null || m.answered_by === undefined)) lastOpen = i; });
+    // a direct turn that failed offers Retry while its line is the owner's newest (a later line makes an old retry confusing)
+    const lastOwn = list.reduce((n, m) => ((clean(m.role) === "user" || clean(m.who) === "user") && Number.isInteger(m.id) && m.id > n ? m.id : n), 0);
+    const retryOf = m => (canAnswer && clean(m.kind) === "error" && Number.isInteger(m.turn) && m.turn === lastOwn
+      ? ' <button type="button" class="linkbtn" data-act="retry-direct" data-turn="' + m.turn + '">Retry</button>' : "");
     const log = clean(s.kind) === "function" || clean(s.kind) === "step";                 // a working log shows the agents' addresses as they are
     let asked = null;
     return list.map((m, i) => {
@@ -326,10 +343,11 @@
         const picked = /^Option (\d+)$/.exec(text(m.text).trim());
         const chosen = picked && asked && asked.qs[0] && asked.qs[0].opts[Number(picked[1]) - 1];
         const failed = clean(m.state) === "error";
-        return '<div class="' + klass + (failed ? " failed" : "") + '"' + attrs + ">" + safeText(chosen ? clean(chosen) : text(m.text)) +
+        const att = attachedOf(m.text);
+        return '<div class="' + klass + (failed ? " failed" : "") + '"' + attrs + ">" + safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
           (failed ? '<div class="nerr">Something went wrong. Try again.' + (clean(s.kind) === "org" ? ' <button type="button" class="linkbtn" data-act="retry">Retry</button>' : "") + "</div>" : "") + "</div>";
       }
-      if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + safeText(text(m.text)) + "</div>";
+      if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + safeText(text(m.text)) + retryOf(m) + "</div>";
       if (cardIn) {
         const ctx = {deptName: dept, sessionKind: clean(s.kind), answer: answers[m.id], answered: answers[m.id] !== undefined,
           deptSession: sessions[clean(cardIn.dept_id)], retry: isObj(o.retryTasks) && o.retryTasks[clean(cardIn.task_id)] === true};
@@ -385,7 +403,7 @@
 
   const providerLabel = connector => (hasOwn(PROVIDERS, connector) ? PROVIDERS[connector] : clean(connector));
 
-  const ChatView = {transcript, card, composerState, safeText, whoLabel, parseAsk, stripTag, providerLabel, BUSY, ONE_AT_A_TIME, PROVIDERS, PERSONA};
+  const ChatView = {transcript, card, composerState, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, BUSY, ONE_AT_A_TIME, PROVIDERS, PERSONA};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatView;
   else root.ChatView = ChatView;
 })(globalThis);

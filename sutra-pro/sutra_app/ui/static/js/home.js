@@ -68,6 +68,7 @@
     graphView: null, chartView: null, panel: null, stream: null, watch: null, values: null,
     // gap attention: the Heads up lane, the age of each ask, the "Got it" marks of this browser, the tab title and the desktop notice
     heads: [], headsLoaded: false, needsAt: 0, seen: {}, fyiMore: false, attention: null,
+    scroll: {parked: false, seenId: 0, pill: 0}, own: false, drafts: undefined,          // the reader's place and the box's draft (GAP-chat-comfort)
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -265,10 +266,61 @@
     const shown = S.messages.concat(S.pending.map(p => p.msg));
     const session = S.session || {kind: "org", writable: true, status: "active", title: "Sutra"};
     const html = root.ChatView.transcript(session, shown, {deptName: "", live: true, answers: answersMap(), deptSessions: deptSessions(), retryTasks: retryTasks()}) + startHtml();
-    if (!ctx.paint($("smsgs"), html)) return;
-    const end = () => { const el = $("smsgs"); el.scrollTop = el.scrollHeight; };
-    end();
-    if (root.requestAnimationFrame) root.requestAnimationFrame(end);
+    const el = $("smsgs");
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    if (!ctx.paint(el, html)) return;
+    follow(el, shown, near);
+  }
+
+  /* ---------------------------------------------------------------- the reader's place and the box (GAP-chat-comfort) */
+  // ChatScroll: the owner's own line goes to the bottom; a reader who moved up keeps the place and the pill counts what came below; else follow.
+  function follow(el, shown, near) {
+    const CS = root.ChatScroll;
+    const end = () => { el.scrollTop = el.scrollHeight; };
+    if (!CS) { end(); if (root.requestAnimationFrame) root.requestAnimationFrame(end); return; }
+    const p = CS.plan({parked: S.scroll.parked, atBottom: near, grew: true, own: S.own, newCount: CS.newCount(shown, S.scroll.seenId), pill: S.scroll.pill});
+    S.own = false;
+    if (p.scroll === "bottom") {
+      end();
+      if (root.requestAnimationFrame) root.requestAnimationFrame(() => { if (!S.scroll.parked) end(); });
+    }
+    S.scroll = CS.settle(S.scroll, p, CS.distance(el), CS.lastId(shown));
+    renderJump();
+  }
+
+  // A follower stays at the newest line when a row under the transcript changes size (ChatScroll.pin does it too, where the page renders).
+  function keepFollowing() {
+    if (!root.ChatScroll || S.scroll.parked) return;
+    const el = $("smsgs");
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function renderJump() {
+    const el = $("sjump");
+    if (!el || !root.ChatScroll) return;
+    const html = root.ChatScroll.pillHtml(S.scroll.pill);
+    ctx.paint(el, html);
+    el.hidden = html === "";
+  }
+
+  function jumpLatest() {
+    const CS = root.ChatScroll;
+    const el = $("smsgs");
+    if (!CS) return;
+    S.scroll = {parked: false, seenId: CS.lastId(S.messages), pill: 0};
+    renderJump();
+    const how = CS.behavior(typeof root.matchMedia === "function" ? q => root.matchMedia(q) : undefined);
+    if (typeof el.scrollTo === "function") el.scrollTo({top: el.scrollHeight, behavior: how});
+    else el.scrollTop = el.scrollHeight;
+  }
+
+  // ChatDraft: the org chat's box keeps its words across a reload, a trip to a team page and a pane switch; only an accepted send clears them.
+  const drafts = () => { if (S.drafts === undefined) S.drafts = root.ChatDraft ? root.ChatDraft.create() : null; return S.drafts; };
+  const growBox = () => { if (root.ChatDraft) root.ChatDraft.grow($("sbox"), 200); };
+  function clearSent(body) {
+    if (drafts()) drafts().clearIf(ORG, body);
+    if ($("sbox").value.trim() === body) $("sbox").value = "";
+    growBox();
   }
 
   // The provider pill of the org chat (ABS-9): the choice also governs the chat agent (ABS-8).
@@ -313,6 +365,7 @@
     const row = CC.streamRow(c.state(), CC.providerOf(providersOf(), S.pillData ? S.pillData.chosen : null));
     ctx.paint($("sstream"), row);
     $("sstream").hidden = row === "";
+    keepFollowing();
   }
 
   async function sendDirect(value) {
@@ -324,7 +377,24 @@
     clearBanner();
     const out = await c.send(body);
     if (!out.ok) return false;
-    if ($("sbox").value.trim() === body) $("sbox").value = "";
+    clearSent(body);
+    S.own = true;
+    try { await fetchMessages(false); } catch (e) { handleFetchError(e); }
+    return true;
+  }
+
+  // Retry on a direct line that failed: the same words, once, to the model (the error line names the owner's line in data-turn).
+  async function retryDirect(turnId) {
+    const c = composer();
+    const line = S.messages.find(m => String(m.id) === String(turnId) && m.role === "user");
+    if (!c || !line) return false;
+    const stuck = S.pillData ? root.ChatComposer.askBlock(providersOf()) : "";
+    if (stuck !== "") { showBanner({text: stuck, settings: true}); return false; }
+    clearBanner();
+    const said = root.ChatView.attachedOf(line.text);
+    const out = await c.retry(line.id, said.text, {files: said.names.length});
+    if (!out.ok) return false;
+    S.own = true;
     try { await fetchMessages(false); } catch (e) { handleFetchError(e); }
     return true;
   }
@@ -352,6 +422,7 @@
     const note = $("snote");
     note.hidden = st.note === "";
     note.textContent = st.note;
+    keepFollowing();
   }
 
   function renderProgress() {
@@ -373,12 +444,13 @@
     S.pending.push(entry);
     S.awaitGraph = true;
     S.sending = true;
+    S.own = true;                                                    // the owner's own line: the transcript goes to the bottom
     renderChat();
     renderComposer();
     try {
       const accepted = await api.post("/api/chats/" + ORG + "/messages", choice ? {text: body, choice} : {text: body});
       entry.serverId = isObj(accepted) && Number.isInteger(accepted.message_id) ? accepted.message_id : null;
-      if ($("sbox").value.trim() === body) $("sbox").value = "";
+      clearSent(body);
       clearBanner();
       S.sending = false;
       try { await fetchMessages(false); } catch (e) { handleFetchError(e); }
@@ -492,6 +564,8 @@
       retryTurn();
     } else if (act === "retry-task") {
       retryTask(b.dataset.task, b);
+    } else if (act === "retry-direct") {
+      retryDirect(b.dataset.turn);
     }
   }
 
@@ -897,6 +971,7 @@
       t.value = "";
     });
     $("sbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send($("sbox").value); } });
+    wireComfort();
     $("sbanner").addEventListener("click", e => {
       const b = e.target.closest("button");
       if (!b) return;
@@ -929,6 +1004,33 @@
     doc.addEventListener("keydown", e => {
       if (e.key === "Escape" && !BARWIDE.matches && barOpen() && !(S.panel && S.panel.isOpen())) { e.stopImmediatePropagation(); barSet(false); $("railtoggle").focus(); }
     }, true);
+  }
+
+  // GAP-chat-comfort: the draft and the size of the box, Esc stops a direct answer, a pasted or dropped file attaches, the reader's gestures, the pill.
+  function wireComfort() {
+    const box = $("sbox");
+    const d = drafts();
+    if (d && box.value === "") box.value = d.load(ORG);
+    growBox();
+    box.addEventListener("input", () => { if (drafts()) drafts().save(ORG, box.value); growBox(); });
+    box.addEventListener("keydown", e => {
+      if (e.key !== "Escape" || e.isComposing || (S.panel && S.panel.isOpen())) return;
+      const c = composer();
+      const turn = c ? c.state().turn : null;
+      if (directOn() && turn && turn.active && !turn.stopping) { e.preventDefault(); stopDirect(); }
+    });
+    box.addEventListener("paste", e => { const c = composer(); if (c && !box.disabled && c.take(e.clipboardData, {pasted: true})) e.preventDefault(); });
+    $("scompose").addEventListener("dragover", e => { if (composer() && root.ChatComposer.hasFiles(e.dataTransfer)) e.preventDefault(); });
+    $("scompose").addEventListener("drop", e => { const c = composer(); if (c && !box.disabled && c.take(e.dataTransfer)) e.preventDefault(); });
+    if ($("sjump")) $("sjump").addEventListener("click", e => { if (e.target.closest("[data-act=jump-latest]")) jumpLatest(); });
+    if (root.ChatScroll) {
+      root.ChatScroll.pin($("smsgs"), () => !S.scroll.parked);
+      root.ChatScroll.watch($("smsgs"), ev => {
+        const before = S.scroll.pill;
+        S.scroll = root.ChatScroll.intent(S.scroll, Object.assign(ev, {lastId: root.ChatScroll.lastId(S.messages)}));
+        if (S.scroll.pill !== before) renderJump();
+      });
+    }
   }
 
   function renderAll() {

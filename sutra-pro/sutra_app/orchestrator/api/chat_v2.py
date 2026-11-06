@@ -5,13 +5,14 @@
     GET  /api/chats/{sid}/providers                     -> {providers: ProviderPill[], chosen}
     PUT  /api/chats/{sid}/choice  {provider, model?}    -> {session_id, provider, model}   (null provider clears; the policy default is untouched)
     POST /api/chats/{sid}/attachments {name, content_b64} -> AttachmentRef                (20 MB a file)
-    POST /api/chats/{sid}/direct  {text, attachments?}  -> 202 {message_id, turn}         (the org, a department or a division chat answered by the chat model)
+    POST /api/chats/{sid}/direct  {text, attachments?, names?} -> 202 {message_id, turn}  (the org, a department or a division chat answered by the chat model)
     POST /api/chats/{sid}/direct/stop                   -> {session_id, stopped}          (ends the turn that is answering; false when none is)
 
 `/direct` stores the owner's line, writes the session's grounding (the node's own record and the rules, `orchestrator/chat_ground.py`, through
 `ChatPort.set_system`), then answers through `ChatPort.stream`. The pieces of the reply travel as `chat.partial` events
 ({session_id, message_id, delta}); they are NOT stored and NOT in the replay ring, so a client that reconnects mid-turn gets the stored
-message only. The agent's message is written once, at `turn_done` (with its typed blocks); a failed turn writes an `error` message.
+message only. The agent's message is written once, at `turn_done` (with its typed blocks); a stopped turn keeps what was written and adds a
+calm note, a failed one keeps it and adds the `error` line, a provider switch is noted (orchestrator/direct_turns.py, GAP-chat-comfort).
 The org chat's staged agent path (`POST /api/chats/cs_org/messages`) is unchanged, and so is a team chat's plain message route; `/direct` on cs_org\nis the owner's opt-in "ask directly" (D115), never the default.
 """
 from __future__ import annotations
@@ -29,7 +30,7 @@ from pydantic import ConfigDict, Field, StringConstraints
 from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE
 from sutra_app.connectors.chat_models import AttachmentRef, ChatTurnIn
 from sutra_app.connectors.egress import scan
-from sutra_app.connectors.errors import ConnectorError
+from sutra_app.connectors.errors import CallCancelledError, ConnectorError
 from sutra_app.library.base import Value
 from sutra_app.library.gate import GATE
 from sutra_app.orchestrator.api.chat import ID_PATTERN, respond
@@ -37,6 +38,7 @@ from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token,
 from sutra_app.orchestrator.chat_ground import ground
 from sutra_app.orchestrator.chat_v2 import MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
 from sutra_app.orchestrator.db import run_blocking
+from sutra_app.orchestrator.direct_turns import Ending, attached_line, failed, finished, stopped
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly
 from sutra_app.orchestrator.events import PARTIAL
 from sutra_app.orchestrator.records import ChatMessage
@@ -63,6 +65,8 @@ class UploadIn(Value):
 class DirectIn(Value):
     text: Annotated[str, StringConstraints(min_length=1, max_length=8000)]
     attachments: Annotated[list[Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]], Field(max_length=MAX_PER_MESSAGE)] = []
+    # the owner's names of the attachments, in order: only for the record on the owner's line (GAP-chat-comfort); the model's input is unchanged
+    names: Annotated[list[Annotated[str, StringConstraints(max_length=200)]], Field(max_length=MAX_PER_MESSAGE)] = []
 
 
 def _need(request: Request, name: str) -> Any:
@@ -166,7 +170,8 @@ def build_router() -> APIRouter:
             _running.add(sid)
         try:
             said = _clean(services, body.text)          # stored and sent without credential shapes: a secret never lands in the chat store
-            message_id = await run_blocking(_store_user_line, services, sid, said)
+            attached = _clean(services, attached_line(list(body.names), [r.kind for r in refs]))
+            message_id = await run_blocking(_store_user_line, services, sid, said, attached)
             await run_blocking(_ground, services, port, sid)
         except BaseException:
             _running.discard(sid)
@@ -204,8 +209,19 @@ def _clean(services: Any, text: str) -> str:
     return scan(services.redact(text), replace=True)[0]
 
 
-def _store_user_line(services: Any, sid: str, text: str) -> int:
-    return _post(services, sid, role="user", who="user", kind="text", text=text)
+def _post_all(services: Any, sid: str, endings: list[Ending]) -> None:
+    """The messages that end one turn, in ONE transaction: a page never reads half an ending."""
+    redact = services.redact
+    with services.db.tx() as tx:
+        for e in endings:
+            services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
+                kind=e.kind, session_id=sid, role="agent", who="sutra", text=redact(e.text)[:200_000], blocks=e.blocks, src_ref=e.src_ref,
+                at=tx.now()), ctx=tx.ctx))
+
+
+def _store_user_line(services: Any, sid: str, text: str, attached: str = "") -> int:
+    """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself)."""
+    return _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""))
 
 
 def _ground(services: Any, port: Any, sid: str) -> None:
@@ -218,14 +234,19 @@ def _ground(services: Any, port: Any, sid: str) -> None:
 
 
 def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn) -> None:
-    """The turn, on a worker thread: partials out as control events, the stored reply once at the end."""
+    """The turn, on a worker thread: partials out as control events, the stored reply once at the end. A stop keeps what was written
+    with a calm note; a failure keeps it with the real reason (direct_turns)."""
     bus = services.bus
     buffered = ""
+    shown = ""                                                       # what the owner has seen stream in, redacted as it was sent
 
     def flush() -> None:
-        nonlocal buffered
-        if buffered and bus is not None:
-            bus.publish_one(PARTIAL, {"session_id": sid, "message_id": user_message_id, "delta": services.redact(buffered)})
+        nonlocal buffered, shown
+        if buffered:
+            piece = services.redact(buffered)
+            shown += piece
+            if bus is not None:
+                bus.publish_one(PARTIAL, {"session_id": sid, "message_id": user_message_id, "delta": piece})
         buffered = ""
 
     try:
@@ -240,15 +261,17 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
         flush()
         if done is None:
             raise RuntimeError("the turn ended without a result")
-        blocks = [b for b in done.get("blocks", []) if b.get("type") != "text" or b.get("text")]
-        _post(services, sid, role="agent", who="sutra", kind="text", text=done["text"] or "(no reply)", blocks=blocks,
-              src_ref=f"direct:{user_message_id}")
+        _post_all(services, sid, finished(user_message_id, done))
     except Exception as exc:                                         # a failed turn is a message, not a lost line
         flush()
-        message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
         log.warning("direct chat turn failed for %s: %s", sid, type(exc).__name__)
+        if isinstance(exc, CallCancelledError):                      # the owner's Stop is not an error: what was written stays
+            endings = stopped(user_message_id, shown)
+        else:
+            message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
+            endings = failed(user_message_id, shown, message)
         try:
-            _post(services, sid, role="agent", who="sutra", kind="error", text=message, src_ref=f"direct:{user_message_id}")
+            _post_all(services, sid, endings)
         except Exception:
             log.exception("could not store the failed turn of %s", sid)
     finally:

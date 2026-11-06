@@ -25,7 +25,7 @@ import pytest
 import fake_backend
 
 STATIC = Path(__file__).resolve().parents[2] / "sutra_app" / "ui" / "static"
-SCRIPTS = ("sutra_ctx.js", "sutra_events.js", "fnode_view.js", "chat_view.js", "node_panel.js")
+SCRIPTS = ("sutra_ctx.js", "sutra_events.js", "fnode_view.js", "chat_view.js", "chat_draft.js", "chat_scroll.js", "node_panel.js")
 DEPT_SESSION = "cs_5e0a77b19c3d"          # the Web team's chat (the department node)
 IDENTITY_LOG = "cs_77aa10c2e9b4"          # Identity's own working log
 ADAPTATION_LOG = "cs_b37b2000ef36"
@@ -147,6 +147,11 @@ def is_open(browser) -> bool:
 def type_and_send(browser, text):
     browser.type(".nbox", text)
     browser.click(".ncomposer .send")
+
+
+def clear_box(browser):
+    """Empty the message box the way the owner does (an input event follows, so the chat's draft is emptied too)."""
+    browser.js("(() => { const b = document.querySelector('.nbox'); b.value = ''; b.dispatchEvent(new Event('input', {bubbles: true})); })()")
 
 
 def posts(fake, session):
@@ -547,6 +552,8 @@ def test_a_refusal_from_the_server_hides_the_box_or_closes_it_or_says_the_chat_i
     browser.wait_for("document.querySelector('.ncomposer').hidden === true")
     assert texts(browser, ".nnote") == ["This chat is read-only."]
     open_node(browser, "web.identity")
+    assert browser.js("document.querySelector('.nbox').value") == "one"      # a refused line is the chat's draft: it comes back (GAP-chat-comfort)
+    clear_box(browser)
     fake.fail(path, 401, method="POST", count=1)                               # 401 bad_token: shown, closed, with the reload sentence
     type_and_send(browser, "two")
     browser.wait_for("!document.querySelector('.nbanner').hidden")
@@ -554,6 +561,8 @@ def test_a_refusal_from_the_server_hides_the_box_or_closes_it_or_says_the_chat_i
     assert texts(browser, ".nbanner") == [NO_TOKEN] and texts(browser, ".nnote") == [NO_TOKEN] and visible(browser, ".ncomposer")
     assert browser.js("document.querySelector('.nbox').value") == "two"
     open_node(browser, "web.identity")
+    assert browser.js("document.querySelector('.nbox').value") == "two"
+    clear_box(browser)
     fake.fail(path, 404, method="POST", count=1)                               # 404: the chat is gone, with a Close button
     type_and_send(browser, "three")
     browser.wait_for("!document.querySelector('.nbanner').hidden")
@@ -561,6 +570,8 @@ def test_a_refusal_from_the_server_hides_the_box_or_closes_it_or_says_the_chat_i
     browser.click(".nbanner [data-npclose]")
     assert not is_open(browser)
     open_node(browser, "web.identity")
+    assert browser.js("document.querySelector('.nbox').value") == "three"
+    clear_box(browser)
     fake.fail(path, 429, method="POST", count=1)
     type_and_send(browser, "four")
     browser.wait_for("!document.querySelector('.nbanner').hidden")
@@ -790,4 +801,126 @@ def test_the_panel_reads_in_both_themes_and_keeps_its_markup_inside_the_drawer(b
         panel_background[theme] = browser.js("getComputedStyle(document.getElementById('nodepanel')).backgroundColor")
     assert panel_background["dark"] != panel_background["light"]
     assert browser.js("Array.from(document.querySelectorAll('body > *')).filter(e => e.id !== 'nodepanel' && e.tagName !== 'SCRIPT' && e.className.toString().match(/\\b(fn|nmsg|ncard|atom)/)).length") == 0
+    no_errors(browser)
+
+
+# ======================================================================================================================
+# the comfort of a chat (GAP-chat-comfort): the box keeps its words, grows with them, and the reader is never pulled down
+# ======================================================================================================================
+DRAFT_KEY = f"sutra:draft:{DEPT_SESSION}"
+
+
+def box_value(browser):
+    return browser.js("document.querySelector('.nbox').value")
+
+
+def from_bottom(browser):
+    return browser.js("(() => { const m = document.querySelector('.nmsgs'); return m.scrollHeight - m.scrollTop - m.clientHeight; })()")
+
+
+@pytest.mark.browser
+def test_the_box_keeps_its_words_through_esc_a_tab_switch_and_a_reload_and_only_an_accepted_send_clears_them(browser, fake):
+    load(browser, fake)
+    open_node(browser, "web.identity")
+    words = "Dear team,\nthe menu needs prices"
+    browser.type(".nbox", words)
+    browser.press("Escape")                                                    # nothing runs: Esc closes the panel, the words are kept
+    assert not is_open(browser)
+    open_node(browser, "web.identity")
+    assert box_value(browser) == words
+    browser.click("[data-nptab=details]")
+    present(browser, ".fndetail .fnsec")
+    browser.click("[data-nptab=chat]")
+    present(browser, ".nchat .nbox")
+    assert box_value(browser) == words
+    browser.reload()
+    browser.wait_for("window.mounted === true")
+    open_node(browser, "web.identity")
+    assert box_value(browser) == words
+    open_node(browser, "web.adaptation")                                       # another chat has its own box (a read-only log: no box at all)
+    open_node(browser, "web.identity")
+    assert box_value(browser) == words
+    browser.expect_failed(f"/api/chats/{DEPT_SESSION}/messages", 409)
+    fake.fail(f"/api/chats/{DEPT_SESSION}/messages", 409, method="POST", count=1)
+    browser.click(".ncomposer .send")                                          # refused: the draft stays
+    browser.wait_for("!document.querySelector('.nbanner').hidden")
+    assert browser.js(f"localStorage.getItem({q(DRAFT_KEY)}) !== null") is True
+    browser.click(".ncomposer .send")                                          # accepted: the box and the draft are empty
+    browser.wait_for("document.querySelector('.nbox').value === '' && document.querySelectorAll('.nmsg.me').length === 2")
+    assert browser.js(f"localStorage.getItem({q(DRAFT_KEY)})") is None
+    open_node(browser, "web.identity")
+    assert box_value(browser) == ""
+    no_errors(browser, network=True)
+
+
+@pytest.mark.browser
+def test_the_box_grows_with_its_text_up_to_a_ceiling_and_shrinks_back_after_a_send(browser, fake):
+    load(browser, fake)
+    open_node(browser, "web.identity")
+    start = browser.js("document.querySelector('.nbox').getBoundingClientRect().height")
+    assert 50 <= start <= 70
+    browser.type(".nbox", "line\n" * 4)
+    grown = browser.js("document.querySelector('.nbox').getBoundingClientRect().height")
+    assert grown > start + 20
+    browser.type(".nbox", "more\n" * 40)
+    assert browser.js("Math.round(document.querySelector('.nbox').getBoundingClientRect().height)") <= 200
+    assert browser.js("getComputedStyle(document.querySelector('.nbox')).overflowY") == "auto"
+    browser.click(".ncomposer .send")
+    browser.wait_for("document.querySelector('.nbox').value === ''")
+    assert browser.js("document.querySelector('.nbox').getBoundingClientRect().height") <= start + 2
+    no_errors(browser)
+
+
+@pytest.mark.browser
+def test_a_reader_who_scrolls_up_stays_put_a_pill_counts_the_new_lines_and_takes_them_to_the_newest(browser, fake):
+    load(browser, fake)
+    open_node(browser, "web.identity")
+    fake.wait_subscribers(2)
+    for n in range(20, 45):
+        fake.emit("chat.message", chat_message(DEPT_SESSION, n, f"Line {n} " + "text " * 20))
+    wait_until(lambda: "Line 44" in texts(browser, ".nmsg:last-child")[0], "the last line arrived")
+    assert from_bottom(browser) < 4 and hidden(browser, ".cjump")                # following: nothing to jump to
+    browser.js("document.querySelector('.nmsgs').dispatchEvent(new WheelEvent('wheel', {deltaY: -120, bubbles: true}))")
+    browser.js("document.querySelector('.nmsgs').scrollTop = 200")
+    time.sleep(0.2)
+    fake.emit("chat.message", chat_message(DEPT_SESSION, 45, "Line 45"))
+    fake.emit("chat.message", chat_message(DEPT_SESSION, 46, "Line 46"))
+    browser.wait_for("document.querySelector('.nmsg:last-child').textContent.includes('Line 46')")
+    browser.wait_for("!document.querySelector('.cjump').hidden")
+    assert abs(browser.js("document.querySelector('.nmsgs').scrollTop") - 200) <= 2          # not pulled down
+    assert texts(browser, ".cjump-btn") == ["2 new messages below"]
+    browser.click(".cjump-btn")
+    browser.wait_for("(() => { const m = document.querySelector('.nmsgs'); return m.scrollHeight - m.scrollTop - m.clientHeight < 4; })()")
+    assert hidden(browser, ".cjump")
+    fake.emit("chat.message", chat_message(DEPT_SESSION, 47, "Line 47"))                       # following again
+    browser.wait_for("document.querySelector('.nmsg:last-child').textContent.includes('Line 47')")
+    wait_until(lambda: from_bottom(browser) < 4, "the follower follows")
+    no_errors(browser)
+
+
+@pytest.mark.browser
+def test_the_owners_own_line_goes_to_the_bottom_and_a_reopened_chat_comes_back_where_it_was_read(browser, fake):
+    load(browser, fake, stage="full")                                          # Content is idle: a line is a follow-up, stored after the others
+    open_node(browser, "content")
+    fake.wait_subscribers(2)
+    for n in range(100, 125):
+        fake.emit("chat.message", chat_message(CONTENT_SESSION, n, f"Line {n} " + "text " * 20))
+    wait_until(lambda: "Line 124" in texts(browser, ".nmsg:last-child")[0], "the last line arrived")
+    browser.js("document.querySelector('.nmsgs').scrollTop = 300")
+    time.sleep(0.2)
+    browser.press("Escape")
+    assert not is_open(browser)
+    open_node(browser, "content")
+    wait_until(lambda: abs(browser.js("document.querySelector('.nmsgs').scrollTop") - 300) <= 2, "the chat opened where it was read")
+    browser.click("[data-nptab=details]")
+    present(browser, ".fndetail .fnsec")
+    browser.click("[data-nptab=chat]")
+    present(browser, ".nchat .nmsg")
+    wait_until(lambda: abs(browser.js("document.querySelector('.nmsgs').scrollTop") - 300) <= 2, "the chat tab came back where it was read")
+    type_and_send(browser, "Prices, please")
+    browser.wait_for("Array.from(document.querySelectorAll('.nmsg.me')).some(e => e.textContent.includes('Prices, please'))")
+    wait_until(lambda: from_bottom(browser) < 4, "the owner's own line is in view")
+    browser.press("Escape")
+    open_node(browser, "content")                                              # closed at the bottom: opens at the bottom
+    wait_until(lambda: from_bottom(browser) < 4, "a chat read to its end opens at its end")
     no_errors(browser)

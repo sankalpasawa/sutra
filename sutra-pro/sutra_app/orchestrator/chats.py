@@ -77,8 +77,9 @@ def _message_out(row: sqlite3.Row) -> ChatMessageOut:
 
 
 def _turn_of(src_ref: str | None) -> int | None:
-    """The owner's line a direct-chat reply answers (`src_ref` is `direct:<message id>`), else None."""
-    found = re.fullmatch(r"direct:([1-9][0-9]{0,15})", src_ref or "")
+    """The owner's line a direct-chat reply answers (`src_ref` is `direct:<message id>`, or `direct-note:`, `direct-error:`, `direct-switch:`
+    for the other messages that end the same turn: orchestrator/direct_turns.py), else None."""
+    found = re.fullmatch(r"direct(?:-(?:note|error|switch))?:([1-9][0-9]{0,15})", src_ref or "")
     return int(found.group(1)) if found else None
 
 
