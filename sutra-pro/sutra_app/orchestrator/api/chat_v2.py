@@ -8,7 +8,8 @@
     POST /api/chats/{sid}/direct  {text, attachments?}  -> 202 {message_id, turn}         (the org, a department or a division chat answered by the chat model)
     POST /api/chats/{sid}/direct/stop                   -> {session_id, stopped}          (ends the turn that is answering; false when none is)
 
-`/direct` stores the owner's line, then answers through `ChatPort.stream`. The pieces of the reply travel as `chat.partial` events
+`/direct` stores the owner's line, writes the session's grounding (the node's own record and the rules, `orchestrator/chat_ground.py`, through
+`ChatPort.set_system`), then answers through `ChatPort.stream`. The pieces of the reply travel as `chat.partial` events
 ({session_id, message_id, delta}); they are NOT stored and NOT in the replay ring, so a client that reconnects mid-turn gets the stored
 message only. The agent's message is written once, at `turn_done` (with its typed blocks); a failed turn writes an `error` message.
 The org chat's staged agent path (`POST /api/chats/cs_org/messages`) is unchanged, and so is a team chat's plain message route; `/direct` on cs_org\nis the owner's opt-in "ask directly" (D115), never the default.
@@ -33,6 +34,7 @@ from sutra_app.library.base import Value
 from sutra_app.library.gate import GATE
 from sutra_app.orchestrator.api.chat import ID_PATTERN, respond
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
+from sutra_app.orchestrator.chat_ground import ground
 from sutra_app.orchestrator.chat_v2 import MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
 from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly
@@ -165,6 +167,7 @@ def build_router() -> APIRouter:
         try:
             said = _clean(services, body.text)          # stored and sent without credential shapes: a secret never lands in the chat store
             message_id = await run_blocking(_store_user_line, services, sid, said)
+            await run_blocking(_ground, services, port, sid)
         except BaseException:
             _running.discard(sid)
             raise
@@ -203,6 +206,15 @@ def _clean(services: Any, text: str) -> str:
 
 def _store_user_line(services: Any, sid: str, text: str) -> int:
     return _post(services, sid, role="user", who="user", kind="text", text=text)
+
+
+def _ground(services: Any, port: Any, sid: str) -> None:
+    """The session's system text for this turn: the node's own record and the rules (`orchestrator/chat_ground.py`), rebuilt every turn so it
+    is current. A grounding that cannot be built or written is logged and the turn runs without a new one; it never fails the turn."""
+    try:
+        port.set_system(sid, ground(services, sid))
+    except Exception:
+        log.warning("could not ground the direct chat %s", sid, exc_info=True)
 
 
 def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn) -> None:

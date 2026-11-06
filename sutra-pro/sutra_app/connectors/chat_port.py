@@ -6,10 +6,14 @@ session API, so every chat improvement lives below every surface. The port never
 """
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Callable, Iterator, Optional, Protocol, Sequence, runtime_checkable
 
+from sutra_app import oslayer
+
 from .attachments import AttachmentStore, deliver
+from .base import write_private_file
 from .chat_models import CarryPlan, Choice, ChatEvent, ChatTurnIn, ChatTurnOut, ProviderPill
 from .errors import InvalidRequestError, NoProviderError
 import re
@@ -33,6 +37,7 @@ class ChatPort(Protocol):
     def plan_switch(self, session_id: str, target: str) -> CarryPlan: ...
     def send(self, session_id: str, turn: ChatTurnIn, on_event: Optional[Callable[[ChatEvent], None]] = None) -> ChatTurnOut: ...
     def stream(self, session_id: str, turn: ChatTurnIn) -> Iterator[ChatEvent]: ...
+    def set_system(self, session_id: str, text: str) -> None: ...
     def stop(self, session_id: str) -> bool: ...
     def close(self) -> None: ...
 
@@ -207,6 +212,23 @@ class RouterChatPort:
         assert done is not None
         d = done.data
         return ChatTurnOut(text=d["text"], provider=d["provider"], model=d.get("model"), usd=d.get("usd"), blocks=d["blocks"], switched=d["switched"])
+
+    def set_system(self, session_id: str, text: str) -> None:
+        """The system text of this session's next turns (the grounding of a direct chat): `<workdir>/system.txt`, mode 0600, replaced
+        atomically; an empty text removes it. Claude reads the file on every turn; Codex on the first turn of a thread (a new session or a
+        switch), so a resumed Codex thread keeps the text it began with. The caller scrubs the text; nothing else is written."""
+        directory = self._work_dir(session_id)
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        target = directory / "system.txt"
+        if not text:
+            target.unlink(missing_ok=True)
+            return
+        tmp = directory / f".system.{uuid.uuid4().hex[:8]}.tmp"
+        try:
+            write_private_file(tmp, text)
+            oslayer.replace(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     def stop(self, session_id: str) -> bool:
         return self.router.chat_stop(session_id)

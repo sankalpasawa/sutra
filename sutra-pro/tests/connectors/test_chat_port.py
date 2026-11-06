@@ -166,3 +166,62 @@ def test_a_model_choice_is_applied_to_a_chat_that_already_has_a_session_or_refus
     with pytest.raises(InvalidRequestError):
         port.choose(B, None, "opus")                                            # a model needs its provider
     assert load_session_state(cfg.resolved_work_root() / A).provider == "claude"
+
+
+# ---- the system text of a session (GAP-model-quality: the grounding of a direct chat) -------------------------------------------------
+
+def test_set_system_writes_a_private_file_that_the_next_turn_reads_and_replaces_or_removes_it(tmp_path):
+    port, router, history, cfg, claude, codex = make(tmp_path)
+    port.set_system(A, "You answer in the chat of the team Web.")
+    path = cfg.resolved_work_root() / A / "system.txt"
+    assert path.read_text() == "You answer in the chat of the team Web." and (path.stat().st_mode & 0o777) == 0o600
+    port.send(A, ChatTurnIn(text="one"))
+    assert claude.calls[-1].system == "You answer in the chat of the team Web."
+    port.set_system(A, "The record changed.")
+    port.send(A, ChatTurnIn(text="two"))                                        # the same provider session reads the new text
+    assert claude.calls[-1].system == "The record changed." and len({c.session_id for c in claude.calls}) == 1
+    assert [p.name for p in path.parent.iterdir() if p.name.startswith(".system")] == []          # no temp file is left
+    port.set_system(A, "")
+    assert not path.exists()
+    port.send(A, ChatTurnIn(text="three"))
+    assert claude.calls[-1].system == ""
+    with pytest.raises(InvalidRequestError):
+        port.set_system("../x", "nope")
+
+
+def test_the_system_text_of_one_session_is_never_another_sessions(tmp_path):
+    port, router, history, cfg, claude, codex = make(tmp_path)
+    port.set_system(A, "team A record")
+    port.set_system(B, "team B record")
+    port.send(A, ChatTurnIn(text="x"))
+    port.send(B, ChatTurnIn(text="y"))
+    assert sorted(c.system for c in claude.calls) == ["team A record", "team B record"]
+    assert (cfg.resolved_work_root() / A / "system.txt").read_text() == "team A record"
+
+
+def test_the_system_text_survives_a_switch_to_codex(tmp_path):
+    port, router, history, cfg, claude, codex = make(tmp_path)
+    port.set_system(A, "grounded")
+    port.send(A, ChatTurnIn(text="one"))
+    claude.fail_next("quota")
+    port.send(A, ChatTurnIn(text="two"))
+    assert load_session_state(cfg.resolved_work_root() / A).provider == "codex" and codex.calls[-1].system == "grounded"
+
+
+def test_the_real_claude_gets_the_system_text_on_argv_and_codex_in_front_of_its_first_prompt(fake, tmp_path):
+    from sutra_app.connectors.claude import ClaudeConnector
+    from sutra_app.connectors.codex import CodexConnector
+
+    grounding = 'You are answering in the chat of the team "Web". What the team is for: Websites.'
+    fake.sequence("ok_plain", "quota", cli="claude").reply(text="the reply")
+    fake.sequence("ok_plain", cli="codex").reply(text="codex reply")
+    cfg = ConnectorConfig(**fake.config_kwargs(tmp_path))
+    router = Router({"claude": ClaudeConnector(cfg), "codex": CodexConnector(cfg)}, policy(), transcripts=History(), sleep=lambda s: None)
+    port = RouterChatPort(router)
+    port.set_system("cs_real", grounding)
+    port.send("cs_real", ChatTurnIn(text="first"))
+    argv = fake.model_calls("claude")[0]["argv"]
+    assert argv[argv.index("--system-prompt") + 1] == grounding
+    port.send("cs_real", ChatTurnIn(text="second"))                           # claude is out of quota: a new codex thread
+    router.drain()
+    assert fake.model_calls("codex")[0]["stdin"].startswith("<system>\n" + grounding + "\n</system>")
