@@ -81,6 +81,16 @@ def test_a_failure_with_nothing_written_is_the_error_line_as_before(rig):
     assert out[0].turn == user
 
 
+def test_a_reply_longer_than_the_store_takes_is_kept_cut_never_lost(rig):
+    huge = "word " * 50_000                                                  # 250 000 characters, above the 200 000 a message holds
+    user, rows, out, _ = run(rig, partial(huge), done(huge))
+    assert [(r["kind"], r["src_ref"]) for r in rows] == [("text", f"direct:{user}")] and len(rows[0]["text"]) <= direct_turns.MAX_TEXT
+    user, rows, out, _ = run(rig, partial(huge), CallCancelledError("stopped"))
+    assert [(r["kind"], r["src_ref"]) for r in rows] == [("text", f"direct:{user}"), ("note", f"direct-note:{user}")]
+    user, rows, out, _ = run(rig, partial(huge), RuntimeError("no"))
+    assert [(r["kind"], r["src_ref"]) for r in rows] == [("text", f"direct:{user}"), ("error", f"direct-error:{user}")]
+
+
 def test_a_turn_that_moved_to_another_model_says_so_where_it_happened(rig):
     switched = {"from": "claude", "to": "codex", "plan": {"kept_messages": 40, "omitted": 0}}
     blocks = [{"type": "tool_use", "kind": "read", "name": "Read", "text": "menu.md"}]

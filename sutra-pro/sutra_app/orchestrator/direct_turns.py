@@ -23,11 +23,12 @@ from pydantic import ConfigDict, StringConstraints
 from sutra_app.library.base import Value
 
 __all__ = ["Ending", "finished", "stopped", "failed", "switch_notice", "attached_line", "clean_name",
-           "STOPPED", "STOPPED_EMPTY", "NO_REPLY"]
+           "STOPPED", "STOPPED_EMPTY", "NO_REPLY", "MAX_TEXT"]
 
 STOPPED = "Stopped. What was written is kept."
 STOPPED_EMPTY = "Stopped before the model wrote anything."
 NO_REPLY = "(no reply)"
+MAX_TEXT = 200_000                       # the store's cap on a message (chat_v2._post cuts there too): a longer reply is kept cut, never lost
 _NAMES = {"claude": "Claude", "codex": "Codex"}
 _KIND_WORDS = {"image": "an image", "pdf": "a PDF", "text": "a text file"}
 
@@ -38,7 +39,7 @@ class Ending(Value):
 
     model_config = ConfigDict(str_strip_whitespace=False)
     kind: Literal["text", "note", "error"]
-    text: Annotated[str, StringConstraints(min_length=1, max_length=200_000)]
+    text: Annotated[str, StringConstraints(min_length=1, max_length=MAX_TEXT)]
     src_ref: Annotated[str, StringConstraints(pattern=r"^direct(-(note|error|switch))?:[1-9][0-9]{0,15}$")]
     blocks: list[dict[str, Any]] = []
 
@@ -71,21 +72,21 @@ def finished(user_id: int, done: dict) -> list[Ending]:
     notice = switch_notice(done.get("switched"))
     if notice:
         out.append(Ending(kind="note", text=notice, src_ref=_ref(user_id, "switch")))
-    out.append(Ending(kind="text", text=str(done.get("text") or "") or NO_REPLY, src_ref=_ref(user_id), blocks=blocks))
+    out.append(Ending(kind="text", text=(str(done.get("text") or "") or NO_REPLY)[:MAX_TEXT], src_ref=_ref(user_id), blocks=blocks))
     return out
 
 
 def stopped(user_id: int, shown: str) -> list[Ending]:
     if not shown.strip():
         return [Ending(kind="note", text=STOPPED_EMPTY, src_ref=_ref(user_id))]
-    return [Ending(kind="text", text=shown, src_ref=_ref(user_id)), Ending(kind="note", text=STOPPED, src_ref=_ref(user_id, "note"))]
+    return [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=_ref(user_id)), Ending(kind="note", text=STOPPED, src_ref=_ref(user_id, "note"))]
 
 
 def failed(user_id: int, shown: str, sentence: str) -> list[Ending]:
-    reason = sentence.strip() or "The model could not answer."
+    reason = sentence.strip()[:MAX_TEXT] or "The model could not answer."
     if not shown.strip():
         return [Ending(kind="error", text=reason, src_ref=_ref(user_id))]
-    return [Ending(kind="text", text=shown, src_ref=_ref(user_id)), Ending(kind="error", text=reason, src_ref=_ref(user_id, "error"))]
+    return [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=_ref(user_id)), Ending(kind="error", text=reason, src_ref=_ref(user_id, "error"))]
 
 
 def clean_name(name: Any) -> str:
