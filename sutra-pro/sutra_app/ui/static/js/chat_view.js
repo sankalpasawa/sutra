@@ -212,7 +212,36 @@
     return '<div class="ncard ' + (tone === "bad" ? "oops" : "ready") + " " + tone + ' c-done" data-card="done" data-tone="' + tone + '" data-task="' + esc(clean(c.task_id)) + '">' +
       "<h2>Your " + (dept ? esc(dept) + " " : "") + "team " + esc(hasOwn(DONE_HEAD, status) ? DONE_HEAD[status] : taskWord(status)) + "</h2>" +
       '<p class="ctitle">' + esc(clean(c.title)) + "</p>" + (clean(c.outcome) ? '<p class="coutcome">' + safeText(clean(c.outcome)) + "</p>" : "") +
+      receiptLine(c.receipt) +
       '<div class="acts">' + openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div></div>";
+  }
+
+  // The receipt of a finished task, evidence only (GAP-model-quality): "Attempt 2 . Took 6 min . about $0.42 . 7 of 8 items passed their checks".
+  // No dollar figure under half a cent (the old rule) and "about", because the ledger's figure is a floor (a failed call has no cost); without
+  // one, the tokens (a Codex-only task); no atoms, no checks part, so the card never gives a verdict it was not given. No receipt, nothing.
+  const count = v => (finite(v) && v >= 0 ? Math.floor(v) : null);
+  const grouped = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  function tookText(seconds) {
+    const s = Math.floor(seconds);
+    if (s < 60) return s + " s";
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + " min";
+    const h = Math.floor(m / 60);
+    return h < 48 ? h + " h" + (m % 60 ? " " + (m % 60) + " min" : "") : Math.floor(h / 24) + " days";
+  }
+  function receiptLine(r) {
+    if (!isObj(r)) return "";
+    const parts = [];
+    const attempt = count(r.attempt);
+    const seconds = count(r.seconds);
+    const tokens = count(r.tokens);
+    const total = count(r.checks_total);
+    if (attempt !== null && attempt >= 2) parts.push("Attempt " + attempt);
+    if (seconds !== null) parts.push("Took " + tookText(seconds));
+    if (finite(r.usd) && r.usd >= 0.005) parts.push("about $" + r.usd.toFixed(2));
+    else if (tokens !== null && tokens > 0) parts.push(grouped(tokens) + " tokens");
+    if (total !== null && total > 0) parts.push(Math.min(count(r.checks_passed) || 0, total) + " of " + total + " items passed their checks");
+    return parts.length ? '<p class="creceipt">' + esc(parts.join(DOT)) + "</p>" : "";
   }
 
   // A function node's own working log gets one card per atom transition (a record written by code): its label as the title, the goal and the rows.
