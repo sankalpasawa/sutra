@@ -91,9 +91,15 @@ def _fake_chrome(j2_check) -> None:
 
 
 def _jsonl(path: Path) -> list:
+    """The complete lines of a JSONL file. The owner thread reads events.jsonl while the engine appends to it, so a last line without its
+    newline is a line still being written and is left for the next read (it failed on a fast Linux runner as a JSONDecodeError)."""
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    text = path.read_text(encoding="utf-8")
+    lines = text.split("\n")
+    if not text.endswith("\n"):
+        lines = lines[:-1]
+    return [json.loads(line) for line in lines if line.strip()]
 
 
 def _hooks_module(clock: FakeClock) -> types.ModuleType:
