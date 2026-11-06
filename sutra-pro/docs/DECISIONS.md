@@ -735,3 +735,73 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: a blanket skip would hide the next Windows regression; a named skip is a list that can be worked down.
 - Rejected: running only a Windows subset; porting the fake CLI wrappers (their expectations are POSIX signals); closing connections without waiting (the crash).
 - Diagram: key only, label "Windows tests named, not hidden".
+
+## D105 — "The J2 provider" is the model seam below every surface: `ModelPort` stays as it is, a sibling `ChatPort` carries the chat improvements
+- Sources: owner, 2026-11-06: "Now we have the J2 prototype idea, so that idea should remain the same. Now let's combine the old Sutra into the new Sutra Pro with all the updated ideas, but the basic improvement regarding the chat and everything should be in the J2 provider." No clarification was available. Code read: `engine/llm.py` (the single model seam, D17), `connectors/router.py` (`chat_start`, `chat_send`, `chat_stream`, `chat_stop`, `chat_pin` exist and nothing in `sutra_app/` calls them), `connectors/orchestrator_port.py` (the org chat agent's own path), `orchestrator/chats.py`; the J2 prototype's `llm.py` is a provider switch.
+- Decided: the request is read as follows. The J2 idea (the vendored engine, its five prompts, its routes, its goldens) is frozen. "The J2 provider" is the provider seam that J2's `llm.py` became: engine `llm.ask` to `ModelPort` to the connector Router to the Claude and Codex connectors. Chat behaviour (history that outlives a provider session, per-chat provider choice, archive, search, folding, scope isolation, attachments, streaming, secret scrubbing, per-model window) is implemented once, below every surface, in the Router and a new sibling protocol `ChatPort` (`connectors/chat_port.py`). The refinement the code forced: there are three model paths today (`ModelPort`, the org chat agent's `AsyncConnector`, and the unused Router session API), so the improvement cannot live in `ModelPort` alone without changing J2's call shape; `ModelPort` keeps its exact shape and `ChatPort` joins it on the same Router. The Simple and Detailed J2 views, the department chat and the node chats all reach the one provider choice: the J2 page through an injected pill and `PortSpec.connector`, the chats through `ChatPort`.
+- Why: it keeps J2 byte for byte (the owner's first sentence), puts the chat work where all surfaces already meet (the Router), and finishes a half-built feature instead of adding a fourth path.
+- Rejected: putting chat sessions into `engine/llm.py` (it would change `ask`, `CompletionRequest` or the goldens); a chat layer in the UI only (each surface would differ); a second router for chat (two policies, two usage ledgers); reading "J2 provider" as the prototype's own Anthropic/Gemini providers (D7 removed them).
+- Diagram: new `ChatPort` box beside `ModelPort` above the Router; label "one provider below every surface".
+
+## D106 — The old Sutra is absorbed by porting capabilities, not code; the owner rule "no relation to the old sutra-ui" now means "no code relation"
+- Sources: the same request; D98 (the old product's files are never edited); `docs/design/absorb-old-sutra.md` section 1 (46 inventory rows).
+- Decided: nothing of `marketplace/plugin/sutra-ui` is copied in, embedded, imported or run. Each capability gets a verdict (PORT, REPLACED, DROP, LATER) and a PORT is re-implemented in Sutra Pro's own shape with the old module's test re-expressed. The owner rule of 2026-11-03 ("a new app, no relation to the old sutra-ui") is read from now on as: no shared code, no shared data folder, no dependence; capabilities may be carried over because the owner asked. The old folder stays read only (D98).
+- Why: the old app is a second implementation of the department, the org chart and the engine; importing its code would bring back what the new design replaced and break the single global org chart.
+- Rejected: vendoring the old modules (two engines, two stores); a compatibility layer that serves the old APIs; leaving the rule's wording as it was (it would contradict the request).
+- Diagram: key only, label "old Sutra: ported, not embedded".
+
+## D107 — What is not carried over from the old app, and why
+- Sources: inventory rows 5, 18, 26, 35, 38, 41, 42, 45 of `docs/design/absorb-old-sutra.md`.
+- Decided: DROP the transcript parsers and the all-sessions browser (Pro owns its transcript); the Claude account resolver that reads another application's session token (D34); the Shadow supervisor and mission engine (a second orchestration brain beside the chat agent; its useful parts are ported or already replaced: attachments, egress scrub, needs-you, approvals, cost per task); the daemon window; the workspace and git pane; the Electron shell (D12, D92, D101); the old test seeding; and the automatic creation of a department for every project folder (the org chart grows on need; a chat-led import of one folder is LATER). LATER, with the trigger that starts each: slash-command palette (a team may call a Claude skill), a text detector for provider names (never; the pill is the one mechanism, D111), DeepSeek (D112), the SEO agent as a library template (the owner asks for one), routines (scheduled work that survives the app being closed), modules and the apps platform (the owner decides distribution), an in-app updater from Pro's own release feed (never the old "Latest", D100).
+- Why: each DROP either breaks an owner rule, an earlier decision, or duplicates something Pro does better; each LATER is wanted but has no design that fits the one-chat model yet.
+- Rejected: porting Shadow "for completeness"; starting any LATER item without the owner's word.
+- Diagram: key only, label "dropped and later: see design".
+
+## D108 — One durable transcript in `ChatStore`; the provider session stays a cache of it (D32 kept); segments, typed blocks, search and owner archive are added to it
+- Sources: old `chat_store.py` (provider-history segments, typed blocks), `chat_archive.py`, search; Pro `orchestrator/chats.py`, `schema.py` (`MIGRATIONS`, `chat_sessions`, `chat_messages`), D32, D70.
+- Decided: the app's own SQLite transcript remains the only record. One migration adds `chat_segments` (a row per provider session of a chat), an FTS5 index over message text and session titles kept in step by triggers, `chat_sessions.kind='legacy'` (by a table rebuild inside one transaction) and the per-session provider choice; `ChatMessage` gets an optional `blocks` list (text, thinking, tool_use, tool_result) stored in `meta_json`. Owner archive and un-archive use the status and slot rules of D70; nothing is ever deleted. The old on-disk format (`~/.sutra-ui/chats/*.json`) is read only by the importer (D113).
+- Why: Pro already treats the provider's session as a cache of its transcript, which is the old app's central idea reached from the other side; one store means one search, one archive and one place the server writes.
+- Rejected: storing chats as JSON files like the old app (a second store beside SQLite); keeping the provider's own transcript as the record (the old reason for `chat_store.py`; it cannot cross vendors); a model-written summary for condensing (D32: carry-over is deterministic text).
+- Diagram: ChatStore box label "segments, blocks, search, archive".
+
+## D109 — Egress scrub is in the Router for every port; for J2's agents it only observes
+- Sources: old `switch_egress.py` (silent scrub plus a count-only audit row); Pro `orchestrator/redact.py` (known secret values only); D52 (function nodes observe before they enforce).
+- Decided: before a prompt leaves for a CLI the Router matches credential shapes (key shapes, github and cloud tokens, JWTs, bearer headers, private-key blocks) and the `Redactor` values. For `ChatPort` and the org chat agent the match is replaced by `[redacted:<shape>]`. For `ModelPort` (J2's agents) nothing is changed: the audit row is written and the text is byte-identical, so J2's prompts and goldens cannot move. The row (`<data>/connectors/egress.jsonl`, append only, 0600) holds time, session, provider, size and shape names with counts, never a payload or a match.
+- Why: a silent scrub that nobody can see is indistinguishable from one that missed; the row is the compensating record. Observe-only on J2's path keeps "the J2 idea stays the same" provable.
+- Rejected: scrubbing J2's prompts (it edits what the prompt goldens pin); a confirmation dialog (the old owner chose silent scrubbing); logging what was caught (a second plaintext copy).
+- Diagram: label "egress scrub (chat: replace, J2: observe)" on the Router.
+
+## D110 — The per-model window can only lower the carry-over; J2's caps are the ceiling
+- Sources: old `budget.py` (a window per model, floor assumed when unknown, 3.0 characters per token); `connectors/transcript.py` (J2 `CHAT_FULL_CHARS` 60 000, `CHAT_TAIL` 40, digest 8 000).
+- Decided: `connectors/budget.py` holds `{provider: {model: window}}`, says `known` or `assumed-floor`, and the carry-over takes `min(J2 cap, budget)`. A large window never makes a carry-over bigger than J2's rule; a small one makes it smaller and the `switched` event says so.
+- Why: J2's constants are part of its idea (D32 cites them); the old app's problem (a switch rejected by a small model) is real and is solved from below.
+- Rejected: replacing J2's constants with the budget (changes J2 behaviour); a budget per provider (haiku-sized windows would be five times too large).
+- Diagram: label "window per model, J2 caps stay" on the carry-over.
+
+## D111 — The provider choice is per chat, persisted, and one mechanism (the pill) governs every surface
+- Sources: old `test_chat_local_provider.py` (a chat on Codex stays on Codex, the global default is untouched), `test_chat_ai_provider.js` (the control and the mirror are the same function), composer text detector; Pro `Router._pins` (in memory), `PUT /api/connectors/sessions/{id}/provider`.
+- Decided: choosing a provider writes that chat's session (connector, model), survives a restart, and never changes the policy default. The org chat agent follows the org chat's choice (every call carries the session id); a team's J2 run starts with `PortSpec.connector` set from the team chat's choice; the J2 page shows the pill through `dept_ext.js`, not by editing `j2_ui.html`. A choice that is not runnable falls back to the policy order and says so. Only providers that can run are offered, each with the reason when not; API-key logins are refused (D7, D34). There is no natural-language switch in the composer.
+- Why: the old app's silent un-switch on reconnect is exactly what an in-memory pin does; a second switching path (text detector) can disagree with the pill.
+- Rejected: a global default only; a detector for "using Codex, ..." (LATER at best); changing the J2 page's header by a port edit.
+- Diagram: pill on the chat box, label "per chat; one mechanism".
+
+## D112 — DeepSeek is deferred; the three old DeepSeek chats are kept as history
+- Sources: old `deepseek_*.py` (ACP transport, an API key, a pairing code, 1 187 lines); D7 and D34 (CLI first, subscription logins, never an API key); the old store holds 3 DeepSeek segments among 50.
+- Decided: no DeepSeek connector now. The seam admits one later as a third `ModelConnector` with no change to `ChatPort`; it needs the owner to lift D7 or a login that is not an API key. An imported chat with a DeepSeek segment is read only history with no connector.
+- Why: building it now would put an API key into the app against an owner rule.
+- Rejected: carrying the old key handling; hiding the three chats.
+- Diagram: key only, label "DeepSeek later (D7)".
+
+## D113 — Old chats are imported only on request, as read-only archived history, by one command
+- Sources: `~/.sutra-ui/chats/` on a machine that ran the old app (49 records, 238 messages, 46 non-empty, segments 47 Claude and 3 DeepSeek); D94 (one instance per data folder), D98 (the old product is read only), D99 (no personal paths).
+- Decided: `sutra-pro import-old-chats [--source ...] [--apply]`, dry run by default; `--apply` takes a backup, refuses while another instance runs, writes one transaction per chat. A chat becomes an archived, read-only `legacy` session (`cs_old_<12 hex>`) shown under "Older chats" and found by search; text is kept, tool blocks collapse to one note per turn (names and counts), thinking is dropped, every text is scrubbed, `src_ref` makes a second run change nothing. Not imported: archive marks, provider transcripts under `~/.claude` and `~/.gemini`, the department registry, settings, agents, drafts, connector settings. Nothing in the old folder is written, moved or deleted.
+- Why: the chats are the only user data worth keeping that Pro can show; importing them silently or resumably would fake continuity with sessions Pro never made.
+- Rejected: an automatic import at first start; making old chats resumable; importing the old department registry (the chart grows through the chat agent); migrating tool input and output (size, secrets).
+- Diagram: key only, label "old chats: import command, read only".
+
+## D114 — J2 moves with the prototype: a second sync brings its Run settings page
+- Sources: `docs/design/j2-sync.md` (baseline `33aeeda`); the copy of the J2 prototype in the old repository (`prototypes/j2`, commit "J2 Run settings") adds `GET /api/runlist` and `GET /api/changes` to `j2_server.py`, the Run settings tab to `j2_ui.html` and `run_settings()` to `j2_flow_test.py`; `llm.py` and `j2.py` are identical to the baseline.
+- Decided: package ABS-0 re-vendors with `scripts/vendor_j2.py` and re-ports the page with `scripts/port_j2_ui.py`, taking the files from the J2 prototype's own repository when the change has reached it and from that copy otherwise (and saying which in `VENDORED.md`). The two routes join the API shape goldens. This is the only package allowed to touch vendored files.
+- Why: "the J2 idea stays the same" includes the prototype's own later changes; nothing else in this merge may change J2.
+- Rejected: leaving Pro on `33aeeda` (the two products would show different J2 pages); editing the page by hand (the port script's anchors are the proof).
+- Diagram: key only, label "J2 sync 2 (D114)".

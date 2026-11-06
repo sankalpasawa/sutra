@@ -1505,6 +1505,291 @@
    ],
    "section": "gaps",
    "spec": "GAP-TRACE The two deferred chassis documents: the design overview (docs/DESIGN.md) and the traceability matrix (docs/TRACEABILITY.md), with a generator and a test (scheduler's package; the coverage critic listed them under GAP-DOCS chassis edits).\n\n1. docs/DESIGN.md (one page, at most 250 lines). Purpose; the five tiers of the architecture (Experience, Orchestration, Department runtime, Connector layer, server contents) each with the modules that implement it AS BUILT (read docs/notes/*.md and list sutra_app/); the owner rules (a new app with no relation to the old sutra-ui and the J2 prototype's design; ONE global org chart; five function nodes with goal, constraints, context and work atom with verify as the teeth; a connector layer with a Claude and a Codex connector, CLI first; everything in J2 present; local only; every decision documented), each with the decision numbers and the modules that implement it; the as-built deviations that matter (from the 'deviations' sections of the notes: 15 to 25 bullets, each naming its package); known limits (docs/design/gaps.md findings G18 to G27, the offline demo limits in docs/notes/GAP-DEMO.md); how to run (plain paths; mention README.md and the docs of GAP-DOCS only as plain text, they may not exist yet); the packages by section; the links to docs/design/{engine,connectors,library,orchestrator,ui}.md, settlements/, function-nodes.md, DECISIONS.md, BUILD-PLAN.md, gaps.md and j2-sync.md.\n2. scripts/build_traceability.py reads docs/build-plan.json, docs/DECISIONS.md (every '## D<n>' heading), docs/notes/*.md, sutra_app/engine/features.py (FEATURES), the route table that the contract tests use (tests/contracts, CT-1), docs/diagram/decisions.json and docs/diagram/gen.py, and writes docs/design/traceability.json and docs/TRACEABILITY.md. Rows: (a) each owner rule -> decisions -> modules -> tests; (b) each of the seven draw.io steps -> module -> test (start from the table in docs/design/gaps.md section 4 and update it with the tests that exist now; later tests under tests/e2e/test_step* are referenced by pattern); (c) each of the 15 chips of the runtime strip -> module; (d) each of the 30 J2 endpoints -> handler -> golden test; (e) each D-number in DECISIONS.md -> the packages it touches -> status (implemented, documented only, rejected); (f) each work package -> its owned paths -> its notes file -> its merge commit (git log --grep). Deterministic and sorted. `--check` verifies that docs/design/traceability.json parses, that every path or test file it names exists, that every D-number in DECISIONS.md has a row, and prints the first 20 problems with exit 1. It must NOT require the committed file to equal a fresh run: later packages add files and decisions, and their merges must not fail because of this test.\n3. tests/test_traceability.py runs the --check on the real repository and unit-tests the parsers on small fixtures (a decision heading, a notes file, a plan entry); a dead path in a fixture must be reported.\n4. Write docs/TRACEABILITY.md from the generator; docs/DESIGN.md by hand from the notes and sections.\nDo not edit anything else.\n\nRIDERS (set by the scheduler): the chassis files docs/DESIGN.md and docs/TRACEABILITY.md (no package may own them) are authorized for you to create; nothing else outside your owns. J2 prompts and route paths do not change."
+  },
+  {
+   "id": "ABS-0",
+   "title": "J2 sync 2: the prototype's Run settings page (runlist, changes)",
+   "owns": [
+    "docs/design/j2-sync-2.md",
+    "docs/notes/ABS-0.md"
+   ],
+   "depends_on": [
+    "E5",
+    "UI-9"
+   ],
+   "acceptance": [
+    "scripts/py scripts/port_j2_ui.py --check",
+    "SUTRA_SLOW=1 scripts/py -m pytest tests/engine -q",
+    "scripts/py -m pytest tests/contracts -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-0 J2's own newer page. The copy at prototypes/j2 of the old repository is ahead of the vendored baseline 33aeeda: j2_server.py gained GET /api/runlist (run_list) and GET /api/changes, j2_ui.html gained the Run settings tab (appearance cards, a searchable run list), j2_flow_test.py gained run_settings(). Confirm first whether the J2 prototype's own repository has it (then vendor from there, record the commit in engine/VENDORED.md) and only otherwise vendor from the copy and say so. Re-vendor with scripts/vendor_j2.py, port the page with scripts/port_j2_ui.py (all anchors must still match), record the two routes in the API shape goldens (scripts/record_api_shapes.py), expose both through engine/views.py as J2 does, and write docs/design/j2-sync-2.md in the form of docs/design/j2-sync.md. RIDERS: sutra_app/engine/ vendored files, engine/VENDORED.md, engine/views.py, ui/pages/j2_ui.html, scripts/port_j2_ui.py anchors, tests/engine goldens. Prompt goldens must not change.\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-1",
+   "title": "ChatPort protocol, models and RouterChatPort over the Router's chat methods",
+   "owns": [
+    "sutra_app/connectors/chat_port.py",
+    "sutra_app/connectors/chat_models.py",
+    "tests/connectors/test_chat_port.py",
+    "docs/notes/ABS-1.md"
+   ],
+   "depends_on": [
+    "CN-9",
+    "E0"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_chat_port.py -q",
+    "scripts/py -m pytest tests/connectors -q",
+    "scripts/py -m pytest tests/engine/test_engine_vendor.py tests/engine/test_engine_prompts.py -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-1 The sibling of ModelPort for chat sessions (design 2.1, 2.2). Protocol ChatPort: providers(session_id), choose(session_id, provider, model), plan_switch(session_id, target), send, stream, stop, close; models ProviderPill, Choice, CarryPlan, ChatTurnIn, ChatTurnOut, ChatEvent (kinds partial, block, usage, switched, turn_done), AttachmentRef (type only here). RouterChatPort wraps Router.chat_start/chat_send/chat_stream/chat_stop/chat_pin and Router.provider_summary using public methods only; it reads history through the existing TranscriptSource and never writes messages. Rules to test with the stub connector and the fake CLIs: only runnable providers are offered with the reason when not; API-key billing providers are refused (D7); choosing a provider for one session leaves the policy default alone; plan_switch starts no process; two sessions never share history or workdir; a stream ends with turn_done. Port the intent of the old test_provider_detect.py and test_chat_local_provider.py. RIDERS: none (no existing file is edited; add the exports to connectors/__init__ lazily as CN-1 did).\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-2",
+   "title": "Egress scrub and audit row in the Router",
+   "owns": [
+    "sutra_app/connectors/egress.py",
+    "tests/connectors/test_egress.py",
+    "docs/notes/ABS-2.md"
+   ],
+   "depends_on": [
+    "ABS-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_egress.py tests/connectors -q",
+    "scripts/py -m pytest tests/engine/test_engine_vendor.py tests/engine/test_engine_prompts.py -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-2 Port marketplace/plugin/sutra-ui/switch_egress.py and its test (design 2.4, D109). A shape table (API-key shapes, github tokens, AWS access keys, JWTs, bearer headers, private-key blocks) plus the existing orchestrator Redactor values. Hook in the Router, called for every port: ChatPort and AsyncConnector prompts get [redacted:<shape>]; ModelPort (engine) prompts are observe only: the audit row is written and the text is byte-identical. Audit row appended to <data>/connectors/egress.jsonl (0600, append only): time, session, provider, bytes, shape names and counts; never a payload or a match. Tests: each shape, the engine path leaves the text identical, the row holds no match, a long text is scanned in bounded time. RIDERS: connectors/router.py (one hook call before the process starts).\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-3",
+   "title": "Per-model window budget for the carry-over (lower-only)",
+   "owns": [
+    "sutra_app/connectors/budget.py",
+    "tests/connectors/test_budget.py",
+    "docs/notes/ABS-3.md"
+   ],
+   "depends_on": [
+    "CN-9"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_budget.py tests/connectors -q",
+    "scripts/py -m pytest tests/engine/test_engine_vendor.py tests/engine/test_engine_prompts.py -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-3 Port budget.py of the old app (design 2.5, D110). A table {provider: {model: window_tokens}}, window_source known or assumed-floor, 3.0 characters per token, label estimate. render_carry_over takes min(J2 cap, budget): FULL_CHARS 60000, TAIL_MESSAGES 40 and DIGEST_CAP_CHARS 8000 stay the ceiling, so a big window never enlarges a carry-over and a small one shrinks it. Tests: unknown model assumes the floor and says so; the result never exceeds the J2 cap for any model; the old test cases are re-expressed. RIDERS: connectors/transcript.py (a budget argument, default None = J2 caps exactly).\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-4",
+   "title": "Attachments: store, kinds, Claude and Codex delivery",
+   "owns": [
+    "sutra_app/connectors/attachments.py",
+    "sutra_app/orchestrator/attachments.py",
+    "tests/connectors/test_attachments.py",
+    "tests/orchestrator/test_attachments.py",
+    "docs/notes/ABS-4.md"
+   ],
+   "depends_on": [
+    "ABS-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_attachments.py tests/orchestrator/test_attachments.py -q",
+    "scripts/py -m pytest tests/connectors -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-4 Port shadow_attachments.py and its test (design 2.2 rule 6). Store: <data>/attachments/<sha256>, once per content, never inside a project folder; kinds image (png, jpeg, gif, webp), pdf, text; at most 20 MB per file and 10 per message; type by sniffing. Delivery: Claude gets image and PDF as stream-json content blocks, Codex gets images with -i (before -m, CN-4) and PDF or text as text cut at 40000 characters with the cut said; a kind a connector cannot take is refused with its name. AttachmentRef gets its fields in connectors/chat_models.py by rider. RIDERS: connectors/claude.py, connectors/codex.py (argument and frame building only), connectors/chat_models.py.\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-5",
+   "title": "Tool-kind classification and typed block events",
+   "owns": [
+    "sutra_app/connectors/tool_kinds.py",
+    "tests/connectors/test_tool_kinds.py",
+    "docs/notes/ABS-5.md"
+   ],
+   "depends_on": [
+    "ABS-4"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/connectors/test_tool_kinds.py tests/connectors -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-5 Port tool_kinds.py (design 2.2 rule 7). classify(tool_name, input) -> read|edit|run|search|web|other; an unknown name is other. The Claude and Codex line parsers emit block events (text, thinking, tool_use, tool_result) carrying that kind through ChatEvent; the turn result keeps the blocks. No block text is truncated silently (the old module's rule: a cut says it was cut). RIDERS: connectors/claude.py, connectors/codex.py (parser output only), connectors/chat_models.py.\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-6",
+   "title": "Chat storage v2: migration, segments, blocks, FTS5, legacy kind, persisted choice",
+   "owns": [
+    "sutra_app/orchestrator/chat_v2.py",
+    "tests/orchestrator/test_chat_v2.py",
+    "docs/notes/ABS-6.md"
+   ],
+   "depends_on": [
+    "ORCH-8",
+    "L8"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_chat_v2.py tests/orchestrator -q",
+    "scripts/py -m pytest tests/library -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-6 The durable side (design 2.3, D108). One new migration appended to schema.MIGRATIONS: table chat_segments (session_id, seq, connector, provider_session_id, from_message_id), FTS5 table over chat_messages.text and chat_sessions.title kept in step by triggers, chat_sessions.kind gains 'legacy' by a table rebuild inside one transaction (copy, drop, rename, foreign keys off for that step), and the persisted per-session choice (connector and model already exist; add pinned). ChatMessage gains an optional blocks list (strictly additive) stored in meta_json. chat_v2.py holds ChatSegments, ChatSearch (scope node, dept or all, archived only on request, at most 50 rows) and owner archive and unarchive (the D70 machinery; archiving a node's active session frees the slot). No delete anywhere. Tests: upgrade a populated database and compare counts and last_message_id; a segment per provider change; search respects scope and archive; blocks round-trip; the closed model refuses an unknown block type. RIDERS: orchestrator/schema.py (the migration), orchestrator/chats.py (post and read blocks, segments), orchestrator/records.py and library/chat.py (the optional field).\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-7",
+   "title": "Chat routes v2: search, archive, providers and choose, upload, send and stream through ChatPort",
+   "owns": [
+    "sutra_app/orchestrator/api/chat_v2.py",
+    "tests/orchestrator/test_api_chat_v2.py",
+    "docs/notes/ABS-7.md"
+   ],
+   "depends_on": [
+    "ABS-4",
+    "ABS-5",
+    "ABS-6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_api_chat_v2.py tests/contracts -q",
+    "scripts/py -m pytest tests/orchestrator/test_api_security.py -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-7 Routes (writes need the token, D81): GET /api/chats/search?q=&scope=&include=archived; POST /api/chats/{sid}/archive and /unarchive; GET /api/chats/{sid}/providers; PUT /api/chats/{sid}/choice {provider, model}; POST /api/chats/{sid}/attachments; POST /api/chats/{sid}/messages extended (attachments) and, for a free-form node chat, answered through ChatPort.stream; SSE chat.partial events that are not stored and not in the replay ring (design 2.2 rule 5; a reconnect mid-turn gets the stored message only); the stored message is written once at turn_done. The org chat's staged agent path is unchanged. Record the new shapes in the contract tests. RIDERS: orchestrator/api/__init__.py (registration only), orchestrator/events.py (the control-like partial event).\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-8",
+   "title": "One choice for every surface: pins reach the org chat agent and each team's run",
+   "owns": [
+    "sutra_app/orchestrator/chat_choice.py",
+    "tests/orchestrator/test_chat_choice.py",
+    "docs/notes/ABS-8.md"
+   ],
+   "depends_on": [
+    "ABS-1",
+    "ABS-2",
+    "ABS-6"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/orchestrator/test_chat_choice.py -q",
+    "scripts/py -m pytest tests/orchestrator tests/connectors -q",
+    "scripts/py -m pytest tests/engine/test_engine_vendor.py tests/engine/test_engine_prompts.py -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-8 The pill must govern all of Sutra Pro (design 2.6, D111). Router.plan reads the persisted choice of RouteContext.session_id (today only the in-memory pin); AsyncConnector already sets session_id, so the org chat agent follows its chat's choice; the run launcher sets PortSpec.connector from the team session's choice when a task starts (an existing field: auto, claude, codex, stub), so a team's J2 run follows its team chat. A choice for a provider that is not runnable falls back to the policy order and says so in the event note. J2 files are not touched. Tests: org chat with Codex chosen routes there; a run started after a choice carries it; clearing the choice restores the policy. RIDERS: connectors/router.py (plan reads the store), connectors/orchestrator_port.py, orchestrator/runs.py (spec only).\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-9",
+   "title": "UI: provider pill, streaming indicator, switch notice",
+   "owns": [
+    "sutra_app/ui/static/js/chat_pill.js",
+    "tests/ui/js/chat_pill.test.js",
+    "docs/notes/ABS-9.md"
+   ],
+   "depends_on": [
+    "ABS-7",
+    "ABS-8"
+   ],
+   "acceptance": [
+    "node --test tests/ui/js/chat_pill.test.js",
+    "node --test tests/ui/js/contrast.test.js"
+   ],
+   "section": "absorb",
+   "spec": "ABS-9 Pure string module like chat_view.js (no DOM; one global ChatPill; module.exports in node). pill(providers, choice) draws the round pill with Claude and Codex, each with its why-not when it cannot run; it never offers a provider that cannot run; selection calls PUT /api/chats/{sid}/choice (the one mechanism, no text detector). A streaming indicator from chat.partial; a one-line notice when a switched event arrives ('Switched Claude to Codex; carried 40 messages'). Placed in the node panel and Home chat, and in the J2 page header by dept_ext.js (injection; j2_ui.html is not edited). Port the intent of the old test_chat_pill.js and test_chat_ai_provider.js. Contrast test must still pass in light and dark. RIDERS: ui/static/js/chat_view.js (mount point only), ui/static/js/dept_ext.js, ui/static/js/node_panel.js, ui/static/js/home.js.\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-10",
+   "title": "UI: fold, search, archive, attachments in the chat",
+   "owns": [
+    "sutra_app/ui/static/js/chat_fold.js",
+    "sutra_app/ui/static/js/chat_search.js",
+    "tests/ui/js/chat_fold.test.js",
+    "tests/ui/js/chat_search.test.js",
+    "docs/notes/ABS-10.md"
+   ],
+   "depends_on": [
+    "ABS-9"
+   ],
+   "acceptance": [
+    "node --test tests/ui/js/chat_fold.test.js tests/ui/js/chat_search.test.js",
+    "node --test tests/ui/js/contrast.test.js"
+   ],
+   "section": "absorb",
+   "spec": "ABS-10 chat_fold.js: a settled turn's blocks fold to ONE row (count, kinds by count, failures) that opens into the cards; streaming draws nothing at the top; the old condense behaviour of test_chat_condense.js. chat_search.js: the search box asks GET /api/chats/search with the scope of the panel, shows title and snippet, escapes everything from the wire (ui.md 4.3), keeps archived chats under 'Older chats'; the old test_chat_search.js intent. Archive and un-archive buttons; attachment picker with the limits shown. No message text becomes markup. RIDERS: ui/static/js/chat_view.js (transcript draws the fold), ui/static/js/node_panel.js, ui/static/js/home.js, ui/pages/home.html (script tags).\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-11",
+   "title": "Library seed audit against the old templates",
+   "owns": [
+    "scripts/audit_old_templates.py",
+    "tests/library/test_audit_old_templates.py",
+    "docs/notes/ABS-11.md"
+   ],
+   "depends_on": [
+    "L7"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/library/test_audit_old_templates.py -q",
+    "scripts/py scripts/audit_old_templates.py --old ../marketplace/plugin/sutra-ui --dry-run"
+   ],
+   "section": "absorb",
+   "spec": "ABS-11 Row 34 of the inventory. Reads the old function-templates/, artifact-templates/ (10 files) and engine-templates/ (6 files) as data, never edits them; prints which seeds Pro already has (library/specs/function_specs.json, engine/templates/, library/artifacts/) and which it lacks; --apply adds the missing ones through the library write gate in log mode (L8) and prints the gate's warnings. Dry run by default. Tests use small fixture trees, not the old folder. RIDERS: none.\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-12",
+   "title": "Import of the old app's chats (sutra-pro import-old-chats)",
+   "owns": [
+    "sutra_app/ops/import_old.py",
+    "tests/ops/test_import_old.py",
+    "docs/notes/ABS-12.md"
+   ],
+   "depends_on": [
+    "ABS-2",
+    "ABS-6",
+    "GAP-OPS-1"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/ops/test_import_old.py -q",
+    "scripts/py -m sutra_app import-old-chats --help"
+   ],
+   "section": "absorb",
+   "spec": "ABS-12 Design section 4, D113. sutra-pro import-old-chats [--source ~/.sutra-ui/chats] [--apply]. Dry run by default (counts, what is flattened). --apply: backup first, refuse while another instance holds the data lock (D94), one transaction per chat. Mapping: kind legacy, node_id legacy, archived, read only, id cs_old_<12 hex>, tool blocks collapse into one note per turn (names and counts), thinking dropped, text kept, src_ref old:<sutra_id>:<index> so a second run changes nothing, texts through the Redactor and the egress shapes. Reads the old folder only; a test proves every old file is byte-identical afterwards. Fixtures: a chat with blocks, a legacy {role,text,ts} chat, an empty chat, a deepseek segment (history only, no connector). RIDERS: ops/cli.py (the subcommand), __main__.py.\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-13",
+   "title": "End to end: switch, carry-over, search, archive, import with fake CLIs",
+   "owns": [
+    "tests/e2e/test_abs_chat.py",
+    "docs/notes/ABS-13.md"
+   ],
+   "depends_on": [
+    "ABS-9",
+    "ABS-10",
+    "ABS-12"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/e2e/test_abs_chat.py -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-13 Real-process scenario with the fake claude and codex CLIs (tests/fakes): start a team chat, choose Codex for that chat only, send, see the carry-over header in the Codex prompt and a secret shape scrubbed in it, a second chat still on Claude, archive and find the old chat by search, import a fixture of old chats and find them under Older chats, J2 run of the team started after the choice carries it. Offline demo (D97) still works unchanged. RIDERS: none.\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-14",
+   "title": "User and developer documents for the merged app",
+   "owns": [
+    "docs/MIGRATING-FROM-SUTRA.md",
+    "docs/notes/ABS-14.md"
+   ],
+   "depends_on": [
+    "ABS-13"
+   ],
+   "acceptance": [
+    "scripts/py -m pytest tests/test_docs.py -q",
+    "scripts/py scripts/check_docs.py"
+   ],
+   "section": "absorb",
+   "spec": "ABS-14 One page for an owner who used the old app: what moved, what is replaced, what was dropped and why, how to import old chats, what is later. Written from docs/design/absorb-old-sutra.md and the as-built notes of ABS-1 to ABS-13. The chassis documents (docs/DESIGN.md, docs/TRACEABILITY.md) are updated by hand by the maintainer, not by this package. RIDERS: none.\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
   }
  ],
  "review_only": [
