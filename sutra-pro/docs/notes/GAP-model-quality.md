@@ -57,7 +57,8 @@ Three verified gaps of the old-app comparison, built once each (the retry's atte
 - `tests/connectors/test_chat_port.py` +4: `set_system` writes 0600, replaces, removes, refuses a path id, leaves no temp file; one session's
   text is never another's; it survives a quota switch to Codex; the real `claude` (fake CLI) gets it on `--system-prompt` and the real
   `codex` in front of its first prompt.
-- `tests/orchestrator/test_attempts.py` 9: no brief on a first attempt; attempt 2 lists the summary's met and unmet items, limits, the
+- `tests/orchestrator/test_attempts.py` 11: no brief on a first attempt; a long first framing is cut, never the brief; a summary of the
+  wrong shape or broken JSON is skipped; attempt 2 lists the summary's met and unmet items, limits, the
   left-to-confirm list and the atoms; attempt 3 lists both earlier attempts once and the base framing once; a crash with no summary still
   says how it ended and its stderr tail is scrubbed; no chat line is promoted; a check named in the framing is listed met only when the audit
   said so; a follow-up starts its own chain; the cap fills the newest attempt first; `attempt_of` takes whole numbers only.

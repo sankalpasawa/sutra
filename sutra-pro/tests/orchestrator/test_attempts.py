@@ -135,6 +135,18 @@ def test_a_long_history_is_cut_to_the_cap_newest_first(tenv):
     assert "oldest attempts are left out)" in framing and framing.endswith("None of it counts as done or checked in this run.")
 
 
+def test_a_summary_of_the_wrong_shape_is_skipped_not_a_failed_retry(tenv):
+    first = tenv.started()
+    write(tenv, first, "summary.json", json.dumps({"done_when": 7, "limits_hit": "x", "to_be_confirmed": {"a": 1}}))
+    tenv.projector.mark_ended(first, "crashed", "boom")
+    framing = spec_of(tenv, retry(tenv, first).id).framing
+    assert "Attempt 1 crashed: boom" in framing and "Done-when" not in framing and "Limits" not in framing
+    second = tenv.started(dept="sales", text="x")
+    write(tenv, second, "summary.json", "[1, 2")
+    tenv.projector.mark_ended(second, "stopped", "stopped by you")
+    assert "Attempt 1 was stopped: stopped by you" in spec_of(tenv, retry(tenv, second).id).framing
+
+
 def test_a_long_first_framing_is_cut_and_the_brief_never_is(tenv):
     first = tenv.started(framing="f" * 19_990)
     tenv.projector.mark_ended(first, "crashed", "boom")

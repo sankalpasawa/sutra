@@ -108,7 +108,8 @@ def _block(conn: sqlite3.Connection, row: sqlite3.Row, run_dir: Callable[[str, s
     head = f"Attempt {attempt_of(row)} {ENDED.get(row['status'], row['status'].replace('_', ' '))}" + (f": {outcome}" if outcome else ".")
     folder = run_dir(row["dept_id"], row["run_id"]) if row["run_id"] else None
     summary = _summary(folder)
-    checks = [d for d in summary.get("done_when", []) if isinstance(d, dict) and isinstance(d.get("criterion"), str)]
+    listed = summary.get("done_when")
+    checks = [d for d in (listed if isinstance(listed, list) else []) if isinstance(d, dict) and isinstance(d.get("criterion"), str)]
     details = _listed("Done-when items its audit found met", [d["criterion"] for d in checks if d.get("pass") is True], scrub)
     details += _listed("Done-when items not met or not checked", [d["criterion"] for d in checks if d.get("pass") is not True], scrub)
     details += _listed("Limits it hit", _texts(summary.get("limits_hit")), scrub)
