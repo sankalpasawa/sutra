@@ -31,14 +31,16 @@ from sutra_app.library.atom import abandon_atom, ledger_row
 from sutra_app.library.gate import GATE, GateError
 from sutra_app.library.node import STEP_REF_RE, FunctionNode, NodeStats, NodeTokens, make_edge, step_node_id
 from sutra_app.library.types import FUNCTIONS, clip, function_node_id
+from sutra_app.orchestrator.attempts import attempt_in
 from sutra_app.orchestrator.chats import parse_options
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.ids import ORG_SESSION_ID, Clock, SystemClock, iso_z, parse_iso_z
 from sutra_app.orchestrator.models import (
-    DoneCard, EventParseError, NeedsYouCard, RunAtom, RunEnded, RunNode, RunSay, RunStarted, RunStep, RunUsage, parse_event,
+    DoneCard, DoneReceipt, EventParseError, NeedsYouCard, RunAtom, RunEnded, RunNode, RunSay, RunStarted, RunStep, RunUsage, parse_event,
 )
 from sutra_app.orchestrator.tasks import TaskGraph, TaskRow, TaskStore
+from sutra_app.orchestrator.usage import UsageStore
 
 __all__ = ["Projector", "Drained", "MAX_CHUNK_BYTES", "MAX_LINE_BYTES", "DEFAULT_OUTCOMES"]
 
@@ -446,8 +448,8 @@ class Projector:
 
     def _finish(self, batch: _Batch, status: str, outcome: str, code: str | None, when: int) -> None:
         """A task ends: status, outcome and time; steps settle (map/1 words), functions go idle; every open function atom of the
-        task is abandoned ('run ended: <status>'); blocked dependants are queued or cancelled; a `done` card in the org chat; a
-        crash also says so in the department chat."""
+        task is abandoned ('run ended: <status>'); blocked dependants are queued or cancelled; a `done` card in the org chat, with its
+        receipt (`_receipt`); a crash also says so in the department chat."""
         tx = batch.tx
         row = batch.row
         text = clip((outcome or "").strip() or DEFAULT_OUTCOMES[status], 2000)
@@ -461,12 +463,30 @@ class Projector:
         self.store.settle_blocked(tx, lambda moved: self.taskgraph.sync(tx, moved))
         name = tx.conn.execute("SELECT name FROM org_nodes WHERE id = ?", (row.dept_id,)).fetchone()
         card = DoneCard(type="done", task_id=row.id, dept_name=name["name"] if name is not None else row.dept_id, title=clip(row.title, 200),
-                        status=status, outcome=text)
+                        status=status, outcome=text, receipt=self._receipt(tx.conn, row))
         self._post(batch, ORG_SESSION_ID, who="sutra", kind="card", card=card.model_dump(mode="json"), src_ref=f"{batch.run}#done", at=ended_at)
         if status == "crashed":
             session = self._session_of(tx, row.dept_id)
             if session is not None:
                 self._post(batch, session, who="sutra", kind="error", text=CRASH_TEXT, role="system", src_ref=f"{batch.run}#crashed", at=ended_at)
+
+    @staticmethod
+    def _receipt(conn: sqlite3.Connection, row: TaskRow) -> DoneReceipt | None:
+        """The done card's evidence line, read through the finishing transaction: the task's ledger sums (stub rows left out), its time from
+        start to end, its atoms by final state (open function atoms were abandoned just before) and a retry's attempt number. None when
+        there is nothing to say."""
+        total = UsageStore._task_total(conn, row.id)
+        usd = total.usd if total is not None else None
+        tokens = None
+        if total is not None and (total.tokens_in is not None or total.tokens_out is not None):
+            tokens = (total.tokens_in or 0) + (total.tokens_out or 0)
+        seconds = max(0, row.ended_at - row.started_at) if row.started_at is not None and row.ended_at is not None else None
+        counts = {r[0]: r[1] for r in conn.execute("SELECT display, count(*) FROM atoms WHERE task_id = ? GROUP BY display", (row.id,))}
+        attempt = attempt_in(conn, row.id)
+        if usd is None and tokens is None and seconds is None and not counts and attempt < 2:
+            return None
+        return DoneReceipt(usd=float(usd) if usd is not None else None, tokens=tokens, seconds=seconds, checks_passed=counts.get("closed", 0),
+                           checks_total=sum(counts.values()), attempt=attempt if attempt >= 2 else None)
 
     def _settle_nodes(self, batch: _Batch, status: str) -> None:
         tx, row = batch.tx, batch.row

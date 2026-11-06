@@ -27,7 +27,7 @@ from sutra_app.library.types import (
 __all__ = [
     "Iso", "Event", "Violation", "ChartNodeOut", "ChartView", "ChartChangeOut", "ChangeResult", "GraphEdgeOut", "GraphNodeOut",
     "GraphView", "FnStats", "FnMeta", "FnDetailMeta", "UsageTotals", "ChatSessionOut", "ChatMessageOut", "ChatOption",
-    "ChatCard", "ChartChangeCard", "TaskCard", "ApprovalCard", "ChoiceCard", "NeedsYouCard", "DoneCard", "AtomCard", "CardRow",
+    "ChatCard", "ChartChangeCard", "TaskCard", "ApprovalCard", "ChoiceCard", "NeedsYouCard", "DoneCard", "DoneReceipt", "AtomCard", "CardRow",
     "ChatChoice", "ChatPost", "Accepted", "Delivery", "TaskOut", "RunRef", "FunctionChip", "DepartmentOut", "DeptRow", "AtomOut",
     "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
     "RUN_EVENT_VARIANTS", "EventParseError", "parse_event", "RunStarted", "RunSay", "RunNode", "RunStep", "RunAtom", "RunUsage",
@@ -272,6 +272,18 @@ class NeedsYouCard(Value):
     options: Annotated[list[Annotated[str, StringConstraints(max_length=500)]], Field(max_length=20)] = []
 
 
+class DoneReceipt(Value):
+    """What a finished task cost and took, evidence only (GAP-model-quality): `usd` sums the ledger's Claude figures (a floor: a failed call
+    has none, so the page says "about"), `tokens` the token counts (what a Codex-only task shows), `seconds` from start to end, the atoms of
+    the task by final state (`checks_total` 0: the team recorded none, so no check is claimed) and the attempt number of a retry."""
+    usd: Annotated[float, Field(ge=0)] | None = None
+    tokens: Count | None = None
+    seconds: Count | None = None
+    checks_passed: Count = 0
+    checks_total: Count = 0
+    attempt: Annotated[int, Field(ge=2)] | None = None
+
+
 class DoneCard(Value):
     type: Literal["done"]
     task_id: TaskId
@@ -279,6 +291,15 @@ class DoneCard(Value):
     title: Name
     status: TaskStatus
     outcome: Annotated[str, StringConstraints(max_length=2000)] = ""
+    receipt: DoneReceipt | None = None
+
+    @model_serializer(mode="wrap")
+    def _receipt_only_when_there_is_one(self, handler: Any) -> dict[str, Any]:
+        """A card without a receipt (every card stored before it existed) keeps the wire shape it always had: the key is left out."""
+        data = handler(self)
+        if data.get("receipt") is None:
+            data.pop("receipt", None)
+        return data
 
 
 class CardRow(Value):

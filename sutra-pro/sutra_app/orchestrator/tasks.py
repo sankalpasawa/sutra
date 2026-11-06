@@ -8,14 +8,15 @@
     await service.start_ready()                                      # FIFO, one live task per department, SUTRA_MAX_RUNS / SUTRA_MAX_LIVE
     service.deliver_to_department(dept, text)                        # answer a waiting team, 409 a working one, else a follow-up task
     service.stop_live(dept)                                          # the engine's reset: stop a waiting team, cancel queued work
-    await service.stop(task_id) / await service.retry(task_id)       # the stop ladder; a fresh run (never seeded)
+    await service.stop(task_id) / await service.retry(task_id)       # the stop ladder; a fresh run (never seeded) told how earlier attempts ended
     service.resolve_run(run_id, dept_id)                             # RunRef: run_id wins, else the live task's run, else the latest
 
 The server makes the run folder (mode 0700) before the engine process exists: `task.json` (RunSpec, 0600, written by temp file and
 rename), empty `inbox.jsonl` and `events.jsonl` (0600, O_EXCL). The engine never creates it.
 
 A follow-up remembers which run to continue from in `settings_json` under the reserved key `_seed_from` (the table has no column
-for it): the seven J2_* keys stay as they were and every reader of the settings drops the underscore keys.
+for it): the seven J2_* keys stay as they were and every reader of the settings drops the underscore keys. A retry stores its attempt
+number the same way, under `_attempt` (`attempts.py`).
 """
 import asyncio
 import hmac
@@ -34,9 +35,12 @@ import anyio.from_thread
 from pydantic import ValidationError
 
 from sutra_app.config import Settings
+from sutra_app.connectors.egress import scan
 from sutra_app.library.gate import GATE, Checked, GateError
 from sutra_app.library.node import StructuralNode, step_node_id
 from sutra_app.library.types import clip, violation, violations_from_validation_error
+from sutra_app.orchestrator import attempts
+from sutra_app.orchestrator.attempts import ATTEMPT_KEY
 from sutra_app.orchestrator.records import WorkTask
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly, from_gate_error, validation_error
@@ -139,10 +143,12 @@ def _payload(row: TaskRow) -> dict[str, Any]:
         ended_at=row.ended_at, last_event_at=row.last_event_at)
 
 
-def _settings_json(settings: dict[str, str], seed_from: str | None) -> str:
+def _settings_json(settings: dict[str, str], seed_from: str | None, attempt: int | None = None) -> str:
     stored: dict[str, Any] = dict(settings)
     if seed_from:
         stored[SEED_KEY] = seed_from
+    if attempt is not None and attempt >= 2:
+        stored[ATTEMPT_KEY] = attempt
     return json.dumps(stored, sort_keys=True, separators=(",", ":"))
 
 
@@ -264,8 +270,9 @@ class TaskStore:
 
     # ---- writes ----------------------------------------------------------------------------------------------------------
 
-    def insert(self, tx: Tx, checked: Checked[WorkTask], *, seed_from: str | None = None) -> TaskRow:
-        """Insert a new row from a Checked `work_task` (the only way in). `seed_from` is the run a follow-up continues from."""
+    def insert(self, tx: Tx, checked: Checked[WorkTask], *, seed_from: str | None = None, attempt: int | None = None) -> TaskRow:
+        """Insert a new row from a Checked `work_task` (the only way in). `seed_from` is the run a follow-up continues from; `attempt`
+        the number of a retry (2, 3, ...; `attempts.ATTEMPT_KEY`)."""
         if not isinstance(checked, Checked) or checked.family != "work_task":
             raise TypeError("TaskStore.insert takes a Checked work_task from GATE.check")
         t: WorkTask = checked.model
@@ -273,7 +280,7 @@ class TaskStore:
         tx.conn.execute(
             f"INSERT INTO tasks({_COLUMNS}) VALUES ({_marks(22)})",
             (t.id, t.dept_id, t.scope_node_id, t.title, t.user_text, t.framing, t.status, t.run_id, t.parent_task_id, json.dumps(list(t.depends_on)),
-             t.request_id, t.origin_message_id, t.change_id, _settings_json(settings, seed_from), t.pid, t.events_offset, t.inbox_seq, t.outcome,
+             t.request_id, t.origin_message_id, t.change_id, _settings_json(settings, seed_from, attempt), t.pid, t.events_offset, t.inbox_seq, t.outcome,
              t.created_at, t.started_at, t.ended_at, t.last_event_at))
         return self.row_in(tx.conn, t.id)
 
@@ -440,7 +447,7 @@ class TaskService:
 
     def _insert(self, tx: Tx, *, dept_id: str, text: str, title: str | None, scope_id: str | None, framing: str, depends_on: Sequence[str],
                 follows: str | None, request: str | None, change_id: str | None, settings: dict[str, Any] | None, seed_run: str | None,
-                parent_task_id: str | None, status_override: str | None = None) -> TaskRow:
+                parent_task_id: str | None, status_override: str | None = None, attempt: int | None = None) -> TaskRow:
         conn = tx.conn
         problems = []
         body = (text or "").strip()
@@ -493,7 +500,7 @@ class TaskService:
             origin_message_id=origin, change_id=change_id, settings=clean, seed_from=seed_run, pid=None, events_offset=0, inbox_seq=0,
             outcome=outcome, created_at=now, started_at=None, ended_at=now if status == "cancelled" else None, last_event_at=None)
         try:
-            row = self.store.insert(tx, GATE.check("work_task", _payload(row), ctx=tx.ctx), seed_from=seed_run)
+            row = self.store.insert(tx, GATE.check("work_task", _payload(row), ctx=tx.ctx), seed_from=seed_run, attempt=attempt)
         except GateError as exc:
             raise from_gate_error(exc) from None
         self.taskgraph.sync(tx, row)
@@ -837,7 +844,9 @@ class TaskService:
 
     async def retry(self, task_id: str) -> TaskOut:
         """A new task with the same words, department, scope and settings; `parent_task_id` = the old task. It starts fresh
-        (`parent_run_id` only, never `seed_from`). Only a task that ended badly can be retried."""
+        (`parent_run_id` only, never `seed_from`). Only a task that ended badly can be retried. Its framing is the first attempt's own
+        framing plus the brief of every earlier attempt (`attempts.brief`: how each ended, what its audit had met, what it left), and it
+        carries its attempt number."""
         def make() -> str:
             with self.db.tx() as tx:
                 old = self.store.row_in(tx.conn, task_id)
@@ -845,9 +854,16 @@ class TaskService:
                     raise NotFound("that task")
                 if old.status not in ("stopped", "crashed", "cancelled", "done_with_open_items"):
                     raise Busy("Only a task that stopped, crashed or was cancelled can be tried again")
+                earlier = attempts.chain(tx.conn, old.id)
+                number = attempts.attempt_of(earlier[-1]) + 1
+                note = attempts.brief(tx.conn, earlier, number, run_dir=lambda dept, run: self.store.runs_dir_in(tx.conn, dept) / run,
+                                      scrub=lambda text: scan(self.redact(text), replace=True)[0])
+                base = earlier[0]["framing"].strip()
+                framing = f"{clip(base, 20_000 - len(note) - 2)}\n\n{note}" if base else note          # the brief is never the part cut
                 row = self._insert(
-                    tx, dept_id=old.dept_id, text=old.user_text, title=old.title, scope_id=old.scope_node_id, framing=old.framing, depends_on=(),
-                    follows=None, request=old.request_id, change_id=old.change_id, settings=old.settings, seed_run=None, parent_task_id=old.id)
+                    tx, dept_id=old.dept_id, text=old.user_text, title=old.title, scope_id=old.scope_node_id, framing=framing, depends_on=(),
+                    follows=None, request=old.request_id, change_id=old.change_id, settings=old.settings, seed_run=None, parent_task_id=old.id,
+                    attempt=number)
                 return row.id
         new_id = await run_blocking(make)
         await self.start_ready()

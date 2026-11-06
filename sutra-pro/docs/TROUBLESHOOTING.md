@@ -42,7 +42,7 @@ Each entry: what you see, what the app did about it, what you do.
 
 ### F7 A run crashed or vanished
 - **You see:** "Something went wrong. Try again." in the team chat, Retry, a red node. Teams that waited on it are cancelled. The code is `process_gone` when the process died without saying why, or the connector's code when a model call ended it.
-- **Do:** Retry starts a fresh run (it does not resume the broken one). Look at `run.stderr.log` and `trace.jsonl` in the run folder. A run that went silent for 30 seconds is flagged on its step node; the server settles it at the next start.
+- **Do:** Retry starts a fresh run (it does not resume the broken one); the new run is told how the earlier attempts ended, which done-when items their audit had met, what they left open and the end of a crash's error log. Look at `run.stderr.log` and `trace.jsonl` in the run folder. A run that went silent for 30 seconds is flagged on its step node; the server settles it at the next start.
 
 ### F8 The app was closed while teams worked
 - **You see:** after the next start, the team chat offers to continue; the node is dashed "left open".

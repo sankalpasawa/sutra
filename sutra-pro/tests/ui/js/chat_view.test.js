@@ -601,6 +601,46 @@ test("a done card links to the team by id when it has one, and otherwise by name
   assert.equal(button.attrs["data-task"], "tsk_b7c8d9e0f1a2");
 });
 
+// The receipt (GAP-model-quality): what a finished task cost and took, evidence only.
+const DONE = {type: "done", task_id: "tsk_b7c8d9e0f1a2", dept_name: "Content", title: "Menu page copy", status: "done", outcome: "Done."};
+const receiptOf = receipt => { const found = select(dom(card({...DONE, receipt})), "p.creceipt"); return found.length ? textOf(found[0]) : null; };
+
+test("a done card's receipt says what the task took and cost and how many items passed their checks", () => {
+  assert.equal(receiptOf({usd: 0.42, tokens: 1800, seconds: 372, checks_passed: 7, checks_total: 8, attempt: null}),
+    "Took 6 min" + DOT + "about $0.42" + DOT + "7 of 8 items passed their checks");
+  assert.equal(receiptOf({usd: 1.5, tokens: null, seconds: 60, checks_passed: 2, checks_total: 3, attempt: 2}),
+    "Attempt 2" + DOT + "Took 1 min" + DOT + "about $1.50" + DOT + "2 of 3 items passed their checks");
+  assert.equal(receiptOf({usd: null, tokens: 4900, seconds: 3900, checks_passed: 0, checks_total: 0}), "Took 1 h 5 min" + DOT + "4,900 tokens");
+  assert.equal(receiptOf({seconds: 200000}), "Took 2 days");
+});
+
+test("a receipt shows no dollars under half a cent, no checks when the team recorded none, and nothing when it has nothing to say", () => {
+  assert.equal(receiptOf({usd: 0.004, tokens: 900, seconds: 45, checks_passed: 0, checks_total: 0}), "Took 45 s" + DOT + "900 tokens");
+  assert.equal(receiptOf({usd: 0.0049, tokens: null, seconds: 5, checks_passed: 0, checks_total: 0}), "Took 5 s");
+  assert.equal(receiptOf({usd: 0.005, seconds: 5}), "Took 5 s" + DOT + "about $0.01");
+  assert.equal(receiptOf({usd: null, tokens: null, seconds: null, checks_passed: 0, checks_total: 0, attempt: null}), null);
+  assert.equal(receiptOf({checks_passed: 9, checks_total: 3}), "3 of 3 items passed their checks");
+  assert.equal(receiptOf({attempt: 1, seconds: 1}), "Took 1 s");                                  // a first attempt is not named
+});
+
+test("a done card without a receipt is drawn byte for byte as before the receipt existed", () => {
+  const before = '<div class="ncard ready ok c-done" data-card="done" data-tone="ok" data-task="tsk_b7c8d9e0f1a2"><h2>Your Content team is done</h2>' +
+    '<p class="ctitle">Menu page copy</p><p class="coutcome">Done.</p><div class="acts"><button type="button" class="lbtn" data-act="open-team"' +
+    ' data-task="tsk_b7c8d9e0f1a2" data-dept-name="Content">Open the team</button></div></div>';
+  assert.equal(card(DONE), before);
+  assert.equal(card({...DONE, receipt: null}), before);
+  assert.equal(card({...DONE, receipt: "Took 6 min"}), before);
+});
+
+test("a receipt from the wire is escaped, takes numbers only and stays well formed", () => {
+  const bad = `<script>alert("x")</script>`;
+  const html = card({...DONE, receipt: {usd: bad, tokens: bad, seconds: bad, checks_passed: bad, checks_total: bad, attempt: bad}});
+  assert.equal(html.includes("<script"), false);
+  assert.equal(select(parse(html), "p.creceipt").length, 0);
+  const mixed = card({...DONE, receipt: {usd: "0.42", tokens: -5, seconds: 61.9, checks_passed: "7", checks_total: 8, attempt: Infinity}});
+  assert.equal(textOf(one(parse(mixed), "p.creceipt")), "Took 1 min" + DOT + "0 of 8 items passed their checks");
+});
+
 test("an atom card of a function node: its label is the title, then the goal and the rows", () => {
   const c = one(dom(card(IDENTITY_LOG.messages[1].card, {sessionKind: "function"})), "div.ncard");
   assert.equal(c.attrs["data-card"], "atom");

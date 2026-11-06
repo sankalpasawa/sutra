@@ -12,6 +12,7 @@ from orchestrator.test_graph_store import World
 
 from sutra_app.connectors.chat_port import RouterChatPort
 from sutra_app.connectors.factory import build_router
+from sutra_app.connectors.models import ConnectorConfig
 from sutra_app.orchestrator.api import chat as chat_api
 from sutra_app.orchestrator.api import chat_v2
 from sutra_app.orchestrator.api.deps import install_error_handlers, redacted_response_class
@@ -34,7 +35,11 @@ def world(db, clock):
 def rig(world, settings, tmp_path):
     chats = ChatStore(world.db)
     bus = EventBus(clock=world.db._clock)
-    router = build_router(settings.model_copy(update={"connector": "stub"}), transcripts=ChatTranscripts(chats), session_hook=chats.set_provider)
+    # a private work root: the default is the machine-wide <tempdir>/sutra-app-<uid>/work, where a session.json or system.txt of an earlier
+    # run (the session ids are the same every run) would be read back and a test of what the route writes there would pass without the write
+    config = ConnectorConfig(data_dir=settings.data_dir, work_root=tmp_path / "work")
+    router = build_router(settings.model_copy(update={"connector": "stub"}), transcripts=ChatTranscripts(chats), session_hook=chats.set_provider,
+                          config=config)
     attachments = Attachments(settings.data_dir)
     services = Services(settings=settings, version="t", db=world.db, redact=Redactor(None, environ={}))
     services.chats, services.bus = chats, bus

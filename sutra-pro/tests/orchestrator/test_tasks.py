@@ -414,6 +414,7 @@ def test_retry_has_no_seed(tenv):
     assert (new.status, row.parent_task_id, row.seed_from, row.user_text, row.settings) == ("starting", first, None, tenv.row(first).user_text, {"J2_FIXES": "1"})
     spec = RunSpec.model_validate_json((tenv.run_dir(new.id) / "task.json").read_text())
     assert (spec.seed_from, spec.parent_run_id) == (None, tenv.row(first).run_id)
+    assert spec.framing.startswith("This is attempt 2 of this request.") and "Attempt 1 crashed: boom" in spec.framing      # told, not seeded
 
 
 def test_retry_only_after_a_task_that_ended_badly(tenv):
