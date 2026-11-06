@@ -859,7 +859,7 @@ class TaskService:
                 note = attempts.brief(tx.conn, earlier, number, run_dir=lambda dept, run: self.store.runs_dir_in(tx.conn, dept) / run,
                                       scrub=lambda text: scan(self.redact(text), replace=True)[0])
                 base = earlier[0]["framing"].strip()
-                framing = clip(f"{base}\n\n{note}" if base else note, 20_000)
+                framing = f"{clip(base, 20_000 - len(note) - 2)}\n\n{note}" if base else note          # the brief is never the part cut
                 row = self._insert(
                     tx, dept_id=old.dept_id, text=old.user_text, title=old.title, scope_id=old.scope_node_id, framing=framing, depends_on=(),
                     follows=None, request=old.request_id, change_id=old.change_id, settings=old.settings, seed_run=None, parent_task_id=old.id,

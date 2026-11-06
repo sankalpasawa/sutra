@@ -135,6 +135,14 @@ def test_a_long_history_is_cut_to_the_cap_newest_first(tenv):
     assert "oldest attempts are left out)" in framing and framing.endswith("None of it counts as done or checked in this run.")
 
 
+def test_a_long_first_framing_is_cut_and_the_brief_never_is(tenv):
+    first = tenv.started(framing="f" * 19_990)
+    tenv.projector.mark_ended(first, "crashed", "boom")
+    framing = spec_of(tenv, retry(tenv, first).id).framing
+    assert len(framing) <= 20_000 and framing.startswith("fff") and "Attempt 1 crashed: boom" in framing
+    assert framing.endswith("None of it counts as done or checked in this run.")
+
+
 def test_attempt_of_reads_only_a_whole_number():
     assert attempt_of({"settings_json": json.dumps({ATTEMPT_KEY: 3})}) == 3
     for bad in ({ATTEMPT_KEY: "3"}, {ATTEMPT_KEY: True}, {ATTEMPT_KEY: 0}, {}):
