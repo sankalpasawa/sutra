@@ -14,8 +14,8 @@ Each entry: what you see, what the app did about it, what you do.
 ### F1 Claude or Codex cannot be reached
 - **You see:** "I can't reach Claude or Codex right now (hint). Nothing was changed." in the org chat, a Retry button, and the request marked as an error. The cause is a CLI that is missing, signed out, out of quota, or no connector at all.
 - **The app:** checks the connectors before it stores your message (a 503 with `provider_unavailable` or `cli_missing`), changes nothing on the chart, and does not retry in the middle of a turn.
-- **Do:** run `sutra-pro doctor`. Missing CLI: install it and put it on `PATH` (a Mac app also looks in `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`; `SUTRA_EXTRA_PATH` adds more). Signed out: `claude auth login` or `codex login`
-  (or Settings, Connectors, Sign in). Out of quota: wait for the reset time shown in Settings and `/console`, or sign in to the other CLI; calls move to it by themselves when the policy allows. Then press Retry. To look around with no model, start with `--offline`.
+- **Do:** run `sutra-pro doctor`. Missing CLI: install it. The app looks on `PATH` and in the folders installers use (`~/.local/bin`, `~/.claude/local`, Homebrew, npm, yarn, bun, Volta, pnpm, mise, asdf, nodenv, n, fnm and every `~/.nvm` node version); it never runs your shell. If it still says "not installed", type the full path (`which claude` in Terminal prints it) in Settings, Connectors, Choose the file: it is checked, kept in `<data>/connectors/bins.json` and survives a relaunch. "Claude Desktop is installed, but Sutra needs Claude Code": Claude Desktop is a different product with no `claude` command; install Claude Code. Signed out: `claude auth login` or `codex login`
+  (or Settings, Connectors, Sign in). Out of quota: the chip says "Out of quota until 14:05" and each usage window has a bar with its reset time in Settings, on the pill and in `/console` (kept across a restart in `<data>/connectors/quota.json`); wait for the reset, or sign in to the other CLI; calls move to it by themselves when the policy allows. Then press Retry. To look around with no model, start with `--offline`.
 
 ### F2 The model's answer was unusable
 - **You see:** nothing, usually; the plan line is the normal template text, and the chart change says it was planned by keywords.
@@ -83,7 +83,7 @@ Each entry: what you see, what the app did about it, what you do.
 - Missing is fine: it is only needed for the override key and live email. `sutra-pro config init` writes a template. In a checkout the file is `<project>/.env`, installed it is `<data>/.env`, or the file `SUTRA_ENV_FILE` names.
 
 ### Doctor: `claude`
-- **fail/warn** "not found on PATH": install the Claude CLI and put it on `PATH`. "Not signed in": `claude auth login`. "Signed in with an API key, which is refused": sign out, then log in with your subscription account (D34).
+- **fail/warn** "not found on PATH or in the usual install folders": install the Claude CLI, or choose its file in Settings, Connectors. "Claude Desktop is installed, but Sutra needs Claude Code": install Claude Code (Desktop has no `claude` command). "Not signed in": `claude auth login`. "Signed in with an API key, which is refused": sign out, then log in with your subscription account (D34).
 - **warn** "tested with 2.1.308": another CLI version works in most cases; if calls fail, install the tested one.
 - It is a warning, not a failure, while Codex works; it fails only when neither CLI is usable.
 

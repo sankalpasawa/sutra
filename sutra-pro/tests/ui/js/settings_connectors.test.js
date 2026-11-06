@@ -92,7 +92,8 @@ const utc = ms => { const d = new Date(ms); return {day: d.getUTCDay(), date: d.
 test("a signed-in row names the plan and how it is billed, and draws a meter per usage window (GAP-providers)", () => {
   const nowMs = Date.UTC(2026, 10, 6, 12, 0, 0);
   const claude = row(connectorsHtml(HEALTH, {nowMs, when: utc}), "claude");
-  assert.match(claude, /<p class="setplan">Claude Max, counted against your plan, not billed per call<\/p><div class="pmeter"/);
+  assert.match(claude, /<\/div><p class="setplan">Claude Max, counted against your plan, not billed per call<\/p>/);   // one plain line under the bars
+  assert.ok(claude.indexOf('class="pmeter"') < claude.indexOf('class="setplan"'));
   assert.match(claude, /data-key="five_hour" data-sev="ok"><span class="pml">5-hour<\/span><span class="pmp">62%<\/span>/);
   assert.match(claude, /data-key="seven_day" data-sev="warn"><span class="pml">Weekly<\/span><span class="pmp">81%<\/span>/);
   assert.match(claude, /<p class="pmasof">as of /);

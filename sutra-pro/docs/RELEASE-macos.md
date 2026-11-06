@@ -23,8 +23,10 @@ does not answer) and the server stops. Opening it again while it runs opens the 
 - Data: `~/.sutra-pro` (override with `SUTRA_DATA_DIR`). One running instance per data folder.
 - Log: `~/.sutra-pro/logs/app.log`, rotated to `app.log.1` at 5 MB. A start failure shows one dialog and names this file.
 - The app carries its own Python 3.11 and every dependency. It needs the `claude` and/or `codex` CLI signed in on the Mac for real
-  model calls (it looks in `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.claude/local`, `~/.npm-global/bin`, `~/.bun/bin`
-  besides the usual PATH; `SUTRA_EXTRA_PATH` adds more). Without them the app still starts; connectors report "not installed".
+  model calls (the launcher adds `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/.claude/local`, `~/.npm-global/bin`, `~/.bun/bin`
+  to PATH, `SUTRA_EXTRA_PATH` adds more, and the app itself looks in the nvm, Volta, pnpm, mise, asdf, fnm and yarn folders and keeps a file
+  the owner chooses in Settings, Connectors). Without them the app still starts; connectors report "not installed", or "Claude Desktop is
+  installed, but Sutra needs Claude Code" when only Claude Desktop is there.
 - First launch of an AD-HOC build (below) on another Mac: Gatekeeper refuses a plain double-click. Right-click the app, Open, Open.
   If macOS says the app is damaged after a browser download: `xattr -dr com.apple.quarantine "/Applications/Sutra Pro.app"`.
 

@@ -220,7 +220,7 @@
       const plan = pm !== null && p.installed !== false ? pm.planLine(p) : "";
       return '<div class="crow" data-provider="' + esc(p.name) + '"><b>' + esc(providerName(p.name)) + '</b><span class="cchip st-' + esc(state || "unknown") + '">' + esc(word) + "</span>" +
         '<span class="cnote">' + esc(quota) + "</span><span class=\"cnote\">Today: " + esc(group(today.calls || 0)) + " calls, " + esc(tokens(today.tokens || 0)) + " tokens</span>" +
-        (plan ? '<p class="pmplan">' + esc(plan) + "</p>" : "") + (metered ? pm.meterHtml(q, nowMs, {when}) : "") + "</div>";
+        (metered ? pm.meterHtml(q, nowMs, {when}) : "") + (plan ? '<p class="pmplan">' + esc(plan) + "</p>" : "") + "</div>";
     }).join("");
     const next = nextReset(status, nowMs);
     return '<div class="cconn"><h3>Connectors</h3>' + (rows || '<p class="cempty">No connector is configured.</p>') +

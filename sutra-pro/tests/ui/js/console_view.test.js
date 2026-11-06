@@ -159,7 +159,7 @@ test("a snapshot with every window of the plan gets a meter per window and the p
       windows: [{key: "five_hour", label: "5-hour", used: 0.62, resets_at: NOW / 1000 + 4200}, {key: "seven_day", label: "Weekly", used: 0.96, resets_at: NOW / 1000 + 86400 * 3}]}}]};
   const html = CV.connectorsHtml(status, NOW, fmt, utc);
   assert.match(html, /<span class="cnote">Quota running low<\/span>/);                    // the meters carry the windows; the line keeps the state
-  assert.match(html, /<p class="pmplan">Claude Max, you@example\.com, counted against your plan, not billed per call<\/p><div class="pmeter"/);
+  assert.match(html, /<\/p><\/div><p class="pmplan">Claude Max, you@example\.com, counted against your plan, not billed per call<\/p><\/div>/);   // under the bars
   assert.match(html, /data-key="five_hour" data-sev="ok">.*62%.*resets in 1 h 10 min/);
   assert.match(html, /data-key="seven_day" data-sev="bad">.*96%/);
   assert.match(html, /as of 11:59/);

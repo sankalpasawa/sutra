@@ -414,7 +414,7 @@
     const meters = pm && c.installed !== false ? pm.meterHtml(c.quota, nowMs, {when}) : "";
     return '<div class="setconn" data-provider="' + esc(name) + '" data-state="' + esc(tone) + '">' +
       '<div class="sethead"><b>' + esc(providerName(name)) + '</b><span class="setchip st-' + esc(tone) + '">' + esc(word) + "</span></div>" +
-      (detail ? '<p class="setdetail">' + esc(detail) + "</p>" : "") + (plan ? '<p class="setplan">' + esc(plan) + "</p>" : "") + meters +
+      (detail ? '<p class="setdetail">' + esc(detail) + "</p>" : "") + meters + (plan ? '<p class="setplan">' + esc(plan) + "</p>" : "") +
       '<div class="setacts"><button type="button" class="ghost" data-act="test" data-provider="' + esc(name) + '"' + (test.step === "running" ? " disabled" : "") + ">Test</button>" +
       (name === "codex" ? '<button type="button" class="ghost" data-act="signin" data-provider="codex"' + (signin.step === "pending" ? " disabled" : "") + ">Sign in</button>" : "") +
       '<span class="settest" data-step="' + esc(test.step) + '" role="status">' + esc(line) + "</span></div>" + signInBox(signin) + pathBox(name, c, state) + "</div>";
