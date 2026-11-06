@@ -518,6 +518,27 @@ def test_test_posts_to_the_provider_and_shows_the_seconds_or_the_servers_sentenc
     assert [(r["path"], r["token"]) for r in tests] == [("/api/connectors/claude/test", True), ("/api/connectors/codex/test", True)]
 
 
+@browser_only
+def test_the_claude_row_shows_its_plan_and_a_meter_per_window_and_takes_another_cli_file(browser, fake):
+    """GAP-providers: the plan in words, one bar per usage window, and the folded "Use another file" box that PUTs the path with the token."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)        # the fake serves no provider pill route (pre-existing, not this package)
+    load(browser, fake)
+    open_settings(browser, "connectors")
+    assert texts(browser, '.setconn[data-provider="claude"] .setplan') == ["Claude Max, counted against your plan, not billed per call"]
+    assert texts(browser, '.setconn[data-provider="claude"] .pml') == ["5-hour", "Weekly"]
+    assert texts(browser, '.setconn[data-provider="claude"] .pmp') == ["62%", "81%"]
+    assert attrs(browser, '.setconn[data-provider="claude"] .pmw', "data-sev") == ["ok", "warn"]
+    assert browser.count('.setconn[data-provider="codex"] .pmeter') == 0
+    browser.click('.setconn[data-provider="claude"] .setpathd summary')
+    browser.type("#setpath-claude", "/opt/tools/claude")
+    browser.click('.setconn[data-provider="claude"] [data-act="set-path"]')
+    browser.wait_for("document.querySelector('.setconn[data-provider=claude] .setpath .settest') !== null")
+    assert texts(browser, '.setconn[data-provider="claude"] .setpath .settest') == ["Using that file."]
+    puts = [r for r in posts(fake, "/api/connectors/") if r["method"] == "PUT"]
+    assert [(r["path"], r["token"], r["body"]) for r in puts] == [("/api/connectors/claude/path", True, {"path": "/opt/tools/claude"})]
+    assert [e for e in browser.console_errors if not e.startswith("[network]")] == []          # the one network line is the 404 announced above
+
+
 def speed_up_sign_in(browser):
     """The page asks every 2 s; a test asks every 40 ms (the module's own function, with a shorter wait)."""
     browser.js("(() => { const orig = SettingsView.signIn; SettingsView.signIn = (api, o) => orig(api, Object.assign({}, o, {pollMs: 40})); })()")

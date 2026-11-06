@@ -1336,6 +1336,18 @@ def test_the_connector_test_answers_per_provider_and_codex_needs_a_sign_in_first
     error_of(fake.post("/api/connectors/claude/test", token=False), 401, "bad_token")
 
 
+def test_the_cli_path_route_keeps_the_real_routes_rules_in_small(fake):
+    """GAP-providers: PUT /api/connectors/{provider}/path, token first, claude or codex only, a full path named as the command."""
+    error_of(fake.request("PUT", "/api/connectors/claude/path", {"path": "/x/claude"}), 401, "bad_token")
+    error_of(fake.request("PUT", "/api/connectors/gemini/path", {"path": "/x/gemini"}, token=True), 404, "not_found")
+    assert "Choose the file named codex" in error_of(fake.request("PUT", "/api/connectors/codex/path", {"path": "/bin/sh"}, token=True), 422, "invalid_request")["message"]
+    error_of(fake.request("PUT", "/api/connectors/codex/path", {"path": 3}, token=True), 422, "validation")
+    status, body = fake.request("PUT", "/api/connectors/codex/path", {"path": "/opt/tools/codex"}, token=True)
+    assert status == 200 and body["path"] == "/opt/tools/codex" and body["installed"] is True
+    status, body = fake.request("PUT", "/api/connectors/codex/path", {"path": None}, token=True)
+    assert status == 200 and body["path"] is None
+
+
 def test_codex_sign_in_walks_through_the_sequence_and_signs_the_connector_in(fake):
     start = fake.post("/api/connectors/codex/sign-in")
     assert start == (200, load("connectors.json")["sign_in"]["start"])
@@ -1402,6 +1414,7 @@ WRITES = [  # every non-GET route that is not a test control: (method, a concret
     ("POST", "/api/chats/cs_org/retry", {}, "/api/chats/cs_org/retry"),
     ("PUT", "/api/engine/settings", {"set": {}}, "/api/engine/settings"),
     ("POST", "/api/connectors/claude/test", {}, "/api/connectors/{provider}/test"),
+    ("PUT", "/api/connectors/claude/path", {"path": None}, "/api/connectors/{provider}/path"),
     ("POST", "/api/connectors/codex/sign-in", {}, "/api/connectors/codex/sign-in"),
     ("DELETE", "/api/connectors/codex/sign-in/si_x", None, "/api/connectors/codex/sign-in/{sign_in_id}"),
     ("POST", "/api/say?dept=web", {"text": "x"}, "/api/say"),

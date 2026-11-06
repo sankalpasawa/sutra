@@ -149,6 +149,66 @@ test("words from the server are written as text, never as markup", () => {
   assert.match(html, /&lt;b&gt;no&lt;\/b&gt;/);
 });
 
+/* ---------------------------------------------------------------- the CLI file (GAP-providers) */
+const {setCliPath} = SettingsView;
+
+test("a CLI that was not found gets an open Choose the file box; a found one has it folded", () => {
+  const health = clone(HEALTH);
+  health.connectors.codex.installed = false;
+  const html = connectorsHtml(health, {});
+  const codex = row(html, "codex");
+  assert.match(codex, /<div class="setpath" data-provider="codex"><label class="setlabel" for="setpath-codex">Choose the file<\/label><input type="text" id="setpath-codex" data-path="codex"/);
+  assert.match(codex, /data-act="set-path" data-provider="codex">Use this file<\/button>/);
+  assert.match(codex, /<code>which codex<\/code>/);
+  assert.equal(codex.includes("<details"), false);
+  assert.equal(codex.includes('data-act="clear-path"'), false);
+  const claude = row(html, "claude");
+  assert.match(claude, /<details class="setpathd" data-key="path-claude"><summary>Use another file<\/summary><div class="setpath" data-provider="claude">/);
+  assert.match(claude, /data-act="clear-path" data-provider="claude">Find it again<\/button>/);
+  const extra = clone(HEALTH);
+  extra.connectors.zeta = {installed: false, health: {state: "ok"}};
+  assert.equal(row(connectorsHtml(extra, {}), "zeta").includes("setpath"), false);           // only claude and codex have a file to choose
+});
+
+test("the box keeps what was typed, disables itself while saving and shows the server's reason, escaped", () => {
+  const health = clone(HEALTH);
+  health.connectors.claude.installed = false;
+  const typed = row(connectorsHtml(health, {path: {claude: {step: "idle", value: '/opt/x/"claude"'}}}), "claude");
+  assert.match(typed, /value="\/opt\/x\/&quot;claude&quot;"/);
+  const saving = row(connectorsHtml(health, {path: {claude: {step: "saving", value: "/x/claude"}}}), "claude");
+  assert.match(saving, /data-act="set-path" data-provider="claude" disabled>/);
+  const refused = row(connectorsHtml(health, {path: {claude: {step: "error", value: "/x/rm", message: "Choose the file named claude: <rm> is not the Claude command"}}}), "claude");
+  assert.match(refused, /<span class="seterr" role="alert">Choose the file named claude: &lt;rm&gt; is not the Claude command<\/span>/);
+  const folded = row(connectorsHtml(HEALTH, {path: {claude: {step: "error", message: "no"}}}), "claude");
+  assert.match(folded, /<details class="setpathd" data-key="path-claude" open>/);                 // a refusal is never hidden in a fold
+});
+
+test("Claude Desktop without Claude Code is said in the row, not as a PATH problem", () => {
+  const health = clone(HEALTH);
+  Object.assign(health.connectors.claude, {installed: false, signed_in: null,
+    detail: "Claude Desktop is installed, but Sutra needs Claude Code, a separate command-line tool: install Claude Code (claude.com/claude-code), or choose its file in Settings, Connectors"});
+  const html = row(connectorsHtml(health, {}), "claude");
+  assert.match(html, /st-missing">Not installed</);
+  assert.match(html, /Claude Desktop is installed, but Sutra needs Claude Code/);
+  assert.match(html, /Choose the file/);
+});
+
+test("setCliPath sends the path, or null to forget it, and says what happened", async () => {
+  const api = fakeApi({"PUT /api/connectors/claude/path": body => ({provider: "claude", path: body.path, installed: body.path !== null, signed_in: true, detail: "signed in"})});
+  const used = await setCliPath(api, "claude", "  ~/.volta/bin/claude ");
+  assert.deepEqual(api.calls[0], {method: "PUT", path: "/api/connectors/claude/path", body: {path: "~/.volta/bin/claude"}});
+  assert.equal(used.ok, true);
+  assert.equal(used.found, true);
+  assert.equal(used.message, "Using that file.");
+  const forgot = await setCliPath(api, "claude", "");
+  assert.deepEqual(api.calls[1].body, {path: null});
+  assert.equal(forgot.message, "The choice is forgotten; Claude is still not found.");
+  const refused = await setCliPath(fakeApi({"PUT /api/connectors/codex/path": new ApiError("There is no file at /nope/codex", "invalid_request", 422)}), "codex", "/nope/codex");
+  assert.deepEqual([refused.ok, refused.message], [false, "There is no file at /nope/codex"]);
+  const odd = await setCliPath(fakeApi({"PUT /api/connectors/a%2Fb/path": {installed: false}}), "a/b", "/x");
+  assert.equal(odd.answer.installed, false);                                                    // the provider is a path segment, encoded
+});
+
 /* ---------------------------------------------------------------- Test */
 test("a running test disables its button; a pass shows the seconds; a failure shows the server's sentence", () => {
   const running = row(connectorsHtml(HEALTH, {test: {claude: {step: "running"}}}), "claude");

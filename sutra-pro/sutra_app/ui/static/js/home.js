@@ -662,6 +662,22 @@
 
   function cancelSignIn() { return S.signer ? S.signer.cancel() : Promise.resolve(null); }
 
+  // The CLI file the owner chose (GAP-providers): what was typed is kept across a repaint; the rows refetch on the connector.health the route sends.
+  function cliPathState(provider) {
+    if (!isObj(S.conn.path)) S.conn.path = {};
+    if (!isObj(S.conn.path[provider])) S.conn.path[provider] = {step: "idle", value: ""};
+    return S.conn.path[provider];
+  }
+  async function setCliPath(provider, path) {
+    Object.assign(cliPathState(provider), {step: "saving", message: ""});
+    paintConnectors();
+    const r = await SV().setCliPath(api, provider, path);
+    Object.assign(cliPathState(provider), r.ok ? {step: "ok", message: r.message, value: ""} : {step: "error", message: r.message});
+    paintConnectors();
+    if (r.ok && S.watch) S.watch.refetch();
+    return r;
+  }
+
   function onSettingsClick(e) {
     const b = e.target.closest("button[data-act]");
     if (!b) return;
@@ -670,6 +686,8 @@
     else if (act === "signin") signIn();
     else if (act === "cancel") cancelSignIn();
     else if (act === "save-engine") saveEngine(S.scope, readEngineForm());
+    else if (act === "set-path") setCliPath(b.dataset.provider, cliPathState(b.dataset.provider).value);
+    else if (act === "clear-path") setCliPath(b.dataset.provider, null);
   }
 
   /* ---------------------------------------------------------------- events */
@@ -778,6 +796,9 @@
     });
     $("needs").addEventListener("click", e => { const b = e.target.closest("[data-needmsg]"); if (b) focusCard(b.dataset.needmsg); });
     $("pane-settings").addEventListener("click", onSettingsClick);
+    $("pane-settings").addEventListener("input", e => {
+      if (e.target && e.target.matches && e.target.matches("input[data-path]")) cliPathState(e.target.dataset.path).value = e.target.value;
+    });
     $("pane-settings").addEventListener("change", e => {
       if (e.target && e.target.matches && e.target.matches("select[data-scope]")) { S.scope = e.target.value; S.settings = null; S.errors = {}; loadEngineSettings(); }
     });

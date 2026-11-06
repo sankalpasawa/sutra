@@ -306,6 +306,7 @@ class FakeState:
             es = self.fx.engine_settings
             self.layers = {"global": copy.deepcopy(es["global"]), "dept": {"web": copy.deepcopy(es.get("department", {}))}}
             self.codex_signed_in = bool(self.fx.health["connectors"]["codex"]["signed_in"])
+            self.cli_paths: dict[str, str] = {}                 # PUT /api/connectors/{provider}/path (GAP-providers)
             self.signins: dict[str, dict] = {}
             self.signin_sequence = "success"
             for chat in self.chats.values():
@@ -618,7 +619,30 @@ class FakeState:
         if self.codex_signed_in:
             health["connectors"]["codex"].update(signed_in=True, detail="Signed in with ChatGPT", method="ChatGPT", billing="subscription",
                                                  health={"state": "ok", "until": None, "reason": None})
+        for provider in self.cli_paths:
+            if provider in health["connectors"]:
+                health["connectors"][provider]["installed"] = True
         return health
+
+    def set_cli_path(self, provider: str, body: Any) -> dict:
+        """The real route's rules in small: claude or codex, a full path named as the command (the fake has no file system to look at)."""
+        if provider not in ("claude", "codex"):
+            raise ApiError(404, "not_found", f"{provider} has no command-line file to choose")
+        if not isinstance(body, dict) or set(body) != {"path"} or not (body["path"] is None or isinstance(body["path"], str)):
+            raise ApiError(422, "validation", "The body must be {\"path\": text or null}.")
+        path = (body["path"] or "").strip()
+        with self.lock:
+            if not path:
+                self.cli_paths.pop(provider, None)
+            elif not path.startswith("/"):
+                raise ApiError(422, "invalid_request", f"Write the full path, starting with / (or ~ for your home folder), as `which {provider}` prints it")
+            elif path.rsplit("/", 1)[-1] != provider:
+                raise ApiError(422, "invalid_request", f"Choose the file named {provider}: {path.rsplit('/', 1)[-1]} is not the {provider.capitalize()} command")
+            else:
+                self.cli_paths[provider] = path
+            installed = provider in self.cli_paths or bool(self.fx.health["connectors"].get(provider, {}).get("installed"))
+        self.publish("connector.health", {"provider": provider, "state": "ok", "until": None, "reason": None})
+        return {"provider": provider, "path": self.cli_paths.get(provider), "installed": installed, "signed_in": True, "detail": "signed in"}
 
     def connector_test(self, provider: str) -> dict:
         tests = self.fx.connectors["test"]
@@ -1176,6 +1200,11 @@ def register_api(app: FastAPI, state: FakeState) -> None:
     def connector_test(provider: str, request: Request):
         require_token(request, state)
         return JSONResponse(state.connector_test(provider))
+
+    @app.put("/api/connectors/{provider}/path")
+    async def connector_path(provider: str, request: Request):
+        require_token(request, state)
+        return JSONResponse(state.set_cli_path(provider, await json_body(request)))
 
     @app.post("/api/connectors/codex/sign-in")
     def sign_in_start(request: Request):
