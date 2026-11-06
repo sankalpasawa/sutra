@@ -541,8 +541,10 @@ class TurnRunner:
 
     def _status_text(self) -> str:
         chart = self.chart.head().model
-        rows = self.db.conn().execute("SELECT dept_id, title, status FROM tasks ORDER BY created_at, rowid").fetchall()
-        return planner.status_report(chart, [TaskLine(r["dept_id"], r["title"], r["status"]) for r in rows])
+        rows = self.db.conn().execute("SELECT dept_id, title, status, last_event_at FROM tasks ORDER BY created_at, rowid").fetchall()
+        clock = getattr(self.tasks, "clock", None)                      # how long a team has waited for the owner (gap attention)
+        return planner.status_report(chart, [TaskLine(r["dept_id"], r["title"], r["status"], r["last_event_at"]) for r in rows],
+                                     now=clock.now() if clock is not None else None)
 
     # ---- the words of the org chat -------------------------------------------------------------------------------------
 

@@ -47,6 +47,20 @@ def test_why_waiting_says_when_every_slot_is_held_by_teams_that_wait_for_the_own
         "waiting for a free slot: 1 teams working, 1 team is waiting for your answers"
 
 
+def test_the_status_answer_says_how_long_a_team_has_waited_for_the_owner(db, clock):
+    from orchestrator.test_graph_store import World
+
+    from sutra_app.orchestrator.agent import planner
+    chart = World(db, clock).chart
+    lines = [planner.TaskLine("web", "Menu", "waiting_user", since=1000), planner.TaskLine("sales", "Quote", "running", since=1000)]
+    text = planner.status_report(chart, lines, now=1000 + 2 * DAY + 5)
+    assert '- Web: waiting for you on "Menu" for 2 days.' in text.splitlines()
+    assert '- Sales: working on "Quote".' in text.splitlines()                    # only the owner's wait is timed
+    assert '- Web: waiting for you on "Menu".' in planner.status_report(chart, lines).splitlines()           # no clock: the old words
+    assert '- Web: waiting for you on "Menu".' in planner.status_report(chart, lines, now=1030).splitlines()  # under a minute: nothing to add
+    assert '- Web: waiting for you on "Menu".' in planner.status_report(chart, [planner.TaskLine("web", "Menu", "waiting_user")], now=9 ** 9).splitlines()
+
+
 # ---- the store and the queue ------------------------------------------------------------------------------------------------
 
 def test_needs_you_says_how_long_each_item_waited_and_marks_the_stale_one(db, clock):
