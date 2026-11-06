@@ -56,7 +56,7 @@ In a team's node panel the box has two modes, "Tell the team" (the team's plain 
 
 ## Not done yet
 
-- **J2 sync with the Run settings page.** The prototype's own repository and the copy in the old repository have diverged (see `docs/design/j2-sync-2.md`); nothing was re-vendored. It needs the Run settings change landed in the prototype's repository first.
+- **J2 sync.** The baseline is the prototype's `9200cf6` and the Run settings page is vendored (patch P13, page edits E14 to E18; see `docs/design/j2-sync-2.md` and sync 3). The J2 branch `build-on-run` is a design only and is not vendored.
 - **The switch notice** (`ChatPill.switchNotice`) is built and tested but no page shows it: the switch is reported in the turn's result, not as an event the page subscribes to.
 - **Search and archive** are on the node panel; Home's org chat has the pill only.
 - **Seed templates**: `scripts/audit_old_templates.py` lists what the old seeds have that Sutra Pro lacks and can copy them aside; nothing reads the copies yet.

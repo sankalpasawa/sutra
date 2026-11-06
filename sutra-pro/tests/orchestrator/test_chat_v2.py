@@ -229,3 +229,12 @@ def test_the_choice_is_stored_cleared_and_validated(db, world):
         choices.set(tx, sid, "gemini")
     with db.tx() as tx, pytest.raises(NotFound):
         choices.set(tx, "cs_000000000fff", "claude")
+
+
+def test_a_node_detail_lists_the_owner_archived_chat_as_an_earlier_chat(db, world):
+    from sutra_app.orchestrator.graph import GraphStore  # noqa: F401
+    sid = world.session_of["web"]
+    with db.tx() as tx:
+        ChatArchive(db).archive(tx, sid)
+    detail = world.store.node("web")
+    assert [s.id for s in detail.archived_chats] == [sid] and detail.archived_chats[0].status == "archived"

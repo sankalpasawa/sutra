@@ -387,7 +387,8 @@
         if (!st) return;
         if (r.error) { st.banner = clean(r.error.message) || "That did not work."; paintChat(); return; }
         const node = st.nodeId, tab = st.tab;
-        open(node, tab);
+        // the team's chat may now be another session (archiving starts a fresh one, bringing it back re-links the old one): read the graph again
+        settle(api().get("/api/graph")).then(g => open(node, tab, g.error ? undefined : g.value));
       });
     }
 
@@ -568,14 +569,14 @@
       paintDetails();
     }
 
-    async function open(nodeId, tab) {
+    async function open(nodeId, tab, freshGraph) {
       const id = clean(nodeId);
       if (id === "") return;
       ensureShell();
       const g = ++gen;
       const opener = st ? st.opener : { el: doc.activeElement, id: "" };
       if (st) stopLive();
-      const graph = getGraph();
+      const graph = isObj(freshGraph) ? freshGraph : getGraph();      // archive and un-archive re-link the team's chat: the caller passes the graph it just fetched
       st = {nodeId: id, tab: tab === "details" ? "details" : "chat", node: findNode(graph, id), detail: null, detailError: "", sid: "", session: null, messages: [],
         lastId: 0, banner: "", blocked: "", cc: null, ccMode: "team", readOnly: false, gone: false, retry: false, sending: false, view: null, scope: "division", divisionChat: null, allAtoms: null,
         openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: true, opener: opener, conn: null, refresh: null};

@@ -124,7 +124,7 @@ class GraphStore:
 
     def node(self, node_id: str) -> NodeDetail:
         """The drawer's data: the node with its full meta, its active chat session, the open atom(s) first and then the newest
-        20, usage totals (stub rows excluded), its task and the chats filed under it."""
+        20, usage totals (stub rows excluded), its task and the chats filed under it or archived by the owner."""
         with self._db.read() as conn:
             row = conn.execute(f"SELECT {_NODE_COLUMNS} FROM graph_nodes WHERE id = ?", (node_id,)).fetchone()
             if row is None:
@@ -132,7 +132,8 @@ class GraphStore:
             out = self._outs(conn, [row], detail=True)[0]
             session = conn.execute("SELECT * FROM chat_sessions WHERE node_id = ? AND status = 'active'", (node_id,)).fetchone()
             archived = conn.execute(
-                "SELECT * FROM chat_sessions WHERE filed_under = ? ORDER BY created_at, id", (node_id,)).fetchall()
+                "SELECT * FROM chat_sessions WHERE filed_under = ? OR (node_id = ? AND status = 'archived') ORDER BY created_at, id",
+                (node_id, node_id)).fetchall()      # merged-away chats filed under it, and the owner's own archived ones
             return NodeDetail(
                 node=out, session=_session_out(session) if session is not None else None,
                 atoms=self._atoms(conn, node_id),
