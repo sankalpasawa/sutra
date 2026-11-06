@@ -2532,6 +2532,38 @@ def readable_decision():
     assert len(re_ask) == 4 and all(ln.startswith("   Option ") for ln in re_ask[1:]), re_ask
 
 
+def decision_negation():
+    """runs/j2-20261103-184249: "Add the credits and keep working. Don't leave anything out and don't finish as it
+    is." read as finish. parse_decision now reads negation: a negated option never selects that option; one option
+    affirmed with the others negated picks the affirmed one; all negated, or unclear, is None (asked again); a bare
+    number still picks that option."""
+    q = {"options": ["Add 40 work credits and keep going: you get more of what you asked for built. Or type your own "
+                     "number, up to 200", "Leave out item 2 Opening hours are listed: you get the site without it.",
+                     "Finish as it is: you get the site as it is now, with 2 things still not right"]}
+    choices, crit = ["continue", "drop", "ship"], ["The menu with prices is shown", "Opening hours are listed",
+                                                   "The address and a map link are shown"]
+    P = lambda a: j2.parse_decision(a, q, choices, crit)
+    assert P("Add the credits and keep working. Don't leave anything out and don't finish as it is.")["decision"] \
+        == "continue"
+    assert P("2") == {"decision": "drop", "add": None, "drop_items": []}
+    assert P("finish as it is")["decision"] == "ship"
+    assert P("don't add more, finish") == {"decision": "ship", "add": None, "drop_items": []}
+    assert P("Don't finish as it is and don't leave anything out")["decision"] is None, "all negated: asked again"
+    assert P("hmm, not sure")["decision"] is None and P("")["decision"] is None, "unclear: asked again"
+    assert P("not 2, and not finish")["decision"] is None, "a number in a negated clause is not a pick"
+    assert P("don't leave out the opening hours; finish") == {"decision": "ship", "add": None, "drop_items": []}
+    assert P("2. Add 25 more. Leave out the opening hours") == {"decision": "continue", "add": 25, "drop_items": [2]}
+    assert P("don't add 25 more; leave out the opening hours") == {"decision": "drop", "add": None, "drop_items": [2]}
+    assert P("no more credits, finish as it is")["decision"] == "ship"
+    assert j2.parse_decision("don't stop, keep going", q, ["continue", "stop"], crit)["decision"] == "continue"
+    assert j2.parse_decision("stop", {"options": ["Keep going", "Stop the whole run here"]}, ["continue", "stop"],
+                             crit)["decision"] == "stop"
+    assert j2.affirmed("Add the credits and keep working. Don't leave anything out and don't finish as it is.") == \
+        ("Add the credits and keep working.and.", {"drop", "ship"})
+    print("decision negation: a negated option never selects it, one affirmed with the rest negated picks the "
+          "affirmed one, all negated or unclear asks again, a bare number still picks ok")
+
+
 PRD_BRIEF = ("Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. Users: "
              "patients at small clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on "
              "average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS "
@@ -5454,6 +5486,38 @@ def artifact_schema_failures():
             llm.subprocess.run = keep
         assert raised and want in raised, (want, raised)
         assert (llm.LAST_META.get("structured") or {}).get("subtype") == payload["subtype"], llm.LAST_META
+    # (h) the CLI refused the schema itself and never called the model (runs/j2-20261103-184249, W-24 to W-35: exit 1,
+    # nothing on stdout, the reason on stderr): the failure names the exit code, the empty stdout and the stderr
+    # text, never a bare "subtype None"
+    err = "Error: --json-schema is not a valid JSON Schema: can't resolve reference #/definitions/Palette from id #"
+    if hasattr(llm, "_run_claude_cli"):      # engine port: the refused-schema report lives in the Claude connector (its own tests)
+        keep = llm.subprocess.run
+        llm.subprocess.run = lambda *a, **k: FakeRun({}, returncode=1, stderr=err + "\n", stdout="")
+        try:
+            raised = None
+            try:
+                llm._run_claude_cli(["claude"], None, "hi", {}, lambda e: None, {"type": "object"})
+            except RuntimeError as e:
+                raised = str(e)
+        finally:
+            llm.subprocess.run = keep
+        assert raised and "exit 1" in raised and "no stdout" in raised and "#/definitions/Palette" in raised \
+            and "subtype None" not in raised, raised
+        st = llm.LAST_META.get("structured") or {}
+        assert st.get("exit") == 1 and st.get("present") is False and "#/definitions/Palette" in st.get("stderr", ""), st
+    # and the cause: Design's transport schema keeps its definitions, which the first page builder's reply schema
+    # used to carry inside its "design" property; now every extra field is written with its definitions in place,
+    # so every $ref in the reply schema resolves at the root, with the model's section or a library's in its place
+    web = AM.model_for("website", "Section")
+    design = {k: v for k, v in AM.transport_schema(AM.Design).items() if k != "$schema"}
+    assert set(design["definitions"]) >= {"Palette", "Fonts"} and '"$ref"' in json.dumps(design), design.keys()
+    first = AM.reply_schema(web, {"design": design})
+    for sch in (first, j2.J2Run._with_section(first, AM.transport_schema(web)), AM.reply_schema(web, {})):
+        refs = set(re.findall(r'"#/definitions/(\w+)"', json.dumps(sch)))
+        assert refs <= set(sch.get("definitions") or {}), (refs, sorted(sch.get("definitions") or {}))
+        assert not any("definitions" in v for v in sch["properties"].values() if isinstance(v, dict)), sch["properties"].keys()
+    assert first["properties"]["design"]["properties"]["palette"]["type"] == "object", "Palette written in place"
+    assert set(first["properties"]["design"]["properties"]["palette"]["required"]) >= {"primary", "text"}
     # and in a run: the builder's first call brings nothing usable, the next one does
     state = {"done": False}
 
@@ -5473,7 +5537,8 @@ def artifact_schema_failures():
     print("artifact schema failures: a missing field fails the shape layer and the retry carries Pydantic's words; a "
           "component covering R9 fails the rules layer with that evidence and the retry fixes it (and a gap that "
           "stays goes to Adaptation); a reply with subtype error_max_structured_output_retries, and one with success "
-          "but no structured_output, are failed attempts with the subtype as the evidence ok")
+          "but no structured_output, are failed attempts with the subtype as the evidence; a refused --json-schema is reported "
+          "with its exit code and stderr, and the first page builder's reply schema has every $ref resolvable ok")
 
 
 def bad_ids_mock(target="W-9", skip=2, attempts=(1,)):
@@ -9917,6 +9982,34 @@ def template_library(demo=False):
                     assert d["rule"] in ("0", "e") and (d["rule"] == "e" or (empty(d) and d["reason"] == L.NOTHING_TO_SPECIALISE)), d
                 assert set(d) >= {"workflow", "atom", "artifact", "section", "action", "template", "version", "score",
                                   "reason"}, d
+        # (b2) every generator call is logged to template_calls.jsonl beside calls.jsonl: the workflow, the time, the
+        # meta schema's sha and the raw reply, one line per call, only for the workflows the router asked about
+        tcalls = list(j2._jsonl(r1.dir, "template_calls.jsonl"))
+        asked = {d["workflow"] for d in d1 if d["artifact"] != "design" and not empty(d)}
+        assert tcalls and {c["workflow"] for c in tcalls} == asked, ({c["workflow"] for c in tcalls}, asked)
+        for c in tcalls:
+            assert c["schema_sha"] == L.sha_of(L.meta_schema()) and c["model"] is None and c["seconds"] >= 0, c
+            assert json.loads(c["raw"])["action"] in ("reuse", "extend", "create") and c["t"] and c["prompt"], c
+        assert not any(c.get("fn") == "template generator" for c in calls_file(r1)), "the builders' call log is as it was"
+        # (b3) a router that crashes never blocks a run: every needy decision is the generic template with the error
+        # as its reason, the builders fill the generic one and the run still ends Done
+        keep_route = L.route
+
+        def boom(need, ctx, ask=None):
+            raise RuntimeError("planted router crash")
+        L.route = boom
+        try:
+            crashed = lib_run(BOUTIQUE_BRIEF)
+        finally:
+            L.route = keep_route
+        assert crashed.outcome.startswith("Done"), crashed.outcome
+        dc = [d for d in tpl_decisions(crashed) if d["artifact"] != "design"]
+        assert dc and all(d["action"] == "generic" and d["rule"] == "e" and d["kind"] == "generic"
+                          and d["reason"] == "the router could not run (RuntimeError: planted router crash)"
+                          for d in dc), [(d["workflow"], d["action"], d["reason"]) for d in dc][:3]
+        assert all(m["text"].startswith(f"{d['workflow']} template: generic ") for d in dc
+                   for m in crashed.chat if m["who"] == "system" and m["text"].startswith(f"{d['workflow']} template:"))
+        assert not [x for x in art_recs(crashed) if not x["pass"]], "the generic templates still pass every layer"
         # (c) extend: the same need plus a fact naming one more field makes v2; v1 is unchanged and still compiles
         need0 = L.make_need("prd", "Requirements", rs.context.business_type, rs.context.facts_used, "Still Point Yoga")
         assert need0["fingerprint"] == rs.context.fingerprint
@@ -9942,6 +10035,36 @@ def template_library(demo=False):
         assert L.transport(v1) == json.load(open(os.path.join(v1_dir, "schema.json"), encoding="utf-8")), "v1 compiles"
         again, rec2 = L.route(need, {"run": "extend-test-2", "workflow": "W-4", "atom": "W-4.a1"})
         assert rec2["action"] == "reused" and again.version == 2, rec2
+        # (c2) the extend threshold: an "extend" the generator sends for a candidate covering under 0.5 is overruled
+        # to a create, with that coverage as the record's score, in its reason and in the chat line; at 0.5 and above
+        # it stays an extend with the same number
+        keep_cands, gen_req = L.candidates, L.generic("prd", "Requirements")
+        made = []
+        for sc, want in ((0.08, "created"), (0.5, "extended"), (0.8, "extended")):
+            L.candidates = lambda n, sc=sc: [{**c, "score": sc, "fingerprint_match": False}
+                                             for c in keep_cands(n) if c["name"] == rs.name][:1]
+            try:
+                cands = L.candidates(need)
+                ref = f"{cands[0]['name']}@{cands[0]['version']}"
+                ext = L.mock_generator(need, gen_req, cands, "extend")
+                assert ext["action"] == "extend" and ext["template"] == ref, ext
+                tX, rX = L.route(need, {"run": "threshold-test", "workflow": "W-4", "atom": "W-4.a1"},
+                                 ask=lambda system, user, mock, schema: json.dumps(ext))
+            finally:
+                L.candidates = keep_cands
+            assert rX["action"] == want and rX["score"] == sc, (sc, rX["action"], rX["score"], rX["reason"])
+            line = j2.template_line("W-4", rX)
+            if want == "created":
+                assert rX["reason"].startswith(f"overruled: coverage {sc} < 0.5") and rX["overruled"] is True \
+                    and rX["rule"] == "d", rX
+                assert tX.name != rs.name and tX.version == 1 and tX.name.startswith(rs.name), tX.name
+                assert line == f"W-4 template: created {tX.name} v1 ({rX['reason']})", line
+                made.append(tX)
+            else:
+                assert "overruled" not in rX and "overruled" not in rX["reason"] and rX["rule"] == "c", rX
+                assert tX.name == rs.name and line.startswith(f"W-4 template: extended {rs.name} v") \
+                    and f"covers {len(need['facts'])} of {len(need['facts'])} facts" in line, line
+        assert len(made) == 1 and L.get(f"{made[0].name}@1", "prd", "Requirements") is not None, "the create is stored"
         # fix 1: the fingerprint includes the sorted needed field names
         fa = L.fingerprint("website", "Section", "boutique", ["f1"], ["form_fields", "elements"])
         assert fa == L.fingerprint("website", "Section", "boutique", ["f1"], ["elements", "form_fields"]), "sorted"
@@ -10095,7 +10218,7 @@ def template_library(demo=False):
           f"Thread & Loom created {len(made1)} templates, run 2 reused all of them (rule a, no new version, used_by both "
           f"runs); Still Point Yoga created its own ({req['template']} with classes day/time/price) and reused no "
           f"boutique template; the fingerprint holds the needed fields, rule (a) reuses only a template with every needed field, a "
-          f"need with no facts and no fields is generic; an extra field extends to v2 with v1 unchanged; six bad specs refused and never stored; "
+          f"need with no facts and no fields is generic; every generator call is logged to template_calls.jsonl and a crashing router leaves every decision generic with the error as its reason; an extra field extends to v2 with v1 unchanged; an extend of a candidate under 0.5 is overruled to a create with that coverage as its score, reason and chat line, and 0.5 and 0.8 stay extends; six bad specs refused and never stored; "
           f"an invalid generator falls back to generic twice and the run ends Done; {n} model.py files match their "
           "runtime classes; every builder's schema sha is its template's schema.json; the committed library/ is "
           "unchanged; every flagged run keeps its own copy of each template it used (created, extended, reused and generic, once "
@@ -10374,6 +10497,7 @@ if __name__ == "__main__":
     open_list()
     covers_by_text()
     readable_decision()
+    decision_negation()
     simple_messages()
     owner_override()
     form_submit()

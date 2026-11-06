@@ -336,3 +336,11 @@ def test_a_lost_session_needs_zero_turns_and_the_words():
     assert code_of(lines).code == "provider_error"
     lines = [result(subtype="error_during_execution", is_error=True, num_turns=0, errors=["disk full"])]
     assert code_of(lines).code == "provider_error"
+
+
+def test_a_schema_the_cli_refuses_itself_names_the_exit_code_and_the_stderr_text():
+    """J2's change in `9200cf6` (llm.py, runs/j2-20261103-184249): `claude -p --json-schema` refused the reply schema before any model call (exit 1,
+    nothing on stdout, the reason on stderr). The connector reports the exit and the stderr, never a bare "no result"."""
+    why = "Error: --json-schema is not a valid JSON Schema: can't resolve reference #/definitions/Palette from id #"
+    err = code_of([], code=1, stderr=why + "\n")
+    assert err.code == "crashed" and str(err.detail.get("exit")) == "1" and "#/definitions/Palette" in err.detail["stderr"]

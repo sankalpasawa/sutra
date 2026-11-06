@@ -109,7 +109,7 @@ def test_the_manifest_carries_the_engine_data():
 # ---- VENDORED.md ---------------------------------------------------------------------------------------------------------
 def test_vendored_md_names_the_baseline_commit():
     head = MD.read_text(encoding="utf-8")
-    assert "33aeeda639cd7bf828d5361273a8a153ebc63a36" in head and "ce2631f" in head
+    assert "9200cf626e5c05032caefda4f96b694284efdc5e" in head and "33aeeda" in head and "ce2631f" in head
 
 
 def test_every_recorded_vendored_hash_matches_the_file():

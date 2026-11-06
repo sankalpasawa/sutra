@@ -457,9 +457,29 @@ def transport_schema(model):
     return out
 
 
+def inline_definitions(schema):
+    """schema with its own definitions written in place of every $ref to them, and no definitions block: a schema
+    that sits inside another schema's property can't keep them (`claude --json-schema` resolves #/definitions/X from
+    the root only; the first page builder's reply schema carried Design's as a nested block and the CLI refused it
+    before any model call, runs/j2-20261103-184249 W-24 to W-35). A reference to itself stays a $ref."""
+    defs = schema.get("definitions") or {}
+
+    def walk(x, stack):
+        if isinstance(x, list):
+            return [walk(v, stack) for v in x]
+        if not isinstance(x, dict):
+            return x
+        name = str(x.get("$ref") or "")[len("#/definitions/"):] if str(x.get("$ref") or "").startswith("#/definitions/") else None
+        if name in defs and name not in stack:
+            return walk({**defs[name], **{k: v for k, v in x.items() if k != "$ref"}}, stack + (name,))
+        return {k: walk(v, stack) for k, v in x.items() if k != "definitions"}
+    return walk(schema, ())
+
+
 def reply_schema(model, extra_fields):
     """The whole reply as one object: the fields a builder already returns (reason first), plus "section", its own
-    section model. extra_fields is {name: schema} for the optional board and spec fields, as today."""
+    section model. extra_fields is {name: schema} for the optional board, spec and design fields; each is written
+    with its definitions in place (inline_definitions), so the reply's only definitions are the section's."""
     sec = transport_schema(model)
     defs = sec.pop("definitions", None)
     sec.pop("$schema", None)
@@ -473,7 +493,7 @@ def reply_schema(model, extra_fields):
                                                                     "what this part created, in everyday words"},
              "next": {"type": "string", "description": "Coordination"},
              "section": sec}
-    props.update(extra_fields or {})
+    props.update({k: inline_definitions(v) for k, v in (extra_fields or {}).items()})
     out = {"$schema": "http://json-schema.org/draft-07/schema#", "type": "object", "additionalProperties": False,
            "properties": props,
            "required": ["reason", "say", "human_output", "atom_human_output", "next", "section"]}

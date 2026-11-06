@@ -1259,7 +1259,7 @@ def route(need, ctx, ask=None):
         t = get(f"{top['name']}@{top['version']}", need["artifact"], need["section"])
         if t:
             return done(t, "reused", top["score"], f"coverage 1.0: {cov(top)}", rule="b")
-    hint = "extend" if top and top["score"] >= 0.5 else "create"
+    hint = "extend" if top and top["score"] >= EXTEND_MIN else "create"
     rule = "c" if hint == "extend" else "d"
     refused, tries = None, []
     for attempt in (1, 2):
@@ -1270,14 +1270,16 @@ def route(need, ctx, ask=None):
         except Exception as e:      # the generator never blocks the run
             reply, refused = None, f"the generator's reply could not be read ({type(e).__name__}: {e})"
         if reply is not None:
-            t, why, score = _accept(reply, need, gen, cands, ctx)
+            t, why, score, action = _accept(reply, need, gen, cands, ctx)
             if t is not None:
-                act = {"reuse": "reused", "extend": "extended", "create": "created"}[reply["action"]]
+                act = {"reuse": "reused", "extend": "extended", "create": "created"}[action]
                 note = why or str(reply.get("reason") or "")
                 if act == "reused":
                     return done(t, act, score, note, rule="b", attempts=attempt, refused=tries)
-                return done(t, act, score if act == "extended" else (top["score"] if top else 0.0), note,
-                            rule=rule, attempts=attempt, refused=tries)
+                over = action != reply.get("action")      # an extend below EXTEND_MIN, taken as a create
+                return done(t, act, score if act == "extended" or over else (top["score"] if top else 0.0), note,
+                            rule="d" if over else rule, attempts=attempt, refused=tries,
+                            **({"overruled": True} if over else {}))
             refused = why
         tries.append(refused)
     return done(None, "generic", top["score"] if top else 0.0,
@@ -1286,38 +1288,49 @@ def route(need, ctx, ask=None):
 
 
 NOTHING_TO_SPECIALISE = "no facts or extra fields to specialise"
+EXTEND_MIN = 0.5      # a candidate must cover at least half of the need to be extended (or reused)
 GEN_SYSTEM = ("You are J2's template generator. You write closed JSON templates for one business, in its own words, "
               "from its recorded facts only. Code checks every reply and refuses anything outside the rules.")
 
 
 def _accept(reply, need, gen, cands, ctx):
-    """(template or None, reason, score). Code re-checks everything: a reuse must exist at that version (and is
-    overruled when its coverage is below 0.5); an extend must name a candidate; every spec passes the checks."""
+    """(template or None, reason, score, action). Code re-checks everything: a reuse must exist at that version (and
+    is overruled when its coverage is below 0.5); an extend must name a candidate, and one whose coverage is below 0.5
+    is overruled to a create (the action returned is the one taken, with the candidate's score as its number); every
+    spec passes the checks."""
     action = reply.get("action") if isinstance(reply, dict) else None
     if action not in ("reuse", "extend", "create"):
-        return None, f"action {action!r} is not reuse, extend or create", 0.0
+        return None, f"action {action!r} is not reuse, extend or create", 0.0, action
     if action == "reuse":
         ref = str(reply.get("template") or "")
         c = next((c for c in cands if f"{c['name']}@{c['version']}" == ref), None)
         t = get(ref, need["artifact"], need["section"]) if c else None
         if t is None:
-            return None, f"reuse names {ref!r}, which is not in the library at that version", 0.0
+            return None, f"reuse names {ref!r}, which is not in the library at that version", 0.0, action
         if c["score"] < 0.5:
-            return None, (f"code overruled the reuse of {ref}: its coverage is {c['score']:.2f}, below 0.5"), 0.0
-        return t, f"the generator reused {ref} (coverage {c['score']:.2f})", c["score"]
+            return None, (f"code overruled the reuse of {ref}: its coverage is {c['score']:.2f}, below 0.5"), 0.0, action
+        return t, f"the generator reused {ref} (coverage {c['score']:.2f})", c["score"], action
     spec = reply.get("spec")
     if not isinstance(spec, dict):
-        return None, f"{action} needs a spec", 0.0
-    score = 0.0
+        return None, f"{action} needs a spec", 0.0, action
+    score, why = 0.0, None
     if action == "extend":
         ref = str(reply.get("template") or "")
         c = next((c for c in cands if f"{c['name']}@{c['version']}" == ref), None)
         if c is None:
-            return None, f"extend names {ref!r}, which is not a candidate", 0.0
-        spec = {**spec, "name": c["name"]}
+            return None, f"extend names {ref!r}, which is not a candidate", 0.0, action
         score = c["score"]
-    elif any(c["name"] == spec.get("name") or c["slug"] == slug(spec.get("name")) for c in cands):
-        return None, f"a template named {spec.get('name')!r} exists; extend it instead", 0.0
+        if score < EXTEND_MIN:      # under half the need: not a new version of that template, a new template
+            action, why = "create", f"overruled: coverage {score} < {EXTEND_MIN} (the generator's extend of {ref})"
+        else:
+            spec = {**spec, "name": c["name"]}
+    if action == "create":
+        taken = lambda name: any(c["name"] == name or c["slug"] == slug(name) for c in cands)
+        if taken(spec.get("name")) and why is None:
+            return None, f"a template named {spec.get('name')!r} exists; extend it instead", 0.0, action
+        n = 2
+        while taken(spec.get("name")):      # an overruled extend keeps the generator's name, numbered to be its own
+            spec, n = {**spec, "name": f"{reply['spec'].get('name')} {n}"}, n + 1
     data = {"name": spec.get("name"), "artifact": need["artifact"], "section": need["section"], "kind": "specialised",
             "description": spec.get("description") or "", "fields": spec.get("fields") or [],
             "objects": spec.get("objects") or [], "rules": [_norm_rule(r) for r in spec.get("rules") or []],
@@ -1333,9 +1346,9 @@ def _accept(reply, need, gen, cands, ctx):
                 f.pop("enum", None)
     bad = refusal(data)
     if bad:
-        return None, "; ".join(bad)[:400], 0.0
+        return None, "; ".join(bad)[:400], 0.0, action
     t, _, _ = store(SpecialisedTemplate.model_validate(data))
-    return t, str(reply.get("reason") or ""), score
+    return t, why or str(reply.get("reason") or ""), score, action
 
 
 # ---------------------------------------------------------------- mock builder data, and the readable view

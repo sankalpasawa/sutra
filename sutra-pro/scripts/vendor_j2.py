@@ -7,7 +7,7 @@ What it does, in this order, and nothing else:
 
   1. reads the J2 files of ONE commit (git blobs when `--source` is a git repository, so an edited working tree is never
      vendored; a plain folder such as a `git archive` extraction otherwise, with `--commit` naming what it is);
-  2. copies the 14 code modules and applies the numbered patches (P1-P5, P7-P11; there is no P6) as exact text edits:
+  2. copies the 14 code modules and applies the numbered patches (P1-P5, P7-P12; there is no P6) as exact text edits:
      every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run instead of
      producing a silently different file;
   3. copies the data files byte for byte: role files, conditions, artifact types, generic templates, the seed template
@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "33aeeda639cd7bf828d5361273a8a153ebc63a36"        # J2_Prototype main, 2026-11-04: PR #30 (template-library)
+BASELINE = "9200cf626e5c05032caefda4f96b694284efdc5e"        # J2_Prototype main, 2026-11-06: PR #31 (template-library-fixes); 33aeeda (PR #30) before it
 DESIGNED_AGAINST = "ce2631f"                                  # the design's line numbers are those of this commit
 J2_ENV = "SUTRA_J2_CHECKOUT"
 
@@ -58,7 +58,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P11"
+    patch: str          # "P1" .. "P12"
     file: str
     old: str
     new: str
@@ -622,7 +622,7 @@ OTHER_EDITS = (
             raw = llm.ask(system, user, mock, max_tokens=16000, effort="high", json_mode=True)
 '''),
     # ---- P10: the template library lock
-    Edit("P10", "j2_template_lib.py", "import copy\nimport hashlib\n", "import contextlib\nimport copy\nimport fcntl\nimport hashlib\n"),
+    Edit("P10", "j2_template_lib.py", "import copy\nimport hashlib\n", "import contextlib\nimport copy\nimport hashlib\n"),
     Edit("P10", "j2_template_lib.py", r'''def store(t, fingerprint=None):
     """Write a specialised template, checked again here: (template, version, created). The same sha is the same
     version (nothing written); any change is v<N+1>. Versions are immutable."""
@@ -636,25 +636,21 @@ class LibraryBusy(RuntimeError):
 
 @contextlib.contextmanager
 def _library_lock():
-    """P10: one writer at a time, across processes: flock on <library>/.lock around a whole read-modify-write of the index.
+    """P10: one writer at a time, across processes: an exclusive lock on <library>/.lock around a whole read-modify-write of the index.
     J2 read the index, changed it and wrote it back with no lock, so two runs storing different templates could lose one
     entry. Waits at most LOCK_WAIT_S seconds, then raises LibraryBusy."""
     os.makedirs(lib_dir(), exist_ok=True)
-    fd = os.open(os.path.join(lib_dir(), ".lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    fd = os.open(os.path.join(lib_dir(), ".lock"), os.O_RDWR | oslayer.O_BINARY | os.O_CREAT, 0o600)
     try:
         deadline = time.monotonic() + LOCK_WAIT_S
-        while True:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if time.monotonic() >= deadline:
-                    raise LibraryBusy(f"the template library is locked by another run (waited {LOCK_WAIT_S:g} s)") from None
-                time.sleep(0.05)
+        while not oslayer.try_lock(fd):
+            if time.monotonic() >= deadline:
+                raise LibraryBusy(f"the template library is locked by another run (waited {LOCK_WAIT_S:g} s)") from None
+            time.sleep(0.05)
         try:
             yield
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            oslayer.unlock(fd)
     finally:
         os.close(fd)
 
@@ -680,6 +676,20 @@ def _mark_used(t, use, fingerprint=None):
     """Append a use (run, workflow, atom, action) to the version's meta.json and the index; and the need's
     fingerprint, so the same need reuses it next time."""
 '''),
+    # ---- P12: Windows (D101), nothing else
+    Edit("P12", "j2_template_lib.py", "import keyword\nimport os\nimport re\n", "import keyword\nimport os\nfrom sutra_app import oslayer\nimport re\n"),
+    Edit("P12", "j2_template_lib.py", "        f.write(text)\n    os.replace(tmp, path)\n", "        f.write(text)\n    oslayer.replace(tmp, path)\n"),
+    Edit("P12", "j2_template_lib.py", '''    return os.path.join("templates", rec["artifact"], slug(rec["section"]), f"{slug(rec['template'])}@v{rec['version']}")\n''',
+         '''    return "/".join(("templates", rec["artifact"], slug(rec["section"]), f"{slug(rec['template'])}@v{rec['version']}"))     # P12: a path in a record is POSIX on every system\n'''),
+    Edit("P12", "j2_template_lib.py", ''' or ".." in rel.split(os.sep):\n''', ''' or ".." in re.split(r"[\\\\/]", rel):          # P12: either separator, on every system\n'''),
+    Edit("P12", "j2_check.py", '''    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, start_new_session=True)\n''',
+         '''    # start_new_session is ignored on Windows. The output is decoded as UTF-8 whatever the console code page is.
+    decoding = {"encoding": "utf-8", "errors": "replace"} if text else {}
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, start_new_session=True, **decoding)\n'''),
+    Edit("P12", "j2_check.py", '''    for p in (os.getenv("J2_CHROME"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",\n''',
+         '''    windows = [os.path.join(root, "Google", "Chrome", "Application", "chrome.exe")
+               for root in (os.getenv(name) for name in ("PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "LOCALAPPDATA")) if root]
+    for p in (os.getenv("J2_CHROME"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", *windows,\n'''),
 )
 
 EDITS = J2_EDITS + OTHER_EDITS
@@ -693,8 +703,9 @@ PATCH_NOTES = {
     "P7": "every `llm.ask` is inside a tagged block: `J2Run.call` (function, step, cycle, stage, call_no, builder atom), the chat summary, the template generator and the reviewer through `_ask(...)`; the planner and judge (`Session.ask`, j2_realization.py) name role and purpose and inherit the turn's function; each hook-observed turn runs inside `llm.tagged(function, step, cycle, stage)`",
     "P8": "hook calls (`NullHooks` by default, nothing is built for it): `post` (`message_posted`, not for ASK_REQUESTER), `_ask_user` (`message_posted(m, questions=)` once `paused` is set), `save` (`record_saved`), `_log_call` (`call_finished`; `calls.jsonl` also gains `provider` and `usd`), the turn dispatch (`turn_started`, `turn_finished` through `_dispatch_turn`), `user_says` and both run ends (`run_status`), the crash path (`run_error`); a hook error goes to stderr unless it is fatal (`fatal = True` or a class named RecordRejected)",
     "P9": "`call` appends `system_addendum(fn)` to the system prompt: empty unless the hooks have a node-context file",
-    "P10": "`store` and `mark_used` of the template library run inside `fcntl.flock` on `<library>/.lock` (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store` and `_mark_used`",
+    "P10": "`store` and `mark_used` of the template library run inside an exclusive lock on `<library>/.lock` (`oslayer.try_lock`: `flock`, or `msvcrt.locking` on Windows) (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store` and `_mark_used`",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
+    "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
 }
 
 
@@ -824,7 +835,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
     out = [
         "# Vendored J2 engine",
         "",
-        f"Source: J2_Prototype commit `{commit}` (main on 2026-11-04, PR #30 `template-library`). The design was written "
+        f"Source: J2_Prototype commit `{commit}` (main on 2026-11-06, PR #31 `template-library-fixes`; 33aeeda, PR #30, was the baseline before it). The design was written "
         f"against `{DESIGNED_AGAINST}`; its line numbers (`j2.py:n`) are that commit's, and everything after `j2.py:8313` "
         "moved down by 7 lines. Patches are located by anchor text, never by line.",
         "",

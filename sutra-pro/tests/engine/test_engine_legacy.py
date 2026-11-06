@@ -48,7 +48,7 @@ def run_python(code: str, tmp_path, **extra_env) -> subprocess.CompletedProcess:
 # ---- the recorded minimums --------------------------------------------------------------------------------------------------
 def test_expected_json_records_the_three_minimums():
     assert set(EXPECTED) == {"j2_commit", "flow_fast_ok_lines", "change_checks", "realization_checks"}
-    assert EXPECTED["j2_commit"].startswith("33aeeda")
+    assert EXPECTED["j2_commit"].startswith("9200cf6")
     assert EXPECTED["change_checks"] >= 192 and EXPECTED["realization_checks"] >= 97       # J2's own numbers (engine.md 9)
     assert EXPECTED["flow_fast_ok_lines"] >= 60
 

@@ -31,3 +31,8 @@ line 8313 moves down by 7). `VENDORED.md` (E1) records the real commit and the s
 | Orchestrator / projector | No change: the run folder is the engine's; the copies are files the Library tab reads through the engine's routes. |
 
 Diagram: the Template library box can say "each run keeps its own copy" (next diagram version, with D88 to D90).
+
+## Later syncs (see `j2-sync-2.md`)
+- 2026-11-06: baseline moved to `9200cf6` (PR #31 `template-library-fixes`): `parse_decision` negation, the extend-under-0.5 overrule, the first page builder's inline definitions, the refused-schema report. `j2-sync-2.md` lists where each is covered.
+- **Pending, not vendored:** J2 branch `build-on-run` (`80f8704`): a design for "build on a run" (fork a finished run with a new brief through `J2_CHANGE`), `docs/build-on-run-design.md`, 552 lines, no code. When it is implemented in the prototype it needs its own sync note: a new entry point in `J2Run`, a new route and probably a patch beside P11 (`rehydrate`).
+- **Pending:** the Run settings page (routes `/api/runlist` and `/api/changes`), present only in the old repository's copy of the prototype.
