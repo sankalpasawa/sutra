@@ -16,6 +16,7 @@ sutra-pro backup              # a consistent backup archive
 sutra-pro restore FILE        # put a backup back
 sutra-pro prune               # remove the bulky evidence of old finished runs
 sutra-pro export chart        # the org chart and its change log as JSON
+sutra-pro import-old-chats    # bring the old Sutra app's chats in (a dry run unless --apply)
 ```
 
 `python -m sutra_app` is the same program as `sutra-pro`. In a checkout, `scripts/run.sh` and `scripts/stop.sh` do the same with the checkout's own virtualenv.
@@ -34,6 +35,7 @@ sutra-pro export chart        # the org chart and its change log as JSON
 | `sutra-pro backup` | `--data-dir D`, `--json`, `--to DIR`, `--no-runs`, `--include-env` | `--include-env` is refused |
 | `sutra-pro restore FILE` | `--data-dir D`, `--json` | the server must be stopped |
 | `sutra-pro prune` | `--data-dir D`, `--json`, `--older-than AGE`, `--dry-run`, `--yes` | a dry run unless `--yes` |
+| `sutra-pro import-old-chats` | `--data-dir D`, `--json`, `--source DIR`, `--apply` | read only on the old folder; a dry run unless `--apply`; the server must be stopped |
 | `sutra-pro export chart` | `--data-dir D`, `--json`, `--out FILE` | `--out -` is standard output |
 | `sutra-pro export team DEPT` | `--data-dir D`, `--json`, `--out DIR` | a team's last finished run |
 | `sutra-pro export usage` | `--data-dir D`, `--json`, `--csv`, `--out FILE` | every usage row |

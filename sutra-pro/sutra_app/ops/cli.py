@@ -29,7 +29,7 @@ __all__ = ["main", "dispatch", "build_parser", "common_parser", "COMMANDS", "BUI
            "before_start", "first_run_problems", "command_names", "STOP_WAIT_S"]
 
 BUILTIN = ("doctor", "status", "stop", "config", "open")
-OPTIONAL_MODULES = ("backup", "retention", "exporter")
+OPTIONAL_MODULES = ("backup", "retention", "exporter", "import_old")
 STOP_WAIT_S = 20.0                       # the app's own stop ladder takes 12 s at most
 COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {}
 
