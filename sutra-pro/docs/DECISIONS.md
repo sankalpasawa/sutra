@@ -801,10 +801,10 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 
 ## D114 — J2 moves with the prototype: a second sync brings its Run settings page
 - Sources: `docs/design/j2-sync.md` (baseline `33aeeda`); the copy of the J2 prototype in the old repository (`prototypes/j2`, commit "J2 Run settings") adds `GET /api/runlist` and `GET /api/changes` to `j2_server.py`, the Run settings tab to `j2_ui.html` and `run_settings()` to `j2_flow_test.py`; `llm.py` and `j2.py` are identical to the baseline.
-- Decided: package ABS-0 re-vendors with `scripts/vendor_j2.py` and re-ports the page with `scripts/port_j2_ui.py`, taking the files from the J2 prototype's own repository when the change has reached it and from that copy otherwise (and saying which in `VENDORED.md`). The two routes join the API shape goldens. This is the only package allowed to touch vendored files.
+- Decided: package ABS-0 re-vendors with `scripts/vendor_j2.py` and re-ports the page with `scripts/port_j2_ui.py`, taking the files from the J2 prototype's own repository when the change has reached it and from that copy otherwise (and saying which in `VENDORED.md`). The two routes join the API shape goldens. This is the only package allowed to touch vendored files, with one extension: sync 3 (`docs/design/j2-sync-3.md`: patch P13 for the two routes and page edits E14 to E18, commit `a2d0c196`) took the same change from the same old copy under this decision, recorded in `VENDORED.md`; any later sync is likewise a recorded vendoring patch with its own sync note.
 - Why: "the J2 idea stays the same" includes the prototype's own later changes; nothing else in this merge may change J2.
 - Rejected: leaving Pro on `33aeeda` (the two products would show different J2 pages); editing the page by hand (the port script's anchors are the proof).
-- Diagram: key only, label "J2 sync 2 (D114)".
+- Diagram: key only, label "J2 sync 2 and 3 (D114)".
 
 ## D115 — The direct chat has a composer: two modes, a Stop, and the org chat may be asked directly
 - Sources: ABS-7 (`POST /api/chats/{sid}/direct`, `chat.partial`), ABS-9 (pill and streaming row), ABS-10 (attachment limits); the owner's note that the browser had no box for the direct chat.
