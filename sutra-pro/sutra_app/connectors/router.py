@@ -317,6 +317,7 @@ class Router:
         self._chat_busy: set[str] = set()
         self._chat_active: dict[str, tuple[ModelConnector, SessionState]] = {}
         self._pins: dict[str, str] = {}
+        self.choice_source: Optional[Callable[[str], Optional[str]]] = None      # session id -> the owner's persisted provider choice (ABS-8)
         self.egress: Optional[Any] = None                      # an `egress.Egress`, set by the factory (ABS-2); None = no scrub, no row
         self._today: dict[str, list] = {}                      # provider -> [date, calls, tokens, usd]
         self._background: list[threading.Thread] = []
@@ -390,7 +391,21 @@ class Router:
         NoProviderError with a reason for every provider dropped."""
         return self._plan(self.policy.resolve(req), req, pinned)
 
+    def _chosen_for(self, req: Any) -> Optional[str]:
+        """The owner's persisted choice for the session of this call, if the app gave the Router a source for it."""
+        sid = getattr(getattr(req, "ctx", None), "session_id", None)
+        if self.choice_source is None or not sid:
+            return None
+        try:
+            return self.choice_source(sid) or None
+        except Exception:
+            log.warning("could not read the chat choice of %s", sid, exc_info=True)
+            return None
+
     def _plan(self, resolved: Resolved, req: Any, pinned: Optional[str] = None) -> Plan:
+        chosen = None
+        if pinned is None:
+            pinned = chosen = self._chosen_for(req)
         order = list(resolved.order)
         if self._restrict is not None:
             order = [self._restrict]
@@ -417,6 +432,9 @@ class Router:
                 skipped.append((provider, reason))
         if not usable:
             raise NoProviderError(skipped=skipped)
+        if chosen is not None and chosen not in usable:           # the pill said one thing, the policy order decides: say so
+            self._emit("connector.choice_unavailable", {"session_id": req.ctx.session_id, "wanted": chosen,
+                                                         "reason": dict(skipped).get(chosen, "not usable"), "used": usable[0]})
         return Plan(order=tuple(usable), skipped=tuple(skipped), resolved=resolved, models=models, tools=tools)
 
     def _skip_reason(self, provider: str, need_images: bool, need_tools: bool) -> Optional[str]:

@@ -618,6 +618,11 @@ class TaskService:
                 upstream.append(UpstreamRef(dept_id=dep.dept_id, run_id=dep.run_id, title=clip(dep.title, 200),
                                             files=self._files_of(conn, dep)))
         connector = "stub" if self.settings.offline else self.settings.connector
+        if connector != "stub":                                      # a team's run follows its team chat's provider choice (ABS-8)
+            chosen = conn.execute("SELECT s.pinned FROM graph_nodes g JOIN chat_sessions s ON s.id = g.chat_session_id WHERE g.id = ?",
+                                  (row.dept_id,)).fetchone()
+            if chosen is not None and chosen["pinned"] in ("claude", "codex"):
+                connector = chosen["pinned"]
         return RunSpec(
             run_id=run_id, task_id=row.id, dept_id=row.dept_id, dept_label=clip(dept["name"] if dept else row.dept_id, 200),
             scope_id=row.scope_node_id, scope_label=clip(scope["name"], 200) if scope is not None else None, user_text=row.user_text,

@@ -39,6 +39,7 @@ from sutra_app.orchestrator.agent.runner import TurnRunner
 from sutra_app.orchestrator.atoms import AtomStore
 from sutra_app.orchestrator.chart import ChartStore
 from sutra_app.orchestrator.attachments import Attachments
+from sutra_app.orchestrator.chat_v2 import ChatChoices
 from sutra_app.orchestrator.chats import ChatStore, ChatTranscripts
 from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.departments import DepartmentStore
@@ -160,6 +161,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
                                     transcripts=ChatTranscripts(chats), session_hook=chats.set_provider,
                                     replybook=demo_book() if router_settings.offline else None)
     port = connector if connector is not None else AsyncConnector(router)
+    router.choice_source = ChatChoices(db).get                       # the pill governs the org chat agent too (ABS-8)
     attachments = Attachments(settings.data_dir)
     chat_port = RouterChatPort(router, attachments=attachments.store)
     agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout)
