@@ -187,6 +187,7 @@ Rules the implementation must hold (each has a test in ABS-1 to ABS-3):
 | condense | `ChatEvent.kind` + `chat_view.js` fold | ABS-5, ABS-10 |
 | attachments | `connectors/attachments.py`, `orchestrator/attachments.py`, upload route | ABS-4, ABS-7, ABS-10 |
 | streaming | `RouterChatPort.stream`, SSE `chat.partial`, indicator in `chat_view.js` | ABS-1, ABS-7, ABS-9 |
+| markdown of a model's reply (`mdHtml` in `02-helpers.js`, `withholdPartialRow` in `01-state.js`) | `ui/static/js/chat_markdown.js` for a direct reply and the streaming row; the link and DECISION-callout branches are not ported (ui.md 4.3: no links) | GAP-markdown |
 | egress scrub and its audit row | `connectors/egress.py`, a Router hook for ALL calls | ABS-2 |
 | per-model window | `connectors/budget.py`, used by the carry-over | ABS-3 |
 
