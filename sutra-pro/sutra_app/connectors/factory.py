@@ -19,6 +19,7 @@ Start-up, in order:
      `connector.health` event goes out. A CLI that is not installed is not degraded (the plan says "CLI not found");
   4. a CLI version other than the tested ones (claude 2.1.308, codex 0.146.0) is logged as a warning;
   5. `connector.mode {mode}` is published.
+The last quota snapshots are loaded from `<data>/connectors/quota.json` before the flags are probed, and kept there (quota_store.py).
 Nothing here calls a model.
 """
 from __future__ import annotations
@@ -33,6 +34,7 @@ from .egress import Egress
 from .errors import ConnectorError, FlagUnsupportedError
 from .models import ConnectorConfig, Provider
 from .policy import load_policy
+from .quota_store import QUOTA_FILE, attach_quota_store
 from .router import Router, TranscriptSource
 from .stub import ReplyBook, StubConnector
 
@@ -80,6 +82,7 @@ def build_router(settings: Any, *, usage_sink: Any = None, events: Optional[Call
                     connector=mode, offline=offline, policy_source=load.source, policy_error=load.error, **router_kw)
     if not stub_only:
         router.egress = Egress(data_dir / "connectors" / "egress.jsonl", redactor=redactor)
+        attach_quota_store(router.health, data_dir / "connectors" / QUOTA_FILE)          # the plan meters survive a restart
         for name, connector in connectors.items():
             _probe_flags(router, name, connector, events)
             _check_version(name, connector)

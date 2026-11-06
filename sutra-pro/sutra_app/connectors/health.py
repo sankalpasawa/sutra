@@ -13,9 +13,14 @@ injected clock:
 
 A success (`ok`) clears cooldowns, the breaker's crash history and any exhausted snapshot; the next snapshot may block again.
 `skip_reason()` is the one question the plan asks: why should this provider be skipped, or None. The book is thread-safe.
+
+Quota snapshots outlive a restart (GAP-providers): `set_quota` stamps `seen_at`, every change of a snapshot (a new one, an exhausted
+one cleared by a success) goes to the listeners of `on_quota_change` (quota_store.py writes the file), and `restore_quota` puts a
+stored snapshot back with its own `seen_at`, so an exhausted one still blocks until its `resets_at` after the app starts again.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from datetime import datetime
@@ -41,6 +46,7 @@ BREAKER_OPEN_S = 60.0
 # the reason shown for an API-key login (D7, S1-contracts-17): refused with no override
 API_KEY_REFUSED = "API-key login refused (D7): sign in with your subscription"
 _NAMES = {"claude": "Claude", "codex": "Codex", "stub": "Stub"}
+log = logging.getLogger("sutra_app.connectors.health")
 
 HealthName = Literal["ok", "cooldown", "quota", "breaker", "signed_out", "missing"]
 
@@ -82,6 +88,7 @@ class HealthBook:
         self._auth_ttl = auth_ttl
         self._slots: dict[str, _Slot] = {}
         self._lock = threading.RLock()
+        self._quota_listeners: list[Callable[[str, Optional[Quota]], None]] = []
 
     def _slot(self, provider: str) -> _Slot:
         slot = self._slots.get(provider)
@@ -175,15 +182,37 @@ class HealthBook:
             slot.crashes.clear()
             if slot.quota is not None and slot.quota.status == "exhausted":
                 slot.quota = None
+                self._quota_changed(provider, None)
 
     def set_quota(self, provider: Provider, quota: Quota) -> None:
-        """Keep the latest snapshot. A fresh `ok` or `warning` lifts a quota block; `exhausted` makes one."""
+        """Keep the latest snapshot, stamped with `seen_at`. A fresh `ok` or `warning` lifts a quota block; `exhausted` makes one."""
+        with self._lock:
+            slot = self._slot(provider)
+            now = self._clock()
+            slot.quota = quota if quota.seen_at is not None else quota.model_copy(update={"seen_at": now})
+            slot.quota_seen_at = now
+            if quota.status != "exhausted":
+                slot.cooldowns.pop("quota", None)
+            self._quota_changed(provider, slot.quota)
+
+    def restore_quota(self, provider: Provider, quota: Quota) -> None:
+        """Put back a stored snapshot (start-up): it keeps its own `seen_at`, it lifts no cooldown and no listener hears it."""
         with self._lock:
             slot = self._slot(provider)
             slot.quota = quota
-            slot.quota_seen_at = self._clock()
-            if quota.status != "exhausted":
-                slot.cooldowns.pop("quota", None)
+            slot.quota_seen_at = quota.seen_at if quota.seen_at is not None else self._clock()
+
+    def on_quota_change(self, listener: Callable[[str, Optional[Quota]], None]) -> None:
+        """`listener(provider, quota or None)` after every change of a snapshot, under the book's lock (writes stay in order)."""
+        with self._lock:
+            self._quota_listeners.append(listener)
+
+    def _quota_changed(self, provider: str, quota: Optional[Quota]) -> None:
+        for listener in list(self._quota_listeners):
+            try:
+                listener(provider, quota)
+            except Exception:                      # a lost snapshot file must not turn a model answer into a failure
+                log.warning("a quota listener failed for %s", provider, exc_info=True)
 
     def quota(self, provider: Provider) -> Optional[Quota]:
         with self._lock:

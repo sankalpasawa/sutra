@@ -925,7 +925,7 @@ class Router:
             counts = self._today.get(name)
         today_key = datetime.fromtimestamp(self._clock()).strftime("%Y-%m-%d")
         today = TodayCounts(calls=counts[1], tokens=counts[2], usd=round(counts[3], 9)) if counts and counts[0] == today_key else TodayCounts()
-        plan = auth.plan if auth else None
+        plan = (auth.plan if auth else None) or (quota.plan if quota is not None else None)    # Codex names its plan only in a quota
         return ProviderStatus(
             name=name, installed=installed, version=auth.version if auth else None, signed_in=auth.signed_in if auth else (True if name == "stub" else None),
             method=auth.method if auth else None, billing=auth.billing if auth else "unknown", plan=plan, plan_label=plan_label(name, plan),
