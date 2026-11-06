@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .models import CallTag, Provider
+from .models import CallTag, Provider, Quota
 
 __all__ = ["AttachmentRef", "ProviderPill", "Choice", "CarryPlan", "ChatTurnIn", "ChatTurnOut", "ChatEvent", "BlockType", "BlockKind",
            "EVENT_KINDS"]
@@ -43,6 +43,7 @@ class ProviderPill(M):
     plan: Optional[str] = None
     billing: str = "unknown"
     chosen: bool = False
+    quota: Optional[Quota] = None            # the last snapshot with every usage window (GAP-providers): the pill shows the fullest one
 
 
 class Choice(M):

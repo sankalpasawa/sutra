@@ -5,7 +5,8 @@
 It reads exactly three fields of `settings` and nothing else (ORCH's `Settings` satisfies that; so does any object with these
 names): `data_dir` (where the optional `connectors/policy.json` lives), `connector` (auto | claude | codex | stub) and
 `offline` (true: nothing but the stub answers). The environment variables `SUTRA_CONNECTOR` and `SUTRA_OFFLINE` are already
-resolved by `Settings`; this module reads no environment.
+resolved by `Settings`; this module reads no environment. Without a `config`, `discover.connector_config` finds the CLIs (the owner's
+chosen file in `connectors/bins.json`, PATH, then the folders installers use; it reads PATH and HOME and runs nothing).
 
 An optional `replybook` goes to the stub of a stub-only router (the offline demo, GAP-DEMO); nothing else changes.
 
@@ -19,6 +20,7 @@ Start-up, in order:
      `connector.health` event goes out. A CLI that is not installed is not degraded (the plan says "CLI not found");
   4. a CLI version other than the tested ones (claude 2.1.308, codex 0.146.0) is logged as a warning;
   5. `connector.mode {mode}` is published.
+The last quota snapshots are loaded from `<data>/connectors/quota.json` before the flags are probed, and kept there (quota_store.py).
 Nothing here calls a model.
 """
 from __future__ import annotations
@@ -28,11 +30,13 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .base import ModelConnector
+from .discover import connector_config
 from .engine_port import build_connectors
 from .egress import Egress
 from .errors import ConnectorError, FlagUnsupportedError
 from .models import ConnectorConfig, Provider
 from .policy import load_policy
+from .quota_store import QUOTA_FILE, attach_quota_store
 from .router import Router, TranscriptSource
 from .stub import ReplyBook, StubConnector
 
@@ -66,7 +70,7 @@ def build_router(settings: Any, *, usage_sink: Any = None, events: Optional[Call
     data_dir = Path(settings.data_dir)
     mode = settings.connector
     offline = bool(settings.offline)
-    cfg = config or ConnectorConfig(data_dir=data_dir)
+    cfg = config or connector_config(data_dir)            # the CLIs where installers put them, or the file the owner chose (discover.py)
     load = load_policy(data_dir)
     if load.error:
         log.warning("the routing policy file is not used: %s", load.error)
@@ -80,6 +84,7 @@ def build_router(settings: Any, *, usage_sink: Any = None, events: Optional[Call
                     connector=mode, offline=offline, policy_source=load.source, policy_error=load.error, **router_kw)
     if not stub_only:
         router.egress = Egress(data_dir / "connectors" / "egress.jsonl", redactor=redactor)
+        attach_quota_store(router.health, data_dir / "connectors" / QUOTA_FILE)          # the plan meters survive a restart
         for name, connector in connectors.items():
             _probe_flags(router, name, connector, events)
             _check_version(name, connector)

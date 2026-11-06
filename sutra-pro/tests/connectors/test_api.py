@@ -95,7 +95,7 @@ def test_every_write_route_has_the_write_guard_in_its_dependency_tree(client):
     routes = [r for r in client.api.routes if isinstance(r, APIRoute) and r.path.startswith(PREFIX)]
     writes = [r for r in routes if r.methods & {"PUT", "POST", "DELETE", "PATCH"}]
     reads = [r for r in routes if not r.methods & {"PUT", "POST", "DELETE", "PATCH"}]
-    assert len(writes) == 6 and len(reads) == 6
+    assert len(writes) == 7 and len(reads) == 6
     for route in writes:
         assert require_token in calls(route.dependant), (route.methods, route.path)
     for route in reads:
@@ -103,7 +103,7 @@ def test_every_write_route_has_the_write_guard_in_its_dependency_tree(client):
 
 
 WRITES = [("PUT", "/policy"), ("POST", "/claude/test"), ("POST", "/codex/sign-in"), ("DELETE", "/codex/sign-in/abc"),
-          ("PUT", "/sessions/s1/provider"), ("POST", "/mediated/refresh")]
+          ("PUT", "/sessions/s1/provider"), ("POST", "/mediated/refresh"), ("PUT", "/claude/path")]
 
 
 @pytest.mark.parametrize("method,path", WRITES)
@@ -435,6 +435,64 @@ def test_mediated_refresh_is_refused_offline(make, fake):
     offline = make(offline=True)
     assert error_of(offline.post(url("/mediated/refresh"), headers=HEADERS))["code"] == "offline"
     assert fake.calls() == []
+
+
+# ---- the CLI file the owner chose (GAP-providers) ------------------------------------------------------------------------------------
+
+@pytest.fixture
+def finder(monkeypatch, tmp_path):
+    """The process as Finder starts it: launchd's PATH, a home with no CLI, no Homebrew folder (this machine may have a real claude)."""
+    from sutra_app.connectors import discover
+    monkeypatch.setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+    monkeypatch.setenv("HOME", str(tmp_path / "finder-home"))
+    monkeypatch.setattr(discover, "KNOWN_DIRS", tuple(d for d in discover.KNOWN_DIRS if d not in discover.SYSTEM_DIRS))
+
+
+def shim(folder, fake, name):
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / name
+    path.write_text(f'#!/bin/sh\nexec "{fake.exe(name)}" "$@"\n', encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def test_choosing_the_file_stores_it_and_the_running_router_follows_at_once(make, fake, tmp_path, finder):
+    client = make()
+    client.router.connectors["claude"].cfg = client.cfg.model_copy(update={"claude_exe": str(tmp_path / "gone" / "claude")})
+    client.router.health.forget_installed("claude")
+    assert client.get(url("/status")).json()["providers"][0]["installed"] is False
+    chosen = shim(tmp_path / "picked", fake, "claude")
+    response = client.put(url("/claude/path"), headers=HEADERS, json={"path": str(chosen)})
+    assert response.status_code == 200, response.text
+    assert response.json() == {"provider": "claude", "path": str(chosen), "installed": True, "signed_in": True, "detail": "signed in"}
+    assert json.loads((client.cfg.data_dir / "connectors" / "bins.json").read_text(encoding="utf-8"))["bins"] == {"claude": str(chosen)}
+    assert client.router.connectors["claude"].cfg.claude_exe == str(chosen)
+    assert client.events.of("connector.health")[-1]["provider"] == "claude"
+    forgot = client.put(url("/claude/path"), headers=HEADERS, json={"path": None})
+    assert forgot.status_code == 200 and forgot.json()["path"] is None and forgot.json()["installed"] is False
+    assert json.loads((client.cfg.data_dir / "connectors" / "bins.json").read_text(encoding="utf-8"))["bins"] == {}
+    assert fake.model_calls() == []
+
+
+def test_a_file_that_cannot_be_the_command_is_refused_with_the_reason_and_nothing_changes(client, tmp_path, finder):
+    before = client.router.connectors["claude"].cfg.claude_exe
+    refused = client.put(url("/claude/path"), headers=HEADERS, json={"path": str(tmp_path / "nowhere" / "claude")})
+    error = error_of(refused)
+    assert refused.status_code == 422 and error["code"] == "invalid_request" and "There is no file at" in error["message"]
+    wrong = client.put(url("/codex/path"), headers=HEADERS, json={"path": "/bin/sh"})
+    assert wrong.status_code == 422 and "Choose the file named codex" in error_of(wrong)["message"]
+    assert client.router.connectors["claude"].cfg.claude_exe == before
+    assert not (client.cfg.data_dir / "connectors" / "bins.json").exists()
+
+
+def test_the_path_route_refuses_an_unknown_provider_a_bad_body_and_offline(make):
+    client = make()
+    assert error_of(client.put(url("/stub/path"), headers=HEADERS, json={"path": None}))["code"] == "not_found"
+    for body in ({}, {"path": 3}, {"path": "/x/claude", "extra": 1}, {"path": "/" + "a" * 1100}):
+        response = client.put(url("/claude/path"), headers=HEADERS, json=body)
+        assert response.status_code == 422 and error_of(response)["code"] == "validation", body
+    offline = make(offline=True).put(url("/claude/path"), headers=HEADERS, json={"path": None})
+    assert offline.status_code == 409 and error_of(offline)["code"] == "offline"
 
 
 # ---- the envelope everywhere ----------------------------------------------------------------------------------------------------------

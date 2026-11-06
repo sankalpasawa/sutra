@@ -11,11 +11,14 @@
      engineBody(settings, form) -> {set, unset}   the PUT body: only the fields that changed; a field that goes back to the value of the layer
                                           below (defaults for all teams; defaults and the all-teams file for one team) is `unset`
      engineErrors(error) -> {field: sentence}      what a 422 `validation` names, key "" for a sentence about the whole form
-     connectorsHtml(health, state) -> html        the Connectors group from GET /api/health: a row per provider with Test and, for codex only, Sign in
+     connectorsHtml(health, state) -> html        the Connectors group from GET /api/health: a row per provider with Test and, for codex only, Sign in;
+                                          the plan in words and one meter per usage window (plan_meter.js, GAP-providers)
      signInState(prev, answer) -> {step, url, code, expires_in, message}   the sign-in reducer (start answer, poll answer, an error)
      appearanceHtml(pref) -> html                 the Appearance group: Light | Dark | System (localStorage j2theme, one choice for both pages)
 
      testConnector(api, provider) -> Promise<{provider, ok, seconds, message, line}>       POST /api/connectors/{provider}/test
+     setCliPath(api, provider, path) -> Promise<{provider, ok, found, message, answer}>   PUT /api/connectors/{provider}/path (GAP-providers: the
+                                          file of a CLI the app could not find; null or "" forgets the choice)
      signIn(api, {onState, sleep, pollMs}) -> {done, cancel}   POST /api/connectors/codex/sign-in, GET ...{id} until signed_in, failed or expired, DELETE
      watchHealth(api, onHealth, onError) -> {onEvent(type), refetch()}   GET /api/health again on connector.health, connector.switch, connector.mode
      loadEngine(api, scope) / saveEngine(api, settings, scope, form)     GET and PUT /api/engine/settings; `dept` is put in the query by hand and
@@ -319,8 +322,27 @@
 
   /* ---------------------------------------------------------------- Connectors group */
   const PROVIDER_NAMES = freeze({claude: "Claude", codex: "Codex"});
-  const HEALTH_WORDS = freeze({ok: "Ready", signed_out: "Not signed in", degraded: "Limited"});
+  // The words of HealthBook's states (connectors/health.py HealthName): a provider out of quota or cooling down is not Ready.
+  const HEALTH_WORDS = freeze({ok: "Ready", signed_out: "Not signed in", degraded: "Limited", quota: "Out of quota", cooldown: "Cooling down",
+    breaker: "Paused after errors", missing: "Not installed"});
   const providerName = p => (hasOwn(PROVIDER_NAMES, p) ? PROVIDER_NAMES[p] : clean(p));
+  const BLOCKS = freeze(["quota", "cooldown", "breaker"]);
+
+  // plan_meter.js draws the meters (GAP-providers): a global in the page, a require in node; looked up when a row is drawn, so the order of the
+  // script tags does not matter. Without it a row simply has no meters.
+  function planMeter() {
+    if (root.PlanMeter) return root.PlanMeter;
+    if (typeof module === "object" && module !== null && module.exports && typeof require === "function") return require("./plan_meter.js");
+    return null;
+  }
+
+  // "until 14:05" for a provider that is blocked (out of quota, cooling down, paused), from health.until (epoch seconds).
+  function untilWords(health, when) {
+    if (!isObj(health) || !BLOCKS.includes(health.state) || !finite(health.until)) return "";
+    const pm = planMeter();
+    const t = pm ? (typeof when === "function" ? when : pm.clockOf)(health.until * 1000) : null;
+    return t ? "until " + (t.hh < 10 ? "0" : "") + t.hh + ":" + (t.mm < 10 ? "0" : "") + t.mm : "";
+  }
 
   function healthChip(c) {
     if (c.installed === false) return ["missing", "Not installed"];
@@ -352,6 +374,27 @@
     return '<div class="signin" data-step="' + esc(s.step) + '" role="status">' + body + "</div>";
   }
 
+  // The CLI file box (GAP-providers): open under a row whose CLI was not found, folded ("Use another file") under one that was. The page keeps what
+  // was typed in state.path[provider].value, so a repaint does not lose it. Only claude and codex have a command-line file to choose.
+  const CHOOSABLE = freeze(["claude", "codex"]);
+  function pathBox(name, c, state) {
+    if (!CHOOSABLE.includes(name)) return "";
+    const p = isObj(state) && isObj(state.path) && isObj(state.path[name]) ? state.path[name] : {step: "idle"};
+    const id = "setpath-" + name;
+    const box = '<div class="setpath" data-provider="' + name + '"><label class="setlabel" for="' + id + '">' +
+      (c.installed === false ? "Choose the file" : "The file to use") + '</label><input type="text" id="' + id + '" data-path="' + name +
+      '" spellcheck="false" autocomplete="off" maxlength="1024" placeholder="/full/path/to/' + name + '" value="' + esc(clean(p.value)) + '">' +
+      '<button type="button" class="ghost" data-act="set-path" data-provider="' + name + '"' + (p.step === "saving" ? " disabled" : "") + ">Use this file</button>" +
+      (c.installed === false ? "" : '<button type="button" class="ghost" data-act="clear-path" data-provider="' + name + '"' + (p.step === "saving" ? " disabled" : "") +
+        ">Find it again</button>") +
+      '<span class="sethint">Sutra looked on PATH and in the folders installers use (nvm, Volta, pnpm, mise, asdf, Homebrew). In Terminal, <code>which ' + name +
+      "</code> prints the full path.</span>" +
+      (p.step === "error" ? '<span class="seterr" role="alert">' + esc(clean(p.message) || "That file was refused.") + "</span>" : "") +
+      (p.step === "ok" && clean(p.message) ? '<span class="settest" data-step="ok" role="status">' + esc(clean(p.message)) + "</span>" : "") + "</div>";
+    if (c.installed === false) return box;
+    return '<details class="setpathd" data-key="path-' + name + '"' + (p.step === "error" ? " open" : "") + "><summary>Use another file</summary>" + box + "</details>";
+  }
+
   function providerOrder(connectors) {
     const names = Object.keys(connectors);
     return ["claude", "codex"].filter(n => names.includes(n)).concat(names.filter(n => n !== "claude" && n !== "codex").sort());
@@ -361,19 +404,25 @@
     const [tone, word] = healthChip(c);
     const test = isObj(state) && isObj(state.test) && isObj(state.test[name]) ? state.test[name] : {step: "idle"};
     const signin = name === "codex" && isObj(state) && isObj(state.signin) ? state.signin : NO_SIGNIN;
-    const detail = [clean(c.detail), c.version ? "version " + clean(c.version) : "", isObj(c.health) && clean(c.health.reason) && tone !== "signed_out" ? clean(c.health.reason) : ""]
-      .filter(Boolean).join(" · ");
+    const when = isObj(state) && typeof state.when === "function" ? state.when : undefined;
+    const nowMs = isObj(state) && finite(state.nowMs) ? state.nowMs : Date.now();
+    const reason = isObj(c.health) && clean(c.health.reason) && tone !== "signed_out" ? [clean(c.health.reason), untilWords(c.health, when)].filter(Boolean).join(", ") : "";
+    const detail = [clean(c.detail), c.version ? "version " + clean(c.version) : "", reason].filter(Boolean).join(" · ");
     const line = testLine(test);
+    const pm = planMeter();
+    const plan = pm && c.installed !== false ? pm.planLine(c) : "";
+    const meters = pm && c.installed !== false ? pm.meterHtml(c.quota, nowMs, {when}) : "";
     return '<div class="setconn" data-provider="' + esc(name) + '" data-state="' + esc(tone) + '">' +
       '<div class="sethead"><b>' + esc(providerName(name)) + '</b><span class="setchip st-' + esc(tone) + '">' + esc(word) + "</span></div>" +
-      (detail ? '<p class="setdetail">' + esc(detail) + "</p>" : "") +
+      (detail ? '<p class="setdetail">' + esc(detail) + "</p>" : "") + meters + (plan ? '<p class="setplan">' + esc(plan) + "</p>" : "") +
       '<div class="setacts"><button type="button" class="ghost" data-act="test" data-provider="' + esc(name) + '"' + (test.step === "running" ? " disabled" : "") + ">Test</button>" +
       (name === "codex" ? '<button type="button" class="ghost" data-act="signin" data-provider="codex"' + (signin.step === "pending" ? " disabled" : "") + ">Sign in</button>" : "") +
-      '<span class="settest" data-step="' + esc(test.step) + '" role="status">' + esc(line) + "</span></div>" + signInBox(signin) + "</div>";
+      '<span class="settest" data-step="' + esc(test.step) + '" role="status">' + esc(line) + "</span></div>" + signInBox(signin) + pathBox(name, c, state) + "</div>";
   }
 
   // connectorsHtml(health, state). health is GET /api/health ({connectors: {claude: {...}, codex: {...}}}); state {test: {provider: {step, seconds, message}},
-  // signin: signInState}. A row for every provider the answer holds, Claude first, then Codex; only the Codex row has Sign in.
+  // signin: signInState, nowMs, when}. A row for every provider the answer holds, Claude first, then Codex; only the Codex row has Sign in. Each row
+  // carries the plan in words and a meter per usage window (plan_meter.js); `nowMs` and `when` (local time) are for a test.
   function connectorsHtml(health, state) {
     const connectors = isObj(health) && isObj(health.connectors) ? health.connectors : null;
     const head = '<section class="setgrp" data-group="connectors" aria-labelledby="set-connectors-h"><h3 id="set-connectors-h">' + GROUPS.connectors + "</h3>";
@@ -399,6 +448,22 @@
     } catch (e) {
       const message = clean(e && e.message) || "The test could not run.";
       return {provider: name, ok: false, seconds: null, message, line: message};
+    }
+  }
+
+  // The CLI file the owner chose (GAP-providers): PUT /api/connectors/{provider}/path {path} (null forgets the choice; the app then looks for the
+  // CLI again). A 200 says whether the CLI is now found; the error envelope's `message` is the reason a file was refused.
+  async function setCliPath(api, provider, path) {
+    const name = clean(provider);
+    const chosen = typeof path === "string" && path.trim() !== "" ? path.trim() : null;
+    try {
+      const answer = await api.put("/api/connectors/" + enc(name) + "/path", {path: chosen});
+      const found = isObj(answer) && answer.installed === true;
+      const message = chosen === null ? (found ? "Found it again." : "The choice is forgotten; " + providerName(name) + " is still not found.")
+        : (found ? "Using that file." : clean(isObj(answer) ? answer.detail : "") || "That file is stored, but it does not answer yet.");
+      return {provider: name, ok: true, found, message, answer};
+    } catch (e) {
+      return {provider: name, ok: false, found: false, message: clean(e && e.message) || "That file could not be used.", answer: null};
     }
   }
 
@@ -502,7 +567,7 @@
 
   const SettingsView = {
     engineHtml, engineBody, engineErrors, formProblems, connectorsHtml, signInState, appearanceHtml,
-    testConnector, signIn, watchHealth, loadEngine, saveEngine, enginePath, testLine, kindOf, parseValue,
+    testConnector, signIn, watchHealth, loadEngine, saveEngine, enginePath, testLine, kindOf, parseValue, setCliPath,
     HEALTH_EVENTS, NOTE_LOCKED, NOTE_NEXT_RUN,
   };
   if (typeof module === "object" && module !== null && module.exports) module.exports = SettingsView;

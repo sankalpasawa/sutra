@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import sys
 import threading
+from pathlib import Path
 
 import pytest
 
 from sutra_app.connectors.errors import ConnectorError, InvalidJsonError, InvalidRequestError, NoProviderError, QuotaError
-from sutra_app.connectors.models import AuthStatus, ConnectorConfig, JsonResult, TurnResult, Usage
+from sutra_app.connectors.models import AuthStatus, ConnectorConfig, JsonResult, Quota, TurnResult, Usage
 from sutra_app.connectors.orchestrator_port import AsyncConnector, build_tag
 from sutra_app.connectors.policy import parse_policy
 from sutra_app.connectors.router import Router
@@ -184,8 +186,22 @@ def test_status_is_a_per_provider_view(rig):
     assert list(status) == ["claude", "codex"]
     claude = status["claude"]
     assert (claude["installed"], claude["signed_in"], claude["detail"]) == (True, True, "ok")
-    assert (claude["method"], claude["billing"], claude["plan"], claude["version"], claude["health"]) == ("claude.ai", "subscription", "max", "9.9", "ok")
+    assert (claude["method"], claude["billing"], claude["plan"], claude["version"]) == ("claude.ai", "subscription", "max", "9.9")
+    assert claude["health"] == {"state": "ok", "until": None, "reason": None} and claude["quota"] is None
+    assert claude["plan_label"] == "Claude Max"
     assert "account" not in claude
+
+
+def test_status_has_the_shape_the_settings_page_reads(rig):
+    """GET /api/health carries this view; settings_view.js and tests/ui/fixtures/health.json read `health` as {state, until, reason}.
+    A bare string made the chip fall back to Ready for a provider out of quota (GAP-providers)."""
+    fixture = json.loads((Path(__file__).resolve().parents[1] / "ui" / "fixtures" / "health.json").read_text(encoding="utf-8"))
+    status = rig.port.status()
+    for name, page_row in fixture["connectors"].items():
+        assert set(page_row) == set(status[name]), name                       # the fixture the page tests read is the real shape
+        assert isinstance(status[name]["health"], dict) and set(status[name]["health"]) == set(page_row["health"]), name
+    rig.router.health.set_quota("claude", Quota.model_validate(fixture["connectors"]["claude"]["quota"]))
+    assert rig.port.status()["claude"]["quota"] == fixture["connectors"]["claude"]["quota"]
 
 
 def test_status_reports_a_provider_in_cooldown_and_a_missing_cli(tmp_path):
@@ -193,5 +209,5 @@ def test_status_reports_a_provider_in_cooldown_and_a_missing_cli(tmp_path):
     rig.router.health.failed("claude", QuotaError("limit", provider="claude", resets_at=4_000_000_000.0))
     rig.router._connectors["codex"].cfg = rig.router._connectors["codex"].cfg.model_copy(update={"codex_exe": "/nonexistent/codex"})
     status = rig.port.status()
-    assert status["claude"]["health"] == "quota"
+    assert status["claude"]["health"] == {"state": "quota", "until": 4_000_000_000.0, "reason": "usage limit reached"}
     assert status["codex"]["installed"] is False and status["codex"]["signed_in"] is None

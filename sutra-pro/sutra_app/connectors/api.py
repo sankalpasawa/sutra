@@ -13,7 +13,10 @@ a `ConnectorError` follows its kind: cli_missing, auth and unavailable 503, quot
 `AppError`, answered by the app's handler. Bodies go through the app's redacting JSON response.
 
 Routes (GET unless noted): status, models, policy (GET, PUT), `{provider}/test` (POST), `codex/sign-in` (POST), `codex/sign-in/{id}`
-(GET, DELETE), `sessions/{session_id}/provider` (PUT), tools, mediated (GET) and `mediated/refresh` (POST).
+(GET, DELETE), `sessions/{session_id}/provider` (PUT), tools, mediated (GET), `mediated/refresh` (POST) and `{provider}/path` (PUT,
+GAP-providers: the CLI file the owner chose in Settings, `{"path": "/full/path/to/claude"}` or `{"path": null}` to forget it; checked
+and stored by bins.py, followed at once by the running router through discover.use_cli; answers `{provider, path, installed, signed_in,
+detail}`; a path that cannot be the command is the 422 envelope with the reason).
 
 Decisions taken here (docs/notes/CN-9.md): a stored policy is also adopted by the running router (order, rules, timeouts, and the
 sandbox and rate card of Codex), so status and file never disagree; the Test button runs through a router restricted to the
@@ -28,12 +31,14 @@ from typing import Any, Callable, Optional
 from fastapi import APIRouter, Body, Depends, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from sutra_app.engine.port import CallTag
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse
 from sutra_app.orchestrator.errors import error_body
 
+from .bins import CHOOSABLE, MAX_PATH, BinStore
+from .discover import use_cli
 from .env import child_env
 from .errors import ConnectorError, InvalidRequestError, PolicyInvalidError
 from .models import AskRequest, Provider, RouteContext
@@ -99,6 +104,11 @@ class ConnectorRoute(APIRoute):
 class _Pin(BaseModel):
     model_config = ConfigDict(extra="forbid")
     provider: Optional[Provider]
+
+
+class _CliPath(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    path: Optional[str] = Field(..., max_length=MAX_PATH)
 
 
 def _offline(router: Router, what: str) -> ApiFailure:
@@ -256,6 +266,18 @@ def build_api_router(*, router: Router, write_guard: Callable[..., Any], mediate
     def put_pin(session_id: str, body: _Pin = Body(...)) -> Response:
         router.chat_pin(session_id, body.provider)        # InvalidRequestError (bad id, unknown provider) becomes the 422 envelope
         return Response(status_code=204)
+
+    @api.put("/{provider}/path", dependencies=guard, summary="Choose the file of a provider's CLI (or forget the choice with null)")
+    def put_cli_path(provider: str, body: _CliPath = Body(...)) -> dict:
+        if router.mode == "offline":
+            raise _offline(router, "Choosing the file of a CLI")
+        if provider not in CHOOSABLE:
+            raise ApiFailure(404, "not_found", f"{provider} has no command-line file to choose", {"kind": "unavailable"})
+        connector_of(provider)
+        stored = BinStore(_data_dir(router)).set(provider, body.path)      # InvalidRequestError (with the reason) becomes the 422 envelope
+        use_cli(router, provider, stored)                                  # the running router follows at once; `connector.health` goes out
+        status = router.provider_summary(provider, refresh=True)
+        return {"provider": provider, "path": stored, "installed": status.installed, "signed_in": status.signed_in, "detail": status.detail}
 
     @api.post("/mediated/refresh", dependencies=guard, summary="Ask Claude now which connectors it holds (at most once a minute)")
     def post_mediated_refresh() -> dict:

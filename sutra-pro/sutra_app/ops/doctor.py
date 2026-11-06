@@ -245,12 +245,16 @@ def _provider_statuses(settings: Settings, cfg: Any) -> dict[str, Any]:
         router.close()
 
 
-def _judge(name: str, status: Any) -> tuple[str, str, str]:
-    """('ok' | 'warn' | 'bad', detail, fix) for one CLI."""
+def _judge(name: str, status: Any, desktop: bool = False) -> tuple[str, str, str]:
+    """('ok' | 'warn' | 'bad', detail, fix) for one CLI. `desktop`: Claude Desktop is installed, which is not Claude Code (GAP-providers)."""
     from sutra_app.connectors.factory import TESTED_VERSIONS
     login = _LOGIN[name]
+    if (status is None or not status.installed) and name == "claude" and desktop:
+        return "bad", "Claude Desktop is installed, but Sutra needs Claude Code, a separate command-line tool", \
+            f"install Claude Code (claude.com/claude-code), or choose its file in Settings, Connectors; then run `{login}`"
     if status is None or not status.installed:
-        return "bad", "not found on PATH", f"install the {name} CLI, put it on PATH, then run `{login}`"
+        return "bad", "not found on PATH or in the usual install folders", \
+            f"install the {name} CLI (or choose its file in Settings, Connectors), then run `{login}`"
     version = status.version or "unknown version"
     if status.billing == "api_key":
         return "bad", f"{version}: signed in with an API key, which is refused (D34)", f"sign out, then `{login}` with your subscription account"
@@ -273,7 +277,7 @@ def _cli_checks(settings: Settings, cfg: Any, offline: bool) -> list[Check]:
     except Exception as exc:                                                # noqa: BLE001
         return [Check(n, n, "fail", f"could not probe the CLI ({type(exc).__name__}: {str(exc)[:150]})", "run `sutra-pro doctor --offline` and report this")
                 for n in ("claude", "codex")]
-    judged = {name: _judge(name, statuses.get(name)) for name in ("claude", "codex")}
+    judged = {name: _judge(name, statuses.get(name), bool(getattr(cfg, "claude_desktop", False))) for name in ("claude", "codex")}
     any_usable = any(level in ("ok", "warn") for level, _, _ in judged.values())
     out = []
     for name, (level, detail, fix) in judged.items():
@@ -413,8 +417,8 @@ def run(settings: Settings, *, offline: bool = False, environ: Mapping[str, str]
     version = tuple(python_version) if python_version is not None else tuple(sys.version_info[:3])
     data_dir = settings.data_dir
     if config is None:
-        from sutra_app.connectors.models import ConnectorConfig
-        config = ConnectorConfig(data_dir=data_dir)
+        from sutra_app.connectors.discover import connector_config         # the CLIs where installers put them, as the app finds them
+        config = connector_config(data_dir, environ=env)
     try:
         settings_check, chrome_path = _check_settings(settings, env)
     except Exception as exc:                                                # noqa: BLE001

@@ -22,7 +22,7 @@ from sutra_app.engine.port import Allowance, CallTag
 from .env import is_secret_name
 
 __all__ = [
-    "Provider", "Effort", "Allowance", "CallTag", "RouteContext", "Message", "AskRequest", "JsonRequest", "Usage", "Quota",
+    "Provider", "Effort", "Allowance", "CallTag", "RouteContext", "Message", "AskRequest", "JsonRequest", "Usage", "Quota", "QuotaWindow",
     "TurnResult", "JsonResult", "AuthStatus", "ModelInfo", "Capabilities", "SessionSpec", "SessionState",
     "ConnectorEvent", "ConnectorConfig", "SESSION_ID_PATTERN",
 ]
@@ -72,13 +72,28 @@ class Usage(M):
         return Usage(**{name: max(0, getattr(self, name) - getattr(other, name)) for name in Usage.model_fields})
 
 
+class QuotaWindow(M):
+    """One usage window of a plan (GAP-providers): `key` as the provider names it (five_hour, seven_day, "120_min"), `label` in words
+    ("5-hour", "Weekly"), `used` a fraction (0.62 = 62 %; None when the provider sent no figure, never 0), `resets_at` epoch seconds."""
+
+    key: str = Field(pattern=r"^[a-z0-9_]{1,40}$")
+    label: str = Field(min_length=1, max_length=60)
+    used: Optional[float] = Field(None, ge=0, allow_inf_nan=False)
+    resets_at: Optional[float] = Field(None, ge=0, allow_inf_nan=False)
+
+
 class Quota(M):
+    """The last quota snapshot of a provider. `window`, `used` and `resets_at` describe the window that meters the call now (the one
+    the router blocks on); `windows` is every window the plan has (`quota_windows.py`). `seen_at` is when the book got it (epoch s)."""
+
     status: Literal["ok", "warning", "exhausted", "unknown"] = "unknown"
     window: Optional[str] = None
     used: Optional[float] = None
     resets_at: Optional[float] = None
     plan: Optional[str] = None
     source: Literal["rate_limit_event", "rollout", "error", "none"] = "none"
+    windows: list[QuotaWindow] = []
+    seen_at: Optional[float] = None
 
 
 class Message(M):
@@ -216,7 +231,8 @@ class ConnectorEvent(M):
 
 
 class ConnectorConfig(M):
-    """Paths and executables; tests point these at the fakes."""
+    """Paths and executables; tests point these at the fakes. The running app's comes from `discover.connector_config` (the CLIs where
+    installers put them, the owner's chosen file, and `claude_desktop`: Claude Desktop is installed, which ships no `claude` command)."""
 
     data_dir: Path
     work_root: Optional[Path] = None
@@ -225,6 +241,7 @@ class ConnectorConfig(M):
     gh_exe: str = "gh"
     python: str = sys.executable
     extra_env: dict[str, str] = {}
+    claude_desktop: bool = False
 
     @field_validator("extra_env")
     @classmethod

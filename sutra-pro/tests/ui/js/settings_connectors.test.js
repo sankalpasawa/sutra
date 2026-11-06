@@ -75,6 +75,51 @@ test("any other state is shown in words, and an extra provider comes after the t
   assert.match(row(html, "zeta"), /<b>zeta<\/b>/);
 });
 
+test("a provider out of quota, cooling down or paused is never shown as Ready (the server's health object)", () => {
+  const cases = [["quota", "Out of quota"], ["cooldown", "Cooling down"], ["breaker", "Paused after errors"]];
+  for (const [state, word] of cases) {
+    const health = clone(HEALTH);
+    health.connectors.claude.health = {state, until: 1793748600, reason: "usage limit reached"};
+    const html = row(connectorsHtml(health, {}), "claude");
+    assert.match(html, new RegExp(`<span class="setchip st-${state}">${word}</span>`), state);
+    assert.equal(html.includes(">Ready<"), false, state);
+  }
+});
+
+// a clock that does not depend on the machine's zone: UTC fields (plan_meter.js `when`)
+const utc = ms => { const d = new Date(ms); return {day: d.getUTCDay(), date: d.getUTCDate(), month: d.getUTCMonth(), hh: d.getUTCHours(), mm: d.getUTCMinutes()}; };
+
+test("a signed-in row names the plan and how it is billed, and draws a meter per usage window (GAP-providers)", () => {
+  const nowMs = Date.UTC(2026, 10, 6, 12, 0, 0);
+  const claude = row(connectorsHtml(HEALTH, {nowMs, when: utc}), "claude");
+  assert.match(claude, /<\/div><p class="setplan">Claude Max, counted against your plan, not billed per call<\/p>/);   // one plain line under the bars
+  assert.ok(claude.indexOf('class="pmeter"') < claude.indexOf('class="setplan"'));
+  assert.match(claude, /data-key="five_hour" data-sev="ok"><span class="pml">5-hour<\/span><span class="pmp">62%<\/span>/);
+  assert.match(claude, /data-key="seven_day" data-sev="warn"><span class="pml">Weekly<\/span><span class="pmp">81%<\/span>/);
+  assert.match(claude, /<p class="pmasof">as of /);
+  const codex = row(connectorsHtml(HEALTH, {nowMs, when: utc}), "codex");
+  assert.equal(codex.includes("pmeter"), false);                                         // no quota signal: no meter, never an empty bar
+  assert.equal(codex.includes("setplan"), false);
+});
+
+test("a window whose reset passed reads reset, and a blocked provider says until when", () => {
+  const health = clone(HEALTH);
+  const nowMs = health.connectors.claude.quota.windows[0].resets_at * 1000 + 60000;
+  health.connectors.claude.health = {state: "quota", until: nowMs / 1000 + 3600, reason: "usage limit reached"};
+  const html = row(connectorsHtml(health, {nowMs, when: utc}), "claude");
+  assert.match(html, /data-key="five_hour" data-sev="reset"><span class="pml">5-hour<\/span><span class="pmp">reset<\/span>/);
+  assert.equal(/5-hour<\/span><span class="pmp">62%/.test(html), false);
+  assert.match(html, /usage limit reached, until \d\d:\d\d/);
+  assert.match(html, /st-quota">Out of quota</);
+});
+
+test("a provider that is not installed has no plan line and no meter", () => {
+  const health = clone(HEALTH);
+  health.connectors.claude.installed = false;
+  const html = row(connectorsHtml(health, {}), "claude");
+  assert.equal(html.includes("pmeter") || html.includes("setplan"), false);
+});
+
 test("both rows have Test and only the Codex row has Sign in", () => {
   const html = connectorsHtml(HEALTH, {});
   assert.match(row(html, "claude"), /data-act="test" data-provider="claude"/);
@@ -103,6 +148,66 @@ test("words from the server are written as text, never as markup", () => {
   assert.equal(html.includes("<img"), false);
   assert.equal(html.includes("<b>no</b>"), false);
   assert.match(html, /&lt;b&gt;no&lt;\/b&gt;/);
+});
+
+/* ---------------------------------------------------------------- the CLI file (GAP-providers) */
+const {setCliPath} = SettingsView;
+
+test("a CLI that was not found gets an open Choose the file box; a found one has it folded", () => {
+  const health = clone(HEALTH);
+  health.connectors.codex.installed = false;
+  const html = connectorsHtml(health, {});
+  const codex = row(html, "codex");
+  assert.match(codex, /<div class="setpath" data-provider="codex"><label class="setlabel" for="setpath-codex">Choose the file<\/label><input type="text" id="setpath-codex" data-path="codex"/);
+  assert.match(codex, /data-act="set-path" data-provider="codex">Use this file<\/button>/);
+  assert.match(codex, /<code>which codex<\/code>/);
+  assert.equal(codex.includes("<details"), false);
+  assert.equal(codex.includes('data-act="clear-path"'), false);
+  const claude = row(html, "claude");
+  assert.match(claude, /<details class="setpathd" data-key="path-claude"><summary>Use another file<\/summary><div class="setpath" data-provider="claude">/);
+  assert.match(claude, /data-act="clear-path" data-provider="claude">Find it again<\/button>/);
+  const extra = clone(HEALTH);
+  extra.connectors.zeta = {installed: false, health: {state: "ok"}};
+  assert.equal(row(connectorsHtml(extra, {}), "zeta").includes("setpath"), false);           // only claude and codex have a file to choose
+});
+
+test("the box keeps what was typed, disables itself while saving and shows the server's reason, escaped", () => {
+  const health = clone(HEALTH);
+  health.connectors.claude.installed = false;
+  const typed = row(connectorsHtml(health, {path: {claude: {step: "idle", value: '/opt/x/"claude"'}}}), "claude");
+  assert.match(typed, /value="\/opt\/x\/&quot;claude&quot;"/);
+  const saving = row(connectorsHtml(health, {path: {claude: {step: "saving", value: "/x/claude"}}}), "claude");
+  assert.match(saving, /data-act="set-path" data-provider="claude" disabled>/);
+  const refused = row(connectorsHtml(health, {path: {claude: {step: "error", value: "/x/rm", message: "Choose the file named claude: <rm> is not the Claude command"}}}), "claude");
+  assert.match(refused, /<span class="seterr" role="alert">Choose the file named claude: &lt;rm&gt; is not the Claude command<\/span>/);
+  const folded = row(connectorsHtml(HEALTH, {path: {claude: {step: "error", message: "no"}}}), "claude");
+  assert.match(folded, /<details class="setpathd" data-key="path-claude" open>/);                 // a refusal is never hidden in a fold
+});
+
+test("Claude Desktop without Claude Code is said in the row, not as a PATH problem", () => {
+  const health = clone(HEALTH);
+  Object.assign(health.connectors.claude, {installed: false, signed_in: null,
+    detail: "Claude Desktop is installed, but Sutra needs Claude Code, a separate command-line tool: install Claude Code (claude.com/claude-code), or choose its file in Settings, Connectors"});
+  const html = row(connectorsHtml(health, {}), "claude");
+  assert.match(html, /st-missing">Not installed</);
+  assert.match(html, /Claude Desktop is installed, but Sutra needs Claude Code/);
+  assert.match(html, /Choose the file/);
+});
+
+test("setCliPath sends the path, or null to forget it, and says what happened", async () => {
+  const api = fakeApi({"PUT /api/connectors/claude/path": body => ({provider: "claude", path: body.path, installed: body.path !== null, signed_in: true, detail: "signed in"})});
+  const used = await setCliPath(api, "claude", "  ~/.volta/bin/claude ");
+  assert.deepEqual(api.calls[0], {method: "PUT", path: "/api/connectors/claude/path", body: {path: "~/.volta/bin/claude"}});
+  assert.equal(used.ok, true);
+  assert.equal(used.found, true);
+  assert.equal(used.message, "Using that file.");
+  const forgot = await setCliPath(api, "claude", "");
+  assert.deepEqual(api.calls[1].body, {path: null});
+  assert.equal(forgot.message, "The choice is forgotten; Claude is still not found.");
+  const refused = await setCliPath(fakeApi({"PUT /api/connectors/codex/path": new ApiError("There is no file at /nope/codex", "invalid_request", 422)}), "codex", "/nope/codex");
+  assert.deepEqual([refused.ok, refused.message], [false, "There is no file at /nope/codex"]);
+  const odd = await setCliPath(fakeApi({"PUT /api/connectors/a%2Fb/path": {installed: false}}), "a/b", "/x");
+  assert.equal(odd.answer.installed, false);                                                    // the provider is a path segment, encoded
 });
 
 /* ---------------------------------------------------------------- Test */

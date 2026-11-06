@@ -32,7 +32,7 @@ __all__ = [
     "CrashedError", "ProtocolError", "ProviderError", "ModelNotFoundError", "SessionLostError", "EmptyReplyError",
     "StructuredError", "InvalidJsonError", "ReplyTruncatedError", "InvalidRequestError", "EnvelopeExceededError",
     "CallCancelledError", "PolicyInvalidError", "ERROR_CLASSES", "error_for_code", "KINDS",
-    "MAX_DETAIL_STRING", "MAX_DETAIL_ITEMS",
+    "MAX_DETAIL_STRING", "MAX_DETAIL_ITEMS", "DESKTOP_ONLY",
 ]
 
 KINDS = ("unavailable", "auth", "quota", "timeout", "bad_output")
@@ -41,6 +41,10 @@ MAX_DETAIL_ITEMS = 50         # one list in `detail` is cut here by as_dict
 MAX_PARSE_MESSAGE = 500       # invalid_json shows "the first 500 characters" of pydantic or parse errors
 _NAMES = {"claude": "Claude", "codex": "Codex", "stub": "Stub"}
 _SECRET = re.compile(r"KEY|TOKEN|SECRET|PASSWORD", re.I)
+# The sentence for a Mac that has Claude Desktop but not Claude Code (GAP-providers, discover.py): Desktop ships no `claude` command, so
+# "not found on PATH" would send the owner after a PATH problem that does not exist. It never says "PATH".
+DESKTOP_ONLY = ("Claude Desktop is installed, but Sutra needs Claude Code, a separate command-line tool: install Claude Code "
+                "(claude.com/claude-code), or choose its file in Settings, Connectors")
 # keys a caller must not put into `detail`: the request text, and anything that carries a credential
 _FORBIDDEN_DETAIL_KEYS = frozenset({"prompt", "system", "user", "stdin", "stdin_text", "env", "environ", "argv_prompt", "messages"})
 
@@ -124,6 +128,8 @@ class CliMissingError(ConnectorError, CliMissing):
     def user_message(self, *, tz: Optional[tzinfo] = None) -> str:
         if self.provider == "codex":
             return "Codex CLI not found on PATH: install it and run `codex login`"
+        if self.provider == "claude" and self.detail.get("desktop"):
+            return DESKTOP_ONLY
         if self.provider == "claude":
             return "Claude CLI not found on PATH: install it and run `claude` once"
         return f"{self._cli()} not found on PATH: install it first"

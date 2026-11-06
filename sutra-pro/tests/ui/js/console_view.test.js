@@ -151,6 +151,20 @@ test("the connector rows give health, quota and today's use, and the next reset 
   assert.match(CV.connectorsHtml(STATUS, NOW + 3 * 3600 * 1000, fmt), /No quota reset is pending\./);
 });
 
+test("a snapshot with every window of the plan gets a meter per window and the plan with its account (GAP-providers)", () => {
+  const utc = ms => { const d = new Date(ms); return {day: d.getUTCDay(), date: d.getUTCDate(), month: d.getUTCMonth(), hh: d.getUTCHours(), mm: d.getUTCMinutes()}; };
+  const status = {providers: [{name: "claude", installed: true, signed_in: true, billing: "subscription", plan: "max", plan_label: "Claude Max", account: "you@example.com",
+    health: {state: "ok"}, today: {calls: 1, tokens: 10},
+    quota: {status: "warning", window: "five_hour", used: 0.62, resets_at: NOW / 1000 + 4200, seen_at: NOW / 1000 - 60,
+      windows: [{key: "five_hour", label: "5-hour", used: 0.62, resets_at: NOW / 1000 + 4200}, {key: "seven_day", label: "Weekly", used: 0.96, resets_at: NOW / 1000 + 86400 * 3}]}}]};
+  const html = CV.connectorsHtml(status, NOW, fmt, utc);
+  assert.match(html, /<span class="cnote">Quota running low<\/span>/);                    // the meters carry the windows; the line keeps the state
+  assert.match(html, /<\/p><\/div><p class="pmplan">Claude Max, you@example\.com, counted against your plan, not billed per call<\/p><\/div>/);   // under the bars
+  assert.match(html, /data-key="five_hour" data-sev="ok">.*62%.*resets in 1 h 10 min/);
+  assert.match(html, /data-key="seven_day" data-sev="bad">.*96%/);
+  assert.match(html, /as of 11:59/);
+});
+
 test("a connector that is missing, has no quota signal or an unknown state still gets a row", () => {
   const html = CV.connectorsHtml({providers: [{name: "codex", installed: false, health: {state: "ok"}}, {name: "claude", installed: true, health: {state: "weird<"}, quota: null}]}, NOW, fmt);
   assert.match(html, /<span class="cchip st-ok">Not installed<\/span>/);

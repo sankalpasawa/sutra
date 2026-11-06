@@ -47,8 +47,10 @@ from .models import (
     SessionSpec, SessionState, TurnResult,
 )
 from .policy import Resolved, RoutingPolicy
+from .quota_windows import plan_label
 from .schema import fits_native, schema_sha, to_json_schema
 from .budget import carry_chars
+from .discover import explain_missing
 from .transcript import render_carry_over
 from .usage import Attempt, UsageIn, UsageSink, build_usage_row, load_session_state, new_request_id, save_session_state
 
@@ -134,6 +136,7 @@ class ProviderStatus(M):
     method: Optional[str] = None
     billing: str = "unknown"
     plan: Optional[str] = None
+    plan_label: Optional[str] = None          # the plan in words ("Claude Max", "ChatGPT Plus"; quota_windows.plan_label)
     account: Optional[str] = None
     detail: str = ""
     health: HealthState
@@ -456,7 +459,7 @@ class Router:
             if not self.health.installed(provider, lambda: shutil.which(exe) is not None):          # type: ignore[arg-type]
                 if provider == "codex":
                     return "CLI not found on PATH (install it and run `codex login`)"
-                return f"CLI not found on PATH (install it and run `{provider}` once)"
+                return explain_missing(provider, self._desktop(connector), f"CLI not found on PATH (install it and run `{provider}` once)")
             try:
                 status = self.health.auth(provider, connector.auth_status)                         # type: ignore[arg-type]
             except ConnectorError as e:
@@ -474,6 +477,11 @@ class Router:
     @staticmethod
     def _exe(connector: ModelConnector) -> str:
         return str(getattr(connector.cfg, f"{connector.name}_exe", connector.name))
+
+    @staticmethod
+    def _desktop(connector: ModelConnector) -> bool:
+        """Claude Desktop is installed on this Mac (discover.py): a missing `claude` is then named as Claude Code, not as a PATH problem."""
+        return bool(getattr(connector.cfg, "claude_desktop", False))
 
     # ---- attempts ----------------------------------------------------------------------------------------------------------
     def _may_fall_back(self, err: ConnectorError, resolved: Resolved) -> bool:
@@ -911,7 +919,7 @@ class Router:
                 except ConnectorError as e:
                     detail = e.user_message()
             else:
-                detail = "CLI not found on PATH"
+                detail = explain_missing(name, self._desktop(connector), "CLI not found on PATH")
             health = self.health.state(name)         # type: ignore[arg-type]
         listed: list[ModelBrief] = []
         if models and installed and (auth is None or auth.signed_in is not False):
@@ -923,9 +931,10 @@ class Router:
             counts = self._today.get(name)
         today_key = datetime.fromtimestamp(self._clock()).strftime("%Y-%m-%d")
         today = TodayCounts(calls=counts[1], tokens=counts[2], usd=round(counts[3], 9)) if counts and counts[0] == today_key else TodayCounts()
+        plan = (auth.plan if auth else None) or (quota.plan if quota is not None else None)    # Codex names its plan only in a quota
         return ProviderStatus(
             name=name, installed=installed, version=auth.version if auth else None, signed_in=auth.signed_in if auth else (True if name == "stub" else None),
-            method=auth.method if auth else None, billing=auth.billing if auth else "unknown", plan=auth.plan if auth else None,
+            method=auth.method if auth else None, billing=auth.billing if auth else "unknown", plan=plan, plan_label=plan_label(name, plan),
             account=auth.account if auth else None, detail=(auth.detail if auth else detail), health=health, quota=quota, models=listed,
             today=today)
 

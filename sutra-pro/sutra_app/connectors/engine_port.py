@@ -9,9 +9,11 @@ otherwise it calls `make_port(PortSpec(mock=False, ...), usage_sink=EventUsageSi
 
 No `from __future__ import annotations` here on purpose: `inspect.signature(make_port)` shows real types.
 
-`port_from_config` is `make_port` with the `ConnectorConfig` supplied by the caller (tests point the executables at the fakes;
-`make_port` itself uses the defaults, so the CLIs are found on PATH). `build_connectors` is the one place that turns a policy into
-connector objects; the factory (CN-9) can use it as well.
+`port_from_config` is `make_port` with the `ConnectorConfig` supplied by the caller (tests point the executables at the fakes).
+A live `make_port` finds the CLIs as the app's own router does (`discover.connector_config`: the file the owner chose in Settings, PATH,
+then the folders installers use; GAP-providers), so a department run uses the same file the Settings row and the chat use; a stub-only
+port keeps the defaults. `build_connectors` is the one place that turns a policy into connector objects; the factory (CN-9) can use it as
+well.
 """
 from pathlib import Path
 from typing import Callable, Optional
@@ -23,6 +25,7 @@ from sutra_app.engine.port import (
 from .base import ModelConnector
 from .claude import ClaudeConnector
 from .codex import CodexConnector
+from .discover import connector_config
 from .errors import ConnectorError, NoProviderError
 from .models import AskRequest, ConnectorConfig, RouteContext
 from .policy import PolicyLoad, RoutingPolicy, load_policy
@@ -47,8 +50,12 @@ def build_connectors(cfg: ConnectorConfig, policy: RoutingPolicy, *, only: Optio
 def make_port(spec: PortSpec, *, usage_sink: UsageSink | None = None) -> ModelPort:
     """A router over the connectors that the policy and `spec.connector` allow, as the engine's `ModelPort`. `spec.mock` or
     `spec.connector == "stub"` gives a stub-only router (no process is ever started). The routing policy is read from
-    `<spec.data_dir>/connectors/policy.json` when it validates, else the packaged default."""
-    return port_from_config(spec, ConnectorConfig(data_dir=Path(spec.data_dir)), usage_sink=usage_sink)
+    `<spec.data_dir>/connectors/policy.json` when it validates, else the packaged default. A live port finds the CLIs as the app does
+    (`discover.connector_config`), so the engine host runs the file the owner chose, or the one an installer put outside PATH."""
+    data_dir = Path(spec.data_dir)
+    stub_only = spec.mock or spec.connector == "stub"
+    cfg = ConnectorConfig(data_dir=data_dir) if stub_only else connector_config(data_dir)
+    return port_from_config(spec, cfg, usage_sink=usage_sink)
 
 
 def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageSink | None = None,

@@ -35,6 +35,7 @@ from .errors import (
 )
 from .models import AuthStatus, Capabilities, ConnectorEvent, ModelInfo, Quota, SessionState, TurnResult, Usage
 from .process import Command, ExitInfo
+from .quota_windows import windows_from_claude
 
 __all__ = ["ClaudeConnector", "ClaudeParser", "CLAUDE_ERROR_MAP", "SYSTEM_FILE_THRESHOLD", "PROBED_FLAGS", "MODEL_ENV_NAMES"]
 
@@ -91,7 +92,7 @@ def _quota_of(info: Mapping[str, Any]) -> Quota:
     return Quota(status=status, window=window,
                  used=float(used) if isinstance(used, (int, float)) and not isinstance(used, bool) else None,
                  resets_at=float(resets) if isinstance(resets, (int, float)) and not isinstance(resets, bool) else None,
-                 source="rate_limit_event")
+                 source="rate_limit_event", windows=windows_from_claude(info))
 
 
 class ClaudeParser(LineParser):
