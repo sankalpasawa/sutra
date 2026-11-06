@@ -174,6 +174,31 @@ body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #
 .cstream small{color:var(--muted)}
 .cstream-text{white-space:normal;overflow-wrap:anywhere}
 
+/* a model's direct reply drawn as markdown (GAP-markdown, chat_markdown.js), in its bubble and in the streaming row: J2's tokens only. The bubble
+   keeps J2's pre-wrap for every other line; the reply resets it, its code box and its table scroll inside the bubble, never the page. */
+.cmd{white-space:normal;min-width:0;max-width:100%;overflow-wrap:anywhere}
+.cmd>:first-child{margin-top:0}
+.cmd>:last-child{margin-bottom:0}
+.cmd .cmd-p{margin:0 0 8px}
+.cmd .cmd-h{margin:12px 0 4px;font:700 14.5px/1.35 var(--display);color:var(--ink)}
+.cmd h3.cmd-h{font-size:17px}
+.cmd h4.cmd-h{font-size:15.5px}
+.cmd .cmd-l{margin:4px 0 8px;padding-left:22px}
+.cmd .cmd-l .cmd-l{margin:2px 0}
+.cmd li{margin:2px 0}
+.cmd code{font:12.5px var(--mono);background:var(--panel2);border-radius:4px;padding:0 4px}
+.cmd .cmd-pre{margin:6px 0 10px;padding:8px 10px;max-height:420px;overflow:auto;white-space:pre;overflow-wrap:normal;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;font:12.5px/1.45 var(--mono)}
+.cmd .cmd-pre code{background:none;padding:0;border-radius:0;font:inherit}
+.cmd .cmd-tw{max-width:100%;overflow-x:auto;margin:6px 0 10px}
+.cmd .cmd-t{border-collapse:collapse;font-size:13px;width:max-content;max-width:48em}
+.cmd .cmd-t th,.cmd .cmd-t td{border:1px solid var(--line);padding:3px 8px;text-align:left;vertical-align:top;overflow-wrap:normal}
+.cmd .cmd-t th{background:var(--panel2);color:var(--ink);font-weight:600}
+.cmd .cmd-t .cmd-ac{text-align:center}
+.cmd .cmd-t .cmd-ar{text-align:right}
+.cmd .cmd-q{margin:6px 0 8px;padding:2px 0 2px 10px;border-left:3px solid var(--accent);color:var(--muted)}
+.cmd .cmd-hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+.cmd del{color:var(--muted)}
+
 /* the fold, search and archive of a chat (ABS-10): J2's tokens only */
 .nsearch{flex:0 0 auto;padding:4px 0}
 .nsearch[hidden],.nsres[hidden],.nactions[hidden]{display:none}
