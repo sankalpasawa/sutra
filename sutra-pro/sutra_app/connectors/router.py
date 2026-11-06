@@ -317,6 +317,7 @@ class Router:
         self._chat_busy: set[str] = set()
         self._chat_active: dict[str, tuple[ModelConnector, SessionState]] = {}
         self._pins: dict[str, str] = {}
+        self.egress: Optional[Any] = None                      # an `egress.Egress`, set by the factory (ABS-2); None = no scrub, no row
         self._today: dict[str, list] = {}                      # provider -> [date, calls, tokens, usd]
         self._background: list[threading.Thread] = []
 
@@ -521,6 +522,8 @@ class Router:
             self._check_images(req.images)
             plan = self._plan(resolved, req)
             state.default_provider = plan.order[0]
+            if self.egress is not None:                      # J2's prompts are not ours to edit: observe only, byte-identical
+                self.egress.check(req.user, system=req.system, session=req.ctx.session_id, provider=plan.order[0], replace=False)
             turn = self._consume(self._drive(state, plan, make))
             ok = True
             if state.note and on_progress is not None:
@@ -593,6 +596,10 @@ class Router:
             self._check_images(req.images)
             plan = self._plan(resolved, req)
             state.default_provider = plan.order[0]
+            if self.egress is not None:
+                req = req.model_copy(update={
+                    "user": self.egress.check(req.user, session=req.ctx.session_id, provider=plan.order[0], replace=True),
+                    "system": self.egress.check(req.system, session=req.ctx.session_id, provider=plan.order[0], replace=True) if req.system else ""})
             result = self._consume(self._drive(state, plan, make))
             ok = True
             if state.note and on_progress is not None:
@@ -789,6 +796,8 @@ class Router:
             if session is None:
                 session, text, replaces = self._new_session(state, plan, provider, connector, old, m)
             previous_id = None if (old is None or lost or old.provider != provider) else old.provider_session_id
+            if self.egress is not None:
+                text = self.egress.check(text, session=sid, provider=provider, replace=True)
             with self._lock:
                 self._chat_active[sid] = (connector, session)
             turn: Optional[TurnResult] = None

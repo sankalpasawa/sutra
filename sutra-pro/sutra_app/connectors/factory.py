@@ -29,6 +29,7 @@ from typing import Any, Callable, Optional
 
 from .base import ModelConnector
 from .engine_port import build_connectors
+from .egress import Egress
 from .errors import ConnectorError, FlagUnsupportedError
 from .models import ConnectorConfig, Provider
 from .policy import load_policy
@@ -76,6 +77,7 @@ def build_router(settings: Any, *, usage_sink: Any = None, events: Optional[Call
     router = Router(connectors, load.policy, usage_sink=usage_sink, transcripts=transcripts, events=events, session_hook=session_hook,
                     connector=mode, offline=offline, policy_source=load.source, policy_error=load.error, **router_kw)
     if not stub_only:
+        router.egress = Egress(data_dir / "connectors" / "egress.jsonl")
         for name, connector in connectors.items():
             _probe_flags(router, name, connector, events)
             _check_version(name, connector)
