@@ -60,7 +60,9 @@ def test_the_chat_improvements_end_to_end(tmp_path, cli):
         assert "Earlier messages of this conversation, carried over because the provider changed" in prompt
         assert SECRET not in prompt and "[redacted:openai-key]" in prompt and "and what is my plan?" in prompt
         egress = [json.loads(x) for x in (live.settings.data_dir / "connectors" / "egress.jsonl").read_text().splitlines()]
-        assert any(r["session"] == web and r["mode"] == "replace" and r["shapes"].get("openai-key") for r in egress)
+        assert any(r["session"] == web and r["mode"] == "replace" for r in egress)
+        # the credential was scrubbed before the line was stored (so it is never in the chat store or a carry-over)
+        assert SECRET not in json.dumps(live.get(f"/api/chats/{web}/messages")) and "[redacted:openai-key]" in messages[0]["text"]
         assert SECRET not in json.dumps(egress)
 
         # a second chat is still on Claude; the global default was never touched
