@@ -167,7 +167,7 @@ def test_home_reads_what_the_design_says_on_load_and_nothing_else(browser, fake)
     load(browser, fake)
     paths = sorted({(r["path"], tuple(sorted(r["query"].split("&"))) if r["query"] else ()) for r in fake.log("/api/") if r["method"] == "GET"})
     wanted = {"/api/chats/cs_org", "/api/chats/cs_org/messages", "/api/chart", "/api/chart/changes", "/api/graph", "/api/departments", "/api/needs-you",
-              "/api/health"}
+              "/api/health", "/api/heads-up"}
     assert {p for p, _ in paths if p != "/api/events"} == wanted
     graph = [r for r in fake.log("/api/graph") if r["path"] == "/api/graph"][0]
     assert "level=chart" in graph["query"]

@@ -15,6 +15,9 @@
                           fetches again only when the live stream is not up (events keep it current otherwise).
      DeptExt.events()     one SutraEvents stream (topics graph, chart, chat), opened by the first view, closed by destroy(); a graph.updated
                           that touches no node of this team is ignored while the graph shows this team only.
+     (init also adds heads_up_view.js, chat_attention.js and attention_pill.js, in that order: the org-wide "N need you" pill, the count in the
+                          tab title and the desktop notice of gap package attention; the pill reads, it opens no second stream. The J2 page is
+                          not edited for it.)
      DeptExt.drawers()    mounts #nodepanel once. The panel and J2's Agent drawer exclude each other in both directions (the panel closes the Agent
                           drawer when it opens and closes itself when the Agent drawer opens: node_panel.js); mounting it is what makes that true.
      DeptExt.state()      {started, tab, live, mounted: {graph, orgchart}, fetches: {graph, chart}, panel}
@@ -147,6 +150,21 @@
       S.panel = safely("NodePanel.mount", () => root.NodePanel.mount(root_, {getGraph: () => S.lastGraph}));
     }
     return S.panel;
+  }
+
+  /* ---- the org-wide "N need you" pill, the tab title count and the desktop notice (gap package attention; attention_pill.js starts itself) */
+  function attention() {
+    const d = doc();
+    if (!d || !d.head) return false;
+    for (const name of ["heads_up_view", "chat_attention", "attention_pill"]) {
+      if (d.getElementById(name + "-js")) continue;
+      const tag = d.createElement("script");
+      tag.id = name + "-js";
+      tag.src = "/ui/js/" + name + ".js";
+      tag.async = false;                         // run in this order: the pill reads the two others when it starts
+      d.head.appendChild(tag);
+    }
+    return true;
   }
 
   function openNode(node) {
@@ -308,6 +326,7 @@
     chip();
     title();
     drawers();
+    attention();
     const d = doc();
     if (d && typeof d.addEventListener === "function") {
       d.addEventListener("sutra:tab", e => onTab(isObj(e && e.detail) ? e.detail.name : ""));

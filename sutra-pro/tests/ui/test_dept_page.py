@@ -215,7 +215,7 @@ def test_the_page_boots_clean_with_the_chip_the_title_and_both_new_tabs(team):
     team.open()
     team.settle(0.4)
     assert team.b.text("#deptchip") == "Web"
-    assert team.js("document.title") == "Web · Sutra"
+    assert team.js("document.title") in ("Web · Sutra", "(1) Web · Sutra")      # gap attention: the org-wide count rides in front once read
     assert team.js("document.getElementById('to-home').getAttribute('href')") == "/"
     assert team.b.count('.tabs [data-tab="graph"]') == 1 and team.b.count('.tabs [data-tab="orgchart"]') == 1
     assert team.js("document.body.classList.contains('archived')") is False

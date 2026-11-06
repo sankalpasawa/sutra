@@ -3,7 +3,8 @@
     fallback_plan(text, chart)        T5: when a stage fails three times (or the call cap is reached): the one department whose name and
                                       purpose share at least 2 words with the request and more than any other, else a list of candidates
     candidates(chart, text, ids=)     up to 3 teams to offer in a `choice` card (the named ids first, then the best word overlap)
-    status_report(chart, tasks)       the answer to a question about progress, built from the chart and the tasks
+    status_report(chart, tasks)       the answer to a question about progress, built from the chart and the tasks (with `now`, how long a
+                                      team has waited for the owner: gap package attention)
     LINES / line(key, **kw)           every Sutra sentence of the org chat; no model sentence is ever shown
     matches_template(text)            True when `text` is made only of those sentences (what the no-prose test asks)
 
@@ -17,6 +18,7 @@ from dataclasses import dataclass, field
 
 from sutra_app.library.org_chart import OrgChart, OrgNode
 from sutra_app.orchestrator.textutil import tokens
+from sutra_app.orchestrator.waiting import age_words
 
 __all__ = [
     "LINES", "STATUS_HEADER", "NO_TEAMS", "NONE_OF_THESE", "Candidate", "Fallback", "TaskLine", "line", "names_phrase",
@@ -121,6 +123,7 @@ class TaskLine:
     dept_id: str
     title: str
     status: str
+    since: int | None = None          # for a team waiting for the owner, when it asked (epoch seconds of its open question)
 
 
 def _score(node: OrgNode, wanted: frozenset[str]) -> int:
@@ -164,9 +167,10 @@ _LAST = {"done": "last finished {t}", "done_with_open_items": "finished {t} with
          "crashed": "{t} ran into trouble", "cancelled": "{t} was cancelled"}
 
 
-def status_report(chart: OrgChart, tasks: Sequence[TaskLine]) -> str:
+def status_report(chart: OrgChart, tasks: Sequence[TaskLine], *, now: int | None = None) -> str:
     """The answer to 'where are things': one line per department, built from the chart and the tasks (oldest first). A team's
-    line says what it is doing, else what it last finished, else that it has nothing yet."""
+    line says what it is doing, else what it last finished, else that it has nothing yet. With `now`, a team waiting for the owner
+    also says for how long ('waiting for you on "Menu" for 2 days'), from the time it asked."""
     departments = [n for n in chart.nodes if n.kind == "department"]
     if not departments:
         return NO_TEAMS
@@ -177,6 +181,8 @@ def status_report(chart: OrgChart, tasks: Sequence[TaskLine]) -> str:
         if live:
             current = next((t for t in live if t.status in ("starting", "running", "waiting_user")), live[0])
             text = _LIVE[current.status].format(t=f'"{current.title}"')
+            if current.status == "waiting_user" and now is not None and current.since is not None and now - current.since >= 60:
+                text += f" for {age_words(now - current.since)}"
         elif mine:
             text = _LAST.get(mine[-1].status, "last task {t}").format(t=f'"{mine[-1].title}"')
         else:

@@ -27,6 +27,17 @@ body.nodeopen #pane-map .mappanel{display:none}
 .npbody{flex:1 1 auto;min-height:0;overflow:auto;padding:12px 0 14px}
 .nempty{margin:8px 0}
 
+/* ---- gap attention: the org-wide "N need you" pill in a corner of a team page and the console (attention_pill.js; Home has its strip). Below the
+   drawer (z-index 60); on a phone it sits under the header, clear of the message box and its Send button. The pulse is for a count that went up. */
+.apillhost{position:fixed;right:16px;bottom:16px;z-index:50}
+.apillhost[hidden]{display:none}
+.apill{display:inline-flex;align-items:baseline;gap:6px;padding:6px 14px;border:1px solid var(--accent);border-radius:99px;background:var(--panel);color:var(--ink);font-size:13.5px;font-weight:600;text-decoration:none}
+.apill small{color:var(--muted);font-weight:400}
+.apill:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:900px){.apillhost{bottom:auto;top:58px;right:12px}}
+@media (prefers-reduced-motion:no-preference){.apill.fresh{animation:apillpulse 1.2s ease-out 2}}
+@keyframes apillpulse{0%{outline:3px solid var(--accent);outline-offset:0}100%{outline:3px solid transparent;outline-offset:8px}}
+
 /* ---- the Chat tab */
 .nchat{display:flex;flex-direction:column;height:100%;min-height:0}
 .nlens{flex:0 0 auto;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;background:var(--panel2);padding:8px 12px;margin:0 0 10px;font-size:13.5px}

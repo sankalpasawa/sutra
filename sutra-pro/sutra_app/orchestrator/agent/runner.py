@@ -541,8 +541,15 @@ class TurnRunner:
 
     def _status_text(self) -> str:
         chart = self.chart.head().model
-        rows = self.db.conn().execute("SELECT dept_id, title, status FROM tasks ORDER BY created_at, rowid").fetchall()
-        return planner.status_report(chart, [TaskLine(r["dept_id"], r["title"], r["status"]) for r in rows])
+        # How long a team has waited for the owner (gap attention) is timed from its open question, not from `last_event_at`: a waiting
+        # team's engine lives on and its heartbeat moves `last_event_at` every few seconds.
+        rows = self.db.conn().execute(
+            "SELECT t.dept_id, t.title, t.status, CASE WHEN t.status = 'waiting_user' THEN (SELECT min(m.at) FROM chat_messages m"
+            " WHERE m.task_id = t.id AND m.kind = 'question' AND m.answered_by IS NULL) END AS asked_at FROM tasks t"
+            " ORDER BY t.created_at, t.rowid").fetchall()
+        clock = getattr(self.tasks, "clock", None)
+        return planner.status_report(chart, [TaskLine(r["dept_id"], r["title"], r["status"], r["asked_at"]) for r in rows],
+                                     now=clock.now() if clock is not None else None)
 
     # ---- the words of the org chat -------------------------------------------------------------------------------------
 

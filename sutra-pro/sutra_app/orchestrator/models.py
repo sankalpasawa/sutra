@@ -486,6 +486,8 @@ class NeedsYouOut(Value):
     text: Body
     options: Annotated[list[Annotated[str, StringConstraints(max_length=500)]], Field(max_length=20)] = []
     asked_at: Iso
+    waiting_s: Count | None = None          # how long it has waited, by the server's clock at the read (gap attention)
+    stale: bool = False                     # waited past waiting.ASK_STALE_S (24 h)
 
 
 class NodeDetail(Value):
