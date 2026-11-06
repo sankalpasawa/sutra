@@ -1,0 +1,102 @@
+// Realization axis married to certainty (v2): how Adaptation turns Identity's goal into workflows.
+// Framework: docs/realization-axis.md. Agent instructions: agents/j2/realization.md, agents/j2/certainty.md,
+// agents/j2/confidence-judge.md. Reply shape: docs/realization-schema.json.
+// Render: dot -Tsvg docs/realization-axis.dot -o docs/realization-axis.svg
+digraph realization_axis {
+  graph [rankdir=TB, fontname="Helvetica", nodesep=0.35, ranksep=0.45, newrank=true,
+         label="Realization × Certainty: goal → stages → workflows (one zone each) → judge → confidence gate",
+         labelloc=t, fontsize=16];
+  node  [shape=box, style="rounded,filled", fillcolor="#ffffff", color="#555555", fontname="Helvetica", fontsize=11];
+  edge  [color="#555555", fontname="Helvetica", fontsize=9];
+
+  identity [label="Identity\ngoal · constraints · done-when items\n(worldview, vision)", fillcolor="#e8eefc"];
+
+  subgraph cluster_realization {
+    label="Realization axis: where to cut (kind of thinking)"; style="rounded"; color="#3b6fd4"; fontcolor="#3b6fd4";
+    factors  [label="1. Factors\nbrief (non-negotiable, quoted) · general · research (cited) · budget"];
+    place    [label="2. Place each factor in the stage\nwhose kind of thinking owns it"];
+    unplaced [label="unplaced factors\n(missing perspective)", shape=note, fillcolor="#fff4e0"];
+    stages   [label="3. Stages that earn their place\nbusiness · compliance · product · design · engineering\nbuild · operations · growth\nwired by inputs_from", fillcolor="#e8eefc"];
+    workflows [label="4. Workflows inside each stage\ngoal · done-test · delivers (one per item) · informs\ndown to work atoms (one goal, one check)", fillcolor="#f0e8fc"];
+    rules    [label="R1 every item: one delivering workflow · R2 single delivery\nR3 one kind each · R4 earns place · R5 merge/split · R6 goal, done-test, method", shape=note, fillcolor="#f4f4f4"];
+    factors -> place -> stages -> workflows;
+    place -> unplaced [style=dashed];
+    workflows -> rules [style=dotted, arrowhead=none];
+  }
+
+  subgraph cluster_certainty {
+    label="Certainty axis: what kind of cut (certainty.md as it stands, read per workflow)"; style="rounded"; color="#2f9e6e"; fontcolor="#2f9e6e";
+    signals [label="5. Five signals\nbroken · reaction · facts_given · known_pattern · open_choices"];
+    zone    [label="zone of\neach workflow", shape=diamond, fillcolor="#e6f6ee"];
+    operate [label="operate\ndirect build", fillcolor="#e6f6ee"];
+    analyze [label="analyze\noptions weighed first", fillcolor="#e6f6ee"];
+    experiment [label="experiment\nprobe; dependants deferred", fillcolor="#e6f6ee"];
+    stabilize [label="stabilize\nfix-only", fillcolor="#e6f6ee"];
+    stagezone [label="stage zone = least certain of its workflows\n(derived by code, for the Map only)", shape=note, fillcolor="#f4f4f4"];
+    signals -> zone;
+    zone -> operate; zone -> analyze; zone -> experiment; zone -> stabilize;
+    zone -> stagezone [style=dotted, arrowhead=none];
+  }
+
+  subgraph cluster_confidence {
+    label="Confidence: a separate judge call (confidence-judge.md); code applies the gate"; style="rounded"; color="#b0641f"; fontcolor="#b0641f";
+    checks   [label="6. Judge: six checks per workflow\ninputs · method · done_test · factors · zone_fit · size\n→ missing · score 0–1 · weakest (any 'no' keeps it < 0.80)"];
+    gate     [label="score ≥ 0.80?", shape=diamond, fillcolor="#fff4e0"];
+    diagnose [label="7. Adaptation revises\nfor the weakest check (max 3 rounds)", fillcolor="#fff4e0"];
+    notready [label="not_ready: not funded\nstop_reason · route: identity | priority (at_risk) | left_out\nworkflows that depend on it are held", fillcolor="#fbe6e3"];
+    checks -> gate;
+    gate -> diagnose [label="no", color="#c0392b", fontcolor="#c0392b"];
+    diagnose -> notready [label="still < 0.80\nafter 3 rounds", color="#c0392b", fontcolor="#c0392b"];
+  }
+
+  subgraph cluster_remedies {
+    label="Remedy along the axis the gap points to"; style="rounded,dashed"; color="#888888";
+    r_ask      [label="missing fact\nblocking → hold branch, ask Identity\nnon-blocking → Assumption: line", fillcolor="#f4f4f4"];
+    r_cert     [label="certainty\nanalyze · experiment · stabilize · re-read", fillcolor="#e6f6ee"];
+    r_real     [label="realization\nadd stage · deepen · split", fillcolor="#e8eefc"];
+    r_research [label="world fact or no known method\n→ research workflow (3+ sources)\nin the stage that owns the question", fillcolor="#f4f4f4"];
+    r_rewrite  [label="vague done-test\n→ rewrite", fillcolor="#f4f4f4"];
+  }
+
+  propose [label="8. PROPOSE\nstages · grid · workflows · confidence history\nopen facts · not_ready · deferred · unplaced\n→ Priority funds what passed (and at_risk only if it chooses)", fillcolor="#e8eefc"];
+  run     [label="Build and Audit", fillcolor="#ffffff"];
+  done    [label="Goal met", shape=doublecircle, fillcolor="#e6f6ee", fontsize=10];
+  reflect [label="9. Missed: which case?\ntoo_shallow · wrong_owner\nmissing_perspective · not_foreseeable", fillcolor="#fff4e0"];
+
+  identity -> factors;
+  workflows -> signals [label="each workflow"];
+  operate -> checks; analyze -> checks; experiment -> checks; stabilize -> checks;
+  gate -> propose [label="yes", color="#2f9e6e", fontcolor="#2f9e6e"];
+  notready -> propose [style=dashed, label="listed, not funded"];
+  diagnose -> r_ask; diagnose -> r_cert; diagnose -> r_real; diagnose -> r_research; diagnose -> r_rewrite;
+  r_cert -> signals [style=dashed, label="re-read / reshape"];
+  r_real -> stages [style=dashed, label="re-cut"];
+  r_research -> workflows [style=dashed];
+  r_rewrite -> checks [style=dashed, label="judge again"];
+  r_ask -> identity [style=dashed, label="ask"];
+  propose -> run;
+  run -> done [label="passes"];
+  run -> reflect [label="misses", color="#c0392b", fontcolor="#c0392b"];
+  reflect -> factors [style=dashed, label="add factor / move owner"];
+  reflect -> stages [style=dashed, label="deepen stage"];
+  reflect -> signals [style=dashed, label="re-read certainty"];
+  unplaced -> reflect [style=dotted, arrowhead=none];
+
+  // Example: food delivery for 10,000 users (docs/realization-axis.md §7.3). Zones are per workflow.
+  subgraph cluster_example {
+    label="Example grid: food delivery for 10,000 users (stage × workflow zone)"; style="rounded"; color="#888888"; fontcolor="#555555";
+    grid [shape=plaintext, style="", label=<
+      <table border="0" cellborder="1" cellspacing="0" cellpadding="4">
+        <tr><td bgcolor="#f4f4f4"><b>stage</b></td><td bgcolor="#e6f6ee"><b>operate</b></td><td bgcolor="#e6f6ee"><b>analyze</b></td><td bgcolor="#e6f6ee"><b>experiment</b></td></tr>
+        <tr><td>business</td><td></td><td>fee model</td><td></td></tr>
+        <tr><td>compliance</td><td>food licence, tax, privacy</td><td></td><td></td></tr>
+        <tr><td>product</td><td>restaurant catalogue</td><td></td><td>which cuisines (probe)</td></tr>
+        <tr><td>design</td><td></td><td>ordering flow</td><td></td></tr>
+        <tr><td>engineering</td><td></td><td>scale at dinner peak</td><td></td></tr>
+        <tr><td>build</td><td>app, back end (delivers)</td><td></td><td></td></tr>
+        <tr><td>operations</td><td></td><td>rider supply</td><td></td></tr>
+        <tr><td>growth</td><td></td><td></td><td>first channel (probe)</td></tr>
+      </table>>];
+  }
+  propose -> grid [style=invis];
+}

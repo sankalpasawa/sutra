@@ -1,0 +1,516 @@
+<title>Realization × Certainty</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column; the two axes are colour-coded (realization = ink blue, certainty = green, confidence = amber) and every diagram reuses those three. */
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --fg: #1b2230;
+  --muted: #5b6577;
+  --line: #d9dee7;
+  --real: #2f5bd3;      /* realization */
+  --real-soft: #e7edfc;
+  --cert: #1f8a5b;      /* certainty */
+  --cert-soft: #e3f4ec;
+  --conf: #b8650f;      /* confidence */
+  --conf-soft: #fcefdc;
+  --bad: #c0392b;
+  --bad-soft: #fbe6e3;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #19202a; --fg: #e6eaf2; --muted: #9aa5b8; --line: #2c3544;
+    --real: #7b9cf5; --real-soft: #1d2a4a; --cert: #4cc28c; --cert-soft: #16332a;
+    --conf: #eba253; --conf-soft: #3a2a16; --bad: #ef7a6c; --bad-soft: #3d1f1c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #19202a; --fg: #e6eaf2; --muted: #9aa5b8; --line: #2c3544;
+  --real: #7b9cf5; --real-soft: #1d2a4a; --cert: #4cc28c; --cert-soft: #16332a;
+  --conf: #eba253; --conf-soft: #3a2a16; --bad: #ef7a6c; --bad-soft: #3d1f1c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font: 16px/1.6 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 80px;
+}
+main { max-width: 860px; margin: 0 auto; display: grid; gap: 64px; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.1rem; font-weight: 700; }
+p { margin: 0; max-width: 65ch; }
+section { display: grid; gap: 18px; }
+.eyebrow { font: 600 0.75rem/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: 1.15rem; color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+.r { color: var(--real); font-weight: 600; }
+.c { color: var(--cert); font-weight: 600; }
+.k { color: var(--conf); font-weight: 600; }
+.muted { color: var(--muted); }
+
+/* hero formula */
+.formula { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font: 600 0.95rem var(--mono); }
+.chip { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); }
+.chip.r { background: var(--real-soft); border-color: transparent; }
+.chip.c { background: var(--cert-soft); border-color: transparent; }
+.chip.k { background: var(--conf-soft); border-color: transparent; }
+.arrow { color: var(--muted); }
+
+/* two axes */
+.axes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.axis { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 10px; align-content: start; }
+.axis.real { border-top: 4px solid var(--real); }
+.axis.cert { border-top: 4px solid var(--cert); }
+.axis dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: 0.92rem; }
+.axis dt { color: var(--muted); }
+.axis dd { margin: 0; }
+
+/* ladder */
+.scroll { overflow-x: auto; }
+.ladder { display: grid; grid-template-columns: 130px 1fr; min-width: 560px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.ladder .tier { padding: 9px 12px; font: 500 0.82rem var(--mono); color: var(--muted); border-bottom: 1px solid var(--line); background: var(--bg); }
+.ladder .lane { position: relative; border-bottom: 1px solid var(--line); }
+.ladder .tier:nth-last-child(2), .ladder .lane:last-child { border-bottom: 0; }
+.bands { display: grid; grid-template-columns: repeat(8, 1fr); grid-auto-rows: 1fr; min-width: 0; }
+.band { margin: 4px 3px; border-radius: 6px; background: var(--real-soft); color: var(--real); font: 600 0.72rem/1.2 var(--body); display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px; }
+.band.id { background: var(--bg); color: var(--muted); border: 1px dashed var(--line); }
+
+/* grid example */
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tab { font: 600 0.88rem var(--body); padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.tab:focus-visible, button:focus-visible { outline: 2px solid var(--real); outline-offset: 2px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+.tbl { min-width: 560px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font: 600 0.75rem var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+.zone { display: inline-block; font: 600 0.75rem var(--mono); padding: 3px 8px; border-radius: 4px; white-space: nowrap; }
+.z-operate { background: var(--cert-soft); color: var(--cert); }
+.z-analyze { background: var(--real-soft); color: var(--real); }
+.z-experiment { background: var(--conf-soft); color: var(--conf); }
+.z-stabilize { background: var(--bad-soft); color: var(--bad); }
+.note { font-size: 0.92rem; color: var(--muted); }
+
+/* zones */
+.zones { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.zcard { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 6px; align-content: start; font-size: 0.9rem; }
+
+/* gate simulator */
+.sim { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 16px; }
+.sim-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 12px; }
+.meter { position: relative; height: 14px; border-radius: 7px; background: var(--bg); border: 1px solid var(--line); }
+.meter .fill { position: absolute; inset: 0 auto 0 0; border-radius: 7px; background: var(--conf); transition: width .5s ease; }
+.meter .fill.pass { background: var(--cert); }
+.meter .mark { position: absolute; top: -6px; bottom: -6px; left: 80%; width: 2px; background: var(--fg); }
+.meter-labels { display: flex; justify-content: space-between; font: 500 0.75rem var(--mono); color: var(--muted); }
+.score { font: 700 2rem var(--display); font-variant-numeric: tabular-nums; }
+.checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; }
+.check { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 0.86rem; }
+.check .ans { font: 600 0.72rem var(--mono); padding: 2px 6px; border-radius: 4px; grid-row: span 2; align-self: start; }
+.ans.yes { background: var(--cert-soft); color: var(--cert); }
+.ans.partly { background: var(--conf-soft); color: var(--conf); }
+.ans.no { background: var(--bad-soft); color: var(--bad); }
+.check.weak { border-color: var(--bad); }
+.check b { font-family: var(--mono); font-size: 0.8rem; }
+.remedy { padding: 12px 14px; border-radius: 8px; background: var(--bg); font-size: 0.92rem; display: grid; gap: 4px; }
+.sim-nav { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+button.btn { font: 600 0.9rem var(--body); padding: 9px 16px; border-radius: 8px; border: 1px solid var(--fg); background: var(--fg); color: var(--bg); cursor: pointer; }
+button.btn.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+button.btn:disabled { opacity: .4; cursor: default; }
+.history { font: 600 0.85rem var(--mono); color: var(--muted); }
+
+/* procedure */
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: s; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 40px 1fr; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+ol.steps li:last-child { border-bottom: 0; }
+ol.steps li::before { content: counter(s); font: 700 1.1rem var(--display); color: var(--muted); }
+ol.steps li p { font-size: 0.95rem; }
+.tag { font: 600 0.7rem var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+
+/* cases */
+.cases { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.case { padding: 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); display: grid; gap: 6px; align-content: start; font-size: 0.9rem; }
+.case code { color: var(--conf); }
+
+/* trunk */
+.trunk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.stop { padding: 10px 14px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); display: grid; gap: 2px; }
+.stop small { color: var(--real); font: 600 0.72rem var(--mono); text-transform: uppercase; letter-spacing: .05em; }
+
+footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { .meter .fill { transition: none; } }
+</style>
+
+<main>
+
+<header style="display:grid; gap:16px">
+  <span class="eyebrow">J2 · Adaptation · framework v1</span>
+  <h1>How Adaptation turns a goal into workflows</h1>
+  <p class="lede">Identity hands Adaptation a goal. Adaptation cuts it along two axes, scores how likely each piece is to work, and keeps cutting only where the score is too low.</p>
+  <div class="formula" aria-label="The framework in one line">
+    <span class="chip">Goal</span><span class="arrow">→</span>
+    <span class="chip r">Realization: where to cut</span><span class="arrow">×</span>
+    <span class="chip c">Certainty: what kind of cut</span><span class="arrow">→</span>
+    <span class="chip">Workflows</span><span class="arrow">→</span>
+    <span class="chip k">Confidence ≥ 0.80?</span>
+  </div>
+</header>
+
+<section>
+  <span class="eyebrow">1 · The two axes</span>
+  <h2>Two questions, asked of every goal</h2>
+  <p>An idea is only a thought. Making it real takes several kinds of thinking, and each of them runs into things nobody knows yet. So there are two separate questions. They form a grid, not a choice.</p>
+  <div class="axes">
+    <div class="axis real">
+      <h3 class="r">Realization</h3>
+      <p>What has to become real, and which kind of thinking makes it real?</p>
+      <dl>
+        <dt>Space</dt><dd>Work: idea → running thing</dd>
+        <dt>Cuts by</dt><dd>Kind of thinking (business, product, design, engineering…)</dd>
+        <dt>Values</dt><dd>Stages</dd>
+        <dt>Stops at</dt><dd>The work atom: one goal, one check that can fail</dd>
+      </dl>
+    </div>
+    <div class="axis cert">
+      <h3 class="c">Certainty</h3>
+      <p>Do I have enough information to act?</p>
+      <dl>
+        <dt>Space</dt><dd>Information: known → unknown</dd>
+        <dt>Cuts by</dt><dd>How well cause and effect are known (Cynefin)</dd>
+        <dt>Values</dt><dd><code>operate</code> · <code>analyze</code> · <code>experiment</code> · <code>stabilize</code></dd>
+        <dt>Stops at</dt><dd>The shape its zone requires</dd>
+      </dl>
+    </div>
+  </div>
+  <p class="note">The business person isn't sure customers will pay. The product person isn't sure users will love the feature. The engineer isn't sure the architecture will hold. That is why certainty is read <em>inside every stage</em>, not once for the whole goal.</p>
+</section>
+
+<section>
+  <span class="eyebrow">2 · Realization</span>
+  <h2>Stages are kinds of thinking that walk the ladder</h2>
+  <p>Native's HOW methodology describes realization as a ladder of eight tiers, from worldview down to implementation. The tiers say <em>how concrete</em> the work is. They don't say <em>who thinks it</em>. Companies answer that with departments, and J2 uses them as the realization values: the <span class="r">stages</span>. Each stage covers a band of tiers.</p>
+  <div class="scroll">
+    <div class="ladder" role="img" aria-label="Which tiers each stage covers">
+      <div class="tier">tier →</div>
+      <div class="lane"><div class="bands" style="font:500 .7rem var(--mono); color:var(--muted)">
+        <span style="padding:8px 2px;text-align:center">Worldview</span><span style="padding:8px 2px;text-align:center">Vision</span><span style="padding:8px 2px;text-align:center">Strategy</span><span style="padding:8px 2px;text-align:center">Capability</span><span style="padding:8px 2px;text-align:center">Architecture</span><span style="padding:8px 2px;text-align:center">Feature</span><span style="padding:8px 2px;text-align:center">Contract</span><span style="padding:8px 2px;text-align:center">Implement.</span>
+      </div></div>
+      <div class="tier">Identity</div><div class="lane"><div class="bands"><span class="band id" style="grid-column:1/3">goal (given, not a stage)</span></div></div>
+      <div class="tier">Business</div><div class="lane"><div class="bands"><span class="band" style="grid-column:3/4">money</span></div></div>
+      <div class="tier">Compliance</div><div class="lane"><div class="bands"><span class="band" style="grid-column:3/8">rules from outside, as constraints</span></div></div>
+      <div class="tier">Product</div><div class="lane"><div class="bands"><span class="band" style="grid-column:4/5">users</span><span class="band" style="grid-column:6/7">scope</span></div></div>
+      <div class="tier">Design</div><div class="lane"><div class="bands"><span class="band" style="grid-column:6/7">experience</span></div></div>
+      <div class="tier">Engineering</div><div class="lane"><div class="bands"><span class="band" style="grid-column:5/6">HLD</span><span class="band" style="grid-column:7/8">LLD</span></div></div>
+      <div class="tier">Build</div><div class="lane"><div class="bands"><span class="band" style="grid-column:8/9">make it</span></div></div>
+      <div class="tier">Operations</div><div class="lane"><div class="bands"><span class="band" style="grid-column:8/9">run it</span></div></div>
+      <div class="tier">Growth</div><div class="lane"><div class="bands"><span class="band" style="grid-column:3/9">reach people</span></div></div>
+    </div>
+  </div>
+
+  <h3>How the stages are chosen: from factors</h3>
+  <p>A <strong>factor</strong> is anything that makes the output unsatisfactory if it isn't thought through. Adaptation lists them in three groups:</p>
+  <div class="zones">
+    <div class="zcard"><span class="tag r">brief</span>The Requester's constraints. Non-negotiable, and quoted. <span class="muted">"10,000 users", "RBI rules", "live by 1 March"</span></div>
+    <div class="zcard"><span class="tag r">general</span>What generally makes this kind of output succeed, from the LLM's knowledge. <span class="muted">"fast on phones", "clear menu"</span></div>
+    <div class="zcard"><span class="tag r">research</span>A general factor that drives a decision, checked by a research workflow and cited. <span class="muted">"research.md#R-1"</span></div>
+    <div class="zcard"><span class="tag r">budget</span>Time, money, tokens. These constrain every stage and own none.</div>
+  </div>
+  <p>Each factor goes to the stage whose kind of thinking owns it: scale to Engineering, competitive edge to Product and Design, a regulator to Compliance. A stage is kept only if it owns something and still changes what gets built. A factor that fits no stage is listed as <strong>unplaced</strong>, never hidden. That is the signal that a perspective is missing.</p>
+  <div class="scroll"><table class="tbl">
+    <thead><tr><th>Rule</th><th>What it means</th><th>Checked by</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">R1 complete</td><td>Every done-when item has exactly one delivering workflow, and every brief factor is owned by some stage</td><td>code</td></tr>
+      <tr><td class="mono">R2 single delivery</td><td>No item is delivered twice. Any number of workflows may <em>inform</em> it</td><td>code</td></tr>
+      <tr><td class="mono">R3 one kind</td><td>One kind of thinking per stage, never shared</td><td>code</td></tr>
+      <tr><td class="mono">R4 earns place</td><td>Owns a factor or an item and changes what gets built</td><td>code + LLM</td></tr>
+      <tr><td class="mono">R5 merge or split</td><td>Merge two stages for small goals; split them again when they pull apart</td><td>LLM</td></tr>
+      <tr><td class="mono">R6 stated</td><td>Each stage gives its goal, done-test and borrowed method</td><td>code</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Deciding is not delivering</h3>
+  <p>Several stages shape one done-when item, but one workflow makes it real. For a booking form, Product decides what it asks, Design how it looks, Compliance what consent it needs, and one Build workflow <strong>delivers</strong> it. So each workflow lists what it <code>delivers</code> and what it <code>informs</code>.</p>
+</section>
+
+<section>
+  <span class="eyebrow">3 · Certainty inside each stage</span>
+  <h2>Every workflow gets its own zone</h2>
+  <p>Certainty is read exactly as <code>certainty.md</code> already says: five signals (<code>broken</code>, <code>reaction</code>, <code>facts_given</code>, <code>known_pattern</code>, <code>open_choices</code>), then a zone on <em>each workflow</em>. Realization adds no zone rule of its own. One stage can mix zones: a known catalogue page and an uncertain conversion question can both be Product work. The zone decides the workflow's shape:</p>
+  <div class="zones">
+    <div class="zcard"><span class="zone z-operate">operate</span>Known pattern, facts given. Direct build workflows.</div>
+    <div class="zcard"><span class="zone z-analyze">analyze</span>Several valid options. An analysis workflow first, then build.</div>
+    <div class="zcard"><span class="zone z-experiment">experiment</span>Only people's reactions can tell. 1–3 probes; the rest is deferred.</div>
+    <div class="zcard"><span class="zone z-stabilize">stabilize</span>Broken, cause unclear. One fix-only workflow.</div>
+  </div>
+  <p>Every workflow sits in exactly one cell: one stage × one zone. A stage's zone is never read on its own: code shows the least certain zone among its workflows, for the Map only. Pick an example to see the grid:</p>
+  <div class="tabs" role="tablist" aria-label="Examples">
+    <button class="tab" role="tab" id="tab-cafe" aria-selected="true" data-ex="cafe">Coffee shop site</button>
+    <button class="tab" role="tab" id="tab-food" aria-selected="false" data-ex="food">Food delivery</button>
+    <button class="tab" role="tab" id="tab-rest" aria-selected="false" data-ex="rest">Restaurant in Pune</button>
+    <button class="tab" role="tab" id="tab-phone" aria-selected="false" data-ex="phone">Phone number change</button>
+  </div>
+  <p id="ex-brief" class="note"></p>
+  <div class="scroll"><table class="tbl" aria-live="polite">
+    <thead><tr><th>Stage</th><th>Owns</th><th>Zone</th><th>Why</th></tr></thead>
+    <tbody id="ex-body"></tbody>
+  </table></div>
+  <p id="ex-foot" class="note"></p>
+</section>
+
+<section>
+  <span class="eyebrow">4 · Confidence</span>
+  <h2>Will this workflow reach its goal?</h2>
+  <p>Before anything is built, a <strong>separate judge call</strong> asks of each workflow: <em>if it runs as written, how likely is it to pass its done-test in one run?</em> Adaptation never scores its own plan: the checker must not be the writer. To keep the number honest, the judge answers six checks first, each with evidence, and lists what is missing. Any <span class="ans no" style="font:600 .75rem var(--mono);padding:2px 6px;border-radius:4px">no</span> keeps the score under 0.80. Code enforces this.</p>
+  <div class="scroll"><table class="tbl">
+    <thead><tr><th>Check</th><th>Asks</th><th>A "no" usually means</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">inputs</td><td>Is everything it needs given, or made by an earlier workflow?</td><td>A missing fact, or a missing upstream stage</td></tr>
+      <tr><td class="mono">method</td><td>Is there a known way to turn the inputs into the output?</td><td>Open options, a question for real users, or no method known</td></tr>
+      <tr><td class="mono">done_test</td><td>Is the done-test observable and pass/fail?</td><td>A vague goal</td></tr>
+      <tr><td class="mono">factors</td><td>Does some step address every factor its stage owns?</td><td>Not thorough enough</td></tr>
+      <tr><td class="mono">zone_fit</td><td>Does its shape match its zone?</td><td>Certainty was skipped or misread</td></tr>
+      <tr><td class="mono">size</td><td>Is it one kind of thinking, within one builder's budget?</td><td>Too big, or mixed</td></tr>
+    </tbody>
+  </table></div>
+  <p>A stage's confidence is its lowest workflow score, and the plan's confidence is its lowest stage score. A plan is only as likely as its weakest part.</p>
+
+  <h3>The gate, step by step</h3>
+  <p>Coffee-shop example: in the first draft, Product and Design were one merged stage. Step through the rounds:</p>
+  <div class="sim" id="sim">
+    <div class="sim-head">
+      <div style="display:grid;gap:2px"><span class="eyebrow" id="sim-round">Round 0</span><h3 id="sim-wf">Workflow</h3></div>
+      <div class="score k" id="sim-score">0.55</div>
+    </div>
+    <div>
+      <div class="meter" aria-hidden="true"><div class="fill" id="sim-fill"></div><div class="mark"></div></div>
+      <div class="meter-labels"><span>0</span><span style="margin-left:auto;margin-right:18%">0.80 gate</span><span>1</span></div>
+    </div>
+    <div class="checks" id="sim-checks"></div>
+    <div class="remedy" id="sim-remedy"></div>
+    <div class="sim-nav">
+      <button class="btn ghost" id="sim-prev" type="button">Back</button>
+      <button class="btn" id="sim-next" type="button">Apply remedy</button>
+      <span class="history" id="sim-hist"></span>
+    </div>
+  </div>
+
+  <h3>From gap to remedy</h3>
+  <p>The weakest check says which axis to cut along next. When it could point either way, try certainty first, then realization, then research. A workflow gets at most three rounds.</p>
+  <h3>Three ways to fill an information gap</h3>
+  <p>Missing information is closed by whoever can supply it. A <strong>Requester fact</strong> (their price, their date) is <em>asked</em>. A <strong>world fact</strong> (competitors, regulations, how leading products do it) is <em>researched</em>. A <strong>reaction</strong> only real people can show is <em>probed</em>. Market research is a research workflow placed in the stage that owns the question (business, product, compliance or engineering), never a stage of its own. It is planned only when its answer would change what gets built.</p>
+  <div class="cases">
+    <div class="case"><code>blocking fact</code><strong>Hold and ask</strong>The done-test can't pass without it (the price on a payment page). The workflow and everything downstream are held and not funded. Identity asks, and the judge scores again once the answer arrives.</div>
+    <div class="case"><code>non-blocking fact</code><strong>Proceed, say so</strong>The output is correct without it (an optional phone number). The workflow proceeds with an <code>Assumption:</code> line, and the judge marks <code>inputs</code> as partly.</div>
+    <div class="case"><code>not_ready</code><strong>Below 0.80 after 3 rounds</strong>Not funded. It records why, and goes to Identity (a fact or decision would fix it), to Priority (fund it at risk, explicitly), or into <code>left_out</code>. Workflows that depend on it are held too.</div>
+  </div>
+  <div class="scroll"><table class="tbl">
+    <thead><tr><th>Weakest check shows</th><th>Remedy</th><th>Axis</th></tr></thead>
+    <tbody>
+      <tr><td>inputs: a <b>Requester fact</b> is missing</td><td>Ask Identity. Never a probe.</td><td class="mono">ask</td></tr>
+      <tr><td>inputs: a <b>world fact</b> is missing (market, competitors, rules, feasibility)</td><td>A research workflow in the stage that owns the question, with 3+ cited sources in <code>research.md</code></td><td class="mono">research:find</td></tr>
+      <tr><td>inputs: a decision from another kind of thinking is missing</td><td>Add that stage or a workflow in it</td><td class="mono r">realization:add</td></tr>
+      <tr><td>method: several valid options</td><td>Analysis workflow first</td><td class="mono c">certainty:analyze</td></tr>
+      <tr><td>method: depends on people's reactions</td><td>1–3 probes; defer the rest</td><td class="mono c">certainty:experiment</td></tr>
+      <tr><td>method: no known method at all</td><td>Research the industry-standard method first</td><td class="mono">research:method</td></tr>
+      <tr><td>method: already failed, cause unclear</td><td>One fix-only workflow</td><td class="mono c">certainty:stabilize</td></tr>
+      <tr><td>done_test: vague</td><td>Rewrite it</td><td class="mono">rewrite</td></tr>
+      <tr><td>factors: an owned factor is missed</td><td>Add steps in the same stage</td><td class="mono r">realization:deepen</td></tr>
+      <tr><td>zone_fit: wrong shape</td><td>Re-read that stage's signals</td><td class="mono c">certainty:reread</td></tr>
+      <tr><td>size: too big or mixed thinking</td><td>Split down a tier, or split the stage</td><td class="mono r">realization:split</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <span class="eyebrow">5 · The whole procedure</span>
+  <h2>Nine steps from goal to proposal</h2>
+  <ol class="steps">
+    <li><div><span class="tag muted">Identity</span><p><strong>Goal</strong>: charter, done-when items, constraints.</p></div></li>
+    <li><div><span class="tag r">Realization</span><p><strong>Factors</strong>: brief first, then general, then budget.</p></div></li>
+    <li><div><span class="tag r">Realization</span><p><strong>Stages</strong>: place the factors, keep stages that earn their place, wire <code>inputs_from</code>, check R1–R6.</p></div></li>
+    <li><div><span class="tag r">Realization</span><p><strong>Workflows</strong>: inside each stage, each with a goal, a done-test, <code>delivers</code> and <code>informs</code>, down to work atoms.</p></div></li>
+    <li><div><span class="tag c">Certainty</span><p><strong>Zone per workflow</strong>: <code>certainty.md</code> as it stands.</p></div></li>
+    <li><div><span class="tag k">Judge</span><p><strong>Score</strong>: a separate call answers six checks per workflow and lists what is missing. Code derives stage and plan confidence.</p></div></li>
+    <li><div><span class="tag k">Confidence</span><p><strong>Gate</strong>: under 0.80, Adaptation revises along the axis the gap points to and the judge scores again (max 3 rounds). Blocking facts hold their branch; after 3 rounds the workflow is <code>not_ready</code>.</p></div></li>
+    <li><div><span class="tag muted">Adaptation</span><p><strong>Propose</strong>: stages, grid, workflows, confidence history, open facts, not-ready workflows, deferred items, unplaced factors. Priority funds only what passed, plus anything it explicitly accepts at risk.</p></div></li>
+    <li><div><span class="tag c">Every cycle</span><p><strong>Re-read</strong>: certainty rises when a probe returns and drops when a fix fails. Unbuilt workflows are scored again.</p></div></li>
+  </ol>
+</section>
+
+<section>
+  <span class="eyebrow">6 · When the output misses</span>
+  <h2>Find the missing Lego piece</h2>
+  <p>When Audit says the output doesn't meet the goal, Adaptation names which case it was before proposing rework. The shape of the gap says which piece is missing.</p>
+  <div class="cases">
+    <div class="case"><code>too_shallow</code><strong>Known factor, thin stage</strong>The stage existed but had too few steps. Next time, deepen it.</div>
+    <div class="case"><code>wrong_owner</code><strong>Known factor, no owner</strong>No stage owned the factor, or the wrong one did. Move it and record a lesson.</div>
+    <div class="case"><code>missing_perspective</code><strong>Factor nobody listed</strong>The site messaged someone, but nothing carried the reply back. "External communication" was a factor. If no stage fits, it is a candidate new axis.</div>
+    <div class="case"><code>not_foreseeable</code><strong>Real uncertainty</strong>Only trying could tell. The plan wasn't wrong. Certainty rises now that the signal is in.</div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">7 · J2 today</span>
+  <h2>J2's document chain is already a realization path</h2>
+  <div class="trunk">
+    <div class="stop"><small>Identity</small>Charter</div><span class="arrow">→</span>
+    <div class="stop"><small>Product</small>PRD</div><span class="arrow">→</span>
+    <div class="stop"><small>Engineering · architecture</small>HLD</div><span class="arrow">→</span>
+    <div class="stop"><small>Engineering · contract</small>LLD</div><span class="arrow">→</span>
+    <div class="stop"><small>Build</small>Code / site</div>
+  </div>
+  <p>What changes: how many workflows each document gets is no longer the LLM's free choice. It follows from the stage's zone and the confidence gate. An <code>analyze</code> PRD gets an analysis workflow first. A confident HLD gets no extra cutting.</p>
+</section>
+
+<section>
+  <span class="eyebrow">8 · Not decided yet</span>
+  <h2>Open questions</h2>
+  <ul style="margin:0;padding-left:20px;display:grid;gap:6px;max-width:65ch">
+    <li>Roll-up: weakest link (lowest score), or the product of the scores?</li>
+    <li>Should <code>experiment</code> workflows pass the gate below 0.80, since a probe exists to learn?</li>
+    <li>How stable are the LLM's scores? Measure it like the certainty experiment: same brief, three runs.</li>
+    <li>Is the stage list fixed, or can it grow from lessons?</li>
+    <li>Out of scope for now: lens and personas (they will attach to each stage's kind of thinking); time, money and scale as their own axes.</li>
+  </ul>
+</section>
+
+<footer>Source files: <code>docs/realization-axis.md</code> (framework, v2) · <code>agents/j2/realization.md</code> and <code>agents/j2/certainty.md</code> (what Adaptation reads) · <code>agents/j2/confidence-judge.md</code> (the judge) · <code>docs/realization-schema.json</code> (reply shape) · <code>docs/realization-axis.dot</code> (graph). Realization tiers from Native §3 HOW methodology.</footer>
+</main>
+
+<script>
+const EX = {
+  cafe: {
+    brief: "“A website for our coffee shop that handles 10,000 visitors a month and stands out from the chains.”",
+    rows: [
+      ["Product", "stand out (edge); informs every item", "analyze", "Feature list unranked"],
+      ["Design", "stand out (look); “warm, local”; informs every item", "analyze", "Style words leave the look open"],
+      ["Engineering", "10,000 visitors (scale); informs every item", "operate", "Static site, known pattern"],
+      ["Build", "delivers every item", "operate", "Follows the plan"]
+    ],
+    foot: "Goal zone: analyze. Plan confidence: 0.80 after Product and Design were split (see the gate below)."
+  },
+  food: {
+    brief: "“Food delivery for 10,000 users in one city.”",
+    rows: [
+      ["Business", "fee model, margins", "analyze", "Commission vs delivery fee: several valid models"],
+      ["Compliance", "food licence, tax, privacy", "operate", "Known checklists"],
+      ["Product · catalogue", "restaurant listing", "operate", "A known pattern"],
+      ["Product · cuisine probe", "which cuisines people order", "experiment", "Only real orders show it. Same stage, different zone."],
+      ["Design", "ordering flow", "analyze", "Known patterns, several choices"],
+      ["Engineering", "10,000 users at dinner peak", "analyze", "The architecture choice matters"],
+      ["Build", "app and back end", "operate", "Follows the LLD"],
+      ["Operations", "rider supply, restaurant onboarding", "analyze", "Supply per zone"],
+      ["Growth", "first 1,000 orders", "experiment", "Which channel works: try it"]
+    ],
+    foot: "Product holds two workflows in two zones. The cuisine and channel probes run first; the full menu set and paid campaigns are deferred."
+  },
+  rest: {
+    brief: "“Open a 40-seat restaurant in Pune in four months on ₹40 lakh.” Four months and ₹40 lakh are constraints on every stage, not stages.",
+    rows: [
+      ["Business", "menu price vs footfall", "analyze", "Several pricing positions"],
+      ["Compliance", "food licence, fire NOC, signage", "operate", "Known list"],
+      ["Product", "the menu", "analyze", "Many valid menus"],
+      ["Design", "interior", "analyze", "Style open"],
+      ["Engineering", "kitchen and services layout", "operate", "Standard layouts"],
+      ["Build", "fit-out", "operate", "Before revision: 0.58, because the equipment lead time is unknown. That's a blocking fact, so the branch is held and Identity asks. It's not a probe."],
+      ["Operations", "staff, suppliers", "analyze", "Choices of sourcing"],
+      ["Growth", "opening", "experiment", "A soft launch tests which dishes pull"]
+    ],
+    foot: "A non-tech goal uses the same stages: Engineering is the kitchen layout, Build is the fit-out."
+  },
+  phone: {
+    brief: "“Change the phone number on the site to 98200 12345.”",
+    rows: [["Build", "the new number", "operate", "Fact given, obvious change"]],
+    foot: "One stage, one workflow, confidence 0.95. The gate passes at once, so the framework adds no cost to simple work."
+  }
+};
+const body = document.getElementById("ex-body");
+function showEx(key) {
+  const ex = EX[key];
+  document.getElementById("ex-brief").textContent = ex.brief;
+  document.getElementById("ex-foot").textContent = ex.foot;
+  body.innerHTML = "";
+  for (const [stage, owns, zone, why] of ex.rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><strong></strong></td><td></td><td><span class="zone z-${zone}"></span></td><td></td>`;
+    tr.children[0].firstChild.textContent = stage;
+    tr.children[1].textContent = owns;
+    tr.children[2].firstChild.textContent = zone;
+    tr.children[3].textContent = why;
+    body.appendChild(tr);
+  }
+  document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", String(t.dataset.ex === key)));
+}
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => showEx(t.dataset.ex)));
+showEx("cafe");
+
+const Y = "yes", P = "partly", N = "no";
+const ROUNDS = [
+  { wf: "Product & design (merged stage)", score: 0.55, weak: "size",
+    checks: { inputs: [Y, "menu, hours, location in the charter"], method: [P, "page plan and style chosen together"],
+      done_test: [Y, "every item maps to a section"], factors: [P, "“stand out” only as a colour choice"],
+      zone_fit: [Y, "analysis step present"], size: [N, "“what to say” and “how it looks” mixed in one"] },
+    remedy: ["realization:split", "Split the stage along the line between the two kinds of thinking: Product (what each visitor needs) and Design (how it looks). Design then scores 0.84 on its own."] },
+  { wf: "Page plan (Product stage)", score: 0.62, weak: "factors",
+    checks: { inputs: [Y, "menu, hours, location in the charter"], method: [Y, "story map of a visit"],
+      done_test: [Y, "every item maps to a section"], factors: [N, "“stand out from the chains” has no step"],
+      zone_fit: [Y, "analysis chooses the grouping first"], size: [Y, "one page plan"] },
+    remedy: ["realization:deepen", "Add a step in the same stage for the missed factor: a signature-drinks section, placed above the menu."] },
+  { wf: "Page plan (Product stage)", score: 0.85, weak: "factors",
+    checks: { inputs: [Y, "menu, hours, location in the charter"], method: [Y, "story map of a visit"],
+      done_test: [Y, "every item maps to a section"], factors: [Y, "signature-drinks section covers “stand out”"],
+      zone_fit: [Y, "analysis chooses the grouping first"], size: [Y, "one page plan"] },
+    remedy: null }
+];
+let round = 0;
+function renderSim() {
+  const r = ROUNDS[round];
+  document.getElementById("sim-round").textContent = `Round ${round}`;
+  document.getElementById("sim-wf").textContent = r.wf;
+  const sc = document.getElementById("sim-score");
+  sc.textContent = r.score.toFixed(2);
+  sc.className = "score " + (r.score >= 0.8 ? "c" : "k");
+  const fill = document.getElementById("sim-fill");
+  fill.style.width = (r.score * 100) + "%";
+  fill.classList.toggle("pass", r.score >= 0.8);
+  const box = document.getElementById("sim-checks");
+  box.innerHTML = "";
+  for (const [id, [ans, ev]] of Object.entries(r.checks)) {
+    const d = document.createElement("div");
+    d.className = "check" + (ans === N ? " weak" : "");
+    d.innerHTML = `<span class="ans ${ans}"></span><b></b><span class="muted"></span>`;
+    d.children[0].textContent = ans;
+    d.children[1].textContent = id;
+    d.children[2].textContent = ev;
+    box.appendChild(d);
+  }
+  const rem = document.getElementById("sim-remedy");
+  if (r.remedy) {
+    rem.innerHTML = `<span class="tag k">Below 0.80 · weakest: <span class="mono"></span> → remedy <span class="mono"></span></span><span></span>`;
+    rem.querySelectorAll(".mono")[0].textContent = r.weak;
+    rem.querySelectorAll(".mono")[1].textContent = r.remedy[0];
+    rem.lastChild.textContent = r.remedy[1];
+  } else {
+    rem.innerHTML = `<span class="tag c">Passes the gate</span><span>0.85 ≥ 0.80: stop cutting this workflow and move to the next one.</span>`;
+  }
+  document.getElementById("sim-hist").textContent = "history: " + ROUNDS.slice(0, round + 1).map(x => x.score.toFixed(2)).join(" → ");
+  document.getElementById("sim-prev").disabled = round === 0;
+  const next = document.getElementById("sim-next");
+  next.disabled = round === ROUNDS.length - 1;
+  next.textContent = round === ROUNDS.length - 1 ? "Done" : "Apply remedy";
+}
+document.getElementById("sim-next").addEventListener("click", () => { if (round < ROUNDS.length - 1) { round++; renderSim(); } });
+document.getElementById("sim-prev").addEventListener("click", () => { if (round > 0) { round--; renderSim(); } });
+renderSim();
+</script>

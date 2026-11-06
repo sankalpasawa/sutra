@@ -1,0 +1,42 @@
+{
+  "_note": "Necessary conditions for an LLD (design documents). Code checks each one on lld.md after every build; the LLD is workable only when all are met and Audit accepts. \"check\" names the code check in j2.condition_met(). \"plan\" (optional): words a workflow in Adaptation's plan must mention, or the plan is flagged before building.",
+  "output": "lld",
+  "conditions": [
+    {
+      "id": "L1",
+      "text": "All five sections are present and not empty",
+      "check": "sections-present",
+      "min_words": 1
+    },
+    {
+      "id": "L2",
+      "text": "Section, element and field ids are unique, and every section has an id",
+      "check": "lld-ids-unique"
+    },
+    {
+      "id": "L3",
+      "text": "Every interactive element has a selector, a trigger and a behaviour",
+      "check": "lld-elements"
+    },
+    {
+      "id": "L4",
+      "text": "Every form field has a name, a type and a required flag",
+      "check": "lld-fields"
+    },
+    {
+      "id": "L5",
+      "text": "Every HLD component appears in an LLD section",
+      "check": "chain-ids",
+      "key": "hld_ids",
+      "in": "Pages and sections",
+      "label": "HLD components",
+      "plan": "\\bC\\d+\\b"
+    },
+    {
+      "id": "L6",
+      "text": "No invented facts: every number, email and proper name comes from the charter, the Requester's answers or the earlier documents, or sits in an Assumption: line",
+      "check": "no-invented-facts",
+      "names": true
+    }
+  ]
+}

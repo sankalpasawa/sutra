@@ -1,0 +1,31 @@
+# Secrets: never commit. .env.example is the template
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local run output and state (runs/ holds chat logs and AI calls; memory/ holds lessons)
+# Runs already committed stay tracked; this only stops new run folders from being added.
+runs/
+memory/
+_backup/
+projects/
+*.log
+
+# Files the assistant writes for the developer
+Claude outputs/
+
+# Local tool state
+.claude/
+graphify-out/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store

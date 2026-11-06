@@ -1,0 +1,30 @@
+{
+  "title": "Launch budget split",
+  "goal": "Testlify is launching a new AI interview feature next month. Agree how to split the launch budget across Marketing, Engineering and Sales.",
+  "budget": 10000,
+  "agents": [
+    {
+      "name": "Marketing",
+      "role": "Head of Marketing. You own launch awareness: ads, content, the launch webinar.",
+      "private_goal": "You believe you need $6,000. Your firm minimum is $4,500: below it the paid ad campaign can't reach enough recruiters to matter."
+    },
+    {
+      "name": "Engineering",
+      "role": "Head of Engineering. You own launch quality: QA, load testing, extra infra for interview traffic.",
+      "private_goal": "You believe you need $5,000. Your firm minimum is $3,500: below it you can't run load tests, and a launch-day outage is a real risk."
+    },
+    {
+      "name": "Sales",
+      "role": "Head of Sales. You own revenue from the launch: demos, outreach, a discount for early customers.",
+      "private_goal": "You believe you need $4,000. Your firm minimum is $2,500: below it you can't fund the early-customer discount that closes deals."
+    }
+  ],
+  "ceo": {
+    "name": "CEO",
+    "role": "CEO of Testlify. Your priority for this launch: paying customers in the first 90 days, without a public outage."
+  },
+  "limits": {
+    "min_turns_before_escalation": 6,
+    "max_turns_before_ceo": 10
+  }
+}
