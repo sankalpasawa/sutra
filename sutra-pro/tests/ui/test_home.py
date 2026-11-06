@@ -737,3 +737,68 @@ def test_a_message_of_another_chat_marks_its_node_unread_and_a_chat_message_of_t
     fake.emit("chat.message", {"session_id": "cs_org", "message": {"id": 41, "session_id": "cs_org", "role": "agent", "who": "sutra", "kind": "text",
              "text": "A new line for you", "card": None, "pause": None, "answered_by": None, "task_id": None, "state": "ok", "at": "2026-11-04T10:09:30Z"}})
     browser.wait_for("document.getElementById('smsgs').innerText.indexOf('A new line for you') >= 0")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# the comfort of the org chat (GAP-chat-comfort): the reader is never pulled down, the box keeps its words across a reload
+# ---------------------------------------------------------------------------------------------------------------------
+def org_line(number, text):
+    return {"session_id": "cs_org", "message": {"id": number, "session_id": "cs_org", "role": "agent", "who": "sutra", "kind": "text", "text": text, "card": None,
+                                                "pause": None, "answered_by": None, "task_id": None, "state": "ok", "at": "2026-11-04T10:09:30Z"}}
+
+
+def from_bottom(browser):
+    return browser.js("(() => { const m = document.getElementById('smsgs'); return m.scrollHeight - m.scrollTop - m.clientHeight; })()")
+
+
+def no_pill_route(browser):
+    """The fake backend has no GET /api/chats/{sid}/providers (ABS-9's pill): its 404 is not what these tests are about."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)
+
+
+def no_console_errors(browser):
+    assert [line for line in browser.console_errors if not (line.startswith("[network]") and "404" in line)] == []
+
+
+@browser_only
+def test_a_reader_who_scrolls_up_on_home_stays_put_and_a_pill_counts_what_came_below(browser, fake):
+    no_pill_route(browser)
+    load(browser, fake, stage="2")
+    for n in range(100, 125):
+        fake.emit("chat.message", org_line(n, f"Line {n} " + "text " * 25))
+    browser.wait_for("document.getElementById('smsgs').innerText.includes('Line 124')")
+    assert wait_until(browser, lambda: from_bottom(browser) < 4) and browser.js("document.getElementById('sjump').hidden") is True
+    browser.js("const m = document.getElementById('smsgs'); m.dispatchEvent(new WheelEvent('wheel', {deltaY: -120, bubbles: true})); m.scrollTop = 200;")
+    browser.js("new Promise(r => setTimeout(r, 200))")
+    fake.emit("chat.message", org_line(125, "Line 125"))
+    browser.wait_for("document.getElementById('smsgs').innerText.includes('Line 125')")
+    browser.wait_for("!document.getElementById('sjump').hidden")
+    assert abs(browser.js("document.getElementById('smsgs').scrollTop") - 200) <= 2              # Home no longer pulls the reader down
+    assert texts(browser, "#sjump .cjump-btn") == ["1 new message below"]
+    browser.click("#sjump .cjump-btn")
+    browser.wait_for("(() => { const m = document.getElementById('smsgs'); return m.scrollHeight - m.scrollTop - m.clientHeight < 4; })()")
+    assert browser.js("document.getElementById('sjump').hidden") is True
+    browser.js("document.getElementById('smsgs').scrollTop = 100")                                 # reading again, then the owner writes
+    browser.js("new Promise(r => setTimeout(r, 200))")
+    send_text(browser, "And the menu?")
+    browser.wait_for("Array.from(document.querySelectorAll('#smsgs .sb.me')).some(e => e.textContent.includes('And the menu?'))")
+    assert wait_until(browser, lambda: from_bottom(browser) < 4)                                    # the owner's own line is in view
+    no_console_errors(browser)
+
+
+@browser_only
+def test_the_org_chats_box_keeps_its_words_across_a_reload_and_an_accepted_send_clears_them(browser, fake):
+    no_pill_route(browser)
+    load(browser, fake)
+    browser.type("#sbox", "A website for my bakery,\nwith a menu")
+    browser.reload()
+    browser.wait_for("window.HomePage && HomePage.state().loaded === true")
+    assert browser.js("document.getElementById('sbox').value") == "A website for my bakery,\nwith a menu"
+    assert browser.js("document.getElementById('sbox').getBoundingClientRect().height") > 56
+    browser.click("#ssend")
+    browser.wait_for("document.getElementById('sbox').value === ''")
+    assert browser.js("localStorage.getItem('sutra:draft:cs_org')") is None
+    browser.reload()
+    browser.wait_for("window.HomePage && HomePage.state().loaded === true")
+    assert browser.js("document.getElementById('sbox').value") == ""
+    no_console_errors(browser)

@@ -45,6 +45,10 @@ body.home #sview { min-width: 0; }
 .nmsg.flash:focus { outline: 2px solid var(--vio); }
 body.home :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .scompose .row textarea { min-width: 0; }
+/* the org chat's box grows with its text up to 200px (chat_draft.js grow); the pill of new messages sits on the transcript's bottom edge (sutra-panel.css .cjump) */
+.scompose #sbox { min-height: 56px; max-height: 200px; overflow-y: hidden; }
+.scompose .row { align-items: flex-end; }
+.scompose .row #ssend { height: 56px; }
 
 /* ---------------------------------------------------------------- the rail: current pane, Teams, Settings */
 body.home .rail.tabs button[aria-current="page"], body.home .rail.tabs button[aria-current="true"] {

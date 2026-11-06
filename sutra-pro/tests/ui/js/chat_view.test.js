@@ -716,3 +716,50 @@ test("the script loads as a classic script with one global and no other name, an
 test("the source is plain ASCII (the dot and the ellipsis are escapes)", () => {
   assert.equal(/[^\x00-\x7f]/.test(fs.readFileSync(FILE, "utf8")), false);
 });
+
+/* ================================================================ GAP-chat-comfort: the end of a direct turn, the files of an owner's line */
+const owner = (id, t) => msg({id, role: "user", who: "user", text: t});
+const ender = over => msg(Object.assign({role: "agent", who: "sutra"}, over));
+
+test("a stopped direct turn reads as the kept reply and a calm note, never a red card", () => {
+  const doc = dom(transcript(writable(), [owner(10, "Write the menu"), ender({id: 11, kind: "text", text: "Starters, mains", turn: 10}),
+    ender({id: 12, kind: "note", text: "Stopped. What was written is kept.", turn: 10})]));
+  assert.equal(textOf(one(doc, "div.nmsg.note")), "Stopped. What was written is kept.");
+  assert.equal(select(doc, "div.nmsg.oops").length, 0);
+  assert.equal(select(doc, "button").length, 0);
+  assert.match(textOf(one(doc, "div.nmsg.team")), /Starters, mains/);
+});
+
+test("a direct error has Retry while its line is the owner's newest; a team error, an older one or a read-only chat has none", () => {
+  const failed = [owner(10, "Write the menu"), ender({id: 11, kind: "text", text: "Start", turn: 10}), ender({id: 12, kind: "error", text: "Claude stopped unexpectedly (exit 137)", turn: 10})];
+  const doc = dom(transcript(writable(), failed));
+  const retry = one(doc, "div.nmsg.oops button");
+  assert.deepEqual([retry.attrs["data-act"], retry.attrs["data-turn"], textOf(retry)], ["retry-direct", "10", "Retry"]);
+  assert.equal(textOf(one(doc, "div.nmsg.oops")), "Claude stopped unexpectedly (exit 137) Retry");
+  assert.equal(select(dom(transcript(writable(), [owner(10, "x"), ender({id: 11, kind: "error", text: "Something broke"})])), "button").length, 0);   // not a direct turn
+  assert.equal(select(dom(transcript(writable(), failed.concat([owner(13, "never mind")]))), "button").length, 0);
+  assert.equal(select(dom(transcript(writable(), failed, {live: false})), "button").length, 0);
+  assert.equal(select(dom(transcript(writable({writable: false}), failed)), "button").length, 0);
+  assert.equal(select(dom(transcript({id: "cs_org", kind: "org", writable: true, status: "active"}, failed)), "button[data-act=retry-direct]").length, 1);
+});
+
+test("the error and the note from the wire are escaped; a forged turn cannot write into the button", () => {
+  const html = transcript(writable(), [owner(10, "x"), ender({id: 11, kind: "error", text: "<img src=x onerror=alert(1)>", turn: 10}),
+    ender({id: 12, kind: "note", text: "<script>x()</script>", turn: '10" onclick="x'})]);
+  assert.doesNotMatch(html, /<img|<script|onclick/);
+  dom(html);
+});
+
+test("an owner's line with files shows the words and the names as chips; the record line itself is not shown", () => {
+  const doc = dom(transcript(writable(), [owner(10, "read these\n(attached: menu.txt, shot 1.png, a PDF)")]));
+  const me = one(doc, "div.nmsg.me");
+  assert.deepEqual(select(me, "ul.cattached li").map(textOf), ["TXTmenu.txt", "IMGshot 1.png", "PDFa PDF"]);
+  assert.equal(textOf(me).startsWith("read these"), true);
+  assert.equal(textOf(me).includes("(attached:"), false);
+  assert.deepEqual(ChatView.attachedOf("hello\n(attached: a.png)"), {text: "hello", names: ["a.png"]});
+  assert.deepEqual(ChatView.attachedOf("(attached: a.png)"), {text: "(attached: a.png)", names: []});         // a line of its own, not a record
+  assert.deepEqual(ChatView.attachedOf("hello"), {text: "hello", names: []});
+  const hostile = transcript(writable(), [owner(10, "x\n(attached: <b onmouseover=1>.png)")]);
+  assert.doesNotMatch(hostile, /<b /);
+  dom(hostile);
+});

@@ -74,7 +74,7 @@ test("Send posts the text and the uploaded refs to /direct, then the files are c
   await c.addFiles([file("a.txt")]);
   const out = await c.send("  read this  ");
   assert.deepEqual(out, {ok: true, message_id: 41});
-  assert.deepEqual(api.calls[api.calls.length - 1], {p: DIRECT, body: {text: "read this", attachments: [ID]}});
+  assert.deepEqual(api.calls[api.calls.length - 1], {p: DIRECT, body: {text: "read this", attachments: [ID], names: ["a.txt"]}});      // the names: the owner's line records them
   assert.deepEqual(c.state().files, []);
   assert.deepEqual(c.state().turn, {active: true, stopping: false, text: "", messageId: 41});
 });
@@ -204,4 +204,120 @@ test("the stored reply keeps its typed blocks: the settled turn is one fold row,
   assert.match(settled, /2 tool calls: 1 read, 1 run/);
   const pending = ChatView.transcript(session, [{id: 2, role: "agent", who: "sutra", kind: "text", text: "Done.", blocks, state: "pending", at: ""}], {live: true});
   assert.doesNotMatch(pending, /tool calls/);
+});
+
+/* ---------------------------------------------------------------- GAP-chat-comfort: paste, drop, thumbnails, Retry */
+const {filesOf, hasFiles} = ChatComposer;
+const urlRig = () => {
+  const made = [];
+  const revoked = [];
+  return {made, revoked, objectUrl: {create: f => { const u = "blob:http://127.0.0.1:8780/" + String(made.length + 1).padStart(8, "0"); made.push([u, f]); return u; }, revoke: u => revoked.push(u)}};
+};
+const image = (name, type) => ({name, size: 2048, type: type || "image/png"});
+
+test("a text paste or a text drop is not a file paste: filesOf says null and the page lets it happen", () => {
+  assert.equal(filesOf({files: [], items: [{kind: "string", type: "text/plain"}], getData: () => "hello"}), null);
+  assert.equal(filesOf({files: []}), null);
+  assert.equal(filesOf(null), null);
+  assert.equal(filesOf("text"), null);
+  const shot = image("image.png");
+  assert.deepEqual(filesOf({files: [shot]}), [shot]);
+  assert.deepEqual(filesOf({files: [], items: [{kind: "file", getAsFile: () => shot}]}), [shot]);
+  assert.equal(hasFiles({types: ["text/plain"]}), false);
+  assert.equal(hasFiles({types: ["Files", "text/uri-list"]}), true);
+  assert.equal(hasFiles(undefined), false);
+});
+
+test("a pasted screenshot attaches once, with a name of its own and a thumbnail; a second paste does not look the same", async () => {
+  const u = urlRig();
+  const {api, c} = rig({[UP]: body => ({id: ID, name: body.name, kind: "image", size: 2048})}, {objectUrl: u.objectUrl});
+  assert.equal(c.take({files: [], items: []}, {pasted: true}), false);
+  assert.equal(api.calls.length, 0);
+  await c.take({files: [image("image.png")]}, {pasted: true});
+  await c.take({files: [image("", "image/jpeg")]}, {pasted: true});
+  assert.deepEqual(api.calls.map(x => x.body.name), ["pasted-image-1.png", "pasted-image-2.jpg"]);
+  assert.deepEqual(c.state().files.map(f => f.name), ["pasted-image-1.png", "pasted-image-2.jpg"]);
+  const html = chips(c.state().files);
+  assert.match(html, /<img class="ccthumb" src="blob:http:\/\/127\.0\.0\.1:8780\/00000001" alt=""\/>/);
+  assert.equal(u.made.length, 2);
+  await c.take({files: [image("logo.png")]});                         // a dropped file keeps its own name
+  assert.equal(c.state().files[2].name, "logo.png");
+});
+
+test("a thumbnail is only a blob: URL; a PDF and a text file get a tile; a hostile name is escaped", () => {
+  const html = chips([{key: "f1", name: "a.png", status: "ready", size: 1, kind: "image", preview: "javascript:alert(1)"},
+    {key: "f2", name: "b.pdf", status: "ready", size: 1, kind: "pdf"}, {key: "f3", name: "<i>.md", status: "uploading", size: 1},
+    {key: "f4", name: "c.png", status: "ready", size: 1, preview: 'blob:x" onerror="alert(1)'}]);
+  assert.doesNotMatch(html, /javascript:|onerror|<img/);
+  assert.deepEqual([...html.matchAll(/<span class="cctile" aria-hidden="true">(\w+)<\/span>/g)].map(m => m[1]), ["IMG", "PDF", "TXT", "IMG"]);
+  assert.match(html, /&lt;i&gt;\.md/);
+  assert.doesNotMatch(html, /<i>/);
+});
+
+test("a thumbnail's URL is revoked when its chip is removed and when the message is sent", async () => {
+  const u = urlRig();
+  const {c} = rig({[UP]: () => ({id: ID, kind: "image", size: 5}), [DIRECT]: () => ({message_id: 9})}, {objectUrl: u.objectUrl});
+  await c.addFiles([image("one.png"), image("two.png"), file("notes.txt")]);
+  assert.equal(u.made.length, 2);                                     // a text file has no thumbnail
+  c.removeFile(c.state().files[0].key);
+  assert.deepEqual(u.revoked, [u.made[0][0]]);
+  await c.send("look");
+  assert.deepEqual(u.revoked, [u.made[0][0], u.made[1][0]]);
+  assert.deepEqual(c.state().files, []);
+});
+
+test("the 11th file of a paste is refused with the same note as the file chooser's", async () => {
+  const {c} = rig({[UP]: () => ({id: ID, kind: "image", size: 5})}, {objectUrl: urlRig().objectUrl});
+  await c.take({files: Array.from({length: 11}, (_, i) => image("shot" + i + ".png"))});
+  assert.equal(c.state().files.length, 10);
+  assert.match(c.state().note, /Up to 10 files/);
+});
+
+test("in team mode a pasted file switches the box to the model, with a one-line note", async () => {
+  const {c} = rig({[UP]: () => ({id: ID, kind: "image", size: 5})}, {mode: "team", objectUrl: urlRig().objectUrl});
+  assert.equal(c.state().mode, "team");
+  await c.take({files: [image("image.png")]}, {pasted: true});
+  assert.equal(c.state().mode, "direct");
+  assert.equal(c.state().note, "Files go only to the model, so this message now asks the model directly.");
+  assert.match(bar(c.state()), /class="ccnote" role="status">Files go only to the model/);
+  const refused = rig({}, {mode: "team"});
+  await refused.c.take({files: [file("tool.exe")]});
+  assert.match(refused.c.state().note, /can be attached/);                // the refusal is what the owner needs to read
+});
+
+test("Retry sends the same words once, on the model, and a second press while it answers is refused", async () => {
+  const {api, c} = rig({[DIRECT]: () => ({message_id: 30})}, {mode: "team"});
+  const first = c.retry(12, "  What time do we open?  ");
+  const second = await c.retry(12, "What time do we open?");
+  assert.equal(second.ok, false);
+  assert.equal((await first).ok, true);
+  assert.deepEqual(api.calls.filter(x => x.p === DIRECT).map(x => x.body), [{text: "What time do we open?"}]);
+  assert.equal(c.state().mode, "direct");
+  assert.equal(c.state().turn.messageId, 30);
+  assert.equal((await rig({}).c.retry(1, "   ")).ok, false);
+});
+
+test("Retry sends the files again when this page sent them, else text only and the note says so", async () => {
+  const {api, c} = rig({[UP]: () => ({id: ID, kind: "text", size: 5}), [DIRECT]: () => ({message_id: 41})});
+  await c.addFiles([file("menu.txt")]);
+  await c.send("read the menu");
+  c.reconcile([{id: 42, role: "agent", kind: "error", turn: 41}]);
+  await c.retry(41, "read the menu", {files: 1});
+  assert.deepEqual(api.calls[api.calls.length - 1].body, {text: "read the menu", attachments: [ID], names: ["menu.txt"]});
+  assert.equal(c.state().note, "");
+  const later = rig({[DIRECT]: () => ({message_id: 50})});            // after a reload the page does not know the files any more
+  await later.c.retry(41, "read the menu", {files: 1});
+  assert.deepEqual(later.api.calls[0].body, {text: "read the menu"});
+  assert.equal(later.c.state().note, "Sent again without its files: attach them again to include them.");
+});
+
+test("rejoin: a chat shown again mid-turn starts its row from what streams next, and keeps the turn", async () => {
+  const {c} = rig({[DIRECT]: () => ({message_id: 5})});
+  assert.equal(c.rejoin(), false);
+  await c.send("hi");
+  c.partial({session_id: SID, message_id: 5, delta: "Hello"});
+  assert.equal(c.rejoin(), true);
+  assert.deepEqual(c.state().turn, {active: true, stopping: false, text: "", messageId: 5});
+  c.partial({session_id: SID, message_id: 5, delta: " again"});
+  assert.equal(c.state().turn.text, " again");
 });

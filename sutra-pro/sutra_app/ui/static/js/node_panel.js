@@ -39,9 +39,13 @@
   const GONE = "This chat is gone.";
   const FAILED = "Something went wrong. Try again.";
 
+  const NEAR_PX = 48;                // a reader this close to the bottom before a repaint is following the newest line
+  const BOX_MAX_PX = 200;            // the message box grows with its text up to this (chat_draft.js grow)
+
   const ctx = () => root.SutraCtx || null;
   const FV = () => root.FnodeView;
   const CV = () => root.ChatView;
+  const CSc = () => root.ChatScroll || null;          // GAP-chat-comfort: chat_draft.js and chat_scroll.js, read when used (a J2 page injects them)
   const api = () => {
     const c = ctx();
     if (!c || !c.api) throw new Error("NodePanel needs SutraCtx (sutra_ctx.js) loaded first");
@@ -120,6 +124,10 @@
     let st = null;                   // null when closed, else everything about the node on show
     let refs = null;                 // the skeleton's elements
     let chatRefs = null;             // the Chat tab's elements (rebuilt when the tab is)
+    let drafts = null;               // the per-chat drafts (ChatDraft), made on first use
+    const composers = new Map();     // session id -> its composer controller: the mode, the files and a running turn outlive a closed panel
+    const scrollMem = new Map();     // session id -> where it was read when it closed (ChatScroll.remember / restore)
+    const draftStore = () => { if (!drafts && root.ChatDraft) drafts = root.ChatDraft.create(); return drafts; };
 
     /* ------------------------------------------------ the skeleton */
     function ensureShell() {
@@ -181,14 +189,78 @@
     function buildChat() {
       refs.body.innerHTML = '<div class="nchat"><div class="nsearch" hidden><input type="search" class="nsbox" aria-label="Search chats" placeholder="Search chats\u2026" maxlength="200"/>' +
         '<div class="nsres" hidden></div></div><div class="nactions" hidden></div><div class="nlens" hidden></div><div class="nlinks" hidden></div><div class="nearlier" hidden></div>' +
-        '<div class="nmsgs" role="log" aria-live="polite" aria-label="Messages"></div><div class="ccstream" hidden></div><p class="nbanner" role="status" hidden></p>' +
+        '<div class="nmsgs" role="log" aria-live="polite" aria-label="Messages"></div><div class="cjump" hidden></div><div class="ccstream" hidden></div><p class="nbanner" role="status" hidden></p>' +
         '<div class="npill" hidden></div><div class="ncomposer" hidden><div class="ccbar" hidden></div><div class="row"><textarea class="nbox" aria-label="Your message" rows="2"></textarea>' +
         '<button type="button" class="send" data-act="send">Send</button></div></div><p class="nnote" role="note" hidden></p></div>';
       refs.body.__html = undefined;
       const q = sel => refs.body.querySelector(sel);
       chatRefs = {lens: q(".nlens"), links: q(".nlinks"), earlier: q(".nearlier"), msgs: q(".nmsgs"), banner: q(".nbanner"), composer: q(".ncomposer"),
-        box: q(".nbox"), send: q(".send"), note: q(".nnote"), pill: q(".npill"), bar: q(".ccbar"), stream: q(".ccstream"), search: q(".nsearch"), sbox: q(".nsbox"), sres: q(".nsres"), actions: q(".nactions")};
+        box: q(".nbox"), send: q(".send"), note: q(".nnote"), pill: q(".npill"), bar: q(".ccbar"), stream: q(".ccstream"), search: q(".nsearch"), sbox: q(".nsbox"), sres: q(".nsres"), actions: q(".nactions"),
+        jump: q(".cjump")};
       if (chatRefs.sbox) chatRefs.sbox.addEventListener("input", () => onSearchInput());
+      if (CSc()) {
+        CSc().watch(chatRefs.msgs, onScrollIntent);
+        CSc().pin(chatRefs.msgs, () => !!st && !st.scroll.parked);       // the box or a row under it changes size: a follower stays at the newest line
+      }
+    }
+
+    /* ------------------------------------------------ the draft and the box (GAP-chat-comfort) */
+    // The box shows the draft of the chat on show; the first time it is synced, words typed before the draft store arrived are kept.
+    const draftSid = () => (st && !st.view && !st.readOnly ? st.sid : "");
+    function growBox() {
+      if (chatRefs && chatRefs.box && root.ChatDraft) root.ChatDraft.grow(chatRefs.box, BOX_MAX_PX);
+    }
+    function syncDraft() {
+      const d = draftStore();
+      if (!chatRefs || !chatRefs.box || !d) return;
+      const sid = draftSid();
+      if (chatRefs.draftFor === sid) return;
+      const first = chatRefs.draftFor === undefined;
+      chatRefs.draftFor = sid;
+      if (first && chatRefs.box.value !== "") d.save(sid, chatRefs.box.value);
+      else chatRefs.box.value = sid ? d.load(sid) : "";
+      growBox();
+    }
+    function saveDraft() {
+      const d = draftStore();
+      if (d && chatRefs && chatRefs.box && chatRefs.draftFor) d.save(chatRefs.draftFor, chatRefs.box.value);
+    }
+
+    /* ------------------------------------------------ the reader's place (GAP-chat-comfort) */
+    function onScrollIntent(ev) {
+      const CS = CSc();
+      if (!CS || !st) return;
+      const before = st.scroll.pill;
+      st.scroll = CS.intent(st.scroll, Object.assign(ev, {lastId: lastIdOf(activeMessages())}));
+      if (st.scroll.pill !== before) paintJump();
+    }
+    function paintJump() {
+      const CS = CSc();
+      if (!chatRefs || !chatRefs.jump) return;
+      const html = CS && st ? CS.pillHtml(st.scroll.pill) : "";
+      chatRefs.jump.hidden = html === "";
+      paintTo(chatRefs.jump, html);
+    }
+    function jumpLatest() {
+      const CS = CSc();
+      const el = chatRefs ? chatRefs.msgs : null;
+      if (!CS || !el) return;
+      st.scroll = {parked: false, seenId: lastIdOf(activeMessages()), pill: 0};
+      paintJump();
+      const how = CS.behavior(typeof root.matchMedia === "function" ? q => root.matchMedia(q) : undefined);
+      if (typeof el.scrollTo === "function") el.scrollTo({top: el.scrollHeight, behavior: how});
+      else el.scrollTop = el.scrollHeight;
+    }
+    // A follower stays at the newest line when a row above or under the transcript changes size (ChatScroll.pin does it too, where the page renders).
+    function keepFollowing() {
+      if (CSc() && st && chatRefs && chatRefs.msgs && !st.scroll.parked && !st.loading) chatRefs.msgs.scrollTop = chatRefs.msgs.scrollHeight;
+    }
+    // Where the chat on show was read, kept when the panel closes or leaves the Chat tab (only once its messages were drawn).
+    function rememberScroll() {
+      const CS = CSc();
+      if (!CS || !st || !chatRefs || !chatRefs.msgs || st.loading || st.chatNote || st.nodeGone) return;
+      const el = chatRefs.msgs;
+      CS.remember(scrollMem, activeSid(), {top: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, seenId: st.scroll.seenId});
     }
 
     const activeSession = () => (st.view ? st.view.session : st.session);
@@ -257,15 +329,35 @@
           (clean(s.note) ? " \u00b7 " + esc(clean(s.note)) : "") + "</button></li>").join("") + "</ul></details>");
     }
 
+    // The reader's place (ChatScroll): the owner's own send (st.stick) goes to the bottom; a chat opened again (st.reopen) comes back where it was
+    // read, else to the bottom; a reader who moved up stays and the pill counts what arrived below; a follower follows.
     function paintMessages() {
       const session = activeSession();
       const el = chatRefs.msgs;
-      const near = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-      const html = CV().transcript(session, activeMessages(), {deptName: deptName(), live: !st.view});
+      const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_PX;
+      const list = activeMessages();
+      const html = CV().transcript(session, list, {deptName: deptName(), live: !st.view});
       const changed = paintTo(el, html);
-      if (changed && (st.stick || near)) el.scrollTop = el.scrollHeight;
+      const last = list.reduce((n, m) => Math.max(n, Number(m.id) || 0), 0);
+      const CS = CSc();
+      if (!CS) {
+        if (changed && (st.stick || st.reopen || near)) el.scrollTop = el.scrollHeight;
+      } else {
+        const back = st.reopen && !st.stick ? CS.restore(scrollMem, activeSid(), {scrollHeight: el.scrollHeight, clientHeight: el.clientHeight}) : null;
+        let p;
+        if (back) {
+          el.scrollTop = back.top;
+          st.scroll = {parked: true, seenId: back.seenId, pill: 0};
+          p = {scroll: "keep", pill: CS.newCount(list, back.seenId)};
+        } else {
+          p = CS.plan({parked: st.scroll.parked, atBottom: near, grew: changed, own: st.stick || st.reopen, newCount: CS.newCount(list, st.scroll.seenId), pill: st.scroll.pill});
+          if (p.scroll === "bottom") el.scrollTop = el.scrollHeight;
+        }
+        st.scroll = CS.settle(st.scroll, p, CS.distance(el), last);
+        paintJump();
+      }
       st.stick = false;
-      const last = activeMessages().reduce((n, m) => Math.max(n, Number(m.id) || 0), 0);
+      st.reopen = false;
       markSeen(activeSid(), last);
     }
 
@@ -275,6 +367,7 @@
       const turn = {busy: !st.view && !direct && teamBusy(), asking: asking(), blocked: st.blocked || (direct ? askBlocked() : "")};
       const state = st.readOnly ? {hidden: true, disabled: true, placeholder: "", note: "This chat is read-only."} : CV().composerState(session, turn);
       chatRefs.composer.hidden = state.hidden;
+      syncDraft();
       chatRefs.box.disabled = state.disabled || st.sending;
       chatRefs.send.disabled = state.disabled || st.sending;
       const c = st.cc ? st.cc.c : null;
@@ -291,6 +384,7 @@
       chatRefs.banner.hidden = problem === "";
       chatRefs.banner.innerHTML = problem === "" ? "" : esc(problem) + (st.gone ? ' <button type="button" class="linkbtn" data-npclose>Close</button>' : "") +
         (st.retry ? ' <button type="button" class="linkbtn" data-act="retry-load">Try again</button>' : "");
+      keepFollowing();
     }
 
     // The composer of the direct chat (ABS-15): one controller per open team chat; "Tell the team" is the plain message route as it was, "Ask the model" is
@@ -300,7 +394,13 @@
       const sid = pillOwner();
       if (!CC || !sid) return null;
       if (!st.cc || st.cc.sid !== sid) {
-        st.cc = {sid, c: CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => { if (st && chatRefs) { paintComposer(); paintBar(); } }})};
+        let c = composers.get(sid);              // the same chat opened again: its mode, its files and a running turn (with Stop) are still there
+        if (c) c.rejoin();
+        else {
+          c = CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => { if (st && chatRefs) { paintComposer(); paintBar(); } }});
+          composers.set(sid, c);
+        }
+        st.cc = {sid, c};
       }
       return st.cc.c;
     }
@@ -316,6 +416,7 @@
       if (hidden) {
         chatRefs.bar.hidden = true; chatRefs.bar.innerHTML = ""; chatRefs.bar.__html = undefined;
         chatRefs.stream.hidden = true; chatRefs.stream.innerHTML = ""; chatRefs.stream.__html = undefined;
+        keepFollowing();
         return;
       }
       const data = pillData();
@@ -325,12 +426,13 @@
       const row = CC.streamRow(c.state(), CC.providerOf(data.providers, data.chosen));
       chatRefs.stream.hidden = row === "";
       paintTo(chatRefs.stream, row);
+      keepFollowing();
     }
 
     // After a refetch: the turn is over when the stored reply is in the list.
     function reconcileTurn() {
       const c = st && st.cc ? st.cc.c : null;
-      if (c && c.reconcile(st.messages)) st.stick = true;
+      if (c && c.reconcile(st.messages) && !st.scroll.parked) st.stick = true;          // a reader who moved up during the answer stays where they read
     }
 
     // The provider pill (ABS-9): only on a team chat the owner can write in; the data comes from GET /api/chats/{sid}/providers.
@@ -352,6 +454,7 @@
       const html = CP.pill(data.providers, data.chosen);
       chatRefs.pill.hidden = html === "";
       chatRefs.pill.innerHTML = html;
+      keepFollowing();
     }
 
     // Search, archive and the attachment limits (ABS-10): ChatSearch builds the strings; the server decides what a scope may see.
@@ -523,7 +626,8 @@
       st.session = isObj(session.value) ? session.value : null;
       st.messages = mergeMessages([], messages.value);
       st.lastId = lastIdOf(st.messages);
-      st.stick = true;
+      st.reopen = true;                          // back where this chat was read, else at its newest line
+      st.scroll = {parked: false, seenId: 0, pill: 0};
     }
 
     async function resolveSid(node, graph) {
@@ -579,7 +683,8 @@
       const graph = isObj(freshGraph) ? freshGraph : getGraph();      // archive and un-archive re-link the team's chat: the caller passes the graph it just fetched
       st = {nodeId: id, tab: tab === "details" ? "details" : "chat", node: findNode(graph, id), detail: null, detailError: "", sid: "", session: null, messages: [],
         lastId: 0, banner: "", blocked: "", cc: null, ccMode: "team", readOnly: false, gone: false, retry: false, sending: false, view: null, scope: "division", divisionChat: null, allAtoms: null,
-        openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: true, opener: opener, conn: null, refresh: null};
+        openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: false, reopen: true, scroll: {parked: false, seenId: 0, pill: 0},
+        opener: opener, conn: null, refresh: null};
       if (!opener.id) opener.id = id;
       doc.body.classList.add("nodeopen");
       closeAgentDrawer();
@@ -635,7 +740,6 @@
       if (found.value.length) {
         st.messages = mergeMessages(st.messages, found.value);
         st.lastId = lastIdOf(st.messages);
-        st.stick = false;
       }
       reconcileTurn();
       if (st.tab === "chat" && chatRefs) paintChat();
@@ -707,6 +811,8 @@
     function close() {
       if (!st) return false;
       const opener = st.opener;
+      rememberScroll();                          // the place it was read and the words in the box come back when it opens again
+      saveDraft();
       stopLive();
       st = null;
       gen += 1;
@@ -758,13 +864,15 @@
       const body = text(value).trim();
       if (!c || body === "") return false;
       const g = gen;
+      const sid = st.sid;
       const stuck = askBlocked();
       if (stuck !== "") { st.banner = stuck; paintChat(); return false; }
       st.banner = "";
       const out = await c.send(body);
+      if (out.ok && draftStore()) draftStore().clearIf(sid, body);          // only a send the server accepted clears the draft
       if (g !== gen || !st) return out.ok;
       if (out.ok) {
-        if (fromBox && chatRefs && chatRefs.box.value.trim() === body) chatRefs.box.value = "";
+        if (fromBox && chatRefs && chatRefs.box.value.trim() === body) { chatRefs.box.value = ""; growBox(); }
         st.stick = true;
         await refreshMessages(g);                 // the owner's line (stored before the 202) and, if it was quick, the reply too
       }
@@ -778,6 +886,22 @@
       const g = gen;
       await c.stop();
       await refreshMessages(g);
+    }
+
+    // Retry on a direct line that failed: the owner's same words, once, to the model (the error line names the line: data-turn).
+    async function retryDirect(turnId) {
+      const c = composerOf();
+      const line = activeMessages().find(m => String(m.id) === String(turnId) && (m.role === "user" || m.who === "user"));
+      if (!c || !line) return;
+      const stuck = st.pill ? root.ChatComposer.askBlock(pillData().providers) : "";
+      if (stuck !== "") { st.banner = stuck; paintChat(); return; }
+      const g = gen;
+      const said = CV().attachedOf(line.text);
+      st.banner = "";
+      const out = await c.retry(line.id, said.text, {files: said.names.length});
+      if (g !== gen || !st) return;
+      if (out.ok) { st.stick = true; await refreshMessages(g); }
+      if (st && g === gen && chatRefs) paintChat();
     }
 
     async function send(value, fromBox, team) {
@@ -794,6 +918,7 @@
       try {
         await api().post(msgPath(sid), {text: body});
         ok = true;
+        if (draftStore()) draftStore().clearIf(sid, body);                 // only a send the server accepted clears the draft
       } catch (e) {
         if (g === gen && st) {
           const problem = problemOf(e);
@@ -806,7 +931,7 @@
       if (g !== gen || !st) return ok;
       st.sending = false;
       if (ok) {
-        if (fromBox && chatRefs && chatRefs.box.value.trim() === body) chatRefs.box.value = "";
+        if (fromBox && chatRefs && chatRefs.box.value.trim() === body) { chatRefs.box.value = ""; growBox(); }
         st.stick = true;
         await Promise.all([refreshMessages(g), refreshDetail(g)]);
       }
@@ -906,6 +1031,8 @@
       else if (name === "earlier") showArchived(act.dataset.sid);
       else if (name === "back") { st.view = null; st.stick = true; paintAll(); }
       else if (name === "retry-load") { const node = st.nodeId; const tab = st.tab; open(node, tab); }
+      else if (name === "jump-latest") jumpLatest();
+      else if (name === "retry-direct") retryDirect(act.dataset.turn);
     }
 
     // J2's convention: an option button answers "Option N"; a question that is one of several adds "<q>. Option N" to the box instead.
@@ -916,13 +1043,16 @@
       if (group.dataset.n === "1") { send("Option " + n, false, true); return; }
       const box = chatRefs.box;
       box.value += (box.value ? "; " : "") + group.dataset.q + ". Option " + n;
+      saveDraft();
+      growBox();
       box.focus();
     }
 
     function switchTab(tab) {
       if (!st || (tab !== "chat" && tab !== "details") || st.tab === tab) return;
+      if (st.tab === "chat") { rememberScroll(); saveDraft(); }
       st.tab = tab;
-      st.stick = true;
+      st.reopen = true;
       chatRefs = null;
       refs.body.innerHTML = "";
       refs.body.__html = undefined;
@@ -930,9 +1060,12 @@
       if (tab === "details" && !st.agentHtml) loadAgent(gen);
     }
 
+    // Esc: first it stops a direct answer that is running, else it closes the panel (the draft is already saved, so nothing is lost).
     function onKeyDown(e) {
       if (!st) return;
       if (e.key === "Escape" && !e.defaultPrevented && !e.isComposing) {
+        const turn = st.cc && st.cc.sid === pillOwner() ? st.cc.c.state().turn : null;
+        if (st.tab === "chat" && turn && turn.active && !turn.stopping) { stopDirect(); return; }
         close();
         return;
       }
@@ -950,6 +1083,21 @@
       if (!c) return;
       c.addFiles(t.files);
       t.value = "";
+    });
+    // The box: what is typed is the chat's draft and sizes the box; a pasted or dropped file attaches (a text paste or drop stays text).
+    const inBox = e => !!(st && chatRefs && chatRefs.box && e.target === chatRefs.box);
+    const inComposer = e => !!(st && chatRefs && chatRefs.composer && e.target && typeof chatRefs.composer.contains === "function" && chatRefs.composer.contains(e.target));
+    host.addEventListener("input", e => { if (inBox(e)) { saveDraft(); growBox(); } });
+    host.addEventListener("paste", e => {
+      const c = inBox(e) && !chatRefs.box.disabled ? composerOf() : null;
+      if (c && c.take(e.clipboardData, {pasted: true})) e.preventDefault();
+    });
+    host.addEventListener("dragover", e => {
+      if (inComposer(e) && composerOf() && root.ChatComposer.hasFiles(e.dataTransfer)) e.preventDefault();
+    });
+    host.addEventListener("drop", e => {
+      const c = inComposer(e) && !chatRefs.box.disabled ? composerOf() : null;
+      if (c && c.take(e.dataTransfer)) e.preventDefault();
     });
     host.addEventListener("keydown", e => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
