@@ -38,9 +38,17 @@ def j2_paths() -> tuple[list[str], list[str]]:
     return found[0], found[1]
 
 
+PATCHED_PATHS = {"/api/runlist", "/api/changes"}        # patch P13: not J2's, but team routes (sutra_ctx.js PATCHED_EXACT)
+
+
+def patched_paths() -> set[str]:
+    text = (UI / "static" / "js" / "sutra_ctx.js").read_text(encoding="utf-8")
+    return set(re.findall(r'"([^"]+)"', re.search(r"const PATCHED_EXACT = \[(.*?)\];", text, re.S).group(1)))
+
+
 def ui_matches(path: str) -> bool:
     exact, prefixes = j2_paths()
-    return path in exact or any(path.startswith(p) for p in prefixes)
+    return path in exact or path in patched_paths() or any(path.startswith(p) for p in prefixes)
 
 
 def literal_paths(files) -> set[str]:
@@ -69,19 +77,21 @@ def all_templates(world: World) -> set[str]:
 
 # ---- the engine's table ----------------------------------------------------------------------------------------------------------
 
-def test_the_engine_serves_exactly_the_j2_routes_the_page_lists_plus_the_two_settings_routes(world):
+def test_the_engine_serves_exactly_the_j2_routes_the_page_lists_plus_the_two_p13_routes_and_the_two_settings_routes(world):
     table = route_table(world.routers["engine"])
     exact, prefixes = j2_paths()
     gets = {path for (method, path) in table if method == "GET"}
     posts = {path for (method, path) in table if method == "POST"}
     templated = {path for path in gets if "{" in path}
     assert {path for (method, path) in table if method == "PUT"} == {SETTINGS_PATH}
-    assert len(gets - {SETTINGS_PATH}) == 22 and len(posts) == 5                     # 22 GET paths (/site/{key} answers two rows)
-    assert len(table) == 22 + 5 + 2
+    assert patched_paths() == PATCHED_PATHS
+    assert len(gets - {SETTINGS_PATH} - PATCHED_PATHS) == 22 and len(posts) == 5      # 22 GET paths (/site/{key} answers two rows)
+    assert len(table) == 22 + 5 + 2 + 2                                              # the last two: P13's /api/runlist and /api/changes
     assert len(templated) == 4 and all(any(path.startswith(prefix) for prefix in prefixes) for path in templated)
     for prefix in prefixes:
         assert any(path.startswith(prefix) for path in templated), prefix
-    assert (gets | posts) - templated - {SETTINGS_PATH} == set(exact)               # the page's list and the table name the same 23
+    assert (gets | posts) - templated - {SETTINGS_PATH} - PATCHED_PATHS == set(exact)     # the page's list and the table name the same 23
+    assert PATCHED_PATHS <= gets
 
 
 def test_no_route_copy_under_a_team_path_and_no_team_header_or_cookie(world):

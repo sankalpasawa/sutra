@@ -185,7 +185,16 @@ def parse_view_names(views_text: str) -> list[str]:
     for node in ast.walk(ast.parse(views_text)):
         targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
         if any(isinstance(t, ast.Name) and t.id == "VIEWS" for t in targets) and isinstance(node.value, ast.DictComp):
-            return [elt.id for elt in node.value.generators[0].iter.elts]
+            patched = parse_patch_views(views_text)          # J2's 30 handlers only: the P13 views are not J2 endpoints
+            return [elt.id for elt in node.value.generators[0].iter.elts if elt.id not in patched]
+    return []
+
+
+def parse_patch_views(views_text: str) -> list[str]:
+    """`PATCH_VIEWS = ("runlist", "changes")` of views.py: the read-only views of patch P13, which J2's own repository does not have."""
+    for node in ast.walk(ast.parse(views_text)):
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "PATCH_VIEWS" for t in node.targets):
+            return [elt.value for elt in node.value.elts]
     return []
 
 
