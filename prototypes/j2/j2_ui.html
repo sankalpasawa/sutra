@@ -637,11 +637,19 @@ svg path[data-edge].hot,svg.focusing path[data-edge].lit{opacity:1!important;str
 .treesvg .tnodes>.tnode:nth-child(3n+2),.consvg .cnodes>.cnode:nth-child(3n+2),.mapsvg .mapnode:nth-child(3n+2){animation-delay:-6s}
 .nodrift .tnode,.nodrift .cnode,.nodrift .mapnode{animation:none!important}
 @media (prefers-reduced-motion:reduce){.treesvg .tnodes>.tnode,.consvg .cnodes>.cnode,.mapsvg .mapnode{animation:none}}
+/* /library: the template catalog outside any run (the same page; the run views stay hidden) */
+#libpage{display:none}body.libpage{display:block}body.libpage #sview,body.libpage #dview{display:none}body.libpage #libpage{display:block;max-width:1100px;margin:0 auto;padding:18px 24px 40px}
+.libhead{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:0 0 10px}.libhead h1{margin:0;font-size:22px}.libhead input[type=search]{min-width:min(320px,100%);padding:4px 8px;font:inherit;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px}
+.libviews [role=tab]{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:3px 10px;font:inherit;cursor:pointer}.libviews [aria-selected="true"]{font-weight:700;border-color:var(--ink)}
+.librun{border:1px solid var(--line);border-radius:10px;padding:6px 12px;margin:8px 0;background:var(--panel)}.librun>summary{cursor:pointer}.librun .libgroup{margin:4px 0 4px 12px}.librun .libgroup b{display:inline-block;min-width:70px}
+.libbadge{border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px}.libbadge.mock{color:var(--validator);border-color:var(--validator)}.libbadge.live{color:var(--ok);border-color:var(--ok)}
+.tplmeta{margin:6px 0 8px;font-size:13px;color:var(--muted)}.tplmeta div{margin:2px 0}.tplmeta b{color:var(--ink)}.tplline{font-size:12.5px;color:var(--muted)}.tplline .code{color:var(--ink)}
 </style>
 <script>/* the viewer's Appearance before the first paint (Run settings sets it): light, dark or system; dark by default */
 try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset.theme = tp === "light" ? "light" : tp === "system" && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } catch (e) { document.documentElement.dataset.theme = "dark"; }</script>
 </head>
 <body class="simple">
+<div id="libpage"></div>
 <div id="sview">
   <section class="sland" id="sland" aria-label="Start">
     <div class="sbotwrap" id="sbotwrap" role="button" tabindex="0" aria-label="Meet your Client Lead"><div class="ssay" id="ssay" role="status"></div><svg class="sbot" id="sbot" viewBox="0 0 150 140" aria-hidden="true">
@@ -2283,7 +2291,8 @@ function artLocate(id){      // the group and row a Map id lands on: a section's
   return hit ? [hit[0], hit[1].id] : null; }
 // Library (template-library/1, J2_TEMPLATE_LIBRARY=1): every template grouped by artifact and section, this run's
 // routing decisions (templates.json), and a viewer with two modes: the four files as stored, or a readable card.
-const LIB = {loaded: false, groups: {}, dir: "", decisions: [], open: null, mode: "readable", view: null, focus: ""};
+const LIB = {loaded: false, groups: {}, dir: "", decisions: [], open: null, mode: "readable", view: null, focus: "",
+             pane: () => $("pane-library"), render: () => renderLibrary()};      // the catalog page (/library) points these at itself
 const slugOf = t => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "template";
 async function loadLibrary(){
   try { const r = await fetch("/api/library", {cache: "no-store"}); if (r.ok){ const d = await r.json(); LIB.groups = d.groups || {}; LIB.dir = d.dir || ""; } } catch (e) {}
@@ -2292,11 +2301,14 @@ async function loadLibrary(){
 }
 async function openTemplate(artifact, section, name, version){
   const sl = name === "generic" ? "generic" : slugOf(name);
-  LIB.open = {artifact, section, slug: sl, version}; LIB.view = null; paint($("pane-library"), renderLibrary());
+  LIB.open = {artifact, section, slug: sl, version}; LIB.view = null; paint(LIB.pane(), LIB.render());
   try { const r = await fetch(`/api/library/${artifact}/${slugOf(section)}/${sl}/v${version}${runQ().replace("&", "?")}`, {cache: "no-store"}); LIB.view = r.ok ? await r.json() : {error: "Could not open this template."}; }
   catch (e) { LIB.view = {error: "Could not open this template."}; }
-  paint($("pane-library"), renderLibrary()); const el = $("tplviewer"); if (el && el.scrollIntoView) el.scrollIntoView({block: "start"});
+  paint(LIB.pane(), LIB.render()); const el = $("tplviewer"); if (el && el.scrollIntoView) el.scrollIntoView({block: "start"});
 }
+const libHref = (art, sec, name, ver) => `/library?open=${encodeURIComponent(art)}/${encodeURIComponent(slugOf(sec))}/${encodeURIComponent(name === "generic" ? "generic" : slugOf(name))}/v${encodeURIComponent(ver)}`;
+const runHref = id => `/?run=${encodeURIComponent(id)}&view=detail&tab=library`;
+const libBadge = m => m === true ? '<span class="libbadge mock">mock</span>' : m === false ? '<span class="libbadge live">live</span>' : `<span class="libbadge">${esc(m || "not recorded")}</span>`;
 const libUses = u => (u || []).map(x => `${esc(x.run)} ${esc(x.workflow)}${x.action ? " (" + esc(x.action) + ")" : ""}`).join("<br>") || '<span class="empty">not used yet</span>';
 const libOpen = (art, sec, name, ver, text) => `<button type="button" class="linkbtn" data-tplopen="${esc(art)}|${esc(sec)}|${esc(name)}|${esc(ver)}">${text}</button>`;
 function renderLibrary(){
@@ -2324,29 +2336,100 @@ function renderTplViewer(){
   if (!v) return `<section class="artrow" id="tplviewer"><p class="empty">Opening the template…</p></section>`;
   if (v.error) return `<section class="artrow" id="tplviewer"><p class="empty">${esc(v.error)}</p></section>`;
   const t = v.template || {}, rd = v.readable || {};
-  const tabs = `<div role="tablist" class="tplmodes"><button type="button" role="tab" data-tplmode="template" aria-selected="${LIB.mode === "template"}">As template</button> <button type="button" role="tab" data-tplmode="readable" aria-selected="${LIB.mode === "readable"}">Readable</button> <button type="button" class="linkbtn" data-tplclose="1">close</button></div>`;
+  const tabs = `<div role="tablist" class="tplmodes"><button type="button" role="tab" data-tplmode="template" aria-selected="${LIB.mode === "template"}">As template</button> <button type="button" role="tab" data-tplmode="readable" aria-selected="${LIB.mode === "readable"}">Readable</button> <button type="button" class="linkbtn" data-tplclose="1">close</button>${cross}</div>`;
   const head = `<h3>${esc(t.name)} v${esc(t.version)} <span class="empty">${esc(t.kind)}${t.extends ? " · extends " + esc(t.extends) : ""}${v.source ? " · " + esc(v.source) : ""}</span></h3>`;
   if (v.source === "not recorded") return `<section class="artrow" id="tplviewer">${head}<p class="empty">not recorded: this run has no copy of this template and the library has no version ${esc(t.version)} of it.</p> <button type="button" class="linkbtn" data-tplclose="1">close</button></section>`;
+  const meta = v.meta || {}, mb = meta.made_by || t.made_by || null, biz = meta.business || null;
+  const nr = '<span class="empty">not recorded</span>';
+  const prov = t.kind === "generic" ? `<div class="tplmeta"><div>The generic layout of every ${esc(String(t.artifact || "").toUpperCase())} · ${esc(t.section)} section, from the code's models and rules; no run made it.</div></div>`
+    : `<div class="tplmeta" data-tplmeta="1">`
+      + `<div><b>Made by</b> ${mb ? `${CAT.on ? `<a href="${runHref(mb.run)}">${esc(mb.run)}</a>` : esc(mb.run)} ${esc(mb.workflow)} ${esc(mb.atom)} (${esc(mb.agent)})${mb.date ? " · " + esc(mb.date) : ""}` : nr} ${"mock" in meta ? libBadge(meta.mock) : ""}</div>`
+      + `<div><b>Business</b> ${biz ? `${esc(biz.name)}${biz.type && biz.type !== "not recorded" ? " (" + esc(biz.type) + ")" : ""}` : nr}</div>`
+      + `<div><b>Extends</b> ${t.extends ? libOpen(t.artifact, t.section, "generic", 1, esc(t.extends)) : nr}</div>`
+      + (meta.renumbered_from ? `<div><b>Renumbered from</b> ${esc(meta.renumbered_from)}</div>` : "")
+      + (meta.collected_from ? `<div><b>Collected from</b> ${esc(meta.collected_from.run)} (${esc(meta.collected_from.where)})</div>` : "")
+      + `<div><b>Used by</b> ${(meta.used_by || []).length ? (meta.used_by || []).map(u => `${CAT.on ? `<a href="${runHref(u.run)}">${esc(u.run)}</a>` : esc(u.run)} ${esc(u.workflow)}${u.action ? " (" + esc(u.action) + ")" : ""}`).join(", ") : '<span class="empty">not used yet</span>'}</div>`
+      + `</div>`;
+  const cross = CAT.on ? "" : ` <a href="${libHref(o.artifact, t.section || o.section, t.kind === "generic" ? "generic" : t.name, t.kind === "generic" ? 1 : t.version)}" data-link="catalog">Open in the template library</a>`;
   let body;
   if (LIB.mode === "template"){
     body = Object.entries(v.files || {}).filter(([n, f]) => f && f.text !== null).map(([n, f]) => { const k = `${o.artifact}/${o.slug}/v${o.version}/${n}`; TPLCODE[k] = f.text;
       return `<div class="codebox" data-tplfile="${esc(n)}"><b>${esc(n)}</b> <span class="empty">sha ${esc(String(f.sha).slice(0, 12))}</span> <button type="button" class="ghost codecopy" data-tplcopy="${esc(k)}">Copy</button><pre class="code plain">${esc(f.text)}</pre></div>`; }).join("");
   } else {
     const chips = l => (l || []).map(x => `<span class="mappill">${esc(x)}</span>`).join(" ");
-    const frow = f => `<tr><td><span class="code">${esc(f.name)}</span>${f.added ? ' <span class="empty">added</span>' : ""}</td><td>${esc(f.type)}</td><td>${f.required ? "required" : "optional"}</td><td>${esc(f.description || "")}${f.enum && f.enum.length ? `<div>${chips(f.enum)}</div>` : ""}</td></tr>`;
+    const frow = f => `<tr><td><span class="code">${esc(f.name)}</span>${rd.kind === "specialised" ? (f.added ? ' <span class="empty">added</span>' : ' <span class="empty">generic</span>') : ""}</td><td>${esc(f.type)}</td><td>${f.required ? "required" : "optional"}</td><td>${esc(f.description || "")}${f.enum && f.enum.length ? `<div>${chips(f.enum)}</div>` : ""}</td></tr>`;
     const tbl = rows => `<table class="maptable"><thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead><tbody>${rows.map(frow).join("")}</tbody></table>`;
     const ex = v.example ? `<h4>Example from this run (${esc(v.example.workflow)})</h4><pre class="code plain">${esc(JSON.stringify(v.example.data, null, 2))}</pre>` : '<p class="empty">No example: this run did not fill this template.</p>';
     body = `<div class="tplcard" data-tplreadable="1"><p>${esc(rd.description || "")}</p><h4>${esc(String(rd.artifact || "").toUpperCase())} · ${esc(rd.section)}</h4>${tbl(rd.fields || [])}`
       + (rd.objects || []).map(ob => `<h4>${esc(ob.name)}</h4>${tbl(ob.fields)}`).join("")
-      + `<h4>Rules</h4><ul>${(rd.rules || []).map(r => `<li>${esc(r.sentence)}${r.own ? ' <span class="empty">(this template\'s own)</span>' : r.from ? ` <span class="empty">(${esc(r.from)})</span>` : ""}</li>`).join("") || '<li class="empty">none</li>'}</ul>${ex}</div>`;
+      + `<h4>Rules</h4><ul>${(rd.rules || []).map(r => `<li>${esc(r.sentence)}${r.own ? ' <span class="empty">(this template\'s own)</span>' : rd.kind === "specialised" ? ` <span class="empty">(inherited from the generic${r.from ? ", " + esc(r.from) : ""})</span>` : r.from ? ` <span class="empty">(${esc(r.from)})</span>` : ""}</li>`).join("") || '<li class="empty">none</li>'}</ul>${CAT.on ? "" : ex}</div>`;
   }
-  return `<section class="artrow" id="tplviewer">${head}${tabs}${body}</section>`;
+  return `<section class="artrow" id="tplviewer">${head}${prov}${tabs}${body}</section>`;
 }
-$("pane-library").addEventListener("click", async e => {
+async function libClick(e){
   const op = e.target.closest("[data-tplopen]"); if (op){ const [a, s, n, v] = op.dataset.tplopen.split("|"); return openTemplate(a, s, n, +v); }
-  const m = e.target.closest("[data-tplmode]"); if (m){ LIB.mode = m.dataset.tplmode; return paint($("pane-library"), renderLibrary()); }
-  if (e.target.closest("[data-tplclose]")){ LIB.open = LIB.view = null; return paint($("pane-library"), renderLibrary()); }
-  const c = e.target.closest("[data-tplcopy]"); if (c){ try { await navigator.clipboard.writeText(TPLCODE[c.dataset.tplcopy] || ""); c.textContent = "Copied"; } catch (err) { c.textContent = "Copy failed"; } } });
+  const m = e.target.closest("[data-tplmode]"); if (m){ LIB.mode = m.dataset.tplmode; return paint(LIB.pane(), LIB.render()); }
+  if (e.target.closest("[data-tplclose]")){ LIB.open = LIB.view = null; return paint(LIB.pane(), LIB.render()); }
+  const c = e.target.closest("[data-tplcopy]"); if (c){ try { await navigator.clipboard.writeText(TPLCODE[c.dataset.tplcopy] || ""); c.textContent = "Copied"; } catch (err) { c.textContent = "Copy failed"; } }
+}
+$("pane-library").addEventListener("click", libClick);
+// ---- /library: the shared template library outside any run, read from library/ only (/api/catalog), so it works on a
+// fresh clone with no runs/. Two views (by run, by artifact), a search box (business or template name), a "Hide mock" box
+// (off by default), and the same viewer as the run's Library tab, opened in place.
+const CAT = {on: location.pathname === "/library", loaded: false, groups: {}, runs: [], dir: "", view: "run", q: "", hideMock: false, open: null};
+const catMatch = (...texts) => { const q = CAT.q.trim().toLowerCase(); return !q || texts.some(t => String(t || "").toLowerCase().includes(q)); };
+const catCount = (r, a) => (r.counts || {})[a] || 0;
+const catItem = d => `<div data-catitem="${esc(d.workflow)}">${esc(d.workflow)} · ${esc(d.artifact)} · ${esc(d.section)} · `
+  + (d.ref ? libOpen(d.ref.artifact, d.section, d.ref.slug === "generic" ? "generic" : d.template, d.ref.version, `${esc(d.template)} v${esc(d.ref.version)}`)
+    + (d.ref.version !== d.version && d.ref.slug !== "generic" ? ` <span class="empty">(was v${esc(d.version)} in this run)</span>` : "")
+    : `${esc(d.template)} v${esc(d.version)} <span class="empty">not recorded${d.why ? ": " + esc(d.why) : ""}</span>`) + `</div>`;
+function renderCatRuns(){
+  const runs = (CAT.runs || []).filter(r => !(CAT.hideMock && r.mock === true))
+    .filter(r => catMatch(r.business, r.run, ...(r.decisions || []).map(d => d.template)));
+  if (!runs.length) return '<p class="empty">No run matches.</p>';
+  return runs.map(r => { const ds = (r.decisions || []).filter(d => catMatch(r.business, r.run, d.template));
+    const groups = [["created", "Created"], ["extended", "Extended"], ["reused", "Reused"], ["generic", "Generic"]].map(([a, label]) => { const mine = ds.filter(d => d.action === a);
+      return mine.length ? `<div class="libgroup" data-catgroup="${a}"><b>${label}</b> ${mine.length}${mine.map(catItem).join("")}</div>` : ""; }).join("");
+    return `<details class="librun" open data-catrun="${esc(r.run)}"><summary><b>${esc(r.run)}</b> · ${esc(r.business)}${r.business_type && r.business_type !== "not recorded" ? " (" + esc(r.business_type) + ")" : ""} · ${esc(r.date)} ${libBadge(r.mock)}`
+      + ` <span class="empty">· created ${catCount(r, "created")}, extended ${catCount(r, "extended")}, reused ${catCount(r, "reused")}, generic ${catCount(r, "generic")}</span> <a href="${runHref(r.run)}">open run</a></summary>${groups || '<p class="empty">No decision matches.</p>'}</details>`; }).join("");
+}
+function renderCatArtifacts(){
+  const out = Object.entries(CAT.groups || {}).map(([art, secs]) => { const rows = Object.entries(secs).map(([sec, g]) => {
+      const ts = (g.templates || []).map(t => ({...t, versions: (t.versions || []).filter(v => !(CAT.hideMock && v.mock === true) && catMatch(t.name, (v.business || {}).name, (v.made_by || {}).run))})).filter(t => t.versions.length);
+      if (CAT.q.trim() && !ts.length) return "";
+      return `<div class="artrow" data-libsec="${esc(art)}|${esc(sec)}"><b>${esc(sec)}</b>`
+        + (g.generic ? `<div>generic · ${libOpen(art, sec, "generic", 1, `${esc(g.generic.name)} v${esc(g.generic.version)}`)} <span class="empty">${esc(g.generic.fields.length)} fields</span></div>` : "")
+        + ts.map(t => `<div class="tplentry" data-tplname="${esc(t.name)}"><span>specialised · <b>${esc(t.name)}</b> <span class="empty">extends ${esc(t.extends)} · ${t.versions.length} version${t.versions.length === 1 ? "" : "s"}</span></span><div class="empty">${esc(t.description || "")}</div>`
+          + t.versions.map(v => `<div class="tplver">${libOpen(art, sec, t.name, v.version, "v" + esc(v.version))} ${libBadge(v.mock)} <span class="empty">made by <a href="${runHref(v.made_by.run)}">${esc(v.made_by.run)}</a> ${esc(v.made_by.workflow)}${v.made_by.date ? " · " + esc(v.made_by.date) : ""} · ${esc((v.business || {}).name || v.business_type || "not recorded")}${v.renumbered_from ? " · renumbered from " + esc(v.renumbered_from) : ""}</span><div class="empty">used by: ${libUses(v.used_by)}</div></div>`).join("") + `</div>`).join("") + `</div>`; }).join("");
+    return rows ? `<details class="artgroup" open data-libart="${esc(art)}"><summary><h3>${esc(art.toUpperCase())}</h3></summary>${rows}</details>` : ""; }).join("");
+  return out || '<p class="empty">No template matches.</p>';
+}
+function renderCatBody(){ return (LIB.open ? renderTplViewer() : "") + (CAT.view === "run" ? renderCatRuns() : renderCatArtifacts()); }
+function renderCatHead(){
+  const nt = Object.values(CAT.groups || {}).reduce((n, secs) => n + Object.values(secs).reduce((m, g) => m + (g.templates || []).length, 0), 0);
+  const nv = Object.values(CAT.groups || {}).reduce((n, secs) => n + Object.values(secs).reduce((m, g) => m + (g.templates || []).reduce((k, t) => k + (t.versions || []).length, 0), 0), 0);
+  return `<div class="libhead"><h1>Template library</h1><span class="empty" data-catcount>${nt} templates, ${nv} versions, from ${(CAT.runs || []).length} runs · ${esc(CAT.dir)}</span><span class="spacer"></span><a href="/">Runs</a></div>`
+    + `<div class="libhead"><div class="libviews" role="tablist" aria-label="View"><button type="button" role="tab" data-catview="run" aria-selected="${CAT.view === "run"}">By run</button> <button type="button" role="tab" data-catview="artifact" aria-selected="${CAT.view === "artifact"}">By artifact</button></div>`
+    + `<input type="search" id="catq" placeholder="Search by business or template name" aria-label="Search by business or template name" value="${esc(CAT.q)}">`
+    + `<label><input type="checkbox" id="cathide"${CAT.hideMock ? " checked" : ""}> Hide mock</label></div><div id="catbody"></div>`;
+}
+async function loadCatalog(){
+  try { const r = await fetch("/api/catalog", {cache: "no-store"}); if (r.ok){ const d = await r.json(); CAT.groups = d.groups || {}; CAT.runs = d.runs || []; CAT.dir = d.dir || ""; } } catch (e) {}
+  CAT.loaded = true; $("libpage").innerHTML = renderCatHead(); paint($("catbody"), renderCatBody());
+  $("catq").addEventListener("input", () => { CAT.q = $("catq").value; paint($("catbody"), renderCatBody()); });
+  $("cathide").addEventListener("change", () => { CAT.hideMock = $("cathide").checked; paint($("catbody"), renderCatBody()); });
+  $("libpage").addEventListener("click", e => { const b = e.target.closest("[data-catview]"); if (b){ CAT.view = b.dataset.catview; $("libpage").querySelectorAll("[data-catview]").forEach(x => x.setAttribute("aria-selected", String(x === b))); return paint($("catbody"), renderCatBody()); } libClick(e); });
+  if (CAT.open){ const [a, s, n, v] = CAT.open; openTemplate(a, s, n, v); }
+}
+if (CAT.on){
+  document.body.classList.add("libpage"); document.title = "J2 template library";
+  LIB.pane = () => $("catbody"); LIB.render = renderCatBody;
+  const q = new URLSearchParams(location.search);
+  CAT.q = q.get("business") || q.get("q") || ""; CAT.hideMock = q.get("mock") === "hide"; CAT.view = q.get("view") === "artifact" ? "artifact" : "run";
+  const o = (q.get("open") || "").split("/");      // artifact/section-slug/template-slug/vN, as libHref writes it
+  if (o.length === 4 && /^v\d+$/.test(o[3])) CAT.open = [o[0], o[1], o[2], +o[3].slice(1)];
+  loadCatalog();
+}
 $("pane-artifacts").addEventListener("click", async e => {
   const cc = e.target.closest("[data-codecopy]"); if (cc){ e.preventDefault(); try { await navigator.clipboard.writeText(CODE[cc.dataset.codecopy] || ""); cc.textContent = "Copied"; } catch (err) { cc.textContent = "Copy failed"; } return; }
   const r = e.target.closest("[data-agrow]"); if (r){ ARTS.sel[ARTS.g] = r.dataset.agrow; ARTS.tab = "sum"; ARTS.ver = ""; artPaint(); const p = $("pane-artifacts").querySelector(".agpane"); if (p) p.scrollTop = 0; return artFetch(); }
@@ -4201,7 +4284,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && RAIL.open)
 document.addEventListener("click", e => { if (RAIL.open && !e.target.closest("#rfly") && !e.target.closest("#rail .ri[data-ri]")) railClose(false); });
 $("rtheme").onclick = () => { THEME = document.documentElement.dataset.theme === "light" ? "dark" : "light"; try { localStorage.setItem("j2theme", THEME); } catch (err) {} themeApply(); sThemeBtn(); };
 railPaint();
-poll();
+if (!CAT.on) poll();      // the catalog page has no run to follow
 </script>
 </body>
 </html>

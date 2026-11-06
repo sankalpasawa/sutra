@@ -64,7 +64,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         u = urlparse(self.path)
-        if u.path in ("/", "/index.html"):
+        if u.path in ("/", "/index.html", "/library"):      # /library: the same page, showing the template catalog
             with open(os.path.join(HERE, "j2_ui.html"), encoding="utf-8") as f:
                 return self._send(200, f.read(), "text/html")
         if u.path == "/vendor/d3.min.js":      # the Map's Tree view library, served from this folder (no CDN: the page works offline)
@@ -143,6 +143,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps(j2_map.plan_view(d if d and os.path.isdir(d) else None), ensure_ascii=False))
         if u.path == "/api/library":    # the Library tab: every template, grouped by artifact and section (template-library/1)
             return self._send(200, json.dumps(j2_template_lib.library_view(), ensure_ascii=False))
+        if u.path == "/api/catalog":    # the /library page: the committed library and the runs that gave it templates (library/ only)
+            return self._send(200, json.dumps(j2_template_lib.catalog_view(), ensure_ascii=False))
         if u.path.startswith("/api/library/"):      # one template version: /api/library/<artifact>/<section>/<slug>/v<N>
             parts = u.path[len("/api/library/"):].split("/")
             ok = (len(parts) == 4 and parts[0] in j2_template_lib.ARTIFACTS
