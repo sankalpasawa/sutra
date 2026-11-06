@@ -48,7 +48,8 @@ PROBED_FLAGS = (
 )
 _MCP_SERVER = "sutra"
 _ALLOWED_TOOLS = f"mcp__{_MCP_SERVER}__*"
-_IMAGE_MAGIC = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"))
+_IMAGE_MAGIC = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF87a", "image/gif"), (b"GIF89a", "image/gif"),
+                (b"%PDF-", "application/pdf"))        # a PDF goes as a document block (ABS-4)
 _RESULT_TEXT_CHARS = 300             # how much of the CLI's own text an error keeps
 _AUTH_MARKERS = ("not logged in", "please run /login", "login expired", "oauth token revoked")
 
@@ -427,8 +428,11 @@ class ClaudeConnector(ModelConnector):
                 raise InvalidRequestError(f"image cannot be read: {path} ({e.strerror or e})", provider="claude") from None
             media = next((m for magic, m in _IMAGE_MAGIC if data.startswith(magic)), None)
             if media is None:
-                raise InvalidRequestError(f"not a PNG or JPEG image: {path}", provider="claude")
-            blocks.append({"type": "image", "source": {"type": "base64", "media_type": media,
+                if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+                    media = "image/webp"
+                else:
+                    raise InvalidRequestError(f"not a PNG or JPEG image (or a GIF, WebP or PDF): {path}", provider="claude")
+            blocks.append({"type": "document" if media == "application/pdf" else "image", "source": {"type": "base64", "media_type": media,
                                                        "data": base64.b64encode(data).decode("ascii")}})
         blocks.append({"type": "text", "text": plan.prompt})
         return json.dumps({"type": "user", "message": {"role": "user", "content": blocks}}, ensure_ascii=False) + "\n"

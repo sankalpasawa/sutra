@@ -9,11 +9,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Iterator, Optional, Protocol, Sequence, runtime_checkable
 
+from .attachments import AttachmentStore, deliver
 from .chat_models import CarryPlan, Choice, ChatEvent, ChatTurnIn, ChatTurnOut, ProviderPill
 from .errors import InvalidRequestError, NoProviderError
 import re
 
-from .models import SESSION_ID_PATTERN, ConnectorEvent, Message, RouteContext, SessionSpec
+from .models import SESSION_ID_PATTERN, AskRequest, ConnectorEvent, Message, RouteContext, SessionSpec
 from .health import API_KEY_REFUSED
 from .router import TRANSCRIPT_LIMIT, Router
 from .transcript import FULL_CHARS, TAIL_MESSAGES, render_carry_over
@@ -36,8 +37,9 @@ class ChatPort(Protocol):
 
 
 class RouterChatPort:
-    def __init__(self, router: Router, *, ctx: Optional[RouteContext] = None) -> None:
+    def __init__(self, router: Router, *, ctx: Optional[RouteContext] = None, attachments: Optional[AttachmentStore] = None) -> None:
         self.router = router
+        self.attachments = attachments
         self._ctx = ctx or RouteContext()
 
     # ---- the pill -----------------------------------------------------------------------------------------------------------------
@@ -121,17 +123,21 @@ class RouterChatPort:
                          chars=len(text), kept_messages=len(messages) - omitted if full else TAIL_MESSAGES, omitted=omitted)
 
     # ---- a turn ---------------------------------------------------------------------------------------------------------------------
-    def _message(self, turn: ChatTurnIn) -> Message:
-        if turn.attachments:
-            raise InvalidRequestError("attachments are not delivered by this port yet", detail={"names": [a.name for a in turn.attachments]})
-        return Message(role="user", text=turn.text)
+    def _message(self, session_id: str, turn: ChatTurnIn) -> Message:
+        if not turn.attachments:
+            return Message(role="user", text=turn.text)
+        if self.attachments is None:
+            raise InvalidRequestError("attachments are not available here", detail={"names": [a.name for a in turn.attachments]})
+        provider = self._chosen(session_id) or self.router.plan(AskRequest(user="chat", ctx=self._ctx_for(session_id, turn))).order[0]
+        d = deliver(self.attachments, turn.attachments, provider)
+        return Message(role="user", text=turn.text + d.text, images=list(d.images))
 
     def _ctx_for(self, session_id: str, turn: ChatTurnIn) -> RouteContext:
         return self._ctx.model_copy(update={"session_id": session_id, "tag": turn.tag})
 
     def stream(self, session_id: str, turn: ChatTurnIn) -> Iterator[ChatEvent]:
         """partial* / block* / usage / switched? / turn_done. The last event is always `turn_done` (errors raise while iterating)."""
-        message = self._message(turn)
+        message = self._message(session_id, turn)
         before = load_session_state(self._work_dir(session_id))
         saw_partial = False
         blocks: list[dict] = []
