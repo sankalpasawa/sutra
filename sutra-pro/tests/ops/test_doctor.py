@@ -176,6 +176,17 @@ def test_one_broken_cli_is_a_warning_while_the_other_can_serve_and_both_broken_f
     assert not both.ok
 
 
+def test_claude_desktop_without_claude_code_is_named_and_never_called_a_path_problem(monkeypatch, tmp_path):
+    """GAP-providers: Claude Desktop ships no `claude` command; the check names Claude Code and the Settings file box."""
+    monkeypatch.setattr(doctor, "_provider_statuses", lambda settings, cfg: {"claude": provider(installed=False), "codex": provider(version="0.146.0")})
+    cfg = fake_config(tmp_path).model_copy(update={"claude_desktop": True})
+    found = check(run(make_settings(tmp_path), offline=False, config=cfg, which=lambda exe: None, exists=lambda p: False), "claude")
+    assert found.status == "warn" and "Claude Desktop is installed" in found.detail and "Claude Code" in found.detail
+    assert "PATH" not in found.detail and "Settings, Connectors" in found.fix and "claude auth login" in found.fix
+    plain = judged(monkeypatch, tmp_path, provider(installed=False), provider(version="0.146.0"))
+    assert "not found on PATH" in check(plain, "claude").detail and "Settings, Connectors" in check(plain, "claude").fix
+
+
 def test_an_api_key_login_is_refused_and_an_unknown_answer_is_not_trusted(monkeypatch, tmp_path):
     keyed = judged(monkeypatch, tmp_path, provider(billing="api_key", method="API key", version="2.1.308"), provider(signed_in=None, detail="odd output"))
     assert "API key, which is refused (D34)" in check(keyed, "claude").detail

@@ -332,6 +332,13 @@ class ModelConnector(ABC):
                 self._version = status.version
         return status
 
+    def forget_cli(self) -> None:
+        """The CLI file changed (the owner chose another one, discover.use_cli): its sign-in, flags and version are read again."""
+        with self._lock:
+            self._auth = None
+            self._flags = None
+            self._version = None
+
     def flags(self) -> dict[str, bool]:
         """`probe_flags`, read once per connector."""
         with self._lock:
@@ -534,6 +541,8 @@ class ModelConnector(ABC):
             error = e
             if e.provider is None:
                 e.provider = self.name
+            if e.code == "cli_missing" and self.name == "claude" and getattr(self.cfg, "claude_desktop", False):
+                e.detail.setdefault("desktop", True)          # the sentence names Claude Code, not PATH (errors.DESKTOP_ONLY)
             if e.code == "not_signed_in":
                 with self._lock:
                     self._auth = None

@@ -231,7 +231,8 @@ class ConnectorEvent(M):
 
 
 class ConnectorConfig(M):
-    """Paths and executables; tests point these at the fakes."""
+    """Paths and executables; tests point these at the fakes. The running app's comes from `discover.connector_config` (the CLIs where
+    installers put them, the owner's chosen file, and `claude_desktop`: Claude Desktop is installed, which ships no `claude` command)."""
 
     data_dir: Path
     work_root: Optional[Path] = None
@@ -240,6 +241,7 @@ class ConnectorConfig(M):
     gh_exe: str = "gh"
     python: str = sys.executable
     extra_env: dict[str, str] = {}
+    claude_desktop: bool = False
 
     @field_validator("extra_env")
     @classmethod

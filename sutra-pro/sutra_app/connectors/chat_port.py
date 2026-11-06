@@ -60,7 +60,7 @@ class RouterChatPort:
         if not entry.enabled:
             return "disabled in the routing policy"
         if not status.installed:
-            return "CLI not found on PATH"
+            return status.detail or "CLI not found on PATH"          # the router's words: Claude Desktop is not Claude Code (GAP-providers)
         if status.signed_in is False:
             return "not signed in"
         if status.billing == "api_key":

@@ -50,6 +50,7 @@ from .policy import Resolved, RoutingPolicy
 from .quota_windows import plan_label
 from .schema import fits_native, schema_sha, to_json_schema
 from .budget import carry_chars
+from .discover import explain_missing
 from .transcript import render_carry_over
 from .usage import Attempt, UsageIn, UsageSink, build_usage_row, load_session_state, new_request_id, save_session_state
 
@@ -458,7 +459,7 @@ class Router:
             if not self.health.installed(provider, lambda: shutil.which(exe) is not None):          # type: ignore[arg-type]
                 if provider == "codex":
                     return "CLI not found on PATH (install it and run `codex login`)"
-                return f"CLI not found on PATH (install it and run `{provider}` once)"
+                return explain_missing(provider, self._desktop(connector), f"CLI not found on PATH (install it and run `{provider}` once)")
             try:
                 status = self.health.auth(provider, connector.auth_status)                         # type: ignore[arg-type]
             except ConnectorError as e:
@@ -476,6 +477,11 @@ class Router:
     @staticmethod
     def _exe(connector: ModelConnector) -> str:
         return str(getattr(connector.cfg, f"{connector.name}_exe", connector.name))
+
+    @staticmethod
+    def _desktop(connector: ModelConnector) -> bool:
+        """Claude Desktop is installed on this Mac (discover.py): a missing `claude` is then named as Claude Code, not as a PATH problem."""
+        return bool(getattr(connector.cfg, "claude_desktop", False))
 
     # ---- attempts ----------------------------------------------------------------------------------------------------------
     def _may_fall_back(self, err: ConnectorError, resolved: Resolved) -> bool:
@@ -913,7 +919,7 @@ class Router:
                 except ConnectorError as e:
                     detail = e.user_message()
             else:
-                detail = "CLI not found on PATH"
+                detail = explain_missing(name, self._desktop(connector), "CLI not found on PATH")
             health = self.health.state(name)         # type: ignore[arg-type]
         listed: list[ModelBrief] = []
         if models and installed and (auth is None or auth.signed_in is not False):
