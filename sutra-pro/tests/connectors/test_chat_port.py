@@ -184,7 +184,8 @@ def test_set_system_writes_a_private_file_that_the_next_turn_reads_and_replaces_
     port, router, history, cfg, claude, codex = make(tmp_path)
     port.set_system(A, "You answer in the chat of the team Web.")
     path = cfg.resolved_work_root() / A / "system.txt"
-    assert path.read_text() == "You answer in the chat of the team Web." and (path.stat().st_mode & 0o777) == 0o600
+    assert path.read_text() == "You answer in the chat of the team Web."
+    assert sys.platform == "win32" or (path.stat().st_mode & 0o777) == 0o600          # Windows has no POSIX modes
     port.send(A, ChatTurnIn(text="one"))
     assert claude.calls[-1].system == "You answer in the chat of the team Web."
     port.set_system(A, "The record changed.")

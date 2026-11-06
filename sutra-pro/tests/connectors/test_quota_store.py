@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import stat
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -47,7 +48,8 @@ def started(path, now=T0):
 def test_a_snapshot_is_written_privately_and_read_back_after_a_restart(path):
     book = started(path)
     book.set_quota("claude", snapshot())
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    if sys.platform != "win32":                                                      # Windows has no POSIX modes
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
     stored = json.loads(path.read_text(encoding="utf-8"))
     assert stored["version"] == 1 and list(stored["providers"]) == ["claude"] and stored["providers"]["claude"]["seen_at"] == T0
     again = started(path, now=T0 + 600)

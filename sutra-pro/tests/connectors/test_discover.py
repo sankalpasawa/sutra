@@ -23,6 +23,7 @@ from sutra_app.connectors.models import ConnectorConfig
 pytestmark = pytest.mark.skipif(sys.platform.startswith("win"), reason="CLI discovery is POSIX only; Windows keeps the installer's PATH")
 
 LAUNCHD_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"          # what a Mac app opened from Finder gets
+INSTALLER_VARIABLES = ("NVM_DIR", "VOLTA_HOME", "PNPM_HOME", "MISE_DATA_DIR", "ASDF_DATA_DIR", "FNM_DIR", "BUN_INSTALL", "NPM_CONFIG_PREFIX")
 
 
 def executable(path: Path, body: str = "#!/bin/sh\nexit 0\n") -> Path:
@@ -144,6 +145,8 @@ def test_a_department_run_uses_the_same_cli_files_as_the_app(home, tmp_path, mon
     BinStore(data).set("claude", str(chosen))
     monkeypatch.setenv("PATH", LAUNCHD_PATH)
     monkeypatch.setenv("HOME", str(home))
+    for name in INSTALLER_VARIABLES:          # a CI runner sets NVM_DIR and friends; the test's own home must be the one searched
+        monkeypatch.delenv(name, raising=False)
 
     def port(**kw):
         return make_port(PortSpec(**{"mock": False, "connector": "auto", "run_id": "j2-20261104-000000-ab12", "dept_id": "web",
