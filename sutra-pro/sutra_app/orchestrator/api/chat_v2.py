@@ -87,21 +87,21 @@ def build_router() -> APIRouter:
 
     @router.post("/chats/{sid}/archive", summary="Archive a chat (a mark)", dependencies=[Depends(require_token)])
     async def archive(request: Request, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
-        db = _need(request, "db")
+        db, graph = _need(request, "db"), getattr(services_of(request), "graph", None)
 
         def run() -> None:
             with db.tx() as tx:
-                ChatArchive(db).archive(tx, sid)
+                ChatArchive(db, graph).archive(tx, sid)
         await run_blocking(run)
         return respond(request, {"session_id": sid, "archived": True})
 
     @router.post("/chats/{sid}/unarchive", summary="Bring an archived chat back", dependencies=[Depends(require_token)])
     async def unarchive(request: Request, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
-        db = _need(request, "db")
+        db, graph = _need(request, "db"), getattr(services_of(request), "graph", None)
 
         def run() -> None:
             with db.tx() as tx:
-                ChatArchive(db).unarchive(tx, sid)
+                ChatArchive(db, graph).unarchive(tx, sid)
         await run_blocking(run)
         return respond(request, {"session_id": sid, "archived": False})
 

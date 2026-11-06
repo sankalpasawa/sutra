@@ -9,6 +9,7 @@ There is no delete anywhere in this module. The tables and triggers are created 
 """
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from typing import Any
@@ -92,10 +93,12 @@ class ChatSearch:
 
 
 class ChatArchive:
-    """Archive is a mark. An archived chat keeps every message; archiving a node's active chat frees the node's slot (a fresh chat may start)."""
+    """Archive is a mark. An archived chat keeps every message; archiving a node's active chat frees the node's slot and, in the same
+    transaction, starts the node's replacement chat (invariant I1: every graph node has one ACTIVE session), carrying the choice over."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, graph: Any = None) -> None:
         self.db = db
+        self.graph = graph
 
     @staticmethod
     def _row(conn: sqlite3.Connection, session_id: str) -> sqlite3.Row:
@@ -112,8 +115,37 @@ class ChatArchive:
         if row["status"] == "archived":
             return False
         tx.conn.execute("UPDATE chat_sessions SET status = 'archived', writable = 0, updated_at = max(updated_at, ?) WHERE id = ?", (tx.now(), session_id))
+        self._replace(tx, row)
         tx.emit("chat.archived", {"session_id": session_id, "archived": True})
         return True
+
+    def _replace(self, tx: Tx, row: sqlite3.Row) -> None:
+        """When the archived chat is its node's current session, a fresh active session takes its place (`ensure_node`) and keeps `pinned`."""
+        node = tx.conn.execute("SELECT body, chat_session_id FROM graph_nodes WHERE id = ?", (row["node_id"],)).fetchone()
+        if node is None or node["chat_session_id"] != row["id"]:
+            return
+        from sutra_app.orchestrator.graph import GraphStore
+        from sutra_app.orchestrator.models import NodeInit
+        from sutra_app.orchestrator.nodes import WRITABLE_KINDS, ensure_node
+        payload = json.loads(node["body"])
+        title = tx.conn.execute("SELECT title, pinned FROM chat_sessions WHERE id = ?", (row["id"],)).fetchone()
+        out = ensure_node(tx, NodeInit(node=payload, session_title=title["title"], writable=payload["kind"] in WRITABLE_KINDS),
+                          graph=self.graph or GraphStore(self.db))
+        if out.chat_session_id and out.chat_session_id != row["id"] and title["pinned"]:
+            tx.conn.execute("UPDATE chat_sessions SET pinned = ? WHERE id = ?", (title["pinned"], out.chat_session_id))
+
+    def _relink(self, tx: Tx, node_id: str, session_id: str) -> None:
+        """The graph node names `session_id` again (its payload and its column)."""
+        from sutra_app.orchestrator.graph import GraphStore
+        from sutra_app.orchestrator.models import NodeInit
+        from sutra_app.orchestrator.nodes import WRITABLE_KINDS, ensure_node
+        node = tx.conn.execute("SELECT body FROM graph_nodes WHERE id = ?", (node_id,)).fetchone()
+        if node is None:
+            return
+        payload = json.loads(node["body"])
+        title = tx.conn.execute("SELECT title FROM chat_sessions WHERE id = ?", (session_id,)).fetchone()["title"]
+        ensure_node(tx, NodeInit(node=payload, session_title=title, writable=payload["kind"] in WRITABLE_KINDS),
+                    graph=self.graph or GraphStore(self.db))
 
     def unarchive(self, tx: Tx, session_id: str) -> bool:
         row = self._row(tx.conn, session_id)
@@ -121,11 +153,17 @@ class ChatArchive:
             return False
         if row["kind"] == "legacy" or row["filed_under"] is not None:
             raise AppError("rules", "That chat stays in the archive (it was imported or its team was merged away)")
-        taken = tx.conn.execute("SELECT 1 FROM chat_sessions WHERE node_id = ? AND status = 'active'", (row["node_id"],)).fetchone()
+        taken = tx.conn.execute("SELECT id FROM chat_sessions WHERE node_id = ? AND status = 'active'", (row["node_id"],)).fetchone()
         if taken is not None:
-            raise AppError("busy", "This team already has an open chat; archive that one first")
+            used = tx.conn.execute("SELECT 1 FROM chat_messages WHERE session_id = ? LIMIT 1", (taken["id"],)).fetchone()
+            if used is not None:
+                raise AppError("busy", "This team already has an open chat; archive that one first")
+            # the empty chat that archiving started steps aside (archived, kept) so this one is the node's session again
+            tx.conn.execute("UPDATE chat_sessions SET status = 'archived', writable = 0, updated_at = max(updated_at, ?) WHERE id = ?", (tx.now(), taken["id"]))
         writable = 1 if row["kind"] in _WRITABLE_KINDS else 0
         tx.conn.execute("UPDATE chat_sessions SET status = 'active', writable = ?, updated_at = max(updated_at, ?) WHERE id = ?", (writable, tx.now(), session_id))
+        if taken is not None:
+            self._relink(tx, row["node_id"], session_id)
         tx.emit("chat.archived", {"session_id": session_id, "archived": False})
         return True
 

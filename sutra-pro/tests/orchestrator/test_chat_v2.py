@@ -158,13 +158,40 @@ def test_archive_is_a_mark_that_keeps_every_message_and_frees_the_slot(db, world
         assert ChatArchive(db).archive(tx, sid) is False
     s = chats.session(sid)
     assert (s.status, s.writable) == ("archived", False) and len(chats.messages(sid)) == 1
-    world.sql("INSERT INTO chat_sessions(id, node_id, kind, title, writable, created_at, updated_at) VALUES ('cs_bbbbbbbbbbbb','web','department','Web 2',1,0,0)")   # the slot is free
+    fresh = db.conn().execute("SELECT id FROM chat_sessions WHERE node_id = 'web' AND status = 'active'").fetchall()
+    assert len(fresh) == 1 and fresh[0]["id"] != sid                       # archiving started the replacement chat
+    assert db.conn().execute("SELECT chat_session_id FROM graph_nodes WHERE id = 'web'").fetchone()[0] == fresh[0]["id"]
+    post(db, chats, fresh[0]["id"], "new chat", who="user")
     with db.tx() as tx, pytest.raises(AppError):
-        ChatArchive(db).unarchive(tx, sid)                                  # the node has a new open chat
-    world.sql("DELETE FROM chat_sessions WHERE id = 'cs_bbbbbbbbbbbb'")
+        ChatArchive(db).unarchive(tx, sid)                                  # the node has a new, used open chat
+    world.sql("UPDATE chat_sessions SET status = 'archived' WHERE id = ?", fresh[0]["id"])
     with db.tx() as tx:
         assert ChatArchive(db).unarchive(tx, sid) is True
     assert chats.session(sid).status == "active" and chats.session(sid).writable is True
+
+
+def test_archiving_a_node_chat_keeps_the_node_with_one_active_chat_and_the_choice(db, world, chats):
+    sid = world.session_of["web"]
+    with db.tx() as tx:
+        ChatChoices(db).set(tx, sid, "codex")
+    with db.tx() as tx:
+        ChatArchive(db).archive(tx, sid)
+    active = db.conn().execute("SELECT id, writable, pinned FROM chat_sessions WHERE node_id = 'web' AND status = 'active'").fetchall()
+    assert len(active) == 1 and active[0]["writable"] == 1 and active[0]["pinned"] == "codex"
+    assert db.conn().execute("SELECT chat_session_id FROM graph_nodes WHERE id = 'web'").fetchone()[0] == active[0]["id"]
+    import json
+    assert json.loads(db.conn().execute("SELECT body FROM graph_nodes WHERE id = 'web'").fetchone()[0])["chat_session_id"] == active[0]["id"]
+
+
+def test_an_unused_replacement_steps_aside_when_the_archived_chat_comes_back(db, world, chats):
+    sid = world.session_of["web"]
+    with db.tx() as tx:
+        ChatArchive(db).archive(tx, sid)
+    with db.tx() as tx:
+        assert ChatArchive(db).unarchive(tx, sid) is True
+    active = db.conn().execute("SELECT id FROM chat_sessions WHERE node_id = 'web' AND status = 'active'").fetchall()
+    assert [r["id"] for r in active] == [sid]
+    assert db.conn().execute("SELECT chat_session_id FROM graph_nodes WHERE id = 'web'").fetchone()[0] == sid
 
 
 def test_the_org_chat_and_merged_or_imported_chats_cannot_change_state(db, world):

@@ -181,3 +181,17 @@ def test_stop_says_whether_a_turn_was_running(rig):
     r = client.post(f"/api/chats/{sid}/direct/stop", headers=H)
     assert r.status_code == 200 and r.json() == {"session_id": sid, "stopped": False}          # nothing is answering
     assert error_code(client.post("/api/chats/cs_000000000fff/direct/stop", headers=H), 404) == "not_found"
+
+
+def test_archiving_a_teams_chat_leaves_the_team_a_working_active_chat(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    assert client.post(f"/api/chats/{sid}/archive", headers=H).status_code == 200
+    row = world.db.conn().execute("SELECT chat_session_id FROM graph_nodes WHERE id = 'web'").fetchone()
+    assert row[0] != sid
+    listed = client.get("/api/chats").json()
+    assert row[0] in {c.get("id") or c.get("session_id") for c in listed} and sid not in {c.get("id") or c.get("session_id") for c in listed}
+    assert world.db.conn().execute("SELECT status, writable FROM chat_sessions WHERE id = ?", (row[0],)).fetchone()[:] == ("active", 1)
+    r = client.post(f"/api/chats/{row[0]}/direct", json={"text": "still there?"}, headers=H)
+    assert r.status_code == 202
+    assert wait_for(lambda: len(chats.messages(row[0])) == 2)
