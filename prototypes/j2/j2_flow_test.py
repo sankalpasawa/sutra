@@ -2075,7 +2075,7 @@ def page():
         say(j2_server.RUN, BREW_LAB + " Test key: sk-test-not-a-real-key-123")
         html = get("/")
         for x in ('data-tab="timeline"', 'data-tab="lessons"', 'id="lanes"', 'id="detail"', "renderLanes", "openDetail",
-                  "renderTimeline", 'id="runsel"', "clear-lessons", "--wf0"):
+                  "renderTimeline", 'id="runlist"', "clear-lessons", "--wf0"):
             assert x in html, x
         raw = get("/api/state")
         st = json.loads(raw)
@@ -3051,7 +3051,7 @@ def prd_page():
         st = json.loads(get("/api/state"))
         assert st["output"] == "prd" and st["output_label"] == "PRD document" and st["doc"], st["output"]
         html = get("/").decode()
-        assert 'id="outsel"' in html and 'id="otype"' in html and 'id="doclinks"' in html and "/api/output" in html
+        assert 'id="outsel"' not in html and 'id="otype"' in html and 'id="doclinks"' in html
         say(j2_server.RUN, PRD_BRIEF)
         try:
             post("/api/output", {"type": "website"})
@@ -8208,7 +8208,7 @@ def view_kept():
     import j2_server
     here = os.path.dirname(os.path.abspath(__file__))
     ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
-    assert '$("runsel").onchange = () => { location.search = viewHref($("runsel").value); };' in ui and "location.search = viewHref(\"\")" in ui, "run links keep the view"
+    assert 'location.search = viewHref(b.dataset.openrun === RUNS.live ? "" : b.dataset.openrun);' in ui and "location.search = viewHref(\"\")" in ui, "run links keep the view"
     chrome = j2.j2_check.find_chrome()
     repo = os.path.join(here, "runs")
     names = sorted(n for n in os.listdir(repo) if os.path.isfile(os.path.join(repo, n, "workflows.json"))) if os.path.isdir(repo) else []
@@ -8223,8 +8223,8 @@ def view_kept():
              " const save = () => sessionStorage.setItem('vk', JSON.stringify(log)), done = () => { save(); document.body.setAttribute('data-r', JSON.stringify(log)); };"
              " const step = log.length ? log[log.length - 1][0] : '';"
              " if (u().get('fresh')){ rec('fresh'); return done(); }"
-             " if (!step){ rec('start'); for (let i = 0; i < 50 && S('runsel').options.length < 3; i++) await wait(100); const o = [...S('runsel').options].find(x => x.value === '" + b_ + "');"
-             "   if (!o){ rec('no-run-option'); return done(); } save(); S('runsel').value = o.value; S('runsel').dispatchEvent(new Event('change')); return; }"
+             " if (!step){ rec('start'); showTab('runsettings'); for (let i = 0; i < 50 && !RUNS.all.length; i++) await wait(100); RUNS.show = 1e4; renderRuns(); const o = document.querySelector('#runlist [data-openrun=\"" + b_ + "\"]');"
+             "   if (!o){ rec('no-run-row'); return done(); } save(); o.click(); return; }"
              " if (step === 'start'){ rec('opened'); save(); location.reload(); return; }"
              " if (step === 'opened'){ rec('reloaded'); S('gochat').click(); rec('to-simple'); save(); location.reload(); return; }"
              " if (step === 'to-simple'){ rec('simple-reloaded'); S('steamfull').click(); rec('to-detail'); save(); location.reload(); return; }"
@@ -8255,6 +8255,130 @@ def view_kept():
         j2_server.HERE, j2.RUNS_DIR = keep_here, runs_
     print(f"view kept: a fresh visit opens Simple; from the detailed view another run opens detailed ({a_} -> {b_}); reloads keep the view; Simple view and "
           "Open detailed view switch both ways and survive a reload; no page error ok")
+
+def run_settings():
+    """Run settings (docs/mocks/j2-run-settings-mock.html): no What to build and no Back to simple view; Appearance as three cards; the run list from
+    /api/runlist (j2_server.run_list) against the records on every saved run: each run once, newest first, its ID, title (goal.json site_name, else the
+    statement's first sentence, else the ID), status (summary.json status: done*, stopped/crashed/stuck/out_of_budget or no summary -> stopped, the
+    live run while it runs -> running). With Chrome (--browser) at 1440x900 and 390x844, light and dark: the current run is highlighted, the chips'
+    counts are the records', a full run ID finds exactly that run, 50+ runs load 20 at a time, a Running row (one run marked running) is as tall as a
+    normal row and the list stacks from the top, the page's scroll height is the window's and only the list scrolls, text 4.5:1, no page error."""
+    import collections
+    import html as htmllib
+    import threading
+    import j2_server
+    here = os.path.dirname(os.path.abspath(__file__))
+    ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
+    rs = ui[ui.index('id="pane-runsettings"'):ui.index('id="pane-rundetails"')]
+    assert "What to build" not in ui and "Back to simple view" not in ui and 'id="outsel"' not in ui and 'id="runsel"' not in ui, "the old controls are gone"
+    assert rs.count("data-themepick=") == 3 and "Applies to this browser only." in rs and all(f'class="sw sw-{k}"' in rs for k in "lds"), "Appearance: three cards with swatches"
+    assert [x for x in re.findall(r'data-rf="(\w+)"', rs)] == ["all", "running", "done", "stopped"] and 'id="runq"' in rs and 'id="reset"' in rs
+    repo = os.path.join(here, "runs")
+    keep_runs = j2.RUNS_DIR
+    j2.RUNS_DIR = repo
+    try:
+        got = j2_server.run_list()
+        names = sorted((n for n in os.listdir(repo) if j2.saved_dir(n) and os.path.isfile(os.path.join(repo, n, "chat.jsonl"))), reverse=True) if os.path.isdir(repo) else []
+    finally:
+        j2.RUNS_DIR = keep_runs
+    def want(n):
+        d = os.path.join(repo, n)
+        rd = lambda f: json.load(open(os.path.join(d, f))) if os.path.isfile(os.path.join(d, f)) else {}
+        st = str((rd("summary.json") or {}).get("status") or "")
+        g = rd("goal.json") or {}
+        stmt = re.split(r"(?<=[.!?])\s", str(g.get("statement") or "").strip())[0]
+        return {"status": "done" if st.startswith("done") else "stopped", "title": str(g.get("site_name") or "").strip() or (stmt[:70] + ("…" if len(stmt) > 70 else "")) or n}
+    ids = [x["id"] for x in got["runs"]]
+    assert sorted(ids) == sorted(names) and len(ids) == len(set(ids)), ("every saved run once", sorted(set(ids) ^ set(names)))
+    assert [x["when"] for x in got["runs"]] == sorted((x["when"] for x in got["runs"]), reverse=True), "newest first"
+    for x in got["runs"]:
+        w_ = want(x["id"])
+        assert x["status"] == ("running" if x["id"] == got["live"] and j2_server.RUN.status == "running" else w_["status"]) and x["title"] == w_["title"], (x, w_)
+        assert x["output"] in ("website", "prd", "hld", "lld", "docset", "") and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", x["when"]), x
+    counts = collections.Counter(x["status"] for x in got["runs"])
+    chrome = j2.j2_check.find_chrome()
+    if not (chrome and BROWSER and len(names) >= 50):
+        print(f"run settings: no old controls, Appearance cards; run list = the records on {len(ids)} runs ({dict(counts)}) ok (browser steps skipped: Chrome not found, fewer than 50 runs, or --fast without --browser)")
+        return
+    cur, mark = names[3], names[5]      # the run opened, and one marked running for the row-height check
+    head = "<script>window.__e = []; addEventListener('error', e => __e.push(String(e.message)));</script>"
+    probe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = {};"
+             " const lum = c => { const f = /^color\\(srgb/.test(c), v = (c.replace(/^color\\(srgb/, '').match(/[\\d.]+/g) || []).slice(0, 3).map(x => { x = f ? +x : x / 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };"
+             " const ct = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }, bg = e => { while (e) { const c = getComputedStyle(e).backgroundColor; if (c && !/rgba\\(0, 0, 0, 0\\)|transparent/.test(c)) return c; e = e.parentElement; } return 'rgb(255, 255, 255)'; };"
+             " showTab('runsettings'); for (let i = 0; i < 80 && !RUNS.all.length; i++) await wait(100); await wait(300);"
+             " const rows = () => q('#runlist .runrow'), fit = () => [document.documentElement.scrollHeight, innerHeight, document.querySelector('#dview .dcol').scrollHeight <= document.querySelector('#dview .dcol').clientHeight + 1, S('runlist').scrollHeight > S('runlist').clientHeight];"
+             " r.first = [rows().length, (S('runmore') || {}).textContent || '', S('runcount').textContent]; r.fit = fit();"
+             " r.cur = q('#runlist .runrow.cur').map(e => [e.dataset.openrun, e.querySelector('.ropen').textContent, e.getAttribute('aria-current')]);"
+             " r.chips = q('[data-rf]').map(b => [b.dataset.rf, +b.querySelector('i').textContent]);"
+             " while (S('runmore')) { S('runmore').click(); }"
+             " r.all = rows().map(e => [e.dataset.openrun, e.querySelector('code').textContent, e.querySelector('.rst').textContent, e.querySelector('.rt').textContent]); r.groups = q('#runlist .rgrp').map(e => e.textContent);"
+             " r.sticky = getComputedStyle(q('#runlist .rgrp')[0]).position; const normal = rows()[1].getBoundingClientRect().height;"
+             " S('runq').value = '" + cur + "'; S('runq').dispatchEvent(new Event('input')); r.search = [rows().map(e => e.dataset.openrun), S('runcount').textContent];"
+             " S('runq').value = ''; S('runq').dispatchEvent(new Event('input')); q('[data-rf=running]')[0].click(); const one = rows();"
+             " r.running = [one.map(e => e.dataset.openrun), one.length ? +one[0].getBoundingClientRect().height.toFixed(1) : 0, +normal.toFixed(1), one.length ? Math.round(one[0].getBoundingClientRect().top - S('runlist').getBoundingClientRect().top) : -1, S('runcount').textContent, q('[data-rf]').map(b => b.getAttribute('aria-pressed')).join()];"
+             " r.fit1 = fit().slice(0, 3); q('[data-rf=all]')[0].click();"
+             " r.themes = {}; for (const th of ['light', 'dark']){ THEME = th; themeApply(); await wait(30); const pr = [];"
+             "   for (const sel of ['#runlist .runrow:not(.cur) .rt', '#runlist .runrow.cur .rt', '#runlist .rm', '#runlist code', '#runlist .rst.done', '#runlist .rst.stopped', '#runlist .rst.running', '#runlist .ropen', '#runlist .rgrp', '.rfil button[aria-pressed=true]', '.rfil button[aria-pressed=false]', '.newrun', '.themecards button']){"
+             "     const e = q(sel)[0]; if (e) pr.push([sel, +ct(getComputedStyle(e).color, bg(e)).toFixed(2)]); }"
+             "   r.themes[th] = [pr, fit(), q('.themecards [aria-pressed=true]').map(b => b.dataset.themepick + ':' + getComputedStyle(b).borderTopColor)]; }"
+             " r.err = __e.slice(); (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); })()")
+    page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { " + probe + " }, 1500)</script></body>")
+    tmp = tempfile.mkdtemp(prefix="j2-runs-")
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+    os.symlink(os.path.join(here, "vendor"), os.path.join(tmp, "vendor"))
+    wrap = {}
+
+    class Wrap(j2_server.Handler):      # a phone-width frame, same origin (headless Chrome's window is at least 500px wide)
+        def do_GET(self):
+            return self._send(200, wrap["page"], "text/html") if self.path.startswith("/wrap") else super().do_GET()
+    keep_here, keep_list = j2_server.HERE, j2_server.run_list
+    def marked():      # one run reported running, so the Running filter has a row (saved runs have none)
+        o = keep_list()
+        for x in o["runs"]:
+            if x["id"] == mark:
+                x["status"] = "running"
+        return o
+    j2_server.HERE, j2.RUNS_DIR, j2_server.run_list = tmp, repo, marked
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), Wrap)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base, seen = f"http://127.0.0.1:{srv.server_address[1]}", 0
+    try:
+        L = marked()["runs"]
+        cnt = collections.Counter(x["status"] for x in L)
+        for w, h in ((1440, 900), (390, 844)):
+            url = f"/?view=detail&run={cur}"
+            if w < 500:
+                wrap["page"] = f'<!doctype html><body style="margin:0"><iframe src="{url}" style="width:{w}px;height:{h}px;border:0;display:block"></iframe></body>'
+                url = "/wrap"
+            dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--window-size={max(w, 500)},{h}", "--virtual-time-budget=40000", "--dump-dom", base + url],
+                             capture_output=True, text=True, timeout=240).stdout
+            hit = re.search(r'data-r="([^"]*)"', dom)
+            assert hit, (w, "the page did not finish its steps", dom[-300:])
+            r = json.loads(htmllib.unescape(hit.group(1)))
+            assert not r["err"], (w, r["err"])
+            n = len(L)
+            assert r["first"] == [20, f"Show 20 more · {n - 20} left", f"{n} runs"], (w, "20 at a time", r["first"])
+            assert [x[0] for x in r["all"]] == [x["id"] for x in L] and all(a[1] == a[0] for a in r["all"]), (w, "every run once, newest first, with its ID")
+            assert [x[2] for x in r["all"]] == [x["status"] for x in L] and [x[3] for x in r["all"]] == [x["title"] for x in L], (w, "status and title from the records")
+            assert r["cur"] == [[cur, "Open now", "true"]], (w, "the current run is highlighted", r["cur"])
+            assert dict(r["chips"]) == {"all": n, "running": cnt["running"], "done": cnt["done"], "stopped": cnt["stopped"]}, (w, r["chips"], cnt)
+            assert set(r["groups"]) <= {"Today", "Yesterday", "This week", "Earlier this month", "Older"} and r["sticky"] == "sticky", (w, r["groups"])
+            assert r["search"] == [[cur], f"1 of {n} runs"], (w, "a full run ID finds exactly that run", r["search"])
+            assert r["running"][0] == [mark] and r["running"][1] == r["running"][2] and 0 <= r["running"][3] <= 40 and r["running"][4] == f"1 of {n} runs" and r["running"][5] == "false,true,false,false", (w, "a lone row keeps its height, at the top", r["running"])
+            for f_ in (r["fit"], r["fit1"]):
+                assert f_[0] == f_[1] and f_[2], (w, "the page fits the window; only the list scrolls", f_)
+            assert r["fit"][3], (w, "the list scrolls inside its card", r["fit"])
+            for th, (pr, fit_, act) in r["themes"].items():
+                assert all(v >= 4.5 for k_, v in pr) and len(pr) >= 12, (w, th, "readable", pr)
+                assert fit_[0] == fit_[1] and fit_[2], (w, th, fit_)
+                assert len(act) == 1 and act[0].startswith(th + ":"), (w, th, "the active card", act)
+            seen += 1
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR, j2_server.run_list = keep_here, keep_runs, keep_list
+    print(f"run settings: no What to build or Back to simple view, Appearance cards; run list = the records on {len(ids)} runs ({dict(counts)}): each once, newest first, ID, title, status; "
+          f"Chrome at 1440x900 and 390x844 ({seen} pages), light and dark: current run highlighted, chip counts, search by ID finds one, 20 at a time, a lone Running row keeps its height "
+          "at the top, page height = window height with only the list scrolling, text 4.5:1, no error ok")
 
 def graph_map():
     """Map, open team as a workflow-artifact graph (m["teams"], j2_map.team_graphs), on every saved run and every team that has workflows: no team node (the team is a
@@ -9476,9 +9600,9 @@ def map_tab():
     # ---- the home is simpler: the header is only the department name; the controls are in Run settings; one Map heading
     assert '<header class="dtop">' not in ui and ui.count("J2 Department") == 1 and "<title>J2 Department</title>" in ui, "no department heading on the page; the title stays"
     assert ui.split('<div id="dview">')[1].split('<div class="dcol">')[1].lstrip().startswith('<section class="needs"'), "the page starts with the Needs you strip"
-    rs = ui[ui.index('id="pane-runsettings"'):ui.index("</section>", ui.index('id="pane-runsettings"'))]
-    assert all(f'id="{i}"' in rs for i in ("outsel", "runsel", "reset", "to-simple")) and "Back to simple view" in rs and 'href="?view=simple"' in rs, "the old controls live in Run settings"
-    assert all(f'id="{i}"' not in ui[:ui.index('id="pane-runsettings"')].split('<div id="dview">')[1] for i in ("outsel", "runsel", "reset", "to-simple")), "and nowhere else in the Detailed view"
+    rs = ui[ui.index('id="pane-runsettings"'):ui.index('id="pane-rundetails"')]
+    assert all(f'id="{i}"' in rs for i in ("appear", "runlist", "runq", "reset")) and all(x not in rs for x in ("Back to simple view", "What to build", 'id="outsel"', 'id="runsel"', 'id="to-simple"')), "Run settings: Appearance and the run list"
+    assert all(f'id="{i}"' not in ui[:ui.index('id="pane-runsettings"')].split('<div id="dview">')[1] for i in ("runlist", "reset")), "and nowhere else in the Detailed view"
     assert real.count("<h3>Map</h3>") == 1 and real.count(">Map<") == 1, "one Map heading, next to the status chips"
     assert 'class="maphead"' in real and real.index("<h3>Map</h3>") < real.index('class="mappill'), "the heading comes first, then the chips"
     # the outcome is one plain line in the Needs you strip, with a link to the Report; the banner text is in the Report
@@ -9674,11 +9798,11 @@ def map_tab():
                 "let chats = 0; const fc = focusChat; focusChat = () => { chats++; return fc(); }; r.none = document.getElementById('needs').innerText.replace(/\\s+/g, ' ') + '|' + document.getElementById('needcount').textContent;"
                 "click('person:requester'); r.person = document.activeElement.id; showTab('map'); click('fn:identity'); r.chats = chats; r.pane = vis();"
                 "showTab('map'); window.j2mark = 1; const where = location.href, rs = () => [document.body.classList.contains('simple'), rect('#sview').width > 0, rect('.rail.tabs').width > 0, rect('#dview .dcol').width, document.getElementById('gochat').getAttribute('aria-current')].join('|'),"
-                " msgs = () => document.getElementById('msgs').children.length + '/' + document.getElementById('smsgs').children.length + '|' + document.getElementById('needs').textContent.replace(/\\s+/g, ' ') + '|' + document.getElementById('runsel').value;"
+                " msgs = () => document.getElementById('msgs').children.length + '/' + document.getElementById('smsgs').children.length + '|' + document.getElementById('needs').textContent.replace(/\\s+/g, ' ') + '|' + runCur();"
                 "r.m0 = msgs(); r.home0 = rs(); document.getElementById('gochat').click(); r.railchat = chats; r.simple = rs(); r.railleft = rect('.rail.tabs').right <= rect('#sview').left + 1; r.m1 = msgs();"
                 "document.querySelector('.rail [data-tab=map]').click(); r.back = rs() + '|' + vis(); r.m2 = msgs(); document.getElementById('gochat').click(); r.m3 = msgs(); document.querySelector('.rail [data-tab=map]').click(); r.m4 = msgs(); r.same = (window.j2mark === 1) + '|' + (location.href === where);"
                 "r.toggled = !document.getElementById('internals') && q('.rail .ri svg').length === 11;"
-                "showTab('runsettings'); document.getElementById('to-simple').click(); r.tosimple = rs(); document.querySelector('.rail [data-tab=map]').click();")
+                "showTab('runsettings'); document.getElementById('gochat').click(); r.tosimple = rs(); document.querySelector('.rail [data-tab=map]').click();")
         finally:
             shutil.rmtree(ended, ignore_errors=True)
         assert a["home"] == "map" and a["count"] == "1" and "Needs you" in a["needs"] and "Add credits?" in a["needs"] and "Answer in Chat" in a["needs"], a
@@ -9705,14 +9829,14 @@ def map_tab():
         c = home_probe(name, base_js + vis_js +
             "r.head = q('#dview h1').filter(seen).length + '|' + document.getElementById('dview').innerText.includes('J2 Department'); r.heads = q('#dview h1, #dview h2, #dview h3').filter(seen).map(h => h.textContent.trim()).filter(t => t === 'Map').length;"
             "r.outcome = !!document.querySelector('#needs [data-outcome]'); document.querySelector('#needs [data-gotab=\"report\"]').click(); r.afterLink = vis(); r.banner = document.getElementById('banner').textContent; r.bannerIn = !!document.getElementById('banner').closest('#pane-report'); r.bannerShown = seen(document.getElementById('banner'));"
-            "showTab('runsettings'); r.settings = ['outsel', 'runsel', 'reset', 'to-simple'].map(i => seen(document.getElementById(i))).join(','); r.runsel = document.getElementById('runsel').value; r.opts = document.getElementById('runsel').options.length;"
+            "showTab('runsettings'); r.settings = ['appear', 'runlist', 'runq', 'reset'].map(i => seen(document.getElementById(i))).join(','); r.runsel = runCur(); r.opts = document.querySelectorAll('#runlist .runrow').length;"
             "showTab('map');")
         assert c["head"] == "0|false" and c["heads"] == 1, c      # no department heading; exactly one visible "Map" heading
         assert c["outcome"] is True and c["afterLink"] == "report" and c["bannerIn"] is True and c["bannerShown"] is True and c["banner"].startswith("Viewing saved run " + name + " (read only)."), c
         assert c["settings"] == "true,true,true,true" and c["opts"] >= 2, c      # the controls are all there in Run settings
         newest = os.path.join(j2.RUNS_DIR, "j2-29990101-000001")      # sorts first, so the selector (newest 60) always lists it
         shutil.copytree(run.dir, newest)
-        assert home_probe("j2-29990101-000001", base_js + "showTab('runsettings'); r.val = document.getElementById('runsel').value;")["val"] == "j2-29990101-000001", "the selector shows the run that is open"
+        assert home_probe("j2-29990101-000001", base_js + "showTab('runsettings'); r.val = (document.querySelector('#runlist .runrow.cur') || {dataset: {}}).dataset.openrun;")["val"] == "j2-29990101-000001", "the run list highlights the run that is open"
         fx = ("document.querySelectorAll('.mapsvgwrap').forEach(w => w.dataset.layout = 'h'); const sv = [...document.querySelectorAll('.mapsvg')].find(x => x.getClientRects().length); const lines = [...sv.querySelectorAll('path.mapedge')].filter(p => parseFloat(getComputedStyle(p).opacity) > 0.01).map(p => { const L = p.getTotalLength(), o = []; for (let i = 0; i <= L; i += 2) { const t = p.getPointAtLength(i); o.push([t.x, t.y]); } return {id: p.dataset.from + ' > ' + p.dataset.to, o}; });"
               "const texts = [...sv.querySelectorAll('text')].filter(t => parseFloat(getComputedStyle(t).opacity) > 0.01 && t.textContent.trim()).map(t => ({t: t.textContent.trim(), b: t.getBBox()}));"
               "r.n = texts.length; r.hits = []; for (const x of texts) { for (const l of lines) if (l.o.some(([px, py]) => px > x.b.x - 1 && px < x.b.x + x.b.width + 1 && py > x.b.y && py < x.b.y + x.b.height)) r.hits.push(x.t + ' on ' + l.id); }"
@@ -9762,7 +9886,7 @@ def map_tab():
         # Run settings: New run posts to /api/reset; choosing a saved run opens it
         e_ = home_probe(name, base_js + "let posted = ''; window.fetch = (u, o) => { if (String(u).includes('/api/reset')) posted = (o && o.method) || 'GET'; return new Promise(() => {}); }; showTab('runsettings'); document.getElementById('reset').click(); r.posted = posted;")
         assert e_["posted"] == "POST", e_
-        f_ = home_probe(name, base_js + "if (sessionStorage.step !== '2') { sessionStorage.step = '2'; showTab('runsettings'); const sel = document.getElementById('runsel'); const o = [...sel.options].find(x => x.value && x.value !== '" + name + "'); sel.value = o ? o.value : ''; r.picked = sel.value; sel.dispatchEvent(new Event('change')); } else { r.after = location.search; r.val = document.getElementById('runsel').value; sessionStorage.clear(); }")
+        f_ = home_probe(name, base_js + "if (sessionStorage.step !== '2') { sessionStorage.step = '2'; showTab('runsettings'); const o = [...document.querySelectorAll('#runlist [data-openrun]')].find(x => x.dataset.openrun !== '" + name + "' && x.dataset.openrun !== RUNS.live); r.picked = o ? o.dataset.openrun : ''; if (o) o.click(); } else { r.after = location.search; r.val = runCur(); sessionStorage.clear(); }")
         assert f_.get("after", "").startswith("?run=j2-") and f_["val"] and f_["val"] != name, f_      # the selector switches runs
         shutil.rmtree(newest, ignore_errors=True)
     for n_ in real_names:
@@ -10578,6 +10702,7 @@ if __name__ == "__main__":
             left_bar_toggle()
             chat_panel()
             view_kept()
+            run_settings()
             graph_map()
             warm_ui()
             map_motion()
