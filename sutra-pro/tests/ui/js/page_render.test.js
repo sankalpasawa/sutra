@@ -155,9 +155,9 @@ test("with a department and a run the URLs carry the run first and the departmen
 });
 
 test("the page's own first calls reach J2's routes with the department once, with and without a run", () => {
-  assert.deepEqual(dept().fetched, ["/api/refs?dept=web", "/api/runs?dept=web", "/api/state?since=0&dept=web"]);
+  assert.deepEqual(dept().fetched, ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", "/api/state?since=0&dept=web"]);
   assert.deepEqual(dept({location: {search: `?run=${RUN}`}}).fetched,
-    ["/api/refs?dept=web", "/api/runs?dept=web", `/api/state?since=0&run=${RUN}&dept=web`]);
+    ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", `/api/state?since=0&run=${RUN}&dept=web`]);
 });
 
 test("without a department the page is J2's: SutraCtx is there and empty, nothing is wrapped, no dept= anywhere", () => {
@@ -165,7 +165,7 @@ test("without a department the page is J2's: SutraCtx is there and empty, nothin
   assert.equal(plain.run("typeof SutraCtx"), "object");
   assert.equal(plain.run("SutraCtx.dept"), "");
   assert.equal(plain.run("typeof fetch.sutraWrapped"), "undefined");
-  assert.deepEqual(plain.fetched, ["/api/refs", "/api/runs", "/api/state?since=0"]);
+  assert.deepEqual(plain.fetched, ["/api/refs", "/api/runs", "/api/runlist", "/api/state?since=0"]);
   assert.ok(!JSON.stringify(plain.out).includes("dept="));
 });
 
@@ -221,4 +221,64 @@ test("J2's own harness on J2's own page prints every key the ported page prints,
   assert.deepEqual(rendered().out, withE13(theirs.out));
   const layout = spawnHarness(path.join(J2, "j2_graph_layout.js"), [path.join(J2, "j2_ui.html"), fixture("maps.json")]);
   assert.deepEqual(spawnHarness(LAYOUT, [PAGE, fixture("maps.json")]).out, layout.out);
+});
+
+// ----------------------------------------------------------------------------------------------------------------------
+// E14 to E18: Run settings (appearance cards and the run list over /api/runlist, patch P13)
+// ----------------------------------------------------------------------------------------------------------------------
+const ROW = (n, over = {}) => ({id: `j2-20261104-1000${String(n).padStart(2, "0")}-aaaa`, title: `Run ${n}`, status: "done", output: "website",
+  when: `2026-11-04T10:00:${String(n % 60).padStart(2, "0")}`, brief: `brief ${n}`, ...over});
+const shown = (page, runs, live = "") => {
+  page.run(`RUNS.all = ${JSON.stringify(runs)}; RUNS.live = ${JSON.stringify(live)}; RUNS.f = "all"; RUNS.q = ""; RUNS.show = 20; renderRuns()`);
+  return page.elements.runlist.innerHTML;
+};
+
+test("E14 to E18: the old controls are gone from the page and the new ones are in it", () => {
+  const html = fs.readFileSync(PAGE, "utf8");
+  for (const gone of ['id="outsel"', 'id="runsel"', 'id="to-simple"', "Back to simple view", "$(\"outsel\")", "$(\"runsel\")"]) assert.ok(!html.includes(gone), gone);
+  for (const there of ['id="runlist"', 'id="runq"', 'data-rf="running"', 'data-themepick="system"', 'id="reset"', 'href="/ui/css/run-settings.css"']) assert.ok(html.includes(there), there);
+  assert.ok(html.includes('class="outsel"'), "the Simple view's start page keeps its output select");
+  assert.ok(html.includes("How the app looks, and which run you are looking at."));
+});
+
+test("Run settings lists the runs under date headings, marks the open one and shows 20 at a time", () => {
+  const page = dept();
+  const runs = Array.from({length: 25}, (_, i) => ROW(i + 1)).reverse();
+  const html = shown(page, runs, runs[0].id);
+  assert.equal((html.match(/class="runrow/g) || []).length, 20);
+  assert.equal((html.match(/class="runrow cur"/g) || []).length, 1);
+  assert.ok(html.includes(`aria-label="Run 25, ${runs[0].id}, done, open now"`) && html.includes("Show 5 more · 5 left"));
+  assert.equal(page.elements.runcount.textContent, "25 runs");
+  page.run("RUNS.show += 20; renderRuns()");
+  assert.equal((page.elements.runlist.innerHTML.match(/class="runrow/g) || []).length, 25);
+  assert.ok(!page.elements.runlist.innerHTML.includes("runmore"));
+});
+
+test("Run settings filters by status and searches title, brief and run id; nothing matching says so", () => {
+  const page = dept();
+  const runs = [ROW(3, {status: "running", title: "Brew Lab"}), ROW(2, {status: "done", brief: "a florist in Jaipur"}), ROW(1, {status: "stopped"})];
+  shown(page, runs);
+  page.run('RUNS.f = "stopped"; renderRuns()');
+  assert.deepEqual([...page.elements.runlist.innerHTML.matchAll(/data-openrun="([^"]+)"/g)].map(m => m[1]), [runs[2].id]);
+  assert.equal(page.elements.runcount.textContent, "1 of 3 runs");
+  page.run('RUNS.f = "all"; RUNS.q = "JAIPUR"; renderRuns()');
+  assert.deepEqual([...page.elements.runlist.innerHTML.matchAll(/data-openrun="([^"]+)"/g)].map(m => m[1]), [runs[1].id]);
+  page.run(`RUNS.q = ${JSON.stringify(runs[0].id.slice(4, 14))}; renderRuns()`);
+  assert.equal((page.elements.runlist.innerHTML.match(/class="runrow/g) || []).length, 3);
+  page.run('RUNS.q = "zzz"; renderRuns()');
+  assert.equal(page.elements.runlist.innerHTML, '<div class="runnone">No runs match.</div>');
+});
+
+test("Run settings escapes what a run says and uses the document icon for a PRD", () => {
+  const page = dept();
+  const html = shown(page, [ROW(1, {title: "<img src=x onerror=1>", brief: '"quoted" & <b>', output: "prd"})]);
+  assert.ok(!html.includes("<img src=x") && !html.includes("<b>") && html.includes("&lt;img src=x onerror=1&gt;"));
+  assert.ok(html.includes('d="M6 3h8l4 4v14H6z"'));
+});
+
+test("Run settings opens a run by the URL's own parameters: the run set, the tab dropped, the live run by no run at all", () => {
+  const page = dept({location: {search: "?view=detail&tab=runsettings"}});
+  assert.equal(page.run('runHref("j2-20261104-100004-7f3a")'), "?view=detail&run=j2-20261104-100004-7f3a");
+  assert.equal(page.run('runHref("")'), "?view=detail");
+  assert.equal(runHarness(RENDER, RENDER_ARGS, {boot: BOOT, location: {pathname: "/d/web/", search: "?run=x"}}).run('runHref("")'), "");
 });

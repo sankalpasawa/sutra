@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>J2 Department</title>
-<link rel="stylesheet" href="/ui/css/j2.css">
+<link rel="stylesheet" href="/ui/css/j2.css"><link rel="stylesheet" href="/ui/css/run-settings.css">
 <link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">
 <!--SUTRA-BOOT-->
 <script src="/ui/js/sutra_ctx.js"></script>
@@ -80,10 +80,11 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
     <div class="pane" id="pane-report" hidden><div class="banner" id="banner" hidden></div><div id="reportbody"></div></div>
     <div class="pane" id="pane-runsettings" hidden>
       <div class="runset">
-        <div class="appear" id="appear">Appearance <span class="seg" role="group" aria-label="Appearance"><button type="button" data-themepick="light" aria-pressed="false">Light</button><button type="button" data-themepick="dark" aria-pressed="true">Dark</button><button type="button" data-themepick="system" aria-pressed="false">System</button></span></div>
-        <label>What to build <select id="outsel" class="outsel" aria-label="What to build"></select></label>
-        <label>Saved runs <select id="runsel" class="ghost" aria-label="Open a saved run"><option value="">Live run</option></select></label>
-        <div class="runact"><button class="ghost" id="reset">New run</button> <a href="?view=simple" class="slink" id="to-simple">Back to simple view</a></div>
+        <section class="rssec" id="appear"><h3>Appearance</h3><p>Applies to this browser only.</p>
+          <div class="themecards" role="group" aria-label="Appearance"><button type="button" data-themepick="light" aria-pressed="false"><span class="sw sw-l"></span>Light</button><button type="button" data-themepick="dark" aria-pressed="true"><span class="sw sw-d"></span>Dark</button><button type="button" data-themepick="system" aria-pressed="false"><span class="sw sw-s"></span>System</button></div></section>
+        <section class="rssec runsec" aria-labelledby="runsh"><div class="rtop"><h3 id="runsh">Runs <small id="runcount"></small></h3><input type="search" id="runq" placeholder="Search runs" aria-label="Search runs by title, brief or run ID" autocomplete="off"><button type="button" class="newrun" id="reset">+ New run</button></div>
+          <div class="rfil" role="group" aria-label="Filter by status"><button type="button" data-rf="all" aria-pressed="true">All <i></i></button><button type="button" data-rf="running" aria-pressed="false">Running <i></i></button><button type="button" data-rf="done" aria-pressed="false">Done <i></i></button><button type="button" data-rf="stopped" aria-pressed="false">Stopped <i></i></button></div>
+          <div class="runlist" id="runlist"></div></section>
       </div>
     </div>
     <div class="pane" id="pane-rundetails" hidden>
@@ -857,7 +858,6 @@ function setView(v, keep){ document.body.classList.toggle("simple", v !== "detai
   if (!v) try { v = localStorage.getItem("j2view"); } catch (e) {}
   setView(v === "detail" ? "detail" : "simple", !!q); })();
 $("to-detail").onclick = e => { e.preventDefault(); setView("detail", true); };
-$("to-simple").onclick = e => { e.preventDefault(); setView("simple", true); };
 
 function renderReport(s){
   const R = s.report;
@@ -919,8 +919,6 @@ async function poll(){
     $("mode").textContent = (viewRun || s.saved ? `run ${viewRun || s.saved} · ` : "") + (s.mock ? "mock functions" : `model: ${s.model}`) + ` · ${s.calls} AI calls · cycle ${s.cycle}` + ((((s.report || {}).metrics || {}).minutes) != null ? ` · ${s.report.metrics.minutes} min` : "") + (prioModel(s).total != null ? ` · budget ${prioModel(s).total} credits` : "");
     $("fixes").textContent = s.fixes ? "J2_FIXES=1 (fixes)" : "J2_FIXES=0 (baseline, as in the diagram)";
     $("otype").textContent = `output: ${s.output_label}`;
-    if ($("outsel").__v !== s.output + s.total){ $("outsel").__v = s.output + s.total; $("outsel").innerHTML = outOptions(s); }
-    $("outsel").disabled = !!s.total || !!s.saved;
     $("doclinks").hidden = !(s.doc || (s.docset || []).length) || !(s.files || []).length;
     $("pane-preview").classList.toggle("has-links", !$("doclinks").hidden);
     if (!$("doclinks").hidden) paint($("doclinks"), (s.docset || []).length > 1 ? `<b>Design documents</b> ${docLinks(s)}` : `<b>${esc(s.output_label)}</b> ${fileLinks(s)}`);
@@ -996,7 +994,7 @@ const TABHINT = {preview: "What the team has built so far.", goal: "What you ask
   docs: "The design documents the team wrote.", artifacts: "The files and records this run produced.",
   map: "Who worked with whom, and what each made.", style: "The look and feel the team agreed on.",
   lessons: "What the team learned from earlier runs.", playbooks: "Plans reused from earlier runs of the same kind.",
-  report: "A summary of the run.", rundetails: "The agents, the steps and the settings of this run.", runsettings: "What to build, which run to open, and a new run.",
+  report: "A summary of the run.", rundetails: "The agents, the steps and the settings of this run.", runsettings: "How the app looks, and which run you are looking at.",
   board: "Questions the functions and the builders asked, who answered them, and who reused them (recorded data only).",
   story: "What each question on the message board did, step by step, read from this run's own records.",
   library: "Every artifact template: the generic layout and the templates made for each business, and how this run chose them."};
@@ -2903,14 +2901,42 @@ $("pane-workflows").addEventListener("click", e => { const b = e.target.closest(
   $("dtitle").textContent = `${a.id} · ${b.dataset.link === "agent" ? "workflow output" : "verification evidence"}`;
   $("dbody").innerHTML = `<pre>${esc(JSON.stringify(b.dataset.link === "agent" ? a.agent_output : (a.results || []), null, 2))}</pre>`;
   $("detail").showModal(); });
-// Saved runs: pick one to open it read-only; the URL keeps ?run= so it can be reloaded or shared locally.
+// Saved runs: the Board story's compare picker (/api/runs).
 (async () => { try { const r = await (await fetch("/api/runs")).json();
-  RUNLIST = r.runs || [];                 // the same list the Board story's compare picker offers
-  $("runsel").innerHTML = `<option value="">Live run (${esc(r.live)})</option>` + r.runs.filter(x => x.id !== r.live)
-    .map(x => `<option value="${esc(x.id)}">${esc(x.id)} · ${esc(x.status)} · ${esc(x.brief.slice(0, 50))}</option>`).join("");
-  $("runsel").value = viewRun;
+  RUNLIST = r.runs || [];
   if (!$("pane-story").hidden || STORY.entries.length) paint($("pane-story"), renderStory()); } catch (e) {} })();
-$("runsel").onchange = () => { location.search = $("runsel").value ? "?run=" + encodeURIComponent($("runsel").value) : ""; };
+// Run settings' run list (/api/runlist, patch P13: every saved run of this team from its records), newest first under date headings; 20 at a time;
+// status chips with counts, a search over title, brief and run id. Opening a run keeps the other URL parameters (the view), not the tab.
+const RUNS = {all: [], live: "", f: "all", q: "", show: 20};
+const RUNICON = {web: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18"/><circle cx="6.5" cy="6.5" r=".6" fill="currentColor"/><circle cx="9" cy="6.5" r=".6" fill="currentColor"/></svg>`,
+  doc: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 15.5h6"/></svg>`};
+const runCur = () => viewRun || RUNS.live;
+const runHref = id => { const q = new URLSearchParams(location.search); if (id) q.set("run", id); else q.delete("run"); q.delete("tab"); const s = q.toString(); return s ? "?" + s : ""; };
+function runGroup(w){ if (!w) return "Older"; const t = new Date(), d = new Date(w), a = new Date(t.getFullYear(), t.getMonth(), t.getDate()), b = new Date(d.getFullYear(), d.getMonth(), d.getDate()), n = Math.round((a - b) / 864e5);
+  return n <= 0 ? "Today" : n === 1 ? "Yesterday" : n < 7 ? "This week" : d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear() ? "Earlier this month" : "Older"; }
+const runWhen = w => { if (!w) return ""; const d = new Date(w); return d.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric"}) + " · " + w.slice(11, 16); };
+const runShown = () => { const q = RUNS.q.trim().toLowerCase(); return RUNS.all.filter(x => (RUNS.f === "all" || x.status === RUNS.f) && (!q || (x.title + " " + x.brief + " " + x.id).toLowerCase().includes(q))); };
+function renderRuns(){
+  const L = runShown(), cur = runCur(); let h = "", g = "";
+  document.querySelectorAll("[data-rf]").forEach(b => { b.querySelector("i").textContent = b.dataset.rf === "all" ? RUNS.all.length : RUNS.all.filter(x => x.status === b.dataset.rf).length;
+    b.setAttribute("aria-pressed", String(b.dataset.rf === RUNS.f)); });
+  $("runcount").textContent = L.length === RUNS.all.length ? plural(L.length, "run") : `${L.length} of ${plural(RUNS.all.length, "run")}`;
+  L.slice(0, RUNS.show).forEach(x => { const G = runGroup(x.when); if (G !== g){ g = G; h += `<div class="rgrp">${G}</div>`; }
+    const me = x.id === cur;
+    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric">${RUNICON[x.output === "website" ? "web" : "doc"]}</span>`
+      + `<span class="rmid"><span class="rt">${esc(x.title)}</span><code>${esc(x.id)}</code><span class="rm">${esc([runWhen(x.when), x.brief].filter(Boolean).join(" · "))}</span></span>`
+      + `<span class="rr"><span class="rst ${esc(x.status)}">${esc(x.status)}</span><span class="ropen">${me ? "Open now" : "Open"}</span></span></button>`; });
+  if (L.length > RUNS.show) h += `<button type="button" class="runmore" id="runmore">Show ${Math.min(20, L.length - RUNS.show)} more · ${L.length - RUNS.show} left</button>`;
+  $("runlist").innerHTML = h || `<div class="runnone">No runs match.</div>`;
+}
+(async () => { try { const r = await (await fetch("/api/runlist", {cache: "no-store"})).json(); RUNS.all = r.runs || []; RUNS.live = r.live || ""; } catch (e) {} renderRuns(); })();
+$("runlist").addEventListener("click", e => {
+  if (e.target.closest("#runmore")){ RUNS.show += 20; return renderRuns(); }
+  const b = e.target.closest("[data-openrun]"); if (!b) return;
+  if (b.dataset.openrun === runCur()) return showTab("map");      // the run already open
+  location.search = runHref(b.dataset.openrun === RUNS.live ? "" : b.dataset.openrun); });
+document.querySelectorAll("[data-rf]").forEach(b => b.onclick = () => { RUNS.f = b.dataset.rf; RUNS.show = 20; renderRuns(); });
+$("runq").addEventListener("input", () => { RUNS.q = $("runq").value; RUNS.show = 20; renderRuns(); });
 $("pane-playbooks").addEventListener("click", async e => {
   if (e.target.id !== "clear-playbooks" || !confirm("Delete every saved playbook (memory/playbooks.jsonl)? This can't be undone.")) return;
   await fetch("/api/playbooks/clear", {method:"POST"});

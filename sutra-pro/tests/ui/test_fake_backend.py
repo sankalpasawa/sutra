@@ -4617,3 +4617,15 @@ def test_the_committed_j2_captures_equal_a_fresh_capture_of_the_real_j2(capsys):
     before = capture.checkout_state(j2)
     assert capture.main(["--j2", str(j2), "--j2-python", python, "--check"]) == 0, capsys.readouterr().err
     assert capture.checkout_state(j2) == before  # J2 is read-only for the app: nothing was written there
+
+
+# ---- patch P13: the fake's /api/runlist and /api/changes (the engine's own shapes, not captured from J2) -------------------------
+def test_the_fake_answers_the_two_p13_routes_per_team(fake_server, fake):
+    fake.stage("2")
+    status, _, raw = j2_get(fake_server, "/api/runlist", dept="web")
+    body = json.loads(raw)
+    assert status == 200 and list(body) == ["live", "runs"] and body["runs"], body
+    assert set(body["runs"][0]) == {"id", "title", "status", "output", "when", "brief"} and body["runs"][0]["when"] == "2026-11-04T10:00:04"
+    assert json.loads(j2_get(fake_server, "/api/changes", dept="web")[2]) == {"changes": []}
+    for path in ("/api/runlist", "/api/changes"):
+        assert j2_get(fake_server, path)[0] == 400 and j2_get(fake_server, path, dept="nosuch")[0] == 404

@@ -1308,6 +1308,24 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
 
         app.add_api_route(path, make(name), methods=["GET"])
 
+    @app.get("/api/runlist")
+    def j2_runlist(dept: str | None = None, run: str | None = None):
+        """Patch P13's run list, derived from the captured /api/runs: the runs of the web team only, as the engine's rows."""
+        scope(dept, run)
+        listed = json.loads(need("runs.json")) if dept == "web" else {"live": "", "runs": []}
+        rows = []
+        for item in listed["runs"]:
+            m = re.search(r"(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})", item["id"])
+            rows.append({"id": item["id"], "title": item["id"], "status": "done" if str(item["status"]).startswith("done") else "stopped",
+                         "output": "website", "when": f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}" if m else "", "brief": item["brief"][:160]})
+        return JSONResponse({"live": listed["live"], "runs": rows}, headers=secure)
+
+    @app.get("/api/changes")
+    def j2_changes(dept: str | None = None, run: str | None = None):
+        """Patch P13's build journey: the captured run has no change.json, so no stops."""
+        scope(dept, run)
+        return JSONResponse({"changes": []}, headers=secure)
+
     @app.get("/api/library")
     def j2_library(dept: str | None = None):
         scope(dept, None)

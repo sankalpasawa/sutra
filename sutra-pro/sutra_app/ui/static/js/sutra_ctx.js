@@ -32,10 +32,14 @@
     "/api/story", "/api/board", "/api/audits", "/api/refs", "/api/say", "/api/output", "/api/reset", "/api/playbooks/clear",
     "/api/lessons/clear"];
   const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/"];
-  const J2_EXACT_SET = new Set(J2_EXACT);
+  // The two read-only routes of patch P13 (scripts/vendor_j2.py; Run settings' run list and the build journey's stops). J2's own repository
+  // does not have them, so they are not in `exact` (23); they are team routes all the same and get `dept`.
+  const PATCHED_EXACT = ["/api/runlist", "/api/changes"];
+  const J2_EXACT_SET = new Set(J2_EXACT.concat(PATCHED_EXACT));
   const J2_PATHS = Object.freeze({
     exact: Object.freeze(J2_EXACT.slice()),
     prefixes: Object.freeze(J2_PREFIXES.slice()),
+    patched: Object.freeze(PATCHED_EXACT.slice()),
     // `pathname` is the path alone, without a query or fragment.
     matches: pathname => typeof pathname === "string" && (J2_EXACT_SET.has(pathname) || J2_PREFIXES.some(p => pathname.startsWith(p))),
   });

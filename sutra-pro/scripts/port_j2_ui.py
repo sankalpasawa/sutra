@@ -6,15 +6,16 @@
                                                                           # differ from a fresh port
     scripts/py scripts/port_j2_ui.py --e13-json                            # the E13 wording pairs as JSON (page_render.test.js)
 
-The page is J2's `j2_ui.html` with 13 edits (E1 to E13). Every edit is `Edit(id, old, new, count)`: `old` is a literal or a
+The page is J2's `j2_ui.html` with 18 edits (E1 to E13 and the Run settings edits E14 to E18). Every edit is `Edit(id, old, new, count)`: `old` is a literal or a
 compiled regex and `count` is the number of places it must match in J2's file. A count that is not met means J2 changed under
 the port: the port stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 13 edits
+    pages/j2_ui.html            the page after the 18 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
+    static/css/run-settings.css the styles of Run settings (edits E14 to E18)
     static/vendor/              d3.min.js, d3-LICENSE and README.md, byte for byte
 
 J2 is only read, never written, and the port is deterministic (no clock, no random): two runs give the same bytes.
@@ -84,7 +85,7 @@ STYLE_BLOCK = re.compile(
     re.DOTALL,
 )
 E1_NEW = _lines(
-    '<link rel="stylesheet" href="/ui/css/j2.css">',
+    '<link rel="stylesheet" href="/ui/css/j2.css"><link rel="stylesheet" href="/ui/css/run-settings.css">',
     '<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">',
     "<!--SUTRA-BOOT-->",
     '<script src="/ui/js/sutra_ctx.js"></script>',
@@ -154,6 +155,122 @@ PAGE_EDITS: tuple[Edit, ...] = (
     *(Edit(f"E13{letter}", old, new, count) for letter, (old, new, count) in zip("abcd", E13_WORDS)),
 )
 
+# ----------------------------------------------------------------------------------------------------------------------
+# E14 to E18: Run settings as the old Sutra repository's copy of the prototype has it (commit e7800503, docs/design/j2-sync-3.md).
+# J2's own repository has the older tab (a theme switch, a "What to build" list, a "Saved runs" list and a link back to the Simple
+# view). The new tab is two cards: Appearance (three swatch cards) and Runs (a status filter with counts, a search over title, brief
+# and run id, rows grouped by date, 20 at a time), fed by `GET /api/runlist` (patch P13 of scripts/vendor_j2.py). Dropped: "What to
+# build" (the Simple view's start page still has it: its `.outsel` select and `POST /api/output` stay) and "Back to simple view" (the
+# rail's Chat item is that way). The old copy's Simple-view redesign is NOT ported: J2's repository does not have it.
+# The styles are a fifth file, static/css/run-settings.css, so that j2.css stays J2's `<style>` block byte for byte.
+# ----------------------------------------------------------------------------------------------------------------------
+RUN_SETTINGS_CSS = r'''/* Run settings (page edits E14 to E18 of scripts/port_j2_ui.py; patch P13 serves /api/runlist): appearance cards and the run list.
+   Written by the port script, not part of J2's `<style>` block (j2.css stays byte for byte J2's). Colours are the page's theme tokens;
+   the two swatch colours are the same in both themes on purpose (they show what each theme looks like). */
+:root{--swlight:#fbf8f3;--swdark:#1f1c18}
+#pane-runsettings .runset{display:flex;flex-direction:column;gap:14px;align-items:stretch}
+.rssec{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px 16px}.rssec h3{margin:0 0 2px;font-size:15px}.rssec>p{margin:0 0 10px;color:var(--muted);font-size:13px}
+.themecards{display:flex;flex-wrap:wrap;gap:8px}.themecards button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:12px;padding:9px 14px;font:inherit;cursor:pointer;min-width:104px}
+.themecards button[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);font-weight:600}
+.themecards .sw{width:30px;height:20px;border-radius:6px;border:1px solid var(--line)}.sw-l{background:var(--swlight)}.sw-d{background:var(--swdark)}.sw-s{background:linear-gradient(90deg,var(--swlight) 50%,var(--swdark) 50%)}
+.rtop{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px}.rtop h3{margin:0}.rtop h3 small{font-weight:400;color:var(--muted);font-size:12.5px;margin-left:6px}
+.rtop input{margin-left:auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:7px 10px;font:inherit;width:220px;max-width:100%}
+.newrun{background:var(--accent);color:var(--on);border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
+.rfil{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.rfil button{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:99px;padding:4px 11px;font:inherit;font-size:12.5px;cursor:pointer}
+.rfil button i{font-style:normal;margin-left:3px}.rfil button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.runlist{max-height:min(62vh,640px);overflow:auto;display:grid;gap:8px;align-content:start;grid-auto-rows:max-content;padding-right:2px}
+.rgrp{position:sticky;top:0;z-index:1;background:var(--panel2);font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:6px 2px 4px}
+.runrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:9px 14px;cursor:pointer;text-align:left;font:inherit;color:var(--ink);width:100%}
+.runrow:hover{border-color:var(--accent)}.runrow.cur{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
+.runrow .ric{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--bg);color:var(--muted)}.runrow.cur .ric{color:var(--accent)}
+.runrow .rmid{min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;align-items:baseline}
+.runrow .rt{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.runrow code{font:12px var(--mono);color:var(--muted);background:var(--bg);border-radius:6px;padding:1px 6px;justify-self:start;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.runrow .rm{grid-column:1/-1;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.runrow .rr{display:flex;gap:8px;align-items:center}.runrow .ropen{font-size:12.5px;color:var(--accent);font-weight:600}.runrow.cur .ropen{color:var(--ink)}
+.rst{font-size:11.5px;border-radius:99px;padding:2px 9px;white-space:nowrap}.rst.done{background:color-mix(in srgb,var(--ok) 16%,var(--panel));color:color-mix(in srgb,var(--ok) 55%,var(--ink))}
+.rst.stopped{background:color-mix(in srgb,var(--warm2) 18%,var(--panel));color:color-mix(in srgb,var(--bad) 55%,var(--ink))}.rst.running{background:color-mix(in srgb,var(--accent) 16%,var(--panel));color:color-mix(in srgb,var(--accent) 55%,var(--ink))}
+.rst.running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:5px;animation:rpulse 1.2s infinite}@keyframes rpulse{50%{opacity:.3}}
+.runmore{margin:4px auto 2px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:7px 16px;font:inherit;font-size:13px;cursor:pointer}
+.runnone{color:var(--muted);font-size:13px;padding:8px}
+@media (max-width:600px){.runrow{grid-template-columns:auto minmax(0,1fr);gap:8px 10px;padding:8px 10px}.runrow .rr{grid-column:2}.rtop input{margin-left:0;flex:1 1 140px}.rssec{padding:12px}}
+@media (prefers-reduced-motion:reduce){.rst.running::before{animation:none}}
+'''
+E14_OLD = r'''      <div class="runset">
+        <div class="appear" id="appear">Appearance <span class="seg" role="group" aria-label="Appearance"><button type="button" data-themepick="light" aria-pressed="false">Light</button><button type="button" data-themepick="dark" aria-pressed="true">Dark</button><button type="button" data-themepick="system" aria-pressed="false">System</button></span></div>
+        <label>What to build <select id="outsel" class="outsel" aria-label="What to build"></select></label>
+        <label>Saved runs <select id="runsel" class="ghost" aria-label="Open a saved run"><option value="">Live run</option></select></label>
+        <div class="runact"><button class="ghost" id="reset">New run</button> <a href="?view=simple" class="slink" id="to-simple">Back to simple view</a></div>
+      </div>
+'''
+E14_NEW = r'''      <div class="runset">
+        <section class="rssec" id="appear"><h3>Appearance</h3><p>Applies to this browser only.</p>
+          <div class="themecards" role="group" aria-label="Appearance"><button type="button" data-themepick="light" aria-pressed="false"><span class="sw sw-l"></span>Light</button><button type="button" data-themepick="dark" aria-pressed="true"><span class="sw sw-d"></span>Dark</button><button type="button" data-themepick="system" aria-pressed="false"><span class="sw sw-s"></span>System</button></div></section>
+        <section class="rssec runsec" aria-labelledby="runsh"><div class="rtop"><h3 id="runsh">Runs <small id="runcount"></small></h3><input type="search" id="runq" placeholder="Search runs" aria-label="Search runs by title, brief or run ID" autocomplete="off"><button type="button" class="newrun" id="reset">+ New run</button></div>
+          <div class="rfil" role="group" aria-label="Filter by status"><button type="button" data-rf="all" aria-pressed="true">All <i></i></button><button type="button" data-rf="running" aria-pressed="false">Running <i></i></button><button type="button" data-rf="done" aria-pressed="false">Done <i></i></button><button type="button" data-rf="stopped" aria-pressed="false">Stopped <i></i></button></div>
+          <div class="runlist" id="runlist"></div></section>
+      </div>
+'''
+E15_OLD = r'''    if ($("outsel").__v !== s.output + s.total){ $("outsel").__v = s.output + s.total; $("outsel").innerHTML = outOptions(s); }
+    $("outsel").disabled = !!s.total || !!s.saved;
+'''
+E16_OLD = r'''$("to-simple").onclick = e => { e.preventDefault(); setView("simple", true); };
+'''
+E17_OLD = r'''// Saved runs: pick one to open it read-only; the URL keeps ?run= so it can be reloaded or shared locally.
+(async () => { try { const r = await (await fetch("/api/runs")).json();
+  RUNLIST = r.runs || [];                 // the same list the Board story's compare picker offers
+  $("runsel").innerHTML = `<option value="">Live run (${esc(r.live)})</option>` + r.runs.filter(x => x.id !== r.live)
+    .map(x => `<option value="${esc(x.id)}">${esc(x.id)} · ${esc(x.status)} · ${esc(x.brief.slice(0, 50))}</option>`).join("");
+  $("runsel").value = viewRun;
+  if (!$("pane-story").hidden || STORY.entries.length) paint($("pane-story"), renderStory()); } catch (e) {} })();
+$("runsel").onchange = () => { location.search = $("runsel").value ? "?run=" + encodeURIComponent($("runsel").value) : ""; };
+'''
+E17_NEW = r'''// Saved runs: the Board story's compare picker (/api/runs).
+(async () => { try { const r = await (await fetch("/api/runs")).json();
+  RUNLIST = r.runs || [];
+  if (!$("pane-story").hidden || STORY.entries.length) paint($("pane-story"), renderStory()); } catch (e) {} })();
+// Run settings' run list (/api/runlist, patch P13: every saved run of this team from its records), newest first under date headings; 20 at a time;
+// status chips with counts, a search over title, brief and run id. Opening a run keeps the other URL parameters (the view), not the tab.
+const RUNS = {all: [], live: "", f: "all", q: "", show: 20};
+const RUNICON = {web: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18"/><circle cx="6.5" cy="6.5" r=".6" fill="currentColor"/><circle cx="9" cy="6.5" r=".6" fill="currentColor"/></svg>`,
+  doc: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 15.5h6"/></svg>`};
+const runCur = () => viewRun || RUNS.live;
+const runHref = id => { const q = new URLSearchParams(location.search); if (id) q.set("run", id); else q.delete("run"); q.delete("tab"); const s = q.toString(); return s ? "?" + s : ""; };
+function runGroup(w){ if (!w) return "Older"; const t = new Date(), d = new Date(w), a = new Date(t.getFullYear(), t.getMonth(), t.getDate()), b = new Date(d.getFullYear(), d.getMonth(), d.getDate()), n = Math.round((a - b) / 864e5);
+  return n <= 0 ? "Today" : n === 1 ? "Yesterday" : n < 7 ? "This week" : d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear() ? "Earlier this month" : "Older"; }
+const runWhen = w => { if (!w) return ""; const d = new Date(w); return d.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric"}) + " · " + w.slice(11, 16); };
+const runShown = () => { const q = RUNS.q.trim().toLowerCase(); return RUNS.all.filter(x => (RUNS.f === "all" || x.status === RUNS.f) && (!q || (x.title + " " + x.brief + " " + x.id).toLowerCase().includes(q))); };
+function renderRuns(){
+  const L = runShown(), cur = runCur(); let h = "", g = "";
+  document.querySelectorAll("[data-rf]").forEach(b => { b.querySelector("i").textContent = b.dataset.rf === "all" ? RUNS.all.length : RUNS.all.filter(x => x.status === b.dataset.rf).length;
+    b.setAttribute("aria-pressed", String(b.dataset.rf === RUNS.f)); });
+  $("runcount").textContent = L.length === RUNS.all.length ? plural(L.length, "run") : `${L.length} of ${plural(RUNS.all.length, "run")}`;
+  L.slice(0, RUNS.show).forEach(x => { const G = runGroup(x.when); if (G !== g){ g = G; h += `<div class="rgrp">${G}</div>`; }
+    const me = x.id === cur;
+    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric">${RUNICON[x.output === "website" ? "web" : "doc"]}</span>`
+      + `<span class="rmid"><span class="rt">${esc(x.title)}</span><code>${esc(x.id)}</code><span class="rm">${esc([runWhen(x.when), x.brief].filter(Boolean).join(" · "))}</span></span>`
+      + `<span class="rr"><span class="rst ${esc(x.status)}">${esc(x.status)}</span><span class="ropen">${me ? "Open now" : "Open"}</span></span></button>`; });
+  if (L.length > RUNS.show) h += `<button type="button" class="runmore" id="runmore">Show ${Math.min(20, L.length - RUNS.show)} more · ${L.length - RUNS.show} left</button>`;
+  $("runlist").innerHTML = h || `<div class="runnone">No runs match.</div>`;
+}
+(async () => { try { const r = await (await fetch("/api/runlist", {cache: "no-store"})).json(); RUNS.all = r.runs || []; RUNS.live = r.live || ""; } catch (e) {} renderRuns(); })();
+$("runlist").addEventListener("click", e => {
+  if (e.target.closest("#runmore")){ RUNS.show += 20; return renderRuns(); }
+  const b = e.target.closest("[data-openrun]"); if (!b) return;
+  if (b.dataset.openrun === runCur()) return showTab("map");      // the run already open
+  location.search = runHref(b.dataset.openrun === RUNS.live ? "" : b.dataset.openrun); });
+document.querySelectorAll("[data-rf]").forEach(b => b.onclick = () => { RUNS.f = b.dataset.rf; RUNS.show = 20; renderRuns(); });
+$("runq").addEventListener("input", () => { RUNS.q = $("runq").value; RUNS.show = 20; renderRuns(); });
+'''
+E18_OLD = 'runsettings: "What to build, which run to open, and a new run."'
+E18_NEW = 'runsettings: "How the app looks, and which run you are looking at."'
+RUN_SETTINGS_EDITS: tuple[Edit, ...] = (
+    Edit("E14", E14_OLD, E14_NEW, 1),          # the pane: two cards instead of the select lists
+    Edit("E15", E15_OLD, "", 1),               # poll() filled and disabled the "What to build" select that is gone
+    Edit("E16", E16_OLD, "", 1),               # the "Back to simple view" link is gone
+    Edit("E17", E17_OLD, E17_NEW, 1),          # the saved-runs select becomes the run list
+    Edit("E18", E18_OLD, E18_NEW, 1),          # the tab's hint
+)
+
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").
 _CTX_LOAD = _lines(
     'const ctxfile = require("path").join(__dirname, "..", "static", "js", "sutra_ctx.js");'
@@ -187,7 +304,7 @@ def apply_edits(text: str, edits: tuple[Edit, ...], what: str) -> str:
 
 def port_page(page: str) -> tuple[str, str]:
     """(the ported page, j2.css) for J2's page text. j2.css is the inner text of the `<style>` block that E1 removes."""
-    ported = apply_edits(page, PAGE_EDITS, J2_PAGE)       # E1 matched exactly once, so the block is there
+    ported = apply_edits(page, PAGE_EDITS + RUN_SETTINGS_EDITS, J2_PAGE)       # E1 matched exactly once, so the block is there
     return ported, STYLE_BLOCK.search(page).group("css")
 
 
@@ -211,6 +328,7 @@ def build(j2: Path) -> dict[str, bytes]:
         "pages/j2_ui_render.js": apply_edits(text(J2_RENDER), RENDER_EDITS, J2_RENDER),
         "pages/j2_graph_layout.js": apply_edits(text(J2_LAYOUT), LAYOUT_EDITS, J2_LAYOUT),
         "static/css/j2.css": css,
+        "static/css/run-settings.css": RUN_SETTINGS_CSS,
     }
     files = {path: body.encode("utf-8") for path, body in outputs.items()}
     files.update({f"static/vendor/{name}": source[f"vendor/{name}"] for name in J2_VENDOR})
@@ -272,7 +390,7 @@ def main(argv: list[str] | None = None) -> int:
         if problems:
             print(f"The committed files differ from a fresh port of J2 {commit}:\n  " + "\n  ".join(problems), file=sys.stderr)
             return 1
-        print(f"ok: the {len(PAGE_EDITS)} anchors of the 13 page edits match their counts, and the {len(files)} committed files equal a fresh port of J2 {commit}")
+        print(f"ok: the {len(PAGE_EDITS) + len(RUN_SETTINGS_EDITS)} anchors of the 18 page edits match their counts, and the {len(files)} committed files equal a fresh port of J2 {commit}")
         return 0
     write_files(args.root, files)
     print(f"ported J2 {commit}: wrote {len(files)} files under {UI_DIR}")

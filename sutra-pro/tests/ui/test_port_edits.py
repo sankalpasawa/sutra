@@ -40,6 +40,7 @@ MODULES = ["sutra_events", "graph_layout", "chart_marks", "graph_render", "graph
 J2_API = {"state", "runs", "call", "preview", "docs", "map", "plan", "library", "run-templates", "artifacts", "artifacts/tree",
           "artifact", "agent", "code", "story", "board", "audits", "refs", "say", "output", "reset", "playbooks/clear",
           "lessons/clear"}
+P13_API = {"runlist", "changes"}          # patch P13: read-only routes J2's own repository does not have (Run settings' run list)
 EXTERNAL_REF = re.compile(r"""(?:src|href|action|poster|data-src)\s*=\s*["']\s*(?:https?:)?//""", re.IGNORECASE)
 INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.DOTALL)
 
@@ -55,7 +56,7 @@ PAGE = read(UI / "pages" / "j2_ui.html")
 # The table: per edit, what the ported page holds (fragment, how many times) and what it no longer holds.
 # A fragment sometimes spans a neighbouring line: that pins where the new text was put.
 # ----------------------------------------------------------------------------------------------------------------------
-E1_HEAD = ('<link rel="stylesheet" href="/ui/css/j2.css">\n'
+E1_HEAD = ('<link rel="stylesheet" href="/ui/css/j2.css"><link rel="stylesheet" href="/ui/css/run-settings.css">\n'
            '<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">\n'
            "<!--SUTRA-BOOT-->\n"
            '<script src="/ui/js/sutra_ctx.js"></script>\n'
@@ -100,6 +101,16 @@ CASES = {
               '  if (MAPPIN){ MAPPIN = ""; paintMap(); }', 1)],
             ["async function openAgent(id){\n  if (MAPPIN)"]),
     "E12": ([(E12_TAIL, 1)], ["poll();\n</script>\n</body>"]),
+    "E14": ([('<section class="rssec" id="appear"><h3>Appearance</h3>', 1), ('<div class="runlist" id="runlist"></div></section>', 1),
+             ('<button type="button" class="newrun" id="reset">+ New run</button>', 1), ('data-rf="stopped"', 1),
+             ('<button type="button" data-themepick="system" aria-pressed="false"><span class="sw sw-s"></span>System</button>', 1)],
+            ['id="outsel"', 'id="runsel"', 'id="to-simple"', "Back to simple view", '<div class="appear"', "Saved runs <select"]),
+    "E15": ([], ['$("outsel")']),
+    "E16": ([], ['$("to-simple")']),
+    "E17": ([('const RUNS = {all: [], live: "", f: "all", q: "", show: 20};', 1), ('fetch("/api/runlist", {cache: "no-store"})', 1),
+             ("const runHref = id =>", 1), ("// Saved runs: the Board story's compare picker (/api/runs).", 1)],
+            ['$("runsel")', "Saved runs: pick one to open it read-only"]),
+    "E18": ([('runsettings: "How the app looks, and which run you are looking at."', 1)], ["What to build, which run to open"]),
     "E13a": ([("How the Prioritiser priced the work each cycle", 1)], ["How the Prioritiser ranked"]),
     "E13b": ([("no pricing records", 2)], ["no ranking records"]),
     "E13c": ([("No pricing records in this run", 1)], ["No ranking records"]),
@@ -123,8 +134,8 @@ def test_edit_is_in_the_committed_page(case):
     check_case(PAGE, case)
 
 
-def test_there_are_thirteen_edits_and_e13_is_four_pairs_with_the_counts_one_two_one_one():
-    assert sorted({re.sub(r"[a-d]$", "", case) for case in CASES}, key=lambda c: int(c[1:])) == [f"E{n}" for n in range(1, 14)]
+def test_there_are_eighteen_edits_and_e13_is_four_pairs_with_the_counts_one_two_one_one():
+    assert sorted({re.sub(r"[a-d]$", "", case) for case in CASES}, key=lambda c: int(c[1:])) == [f"E{n}" for n in range(1, 19)]
     assert [CASES[f"E13{letter}"][0][0][1] for letter in "abcd"] == [1, 2, 1, 1]
 
 
@@ -154,10 +165,10 @@ def test_no_external_url_in_the_markup_and_no_cdn():
     assert not re.search(r"url\(\s*[\"']?\s*(?:https?:)?//", PAGE)
 
 
-def test_the_two_query_only_links_stay_relative_and_everything_else_in_href_is_a_hash_a_root_path_or_a_template():
+def test_the_one_query_only_link_stays_relative_and_everything_else_in_href_is_a_hash_a_root_path_or_a_template():
     hrefs = re.findall(r'href="([^"]*)"', PAGE)
-    assert hrefs.count("?view=detail") == 1 and hrefs.count("?view=simple") == 1
-    odd = [h for h in hrefs if h not in {"?view=detail", "?view=simple", "#"} and not h.startswith("/")]
+    assert hrefs.count("?view=detail") == 1 and hrefs.count("?view=simple") == 0       # E14 took "Back to simple view" away (the rail's Chat is the way)
+    odd = [h for h in hrefs if h not in {"?view=detail", "#"} and not h.startswith("/")]
     assert odd == [], odd
 
 
@@ -199,14 +210,14 @@ def fetch_sites(script: str) -> list[str]:
 
 def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_the_whole_page():
     sites = fetch_sites(INLINE_SCRIPT.findall(PAGE)[1])
-    assert len(sites) == 28 and sites.count("artUrl(f)") == 2
+    assert len(sites) == 29 and sites.count("artUrl(f)") == 2
     for site in sites:
         if site == "artUrl(f)":
             continue
         path = re.match(r"[`\"](/[^?$`\"]*)", site)
         assert path, site
         route = path.group(1)
-        assert route.startswith("/api/") and (route[len("/api/"):] in J2_API or route == "/api/library/"), site
+        assert route.startswith("/api/") and (route[len("/api/"):] in J2_API | P13_API or route == "/api/library/"), site
     assert "const artUrl = f => `/api/artifact?name=${encodeURIComponent(f)}${runQ()}`;" in PAGE
 
 
@@ -278,6 +289,8 @@ document.documentElement.dataset.theme = "dark";</script>
     <div class="pane preview" id="pane-preview" hidden><iframe id="frame" title="Website preview" src="/site/latest"></iframe></div>
     <div class="pane" id="pane-map"></div>
     <div class="pane" id="pane-style" hidden></div>
+    <div class="pane" id="pane-runsettings" hidden>
+@@E14@@    </div>
 </div>
 <aside id="agentdrawer" class="agentdrawer" hidden role="dialog" aria-labelledby="adtitle"></aside>
 <dialog id="detail"></dialog>
@@ -288,7 +301,7 @@ const runQ = () => viewRun ? "&run=" + encodeURIComponent(viewRun) : "";
 function renderSimple(s){{
   $("stitle").textContent = s.doc ? "Your document team" : "Your website team";
 }}
-const TABHINT = {{priorities: "How the Prioritiser ranked the work each cycle, what it deferred and why."}};
+const TABHINT = {{priorities: "How the Prioritiser ranked the work each cycle, what it deferred and why.", runsettings: "What to build, which run to open, and a new run."}};
 function showTab(name){{
   $("wtitle").textContent = name;
   $("backmap").hidden = name === "map"; document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map"); if (name !== "map") railReveal(name);
@@ -305,11 +318,13 @@ function renderPriorities(s){{
   if (!p.has) return `<p class="empty">No ranking records in this run: nothing was recorded.</p>`;
   return `<h4>Funded, in the order it ranked them</h4>`;
 }}
-poll();
+@@E15@@@@E16@@@@E17@@poll();
 </script>
 </body>
 </html>
 """
+MINI_PAGE = (MINI_PAGE.replace("@@E14@@", port.E14_OLD).replace("@@E15@@", port.E15_OLD).replace("@@E16@@", port.E16_OLD)
+             .replace("@@E17@@", port.E17_OLD))
 MINI_RENDER = r"""// mini render harness
 const fs = require("fs"), vm = require("vm");
 const src = fs.readFileSync(html, "utf8"), scripts = [...src.matchAll(/<script>([\s\S]*?)<\/script>/g)];
@@ -328,7 +343,7 @@ MINI_D3 = b"// https://d3js.org v7.9.0 mini\r\n(function(){})();\xc2\xb7\n"     
 MINI_LICENSE = b"ISC mini licence\n"
 MINI_README = b"d3 7.9.0 mini readme\r\n"
 OUTPUTS = ["pages/j2_graph_layout.js", "pages/j2_ui.html", "pages/j2_ui_render.js", "static/css/j2.css",
-           "static/vendor/README.md", "static/vendor/d3-LICENSE", "static/vendor/d3.min.js"]
+           "static/css/run-settings.css", "static/vendor/README.md", "static/vendor/d3-LICENSE", "static/vendor/d3.min.js"]
 
 
 def make_j2(base: Path, **replace: tuple[tuple[str, str], ...]) -> Path:
@@ -368,7 +383,7 @@ def ported(tmp_path, capsys):
     return j2, root
 
 
-def test_the_port_writes_the_seven_files_under_sutra_app_ui(ported):
+def test_the_port_writes_the_eight_files_under_sutra_app_ui(ported):
     _, root = ported
     assert sorted(tree(root)) == sorted(f"sutra_app/ui/{name}" for name in OUTPUTS)
 
@@ -413,7 +428,7 @@ def test_check_is_quiet_about_files_in_step_and_writes_nothing(ported, capsys):
     j2, root = ported
     before = tree(root)
     code, out, err = run(capsys, "--j2", j2, "--root", root, "--check")
-    assert (code, err) == (0, "") and out.startswith("ok: ") and "7 committed files equal a fresh port of J2 " in out
+    assert (code, err) == (0, "") and out.startswith("ok: ") and "8 committed files equal a fresh port of J2 " in out
     assert tree(root) == before
 
 
@@ -426,7 +441,7 @@ def test_check_fails_and_names_a_changed_file(ported, capsys):
     assert err.count("differs:") == 1 and "missing:" not in err
 
 
-def test_check_notices_a_change_in_each_of_the_seven_files(ported, capsys):
+def test_check_notices_a_change_in_each_of_the_eight_files(ported, capsys):
     j2, root = ported
     for name in OUTPUTS:
         target = root / "sutra_app/ui" / name
@@ -450,7 +465,7 @@ def test_check_on_an_empty_root_reports_every_file_missing(tmp_path, capsys):
     root = tmp_path / "empty"
     root.mkdir()
     code, _, err = run(capsys, "--j2", make_j2(tmp_path), "--root", root, "--check")
-    assert code == 1 and err.count("missing:") == 7 and tree(root) == {}
+    assert code == 1 and err.count("missing:") == 8 and tree(root) == {}
 
 
 def test_the_port_replaces_files_that_are_there(ported, capsys):
@@ -464,7 +479,7 @@ def test_the_port_replaces_files_that_are_there(ported, capsys):
 def test_the_port_prints_what_it_wrote(tmp_path, capsys):
     root = tmp_path / "repo"
     code, out, _ = run(capsys, "--j2", make_j2(tmp_path), "--root", root)
-    assert code == 0 and out.startswith("ported J2 ") and "wrote 7 files under sutra_app/ui" in out
+    assert code == 0 and out.startswith("ported J2 ") and "wrote 8 files under sutra_app/ui" in out
     assert "pages/j2_ui.html (" in out and "static/vendor/d3.min.js (" in out
 
 

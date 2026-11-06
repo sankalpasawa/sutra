@@ -384,6 +384,18 @@ test("J2_PATHS lists the 23 exact pathnames and the four prefixes of j2_server.p
   assert.ok(Object.isFrozen(J2_PATHS) && Object.isFrozen(J2_PATHS.exact) && Object.isFrozen(J2_PATHS.prefixes));
 });
 
+const PATCHED = ["/api/runlist", "/api/changes"];
+
+test("J2_PATHS.patched lists the two read-only routes of patch P13 and they get dept like J2's own", () => {
+  const { J2_PATHS } = load(browser()).SutraCtx;
+  assert.deepEqual(plain(J2_PATHS.patched), PATCHED);
+  assert.ok(Object.isFrozen(J2_PATHS.patched) && PATCHED.every(p => !J2_PATHS.exact.includes(p)));
+  for (const p of PATCHED) {
+    assert.equal(J2_PATHS.matches(p), true, p);
+    for (const other of [p + "/", p + "x", p.slice(0, -1), p.toUpperCase()]) assert.equal(J2_PATHS.matches(other), false, other);
+  }
+});
+
 test("J2_PATHS matches whole pathnames exactly for J2's /api/ paths", () => {
   const { J2_PATHS } = load(browser()).SutraCtx;
   for (const p of J2_EXACT) {
