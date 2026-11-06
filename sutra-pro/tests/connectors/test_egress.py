@@ -116,3 +116,18 @@ def test_orchestrator_json_calls_are_scrubbed(tmp_path):
         pass                                            # the stub's reply need not be JSON; the prompt is what is checked
     assert all(SAMPLES["github-token"] not in c.prompt for c in claude.calls)
     assert router.egress.rows()[0]["mode"] == "replace"
+
+
+@pytest.mark.parametrize("uri,leak", [
+    ("postgres://user:p@ss:word123@host/db", "word123"),
+    ("postgres://u:pa/ss1234@h/x", "ss1234"),
+    ("redis://:onlypass99@cache:6379/0", "onlypass99"),
+])
+def test_db_uri_credentials_with_at_colon_or_slash_in_the_password_are_fully_replaced(uri, leak):
+    out, counts = scan(f"a {uri} and then more", replace=True)
+    assert leak not in out and counts == {"db-uri-credentials": 1} and out.startswith("a ") and out.endswith(" and then more")
+    assert "[redacted:db-uri-credentials]" in out
+
+
+def test_a_uri_without_credentials_is_left_alone():
+    assert scan("see postgres://host:5432/db and me@x.org", replace=True)[0] == "see postgres://host:5432/db and me@x.org"

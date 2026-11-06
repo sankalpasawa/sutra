@@ -37,7 +37,7 @@ SHAPES: list[tuple[str, "re.Pattern[str]", bool]] = [        # (name, pattern, k
     ("stripe-key", re.compile(r"(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}"), False),
     ("slack-webhook", re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/_-]{10,}"), False),
     ("discord-webhook", re.compile(r"https://discord(?:app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{10,}"), False),
-    ("db-uri-credentials", re.compile(r"(?i)\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://)[^\s:@/]+:[^\s:@/]+@"), True),
+    ("db-uri-credentials", re.compile(r"(?i)\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://)[^\s/@]*:[^\s]*@(?=[^\s@/]+)"), True),
     ("private-key-env", re.compile(r"(?i)\b((?:api[_-]?key|secret[_-]?key|access[_-]?token|password|passwd)\s*[=:]\s*)['\"]?[A-Za-z0-9._\-/+]{12,}['\"]?"), True),
 ]
 
