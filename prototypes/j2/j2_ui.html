@@ -1198,6 +1198,24 @@ function atomPreview(a, v){
 }
 const ART_TYPES = ["artifact-schema", "artifact-rules", "artifact-render"];
 const artLast = (a, t) => (a.results || []).filter(r => r.type === t).slice(-1)[0] || null;
+// The Template line on every workflow row and work-atom card: the run's routing decision for the atom (templates.json,
+// the design entry aside), else the receipts' template_route; an atom with none says why.
+const TPL_WHY = {before: "run made before templates", none: "not a templated section", nr: "not recorded"};
+function tplOf(a){
+  const d = (LIB.decisions || []).find(x => x.atom === a.id && x.artifact !== "design");
+  if (d) return {name: d.template, version: d.version, action: d.action, kind: d.kind, artifact: d.artifact, section: d.section};
+  const r = (a.results || []).slice().reverse().find(x => x.template_route);
+  if (r) return {name: r.template_route.template, version: r.template_route.version, action: r.template_route.action, kind: r.template_route.kind, section: r.target};
+  return null;
+}
+function tplLine(a, s){
+  const t = tplOf(a);
+  if (!t){ const why = !(s && s.has_templates) ? TPL_WHY.before : (a.results || []).some(r => /^artifact-/.test(String(r.type))) ? TPL_WHY.nr : TPL_WHY.none;
+    return `<span class="tplline" data-tplline="none">Template: <span class="empty">${why}</span></span>`; }
+  const href = t.artifact && t.section ? libHref(t.artifact, t.section, t.kind === "generic" ? "generic" : t.name, t.kind === "generic" ? 1 : t.version) : `/library?q=${encodeURIComponent(t.name)}`;
+  return `<span class="tplline" data-tplline="${esc(t.action)}">Template: <span class="code">${esc(t.name)} v${esc(t.version)}</span> · ${esc(t.action)}`
+    + ` · <button type="button" class="linkbtn" data-link="tplview" data-atom="${esc(a.id)}">this run</button> · <a href="${href}" data-link="catalog">library</a></span>`;
+}
 function artifactRows(a){
   const got = ART_TYPES.map(t => artLast(a, t));
   if (!got.some(Boolean)) return "";
@@ -1251,6 +1269,7 @@ function atomBlocks(a, w, v){
     + blockHTML(a, "context", "Context", "What it needs to know", atomRow(a, "context", w), true)
     + g("2. Defined output and verification")
     + blockHTML(a, "expected_output", "Defined output", "What must exist when it is done", atomRow(a, "expected_output", w), false)
+    + blockHTML(a, "template_line", "Template", "The template its builder filled, from this run's routing record", tplLine(a, CTX), false)
     + (artifactRows(a) ? blockHTML(a, "artifact_template", "Artifact template",
         "The template its data followed, and what code made of it", artifactRows(a), false) : "")
     + blockHTML(a, "verification", "Verification", "The check that proves the goal is met",
@@ -1317,7 +1336,8 @@ function renderWorkflows(s){ return renderPlanView(s) + renderWorkflowsTable(s);
 function renderWorkflowsTable(s){
   const pct = Math.min(100, s.spent / s.budget * 100);
   const tags = Object.fromEntries(s.workflows.map(w => [w.id, outTags(s, w)])), shown = s.workflows.filter(w => (!OTAG || tags[w.id].some(t => t.type === OTAG)) && (!WFSTEP.length || WFSTEP.includes(w.id)));
-  const rows = shown.map(w => `<tr data-wfrow="${esc(w.id)}"><td>${w.id}</td><td style="color:${col(w.id)}"><b>${esc(w.agent || who(w.id)[0])}</b><br><span class="empty">section ${esc(w.section || "")}${w.revises ? " (rewrites " + esc(w.revises) + "'s)" : ""}</span><br>${tagsHTML(tags[w.id])}</td>
+  const wfTpl = w => { const wa = (w.atoms || []).find(a => tplOf(a)) || (w.atoms || [])[0]; return wa ? `<br>${tplLine(wa, s)}` : ""; };
+  const rows = shown.map(w => `<tr data-wfrow="${esc(w.id)}"><td>${w.id}</td><td style="color:${col(w.id)}"><b>${esc(w.agent || who(w.id)[0])}</b><br><span class="empty">section ${esc(w.section || "")}${w.revises ? " (rewrites " + esc(w.revises) + "'s)" : ""}</span><br>${tagsHTML(tags[w.id])}${wfTpl(w)}</td>
     <td>${w.cost}${w.charged === false ? '<br><span class="empty">released</span>' : ""}</td>
     <td>${envCell(w)}</td><td>${w.cycle}</td><td><span class="pill ${w.status}">${w.status}${w.send_error ? ` (${esc(w.send_error)})` : ""}</span></td></tr>
     <tr><td colspan="7"><details data-key="wf-${esc(w.id)}"><summary>Open ${esc(w.id)}: ${(w.atoms || []).length} work atom(s)</summary><div class="wtags">Made: ${tagsHTML(tags[w.id])}</div>${atomCards(s, w)}</details></td></tr>`).join("");
@@ -2298,6 +2318,7 @@ async function loadLibrary(){
   try { const r = await fetch("/api/library", {cache: "no-store"}); if (r.ok){ const d = await r.json(); LIB.groups = d.groups || {}; LIB.dir = d.dir || ""; } } catch (e) {}
   try { const r = await fetch(`/api/run-templates?${runQ().slice(1)}`, {cache: "no-store"}); if (r.ok) LIB.decisions = (await r.json()).decisions || []; } catch (e) {}
   LIB.loaded = true; paint($("pane-library"), renderLibrary());
+  if (state) paint($("pane-workflows"), renderWorkflows(state));      // the Template lines read the decisions just loaded
 }
 async function openTemplate(artifact, section, name, version){
   const sl = name === "generic" ? "generic" : slugOf(name);
@@ -2315,7 +2336,8 @@ function renderLibrary(){
   const dec = LIB.decisions || [];
   const table = dec.length ? `<table class="maptable" data-tpltable="1"><thead><tr><th>Workflow</th><th>Artifact · section</th><th>Action</th><th>Template</th><th>From</th><th>Score</th><th>Reason</th></tr></thead><tbody>`
     + dec.map(d => `<tr data-tplrow="${esc(d.atom)}"${LIB.focus && LIB.focus === d.atom && d.artifact !== "design" ? ' class="tplfocus"' : ""}><td>${esc(d.workflow)}</td><td>${esc(d.artifact)} · ${esc(d.section)}</td><td>${esc(d.action)}</td>`
-      + `<td>${d.source === "not recorded" ? `${esc(d.template)} v${esc(d.version)}` : libOpen(d.artifact, d.section, d.kind === "generic" ? "generic" : d.template, d.kind === "generic" ? 1 : d.version, `${esc(d.template)} v${esc(d.version)}`)}</td>`
+      + `<td>${d.source === "not recorded" ? `${esc(d.template)} v${esc(d.version)}` : libOpen(d.artifact, d.section, d.kind === "generic" ? "generic" : d.template, d.kind === "generic" ? 1 : d.version, `${esc(d.template)} v${esc(d.version)}`)}`
+      + ` <a href="${libHref(d.artifact, d.section, d.kind === "generic" ? "generic" : d.template, d.kind === "generic" ? 1 : d.version)}" data-link="catalog" class="empty">library</a></td>`
       + `<td data-tplsource="${esc(d.source || "")}">${d.source ? esc(d.source) : '<span class="empty">not recorded</span>'}</td>`
       + `<td>${d.score === null || d.score === undefined ? '<span class="empty">not recorded</span>' : esc(Number(d.score).toFixed(2))}</td><td>${esc(d.covers ? d.covers + "; " + d.reason : d.reason)}</td></tr>`).join("") + `</tbody></table>`
     : '<p class="empty">This run recorded no routing decisions.</p>';
