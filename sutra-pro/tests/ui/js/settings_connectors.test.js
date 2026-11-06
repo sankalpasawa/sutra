@@ -75,6 +75,17 @@ test("any other state is shown in words, and an extra provider comes after the t
   assert.match(row(html, "zeta"), /<b>zeta<\/b>/);
 });
 
+test("a provider out of quota, cooling down or paused is never shown as Ready (the server's health object)", () => {
+  const cases = [["quota", "Out of quota"], ["cooldown", "Cooling down"], ["breaker", "Paused after errors"]];
+  for (const [state, word] of cases) {
+    const health = clone(HEALTH);
+    health.connectors.claude.health = {state, until: 1793748600, reason: "usage limit reached"};
+    const html = row(connectorsHtml(health, {}), "claude");
+    assert.match(html, new RegExp(`<span class="setchip st-${state}">${word}</span>`), state);
+    assert.equal(html.includes(">Ready<"), false, state);
+  }
+});
+
 test("both rows have Test and only the Codex row has Sign in", () => {
   const html = connectorsHtml(HEALTH, {});
   assert.match(row(html, "claude"), /data-act="test" data-provider="claude"/);

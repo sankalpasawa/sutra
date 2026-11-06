@@ -90,8 +90,8 @@ body.home .rail.tabs button[aria-current="page"], body.home .rail.tabs button[ar
 .sethead { display: flex; align-items: center; gap: 10px; }
 .setchip { border: 1px solid var(--line); border-radius: 12px; padding: 1px 10px; font-size: 12px; color: var(--muted); }
 .setchip.st-ok { color: var(--ok); border-color: var(--ok); }
-.setchip.st-signed_out { color: var(--validator); border-color: var(--validator); }
-.setchip.st-missing, .setchip.st-fault { color: var(--bad); border-color: var(--bad); }
+.setchip.st-signed_out, .setchip.st-quota, .setchip.st-cooldown { color: var(--validator); border-color: var(--validator); }
+.setchip.st-missing, .setchip.st-fault, .setchip.st-breaker { color: var(--bad); border-color: var(--bad); }
 .settest { color: var(--muted); font-size: 13.5px; }
 .settest[data-step="ok"] { color: var(--ok); }
 .settest[data-step="error"] { color: var(--bad); }

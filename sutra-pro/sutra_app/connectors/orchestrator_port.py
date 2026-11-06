@@ -1,7 +1,9 @@
 """`AsyncConnector`: the orchestrator's `ConnectorPort` over a `Router` (connectors design 3.10, ORCH 3.5).
 
     async call_json(prompt, *, schema, tools, timeout, function, step, context) -> (dict, usd | None, how)
-    status() -> {provider: {installed, signed_in, detail, ...}}
+    status() -> {provider: {installed, signed_in, detail, ..., health: {state, until, reason}, quota: {...} | None}}
+                                       `health` is the HealthState object (the shape Settings reads from /api/health); `account`
+                                       is left out (PII, CN-7)
     records_usage                      True when the router has a usage sink: the router then writes the ledger row of every
                                        call, so the orchestrator's `TurnRunner` and `NodeAsk` write none of their own
 
@@ -74,5 +76,6 @@ class AsyncConnector:
         for name in self.router.connectors:
             s = self.router.provider_summary(name)
             out[name] = {"installed": s.installed, "signed_in": s.signed_in, "detail": s.detail, "method": s.method,
-                         "billing": s.billing, "plan": s.plan, "version": s.version, "health": s.health.state}
+                         "billing": s.billing, "plan": s.plan, "version": s.version, "health": s.health.model_dump(mode="json"),
+                         "quota": s.quota.model_dump(mode="json") if s.quota is not None else None}
         return out

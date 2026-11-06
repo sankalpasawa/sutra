@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import sys
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -184,8 +186,19 @@ def test_status_is_a_per_provider_view(rig):
     assert list(status) == ["claude", "codex"]
     claude = status["claude"]
     assert (claude["installed"], claude["signed_in"], claude["detail"]) == (True, True, "ok")
-    assert (claude["method"], claude["billing"], claude["plan"], claude["version"], claude["health"]) == ("claude.ai", "subscription", "max", "9.9", "ok")
+    assert (claude["method"], claude["billing"], claude["plan"], claude["version"]) == ("claude.ai", "subscription", "max", "9.9")
+    assert claude["health"] == {"state": "ok", "until": None, "reason": None} and claude["quota"] is None
     assert "account" not in claude
+
+
+def test_status_has_the_shape_the_settings_page_reads(rig):
+    """GET /api/health carries this view; settings_view.js and tests/ui/fixtures/health.json read `health` as {state, until, reason}.
+    A bare string made the chip fall back to Ready for a provider out of quota (GAP-providers)."""
+    fixture = json.loads((Path(__file__).resolve().parents[1] / "ui" / "fixtures" / "health.json").read_text(encoding="utf-8"))
+    status = rig.port.status()
+    for name, page_row in fixture["connectors"].items():
+        assert set(page_row) <= set(status[name]), name
+        assert isinstance(status[name]["health"], dict) and set(status[name]["health"]) == set(page_row["health"]), name
 
 
 def test_status_reports_a_provider_in_cooldown_and_a_missing_cli(tmp_path):
@@ -193,5 +206,5 @@ def test_status_reports_a_provider_in_cooldown_and_a_missing_cli(tmp_path):
     rig.router.health.failed("claude", QuotaError("limit", provider="claude", resets_at=4_000_000_000.0))
     rig.router._connectors["codex"].cfg = rig.router._connectors["codex"].cfg.model_copy(update={"codex_exe": "/nonexistent/codex"})
     status = rig.port.status()
-    assert status["claude"]["health"] == "quota"
+    assert status["claude"]["health"] == {"state": "quota", "until": 4_000_000_000.0, "reason": "usage limit reached"}
     assert status["codex"]["installed"] is False and status["codex"]["signed_in"] is None

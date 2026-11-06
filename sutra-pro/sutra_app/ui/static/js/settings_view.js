@@ -319,7 +319,9 @@
 
   /* ---------------------------------------------------------------- Connectors group */
   const PROVIDER_NAMES = freeze({claude: "Claude", codex: "Codex"});
-  const HEALTH_WORDS = freeze({ok: "Ready", signed_out: "Not signed in", degraded: "Limited"});
+  // The words of HealthBook's states (connectors/health.py HealthName): a provider out of quota or cooling down is not Ready.
+  const HEALTH_WORDS = freeze({ok: "Ready", signed_out: "Not signed in", degraded: "Limited", quota: "Out of quota", cooldown: "Cooling down",
+    breaker: "Paused after errors", missing: "Not installed"});
   const providerName = p => (hasOwn(PROVIDER_NAMES, p) ? PROVIDER_NAMES[p] : clean(p));
 
   function healthChip(c) {
