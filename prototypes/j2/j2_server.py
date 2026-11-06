@@ -83,6 +83,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             since = int(q.get("since", "0"))
             snap = j2.saved_snapshot(run, since) if run else {**RUN.snapshot(since), "saved": None}
             return self._send(200, json.dumps(snap, ensure_ascii=False)) if snap else self._send(404, '{"error": "no such run"}')
+        if u.path == "/api/runlist":
+            return self._send(200, json.dumps(run_list(), ensure_ascii=False))
         if u.path == "/api/runs":
             return self._send(200, json.dumps({"live": os.path.basename(RUN.dir), "runs": j2.list_runs()}))
         if u.path == "/api/call":       # one AI call in full, for the detail view's "full text" toggle
@@ -277,6 +279,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
             RUN.reset()
             return self._send(200, '{"ok": true}')
         self._send(404, "{}")
+
+
+
+# Run settings' run list (read-only): every saved run, newest first, from its own records. status: summary.json "status" (done and
+# done_with_open_items -> done; stopped, crashed, stuck, out_of_budget -> stopped); no summary.json -> stopped (it never finished), except the live
+# run while it runs -> running. title: goal.json "site_name", else the first sentence of goal.json "statement", else the run id. output: summary.json
+# "output_type" (the type the run ended with), else chat.jsonl's meta row "output" (the type it started with). brief: summary.json "brief", else the first user message in chat.jsonl. when: from the id.
+def run_row(name, live_running=False):
+    d = j2.saved_dir(name)
+    if not d or not os.path.exists(os.path.join(d, "chat.jsonl")):
+        return None
+    s, g = j2._read(d, "summary.json", {}) or {}, j2._read(d, "goal.json", {}) or {}
+    rows = j2._jsonl(d, "chat.jsonl")
+    meta = rows[0] if rows and rows[0].get("meta") else {}
+    first = next((m for m in rows if m.get("who") == "user"), {})
+    st = str(s.get("status") or "")
+    status = "running" if live_running else "done" if st.startswith("done") else "stopped"
+    stmt = re.split(r"(?<=[.!?])\s", str(g.get("statement") or "").strip())[0]
+    title = str(g.get("site_name") or "").strip() or (stmt[:70] + ("…" if len(stmt) > 70 else "")) or name
+    m = re.search(r"(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})", name)
+    return {"id": name, "title": title, "status": status, "output": s.get("output_type") or meta.get("output") or "",
+            "when": f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}" if m else "", "brief": str(s.get("brief") or first.get("text") or "")[:160]}
+
+
+def run_list():
+    live = os.path.basename(RUN.dir)
+    names = sorted(os.listdir(j2.RUNS_DIR), reverse=True) if os.path.isdir(j2.RUNS_DIR) else []
+    out = [x for x in (run_row(n, n == live and RUN.status == "running") for n in names) if x]
+    out.sort(key=lambda x: x["when"], reverse=True)
+    return {"live": live, "runs": out}
 
 
 def main():

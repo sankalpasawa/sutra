@@ -24,7 +24,7 @@
   --m1:#b79ac9;--m2:#7f9cbf;--m3:#8fb98a;--m4:#e0a458;--m5:#d9785f;--hat1:#7a5f96;--hathard:#f0c75e;--hatband:#e0a458;--capd:#5d4a3a;--capb:#3e3127;--gold:#f6d38b;
   --coin:#f0c75e;--coinline:#c99a2e;--wood:#a07a52;--steel:#7c7c7c;--shield:#fff4e4;--shieldline:#c98a3c;--tie:#d9785f;--tieknot:#b85c45;--clip:#9d84b3;--glass:#e9dcf7;
   --mid:#f2d6b6;--headset:#7d6656;--compass:#f3e3cf;--compassl:#c9a77f;--needle2:#8a7a6a;--bub:#fbe3cc;--bubl:#e0a874;--bubd:#c98a5c;--box:#e9c79e;--boxl:#b88a5c;--gear:#e7d9c6;--gearl:#9a8672;
-  --lblbg:#f6eee3;--lblink:#2e2721;--lblsub:#6f6255;--lblline:#e6dccd;
+  --swlight:#fbf8f3;--swdark:#1f1c18;--lblbg:#f6eee3;--lblink:#2e2721;--lblsub:#6f6255;--lblline:#e6dccd;
   --bot:#e9c9a6;--botline:#b98d63;--botvisor:#2a221c;--boteye:#ffd9b0;--botcheek:#e8956a;
   --display:"Bricolage Grotesque",Arial,sans-serif;--body:"IBM Plex Sans",Arial,sans-serif;--mono:"IBM Plex Mono",Menlo,monospace;
 }
@@ -100,7 +100,6 @@ textarea{flex:1;resize:none;height:56px;border:1px solid var(--line);border-radi
 .pane.preview{padding:0;background:var(--paper)}
 .doclinks{display:flex;gap:8px;align-items:center;height:38px;padding:0 10px;border-bottom:1px solid var(--line);background:var(--panel);font-size:13.5px}
 .doclinks a{color:var(--ink)}.pane.preview.has-links iframe{height:calc(100% - 39px)}
-.outsel{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 6px;font:inherit}
 iframe{width:100%;height:100%;border:0;display:block}
 .empty{color:var(--muted)}
 h3{font:600 15px var(--display);margin:0 0 8px}
@@ -132,7 +131,7 @@ dialog::backdrop{background:var(--scrim)}
 .dbody{padding:12px 16px;overflow:auto}
 .dbody h3{margin-top:14px}
 pre{white-space:pre-wrap;word-wrap:break-word;font:12px/1.45 var(--mono);background:var(--panel2);padding:8px 10px;border-radius:7px;max-height:340px;overflow:auto}
-#runsel{max-width:min(340px,100%);text-overflow:ellipsis}
+
 .banner{font:500 12.5px var(--body);background:var(--panel2);color:var(--priority);padding:6px 16px;border-bottom:1px solid var(--line)}
 .lock{font:500 12px var(--mono);color:var(--coordination)}
 /* ---- Simple view (default): a landing with the Client Lead bot, then chat + preview. One voice, plain words. Colours are theme tokens. */
@@ -504,6 +503,37 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 @media (max-width:900px){#dview.chaton .dcol{margin-right:0}#dview .chat{left:96px;width:auto}#dview.chaton .chatfab{display:none}}
 @media (max-width:600px){#dview .chat{left:72px;right:8px;top:8px;bottom:8px}.chatfab{right:12px;bottom:12px}}
 @media (prefers-reduced-motion:reduce){#dview .dcol,#dview .chat,.chatfab{transition:none!important}}
+/* Run settings: appearance cards and the run list; the page fits the screen, only the list scrolls */
+#pane-runsettings{overflow:hidden;flex-direction:column}#pane-runsettings:not([hidden]){display:flex}
+#pane-runsettings .runset{flex:1;min-height:0;display:flex;flex-direction:column;gap:14px;align-items:stretch}
+.runset .rssub{margin:0;color:var(--muted);font-size:13px}
+.rsec{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px 16px}.rsec h3{margin:0 0 2px;font-size:15px}.rsec>p{margin:0 0 10px;color:var(--muted);font-size:13px}
+.themecards{display:flex;flex-wrap:wrap;gap:8px}.themecards button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:12px;padding:9px 14px;font:inherit;cursor:pointer;min-width:104px}
+.themecards button[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);font-weight:600}
+.themecards .sw{width:30px;height:20px;border-radius:6px;border:1px solid var(--line)}.sw-l{background:var(--swlight)}.sw-d{background:var(--swdark)}.sw-s{background:linear-gradient(90deg,var(--swlight) 50%,var(--swdark) 50%)}
+.runsec{flex:1;min-height:0;display:flex;flex-direction:column}
+.rtop{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px}.rtop h3{margin:0}.rtop h3 small{font-weight:400;color:var(--muted);font-size:12.5px;margin-left:6px}
+.rtop input{margin-left:auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:7px 10px;font:inherit;width:220px;max-width:100%}
+.newrun{background:var(--accent);color:var(--on);border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
+.rfil{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.rfil button{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:99px;padding:4px 11px;font:inherit;font-size:12.5px;cursor:pointer}
+.rfil button i{font-style:normal;margin-left:3px}.rfil button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.runlist{flex:1;min-height:0;overflow:auto;display:grid;gap:8px;align-content:start;grid-auto-rows:max-content;padding-right:2px}
+.rgrp{position:sticky;top:0;z-index:1;background:var(--panel2);font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:6px 2px 4px}
+.runrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:9px 14px;cursor:pointer;text-align:left;font:inherit;color:var(--ink);width:100%}
+.runrow:hover{border-color:var(--accent)}.runrow.cur{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
+.runrow .ric{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--bg);color:var(--muted)}.runrow.cur .ric{color:var(--accent)}
+.runrow .rmid{min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;align-items:baseline}
+.runrow .rt{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.runrow code{font:12px var(--mono);color:var(--muted);background:var(--bg);border-radius:6px;padding:1px 6px;justify-self:start;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.runrow .rm{grid-column:1/-1;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.runrow .rr{display:flex;gap:8px;align-items:center}.runrow .ropen{font-size:12.5px;color:var(--accent);font-weight:600}.runrow.cur .ropen{color:var(--ink)}
+.rst{font-size:11.5px;border-radius:99px;padding:2px 9px;white-space:nowrap}.rst.done{background:color-mix(in srgb,var(--ok) 16%,var(--panel));color:color-mix(in srgb,var(--ok) 55%,var(--ink))}
+.rst.stopped{background:color-mix(in srgb,var(--warm2) 18%,var(--panel));color:color-mix(in srgb,var(--bad) 55%,var(--ink))}.rst.running{background:color-mix(in srgb,var(--accent) 16%,var(--panel));color:color-mix(in srgb,var(--accent) 55%,var(--ink))}
+.rst.running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:5px;animation:rpulse 1.2s infinite}@keyframes rpulse{50%{opacity:.3}}
+.runmore{margin:4px auto 2px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:7px 16px;font:inherit;font-size:13px;cursor:pointer}
+.runnone{color:var(--muted);font-size:13px;padding:8px}
+#dview[data-tab=runsettings] .dcol{overflow:hidden}#dview[data-tab=runsettings] main{grid-template-rows:minmax(0,1fr);flex:1;min-height:0}
+@media (max-width:600px){.runrow{grid-template-columns:auto minmax(0,1fr);gap:8px 10px;padding:8px 10px}.runrow .rr{grid-column:2}.rtop input{margin-left:0;flex:1 1 140px}.rsec{padding:12px}}
+@media (prefers-reduced-motion:reduce){.rst.running::before{animation:none}}
 @media (prefers-reduced-motion:reduce){#rail *,#rail *::before,.rfly{animation:none!important;transition:none!important}}
 .dcol{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
 #dview header.dtop{align-items:flex-end;gap:10px;padding:18px var(--gut) 8px;border-bottom:0;background:none}
@@ -693,10 +723,11 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
     <div class="pane" id="pane-report" hidden><div class="banner" id="banner" hidden></div><div id="reportbody"></div></div>
     <div class="pane" id="pane-runsettings" hidden>
       <div class="runset">
-        <div class="appear" id="appear">Appearance <span class="seg" role="group" aria-label="Appearance"><button type="button" data-themepick="light" aria-pressed="false">Light</button><button type="button" data-themepick="dark" aria-pressed="true">Dark</button><button type="button" data-themepick="system" aria-pressed="false">System</button></span></div>
-        <label>What to build <select id="outsel" class="outsel" aria-label="What to build"></select></label>
-        <label>Saved runs <select id="runsel" class="ghost" aria-label="Open a saved run"><option value="">Live run</option></select></label>
-        <div class="runact"><button class="ghost" id="reset">New run</button> <a href="?view=simple" class="slink" id="to-simple">Back to simple view</a></div>
+        <section class="rsec" id="appear"><h3>Appearance</h3><p>Applies to this browser only.</p>
+          <div class="themecards" role="group" aria-label="Appearance"><button type="button" data-themepick="light" aria-pressed="false"><span class="sw sw-l"></span>Light</button><button type="button" data-themepick="dark" aria-pressed="true"><span class="sw sw-d"></span>Dark</button><button type="button" data-themepick="system" aria-pressed="false"><span class="sw sw-s"></span>System</button></div></section>
+        <section class="rsec runsec" aria-labelledby="runsh"><div class="rtop"><h3 id="runsh">Runs <small id="runcount"></small></h3><input type="search" id="runq" placeholder="Search runs" aria-label="Search runs by title, brief or run ID" autocomplete="off"><button type="button" class="newrun" id="reset">+ New run</button></div>
+          <div class="rfil" role="group" aria-label="Filter by status"><button type="button" data-rf="all" aria-pressed="true">All <i></i></button><button type="button" data-rf="running" aria-pressed="false">Running <i></i></button><button type="button" data-rf="done" aria-pressed="false">Done <i></i></button><button type="button" data-rf="stopped" aria-pressed="false">Stopped <i></i></button></div>
+          <div class="runlist" id="runlist"></div></section>
       </div>
     </div>
     <div class="pane" id="pane-rundetails" hidden>
@@ -756,15 +787,12 @@ function paint(el, html){
 const EXAMPLES = ["A website for my cafe", "A website for Sweet Crumbs Bakery in Pune: menu, cake orders, contact",
   "A website for Petal & Stem, a florist in Jaipur: bouquets, same-day delivery, wedding flowers",
   "A website for Asha Rao Photography, a wedding and portrait photographer in Mumbai: portfolio, packages, booking"];
-// Output types the start page offers (J2_OUTPUT sets the default); the run keeps its type once it starts.
-const OUTS = [["website", "Website"], ["prd", "PRD document"]];
 const PRD_EXAMPLES = ["Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. "
   + "Users: patients at small clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on "
   + "average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS alert "
   + "when 2 patients are ahead, staff dashboard to call the next patient. Constraints: works on low-end Android phones; no "
   + "patient health data stored. Success: average in-room wait under 10 minutes; 60% of patients join remotely within 3 months."];
 const examples = s => s.doc ? PRD_EXAMPLES : EXAMPLES;
-const outOptions = s => OUTS.map(([v, l]) => `<option value="${v}"${s.output === v ? " selected" : ""}>${l}</option>`).join("");
 const docLinks = s => (s.docset_files || []).map(d => `<a href="/file/${d.md}${runQ().replace("&", "?")}" download>${esc(d.kind.toUpperCase())} .md</a> <a href="/file/${d.docx}${runQ().replace("&", "?")}" download>${esc(d.kind.toUpperCase())} .docx</a>`).join(" ");
 const plainDocLinks = s => (s.docset_files || []).map(d => `<a href="/file/${d.md}${runQ().replace("&", "?")}" download>Download the ${esc(d.label)} (markdown)</a> <a href="/file/${d.docx}${runQ().replace("&", "?")}" download>Download the ${esc(d.label)} (Word file)</a>`).join(" ");
 const fileLinks = s => (s.files || []).map(f => `<a href="/file/${f}${runQ().replace("&", "?")}" download>Download ${f.split(".").pop() === "docx" ? "the Word file (.docx)" : "the markdown (.md)"}</a>`).join(" ");
@@ -1733,7 +1761,6 @@ function setView(v, keep){ document.body.classList.toggle("simple", v !== "detai
   try { const q = new URLSearchParams(location.search); if (q.get("view") !== v){ q.set("view", v); history.replaceState(history.state, "", location.pathname + "?" + q + location.hash); } } catch (e) {} }
 (() => { const q = viewNorm(new URLSearchParams(location.search).get("view")); let pref = ""; try { pref = viewNorm(localStorage.getItem("j2view")); } catch (e) {}
   setView(q || pref || "simple", !!q); })();
-$("to-simple").onclick = e => { e.preventDefault(); setView("simple", true); };
 
 function renderReport(s){
   const R = s.report;
@@ -1796,8 +1823,6 @@ async function poll(){
     $("mode").textContent = (viewRun || s.saved ? `run ${viewRun || s.saved} · ` : "") + (s.mock ? "mock functions" : `model: ${s.model}`) + ` · ${s.calls} AI calls · cycle ${s.cycle}` + ((((s.report || {}).metrics || {}).minutes) != null ? ` · ${s.report.metrics.minutes} min` : "") + (prioModel(s).total != null ? ` · budget ${prioModel(s).total} credits` : "");
     $("fixes").textContent = s.fixes ? "J2_FIXES=1 (fixes)" : "J2_FIXES=0 (baseline, as in the diagram)";
     $("otype").textContent = `output: ${s.output_label}`;
-    if ($("outsel").__v !== s.output + s.total){ $("outsel").__v = s.output + s.total; $("outsel").innerHTML = outOptions(s); }
-    $("outsel").disabled = !!s.total || !!s.saved;
     $("doclinks").hidden = !(s.doc || (s.docset || []).length) || !(s.files || []).length;
     $("pane-preview").classList.toggle("has-links", !$("doclinks").hidden);
     if (!$("doclinks").hidden) paint($("doclinks"), (s.docset || []).length > 1 ? `<b>Design documents</b> ${docLinks(s)}` : `<b>${esc(s.output_label)}</b> ${fileLinks(s)}`);
@@ -1875,11 +1900,12 @@ const TABHINT = {preview: "What the team has built so far.", goal: "What you ask
   docs: "The design documents the team wrote.", artifacts: "The files and records this run produced.",
   map: "Who worked with whom, and what each made.", style: "The look and feel the team agreed on.",
   lessons: "What the team learned from earlier runs.", playbooks: "Plans reused from earlier runs of the same kind.",
-  report: "A summary of the run.", rundetails: "The agents, the steps and the settings of this run.", runsettings: "What to build, which run to open, and a new run.",
+  report: "A summary of the run.", rundetails: "The agents, the steps and the settings of this run.", runsettings: "How the app looks, and which run you are looking at.",
   board: "Questions the functions and the builders asked, who answered them, and who reused them (recorded data only).",
   story: "What each question on the message board did, step by step, read from this run's own records.",
   library: "Every artifact template: the generic layout and the templates made for each business, and how this run chose them."};
 function showTab(name){
+  if ($("dview")) $("dview").dataset.tab = name;
   document.querySelectorAll(".tabs [role=tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === name));
   const tb = document.querySelector(`.tabs [data-tab="${name}"]`);
   $("wtitle").textContent = tb ? tb.textContent.trim() : name; $("wsub").textContent = TABHINT[name] || ""; $("ver").hidden = name !== "preview";
@@ -3738,9 +3764,6 @@ async function send(){
   await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text})});
 }
 $("send").onclick = send;
-// The start page's output type (both views): only before the first message; the server refuses it after.
-document.addEventListener("change", async e => { if (!e.target.matches(".outsel")) return;
-  await fetch("/api/output", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type: e.target.value})}); });
 // Delegated clicks: panes are re-rendered on every poll.
 // Detail view: click an agent message, a timeline step, or a lane (its latest message).
 $("msgs").addEventListener("click", e => {
@@ -3778,14 +3801,41 @@ $("pane-workflows").addEventListener("click", e => { const b = e.target.closest(
   $("dtitle").textContent = `${a.id} · ${b.dataset.link === "agent" ? "workflow output" : "verification evidence"}`;
   $("dbody").innerHTML = `<pre>${esc(JSON.stringify(b.dataset.link === "agent" ? a.agent_output : (a.results || []), null, 2))}</pre>`;
   $("detail").showModal(); });
-// Saved runs: pick one to open it read-only; the URL keeps ?run= so it can be reloaded or shared locally.
+// Saved runs: the Board story's compare picker (/api/runs).
 (async () => { try { const r = await (await fetch("/api/runs")).json();
-  RUNLIST = r.runs || [];                 // the same list the Board story's compare picker offers
-  $("runsel").innerHTML = `<option value="">Live run (${esc(r.live)})</option>` + r.runs.filter(x => x.id !== r.live)
-    .map(x => `<option value="${esc(x.id)}">${esc(x.id)} · ${esc(x.status)} · ${esc(x.brief.slice(0, 50))}</option>`).join("");
-  $("runsel").value = viewRun;
+  RUNLIST = r.runs || [];
   if (!$("pane-story").hidden || STORY.entries.length) paint($("pane-story"), renderStory()); } catch (e) {} })();
-$("runsel").onchange = () => { location.search = viewHref($("runsel").value); };
+// Run settings' run list (/api/runlist, j2_server.run_list: every saved run from its records), newest first under date headings; 20 at a time;
+// status chips with counts, a search over title, brief and run id. Opening a run keeps the current view (viewHref).
+const RUNS = {all: [], live: "", f: "all", q: "", show: 20};
+const RUNICON = {web: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18"/><circle cx="6.5" cy="6.5" r=".6" fill="currentColor"/><circle cx="9" cy="6.5" r=".6" fill="currentColor"/></svg>`,
+  doc: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 15.5h6"/></svg>`};
+const runCur = () => viewRun || RUNS.live;
+function runGroup(w){ if (!w) return "Older"; const t = new Date(), d = new Date(w), a = new Date(t.getFullYear(), t.getMonth(), t.getDate()), b = new Date(d.getFullYear(), d.getMonth(), d.getDate()), n = Math.round((a - b) / 864e5);
+  return n <= 0 ? "Today" : n === 1 ? "Yesterday" : n < 7 ? "This week" : d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear() ? "Earlier this month" : "Older"; }
+const runWhen = w => { if (!w) return ""; const d = new Date(w); return d.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric"}) + " · " + w.slice(11, 16); };
+const runShown = () => { const q = RUNS.q.trim().toLowerCase(); return RUNS.all.filter(x => (RUNS.f === "all" || x.status === RUNS.f) && (!q || (x.title + " " + x.brief + " " + x.id).toLowerCase().includes(q))); };
+function renderRuns(){
+  const L = runShown(), cur = runCur(); let h = "", g = "";
+  document.querySelectorAll("[data-rf]").forEach(b => { b.querySelector("i").textContent = b.dataset.rf === "all" ? RUNS.all.length : RUNS.all.filter(x => x.status === b.dataset.rf).length;
+    b.setAttribute("aria-pressed", String(b.dataset.rf === RUNS.f)); });
+  $("runcount").textContent = L.length === RUNS.all.length ? plural(L.length, "run") : `${L.length} of ${plural(RUNS.all.length, "run")}`;
+  L.slice(0, RUNS.show).forEach(x => { const G = runGroup(x.when); if (G !== g){ g = G; h += `<div class="rgrp">${G}</div>`; }
+    const me = x.id === cur;
+    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric">${RUNICON[x.output === "website" ? "web" : "doc"]}</span>`
+      + `<span class="rmid"><span class="rt">${esc(x.title)}</span><code>${esc(x.id)}</code><span class="rm">${esc([runWhen(x.when), x.brief].filter(Boolean).join(" · "))}</span></span>`
+      + `<span class="rr"><span class="rst ${esc(x.status)}">${esc(x.status)}</span><span class="ropen">${me ? "Open now" : "Open"}</span></span></button>`; });
+  if (L.length > RUNS.show) h += `<button type="button" class="runmore" id="runmore">Show ${Math.min(20, L.length - RUNS.show)} more · ${L.length - RUNS.show} left</button>`;
+  $("runlist").innerHTML = h || `<div class="runnone">No runs match.</div>`;
+}
+(async () => { try { const r = await (await fetch("/api/runlist", {cache: "no-store"})).json(); RUNS.all = r.runs || []; RUNS.live = r.live || ""; } catch (e) {} renderRuns(); })();
+$("runlist").addEventListener("click", e => {
+  if (e.target.closest("#runmore")){ RUNS.show += 20; return renderRuns(); }
+  const b = e.target.closest("[data-openrun]"); if (!b) return;
+  if (b.dataset.openrun === runCur()) return showTab("map");      // the run already open
+  location.search = viewHref(b.dataset.openrun === RUNS.live ? "" : b.dataset.openrun); });
+document.querySelectorAll("[data-rf]").forEach(b => b.onclick = () => { RUNS.f = b.dataset.rf; RUNS.show = 20; renderRuns(); });
+$("runq").addEventListener("input", () => { RUNS.q = $("runq").value; RUNS.show = 20; renderRuns(); });
 $("pane-playbooks").addEventListener("click", async e => {
   if (e.target.id !== "clear-playbooks" || !confirm("Delete every saved playbook (memory/playbooks.jsonl)? This can't be undone.")) return;
   await fetch("/api/playbooks/clear", {method:"POST"});
