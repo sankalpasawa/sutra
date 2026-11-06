@@ -10,14 +10,15 @@ Built:
 - `sutra_app/orchestrator/chats.py` `needs_you(now=)` and `models.py` `NeedsYouOut.waiting_s` (int or null) and `stale` (bool): additive, optional.
 - `sutra_app/orchestrator/tasks.py`: `_prepare_next` uses `why_waiting`; `_mark_stop(task_id, "owner"|"app")` is called by `_stop` (the owner's Stop and
   reset) and by `shutdown` before the stop ladder.
-- `sutra_app/orchestrator/agent/planner.py` `TaskLine.since`, `status_report(now=)`; `agent/runner.py` `_status_text` passes `last_event_at` and the clock.
+- `sutra_app/orchestrator/agent/planner.py` `TaskLine.since`, `status_report(now=)`; `agent/runner.py` `_status_text` passes the time of the task's
+  open question and the clock.
 - `sutra_app/ui/static/js/heads_up_view.js` (new, pure, global `HeadsUpView`), `chat_attention.js` (new, global `ChatAttention`), `attention_pill.js`
   (new, global `AttentionPill`).
 - Riders: `home.js` (the needs-you area: strip, lane, Try again, badge, title, notices, a one-minute redraw; one `retryTasks` key in `renderChat`'s
   transcript options and one `retry-task` branch in `onChatClick`), `chat_view.js` (`doneCard(c, ctx)` draws Try again when `ctx.retry`; the transcript
   passes `opts.retryTasks`), `dept_ext.js` (`attention()` adds the three scripts with `async = false`, called from `init`; not exported), `home.html`
   and `console.html` (script tags), `css/sutra-shell.css` (the lane, in the needs block), `css/sutra-panel.css` (the pill, after `.nempty`).
-- Tests: `tests/orchestrator/test_waiting.py` 19, `tests/orchestrator/test_headsup.py` 13, `tests/ui/js/chat_attention.test.js` 12,
+- Tests: `tests/orchestrator/test_waiting.py` 20, `tests/orchestrator/test_headsup.py` 13, `tests/ui/js/chat_attention.test.js` 12,
   `tests/ui/js/heads_up_view.test.js` 8, `tests/ui/js/attention_pill.test.js` 6, `tests/ui/js/chat_view_retry.test.js` 3, `tests/ui/test_home_attention.py`
   1 + 3 browser, `tests/ui/test_dept_attention.py` 3 browser (`SUTRA_BROWSER=1`). `tests/ui/fake_backend.py` serves `GET /api/heads-up`,
   `POST /api/tasks/{task_id}/retry` (token; the row leaves the lane, `task.updated`) and the control `POST /__fake/heads-up {items}`.
@@ -66,7 +67,8 @@ Built:
   keeps one event stream (pinned by `test_dept_page.py::test_the_live_chip_follows_the_stream_of_both_views`), and every open stream holds one of the
   browser's six connections to this host for as long as the tab is open; a second stream per team tab would starve the pages after a few tabs.
 - Stale window: a constant (`waiting.ASK_STALE_S`, 24 h), not a setting: no new environment variable and no `config.py` change (other packages edit it).
-- The status answer says "for 2 days" (not "since 2 days"); the time is the task's `last_event_at`, which for a team waiting on the owner is its ask.
+- The status answer says "for 2 days" (not "since 2 days"); the time is the `at` of the task's oldest unanswered question (the same time
+  Needs you uses), not `last_event_at`: a waiting team's engine stays alive and its heartbeat moves `last_event_at` every 5 s.
 
 ## Existing tests changed (intended behaviour change, nothing weakened)
 - `tests/orchestrator/test_api_chat_read.py`: the needs-you key set gains `waiting_s` and `stale` (and checks their types).

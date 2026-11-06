@@ -61,6 +61,30 @@ def test_the_status_answer_says_how_long_a_team_has_waited_for_the_owner(db, clo
     assert '- Web: waiting for you on "Menu".' in planner.status_report(chart, [planner.TaskLine("web", "Menu", "waiting_user")], now=9 ** 9).splitlines()
 
 
+def test_the_status_answer_times_the_wait_from_the_question_not_from_the_heartbeat(db, settings, clock, events):
+    """A team waiting for the owner keeps its engine alive and its heartbeat (every 5 s) moves `last_event_at`: the wait is timed from the
+    open question's own time, so two days of waiting read "for 2 days" even with a beat a second ago."""
+    from orchestrator.test_chat_agent import AgentEnv
+
+    from sutra_app.orchestrator.agent.runner import TurnRunner
+    from sutra_app.orchestrator.ids import iso_z
+    a = AgentEnv(db, settings, clock, events)
+    runner = TurnRunner(db=a.db, chart=a.chart, chats=a.chats, tasks=a.service, agent=a.agent, connector=a.connector)
+    task = a.new(dept="web", text="Menu").id
+    a.run(a.service.start_ready())
+    asked = 1_793_786_400                                                        # the events' default time
+    a.write_events(task, ev("run.started", pid=1, schema="events/1", mock=True, seed="none"),
+                   ev("say", id=1, who="identity", text="What is it called?", to_user=True, act="ASK_REQUESTER", next="user"))
+    a.drain(task)
+    assert a.status(task) == "waiting_user"
+    a.write_events(task, ev("heartbeat", at=iso_z(asked + 2 * DAY)))
+    a.drain(task)
+    assert a.row(task).last_event_at == asked + 2 * DAY                          # the beat moved the task's last sign of life
+    a.clock.advance(asked + 2 * DAY + 2 - a.clock.peek)
+    web = [line for line in runner._status_text().splitlines() if line.startswith("- Web:")]
+    assert web == ['- Web: waiting for you on "Menu" for 2 days.']
+
+
 # ---- the store and the queue ------------------------------------------------------------------------------------------------
 
 def test_needs_you_says_how_long_each_item_waited_and_marks_the_stale_one(db, clock):

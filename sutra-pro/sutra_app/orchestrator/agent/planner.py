@@ -123,7 +123,7 @@ class TaskLine:
     dept_id: str
     title: str
     status: str
-    since: int | None = None          # epoch seconds of the task's last event: for a team waiting for the owner, when it asked
+    since: int | None = None          # for a team waiting for the owner, when it asked (epoch seconds of its open question)
 
 
 def _score(node: OrgNode, wanted: frozenset[str]) -> int:
