@@ -7,7 +7,10 @@
    Nothing touches the DOM, every word that came from the wire is escaped, and the markup is well formed XML.
 
    safeText escapes first and then allows three things the text asked for in plain marks: **bold**, `code` and line breaks. It makes no link,
-   no image and no other tag, so a message cannot put markup on the page (docs/design/ui.md section 4.3).
+   no image and no other tag, so a message cannot put markup on the page (docs/design/ui.md section 4.3). One kind of line reads more: a model's
+   reply to a direct line (an agent text message with `turn` set) goes through ChatMarkdown.render (chat_markdown.js, GAP-markdown) when that
+   script is on the page: escaped first too, then paragraphs, lists, code blocks, tables, headings and quotes, and still no link and no HTML.
+   Every other line (the owner's, a team's, Sutra's, a note, an error, a card) keeps safeText.
 
    Buttons carry data-act (open-team, show-node, show-change, choose, option, answer-option, answer, retry) and the data they need; the page that
    shows the transcript (the node panel, Home) listens for them. A link that opens a team page is a real <a href>, so it also works without a script.
@@ -258,6 +261,9 @@
     return "nmsg sb team";
   }
 
+  // A model's reply to the owner's direct line (D115): ChatMessageOut.turn names the line it answers. Its error line and notes are not replies.
+  const directReply = m => clean(m.role) === "agent" && (clean(m.kind) || "text") === "text" && Number.isInteger(m.turn) && m.turn > 0;
+
   // transcript(session, messages, opts) -> the html of every message, oldest first. session {kind, writable, status}; opts {deptName, live, answers,
   // deptSessions}: `deptName` is the department the session belongs to, `live` false closes every question, `answers` maps a message id to the
   // answer the owner gave an approval, a choice or a needs_you card, `deptSessions` maps a department id to its session id (a needs_you card answers
@@ -301,6 +307,8 @@
       if (kind === "question" && !log) {
         asked = parseAsk(body);
         inner = askHtml(body, canAnswer && i === lastOpen);
+      } else if (directReply(m) && root.ChatMarkdown) {
+        inner = root.ChatMarkdown.render(text(m.text));                 // as the model wrote it: an "@name" at its start is not an agent's address
       } else {
         inner = safeText(body);
       }

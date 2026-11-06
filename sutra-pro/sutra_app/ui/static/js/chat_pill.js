@@ -9,7 +9,8 @@
      choiceRequest(sid, name)   {method, path, body} for the PUT; name null clears the choice (the policy decides again)
      partial(state, event)      the streaming state after a `chat.partial` event of this chat: {active, text}
      settle(state)              the state once the stored message arrived: nothing is shown
-     indicator(state)           the streaming row ("Claude is writing" plus the text so far), or "" when nothing streams
+     indicator(state)           the streaming row ("Claude is writing" plus the text so far), or "" when nothing streams; the text is drawn by
+                                ChatMarkdown.render(text, {streaming: true}) when chat_markdown.js is on the page (GAP-markdown), else escaped
      switchNotice(event)        "Switched Claude to Codex; carried 40 messages" from a `switched` event {from, to, plan}
 
    Buttons carry data-act="choose-provider" and data-provider; the panel that shows the pill listens for them.
@@ -54,12 +55,25 @@
   }
 
   const idle = () => ({active: false, text: ""});
+  // chat_markdown.js: the page's global, or in node the file beside this one
+  const markdown = () => root.ChatMarkdown || (typeof module === "object" && module !== null && module.exports && typeof require === "function" ? require("./chat_markdown.js") : null);
+
+  // The row keeps the last MAX_SHOWN characters. The cut is made at a line break when the kept part has one, and when the part cut off leaves a
+  // code fence open, the kept part starts with that fence again: the row still reads as code where the reply is code.
+  function bounded(full) {
+    if (full.length <= MAX_SHOWN) return full;
+    let tail = full.slice(-MAX_SHOWN);
+    const nl = tail.indexOf("\n");
+    if (nl >= 0 && nl < tail.length - 1) tail = tail.slice(nl + 1);
+    const MD = markdown();
+    const open = MD ? MD.fenceAt(full.slice(0, full.length - tail.length)) : "";
+    return open === "" ? tail : open + "\n" + tail;
+  }
 
   function partial(state, event) {
     const prev = isObj(state) && state.active ? state.text : "";
     const d = isObj(event) && isObj(event.data) ? event.data : (isObj(event) ? event : {});
-    const next = (prev + text(d.delta)).slice(-MAX_SHOWN);
-    return {active: true, text: next};
+    return {active: true, text: bounded(prev + text(d.delta))};
   }
 
   const settle = () => idle();
@@ -68,8 +82,10 @@
     if (!isObj(state) || state.active !== true) return "";
     const who = clean(provider) ? label(clean(provider)) : "The model";
     const shown = text(state.text);
+    const MD = markdown();
+    const body = shown === "" ? "" : (MD ? MD.render(shown, {streaming: true}) : esc(shown).replace(/\r\n|\r|\n/g, "<br/>"));
     return '<div class="cstream" role="status" aria-live="polite"><small>' + esc(who) + " is writing…</small>" +
-      (shown === "" ? "" : '<div class="cstream-text">' + esc(shown).replace(/\r\n|\r|\n/g, "<br/>") + "</div>") + "</div>";
+      (body === "" ? "" : '<div class="cstream-text">' + body + "</div>") + "</div>";
   }
 
   function switchNotice(event) {
