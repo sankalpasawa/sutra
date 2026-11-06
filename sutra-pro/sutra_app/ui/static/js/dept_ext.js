@@ -135,6 +135,12 @@
     const d = doc();
     const root_ = byId("nodepanel");
     if (!d || !root_ || !root.NodePanel) return null;
+    if (!root.ChatPill && d.head && !d.getElementById("chat-pill-js")) {      // the J2 page is not edited: its provider pill script is added from here
+      const tag = d.createElement("script");
+      tag.id = "chat-pill-js";
+      tag.src = "/ui/js/chat_pill.js";
+      d.head.appendChild(tag);
+    }
     if (S.panel === null) {
       S.panel = safely("NodePanel.mount", () => root.NodePanel.mount(root_, {getGraph: () => S.lastGraph}));
     }

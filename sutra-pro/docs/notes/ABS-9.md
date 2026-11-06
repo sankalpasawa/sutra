@@ -1,0 +1,5 @@
+# ABS-9 as built
+
+`ui/static/js/chat_pill.js` (pure strings, one global `ChatPill`, node exports): `pill`, `selectable`, `choiceRequest`, `partial`/`settle`/`indicator`, `switchNotice`. A provider that cannot run is a label with its reason, never a button; selection is one `PUT /api/chats/{sid}/choice`; no text detector.
+Glue (riders): `node_panel.js` shows the pill above the composer of a writable department or division chat and sends the choice; `home.js` + `home.html` (`#spill`) show it for the org chat (the choice also governs the chat agent, ABS-8); `dept_ext.js` adds the `chat_pill.js` script tag to the J2 team page (`j2_ui.html` is not edited, so the page cannot load it itself); `sutra-panel.css` has the rules (J2 tokens only; contrast test unchanged and green); `home.html` loads the script.
+Not wired yet (left for ABS-10, which owns the transcript redraw): the streaming indicator and the switch notice are built and tested but nothing subscribes to `chat.partial` yet, because only the direct chat (`POST /chats/{sid}/direct`) produces partials and the UI has no composer for it yet.

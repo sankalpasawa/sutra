@@ -160,3 +160,16 @@ body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #
 @media (prefers-reduced-motion:reduce){
   #nodepanel *{animation:none!important;transition:none!important}
 }
+
+/* the provider pill and the streaming row of a chat (ABS-9): J2's tokens only */
+.npill{flex:0 0 auto;padding:6px 0 0}
+.npill[hidden]{display:none}
+.cpill{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:13px;color:var(--ink)}
+.cpill-opt{background:transparent;border:1px solid transparent;border-radius:999px;padding:1px 10px;color:var(--ink);font:inherit;cursor:pointer}
+.cpill-opt.on{border-color:var(--accent);color:var(--accent)}
+.cpill-opt.off{color:var(--muted);cursor:default}
+.cpill-opt.off small,.cpill-note{color:var(--muted);font-size:12px}
+.cpill-opt.auto{color:var(--muted);font-size:12px}
+.cstream{margin:6px 0;color:var(--ink)}
+.cstream small{color:var(--muted)}
+.cstream-text{white-space:normal;overflow-wrap:anywhere}

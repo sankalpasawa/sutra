@@ -181,12 +181,12 @@
     function buildChat() {
       refs.body.innerHTML = '<div class="nchat"><div class="nlens" hidden></div><div class="nlinks" hidden></div><div class="nearlier" hidden></div>' +
         '<div class="nmsgs" role="log" aria-live="polite" aria-label="Messages"></div><p class="nbanner" role="status" hidden></p>' +
-        '<div class="ncomposer" hidden><div class="row"><textarea class="nbox" aria-label="Your message" rows="2"></textarea>' +
+        '<div class="npill" hidden></div><div class="ncomposer" hidden><div class="row"><textarea class="nbox" aria-label="Your message" rows="2"></textarea>' +
         '<button type="button" class="send" data-act="send">Send</button></div></div><p class="nnote" role="note" hidden></p></div>';
       refs.body.__html = undefined;
       const q = sel => refs.body.querySelector(sel);
       chatRefs = {lens: q(".nlens"), links: q(".nlinks"), earlier: q(".nearlier"), msgs: q(".nmsgs"), banner: q(".nbanner"), composer: q(".ncomposer"),
-        box: q(".nbox"), send: q(".send"), note: q(".nnote")};
+        box: q(".nbox"), send: q(".send"), note: q(".nnote"), pill: q(".npill")};
     }
 
     const activeSession = () => (st.view ? st.view.session : st.session);
@@ -283,6 +283,40 @@
         (st.retry ? ' <button type="button" class="linkbtn" data-act="retry-load">Try again</button>' : "");
     }
 
+    // The provider pill (ABS-9): only on a team chat the owner can write in; the data comes from GET /api/chats/{sid}/providers.
+    const pillOwner = () => (st && !st.view && !st.readOnly && st.session && (st.session.kind === "department" || st.session.kind === "division")) ? st.sid : "";
+    function paintPill() {
+      const CP = root.ChatPill;
+      if (!chatRefs || !chatRefs.pill) return;
+      const sid = pillOwner();
+      if (!CP || !sid) { chatRefs.pill.hidden = true; chatRefs.pill.innerHTML = ""; return; }
+      if (st.pillSid !== sid) {
+        st.pillSid = sid;
+        settle(api().get("/api/chats/" + enc(sid) + "/providers")).then(r => {
+          if (!st || st.pillSid !== sid || r.error || !r.value) return;
+          st.pill = r.value;
+          paintPill();
+        });
+      }
+      const data = st.pill || {providers: [], chosen: null};
+      const html = CP.pill(data.providers, data.chosen);
+      chatRefs.pill.hidden = html === "";
+      chatRefs.pill.innerHTML = html;
+    }
+
+    function chooseProvider(name) {
+      const CP = root.ChatPill;
+      const sid = pillOwner();
+      if (!CP || !sid) return;
+      const req = CP.choiceRequest(sid, name);
+      settle(api().put(req.path, req.body)).then(r => {
+        if (!st || st.sid !== sid) return;
+        if (r.error) { st.banner = clean(r.error.message) || "That model cannot answer right now."; paintChat(); return; }
+        st.pillSid = ""; st.pill = null; st.banner = "";
+        paintChat();
+      });
+    }
+
     function paintChat() {
       if (!st || st.tab !== "chat" || !chatRefs) return;
       const gap = st.loading ? "Loading\u2026" : (st.nodeGone || st.chatNote);
@@ -293,6 +327,7 @@
         paintMessages();
       }
       paintLens();
+      paintPill();
       paintComposer();
     }
 
@@ -731,6 +766,7 @@
       else if (name === "fn") openFrom(act);
       else if (name === "go-tab") goToTab(act.dataset.tab);
       else if (name === "show-all") showAll();
+      else if (name === "choose-provider") chooseProvider(act.dataset.provider || null);
       else if (name === "open-team") {
         e.preventDefault();
         const dept = departmentOf(st.node);

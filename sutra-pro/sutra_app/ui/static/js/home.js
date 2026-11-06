@@ -132,6 +132,7 @@
     mergeMessages(fresh, all);
     renderChat();
     renderComposer();
+    renderPill();
   }
 
   function mergeMessages(list, replace) {
@@ -246,6 +247,27 @@
     const end = () => { const el = $("smsgs"); el.scrollTop = el.scrollHeight; };
     end();
     if (root.requestAnimationFrame) root.requestAnimationFrame(end);
+  }
+
+  // The provider pill of the org chat (ABS-9): the choice also governs the chat agent (ABS-8).
+  async function renderPill() {
+    const el = $("spill");
+    const CP = root.ChatPill;
+    if (!el || !CP) return;
+    if (S.pillData === undefined) {
+      S.pillData = null;
+      try { S.pillData = await api.get("/api/chats/" + ORG + "/providers"); } catch (e) { S.pillData = null; }
+    }
+    const html = S.pillData ? CP.pill(S.pillData.providers, S.pillData.chosen) : "";
+    ctx.paint(el, html);
+    el.hidden = html === "";
+  }
+
+  function onPillClick(e) {
+    const b = e.target.closest("button[data-act=choose-provider]");
+    if (!b || !root.ChatPill) return;
+    const req = root.ChatPill.choiceRequest(ORG, b.dataset.provider || null);
+    api.put(req.path, req.body).then(() => { S.pillData = undefined; return renderPill(); }, err => showBanner({text: clean(err && err.message) || "That model cannot answer right now.", settings: false}));
   }
 
   function renderComposer() {
@@ -673,6 +695,7 @@
 
   function wire() {
     $("smsgs").addEventListener("click", onChatClick);
+    if ($("spill")) $("spill").addEventListener("click", onPillClick);
     $("ssend").addEventListener("click", () => send($("sbox").value));
     $("sbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send($("sbox").value); } });
     $("sbanner").addEventListener("click", e => {
