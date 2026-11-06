@@ -1,0 +1,321 @@
+{
+  "_note": "Artifact types, step 1. j2.py's flow does not read this file; tests/test files compare it with the Python it mirrors (prd/hld/lld/website) and the Artifacts tab reads it. kind type = a deliverable the department builds; kind record = evidence the run keeps. A file with * lists every match. Regexes are case-insensitive.",
+  "schema": "artifact-types/1",
+  "site_words": "\\b(?:web\\s?)?sites?\\b|\\bweb\\s?pages?\\b|\\blanding\\s+page\\b",
+  "groups": {
+    "design-docs": {
+      "pattern": "\\bdesign\\s+(?:docs?|documents?|documentation)\\b|\\bfull\\s+documentation\\b",
+      "members": [
+        "prd",
+        "hld",
+        "lld"
+      ]
+    }
+  },
+  "types": [
+    {
+      "name": "prd",
+      "kind": "type",
+      "label": "Product requirements",
+      "tag": "PRD",
+      "color": "--prd",
+      "form": "doc",
+      "file": "prd.md",
+      "export": "docx",
+      "deliverable": true,
+      "triggers": [
+        "\\bPRDs?\\b|\\bproduct\\s+requirements?\\b"
+      ],
+      "groups": [
+        "design-docs"
+      ],
+      "depends_on": [],
+      "conditions": "prd.json",
+      "workflow": {
+        "template": "doc-sections",
+        "sections": [
+          "Problem",
+          "Users",
+          "Goals",
+          "Requirements",
+          "Success metrics",
+          "Out of scope"
+        ],
+        "builder": "python:PRD_BUILDER",
+        "refs": "^prd\\.md(#|$)"
+      },
+      "cost": {
+        "card": "rates_prd",
+        "parts": {
+          "doc_section": 5,
+          "requirements_section": 1
+        }
+      }
+    },
+    {
+      "name": "hld",
+      "kind": "type",
+      "label": "High-level design",
+      "tag": "HLD",
+      "color": "--hld",
+      "form": "doc",
+      "file": "hld.md",
+      "export": "docx",
+      "deliverable": true,
+      "triggers": [
+        "\\bHLDs?\\b|\\bhigh[- ]level\\s+design\\b|\\barchitecture\\s+overview\\b"
+      ],
+      "groups": [
+        "design-docs"
+      ],
+      "depends_on": [
+        "prd"
+      ],
+      "conditions": "hld.json",
+      "workflow": {
+        "template": "doc-sections",
+        "sections": [
+          "Purpose and scope",
+          "Pages",
+          "Components",
+          "Data flow",
+          "Hosting and deployment",
+          "Risks"
+        ],
+        "builder": "python:HLD_BUILDER",
+        "refs": "^hld\\.md(#|$)"
+      },
+      "cost": {
+        "card": "rates_prd",
+        "parts": {
+          "doc_section": 5,
+          "requirements_section": 1
+        }
+      }
+    },
+    {
+      "name": "lld",
+      "kind": "type",
+      "label": "Low-level design",
+      "tag": "LLD",
+      "color": "--lld",
+      "form": "doc",
+      "file": "lld.md",
+      "export": "docx",
+      "deliverable": true,
+      "triggers": [
+        "\\bLLDs?\\b|\\blow[- ]level\\s+design\\b|\\bdetailed\\s+design\\b"
+      ],
+      "groups": [
+        "design-docs"
+      ],
+      "depends_on": [
+        "prd",
+        "hld"
+      ],
+      "conditions": "lld.json",
+      "workflow": {
+        "template": "doc-sections",
+        "sections": [
+          "Pages and sections",
+          "Interactive elements",
+          "Form fields",
+          "File structure",
+          "Responsive and accessibility rules"
+        ],
+        "builder": "python:LLD_BUILDER",
+        "refs": "^lld\\.md(#|$)"
+      },
+      "cost": {
+        "card": "rates_prd",
+        "parts": {
+          "doc_section": 4,
+          "requirements_section": 1
+        }
+      }
+    },
+    {
+      "name": "website",
+      "kind": "type",
+      "label": "Website",
+      "tag": "Site",
+      "color": "--site",
+      "form": "page",
+      "file": "site/index.html",
+      "export": null,
+      "deliverable": true,
+      "triggers": [],
+      "also_when": "site-words",
+      "groups": [],
+      "depends_on": [
+        "hld",
+        "lld"
+      ],
+      "conditions": "website.json",
+      "workflow": {
+        "template": "site-parts",
+        "sections": [],
+        "builder": "builder.md",
+        "refs": "\\.html?(#|$)"
+      },
+      "cost": {
+        "card": "rates",
+        "parts": {
+          "styling": 1,
+          "page_section": 3,
+          "form": 1
+        }
+      }
+    },
+    {
+      "name": "screenshots",
+      "kind": "record",
+      "label": "Screenshot",
+      "tag": "Other",
+      "color": "--other",
+      "form": "image",
+      "file": "site/shots/*.png",
+      "deliverable": false
+    },
+    {
+      "name": "atoms",
+      "kind": "record",
+      "label": "Work atoms",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "atoms.json",
+      "deliverable": false
+    },
+    {
+      "name": "audits",
+      "kind": "record",
+      "label": "Audits",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "audits.json",
+      "deliverable": false
+    },
+    {
+      "name": "receipts",
+      "kind": "record",
+      "label": "Receipts",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "receipts.jsonl",
+      "deliverable": false
+    },
+    {
+      "name": "conditions",
+      "kind": "record",
+      "label": "Necessary conditions",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "conditions.json",
+      "deliverable": false
+    },
+    {
+      "name": "chain",
+      "kind": "record",
+      "label": "Requirement chain",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "chain.json",
+      "deliverable": false
+    },
+    {
+      "name": "goal",
+      "kind": "record",
+      "label": "Charter",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "goal.json",
+      "deliverable": false
+    },
+    {
+      "name": "workflows",
+      "kind": "record",
+      "label": "Workflows",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "workflows.json",
+      "deliverable": false
+    },
+    {
+      "name": "summary",
+      "kind": "record",
+      "label": "Run summary",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "summary.json",
+      "deliverable": false
+    },
+    {
+      "name": "report",
+      "kind": "record",
+      "label": "Run report",
+      "tag": "Other",
+      "color": "--other",
+      "form": "doc",
+      "file": "report.md",
+      "deliverable": false
+    },
+    {
+      "name": "chat",
+      "kind": "record",
+      "label": "Chat log",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "chat.jsonl",
+      "deliverable": false
+    },
+    {
+      "name": "board",
+      "kind": "record",
+      "label": "Message board",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "board.json",
+      "deliverable": false
+    },
+    {
+      "name": "realization",
+      "kind": "record",
+      "label": "Realization plan",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "realization.json",
+      "deliverable": false
+    },
+    {
+      "name": "workflow_files",
+      "kind": "record",
+      "label": "Workflow file",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "artifacts/*.*",
+      "deliverable": false
+    },
+    {
+      "name": "workflow_files_in_folders",
+      "kind": "record",
+      "label": "Workflow file",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "artifacts/*/*.*",
+      "deliverable": false
+    }
+  ]
+}

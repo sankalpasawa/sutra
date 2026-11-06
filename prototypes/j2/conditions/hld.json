@@ -1,0 +1,50 @@
+{
+  "_note": "Necessary conditions for an HLD (design documents). Code checks each one on hld.md after every build; the HLD is workable only when all are met and Audit accepts. \"check\" names the code check in j2.condition_met(). \"plan\" (optional): words a workflow in Adaptation's plan must mention, or the plan is flagged before building.",
+  "output": "hld",
+  "conditions": [
+    {
+      "id": "H1",
+      "text": "All six sections are present and not empty",
+      "check": "sections-present",
+      "min_words": 1
+    },
+    {
+      "id": "H2",
+      "text": "Section headings are unique",
+      "check": "headings-unique"
+    },
+    {
+      "id": "H3",
+      "text": "Components have unique sequential ids (C1, C2, ...) and each states its responsibility",
+      "check": [
+        "ids-sequential",
+        "components-have-responsibility"
+      ],
+      "section": "Components",
+      "prefix": "C"
+    },
+    {
+      "id": "H4",
+      "text": "Every PRD requirement appears in an HLD component",
+      "check": "chain-ids",
+      "key": "prd_ids",
+      "in": "Components",
+      "label": "PRD requirements",
+      "plan": "\\bR\\d+\\b"
+    },
+    {
+      "id": "H5",
+      "text": "No invented facts: every number, email and proper name comes from the charter, the Requester's answers or the PRD, or sits in an Assumption: line",
+      "check": "no-invented-facts",
+      "names": true
+    },
+    {
+      "id": "H6",
+      "text": "Nothing is \"to be confirmed\", and every brief fact appears exactly",
+      "check": [
+        "nothing-to-be-confirmed",
+        "facts-present-all"
+      ]
+    }
+  ]
+}

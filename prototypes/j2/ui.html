@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Studio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f1f3f2;--panel:#fff;--panel2:#eaeeec;--ink:#18201e;--muted:#5d6865;--line:#d6ddd9;
+  --user:#18201e;--product:#3056b8;--design:#b4487e;--development:#1f7a55;--system:#8a6d1d;
+  --accent:#3056b8;--on:#fff;
+  --display:"Bricolage Grotesque",Arial,sans-serif;--body:"IBM Plex Sans",Arial,sans-serif;--mono:"IBM Plex Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;
+  --bg:#101413;--panel:#191f1d;--panel2:#212826;--ink:#e6ebe9;--muted:#9aa5a1;--line:#2d3633;
+  --user:#e6ebe9;--product:#7c9ef0;--design:#e58ab5;--development:#5cc596;--system:#d9b55a;--accent:#7c9ef0;--on:#0f1312}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14.5px/1.5 var(--body);display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+h1{font:700 19px var(--display);margin:0}
+.team{display:flex;gap:8px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:3px 9px;border-radius:99px;background:var(--panel2)}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.chip.speaking{outline:2px solid var(--c)}
+.spacer{flex:1}
+.meta{font:500 12px var(--mono);color:var(--muted)}
+button{font:500 13px var(--body);cursor:pointer}
+.ghost{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 11px;border-radius:7px}
+main{flex:1;display:grid;grid-template-columns:minmax(340px,1fr) minmax(0,1.45fr);min-height:0}
+@media (max-width:900px){main{grid-template-columns:1fr;grid-template-rows:60vh 70vh}}
+.chat{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+.msgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{display:grid;grid-template-columns:32px 1fr;gap:10px;animation:in .25s ease}
+@keyframes in{from{opacity:.2;transform:translateY(4px)}to{opacity:1}}
+.av{width:32px;height:32px;border-radius:9px;background:var(--c);color:var(--on);display:grid;place-items:center;font:700 13px var(--display)}
+.bubble{background:var(--panel);border:1px solid var(--line);border-radius:4px 12px 12px 12px;padding:9px 12px;min-width:0}
+.msg.user .bubble{background:var(--panel2)}
+.who{font:600 12.5px var(--body);color:var(--c);display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.who span{font:400 11px var(--mono);color:var(--muted)}
+.text{white-space:pre-wrap;word-wrap:break-word}
+.tag{display:inline-block;margin-top:6px;font:500 11px var(--mono);padding:2px 7px;border-radius:5px;background:var(--panel2);color:var(--muted)}
+.tag.bad{color:#b33}.tag.ok{color:var(--development)}
+.sys{font:500 12px var(--mono);color:var(--system);text-align:center}
+.typing{font-size:13px;color:var(--muted);padding:0 16px 8px;min-height:24px}
+.typing b{color:var(--c)}
+.dots::after{content:"";animation:d 1.2s infinite}
+@keyframes d{0%{content:""}33%{content:"."}66%{content:".."}100%{content:"..."}}
+.compose{border-top:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--panel)}
+.quick{display:flex;gap:6px;flex-wrap:wrap}
+.quick button{border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:5px 10px;border-radius:99px;font-size:12.5px}
+.row{display:flex;gap:8px}
+textarea{flex:1;resize:none;height:58px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;background:var(--panel);color:var(--ink)}
+.send{background:var(--accent);color:var(--on);border:0;border-radius:9px;padding:0 18px;font-weight:600}
+.send:disabled,textarea:disabled{opacity:.5;cursor:not-allowed}
+.work{display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--line);background:var(--panel);align-items:flex-end;flex-wrap:wrap}
+.tabs button{border:0;background:none;color:var(--muted);padding:8px 12px;border-bottom:2px solid transparent}
+.tabs button[aria-selected="true"]{color:var(--ink);border-color:var(--accent);font-weight:600}
+.tabs select{margin:0 0 6px auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 6px;font:inherit}
+.pane{flex:1;min-height:0;overflow:auto;padding:16px}
+.pane.preview{padding:0;background:#fff}
+iframe{width:100%;height:100%;border:0;display:block}
+.empty{color:var(--muted);padding:24px}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:6px 14px;max-width:720px}
+.kv dt{font:500 12px var(--mono);color:var(--muted);padding-top:2px}.kv dd{margin:0}
+.sw{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 14px}
+.sw div{display:flex;flex-direction:column;gap:4px;font:500 11px var(--mono);color:var(--muted)}
+.sw span{width:74px;height:48px;border-radius:8px;border:1px solid var(--line)}
+table{border-collapse:collapse;width:100%;max-width:720px;font-size:13.5px}
+td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
+pre{font:12px/1.5 var(--mono);white-space:pre-wrap;word-break:break-all;margin:0}
+h3{font:600 15px var(--display);margin:0 0 8px}
+.steps{display:flex;gap:4px;padding:8px 18px;border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto;list-style:none;margin:0}
+.steps li{flex:1;min-width:78px;font:500 11.5px var(--mono);color:var(--muted);white-space:nowrap}
+.steps li::before{content:"";display:block;height:4px;border-radius:2px;background:var(--line);margin-bottom:4px}
+.steps li.done{color:var(--ink)}.steps li.done::before{background:var(--development)}
+.steps li.now{color:var(--accent);font-weight:600}.steps li.now::before{background:var(--accent);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+.act{display:flex;flex-direction:column;gap:4px}
+.act small{font:500 11.5px var(--mono);color:var(--muted)}
+.act .note{color:var(--system)}
+.bar{height:5px;border-radius:3px;background:var(--panel2);overflow:hidden;max-width:360px}
+.bar i{display:block;height:100%;background:var(--c);transition:width .6s ease}
+@media (prefers-reduced-motion:reduce){.steps li.now::before,.dots::after,.msg{animation:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Studio</h1>
+  <div class="team" id="team"></div>
+  <span class="spacer"></span>
+  <span class="meta" id="mode"></span>
+  <button class="ghost" id="reset">New project</button>
+</header>
+<ol class="steps" id="steps" aria-label="Project progress"></ol>
+<main>
+  <section class="chat">
+    <div class="msgs" id="msgs"></div>
+    <div class="typing" id="typing"></div>
+    <div class="compose">
+      <div class="quick" id="quick"></div>
+      <div class="row">
+        <textarea id="box" placeholder="Describe the website you want…" aria-label="Message"></textarea>
+        <button class="send" id="send">Send</button>
+      </div>
+    </div>
+  </section>
+  <section class="work">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="preview" aria-selected="true">Preview</button>
+      <button role="tab" data-tab="brief" aria-selected="false">Brief</button>
+      <button role="tab" data-tab="design" aria-selected="false">Design</button>
+      <button role="tab" data-tab="code" aria-selected="false">Code</button>
+      <select id="ver" aria-label="Version"></select>
+    </div>
+    <div class="pane preview" id="pane-preview"><iframe id="frame" title="Website preview" src="/site/latest"></iframe></div>
+    <div class="pane" id="pane-brief" hidden></div>
+    <div class="pane" id="pane-design" hidden></div>
+    <div class="pane" id="pane-code" hidden><pre id="code"></pre></div>
+  </section>
+</main>
+<script>
+const WHO = {user:["You","U"],product:["Product","P"],design:["Design","D"],development:["Development","Dv"],system:["System","!"]};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const md = s => esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/@(Product|Design|Development|User)/g,'<b>@$1</b>');
+let seen = 0, state = null, versions = 0, tab = "preview", liveAt = 0;
+const kb = n => (n/1024).toFixed(1) + " KB";
+
+$("team").innerHTML = ["user","product","design","development"].map(k =>
+  `<span class="chip" id="chip-${k}" style="--c:var(--${k})"><i></i>${WHO[k][0]}</span>`).join("");
+
+function addMsg(m){
+  const el = document.createElement("div");
+  if (m.kind === "system"){ el.className = "sys"; el.textContent = m.text; $("msgs").appendChild(el); return; }
+  el.className = "msg " + m.who; el.style.setProperty("--c", `var(--${m.who})`);
+  let tags = "";
+  if (m.next && m.next !== "user") tags += `<span class="tag">→ next: ${m.next}${m.auto ? " · routed without an AI call" : ""}</span> `;
+  if (m.artifact === "site") tags += `<span class="tag">posted site v${m.version} · ${(m.size/1024).toFixed(1)} KB</span>`;
+  if (m.artifact === "design") tags += `<span class="tag">posted design spec</span>`;
+  if (m.check) tags += `<span class="tag ${m.check.ok ? "ok":"bad"}">spec check: ${m.check.ok ? "buildable" : m.check.concerns.length + " concern(s)"}</span> `;
+  if (m.question) tags += `<span class="tag">question for ${WHO[m.question.to][0]}</span> `;
+  if (m.answer) tags += `<span class="tag">answer${m.artifact_updated ? " · updated design spec" : ""}</span> `;
+  if (m.review) tags += `<span class="tag ${m.review.approved ? "ok":"bad"}">review v${m.review.version}: ${m.review.approved ? "approved" : m.review.issues.length + " issue(s)"}</span>`;
+  el.innerHTML = `<div class="av">${WHO[m.who][1]}</div><div class="bubble">
+    <div class="who">${WHO[m.who][0]} <span>${m.ts}</span></div><div class="text">${md(m.text)}</div>${tags ? `<div>${tags}</div>` : ""}</div>`;
+  $("msgs").appendChild(el);
+}
+
+function renderBrief(b){
+  if (!b) return `<p class="empty">Product writes the brief after asking you a few questions.</p>`;
+  const pages = (b.pages||[]).map(p => `<b>${esc(p.name)}</b>: ${(p.sections||[]).map(esc).join(" · ")}`).join("<br>");
+  return `<h3>${esc(b.site_name)}</h3><dl class="kv">
+    <dt>purpose</dt><dd>${esc(b.purpose)}</dd><dt>audience</dt><dd>${esc(b.audience)}</dd>
+    <dt>pages</dt><dd>${pages}</dd><dt>must have</dt><dd>${(b.must_have||[]).map(esc).join("<br>")}</dd>
+    <dt>tone</dt><dd>${esc(b.tone)}</dd></dl>`;
+}
+function renderDesign(d){
+  if (!d) return `<p class="empty">Design posts a spec once the brief is ready.</p>`;
+  const sw = Object.entries(d.palette||{}).map(([k,v]) => `<div><span style="background:${esc(v)}"></span>${esc(k)}<br>${esc(v)}</div>`).join("");
+  const rows = (d.sections||[]).map(s => `<tr><td>${esc(s.name)}</td><td>${esc(s.notes)}</td></tr>`).join("");
+  return `<h3>Palette</h3><div class="sw">${sw}</div>
+    <dl class="kv"><dt>fonts</dt><dd>${esc(d.fonts?.heading)} (headings) · ${esc(d.fonts?.body)} (body)</dd><dt>style</dt><dd>${esc(d.style)}</dd></dl>
+    <h3 style="margin-top:16px">Sections</h3><table><tr><th>Section</th><th>Notes</th></tr>${rows}</table>`;
+}
+
+function quickReplies(s){
+  const q = $("quick"); let items = [];
+  if (!s.total) items = ["I want a website for a hospital", "Build a site for my bakery", "A portfolio for a photographer"];
+  else if (s.status === "waiting" && s.design && !s.approved) items = ["Approve", "Change the colours to green"];
+  else if (s.status === "waiting" && s.versions && s.approved) items = ["Done, looks good", "Add a testimonials section"];
+  else if (s.status === "waiting" && !s.brief) items = ["CityCare Hospital, Bengaluru. Mainly patients booking visits, plus emergency. Must have online appointments and doctor profiles."];
+  q.innerHTML = items.map(t => `<button type="button">${esc(t)}</button>`).join("");
+  [...q.children].forEach(b => b.onclick = () => { $("box").value = b.textContent; send(); });
+}
+
+async function poll(){
+  try{
+    const s = await (await fetch(`/api/state?since=${seen}`, {cache:"no-store"})).json();
+    s.messages.forEach(addMsg);
+    if (s.messages.length){ seen = s.total; $("msgs").scrollTop = $("msgs").scrollHeight; }
+    const thinking = s.status.startsWith("thinking:") ? s.status.split(":")[1] : null;
+    ["user","product","design","development"].forEach(k => $("chip-"+k).classList.toggle("speaking", thinking ? k === thinking : (s.status === "waiting" && k === "user")));
+    $("typing").innerHTML = thinking ? activityHtml(thinking, s.activity)
+      : s.status === "waiting" ? "Your turn." : s.status === "done" ? "Project finished." : "";
+    renderSteps(s);
+    liveHtml(s.activity);
+    const canType = !thinking;
+    $("box").disabled = !canType; $("send").disabled = !canType;
+    $("mode").textContent = (s.mock ? "mock agents" : `${s.provider === "gemini" ? "Gemini" : "Claude"} · ${s.model}`) + ` · ${s.calls} AI calls`;
+    if (s.versions !== versions){
+      versions = s.versions;
+      $("ver").innerHTML = Array.from({length:versions}, (_,i) => `<option value="v${i+1}">v${i+1}</option>`).join("") || `<option>no site yet</option>`;
+      $("ver").value = versions ? "v"+versions : "";
+      loadVersion();
+    }
+    if (!state || JSON.stringify(state.brief) !== JSON.stringify(s.brief)) $("pane-brief").innerHTML = renderBrief(s.brief);
+    if (!state || JSON.stringify(state.design) !== JSON.stringify(s.design)) $("pane-design").innerHTML = renderDesign(s.design);
+    if (!state || state.status !== s.status || state.total !== s.total) quickReplies(s);
+    state = s;
+  }catch(e){}
+  setTimeout(poll, 700);
+}
+function activityHtml(who, a){
+  const name = `<b>${WHO[who][0]}</b>`;
+  if (!a) return `<span style="--c:var(--${who})">${name} is working<span class="dots"></span></span>`;
+  let line = `${name} is ${esc(a.label)}<span class="dots"></span>`;
+  let detail = [`${a.elapsed}s`];
+  if (a.chars) detail.push(`${who === "development" ? "HTML written" : "reply"}: ${kb(a.chars)}`);
+  else detail.push("thinking before it writes");
+  if (a.section) detail.push(`now on: ${esc(a.section)}`);
+  let bar = "";
+  if (a.expected && a.chars){  // edits come out about the size of the previous version
+    const pct = Math.min(99, Math.round(100 * a.chars / a.expected));
+    bar = `<div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Size compared with the previous version"><i style="width:${pct}%"></i></div>`;
+    detail.push(`~${pct}% of previous version's size`);
+  }
+  const note = a.note ? `<small class="note">${esc(a.note)}</small>` : "";
+  return `<div class="act" style="--c:var(--${who})"><span>${line}</span><small>${detail.join(" · ")}</small>${bar}${note}</div>`;
+}
+function renderSteps(s){
+  const steps = s.steps || [];
+  const now = steps.findIndex(x => !x.done);
+  $("steps").innerHTML = steps.map((x,i) => `<li class="${x.done ? "done" : i === now ? "now" : ""}"${i === now ? ' aria-current="step"' : ""}>${esc(x.name)}</li>`).join("");
+}
+async function liveHtml(a){
+  // Show the page as Development writes it, refreshed every few seconds so it doesn't flicker.
+  if (!a || a.agent !== "development"){ if ($("frame").hasAttribute("srcdoc")) loadVersion(); return; }
+  if (!a.chars || tab !== "preview" || Date.now() - liveAt < 2500) return;
+  liveAt = Date.now();
+  const html = await (await fetch("/site/live", {cache:"no-store"})).text();
+  if (html) $("frame").srcdoc = html;
+}
+async function loadVersion(){
+  const v = $("ver").value || "latest";
+  $("frame").removeAttribute("srcdoc");
+  $("frame").src = `/site/${versions ? v : "latest"}?t=${Date.now()}`;
+  if (versions){ $("code").textContent = await (await fetch(`/site/${v}`)).text(); }
+}
+$("ver").onchange = loadVersion;
+document.querySelectorAll(".tabs [role=tab]").forEach(b => b.onclick = () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll(".tabs [role=tab]").forEach(x => x.setAttribute("aria-selected", x === b));
+  ["preview","brief","design","code"].forEach(t => $("pane-"+t).hidden = t !== tab);
+});
+async function send(){
+  const text = $("box").value.trim(); if (!text) return;
+  $("box").value = "";
+  await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text})});
+}
+$("send").onclick = send;
+$("box").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }});
+$("reset").onclick = async () => { await fetch("/api/reset", {method:"POST"}); location.reload(); };
+poll();
+</script>
+</body>
+</html>

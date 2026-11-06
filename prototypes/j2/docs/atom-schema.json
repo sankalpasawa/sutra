@@ -1,0 +1,193 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "atom/1",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "workflow",
+    "name",
+    "owner",
+    "status",
+    "attempt",
+    "goal",
+    "how",
+    "constraints",
+    "context",
+    "defined_output",
+    "verification",
+    "output",
+    "depends_on",
+    "used_by",
+    "notes",
+    "details"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "atom/1"
+    },
+    "id": {
+      "type": "string"
+    },
+    "workflow": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "owner": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "enum": [
+        "open",
+        "closed",
+        "verify_failed",
+        "abandoned"
+      ]
+    },
+    "attempt": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "goal": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "how": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "constraints": {
+      "type": "array"
+    },
+    "context": {
+      "type": "array"
+    },
+    "defined_output": {
+      "type": "array"
+    },
+    "verification": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "check",
+          "applies_to",
+          "method",
+          "met",
+          "evidence"
+        ],
+        "properties": {
+          "check": {
+            "enum": [
+              "exists",
+              "valid",
+              "meets the defined output",
+              "receipt"
+            ]
+          },
+          "applies_to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "the name of an output item"
+          },
+          "method": {
+            "type": "string"
+          },
+          "met": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "output": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "verb",
+          "name",
+          "form",
+          "ref"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "verb": {
+            "enum": [
+              "make",
+              "do"
+            ],
+            "description": "make gives an artifact, do gives a deed"
+          },
+          "name": {
+            "type": "string"
+          },
+          "form": {
+            "type": "string",
+            "description": "open list; make: doc, code, page, test, plan, skill, app; do: behaviour, fetch, send; unknown forms are recorded"
+          },
+          "ref": {
+            "type": "string",
+            "description": "file path, section anchor, document heading or receipt id"
+          }
+        }
+      }
+    },
+    "depends_on": {
+      "$ref": "#/definitions/edges"
+    },
+    "used_by": {
+      "$ref": "#/definitions/edges"
+    },
+    "notes": {
+      "type": "string",
+      "description": "plain words, 1 to 2 sentences"
+    },
+    "details": {
+      "type": "object",
+      "description": "type-specific; website: selectors, ids, anchor, elements; deeds: scope self|external; sends also channel, mode (dry-run|mock), sent"
+    }
+  },
+  "definitions": {
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "atom",
+          "why"
+        ],
+        "properties": {
+          "atom": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

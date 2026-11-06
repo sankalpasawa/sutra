@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Budget Negotiation</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f1f3f2;--panel:#fff;--panel2:#eaeeec;--ink:#18201e;--muted:#5d6865;--line:#d6ddd9;
+  --Marketing:#8a3fb0;--Engineering:#16798a;--Sales:#b0640f;--CEO:#1f6b45;--system:#6c7471;
+  --good:#1f7a55;--bad:#b23b3b;--warn:#a3741a;--accent:#3056b8;--on:#fff;
+  --display:"Bricolage Grotesque",Arial,sans-serif;--body:"IBM Plex Sans",Arial,sans-serif;--mono:"IBM Plex Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
+  --bg:#101413;--panel:#191f1d;--panel2:#232a28;--ink:#e6ebe9;--muted:#9aa5a1;--line:#2d3633;
+  --Marketing:#c78ae6;--Engineering:#5cc3d4;--Sales:#e3a256;--CEO:#6fcf9b;--system:#8f9995;
+  --good:#5cc596;--bad:#ec7f7f;--warn:#e0b35a;--accent:#7c9ef0;--on:#0f1312}}
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#101413;--panel:#191f1d;--panel2:#232a28;--ink:#e6ebe9;--muted:#9aa5a1;--line:#2d3633;
+  --Marketing:#c78ae6;--Engineering:#5cc3d4;--Sales:#e3a256;--CEO:#6fcf9b;--system:#8f9995;
+  --good:#5cc596;--bad:#ec7f7f;--warn:#e0b35a;--accent:#7c9ef0;--on:#0f1312}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14.5px/1.5 var(--body);display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+h1{font:700 19px var(--display);margin:0}
+.goal{color:var(--muted);font-size:13px;max-width:620px}
+.spacer{flex:1}
+.meta{font:500 12px var(--mono);color:var(--muted)}
+button{font:600 13.5px var(--body);cursor:pointer;border:0;border-radius:8px;padding:8px 16px;background:var(--accent);color:var(--on)}
+button:disabled{opacity:.45;cursor:default}
+.steps{display:flex;gap:6px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.step{font:500 12.5px var(--body);padding:4px 11px;border-radius:99px;background:var(--panel2);color:var(--muted)}
+.step.on{background:var(--ink);color:var(--bg)}
+.step.done{color:var(--ink)}
+.step.skip{text-decoration:line-through;opacity:.6}
+main{flex:1;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);min-height:0}
+@media (max-width:900px){main{grid-template-columns:1fr;grid-template-rows:auto auto}.chat{border-right:0;max-height:75vh}}
+.chat{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+.msgs{flex:1;overflow:auto;padding:18px 16px;display:flex;flex-direction:column;gap:12px}
+.empty{margin:auto;text-align:center;color:var(--muted);max-width:380px}
+.empty b{display:block;font:700 17px var(--display);color:var(--ink);margin-bottom:6px}
+.msg{display:grid;grid-template-columns:34px 1fr;gap:10px;animation:in .25s ease}
+@keyframes in{from{opacity:.2;transform:translateY(4px)}to{opacity:1}}
+.av{width:34px;height:34px;border-radius:9px;background:var(--c);color:var(--on);display:grid;place-items:center;font:700 14px var(--display)}
+.bubble{background:var(--panel);border:1px solid var(--line);border-radius:4px 12px 12px 12px;padding:9px 13px;min-width:0}
+.msg.ceo .bubble{border:2px solid var(--CEO)}
+.who{font:600 13px var(--body);color:var(--c);display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+.stance{font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:1px 7px;border-radius:5px;border:1px solid currentColor}
+.stance.propose{color:var(--accent)}.stance.accept{color:var(--good)}.stance.reject,.stance.object{color:var(--bad)}.stance.escalate{color:var(--warn)}
+.text{white-space:pre-wrap;overflow-wrap:anywhere}
+.extra{margin:7px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.extra li{font-size:13px;padding:5px 9px;border-radius:7px;background:var(--panel2)}
+.extra li b{font-weight:600}
+.split{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.split span{font:500 12px var(--mono);padding:2px 8px;border-radius:6px;border-left:3px solid var(--c);background:var(--panel2)}
+.sys{align-self:center;font-size:12.5px;color:var(--system);background:var(--panel2);padding:4px 12px;border-radius:99px;text-align:center;max-width:90%}
+.sys.big{color:var(--on);background:var(--warn);font-weight:600;padding:7px 16px}
+.sys.ok{color:var(--on);background:var(--good);font-weight:600;padding:7px 16px}
+.typing{padding:10px 16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);min-height:42px;display:flex;align-items:center;gap:8px}
+.dots i{display:inline-block;width:5px;height:5px;margin:0 1px;border-radius:50%;background:var(--muted);animation:b 1s infinite}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,80%,100%{opacity:.25}40%{opacity:1}}
+aside{overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card h2{font:700 15px var(--display);margin:0 0 4px}
+.card .sub{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+.row{margin-bottom:12px}
+.row .lbl{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;gap:8px}
+.row .lbl b{color:var(--c)}
+.row .lbl .ok{color:var(--good);font-size:12px}
+.bar{position:relative;height:12px;background:var(--panel2);border-radius:6px;overflow:visible}
+.bar .fill{height:100%;border-radius:6px;background:var(--c);transition:width .4s}
+.bar .floor{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.legend{font-size:11.5px;color:var(--muted);margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:12px}
+td.num{font-family:var(--mono);white-space:nowrap}
+.below{color:var(--bad)}.met{color:var(--good)}
+.plan{font-size:12.5px;color:var(--muted)}
+.err{border-color:var(--bad);color:var(--bad)}
+.outcome{display:inline-block;font:600 12px var(--mono);text-transform:uppercase;padding:2px 8px;border-radius:5px;background:var(--panel2);margin-bottom:10px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="title">Budget Negotiation</h1>
+    <div class="goal" id="goal"></div>
+  </div>
+  <div class="spacer"></div>
+  <span class="meta" id="mode"></span>
+  <button id="start">Start negotiation</button>
+</header>
+<div class="steps" id="steps"></div>
+<main>
+  <section class="chat">
+    <div class="msgs" id="msgs">
+      <div class="empty"><b>Three department heads, one budget.</b>
+        Each has a private minimum, and the minimums don't all fit. Press Start to watch them argue,
+        escalate to the CEO, and commit to a plan.</div>
+    </div>
+    <div class="typing" id="typing"></div>
+  </section>
+  <aside>
+    <div class="card" id="tableCard">
+      <h2>On the table</h2>
+      <div class="sub" id="tableSub">No split proposed yet.</div>
+      <div id="bars"></div>
+      <div class="legend">Bar = proposed share of the budget. Black line = that department's private minimum.</div>
+    </div>
+    <div class="card" id="resultCard" hidden></div>
+  </aside>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const money = n => "$" + Number(n).toLocaleString("en-US");
+let since = 0, st = null, timer = null;
+let floors = {};  // private minimums, shown to the audience (the agents only know their own)
+
+function color(who){ return `var(--${["Marketing","Engineering","Sales","CEO"].includes(who) ? who : "system"})`; }
+
+function renderMsg(m){
+  const box = $("msgs");
+  if (box.querySelector(".empty")) box.innerHTML = "";
+  if (m.who === "system"){
+    const d = document.createElement("div");
+    d.className = "sys" + (/Escalated to the CEO/.test(m.text) ? " big" : /No CEO needed/.test(m.text) ? " ok" : "");
+    d.textContent = m.text;
+    box.appendChild(d);
+    return;
+  }
+  // Lines like "Reserve: ...", "Trade: ...", "@Sales: ...", "Plan: ..." become a list under the message.
+  const lines = m.text.split("\n");
+  const main = [], extra = [];
+  lines.forEach((l, i) => {
+    const t = l.trim();
+    const mm = t.match(/^(Reserve|Trade|Plan|@\w+):\s*(.*)$/);
+    if (i > 0 && mm) extra.push(`<li><b>${esc(mm[1].replace(/^@/, "For "))}:</b> ${esc(mm[2])}</li>`);
+    else main.push(l);
+  });
+  const split = m.split ? `<div class="split">${Object.entries(m.split).map(([k, v]) =>
+      `<span style="--c:${color(k)}">${esc(k)} ${money(v)}</span>`).join("")}</div>` : "";
+  const d = document.createElement("div");
+  d.className = "msg" + (m.who === "CEO" ? " ceo" : "");
+  d.style.setProperty("--c", color(m.who));
+  d.innerHTML = `<div class="av">${esc(m.who[0])}</div><div class="bubble">
+    <div class="who">${esc(m.who)}${m.stance ? `<span class="stance ${esc(m.stance)}">${esc(m.stance)}</span>` : ""}</div>
+    <div class="text">${esc(main.join("\n").trim())}</div>
+    ${extra.length ? `<ul class="extra">${extra.join("")}</ul>` : ""}${split}</div>`;
+  box.appendChild(d);
+}
+
+function renderSteps(){
+  const p = st.phase, agreed = st.result && st.result.outcome === "agreed";
+  const order = ["negotiating", "ceo", "commit", "done"];
+  const names = {negotiating: "Agents negotiate", ceo: "CEO mediates", commit: "Everyone commits", done: "Done"};
+  const at = order.indexOf(p);
+  $("steps").innerHTML = order.map((k, i) => {
+    let c = "step";
+    if (k === "ceo" && agreed) c += " skip";
+    else if (i === at && p !== "done") c += " on";
+    else if (i < at || p === "done") c += " done";
+    if (k === "done" && p === "done") c = "step on";
+    const tick = c.includes("done") ? "✓ " : "";
+    return `<span class="${c}">${tick}${names[k]}</span>`;
+  }).join("");
+}
+
+function renderTable(){
+  const t = st.table;
+  if (!t){ $("tableSub").textContent = "No split proposed yet."; $("bars").innerHTML = ""; return; }
+  const by = t.by === "CEO" ? "the CEO's ruling" : `proposed by ${t.by}`;
+  const acc = t.by === "CEO" ? "" : ` · accepted by ${st.accepted.length ? st.accepted.join(", ") : "nobody"}`;
+  $("tableSub").textContent = `Latest split, ${by}${acc}`;
+  const rows = st.agents.map(n => {
+    const v = t.split[n] || 0, pct = 100 * v / st.budget;
+    const f = floors[n], fpct = f ? 100 * f / st.budget : null;
+    const ok = t.by !== "CEO" && st.accepted.includes(n) ? `<span class="ok">✓ accepted</span>` : "";
+    return `<div class="row" style="--c:${color(n)}"><div class="lbl"><b>${esc(n)}</b><span>${money(v)} ${ok}</span></div>
+      <div class="bar"><div class="fill" style="width:${pct}%"></div>${fpct ? `<div class="floor" style="left:${fpct}%"></div>` : ""}</div></div>`;
+  });
+  if (t.by === "CEO" && st.reserve){
+    rows.push(`<div class="row" style="--c:var(--warn)"><div class="lbl"><b>Reserve</b><span>${money(st.reserve.amount)}</span></div>
+      <div class="bar"><div class="fill" style="width:${100 * st.reserve.amount / st.budget}%"></div></div>
+      <div class="legend">Day 30: ${esc(st.reserve.release)}</div></div>`);
+  }
+  $("bars").innerHTML = rows.join("");
+}
+
+function renderResult(){
+  const c = $("resultCard");
+  if (st.error){
+    c.hidden = false; c.className = "card err";
+    c.innerHTML = `<h2>Stopped</h2><div>${esc(st.error)}</div><div class="sub">Chat so far is saved in ${esc(st.folder)}/</div>`;
+    return;
+  }
+  const r = st.result;
+  if (!r){ c.hidden = true; return; }
+  c.hidden = false; c.className = "card";
+  c.innerHTML = `<h2>Final decision</h2>
+    <span class="outcome">${r.outcome === "agreed" ? "Agreed without the CEO" : "Resolved by the CEO"}</span>
+    <table><tr><th>Dept</th><th>Wanted</th><th>Private min</th><th>Final</th></tr>
+    ${r.rows.map(x => `<tr><td style="color:${color(x.name)};font-weight:600">${esc(x.name)}</td>
+      <td class="num">${money(x.want)}</td><td class="num">${money(x.floor)}</td>
+      <td class="num ${x.final >= x.floor ? "met" : "below"}">${money(x.final)}</td></tr>
+      ${x.plan ? `<tr><td></td><td colspan="3" class="plan">${esc(x.plan)}</td></tr>` : ""}`).join("")}</table>
+    ${r.reserve ? `<p class="plan"><b>Reserve:</b> ${money(r.reserve.amount)}, day 30: ${esc(r.reserve.release)}</p>` : ""}
+    <div class="sub" style="margin:10px 0 0">${r.calls} model calls · saved in ${esc(st.folder)}/</div>`;
+}
+
+async function poll(){
+  try {
+    const res = await fetch(`/api/state?since=${since}`);
+    st = await res.json();
+  } catch { return; }
+  $("title").textContent = st.title;
+  $("goal").textContent = `${st.goal} Budget: ${money(st.budget)}.`;
+  $("mode").textContent = st.mode;
+  floors = st.floors || {};
+  $("start").disabled = st.running;
+  $("start").textContent = st.running ? "Running…" : (st.phase === "idle" ? "Start negotiation" : "Run again");
+  if (st.count < since) since = 0; // a new run started
+  const box = $("msgs");
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  st.messages.forEach(renderMsg);
+  since = st.count;
+  if (st.messages.length && atBottom) box.scrollTop = box.scrollHeight;
+  renderResult(); renderSteps(); renderTable();
+  $("typing").innerHTML = st.running && st.thinking
+    ? `<span class="dots"><i></i><i></i><i></i></span> <span style="color:${color(st.thinking)};font-weight:600">${esc(st.thinking)}</span> is thinking…`
+    : st.running ? "Working…" : "";
+}
+
+$("start").onclick = async () => {
+  $("start").disabled = true;
+  const r = await fetch("/api/start", {method: "POST"});
+  if (r.ok){
+    since = 0;
+    $("msgs").innerHTML = "";
+    $("resultCard").hidden = true;
+  }
+  poll();
+};
+poll();
+timer = setInterval(poll, 1000);
+</script>
+</body>
+</html>

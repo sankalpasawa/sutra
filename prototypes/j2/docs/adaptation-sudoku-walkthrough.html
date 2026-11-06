@@ -1,0 +1,388 @@
+<title>Sudoku Through Adaptation</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column; a sticky switch flips between the two flows; colour = which flow (slate = original, blue = realization, green = certainty, amber = judge). */
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --fg: #1b2230; --muted: #5b6577; --line: #d9dee7;
+  --orig: #4a5568; --orig-soft: #eceff3;
+  --real: #2f5bd3; --real-soft: #e7edfc;
+  --cert: #1f8a5b; --cert-soft: #e3f4ec;
+  --conf: #b8650f; --conf-soft: #fcefdc;
+  --bad: #c0392b; --bad-soft: #fbe6e3;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #19202a; --fg: #e6eaf2; --muted: #9aa5b8; --line: #2c3544;
+    --orig: #b4bfd0; --orig-soft: #232b37; --real: #7b9cf5; --real-soft: #1d2a4a; --cert: #4cc28c; --cert-soft: #16332a;
+    --conf: #eba253; --conf-soft: #3a2a16; --bad: #ef7a6c; --bad-soft: #3d1f1c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #19202a; --fg: #e6eaf2; --muted: #9aa5b8; --line: #2c3544;
+  --orig: #b4bfd0; --orig-soft: #232b37; --real: #7b9cf5; --real-soft: #1d2a4a; --cert: #4cc28c; --cert-soft: #16332a;
+  --conf: #eba253; --conf-soft: #3a2a16; --bad: #ef7a6c; --bad-soft: #3d1f1c; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 80px; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+main { max-width: 900px; margin: 0 auto; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 2.9rem); letter-spacing: -0.02em; }
+h2 { font-size: 1.55rem; }
+h3 { font-size: 1.08rem; }
+p { margin: 0; max-width: 68ch; }
+section { display: grid; gap: 16px; }
+.eyebrow { font: 600 0.75rem/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: 1.12rem; color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+.muted { color: var(--muted); }
+.note { font-size: 0.92rem; color: var(--muted); }
+.r { color: var(--real); } .c { color: var(--cert); } .k { color: var(--conf); } .o { color: var(--orig); }
+
+.flag { display: grid; gap: 4px; padding: 12px 14px; border-radius: 8px; border-left: 4px solid var(--conf); background: var(--conf-soft); font-size: 0.93rem; }
+.flag.bad { border-color: var(--bad); background: var(--bad-soft); }
+.flag.ok { border-color: var(--cert); background: var(--cert-soft); }
+
+.switch { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; display: flex; flex-wrap: wrap; gap: 8px; padding-block: 10px; background: var(--bg); border-bottom: 1px solid var(--line); }
+.tab { font: 600 0.9rem var(--body); padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.tab:focus-visible, .copy:focus-visible { outline: 2px solid var(--real); outline-offset: 2px; }
+
+.flow { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.flow > li { display: grid; grid-template-columns: 112px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.flow > li:last-child { border-bottom: 0; }
+.who { display: grid; gap: 4px; align-content: start; }
+.who b { font: 700 0.95rem var(--display); }
+.who span { font: 600 0.7rem var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.who.new b { color: var(--real); }
+.who.cert b { color: var(--cert); }
+.who.judge b { color: var(--conf); }
+.body { display: grid; gap: 10px; min-width: 0; }
+.body p { font-size: 0.96rem; }
+ul.tight { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 0.93rem; }
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+.tbl { min-width: 600px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font: 600 0.72rem var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); white-space: nowrap; }
+.zone { display: inline-block; font: 600 0.72rem var(--mono); padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
+.z-operate { background: var(--cert-soft); color: var(--cert); }
+.z-analyze { background: var(--real-soft); color: var(--real); }
+.z-experiment { background: var(--conf-soft); color: var(--conf); }
+.st { display: inline-block; font: 600 0.72rem var(--mono); padding: 2px 7px; border-radius: 4px; background: var(--orig-soft); color: var(--orig); white-space: nowrap; }
+.score { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.score .lo { color: var(--bad); } .score .hi { color: var(--cert); font-weight: 600; }
+
+.cmp { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 8px; align-content: start; }
+.card.o { border-top: 4px solid var(--orig); } .card.n { border-top: 4px solid var(--real); }
+.bar { height: 10px; border-radius: 5px; background: var(--bg); border: 1px solid var(--line); position: relative; }
+.bar i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: var(--orig); }
+.bar.n i { background: var(--real); }
+.metric { display: grid; grid-template-columns: 150px 1fr 54px; gap: 10px; align-items: center; font-size: 0.86rem; }
+.metric b { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+
+.prompt { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 8px; }
+.prompt pre { margin: 0; white-space: pre-wrap; font: 0.86rem/1.55 var(--mono); max-width: 100%; overflow-x: auto; }
+.prompt .head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.copy { font: 600 0.8rem var(--body); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+
+<main>
+<header style="display:grid; gap:14px">
+  <span class="eyebrow">Draft for review · J2 Adaptation · 24 Oct 2026</span>
+  <h1>“Build me a Sudoku site”, through Adaptation twice</h1>
+  <p class="lede">The same brief, followed step by step. Once through Adaptation as it runs today in the GitHub repo. Once with realization and certainty as axes and a confidence judge. Then a test prompt to compare the two, and how deep each one goes.</p>
+  <div class="flag">
+    <strong>What is real and what is predicted</strong>
+    <span><b>Original flow:</b> the steps, limits and rules come from the code (<code>j2.py</code> on <code>main</code>). The charter is real: Identity wrote it for a Sudoku brief in saved run <code>j2-20261006-110537</code>. That run paused before Adaptation started, so Adaptation's plan below is <em>predicted</em> from the same code and from the Tap Rush game run (<code>j2-20261014-111512</code>), the closest saved run that got through Adaptation.</span>
+    <span><b>New flow:</b> not built yet. Everything after Identity is the framework (<code>docs/realization-axis.md</code>) applied by hand to the same charter. The judge's scores are illustrations, not measurements.</span>
+  </div>
+</header>
+
+<section>
+  <span class="eyebrow">Common start</span>
+  <h2>Identity turns four words into a charter</h2>
+  <p>"Build me a Sudoku site" names no documents, so the run builds the website directly (no PRD → HLD → LLD chain). Identity finds the brief too thin and asks the Requester 1–4 questions (in the saved run: difficulty levels, which helper features, and live hosting). From the answers it writes the charter. Code checks the charter: at least 3 checkable done-when items, every fact traced to the brief, and any item dropped from the brief put back to the Requester.</p>
+  <div class="scroll"><table class="tbl">
+    <thead><tr><th>#</th><th>Done-when item (real, from the saved run)</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>One HTML file, inline CSS and JS, no build step</td></tr>
+      <tr><td class="num">2</td><td>A 9×9 grid; select a cell, enter or clear 1–9</td></tr>
+      <tr><td class="num">3</td><td>New Game with Easy, Medium, Hard; puzzles generated in the browser</td></tr>
+      <tr><td class="num">4</td><td>A solver counts solutions; only one-solution puzzles are accepted</td></tr>
+      <tr><td class="num">5</td><td>Duplicates in a row, column or box are highlighted</td></tr>
+      <tr><td class="num">6</td><td>Pencil-note mode; entering a number updates that cell's notes</td></tr>
+      <tr><td class="num">7</td><td>Undo, one step at a time, including note changes</td></tr>
+      <tr><td class="num">8</td><td>Hint fills one correct cell; Check marks wrong entries</td></tr>
+      <tr><td class="num">9</td><td>A running timer that stops on completion</td></tr>
+      <tr><td class="num">10</td><td>A completion message when the grid is correctly filled</td></tr>
+      <tr><td class="num">11</td><td>No localStorage, sessionStorage, cookies or IndexedDB</td></tr>
+      <tr><td class="num">12</td><td>Numbered Vercel deploy steps and a marked placeholder for the live URL</td></tr>
+      <tr><td class="num">13</td><td>Usable at 360px wide and on desktop</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">The charter's rules also say: "Do not add persistence or features beyond the chosen scope without a new Identity ruling." That rule matters for depth (section 4). Both flows start from this charter. Identity is the same in both.</p>
+</section>
+
+<nav class="switch" role="tablist" aria-label="Choose a flow">
+  <button class="tab" role="tab" id="tab-orig" aria-selected="true" aria-controls="flow-orig">Original flow (today)</button>
+  <button class="tab" role="tab" id="tab-new" aria-selected="false" aria-controls="flow-new">New flow (realization × certainty)</button>
+</nav>
+
+<section id="flow-orig" role="tabpanel" aria-labelledby="tab-orig">
+  <span class="eyebrow">Version 1 · how it runs in the repo today</span>
+  <h2>Adaptation proposes the smallest workflows that close the gap</h2>
+  <ol class="flow">
+    <li><div class="who"><span>J2.b</span><b>Adaptation</b></div><div class="body">
+      <p>Reads <code>team.md</code> and <code>adaptation.md</code>, the run state (budget 100, the rate card, item minimums) and its task. The task says, in this order:</p>
+      <ul class="tight">
+        <li>"Propose the smallest workflows that close the gap"</li>
+        <li>Each workflow lists the done-when items it <code>covers</code></li>
+        <li>No check or report workflows</li>
+        <li>Exactly one work atom per workflow, with its checks</li>
+        <li>What doesn't fit the budget goes in <code>left_out</code></li>
+      </ul>
+      <p>How to split the work is the LLM's own choice. In practice it splits by screen or section: Tap Rush got one workflow per screen.</p>
+      <p><b>Predicted plan</b> for the Sudoku charter:</p>
+      <div class="scroll"><table class="tbl">
+        <thead><tr><th>Workflow</th><th>Covers</th><th>Atoms</th><th>Parts (rate card)</th></tr></thead>
+        <tbody>
+          <tr><td>W-1 Board and input</td><td class="num">2, 5, 13</td><td class="num">1</td><td>interactive_feature, styling</td></tr>
+          <tr><td>W-2 Puzzle generator and solver</td><td class="num">3, 4</td><td class="num">1</td><td>interactive_feature</td></tr>
+          <tr><td>W-3 Notes and undo</td><td class="num">6, 7</td><td class="num">1</td><td>interactive_feature ×2</td></tr>
+          <tr><td>W-4 Hint, check, timer, completion</td><td class="num">8, 9, 10</td><td class="num">1</td><td>interactive_feature ×2</td></tr>
+          <tr><td>W-5 Deploy steps</td><td class="num">12</td><td class="num">1</td><td>page_section</td></tr>
+          <tr><td>W-6 Single file, no storage</td><td class="num">1, 11</td><td class="num">1</td><td>styling</td></tr>
+        </tbody>
+      </table></div>
+    </div></li>
+    <li><div class="who"><span>J2.b code</span><b>Validator</b></div><div class="body">
+      <p>Checks the reply has its fields and each atom has checks. A plan check uses the website conditions; only N8 (nav) has one. Anything that fails is re-asked once, then dropped or patched by code. Nothing in this step asks whether the plan is <em>enough</em>.</p>
+    </div></li>
+    <li><div class="who"><span>J2.c–d</span><b>Priority</b></div><div class="body">
+      <p>Prices each workflow from the rate card (<code>interactive_feature</code> 10, <code>page_section</code> 10, <code>styling</code> 5, plus item minimums). It replies GRANT, COUNTER or REFUSE. With budget 100 and roughly 8–10 interactive parts, this plan is close to the limit, so a COUNTER, or items moved to <code>left_out</code>, is likely. There are up to 4 bargaining exchanges; then Identity decides.</p>
+    </div></li>
+    <li><div class="who"><span>J2.e–f</span><b>Coordination + builders</b></div><div class="body">
+      <p>Each registered workflow becomes a "W-n Builder". It builds its section in one atom, with up to 3 attempts against that atom's checks. The puzzle generator gets the same single atom as the deploy-steps text.</p>
+    </div></li>
+    <li><div class="who"><span>J2.g</span><b>Audit</b></div><div class="body">
+      <p>LLM findings, plus code checks of conditions N1–N8: the page parses, no JS errors, no overflow at 360/1280px, links work, facts present, nothing invented, forms work, nav reaches every section. This is the first point where anything judges whether the plan was good, and it is <em>after</em> the build.</p>
+    </div></li>
+    <li><div class="who"><span>J2.h</span><b>Identity</b></div><div class="body">
+      <p>Code decides whether the result is workable. If it is, the run is done. If not, the open items go back to Adaptation for a new cycle. Limits: 6 cycles, 30+ turns per cycle, and a stop when the same failure repeats twice. The run ends as Done, Done with open items, or Paused for the Requester.</p>
+    </div></li>
+  </ol>
+</section>
+
+<section id="flow-new" role="tabpanel" aria-labelledby="tab-new" hidden>
+  <span class="eyebrow">Version 2 · realization and certainty as axes, with a confidence judge</span>
+  <h2>Adaptation cuts by kind of thinking, reads certainty, and the judge scores before anything is built</h2>
+  <ol class="flow">
+    <li><div class="who new"><span>Step 1</span><b>Factors</b></div><div class="body">
+      <p>Adaptation first lists what makes a Sudoku site good or bad.</p>
+      <ul class="tight">
+        <li><b>From the brief (quoted):</b> three difficulty levels; a unique solution; notes, undo, hint, check and timer; no storage; phone and desktop; deploy steps.</li>
+        <li><b>General (what makes Sudoku sites succeed):</b>
+          <ul class="tight">
+            <li>Puzzles feel right for their level. Hard must be harder than Easy, not just emptier.</li>
+            <li>Fast number entry on a phone (an on-screen pad, not the keyboard).</li>
+            <li>Keyboard entry on desktop.</li>
+            <li>A new puzzle appears quickly on a mid-range phone.</li>
+            <li>Errors are shown without giving away the answer.</li>
+          </ul></li>
+        <li><b>Budget:</b> 100 credits and 6 cycles.</li>
+      </ul>
+    </div></li>
+    <li><div class="who new"><span>Step 2</span><b>Stages</b></div><div class="body">
+      <p>Four stages earn their place. Business, compliance, operations and growth own nothing here (R4), so they are left out.</p>
+      <div class="scroll"><table class="tbl">
+        <thead><tr><th>Stage</th><th>Kind of thinking</th><th>Owns</th></tr></thead>
+        <tbody>
+          <tr><td><span class="st">product</span></td><td>Users: what each level means, what Hint and Check reveal</td><td>"puzzles feel right", "errors without giving away the answer"</td></tr>
+          <tr><td><span class="st">design</span></td><td>Experience: board, number pad, note mode, 360px</td><td>"fast entry on a phone", "phone and desktop"</td></tr>
+          <tr><td><span class="st">engineering</span></td><td>Structure: generator and solver algorithm; game state for undo and notes</td><td>"unique solution", "new puzzle quickly", "undo including notes"</td></tr>
+          <tr><td><span class="st">build</span></td><td>Making it</td><td>delivers all 13 items</td></tr>
+        </tbody>
+      </table></div>
+    </div></li>
+    <li><div class="who cert"><span>Step 3</span><b>Workflows and zones</b></div><div class="body">
+      <p>Decision workflows <code>inform</code> items; build workflows <code>deliver</code> them, one each. Zones come from <code>certainty.md</code>. Nothing here depends on how players react, so there is no <code>experiment</code>.</p>
+      <div class="scroll"><table class="tbl">
+        <thead><tr><th>Workflow</th><th>Stage</th><th>Zone</th><th>Delivers</th><th>Informs</th></tr></thead>
+        <tbody>
+          <tr><td>D-1 Play rules: what each level means; what Hint and Check reveal</td><td>product</td><td><span class="zone z-analyze">analyze</span></td><td class="num">–</td><td class="num">3, 8, 10</td></tr>
+          <tr><td>D-2 Board and controls layout</td><td>design</td><td><span class="zone z-analyze">analyze</span></td><td class="num">–</td><td class="num">2, 5, 6, 7, 8, 13</td></tr>
+          <tr><td>D-3 Generator and solver design</td><td>engineering</td><td><span class="zone z-analyze">analyze</span></td><td class="num">–</td><td class="num">3, 4</td></tr>
+          <tr><td>B-1 Board, input, conflict highlight</td><td>build</td><td><span class="zone z-operate">operate</span></td><td class="num">2, 5, 13</td><td class="num">–</td></tr>
+          <tr><td>B-2 Generator and solver</td><td>build</td><td><span class="zone z-operate">operate</span></td><td class="num">3, 4</td><td class="num">–</td></tr>
+          <tr><td>B-3 Notes and undo</td><td>build</td><td><span class="zone z-operate">operate</span></td><td class="num">6, 7</td><td class="num">–</td></tr>
+          <tr><td>B-4 Hint, check, timer, completion</td><td>build</td><td><span class="zone z-operate">operate</span></td><td class="num">8, 9, 10</td><td class="num">–</td></tr>
+          <tr><td>B-5 Shell, no storage, deploy steps</td><td>build</td><td><span class="zone z-operate">operate</span></td><td class="num">1, 11, 12</td><td class="num">–</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">Open fact: the live Vercel URL. It is non-blocking, so it goes on the page as a marked placeholder (an <code>Assumption:</code> line) and nothing waits for it.</p>
+    </div></li>
+    <li><div class="who judge"><span>Step 4</span><b>Judge</b></div><div class="body">
+      <p>A separate call scores each workflow on six checks. Illustrative first round, showing the four that fall below 0.80:</p>
+      <div class="scroll"><table class="tbl">
+        <thead><tr><th>Workflow</th><th>Weakest check</th><th>What is missing</th><th>Remedy</th><th>Score</th></tr></thead>
+        <tbody>
+          <tr><td>B-3 Notes and undo</td><td><code>inputs: no</code></td><td>Undo must cover note changes, but nothing defines the game state the undo works on</td><td><code>realization:add</code> → new D-4 "Game state model" (engineering, operate)</td><td class="score"><span class="lo">0.60</span> → <span class="hi">0.84</span></td></tr>
+          <tr><td>B-2 Generator and solver</td><td><code>done_test: partly</code></td><td>The check only finds a solver function in the file; it never proves uniqueness</td><td><code>rewrite</code>: a named test generates 20 puzzles per level and counts exactly one solution each</td><td class="score"><span class="lo">0.66</span> → <span class="hi">0.86</span></td></tr>
+          <tr><td>D-2 Board and controls</td><td><code>factors: no</code></td><td>"Fast entry on a phone" has no step</td><td><code>realization:deepen</code>: an on-screen number pad and a note-mode toggle</td><td class="score"><span class="lo">0.72</span> → <span class="hi">0.85</span></td></tr>
+          <tr><td>D-1 Play rules</td><td><code>method: partly</code></td><td>"Difficulty" is undefined: clue count, or the solving techniques needed?</td><td><code>certainty:analyze</code>: weigh both and pick one; Hard must need more than Easy</td><td class="score"><span class="lo">0.70</span> → <span class="hi">0.83</span></td></tr>
+        </tbody>
+      </table></div>
+      <p>After two rounds every workflow is at 0.80 or above, and the plan's confidence is 0.83. None are <code>not_ready</code>.</p>
+    </div></li>
+    <li><div class="who"><span>J2.c onward</span><b>Same as today</b></div><div class="body">
+      <p>Priority funds what passed; Coordination orders it (decisions before builds, by <code>inputs_from</code>); builders, Audit and Identity work as before. The difference: Audit should find fewer surprises, because the gaps it would have found (undo over notes, a uniqueness that was never proved, a cramped phone layout) were closed before building.</p>
+    </div></li>
+  </ol>
+  <div class="flag bad">
+    <strong>Where this clashes with today's code (fix in the code step)</strong>
+    <ul class="tight">
+      <li>The validator rejects a workflow that covers no item and fixes nothing (<code>_underpriced</code>). D-1 to D-4 deliver nothing, so they would be refused. A workflow that only informs items needs to count.</li>
+      <li>The rate card has no part for decision work. There is nothing to price D-1 to D-4 with.</li>
+      <li>Builders see only their own section (<code>J2_SLIM</code>). D-2's layout and D-4's state model must reach B-1 to B-4 through <code>inputs_from</code>.</li>
+      <li>On the Anthropic API path, Adaptation's reply is capped at 900 tokens. Factors, stages and 9 workflows will be cut off; the cap must rise.</li>
+      <li>9 workflows instead of 6 costs more. Budget 100 may not cover it, and some items would move to <code>left_out</code>.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">4 · How deep each flow goes</span>
+  <h2>Thinking depth versus feature depth</h2>
+  <p>Two kinds of depth are mixed up easily. <b>Feature depth</b> is how many things the site does. <b>Thinking depth</b> is how well each thing is worked out before it is built. Today, feature depth is fixed by Identity's done-when list, and Adaptation is told not to add scope. The new flow goes deeper in thinking. It does <em>not</em> add features by itself.</p>
+  <div class="cmp">
+    <div class="card o">
+      <h3 class="o">Original flow</h3>
+      <div class="metric"><span>Workflows</span><div class="bar"><i style="width:40%"></i></div><b>~6</b></div>
+      <div class="metric"><span>Decision steps</span><div class="bar"><i style="width:0%"></i></div><b>0</b></div>
+      <div class="metric"><span>Atoms per workflow</span><div class="bar"><i style="width:20%"></i></div><b>1</b></div>
+      <div class="metric"><span>Factors considered</span><div class="bar"><i style="width:45%"></i></div><b>13*</b></div>
+      <div class="metric"><span>Checked before build</span><div class="bar"><i style="width:10%"></i></div><b>shape</b></div>
+      <p class="note">* only the done-when items. Gaps are found by Audit after the build, then fixed in later cycles. Tap Rush: 12 items → 5 workflows, the whole game loop in one atom; 2 cycles, 27 calls, 136 of 200 budget.</p>
+    </div>
+    <div class="card n">
+      <h3 class="r">New flow</h3>
+      <div class="metric"><span>Workflows</span><div class="bar n"><i style="width:60%"></i></div><b>~9</b></div>
+      <div class="metric"><span>Decision steps</span><div class="bar n"><i style="width:27%"></i></div><b>4</b></div>
+      <div class="metric"><span>Atoms per workflow</span><div class="bar n"><i style="width:20%"></i></div><b>1</b></div>
+      <div class="metric"><span>Factors considered</span><div class="bar n"><i style="width:65%"></i></div><b>19</b></div>
+      <div class="metric"><span>Checked before build</span><div class="bar n"><i style="width:80%"></i></div><b>judge</b></div>
+      <p class="note">Same 13 features, worked out more thoroughly. The predicted cost is about 1.5× the workflows and 2–3 extra judge calls per round. The test below measures whether that buys fewer Audit failures and fewer cycles.</p>
+    </div>
+  </div>
+  <div class="flag">
+    <strong>Decision needed: should Adaptation be allowed to propose features?</strong>
+    <span>Some general factors are really features: keyboard entry on desktop, a number pad, a difficulty definition. Today they can only shape <em>how</em> the 13 items are built. To let Adaptation build more features, add a <code>proposed_additions</code> list that goes to Identity, which adds them to done-when or not (and the Requester decides where scope changes). Without it, the new flow thinks deeper but builds the same feature list.</span>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">5 · Test prompts</span>
+  <h2>How to compare the two flows</h2>
+  <p>Use two prompts. The first is your exact brief: it tests how far each flow fills in a thin request. The second fixes every fact, so the only difference between runs is Adaptation.</p>
+
+  <div class="prompt">
+    <div class="head"><h3>Prompt A: the open brief</h3><button class="copy" type="button" data-copy="pa">Copy</button></div>
+    <pre id="pa">Build me a Sudoku site.</pre>
+    <p class="note">Give Identity the same answers in both flows. Paste these when it asks:</p>
+    <pre id="pa-ans">Difficulty: Easy, Medium and Hard.
+Helpers: pencil notes, undo, hint, check, and a timer.
+Saving: no saved games, no browser storage.
+Hosting: give me the steps to put it on my own Vercel account; don't publish it yourself.
+Devices: phone and desktop.
+Anything else: you decide, and tell me what you assumed.</pre>
+    <div><button class="copy" type="button" data-copy="pa-ans">Copy answers</button></div>
+  </div>
+
+  <div class="prompt">
+    <div class="head"><h3>Prompt B: the controlled brief</h3><button class="copy" type="button" data-copy="pb">Copy</button></div>
+<pre id="pb">Build a Sudoku game as one web page.
+
+Players: anyone on a phone or laptop, no login.
+How it plays: a 9x9 grid. The player selects a cell and enters or clears a number 1 to 9. New Game offers Easy, Medium and Hard. Puzzles are generated in the browser and each one has exactly one solution.
+Helpers: pencil-note mode, Undo (one step at a time, including notes), Hint (fills one correct cell), Check (marks wrong entries), a timer that stops when the puzzle is solved, and a message when it is solved.
+Mistakes: numbers that clash in a row, column or 3x3 box are highlighted.
+Look: clean and calm, works on a 360px-wide phone with no horizontal scrolling.
+Rules for the build: one HTML file with inline CSS and JavaScript, no build step, no external images or fonts, no browser storage of any kind, no sign-up, no ads.
+Deploy: include numbered steps for putting the file on the player's own Vercel account and a marked placeholder for the live URL. Do not publish it.
+Anything not listed here is not decided. Ask me, or mark it to be confirmed. Do not invent it.</pre>
+  </div>
+
+  <h3>How to run it</h3>
+  <ul class="tight">
+    <li><b>Same settings in both flows:</b> the same model; <code>J2_MEMORY=0</code> (no lessons or playbooks from earlier runs); <code>J2_DELAY=0</code>; <code>J2_BUDGET=100</code>; and the same Identity answers.</li>
+    <li><b>Original flow:</b> the repo as it is today.</li>
+    <li><b>New flow:</b> first as a planning-only pilot (plan + judge, no build), which compares plans. Then, once wired in, a switch such as <code>J2_REALIZATION=1</code> compares built sites.</li>
+    <li><b>How many runs:</b> 3 per flow per prompt, in alternating order (orig, new, new, orig, …).</li>
+  </ul>
+
+  <h3>What to measure</h3>
+  <div class="scroll"><table class="tbl">
+    <thead><tr><th>Measure</th><th>Read from</th><th>What a better flow shows</th></tr></thead>
+    <tbody>
+      <tr><td colspan="3"><b>Plan</b> (both flows, before building)</td></tr>
+      <tr><td>Workflows, decision vs build</td><td><code>workflows.json</code></td><td>Decision steps where the work is hard (generator, state model), none for trivial work (deploy text)</td></tr>
+      <tr><td>Factors listed beyond done-when</td><td>proposal (new flow)</td><td>Real Sudoku concerns, not filler</td></tr>
+      <tr><td>Judge score before and after revision</td><td>judge log (new flow); score the original plan with the same judge once</td><td>The original plan scores lower on the same checks</td></tr>
+      <tr><td colspan="3"><b>Outcome</b> (after building)</td></tr>
+      <tr><td>Done-when items met</td><td>Audit, <code>summary.json</code></td><td>13/13 in fewer cycles</td></tr>
+      <tr><td>Cycles, AI calls, budget used</td><td><code>summary.json</code></td><td>No big rise in cost for the gain</td></tr>
+      <tr><td>Audit findings in cycle 1</td><td><code>audits.json</code></td><td>Fewer: gaps were closed before the build</td></tr>
+      <tr><td colspan="3"><b>Depth probes</b> (we run these on the finished file; neither flow is told about them)</td></tr>
+      <tr><td>Uniqueness</td><td>generate 50 puzzles per level, count solutions</td><td>all exactly 1</td></tr>
+      <tr><td>Difficulty</td><td>clue counts and techniques needed, Easy vs Hard</td><td>Hard clearly harder</td></tr>
+      <tr><td>Generation time</td><td>time New Game on Hard, phone-speed CPU</td><td>under 2 s</td></tr>
+      <tr><td>Undo over notes</td><td>scripted: note, enter, undo twice</td><td>notes come back</td></tr>
+      <tr><td>Input</td><td>tap-only at 360px; keyboard only on desktop</td><td>both work</td></tr>
+      <tr><td>Check and Hint</td><td>do they reveal more than one cell?</td><td>no</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <span class="eyebrow">6 · What we can say today</span>
+  <h2>Current status of both flows on Sudoku</h2>
+  <div class="cmp">
+    <div class="card o"><h3 class="o">Original</h3><p>Has never got past Identity on Sudoku: the only run paused over dropping the live Vercel deploy. On a comparable game (Tap Rush) it planned 5 one-atom workflows and passed 7 of 8 site conditions in 2 cycles, before the run crashed on a spend limit. <b>Running Prompt A or B now would give the first real Sudoku result</b>, at about 25–40 AI calls.</p></div>
+    <div class="card n"><h3 class="r">New</h3><p>Exists as instructions, a schema and a judge prompt. It has not run. The plan above is a worked example. The next real evidence would come from the planning-only pilot on the five briefs, with Sudoku added as a sixth.</p></div>
+  </div>
+</section>
+
+<footer>Sources: <code>j2.py</code> (control flow, PROPOSE format, limits, validator), <code>agents/j2/adaptation.md</code>, <code>agents/j2/rates.json</code>, runs <code>j2-20261006-110537</code> (Sudoku charter) and <code>j2-20261014-111512</code> (Tap Rush), <code>docs/realization-axis.md</code>, <code>agents/j2/realization.md</code>, <code>agents/j2/confidence-judge.md</code>.</footer>
+</main>
+
+<script>
+const tabs = [["tab-orig", "flow-orig"], ["tab-new", "flow-new"]];
+function show(id) {
+  for (const [t, p] of tabs) {
+    const on = t === id;
+    document.getElementById(t).setAttribute("aria-selected", String(on));
+    document.getElementById(p).hidden = !on;
+  }
+}
+for (const [t] of tabs) document.getElementById(t).addEventListener("click", () => show(t));
+if (location.hash === "#new") show("tab-new");
+document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", () => {
+  const text = document.getElementById(b.dataset.copy).textContent;
+  const done = () => { const old = b.textContent; b.textContent = "Copied"; setTimeout(() => b.textContent = old, 1400); };
+  const fallback = () => { const r = document.createRange(); r.selectNodeContents(document.getElementById(b.dataset.copy)); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Selected: press Ctrl+C"; };
+  try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+}));
+</script>

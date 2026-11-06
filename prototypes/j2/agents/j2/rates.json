@@ -1,0 +1,24 @@
+{
+  "_note": "PLACEHOLDER rate card for the J2 test (not an official file). A workflow's cost is the sum of its parts' prices; agents' own money estimates are ignored. Set J2_RATES=0 to go back to agent estimates.",
+  "rates": {
+    "page_section": 10,
+    "form": 15,
+    "interactive_feature": 10,
+    "profiles": 10,
+    "blog_post": 10,
+    "extra_language": 12,
+    "styling": 5,
+    "fix": 8
+  },
+  "_note_prd": "Document rate card (PRD, HLD, LLD): one section per workflow. Website rates above are unchanged. Calibrated 16 Oct from runs/ (only PRDs measured): doc_section 10 as measured; requirements_section 48 so the least a PRD costs is 98, the cheapest measured finished PRD (j2-20261013-165916: 90 first pass + one 8 fix). Other PRDs finished at 133 and 160. HLD and LLD are not measured yet.",
+  "rates_prd": {
+    "doc_section": 10,
+    "requirements_section": 48,
+    "fix": 8
+  },
+  "_note_deed": "PLACEHOLDER price of a send deed (test sends only): 5 each, not measured. J2_RATES=0 makes it free.",
+  "rates_deed": {
+    "send_email": 5,
+    "send_slack_message": 5
+  }
+}

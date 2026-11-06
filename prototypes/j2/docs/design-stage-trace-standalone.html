@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Design Stage Trace</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;800&family=Atkinson+Hyperlegible+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column with a numbered rail (the stations of the run); the design thread is a tinted box inside each station; wide tables scroll in their own box. */
+:root{
+  --bg:#f7f8fa; --paper:#ffffff; --ink:#18202b; --muted:#56606e; --line:#d9dee6; --soft:#eef1f5;
+  --real:#0f7b72; --real-bg:#e3f3f1;
+  --cert:#a35a00; --cert-bg:#fbefdc;
+  --judge:#5b47b5; --judge-bg:#ece9f9;
+  --build:#2f6b2f; --build-bg:#e6f2e3;
+  --ask:#b2304f; --ask-bg:#f9e5ea;
+  --design:#1d5fae; --design-bg:#e4eefb;
+  --sans:"Atkinson Hyperlegible Next","Segoe UI",system-ui,sans-serif;
+  --mono:"Atkinson Hyperlegible Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11151b; --paper:#171c24; --ink:#e6e9ee; --muted:#9aa4b2; --line:#2c3440; --soft:#1f2630;
+  --real:#4cc2b6; --real-bg:#13302d; --cert:#f0a94a; --cert-bg:#33260f; --judge:#a99bf0; --judge-bg:#25213d;
+  --build:#7cc57c; --build-bg:#18301a; --ask:#f07a96; --ask-bg:#3a1a23; --design:#7fb0f0; --design-bg:#172a42; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11151b; --paper:#171c24; --ink:#e6e9ee; --muted:#9aa4b2; --line:#2c3440; --soft:#1f2630;
+  --real:#4cc2b6; --real-bg:#13302d; --cert:#f0a94a; --cert-bg:#33260f; --judge:#a99bf0; --judge-bg:#25213d;
+  --build:#7cc57c; --build-bg:#18301a; --ask:#f07a96; --ask-bg:#3a1a23; --design:#7fb0f0; --design-bg:#172a42; color-scheme:dark}
+
+body{background:var(--bg);color:var(--ink);font:16px/1.55 var(--sans)}
+.wrap{max-width:980px;margin:0 auto;padding-block:40px 72px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:grid;gap:36px}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+h1{font-size:clamp(1.6rem,4vw,2.2rem);line-height:1.2;font-weight:800;letter-spacing:-.01em}
+h2{font-size:1.3rem;font-weight:800}
+h3{font-size:1.05rem;font-weight:800}
+h4{font-size:.95rem;font-weight:700}
+p{margin:0}
+ul,ol{margin:0;padding-left:20px;display:grid;gap:4px}
+.eyebrow{font:600 .75rem/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);max-width:68ch}
+.mono{font-family:var(--mono);font-size:.88em}
+.small{font-size:.9rem}
+.muted{color:var(--muted)}
+header,section{display:grid;gap:14px}
+a{color:var(--design)}
+:focus-visible{outline:2px solid var(--design);outline-offset:2px}
+
+/* answer box */
+.answer{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:18px 20px;display:grid;gap:10px}
+.answer ol{gap:6px}
+
+/* overview strip */
+.strip{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.strip a{display:inline-flex;gap:6px;align-items:center;text-decoration:none;color:var(--ink);background:var(--paper);
+  border:1px solid var(--line);border-left:4px solid var(--c);border-radius:6px;padding:5px 9px;font-size:.85rem}
+.strip a b{font:600 .72rem/1 var(--mono);color:var(--c)}
+.strip .to{color:var(--muted);font-size:.8rem}
+
+/* lanes */
+.L-id{--c:var(--muted);--cb:var(--soft)} .L-real{--c:var(--real);--cb:var(--real-bg)} .L-cert{--c:var(--cert);--cb:var(--cert-bg)}
+.L-code{--c:var(--muted);--cb:var(--soft)} .L-judge{--c:var(--judge);--cb:var(--judge-bg)} .L-build{--c:var(--build);--cb:var(--build-bg)}
+.L-ask{--c:var(--ask);--cb:var(--ask-bg)} .L-design{--c:var(--design);--cb:var(--design-bg)}
+.chip{display:inline-block;font:600 .7rem/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--c);
+  background:var(--cb);border:1px solid var(--c);border-radius:999px;padding:4px 8px;white-space:nowrap}
+
+/* joint diagram */
+.joint{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1.1fr) auto minmax(0,1fr);gap:10px;align-items:stretch}
+.jbox{border:1.5px solid var(--c);background:var(--cb);border-radius:10px;padding:14px;display:grid;gap:8px;align-content:start;min-width:0}
+.jbox .chip{justify-self:start}
+.jarrow{display:grid;place-items:center;color:var(--muted);font-size:1.4rem}
+@media (max-width:800px){.joint{grid-template-columns:1fr}.jarrow{transform:rotate(90deg);height:24px}}
+
+/* stations */
+.rail{display:grid;gap:0}
+.station{display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;padding-bottom:26px;position:relative}
+.station::before{content:"";position:absolute;left:21px;top:44px;bottom:0;width:2px;background:var(--line)}
+.station:last-child::before{display:none}
+.num{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--cb);border:2px solid var(--c);
+  color:var(--c);font:800 1rem/1 var(--mono);z-index:1}
+.body{display:grid;gap:12px;min-width:0;padding-top:6px}
+.shead{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
+.io{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.io div{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:4px;align-content:start;font-size:.92rem}
+.io b{font:600 .68rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+@media (max-width:700px){.io{grid-template-columns:1fr}}
+.design{border:1.5px solid var(--design);background:var(--design-bg);border-radius:10px;padding:12px 14px;display:grid;gap:8px}
+.design > .tag{font:600 .7rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--design)}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:grid;gap:8px}
+.quote{border-left:3px solid var(--line);padding-left:12px;color:var(--muted);font-size:.93rem}
+.warn{border:1.5px solid var(--ask);background:var(--ask-bg);border-radius:10px;padding:12px 14px;display:grid;gap:6px}
+.warn > .tag{font:600 .7rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ask)}
+details{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+details > summary{cursor:pointer;font-weight:700;font-size:.92rem}
+details[open] > summary{margin-bottom:8px}
+
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{text-align:left;vertical-align:top;padding:8px 11px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+th{font:600 .68rem/1.3 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted);background:var(--soft);white-space:nowrap}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.hl td{background:var(--design-bg)}
+.w560{min-width:560px}.w720{min-width:720px}.w860{min-width:860px}
+.ok{color:var(--build);font-weight:700}.no{color:var(--ask);font-weight:700}
+.sc{display:inline-block;min-width:44px;text-align:center;border-radius:4px;padding:1px 6px;font:600 .82rem/1.4 var(--mono)}
+.sc.p{background:var(--build-bg);color:var(--build)} .sc.f{background:var(--ask-bg);color:var(--ask)} .sc.x{color:var(--muted)}
+
+/* five gates */
+.gates{display:grid;gap:0}
+.gate{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:10px;align-items:stretch}
+.gq{border:1.5px solid var(--cert);background:var(--cert-bg);border-radius:8px;padding:10px 12px;display:grid;gap:4px}
+.gq .q{font-weight:700}
+.ga{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:10px 12px;display:grid;gap:4px;font-size:.9rem}
+.ga .ans{font:600 .8rem/1 var(--mono)}
+.gdown{height:22px;margin-left:24px;border-left:2px solid var(--line)}
+.zone{border:2px solid var(--cert);border-radius:10px;padding:12px 14px;display:grid;gap:6px;background:var(--paper)}
+@media (max-width:640px){.gate{grid-template-columns:1fr}}
+
+/* rounds timeline */
+.rounds{display:grid;gap:10px}
+.rnd{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:start}
+.rnd .rl{font:600 .78rem/1.3 var(--mono);color:var(--judge);padding-top:12px}
+.rbox{border:1.5px solid var(--c);background:var(--cb);border-radius:8px;padding:10px 12px;display:grid;gap:6px;min-width:0}
+.math{font:600 .85rem/1.4 var(--mono)}
+.split{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media (max-width:640px){.rnd{grid-template-columns:1fr}.rnd .rl{padding-top:0}.split{grid-template-columns:1fr}}
+
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:760px){.two{grid-template-columns:1fr}}
+.foot{font-size:.85rem;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+</style>
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">J2 · Realization + certainty · one real run, traced · 25 Oct 2026</p>
+  <h1>How the design department was born, judged, split and built in one real J2 run</h1>
+  <p class="lede">Run <span class="mono">tax-realization / j2-20261025-003747</span>. Brief: a tax set-aside calculator for freelancers in India. Every name, number and quote below comes from the run's own files: <span class="mono">realization.json</span>, <span class="mono">decisions.md</span>, <span class="mono">atoms.json</span>, <span class="mono">chat.jsonl</span> and the final page <span class="mono">site/v9.html</span>.</p>
+</header>
+
+<section aria-labelledby="ans-h">
+  <h2 id="ans-h">The answer first</h2>
+  <div class="answer">
+    <ol>
+      <li><b>Realization made the design department.</b> It found 3 design factors in the charter (plain words, Indian rupee format, fit at 360px and 1280px) and gave them to a "design" stage.</li>
+      <li><b>Certainty set how the department must work.</b> The five gates gave the zone "analyze": compare options, choose one, then build. So design became a <i>decide</i> workflow, not a build workflow.</li>
+      <li><b>The judge joined the two axes.</b> It failed the design workflow two times. First on a certainty question (no options were compared). Then on a realization question (it mixed two kinds of thinking). Adaptation fixed the first and split the workflow in two for the second.</li>
+      <li><b>The two design decisions reached every builder.</b> The final page uses the exact words, the 2/4-column grid, the 640px switch and the rupee format that the decisions set.</li>
+      <li><b>Two gaps.</b> The gate held all build work, but Adaptation built it anyway. Builders used their own element ids, not the ids in the decisions.</li>
+    </ol>
+  </div>
+</section>
+
+<section aria-labelledby="joint-h">
+  <div>
+    <h2 id="joint-h">Where the two axes join</h2>
+    <p class="lede">Realization and certainty write one plan together. The judge then asks questions from both axes. Code adds up one score. A low score sends a fix back, labelled with the axis that must change.</p>
+  </div>
+  <div class="joint">
+    <div class="jbox L-real"><span class="chip">Realization</span><p><b>What must the work cover?</b></p>
+      <ul class="small"><li>Factors and their source</li><li>Stages: one kind of thinking each</li><li>Workflows: decide or build</li><li>Who reads whom (<span class="mono">inputs_from</span>)</li></ul></div>
+    <div class="jarrow" aria-hidden="true">→</div>
+    <div class="jbox L-judge"><span class="chip">Judge + code</span><p><b>One score per workflow</b></p>
+      <ul class="small"><li><b>From realization:</b> F questions (stage factors), S1 one kind of thinking, S2 one output, I1/I2 inputs</li><li><b>From certainty:</b> Z1 shape fits the zone, M2 a choice is made</li><li><b>Both:</b> M1 method, D1–D4 done-test</li></ul>
+      <p class="math">score = 0.95 − weight of each "no"</p><p class="small">Gate: 0.80. A critical "no" (weight 0.25, or 0.15 in one check) caps the score at 0.79.</p></div>
+    <div class="jarrow" aria-hidden="true">←</div>
+    <div class="jbox L-cert"><span class="chip">Certainty</span><p><b>How sure are we of cause and effect?</b></p>
+      <ul class="small"><li>Five gates (signals) for the whole goal</li><li>One zone for the plan</li><li>One zone per workflow</li><li>The zone sets the workflow's shape</li></ul></div>
+  </div>
+  <p class="small muted">Fix labels that Adaptation must use: <span class="mono">certainty:reread · certainty:analyze · certainty:experiment · certainty:stabilize · realization:add · realization:deepen · realization:split · research:find · research:method · ask · rewrite</span>.</p>
+</section>
+
+<section aria-labelledby="map-h">
+  <h2 id="map-h">The stations of the run</h2>
+  <nav class="strip" aria-label="Stations">
+    <a href="#s1" class="L-id"><b>1</b>Brief</a><span class="to">→</span>
+    <a href="#s2" class="L-id"><b>2</b>Charter</a><span class="to">→</span>
+    <a href="#s3" class="L-real"><b>3</b>Factors</a><span class="to">→</span>
+    <a href="#s4" class="L-real"><b>4</b>Stages</a><span class="to">→</span>
+    <a href="#s5" class="L-cert"><b>5</b>Five gates</a><span class="to">→</span>
+    <a href="#s6" class="L-real"><b>6</b>Workflows</a><span class="to">→</span>
+    <a href="#s7" class="L-code"><b>7</b>Code check</a><span class="to">→</span>
+    <a href="#s8" class="L-judge"><b>8</b>Judge rounds</a><span class="to">→</span>
+    <a href="#s9" class="L-judge"><b>9</b>Gate result</a><span class="to">→</span>
+    <a href="#s10" class="L-design"><b>10</b>Decisions</a><span class="to">→</span>
+    <a href="#s11" class="L-build"><b>11</b>Build</a><span class="to">→</span>
+    <a href="#s12" class="L-ask"><b>12</b>Audit</a><span class="to">→</span>
+    <a href="#s13" class="L-build"><b>13</b>What emerged</a>
+  </nav>
+  <p class="small muted">Stations 3 to 10 are planning. They took 14 AI calls for the plan and judge, and 1 call for the decisions (about 17 minutes). They use no build credits. In one plan call, Adaptation writes stations 3 to 6 together. They are shown apart here so you can follow them.</p>
+</section>
+
+<div class="rail">
+
+<!-- 1 BRIEF -->
+<div class="station L-id" id="s1"><div class="num">1</div><div class="body">
+  <div class="shead"><h3>The brief</h3><span class="chip">Requester</span></div>
+  <p class="quote">"Build a calculator as a single web page that tells freelancers in India how much tax they should set aside each month. Most of them are designers, developers and writers paid by clients in irregular amounts, and they're never sure what they'll owe. Keep it to one file, with no sign-up. You decide the details; tell me what you chose."</p>
+  <div class="design"><span class="tag">Design thread</span><p>The brief says nothing about layout, words or screen sizes. The design work comes from Identity's charter and from Adaptation's planning.</p></div>
+</div></div>
+
+<!-- 2 CHARTER -->
+<div class="station L-id" id="s2"><div class="num">2</div><div class="body">
+  <div class="shead"><h3>Identity writes the charter</h3><span class="chip">Identity</span><span class="chip L-code">Validator: 7 checkable items</span></div>
+  <div class="io"><div><b>In</b>The brief</div><div><b>Does</b>Writes a statement, the standards, the rules and the done-when items</div><div><b>Out</b>4 standards, 5 rules, 7 done-when items</div></div>
+  <div class="tbl"><table class="w720">
+    <thead><tr><th class="n">#</th><th>Done-when item</th></tr></thead>
+    <tbody>
+      <tr><td class="n">1</td><td>Input fields for income in rupees, a separate amount for each of the 12 months.</td></tr>
+      <tr><td class="n">2</td><td>After input, the page shows a monthly tax set-aside amount in rupees.</td></tr>
+      <tr><td class="n">3</td><td>The page shows the tax rates or slabs it used and their financial year.</td></tr>
+      <tr><td class="n">4</td><td>The page states that the result is an estimate and not tax advice.</td></tr>
+      <tr><td class="n">5</td><td>No sign-up, login or account form; everything in one file.</td></tr>
+      <tr class="hl"><td class="n">6</td><td>No JavaScript errors, <b>no horizontal overflow at 360px and 1280px</b>, every in-page link points to an existing section.</td></tr>
+      <tr><td class="n">7</td><td>Every in-page link works and the calculate control works with the keyboard.</td></tr>
+    </tbody></table></div>
+  <div class="design"><span class="tag">Design thread</span>
+    <p>Three of the four standards are design needs: <b>"Plain everyday language"</b>, <b>"Amounts in Indian rupees with Indian digit grouping"</b>, <b>"Readable on phones at 360px and on desktop at 1280px"</b>. Item 6 tests the screen sizes.</p></div>
+</div></div>
+
+<!-- 3 FACTORS -->
+<div class="station L-real" id="s3"><div class="num">3</div><div class="body">
+  <div class="shead"><h3>Realization, step 1: list the factors</h3><span class="chip">Adaptation · realization</span></div>
+  <div class="io"><div><b>In</b>The charter</div><div><b>Does</b>Lists every thing that changes the output. Each factor has a source: brief (with a quote), general knowledge, research or budget.</div><div><b>Out</b>14 factors: 11 brief, 2 general, 1 budget</div></div>
+  <div class="tbl"><table class="w860">
+    <thead><tr><th>Factor</th><th>Source</th><th>Quote or reason</th><th>Owned by stage</th></tr></thead>
+    <tbody>
+      <tr><td>12 monthly income fields</td><td>brief</td><td>"including a separate amount for each of the 12 months"</td><td>product</td></tr>
+      <tr><td>monthly set-aside shown</td><td>brief</td><td>"shows a monthly tax set-aside amount in rupees"</td><td>product, engineering</td></tr>
+      <tr><td>tax rates state the financial year</td><td>brief</td><td>"Tax rates shown must state the financial year they apply to"</td><td>compliance</td></tr>
+      <tr><td>estimate not tax advice</td><td>brief</td><td>"The result is described as an estimate, not tax advice"</td><td>compliance</td></tr>
+      <tr><td>single file, no build step</td><td>brief</td><td>"Everything in one HTML file, no build step"</td><td>engineering</td></tr>
+      <tr><td>no sign-up</td><td>brief</td><td>"No sign-up, login or account"</td><td>product</td></tr>
+      <tr><td>no invented contact details or prices</td><td>brief</td><td>"No invented contact details or prices"</td><td>product</td></tr>
+      <tr class="hl"><td><b>plain everyday language</b></td><td>brief</td><td>"Plain everyday language". Why: the audience is not tax experts.</td><td><b>design</b></td></tr>
+      <tr class="hl"><td><b>rupees with Indian digit grouping</b></td><td>brief</td><td>"Amounts in Indian rupees with Indian digit grouping". Why: 1,09,200 must look familiar. Design decides the display, engineering writes the formatter.</td><td><b>design</b>, engineering</td></tr>
+      <tr class="hl"><td><b>readable at 360px and 1280px</b></td><td>brief</td><td>"Readable on phones at 360px and on desktop at 1280px". Why: twelve inputs must not overflow a narrow screen.</td><td><b>design</b></td></tr>
+      <tr><td>links, keyboard and clean script</td><td>brief</td><td>"calculate control works with the keyboard"</td><td>engineering</td></tr>
+      <tr><td>India freelancer tax rules</td><td>general</td><td>Not in the brief. Slabs, rebate, cess and presumptive rule, from memory (no web access). Marked unverified.</td><td>compliance</td></tr>
+      <tr><td>irregular income follows the yearly total</td><td>general</td><td>Not in the brief. Tax is on the year, so a month's set-aside is a share of the yearly tax.</td><td>product</td></tr>
+      <tr><td>small token and time budget</td><td>budget</td><td>Limits every stage, owns none.</td><td>none</td></tr>
+    </tbody></table></div>
+  <div class="design"><span class="tag">Design thread</span><p>3 factors belong to design. These 3 become judge questions F8, F9 and F10 for every design workflow (station 8).</p></div>
+</div></div>
+
+<!-- 4 STAGES -->
+<div class="station L-real" id="s4"><div class="num">4</div><div class="body">
+  <div class="shead"><h3>Realization, step 2: group factors into stages</h3><span class="chip">Adaptation · realization</span></div>
+  <div class="io"><div><b>In</b>14 factors</div><div><b>Does</b>Makes one stage per kind of thinking. Each stage has a goal, a done-test and a method, and owns factors. Allowed stages: business, compliance, product, design, engineering, build, operations, growth.</div><div><b>Out</b>5 stages: compliance → product → design + engineering → build</div></div>
+  <div class="tbl"><table class="w860">
+    <thead><tr><th>Stage</th><th>Kind of thinking</th><th>Method</th><th>Reads</th><th>Done-test</th></tr></thead>
+    <tbody>
+      <tr><td>compliance</td><td>Rules from outside: rates, labels, estimate wording</td><td>Written decision with options and assumptions</td><td>none</td><td>decisions.md lists slabs, rebate, cess, FY label, estimate sentence, each rate marked unverified</td></tr>
+      <tr><td>product</td><td>Users: what they enter, see, in what order</td><td>Story mapping</td><td>compliance</td><td>decisions.md names each section, its order, inputs and calculation method</td></tr>
+      <tr class="hl"><td><b>design</b></td><td><b>Experience: layout, look and words</b></td><td>Mobile-first layout notes and a fixed word list</td><td>product, compliance</td><td>decisions.md gives the layout for each width, the wording for labels, hints and results, and the amount format</td></tr>
+      <tr><td>engineering</td><td>Structure: file, data, calculation, keyboard</td><td>Static single-file pattern</td><td>product, compliance</td><td>decisions.md gives element ids, data object, function names, formatter, keyboard behaviour</td></tr>
+      <tr><td>build</td><td>Making the thing</td><td>File, element and text checks with browser steps</td><td>all four</td><td>Each build workflow's code checks and browser steps pass</td></tr>
+    </tbody></table></div>
+  <div class="design"><span class="tag">Design thread</span><p>The design department is born here. Goal: "A plain, readable layout that fits 360px and 1280px, with everyday wording and Indian amounts."</p></div>
+</div></div>
+
+<!-- 5 FIVE GATES -->
+<div class="station L-cert" id="s5"><div class="num">5</div><div class="body">
+  <div class="shead"><h3>Certainty: the five gates</h3><span class="chip">Adaptation · certainty</span><span class="chip L-code">Code checks the rule</span></div>
+  <div class="io"><div><b>In</b>The charter and the factors</div><div><b>Does</b>Answers 5 signals with yes, no or unknown, and quotes the evidence. A fixed rule turns the answers into a zone. Code checks that the zone follows the rule.</div><div><b>Out</b>Zone <b>analyze</b> for the plan</div></div>
+
+  <div class="gates" role="figure" aria-label="The five gates in order, with this run's answers">
+    <div class="gate"><div class="gq"><span class="chip L-cert" style="justify-self:start">Gate 1 · broken</span><p class="q">Is something broken now, with no clear cause?</p><p class="small">Yes → <b>stabilize</b> (repair only)</p></div>
+      <div class="ga"><span class="ans">Answer: no</span><p>"Nothing is built yet and there are no open findings."</p></div></div>
+    <div class="gdown"></div>
+    <div class="gate"><div class="gq"><span class="chip L-cert" style="justify-self:start">Gate 2 · reaction</span><p class="q">Does success depend on how people react?</p><p class="small">Yes → <b>experiment</b> (1 to 3 small tests)</p></div>
+      <div class="ga"><span class="ans">Answer: no</span><p>"The brief asks for a working calculator, not a result that depends on how people react."</p></div></div>
+    <div class="gdown"></div>
+    <div class="gate"><div class="gq"><span class="chip L-cert" style="justify-self:start">Gate 3 · facts given</span><p class="q">Are all the facts given?</p><p class="small">Needed "yes" for operate</p></div>
+      <div class="ga"><span class="ans">Answer: unknown</span><p>"It does not give the tax slabs, rebate or financial year, and with no web access they come from memory and are unverified."</p></div></div>
+    <div class="gdown"></div>
+    <div class="gate"><div class="gq"><span class="chip L-cert" style="justify-self:start">Gate 4 · known pattern</span><p class="q">Does a known pattern turn the facts into the output?</p><p class="small">Needed "yes" for operate</p></div>
+      <div class="ga"><span class="ans">Answer: yes</span><p>"A single-file form with number inputs, a calculate button and a result block is a standard pattern."</p></div></div>
+    <div class="gdown"></div>
+    <div class="gate"><div class="gq"><span class="chip L-cert" style="justify-self:start">Gate 5 · open choices</span><p class="q">Are there several valid ways, where a wrong pick costs?</p><p class="small">Needed "no" for operate</p></div>
+      <div class="ga"><span class="ans">Answer: yes</span><p>"Several valid ways to compute a monthly set-aside … There are also several ways to lay out 12 month fields on a 360px screen. A wrong pick gives misleading numbers or a cramped page."</p></div></div>
+    <div class="gdown"></div>
+    <div class="zone"><span class="chip L-cert" style="justify-self:start">Rule result</span>
+      <p><b>Not broken, no reaction → not stabilize, not experiment. Facts unknown and open choices yes → not operate. So: analyze.</b></p>
+      <p class="small">Second rule: 2 or more "unknown" answers move the zone one step toward less certain. Here only 1 is unknown, so the zone stays <b>analyze</b>. Code ran the same rule and agreed.</p></div>
+  </div>
+
+  <div class="tbl"><table class="w560">
+    <thead><tr><th>Zone</th><th>When</th><th>Shape a workflow must have</th></tr></thead>
+    <tbody>
+      <tr><td>operate</td><td>Facts given, known pattern, no open choices</td><td>Build directly</td></tr>
+      <tr class="hl"><td><b>analyze</b></td><td>Open choices or missing facts</td><td><b>Compare options, choose one, give the reason, then build</b></td></tr>
+      <tr><td>experiment</td><td>Success depends on reactions</td><td>1–3 probes, each with hypothesis, signal, fails-if, limit</td></tr>
+      <tr><td>stabilize</td><td>Broken, cause unknown</td><td>Repair only, add nothing</td></tr>
+    </tbody></table></div>
+
+  <div class="design"><span class="tag">Design thread</span>
+    <p>Gate 5 names the design question: <i>how to lay out 12 month fields on a 360px screen</i>. So the design stage gets zone <b>analyze</b>: it must compare layouts and choose one before anyone builds.</p>
+    <p class="small">Certainty also sets one zone per workflow. All 4 thinking workflows (compliance, product, design, engineering) are <b>analyze</b> or <b>operate</b> by their own open choices. All 4 build workflows are <b>operate</b>, because the decisions close the choices before they start.</p></div>
+</div></div>
+
+<!-- 6 WORKFLOWS -->
+<div class="station L-real" id="s6"><div class="num">6</div><div class="body">
+  <div class="shead"><h3>Realization, step 3: cut stages into workflows</h3><span class="chip">Adaptation · realization + certainty</span></div>
+  <div class="io"><div><b>In</b>Stages, zones</div><div><b>Does</b>Cuts each stage into workflows. Code sets the kind: a workflow that delivers no item is <b>decide</b>; one that delivers items is <b>build</b>. Each gets a zone, an approach and a done-test.</div><div><b>Out</b>Round 0: 8 workflows (4 decide, 4 build)</div></div>
+  <div class="tbl"><table class="w860">
+    <thead><tr><th>Workflow (round 0)</th><th>Stage</th><th>Kind</th><th>Zone</th><th>Delivers</th><th>Informs</th><th>Reads</th></tr></thead>
+    <tbody>
+      <tr><td>Tax rules and wording</td><td>compliance</td><td>decide</td><td>analyze</td><td>none</td><td>3, 4</td><td>none</td></tr>
+      <tr><td>Calculator scope and method</td><td>product</td><td>decide</td><td>analyze</td><td>none</td><td>1–5</td><td>Tax rules</td></tr>
+      <tr class="hl"><td><b>Look, wording and layout</b></td><td>design</td><td>decide</td><td>analyze</td><td>none</td><td>1, 2, 6</td><td>Calculator scope</td></tr>
+      <tr><td>Single-file structure and logic</td><td>engineering</td><td>decide</td><td>operate</td><td>none</td><td>1, 2, 5, 6, 7</td><td>Calculator scope, Tax rules</td></tr>
+      <tr><td>Page shell and navigation</td><td>build</td><td>build</td><td>operate</td><td>5, 6</td><td>7</td><td>all 4 decide workflows</td></tr>
+      <tr><td>Monthly income inputs</td><td>build</td><td>build</td><td>operate</td><td>1</td><td>6</td><td>Page shell + decide workflows</td></tr>
+      <tr><td>Rates and estimate notice</td><td>build</td><td>build</td><td>operate</td><td>3, 4</td><td>2</td><td>Page shell + decide workflows</td></tr>
+      <tr><td>Set-aside result and keyboard use</td><td>build</td><td>build</td><td>operate</td><td>2, 7</td><td>4, 6</td><td>all of the above</td></tr>
+    </tbody></table></div>
+  <div class="design"><span class="tag">Design thread · round 0 version</span>
+    <div class="card"><h4>Look, wording and layout</h4>
+      <p class="small"><b>Approach:</b> "Mobile-first single column, with the month fields in a grid that wraps, and short everyday wording."</p>
+      <p class="small"><b>Done-test:</b> "decisions.md gives the field grid for 360px and 1280px, the label, hint and result wording in plain language, and the amount format (₹ with Indian grouping, for example ₹1,09,200)"</p>
+      <p class="small"><b>Certainty signal:</b> "open_choices: layout of 12 inputs on a narrow screen"</p>
+      <p class="small"><b>The plan's analysis</b> (the options compared) covered only the calculation method. It had no layout options.</p></div>
+  </div>
+</div></div>
+
+<!-- 7 CODE CHECK -->
+<div class="station L-code" id="s7"><div class="num">7</div><div class="body">
+  <div class="shead"><h3>Code checks the plan's rules</h3><span class="chip">Code, no AI</span></div>
+  <div class="io"><div><b>In</b>The plan</div><div><b>Does</b>Checks fixed rules. If a rule fails, the plan goes back to Adaptation one time with the faults named.</div><div><b>Out</b>0 faults in every round</div></div>
+  <ul class="small">
+    <li>Each done-when item has exactly one build workflow (R1, R2).</li>
+    <li>Each brief factor has a stage; factor and stage lists agree; budget factors own no stage.</li>
+    <li>No two stages share a kind of thinking (R3). Each stage owns a factor or touches an item (R4). Each stage has a goal, done-test and method (R6).</li>
+    <li>No workflow reads a workflow that does not exist; no loops in <span class="mono">inputs_from</span>.</li>
+    <li>The zone follows the five-gate rule. Zone analyze has options and a choice. Each workflow has a zone and an approach.</li>
+  </ul>
+</div></div>
+
+<!-- 8 JUDGE -->
+<div class="station L-judge" id="s8"><div class="num">8</div><div class="body">
+  <div class="shead"><h3>The judge scores each workflow, round by round</h3><span class="chip">Separate AI judge</span><span class="chip L-code">Code sets the score</span></div>
+  <div class="io"><div><b>In</b>The plan, frozen item questions K1–K15</div><div><b>Does</b>Answers yes, no or n/a to each question. A "no" needs a note. Code subtracts weights. Near the gate (±0.05) the judge looks again and the lower score counts. A revised workflow that is "same" or "worse" cannot score higher.</div><div><b>Out</b>A score per workflow; below 0.80 goes back to Adaptation (max 3 rounds)</div></div>
+
+  <details open><summary>The 14 questions every design workflow gets, and the answers in each round</summary>
+  <div class="tbl"><table class="w860">
+    <thead><tr><th>Id</th><th>Axis</th><th class="n">Weight</th><th>Question (short)</th><th>R0 Look, wording, layout</th><th>R1 same, revised</th><th>R2 Layout</th><th>R2 Wording</th></tr></thead>
+    <tbody>
+      <tr><td>I1</td><td>realization</td><td class="n">0.25</td><td>All inputs are in the charter or from a listed workflow</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>I2</td><td>realization</td><td class="n">0.25</td><td>No hidden Requester fact</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>M1</td><td>both</td><td class="n">0.25</td><td>A known method or a decision tells it how</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>M2</td><td>certainty</td><td class="n">0.08</td><td>Where several ways exist, one is chosen</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>D1</td><td>both</td><td class="n">0.25</td><td>Done-test names something you can see</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>D2</td><td>both</td><td class="n">0.08</td><td>Done-test has a pass line</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr class="hl"><td>D3</td><td>both</td><td class="n">0.10</td><td>Done-test checks content, not only that it exists</td><td class="no">no</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>D4</td><td>both</td><td class="n">0.06</td><td>Code or Audit can run it without judgement</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr class="hl"><td>Z1</td><td>certainty</td><td class="n">0.25</td><td>Shape matches its zone (analyze: options weighed, one chosen)</td><td class="no">no</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr class="hl"><td>S1</td><td>realization</td><td class="n">0.15</td><td>Needs only one kind of thinking</td><td>yes</td><td class="no">no</td><td>yes</td><td>yes</td></tr>
+      <tr><td>S2</td><td>realization</td><td class="n">0.08</td><td>Fits one builder's run</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>F8</td><td>realization</td><td class="n">0.08</td><td>Factor "plain everyday language" is covered in the stage</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>F9</td><td>realization</td><td class="n">0.08</td><td>Factor "rupees with Indian digit grouping" is covered</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>F10</td><td>realization</td><td class="n">0.08</td><td>Factor "readable at 360px and 1280px" is covered</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td colspan="4"><b>Score</b></td><td><span class="sc f">0.60</span></td><td><span class="sc f">0.79</span></td><td><span class="sc p">0.95</span></td><td><span class="sc p">0.95</span></td></tr>
+    </tbody></table></div>
+  <p class="small muted">Decide workflows deliver no item, so they get no K questions. Build workflows also get the K questions for the items they deliver (weight 0.10 each).</p>
+  </details>
+
+  <div class="design"><span class="tag">Design thread · the rounds</span>
+  <div class="rounds">
+    <div class="rnd"><span class="rl">Round 0</span><div class="rbox L-judge">
+      <p><b>"Look, wording and layout" scores <span class="sc f">0.60</span></b></p>
+      <p class="small">First look gave 0.81. That is within 0.05 of the gate, so the judge looked a second time and gave 0.60. The lower score counts.</p>
+      <p class="math">0.95 − Z1 0.25 − D3 0.10 = 0.60 · weakest check: zone_fit</p>
+      <p class="quote">Z1: "It is marked analyze, but it names one layout and weighs no options. The plan's analysis covers only the calculation method, not layout or wording, so the approach does not follow from any analysis."</p>
+      <p class="quote">D3: "The done-test only checks that decisions.md 'gives' a grid, wording and an amount format. It does not check any content."</p>
+      <p class="small"><span class="chip L-cert">certainty failed</span> The zone said analyze, but the workflow did not analyze.</p>
+    </div></div>
+    <div class="rnd"><span class="rl">Fix 1</span><div class="rbox L-cert">
+      <p><b>Adaptation revises. Labels: <span class="mono">certainty:reread</span> and <span class="mono">rewrite</span></b></p>
+      <p class="quote">"The workflow stays analyze, but the analysis now weighs three layouts (stacked column, 2/4-column grid, table), picks the grid and says why."</p>
+      <p class="quote">"Rewrote the done-test so decisions.md must state checkable content: 2 columns at 360px and 4 at 1280px with the 640px switch, the 960px page width, the April to March labels, the exact hint text (non-empty, at most 12 words), the amount format rule with a worked example, the result sentence and the 16px input size."</p>
+    </div></div>
+    <div class="rnd"><span class="rl">Round 1</span><div class="rbox L-judge">
+      <p><b>Same workflow scores <span class="sc f">0.79</span></b> · judge says "better"</p>
+      <p class="math">0.95 − S1 0.15 = 0.80 → a check with 0.15 lost is "no" → capped at 0.79</p>
+      <p class="quote">S1: "it decides what the page says (labels, hints, result sentence) and how it looks (grid, widths, amount format) in one workflow; these are two kinds of thinking"</p>
+      <p class="small"><span class="chip L-real">realization failed</span> Certainty is now correct. The size is wrong: one workflow holds two kinds of thinking.</p>
+    </div></div>
+    <div class="rnd"><span class="rl">Fix 2</span><div class="rbox L-real">
+      <p><b>Adaptation splits it. Label: <span class="mono">realization:split</span></b></p>
+      <p class="quote">"Split along the line between the two kinds of thinking into 'Layout and amount format' … and 'Wording and hints' … Both stay in the design stage. 'Wording and hints' also reads 'Tax rules and wording' so its estimate line matches word for word. … Four build workflows replaced the old name in inputs_from with the two new names."</p>
+      <div class="split">
+        <div class="card"><h4>Layout and amount format</h4><p class="small">Grid of month fields, 2 columns on phones, 4 on desktop, page column ≤ 960px, one Indian amount format. Done-test (a)–(f): 2/4 columns with a 640px switch; ≤ 960px centred; April first, March last; ₹ + en-IN + whole rupees, 1250000 → ₹12,50,000; inputs ≥ 16px and ≥ 44px tall; no fixed width over 320px.</p></div>
+        <div class="card"><h4>Wording and hints</h4><p class="small">The exact everyday words. Reads Calculator scope and Tax rules. Done-test (a)–(g): 12 month labels; exact hints ≤ 12 words; button ≤ 3 words; result sentence with "set aside" and "a month"; estimate line word for word from compliance; one-line meanings of slab, cess, rebate; no sentence over 20 words.</p></div>
+      </div>
+    </div></div>
+    <div class="rnd"><span class="rl">Round 2 + 3</span><div class="rbox L-build">
+      <p><b>Both new design workflows score <span class="sc p">0.95</span></b>, all 14 questions "yes". The design stage's confidence is 0.95.</p>
+    </div></div>
+  </div></div>
+
+  <details><summary>Every workflow's score in every round</summary>
+  <div class="tbl"><table class="w720">
+    <thead><tr><th>Workflow</th><th>Stage</th><th class="n">R0</th><th class="n">R1</th><th class="n">R2</th><th class="n">R3</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>Tax rules and wording</td><td>compliance</td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc f">0.70</span></td><td class="n"><span class="sc f">0.70</span></td><td class="n"><span class="sc f">0.70</span></td><td class="small">I1 "research:" the tax figures come from memory. Unchanged in R1 but scored lower: judge variance.</td></tr>
+      <tr><td>Calculator scope and method</td><td>product</td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td></td></tr>
+      <tr class="hl"><td>Look, wording and layout</td><td>design</td><td class="n"><span class="sc f">0.60</span></td><td class="n"><span class="sc f">0.79</span></td><td class="n"><span class="sc x">split</span></td><td class="n"><span class="sc x">–</span></td><td class="small">Z1 + D3, then S1</td></tr>
+      <tr class="hl"><td>Layout and amount format</td><td>design</td><td class="n"><span class="sc x">–</span></td><td class="n"><span class="sc x">–</span></td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td class="small">new in R2</td></tr>
+      <tr class="hl"><td>Wording and hints</td><td>design</td><td class="n"><span class="sc x">–</span></td><td class="n"><span class="sc x">–</span></td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td class="small">new in R2</td></tr>
+      <tr><td>Single-file structure and logic</td><td>engineering</td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.87</span></td><td class="n"><span class="sc p">0.87</span></td><td class="n"><span class="sc p">0.95</span></td><td class="small">D2 in R1–R2</td></tr>
+      <tr><td>Page shell and navigation</td><td>build</td><td class="n"><span class="sc p">0.85</span></td><td class="n"><span class="sc p">0.85</span></td><td class="n"><span class="sc p">0.85</span></td><td class="n"><span class="sc p">0.85</span></td><td class="small">K11: console read only on load</td></tr>
+      <tr><td>Monthly income inputs</td><td>build</td><td class="n"><span class="sc f">0.79</span></td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td class="small">K2 + D4, fixed by rewrite</td></tr>
+      <tr><td>Rates and estimate notice</td><td>build</td><td class="n"><span class="sc p">0.85</span></td><td class="n"><span class="sc f">0.65</span></td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td class="small">K6–K8 in R1, fixed by rewrite</td></tr>
+      <tr><td>Set-aside result and keyboard use</td><td>build</td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td class="n"><span class="sc p">0.95</span></td><td></td></tr>
+    </tbody></table></div>
+  </details>
+</div></div>
+
+<!-- 9 GATE RESULT -->
+<div class="station L-judge" id="s9"><div class="num">9</div><div class="body">
+  <div class="shead"><h3>The gate result after round 3</h3><span class="chip">Code</span></div>
+  <div class="io"><div><b>In</b>Final scores</div><div><b>Does</b>Stage confidence = its weakest workflow. Plan confidence = its weakest stage. Below 0.80 after 3 rounds = not ready. Anything that reads a not-ready workflow is held.</div><div><b>Out</b>Plan confidence 0.70. 1 not ready. 8 held.</div></div>
+  <div class="tbl"><table class="w560">
+    <thead><tr><th>Stage</th><th class="n">Confidence</th><th>Zone</th></tr></thead>
+    <tbody>
+      <tr><td>compliance</td><td class="n"><span class="sc f">0.70</span></td><td>analyze</td></tr>
+      <tr><td>product</td><td class="n"><span class="sc p">0.95</span></td><td>analyze</td></tr>
+      <tr class="hl"><td><b>design</b></td><td class="n"><span class="sc p">0.95</span></td><td>analyze</td></tr>
+      <tr><td>engineering</td><td class="n"><span class="sc p">0.95</span></td><td>operate</td></tr>
+      <tr><td>build</td><td class="n"><span class="sc p">0.85</span></td><td>operate</td></tr>
+    </tbody></table></div>
+  <p class="small">"Tax rules and wording" stays at 0.70. The judge's note starts with "research:", not "ask:", so code routes it to Priority, not to Identity. Its open fact was marked non-blocking, so no question goes to the Requester at this point. All 8 other workflows read it directly or indirectly, so code marks them "waiting on dependency". The list of build workflows to propose is <b>empty</b>, and all 7 items are listed as "leave out".</p>
+  <div class="warn"><span class="tag">Gap · the gate did not hold</span><p>Adaptation proposed the 4 build workflows anyway. It wrote: "I have not used the left_out reasons, since every item is covered." Nothing in code stopped this. The design workflows themselves passed, so the design decisions were not the cause.</p></div>
+</div></div>
+
+<!-- 10 DECISIONS -->
+<div class="station L-design" id="s10"><div class="num">10</div><div class="body">
+  <div class="shead"><h3>Adaptation writes the decisions</h3><span class="chip">Adaptation · 1 call</span><span class="chip L-code">0 faults</span></div>
+  <div class="io"><div><b>In</b>The judged plan (5 decide workflows)</div><div><b>Does</b>For each decide workflow: the question, 2+ options with for and against, the choice, why, how it can still fail, rules for builders.</div><div><b>Out</b><span class="mono">decisions.md</span>, 5 decisions</div></div>
+  <div class="two">
+    <div class="design"><span class="tag">Decision · Layout and amount format</span>
+      <p class="small"><b>Question:</b> How is the page laid out so it fits 360px and 1280px, and how are rupee amounts written?</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Option</th><th>For</th><th>Against</th></tr></thead>
+        <tbody>
+          <tr><td>A: one column, 12 fields stacked</td><td>Simplest, no overflow risk</td><td>Phone users scroll past 12 fields to the button</td></tr>
+          <tr><td><b>B: grid, 2 cols &lt; 640px, 4 cols ≥ 640px, ≤ 960px ✔</b></td><td>6 rows on phone, 3 on desktop; ~158px per cell at 360px</td><td>Hint may wrap; 640px is untested at other widths</td></tr>
+          <tr><td>C: table, one row per month</td><td>Compact</td><td>Cramped at 360px; shows results before input</td></tr>
+          <tr><td><b>Intl en-IN, whole rupees ✔</b></td><td>Gives ₹12,50,000 directly</td><td>Depends on browser locale data</td></tr>
+        </tbody></table></div>
+      <p class="small"><b>Could fail if:</b> a long number widens a cell; the rates table overflows at 360px; a browser prints 1,250,000; large phone text crowds 2 columns; it breaks between 640px and 700px.</p>
+      <p class="small"><b>Rules for builders (8):</b> CSS grid with 2 <span class="mono">minmax(0,1fr)</span> columns, 4 inside <span class="mono">@media (min-width:640px)</span> · page max-width 960px, border-box · no scroll wider than the window at 360/1280, also after 12 × ₹99,99,999 · inputs and button ≥ 16px font and ≥ 44px tall, no fixed width over 320px · months in DOM order April→March · every amount through <span class="mono">formatInr()</span> (1250000 → ₹12,50,000, 109200 → ₹1,09,200, 0 → ₹0) · tables width 100%, cells wrap · focus outline ≥ 2px.</p>
+    </div>
+    <div class="design"><span class="tag">Decision · Wording and hints</span>
+      <p class="small"><b>Question:</b> What exact everyday words does the page use?</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Option</th><th>For</th><th>Against</th></tr></thead>
+        <tbody>
+          <tr><td><b>Plain words + fixed meanings for 3 tax terms ✔</b></td><td>Fits non-experts; one list for all builders</td><td>Simple meanings lose detail</td></tr>
+          <tr><td>Standard tax terms, no explanation</td><td>Exact</td><td>Freelancers will not follow it</td></tr>
+          <tr><td>Long help text on each field</td><td>Fuller guidance</td><td>Crowds a 158px cell</td></tr>
+        </tbody></table></div>
+      <p class="small"><b>Fixed strings, for example:</b> hint "Rupees received. Leave blank if none." · button "Calculate" · result "You should set aside about {amount} a month." · estimate line copied word for word from compliance · "Slab: an income range that is taxed at one rate." · "Cess: a small extra amount added on top of your tax." · "Rebate: a discount that cuts your tax to zero if your income is low enough." · nav "Your income", "Your result", "Rates used" · no sentence over 20 words · banned words: sign up, login, account, password, subscribe.</p>
+      <p class="small"><b>Could fail if:</b> "a month" is read as a fixed amount; the rebate meaning suggests full exemption; a placeholder shows "{amount}" or "undefined"; the hint repeated 12 times looks like clutter.</p>
+    </div>
+  </div>
+</div></div>
+
+<!-- 11 BUILD -->
+<div class="station L-build" id="s11"><div class="num">11</div><div class="body">
+  <div class="shead"><h3>J2 builds: decisions go to every builder</h3><span class="chip">Adaptation → Priority → Coordination → Builders</span></div>
+  <div class="io"><div><b>In</b>4 build workflows + decisions</div><div><b>Does</b>Adaptation writes one work atom per workflow, with code checks. When a builder starts, code adds "decisions to follow": every decision upstream by <span class="mono">inputs_from</span> or about its items.</div><div><b>Out</b>W-1 to W-4 built, all code checks passed first try</div></div>
+  <div class="tbl"><table class="w720">
+    <thead><tr><th>J2 workflow</th><th>Items</th><th>Decisions it read</th><th class="n">Checks</th><th>Builder said</th></tr></thead>
+    <tbody>
+      <tr><td>W-1 Page shell and navigation</td><td>5, 6</td><td>all 5</td><td class="n">6</td><td class="small">Header, 3 nav links, hero, titled places for income, result and rates.</td></tr>
+      <tr><td>W-2 Rates and estimate notice</td><td>3, 4</td><td>all 5</td><td class="n">4</td><td class="small">Rates table with the FY, slab/cess/rebate in plain words, estimate notice.</td></tr>
+      <tr class="hl"><td>W-4 Monthly income inputs</td><td>1</td><td>all 5</td><td class="n">8</td><td class="small">"A grid of twelve number fields … 2 columns on phones and 4 on desktop, and every field is at least 48px tall."</td></tr>
+      <tr><td>W-3 Set-aside result and keyboard use</td><td>2, 7</td><td>all 5</td><td class="n">6</td><td class="small">Calculate button, monthly amount, yearly tax, works with Tab, Enter, Space.</td></tr>
+    </tbody></table></div>
+  <p class="small">Before this, the validator rejected 2 atoms (W-3 named ids it did not create; W-4 named a number with no facts check). Adaptation resent them. Coordination held W-3 until W-4 made <span class="mono">#month-1</span> to <span class="mono">#month-12</span>.</p>
+  <div class="warn"><span class="tag">Gap · ids and checks</span><p>The atom's code checks come from Adaptation's J2 proposal, not from the decisions. W-4's checks test the 12 fields and 44px tap size. They do not test the 640px switch, the column count or the exact hint text. The decisions named <span class="mono">#result-sentence</span> and <span class="mono">#estimate-notice</span>; the builders made <span class="mono">#result-amount</span> and <span class="mono">#estimate-note</span>.</p></div>
+</div></div>
+
+<!-- 12 AUDIT -->
+<div class="station L-ask" id="s12"><div class="num">12</div><div class="body">
+  <div class="shead"><h3>Audit, the question and the fix rounds</h3><span class="chip">Audit → Identity → Requester</span></div>
+  <div class="tbl"><table class="w720">
+    <thead><tr><th>Audit</th><th>Site</th><th>Found</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>1</td><td>v4</td><td>Layout: inputs and result panel sit after the footer (F-8). N5: "one file" and "no sign-up" not visible. N8: nav misses 2 targets. Policy: tax rates unverified (F-9).</td><td>Identity asks the Requester to confirm the rates. Answer: "Use the brackets you chose as they are." Then W-5 nav, layout, one-file wording; W-6 remove "unverified" comment.</td></tr>
+      <tr><td>2</td><td>v6</td><td>N8: nav points at inner elements. N6: a number not in the charter.</td><td>W-7 nav targets section ids; W-8 single slab source in result script.</td></tr>
+      <tr><td>3</td><td>v8</td><td>N8 still fails.</td><td>W-9 nav reaches every section id.</td></tr>
+      <tr><td>4</td><td>v9</td><td>All pass.</td><td>Done. 126 of 200 credits.</td></tr>
+    </tbody></table></div>
+  <p class="small">The question to the Requester came from Audit 1, after the first build. It did not come from the planning gate (station 9).</p>
+  <div class="design"><span class="tag">Design thread</span><p>Audit found one design problem: placement (inputs and result after the footer). It found no problem with the grid, the widths, the words or the rupee format. Code measured no overflow at 360px or 1280px on every version.</p></div>
+</div></div>
+
+<!-- 13 EMERGED -->
+<div class="station L-build" id="s13"><div class="num">13</div><div class="body">
+  <div class="shead"><h3>What emerged: design rules against the final page</h3><span class="chip">site/v9.html</span></div>
+  <div class="tbl"><table class="w720">
+    <thead><tr><th>Design rule</th><th>From decision</th><th>In the final page</th></tr></thead>
+    <tbody>
+      <tr><td>Grid switches at 640px</td><td>Layout</td><td class="ok">yes · <span class="mono">@media (min-width: 640px)</span></td></tr>
+      <tr><td>2 columns, then 4, with <span class="mono">minmax(0,…)</span></td><td>Layout</td><td class="ok">yes · <span class="mono">repeat(2…)</span>, <span class="mono">repeat(4…)</span></td></tr>
+      <tr><td>Page column ≤ 960px</td><td>Layout</td><td class="ok">yes</td></tr>
+      <tr><td>Every amount through <span class="mono">formatInr()</span> with Intl en-IN</td><td>Layout</td><td class="ok">yes · 6 uses</td></tr>
+      <tr><td>Tap size ≥ 44px</td><td>Layout</td><td class="ok">yes · fields 48px</td></tr>
+      <tr><td>Visible focus outline</td><td>Layout</td><td class="ok">yes</td></tr>
+      <tr><td>Hint "Rupees received. Leave blank if none." on all 12 fields, linked by aria-describedby</td><td>Wording</td><td class="ok">yes · 12 of 12</td></tr>
+      <tr><td>Button text "Calculate"</td><td>Wording</td><td class="ok">yes</td></tr>
+      <tr><td>"You should set aside about … a month." and "Press Calculate to see your monthly amount."</td><td>Wording</td><td class="ok">yes</td></tr>
+      <tr><td>Estimate line, word for word</td><td>Wording + compliance</td><td class="ok">yes</td></tr>
+      <tr><td>Plain meanings of slab, cess, rebate</td><td>Wording</td><td class="ok">yes · all 3</td></tr>
+      <tr><td>Nav texts "Your income", "Your result", "Rates used"</td><td>Wording</td><td class="ok">yes</td></tr>
+      <tr><td>Tick-box "Count only part of my income as profit"</td><td>Wording</td><td class="ok">yes</td></tr>
+      <tr><td>Ids <span class="mono">#result-sentence</span>, <span class="mono">#estimate-notice</span></td><td>Wording rules</td><td class="no">no · renamed</td></tr>
+    </tbody></table></div>
+  <p class="small">Result: no overflow at 360px or 1280px, no script errors, and 7 of 7 correct monthly amounts in our accuracy test.</p>
+</div></div>
+
+</div><!-- /rail -->
+
+<section aria-labelledby="base-h">
+  <div>
+    <h2 id="base-h">The same department in base J2, for contrast</h2>
+    <p class="lede">Base J2 has no factors, stages, gates or judge. Adaptation grouped charter items into 4 build workflows in one call.</p>
+  </div>
+  <div class="two">
+    <div class="card"><span class="chip L-id" style="justify-self:start">Base J2</span>
+      <ul class="small">
+        <li>Design was part of one build workflow: <b>W-2 "Page header, navigation and styling"</b>. Steps: "Add CSS … mobile-first, box-sizing border-box, max-width 100%."</li>
+        <li>No layout options, no fixed word list, no amount-format rule.</li>
+        <li>A layout problem showed up at Audit: "the twelve month boxes sit above the calculate button on a phone". It took a fix workflow (W-7) to make the boxes collapsible.</li>
+        <li>12 workflows, 4 fix rounds, 168 credits. 0 of 7 correct amounts.</li>
+      </ul></div>
+    <div class="card"><span class="chip L-design" style="justify-self:start">Realization + certainty</span>
+      <ul class="small">
+        <li>Design was its own stage with 3 owned factors, and two decide workflows that closed before any build.</li>
+        <li>3 layouts compared, one chosen, 8 builder rules and a fixed word list.</li>
+        <li>Audit found one placement problem and no layout or wording problem.</li>
+        <li>9 workflows, 3 fix rounds, 126 credits. 7 of 7 correct amounts.</li>
+      </ul></div>
+  </div>
+  <p class="small muted">The two charters differ a little. Base asked for an expenses field and optional month fields. This is one run of each.</p>
+</section>
+
+<section aria-labelledby="gaps-h">
+  <h2 id="gaps-h">What this run shows, and what to fix</h2>
+  <div class="two">
+    <div class="card"><h3>Works</h3>
+      <ul class="small">
+        <li>Realization found the design need in the charter and gave it an owner.</li>
+        <li>Certainty forced a comparison of layouts before any build.</li>
+        <li>The judge caught one certainty fault and one realization fault in the same workflow, and each fix used the matching axis.</li>
+        <li>Builders followed the design words and layout closely.</li>
+      </ul></div>
+    <div class="card"><h3>To fix</h3>
+      <ol class="small">
+        <li><b>Enforce the gate.</b> Held work was built anyway.</li>
+        <li><b>Route world facts to a question early.</b> The tax gap was "research:", so no question went out until Audit.</li>
+        <li><b>Turn builder rules into atom checks.</b> Ids and the 640px switch were not tested by code.</li>
+        <li><b>Steady the judge.</b> "Tax rules and wording" fell from 0.95 to 0.70 with no change.</li>
+      </ol></div>
+  </div>
+</section>
+
+<p class="foot">Sources: <span class="mono">J2_Realization/runs/tax-realization/j2-20261025-003747/</span> (realization.json, decisions.md, atoms.json, workflows.json, chat.jsonl, site/v9.html) and <span class="mono">runs/tax-base/j2-20261025-000352/</span>; logic from <span class="mono">j2_realization.py</span> and <span class="mono">j2.py</span> on branch <span class="mono">certainty-axis</span>. Quotes are shortened with "…" only.</p>
+
+</div>
+
+</body>
+</html>

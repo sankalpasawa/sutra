@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "realization/1",
+  "title": "Realization fields on Adaptation's PROPOSE (agents/j2/realization.md)",
+  "type": "object",
+  "required": ["factors", "unplaced", "stages", "workflows", "open_facts", "not_ready"],
+  "$defs": {
+    "stageId": {"enum": ["business", "compliance", "product", "design", "engineering", "build", "operations", "growth"]},
+    "tier": {"enum": ["strategy", "capability", "architecture", "feature", "contract", "implementation"]},
+    "zone": {"enum": ["operate", "analyze", "experiment", "stabilize"]},
+    "items": {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": true}
+  },
+  "properties": {
+    "factors": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "source", "quote", "why", "stages"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "source": {"enum": ["brief", "general", "research", "budget"]},
+          "quote": {"type": ["string", "null"]},
+          "citation": {"type": ["string", "null"], "description": "research factors: the research.md entry, e.g. research.md#R-1"},
+          "why": {"type": "string", "minLength": 1},
+          "stages": {"type": "array", "items": {"$ref": "#/$defs/stageId"}, "uniqueItems": true}
+        },
+        "allOf": [
+          {"if": {"properties": {"source": {"const": "brief"}}}, "then": {"properties": {"quote": {"type": "string", "minLength": 1}}}},
+          {"if": {"properties": {"source": {"const": "research"}}}, "then": {"required": ["citation"], "properties": {"citation": {"type": "string", "pattern": "^research\\.md#R-\\d+$"}}}},
+          {"if": {"properties": {"source": {"const": "budget"}}}, "then": {"properties": {"stages": {"maxItems": 0}}}}
+        ]
+      }
+    },
+    "unplaced": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": false, "required": ["name", "why"],
+                "properties": {"name": {"type": "string"}, "why": {"type": "string"}}}
+    },
+    "stages": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "thinking", "tiers", "goal", "done_test", "method", "owns_factors", "inputs_from"],
+        "properties": {
+          "id": {"$ref": "#/$defs/stageId"},
+          "thinking": {"type": "string", "minLength": 1},
+          "tiers": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/tier"}, "uniqueItems": true},
+          "goal": {"type": "string", "minLength": 1},
+          "done_test": {"type": "string", "minLength": 1},
+          "method": {"type": ["string", "null"]},
+          "owns_factors": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "inputs_from": {"type": "array", "items": {"$ref": "#/$defs/stageId"}, "uniqueItems": true}
+        }
+      }
+    },
+    "workflows": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "stage", "certainty", "goal", "done_test", "delivers", "informs", "inputs_from"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "stage": {"$ref": "#/$defs/stageId"},
+          "certainty": {"$ref": "#/$defs/zone"},
+          "goal": {"type": "string", "minLength": 1},
+          "done_test": {"type": "string", "minLength": 1},
+          "inputs_from": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "description": "names of the workflows whose output this one reads"},
+          "delivers": {"$ref": "#/$defs/items"},
+          "informs": {"$ref": "#/$defs/items"},
+          "hold": {"enum": ["waiting_on_identity", "waiting_on_dependency"]},
+          "research": {
+            "type": "object", "additionalProperties": false,
+            "required": ["question", "feeds", "min_sources", "output"],
+            "properties": {
+              "question": {"type": "string", "minLength": 1},
+              "feeds": {"type": "string", "minLength": 1},
+              "min_sources": {"type": "integer", "minimum": 3},
+              "output": {"type": "string", "pattern": "^research\\.md#R-\\d+$"}
+            }
+          }
+        },
+        "if": {"required": ["research"]},
+        "then": {"properties": {"delivers": {"maxItems": 0}, "stage": {"not": {"enum": ["build"]}}}}
+      }
+    },
+    "open_facts": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": false, "required": ["fact", "workflow", "blocking", "handling"],
+                "properties": {"fact": {"type": "string"}, "workflow": {"type": "string"},
+                               "blocking": {"type": "boolean"}, "handling": {"type": "string"}}}
+    },
+    "not_ready": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": false,
+                "required": ["workflow", "score", "weakest", "stop_reason", "route"],
+                "properties": {"workflow": {"type": "string"}, "score": {"type": "number", "minimum": 0, "maximum": 1},
+                               "weakest": {"enum": ["inputs", "method", "done_test", "factors", "zone_fit", "size"]},
+                               "stop_reason": {"type": "string", "minLength": 1},
+                               "route": {"enum": ["identity", "priority", "left_out"]}}}
+    }
+  }
+}
