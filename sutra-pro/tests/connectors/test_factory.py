@@ -238,3 +238,19 @@ def test_the_tested_versions_raise_no_warning(env, caplog):
     with caplog.at_level(logging.WARNING, logger="sutra_app.connectors.factory"):
         env()
     assert [r for r in caplog.records if "version" in r.getMessage()] == []
+
+
+def test_the_app_redactor_reaches_the_egress_and_scrubs_secret_values_in_a_chat_turn(fake, tmp_path):
+    from sutra_app.connectors.chat_models import ChatTurnIn
+    from sutra_app.connectors.chat_port import RouterChatPort
+
+    class Secrets:
+        def secrets(self):
+            return ["custom-token-xyz"]               # matches none of the 13 shapes
+
+    cfg = ConnectorConfig(**fake.config_kwargs(tmp_path))
+    router = build_router(SimpleNamespace(data_dir=cfg.data_dir, connector="auto", offline=False), config=cfg, redactor=Secrets())
+    assert router.egress.redactor is not None
+    RouterChatPort(router).send("cs_fac1", ChatTurnIn(text="please use custom-token-xyz now"))
+    assert all("custom-token-xyz" not in str(c) for c in fake.model_calls())
+    assert router.egress.rows()[0]["shapes"] == {"secret-value": 1}

@@ -159,7 +159,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     # offline (and only offline) the stub answers the chat agent from the message, so a team can be made with no CLI (D97, GAP-DEMO)
     router = build_connector_router(router_settings, usage_sink=usage, events=lambda type_, data: bus.publish_one(type_, data),
                                     transcripts=ChatTranscripts(chats), session_hook=chats.set_provider,
-                                    replybook=demo_book() if router_settings.offline else None)
+                                    replybook=demo_book() if router_settings.offline else None, redactor=redactor)
     port = connector if connector is not None else AsyncConnector(router)
     router.choice_source = ChatChoices(db).get                       # the pill governs the org chat agent too (ABS-8)
     attachments = Attachments(settings.data_dir)

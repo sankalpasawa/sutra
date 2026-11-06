@@ -56,11 +56,13 @@ REQUIRED_FLAGS: dict[str, tuple[str, ...]] = {
 def build_router(settings: Any, *, usage_sink: Any = None, events: Optional[Callable[[str, dict], None]] = None,
                  transcripts: Optional[TranscriptSource] = None,
                  session_hook: Optional[Callable[[str, Provider, str, Optional[str]], None]] = None,
-                 config: Optional[ConnectorConfig] = None, replybook: Optional[ReplyBook] = None, **router_kw: Any) -> Router:
+                 config: Optional[ConnectorConfig] = None, replybook: Optional[ReplyBook] = None, redactor: Any = None,
+                 **router_kw: Any) -> Router:
     """A `Router` for these settings. `config` (tests point the executables at the fakes) and `router_kw` (a clock, a sleep, a
     health book) are extras beyond the specified signature; the three settings fields and the four wiring arguments are the contract.
     `replybook` (GAP-DEMO, D97) is the stub's canned replies; it is used only by a stub-only router (offline or `stub`), and the
-    stub class is the book's `connector_class` when it has one (the demo book's stub reads the prompt), else `StubConnector`."""
+    stub class is the book's `connector_class` when it has one (the demo book's stub reads the prompt), else `StubConnector`.
+    `redactor` (the app's `Redactor`, anything with `secrets()`) lets the egress scrub the app's known secret VALUES, not only the shapes."""
     data_dir = Path(settings.data_dir)
     mode = settings.connector
     offline = bool(settings.offline)
@@ -77,7 +79,7 @@ def build_router(settings: Any, *, usage_sink: Any = None, events: Optional[Call
     router = Router(connectors, load.policy, usage_sink=usage_sink, transcripts=transcripts, events=events, session_hook=session_hook,
                     connector=mode, offline=offline, policy_source=load.source, policy_error=load.error, **router_kw)
     if not stub_only:
-        router.egress = Egress(data_dir / "connectors" / "egress.jsonl")
+        router.egress = Egress(data_dir / "connectors" / "egress.jsonl", redactor=redactor)
         for name, connector in connectors.items():
             _probe_flags(router, name, connector, events)
             _check_version(name, connector)
