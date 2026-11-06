@@ -4,7 +4,8 @@
 
      pill(providers, chosen)    the round pill: one button per provider that CAN run (the chosen one pressed), and a plain, unclickable label with its
                                 reason for one that cannot. A provider that cannot run is never offered (the old app's rule). Selecting calls
-                                PUT /api/chats/{sid}/choice; there is no text detector (one mechanism, D111).
+                                PUT /api/chats/{sid}/choice; there is no text detector (one mechanism, D111). A button carries its fullest usage
+                                window ("5-hour 62%") when the provider sent a quota (GAP-providers; a third argument `nowMs` is for a test).
      selectable(providers)      the names the pill offers
      choiceRequest(sid, name)   {method, path, body} for the PUT; name null clears the choice (the policy decides again)
      partial(state, event)      the streaming state after a `chat.partial` event of this chat: {active, text}
@@ -30,7 +31,26 @@
   const list = providers => (Array.isArray(providers) ? providers.filter(p => isObj(p) && hasOwn(NAMES, p.name)) : []);
   const selectable = providers => list(providers).filter(p => p.ready === true).map(p => p.name);
 
-  function pill(providers, chosen) {
+  // The fullest usage window of a ready provider as a small figure on its button ("5-hour 62%"), from `quota` (GAP-providers, plan_meter.js, looked
+  // up when drawn). A window whose reset has passed or that has no figure is left out; "" when nothing is left or plan_meter.js is not loaded.
+  function planMeter() {
+    if (root.PlanMeter) return root.PlanMeter;
+    if (typeof module === "object" && module !== null && module.exports && typeof require === "function") return require("./plan_meter.js");
+    return null;
+  }
+  function quotaWord(p, nowMs) {
+    const pm = planMeter();
+    if (!pm || !isObj(p.quota)) return "";
+    const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+    const live = pm.windowsOf(p.quota).filter(w => pm.severity(w.used) !== "unknown" && pm.resetText(w.resets_at, now) !== "reset");
+    if (live.length === 0) return "";
+    const top = live.reduce((a, b) => (b.used > a.used ? b : a));
+    const words = (clean(top.label) || "Plan") + " " + Math.round(top.used * 100) + "%";
+    const reset = pm.resetText(top.resets_at, now);
+    return ' <small class="cpill-q" data-sev="' + pm.severity(top.used) + '" title="' + esc(words + (reset ? ", " + reset : "")) + '">' + esc(words) + "</small>";
+  }
+
+  function pill(providers, chosen, nowMs) {
     const items = list(providers);
     if (items.length === 0) return "";
     const picked = hasOwn(NAMES, chosen) ? chosen : "";
@@ -41,7 +61,7 @@
       }
       const on = p.name === picked;
       return '<button type="button" class="cpill-opt' + (on ? " on" : "") + '" data-act="choose-provider" data-provider="' + esc(p.name) +
-        '" aria-pressed="' + (on ? "true" : "false") + '">' + esc(label(p.name)) + "</button>";
+        '" aria-pressed="' + (on ? "true" : "false") + '">' + esc(label(p.name)) + quotaWord(p, nowMs) + "</button>";
     });
     const auto = picked === "" ? '<span class="cpill-note">chosen by the app</span>' :
       '<button type="button" class="cpill-opt auto" data-act="choose-provider" data-provider="" aria-pressed="false">Let the app choose</button>';

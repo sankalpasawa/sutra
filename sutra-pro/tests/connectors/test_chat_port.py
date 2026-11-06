@@ -61,6 +61,16 @@ def test_an_api_key_provider_is_refused_and_cannot_be_chosen(tmp_path):
         port.choose(A, "codex")
 
 
+def test_the_pill_carries_the_last_quota_snapshot_with_every_window(tmp_path):
+    """GAP-providers: the pill shows the fullest window of a ready provider, so the snapshot rides along."""
+    from sutra_app.connectors.models import Quota, QuotaWindow
+    port, router = make(tmp_path)[:2]
+    router.health.set_quota("claude", Quota(status="ok", source="rate_limit_event", windows=[QuotaWindow(key="five_hour", label="5-hour", used=0.62)]))
+    pills = {p.name: p for p in port.providers()}
+    assert [(w.label, w.used) for w in pills["claude"].quota.windows] == [("5-hour", 0.62)] and pills["codex"].quota is None
+    assert pills["claude"].model_dump(mode="json")["quota"]["windows"][0]["key"] == "five_hour"
+
+
 def test_a_disabled_provider_says_why(tmp_path):
     port, router = make(tmp_path)[:2]
     router.policy.providers["codex"].enabled = False

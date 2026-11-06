@@ -168,6 +168,9 @@ body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #
 .pmw[data-sev="warn"] .pmbar i{background:var(--validator)}
 .pmw[data-sev="bad"] .pmbar i{background:var(--bad)}
 .pmasof,.pmplan,.setplan{margin:2px 0 0;color:var(--muted);font-size:12px}
+.cpill-q{color:var(--muted);font:500 11.5px var(--mono)}
+.cpill-q[data-sev="warn"]{color:var(--validator)}
+.cpill-q[data-sev="bad"]{color:var(--bad)}
 
 @media (max-width:700px){
   .nmsg.sb{max-width:96%}

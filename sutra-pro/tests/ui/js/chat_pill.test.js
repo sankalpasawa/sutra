@@ -38,6 +38,23 @@ test("nothing is drawn without providers, and unknown providers are dropped", ()
   assert.deepEqual(selectable([{name: "gemini", ready: true}, {name: "claude", ready: true}]), ["claude"]);
 });
 
+test("a ready provider carries its fullest usage window; a passed reset or an absent figure is left out (GAP-providers)", () => {
+  const now = Date.UTC(2026, 10, 6, 12, 0, 0);
+  const s = now / 1000;
+  const quota = {status: "warning", source: "rate_limit_event", windows: [
+    {key: "five_hour", label: "5-hour", used: 0.62, resets_at: s + 4200}, {key: "seven_day", label: "Weekly", used: 0.97, resets_at: s - 10},
+    {key: "thirty_day", label: "Monthly", used: null, resets_at: s + 9e5}]};
+  const html = pill([{name: "claude", ready: true, why_not: "", quota}, {name: "codex", ready: true, why_not: ""}], "", now);
+  assert.match(html, /data-provider="claude" aria-pressed="false">Claude <small class="cpill-q" data-sev="ok" title="5-hour 62%, resets in 1 h 10 min">5-hour 62%<\/small><\/button>/);
+  assert.match(html, /data-provider="codex" aria-pressed="false">Codex<\/button>/);                // no quota: the button is as it was
+  const full = pill([{name: "codex", ready: true, quota: {windows: [{key: "five_hour", label: "5-hour", used: 0.96, resets_at: s + 60}]}}], "", now);
+  assert.match(full, /data-sev="bad"[^>]*>5-hour 96%</);
+  const out = pill([{name: "codex", ready: false, why_not: "usage limit reached", quota}], "", now);
+  assert.equal(out.includes("cpill-q"), false);                                                     // a provider that cannot run shows its reason only
+  const hostile = pill([{name: "claude", ready: true, quota: {windows: [{key: "five_hour", label: '<img src=x onerror="1">', used: 0.5, resets_at: s + 60}]}}], "", now);
+  assert.doesNotMatch(hostile, /<img/);
+});
+
 test("everything from the wire is escaped", () => {
   const html = pill([{name: "claude", ready: true, why_not: ""}, {name: "codex", ready: false, why_not: '<img src=x onerror="1">'}], "");
   assert.doesNotMatch(html, /<img/);

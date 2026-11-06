@@ -80,7 +80,7 @@ class RouterChatPort:
             why = self._why_not(name)
             slugs = [m.slug for m in status.models]
             pills.append(ProviderPill(name=name, ready=not why, why_not=why, model=self.router.policy.model_for(name),    # type: ignore[arg-type]
-                                      models=slugs, plan=status.plan, billing=status.billing, chosen=name == chosen))
+                                      models=slugs, plan=status.plan, billing=status.billing, chosen=name == chosen, quota=status.quota))
         return pills
 
     def _chosen(self, session_id: str) -> Optional[str]:
