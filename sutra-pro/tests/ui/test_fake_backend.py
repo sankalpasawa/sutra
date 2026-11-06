@@ -1400,6 +1400,7 @@ def test_every_404_says_what_is_missing_in_the_words_the_page_shows(fake):
 WRITES = [  # every non-GET route that is not a test control: (method, a concrete path, a body, the route as registered)
     ("POST", "/api/chats/cs_org/messages", {"text": "x"}, "/api/chats/{sid}/messages"),
     ("POST", "/api/chats/cs_org/retry", {}, "/api/chats/cs_org/retry"),
+    ("POST", "/api/tasks/tsk_000000000001/retry", {}, "/api/tasks/{task_id}/retry"),
     ("PUT", "/api/engine/settings", {"set": {}}, "/api/engine/settings"),
     ("POST", "/api/connectors/claude/test", {}, "/api/connectors/{provider}/test"),
     ("POST", "/api/connectors/codex/sign-in", {}, "/api/connectors/codex/sign-in"),

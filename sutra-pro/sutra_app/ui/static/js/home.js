@@ -10,8 +10,12 @@
    renderSettings, saveEngine, testConnector, signIn. They are on window.HomePage with the state (HomePage.state()), so a test can look at both.
 
    Reads: GET /api/chats/cs_org and its messages, /api/chart, /api/chart/changes, /api/graph?level=chart, /api/departments, /api/needs-you, /api/health,
-   /api/engine/settings. Writes (each with X-Sutra-Token, through SutraCtx.api): POST /api/chats/cs_org/messages and .../retry, POST /api/chats/{department
-   session}/messages (an answer to a team's question, never to cs_org), the connector Test and Sign in calls, PUT /api/engine/settings.
+   /api/engine/settings, /api/heads-up. Writes (each with X-Sutra-Token, through SutraCtx.api): POST /api/chats/cs_org/messages and .../retry, POST /api/chats/{department
+   session}/messages (an answer to a team's question, never to cs_org), the connector Test and Sign in calls, PUT /api/engine/settings, POST
+   /api/tasks/{id}/retry (Try again, from the Heads up lane or a done card).
+
+   Gap package attention: the strip shows how long each ask has waited and a Heads up lane (HeadsUpView); the badge, the strip's count and the tab
+   title count the asks plus the problems not marked "Got it"; ChatAttention sends one desktop notice per new one while the window is not in front.
 
    A classic script with one global, HomePage. It does nothing on a page that is not Home (no #sview). */
 (function (root) {
@@ -36,6 +40,7 @@
   const PANES = ["graph", "chart", "settings"];
   const COALESCE_MS = 150;
   const POLL_MS = 2000;
+  const MINUTE_MS = 60000;
   const NO_TOKEN = "This page was opened without its access token. Reload it from the app.";
   const TOO_MANY = "Too many messages are waiting. I answer them one at a time.";
   const DOWN = "The app is not responding. Try again in a moment.";
@@ -61,6 +66,8 @@
     pane: "graph", turn: {seen: false, phase: "", n: 0, active: false}, awaitGraph: false,
     banner: null, blocked: "", sending: false, live: "offline", theme: null, loaded: false,
     graphView: null, chartView: null, panel: null, stream: null, watch: null, values: null,
+    // gap attention: the Heads up lane, the age of each ask, the "Got it" marks of this browser, the tab title and the desktop notice
+    heads: [], headsLoaded: false, needsAt: 0, seen: {}, fyiMore: false, attention: null,
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -177,8 +184,21 @@
     const list = await api.get("/api/needs-you");
     S.needs = Array.isArray(list) ? list : [];
     S.needsLoaded = true;
+    S.needsAt = Date.now();
     renderNeeds();
     renderChat();
+  }
+
+  // GET /api/heads-up: crashed or app-stopped work (Try again), teams gone quiet, work finished in 24 h. A failed read keeps the lane it had.
+  async function fetchHeads() {
+    try {
+      const list = await api.get("/api/heads-up");
+      S.heads = Array.isArray(list) ? list : [];
+    } finally {
+      S.headsLoaded = true;
+      renderNeeds();
+      renderChat();
+    }
   }
 
   async function fetchHealth() { S.health = await api.get("/api/health"); paintConnectors(); }
@@ -188,13 +208,14 @@
   const refetchGraph = SutraEvents.coalesce(single(fetchGraph), COALESCE_MS);
   const refetchChart = SutraEvents.coalesce(single(fetchChart), COALESCE_MS);
   const refetchNeeds = SutraEvents.coalesce(single(fetchNeeds), COALESCE_MS);
+  const refetchHeads = SutraEvents.coalesce(single(fetchHeads), COALESCE_MS);
   const refetchDepartments = SutraEvents.coalesce(single(fetchDepartments), COALESCE_MS);
 
   const settled = list => Promise.allSettled(list.map(f => f()));
 
   // Everything Home shows, once: on load, on server.resync, and for "Retry". Each part fails on its own and keeps what it had.
   async function loadAll() {
-    const results = await settled([fetchSession, () => fetchMessages(true), fetchChart, fetchGraph, fetchDepartments, fetchNeeds, fetchHealth]);
+    const results = await settled([fetchSession, () => fetchMessages(true), fetchChart, fetchGraph, fetchDepartments, fetchNeeds, fetchHealth, fetchHeads]);
     const failed = results.filter(r => r.status === "rejected");
     if (failed.length === results.length) handleFetchError(failed[0].reason);
     else if (failed.length === 0) clearBanner();
@@ -206,7 +227,7 @@
 
   // What polling asks every 2 s when the stream is down (docs/design/ui.md 9, X4).
   function pollAll() {
-    return settled([() => fetchMessages(false), fetchGraph, fetchChart, fetchNeeds, fetchDepartments]);
+    return settled([() => fetchMessages(false), fetchGraph, fetchChart, fetchNeeds, fetchDepartments, fetchHeads]);
   }
 
   /* ---------------------------------------------------------------- the org chat */
@@ -243,7 +264,7 @@
   function renderChat() {
     const shown = S.messages.concat(S.pending.map(p => p.msg));
     const session = S.session || {kind: "org", writable: true, status: "active", title: "Sutra"};
-    const html = root.ChatView.transcript(session, shown, {deptName: "", live: true, answers: answersMap(), deptSessions: deptSessions()}) + startHtml();
+    const html = root.ChatView.transcript(session, shown, {deptName: "", live: true, answers: answersMap(), deptSessions: deptSessions(), retryTasks: retryTasks()}) + startHtml();
     if (!ctx.paint($("smsgs"), html)) return;
     const end = () => { const el = $("smsgs"); el.scrollTop = el.scrollHeight; };
     end();
@@ -469,6 +490,8 @@
       if (box) answerNeeds(card, box.value);
     } else if (act === "retry") {
       retryTurn();
+    } else if (act === "retry-task") {
+      retryTask(b.dataset.task, b);
     }
   }
 
@@ -480,14 +503,97 @@
     return clean(item.dept_name) + (said ? ": " + said : "");
   }
 
+  // The strip: what waits on the owner (questions and approvals, each with how long it has waited) and the Heads up lane (heads_up_view.js).
+  // The count is the questions and approvals plus the problems the owner has not marked "Got it"; quiet teams and finished work never count.
+  const HV = () => root.HeadsUpView || null;
+  const attentionCount = () => (HV() ? HV().count(S.needs, S.heads, S.seen) : S.needs.length);
+
   function renderNeeds() {
     const items = S.needs;
-    $("needs").classList.toggle("on", items.length > 0);
-    ctx.paint($("needs"), '<h2>Needs you <span class="needbadge" id="needcount">' + items.length + "</span></h2>" +
-      (items.length ? items.map(i => '<div class="needitem"><span>' + esc(needLine(i)) + '</span><button type="button" data-needmsg="' + esc(i.message_id) + '">Answer in Chat</button></div>').join("")
-        : '<span class="none">Nothing needs you right now.</span>'));
+    const n = attentionCount();
+    const hv = HV();
+    attend();
+    const lane = hv ? hv.laneHtml(S.heads, {seen: S.seen, more: S.fyiMore}) : "";
+    const sum = hv && lane ? hv.summary(items, S.heads, S.seen) : "";
+    const elapsed = S.needsAt ? Date.now() - S.needsAt : 0;
+    $("needs").classList.toggle("on", n > 0);
+    ctx.paint($("needs"), '<h2>Needs you <span class="needbadge" id="needcount">' + n + "</span></h2>" + (sum ? '<p class="needsum">' + esc(sum) + "</p>" : "") +
+      (items.length ? (lane ? '<h3 class="nylane">Waiting on you</h3>' : "") + items.map(i => '<div class="needitem"><span>' + esc(needLine(i)) + "</span>" +
+        (hv ? hv.waitedHtml(i, elapsed) : "") + '<button type="button" data-needmsg="' + esc(i.message_id) + '">Answer in Chat</button></div>').join("")
+        : (n === 0 ? '<span class="none">Nothing needs you right now.</span>' : "")) + lane + offerHtml());
     barBadge();
   }
+
+  // The tab title count and one desktop notice per new question or problem (chat_attention.js), once both lists have been read: what is
+  // there at the first read is not news.
+  function attend() {
+    if (!S.attention || !S.needsLoaded || !S.headsLoaded) return;
+    protect("attention", () => S.attention.update(root.ChatAttention.itemsOf(S.needs, S.heads, S.seen)));
+  }
+
+  function offerHtml() {
+    if (!S.attention || !protect("offer", () => S.attention.offered())) return "";
+    return '<p class="nyoffer">Get a desktop notice when a team needs you and Sutra is in the background? ' +
+      '<button type="button" class="linkbtn" data-act="notify-on">Turn on</button> <button type="button" class="linkbtn" data-act="notify-off">No thanks</button></p>';
+  }
+
+  // A notice was clicked: the window is in front already; show what it was about.
+  function openAttention(item) {
+    const ref = isObj(item) && isObj(item.ref) ? item.ref : {};
+    if (ref.kind === "question") { focusCard(ref.message_id); return; }
+    if (ref.kind === "approval") {
+      selectPane("chat", {focus: false});
+      const row = $("smsgs").querySelector('.nmsg[data-id="' + String(ref.message_id).replace(/\D/g, "") + '"]');
+      if (row && row.scrollIntoView) row.scrollIntoView({block: "center"});
+      return;
+    }
+    const strip = $("needs");
+    doc.body.classList.add("has-site", "sp-preview");
+    if (strip.scrollIntoView) strip.scrollIntoView({block: "start"});
+    strip.focus();
+  }
+
+  // The tasks whose done card offers Try again: exactly the Heads up rows that offer it, so the button goes when the problem does.
+  function retryTasks() {
+    const out = {};
+    S.heads.forEach(h => { if (isObj(h) && h.retry === true && typeof h.task_id === "string") out[h.task_id] = true; });
+    return out;
+  }
+
+  // Try again: the existing POST /api/tasks/{id}/retry (a new task with the same words, parent_task_id = this one), then the lane again.
+  async function retryTask(taskId, button) {
+    if (!/^tsk_[0-9a-f]{12}$/.test(text(taskId))) return false;
+    if (button) button.disabled = true;
+    try {
+      await api.post("/api/tasks/" + enc(taskId) + "/retry");
+      clearBanner();
+    } catch (e) {
+      showBanner(errorWords(e));
+      if (button) button.disabled = false;
+      return false;
+    }
+    try { await fetchHeads(); } catch (e) { handleFetchError(e); }
+    refetchDepartments();
+    return true;
+  }
+
+  function onNeedsClick(e) {
+    const b = e.target.closest("[data-needmsg], button[data-act]");
+    if (!b || !$("needs").contains(b)) return;
+    if (b.dataset.needmsg) { focusCard(b.dataset.needmsg); return; }
+    const act = b.dataset.act;
+    const hv = HV();
+    if (act === "retry-task") retryTask(b.dataset.task, b);
+    else if (act === "headsup-seen" && hv) {
+      S.seen[text(b.dataset.task)] = true;
+      protect("seen", () => hv.saveSeen(storage(), S.seen, S.heads));
+      renderNeeds();
+    } else if (act === "headsup-more") { S.fyiMore = true; renderNeeds(); }
+    else if (act === "notify-on" && S.attention) S.attention.enable().then(renderNeeds, renderNeeds);
+    else if (act === "notify-off" && S.attention) { S.attention.decline(); renderNeeds(); }
+  }
+
+  function storage() { try { return root.localStorage; } catch (e) { return null; } }
 
   function statusWord(status) { return hasOwn(STATUS_WORDS, status) ? STATUS_WORDS[status] : "idle"; }
 
@@ -576,7 +682,7 @@
     barSet(BARWIDE.matches && v !== "0", false);
   }
   function barBadge() {
-    const n = S.needs.length;
+    const n = attentionCount();
     $("barbadge").textContent = String(n);
     $("barbadge").hidden = !n;
     $("railtoggle").setAttribute("aria-label", n ? "Menu, " + n + " waiting on you" : "Menu");
@@ -710,7 +816,7 @@
       case "chart.changed": refetchChart(); refetchGraph(); break;
       case "chart.approval": refetchMessages(); break;
       case "graph.updated": refetchGraph(); break;
-      case "task.updated": refetchDepartments(); break;
+      case "task.updated": refetchDepartments(); refetchHeads(); break;
       case "needs_you.changed": refetchNeeds(); break;
       case "server.resync": loadAll(); break;
       default: break;
@@ -738,6 +844,10 @@
     BARWIDE.addEventListener("change", barInit);
     S.panel = root.NodePanel.mount($("nodepanel"), {getGraph: () => S.graph, navigate: url => root.location.assign(url)});
     S.watch = SV().watchHealth(api, h => { S.health = h; paintConnectors(); }, () => {});
+    if (root.HeadsUpView) S.seen = root.HeadsUpView.loadSeen(storage());
+    if (root.ChatAttention) S.attention = protect("ChatAttention.create", () => root.ChatAttention.create({onOpen: openAttention})) || null;
+    // a quiet team and the age of each ask move with time, not with events: read the lane again and redraw the strip every minute
+    root.setInterval(() => { refetchHeads(); renderNeeds(); }, MINUTE_MS);
     const link = deepLink();
     wire();
     selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false});
@@ -776,7 +886,7 @@
       else if (b.dataset.act === "retry-load") loadAll();
       else clearBanner();
     });
-    $("needs").addEventListener("click", e => { const b = e.target.closest("[data-needmsg]"); if (b) focusCard(b.dataset.needmsg); });
+    $("needs").addEventListener("click", onNeedsClick);
     $("pane-settings").addEventListener("click", onSettingsClick);
     $("pane-settings").addEventListener("change", e => {
       if (e.target && e.target.matches && e.target.matches("select[data-scope]")) { S.scope = e.target.value; S.settings = null; S.errors = {}; loadEngineSettings(); }
@@ -811,7 +921,7 @@
 
   const HomePage = {
     boot, loadAll, renderChat, send, answerNeeds, selectPane, renderRail, renderNeeds, onEvent, themeApply, barSet, renderSettings, saveEngine, testConnector,
-    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S,
+    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask,
   };
   root.HomePage = HomePage;
   const start = () => protect("boot", () => boot().catch(e => { if (root.console) root.console.error("HomePage: boot failed", e); }));

@@ -308,6 +308,8 @@ class FakeState:
             self.codex_signed_in = bool(self.fx.health["connectors"]["codex"]["signed_in"])
             self.signins: dict[str, dict] = {}
             self.signin_sequence = "success"
+            self.heads_up: list[dict] = []          # gap attention: GET /api/heads-up (set by /__fake/heads-up), emptied of a task on its retry
+            self.retried: list[str] = []
             for chat in self.chats.values():
                 chat.reset()
             self._apply_visibility()
@@ -1118,6 +1120,28 @@ def register_api(app: FastAPI, state: FakeState) -> None:
     def needs_you():
         return JSONResponse(state.needs_you())
 
+    @app.get("/api/heads-up")
+    def heads_up():
+        with state.lock:
+            return JSONResponse(copy.deepcopy(state.heads_up))
+
+    @app.post("/api/tasks/{task_id}/retry")
+    def retry_task(task_id: str, request: Request):
+        """Try again (gap attention): a row that offers it leaves the lane (the real server lists a retried task no more) and
+        task.updated says so; anything else is 409 busy, as the real route answers a task that may not be retried."""
+        require_token(request, state)
+        with state.lock:
+            row = next((h for h in state.heads_up if h.get("task_id") == task_id and h.get("retry") is True), None)
+            if row is None:
+                raise ApiError(409, "busy", "Only a task that stopped, crashed or was cancelled can be tried again")
+            state.heads_up = [h for h in state.heads_up if h is not row]
+            state.retried.append(task_id)
+            new_id = "tsk_" + format(len(state.retried), "012x")
+        task = {"id": new_id, "dept_id": row.get("dept_id", "web"), "dept_name": row.get("dept_name", ""), "title": row.get("title", ""),
+                "status": "queued", "parent_task_id": task_id, "created_at": "2026-11-04T10:00:00Z"}
+        state.publish("task.updated", {"task": task})
+        return JSONResponse(task, status_code=201)
+
     @app.get("/api/departments")
     def departments():
         return JSONResponse(state.departments())
@@ -1458,6 +1482,16 @@ def register_controls(app: FastAPI, state: FakeState, fixtures: Fixtures) -> Non
         if not isinstance(body, dict) or not isinstance(body.get("name"), str) or "version" not in body:
             raise ApiError(422, "validation", "fixture needs {name, version}")
         return JSONResponse(state.set_fixture(body["name"], body["version"]))
+
+    @app.post("/__fake/heads-up")
+    async def set_heads_up(request: Request):
+        body = await json_body(request)
+        if not isinstance(body, dict) or not isinstance(body.get("items"), list) or not all(isinstance(i, dict) for i in body["items"]):
+            raise ApiError(422, "validation", "heads-up needs {items: [...]}")
+        with state.lock:
+            state.heads_up = copy.deepcopy(body["items"])
+        state.publish("task.updated", {"task": None})
+        return JSONResponse({"items": len(body["items"])})
 
     @app.post("/__fake/fail")
     async def fail(request: Request):

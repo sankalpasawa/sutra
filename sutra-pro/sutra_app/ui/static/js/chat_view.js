@@ -9,7 +9,7 @@
    safeText escapes first and then allows three things the text asked for in plain marks: **bold**, `code` and line breaks. It makes no link,
    no image and no other tag, so a message cannot put markup on the page (docs/design/ui.md section 4.3).
 
-   Buttons carry data-act (open-team, show-node, show-change, choose, option, answer-option, answer, retry) and the data they need; the page that
+   Buttons carry data-act (open-team, show-node, show-change, choose, option, answer-option, answer, retry, retry-task) and the data they need; the page that
    shows the transcript (the node panel, Home) listens for them. A link that opens a team page is a real <a href>, so it also works without a script.
 
    A classic script with ONE global, ChatView (see sutra_ctx.js for why); in node it is module.exports. */
@@ -204,7 +204,11 @@
   const DONE_TONE = freeze({done: "ok", done_with_open_items: "warn", crashed: "bad", stopped: "bad"});
   const DONE_HEAD = freeze({done: "is done", done_with_open_items: "is done, with some things left open", crashed: "ran into a problem", stopped: "was stopped"});
 
-  function doneCard(c) {
+  // Try again on a done card while the Heads up lane offers it (ctx.retry, from opts.retryTasks): it goes when the task was retried or replaced.
+  const retryButton = (c, ctx) => (isObj(ctx) && ctx.retry === true && /^tsk_[0-9a-f]{12}$/.test(clean(c.task_id)) ?
+    '<button type="button" class="lbtn" data-act="retry-task" data-task="' + esc(clean(c.task_id)) + '">Try again</button>' : "");
+
+  function doneCard(c, ctx) {
     const status = clean(c.status);
     const tone = hasOwn(DONE_TONE, status) ? DONE_TONE[status] : "warn";
     const dept = clean(c.dept_name);
@@ -212,7 +216,7 @@
     return '<div class="ncard ' + (tone === "bad" ? "oops" : "ready") + " " + tone + ' c-done" data-card="done" data-tone="' + tone + '" data-task="' + esc(clean(c.task_id)) + '">' +
       "<h2>Your " + (dept ? esc(dept) + " " : "") + "team " + esc(hasOwn(DONE_HEAD, status) ? DONE_HEAD[status] : taskWord(status)) + "</h2>" +
       '<p class="ctitle">' + esc(clean(c.title)) + "</p>" + (clean(c.outcome) ? '<p class="coutcome">' + safeText(clean(c.outcome)) + "</p>" : "") +
-      '<div class="acts">' + openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div></div>";
+      '<div class="acts">' + retryButton(c, ctx) + openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div></div>";
   }
 
   // A function node's own working log gets one card per atom transition (a record written by code): its label as the title, the goal and the rows.
@@ -241,7 +245,7 @@
       case "approval": return choiceCard(value, c, "approval");
       case "choice": return choiceCard(value, c, "choice");
       case "needs_you": return needsYouCard(value, c);
-      case "done": return doneCard(value);
+      case "done": return doneCard(value, c);
       case "atom": return c.sessionKind === "function" ? atomCard(value) : plainCard(Object.assign({}, value, {text: clean(value.label) + (clean(value.goal) ? ": " + clean(value.goal) : "")}));
       default: return plainCard(value);
     }
@@ -262,7 +266,7 @@
   // deptSessions}: `deptName` is the department the session belongs to, `live` false closes every question, `answers` maps a message id to the
   // answer the owner gave an approval, a choice or a needs_you card, `deptSessions` maps a department id to its session id (a needs_you card answers
   // there). Option buttons are on only for the last open question of a session the owner can write in. In an org session and on cards, an Identity
-  // carries the department's name.
+  // carries the department's name. opts.retryTasks {task_id: true} puts Try again (data-act retry-task) on those tasks' done cards (gap attention).
   function transcript(session, messages, opts) {
     const s = isObj(session) ? session : {};
     const o = isObj(opts) ? opts : {};
@@ -293,7 +297,7 @@
       if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + safeText(text(m.text)) + "</div>";
       if (cardIn) {
         const ctx = {deptName: dept, sessionKind: clean(s.kind), answer: answers[m.id], answered: answers[m.id] !== undefined,
-          deptSession: sessions[clean(cardIn.dept_id)]};
+          deptSession: sessions[clean(cardIn.dept_id)], retry: isObj(o.retryTasks) && o.retryTasks[clean(cardIn.task_id)] === true};
         return '<div class="' + klass + '"' + attrs + "><small>" + esc(label) + "</small>" + card(cardIn, ctx) + "</div>";
       }
       const body = log ? text(m.text) : stripTag(m.text);
