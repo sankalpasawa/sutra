@@ -29,6 +29,7 @@ import keyword
 import os
 import re
 import shutil
+import sys
 import tempfile
 import time
 from typing import Any, ClassVar, Dict, List, Literal, Optional
@@ -1480,6 +1481,197 @@ def readable(t):
                          for r in t.rules])}
 
 
-if __name__ == "__main__":      # python3 j2_template_lib.py: (re)write templates/<artifact>/generic.json
-    for p in write_generic():
-        print(os.path.relpath(p, HERE))
+# ---------------------------------------------------------------- the catalog: every run's templates, collected into library/
+# python3 j2_template_lib.py --collect [--runs DIR]: every run with a templates.json gives its specialised template versions
+# to the committed library (same spec sha = same version, the run added to used_by; a free number is kept; a taken number
+# with another sha becomes the next free one, "renumbered_from" says where it came from), with provenance (made_by with its
+# date, the business, live or mock) in meta.json and index.json, and a "runs" section in index.json so the library page
+# can show every run without reading runs/. Nothing is overwritten or deleted.
+RUN_ID = re.compile(r"^j2-(\d{4})(\d\d)(\d\d)-(\d\d)(\d\d)(\d\d)")
+ACTIONS = ("created", "extended", "reused", "generic")
+
+
+def run_date(run_id):
+    """The date and time in a run id (j2-20261103-184249 -> 2026-11-03 18:42:49), else "not recorded"."""
+    m = RUN_ID.match(str(run_id or ""))
+    return f"{m[1]}-{m[2]}-{m[3]} {m[4]}:{m[5]}:{m[6]}" if m else NOT_RECORDED
+
+
+def run_facts(run_dir):
+    """What a run recorded about itself: its business (goal.json), live or mock and the model (chat.jsonl's meta line),
+    its date (its id). Missing records are "not recorded"."""
+    rid = os.path.basename(run_dir.rstrip(os.sep))
+    g = _read(os.path.join(run_dir, "goal.json")) or {}
+    meta = {}
+    try:
+        with open(os.path.join(run_dir, "chat.jsonl"), encoding="utf-8") as f:
+            first = json.loads(f.readline() or "{}")
+        meta = first if first.get("meta") else {}
+    except (OSError, ValueError):
+        pass
+    return {"run": rid, "date": run_date(rid), "business": g.get("site_name") or g.get("product_name") or NOT_RECORDED,
+            "business_type": g.get("business_type") or NOT_RECORDED,
+            "mock": bool(meta["mock"]) if "mock" in meta else NOT_RECORDED,
+            "provider": meta.get("provider") or NOT_RECORDED, "model": meta.get("model") or NOT_RECORDED}
+
+
+def _decision_files(run_dir, rec, d):
+    """(spec, meta, where) of one specialised decision's template version: the run's own copy, else the version in the
+    library the run recorded (by name, version and the schema sha the decision holds), else None."""
+    sd = run_saved_dir(run_dir, d)
+    if sd:
+        got = load_dir(sd)
+        if got:
+            return got[0], got[1], "the run's copy"
+    lib = rec.get("library")
+    if lib and os.path.isdir(lib):
+        got = load_dir(os.path.join(lib, d["artifact"], slug(d["section"]), slug(d["template"]), f"v{d['version']}"))
+        if got and got[0].get("name") == d.get("template") and (not d.get("schema_sha")
+                                                                 or got[1].get("schema_sha") == d.get("schema_sha")):
+            return got[0], got[1], "the library the run recorded"
+    return None
+
+
+def _use(rid, d):
+    return {"run": rid, "workflow": d.get("workflow"), "atom": d.get("atom"), "action": d.get("action")}
+
+
+def _add_use(entry, v, use, fingerprints=()):
+    """A run's use added to a stored version (meta.json and the index row), once."""
+    d = vdir(entry["artifact"], entry["section"], entry["slug"], v["version"])
+    meta = _read(os.path.join(d, "meta.json")) or {}
+    meta.setdefault("used_by", [])
+    if use not in meta["used_by"]:
+        meta["used_by"].append(use)
+    for fp in fingerprints or []:
+        if fp and fp not in meta.setdefault("fingerprints", []):
+            meta["fingerprints"].append(fp)
+    _write(os.path.join(d, "meta.json"), meta)
+    v["used_by"], v["fingerprints"] = meta["used_by"], meta.get("fingerprints") or []
+
+
+def _place(idx, spec, meta, rid, d, where, facts_of):
+    """One template version into the library: ("same" | "added" | "renumbered", entry, version row). The spec sha
+    decides: the same sha is the same version (the use is added); a free number is kept; a taken number with another
+    sha takes the next free one, with renumbered_from. model.py and schema.json are regenerated from the spec."""
+    t = SpecialisedTemplate.model_validate({**spec, "used_by": []})
+    sha = t.compute_sha()
+    tslug = slug(t.name)
+    entry = next((e for e in idx["templates"] if e["artifact"] == t.artifact and e["section"] == t.section
+                  and e["slug"] == tslug), None)
+    if entry is None:
+        entry = {"artifact": t.artifact, "section": t.section, "section_slug": slug(t.section), "slug": tslug,
+                 "name": t.name, "kind": "specialised", "extends": t.extends, "versions": [], "description": t.description}
+        idx["templates"].append(entry)
+    same = next((v for v in entry["versions"] if v["sha"] == sha), None)
+    if same:
+        _add_use(entry, same, _use(rid, d), meta.get("fingerprints"))
+        return "same", entry, same
+    taken = {v["version"] for v in entry["versions"]}
+    renumbered = None
+    version = int(spec.get("version") or 1)
+    if version in taken:
+        renumbered = f"{t.name}@v{version} in {rid}"
+        version = max(taken) + 1
+    t.version, t.sha = version, sha
+    made = facts_of(t.made_by.run)
+    spec_out = t.model_dump(exclude={"used_by"})
+    schema = transport(t)
+    src = codegen(t)
+    out = {"schema": SCHEMA, "name": t.name, "version": version, "sha": sha, "schema_sha": sha_of(schema),
+           "model_sha": hashlib.sha256(src.encode("utf-8")).hexdigest(), "class": class_name(t),
+           "created": meta.get("created") or run_date(t.made_by.run),
+           "fingerprints": list(dict.fromkeys(list(meta.get("fingerprints") or []) + [t.context.fingerprint])),
+           "made_by": {**t.made_by.model_dump(), "date": run_date(t.made_by.run)},
+           "business": {"name": made["business"], "type": made["business_type"]}, "mock": made["mock"],
+           "collected_from": {"run": rid, "where": where}, "used_by": [_use(rid, d)]}
+    if renumbered:
+        out["renumbered_from"] = renumbered
+    dst = vdir(t.artifact, t.section, tslug, version)
+    _write(os.path.join(dst, "spec.json"), spec_out)
+    _write(os.path.join(dst, "schema.json"), schema)
+    _write(os.path.join(dst, "model.py"), src)
+    _write(os.path.join(dst, "meta.json"), out)
+    row = {**_version_row(t, out), "made_by": out["made_by"], "business": out["business"], "mock": out["mock"],
+           "collected_from": out["collected_from"], **({"renumbered_from": renumbered} if renumbered else {})}
+    entry["versions"].append(row)
+    entry["versions"].sort(key=lambda v: v["version"])
+    entry["description"] = t.description
+    return "renumbered" if renumbered else "added", entry, row
+
+
+def collect(runs_dir, runs=None):
+    """Every run (or the named ones) with a templates.json into library/ (see the note above). Returns the report:
+    per run, what was added, renumbered, already there or not recorded."""
+    idx = index()
+    idx.setdefault("runs", {})
+    names = [n for n in sorted(os.listdir(runs_dir)) if os.path.isfile(os.path.join(runs_dir, n, "templates.json"))] \
+        if os.path.isdir(runs_dir) else []
+    names = [n for n in names if not runs or n in runs]
+    facts = {n: run_facts(os.path.join(runs_dir, n)) for n in names}
+    facts_of = lambda rid: facts.get(rid) or {"business": NOT_RECORDED, "business_type": NOT_RECORDED, "mock": NOT_RECORDED}
+    report = []
+    for rid in names:
+        run_dir = os.path.join(runs_dir, rid)
+        rec = _read(os.path.join(run_dir, "templates.json")) or {}
+        row = {**facts[rid], "library": rec.get("library") or NOT_RECORDED, "decisions": [],
+               "counts": {a: 0 for a in ACTIONS}}
+        rep = {"run": rid, "mock": row["mock"], "business": row["business"], "counts": row["counts"],
+               "same": [], "added": [], "renumbered": [], "not_recorded": []}
+        for d in rec.get("decisions") or []:
+            item = {k: d.get(k) for k in ("workflow", "atom", "artifact", "section", "template", "version", "action",
+                                          "kind", "score", "rule")}
+            row["counts"][d.get("action")] = row["counts"].get(d.get("action"), 0) + 1
+            if d.get("kind") == "generic":
+                item.update(source="generic", ref={"artifact": d["artifact"], "section_slug": slug(d["section"]),
+                                                   "slug": "generic", "version": 1})
+                row["decisions"].append(item)
+                continue
+            got = _decision_files(run_dir, rec, d)
+            if got is None:
+                item.update(source=NOT_RECORDED, ref=None)
+                rep["not_recorded"].append(f"{d.get('workflow')} {d.get('template')} v{d.get('version')}")
+                row["decisions"].append(item)
+                continue
+            spec, meta, where = got
+            try:
+                status, entry, v = _place(idx, spec, meta, rid, d, where, facts_of)
+            except Exception as e:      # a copy the current generic refuses: recorded as such, never half-written
+                item.update(source=NOT_RECORDED, ref=None, why=f"{type(e).__name__}: {str(e)[:160]}")
+                rep["not_recorded"].append(f"{d.get('workflow')} {d.get('template')} v{d.get('version')} ({type(e).__name__})")
+                row["decisions"].append(item)
+                continue
+            item.update(source=where, ref={"artifact": entry["artifact"], "section_slug": entry["section_slug"],
+                                           "slug": entry["slug"], "version": v["version"]})
+            rep[status if status != "renumbered" else "renumbered"].append(
+                f"{entry['name']} v{v['version']}" + (f" (was v{d.get('version')})" if status == "renumbered" else ""))
+            row["decisions"].append(item)
+        idx["runs"][rid] = row
+        report.append(rep)
+    _save_index(idx)
+    return report
+
+
+def catalog_view():
+    """GET /api/catalog: the library page outside any run, from library/ only: the templates grouped by artifact and
+    section (the generic layer included) and every run that gave templates, newest first."""
+    view = library_view()
+    runs = index().get("runs") or {}
+    rows = sorted(runs.values(), key=lambda r: r.get("date") or "", reverse=True)
+    return {"schema": SCHEMA, "dir": view["dir"], "groups": view["groups"], "runs": rows}
+
+
+if __name__ == "__main__":      # python3 j2_template_lib.py: (re)write templates/<artifact>/generic.json; --collect: the catalog
+    if "--collect" in sys.argv:
+        runs_dir = sys.argv[sys.argv.index("--runs") + 1] if "--runs" in sys.argv else os.path.join(HERE, "runs")
+        for r in collect(runs_dir):
+            print(f"{r['run']} ({'mock' if r['mock'] is True else 'live' if r['mock'] is False else r['mock']}, {r['business']}): "
+                  + ", ".join(f"{a} {n}" for a, n in r["counts"].items() if n)
+                  + f"; added {len(r['added'])}, renumbered {len(r['renumbered'])}, already there {len(r['same'])}, "
+                    f"not recorded {len(r['not_recorded'])}")
+            for k in ("added", "renumbered", "not_recorded"):
+                for x in r[k]:
+                    print(f"  {k}: {x}")
+    else:
+        for p in write_generic():
+            print(os.path.relpath(p, HERE))
