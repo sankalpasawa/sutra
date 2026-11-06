@@ -1,6 +1,6 @@
 """Chat routes v2 (absorb design 2.2 and 2.3, work package ABS-7). Writes need the token (D81).
 
-    GET  /api/chats/search?q=&scope=&include=archived   -> {results: [{session_id, message_id, title, snippet, at}]}   (at most 50)
+    GET  /api/chats/search?q=&scope=&include=archived   -> {results: [{session_id, message_id, title, snippet, at, archived}]}   (at most 50)
     POST /api/chats/{sid}/archive | /unarchive          -> {session_id, archived}      (a mark, never a delete)
     GET  /api/chats/{sid}/providers                     -> {providers: ProviderPill[], chosen}
     PUT  /api/chats/{sid}/choice  {provider, model?}    -> {session_id, provider, model}   (null provider clears; the policy default is untouched)

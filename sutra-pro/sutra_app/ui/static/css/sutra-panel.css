@@ -173,3 +173,21 @@ body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #
 .cstream{margin:6px 0;color:var(--ink)}
 .cstream small{color:var(--muted)}
 .cstream-text{white-space:normal;overflow-wrap:anywhere}
+
+/* the fold, search and archive of a chat (ABS-10): J2's tokens only */
+.nsearch{flex:0 0 auto;padding:4px 0}
+.nsearch[hidden],.nsres[hidden],.nactions[hidden]{display:none}
+.nsbox{width:100%;box-sizing:border-box;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:4px 8px;font:inherit}
+.nsres{max-height:30vh;overflow:auto;padding:4px 0}
+.csearch-list{list-style:none;margin:0;padding:0}
+.csearch-row .linkbtn{text-align:left;color:var(--ink)}
+.csearch-row span{color:var(--muted)}
+.csearch-head{margin:6px 0 2px;color:var(--muted);font-size:12px}
+.csearch-empty{color:var(--muted)}
+.nactions{flex:0 0 auto;padding:2px 0}
+.cfold{margin-top:6px;font-size:13px;color:var(--muted)}
+.cfold summary{cursor:pointer;color:var(--muted)}
+.cfold-list{list-style:none;margin:4px 0 0;padding:0}
+.cfold-item{padding:2px 0;color:var(--ink);overflow-wrap:anywhere}
+.cfold-item.failed small{color:var(--bad)}
+.cfold-out{margin:2px 0 0;white-space:pre-wrap;max-height:12em;overflow:auto;color:var(--muted)}

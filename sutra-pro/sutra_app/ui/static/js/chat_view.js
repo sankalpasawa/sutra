@@ -304,6 +304,8 @@
       } else {
         inner = safeText(body);
       }
+      // a settled provider turn: its tool calls fold into ONE row (ChatFold, ABS-10); nothing is drawn while the message is pending
+      if (root.ChatFold && Array.isArray(m.blocks) && m.blocks.length > 0) inner += root.ChatFold.fold(m.blocks, {settled: clean(m.state) !== "pending"});
       return '<div class="' + klass + '"' + attrs + "><small>" + esc(label) + "</small>" + inner + "</div>";
     }).join("");
   }

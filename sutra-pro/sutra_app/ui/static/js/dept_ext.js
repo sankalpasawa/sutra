@@ -135,11 +135,13 @@
     const d = doc();
     const root_ = byId("nodepanel");
     if (!d || !root_ || !root.NodePanel) return null;
-    if (!root.ChatPill && d.head && !d.getElementById("chat-pill-js")) {      // the J2 page is not edited: its provider pill script is added from here
-      const tag = d.createElement("script");
-      tag.id = "chat-pill-js";
-      tag.src = "/ui/js/chat_pill.js";
-      d.head.appendChild(tag);
+    for (const name of ["chat_pill", "chat_fold", "chat_search"]) {           // the J2 page is not edited: the chat scripts of ABS-9 and ABS-10 are added from here
+      if (d.head && !d.getElementById(name + "-js")) {
+        const tag = d.createElement("script");
+        tag.id = name + "-js";
+        tag.src = "/ui/js/" + name + ".js";
+        d.head.appendChild(tag);
+      }
     }
     if (S.panel === null) {
       S.panel = safely("NodePanel.mount", () => root.NodePanel.mount(root_, {getGraph: () => S.lastGraph}));

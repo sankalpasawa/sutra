@@ -75,7 +75,7 @@ def test_search_returns_rows_and_search_is_not_taken_for_a_session(rig):
     sid = world.session_of["web"]
     say(world, sid, "the zebra plan")
     r = client.get("/api/chats/search", params={"q": "zebra"})
-    assert r.status_code == 200 and r.json()["results"][0]["session_id"] == sid and set(r.json()["results"][0]) == {"session_id", "message_id", "title", "snippet", "at"}
+    assert r.status_code == 200 and r.json()["results"][0]["session_id"] == sid and set(r.json()["results"][0]) == {"session_id", "message_id", "title", "snippet", "at", "archived"}
     assert client.get("/api/chats/search", params={"q": "zebra", "scope": "node:menu"}).json()["results"] == []
     assert error_code(client.get("/api/chats/search", params={"q": "x", "scope": "bad scope"}), 422) == "validation"
 

@@ -62,7 +62,7 @@ class ChatSearch:
         self.db = db
 
     def search(self, q: str, *, scope: str = "all", include_archived: bool = False, limit: int = MAX_RESULTS) -> list[dict[str, Any]]:
-        """`[{session_id, message_id, title, snippet, at}]`, best match first, at most 50. `message_id` is 0 for a title match.
+        """`[{session_id, message_id, title, snippet, at, archived}]`, best match first, at most 50. `message_id` is 0 for a title match.
         The scope is part of the SQL: a row outside it is never read."""
         if SCOPE_RE.match(scope or "") is None:
             raise AppError("validation", "scope is all, node:<id> or dept:<id>")
@@ -81,12 +81,13 @@ class ChatSearch:
             where.append("(s.node_id = ? OR s.filed_under = ? OR s.node_id IN (SELECT id FROM graph_nodes WHERE department_id = ?))")
             args += [dept, dept, dept]
         sql = ("SELECT f.session_id AS session_id, f.message_id AS message_id, s.title AS title, "
-               "snippet(chat_search, 0, '', '', '…', 12) AS snippet, COALESCE(m.at, s.updated_at) AS at "
+               "snippet(chat_search, 0, '', '', '…', 12) AS snippet, COALESCE(m.at, s.updated_at) AS at, s.status AS status "
                "FROM chat_search f JOIN chat_sessions s ON s.id = f.session_id "
                "LEFT JOIN chat_messages m ON f.message_id <> 0 AND m.id = f.message_id "
                f"WHERE {' AND '.join(where)} ORDER BY rank LIMIT ?")
         rows = self.db.conn().execute(sql, (*args, max(1, min(int(limit), MAX_RESULTS)))).fetchall()
-        return [{"session_id": r["session_id"], "message_id": int(r["message_id"]), "title": r["title"], "snippet": r["snippet"], "at": iso_z(r["at"])}
+        return [{"session_id": r["session_id"], "message_id": int(r["message_id"]), "title": r["title"], "snippet": r["snippet"], "at": iso_z(r["at"]),
+                 "archived": r["status"] == "archived"}
                 for r in rows]
 
 

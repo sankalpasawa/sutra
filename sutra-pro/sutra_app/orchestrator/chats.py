@@ -38,7 +38,7 @@ RESUME_MESSAGES = 20
 MAX_LIMIT = 500
 TURN_PHASES = ("reading", "planning", "building")
 PROVIDERS = ("claude", "codex", "stub", "")
-_MESSAGE_COLUMNS = "id, session_id, role, who, kind, text, card_json, pause, answered_by, task_id, state, at"
+_MESSAGE_COLUMNS = "id, session_id, role, who, kind, text, card_json, meta_json, pause, answered_by, task_id, state, at"
 _SESSION_COLUMNS = ("id, node_id, kind, title, writable, status, filed_under, connector, model, provider_session_id, "
                     "last_message_id, note, created_at, updated_at, pinned")
 _OPEN_TASKS = ("blocked", "queued", "starting", "running", "waiting_user")
@@ -71,7 +71,15 @@ def _message_out(row: sqlite3.Row) -> ChatMessageOut:
     return ChatMessageOut(
         id=row["id"], session_id=row["session_id"], role=row["role"], who=row["who"], kind=row["kind"], text=row["text"],
         card=json.loads(row["card_json"]) if row["card_json"] else None, pause=row["pause"], answered_by=row["answered_by"],
-        task_id=row["task_id"], state=row["state"], at=iso_z(row["at"]))
+        task_id=row["task_id"], state=row["state"], at=iso_z(row["at"]), blocks=_blocks_of(row["meta_json"]))
+
+
+def _blocks_of(meta_json: str | None) -> list[dict]:
+    try:
+        found = json.loads(meta_json or "{}").get("blocks", [])
+    except ValueError:
+        return []
+    return found if isinstance(found, list) else []
 
 
 def _clamp(limit: int) -> int:

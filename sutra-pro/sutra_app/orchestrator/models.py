@@ -17,6 +17,7 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import Field, StringConstraints, TypeAdapter, ValidationError, field_validator, model_serializer, model_validator
 
 from sutra_app.engine.spec import DEPT_ID_RE, RUN_ID_RE, TASK_SCHEMA, TASK_SETTING_KEYS
+from sutra_app.library.chat import ChatBlock
 from sutra_app.library.base import Value, nested_models, unwrap_annotation
 from sutra_app.library.node import GraphNodeId, NodeState
 from sutra_app.library.types import (
@@ -313,6 +314,15 @@ class ChatMessageOut(Value):
     task_id: TaskId | None = None
     state: Literal["ok", "pending", "error"] = "ok"
     at: Iso
+    blocks: Annotated[list[ChatBlock], Field(max_length=500)] = []        # the typed provider blocks of a settled chat turn (ABS-6)
+
+    @model_serializer(mode="wrap")
+    def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
+        """The wire shape of a message without blocks is what it always was: the key is left out when empty."""
+        data = handler(self)
+        if not data.get("blocks"):
+            data.pop("blocks", None)
+        return data
 
 
 class ChatChoice(Value):

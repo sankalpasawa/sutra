@@ -179,14 +179,16 @@
 
     /* ------------------------------------------------ the Chat tab */
     function buildChat() {
-      refs.body.innerHTML = '<div class="nchat"><div class="nlens" hidden></div><div class="nlinks" hidden></div><div class="nearlier" hidden></div>' +
+      refs.body.innerHTML = '<div class="nchat"><div class="nsearch" hidden><input type="search" class="nsbox" aria-label="Search chats" placeholder="Search chats\u2026" maxlength="200"/>' +
+        '<div class="nsres" hidden></div></div><div class="nactions" hidden></div><div class="nlens" hidden></div><div class="nlinks" hidden></div><div class="nearlier" hidden></div>' +
         '<div class="nmsgs" role="log" aria-live="polite" aria-label="Messages"></div><p class="nbanner" role="status" hidden></p>' +
         '<div class="npill" hidden></div><div class="ncomposer" hidden><div class="row"><textarea class="nbox" aria-label="Your message" rows="2"></textarea>' +
         '<button type="button" class="send" data-act="send">Send</button></div></div><p class="nnote" role="note" hidden></p></div>';
       refs.body.__html = undefined;
       const q = sel => refs.body.querySelector(sel);
       chatRefs = {lens: q(".nlens"), links: q(".nlinks"), earlier: q(".nearlier"), msgs: q(".nmsgs"), banner: q(".nbanner"), composer: q(".ncomposer"),
-        box: q(".nbox"), send: q(".send"), note: q(".nnote"), pill: q(".npill")};
+        box: q(".nbox"), send: q(".send"), note: q(".nnote"), pill: q(".npill"), search: q(".nsearch"), sbox: q(".nsbox"), sres: q(".nsres"), actions: q(".nactions")};
+      if (chatRefs.sbox) chatRefs.sbox.addEventListener("input", () => onSearchInput());
     }
 
     const activeSession = () => (st.view ? st.view.session : st.session);
@@ -304,6 +306,43 @@
       chatRefs.pill.innerHTML = html;
     }
 
+    // Search, archive and the attachment limits (ABS-10): ChatSearch builds the strings; the server decides what a scope may see.
+    let searchTimer = 0;
+    function onSearchInput() {
+      const CS = root.ChatSearch;
+      if (!CS || !st || !chatRefs) return;
+      root.clearTimeout(searchTimer);
+      searchTimer = root.setTimeout(async () => {
+        const session = activeSession();
+        const req = CS.request(chatRefs.sbox.value, CS.scopeOf(session, (departmentOf(st.node) || {}).id), true);
+        if (!req) { chatRefs.sres.hidden = true; chatRefs.sres.innerHTML = ""; return; }
+        const r = await settle(api().get(req.path, req.query));
+        if (!st || !chatRefs) return;
+        chatRefs.sres.hidden = false;
+        chatRefs.sres.innerHTML = r.error ? '<p class="empty csearch-empty">Search is not available right now.</p>' : CS.results(r.value && r.value.results);
+      }, 250);
+    }
+
+    function paintActions() {
+      const CS = root.ChatSearch;
+      if (!chatRefs || !chatRefs.actions || !chatRefs.search) return;
+      const session = activeSession();
+      const on = !!CS && !!session;
+      chatRefs.search.hidden = !on;
+      const html = on ? CS.archiveButton(session) : "";
+      chatRefs.actions.hidden = html === "";
+      chatRefs.actions.innerHTML = html;
+    }
+
+    function archiveChat(sid, archive) {
+      settle(api().post("/api/chats/" + enc(sid) + (archive ? "/archive" : "/unarchive"))).then(r => {
+        if (!st) return;
+        if (r.error) { st.banner = clean(r.error.message) || "That did not work."; paintChat(); return; }
+        const node = st.nodeId, tab = st.tab;
+        open(node, tab);
+      });
+    }
+
     function chooseProvider(name) {
       const CP = root.ChatPill;
       const sid = pillOwner();
@@ -327,6 +366,7 @@
         paintMessages();
       }
       paintLens();
+      paintActions();
       paintPill();
       paintComposer();
     }
@@ -767,6 +807,8 @@
       else if (name === "go-tab") goToTab(act.dataset.tab);
       else if (name === "show-all") showAll();
       else if (name === "choose-provider") chooseProvider(act.dataset.provider || null);
+      else if (name === "archive" || name === "unarchive") archiveChat(act.dataset.sid, name === "archive");
+      else if (name === "open-chat") { chatRefs.sres.hidden = true; if (act.dataset.sid !== st.sid) showArchived(act.dataset.sid); }
       else if (name === "open-team") {
         e.preventDefault();
         const dept = departmentOf(st.node);

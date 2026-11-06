@@ -1,0 +1,6 @@
+# ABS-10 as built
+
+`chat_fold.js` (`ChatFold`: `summarize`, `line`, `fold`): a settled turn's blocks become ONE `<details>` row ("12 tool calls: 8 read, 4 run, 1 failed"); streaming draws nothing; a cut says it was cut; text is escaped. `chat_search.js` (`ChatSearch`: `request`, `scopeOf`, `results`, `archiveButton`, `checkFile`, `limitsNote`): scope of the panel, title and snippet, archived chats under "Older chats", attachment limits.
+Riders: `chat_view.js` appends the fold under an agent message with `blocks`; `node_panel.js` has the search box, archive/un-archive and opens a found chat through the existing earlier-chat lens; `home.html` loads the scripts; `dept_ext.js` injects the three chat scripts into the J2 page (not edited); CSS in `sutra-panel.css`.
+Wire change: `ChatMessageOut.blocks` (omitted from the JSON when empty, so every existing shape is unchanged) and search rows gained `archived`.
+Not wired: the attachment picker and a composer for `POST /chats/{sid}/direct` (the pure checks and the limits note exist and are tested; a composer for the direct chat is a UI decision left for the owner: today a team chat's box talks to the team's Identity). `home.js` was not changed in this package (the org chat has no archive or search box; Home has its own rail).
