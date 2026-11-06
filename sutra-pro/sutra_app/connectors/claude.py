@@ -186,7 +186,7 @@ class ClaudeParser(LineParser):
             if isinstance(block, dict) and block.get("type") == "tool_result":
                 events.append(ConnectorEvent(kind="tool_result", data={
                     "tool_use_id": block.get("tool_use_id"), "content": _text_of(block.get("content"))[:2000],
-                    "is_error": bool(block.get("is_error"))}))
+                    "truncated": len(_text_of(block.get("content"))) > 2000, "is_error": bool(block.get("is_error"))}))
         return events
 
     def _on_rate_limit_event(self, obj: dict) -> list[ConnectorEvent]:

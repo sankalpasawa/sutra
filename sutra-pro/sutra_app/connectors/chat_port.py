@@ -17,6 +17,7 @@ import re
 from .models import SESSION_ID_PATTERN, AskRequest, ConnectorEvent, Message, RouteContext, SessionSpec
 from .health import API_KEY_REFUSED
 from .router import TRANSCRIPT_LIMIT, Router
+from .tool_kinds import classify, title_of
 from .transcript import FULL_CHARS, TAIL_MESSAGES, render_carry_over
 from .usage import load_session_state
 
@@ -141,8 +142,9 @@ class RouterChatPort:
         before = load_session_state(self._work_dir(session_id))
         saw_partial = False
         blocks: list[dict] = []
+        kinds: dict = {}
         for event in self.router.chat_stream(session_id, message, self._ctx_for(session_id, turn)):
-            out = self._map(event, saw_partial)
+            out = self._map(event, saw_partial, kinds, before.provider if before is not None else "claude")
             if event.kind == "text_delta" and event.data.get("kind", "text") == "text":
                 saw_partial = True
             if out is None:
@@ -164,17 +166,23 @@ class RouterChatPort:
                 return
             yield out
 
-    @staticmethod
-    def _map(event: ConnectorEvent, saw_partial: bool) -> Optional[ChatEvent]:
+    def _map(self, event: ConnectorEvent, saw_partial: bool, kinds: dict, provider: str) -> Optional[ChatEvent]:
         if event.kind == "text_delta":
             return ChatEvent(kind="partial", data={"delta": event.data.get("text", "")}) if event.data.get("kind", "text") == "text" else None
         if event.kind == "text":
             return None if saw_partial else ChatEvent(kind="block", data={"type": "text", "kind": "other", "text": event.data.get("text", "")})
         if event.kind == "tool_call":
-            return ChatEvent(kind="block", data={"type": "tool_use", "kind": "other", "name": str(event.data.get("name") or event.data.get("type") or ""),
-                                                  "text": ""})
+            name = str(event.data.get("name") or event.data.get("type") or "")
+            kind = classify(name, event.data.get("input"), provider)
+            kinds[event.data.get("id")] = (kind, name)
+            return ChatEvent(kind="block", data={"type": "tool_use", "kind": kind, "name": name, "text": title_of(name, event.data.get("input"))})
         if event.kind == "tool_result":
-            return ChatEvent(kind="block", data={"type": "tool_result", "kind": "other", "name": "", "text": ""})
+            kind, name = kinds.get(event.data.get("tool_use_id"), ("other", ""))
+            text = str(event.data.get("content") or "")
+            data = {"type": "tool_result", "kind": kind, "name": name, "text": text, "is_error": bool(event.data.get("is_error"))}
+            if event.data.get("truncated"):
+                data["truncated"] = True            # a cut says it was cut
+            return ChatEvent(kind="block", data=data)
         if event.kind == "turn_done":
             return ChatEvent(kind="turn_done")
         return None
