@@ -1,0 +1,27 @@
+# J2 sync 3: Run settings and the lists behind it, and what was left out on purpose
+
+Baseline unchanged: J2_Prototype `9200cf626e5c05032caefda4f96b694284efdc5e` (`vendor_j2.py --check` and `port_j2_ui.py --check` pass against it). This note records the audit of the J2 diffs that had not landed (the old repository's copy `prototypes/j2`, J2's `origin/build-on-run` and `origin/backend-builder`) and what Sutra Pro now does with each. D114 already allows taking a change from that copy when J2's own repository does not have it; `VENDORED.md` says so in patch P13.
+
+## Landed
+| What | Patch | Where |
+|---|---|---|
+| `GET /api/runlist`: every saved run of the team, newest first (`id`, `title`, `status` running/done/stopped, `output`, `when`, `brief`) | **P13** in `scripts/vendor_j2.py` (`run_row`, `run_list` in `j2.py`, placed before `saved_snapshot`; `runs_dir` as in P5) | `engine/views.py` `runlist`, `engine/api/state.py`, `engine/j2_server.py` (the stdlib adapter); the live run reads `running` only while its process exists and its snapshot says so |
+| `GET /api/changes`: one stop per change request of the run's `change.json` (`id`, `request`, `cycle`, `revise`, `new`) | **P13** (`run_changes`) | `engine/views.py` `changes`, same two adapters. The route only; the Simple view's journey that reads it (`sJourney`) is not ported (below) |
+| The Run settings tab: Appearance cards, a searchable run list with status filters, 20 at a time, grouped by date | **E14 to E18** in `scripts/port_j2_ui.py` (the page is never hand edited; `--check` passes) | `pages/j2_ui.html`, new `static/css/run-settings.css`, `static/js/sutra_ctx.js` (`J2_PATHS.patched`: the two routes get `dept`) |
+| Shapes of the two routes | `tests/engine/golden/api_shapes.json` key `patched`, recorded by `scripts/record_api_shapes.py --patched-only` from the engine's own handlers (J2 has no source for them) | `tests/engine/test_engine_views.py` |
+
+What the new tab drops from J2's own tab, as the old copy does: the "What to build" select (the Simple view's start page keeps its output select and `POST /api/output`) and "Back to simple view" (the rail's Chat item is that way). The saved-runs select is the run list; opening a run keeps the URL's other parameters. No prompt, no prompt golden and no `/api/runs` shape changed. P1 to P12 and every other vendored file are byte for byte what they were (`j2.py` gained the P13 block only).
+
+## Skipped, with the reason (nothing here changes Sutra Pro)
+| Diff | Reason | When it comes back |
+|---|---|---|
+| J2 `origin/build-on-run` (`80f8704`): `docs/build-on-run-design.md`, 552 lines, no code (fork a finished run with a new brief through `J2_CHANGE`) | A design only; there is nothing to vendor | When code lands: a new `J2Run` entry point, a route and a patch beside P11 (`rehydrate`) |
+| J2 `origin/backend-builder` (5 commits, tip `7cce55c`): the Backend workflow (`j2_backend.py`, `agents/j2/backend.md`, LLD templates, `templates/backend/generic.json`, `rates.json`, +722 lines in `j2.py`, `j2_rules.py`, `j2_artifact_models.py`, `j2_check.py`, flow test +974, `docs/backend-design.md`) | Not on J2 `main`; Sutra Pro vendors J2's `main` only. It touches the prompts, so the goldens would need a recorded vendoring patch | After it merges: add the new files to `vendor_j2.py`'s lists, re-derive P1, P2, P7, P8, P10 and P12 by anchor, re-record the prompt goldens through a recorded patch, and write a sync note |
+| The old copy's Simple-view redesign (landing with the Client Lead bot, journey SVG, finish card, floating chat panel, rail open and close, new theme tokens; about +820/-210 lines of `j2_ui.html`, from `a57d5556`) and its render-harness change (`j2_ui_render.js`: `d.changes`, `SJ`, `sJourneyModel`, `sFinish`) | Not in J2's own repository, so porting it would fork J2 from its source; D114 names only Run settings. Run settings is separable (`e7800503` is a small delta over it) and was ported without it | Raised to the owner and the J2 team to commit upstream; then vendor and re-anchor the port script. `/api/changes` is already there for its journey. `j2_graph_layout.js` has no diff |
+| The old copy's `j2_flow_test.py` (+710/-313): `run_settings()`, `simple_redesign()`, `chat_panel()`, `view_kept()` and the helper changes | The copy lacks the `9200cf6` blocks (it would drop `decision_negation` and the new J2 blocks); the legacy flow test runs J2's page from `SUTRA_J2_CHECKOUT`, which has no Run settings. Run settings is tested here instead: `tests/ui/js/page_render.test.js` (the list, filters, search, escaping, opening a run), `tests/ui/test_port_edits.py` (E14 to E18), `tests/engine/test_engine_views.py` (the routes) | with the redesign, if it is ever vendored |
+| The old copy's `docs/mocks/j2-run-settings-mock.html` (121 lines) | A mock page, not engine code, and `docs/reference/j2` is the vendored reference tree that the script manages | not needed |
+
+## Findings the earlier notes did not say
+- The old copy's base is `33aeeda` plus an unmerged Simple-view redesign; it is not J2's `main` plus Run settings. The earlier notes (`j2-sync-2.md`, `ABS-0.md`, D114) name only Run settings and say the copy is ahead.
+- J2's repository has two other lines of work the notes never mentioned (`build-on-run`, `backend-builder`, above).
+- Still pending: `build-on-run`, `backend-builder`, the Simple-view redesign. Recorded in `j2-sync.md`.
