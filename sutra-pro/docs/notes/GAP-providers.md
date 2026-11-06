@@ -66,8 +66,9 @@ Where:
 - `sutra_app/connectors/bins.py` (new): `<data>/connectors/bins.json`, mode 0600, atomic; `check_path` refuses with `InvalidRequestError`
   (a 422 with the reason). The name is the name of the chosen path, not of its target, because nvm, Volta and the native installer use
   links to files with other names (`.../versions/2.1.308`, `volta-shim`, `cli.js`).
-- `models.ConnectorConfig.claude_desktop` (additive, default False); `factory.build_router` and `ops/doctor.run` use `connector_config` when
-  no config is handed in (every test hands one in, so no test depends on this machine's CLIs).
+- `models.ConnectorConfig.claude_desktop` (additive, default False); `factory.build_router`, `ops/doctor.run` and a live
+  `engine_port.make_port` (the engine host's port, so a department run uses the same file as Settings and the chat; a stub-only port keeps
+  the defaults) use `connector_config` when no config is handed in (every test hands one in, so no test depends on this machine's CLIs).
 - Wording: `errors.DESKTOP_ONLY` and `CliMissingError.user_message` (`detail.desktop`, set in `base._execute` for Claude when the flag is on);
   `router._skip_reason` and `provider_summary`; `chat_port._why_not` returns the router's detail (one line); `doctor._judge` gains the
   Desktop branch and names the Settings box in its fix.
@@ -84,7 +85,7 @@ Where:
   thresholds are the old bars' 80 and 95, not the old usage guard's 70 and 80.
 - PROV-3: the snapshot file is written on every change under the health book's lock (writes stay in order); a failed write is logged and
   never fails a call.
-- PROV-4: discovery runs only where no config is handed in (the app and the doctor), so tests stay hermetic; the system folders are a
+- PROV-4: discovery runs only where no config is handed in (the app, its engine host and the doctor), so tests stay hermetic; the system folders are a
   separate tuple (`SYSTEM_DIRS`) that tests leave out.
 - PROV-5: a chosen file must be named as the command (claude, codex; .exe/.cmd on Windows), checked on the chosen path, not its target.
 - PROV-6: no `SUTRA_CLAUDE_BIN`-style variable: it is useless from Finder (the old app's own note), and the Settings box covers a terminal

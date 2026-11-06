@@ -132,6 +132,38 @@ def test_the_running_apps_config_uses_the_owners_chosen_file(home, tmp_path):
     assert cfg.claude_exe == str(chosen) and cfg.extra_env["PATH"].endswith(":" + str(chosen.parent))
 
 
+
+def test_a_department_run_uses_the_same_cli_files_as_the_app(home, tmp_path, monkeypatch):
+    """The engine host's port (engine_port.make_port) finds the CLIs as the app's router does: a department run must not say "not
+    installed" for the file the Settings row and the chat use. A stub-only port keeps the defaults (the J2 twin runs against it)."""
+    from sutra_app.connectors.engine_port import make_port
+    from sutra_app.engine.port import PortSpec
+    chosen = executable(tmp_path / "tools" / "claude")
+    codex = executable(home / ".nvm/versions/node/v22.1.0/bin/codex")
+    data = tmp_path / "data"
+    BinStore(data).set("claude", str(chosen))
+    monkeypatch.setenv("PATH", LAUNCHD_PATH)
+    monkeypatch.setenv("HOME", str(home))
+
+    def port(**kw):
+        return make_port(PortSpec(**{"mock": False, "connector": "auto", "run_id": "j2-20261104-000000-ab12", "dept_id": "web",
+                                     "data_dir": str(data), **kw}))
+
+    live = port()
+    try:
+        claude, found_codex = live.router.connectors["claude"].cfg, live.router.connectors["codex"].cfg
+        assert (claude.claude_exe, found_codex.codex_exe) == (str(chosen), str(codex))
+        assert claude.extra_env["PATH"] == LAUNCHD_PATH + ":" + str(chosen.parent) + ":" + str(codex.parent)
+    finally:
+        live.close()
+    for kw in ({"mock": True}, {"connector": "stub"}):
+        stub = port(**kw)
+        try:
+            assert list(stub.router.connectors) == ["stub"] and stub.router.connectors["stub"].cfg.claude_exe == "claude"
+        finally:
+            stub.close()
+
+
 def fake_in(folder: Path, fake, name: str) -> Path:
     """A shim where an installer would put it, handing over to the fake CLI (what a Volta or asdf shim does with the real one)."""
     return executable(folder / name, f'#!/bin/sh\nexec "{fake.exe(name)}" "$@"\n')
