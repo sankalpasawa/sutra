@@ -464,7 +464,7 @@ def groups(d, m=None):
     empty = [{"id": k, "label": lab, "rows": []} for k, lab in (("plan", "Run plan"), ("guides", "Guides the makers read"),
                                                                 ("site", "Website sections"), ("records", "Run records"))]
     if not d or not os.path.isdir(d):
-        return {"schema": "artifacts-groups/1", "site": None, "groups": empty}
+        return {"schema": "artifacts-groups/1", "documents": {}, "site": None, "groups": empty}
     m = m or j2_map.build(d)
     t = {g["id"]: g for g in tree(d, m)["groups"]}
     plan_items = {x["name"]: x for x in t["plan"]["items"]}
@@ -578,7 +578,16 @@ def groups(d, m=None):
                     "shots": [{"file": f, "version": (aud.get(f) or {}).get("version"),
                                "passed": sum(1 for r in (aud.get(f) or {}).get("results") or [] if isinstance(r, dict) and r.get("pass")) if f in aud else None,
                                "total": len((aud.get(f) or {}).get("results") or []) if f in aud else None} for f in shots]})
-    return {"schema": "artifacts-groups/1",
+    # the documents (PRD, HLD, LLD) are in Documents, not here: each one's sections with their own heading, so a Map link can land on the heading
+    kinds = [t["name"] for t in load_types()["types"] if t["deliverable"] and t["form"] == "doc"]
+    decks = [n for n in m["nodes"] if n["id"] in {f"work:{k}" for k in kinds}]
+    documents = {}
+    for deck, (_, ss) in sections_of(d, decks).items():
+        for sid, e in (ss or {}).items():
+            hit = re.search(r"^#{1,6}\s+(.+?)\s*$", ((e.get("head") or "") + "\n" + (e.get("body") or "")) if isinstance(e, dict) else "", re.M)
+            if hit:
+                documents.setdefault(deck.split(":", 1)[1], {})[sid] = hit.group(1)
+    return {"schema": "artifacts-groups/1", "documents": documents,
             "site": {"version": (web or {}).get("version"), "audit": {"version": last.get("version"), "passed": sum(1 for r in last.get("results") or [] if isinstance(r, dict) and r.get("pass")),
                                                                      "total": len(last.get("results") or [])} if last else None} if web else None,
             "groups": [{**e, "rows": r} for e, r in zip(empty, (plan, guides, site, rec))]}

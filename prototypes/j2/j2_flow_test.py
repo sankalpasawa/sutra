@@ -3748,7 +3748,7 @@ def docs_tab():
     assert re.findall(r'<span>(End of \w+|Start of \w+)</span>', d) == ["End of PRD", "Start of HLD", "End of HLD", "Start of LLD", "End of LLD"], d
     assert d.count('data-docjump="top"') == 3
     assert '<p class="dl hit" id="doc-prd-R2">' in d and '<p class="dl" id="doc-prd-G1">' in d and 'id="doc-lld-S1"' in d, d
-    assert d.count('id="doc-prd-G1"') == 1 and "<h4>P</h4>" in d, "an item's first line only carries the id"
+    assert d.count('id="doc-prd-G1"') == 1 and '<h4 data-head="P">P</h4>' in d, "an item's first line only carries the id; a heading carries its text (a Map section link lands on it)"
     docs["docs"]["hld"] = {"asked": False, "text": None, "workflows": []}
     nd = render_node(snap, docs=docs)["docs"]
     assert "Not asked for in this run." in nd.split('data-doc-kind="hld"')[1].split("</section>")[0] and nd.count("End of HLD") == 1
@@ -8449,6 +8449,9 @@ def artifacts_groups():
              " r.flyc = contrast(['#rfl [data-artgo] small', '#rfly .rnh']);"
              " r.f0 = files().length; r.heads = {}; r.err0 = __e.slice();"
              " q('#rfl [data-artgo=guides]')[0].click(); await wait(300); r.heads.guides = [S('wtitle').textContent, S('wsub').textContent, S('rfly').hidden]; r.grows = rows();"
+             " const vh = id => !S(id).hidden && S(id).getClientRects().length > 0; r.hdr = [S('wcrumb').textContent.replace(/\\s+/g, ' ').trim(), S('wcnt').textContent, vh('wcnt'), vh('backmap'), vh('wtheme'), S('wtheme').textContent.trim(), S('wtheme').querySelectorAll('svg').length, S('wtheme').getAttribute('aria-label'), S('wsub').getClientRects().length === 1 && S('wsub').getBoundingClientRect().height < 24];"
+             " const th0 = document.documentElement.dataset.theme; S('wtheme').click(); r.hdrTheme = [th0, document.documentElement.dataset.theme]; S('wtheme').click();"
+             " showTab('charter'); r.hdrOther = [vh('backmap'), vh('wcrumb'), vh('wcnt'), vh('wtheme')]; showTab('artifacts');"
              " row('W-2').click(); await wait(400); r.f1 = files(); r.guide = [q('.aasm .ackl li').length, q('.atoc [data-ajump]').length, !!q('.aasm')[0], pane().textContent.includes('Guides are not audited')];"
              " r.mk = row('W-31').textContent.includes('Maker not recorded');"
              " q('[data-atab=doc]')[0].click(); await wait(300); r.vers = q('.avers button').map(b => b.textContent + ':' + b.getAttribute('aria-pressed')); r.doch = q('.amd h3').length; r.scrolls = pane().scrollHeight > pane().clientHeight; r.fitDoc = fit();"
@@ -8466,7 +8469,7 @@ def artifacts_groups():
              " r.emoji = /[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}]/u.test(S('pane-artifacts').innerText + S('rfly').innerText);"
              " r.themes = {}; for (const th of ['light', 'dark']){ THEME = th; themeApply(); await wait(30); const out = [];"
              "   for (const [g_, id] of [['guides', 'W-2'], ['site', 'W-8'], ['plan', 'charter'], ['records', 'conditions']]){ await artOpenGroup(g_, id); await wait(250);"
-             "     out.push(...contrast(['.agrow.on .agt b', '.agrow:not(.on) .agt span', '.agrow .mono', '.aby', '.ablk h5', '.ackl li span', '.atabs button[aria-selected=false]', '.atabs button[aria-selected=true]', '.aasm p', '.atoc .linkbtn', '.agpane .empty', '.aev']).filter(x => x[1])); }"
+             "     out.push(...contrast(['#wcrumb', '#wcrumb b', '#wcnt', '.agrow.on .agt b', '.agrow:not(.on) .agt span', '.agrow .mono', '.aby', '.ablk h5', '.ackl li span', '.atabs button[aria-selected=false]', '.atabs button[aria-selected=true]', '.aasm p', '.atoc .linkbtn', '.agpane .empty', '.aev']).filter(x => x[1])); }"
              "   r.themes[th] = [out, fit()]; }"
              " r.err = __e.slice(); (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); })()")
     page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { " + probe + " }, 1500)</script></body>")
@@ -8501,6 +8504,8 @@ def artifacts_groups():
             assert r["f0"] == 0 and r["f1"] == ["artifacts/product-plan.md", "artifacts/architecture.md"] and r["f2"] == 3 and r["f3"] == 4, (w, "a file loads only when its item opens (a group opens its first item)", r["f0"], r["f1"], r["f2"], r["f3"])
             assert r["heads"]["guides"][:2] == ["Guides the makers read", "Each guide, who wrote it, and how it was checked."] and r["heads"]["guides"][2] is True, (w, r["heads"])
             assert r["heads"]["site"] == ["Website sections", "Website v33: the latest audit passes 19 of 19 items."] and r["heads"]["plan"][0] == "Run plan" and r["heads"]["records"][0] == "Run records", (w, r["heads"])
+            assert r["hdr"] == ["Artifacts / Guides the makers read", f"5 guides · {nv} versions", True, False, True, "", 2, "Switch theme", True], (w, "the header: breadcrumb, count chip, no Back to map, an icon-only theme button, a one-line subtitle", r["hdr"])
+            assert r["hdrTheme"][0] != r["hdrTheme"][1] and r["hdrOther"] == [True, False, False, False], (w, "the theme button switches the theme; Back to map stays on the other views", r["hdrTheme"], r["hdrOther"])
             assert r["grows"] == [x["id"] for x in counts["guides"]["rows"]] and r["srows"] == [x["id"] for x in counts["site"]["rows"]], (w, r["grows"], r["srows"])
             assert r["guide"] == [asm, heads, True, True] and r["mk"], (w, "assumptions, sections, guides not audited, maker not recorded", r["guide"], asm, heads)
             assert r["vers"] == ["v1 · W-2:false", "v2 · W-23:false", "current · W-27:true"] and r["doch"] == heads and r["scrolls"], (w, r["vers"], r["doch"])
@@ -8519,10 +8524,53 @@ def artifacts_groups():
         srv.shutdown()
         j2_server.HERE, j2.RUNS_DIR = keep_here, keep_runs
         shutil.rmtree(tmp, ignore_errors=True)
+    # document runs: every saved run with a PRD, HLD or LLD; each document and each of its sections is reachable from the rail's Documents entry and from Map links
+    repo = os.path.join(here, "runs")
+    docruns = [n for n in sorted(os.listdir(repo)) if any(os.path.isfile(os.path.join(repo, n, k + ".md")) for k in ("prd", "hld", "lld"))]
+    dprobe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = {docs: {}, links: [], err: []};"
+              " const vis = () => q('#dview .pane').filter(p => !p.hidden).map(p => p.id.slice(5)).join(','), inview = e => { const b = e.getBoundingClientRect(), p = S('pane-docs').getBoundingClientRect(); return b.top >= p.top - 2 && b.top < p.bottom; };"
+              " for (let i = 0; i < 80 && !document.querySelector('#rail [data-ri=artifacts]'); i++) await wait(100); await wait(800);"
+              " document.querySelector('#rail [data-ri=artifacts]').click(); await wait(300); q('#rfl [data-tab=docs]')[0].click(); for (let i = 0; i < 50 && !q('#pane-docs .docbody h4').length; i++) await wait(100);"
+              " r.pane = vis(); for (const b of q('#pane-docs [data-doc-kind]')) r.docs[b.dataset.docKind] = q('#docblock-' + b.dataset.docKind + ' [data-head]').map(h => h.dataset.head);"
+              " for (let i = 0; i < 50 && !ARTS.groups; i++) await wait(100); const D = (ARTS.groups || {}).documents || {};"
+              " for (const k of Object.keys(D)){ showTab('map'); let el = await mapOpenIn('art', 'work:' + k); r.links.push(['work:' + k, vis(), el ? el.id : '', '']);"
+              "   for (const [sid, h] of Object.entries(D[k])){ showTab('map'); el = await mapOpenIn('art', 'sec:work:' + k + ':' + sid); r.links.push([sid, vis(), el ? (el.dataset.head || el.id) : '', h, el ? inview(el) && el.classList.contains('dlhit') && !!el.closest('#docblock-' + k) : false]); } }"
+              " r.groups = D; r.err = __e.slice(); document.body.setAttribute('data-r', JSON.stringify(r)); })()")
+    page = ui.replace("<head>", "<head><script>window.__e = []; addEventListener('error', e => __e.push(String(e.message)));</script>", 1).replace("</body>", "<script>setTimeout(() => { " + dprobe + " }, 1500)</script></body>")
+    tmp = tempfile.mkdtemp(prefix="j2-docs-")
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+    os.symlink(os.path.join(here, "vendor"), os.path.join(tmp, "vendor"))
+    j2_server.HERE, j2.RUNS_DIR = tmp, repo
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    nsec = 0
+    try:
+        for n in docruns:
+            dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", "--window-size=1440,900", "--virtual-time-budget=40000", "--dump-dom",
+                              f"http://127.0.0.1:{srv.server_address[1]}/?view=detail&run={n}"], capture_output=True, text=True, timeout=240).stdout
+            hit = re.search(r'data-r="([^"]*)"', dom)
+            assert hit, (n, "the page did not finish its steps", dom[-300:])
+            r = json.loads(htmllib.unescape(hit.group(1)))
+            made = [k for k in ("prd", "hld", "lld") if os.path.isfile(os.path.join(repo, n, k + ".md"))]
+            heads = {k: [l[3:].strip() for l in open(os.path.join(repo, n, k + ".md"), encoding="utf-8") if l.startswith("## ")] for k in made}
+            assert not r["err"] and r["pane"] == "docs", (n, r["err"], r["pane"])
+            assert all(r["docs"].get(k) and set(heads[k]) <= set(r["docs"][k]) for k in made), (n, "the Documents entry shows every document and its sections", r["docs"], heads)
+            assert set(r["groups"]) <= set(made) and all(set(v.values()) <= set(heads[k]) for k, v in r["groups"].items()), (n, r["groups"])
+            for x in r["links"]:
+                if x[0].startswith("work:"):
+                    assert x[1] == "docs" and x[2] == "docblock-" + x[0][5:], (n, "a document's Map link opens it in Documents", x)
+                else:
+                    assert x[1] == "docs" and x[2] == x[3] and x[4], (n, "a section's Map link lands on its heading in Documents, lit and in view", x)
+                    nsec += 1
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR = keep_here, keep_runs
+        shutil.rmtree(tmp, ignore_errors=True)
     print(f"artifacts groups: four groups from {name}'s files (guides by output file, sections by sections.json, versions folded, maker not guessed, checks final "
           f"attempt, escaped text); Chrome at 1440x900 and 390x844 ({seen} pages), light and dark: the rail keeps Preview and Documents and lists the groups with "
           "counts, title and subtitle per group, files load on open, assumptions, sections, Read document and versions, Code and Script blocks with line numbers "
-          "and Copy, the style guide, audit bars, page = window with only the panes scrolling, text 4.5:1, no emoji, no error ok")
+          "and Copy, the style guide, audit bars, page = window with only the panes scrolling, text 4.5:1, no emoji, no error; "
+          f"{len(docruns)} document runs: every PRD, HLD and LLD and its sections in Documents, and {nsec} Map section links landing on their heading ok")
 
 def graph_map():
     """Map, open team as a workflow-artifact graph (m["teams"], j2_map.team_graphs), on every saved run and every team that has workflows: no team node (the team is a
@@ -9138,9 +9186,9 @@ def map_motion():
                " document.getElementById('backmap').click(); await wait(300); r.wfBack = [vis(document.getElementById('pane-map')), CONS.kind, CONS.id, CONS.path.length, !!document.querySelector('.consvg[data-kind=wf]')];"
                " consGo([{id: 'work:website', kind: 'art'}], 'sec:work:website:W-8'); await wait(200); document.querySelector('.conspanel [data-openart]').click(); await wait(800);"
                " const a = document.querySelector('#pane-artifacts .dlhit'); r.art = [vis(document.getElementById('pane-artifacts')), a ? a.dataset.sec : '', a ? inview(a) : false, a ? [...(function* (){ let d = a.closest('details'); while (d){ yield d.open; d = d.parentElement.closest('details'); } })()].every(Boolean) : false];"
-               " document.getElementById('backmap').click(); await wait(300); r.artBack = [vis(document.getElementById('pane-map')), CONS.kind, CONS.id, CONS.focus, !!document.querySelector('.consvg.focusing')];")
+               " r.artNoBack = document.getElementById('backmap').hidden; showTab('map'); await wait(300); r.artBack = [vis(document.getElementById('pane-map')), CONS.kind, CONS.id, CONS.focus, !!document.querySelector('.consvg.focusing')];")
     assert dl["wf"] == [True, "W-8", True, 1] and dl["wfBack"] == [True, "wf", "W-8", 2, True], ("Open in Workflows: W-8's row, lit and in view; Back to the same sun", dl)
-    assert dl["art"] == [True, "work:website|W-8", True, True] and dl["artBack"] == [True, "art", "work:website", "sec:work:website:W-8", True], ("Open in Artifacts: the section's row in its open fold, lit and in view; Back to the same focus", dl)
+    assert dl["art"] == [True, "work:website|W-8", True, True] and dl["artNoBack"] is True and dl["artBack"] == [True, "art", "work:website", "sec:work:website:W-8", True], ("Open in Artifacts: the section's row, lit and in view (Artifacts has no Back to map); the Map keeps the same focus", dl)
     # reduced motion: no drift, a new view at once, hover moves nothing
     rm = probe("showTab('map'); MAPVIEW = 'tree'; paintMap(); const k = Object.keys(mapTree(MAP).stages)[0]; treeFocusTeam(k); let M = document.querySelector('.treesvg').__m; r.focus = [M.svg.dataset.settled, M.svg.classList.contains('tmoving'), exact(M)];"
                " consOpen('work:website'); M = document.querySelector('.consvg').__m; r.sun = [M.svg.dataset.settled, exact(M)]; const n = M.nodes.find(x => x.id === 'W-8'); fire('mouseover', n.el, 0, 0); await wait(300);"
@@ -9952,7 +10000,7 @@ def map_tab():
         assert a["home"] == "map" and a["count"] == "1" and "Needs you" in a["needs"] and "Add credits?" in a["needs"] and "Answer in Chat" in a["needs"], a
         assert a["layout"] == [True, True, True] and a["rail"] == ["Map", "Simple view", "Identity", "Adaptation", "Priority", "Coordination", "Audit", "Artifacts", "Actions", "Library", "Settings"] and a["sub"] is True and a["back0"] is True, a      # strip above the map, chat docked on the right, no Back link on the home
         assert a["focus"] == "true|9999", a      # the strip's button focuses the question in the Chat
-        assert a["tabs"] == {t: f"{t}|false|false" for t in old_tabs}, a      # every old tab opens from the sections, with a Back to map link
+        assert a["tabs"] == {t: f"{t}|{str(t == 'artifacts').lower()}|false" for t in old_tabs}, a      # Artifacts has its own header (a breadcrumb, no Back to map)      # every old tab opens from the sections, with a Back to map link
         assert a["back"] == "map|true", a
         sw = by["step:prd>hld"]["workflows"]
         n = a["nodes"]
