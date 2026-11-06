@@ -6637,8 +6637,8 @@ def artifact_types():
 
 def artifacts_tab():
     """Artifacts: artifacts.json written at the end of a run (additive), the same rows rebuilt from an old folder, the
-    endpoints serve only files the list names, and the tab renders two headings with tags, workflows, dependencies and an
-    Open button per form (document text, website preview, screenshot image, data text)."""
+    endpoints serve only files the list names; the Artifacts groups keep the PRD, HLD and LLD out of the guides, and the page lists a group
+    with nothing opened but its first item."""
     import shutil
     import threading
     import urllib.error
@@ -6731,37 +6731,20 @@ def artifacts_tab():
         print("artifacts tab render skipped: node not found")
         return
     snap = j2.saved_snapshot(name, 0)
-    lst = A.listing(run.dir)
-    html = render_node(snap, docs={"docs": {}, "artifacts": lst})["artifacts"]
-    assert html.index("<h3>Deliverables</h3>") < html.index("<h3>Evidence and records</h3>") and html.count("<h3>") == 2
-    top, rest = html.split("<h3>Evidence and records</h3>")
-    assert top.count('class="artrow"') == 4 and rest.count('class="artrow"') == len(lst["records"])
-    for r in lst["deliverables"]:
-        row = top[top.index(f'data-art="{r["file"]}"'):].split('<div class="artrow"')[0]
-        assert f"<b>{r['label']}</b>" in row and f'style="background:var({r["color"]})">{r["tag"]}</span>' in row and "Open</button>" in row
-        assert (f"made by {j2_ui_idruns(r['workflows'])}" in row) and r["form"] in row
-    assert "depends on nothing in this run" in top.split('data-art="hld.md"')[0] and "depends on Product requirements" in top.split('data-art="hld.md"')[1].split('data-art="lld.md"')[0]
-    assert "depends on High-level design, Low-level design" in top.split('data-art="site/index.html"')[1]
-    assert "Open</button>" in rest and "iframe" not in html and "<img" not in html and "<pre" not in html      # nothing open by default
-    # Open: a document shows readable text, the site a preview frame, a screenshot an image, a data file plain text
-    lst["records"].append({**lst["records"][0], "name": "Screenshot v4", "type": "screenshots", "form": "image", "file": "site/shots/v4.png",
-                           "open": "image", "tag": "Other", "color": "--other"})
-    for f, mode, mark in (("prd.md", "text", '<pre class="arttext">'), ("site/index.html", "preview", '<iframe class="artframe" sandbox=""'),
-                          ("site/shots/v4.png", "image", '<img class="artimg"'), ("atoms.json", "text", '<pre class="arttext">')):
-        out = render_node(snap, docs={"docs": {}, "artifacts": lst, "artopen": f, "arttext": {f: "# Product\n<b>x</b>"}})["artifacts"]
-        assert out.count(mark) == 1 and "Close</button>" in out, (f, mode)
-        if mode == "text":
-            assert "# Product\n&lt;b&gt;x&lt;/b&gt;" in out      # escaped, never run as markup
-        assert f"/api/artifact?name={urllib.request.quote(f, safe='')}" in out or mode == "text"
-    out = render_node(snap, docs={"docs": {}, "artifacts": {"deliverables": [], "records": []}})["artifacts"]
-    assert "Nothing built yet." in out and "Nothing recorded yet." in out
+    g = A.groups(run.dir)
+    G = {x["id"]: x for x in g["groups"]}
+    assert all(x["file"] not in ("prd.md", "hld.md", "lld.md") for x in G["guides"]["rows"]), "a PRD, HLD or LLD is a document (Documents), not a guide"
+    art = lambda k, **kw: render_node(snap, docs={"docs": {}, "artifacts": {"groups": g, "g": k, "sel": {}, "tab": "sum", "ver": "", **kw}})["artifacts"]
+    html = art("records")
+    assert html.count("data-agrow=") == len(G["records"]["rows"]) >= 3 and "<iframe" not in html and "<pre" not in html, "a list and the first record; nothing else opened"
+    assert 'data-agrow="charter"' in art("plan") and 'data-art="goal.json"' in art("plan")
+    assert "Loading the artifacts" in render_node(snap, docs={"docs": {}, "artifacts": {}})["artifacts"], "before the groups load"
     # the Documents and Charter tabs still render as before
     both = render_node(snap, docs={"docs": {k: {"asked": True, "text": open(os.path.join(run.dir, k + ".md"), encoding="utf-8").read()}
                                             for k in ("prd", "hld", "lld")}})
     assert 'id="docblock-prd"' in both["docs"] and "Charter" in both["charter"]
     print("artifacts: artifacts.json written at run end (additive), an old run gets the same rows from its folder, endpoints serve "
-          "only listed files (live, saved, missing run), the tab shows two headings with tag, workflows, dependencies and an Open "
-          "button per form ok")
+          "only listed files (live, saved, missing run), the groups keep documents out of the guides, a group lists its rows ok")
 
 
 def j2_ui_idruns(ids):
@@ -6784,7 +6767,8 @@ def artifacts_tree():
     """The Artifacts page as a tree (artifacts-tree/1) for every run under runs/: Plan, Specs, Deliverable, Proof; every file in
     artifacts.json exactly once; every spec has its maker and the Style guide is a spec; screenshots only under Proof (Verification
     proof); makers, readers and statuses are j2_map.build's; no deliverable among the run records. Run 174314: 5 specs and the Style
-    guide, the Website with 11 sections folded and 14 versions, 2 screenshots. The page: one line per item with one status tag."""
+    guide, the Website with 11 sections folded and 14 versions, 2 screenshots. The page (the Artifacts groups): the five guides, ten sections and the
+    Style guide, the screenshots as one record."""
     import collections
     import j2_artifacts as A
     import j2_map as M
@@ -6851,14 +6835,15 @@ def artifacts_tree():
         assert "zone analyze" in plan["Realization plan"]["note"] and "plan confidence 0.85" in plan["Realization plan"]["note"] and plan["Workflows"]["note"] == "17 workflows"
         assert plan["Realization plan"]["children"][0]["file"] == "realization.md"
         assert plan["Realization plan"]["made_by"] == {"function": "Adaptation (scored by the confidence judge)"}, "Adaptation's plan reply, saved by code"
-        # the page: four groups; one line per item (name, maker, one status tag, Open); the sections folded; the screenshots as thumbnails
-        html = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {**A.listing(d74), "tree": t}})["artifacts"]
-        assert [re.sub(r"<[^>]+>", "", h).split()[0] for h in re.findall(r'<h3 class="arthead">.*?</h3>', html)] == ["Plan", "Specs", "Deliverable", "Proof"]
-        assert "Product Manager (W-1) · Product plan · read by 7" in html and "Web Developer (W-6)" in html and 'data-artopen="artifacts/hint-method.md"' in html
-        assert "<summary>11 sections</summary>" in html and "<summary>14 versions</summary>" in html and html.count('class="artshot"') == 2
-        assert html.index('data-group="specs"') < html.index('data-art="style.json"') < html.index('data-group="deliverables"'), "the Style guide under Specs"
-        tails = re.findall(r'<div class="artrow" data-art="([^"]*)"[^>]*>.*?<span class="artr">(.*?)</span></div>', html, re.S)
-        assert len(tails) == html.count('<div class="artrow"') and all(r.count('class="arttag') == (0 if a == "Verification proof" else 1) for a, r in tails), "one status tag per line"
+        # the page (the Artifacts groups, j2_artifacts.groups): the guides with their makers, the sections then the Style guide, the screenshots as one record
+        gr = A.groups(d74)
+        art = lambda k: render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": gr, "g": k, "sel": {}, "tab": "sum", "ver": ""}})["artifacts"]
+        html = art("guides")
+        assert re.findall(r'data-agrow="([^"]+)"', html) == ["W-1", "W-2", "W-3", "W-4", "W-5"] and "Product Manager · 1 version" in html and 'data-art="artifacts/hint-method.md"' in html
+        html = art("site")
+        assert len(re.findall(r'data-agrow="([^"]+)"', html)) == 11 and re.findall(r'data-agrow="([^"]+)"', html)[-1] == "style" and 'data-sec="work:website|W-6"' in html, "10 sections, then the Style guide"
+        html = art("records")
+        assert 'data-agrow="shots"' in html and "2 images" in html and html.count("data-agrow=") == 4
     if "j2-20261027-130930" in names:
         t = A.tree(os.path.join(repo, "j2-20261027-130930"))
         prd = next(x for g in t["groups"] if g["id"] == "deliverables" for x in g["items"])
@@ -6867,7 +6852,7 @@ def artifacts_tree():
     print(f"artifacts tree: {seen} runs, Plan / Specs / Deliverable / Proof, every artifacts.json file once, every spec with its maker, "
           f"the Style guide under Specs ({style_n}), {shots_n} screenshots only under Proof, makers, readers and statuses from j2_map.build, "
           "no deliverable among the run records; 174314: 5 specs and the Style guide, Website with 11 sections folded and 14 versions, "
-          "2 screenshots as thumbnails, one status tag per line; 130930: the emails under the PRD with sent and skipped ok")
+          "2 screenshots, and on the page five guides, ten sections and the Style guide, the screenshots as one record; 130930: the emails under the PRD with sent and skipped ok")
 
 
 def agent_view():
@@ -7003,8 +6988,8 @@ def agent_view():
               " document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); r.closed = d.hidden; r.panel = !!document.querySelector('#pane-map .mappanel');"
               " const c = document.querySelector('#msgs [data-agent^=\"W-\"]'); r.chatbtn = c ? c.dataset.agent : null; c.click();"
               " setTimeout(() => { r.wf = d.hidden ? '' : d.querySelector('h3').textContent; document.querySelector('[data-agentclose]').click(); r.closed2 = d.hidden;"
-              "  showTab('artifacts'); loadArtifacts().then(() => { const o = document.querySelector('[data-artcode=\"work:website|W-8\"]'); o.click();"
-              "   setTimeout(() => { const pre = document.querySelector('#pane-artifacts pre.code'); r.code = pre ? [pre.querySelectorAll('.ln').length, getComputedStyle(pre).fontFamily, !!document.querySelector('[data-codecopy]'), pre.querySelector('.hlt') ? 1 : 0] : null;"
+              "  artOpenGroup('site', 'W-8').then(() => { document.querySelector('#pane-artifacts [data-atab=code]').click();"
+              "   setTimeout(() => { const pre = document.querySelector('#pane-artifacts pre.code'); r.code = pre ? [pre.querySelectorAll('.ln').length, getComputedStyle(pre).fontFamily, !!document.querySelector('[data-codecopy]'), document.querySelector('#pane-artifacts pre.code .hlt') ? 1 : 0] : null;"
               "    document.body.setAttribute('data-r', JSON.stringify(r)); }, 900); }); }, 900); }, 900);")
         tmp = tf.mkdtemp(prefix="j2-agent-")
         open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(ui.replace("</body>", "<script>setTimeout(() => { try { " + js + " } catch (e) { document.body.setAttribute('data-r', JSON.stringify({error: String(e.stack || e)})); } }, 2500)</script></body>"))
@@ -7790,8 +7775,8 @@ def left_bar():
     Artifacts, Actions, Other, Settings); no Internals folder. Every rail item's status line and badge come from the same records. Every run under runs/ (browser-free): every tab sits in exactly one section and Other is empty; Workflows is
     under Adaptation and Priorities under Priority; Priority's header and view come from the run's decisions, priced workflows and conflicts (a run with none says so);
     the Workflows view lists every workflow once, by cycle, each with a link to its place in the Map's Tree; the tabs whose data this run lacks are dimmed with their reason
-    and exactly those; the conflicts and the actions of the run are each listed once; no artifact row says "not audited" and the ones a record names show their Audit
-    status. With Chrome (--browser): Map and Chat rows, the active one highlighted, sections open and close and remember it, a dimmed tab still opens, a workflow's Map
+    and exactly those; the conflicts and the actions of the run are each listed once; no artifact row says "not audited" and each guide and section row shows its
+    record's mark (latest checks by code, audit of its items). With Chrome (--browser): Map and Chat rows, the active one highlighted, sections open and close and remember it, a dimmed tab still opens, a workflow's Map
     link focuses it in the Tree, the Run details line has the run id and budget."""
     import collections
     import copy
@@ -7832,13 +7817,16 @@ def left_bar():
             t = A.tree(d, m)
             docs_ = {k: {"asked": "", "text": open(os.path.join(d, k + ".md"), encoding="utf-8").read()} for k in docfiles}
             plan = M.plan_view(d)
-            out = render_node(snap, docs={"docs": docs_, "map": m, "railtabs": tabs, "plan": plan, "artifacts": {**A.listing(d), "tree": t}})
+            gr = A.groups(d, m)
+            out = render_node(snap, docs={"docs": docs_, "map": m, "railtabs": tabs, "plan": plan, "artifacts": {"tree": t, "groups": gr}})
             model = out["rail"]
             assert [x["id"] for x in model] == order, (name, "the sections, in order")
             # deep links from the Map: every workflow has its row in Workflows, every artifact and section on the Map its item in Artifacts
             for w in wfs:
                 assert f'data-wfrow="{htmllib.escape(w["id"])}"' in out["workflows"], (name, w["id"], "a workflow's deep link lands on no Workflows row")
-            arts_html = out["artifacts"]
+            arts_html = "".join(render_node(snap, docs={"docs": {}, "map": m, "artifacts": {"groups": gr, "g": k, "sel": {}, "tab": "sum", "ver": ""}})["artifacts"]
+                                for k in ("plan", "guides", "site", "records"))      # every group's list (a row's data-node lists each Map node it holds)
+            arts_html = re.sub(r'data-node="([^"]*)"', lambda x: " ".join(f'data-node="{v}"' for v in x.group(1).split()), arts_html)
             map_arts = {n["id"]: n for n in m["nodes"] if n["kind"] == "work"}
             ids = set(map_arts) | {a for C in (m.get("constellations") or {}).values() for a in [C["id"]] + [s_["section"] for s_ in C["slots"] if s_["section"]]}
             def want_of(a):      # mapDeepTarget: a section's own row, else its document's item
@@ -7848,7 +7836,9 @@ def left_bar():
                 return [f'data-node="{htmllib.escape(a)}"'] + ([f'data-art="{htmllib.escape(f_)}"'] if f_ else []) + (['data-art="goal.json"'] if a == "work:charter" else [])
             for a in sorted(ids):
                 want = want_of(a)
-                assert any(w_ in arts_html for w_ in want), (name, a, "an artifact's deep link lands on no Artifacts item", want)
+                doc = re.sub(r"^work:", "", ":".join(a.split(":")[1:-1]) if a.startswith("sec:") else a)
+                assert any(w_ in arts_html for w_ in want) or (doc in ("prd", "hld", "lld") and f'id="docblock-{doc}"' in out["docs"]), \
+                    (name, a, "an artifact's deep link lands on no Artifacts item (a PRD, HLD or LLD: on its Documents block)", want)
                 seen["deep links"] += 1
             seen["deep links"] += len(wfs)
             sec = {x["id"]: x for x in model}
@@ -7919,19 +7909,15 @@ def left_bar():
             wantA = (f"{plural(n_, 'finding')}, {fx_} fixed" + (f", {n_ - fx_} open" if n_ - fx_ else "")) if n_ else ("no findings" if snap["audits"] else "no audits yet")
             assert sec["audit"]["status"] == wantA, (name, sec["audit"]["status"], wantA)
             assert sec["coordination"]["status"] == (f"{sum(1 for w in wfs if w.get('status') == 'done')} of {len(wfs)} workflows done" if wfs else "no workflows yet"), name
-            # artifact rows: an Audit status only where a record names the artifact
-            rows = []
-            walk = lambda xs: [rows.append(x) or walk(x.get("children") or []) for x in xs]
-            for g in t["groups"]:
-                walk(g["items"])
-            rows = [x for x in rows if x.get("count") is None]
-            html = out["artifacts"]
-            audited = {a.get("version") for a in snap["audits"]}
-            want_n = sum(1 for x in rows if (x.get("version") is not None and x["version"] in audited) or (x.get("file") == "goal.json" and snap["goal"]))
-            got_n = len(re.findall(r'class="arttag \w+">(?:audited|validated)', html))      # the Audit status is the row's one tag where a record names it
-            assert "not audited" not in html and got_n == want_n, (name, "no row says not audited; the rows a record names show their status", got_n, want_n)
+            # artifact rows: a mark only on a guide or a section, and it is the record's (its latest version's checks by code and the audit of its items)
+            rows = [x for g_ in gr["groups"] for x in g_["rows"] if x.get("versions")]
+            for x in rows:
+                seg = arts_html.split(f'data-agrow="{htmllib.escape(x["id"])}"', 1)[1].split("</button>", 1)[0]
+                assert ("am-ok" in seg) == x["ok"] and ("am-warn" in seg) == (not x["ok"]), (name, x["id"], "a row's mark is its record's")
+            lists = "".join(re.findall(r'<div class="aglist".*?</div><div class="agpane"', arts_html, re.S))
+            assert "not audited" not in lists and lists.count("am-ok") + lists.count("am-warn") == len(rows), (name, "one mark per guide and section row, none says not audited")
             seen["artifact rows"] += len(rows)
-            seen["artifact audit"] += want_n
+            seen["artifact audit"] += sum(1 for x in rows if not x["ok"])
             # the icon rail: every tab in exactly one item; the status lines and badges come from the same records
             rs_ = out["railst"]
             flat = [t_ for v in rs_["items"].values() for t_ in v]
@@ -7964,7 +7950,7 @@ def left_bar():
         j2.RUNS_DIR = keep_dir
     print(f"left bar: {seen['runs']} runs: icon rail (every tab in exactly one item, status lines and {seen['rail badges']} badges from the records), no Internals; every one of the {len(tabs)} tabs in exactly one section, Other empty; Priorities ({seen['with ranking']} runs with ranking records, "
           f"{seen['no ranking']} without) and the Workflows view ({seen['workflows linked']} workflows, each linked to its Map team ({seen['workflows not on the map']} the Map itself lists as not placed, shown as such), {seen['with plan']} runs with a plan record) render from the records; {seen['dimmed']} dimmed tabs, exactly the ones with no data; "
-          f"{seen['conflicts']} conflicts and {seen['actions']} actions each once; {seen['artifact rows']} artifact rows, {seen['artifact audit']} with an Audit status where a record names them, none \"not audited\""
+          f"{seen['conflicts']} conflicts and {seen['actions']} actions each once; {seen['artifact rows']} guide and section rows with their record's mark ({seen['artifact audit']} needing a look), none \"not audited\""
           + " ok")
 
 
@@ -8046,7 +8032,7 @@ def left_bar_toggle():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base, seen = f"http://127.0.0.1:{srv.server_address[1]}", 0
     want_tabs = {"identity": ["goal", "charter", "report"], "adaptation": ["workflows", "lessons", "playbooks"], "priority": ["priorities", "conflicts"], "coordination": ["timeline", "board", "story"],
-                 "audit": ["audit"], "artifacts": ["preview", "docs", "artifacts"], "library": ["library"], "settings": ["rundetails", "runsettings"], "map": [], "actions": []}
+                 "audit": ["audit"], "artifacts": ["preview", "docs"], "library": ["library"], "settings": ["rundetails", "runsettings"], "map": [], "actions": []}
     try:
         for run in runs:
             sends = [n for n in M.build(os.path.join(repo, run))["nodes"] if n["kind"] == "work" and n.get("tag") == "Send"]
@@ -8073,6 +8059,8 @@ def left_bar_toggle():
                         assert p["gos"] == ["Treeteams and what they made", "Run graphevery workflow and artifact"], (run, w, p["gos"])
                     if id_ == "actions":
                         assert len(p["gos"]) == max(1, len(sends)), (run, w, "each action once, or none in this run", p["gos"])
+                    if id_ == "artifacts":      # Preview and Documents, then the four groups of the Artifacts section with their counts
+                        assert [x.split(" ")[0] for x in p["gos"]] == ["Run", "Guides", "Website", "Run"] and all(re.search(r"\d|no |nothing|loading", x) for x in p["gos"]), (run, w, p["gos"])
                 assert set(t_ for p in r["panels"].values() for t_ in p["tabs"]) == {t_ for v in want_tabs.values() for t_ in v}, (run, w, "no tab is lost")
                 assert r["pick"] == [True, True, True] and r["graph"] == [True, "line", True] and r["chat"] is True, (run, w, "a tab opens in the main area; Run graph opens the Map's graph; Chat opens the Simple view", r["pick"], r["graph"], r["chat"])
                 seen += 1
@@ -8379,6 +8367,162 @@ def run_settings():
     print(f"run settings: no What to build or Back to simple view, Appearance cards; run list = the records on {len(ids)} runs ({dict(counts)}): each once, newest first, ID, title, status; "
           f"Chrome at 1440x900 and 390x844 ({seen} pages), light and dark: current run highlighted, chip counts, search by ID finds one, 20 at a time, a lone Running row keeps its height "
           "at the top, page height = window height with only the list scrolling, text 4.5:1, no error ok")
+
+def artifacts_groups():
+    """Artifacts as four groups (docs/mocks/j2-artifacts-mock.html; j2_artifacts.groups, /api/artifacts/groups), on run j2-20261103-132506. Browser-free: each
+    guide is one row per output file with its revisions as versions, each website section one row per sections.json entry with every workflow recorded on it,
+    the old copies of a guide paired with its versions, a missing maker left None, tree() untouched; a file's text is escaped. With Chrome (--browser) at
+    1440x900 and 390x844, light and dark: the rail panel keeps Preview and Documents and lists the four groups with counts; each group sets the title and
+    subtitle; no file is fetched until its item opens; a guide's assumptions, sections, Read document and version switcher; a section's Code and a script's
+    Script tab in JS, CSS and HTML blocks with line numbers and Copy; the style guide row; the audits as bars; the page's scroll height is the window's with
+    no sideways scroll and only the list and the item scrolling; text 4.5:1; no emoji; no page error."""
+    import collections
+    import html as htmllib
+    import shutil
+    import threading
+    import j2_server
+    A = j2_artifacts
+    here = os.path.dirname(os.path.abspath(__file__))
+    ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
+    assert 'data-artgo="${k}"' in ui and "/api/artifacts/groups" in ui and 'b.dataset.tab === "artifacts"' in ui, "the rail lists the groups instead of one Artifacts entry"
+    assert all(x not in ui for x in ("renderArtTree", "artNode(", "data-artopen=")), "the old tree view is gone"
+    assert not re.search("[\U0001F300-\U0001FAFF☀-➿]", ui[ui.index("const ARTGROUPS"):ui.index("function railArtCounts")]), "no emoji in the Artifacts code"
+    name = "j2-20261103-132506"
+    d = os.path.join(here, "runs", name)
+    if not os.path.isdir(d):
+        print(f"artifacts groups: static checks ok (skipped the rest: runs/{name} not found)")
+        return
+    g = A.groups(d)
+    G = {x["id"]: x for x in g["groups"]}
+    assert [x["id"] for x in g["groups"]] == ["plan", "guides", "site", "records"] and [x["label"] for x in g["groups"]] == ["Run plan", "Guides the makers read", "Website sections", "Run records"]
+    wfs = json.load(open(os.path.join(d, "workflows.json")))
+    num = lambda w: int(w.split("-")[1])
+    secs = json.load(open(os.path.join(d, "sections.json")))
+    want_site = {s: [s] + sorted((w["id"] for w in wfs if w.get("section") == s and w["id"] != s), key=num) for s in secs if s != "style"}
+    got_site = {x["id"]: [v["workflow"] for v in x["versions"]] for x in G["site"]["rows"] if x["kind"] != "style"}
+    assert got_site == want_site, ("a section's versions are the workflows recorded on it", got_site, want_site)
+    assert [x["id"] for x in G["site"]["rows"]][-1] == "style" and G["site"]["rows"][-1]["maker"] == "Web Developer", "the style guide is a row under Website sections"
+    outs = collections.defaultdict(list)
+    for w in sorted(wfs, key=lambda w: num(w["id"])):
+        if (w.get("outputs") or [""])[0].endswith(".md"):
+            outs[w["outputs"][0]].append(w["id"])
+    assert {x["file"]: [v["workflow"] for v in x["versions"]] for x in G["guides"]["rows"]} == {"artifacts/" + k: v for k, v in outs.items()}, "a guide: one row per file"
+    arch = next(x for x in G["guides"]["rows"] if x["file"] == "artifacts/architecture.md")
+    assert [(v["label"], v["workflow"]) for v in arch["versions"]] == [("first version", "W-2"), ("change 1", "W-23"), ("change 2", "W-27")], arch["versions"]
+    assert [(x["label"], x["file"], x["workflow"]) for x in arch["docs"]] == [("v1", "artifacts/architecture.v1.md", "W-2"), ("v2", "artifacts/architecture.v2.md", "W-23"), ("current", "artifacts/architecture.md", "W-27")]
+    assert next(x for x in G["guides"]["rows"] if x["id"] == "W-31")["maker"] is None, "no step recorded for W-31: its maker is left out, not guessed"
+    eng = next(x for x in G["site"]["rows"] if x["id"] == "W-6")
+    assert eng["kind"] == "script" and {r["id"] for r in eng["reused_by"]} == {w["id"] for w in wfs if "puzzle-engine" in (w.get("dependencies") or [])}, eng["reused_by"]
+    last = json.load(open(os.path.join(d, "audits.json")))[-1]
+    assert all(a["pass"] == next(r["pass"] for r in last["results"] if r.get("item") == a["item"]) for x in G["site"]["rows"] for a in x.get("audit") or []), "audit results are the latest audit's"
+    for x in G["guides"]["rows"] + [r for r in G["site"]["rows"] if r.get("versions")]:
+        for c in x["checks"]:
+            w = next(w for w in wfs if w["id"] == c["workflow"])
+            rs = [r for a in w["atoms"] for r in a.get("results") or []]
+            assert any(r.get("check") == c["check"] and r.get("attempt", 1) == max(q.get("attempt", 1) for q in rs) for r in rs), ("checks by code: the final attempt only", c)
+    assert {x["id"] for x in G["records"]["rows"]} == {"receipts", "audits", "conditions", "shots"} and len(next(x for x in G["records"]["rows"] if x["id"] == "audits")["audits"]) == len(json.load(open(os.path.join(d, "audits.json"))))
+    assert "realization.md" == next(x for x in G["plan"]["rows"] if x["id"] == "realization")["text"] and A.groups(None)["groups"][0]["rows"] == []
+    assert not re.search(r'"(head|body)":', json.dumps(g)) and "<script" not in json.dumps(g), "no file contents in the groups: they load when an item opens"
+    if shutil.which("node"):      # escaped: a guide whose text holds markup shows it as text
+        out = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": g, "g": "guides", "sel": {"guides": arch["id"]}, "tab": "doc", "ver": ""},
+                                                             "arttext": {arch["file"]: "## Heading <b>x</b>\nAssumption: <img src=x onerror=alert(1)>"}})["artifacts"]
+        assert "&lt;b&gt;x&lt;/b&gt;" in out and "<img src=x" not in out and "<b>x</b>" not in out, out[-400:]
+    chrome = j2.j2_check.find_chrome()
+    if not (chrome and BROWSER):
+        print("artifacts groups: four groups from the run's files, guides by output file, sections by sections.json with their versions, maker not guessed, checks "
+              "final attempt, escaped text ok (browser steps skipped: Chrome not found, or --fast without --browser)")
+        return
+    asm = sum("Assumption:" in l for l in open(os.path.join(d, "artifacts", "architecture.md"), encoding="utf-8"))
+    heads = sum(l.startswith("## ") for l in open(os.path.join(d, "artifacts", "architecture.md"), encoding="utf-8"))
+    v1 = next(l for l in open(os.path.join(d, "artifacts", "architecture.v1.md"), encoding="utf-8") if l.strip()).lstrip("# ").strip()
+    head = "<script>window.__e = []; addEventListener('error', e => __e.push(String(e.message))); window.__f = []; const __of = window.fetch; window.fetch = (u, o) => { __f.push(String(u)); return __of(u, o); };</script>"
+    probe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = {};"
+             " const lum = c => { const f = /^color\\(srgb/.test(c), v = (c.replace(/^color\\(srgb/, '').match(/[\\d.]+/g) || []).slice(0, 3).map(x => { x = f ? +x : x / 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };"
+             " const ct = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }, bg = e => { while (e) { const c = getComputedStyle(e).backgroundColor; if (c && !/rgba\\(0, 0, 0, 0\\)|transparent/.test(c)) return c; e = e.parentElement; } return 'rgb(255, 255, 255)'; };"
+             " const fit = () => [document.documentElement.scrollHeight, innerHeight, document.documentElement.scrollWidth <= innerWidth, document.querySelector('#dview .dcol').scrollHeight <= document.querySelector('#dview .dcol').clientHeight + 1];"
+             " const contrast = sels => sels.map(sel => { const e = q(sel).find(x => x.getClientRects().length); return e ? [sel, +ct(getComputedStyle(e).color, bg(e)).toFixed(2)] : [sel, 0]; });"
+             " const row = id => q('#pane-artifacts [data-agrow]').find(e => e.dataset.agrow === id), rows = () => q('#pane-artifacts [data-agrow]').map(e => e.dataset.agrow), pane = () => document.querySelector('#pane-artifacts .agpane');"
+             " const files = () => __f.filter(u => /\\/api\\/(artifact\\?|code\\?)/.test(u)).map(u => decodeURIComponent((u.match(/name=([^&]+)/) || u.match(/section=([^&]+)/) || ['', ''])[1]));"
+             " for (let i = 0; i < 80 && !document.querySelector('#rail [data-ri=artifacts]'); i++) await wait(100); await wait(500);"
+             " document.querySelector('#rail [data-ri=artifacts]').click(); for (let i = 0; i < 80 && !ARTS.groups; i++) await wait(100); await wait(200);"
+             " r.fly = [q('#rfl [data-tab]').map(b => b.dataset.tab), q('#rfl [data-artgo]').map(b => b.firstChild.textContent.trim() + '|' + b.querySelector('small').textContent)];"
+             " r.flyc = contrast(['#rfl [data-artgo] small', '#rfly .rnh']);"
+             " r.f0 = files().length; r.heads = {}; r.err0 = __e.slice();"
+             " q('#rfl [data-artgo=guides]')[0].click(); await wait(300); r.heads.guides = [S('wtitle').textContent, S('wsub').textContent, S('rfly').hidden]; r.grows = rows();"
+             " row('W-2').click(); await wait(400); r.f1 = files(); r.guide = [q('.aasm .ackl li').length, q('.atoc [data-ajump]').length, !!q('.aasm')[0], pane().textContent.includes('Guides are not audited')];"
+             " r.mk = row('W-31').textContent.includes('Maker not recorded');"
+             " q('[data-atab=doc]')[0].click(); await wait(300); r.vers = q('.avers button').map(b => b.textContent + ':' + b.getAttribute('aria-pressed')); r.doch = q('.amd h3').length; r.scrolls = pane().scrollHeight > pane().clientHeight; r.fitDoc = fit();"
+             " q('.avers button')[0].click(); await wait(400); r.v1 = [q('.amd h2, .amd h3, .amd p')[0] ? q('.amd h2, .amd h3, .amd p')[0].textContent.trim() : '', files().includes('artifacts/architecture.v1.md')];"
+             " q('[data-atab=sum]')[0].click(); await wait(200); q('.atoc [data-ajump]')[2].click(); await wait(300); const h2 = S('ah-2'); r.jump = [q('[data-atab=doc]')[0].getAttribute('aria-selected'), !!h2 && h2.getBoundingClientRect().top >= pane().getBoundingClientRect().top - 2 && h2.getBoundingClientRect().top < pane().getBoundingClientRect().top + 80];"
+             " q('#rail [data-ri=artifacts]')[0].click(); await wait(200); q('#rfl [data-artgo=site]')[0].click(); await wait(300); r.heads.site = [S('wtitle').textContent, S('wsub').textContent]; r.srows = rows();"
+             " row('W-6').click(); await wait(300); r.script = [q('[data-atab]').map(b => b.textContent).join(','), pane().textContent.includes('Reused by'), !!pane().querySelector('.ashot img')];"
+             " r.f2 = files().length; q('[data-atab=code]')[0].click(); await wait(500); r.sblocks = q('.acode').map(b => b.dataset.acode + ':' + b.querySelectorAll('.ln').length + ':' + !!b.querySelector('[data-codecopy]'));"
+             " row('W-5').click(); await wait(200); r.f3 = files().length; q('[data-atab=code]')[0].click(); await wait(500); r.cblocks = q('.acode').map(b => b.dataset.acode); r.mono = getComputedStyle(q('.acode pre.code')[0]).fontFamily; r.fitCode = fit();"
+             " row('style').click(); await wait(400); r.style = [!!q('.astyle')[0], q('[data-atab]').map(b => b.textContent).join(',')];"
+             " q('#rail [data-ri=artifacts]')[0].click(); await wait(200); q('#rfl [data-artgo=plan]')[0].click(); await wait(300); r.heads.plan = [S('wtitle').textContent, S('wsub').textContent];"
+             " row('realization').click(); await wait(200); q('[data-atab=doc]')[0].click(); await wait(400); r.rz = [q('.amd h2, .amd h3').length, files().includes('realization.md')];"
+             " q('#rail [data-ri=artifacts]')[0].click(); await wait(200); q('#rfl [data-artgo=records]')[0].click(); await wait(300); r.heads.records = [S('wtitle').textContent, S('wsub').textContent];"
+             " row('audits').click(); await wait(200); r.bars = q('.abar').length; r.fit = fit(); r.listScroll = getComputedStyle(document.querySelector('.aglist')).overflowY;"
+             " r.emoji = /[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}]/u.test(S('pane-artifacts').innerText + S('rfly').innerText);"
+             " r.themes = {}; for (const th of ['light', 'dark']){ THEME = th; themeApply(); await wait(30); const out = [];"
+             "   for (const [g_, id] of [['guides', 'W-2'], ['site', 'W-8'], ['plan', 'charter'], ['records', 'conditions']]){ await artOpenGroup(g_, id); await wait(250);"
+             "     out.push(...contrast(['.agrow.on .agt b', '.agrow:not(.on) .agt span', '.agrow .mono', '.aby', '.ablk h5', '.ackl li span', '.atabs button[aria-selected=false]', '.atabs button[aria-selected=true]', '.aasm p', '.atoc .linkbtn', '.agpane .empty', '.aev']).filter(x => x[1])); }"
+             "   r.themes[th] = [out, fit()]; }"
+             " r.err = __e.slice(); (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); })()")
+    page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { " + probe + " }, 1500)</script></body>")
+    tmp = tempfile.mkdtemp(prefix="j2-arts-")
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+    os.symlink(os.path.join(here, "vendor"), os.path.join(tmp, "vendor"))
+    wrap = {}
+
+    class Wrap(j2_server.Handler):      # a phone-width frame, same origin (headless Chrome's window is at least 500px wide)
+        def do_GET(self):
+            return self._send(200, wrap["page"], "text/html") if self.path.startswith("/wrap") else super().do_GET()
+    keep_here, keep_runs = j2_server.HERE, j2.RUNS_DIR
+    j2_server.HERE, j2.RUNS_DIR = tmp, os.path.join(here, "runs")
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), Wrap)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base, seen = f"http://127.0.0.1:{srv.server_address[1]}", 0
+    counts = {x["id"]: x for x in g["groups"]}
+    try:
+        for w, h in ((1440, 900), (390, 844)):
+            url = f"/?view=detail&run={name}"
+            if w < 500:
+                wrap["page"] = f'<!doctype html><body style="margin:0"><iframe src="{url}" style="width:{w}px;height:{h}px;border:0;display:block"></iframe></body>'
+                url = "/wrap"
+            dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--window-size={max(w, 500)},{h}", "--virtual-time-budget=60000", "--dump-dom", base + url],
+                             capture_output=True, text=True, timeout=300).stdout
+            hit = re.search(r'data-r="([^"]*)"', dom)
+            assert hit, (w, "the page did not finish its steps", dom[-300:])
+            r = json.loads(htmllib.unescape(hit.group(1)))
+            assert not r["err"], (w, r["err"])
+            nv = sum(len(x["versions"]) for x in counts["guides"]["rows"])
+            assert r["fly"] == [["preview", "docs"], [f"Run plan|3 files", f"Guides the makers read|5 guides · {nv} versions", "Website sections|13 sections · 1 script", "Run records|4 records"]], (w, r["fly"])
+            assert r["f0"] == 0 and r["f1"] == ["artifacts/product-plan.md", "artifacts/architecture.md"] and r["f2"] == 3 and r["f3"] == 4, (w, "a file loads only when its item opens (a group opens its first item)", r["f0"], r["f1"], r["f2"], r["f3"])
+            assert r["heads"]["guides"][:2] == ["Guides the makers read", "Each guide, who wrote it, and how it was checked."] and r["heads"]["guides"][2] is True, (w, r["heads"])
+            assert r["heads"]["site"] == ["Website sections", "Website v33: the latest audit passes 19 of 19 items."] and r["heads"]["plan"][0] == "Run plan" and r["heads"]["records"][0] == "Run records", (w, r["heads"])
+            assert r["grows"] == [x["id"] for x in counts["guides"]["rows"]] and r["srows"] == [x["id"] for x in counts["site"]["rows"]], (w, r["grows"], r["srows"])
+            assert r["guide"] == [asm, heads, True, True] and r["mk"], (w, "assumptions, sections, guides not audited, maker not recorded", r["guide"], asm, heads)
+            assert r["vers"] == ["v1 · W-2:false", "v2 · W-23:false", "current · W-27:true"] and r["doch"] == heads and r["scrolls"], (w, r["vers"], r["doch"])
+            assert r["v1"] == [v1, True] and r["jump"] == ["true", True], (w, "the version switcher and a section link", r["v1"], r["jump"])
+            assert r["script"] == ["Summary,Script", True, True] and r["sblocks"] and r["sblocks"][0].split(":")[0] == "JavaScript" and int(r["sblocks"][0].split(":")[1]) >= 200 and r["sblocks"][0].endswith(":true"), (w, r["script"], r["sblocks"])
+            assert r["cblocks"] == ["JavaScript", "CSS", "HTML"] and "mono" in r["mono"].lower() or "menlo" in r["mono"].lower(), (w, r["cblocks"], r["mono"])
+            assert r["style"] == [True, "Summary,Code"] and r["rz"][0] >= 3 and r["rz"][1] and r["bars"] == len(counts["records"]["rows"][1]["audits"]), (w, r["style"], r["rz"], r["bars"])
+            for f_ in (r["fit"], r["fitDoc"], r["fitCode"]) + tuple(v[1] for v in r["themes"].values()):
+                assert f_[0] == f_[1] and f_[2] and f_[3], (w, "the page fits the window with no sideways scroll; only the panes scroll", f_)
+            assert r["listScroll"] == "auto" and not r["emoji"], (w, r["listScroll"], r["emoji"])
+            for th, (pr, _) in r["themes"].items():
+                assert len(pr) >= 30 and all(v >= 4.5 for _, v in pr), (w, th, "readable", [x for x in pr if x[1] < 4.5], len(pr))
+            assert all(v >= 4.5 for _, v in r["flyc"]), (w, r["flyc"])
+            seen += 1
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR = keep_here, keep_runs
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"artifacts groups: four groups from {name}'s files (guides by output file, sections by sections.json, versions folded, maker not guessed, checks final "
+          f"attempt, escaped text); Chrome at 1440x900 and 390x844 ({seen} pages), light and dark: the rail keeps Preview and Documents and lists the groups with "
+          "counts, title and subtitle per group, files load on open, assumptions, sections, Read document and versions, Code and Script blocks with line numbers "
+          "and Copy, the style guide, audit bars, page = window with only the panes scrolling, text 4.5:1, no emoji, no error ok")
 
 def graph_map():
     """Map, open team as a workflow-artifact graph (m["teams"], j2_map.team_graphs), on every saved run and every team that has workflows: no team node (the team is a
@@ -9792,7 +9936,7 @@ def map_tab():
                 "document.getElementById('backmap').click(); r.back = vis() + '|' + document.getElementById('backmap').hidden;"
                 "let asked = []; const fq = focusQuestion; focusQuestion = id => { asked.push(String(id)); return fq(id); }; r.nodes = {};"
                 "for (const id of ['person:requester', 'fn:identity', 'fn:adaptation', 'fn:audit', 'step:prd>hld', 'work:prd', 'work:website', 'work:charter']) { showTab('map'); asked = []; click(id);"
-                " r.nodes[id] = {pane: vis(), asked: asked.join(','), wf: WFSTEP.join(','), filt: MAPFILT, art: ARTOPEN}; }"
+                " r.nodes[id] = {pane: vis(), asked: asked.join(','), wf: WFSTEP.join(','), filt: MAPFILT, art: (document.querySelector('.dlhit') || {id: ''}).id}; document.querySelectorAll('.dlhit').forEach(x => x.classList.remove('dlhit')); }"
                 "showTab('workflows'); r.wfnote = !!document.querySelector('[data-stepfilter]'); document.querySelector('[data-wfclear]').click(); r.wfcleared = !document.querySelector('[data-stepfilter]') && WFSTEP.length;")
             b = home_probe(name, base_js +
                 "let chats = 0; const fc = focusChat; focusChat = () => { chats++; return fc(); }; r.none = document.getElementById('needs').innerText.replace(/\\s+/g, ' ') + '|' + document.getElementById('needcount').textContent;"
@@ -9815,7 +9959,7 @@ def map_tab():
         assert n["person:requester"]["asked"] == "9999" and n["fn:identity"]["asked"] == "9999", n      # waiting on you: straight to the question in the Chat
         assert n["fn:adaptation"] == {"pane": "map", "asked": "", "wf": "", "filt": "fn:adaptation", "art": ""}, n      # the other functions: the tables under the Map, filtered to them
         assert n["fn:audit"]["pane"] == "audit" and n["step:prd>hld"]["pane"] == "workflows" and n["step:prd>hld"]["wf"] == ",".join(sw), n
-        assert n["work:prd"]["pane"] == "artifacts" and n["work:prd"]["art"] == "prd.md" and n["work:website"]["pane"] == "preview" and n["work:charter"]["pane"] == "charter", n
+        assert n["work:prd"]["pane"] == "docs" and n["work:prd"]["art"] == "docblock-prd" and n["work:website"]["pane"] == "preview" and n["work:charter"]["pane"] == "charter", n
         assert a["wfnote"] is True and a["wfcleared"] == 0, a      # "Show all" clears the step filter
         assert b["none"].startswith("Needs you 0 Nothing needs you right now.") and b["none"].endswith("See report|0") and b["person"] == "needs" and b["chats"] == 1 and b["railchat"] == 1 and b["toggled"] is True, b
         # the rail's Chat opens the Simple view with the rail kept and Chat lit; Map goes back to the unchanged home; same run, same messages, no reload
@@ -10703,6 +10847,7 @@ if __name__ == "__main__":
             chat_panel()
             view_kept()
             run_settings()
+            artifacts_groups()
             graph_map()
             warm_ui()
             map_motion()

@@ -173,6 +173,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if not run and (RUN.status == "running" or RUN.paused) else None
             ok = d and os.path.isdir(d)
             return self._send(200, json.dumps(j2_artifacts.tree(d, j2_map.build(d, live)) if ok else j2_artifacts.tree(None), ensure_ascii=False))
+        if u.path == "/api/artifacts/groups":      # the Artifacts section's four groups (artifacts-groups/1), from the run's own files
+            d = j2.saved_dir(run) if run else RUN.dir
+            live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.STAGE_WORDS, "board": RUN.board} \
+                if not run and (RUN.status == "running" or RUN.paused) else None
+            ok = d and os.path.isdir(d)
+            return self._send(200, json.dumps(j2_artifacts.groups(d, j2_map.build(d, live)) if ok else j2_artifacts.groups(None), ensure_ascii=False))
         if u.path == "/api/artifact":   # one file the run's artifact list names, read-only; nothing else is served
             d = j2.saved_dir(run) if run else RUN.dir
             p = j2_artifacts.served(d if d and os.path.isdir(d) else None, q.get("name"))
