@@ -117,7 +117,13 @@ def test_the_direct_chat_composer_in_the_node_panel_and_on_home(app, browser, tm
     browser.wait_for("document.querySelectorAll('#nodepanel .ccfile').length === 0")                                                                     # the files went with the message
     browser.wait_for("!document.querySelector('#nodepanel .ccstream').hidden", timeout=20)
     assert "is writing" in label(browser, "#nodepanel .ccstream")
+    browser.click("[data-npclose]")                                     # closed while the model writes: the reply is stored with no panel open
+    browser.wait_for("document.getElementById('nodepanel').hidden")
     reply = agent_after(live, sid, 2)
+    browser.js("document.querySelector('#pane-graph g.wnode[data-id=\"web\"]').focus()")
+    browser.press("Enter")                                              # opened again: the stored reply ends the turn (Send, no writing row)
+    browser.wait_for("!document.getElementById('nodepanel').hidden && document.getElementById('nptitle').textContent === 'Web'")
+    present(browser, "#nodepanel .npill .cpill")
     assert reply["role"] == "agent" and reply["kind"] == "text" and reply["text"]
     browser.wait_for("document.querySelector('#nodepanel .ccstream').hidden && document.querySelector('.ncomposer .send').textContent === 'Send'", timeout=20)
     assert [m["role"] for m in live.messages(sid)] == ["user", "agent"]

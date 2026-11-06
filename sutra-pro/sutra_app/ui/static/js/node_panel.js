@@ -395,12 +395,16 @@
       if (!CC || !sid) return null;
       if (!st.cc || st.cc.sid !== sid) {
         let c = composers.get(sid);              // the same chat opened again: its mode, its files and a running turn (with Stop) are still there
-        if (c) c.rejoin();
-        else {
+        const again = c !== undefined;
+        if (!again) {
           c = CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => { if (st && chatRefs) { paintComposer(); paintBar(); } }});
           composers.set(sid, c);
         }
-        st.cc = {sid, c};
+        st.cc = {sid, c};                        // set first: rejoin and reconcile repaint, and the repaint asks for this composer again
+        if (again) {
+          c.rejoin();
+          c.reconcile(st.messages);              // a turn whose reply was stored while the chat was closed is over (no event of it reaches this page now)
+        }
       }
       return st.cc.c;
     }
