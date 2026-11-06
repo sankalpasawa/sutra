@@ -50,9 +50,12 @@ def _header(from_provider: Optional[str], to_provider: Optional[str], omitted: i
 
 
 def render_carry_over(messages: Sequence[Message], *, from_provider: Optional[str] = None, to_provider: Optional[str] = None,
-                      full_chars: int = FULL_CHARS, tail: int = TAIL_MESSAGES, digest_cap: int = DIGEST_CAP_CHARS) -> str:
+                      full_chars: int = FULL_CHARS, tail: int = TAIL_MESSAGES, digest_cap: int = DIGEST_CAP_CHARS,
+                      budget: Optional[int] = None) -> str:
     """The block a new provider session starts with. `from_provider` / `to_provider` only fill the header. The three limits are
-    parameters for tests; the defaults are J2's."""
+    parameters for tests; the defaults are J2's. `budget` (characters, ABS-3) can only LOWER the first and last limit: None keeps J2's exactly."""
+    if budget is not None:
+        full_chars, digest_cap = min(full_chars, budget), min(digest_cap, budget)
     msgs = list(messages)
     if not msgs:
         return ""

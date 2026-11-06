@@ -48,6 +48,7 @@ from .models import (
 )
 from .policy import Resolved, RoutingPolicy
 from .schema import fits_native, schema_sha, to_json_schema
+from .budget import carry_chars
 from .transcript import render_carry_over
 from .usage import Attempt, UsageIn, UsageSink, build_usage_row, load_session_state, new_request_id, save_session_state
 
@@ -768,7 +769,9 @@ class Router:
         fresh.switches = (old.switches + (1 if replaces else 0)) if old is not None else 0
         fresh.pinned = pinned          # type: ignore[assignment]
         save_session_state(fresh)
-        carry = render_carry_over(self._transcript(sid, m), from_provider=old.provider if old is not None else None, to_provider=provider)
+        window = carry_chars(provider, fresh.model)
+        carry = render_carry_over(self._transcript(sid, m), from_provider=old.provider if old is not None else None, to_provider=provider,
+                                  budget=window["full_chars"])
         return fresh, (f"{carry}\n\n{NEW_MESSAGE_LABEL}\n{m.text}" if carry else m.text), replaces
 
     def _chat_turn(self, state: _Request, plan: Plan, provider: str, connector: ModelConnector, m: Message,
