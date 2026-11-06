@@ -58,7 +58,7 @@ def route(path):
              "/api/map": "map", "/api/plan": "plan", "/api/library": "library", "/api/run-templates": "run_templates",
              "/api/artifacts": "artifacts", "/api/agent": "agent", "/api/code": "code", "/api/artifacts/tree": "artifacts_tree",
              "/api/artifact": "artifact", "/api/story": "story", "/api/board": "board", "/api/audits": "audits",
-             "/api/refs": "refs"}
+             "/api/refs": "refs", "/api/runlist": "runlist", "/api/changes": "changes"}         # the last two: patch P13
     if path in fixed:
         return fixed[path], {}
     if path.startswith("/api/library/"):      # /api/library/<artifact>/<section>/<slug>/v<N>

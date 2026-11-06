@@ -34,13 +34,14 @@ from .paths import pid_alive
 from .spec import EngineSettings
 
 __all__ = ["Reply", "MemoryPaths", "Commands", "RunCtx", "Published", "VIEWS", "HANDLER_COUNT", "DOCX", "PROCESS_GONE",
-           "EMPTY_LIVE", "LIVE_VIEWS", "live_state", "read_published", "idle_snapshot", "effective_snapshot"]
+           "EMPTY_LIVE", "LIVE_VIEWS", "PATCH_VIEWS", "live_state", "read_published", "idle_snapshot", "effective_snapshot"]
 
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PROCESS_GONE = "The department process stopped (exit unknown). Try again."      # engine design 4.6
 SNAPSHOT_FILE, LIVE_FILE = "snapshot.json", "live.json"
 PNG = "image/png"
 HANDLER_COUNT = 30        # the rows 1 to 30 of engine design 7.1 ("site" has two rows, saved and live, and one entry in VIEWS)
+PATCH_VIEWS = ("runlist", "changes")      # P13: two read-only routes J2's own repository does not have (docs/design/j2-sync-3.md)
 
 
 @dataclass(frozen=True)
@@ -283,6 +284,18 @@ def state(ctx: RunCtx, q: dict) -> Reply:
 
 def runs(ctx: RunCtx, q: dict) -> Reply:
     return _json({"live": ctx.live_id or "", "runs": j2.list_runs(runs_dir=ctx.runs_dir)})
+
+
+def runlist(ctx: RunCtx, q: dict) -> Reply:
+    """P13: Run settings' list of this department's saved runs, newest first (`j2.run_list`). The live run reads `running`
+    only while its process is alive and its snapshot says so; `?run=` is not used: the list is about the department."""
+    running = ctx.mode == "live" and ctx.alive and (ctx.snap or {}).get("status") == "running"
+    return _json(j2.run_list(ctx.runs_dir, ctx.live_id or "", bool(running)))
+
+
+def changes(ctx: RunCtx, q: dict) -> Reply:
+    """P13: the build journey's stops, one per change request of the run's `change.json` (`j2.run_changes`); none: an empty list."""
+    return _json(j2.run_changes(_dir(ctx)))
 
 
 def call(ctx: RunCtx, q: dict) -> Reply:
@@ -535,7 +548,8 @@ def reset(ctx: RunCtx, body: dict) -> Reply:
 
 VIEWS: Dict[str, Callable[[RunCtx, dict], Reply]] = {fn.__name__: fn for fn in (
     index, vendor, state, runs, call, preview, docs, map, plan, library, library_item, run_templates, artifacts, agent, code,
-    artifacts_tree, artifact, story, board, audits, refs, shot, file, site, say, playbooks_clear, lessons_clear, output, reset)}
+    artifacts_tree, artifact, story, board, audits, refs, shot, file, site, say, playbooks_clear, lessons_clear, output, reset,
+    runlist, changes)}
 
 # What a request needs from the live run (the stdlib adapter builds `live_state` only for these; the others read the folder).
-LIVE_VIEWS = frozenset({"state", "preview", "docs", "map", "artifacts_tree", "story", "board", "file", "site"})
+LIVE_VIEWS = frozenset({"state", "runlist", "preview", "docs", "map", "artifacts_tree", "story", "board", "file", "site"})

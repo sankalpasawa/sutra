@@ -19,7 +19,7 @@ TOKEN = {"X-Sutra-Token": "fake-token-fake-token-0123"}
 GET_PATHS = ["/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=a", "/api/docs", "/api/map", "/api/plan", "/api/library",
              "/api/run-templates", "/api/artifacts", "/api/agent?who=identity", "/api/artifacts/tree", "/api/artifact?name=prd.md",
              "/api/artifact?name=site/v1.html", "/api/story", "/api/board", "/api/audits", "/api/refs", "/file/prd.md", "/site/latest",
-             "/site/v1", "/api/engine/settings"]
+             "/site/v1", "/api/engine/settings", "/api/runlist", "/api/changes"]
 
 
 @pytest.fixture

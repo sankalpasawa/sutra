@@ -36,7 +36,7 @@ PRD_BRIEF = ("Write a PRD for QuickQueue, a mobile app that lets clinic patients
              "patients join remotely within 3 months.")
 NAMES = {"index", "vendor", "state", "runs", "call", "preview", "docs", "map", "plan", "library", "library_item", "run_templates",
          "artifacts", "agent", "code", "artifacts_tree", "artifact", "story", "board", "audits", "refs", "shot", "file", "site",
-         "say", "playbooks_clear", "lessons_clear", "output", "reset"}
+         "say", "playbooks_clear", "lessons_clear", "output", "reset", "runlist", "changes"}         # the last two: patch P13
 
 
 def load_recorder():
@@ -263,7 +263,7 @@ def test_the_views_are_the_thirty_handlers_of_the_design(w):
     v = w.views
     assert set(v.VIEWS) == NAMES and all(callable(f) for f in v.VIEWS.values())
     assert v.VIEWS["site"] is v.site and callable(v.site_saved) and callable(v.site_live)
-    assert v.HANDLER_COUNT == 30 == len(v.VIEWS) - 1 + 2          # "site" has two rows (saved and live), one entry
+    assert v.HANDLER_COUNT == 30 == len(v.VIEWS) - len(v.PATCH_VIEWS) - 1 + 2          # "site" has two rows (saved and live), one entry
     assert v.LIVE_VIEWS <= set(v.VIEWS)
 
 
@@ -794,7 +794,7 @@ def test_the_clear_routes_empty_the_departments_memory_files(w, tmp_path):
 
 
 # ---- the file-based live mode and the stdlib adapter give the same bodies ---------------------------------------------
-LIVE_QUERIES = {"state": {"since": "1"}, "preview": {}, "docs": {}, "map": {}, "artifacts_tree": {}, "story": {}, "board": {},
+LIVE_QUERIES = {"state": {"since": "1"}, "runlist": {}, "preview": {}, "docs": {}, "map": {}, "artifacts_tree": {}, "story": {}, "board": {},
                 "file": {"name": "prd.md"}, "site": {"key": "latest"}}
 
 
@@ -949,3 +949,82 @@ def test_the_views_and_the_adapter_do_not_import_the_ui_package():
     for name in ("views.py", "j2_server.py"):
         source = (REPO / "sutra_app" / "engine" / name).read_text(encoding="utf-8")
         assert "sutra_app.ui" not in source.replace("sutra_app.ui` ", "").split('"""', 2)[-1], name
+
+
+# ---- patch P13: GET /api/runlist and GET /api/changes (not in J2's repository; shapes in GOLD["patched"]) ------------------
+def patched_problems(w, route, ctx, mode):
+    reply = w.views.VIEWS[route](ctx, {})
+    got, gold = rec.shape(reply.code, reply.ctype, reply.body), GOLD["patched"]["get"][route][mode]
+    return [] if got == gold else [f"{route}/{mode}: {got} instead of {gold}"]
+
+
+def test_the_golden_has_the_two_patched_routes():
+    assert set(GOLD["patched"]["get"]) == set(rec.PATCH_ROUTES) == {"runlist", "changes"}
+    assert set(GOLD["patched"]["get"]["runlist"]["runs"]["keys"]) == {"live", "runs", "runs[].id", "runs[].title", "runs[].status",
+                                                                     "runs[].output", "runs[].when", "runs[].brief"}
+    assert {"runlist", "changes"} <= NAMES
+
+
+def test_the_runlist_of_the_real_runs_lists_both_newest_first(w):
+    ctx = saved_ctx(w, SITE_ID)
+    body = jbody(call(w, "runlist", ctx))
+    ids = [r["id"] for r in body["runs"]]
+    assert ids == [PRD_ID, SITE_ID] and body["live"] == SITE_ID          # the saved ctx of this fixture names SITE_ID as its live id
+    by = {r["id"]: r for r in body["runs"]}
+    assert by[SITE_ID]["status"] == "done" and by[SITE_ID]["output"] == "website" and by[SITE_ID]["when"] == "2026-11-04T10:00:04"
+    assert by[PRD_ID]["output"] == "prd" and by[PRD_ID]["brief"].startswith("Write a PRD for QuickQueue")
+    assert by[SITE_ID]["brief"] == rec.BREW_LAB[:160]
+    assert patched_problems(w, "runlist", ctx, "runs") == []
+
+
+def test_the_live_run_reads_running_only_while_it_runs_and_its_process_exists(w):
+    ctx = live_ctx(w, w.site)
+    assert {r["id"]: r["status"] for r in jbody(call(w, "runlist", ctx))["runs"]}[SITE_ID] == "done"
+    snap = {**ctx.snap, "status": "running"}
+    running = w.views.RunCtx("live", SITE_ID, ctx.dir, ctx.runs_dir, SITE_ID, w.memory, snap=snap, extras=ctx.extras, alive=True)
+    assert {r["id"]: r["status"] for r in jbody(call(w, "runlist", running))["runs"]} == {PRD_ID: "done", SITE_ID: "running"}
+    gone = w.views.RunCtx("live", SITE_ID, ctx.dir, ctx.runs_dir, SITE_ID, w.memory, snap=snap, extras=ctx.extras, alive=False)
+    assert jbody(call(w, "runlist", gone))["runs"][1]["status"] == "done"
+    saved = saved_ctx(w, SITE_ID)
+    assert jbody(call(w, "runlist", saved))["runs"][1]["status"] == "done"
+
+
+def test_the_runlist_of_a_department_with_no_runs_is_empty(w, tmp_path):
+    ctx = w.views.RunCtx("idle", None, None, str(tmp_path / "none"), None, w.memory, snap=None)
+    assert jbody(call(w, "runlist", ctx)) == {"live": "", "runs": []}
+    assert patched_problems(w, "runlist", ctx, "empty") == [] and patched_problems(w, "changes", ctx, "empty") == []
+
+
+def test_the_changes_of_a_run_without_a_change_file_are_empty_and_a_torn_file_reads_as_none(w, tmp_path):
+    assert jbody(call(w, "changes", saved_ctx(w, SITE_ID))) == {"changes": []}
+    assert jbody(call(w, "changes", idle_ctx(w))) == {"changes": []}
+    d = tmp_path / "j2-20261106-120000-dddd"
+    d.mkdir()
+    ctx = w.views.RunCtx("saved", d.name, str(d), str(tmp_path), None, w.memory)
+    for text in ("{not json", '{"a": 1}', "[1, 2]"):
+        (d / "change.json").write_text(text)
+        assert jbody(call(w, "changes", ctx)) == {"changes": []}
+    (d / "change.json").write_text(json.dumps([{"id": "c1", "request": "Add a map", "cycle": 2, "revise": ["a", "b"], "new": ["c"]}, "x"]))
+    assert jbody(call(w, "changes", ctx)) == {"changes": [{"id": "c1", "request": "Add a map", "cycle": 2, "revise": 2, "new": 1}]}
+    assert patched_problems(w, "changes", ctx, "runs") == []
+
+
+def test_the_fixture_runs_of_the_recorder_give_titles_statuses_and_skip_what_is_not_a_run(w, tmp_path):
+    live = rec.write_patch_fixture(tmp_path / "runs")
+    ctx = w.views.RunCtx("saved", rec.PATCH_RUN_DONE, str(tmp_path / "runs" / rec.PATCH_RUN_DONE), str(tmp_path / "runs"), live, w.memory)
+    body = jbody(call(w, "runlist", ctx))
+    assert [r["id"] for r in body["runs"]] == [rec.PATCH_RUN_STOPPED, rec.PATCH_RUN_DONE]      # newest first; the folder without a chat is skipped
+    stopped, done = body["runs"]
+    assert (done["title"], done["status"], done["output"]) == ("Brew Lab", "done", "website")
+    assert (stopped["title"], stopped["status"], stopped["output"]) == ("A PRD for QuickQueue.", "stopped", "prd")
+    assert stopped["brief"] == "Write a PRD for QuickQueue." and stopped["when"] == "2026-11-06T10:15:00"
+    assert jbody(call(w, "changes", ctx))["changes"][1] == {"id": "c2", "request": "Warmer colours", "cycle": 3, "revise": 0, "new": 2}
+
+
+def test_the_stdlib_adapter_serves_the_two_p13_routes(w, monkeypatch):
+    monkeypatch.setattr(w.j2_server, "RUN", w.prd)
+    body = w.server.json("/api/runlist")
+    assert body["live"] == PRD_ID and [r["id"] for r in body["runs"]] == [PRD_ID, SITE_ID]
+    assert w.server.json(f"/api/runlist?run={SITE_ID}")["runs"] == body["runs"]
+    assert w.server.json("/api/changes") == {"changes": []} and w.server.json(f"/api/changes?run={SITE_ID}") == {"changes": []}
+    assert w.server.ask("GET", "/api/changes?run=j2-20260101-000000-zzzz")[0] == 200

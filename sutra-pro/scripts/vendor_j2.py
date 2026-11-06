@@ -7,7 +7,7 @@ What it does, in this order, and nothing else:
 
   1. reads the J2 files of ONE commit (git blobs when `--source` is a git repository, so an edited working tree is never
      vendored; a plain folder such as a `git archive` extraction otherwise, with `--commit` naming what it is);
-  2. copies the 14 code modules and applies the numbered patches (P1-P5, P7-P12; there is no P6) as exact text edits:
+  2. copies the 14 code modules and applies the numbered patches (P1-P5, P7-P13; there is no P6) as exact text edits:
      every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run instead of
      producing a silently different file;
   3. copies the data files byte for byte: role files, conditions, artifact types, generic templates, the seed template
@@ -58,7 +58,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P12"
+    patch: str          # "P1" .. "P13"
     file: str
     old: str
     new: str
@@ -257,6 +257,56 @@ def _ask(tag, *args, **kw):
 def saved_snapshot_dir(d, name, since=0):
     """P5: saved_snapshot for a folder the caller has already resolved (the server resolves it per department)."""
     rows = _jsonl(d, "chat.jsonl")
+'''),
+    # ---- P13: the run list of Run settings and the change list of the build journey (read-only; J2's own repository has neither)
+    Edit("P13", "j2.py", r'''def saved_snapshot(name, since=0):
+    """The page's state for a saved run, read from its folder (read-only)."""
+''', r'''# P13: Run settings' run list (GET /api/runlist), read-only: every saved run, newest first, from its own records. status: summary.json
+# "status" (done and done_with_open_items -> done; stopped, crashed, stuck, out_of_budget -> stopped); no summary.json -> stopped (it never
+# finished), except the live run while it runs -> running. title: goal.json "site_name", else the first sentence of goal.json "statement",
+# else the run id. output: summary.json "output_type" (the type the run ended with), else the chat's meta row "output" (the type it started
+# with). brief: summary.json "brief", else the first user message of chat.jsonl. when: from the id. Taken from the old Sutra repository's copy
+# of the prototype (e7800503, `j2_server.run_row` / `run_list`), which J2's own repository does not have; `runs_dir` as in P5.
+def run_row(name, runs_dir=None, live_running=False):
+    d = saved_dir(name, runs_dir)
+    if not d or not os.path.exists(os.path.join(d, "chat.jsonl")):
+        return None
+    s, g = _read(d, "summary.json", {}) or {}, _read(d, "goal.json", {}) or {}
+    rows = _jsonl(d, "chat.jsonl")
+    meta = rows[0] if rows and rows[0].get("meta") else {}
+    first = next((m for m in rows if m.get("who") == "user"), {})
+    st = str(s.get("status") or "")
+    status = "running" if live_running else "done" if st.startswith("done") else "stopped"
+    stmt = re.split(r"(?<=[.!?])\s", str(g.get("statement") or "").strip())[0]
+    title = str(g.get("site_name") or "").strip() or (stmt[:70] + ("\u2026" if len(stmt) > 70 else "")) or name
+    m = re.search(r"(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})", name)
+    return {"id": name, "title": title, "status": status, "output": s.get("output_type") or meta.get("output") or "",
+            "when": f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}" if m else "", "brief": str(s.get("brief") or first.get("text") or "")[:160]}
+
+
+def run_list(runs_dir=None, live="", live_running=False):
+    runs_dir = runs_dir or RUNS_DIR
+    names = sorted(os.listdir(runs_dir), reverse=True) if os.path.isdir(runs_dir) else []
+    out = [x for x in (run_row(n, runs_dir, bool(live_running) and n == live) for n in names) if x]
+    out.sort(key=lambda x: x["when"], reverse=True)
+    return {"live": live or "", "runs": out}
+
+
+# P13: GET /api/changes, the build journey's stops: one per change request in the run's change.json (a folder or None), read-only.
+def run_changes(d):
+    p = os.path.join(d or "", "change.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            rows = json.load(f) if d and os.path.isfile(p) else []
+    except (OSError, ValueError):
+        rows = []
+    return {"changes": [{"id": c.get("id"), "request": str(c.get("request") or ""), "cycle": c.get("cycle"),
+                         "revise": len(c.get("revise") or []), "new": len(c.get("new") or [])}
+                        for c in (rows if isinstance(rows, list) else []) if isinstance(c, dict)]}
+
+
+def saved_snapshot(name, since=0):
+    """The page's state for a saved run, read from its folder (read-only)."""
 '''),
     # ---- P3: the host names the run folder and id; P8: the hooks
     Edit("P3", "j2.py", r'''class J2Run:
@@ -706,6 +756,7 @@ PATCH_NOTES = {
     "P10": "`store` and `mark_used` of the template library run inside an exclusive lock on `<library>/.lock` (`oslayer.try_lock`: `flock`, or `msvcrt.locking` on Windows) (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store` and `_mark_used`",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
+    "P13": "Run settings' read-only lists (the old Sutra repository's copy of the prototype has them, J2's own repository does not): `run_row(name, runs_dir=None, live_running=False)` and `run_list(runs_dir=None, live=\"\", live_running=False)` (GET /api/runlist: every saved run newest first with id, title, status, output, when, brief) and `run_changes(d)` (GET /api/changes: one stop per change request of `change.json`), placed before `saved_snapshot`; `views.runlist` and `views.changes` and the two routes call them",
 }
 
 

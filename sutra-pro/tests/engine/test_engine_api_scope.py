@@ -20,7 +20,7 @@ TOKEN = {"X-Sutra-Token": "fake-token-fake-token-0123"}
 GET_PATHS = ["/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=a", "/api/docs", "/api/map", "/api/plan", "/api/library",
              "/api/library/website/hero/main/v1", "/api/run-templates", "/api/artifacts", "/api/agent?who=identity",
              "/api/code?deck=a&section=b", "/api/artifacts/tree", "/api/artifact?name=x", "/api/story", "/api/board", "/api/audits",
-             "/api/refs", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1"]
+             "/api/refs", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1", "/api/runlist", "/api/changes"]
 NOT_FOUND = {"/api/call?id=1", "/api/library/website/hero/main/v1", "/api/code?deck=a&section=b", "/api/artifact?name=x", "/shot/1",
              "/file/prd.md"}           # the view's own 404 for a run with nothing in it
 POSTS = ["/api/say", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset"]
@@ -61,12 +61,13 @@ def test_every_row_of_7_1_answers_at_the_root_with_dept_in_both_modes(api):
             assert got.status_code == (404 if path in NOT_FOUND else 200), (path, query, got.text[:200])
 
 
-def test_the_route_table_is_the_28_j2_rows_plus_the_two_settings_routes_and_nothing_under_d(api):
+def test_the_route_table_is_the_28_j2_rows_plus_the_two_p13_routes_the_two_settings_routes_and_nothing_under_d(api):
     table = {(method.upper(), path) for path, item in api.app.openapi()["paths"].items() for method in item}
     gets = {"/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan", "/api/library",
             "/api/library/{artifact}/{section}/{slug}/{version}", "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code",
             "/api/artifacts/tree", "/api/artifact", "/api/story", "/api/board", "/api/audits", "/api/refs", "/shot/{n}",
-            "/file/{name}", "/site/{key}"}                       # 22 paths: /site/{key} answers rows 24 and 25
+            "/file/{name}", "/site/{key}",
+            "/api/runlist", "/api/changes"}                      # 22 J2 paths: /site/{key} answers rows 24 and 25; the last two are P13
     assert table == {("GET", p) for p in gets} | {("POST", p) for p in POSTS} | {("GET", "/api/engine/settings"),
                                                                                   ("PUT", "/api/engine/settings")}
     assert not [path for _, path in table if path.startswith("/d/")]

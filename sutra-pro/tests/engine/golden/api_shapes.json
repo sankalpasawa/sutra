@@ -3637,6 +3637,56 @@
   "proposal",
   "reply"
  ],
+ "patched": {
+  "fixture": "write_patch_fixture in scripts/record_api_shapes.py",
+  "get": {
+   "changes": {
+    "empty": {
+     "ctype": "application/json",
+     "keys": [
+      "changes"
+     ],
+     "status": 200
+    },
+    "runs": {
+     "ctype": "application/json",
+     "keys": [
+      "changes",
+      "changes[].cycle",
+      "changes[].id",
+      "changes[].new",
+      "changes[].request",
+      "changes[].revise"
+     ],
+     "status": 200
+    }
+   },
+   "runlist": {
+    "empty": {
+     "ctype": "application/json",
+     "keys": [
+      "live",
+      "runs"
+     ],
+     "status": 200
+    },
+    "runs": {
+     "ctype": "application/json",
+     "keys": [
+      "live",
+      "runs",
+      "runs[].brief",
+      "runs[].id",
+      "runs[].output",
+      "runs[].status",
+      "runs[].title",
+      "runs[].when"
+     ],
+     "status": 200
+    }
+   }
+  }
+ },
  "post": {
   "lessons_clear": {
    "ctype": "application/json",
