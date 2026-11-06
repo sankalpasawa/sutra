@@ -119,13 +119,14 @@ test("partials of this chat stream into the row, another chat's are ignored, and
   assert.equal(streamRow(rig({}).c.state(), "claude"), "");
 });
 
-test("the turn ends when an agent message newer than the owner's line is stored, and not before", async () => {
+test("the turn ends only when the reply that answers the owner's line is stored, not on another agent message", async () => {
   const {c} = rig({[DIRECT]: () => ({message_id: 10})});
   await c.send("hi");
   assert.equal(c.reconcile([{id: 10, role: "user"}]), false);
   assert.equal(c.reconcile([{id: 9, role: "agent"}]), false);
+  assert.equal(c.reconcile([{id: 10, role: "user"}, {id: 11, role: "agent", kind: "note"}, {id: 12, role: "agent", kind: "text", turn: 4}]), false);
   assert.equal(c.state().turn.active, true);
-  assert.equal(c.reconcile([{id: 10, role: "user"}, {id: 11, role: "agent", kind: "error"}]), true);
+  assert.equal(c.reconcile([{id: 10, role: "user"}, {id: 11, role: "agent", kind: "note"}, {id: 12, role: "agent", kind: "error", turn: 10}]), true);
   assert.equal(c.state().turn.active, false);
   assert.equal(streamRow(c.state(), "claude"), "");
 });
@@ -141,11 +142,25 @@ test("the Send button becomes Stop while a direct turn answers; Stop posts to /d
   assert.equal(c.state().turn.active, true);              // the stored reply ends it, not the click
 });
 
-test("Stop on a turn that had already finished clears the row at once", async () => {
+test("Stop that finds nothing to stop keeps the turn until its reply is stored", async () => {
   const {c} = rig({[DIRECT]: () => ({message_id: 3}), [STOP]: () => ({session_id: SID, stopped: false})});
   await c.send("x");
   assert.deepEqual(await c.stop(), {ok: true, stopped: false});
+  assert.equal(c.state().turn.active, true);
+  assert.equal(c.state().turn.stopping, false);
+  assert.equal(c.reconcile([{id: 4, role: "agent", kind: "text", turn: 3}]), true);
   assert.equal(c.state().turn.active, false);
+});
+
+test("a late partial after the turn ended, or another turn's partial, does not bring the row back", async () => {
+  const {c} = rig({[DIRECT]: () => ({message_id: 5})});
+  await c.send("hi");
+  assert.equal(c.partial({session_id: SID, message_id: 4, delta: "old"}), false);
+  assert.equal(c.state().turn.text, "");
+  c.reconcile([{id: 6, role: "agent", kind: "text", turn: 5}]);
+  assert.equal(c.partial({session_id: SID, message_id: 5, delta: "late"}), false);
+  assert.equal(c.state().turn.active, false);
+  assert.equal(streamRow(c.state(), "claude"), "");
 });
 
 test("a stop that fails says so and the button comes back", async () => {

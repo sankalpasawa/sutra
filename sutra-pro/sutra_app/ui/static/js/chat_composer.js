@@ -13,7 +13,7 @@
          send(text)                    POST /direct with the uploaded refs -> {ok, message_id} | {ok:false, error}; the files are kept on a refusal
          stop()                        POST /direct/stop; the turn ends when the stored reply (or the error line) arrives
          partial(data)                 a `chat.partial` of this chat adds to the streaming text (the ChatPill rules)
-         reconcile(messages)           the turn ends when an agent message newer than the owner's line is in the list
+         reconcile(messages)           the turn ends when the reply that answers the owner's line (`turn` = its id) is in the list
      bar(state, opts)                  the mode toggle, the file chips, the attach button and the limits note
      streamRow(state, provider)        the streaming row ("Claude is writing" plus the text so far), or ""
      button(state, value, flags)       {label, act, disabled} of the Send button: Send, or Stop while a direct turn is answering
@@ -210,7 +210,11 @@
       changed();
       try {
         const r = await api.post(base + "/direct/stop", {});
-        if (isObj(r) && r.stopped === false) { state.turn = idle(); changed(); return {ok: true, stopped: false}; }      // it had already finished
+        if (isObj(r) && r.stopped === false) {                     // nothing was running to stop: the reply is on its way or stored; reconcile ends the turn
+          state.turn.stopping = false;
+          changed();
+          return {ok: true, stopped: false};
+        }
         return {ok: true, stopped: true};
       } catch (e) {
         state.turn.stopping = false;
@@ -225,6 +229,8 @@
       const d = isObj(data) && isObj(data.data) ? data.data : data;
       if (!CP || !isObj(d) || d.session_id !== sid) return false;
       const turn = state.turn;
+      if (!turn.active) return false;                                  // a late piece, after the stored reply ended the turn
+      if (turn.messageId !== null && Number.isInteger(d.message_id) && d.message_id !== turn.messageId) return false;      // another turn's
       const next = CP.partial({active: turn.active, text: turn.text}, d);
       state.turn = {active: true, stopping: turn.stopping, text: next.text, messageId: turn.messageId !== null ? turn.messageId : (Number.isInteger(d.message_id) ? d.message_id : null)};
       changed();
@@ -234,7 +240,7 @@
     function reconcile(messages) {
       const turn = state.turn;
       if (!turn.active || turn.messageId === null) return false;
-      const done = (Array.isArray(messages) ? messages : []).some(m => isObj(m) && m.role === "agent" && Number(m.id) > turn.messageId);
+      const done = (Array.isArray(messages) ? messages : []).some(m => isObj(m) && m.role === "agent" && m.turn === turn.messageId);
       if (!done) return false;
       state.turn = idle();
       changed();

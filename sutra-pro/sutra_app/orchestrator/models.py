@@ -315,13 +315,16 @@ class ChatMessageOut(Value):
     state: Literal["ok", "pending", "error"] = "ok"
     at: Iso
     blocks: Annotated[list[ChatBlock], Field(max_length=500)] = []        # the typed provider blocks of a settled chat turn (ABS-6)
+    turn: Annotated[int, Field(ge=1)] | None = None                       # a direct-chat reply: the id of the owner's line it answers
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
-        """The wire shape of a message without blocks is what it always was: the key is left out when empty."""
+        """The wire shape of a message without blocks (or a turn) is what it always was: the keys are left out when empty."""
         data = handler(self)
         if not data.get("blocks"):
             data.pop("blocks", None)
+        if data.get("turn") is None:
+            data.pop("turn", None)
         return data
 
 

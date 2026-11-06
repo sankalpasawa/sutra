@@ -141,6 +141,8 @@ def test_a_direct_turn_stores_the_user_line_then_one_reply_and_streams_partials_
     user, agent = chats.messages(sid)
     assert (user.role, user.text, agent.role, agent.kind, agent.state) == ("user", "hello there", "agent", "text", "ok") and agent.text
     partials = [d for t, d in seen if t == PARTIAL]
+    assert chats.messages(sid)[1].turn == user.id and chats.messages(sid)[0].turn is None          # the reply names the line it answers
+    assert "turn" not in chats.messages(sid)[0].model_dump(mode="json")
     assert partials and "".join(p["delta"] for p in partials) == agent.text and all(p["session_id"] == sid and p["message_id"] == user.id for p in partials)
     assert all(e.type != PARTIAL for e in bus.replay(0).events)               # a reconnect gets the stored message, never half of one
 

@@ -184,11 +184,12 @@ def _kind_of(filename: str) -> str:
     return "pdf" if ext == "pdf" else "image" if ext in ("png", "jpg", "gif", "webp") else "text"
 
 
-def _post(services: Any, sid: str, *, role: str, who: str, kind: str, text: str, blocks: list | None = None) -> int:
+def _post(services: Any, sid: str, *, role: str, who: str, kind: str, text: str, blocks: list | None = None,
+          src_ref: str | None = None) -> int:
     redact = services.redact
     with services.db.tx() as tx:
         out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
-            kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], at=tx.now()), ctx=tx.ctx))
+            kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], src_ref=src_ref, at=tx.now()), ctx=tx.ctx))
     return out.id
 
 
@@ -220,13 +221,14 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
         if done is None:
             raise RuntimeError("the turn ended without a result")
         blocks = [b for b in done.get("blocks", []) if b.get("type") != "text" or b.get("text")]
-        _post(services, sid, role="agent", who="sutra", kind="text", text=done["text"] or "(no reply)", blocks=blocks)
+        _post(services, sid, role="agent", who="sutra", kind="text", text=done["text"] or "(no reply)", blocks=blocks,
+              src_ref=f"direct:{user_message_id}")
     except Exception as exc:                                         # a failed turn is a message, not a lost line
         flush()
         message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
         log.warning("direct chat turn failed for %s: %s", sid, type(exc).__name__)
         try:
-            _post(services, sid, role="agent", who="sutra", kind="error", text=message)
+            _post(services, sid, role="agent", who="sutra", kind="error", text=message, src_ref=f"direct:{user_message_id}")
         except Exception:
             log.exception("could not store the failed turn of %s", sid)
     finally:
