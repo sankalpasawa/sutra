@@ -805,3 +805,11 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: "the J2 idea stays the same" includes the prototype's own later changes; nothing else in this merge may change J2.
 - Rejected: leaving Pro on `33aeeda` (the two products would show different J2 pages); editing the page by hand (the port script's anchors are the proof).
 - Diagram: key only, label "J2 sync 2 (D114)".
+
+## D115 — The direct chat has a composer: two modes, a Stop, and the org chat may be asked directly
+- Sources: ABS-7 (`POST /api/chats/{sid}/direct`, `chat.partial`), ABS-9 (pill and streaming row), ABS-10 (attachment limits); the owner's note that the browser had no box for the direct chat.
+- Decided: the node panel's box and Home's box each get a mode toggle. "Tell the team" / "Plan with Sutra" is the route each box had, unchanged and still the default. "Ask the model" / "Ask directly" sends to `/direct` with up to 10 uploaded files (ABS-4's route) and shows a Stop while the turn answers; `POST /api/chats/{sid}/direct/stop` (token required, answers `{stopped}`) asks `ChatPort.stop` to end it. `/direct` also accepts `cs_org`, because Home's chat has no other way to reach the model without the staged agent. The page subscribes to `chat.partial` (the SSE listener list gained it: until now no page could receive it). The model that answers is the persisted choice of the pill; when no provider can run the box says so and does not send.
+- Why: the direct route and the pill existed without a place to use them; two explicit modes keep the team's own message route and the staged org path exactly as they were.
+- Rejected: replacing the team route with the direct one (a team's Identity would stop hearing the owner); a text detector for "using Codex" (D111); making the direct chat the default for Home (the staged path is how a team gets planned).
+- Diagram: key only, label "direct chat composer (D115)".
+

@@ -191,3 +191,17 @@ body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #
 .cfold-item{padding:2px 0;color:var(--ink);overflow-wrap:anywhere}
 .cfold-item.failed small{color:var(--bad)}
 .cfold-out{margin:2px 0 0;white-space:pre-wrap;max-height:12em;overflow:auto;color:var(--muted)}
+
+/* the composer of the direct chat (ABS-15): the mode toggle, the file chips, the attach row, the streaming row; J2's tokens only */
+.ccbar{display:flex;flex-direction:column;gap:6px;padding:0 0 6px}
+.ccbar[hidden],.ccstream[hidden]{display:none}
+.ccmode{display:inline-flex;align-self:flex-start;border:1px solid var(--line);border-radius:999px;padding:2px}
+.ccmode-opt{background:transparent;border:1px solid transparent;border-radius:999px;padding:1px 10px;color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+.ccmode-opt.on{border-color:var(--accent);color:var(--accent)}
+.ccfiles{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.ccfile{border:1px solid var(--line);border-radius:8px;padding:2px 8px;font-size:13px;color:var(--ink);overflow-wrap:anywhere}
+.ccfile small{color:var(--muted)}
+.ccfile.failed{border-color:var(--bad)}
+.ccattach{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ccattach small,.ccnote{color:var(--muted);font-size:12px;margin:0}
+.ccstream{margin:0;padding:4px 0}

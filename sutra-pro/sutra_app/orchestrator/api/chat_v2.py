@@ -5,12 +5,13 @@
     GET  /api/chats/{sid}/providers                     -> {providers: ProviderPill[], chosen}
     PUT  /api/chats/{sid}/choice  {provider, model?}    -> {session_id, provider, model}   (null provider clears; the policy default is untouched)
     POST /api/chats/{sid}/attachments {name, content_b64} -> AttachmentRef                (20 MB a file)
-    POST /api/chats/{sid}/direct  {text, attachments?}  -> 202 {message_id, turn}         (a department or division chat answered by the chat model)
+    POST /api/chats/{sid}/direct  {text, attachments?}  -> 202 {message_id, turn}         (the org, a department or a division chat answered by the chat model)
+    POST /api/chats/{sid}/direct/stop                   -> {session_id, stopped}          (ends the turn that is answering; false when none is)
 
 `/direct` stores the owner's line, then answers through `ChatPort.stream`. The pieces of the reply travel as `chat.partial` events
 ({session_id, message_id, delta}); they are NOT stored and NOT in the replay ring, so a client that reconnects mid-turn gets the stored
 message only. The agent's message is written once, at `turn_done` (with its typed blocks); a failed turn writes an `error` message.
-The org chat's staged agent path (`POST /api/chats/cs_org/messages`) is unchanged, and so is a team chat's plain message route.
+The org chat's staged agent path (`POST /api/chats/cs_org/messages`) is unchanged, and so is a team chat's plain message route; `/direct` on cs_org\nis the owner's opt-in "ask directly" (D115), never the default.
 """
 from __future__ import annotations
 
@@ -148,7 +149,7 @@ def build_router() -> APIRouter:
         services = services_of(request)
         chats, port, attachments = _need(request, "chats"), _need(request, "chat_port"), _need(request, "attachments")
         session = await run_blocking(chats.session, sid)
-        if session.status != "active" or not session.writable or session.kind not in ("department", "division"):
+        if session.status != "active" or not session.writable or session.kind not in ("org", "department", "division"):
             raise ReadOnly("This chat cannot be asked directly")
         refs = []
         for ref_id in body.attachments:
@@ -167,6 +168,13 @@ def build_router() -> APIRouter:
             raise
         asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, ChatTurnIn(text=body.text, attachments=refs)))
         return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started"})
+
+    @router.post("/chats/{sid}/direct/stop", summary="Stop the turn that is answering", dependencies=[Depends(require_token)])
+    async def stop(request: Request, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
+        chats, port = _need(request, "chats"), _need(request, "chat_port")
+        await run_blocking(chats.session, sid)
+        stopped = await run_blocking(port.stop, sid)
+        return respond(request, {"session_id": sid, "stopped": bool(stopped)})
 
     return router
 

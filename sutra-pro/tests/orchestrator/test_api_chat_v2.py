@@ -149,7 +149,8 @@ def test_a_direct_chat_needs_the_token_a_writable_team_chat_and_one_turn_at_a_ti
     client, world, chats, bus, services = rig
     sid = world.session_of["web"]
     assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": "x"}), 401) == "bad_token"
-    assert error_code(client.post("/api/chats/cs_org/direct", json={"text": "x"}, headers=H), 403) == "read_only"
+    assert error_code(client.post(f"/api/chats/{sid}/direct/stop", json={}), 401) == "bad_token"
+    assert error_code(client.post("/api/chats/cs_000000000fff/direct", json={"text": "x"}, headers=H), 404) == "not_found"
     assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": ""}, headers=H), 422) == "validation"
     assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": "x", "attachments": ["0" * 64]}, headers=H), 404) == "not_found"
     chat_v2._running.add(sid)
@@ -164,3 +165,19 @@ def test_partial_is_a_control_event_never_in_the_ring(rig):
     before = bus.head
     ev = bus.publish_one(PARTIAL, {"session_id": "cs_org", "delta": "x"})
     assert ev.seq == 0 and bus.head == before and bus.replay(0).events == ()
+
+
+def test_the_org_chat_can_be_asked_directly_when_the_owner_chooses_it(rig):
+    client, world, chats, bus, services = rig
+    r = client.post("/api/chats/cs_org/direct", json={"text": "what can you do?"}, headers=H)       # D115: an opt-in, beside the staged path
+    assert r.status_code == 202
+    assert wait_for(lambda: len(chats.messages("cs_org")) >= 2 and "cs_org" not in chat_v2._running)
+    assert [m.role for m in chats.messages("cs_org")][-2:] == ["user", "agent"]
+
+
+def test_stop_says_whether_a_turn_was_running(rig):
+    client, world, *_ = rig
+    sid = world.session_of["web"]
+    r = client.post(f"/api/chats/{sid}/direct/stop", headers=H)
+    assert r.status_code == 200 and r.json() == {"session_id": sid, "stopped": False}          # nothing is answering
+    assert error_code(client.post("/api/chats/cs_000000000fff/direct/stop", headers=H), 404) == "not_found"

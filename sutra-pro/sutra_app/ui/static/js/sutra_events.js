@@ -7,8 +7,8 @@
 (function (root) {
   "use strict";
 
-  // The 14 event names of /api/events. EventSource delivers a named event only to a listener for that name.
-  const TYPES = Object.freeze(["server.hello", "server.resync", "chat.turn", "chat.message", "chart.changed", "chart.approval",
+  // The 15 event names of /api/events (chat.partial, ABS-7, is a streamed piece of a reply: never stored, never replayed). EventSource delivers a named event only to a listener for that name.
+  const TYPES = Object.freeze(["server.hello", "server.resync", "chat.turn", "chat.message", "chat.partial", "chart.changed", "chart.approval",
     "graph.updated", "task.updated", "atom.updated", "usage.recorded", "needs_you.changed", "connector.health",
     "connector.switch", "connector.mode"]);
   const ERRORS_BEFORE_POLLING = 3;

@@ -22,11 +22,12 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
     <section class="schat" aria-label="Chat with Sutra">
       <div class="sprog" id="sprog" aria-label="Progress" hidden></div>
       <div class="smsgs" id="smsgs" aria-live="polite"></div>
+      <div class="ccstream" id="sstream" hidden></div>
       <div class="sbanner" id="sbanner" role="alert" hidden></div>
       <div class="sstatus" id="sstatus" role="status"></div>
       <div class="snote" id="snote" hidden></div>
       <div class="npill" id="spill" hidden></div>
-      <div class="scompose" id="scompose"><div class="row"><textarea id="sbox" aria-label="Your message" placeholder="Tell Sutra what you need&hellip;"></textarea><button class="send" id="ssend" type="button">Send</button></div></div>
+      <div class="scompose" id="scompose"><div class="ccbar" id="sbar" hidden></div><div class="row"><textarea id="sbox" aria-label="Your message" placeholder="Tell Sutra what you need&hellip;"></textarea><button class="send" id="ssend" type="button">Send</button></div></div>
     </section>
     <section class="sprev sright" id="sright" aria-label="Teams and settings">
       <section class="needs" id="needs" aria-label="Needs you" tabindex="-1"></section>
@@ -69,6 +70,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <script src="/ui/js/chat_pill.js"></script>
 <script src="/ui/js/chat_fold.js"></script>
 <script src="/ui/js/chat_search.js"></script>
+<script src="/ui/js/chat_composer.js"></script>
 <script src="/ui/js/node_panel.js"></script>
 <script src="/ui/js/settings_view.js"></script>
 <script src="/ui/js/home.js"></script>

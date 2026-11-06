@@ -50,11 +50,14 @@ Departments and their charter, models, the function screens, the website departm
 - **Transcript parsers and the all-sessions browser**: Sutra Pro keeps its own transcript.
 - **File workspace and git pane**, **Electron shell**, **old test seeding**, **the daemon window**.
 
+## The direct chat's composer
+
+In a team's node panel the box has two modes, "Tell the team" (the team's plain message route, as before) and "Ask the model" (attach files, Send, a Stop button while it answers, the reply streamed under the messages and then stored with its tool calls folded into one row). On Home the same two modes are "Plan with Sutra" (the staged path, the default) and "Ask directly". The model that answers is the one the pill shows (D111). Stop ends a turn that is running; the owner then gets a line in the chat instead of a frozen box (D115).
+
 ## Not done yet
 
 - **J2 sync with the Run settings page.** The prototype's own repository and the copy in the old repository have diverged (see `docs/design/j2-sync-2.md`); nothing was re-vendored. It needs the Run settings change landed in the prototype's repository first.
-- **A composer for the direct chat.** `POST /api/chats/{sid}/direct` (a team chat answered by the chat model, streamed as `chat.partial`) exists, with tests; the browser has no box for it yet, and the team chat's own box still talks to the team's Identity. The attachment picker's checks and limits text exist (`ChatSearch`), but no upload control is placed on a page.
-- **The streaming indicator and the switch notice** are built and tested (`ChatPill`) but not yet subscribed to events in a page.
+- **The switch notice** (`ChatPill.switchNotice`) is built and tested but no page shows it: the switch is reported in the turn's result, not as an event the page subscribes to.
 - **Search and archive** are on the node panel; Home's org chat has the pill only.
 - **Seed templates**: `scripts/audit_old_templates.py` lists what the old seeds have that Sutra Pro lacks and can copy them aside; nothing reads the copies yet.
 - **Later, when asked for:** slash-command palette, DeepSeek (needs a decision on API keys, D7), the SEO writer as a template, scheduled routines, modules and apps, an in-app updater, a chat-led import of one project folder.

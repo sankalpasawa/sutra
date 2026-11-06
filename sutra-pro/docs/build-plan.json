@@ -1281,7 +1281,7 @@
     "SUTRA_BROWSER=1 scripts/py -m pytest tests/e2e/test_browser_real_app.py tests/e2e/test_browser_resync.py -q"
    ],
    "section": "gaps",
-   "spec": "### GAP-E2E-UI Browser walk against the real app (G06)\n- **Owns (new).** `tests/e2e/test_browser_real_app.py`, `tests/e2e/test_browser_resync.py`, `docs/notes/GAP-E2E-UI.md`.\n- **Spec.** Reuse `tests/ui/cdp.py` and the GAP-E2E harness. Walk, with zero console errors and zero failed requests after each step: Home start page; send a brief; progress, `chart_change` and `task` cards; the graph draws the new team; open a function node (read-only chat, atoms, goal/task/context/constraints); Identity's question card; answer it; the node turns green in the same document from `atom.updated` + `graph.updated`; `Done` card; open `/d/web/` (J2 page, Detailed view, Map, Library tab with the run's template copies); Workflow graph and Org chart tabs; Settings Engine group edit and Connectors Test (stub). Second test: stop the server process and restart it on the same data folder: the page shows `\u25cb polling`, then the hello/resync refetch restores the graph and the chat without a reload. Third: a page opened before the restart gets 401 on a write and shows the \"reload from the app\" sentence.\n- **Acceptance.** `SUTRA_BROWSER=1 scripts/py -m pytest tests/e2e/test_browser_real_app.py tests/e2e/test_browser_resync.py -q`.\n- **Depends on.** ORCH-8, UI-9, GAP-E2E.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-E2E-UI.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
+   "spec": "### GAP-E2E-UI Browser walk against the real app (G06)\n- **Owns (new).** `tests/e2e/test_browser_real_app.py`, `tests/e2e/test_browser_resync.py`, `docs/notes/GAP-E2E-UI.md`.\n- **Spec.** Reuse `tests/ui/cdp.py` and the GAP-E2E harness. Walk, with zero console errors and zero failed requests after each step: Home start page; send a brief; progress, `chart_change` and `task` cards; the graph draws the new team; open a function node (read-only chat, atoms, goal/task/context/constraints); Identity's question card; answer it; the node turns green in the same document from `atom.updated` + `graph.updated`; `Done` card; open `/d/web/` (J2 page, Detailed view, Map, Library tab with the run's template copies); Workflow graph and Org chart tabs; Settings Engine group edit and Connectors Test (stub). Second test: stop the server process and restart it on the same data folder: the page shows `○ polling`, then the hello/resync refetch restores the graph and the chat without a reload. Third: a page opened before the restart gets 401 on a write and shows the \"reload from the app\" sentence.\n- **Acceptance.** `SUTRA_BROWSER=1 scripts/py -m pytest tests/e2e/test_browser_real_app.py tests/e2e/test_browser_resync.py -q`.\n- **Depends on.** ORCH-8, UI-9, GAP-E2E.\n\nRIDERS (set by the scheduler): (1) the paths listed under Transfers now belong to THIS package (they were moved out of the merged packages that owned them); you may also update existing tests of those modules when an intended behaviour change breaks them, never weakening them, and list each such test in docs/notes/GAP-E2E-UI.md. (2) Chassis files (pyproject.toml, README.md, docs/DESIGN.md, docs/TRACEABILITY.md, docs/DECISIONS.md) are edited by the scheduler by hand, not by you; if you need a change there, say so under 'needs'. (3) The J2 prompts, J2 route paths and closed library models do not change; the prompt goldens, schema drift test and CT-1 route table stay green."
   },
   {
    "id": "GAP-LIVE",
@@ -1790,6 +1790,28 @@
    ],
    "section": "absorb",
    "spec": "ABS-14 One page for an owner who used the old app: what moved, what is replaced, what was dropped and why, how to import old chats, what is later. Written from docs/design/absorb-old-sutra.md and the as-built notes of ABS-1 to ABS-13. The chassis documents (docs/DESIGN.md, docs/TRACEABILITY.md) are updated by hand by the maintainer, not by this package. RIDERS: none.\n\nRead docs/design/absorb-old-sutra.md (sections 2 to 4) and the decisions D105 to D114 first. The old product under marketplace/plugin/sutra-ui is read only: read it, never edit it. J2 is unchanged: do not edit sutra_app/engine/j2*.py, engine/llm.py, engine/port.py or ui/pages/j2_ui.html (except ABS-0). Edits to existing files that other packages own are riders named in this spec; edit nothing else. No personal path or name in any file (ownership audit): use ~."
+  },
+  {
+   "id": "ABS-15",
+   "title": "UI: the composer of the direct chat",
+   "owns": [
+    "sutra_app/ui/static/js/chat_composer.js",
+    "tests/ui/js/chat_composer.test.js",
+    "tests/e2e/test_browser_chat_composer.py",
+    "docs/notes/ABS-15.md"
+   ],
+   "depends_on": [
+    "ABS-9",
+    "ABS-10",
+    "ABS-13"
+   ],
+   "acceptance": [
+    "node --test tests/ui/js/chat_composer.test.js",
+    "scripts/py -m pytest tests/orchestrator/test_api_chat_v2.py -q",
+    "SUTRA_BROWSER=1 scripts/py -m pytest tests/e2e/test_browser_chat_composer.py -q"
+   ],
+   "section": "absorb",
+   "spec": "ABS-15 The browser composer for the direct chat (D115): chat_composer.js (attachments through ABS-4's upload route, Send to /direct, Stop, the streaming row, the provider rule of the pill) wired into the node panel and Home as a second mode beside the existing route; POST /api/chats/{sid}/direct/stop; chat.partial added to the SSE listener list; /direct also accepts the org chat. RIDERS: node_panel.js, home.js, home.html, dept_ext.js, sutra_events.js (+ events.test.js), sutra-panel.css, api/chat_v2.py (+ its test). J2 is unchanged."
   }
  ],
  "review_only": [

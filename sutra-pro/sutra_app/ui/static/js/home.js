@@ -54,7 +54,7 @@
 
   /* ---------------------------------------------------------------- state */
   const S = {
-    session: null, messages: [], lastId: 0, pending: [], localSeq: 0, answers: {},
+    cc: undefined, session: null, messages: [], lastId: 0, pending: [], localSeq: 0, answers: {},
     departments: [], departmentsLoaded: false, needs: [], needsLoaded: false,
     graph: null, chart: null, changes: [],
     health: null, settings: null, scope: "", errors: {}, saved: false, saving: false, conn: {test: {}, signin: null}, signer: null,
@@ -130,6 +130,7 @@
       after = Number.isFinite(page.next_after) ? page.next_after : got[got.length - 1].id;
     }
     mergeMessages(fresh, all);
+    if (S.cc && S.cc.reconcile(S.messages)) renderBar();
     renderChat();
     renderComposer();
     renderPill();
@@ -270,12 +271,62 @@
     api.put(req.path, req.body).then(() => { S.pillData = undefined; return renderPill(); }, err => showBanner({text: clean(err && err.message) || "That model cannot answer right now.", settings: false}));
   }
 
+  // The composer of the direct chat (ABS-15). "Plan with Sutra" is the staged path as it was; "Ask directly" is POST /direct on the org chat (D115): the
+  // chosen model answers, streamed, with attachments and a Stop. The mode is the owner's, per page load.
+  function composer() {
+    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", onChange: () => { renderBar(); renderComposer(); }}) : null;
+    return S.cc;
+  }
+  const directOn = () => { const c = composer(); return c !== null && c.state().mode === "direct"; };
+  const providersOf = () => (S.pillData ? S.pillData.providers : []);
+  const askBlocked = () => (directOn() && S.pillData ? root.ChatComposer.askBlock(providersOf()) : "");
+
+  function renderBar() {
+    const c = composer();
+    const bar = $("sbar");
+    if (!c || !bar) return;
+    const CC = root.ChatComposer;
+    const html = CC.bar(c.state(), {labels: {team: "Plan with Sutra", direct: "Ask directly"}});
+    ctx.paint(bar, html);
+    bar.hidden = html === "";
+    const row = CC.streamRow(c.state(), CC.providerOf(providersOf(), S.pillData ? S.pillData.chosen : null));
+    ctx.paint($("sstream"), row);
+    $("sstream").hidden = row === "";
+  }
+
+  async function sendDirect(value) {
+    const c = composer();
+    const body = text(value).trim();
+    if (!c || body === "") return false;
+    const stuck = askBlocked();
+    if (stuck !== "") { showBanner({text: stuck, settings: true}); return false; }
+    clearBanner();
+    const out = await c.send(body);
+    if (!out.ok) return false;
+    if ($("sbox").value.trim() === body) $("sbox").value = "";
+    try { await fetchMessages(false); } catch (e) { handleFetchError(e); }
+    return true;
+  }
+
+  async function stopDirect() {
+    const c = composer();
+    if (!c) return;
+    await c.stop();
+    try { await fetchMessages(false); } catch (e) { handleFetchError(e); }
+  }
+
   function renderComposer() {
     const session = S.session || {kind: "org", writable: true, status: "active", title: "Sutra"};
-    const st = root.ChatView.composerState(session, {busy: S.turn.active === true, asking: false, blocked: S.blocked});
+    const direct = directOn();
+    const st = root.ChatView.composerState(session, {busy: !direct && S.turn.active === true, asking: false, blocked: S.blocked || askBlocked()});
     $("scompose").hidden = st.hidden;
     $("sbox").disabled = st.disabled;
     $("ssend").disabled = st.disabled || S.sending;
+    const c = composer();
+    const b = c && direct ? root.ChatComposer.button(c.state(), $("sbox").value, {disabled: st.disabled || S.sending, blocked: askBlocked() !== ""}) : {label: "Send", act: "send", disabled: st.disabled || S.sending};
+    $("ssend").textContent = b.label;
+    $("ssend").dataset.act = b.act;
+    $("ssend").disabled = b.disabled || st.disabled || S.sending;
     $("sbox").placeholder = S.messages.some(m => m.role === "user") ? "Write a message…" : "Tell Sutra what you need…";
     const note = $("snote");
     note.hidden = st.note === "";
@@ -293,6 +344,7 @@
   // The owner writes. The bubble shows at once (pending, dimmed); the box keeps its text until the server accepts the line, so a refusal (no usable
   // connector, too many waiting) loses nothing.
   async function send(value, choice) {
+    if (!choice && directOn()) return sendDirect(value);
     const body = text(value).trim();
     if (body === "" || S.blocked !== "" || (S.sending && !choice)) return false;
     const entry = {serverId: null, msg: {id: "local-" + (++S.localSeq), session_id: ORG, role: "user", who: "user", kind: "text", text: body, card: null,
@@ -632,6 +684,9 @@
     const d = isObj(data) ? data : {};
     if (S.watch) S.watch.onEvent(type);
     switch (type) {
+      case "chat.partial":
+        if (d.session_id === ORG && composer()) composer().partial(d);
+        break;
       case "chat.turn":
         if (d.session_id === ORG) {
           S.turn.seen = true;
@@ -688,6 +743,7 @@
     selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false});
     renderProgress();
     renderComposer();
+    renderBar();
     S.stream = SutraEvents.connect({url: "/api/events", onEvent, onState: setLive, pollFn: pollAll, pollMs: POLL_MS});
     await loadAll();
     applyDeepLink(link);
@@ -696,7 +752,22 @@
   function wire() {
     $("smsgs").addEventListener("click", onChatClick);
     if ($("spill")) $("spill").addEventListener("click", onPillClick);
-    $("ssend").addEventListener("click", () => send($("sbox").value));
+    $("ssend").addEventListener("click", () => ($("ssend").dataset.act === "composer-stop" ? stopDirect() : send($("sbox").value)));
+    $("sbar").addEventListener("click", e => {
+      const b = e.target.closest("[data-act]");
+      const c = composer();
+      if (!b || !c) return;
+      if (b.dataset.act === "composer-mode") c.setMode(b.dataset.mode);
+      else if (b.dataset.act === "composer-attach") { const input = $("sbar").querySelector(".ccinput"); if (input) input.click(); }
+      else if (b.dataset.act === "composer-remove") c.removeFile(b.dataset.key);
+    });
+    $("sbar").addEventListener("change", e => {
+      const t = e.target;
+      const c = composer();
+      if (!c || !t || !t.classList || !t.classList.contains("ccinput")) return;
+      c.addFiles(t.files);
+      t.value = "";
+    });
     $("sbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send($("sbox").value); } });
     $("sbanner").addEventListener("click", e => {
       const b = e.target.closest("button");

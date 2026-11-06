@@ -135,7 +135,7 @@
     const d = doc();
     const root_ = byId("nodepanel");
     if (!d || !root_ || !root.NodePanel) return null;
-    for (const name of ["chat_pill", "chat_fold", "chat_search"]) {           // the J2 page is not edited: the chat scripts of ABS-9 and ABS-10 are added from here
+    for (const name of ["chat_pill", "chat_fold", "chat_search", "chat_composer"]) {           // the J2 page is not edited: the chat scripts of ABS-9, ABS-10 and ABS-15 are added from here
       if (d.head && !d.getElementById(name + "-js")) {
         const tag = d.createElement("script");
         tag.id = name + "-js";

@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 114,
-  "packages": 77,
+  "decisions": 115,
+  "packages": 78,
   "endpoints": 30,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 114,
+ "max_decision": 115,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -303,7 +303,8 @@
     "D111",
     "D112",
     "D113",
-    "D114"
+    "D114",
+    "D115"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -1328,6 +1329,8 @@
    "id": "D7",
    "title": "Connectors are CLI-first: Claude CLI and Codex CLI on the owner's own logins; a stub connector for tests",
    "packages": [
+    "ABS-1",
+    "ABS-3",
     "CN-1",
     "CN-4",
     "CN-6",
@@ -1620,6 +1623,7 @@
    "id": "D32",
    "title": "Chat sessions: one process per turn, resumed, with a carry-over on a provider switch",
    "packages": [
+    "ABS-1",
     "CN-1",
     "CN-3",
     "CN-7",
@@ -2291,6 +2295,7 @@
    "id": "D81",
    "title": "Writes need a per-launch token in a header, with Host and Origin checks; no cookie anywhere",
    "packages": [
+    "ABS-7",
     "CN-9",
     "CT-1",
     "GAP-CONSOLE",
@@ -2452,6 +2457,7 @@
    "id": "D94",
    "title": "One instance per data folder",
    "packages": [
+    "ABS-12",
     "GAP-DATA",
     "GAP-OPS-1"
    ],
@@ -2507,6 +2513,7 @@
    "id": "D98",
    "title": "sutra-pro lives inside the Sutra repository, in the folder `sutra-pro/`",
    "packages": [
+    "ABS-12",
     "REL-1",
     "REL-2"
    ],
@@ -2592,56 +2599,74 @@
   {
    "id": "D107",
    "title": "What is not carried over from the old app, and why",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ABS-1"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "key only, label \"dropped and later: see design\"."
   },
   {
    "id": "D108",
    "title": "One durable transcript in `ChatStore`; the provider session stays a cache of it (D32 kept); segments, typed blocks, search and owner archive are added to it",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ABS-6",
+    "ORCH-1",
+    "ORCH-3"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "ChatStore box label \"segments, blocks, search, archive\"."
   },
   {
    "id": "D109",
    "title": "Egress scrub is in the Router for every port; for J2's agents it only observes",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ABS-2"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"egress scrub (chat: replace, J2: observe)\" on the Router."
   },
   {
    "id": "D110",
    "title": "The per-model window can only lower the carry-over; J2's caps are the ceiling",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ABS-3"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"window per model, J2 caps stay\" on the carry-over."
   },
   {
    "id": "D111",
    "title": "The provider choice is per chat, persisted, and one mechanism (the pill) governs every surface",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ABS-9"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "pill on the chat box, label \"per chat; one mechanism\"."
   },
   {
    "id": "D112",
    "title": "DeepSeek is deferred; the three old DeepSeek chats are kept as history",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ABS-3"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "key only, label \"DeepSeek later (D7)\"."
   },
   {
    "id": "D113",
    "title": "Old chats are imported only on request, as read-only archived history, by one command",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ABS-6",
+    "ABS-12",
+    "ORCH-1"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "key only, label \"old chats: import command, read only\"."
   },
@@ -2654,6 +2679,25 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "key only, label \"J2 sync 2 (D114)\"."
+  },
+  {
+   "id": "D115",
+   "title": "The direct chat has a composer: two modes, a Stop, and the org chat may be asked directly",
+   "packages": [
+    "ABS-4",
+    "ABS-7",
+    "ABS-9",
+    "ABS-10",
+    "ABS-15",
+    "GAP-CONSOLE",
+    "ORCH-2",
+    "UI-3",
+    "UI-6",
+    "UI-8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key only, label \"direct chat composer (D115)\"."
   }
  ],
  "packages": [
@@ -2670,7 +2714,7 @@
     "docs/notes/ABS-0.md"
    ],
    "notes": "docs/notes/ABS-0.md",
-   "notes_lines": 0,
+   "notes_lines": 6,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2690,8 +2734,10 @@
     "tests/connectors/test_chat_port.py"
    ],
    "notes": "docs/notes/ABS-1.md",
-   "notes_lines": 0,
-   "decisions_cited": [],
+   "notes_lines": 10,
+   "decisions_cited": [
+    "D7"
+   ],
    "merge_commits": [],
    "status": "pending"
   },
@@ -2708,7 +2754,7 @@
     "tests/connectors/test_egress.py"
    ],
    "notes": "docs/notes/ABS-2.md",
-   "notes_lines": 0,
+   "notes_lines": 5,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2726,8 +2772,11 @@
     "tests/connectors/test_budget.py"
    ],
    "notes": "docs/notes/ABS-3.md",
-   "notes_lines": 0,
-   "decisions_cited": [],
+   "notes_lines": 5,
+   "decisions_cited": [
+    "D7",
+    "D112"
+   ],
    "merge_commits": [],
    "status": "pending"
   },
@@ -2746,7 +2795,7 @@
     "tests/orchestrator/test_attachments.py"
    ],
    "notes": "docs/notes/ABS-4.md",
-   "notes_lines": 0,
+   "notes_lines": 8,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2764,7 +2813,7 @@
     "tests/connectors/test_tool_kinds.py"
    ],
    "notes": "docs/notes/ABS-5.md",
-   "notes_lines": 0,
+   "notes_lines": 6,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2783,8 +2832,10 @@
     "tests/orchestrator/test_chat_v2.py"
    ],
    "notes": "docs/notes/ABS-6.md",
-   "notes_lines": 0,
-   "decisions_cited": [],
+   "notes_lines": 7,
+   "decisions_cited": [
+    "D113"
+   ],
    "merge_commits": [],
    "status": "pending"
   },
@@ -2803,7 +2854,7 @@
     "tests/orchestrator/test_api_chat_v2.py"
    ],
    "notes": "docs/notes/ABS-7.md",
-   "notes_lines": 0,
+   "notes_lines": 8,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2823,7 +2874,7 @@
     "tests/orchestrator/test_chat_choice.py"
    ],
    "notes": "docs/notes/ABS-8.md",
-   "notes_lines": 0,
+   "notes_lines": 6,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2842,7 +2893,7 @@
     "tests/ui/js/chat_pill.test.js"
    ],
    "notes": "docs/notes/ABS-9.md",
-   "notes_lines": 0,
+   "notes_lines": 5,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2862,7 +2913,7 @@
     "tests/ui/js/chat_search.test.js"
    ],
    "notes": "docs/notes/ABS-10.md",
-   "notes_lines": 0,
+   "notes_lines": 6,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2880,7 +2931,7 @@
     "tests/library/test_audit_old_templates.py"
    ],
    "notes": "docs/notes/ABS-11.md",
-   "notes_lines": 0,
+   "notes_lines": 4,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2900,7 +2951,7 @@
     "tests/ops/test_import_old.py"
    ],
    "notes": "docs/notes/ABS-12.md",
-   "notes_lines": 0,
+   "notes_lines": 7,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2919,7 +2970,7 @@
     "tests/e2e/test_abs_chat.py"
    ],
    "notes": "docs/notes/ABS-13.md",
-   "notes_lines": 0,
+   "notes_lines": 4,
    "decisions_cited": [],
    "merge_commits": [],
    "status": "pending"
@@ -2936,8 +2987,31 @@
     "docs/notes/ABS-14.md"
    ],
    "notes": "docs/notes/ABS-14.md",
-   "notes_lines": 0,
+   "notes_lines": 3,
    "decisions_cited": [],
+   "merge_commits": [],
+   "status": "pending"
+  },
+  {
+   "id": "ABS-15",
+   "title": "UI: the composer of the direct chat",
+   "section": "absorb",
+   "depends_on": [
+    "ABS-9",
+    "ABS-10",
+    "ABS-13"
+   ],
+   "owns": [
+    "docs/notes/ABS-15.md",
+    "sutra_app/ui/static/js/chat_composer.js",
+    "tests/e2e/test_browser_chat_composer.py",
+    "tests/ui/js/chat_composer.test.js"
+   ],
+   "notes": "docs/notes/ABS-15.md",
+   "notes_lines": 8,
+   "decisions_cited": [
+    "D115"
+   ],
    "merge_commits": [],
    "status": "pending"
   },

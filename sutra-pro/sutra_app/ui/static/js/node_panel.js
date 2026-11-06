@@ -181,13 +181,13 @@
     function buildChat() {
       refs.body.innerHTML = '<div class="nchat"><div class="nsearch" hidden><input type="search" class="nsbox" aria-label="Search chats" placeholder="Search chats\u2026" maxlength="200"/>' +
         '<div class="nsres" hidden></div></div><div class="nactions" hidden></div><div class="nlens" hidden></div><div class="nlinks" hidden></div><div class="nearlier" hidden></div>' +
-        '<div class="nmsgs" role="log" aria-live="polite" aria-label="Messages"></div><p class="nbanner" role="status" hidden></p>' +
-        '<div class="npill" hidden></div><div class="ncomposer" hidden><div class="row"><textarea class="nbox" aria-label="Your message" rows="2"></textarea>' +
+        '<div class="nmsgs" role="log" aria-live="polite" aria-label="Messages"></div><div class="ccstream" hidden></div><p class="nbanner" role="status" hidden></p>' +
+        '<div class="npill" hidden></div><div class="ncomposer" hidden><div class="ccbar" hidden></div><div class="row"><textarea class="nbox" aria-label="Your message" rows="2"></textarea>' +
         '<button type="button" class="send" data-act="send">Send</button></div></div><p class="nnote" role="note" hidden></p></div>';
       refs.body.__html = undefined;
       const q = sel => refs.body.querySelector(sel);
       chatRefs = {lens: q(".nlens"), links: q(".nlinks"), earlier: q(".nearlier"), msgs: q(".nmsgs"), banner: q(".nbanner"), composer: q(".ncomposer"),
-        box: q(".nbox"), send: q(".send"), note: q(".nnote"), pill: q(".npill"), search: q(".nsearch"), sbox: q(".nsbox"), sres: q(".nsres"), actions: q(".nactions")};
+        box: q(".nbox"), send: q(".send"), note: q(".nnote"), pill: q(".npill"), bar: q(".ccbar"), stream: q(".ccstream"), search: q(".nsearch"), sbox: q(".nsbox"), sres: q(".nsres"), actions: q(".nactions")};
       if (chatRefs.sbox) chatRefs.sbox.addEventListener("input", () => onSearchInput());
     }
 
@@ -271,11 +271,19 @@
 
     function paintComposer() {
       const session = activeSession();
-      const turn = {busy: !st.view && teamBusy(), asking: asking(), blocked: st.blocked || ""};
+      const direct = directOn();
+      const turn = {busy: !st.view && !direct && teamBusy(), asking: asking(), blocked: st.blocked || (direct ? askBlocked() : "")};
       const state = st.readOnly ? {hidden: true, disabled: true, placeholder: "", note: "This chat is read-only."} : CV().composerState(session, turn);
       chatRefs.composer.hidden = state.hidden;
       chatRefs.box.disabled = state.disabled || st.sending;
       chatRefs.send.disabled = state.disabled || st.sending;
+      const c = st.cc ? st.cc.c : null;
+      if (c && direct) {
+        const b = root.ChatComposer.button(c.state(), chatRefs.box.value, {disabled: state.disabled || st.sending, blocked: askBlocked() !== ""});
+        chatRefs.send.textContent = b.label; chatRefs.send.dataset.act = b.act; chatRefs.send.disabled = b.disabled || state.disabled || st.sending;
+      } else {
+        chatRefs.send.textContent = "Send"; chatRefs.send.dataset.act = "send";
+      }
       chatRefs.box.placeholder = state.placeholder;
       chatRefs.note.hidden = state.note === "";
       chatRefs.note.textContent = state.note;
@@ -283,6 +291,46 @@
       chatRefs.banner.hidden = problem === "";
       chatRefs.banner.innerHTML = problem === "" ? "" : esc(problem) + (st.gone ? ' <button type="button" class="linkbtn" data-npclose>Close</button>' : "") +
         (st.retry ? ' <button type="button" class="linkbtn" data-act="retry-load">Try again</button>' : "");
+    }
+
+    // The composer of the direct chat (ABS-15): one controller per open team chat; "Tell the team" is the plain message route as it was, "Ask the model" is
+    // POST /direct with attachments and a Stop. The streaming row lives under the messages; the stored reply (with its blocks) replaces it.
+    function composerOf() {
+      const CC = root.ChatComposer;
+      const sid = pillOwner();
+      if (!CC || !sid) return null;
+      if (!st.cc || st.cc.sid !== sid) {
+        st.cc = {sid, c: CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => { if (st && chatRefs) { paintComposer(); paintBar(); } }})};
+      }
+      return st.cc.c;
+    }
+    const directOn = () => { const c = st && st.tab === "chat" ? composerOf() : null; return c !== null && c.state().mode === "direct"; };
+    const pillData = () => st.pill || {providers: [], chosen: null};
+    const askBlocked = () => (directOn() && st.pill ? root.ChatComposer.askBlock(pillData().providers) : "");
+
+    function paintBar() {
+      const CC = root.ChatComposer;
+      if (!chatRefs || !chatRefs.bar) return;
+      const c = composerOf();
+      const hidden = !c || chatRefs.composer.hidden;
+      if (hidden) {
+        chatRefs.bar.hidden = true; chatRefs.bar.innerHTML = ""; chatRefs.bar.__html = undefined;
+        chatRefs.stream.hidden = true; chatRefs.stream.innerHTML = ""; chatRefs.stream.__html = undefined;
+        return;
+      }
+      const data = pillData();
+      const html = CC.bar(c.state(), {labels: {team: "Tell the team", direct: "Ask the model"}});
+      chatRefs.bar.hidden = html === "";
+      paintTo(chatRefs.bar, html);
+      const row = CC.streamRow(c.state(), CC.providerOf(data.providers, data.chosen));
+      chatRefs.stream.hidden = row === "";
+      paintTo(chatRefs.stream, row);
+    }
+
+    // After a refetch: the turn is over when the stored reply is in the list.
+    function reconcileTurn() {
+      const c = st && st.cc ? st.cc.c : null;
+      if (c && c.reconcile(st.messages)) st.stick = true;
     }
 
     // The provider pill (ABS-9): only on a team chat the owner can write in; the data comes from GET /api/chats/{sid}/providers.
@@ -369,6 +417,7 @@
       paintActions();
       paintPill();
       paintComposer();
+      paintBar();
     }
 
     /* ------------------------------------------------ the Details tab */
@@ -528,7 +577,7 @@
       if (st) stopLive();
       const graph = getGraph();
       st = {nodeId: id, tab: tab === "details" ? "details" : "chat", node: findNode(graph, id), detail: null, detailError: "", sid: "", session: null, messages: [],
-        lastId: 0, banner: "", blocked: "", readOnly: false, gone: false, retry: false, sending: false, view: null, scope: "division", divisionChat: null, allAtoms: null,
+        lastId: 0, banner: "", blocked: "", cc: null, ccMode: "team", readOnly: false, gone: false, retry: false, sending: false, view: null, scope: "division", divisionChat: null, allAtoms: null,
         openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: true, opener: opener, conn: null, refresh: null};
       if (!opener.id) opener.id = id;
       doc.body.classList.add("nodeopen");
@@ -587,6 +636,7 @@
         st.lastId = lastIdOf(st.messages);
         st.stick = false;
       }
+      reconcileTurn();
       if (st.tab === "chat" && chatRefs) paintChat();
     }
 
@@ -611,7 +661,10 @@
         topics: TOPICS,
         onEvent(type, data) {
           if (!st || g !== gen) return;
-          if (type === "chat.message") {
+          if (type === "chat.partial") {
+            const c = mine(data) ? composerOf() : null;
+            if (c) c.partial(data);
+          } else if (type === "chat.message") {
             if (mine(data)) refetchMessages();
           } else if (type === "atom.updated") {
             const atom = isObj(data) && isObj(data.atom) ? data.atom : data;
@@ -699,8 +752,36 @@
       });
     }
 
-    async function send(value, fromBox) {
+    async function sendDirect(value, fromBox) {
+      const c = composerOf();
+      const body = text(value).trim();
+      if (!c || body === "") return false;
+      const g = gen;
+      const stuck = askBlocked();
+      if (stuck !== "") { st.banner = stuck; paintChat(); return false; }
+      st.banner = "";
+      const out = await c.send(body);
+      if (g !== gen || !st) return out.ok;
+      if (out.ok) {
+        if (fromBox && chatRefs && chatRefs.box.value.trim() === body) chatRefs.box.value = "";
+        st.stick = true;
+        await refreshMessages(g);                 // the owner's line (stored before the 202) and, if it was quick, the reply too
+      }
+      if (st && g === gen && chatRefs) paintChat();
+      return out.ok;
+    }
+
+    async function stopDirect() {
+      const c = st && st.cc ? st.cc.c : null;
+      if (!c) return;
+      const g = gen;
+      await c.stop();
+      await refreshMessages(g);
+    }
+
+    async function send(value, fromBox, team) {
       if (!st || st.sending || st.view) return false;
+      if (directOn() && team !== true) return sendDirect(value, fromBox);
       const body = text(value).trim();
       if (body === "") return false;
       const g = gen;
@@ -803,6 +884,10 @@
       const name = act.dataset.act;
       if (name === "chat") switchTab("chat");
       else if (name === "send") send(chatRefs ? chatRefs.box.value : "", true);
+      else if (name === "composer-stop") stopDirect();
+      else if (name === "composer-mode") { const c = composerOf(); if (c) { st.ccMode = act.dataset.mode === "direct" ? "direct" : "team"; c.setMode(st.ccMode); } }
+      else if (name === "composer-attach") { const input = chatRefs && chatRefs.bar ? chatRefs.bar.querySelector(".ccinput") : null; if (input) input.click(); }
+      else if (name === "composer-remove") { const c = composerOf(); if (c) c.removeFile(act.dataset.key); }
       else if (name === "fn") openFrom(act);
       else if (name === "go-tab") goToTab(act.dataset.tab);
       else if (name === "show-all") showAll();
@@ -827,7 +912,7 @@
       const group = button.closest(".opts");
       if (!group || !chatRefs) return;
       const n = button.dataset.opt;
-      if (group.dataset.n === "1") { send("Option " + n, false); return; }
+      if (group.dataset.n === "1") { send("Option " + n, false, true); return; }
       const box = chatRefs.box;
       box.value += (box.value ? "; " : "") + group.dataset.q + ". Option " + n;
       box.focus();
@@ -858,6 +943,13 @@
     }
 
     host.addEventListener("click", onClick);
+    host.addEventListener("change", e => {
+      const t = e.target;
+      const c = st && t && t.classList && t.classList.contains("ccinput") ? composerOf() : null;
+      if (!c) return;
+      c.addFiles(t.files);
+      t.value = "";
+    });
     host.addEventListener("keydown", e => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       const t = e.target;

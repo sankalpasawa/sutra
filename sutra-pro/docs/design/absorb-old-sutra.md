@@ -1,6 +1,6 @@
 # Absorbing the old Sutra app into Sutra Pro
 
-Status: design, 2026-11-06. Decisions D105 to D114 in `docs/DECISIONS.md`. Work packages `ABS-*` at the end (and in `docs/build-plan.json`).
+Status: design, 2026-11-06. Decisions D105 to D115 in `docs/DECISIONS.md`. Work packages `ABS-*` at the end (and in `docs/build-plan.json`).
 Nothing in this document changes a vendored J2 file, a J2 prompt, a J2 route path or a golden.
 
 Owner's request (2026-11-06, verbatim): "Now we have the J2 prototype idea, so that idea should remain the same. Now let's combine the old
@@ -240,6 +240,7 @@ existing file at the same time because their dependencies order them. `docs/buil
 | ABS-12 | Import of the old app's chats (`sutra-pro import-old-chats`) | ABS-2, ABS-6, GAP-OPS-1 | `ops/import_old.py` | `tests/ops/test_import_old.py` |
 | ABS-13 | End to end: switch, carry-over, search, archive, import with fake CLIs | ABS-9, ABS-10, ABS-12 | `tests/e2e/test_abs_chat.py` | `tests/e2e/test_abs_chat.py` |
 | ABS-14 | User and developer documents for the merged app | ABS-13 | `docs/MIGRATING-FROM-SUTRA.md` | `tests/test_docs.py` |
+| ABS-15 | UI: the composer of the direct chat (attach, send, stop, streaming row, pill respected) on the node panel and Home | ABS-9, ABS-10, ABS-13 | `ui/static/js/chat_composer.js` | `tests/ui/js/chat_composer.test.js`, `tests/e2e/test_browser_chat_composer.py` |
 
 Order among the ABS packages (the global waves of `scripts/plan_tools.py waves` put them after everything already merged): first ABS-0, ABS-1, ABS-3,
 ABS-6, ABS-11 (independent); then ABS-2 and ABS-4; then ABS-5, ABS-8, ABS-12; then ABS-7; then ABS-9; ABS-10; ABS-13; ABS-14. Critical path:
