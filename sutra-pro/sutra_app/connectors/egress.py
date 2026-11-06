@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from sutra_app import oslayer
+
 __all__ = ["SHAPES", "Egress", "scan"]
 
 log = logging.getLogger(__name__)
@@ -86,7 +88,7 @@ class Egress:
         try:
             with self._lock:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
-                fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+                fd = os.open(self.path, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_APPEND, 0o600)
                 try:
                     try:
                         os.fchmod(fd, 0o600)

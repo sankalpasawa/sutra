@@ -348,9 +348,9 @@ def differences(root: Path, files: dict[str, bytes]) -> list[str]:
     for path, data in sorted(files.items()):
         target = root / UI_DIR / path
         if not target.is_file():
-            problems.append(f"missing: {UI_DIR / path}")
+            problems.append(f"missing: {(UI_DIR / path).as_posix()}")
         elif target.read_bytes() != data:
-            problems.append(f"differs: {UI_DIR / path}")
+            problems.append(f"differs: {(UI_DIR / path).as_posix()}")
     return problems
 
 

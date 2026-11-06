@@ -164,9 +164,18 @@ def test_the_function_node_events_of_a_run_carry_no_goal_and_one_turn_state(live
     assert {e["fn"] for e in nodes} == set(rec.FUNCTIONS)
 
 
+def shape_of(live) -> str:
+    """What the run did, for a failure message: events by type, how it ended, the last lines it said."""
+    from collections import Counter
+    ev_ = live["events"]
+    ended = [e for e in ev_ if e["t"] == "run.ended"]
+    said = [str(e.get("text", ""))[:80] for e in ev_ if e["t"] == "say"][-3:]
+    return f"{dict(Counter(e['t'] for e in ev_))}; ended {ended[-1:] and (ended[-1].get('status'), str(ended[-1].get('outcome'))[:80])}; last said {said}"
+
+
 def test_the_function_atom_events_carry_what_the_library_checks(live):
     atoms = rec.function_atom_events(live["events"])
-    assert len(atoms) > 60
+    assert len(atoms) > 60, shape_of(live)
     for e in atoms:
         body = GATE.check("atom", e["atom"]["body"])                     # strict model, cross rules, canonical JSON
         assert body.model.id == e["atom"]["id"] and body.model.state == e["atom"]["status"]
@@ -186,7 +195,8 @@ def test_builder_atoms_are_atom_1_views_without_the_function_fields(live):
 
 def test_usage_lines_of_a_live_run_all_name_an_atom(live):
     usage = [parse_event(e, strict=True) for e in live["events"] if e["t"] == "usage"]
-    assert len(usage) > 25 and all(u.atom for u in usage)
+    assert len(usage) > 25, shape_of(live)
+    assert all(u.atom for u in usage)
     assert {u.provider for u in usage} == {"stub"} and len({u.call_ref for u in usage}) == len(usage)
 
 

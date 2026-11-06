@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence
 
+from sutra_app import oslayer
+
 from .chat_models import AttachmentRef
 from .errors import InvalidRequestError
 
@@ -78,12 +80,12 @@ class AttachmentStore:
         path = self.root / (digest + ext)
         if not path.exists():
             tmp = path.with_suffix(path.suffix + ".part")
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            fd = os.open(tmp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_TRUNC, 0o600)      # binary: Windows would turn \n into \r\n
             try:
                 os.write(fd, blob)
             finally:
                 os.close(fd)
-            os.replace(tmp, path)
+            oslayer.replace(tmp, path)
         return AttachmentRef(id=digest, name=clean, kind=kind, size=len(blob))      # type: ignore[arg-type]
 
     def path_of(self, ref_id: str) -> Optional[Path]:

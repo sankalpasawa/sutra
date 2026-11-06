@@ -365,7 +365,7 @@ def make_j2(base: Path, **replace: tuple[tuple[str, str], ...]) -> Path:
 
 
 def tree(base: Path) -> dict[str, bytes]:
-    return {str(p.relative_to(base)): p.read_bytes() for p in sorted(base.rglob("*")) if p.is_file()}
+    return {p.relative_to(base).as_posix(): p.read_bytes() for p in sorted(base.rglob("*")) if p.is_file()}
 
 
 def run(capsys, *args) -> tuple[int, str, str]:
