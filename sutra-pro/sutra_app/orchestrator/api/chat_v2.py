@@ -27,6 +27,7 @@ from pydantic import ConfigDict, Field, StringConstraints
 
 from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE
 from sutra_app.connectors.chat_models import AttachmentRef, ChatTurnIn
+from sutra_app.connectors.egress import scan
 from sutra_app.connectors.errors import ConnectorError
 from sutra_app.library.base import Value
 from sutra_app.library.gate import GATE
@@ -162,11 +163,12 @@ def build_router() -> APIRouter:
                 raise Busy("This chat is already answering")
             _running.add(sid)
         try:
-            message_id = await run_blocking(_store_user_line, services, sid, body.text)
+            said = _clean(services, body.text)          # stored and sent without credential shapes: a secret never lands in the chat store
+            message_id = await run_blocking(_store_user_line, services, sid, said)
         except BaseException:
             _running.discard(sid)
             raise
-        asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, ChatTurnIn(text=body.text, attachments=refs)))
+        asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, ChatTurnIn(text=said, attachments=refs)))
         return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started"})
 
     @router.post("/chats/{sid}/direct/stop", summary="Stop the turn that is answering", dependencies=[Depends(require_token)])
@@ -191,6 +193,12 @@ def _post(services: Any, sid: str, *, role: str, who: str, kind: str, text: str,
         out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
             kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], src_ref=src_ref, at=tx.now()), ctx=tx.ctx))
     return out.id
+
+
+def _clean(services: Any, text: str) -> str:
+    """The app's secret values and the egress credential shapes replaced (connectors.egress), so the stored line, the line the model gets and
+    any later carry-over are the same text."""
+    return scan(services.redact(text), replace=True)[0]
 
 
 def _store_user_line(services: Any, sid: str, text: str) -> int:

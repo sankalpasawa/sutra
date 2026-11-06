@@ -197,3 +197,12 @@ def test_archiving_a_teams_chat_leaves_the_team_a_working_active_chat(rig):
     r = client.post(f"/api/chats/{row[0]}/direct", json={"text": "still there?"}, headers=H)
     assert r.status_code == 202
     assert wait_for(lambda: len(chats.messages(row[0])) == 2)
+
+
+def test_a_credential_typed_in_a_direct_chat_is_never_stored(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    assert client.post(f"/api/chats/{sid}/direct", json={"text": "my key sk-abcdefgh12345678 ok"}, headers=H).status_code == 202
+    assert wait_for(lambda: len(chats.messages(sid)) == 2)
+    user = chats.messages(sid)[0]
+    assert "sk-abcdefgh12345678" not in user.text and "[redacted:openai-key]" in user.text
