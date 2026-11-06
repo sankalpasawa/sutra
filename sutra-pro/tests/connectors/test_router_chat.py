@@ -362,3 +362,19 @@ def test_the_real_claude_connector_resumes_the_session_on_turn_two(fake, tmp_pat
     first, second = fake.model_calls("claude")
     assert "--session-id" in first["argv"] and "--resume" in second["argv"]
     assert first["argv"][first["argv"].index("--session-id") + 1] == second["argv"][second["argv"].index("--resume") + 1]
+
+
+def test_a_stop_that_arrives_while_the_turn_is_being_set_up_ends_it_before_any_process_starts(tmp_path):
+    rig = Rig(tmp_path)
+    stops = []
+
+    class StopsDuringSetUp(History):
+        def messages(self, session_id, limit=20):          # asked while the new session is rendered, before the process is registered
+            stops.append(rig.router.chat_stop(session_id))
+            return super().messages(session_id, limit)
+    rig.router.transcripts = StopsDuringSetUp()
+    with pytest.raises(CallCancelledError):
+        rig.send("hello")
+    assert stops == [True] and rig.claude.calls == [] and rig.router.chat_stop(SID) is False
+    rig.router.transcripts = rig.history
+    assert rig.send("again").text.startswith("[stub] again")       # the request does not leak into the next turn

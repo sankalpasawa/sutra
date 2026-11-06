@@ -315,6 +315,7 @@ class Router:
         self._sems: dict[str, threading.Semaphore] = {}
         self._closed = threading.Event()
         self._chat_busy: set[str] = set()
+        self._chat_stop_early: set[str] = set()        # a Stop that arrived before the turn's process was registered
         self._chat_active: dict[str, tuple[ModelConnector, SessionState]] = {}
         self._pins: dict[str, str] = {}
         self.choice_source: Optional[Callable[[str], Optional[str]]] = None      # session id -> the owner's persisted provider choice (ABS-8)
@@ -709,6 +710,9 @@ class Router:
     def chat_stop(self, session_id: str) -> bool:
         with self._lock:
             active = self._chat_active.get(session_id)
+            if active is None and session_id in self._chat_busy:
+                self._chat_stop_early.add(session_id)        # the turn is being set up: it ends before any process starts
+                return True
         return False if active is None else active[0].stop(active[1])
 
     def chat_pin(self, session_id: str, provider: Optional[str]) -> None:
@@ -733,6 +737,7 @@ class Router:
             if sid in self._chat_busy:
                 raise InvalidRequestError(f"session {sid} is already running a turn", detail={"busy": True})
             self._chat_busy.add(sid)
+            self._chat_stop_early.discard(sid)
         try:
             ctx = ctx.model_copy(update={"session_id": sid})
             req = AskRequest(user=m.text, ctx=ctx, kind="text", images=list(m.images))
@@ -762,6 +767,7 @@ class Router:
         finally:
             with self._lock:
                 self._chat_busy.discard(sid)
+                self._chat_stop_early.discard(sid)
 
     def _read_system(self, workdir: Path) -> str:
         try:
@@ -817,7 +823,12 @@ class Router:
             if self.egress is not None:
                 text = self.egress.check(text, session=sid, provider=provider, replace=True)
             with self._lock:
-                self._chat_active[sid] = (connector, session)
+                stopped_early = sid in self._chat_stop_early
+                self._chat_stop_early.discard(sid)
+                if not stopped_early:
+                    self._chat_active[sid] = (connector, session)
+            if stopped_early:
+                raise CallCancelledError("the turn was stopped before it started", provider=provider)
             turn: Optional[TurnResult] = None
             try:
                 for event in connector.stream(session, Message(role="user", text=text, images=list(m.images)),
