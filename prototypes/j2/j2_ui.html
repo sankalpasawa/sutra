@@ -1146,7 +1146,7 @@ function constraintsHTML(v){
 function docBody(kind, text){
   const seen = {};
   return text.split("\n").map(l => { if (!l.trim()) return "";
-    const h = l.match(/^#{1,6}\s+(.*)$/); if (h) return `<h4 data-head="${esc(h[1].trim())}">${md(h[1])}</h4>`;
+    const h = l.match(/^#{1,6}\s+(.*)$/); if (h) return `<h4 data-head="${esc(h[1].trim())}">${md(h[1])}</h4>` + (/^##\s/.test(l) ? `<p class="doctpl">${tplSecLine(kind, null, h[1].trim())}</p>` : "");
     const id = (l.match(ITEM_AT) || [])[1], first = id && !seen[id]; if (first) seen[id] = 1;
     return `<p class="dl${first && FOCUS.kind === kind && FOCUS.item === id ? " hit" : ""}"${first ? ` id="doc-${kind}-${esc(id)}"` : ""}>${md(l.replace(/^\s*[-*]\s+/, "• ").replace(/`/g, ""))}</p>`; }).join("");
 }
@@ -1215,6 +1215,31 @@ function tplLine(a, s){
   const href = t.artifact && t.section ? libHref(t.artifact, t.section, t.kind === "generic" ? "generic" : t.name, t.kind === "generic" ? 1 : t.version) : `/library?q=${encodeURIComponent(t.name)}`;
   return `<span class="tplline" data-tplline="${esc(t.action)}">Template: <span class="code">${esc(t.name)} v${esc(t.version)}</span> · ${esc(t.action)}`
     + ` · <button type="button" class="linkbtn" data-link="tplview" data-atom="${esc(a.id)}">this run</button> · <a href="${href}" data-link="catalog">library</a></span>`;
+}
+// The same line for a deliverable's section (Artifacts tab, Documents view): the run's decision by artifact and the workflow
+// that wrote the section (its rewriter when one did), or by artifact and section heading; "style" is the design decision.
+const DECK_ART = {"work:prd": "prd", "work:hld": "hld", "work:lld": "lld", "work:website": "website"};
+function tplDecision(artifact, wid, section){
+  const ds = (LIB.decisions || []).filter(d => d.artifact === artifact && (!wid || d.workflow === wid) && (!section || d.section === section));
+  return ds.length ? ds[ds.length - 1] : null;
+}
+function tplWhy(wid){
+  if (!(CTX && CTX.has_templates)) return TPL_WHY.before;
+  const w = ((CTX && CTX.workflows) || []).find(x => x.id === wid);
+  return w && (w.atoms || []).some(a => (a.results || []).some(r => /^artifact-/.test(String(r.type)))) ? TPL_WHY.nr : TPL_WHY.none;
+}
+function tplSecLine(artifact, wid, section){
+  const d = tplDecision(artifact, wid, section);
+  if (!d) return `<span class="tplline" data-tplline="none">Template: <span class="empty">${tplWhy(wid)}</span></span>`;
+  const name = d.kind === "generic" ? "generic" : d.template, ver = d.kind === "generic" ? 1 : d.version;
+  return `<span class="tplline" data-tplline="${esc(d.action)}">Template: <span class="code">${esc(d.template)} v${esc(d.version)}</span> · ${esc(d.action)}`
+    + ` · <button type="button" class="linkbtn" data-tplgo="${esc(d.atom)}|${esc(d.artifact)}">this run</button> · <a href="${libHref(d.artifact, d.section, name, ver)}" data-link="catalog">library</a></span>`;
+}
+function tplGo(atomId, artifact){      // the run's Library tab, with that decision's template open
+  setView("detail", true); showTab("library"); LIB.focus = atomId;
+  loadLibrary().then(() => { const ds = LIB.decisions || [], d = ds.find(x => x.atom === atomId && (artifact ? x.artifact === artifact : x.artifact !== "design")) || ds.find(x => x.atom === atomId);
+    if (d) openTemplate(d.artifact, d.section, d.kind === "generic" ? "generic" : d.template, d.kind === "generic" ? 1 : d.version);
+    else { const el = document.querySelector(`[data-tplrow="${atomId}"]`); if (el && el.scrollIntoView) el.scrollIntoView({block: "center"}); } });
 }
 function artifactRows(a){
   const got = ART_TYPES.map(t => artLast(a, t));
@@ -2269,9 +2294,13 @@ const ARTKIND = {
     human: x => `<div class="ashots">${x.shots.map(s => `<a class="ashot" href="${artUrl(s.file)}" target="_blank" rel="noopener"><img loading="lazy" alt="Screenshot ${esc(s.file.split("/").pop())}" src="${artUrl(s.file)}">`
       + `<span class="mono">${esc(s.file.split("/").pop())}${s.total ? ` · ${s.passed}/${s.total}` : ""}</span></a>`).join("")}</div>`}};
 ARTKIND.script = ARTKIND.section;
+// the Summary tab's Template block (library catalog, part 4): a website section's routing decision is the one its current owner made
+// (the rewriter when one did); the Style guide row shows the design decision. PRD / HLD / LLD sections carry theirs in the Documents view.
+const artTpl = x => x.kind === "section" || x.kind === "script" ? `<div class="ablk"><h5>Template</h5><p>${tplSecLine("website", x.owner || x.section, null)}</p></div>`
+  : x.kind === "style" ? `<div class="ablk"><h5>Template</h5><p>${tplSecLine("design", null, "Style guide")}</p></div>` : "";
 function artPane(x){ const k = ARTKIND[x.kind] || {}, v = x.views || {}, tab = artTab(ARTTABS, "sum");
   return (k.top ? k.top(x) : `<h2>${esc(x.name)}</h2>${artBy(x, x.file)}`) + artTabs(ARTTABS)
-    + (tab === "agent" ? artAgent(x) : tab === "human" ? (v.human && k.human ? k.human(x) : artNotSaved) : k.sum ? k.sum(x) : ""); }
+    + (tab === "agent" ? artAgent(x) : tab === "human" ? (v.human && k.human ? k.human(x) : artNotSaved) : (k.sum ? k.sum(x) : "") + artTpl(x)); }
 const artCur = () => { const g = artGroup(ARTS.g), rows = g.rows || []; return rows.find(r => r.id === ARTS.sel[g.id]) || rows[0] || null; };
 function renderArtifacts(){
   if (!ARTS.groups) return '<p class="empty">Loading the artifacts…</p>';
@@ -2319,6 +2348,8 @@ async function loadLibrary(){
   try { const r = await fetch(`/api/run-templates?${runQ().slice(1)}`, {cache: "no-store"}); if (r.ok) LIB.decisions = (await r.json()).decisions || []; } catch (e) {}
   LIB.loaded = true; paint($("pane-library"), renderLibrary());
   if (state) paint($("pane-workflows"), renderWorkflows(state));      // the Template lines read the decisions just loaded
+  if (ARTS.groups) artPaint();      // the Summary tab's Template block reads them too
+  if (Object.keys(DOCS).length) paint($("pane-docs"), renderDocs());
 }
 async function openTemplate(artifact, section, name, version){
   const sl = name === "generic" ? "generic" : slugOf(name);
@@ -2452,6 +2483,7 @@ if (CAT.on){
   if (o.length === 4 && /^v\d+$/.test(o[3])) CAT.open = [o[0], o[1], o[2], +o[3].slice(1)];
   loadCatalog();
 }
+document.addEventListener("click", e => { const tg = e.target.closest("[data-tplgo]"); if (!tg) return; e.preventDefault(); const [atom, art] = tg.dataset.tplgo.split("|"); tplGo(atom, art); });
 $("pane-artifacts").addEventListener("click", async e => {
   const cc = e.target.closest("[data-codecopy]"); if (cc){ e.preventDefault(); try { await navigator.clipboard.writeText(CODE[cc.dataset.codecopy] || ""); cc.textContent = "Copied"; } catch (err) { cc.textContent = "Copy failed"; } return; }
   const r = e.target.closest("[data-agrow]"); if (r){ ARTS.sel[ARTS.g] = r.dataset.agrow; ARTS.tab = "sum"; ARTS.ver = ""; artPaint(); const p = $("pane-artifacts").querySelector(".agpane"); if (p) p.scrollTop = 0; return artFetch(); }
