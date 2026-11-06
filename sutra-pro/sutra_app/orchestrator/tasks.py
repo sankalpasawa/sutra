@@ -48,6 +48,8 @@ from sutra_app.orchestrator.models import (
 from sutra_app.orchestrator.nodes import ensure_node, node_init
 from sutra_app.orchestrator.runs import stderr_tail
 from sutra_app.orchestrator.textutil import one_line_title
+from sutra_app.orchestrator.headsup import STOP_KEY
+from sutra_app.orchestrator.waiting import why_waiting
 
 __all__ = [
     "TaskRow", "TaskStore", "TaskGraph", "TaskService", "NODE_STATE_OF_TASK", "OVERRIDE_BUSY_NOTE", "RUN_FOLDER_INTERNALS",
@@ -559,16 +561,15 @@ class TaskService:
         with self.db.tx() as tx:
             self.store.settle_blocked(tx, lambda row: self.taskgraph.sync(tx, row))
             working, live = self.store.counts_in(tx.conn)
-            busy = {r[0] for r in tx.conn.execute(f"SELECT dept_id FROM tasks WHERE status IN ({_marks(len(LIVE_STATUSES))})", LIVE_STATUSES)}
+            busy = {r[0]: r[1] for r in tx.conn.execute(f"SELECT dept_id, status FROM tasks WHERE status IN ({_marks(len(LIVE_STATUSES))})", LIVE_STATUSES)}
             queued = [_row_of(r) for r in tx.conn.execute(f"SELECT {_COLUMNS} FROM tasks WHERE status = 'queued' ORDER BY created_at, rowid")]
             for row in queued:
                 if only is not None and row.id != only:
                     continue
-                if row.dept_id in busy:
-                    self.taskgraph.sync(tx, row, waiting="waiting for the team to finish its current task", announce=False)
-                    continue
-                if working >= self.settings.max_runs or live >= self.settings.max_live:
-                    self.taskgraph.sync(tx, row, waiting=f"waiting for a free slot ({working} teams working)", announce=False)
+                waiting = why_waiting(busy_status=busy.get(row.dept_id), working=working, live=live,              # names the owner when it is the owner
+                                      max_runs=self.settings.max_runs, max_live=self.settings.max_live)
+                if waiting:
+                    self.taskgraph.sync(tx, row, waiting=waiting, announce=False)
                     continue
                 spec, run_dir = self._begin(tx, row)
                 return row.id, spec, run_dir
@@ -808,6 +809,20 @@ class TaskService:
         self.store.settle_blocked(tx, lambda moved: self.taskgraph.sync(tx, moved))
         return row
 
+    def _mark_stop(self, task_id: str, by: str) -> None:
+        """Remember who asked a live task to stop, "owner" or "app", in the reserved settings key `_stopped_by` (the first one to ask
+        wins). The engine ends a stopped run with the same words for both, and the Heads up lane must never list the owner's own stop
+        (headsup.py)."""
+        with self.db.tx() as tx:
+            found = tx.conn.execute("SELECT settings_json FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if found is None:
+                return
+            stored = json.loads(found["settings_json"] or "{}")
+            if stored.get(STOP_KEY):
+                return
+            stored[STOP_KEY] = by
+            self.store.update(tx, task_id, settings_json=json.dumps(stored, sort_keys=True, separators=(",", ":")))
+
     async def stop(self, task_id: str) -> TaskOut:
         """Stop a task ('stopped by you'): a live task through the ladder, a queued or blocked one is cancelled; a finished one is 409."""
         return await self._stop(task_id, "stopped by you")
@@ -823,6 +838,7 @@ class TaskService:
                     self.graph.aggregate(tx)
                 return self.store.get(task_id)
             return await run_blocking(cancel)
+        await run_blocking(self._mark_stop, task_id, "owner")
         run_dir = await run_blocking(self.store.run_dir_of, row)
         await self.launcher.stop(run_dir, row.pid)
         if self.watcher is not None:
@@ -871,6 +887,7 @@ class TaskService:
             if row is None or not row.live:
                 return
             try:
+                await run_blocking(self._mark_stop, task_id, "app")
                 run_dir = await run_blocking(self.store.run_dir_of, row)
                 await self.launcher.stop(run_dir, row.pid)
                 await run_blocking(self.projector.drain, task_id)

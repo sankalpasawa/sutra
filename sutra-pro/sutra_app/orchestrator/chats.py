@@ -30,6 +30,7 @@ from sutra_app.orchestrator.errors import NotFound
 from sutra_app.orchestrator.ids import iso_z
 from sutra_app.orchestrator.models import ChatMessageOut, ChatSessionOut, NeedsYouOut, ResumeInfo
 from sutra_app.orchestrator.records import ChatMessage, ChatSession
+from sutra_app.orchestrator.waiting import ask_state
 
 __all__ = ["ChatStore", "ChatTranscripts", "RESUME_MESSAGES", "TURN_PHASES", "PROVIDERS", "parse_options"]
 
@@ -236,18 +237,26 @@ class ChatStore:
 
     # ---- needs you -------------------------------------------------------------------------------------------------
 
-    def needs_you(self) -> list[NeedsYouOut]:
+    def needs_you(self, *, now: int | None = None) -> list[NeedsYouOut]:
         """What waits for the owner, oldest first: every unanswered question in a department session (Identity's text,
-        verbatim, with its `Option N:` lines as options) and every approval card whose chart change is still pending."""
+        verbatim, with its `Option N:` lines as options) and every approval card whose chart change is still pending. With `now`
+        (epoch seconds, the server's clock) each item also says how long it has waited and whether that is past 24 h (`stale`)."""
         conn = self.db.conn()
         out: list[NeedsYouOut] = []
+
+        def age(at: int) -> dict:
+            if now is None:
+                return {}
+            waited, stale = ask_state(at, now)
+            return {"waiting_s": waited, "stale": stale}
+
         for r in conn.execute(
                 "SELECT m.id, m.session_id, m.text, m.at, s.node_id, o.name FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id"
                 " LEFT JOIN org_nodes o ON o.id = s.node_id WHERE m.kind = 'question' AND m.answered_by IS NULL AND s.kind = 'department'"
                 " ORDER BY m.id"):
             out.append(NeedsYouOut(
                 message_id=r["id"], session_id=r["session_id"], kind="question", dept_id=r["node_id"], dept_name=r["name"] or r["node_id"],
-                text=r["text"], options=parse_options(r["text"]), asked_at=iso_z(r["at"])))
+                text=r["text"], options=parse_options(r["text"]), asked_at=iso_z(r["at"]), **age(r["at"])))
         for r in conn.execute(
                 "SELECT m.id, m.session_id, m.card_json, m.at FROM chat_messages m WHERE m.kind = 'card'"
                 " AND json_extract(m.card_json, '$.type') = 'approval' AND json_extract(m.card_json, '$.change_id') IN"
@@ -255,7 +264,7 @@ class ChatStore:
             card = json.loads(r["card_json"])
             out.append(NeedsYouOut(
                 message_id=r["id"], session_id=r["session_id"], kind="approval", text=card["question"],
-                options=[o["label"] for o in card["options"]], asked_at=iso_z(r["at"])))
+                options=[o["label"] for o in card["options"]], asked_at=iso_z(r["at"]), **age(r["at"])))
         return sorted(out, key=lambda item: item.message_id)
 
     def needs_you_count(self) -> int:

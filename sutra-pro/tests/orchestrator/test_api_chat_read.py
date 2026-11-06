@@ -130,7 +130,8 @@ def test_needs_you_lists_open_questions_in_the_response_model(client, world):
     [item] = client.get("/api/needs-you").json()
     need = NeedsYouOut.model_validate(item)
     assert (need.message_id, need.kind, need.dept_id, need.dept_name, need.options) == (q.id, "question", "web", "Web", ["Warm", "Clean [adds 5 work credits]"])
-    assert set(item) == {"message_id", "session_id", "kind", "dept_id", "dept_name", "text", "options", "asked_at"}
+    assert set(item) == {"message_id", "session_id", "kind", "dept_id", "dept_name", "text", "options", "asked_at", "waiting_s", "stale"}
+    assert isinstance(item["waiting_s"], int) and item["waiting_s"] >= 0 and isinstance(item["stale"], bool)      # gap attention: age by the server clock
 
 
 # ---- atoms ---------------------------------------------------------------------------------------------------------------------------

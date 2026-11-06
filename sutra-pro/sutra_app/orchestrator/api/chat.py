@@ -4,10 +4,12 @@ belong to the agent routes.
     GET /api/chats?node_id=&include=archived        -> ChatSessionOut[]   (active sessions; `include=archived` adds the archived ones)
     GET /api/chats/{sid}                            -> ChatSessionOut     (404 not_found; `phase` is set for cs_org)
     GET /api/chats/{sid}/messages?after=&limit=     -> {messages: ChatMessageOut[], next_after}   (oldest first; limit 1..500, default 200)
-    GET /api/needs-you                              -> NeedsYouOut[]      (open department questions and pending approvals)
+    GET /api/needs-you                              -> NeedsYouOut[]      (open department questions and pending approvals, with how long each waited)
+    GET /api/heads-up                               -> HeadsUpOut[]       (crashed or app-stopped work, teams gone quiet, work finished in 24 h)
 
 `next_after` is the id to pass as `after` next time: the last message returned, or `after` itself when nothing new came.
-The router reads `request.app.state.services.chats` (a `ChatStore`).
+The router reads `request.app.state.services.chats` (a `ChatStore`); the two "what waits for the owner" reads take the time from
+`services.clock` and `GET /api/heads-up` reads `services.db` through `HeadsUp` (headsup.py, gap package attention).
 """
 from typing import Annotated, Any
 
@@ -19,6 +21,7 @@ from sutra_app.orchestrator.api.deps import RedactedJSONResponse, services_of
 from sutra_app.orchestrator.chats import ChatStore
 from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.errors import AppError
+from sutra_app.orchestrator.headsup import HeadsUp
 from sutra_app.orchestrator.models import ChatMessageOut
 
 __all__ = ["router", "build_router", "MessagePage", "ID_PATTERN"]
@@ -76,7 +79,14 @@ def build_router() -> APIRouter:
 
     @router.get("/needs-you", summary="What waits for the owner")
     async def get_needs_you(request: Request) -> RedactedJSONResponse:
-        return respond(request, await run_blocking(lambda: _store(request).needs_you()))
+        now = services_of(request).clock.now()
+        return respond(request, await run_blocking(lambda: _store(request).needs_you(now=now)))
+
+    @router.get("/heads-up", summary="What happened to the teams lately")
+    async def get_heads_up(request: Request) -> RedactedJSONResponse:
+        services = services_of(request)
+        now = services.clock.now()
+        return respond(request, await run_blocking(lambda: HeadsUp(services.db).items(now)))
 
     return router
 
