@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from sutra_app.connectors.errors import ConnectorError, InvalidJsonError, InvalidRequestError, NoProviderError, QuotaError
-from sutra_app.connectors.models import AuthStatus, ConnectorConfig, JsonResult, TurnResult, Usage
+from sutra_app.connectors.models import AuthStatus, ConnectorConfig, JsonResult, Quota, TurnResult, Usage
 from sutra_app.connectors.orchestrator_port import AsyncConnector, build_tag
 from sutra_app.connectors.policy import parse_policy
 from sutra_app.connectors.router import Router
@@ -198,8 +198,10 @@ def test_status_has_the_shape_the_settings_page_reads(rig):
     fixture = json.loads((Path(__file__).resolve().parents[1] / "ui" / "fixtures" / "health.json").read_text(encoding="utf-8"))
     status = rig.port.status()
     for name, page_row in fixture["connectors"].items():
-        assert set(page_row) <= set(status[name]), name
+        assert set(page_row) == set(status[name]), name                       # the fixture the page tests read is the real shape
         assert isinstance(status[name]["health"], dict) and set(status[name]["health"]) == set(page_row["health"]), name
+    rig.router.health.set_quota("claude", Quota.model_validate(fixture["connectors"]["claude"]["quota"]))
+    assert rig.port.status()["claude"]["quota"] == fixture["connectors"]["claude"]["quota"]
 
 
 def test_status_reports_a_provider_in_cooldown_and_a_missing_cli(tmp_path):

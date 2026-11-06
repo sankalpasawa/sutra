@@ -652,7 +652,7 @@ def test_health_is_the_two_connector_rows_with_one_signed_out_so_sign_in_has_som
     claude, codex = health["connectors"]["claude"], health["connectors"]["codex"]
     assert claude["signed_in"] and claude["health"]["state"] == "ok" and claude["billing"] == "subscription"
     assert not codex["signed_in"] and codex["health"]["state"] == "signed_out" and codex["method"] is None
-    assert {"installed", "signed_in", "detail", "version", "method", "billing", "health"} == set(claude) == set(codex)
+    assert {"installed", "signed_in", "detail", "version", "method", "billing", "plan", "plan_label", "health", "quota"} == set(claude) == set(codex)
 
 
 def test_engine_settings_follow_the_engine_sections_field_list():

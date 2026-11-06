@@ -86,6 +86,39 @@ test("a provider out of quota, cooling down or paused is never shown as Ready (t
   }
 });
 
+// a clock that does not depend on the machine's zone: UTC fields (plan_meter.js `when`)
+const utc = ms => { const d = new Date(ms); return {day: d.getUTCDay(), date: d.getUTCDate(), month: d.getUTCMonth(), hh: d.getUTCHours(), mm: d.getUTCMinutes()}; };
+
+test("a signed-in row names the plan and how it is billed, and draws a meter per usage window (GAP-providers)", () => {
+  const nowMs = Date.UTC(2026, 10, 6, 12, 0, 0);
+  const claude = row(connectorsHtml(HEALTH, {nowMs, when: utc}), "claude");
+  assert.match(claude, /<p class="setplan">Claude Max, counted against your plan, not billed per call<\/p><div class="pmeter"/);
+  assert.match(claude, /data-key="five_hour" data-sev="ok"><span class="pml">5-hour<\/span><span class="pmp">62%<\/span>/);
+  assert.match(claude, /data-key="seven_day" data-sev="warn"><span class="pml">Weekly<\/span><span class="pmp">81%<\/span>/);
+  assert.match(claude, /<p class="pmasof">as of /);
+  const codex = row(connectorsHtml(HEALTH, {nowMs, when: utc}), "codex");
+  assert.equal(codex.includes("pmeter"), false);                                         // no quota signal: no meter, never an empty bar
+  assert.equal(codex.includes("setplan"), false);
+});
+
+test("a window whose reset passed reads reset, and a blocked provider says until when", () => {
+  const health = clone(HEALTH);
+  const nowMs = health.connectors.claude.quota.windows[0].resets_at * 1000 + 60000;
+  health.connectors.claude.health = {state: "quota", until: nowMs / 1000 + 3600, reason: "usage limit reached"};
+  const html = row(connectorsHtml(health, {nowMs, when: utc}), "claude");
+  assert.match(html, /data-key="five_hour" data-sev="reset"><span class="pml">5-hour<\/span><span class="pmp">reset<\/span>/);
+  assert.equal(/5-hour<\/span><span class="pmp">62%/.test(html), false);
+  assert.match(html, /usage limit reached, until \d\d:\d\d/);
+  assert.match(html, /st-quota">Out of quota</);
+});
+
+test("a provider that is not installed has no plan line and no meter", () => {
+  const health = clone(HEALTH);
+  health.connectors.claude.installed = false;
+  const html = row(connectorsHtml(health, {}), "claude");
+  assert.equal(html.includes("pmeter") || html.includes("setplan"), false);
+});
+
 test("both rows have Test and only the Codex row has Sign in", () => {
   const html = connectorsHtml(HEALTH, {});
   assert.match(row(html, "claude"), /data-act="test" data-provider="claude"/);

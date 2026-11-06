@@ -11,7 +11,8 @@
      engineBody(settings, form) -> {set, unset}   the PUT body: only the fields that changed; a field that goes back to the value of the layer
                                           below (defaults for all teams; defaults and the all-teams file for one team) is `unset`
      engineErrors(error) -> {field: sentence}      what a 422 `validation` names, key "" for a sentence about the whole form
-     connectorsHtml(health, state) -> html        the Connectors group from GET /api/health: a row per provider with Test and, for codex only, Sign in
+     connectorsHtml(health, state) -> html        the Connectors group from GET /api/health: a row per provider with Test and, for codex only, Sign in;
+                                          the plan in words and one meter per usage window (plan_meter.js, GAP-providers)
      signInState(prev, answer) -> {step, url, code, expires_in, message}   the sign-in reducer (start answer, poll answer, an error)
      appearanceHtml(pref) -> html                 the Appearance group: Light | Dark | System (localStorage j2theme, one choice for both pages)
 
@@ -323,6 +324,23 @@
   const HEALTH_WORDS = freeze({ok: "Ready", signed_out: "Not signed in", degraded: "Limited", quota: "Out of quota", cooldown: "Cooling down",
     breaker: "Paused after errors", missing: "Not installed"});
   const providerName = p => (hasOwn(PROVIDER_NAMES, p) ? PROVIDER_NAMES[p] : clean(p));
+  const BLOCKS = freeze(["quota", "cooldown", "breaker"]);
+
+  // plan_meter.js draws the meters (GAP-providers): a global in the page, a require in node; looked up when a row is drawn, so the order of the
+  // script tags does not matter. Without it a row simply has no meters.
+  function planMeter() {
+    if (root.PlanMeter) return root.PlanMeter;
+    if (typeof module === "object" && module !== null && module.exports && typeof require === "function") return require("./plan_meter.js");
+    return null;
+  }
+
+  // "until 14:05" for a provider that is blocked (out of quota, cooling down, paused), from health.until (epoch seconds).
+  function untilWords(health, when) {
+    if (!isObj(health) || !BLOCKS.includes(health.state) || !finite(health.until)) return "";
+    const pm = planMeter();
+    const t = pm ? (typeof when === "function" ? when : pm.clockOf)(health.until * 1000) : null;
+    return t ? "until " + (t.hh < 10 ? "0" : "") + t.hh + ":" + (t.mm < 10 ? "0" : "") + t.mm : "";
+  }
 
   function healthChip(c) {
     if (c.installed === false) return ["missing", "Not installed"];
@@ -363,19 +381,25 @@
     const [tone, word] = healthChip(c);
     const test = isObj(state) && isObj(state.test) && isObj(state.test[name]) ? state.test[name] : {step: "idle"};
     const signin = name === "codex" && isObj(state) && isObj(state.signin) ? state.signin : NO_SIGNIN;
-    const detail = [clean(c.detail), c.version ? "version " + clean(c.version) : "", isObj(c.health) && clean(c.health.reason) && tone !== "signed_out" ? clean(c.health.reason) : ""]
-      .filter(Boolean).join(" · ");
+    const when = isObj(state) && typeof state.when === "function" ? state.when : undefined;
+    const nowMs = isObj(state) && finite(state.nowMs) ? state.nowMs : Date.now();
+    const reason = isObj(c.health) && clean(c.health.reason) && tone !== "signed_out" ? [clean(c.health.reason), untilWords(c.health, when)].filter(Boolean).join(", ") : "";
+    const detail = [clean(c.detail), c.version ? "version " + clean(c.version) : "", reason].filter(Boolean).join(" · ");
     const line = testLine(test);
+    const pm = planMeter();
+    const plan = pm && c.installed !== false ? pm.planLine(c) : "";
+    const meters = pm && c.installed !== false ? pm.meterHtml(c.quota, nowMs, {when}) : "";
     return '<div class="setconn" data-provider="' + esc(name) + '" data-state="' + esc(tone) + '">' +
       '<div class="sethead"><b>' + esc(providerName(name)) + '</b><span class="setchip st-' + esc(tone) + '">' + esc(word) + "</span></div>" +
-      (detail ? '<p class="setdetail">' + esc(detail) + "</p>" : "") +
+      (detail ? '<p class="setdetail">' + esc(detail) + "</p>" : "") + (plan ? '<p class="setplan">' + esc(plan) + "</p>" : "") + meters +
       '<div class="setacts"><button type="button" class="ghost" data-act="test" data-provider="' + esc(name) + '"' + (test.step === "running" ? " disabled" : "") + ">Test</button>" +
       (name === "codex" ? '<button type="button" class="ghost" data-act="signin" data-provider="codex"' + (signin.step === "pending" ? " disabled" : "") + ">Sign in</button>" : "") +
       '<span class="settest" data-step="' + esc(test.step) + '" role="status">' + esc(line) + "</span></div>" + signInBox(signin) + "</div>";
   }
 
   // connectorsHtml(health, state). health is GET /api/health ({connectors: {claude: {...}, codex: {...}}}); state {test: {provider: {step, seconds, message}},
-  // signin: signInState}. A row for every provider the answer holds, Claude first, then Codex; only the Codex row has Sign in.
+  // signin: signInState, nowMs, when}. A row for every provider the answer holds, Claude first, then Codex; only the Codex row has Sign in. Each row
+  // carries the plan in words and a meter per usage window (plan_meter.js); `nowMs` and `when` (local time) are for a test.
   function connectorsHtml(health, state) {
     const connectors = isObj(health) && isObj(health.connectors) ? health.connectors : null;
     const head = '<section class="setgrp" data-group="connectors" aria-labelledby="set-connectors-h"><h3 id="set-connectors-h">' + GROUPS.connectors + "</h3>";

@@ -10,10 +10,25 @@
       "version": "2.1.308",
       "method": "claude.ai",
       "billing": "subscription",
+      "plan": "max",
+      "plan_label": "Claude Max",
       "health": {
         "state": "ok",
         "until": null,
         "reason": null
+      },
+      "quota": {
+        "status": "ok",
+        "window": "five_hour",
+        "used": 0.62,
+        "resets_at": 4102444800,
+        "plan": null,
+        "source": "rate_limit_event",
+        "windows": [
+          {"key": "five_hour", "label": "5-hour", "used": 0.62, "resets_at": 4102444800},
+          {"key": "seven_day", "label": "Weekly", "used": 0.81, "resets_at": 4102876800}
+        ],
+        "seen_at": 1793748000
       }
     },
     "codex": {
@@ -23,11 +38,14 @@
       "version": "0.5.2",
       "method": null,
       "billing": null,
+      "plan": null,
+      "plan_label": null,
       "health": {
         "state": "signed_out",
         "until": null,
         "reason": "not signed in"
-      }
+      },
+      "quota": null
     }
   }
 }

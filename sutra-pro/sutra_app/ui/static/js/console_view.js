@@ -195,20 +195,32 @@
     return best;
   }
 
-  // The connectors' health and quota, from GET /api/connectors/status. `format(epochSeconds)` writes a clock time (a test passes its own).
-  function connectorsHtml(status, nowMs, format) {
+  // plan_meter.js (GAP-providers): a global in the page, a require in node. Without it the rows keep their one quota line.
+  function planMeter() {
+    if (root.PlanMeter) return root.PlanMeter;
+    if (typeof module === "object" && module !== null && module.exports && typeof require === "function") return require("./plan_meter.js");
+    return null;
+  }
+
+  // The connectors' health and quota, from GET /api/connectors/status. `format(epochSeconds)` writes a clock time (a test passes its own). A snapshot
+  // that names every window of the plan (`quota.windows`) gets a meter per window and the plan in words (plan_meter.js); an older one keeps its line.
+  function connectorsHtml(status, nowMs, format, when) {
     const fmt = typeof format === "function" ? format : localTime;
     if (!isObj(status)) return '<div class="cconn"><h3>Connectors</h3><p class="cempty">Not loaded yet.</p></div>';
+    const pm = planMeter();
     const rows = arr(status.providers).filter(isObj).map(p => {
       const state = isObj(p.health) ? clean(p.health.state) : "";
       const word = p.installed === false ? HEALTH_WORDS.missing : (hasOwn(HEALTH_WORDS, state) ? HEALTH_WORDS[state] : (state || "unknown"));
       const q = isObj(p.quota) ? p.quota : null;
-      const quota = q ? (hasOwn(QUOTA_WORDS, q.status) ? QUOTA_WORDS[q.status] : "Quota unknown") + (q.window ? " (" + clean(q.window) + ")" : "") +
+      const metered = pm !== null && q !== null && arr(q.windows).length > 0;
+      const quota = q ? (hasOwn(QUOTA_WORDS, q.status) ? QUOTA_WORDS[q.status] : "Quota unknown") + (metered ? "" : (q.window ? " (" + clean(q.window) + ")" : "") +
         (finite(q.used) ? ", " + Math.round(q.used * 100) + "% used" : "") +
-        (finite(q.resets_at) ? ", resets " + fmt(q.resets_at) + " (" + untilText(q.resets_at, nowMs) + ")" : "") : "No quota signal yet";
+        (finite(q.resets_at) ? ", resets " + fmt(q.resets_at) + " (" + untilText(q.resets_at, nowMs) + ")" : "")) : "No quota signal yet";
       const today = isObj(p.today) ? p.today : {};
+      const plan = pm !== null && p.installed !== false ? pm.planLine(p) : "";
       return '<div class="crow" data-provider="' + esc(p.name) + '"><b>' + esc(providerName(p.name)) + '</b><span class="cchip st-' + esc(state || "unknown") + '">' + esc(word) + "</span>" +
-        '<span class="cnote">' + esc(quota) + "</span><span class=\"cnote\">Today: " + esc(group(today.calls || 0)) + " calls, " + esc(tokens(today.tokens || 0)) + " tokens</span></div>";
+        '<span class="cnote">' + esc(quota) + "</span><span class=\"cnote\">Today: " + esc(group(today.calls || 0)) + " calls, " + esc(tokens(today.tokens || 0)) + " tokens</span>" +
+        (plan ? '<p class="pmplan">' + esc(plan) + "</p>" : "") + (metered ? pm.meterHtml(q, nowMs, {when}) : "") + "</div>";
     }).join("");
     const next = nextReset(status, nowMs);
     return '<div class="cconn"><h3>Connectors</h3>' + (rows || '<p class="cempty">No connector is configured.</p>') +
