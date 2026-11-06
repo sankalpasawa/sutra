@@ -108,7 +108,7 @@ def test_control_events_get_no_seq_and_stay_out_of_the_ring():
         got = [await asyncio.wait_for(sub.next(), 5) for _ in range(3)]
         return bus, resync, hello, got
     bus, resync, hello, got = run(go())
-    assert CONTROL_TYPES == ("server.hello", "server.resync")
+    assert CONTROL_TYPES == ("server.hello", "server.resync", "chat.partial")
     assert resync.seq == 0 and hello.seq == 0
     assert bus.head == 2 and [e.type for e in bus.replay(0).events] == ["chat.message", "graph.updated"]
     assert [(e.type, e.seq) for e in got] == [("chat.message", 1), ("server.resync", 0), ("server.hello", 0)]   # server passes a topic filter

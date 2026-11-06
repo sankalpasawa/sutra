@@ -1,0 +1,166 @@
+"""Chat routes v2 (work package ABS-7): search, archive, providers and choice, upload, the direct streamed chat, the partial event."""
+from __future__ import annotations
+
+import base64
+import time
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from orchestrator.test_chat_store import msg
+from orchestrator.test_graph_store import World
+
+from sutra_app.connectors.chat_port import RouterChatPort
+from sutra_app.connectors.factory import build_router
+from sutra_app.orchestrator.api import chat as chat_api
+from sutra_app.orchestrator.api import chat_v2
+from sutra_app.orchestrator.api.deps import install_error_handlers, redacted_response_class
+from sutra_app.orchestrator.attachments import Attachments
+from sutra_app.orchestrator.chats import ChatStore, ChatTranscripts
+from sutra_app.orchestrator.events import PARTIAL, EventBus
+from sutra_app.orchestrator.redact import Redactor
+from sutra_app.orchestrator.services import Services
+
+TOKEN = "test-token-0123456789abcdef"
+H = {"X-Sutra-Token": TOKEN}
+
+
+@pytest.fixture
+def world(db, clock):
+    return World(db, clock)
+
+
+@pytest.fixture
+def rig(world, settings, tmp_path):
+    chats = ChatStore(world.db)
+    bus = EventBus(clock=world.db._clock)
+    router = build_router(settings.model_copy(update={"connector": "stub"}), transcripts=ChatTranscripts(chats), session_hook=chats.set_provider)
+    attachments = Attachments(settings.data_dir)
+    services = Services(settings=settings, version="t", db=world.db, redact=Redactor(None, environ={}))
+    services.chats, services.bus = chats, bus
+    services.chat_port, services.attachments = RouterChatPort(router, attachments=attachments.store), attachments
+    app = FastAPI()
+    app.state.services = services
+    install_error_handlers(app, redacted_response_class(Redactor(None, environ={})))
+    for module in (chat_v2, chat_api):                    # the real order: chat_v2 first, so /chats/search is not a session id
+        app.include_router(module.build_router())
+    client = TestClient(app, base_url="http://127.0.0.1:8780", raise_server_exceptions=False)
+    yield client, world, chats, bus, services
+    router.close()
+
+
+def say(world, sid, text, who="user"):
+    with world.db.tx() as tx:
+        ChatStore(world.db).post(tx, sid, msg(sid, text, who=who))
+
+
+def wait_for(cond, seconds=10):
+    end = time.time() + seconds
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def error_code(r, status):
+    assert r.status_code == status, r.text
+    return r.json()["error"]["code"]
+
+
+# ---- search ------------------------------------------------------------------------------------------------------------------------
+
+def test_search_returns_rows_and_search_is_not_taken_for_a_session(rig):
+    client, world, *_ = rig
+    sid = world.session_of["web"]
+    say(world, sid, "the zebra plan")
+    r = client.get("/api/chats/search", params={"q": "zebra"})
+    assert r.status_code == 200 and r.json()["results"][0]["session_id"] == sid and set(r.json()["results"][0]) == {"session_id", "message_id", "title", "snippet", "at"}
+    assert client.get("/api/chats/search", params={"q": "zebra", "scope": "node:menu"}).json()["results"] == []
+    assert error_code(client.get("/api/chats/search", params={"q": "x", "scope": "bad scope"}), 422) == "validation"
+
+
+def test_search_needs_no_token_but_hides_archived_chats_until_asked(rig):
+    client, world, *_ = rig
+    sid = world.session_of["web"]
+    say(world, sid, "needle")
+    assert client.post(f"/api/chats/{sid}/archive").status_code == 401
+    assert client.post(f"/api/chats/{sid}/archive", headers=H).json() == {"session_id": sid, "archived": True}
+    assert client.get("/api/chats/search", params={"q": "needle"}).json()["results"] == []
+    assert len(client.get("/api/chats/search", params={"q": "needle", "include": "archived"}).json()["results"]) == 1
+    assert client.post(f"/api/chats/{sid}/unarchive", headers=H).json()["archived"] is False
+    assert len(client.get("/api/chats/search", params={"q": "needle"}).json()["results"]) == 1
+    assert error_code(client.post("/api/chats/cs_org/archive", headers=H), 422) == "rules"
+    assert error_code(client.post("/api/chats/cs_000000000fff/archive", headers=H), 404) == "not_found"
+
+
+# ---- providers and choice ----------------------------------------------------------------------------------------------------------
+
+def test_providers_lists_the_pill_and_an_unrunnable_choice_is_refused(rig):
+    client, world, *_ = rig
+    sid = world.session_of["web"]
+    r = client.get(f"/api/chats/{sid}/providers")
+    assert r.status_code == 200 and r.json() == {"providers": [], "chosen": None}          # a stub-only router offers no claude or codex
+    assert error_code(client.put(f"/api/chats/{sid}/choice", json={"provider": "codex"}, headers=H), 422) == "validation"
+    assert error_code(client.put(f"/api/chats/{sid}/choice", json={"provider": "gemini"}, headers=H), 422) == "validation"
+    assert error_code(client.put(f"/api/chats/{sid}/choice", json={"provider": "codex"}), 401) == "bad_token"
+
+
+def test_clearing_a_choice_is_accepted(rig):
+    client, world, *_ = rig
+    sid = world.session_of["web"]
+    r = client.put(f"/api/chats/{sid}/choice", json={"provider": None}, headers=H)
+    assert r.status_code == 200 and r.json()["provider"] is None
+
+
+# ---- attachments -------------------------------------------------------------------------------------------------------------------
+
+def test_an_upload_stores_the_file_once_and_refuses_what_is_not_a_kind_we_take(rig):
+    client, world, *_ = rig
+    sid = world.session_of["web"]
+    blob = base64.b64encode(b"hello notes").decode()
+    a = client.post(f"/api/chats/{sid}/attachments", json={"name": "notes.txt", "content_b64": blob}, headers=H)
+    b = client.post(f"/api/chats/{sid}/attachments", json={"name": "again.txt", "content_b64": blob}, headers=H)
+    assert a.status_code == 200 and a.json()["id"] == b.json()["id"] and a.json()["kind"] == "text"
+    assert error_code(client.post(f"/api/chats/{sid}/attachments", json={"name": "a.exe", "content_b64": base64.b64encode(b"MZ").decode()}, headers=H), 422) == "validation"
+    assert error_code(client.post(f"/api/chats/{sid}/attachments", json={"name": "a.txt", "content_b64": "***"}, headers=H), 422) == "validation"
+    assert error_code(client.post(f"/api/chats/{sid}/attachments", json={"name": "a.txt", "content_b64": blob}), 401) == "bad_token"
+
+
+# ---- the direct chat ---------------------------------------------------------------------------------------------------------------
+
+def test_a_direct_turn_stores_the_user_line_then_one_reply_and_streams_partials_that_are_not_replayed(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    seen = []
+    real = bus.publish_one
+    bus.publish_one = lambda type_, data=None: (seen.append((type_, data)), real(type_, data))[1]
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "hello there"}, headers=H)
+    assert r.status_code == 202 and r.json()["turn"] == "started"
+    assert wait_for(lambda: len(chats.messages(sid)) == 2)
+    user, agent = chats.messages(sid)
+    assert (user.role, user.text, agent.role, agent.kind, agent.state) == ("user", "hello there", "agent", "text", "ok") and agent.text
+    partials = [d for t, d in seen if t == PARTIAL]
+    assert partials and "".join(p["delta"] for p in partials) == agent.text and all(p["session_id"] == sid and p["message_id"] == user.id for p in partials)
+    assert all(e.type != PARTIAL for e in bus.replay(0).events)               # a reconnect gets the stored message, never half of one
+
+
+def test_a_direct_chat_needs_the_token_a_writable_team_chat_and_one_turn_at_a_time(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": "x"}), 401) == "bad_token"
+    assert error_code(client.post("/api/chats/cs_org/direct", json={"text": "x"}, headers=H), 403) == "read_only"
+    assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": ""}, headers=H), 422) == "validation"
+    assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": "x", "attachments": ["0" * 64]}, headers=H), 404) == "not_found"
+    chat_v2._running.add(sid)
+    try:
+        assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": "x"}, headers=H), 409) == "busy"
+    finally:
+        chat_v2._running.discard(sid)
+
+
+def test_partial_is_a_control_event_never_in_the_ring(rig):
+    _, _, _, bus, _ = rig
+    before = bus.head
+    ev = bus.publish_one(PARTIAL, {"session_id": "cs_org", "delta": "x"})
+    assert ev.seq == 0 and bus.head == before and bus.replay(0).events == ()

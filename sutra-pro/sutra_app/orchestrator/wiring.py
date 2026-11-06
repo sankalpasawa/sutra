@@ -25,6 +25,7 @@ from typing import Any
 
 import sutra_app
 from sutra_app.config import Settings
+from sutra_app.connectors.chat_port import RouterChatPort
 from sutra_app.connectors.factory import build_router as build_connector_router
 from sutra_app.connectors.orchestrator_port import AsyncConnector
 from sutra_app.library.gate import GATE
@@ -37,6 +38,7 @@ from sutra_app.orchestrator.agent.demo import demo_book
 from sutra_app.orchestrator.agent.runner import TurnRunner
 from sutra_app.orchestrator.atoms import AtomStore
 from sutra_app.orchestrator.chart import ChartStore
+from sutra_app.orchestrator.attachments import Attachments
 from sutra_app.orchestrator.chats import ChatStore, ChatTranscripts
 from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.departments import DepartmentStore
@@ -65,6 +67,8 @@ class AppServices(Services):
     """`Services` plus what only the app shell needs: the connector router (for `/api/connectors`) and the startup report."""
 
     connector_router: Any = None
+    chat_port: Any = None              # ChatPort over the router (ABS-1), for the direct chat routes
+    attachments: Any = None            # the attachment service (ABS-4)
     reconciled: ReconcileReport | None = None
     swept: int = 0
     refreshed: int = 0
@@ -156,6 +160,8 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
                                     transcripts=ChatTranscripts(chats), session_hook=chats.set_provider,
                                     replybook=demo_book() if router_settings.offline else None)
     port = connector if connector is not None else AsyncConnector(router)
+    attachments = Attachments(settings.data_dir)
+    chat_port = RouterChatPort(router, attachments=attachments.store)
     agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout)
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
                         publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor)
@@ -164,7 +170,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         bus=bus, chats=chats, atoms=atoms, usage=usage, graph=graph, chart=chart, departments=departments, tasks=tasks,
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
-        stop_live=tasks.stop_live, connector_router=router)
+        stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments)
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------

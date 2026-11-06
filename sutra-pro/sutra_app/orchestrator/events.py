@@ -10,7 +10,7 @@
   router calls from its own. A lock numbers the events and appends them to the ring in one step (so ring order is seq
   order); each subscriber's queue is fed with `loop.call_soon_threadsafe`, so a subscriber sees the events in seq order.
 * `seq` is process-local and starts at 1 at each launch. The ring keeps the last `RING_SIZE` (1000) events.
-* `server.hello` and `server.resync` are CONTROL events [S3-web-06]: they are broadcast to the open streams only, get no
+* `server.hello`, `server.resync` and `chat.partial` are CONTROL events [S3-web-06]: they are broadcast to the open streams only, get no
   `seq` (0) and never enter the ring, so a client's last event id always names a real event. The reconciler publishes
   `server.resync {reason:'restart'}` this way; a stream that falls too far behind is given `server.resync {reason:'gap'}`.
 * `replay(after, topics)` / `subscribe(after=...)` give the events a client missed: nothing for a first connection (`after`
@@ -36,7 +36,7 @@ from sutra_app.orchestrator.ids import Clock, SystemClock, iso_z
 from sutra_app.orchestrator.models import Event
 
 __all__ = [
-    "RING_SIZE", "MAX_PENDING", "CONTROL_TYPES", "HELLO", "RESYNC", "EventBus", "Subscription", "Replay", "topic_of",
+    "RING_SIZE", "MAX_PENDING", "CONTROL_TYPES", "HELLO", "RESYNC", "PARTIAL", "EventBus", "Subscription", "Replay", "topic_of",
     "topic_matches", "event_type_ok",
 ]
 
@@ -45,7 +45,8 @@ RING_SIZE = 1000                   # events kept for replay
 MAX_PENDING = 2000                 # events a slow stream may hold before it is told to resync (gap)
 HELLO = "server.hello"
 RESYNC = "server.resync"
-CONTROL_TYPES = (HELLO, RESYNC)
+PARTIAL = "chat.partial"           # a streamed piece of a chat reply: shown, never stored, never replayed (ABS-7)
+CONTROL_TYPES = (HELLO, RESYNC, PARTIAL)
 _TYPE_RE = re.compile(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*")
 _GAP_EVENT = Event(seq=0, at="1970-01-01T00:00:00Z", type=RESYNC, data={"reason": "gap"})
 
