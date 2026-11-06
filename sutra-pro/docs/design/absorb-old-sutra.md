@@ -83,7 +83,7 @@ Electron payload. "Pro equivalent" cites files under `sutra-pro/`. Verdicts: **P
 | 29 | `functions_view.py`, `20-dept.js`, `24-functions.js` | Function and department screens | 1122 py + js | `ui/static/js/fnode_view.js`, `node_panel.js`, `orgchart_view.js`, J2 page | **REPLACED** |
 | 30 | `website_dept.py`, `website_api.py` | A department that builds a website with four engines | 1841 + 482 py | J2's website artifact in `engine/` and `library/artifacts/` | **REPLACED** |
 | 31 | `seo_agent/`, `agents_api.py` | SEO writer agent and its routes | 3305 py + about 5 660 py | none | **LATER** (as a library template of a team, when the owner asks for one) |
-| 32 | `goal_store.py`, `goal_lifecycle.py` | A durable goal that outlives its attempts (missions) | 526 + 484 py | `library/goal.py` (goal of a node), follow-up tasks with `seed_from` (ORCH-6), GAP-E1B | **REPLACED** (the idea "a goal outlives a failed attempt" is a follow-up task; recorded as an open question in section 5) |
+| 32 | `goal_store.py`, `goal_lifecycle.py` | A durable goal that outlives its attempts (missions) | 526 + 484 py | `library/goal.py` (goal of a node), follow-up tasks with `seed_from` (ORCH-6), GAP-E1B | **REPLACED** (the idea "a goal outlives a failed attempt" is a follow-up task; recorded as an open question in section 5; a retry carries the brief of the earlier attempts, GAP-model-quality) |
 
 ### 1.4 Library, templates
 
@@ -313,7 +313,9 @@ moved or deleted (D98: the old product is read-only).
    routes, `/api/runlist` and `/api/changes`, and 1,166 changed lines in the page). ABS-0 syncs it; the source of truth is the J2 prototype's own
    repository, the copy is used only if the change has not reached it yet, and `VENDORED.md` records which.
 8. **A goal that outlives its attempts (row 32).** Replaced by follow-up tasks, but the old "a failed mission does not end the goal" behaviour has no
-   explicit test in Pro. Left as an open question for the owner, not a package.
+   explicit test in Pro. Left as an open question for the owner, not a package. Since GAP-model-quality a retry is told how every earlier
+   attempt of the same request ended (`orchestrator/attempts.py`, tested in `tests/orchestrator/test_attempts.py`); the cumulative turn
+   budget stays out (J2's budget is per run and frozen).
 9. **Scope creep through LATER.** Routines, modules, apps, the updater and DeepSeek are real wants. They are listed with triggers so that none is
    started without the owner's word.
 10. **Old repository is read only.** The importer reads `~/.sutra-ui` but nothing under `marketplace/`; a test asserts the old folder's files are

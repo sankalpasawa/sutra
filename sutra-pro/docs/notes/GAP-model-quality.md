@@ -71,7 +71,9 @@ Three verified gaps of the old-app comparison, built once each (the retry's atte
 ## Docs changed
 
 `docs/design/orchestrator.md` (the `done` card shape; the retry sentence in 5.5 and the route table), `docs/design/ui.md` (the done card
-row), `docs/TROUBLESHOOTING.md` F7 (what Retry now tells the new run).
+row), `docs/TROUBLESHOOTING.md` F7 (what Retry now tells the new run), `docs/design/absorb-old-sutra.md` (row 32 and risk 8). Row 35 (cost
+per task REPLACED) is left as it is because the attention package edits the same row (presence); it should say "shown on the done card"
+after the merge.
 
 ## Not done, and why
 
