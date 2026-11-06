@@ -35,5 +35,17 @@
       "atom": "W-4.a1",
       "action": "reused"
     }
-  ]
+  ],
+  "made_by": {
+    "run": "j2-20261103-161111",
+    "workflow": "W-4",
+    "atom": "W-4.a1",
+    "agent": "template generator (mock)",
+    "date": "2026-11-03 16:11:11"
+  },
+  "business": {
+    "name": "Thread",
+    "type": "boutique"
+  },
+  "mock": true
 }

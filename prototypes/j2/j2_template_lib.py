@@ -1550,6 +1550,23 @@ def _add_use(entry, v, use, fingerprints=()):
     v["used_by"], v["fingerprints"] = meta["used_by"], meta.get("fingerprints") or []
 
 
+def _provenance(entry, v, t, facts_of):
+    """A version stored before the catalog existed gets the same provenance keys as a collected one (made_by with its
+    date, business, mock), in meta.json and the index row; keys already there are kept."""
+    d = vdir(entry["artifact"], entry["section"], entry["slug"], v["version"])
+    meta = _read(os.path.join(d, "meta.json")) or {}
+    made = facts_of(t.made_by.run)
+    add = {"made_by": {**t.made_by.model_dump(), "date": run_date(t.made_by.run)},
+           "business": {"name": made["business"], "type": made["business_type"]}, "mock": made["mock"]}
+    missing = {k: x for k, x in add.items() if k not in meta}
+    if missing:
+        meta.update(missing)
+        _write(os.path.join(d, "meta.json"), meta)
+    for k, x in add.items():
+        v.setdefault(k, x)
+    v["made_by"] = meta["made_by"]
+
+
 def _place(idx, spec, meta, rid, d, where, facts_of):
     """One template version into the library: ("same" | "added" | "renumbered", entry, version row). The spec sha
     decides: the same sha is the same version (the use is added); a free number is kept; a taken number with another
@@ -1566,6 +1583,7 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
     same = next((v for v in entry["versions"] if v["sha"] == sha), None)
     if same:
         _add_use(entry, same, _use(rid, d), meta.get("fingerprints"))
+        _provenance(entry, same, t, facts_of)
         return "same", entry, same
     taken = {v["version"] for v in entry["versions"]}
     renumbered = None

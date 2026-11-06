@@ -29,5 +29,17 @@
       "atom": "W-21.a1",
       "action": "reused"
     }
-  ]
+  ],
+  "made_by": {
+    "run": "j2-20261103-161111-3",
+    "workflow": "W-15",
+    "atom": "W-15.a1",
+    "agent": "template generator (mock)",
+    "date": "2026-11-03 16:11:11"
+  },
+  "business": {
+    "name": "Still Point Yoga",
+    "type": "business"
+  },
+  "mock": true
 }

@@ -38,7 +38,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-9",
             "atom": "W-9.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -53,7 +54,12 @@
               "atom": "W-9.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         },
         {
           "version": 2,
@@ -145,7 +151,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-10",
             "atom": "W-10.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -178,7 +185,12 @@
               "atom": "W-17.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Data flow for Still Point Yoga (hld): the generic HLD/1 · Data flow fields plus facts_used, from 2 charter fact(s)"
@@ -220,7 +232,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-11",
             "atom": "W-11.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -247,7 +260,12 @@
               "atom": "W-15.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Hosting and deployment for Still Point Yoga (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 2 charter fact(s)"
@@ -289,7 +307,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-8",
             "atom": "W-8.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -310,7 +329,12 @@
               "atom": "W-9.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Pages for Still Point Yoga (hld): the generic HLD/1 · Pages fields plus facts_used, from 2 charter fact(s)"
@@ -352,7 +376,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-7",
             "atom": "W-7.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -373,7 +398,12 @@
               "atom": "W-8.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Purpose and scope for Still Point Yoga (hld): the generic HLD/1 · Purpose and scope fields plus facts_used, from 2 charter fact(s)"
@@ -415,7 +445,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-12",
             "atom": "W-12.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -448,7 +479,12 @@
               "atom": "W-18.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Risks for Still Point Yoga (hld): the generic HLD/1 · Risks fields plus facts_used, from 2 charter fact(s)"
@@ -490,7 +526,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-16",
             "atom": "W-16.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -511,7 +548,12 @@
               "atom": "W-22.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "File structure for Still Point Yoga (lld): the generic LLD/1 · File structure fields plus facts_used, from 2 charter fact(s)"
@@ -568,7 +610,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-15",
             "atom": "W-15.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -589,7 +632,12 @@
               "atom": "W-21.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Form fields for Still Point Yoga (lld): the generic LLD/1 · Form fields fields plus facts_used, from 2 charter fact(s)"
@@ -631,7 +679,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-14",
             "atom": "W-14.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -652,7 +701,12 @@
               "atom": "W-20.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Interactive elements for Still Point Yoga (lld): the generic LLD/1 · Interactive elements fields plus facts_used, from 2 charter fact(s)"
@@ -694,7 +748,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-13",
             "atom": "W-13.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -709,7 +764,12 @@
               "atom": "W-13.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         },
         {
           "version": 2,
@@ -811,7 +871,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-17",
             "atom": "W-17.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -832,7 +893,12 @@
               "atom": "W-23.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Responsive and accessibility rules for Still Point Yoga (lld): the generic LLD/1 · Responsive and accessibility rules fields plus facts_used, from 2 charter fact(s)"
@@ -884,7 +950,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-3",
             "atom": "W-3.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -899,7 +966,12 @@
               "atom": "W-3.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Goals for Still Point Yoga (prd): the generic PRD/1 · Goals fields plus facts_used, from 7 charter fact(s)"
@@ -1101,7 +1173,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-6",
             "atom": "W-6.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -1116,7 +1189,12 @@
               "atom": "W-6.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Out of scope for Still Point Yoga (prd): the generic PRD/1 · Out of scope fields plus facts_used, from 7 charter fact(s)"
@@ -1302,7 +1380,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-1",
             "atom": "W-1.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -1317,7 +1396,12 @@
               "atom": "W-1.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         },
         {
           "version": 2,
@@ -1527,7 +1611,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-4",
             "atom": "W-4.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -1542,7 +1627,12 @@
               "atom": "W-4.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         },
         {
           "version": 2,
@@ -1944,7 +2034,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-5",
             "atom": "W-5.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -1959,7 +2050,12 @@
               "atom": "W-5.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Success metrics for Still Point Yoga (prd): the generic PRD/1 · Success metrics fields plus facts_used, from 7 charter fact(s)"
@@ -2096,7 +2192,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-2",
             "atom": "W-2.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -2111,7 +2208,12 @@
               "atom": "W-2.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Users for Still Point Yoga (prd): the generic PRD/1 · Users fields plus facts_used, from 7 charter fact(s)"
@@ -2163,7 +2265,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-19",
             "atom": "W-19.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -2178,7 +2281,12 @@
               "atom": "W-19.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Section for Still Point Yoga (business): the generic WebsiteSection/1 · Section fields plus elements, form_fields, from 1 charter fact(s)"
@@ -2226,7 +2334,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-20",
             "atom": "W-20.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -2235,7 +2344,12 @@
               "atom": "W-20.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Section for Still Point Yoga (business): the generic WebsiteSection/1 · Section fields plus elements, from 1 charter fact(s)"
@@ -2282,7 +2396,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-21",
             "atom": "W-21.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -2291,7 +2406,12 @@
               "atom": "W-21.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Section for Still Point Yoga (business): the generic WebsiteSection/1 · Section fields plus elements, form_fields, from 0 charter fact(s)"
@@ -2334,7 +2454,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-22",
             "atom": "W-22.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -2343,7 +2464,12 @@
               "atom": "W-22.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Section for Still Point Yoga (business): the generic WebsiteSection/1 · Section fields plus elements, from 0 charter fact(s)"
@@ -2390,7 +2516,8 @@
             "run": "j2-20261103-161111-3",
             "workflow": "W-23",
             "atom": "W-23.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -2399,7 +2526,12 @@
               "atom": "W-23.a1",
               "action": "created"
             }
-          ]
+          ],
+          "business": {
+            "name": "Still Point Yoga",
+            "type": "business"
+          },
+          "mock": true
         }
       ],
       "description": "Section for Still Point Yoga (business): the generic WebsiteSection/1 · Section fields plus elements, form_fields, from 0 charter fact(s)"
@@ -2443,7 +2575,8 @@
             "run": "j2-20261103-161111",
             "workflow": "W-4",
             "atom": "W-4.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -2470,7 +2603,12 @@
               "atom": "W-4.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Thread",
+            "type": "boutique"
+          },
+          "mock": true
         }
       ],
       "description": "Section for Thread (boutique): the generic WebsiteSection/1 · Section fields, from 1 charter fact(s)"
@@ -2514,7 +2652,8 @@
             "run": "j2-20261103-161111",
             "workflow": "W-3",
             "atom": "W-3.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -2541,7 +2680,12 @@
               "atom": "W-3.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Thread",
+            "type": "boutique"
+          },
+          "mock": true
         }
       ],
       "description": "Section for Thread (boutique): the generic WebsiteSection/1 · Section fields, from 1 charter fact(s)"
@@ -2585,7 +2729,8 @@
             "run": "j2-20261103-161111",
             "workflow": "W-2",
             "atom": "W-2.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -2612,7 +2757,12 @@
               "atom": "W-2.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Thread",
+            "type": "boutique"
+          },
+          "mock": true
         }
       ],
       "description": "Section for Thread (boutique): the generic WebsiteSection/1 · Section fields, from 1 charter fact(s)"
@@ -2656,7 +2806,8 @@
             "run": "j2-20261103-161111",
             "workflow": "W-1",
             "atom": "W-1.a1",
-            "agent": "template generator (mock)"
+            "agent": "template generator (mock)",
+            "date": "2026-11-03 16:11:11"
           },
           "used_by": [
             {
@@ -2683,7 +2834,12 @@
               "atom": "W-1.a1",
               "action": "reused"
             }
-          ]
+          ],
+          "business": {
+            "name": "Thread",
+            "type": "boutique"
+          },
+          "mock": true
         }
       ],
       "description": "Section for Thread (boutique): the generic WebsiteSection/1 · Section fields, from 1 charter fact(s)"
