@@ -15,10 +15,15 @@
                                           the plan in words and one meter per usage window (plan_meter.js, GAP-providers)
      signInState(prev, answer) -> {step, url, code, expires_in, message}   the sign-in reducer (start answer, poll answer, an error)
      appearanceHtml(pref) -> html                 the Appearance group: Light | Dark | System (localStorage j2theme, one choice for both pages)
+     workdirHtml(state) -> html                   the Working folder group (GAP3-workdir): a text field, Save, Clear, "What the model can see" (the folder's
+                                          top-level names from GET /api/connectors/workdir) and the plain words: read-only, chats only, the engine's
+                                          department runs unchanged, what the model reads goes to your own Claude or Codex
 
      testConnector(api, provider) -> Promise<{provider, ok, seconds, message, line}>       POST /api/connectors/{provider}/test
      setCliPath(api, provider, path) -> Promise<{provider, ok, found, message, answer}>   PUT /api/connectors/{provider}/path (GAP-providers: the
                                           file of a CLI the app could not find; null or "" forgets the choice)
+     loadWorkdir(api) / saveWorkdir(api, path) / clearWorkdir(api) -> Promise<{ok, data, message}>   GET, PUT and DELETE /api/connectors/workdir; `data` is
+                                          {path, usable, problem, preview: {entries: [{name, kind}], total, shown, capped, readable}}
      signIn(api, {onState, sleep, pollMs}) -> {done, cancel}   POST /api/connectors/codex/sign-in, GET ...{id} until signed_in, failed or expired, DELETE
      watchHealth(api, onHealth, onError) -> {onEvent(type), refetch()}   GET /api/health again on connector.health, connector.switch, connector.mode
      loadEngine(api, scope) / saveEngine(api, settings, scope, form)     GET and PUT /api/engine/settings; `dept` is put in the query by hand and
@@ -395,6 +400,62 @@
     return '<details class="setpathd" data-key="path-' + name + '"' + (p.step === "error" ? " open" : "") + "><summary>Use another file</summary>" + box + "</details>";
   }
 
+  /* ---------------------------------------------------------------- Working folder group (GAP3-workdir) */
+  const WORKDIR_PATH = "/api/connectors/workdir";
+  const WORKDIR_WORDS = freeze({
+    what: "The one folder of your own files that chats can read: a direct chat on any team, and the org chat. It is read-only. The model can open and search " +
+      "these files but cannot create, change or delete one or run a command. It applies to chats only: the engine's department runs are unchanged.",
+    egress: "What the model reads here goes to your own Claude or Codex, like any message you type. Sutra's scrub covers what Sutra sends, not the contents of your files.",
+    none: "No folder is set. Chats run in a private empty folder and cannot see your files.",
+    saved: "Saved. The next message in any chat can read this folder.",
+    cleared: "Cleared. Chats go back to a private empty folder.",
+    hint: "Write the full path, for example ~/Documents/my-project. A leading ~ is your home folder.",
+  });
+
+  const workdirData = state => (isObj(state) && isObj(state.data) ? state.data : null);
+
+  function workdirList(data) {
+    const p = isObj(data.preview) ? data.preview : null;
+    if (p === null || !Array.isArray(p.entries)) return "";
+    if (p.readable === false) return '<p class="seterr" role="alert">This folder cannot be listed.</p>';
+    const rows = p.entries.filter(isObj).map(e => {
+      const dir = e.kind === "dir";
+      return '<li data-kind="' + (dir ? "dir" : "file") + '">' + esc(clean(e.name)) + (dir ? "/" : "") + "</li>";
+    }).join("");
+    const total = finite(p.total) ? p.total : p.entries.length;
+    const shown = p.entries.length;
+    const more = total > shown || p.capped === true
+      ? '<p class="sethint wdmore">Showing ' + shown + " of " + (p.capped === true ? "at least " : "") + total + " entries. The model can see all of them.</p>"
+      : '<p class="sethint wdmore">' + (total === 0 ? "The folder is empty." : total + (total === 1 ? " entry." : " entries.")) + "</p>";
+    return (rows ? '<ul class="wdlist" aria-label="What the model can see">' + rows + "</ul>" : "") + more;
+  }
+
+  // workdirHtml(state). state {data: the GET answer or null while it loads, value: what the owner typed, step: idle | saving | ok | error, message}.
+  function workdirHtml(state) {
+    const st = isObj(state) ? state : {};
+    const data = workdirData(st);
+    const head = '<section class="setgrp" data-group="workdir" aria-labelledby="set-workdir-h"><h3 id="set-workdir-h">Working folder</h3>' +
+      '<p class="setnote">' + esc(WORKDIR_WORDS.what) + '</p><p class="setnote">' + esc(WORKDIR_WORDS.egress) + "</p>";
+    if (data === null) {
+      return head + '<p class="setempty">' + (st.step === "error" ? esc(clean(st.message) || "The working folder could not be read.") : "Reading the setting…") + "</p></section>";
+    }
+    const saving = st.step === "saving";
+    const path = clean(data.path);
+    const status = path === "" ? WORKDIR_WORDS.none
+      : (data.usable === false ? "The folder you chose cannot be used now, so chats run without it: " + (clean(data.problem) || "it cannot be read.") : "In use: " + path);
+    const note = st.step === "error" ? '<span class="seterr" role="alert">' + esc(clean(st.message) || "That folder was refused.") + "</span>"
+      : (st.step === "ok" && clean(st.message) ? '<span class="settest" data-step="ok" role="status">' + esc(clean(st.message)) + "</span>" : "");
+    return head + '<p class="setdetail wdstatus" data-state="' + (path === "" ? "none" : (data.usable === false ? "broken" : "set")) + '">' + esc(status) + "</p>" +
+      '<div class="setpath" data-workdir><label class="setlabel" for="setwd">Folder</label><input type="text" id="setwd" data-workdir-input spellcheck="false" ' +
+      'autocomplete="off" maxlength="1024" placeholder="~/Documents/my-project" value="' + esc(clean(st.value)) + '">' +
+      '<button type="button" class="ghost" data-act="workdir-save"' + (saving ? " disabled" : "") + ">Save</button>" +
+      '<button type="button" class="ghost" data-act="workdir-clear"' + (saving || path === "" ? " disabled" : "") + ">Clear</button>" +
+      '<span class="sethint">' + esc(WORKDIR_WORDS.hint) + "</span>" + note + "</div>" +
+      '<h4 class="setsub">What the model can see</h4>' +
+      (path !== "" && data.usable !== false ? workdirList(data) : '<p class="sethint">Nothing yet: choose a folder and its top level appears here. Names only, never file contents.</p>') +
+      "</section>";
+  }
+
   function providerOrder(connectors) {
     const names = Object.keys(connectors);
     return ["claude", "codex"].filter(n => names.includes(n)).concat(names.filter(n => n !== "claude" && n !== "codex").sort());
@@ -464,6 +525,35 @@
       return {provider: name, ok: true, found, message, answer};
     } catch (e) {
       return {provider: name, ok: false, found: false, message: clean(e && e.message) || "That file could not be used.", answer: null};
+    }
+  }
+
+  // The working folder (GAP3-workdir): GET, PUT {path} and DELETE on /api/connectors/workdir. Every answer is `{ok, data, message}`; the error envelope's
+  // `message` is the reason a folder was refused (it is not in the app's data, it is a folder, it exists...).
+  async function loadWorkdir(api) {
+    try {
+      const data = await api.get(WORKDIR_PATH);
+      return isObj(data) ? {ok: true, data, message: ""} : {ok: false, data: null, message: "The working folder could not be read."};
+    } catch (e) {
+      return {ok: false, data: null, message: clean(e && e.message) || "The working folder could not be read."};
+    }
+  }
+  async function saveWorkdir(api, path) {
+    const chosen = typeof path === "string" ? path.trim() : "";
+    if (chosen === "") return {ok: false, data: null, message: "Write the full path of the folder, for example ~/Documents/my-project."};
+    try {
+      const data = await api.put(WORKDIR_PATH, {path: chosen});
+      return {ok: true, data: isObj(data) ? data : null, message: WORKDIR_WORDS.saved};
+    } catch (e) {
+      return {ok: false, data: null, message: clean(e && e.message) || "That folder could not be used."};
+    }
+  }
+  async function clearWorkdir(api) {
+    try {
+      const data = await api.del(WORKDIR_PATH);
+      return {ok: true, data: isObj(data) ? data : {path: null, usable: false, problem: null, preview: null}, message: WORKDIR_WORDS.cleared};
+    } catch (e) {
+      return {ok: false, data: null, message: clean(e && e.message) || "The folder could not be cleared."};
     }
   }
 
@@ -568,6 +658,7 @@
   const SettingsView = {
     engineHtml, engineBody, engineErrors, formProblems, connectorsHtml, signInState, appearanceHtml,
     testConnector, signIn, watchHealth, loadEngine, saveEngine, enginePath, testLine, kindOf, parseValue, setCliPath,
+    workdirHtml, loadWorkdir, saveWorkdir, clearWorkdir, WORKDIR_PATH, WORKDIR_WORDS,
     HEALTH_EVENTS, NOTE_LOCKED, NOTE_NEXT_RUN,
   };
   if (typeof module === "object" && module !== null && module.exports) module.exports = SettingsView;

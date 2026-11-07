@@ -806,6 +806,38 @@
 
   function paintAppearance() { ctx.paint($("set-appearance"), SV().appearanceHtml(themePref())); themeApply(); }
   function paintConnectors() { ctx.paint($("set-connectors"), SV().connectorsHtml(S.health, S.conn)); }
+
+  /* ---- the working folder (GAP3-workdir; settings_view.js draws it, this part keeps what was typed and calls the server) */
+  const WD = {data: null, loaded: false, value: "", dirty: false, step: "idle", message: ""};
+  function paintWorkdir() { if ($("set-workdir") && !typingIn($("set-workdir"))) ctx.paint($("set-workdir"), SV().workdirHtml(WD)); }
+  async function loadWorkdir() {
+    const r = await SV().loadWorkdir(api);
+    if (r.ok) {
+      WD.data = r.data;
+      WD.loaded = true;
+      if (!WD.dirty && WD.step !== "saving") WD.value = r.data && r.data.path ? r.data.path : "";      // what the owner is typing is never replaced
+      if (WD.step === "error") { WD.step = "idle"; WD.message = ""; }
+    } else if (WD.data === null) { WD.step = "error"; WD.message = r.message; }
+    paintWorkdir();
+    return r;
+  }
+  async function workdirAct(act) {
+    if (WD.step === "saving") return null;
+    WD.step = "saving";
+    WD.message = "";
+    paintWorkdir();
+    const r = act === "workdir-clear" ? await SV().clearWorkdir(api) : await SV().saveWorkdir(api, WD.value);
+    WD.step = r.ok ? "ok" : "error";
+    WD.message = r.message;
+    if (r.ok && r.data) {
+      WD.data = r.data;
+      WD.loaded = true;
+      WD.value = r.data.path || "";
+      WD.dirty = false;
+    }
+    paintWorkdir();
+    return r;
+  }
   function paintEngine() {
     ctx.paint($("set-engine"), SV().engineHtml(S.settings, {scope: S.scope, departments: S.departments, errors: S.errors, values: S.values, saved: S.saved, busy: S.saving}));
   }
@@ -842,6 +874,7 @@
   function renderSettings() {
     paintAppearance();
     paintConnectors();
+    paintWorkdir();
     paintEngine();
     paintLimits();
     paintNotices();
@@ -866,6 +899,7 @@
     if (S.settings === null) loadEngineSettings();
     if (NS.data === null) loadNotes();
     if (S.health === null) fetchHealth().catch(handleFetchError);
+    loadWorkdir();                                                                     // read again on every visit: the folder may have vanished
     if (S.notices === null) fetchLimits(); else refetchLimits();                          // the notices are read at load; read them again here only if that failed
     if (S.recurring === null) fetchRecurring();
     if (group) {
@@ -943,6 +977,7 @@
     else if (act === "save-engine") saveEngine(S.scope, readEngineForm());
     else if (act === "set-path") setCliPath(b.dataset.provider, cliPathState(b.dataset.provider).value);
     else if (act === "clear-path") setCliPath(b.dataset.provider, null);
+    else if (act === "workdir-save" || act === "workdir-clear") workdirAct(act);
     else if (act.indexOf("note-") === 0) noteAct(act, b);
     else routinesLimits(act, b);
   }
@@ -1218,6 +1253,7 @@
     wireRoutinesLimits();
     $("pane-settings").addEventListener("input", e => {
       if (e.target && e.target.matches && e.target.matches("input[data-path]")) cliPathState(e.target.dataset.path).value = e.target.value;
+      else if (e.target && e.target.matches && e.target.matches("input[data-workdir-input]")) { WD.value = e.target.value; WD.dirty = true; }
     });
     $("pane-settings").addEventListener("change", e => {
       if (e.target && e.target.matches && e.target.matches("select[data-scope]")) { S.scope = e.target.value; S.settings = null; S.errors = {}; loadEngineSettings(); }

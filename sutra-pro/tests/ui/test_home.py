@@ -84,7 +84,7 @@ HOME = (PAGES_DIR / "home.html").read_text(encoding="utf-8")
 SHELL_CSS = (STATIC_DIR / "css" / "sutra-shell.css").read_text(encoding="utf-8")
 SKELETON_IDS = ("sview", "stitle", "sotype", "smsgs", "sprog", "sstatus", "scompose", "sbox", "ssend", "sright", "needs", "pane-graph", "pane-chart",
                 "pane-settings", "dview", "railtoggle", "barbadge", "rail", "gochat", "railteams", "nodepanel", "sbanner", "set-appearance", "set-connectors",
-                "set-engine")
+                "set-workdir", "set-engine")
 
 
 def test_the_page_has_one_boot_marker_and_one_inline_script_that_is_hashed():
@@ -538,6 +538,41 @@ def test_the_claude_row_shows_its_plan_and_a_meter_per_window_and_takes_another_
     puts = [r for r in posts(fake, "/api/connectors/") if r["method"] == "PUT"]
     assert [(r["path"], r["token"], r["body"]) for r in puts] == [("/api/connectors/claude/path", True, {"path": "/opt/tools/claude"})]
     assert [e for e in browser.console_errors if not e.startswith("[network]")] == []          # the one network line is the 404 announced above
+
+
+@browser_only
+def test_the_working_folder_group_saves_shows_what_the_model_can_see_and_clears(browser, fake):
+    """GAP3-workdir: Settings, Connectors shows the Working folder group: PUT with the token, the top of the folder, a refusal in words, DELETE."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)        # the fake serves no provider pill route (pre-existing, not this package)
+    browser.expect_failed("/api/notes", 404)                         # nor a notes route: every Settings browser test fails on it without this line (pre-existing)
+    browser.expect_failed("/api/connectors/workdir", 422)            # the refusal of a relative path, on purpose
+    load(browser, fake)
+    open_settings(browser, "connectors")
+    present(browser, '#set-workdir .setgrp[data-group="workdir"]')
+    assert texts(browser, "#set-workdir h3") == ["Working folder"]
+    browser.wait_for("!!document.querySelector('#set-workdir .wdstatus')")
+    assert texts(browser, "#set-workdir .wdstatus") == ["No folder is set. Chats run in a private empty folder and cannot see your files."]
+    assert texts(browser, "#set-workdir .setsub") == ["What the model can see"]
+    browser.type("#setwd", "relative/folder")
+    browser.click('#set-workdir [data-act="workdir-save"]')
+    browser.wait_for("!!document.querySelector('#set-workdir .seterr')")
+    assert texts(browser, "#set-workdir .seterr") == ["Write the full path, starting with / (or ~ for your home folder)"]
+    browser.js("document.querySelector('#setwd').value = ''")
+    browser.type("#setwd", "/work/proj")
+    browser.click('#set-workdir [data-act="workdir-save"]')
+    browser.wait_for("document.querySelector('#set-workdir .wdstatus').dataset.state === 'set'")
+    assert texts(browser, "#set-workdir .wdstatus") == ["In use: /work/proj"]
+    assert texts(browser, "#set-workdir .wdlist li") == ["src/", "README.md"]
+    assert texts(browser, "#set-workdir .settest") == ["Saved. The next message in any chat can read this folder."]
+    assert browser.js("document.querySelector('#setwd').value") == "/work/proj"
+    puts = [r for r in posts(fake, "/api/connectors/workdir") if r["method"] == "PUT"]
+    assert [(r["token"], r["body"]) for r in puts] == [(True, {"path": "relative/folder"}), (True, {"path": "/work/proj"})]
+    browser.click('#set-workdir [data-act="workdir-clear"]')
+    browser.wait_for("document.querySelector('#set-workdir .wdstatus').dataset.state === 'none'")
+    assert browser.count("#set-workdir .wdlist") == 0
+    deletes = [r for r in posts(fake, "/api/connectors/workdir") if r["method"] == "DELETE"]
+    assert [r["token"] for r in deletes] == [True]
+    assert [e for e in browser.console_errors if not e.startswith("[network]")] == []
 
 
 def speed_up_sign_in(browser):

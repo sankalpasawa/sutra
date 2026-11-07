@@ -1423,6 +1423,8 @@ WRITES = [  # every non-GET route that is not a test control: (method, a concret
     ("PUT", "/api/engine/settings", {"set": {}}, "/api/engine/settings"),
     ("POST", "/api/connectors/claude/test", {}, "/api/connectors/{provider}/test"),
     ("PUT", "/api/connectors/claude/path", {"path": None}, "/api/connectors/{provider}/path"),
+    ("PUT", "/api/connectors/workdir", {"path": "/work/proj"}, "/api/connectors/workdir"),
+    ("DELETE", "/api/connectors/workdir", None, "/api/connectors/workdir"),
     ("POST", "/api/connectors/codex/sign-in", {}, "/api/connectors/codex/sign-in"),
     ("DELETE", "/api/connectors/codex/sign-in/si_x", None, "/api/connectors/codex/sign-in/{sign_in_id}"),
     ("POST", "/api/say?dept=web", {"text": "x"}, "/api/say"),
