@@ -1,5 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
 const runtime = require('../src/runtime');
@@ -80,4 +82,38 @@ test('on Windows the PATH variable keeps its own spelling, folders are joined wi
   assert.equal('PATH' in env, false);
   assert.equal(env.Path, 'C:\\Windows;C:\\Users\\u\\AppData\\Roaming\\npm;C:\\Users\\u\\.local\\bin');
   assert.equal(env.PYTHONUTF8, '1');
+});
+
+test('a folder the app needs is made, and one it cannot make or write to is reported with the reason', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'sutra-folder-'));
+  t.after(() => {
+    for (const name of ['read-only', 'locked']) {
+      try {
+        fs.chmodSync(path.join(base, name), 0o700);
+      } catch {
+        // never made: Windows and root return before they are
+      }
+    }
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  const nested = path.join(base, 'a', 'b', 'electron');
+  assert.equal(runtime.folderProblem(nested), null);
+  assert.ok(fs.statSync(nested).isDirectory());
+  assert.equal(runtime.folderProblem(nested), null, 'a folder that is already there is fine');
+
+  const file = path.join(base, 'a-file');
+  fs.writeFileSync(file, 'not a folder');
+  assert.match(runtime.folderProblem(file) || '', /\S/, 'a regular file where the folder should be');
+  const underFile = runtime.folderProblem(path.join(file, 'electron')) || '';
+  assert.match(underFile, /\S/, 'a folder below a regular file cannot be made');
+  assert.ok(underFile.includes(file), 'the answer names the path');
+
+  if (process.platform === 'win32' || (typeof process.getuid === 'function' && process.getuid() === 0)) {
+    return t.diagnostic('a read-only folder is refused by permission bits: not on Windows, not for root');
+  }
+  const readOnly = path.join(base, 'read-only');
+  fs.mkdirSync(readOnly, { mode: 0o500 });
+  assert.match(runtime.folderProblem(path.join(readOnly, 'electron')) || '', /EACCES/);
+  fs.mkdirSync(path.join(base, 'locked'), { mode: 0o500 });
+  assert.match(runtime.folderProblem(path.join(base, 'locked')) || '', /not writable/, 'it exists but nothing can be written in it');
 });

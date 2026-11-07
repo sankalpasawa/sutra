@@ -21,10 +21,15 @@ const ICON_NAME = 'sutra-pro-1024.png';
 const SELFTEST = process.env.SUTRA_PRO_SELFTEST === '1';
 
 const folder = runtime.dataDir();
-// a test's or a developer's own data folder carries its own Chromium state too, and its own single-instance lock
-if (process.env.SUTRA_DATA_DIR) app.setPath('userData', path.join(folder, 'electron'));
+// a test's or a developer's own data folder carries its own Chromium state too, and its own single-instance lock. Chromium reports a lock it could not
+// create (a missing drive, a file where the folder should be, a read-only folder) as it reports one another app holds, and the app would end as a
+// "second instance" without a word: so the folder is made and checked first. When it cannot be used the app keeps the system's user-data folder, and
+// its log, and says so in the window (boot).
+const ownState = process.env.SUTRA_DATA_DIR ? path.join(folder, 'electron') : '';
+const folderProblem = ownState ? runtime.folderProblem(ownState) : null;
+if (ownState && !folderProblem) app.setPath('userData', ownState);
 
-const log = createLog(folder);
+const log = createLog(folderProblem ? app.getPath('userData') : folder);
 const supervisor = new Supervisor({
   dataDir: folder,
   command: runtime.pythonPath({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, projectRoot: PROJECT_ROOT }),
@@ -132,7 +137,8 @@ async function failed(error) {
   }
   show(errorPage({ message: String(error && error.message), output, logFile: log.file, logo: logoDataUri(), dark: nativeTheme.shouldUseDarkColors }));
   const question = {
-    type: 'error', title: APP_NAME, message: `${APP_NAME} could not start its server.`, detail: String(error && error.message),
+    type: 'error', title: APP_NAME, message: error && error.dataFolder ? `${APP_NAME} cannot use its data folder.` : `${APP_NAME} could not start its server.`,
+    detail: String(error && error.message),
     buttons: ['Try Again', 'Show the Log', 'Quit'], defaultId: 0, cancelId: 2,
   };
   for (;;) {
@@ -180,6 +186,12 @@ async function boot() {
   installMenu();
   createWindow();
   supervisor.on('exit', onServerExit);
+  if (folderProblem) {
+    const error = new Error(`${APP_NAME} cannot use its data folder ${folder}: ${folderProblem}`);
+    error.dataFolder = true;
+    await failed(error);                                // Try Again starts the server on the folder, in case it is usable by now
+    return;
+  }
   await startServer();
 }
 
@@ -203,7 +215,13 @@ app.on('window-all-closed', () => app.quit());
 process.on('uncaughtException', (error) => log.write(`uncaught: ${error && error.stack ? error.stack : error}`));
 
 if (!app.requestSingleInstanceLock()) {
-  app.exit(0);                                          // the running app takes the focus (its second-instance handler below)
+  // not taken: another instance holds it (it takes the focus, see its second-instance handler below), or Chromium could not make the lock
+  const problem = runtime.folderProblem(app.getPath('userData'));
+  if (problem) {
+    log.write(`could not start: ${problem}`);
+    dialog.showErrorBox(APP_NAME, `${APP_NAME} cannot use its settings folder.\n\n${problem}`);
+  }
+  app.exit(problem ? 1 : 0);
 } else {
   app.on('second-instance', () => {
     if (win) {

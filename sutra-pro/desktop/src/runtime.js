@@ -19,6 +19,20 @@ function dataDir(env = process.env, home = os.homedir()) {
   return path.resolve(named);
 }
 
+/* Make `dir` (and what is above it) when it is missing and say why when the app cannot use it: null when it is a folder the app can write in, else
+   one line with the reason. Chromium keeps its single-instance lock in the user-data folder and reports a lock it could not create exactly like
+   a lock another app holds, so the app asks first instead of taking "no lock" for "already running". */
+function folderProblem(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    if (!fs.statSync(dir).isDirectory()) return `${dir} is not a folder`;
+    fs.accessSync(dir, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
+    return null;
+  } catch (error) {
+    return error && error.code === 'EACCES' && fs.existsSync(dir) ? `${dir} is not writable (${error.code})` : String(error && error.message ? error.message : error);
+  }
+}
+
 /* The interpreter that runs the server. Installed: the one inside the app (Contents/Resources/python on a Mac, resources\python on Windows), never
    one the environment names. From a checkout (`npm start`): SUTRA_PRO_PYTHON, else the checkout's virtual environment, else the python on PATH. */
 function pythonPath({ packaged, resourcesPath, platform = process.platform, env = process.env, projectRoot, exists = fs.existsSync }) {
@@ -86,4 +100,4 @@ function childEnv(env, { platform = process.platform, home = os.homedir(), dataD
   return out;
 }
 
-module.exports = { dataDir, pythonPath, serverArgs, childEnv, pathExtras, startTimeoutMs, DATA_DIR_NAME };
+module.exports = { dataDir, folderProblem, pythonPath, serverArgs, childEnv, pathExtras, startTimeoutMs, DATA_DIR_NAME };
