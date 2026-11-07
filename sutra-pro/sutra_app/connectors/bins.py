@@ -43,6 +43,11 @@ class BinsFile(M):
     bins: dict[Literal["claude", "codex"], str] = {}
 
 
+def _finder(provider: str) -> str:
+    """The terminal command that prints where a command is: `which` on a Mac or Linux, `where` on Windows."""
+    return f"`where {provider}`" if oslayer.IS_WINDOWS else f"`which {provider}`"
+
+
 def is_executable_file(path: str) -> bool:
     """A regular file (a link to one counts) that this user may run."""
     try:
@@ -53,11 +58,6 @@ def is_executable_file(path: str) -> bool:
 
 def _allowed_names(provider: str) -> set[str]:
     return {provider, f"{provider}.exe", f"{provider}.cmd"} if oslayer.IS_WINDOWS else {provider}
-
-
-def _finder(provider: str) -> str:
-    """The terminal command that prints where a command is: `which` on a Mac or Linux, `where` on Windows."""
-    return f"`where {provider}`" if oslayer.IS_WINDOWS else f"`which {provider}`"
 
 
 def check_path(provider: str, raw: str, *, home: Optional[str] = None) -> str:
