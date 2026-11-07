@@ -1152,9 +1152,6 @@
     else if (/^rec-/.test(act)) recAct(act, b.dataset.id || "");
   }
 
-  const ENTER_SAVES = '[data-act="save-limit"], [data-act="save-notices"], [data-act="save-engine"], [data-act="note-add"], [data-act="note-save"], ' +
-    '[data-act="rec-add"], [data-act="set-path"]';
-
   // "Saved." says what the server holds, so it goes as soon as a field of its group is edited. The group is not repainted while the owner types (typingIn), so
   // the line is cleared in place as well as in the state that the next repaint reads (QA firstrun-settings: it stayed beside a value the server did not have).
   function staleSaved(t) {
@@ -1185,20 +1182,6 @@
       else if (name === "rec_time") recDraft().time = t.value;
       else if (name === "rec_minute") recDraft().minute = t.value;
     });
-    // Enter in a text, number, time or date field presses the Save of its own place, as in a form (the Settings groups have no <form>): a note row, the CLI file
-    // box or the add form of Recurring work first, else the group's. A disabled button (a save in flight) is left alone. The button takes the focus first, as
-    // a mouse press would: Limits and Notifications are not repainted while a field has the focus (typingIn), so the answer of the save would not show.
-    pane.addEventListener("keydown", e => {
-      const t = e.target;
-      if (e.key !== "Enter" || e.isComposing || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
-      if (!t || t.tagName !== "INPUT" || !/^(text|number|time|date)$/.test(t.type)) return;
-      const scope = t.closest(".noteadd, li.note, .setpath, .setgrp");
-      const b = scope ? scope.querySelector(ENTER_SAVES) : null;
-      if (!b || b.disabled) return;
-      e.preventDefault();
-      b.focus();
-      b.click();
-    });
     pane.addEventListener("change", e => {
       const t = e.target;
       if (!t || !t.matches) return;
@@ -1207,6 +1190,26 @@
       if (name === "rec_dept") recDraft().dept_id = t.value;
       else if (name === "rec_weekday") recDraft().weekday = t.value;
       else if (name === "rec_every") { recDraft().every = t.value; paintRecurring(true); }                 // the cadence decides which fields the form shows
+    });
+  }
+
+  // Enter in a text, number, time or date field presses the Save of its own place, as in a form (the Settings groups have no <form>): a note row, the CLI file
+  // box or the add form of Recurring work first, else the group's. A disabled button (a save in flight) is left alone. The button takes the focus first, as
+  // a mouse press would: a group is not repainted while a field of it has the focus (typingIn), so the answer of a save would not show. A key that another
+  // handler of the pane already took (preventDefault) is left to it.
+  const ENTER_SAVES = '[data-act="save-limit"], [data-act="save-notices"], [data-act="save-engine"], [data-act="note-add"], [data-act="note-save"], ' +
+    '[data-act="rec-add"], [data-act="set-path"]';
+  function wireEnterSaves() {
+    $("pane-settings").addEventListener("keydown", e => {
+      const t = e.target;
+      if (e.defaultPrevented || e.key !== "Enter" || e.isComposing || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (!t || t.tagName !== "INPUT" || !/^(text|number|time|date)$/.test(t.type)) return;
+      const scope = t.closest(".noteadd, li.note, .setpath, .setgrp");
+      const b = scope ? scope.querySelector(ENTER_SAVES) : null;
+      if (!b || b.disabled) return;
+      e.preventDefault();
+      b.focus();
+      b.click();
     });
   }
 
@@ -1328,6 +1331,7 @@
     $("needs").addEventListener("click", onNeedsClick);
     $("pane-settings").addEventListener("click", onSettingsClick);
     wireRoutinesLimits();
+    wireEnterSaves();
     $("pane-settings").addEventListener("input", e => {
       if (e.target && e.target.matches && e.target.matches("input[data-path]")) cliPathState(e.target.dataset.path).value = e.target.value;
     });
