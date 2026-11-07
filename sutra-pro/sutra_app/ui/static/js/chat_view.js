@@ -313,6 +313,30 @@
     return "nmsg sb team";
   }
 
+  // answersOf(messages, o) -> {message id: the answer}: the cards of a transcript the owner has dealt with, for transcript()'s `answers`. An answer is
+  // the words of the owner line that answered ("Yes"), or "" for a card that reads just "Answered". o {local, needs, needsLoaded}: `local` is what the
+  // owner clicked on this page; a card the server says was answered (`answered_by`, the owner line of a pressed button; an approval decided without
+  // one points at itself, so it has no words) is answered after a reload too; and a team question that the list of /api/needs-you no longer holds is
+  // answered, once that list was read.
+  function answersOf(messages, o) {
+    const opts = isObj(o) ? o : {};
+    const list = Array.isArray(messages) ? messages.filter(isObj) : [];
+    const needs = Array.isArray(opts.needs) ? opts.needs.filter(isObj) : [];
+    const out = Object.assign({}, isObj(opts.local) ? opts.local : {});
+    list.forEach(m => {
+      if (clean(m.kind) !== "card" || !isObj(m.card) || hasOwn(out, m.id)) return;
+      const c = m.card;
+      if (m.answered_by !== null && m.answered_by !== undefined) {
+        const line = list.find(x => x.id === m.answered_by && x.id !== m.id && (clean(x.role) === "user" || clean(x.who) === "user"));
+        out[m.id] = line ? clean(line.text) : "";
+      } else if (clean(c.type) === "needs_you" && opts.needsLoaded === true &&
+        !needs.some(n => String(n.message_id) === String(c.question_message_id) && (!n.dept_id || !c.dept_id || n.dept_id === c.dept_id))) {
+        out[m.id] = "";
+      }
+    });
+    return out;
+  }
+
   // A model's reply to the owner's direct line (D115): ChatMessageOut.turn names the line it answers. Its error line and notes are not replies.
   const directReply = m => clean(m.role) === "agent" && (clean(m.kind) || "text") === "text" && Number.isInteger(m.turn) && m.turn > 0;
 
@@ -409,7 +433,7 @@
 
   const providerLabel = connector => (hasOwn(PROVIDERS, connector) ? PROVIDERS[connector] : clean(connector));
 
-  const ChatView = {transcript, card, composerState, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, BUSY, ONE_AT_A_TIME, PROVIDERS, PERSONA};
+  const ChatView = {transcript, card, answersOf, composerState, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, BUSY, ONE_AT_A_TIME, PROVIDERS, PERSONA};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatView;
   else root.ChatView = ChatView;
 })(globalThis);

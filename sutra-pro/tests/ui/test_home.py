@@ -311,6 +311,21 @@ def test_a_choice_card_posts_the_chosen_option_to_the_org_chat(browser, fake):
     assert browser.count(".c-choice [data-act=\"choose\"]") == 3                            # the other card is still open
 
 
+@browser_only
+def test_an_answered_approval_stays_closed_after_a_reload_and_the_open_cards_stay_open(browser, fake):
+    """QA org-chat-teams: the answer lived only in the page, so a reload (or a second window) drew the answered card with Yes and No again."""
+    load(browser, fake, stage="full")
+    present(browser, '.c-approval [data-act="choose"]')
+    browser.click('.c-approval [data-act="choose"]')
+    present(browser, ".c-approval[data-answered]")
+    browser.goto(fake.url + "/")                                                              # the reload: the page starts from what the server holds
+    browser.wait_for("window.HomePage && HomePage.state().loaded === true")
+    present(browser, ".c-approval[data-answered]")
+    assert browser.count('.c-approval [data-act="choose"]') == 0
+    assert "You answered: Yes" in texts(browser, ".c-approval")[0]
+    assert browser.count('.c-choice [data-act="choose"]') == 3 and browser.count(".c-choice[data-answered]") == 0
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # needs you
 # ---------------------------------------------------------------------------------------------------------------------

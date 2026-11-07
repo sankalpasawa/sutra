@@ -39,7 +39,16 @@ RESUME_MESSAGES = 20
 MAX_LIMIT = 500
 TURN_PHASES = ("reading", "planning", "building")
 PROVIDERS = ("claude", "codex", "stub", "")
-_MESSAGE_COLUMNS = "id, session_id, role, who, kind, text, card_json, meta_json, pause, answered_by, task_id, src_ref, state, at"
+# A question is answered by the owner line stored in its `answered_by`. An approval or choice card has no stored value: pressing one of its buttons
+# stores the owner's line as `choice:<card id>` (TurnRunner._store_user_line), and that line answered the card. Both are read here, from the rows,
+# so a page that loads the chat again (and an app that was restarted) draws the card closed. An approval whose change is no longer pending was
+# answered without a button (a typed yes or no, the decision route): it says so by pointing at itself, since no line is its answer.
+_PRESSED = ("(SELECT min(u.id) FROM chat_messages u WHERE u.session_id = chat_messages.session_id"
+            " AND u.src_ref = 'choice:' || chat_messages.id)")
+_ANSWERED_BY = ("CASE WHEN kind = 'card' AND json_extract(card_json, '$.type') IN ('approval', 'choice') THEN COALESCE(" + _PRESSED +
+                ", CASE WHEN json_extract(card_json, '$.type') = 'approval' AND json_extract(card_json, '$.change_id') NOT IN"
+                " (SELECT id FROM chart_changes WHERE status = 'pending_approval') THEN id END) ELSE answered_by END AS answered_by")
+_MESSAGE_COLUMNS = f"id, session_id, role, who, kind, text, card_json, meta_json, pause, {_ANSWERED_BY}, task_id, src_ref, state, at"
 _SESSION_COLUMNS = ("id, node_id, kind, title, writable, status, filed_under, connector, model, provider_session_id, "
                     "last_message_id, note, created_at, updated_at, pinned")
 _OPEN_TASKS = ("blocked", "queued", "starting", "running", "waiting_user")

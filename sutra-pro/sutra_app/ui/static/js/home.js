@@ -265,19 +265,9 @@
     return map;
   }
 
-  // The answer of every card the owner has dealt with: what the owner clicked here, a message the server marks answered, and a team question
-  // that /api/needs-you no longer lists (then the card just reads "Answered").
-  function answersMap() {
-    const out = Object.assign({}, S.answers);
-    S.messages.forEach(m => {
-      if (m.kind !== "card" || !isObj(m.card) || hasOwn(out, m.id)) return;
-      const c = m.card;
-      if (m.answered_by !== null && m.answered_by !== undefined) out[m.id] = "";
-      else if (c.type === "needs_you" && S.needsLoaded &&
-        !S.needs.some(n => String(n.message_id) === String(c.question_message_id) && (!n.dept_id || !c.dept_id || n.dept_id === c.dept_id))) out[m.id] = "";
-    });
-    return out;
-  }
+  // The answer of every card the owner has dealt with (ChatView.answersOf): what the owner clicked here, a card the server says was answered (also after
+  // a reload: an approval or choice whose button was pressed), and a team question that /api/needs-you no longer lists (then the card just reads "Answered").
+  const answersMap = () => root.ChatView.answersOf(S.messages, {local: S.answers, needs: S.needs, needsLoaded: S.needsLoaded});
 
   function startHtml() {
     if (hasWritten() || S.messages.length === 0) return "";

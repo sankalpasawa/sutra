@@ -334,6 +334,43 @@ def test_the_card_buttons_answer_too_and_a_second_click_is_refused(renv):
     assert info.value.result.status == "applied"
 
 
+def test_a_card_the_owner_answered_reads_answered_whenever_the_chat_is_read_again(renv):
+    """QA org-chat-teams: Home drew an answered approval or choice card open again after a reload, because the server never said it was answered.
+    A button press stores the owner's line as `choice:<card id>`; the card's `answered_by` is that line, read from the stored rows (so it
+    holds after a restart too), and a card nobody pressed stays open."""
+    renv.connector.push(decide("clarify", "none", reuse=("quotes", "web"), why="two fit"))
+    renv.say("Do the thing for me")
+    merge_request(renv)
+    choice, approval = [m for m in renv.messages() if m.kind == "card"]
+    assert (choice.card.type, approval.card.type) == ("choice", "approval") and choice.answered_by is None and approval.answered_by is None
+    no = renv.say("No", choice=ChatChoice(message_id=approval.id, option="no"))
+    assert renv.chats.message(approval.id).answered_by == no.message_id
+    quotes = renv.say("Quotes", choice=ChatChoice(message_id=choice.id, option="quotes"))
+    again = {m.id: m.answered_by for m in type(renv.chats)(renv.db).messages(ORG)}                  # a new store over the same rows: a reload
+    assert again[approval.id] == no.message_id and again[choice.id] == quotes.message_id
+    assert type(renv.chats).message_in(renv.db.conn(), choice.id).answered_by == quotes.message_id          # the row an event carries says it too
+    assert all(by is None for mid, by in again.items() if mid not in (approval.id, choice.id))      # lines and the other cards are as they were
+
+
+@pytest.mark.parametrize("word,status", [("Yes", "applied"), ("no", "rejected")])
+def test_an_approval_decided_without_its_button_reads_answered_too(renv, word, status):
+    """A typed yes or no (or the decision route) presses no button, so no line is the card's answer: the card points at itself, and is open
+    exactly while its change waits."""
+    merge_request(renv)
+    [approval] = [m for m in renv.messages() if m.kind == "card" and m.card.type == "approval"]
+    assert approval.answered_by is None and [n.kind for n in renv.chats.needs_you()] == ["approval"]
+    renv.say(word)
+    assert renv.chart.record(approval.card.change_id).out.status == status and renv.chats.needs_you() == []
+    assert renv.chats.message(approval.id).answered_by == approval.id
+
+
+def test_an_approval_decided_by_the_route_reads_answered(renv):
+    merge_request(renv)
+    [approval] = [m for m in renv.messages() if m.kind == "card" and m.card.type == "approval"]
+    renv.go(lambda: renv.runner.decide(approval.card.change_id, False))
+    assert renv.chats.message(approval.id).answered_by == approval.id
+
+
 def test_a_merge_for_a_task_asks_stage_c_after_the_yes(renv):
     renv.connector.push(decide("new_task", "rearrange", reuse=(), why=SECRET_SENTENCE), merge_reply("quotes", "leads"))
     first = renv.say("Merge leads into quotes and write the price list")

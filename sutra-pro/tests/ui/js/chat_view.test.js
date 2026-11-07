@@ -407,6 +407,35 @@ test("an answered approval or choice shows the answer the owner gave, and an ope
   assert.equal(select(select(answered, "div.nmsg")[1], "button").length, 3);
 });
 
+test("answersOf closes an approval or choice the server says was answered, with the words of the owner line that answered it", () => {
+  // QA org-chat-teams: after a reload the transcript only had `answered_by`, which Home read as a question's; the card came back with Yes and No
+  const owner = (id, over = {}) => msg({id, role: "user", who: "user", text: "Yes", ...over});
+  const messages = [
+    msg({id: 20, who: "sutra", kind: "card", card: ORG.messages[19].card, answered_by: 21}), owner(21, {text: "No"}),
+    msg({id: 22, who: "sutra", kind: "card", card: ORG.messages[21].card}),
+    msg({id: 23, who: "sutra", kind: "card", card: ORG.messages[19].card, answered_by: 23}),          // decided without a button: it points at itself
+    msg({id: 24, who: "sutra", kind: "card", card: ORG.messages[21].card, answered_by: 99}),          // the answering line is not in the list
+  ];
+  const answers = ChatView.answersOf(messages, {});
+  assert.deepEqual(answers, {20: "No", 23: "", 24: ""});
+  const html = dom(transcript({id: "cs_org", kind: "org", writable: true, status: "active"}, messages, {answers}));
+  const rows = select(html, "div.nmsg").filter(row => row.attrs["data-kind"] === "card");
+  assert.deepEqual(rows.map(row => select(row, "button").length), [0, 3, 0, 0]);
+  assert.equal(textOf(one(rows[0], "p.canswer")), "You answered: No");
+  assert.equal(textOf(one(rows[2], "p.canswer")), "Answered");
+});
+
+test("answersOf keeps what the owner clicked here, and closes a team question that /api/needs-you no longer lists once it was read", () => {
+  const question = msg({id: 6, kind: "card", card: ORG.messages[5].card});
+  const asked = ORG.messages[5].card.question_message_id;
+  assert.deepEqual(ChatView.answersOf([question], {needsLoaded: false, needs: []}), {});
+  assert.deepEqual(ChatView.answersOf([question], {needsLoaded: true, needs: [{message_id: asked}]}), {});
+  assert.deepEqual(ChatView.answersOf([question], {needsLoaded: true, needs: []}), {6: ""});
+  assert.deepEqual(ChatView.answersOf([question], {needsLoaded: true, needs: [], local: {6: "Option 1"}}), {6: "Option 1"});
+  assert.deepEqual(ChatView.answersOf([question, msg({id: 7})], {local: {7: "x"}}), {7: "x"});
+  assert.deepEqual(ChatView.answersOf(null, null), {});
+});
+
 test("a needs_you card answered in the transcript reads Answered", () => {
   const messages = [msg({id: 6, kind: "card", card: ORG.messages[5].card})];
   const doc = dom(transcript({id: "cs_org", kind: "org", writable: true, status: "active"}, messages, {answers: {6: "Option 1"}}));
