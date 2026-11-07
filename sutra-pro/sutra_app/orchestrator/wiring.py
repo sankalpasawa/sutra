@@ -47,6 +47,7 @@ from sutra_app.orchestrator.events import EventBus
 from sutra_app.orchestrator.graph import GraphStore
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock
 from sutra_app.orchestrator.projector import Projector
+from sutra_app.orchestrator.recurring import Recurring
 from sutra_app.orchestrator.redact import Redactor
 from sutra_app.orchestrator.runs import ProcessLauncher, ReconcileReport, RunWatcher, reconcile
 from sutra_app.orchestrator.services import Services
@@ -70,6 +71,7 @@ class AppServices(Services):
     connector_router: Any = None
     chat_port: Any = None              # ChatPort over the router (ABS-1), for the direct chat routes
     attachments: Any = None            # the attachment service (ABS-4)
+    recurring: Any = None              # the schedules of recurring work and their ticker (GAP2 routines-limits)
     reconciled: ReconcileReport | None = None
     swept: int = 0
     refreshed: int = 0
@@ -164,6 +166,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     router.choice_source = ChatChoices(db).get                       # the pill governs the org chat agent too (ABS-8)
     attachments = Attachments(settings.data_dir)
     chat_port = RouterChatPort(router, attachments=attachments.store)
+    recurring = Recurring(db, tasks, clock=clock)
     agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout)
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
                         publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor)
@@ -172,7 +175,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         bus=bus, chats=chats, atoms=atoms, usage=usage, graph=graph, chart=chart, departments=departments, tasks=tasks,
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
-        stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments)
+        stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring)
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------
@@ -209,6 +212,8 @@ async def start_services(services: AppServices) -> AppServices:
     services.reconciled = await reconcile(
         tasks=services.tasks.store, projector=services.projector, watcher=services.watcher, launcher=services.launcher,
         publish=services.bus.publish_one, clock=services.clock)
+    if services.recurring is not None:                      # the one catch-up for the time the app was away, before the first start_ready
+        await services.recurring.start()
     await services.tasks.start_ready()
     services.started = True
     services.stopped = False
@@ -237,6 +242,8 @@ async def stop_services(services: AppServices) -> None:
         return
     services.stopped = True
     services.started = False
+    if services.recurring is not None:                      # first: no schedule may make a task while the rest closes
+        await _quietly("scheduler", services.recurring.stop, services)
     await _quietly("turn runner", services.runner.close, services)
     await _quietly("event bus", services.bus.close, services)
     router = services.connector_router

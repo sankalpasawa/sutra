@@ -14,6 +14,7 @@ from sutra_app.config import Settings
 from sutra_app.connectors.models import ConnectorConfig
 from sutra_app.ops import doctor
 from sutra_app.ops.lock import InstanceLock
+from sutra_app.orchestrator import schema
 from sutra_app.orchestrator.db import Database
 
 FAKES = Path(__file__).resolve().parents[1] / "fakes"
@@ -118,7 +119,7 @@ def test_the_database_may_be_absent_older_current_but_never_newer_or_broken(tmp_
     assert "none yet" in check(run(settings), "database").detail
     migrated_db(settings)
     current = check(run(settings), "database")
-    assert current.status == "ok" and "schema version 2" in current.detail
+    assert current.status == "ok" and f"schema version {schema.SCHEMA_VERSION}" in current.detail
     conn = sqlite3.connect(settings.db_path)
     conn.execute("PRAGMA user_version = 99")
     conn.close()

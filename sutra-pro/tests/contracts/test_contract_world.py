@@ -23,7 +23,7 @@ from sutra_app.connectors.factory import build_router as build_connector_router
 from sutra_app.engine.api import build_router as build_engine_router
 from sutra_app.engine.api import mount as mount_engine
 from sutra_app.ops import api as ops_api
-from sutra_app.orchestrator.api import atoms, chart, chat, departments, events as events_api, graph, tasks, usage
+from sutra_app.orchestrator.api import atoms, chart, chat, departments, events as events_api, graph, recurring, tasks, usage
 from sutra_app.orchestrator.api.deps import install_error_handlers, redacted_response_class, require_token
 from sutra_app.orchestrator.departments import DepartmentStore
 from sutra_app.orchestrator.redact import Redactor
@@ -88,7 +88,7 @@ def world(tenv) -> Iterator[World]:  # noqa: F811
     mount_engine(app, services)
     routers: dict[str, Any] = {"engine": build_engine_router(services)}
     for name, module in (("atoms", atoms), ("chart", chart), ("chat", chat), ("departments", departments), ("events", events_api),
-                         ("graph", graph), ("tasks", tasks), ("usage", usage)):
+                         ("graph", graph), ("recurring", recurring), ("tasks", tasks), ("usage", usage)):
         routers[name] = module.build_router()
         app.include_router(routers[name])
     routers["ops"] = ops_api.router                     # GAP-CONSOLE: the owner console's routes, which console_view.js calls
