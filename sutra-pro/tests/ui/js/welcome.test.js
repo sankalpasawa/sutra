@@ -86,6 +86,26 @@ test("the email line follows the engine's mode and is left out when it is not kn
   assert.match(none, /inside a budget for each run/);
 });
 
+test("what leaves the machine mentions the automatic update check: what it asks, how often, that it sends nothing about you, and where to turn it off", () => {
+  const on = clone(FACTS);
+  on.egress.auto_update = {on: true, desktop: true};
+  const html = welcomeHtml(on);
+  assert.match(html, /desktop app asks GitHub for the list of Sutra Pro releases about a minute after it opens and every 6 hours/);
+  assert.match(html, /one request, and nothing about you or your files is sent/);
+  assert.match(html, /installed only when you say so/);
+  assert.match(html, /turn this off in Settings, About/);
+  assert.match(html, /never check by themselves\.<\/p>/);
+  assert.match(html, /never uses an API key/);                                                    // the old sentences stay
+  assert.match(html, /No usage data is sent to Sutra\./);
+  const browser = welcomeHtml({...on, egress: {...on.egress, auto_update: {on: true, desktop: false}}});
+  assert.match(browser, /this copy was not started by the desktop app, so it makes no automatic check/);
+  const off = welcomeHtml({...on, egress: {...on.egress, auto_update: {on: false, desktop: true}}});
+  assert.match(off, /automatic check for a newer Sutra Pro is switched off \(Settings, About\)/);
+  assert.doesNotMatch(off, /about a minute after it opens/);
+  assert.doesNotMatch(welcomeHtml(FACTS), /GitHub/);                                              // an older server's answer has no such field: no paragraph, no crash
+  assert.doesNotMatch(welcomeHtml({...on, egress: {auto_update: "yes"}}), /GitHub/);
+});
+
 test("every word from the wire is escaped", () => {
   const evil = '<img src=x onerror="1">';
   const html = welcomeHtml({models: [{name: evil, state: "not_ready", why: evil, fix: evil}], data: {dir: evil, backup: evil, db_bytes: 1, free_bytes: 1},
