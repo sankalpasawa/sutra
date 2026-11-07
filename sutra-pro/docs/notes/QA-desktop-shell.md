@@ -38,7 +38,7 @@ paragraphs (`RELEASE-macos.md`, D118 in `DECISIONS.md`, this note) changed; no J
   server in it when it is usable by now, Show the Log reveals the fallback log, Quit quits). In the self-test mode the same failure is recorded and the exit status is 1.
   As a safety net for the same ambiguity, a refused lock while the settings folder is itself unusable now shows an error box and exits 1; a refused lock with a usable
   folder is still a second instance and exits 0.
-- Tests (`desktop/test/runtime.test.js`, 1): nested folders are made and a present folder is fine; a regular file where the folder should be, and a folder below a
+- Tests (`desktop/test/runtime.test.js`, 2: `folderProblem`, and `windowState` from the review round): nested folders are made and a present folder is fine; a regular file where the folder should be, and a folder below a
   file, are reported with the path named; a read-only parent (`EACCES`) and a present-but-not-writable folder are reported (those two are skipped on Windows and
   for root, which ignore permission bits). Before the fix `runtime.folderProblem` did not exist.
 - Live, after the fix: the three cases in self-test mode give exit 1 with the failure text in the verdict (the base: exit 0); a normal run keeps the window open on the
@@ -95,7 +95,7 @@ None: all three reproduced and were fixed.
 
 ## Commands run
 
-- `cd desktop && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --ignore-scripts && node --test "test/*.test.js"`: 57 tests, 57 pass (46 before: 11 added).
+- `cd desktop && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --ignore-scripts && node --test "test/*.test.js"`: 58 tests, 58 pass (46 before: 12 added).
 - `node --test tests/ui/js/*.test.js`: 965 tests, 963 pass, 2 skipped, 0 fail.
 - `scripts/py -m pytest tests/release tests/library tests/test_docs.py tests/test_traceability.py tests/test_ownership.py tests/test_layout.py -q -p no:warnings`:
-  3045 tests collected, exit status 0 (the repository's `addopts = "-q"` plus `-q` hides the summary line).
+  3033 passed, 12 skipped (run with `-o addopts="" -q` to see the summary line; the repository's `addopts = "-q"` plus `-q` hides it).
