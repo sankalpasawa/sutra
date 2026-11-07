@@ -53,6 +53,13 @@ test("runWords says what happened to a due time, honestly", () => {
   assert.equal(RV.runWords(null), "");
 });
 
+test("a folded count that reached the cap is told as many, not as an exact figure", () => {
+  assert.equal(RV.runWords(run({trigger: "catch_up", folded: 71})), "Wed 4 Nov, 9:00 AM: started as a catch-up (71 earlier times folded in), done");
+  assert.equal(RV.runWords(run({trigger: "catch_up", folded: 1998})), "Wed 4 Nov, 9:00 AM: started as a catch-up (1998 earlier times folded in), done");
+  assert.equal(RV.runWords(run({trigger: "catch_up", folded: 1999})), "Wed 4 Nov, 9:00 AM: started as a catch-up (many earlier times folded in), done");
+  assert.equal(RV.runWords(run({trigger: "catch_up", folded: 5000})), "Wed 4 Nov, 9:00 AM: started as a catch-up (many earlier times folded in), done");
+});
+
 test("a run held back by a limit is queued and waiting on the limit, never started or working", () => {
   assert.equal(RV.runWords(run({trigger: "manual", result: "held"})), "Wed 4 Nov, 9:00 AM: queued by you, waiting on a limit");
   assert.equal(RV.runWords(run({result: "held"})), "Wed 4 Nov, 9:00 AM: queued on schedule, waiting on a limit");

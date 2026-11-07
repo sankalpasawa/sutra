@@ -44,7 +44,7 @@ from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound, validation_error
 from sutra_app.orchestrator.ids import Clock, SystemClock, iso_z
 from sutra_app.orchestrator.models import Count, Iso, Name, TaskOut
-from sutra_app.orchestrator.schedule import Schedule, human, next_due, owed
+from sutra_app.orchestrator.schedule import COUNT_CAP, Schedule, human, next_due, owed
 from sutra_app.orchestrator.textutil import one_line_title
 
 __all__ = ["Recurring", "RecurringOut", "RunOut", "TickReport", "TICK_S", "LATE_S", "MAX_RECURRING", "MAX_TEXT", "CRASH_LIMIT", "result_of"]
@@ -386,7 +386,9 @@ class Recurring:
                 return
             reason = ""
             if folded:
-                reason = f"{folded} earlier due time{'' if folded == 1 else 's'} {'was' if folded == 1 else 'were'} missed while the app was away and folded into this one run"
+                many = count >= COUNT_CAP                              # the count stopped at its cap: told as many, never as a figure that looks exact
+                reason = (f"{'many' if many else folded} earlier due time{'' if folded == 1 else 's'} {'was' if folded == 1 else 'were'} "
+                          "missed while the app was away and folded into this one run")
             elif trigger == "catch_up":
                 reason = "started late: the app was not running at the due time"
             made = self._row(conn, rec_id, latest, now, trigger, "started", folded, reason)

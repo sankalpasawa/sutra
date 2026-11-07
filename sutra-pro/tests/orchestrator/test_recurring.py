@@ -11,7 +11,7 @@ from orchestrator.test_tasks import TEnv, tenv  # noqa: F401  (tenv is a fixture
 
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound
 from sutra_app.orchestrator.recurring import CRASH_LIMIT, MAX_RECURRING, Recurring
-from sutra_app.orchestrator.schedule import Schedule
+from sutra_app.orchestrator.schedule import COUNT_CAP, Schedule
 
 UTC = timezone.utc
 WEEKDAYS_9 = Schedule(every="weekdays", hour=9, minute=0)
@@ -99,6 +99,32 @@ def test_three_days_down_then_start_makes_one_task_and_says_how_many_slots_it_fo
     assert (row["trigger"], row["folded"], row["due_at"]) == ("catch_up", 2, at(2026, 11, 4, 9))
     assert "2 earlier due times were missed" in row["reason"]
     assert rec.tick(at(2026, 11, 4, 10, 30)).started == []                                   # nothing more is owed
+
+
+def test_an_absence_past_the_count_cap_is_told_as_many_and_a_shorter_one_as_a_figure(tenv, rec):
+    """QA recurring-limits: 120 days of hourly times printed 'folded 1999' as if it were exact (the count stops at COUNT_CAP)."""
+    hourly = Schedule(every="hour", minute=0)
+    short = rec.create("web", "Hourly digest", hourly, now=at(2026, 11, 1, 0, 30))
+    rec.tick(at(2026, 11, 4, 0, 30))                                                         # 72 whole hours away: an exact figure
+    assert "71 earlier due times were missed" in rows_of(tenv, short.id)[0]["reason"] and rows_of(tenv, short.id)[0]["folded"] == 71
+    rec.delete(short.id)
+    tenv.sql("UPDATE tasks SET status = 'done', ended_at = created_at, outcome = 'x'")
+    long = rec.create("web", "Hourly digest", hourly, now=at(2026, 1, 1, 0, 30))
+    ((_, task),) = rec.tick(at(2026, 5, 1, 0, 30)).started                                   # about 120 days: more than the cap
+    (row,) = rows_of(tenv, long.id)
+    assert row["folded"] == COUNT_CAP - 1                                                    # the figure that is stored is the least it was
+    assert row["reason"].startswith("many earlier due times were missed") and "1999" not in row["reason"] and "1,999" not in row["reason"]
+    note = tenv.one("SELECT text FROM chat_messages WHERE task_id = ? AND kind = 'note'", task)
+    assert "Many earlier due times were missed" in note and "1999" not in note
+
+
+def test_the_page_names_the_same_cap_as_the_schedule_counts_to():
+    """recurring_view.js tells a folded count at the cap as 'many'; its constant is COUNT_CAP - 1 (the count includes the run's own due time)."""
+    import re
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[2] / "sutra_app" / "ui" / "static" / "js" / "recurring_view.js").read_text(encoding="utf-8")
+    found = re.search(r"const MANY_FOLDED = (\d+);", source)
+    assert found is not None and int(found.group(1)) == COUNT_CAP - 1
 
 
 def test_a_single_late_slot_is_a_catch_up_too_but_folds_nothing(tenv, rec):

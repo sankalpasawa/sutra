@@ -31,6 +31,7 @@
   const ID = /^rec_[0-9a-f]{12}$/;
   const HM = /^([01]\d|2[0-3]):([0-5]\d)$/;
   const MAX_TEXT = 4000;
+  const MANY_FOLDED = 1999;                                                              // schedule.py COUNT_CAP - 1: a count that reached it is "at least", told as many
   const EVERY = [["hour", "Every hour"], ["day", "Every day"], ["weekdays", "Every weekday"], ["week", "Every week"]];
   const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];                 // Date.getDay() order
@@ -77,7 +78,8 @@
     const when = dueWords(run.due_at);
     const why = clean(run.reason);
     if (run.result === "skipped") return (when ? when + ": " : "") + "skipped" + (why ? ", " + why : "");
-    const folded = finite(run.folded) && run.folded > 0 ? " (" + run.folded + " earlier time" + (run.folded === 1 ? "" : "s") + " folded in)" : "";
+    const folded = finite(run.folded) && run.folded > 0
+      ? " (" + (run.folded >= MANY_FOLDED ? "many" : run.folded) + " earlier time" + (run.folded === 1 ? "" : "s") + " folded in)" : "";
     return (when ? when + ": " : "") + (run.result === "held" ? "queued " : "started ") + how + folded + (result ? ", " + result : "");   // held: a limit keeps it from starting
   }
 
