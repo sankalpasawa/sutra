@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from sutra_app import oslayer
 from sutra_app.config import Settings
 from sutra_app.ops import cli, import_old, lock
 from sutra_app.orchestrator.db import Database
@@ -99,6 +100,32 @@ def test_apply_makes_archived_read_only_legacy_chats_and_leaves_the_old_folder_b
     assert (a["kind"], a["node_id"], a["status"], a["writable"], a["connector"], a["title"]) == ("legacy", "legacy", "archived", 0, "codex", "Plan the cafe site")
     assert a["note"] == "Imported from old Sutra, folder cafe-site"
     assert sessions["cs_old_" + "d" * 12]["connector"] == "" and sessions["cs_old_" + "b" * 12]["connector"] == ""      # deepseek and no history: history only
+
+
+@pytest.mark.skipif(oslayer.IS_WINDOWS, reason="asserts POSIX permission bits")
+def test_apply_into_a_missing_data_folder_makes_it_private_whatever_the_umask(old, tmp_path, capsys):
+    data = tmp_path / "fresh" / "data"
+    previous = os.umask(0o022)
+    try:
+        code, _ = run(["--source", str(old), "--data-dir", str(data), "--apply"], capsys)
+    finally:
+        os.umask(previous)
+    assert code == 0 and data.stat().st_mode & 0o777 == 0o700
+    assert not [p for p in data.rglob("*") if p.is_dir() and p.stat().st_mode & 0o077]       # nothing it created is open to other users
+
+
+def test_apply_into_a_missing_data_folder_holds_the_instance_lock_while_it_writes(old, tmp_path, capsys, monkeypatch):
+    data = tmp_path / "fresh" / "data"
+    seen: list[bool] = []
+    real = import_old.import_chats
+
+    def watch(db, chats, redactor):
+        seen.append(lock.is_locked(data))                       # a server that starts now must be refused, as for a folder that exists
+        return real(db, chats, redactor)
+
+    monkeypatch.setattr(import_old, "import_chats", watch)
+    code, _ = run(["--source", str(old), "--data-dir", str(data), "--apply"], capsys)
+    assert code == 0 and seen == [True] and not lock.is_locked(data)
 
 
 def test_messages_are_mapped_notes_collapse_tools_and_thinking_is_dropped(old, tmp_path, capsys):

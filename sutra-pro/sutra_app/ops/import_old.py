@@ -212,12 +212,10 @@ def cmd_import(args: argparse.Namespace) -> int:
     settings = cli.load_settings(args)
     if settings is None:
         return 2
-    held = None
-    if settings.data_dir.exists():
-        held = lock.InstanceLock(settings.data_dir)
-        if not held.acquire():
-            print(f"sutra-pro: Sutra Pro is running on {settings.data_dir}; stop it first (`sutra-pro stop`). Nothing was changed", file=sys.stderr)
-            return 1
+    held = lock.InstanceLock(settings.data_dir)          # also for a folder that does not exist yet: taking the lock makes it, private (0700)
+    if not held.acquire():
+        print(f"sutra-pro: Sutra Pro is running on {settings.data_dir}; stop it first (`sutra-pro stop`). Nothing was changed", file=sys.stderr)
+        return 1
     try:
         from sutra_app.ops import backup
         if settings.db_path.exists():
@@ -231,8 +229,7 @@ def cmd_import(args: argparse.Namespace) -> int:
         finally:
             db.close()
     finally:
-        if held is not None:
-            held.release()
+        held.release()
     payload.update(applied=True, **done)
     lines.append(f"Imported {done['chats_added']} chat(s) ({done['chats_present']} already there), {done['messages_added']} message(s) added.")
     if done["scrubbed"]:

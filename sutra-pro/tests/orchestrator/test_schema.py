@@ -1,10 +1,12 @@
 """The database layer and the DDL: migrations, pragmas, transactions and events, StoreContext, and every constraint of 4.1."""
+import os
 import sqlite3
 import threading
 
 import anyio
 import pytest
 
+from sutra_app import oslayer
 from sutra_app.library.gate import GATE
 from sutra_app.library.org_chart import seed_chart
 from sutra_app.orchestrator import db as dbmod
@@ -68,6 +70,16 @@ def test_migrate_again_is_a_no_op(db):
 def test_pragmas(db):
     one = lambda p: sql(db, f"PRAGMA {p}").fetchone()[0]          # noqa: E731
     assert (one("journal_mode"), one("synchronous"), one("foreign_keys"), one("busy_timeout")) == ("wal", 1, 1, 5000)
+
+
+@pytest.mark.skipif(oslayer.IS_WINDOWS, reason="asserts POSIX permission bits")
+def test_a_database_makes_its_missing_folder_private_whatever_the_umask(tmp_path, events):
+    previous = os.umask(0o022)
+    try:
+        Database(tmp_path / "fresh" / "db.sqlite3", events).close()
+    finally:
+        os.umask(previous)
+    assert (tmp_path / "fresh").stat().st_mode & 0o777 == 0o700
 
 
 def test_a_database_from_a_newer_app_is_refused(db, settings, events):
