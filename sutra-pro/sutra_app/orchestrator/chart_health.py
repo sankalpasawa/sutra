@@ -19,6 +19,7 @@ handed both a single clock). A note is information only. Only divisions can be m
 the chat agent, and a team with no purpose offers 'change the purpose of X to ...'. Nothing here changes the chart.
 """
 import sqlite3
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
@@ -126,11 +127,20 @@ def overlap_pairs(items: Sequence[Item], parent: Mapping[str, str | None], *, th
     return found
 
 
+def _words(text: str) -> frozenset[str]:
+    """The whole words of `text` in any script, casefolded, punctuation and symbols read as spaces. `tokens` reads a-z only; this is for text it cannot read."""
+    spaced = "".join(" " if unicodedata.category(ch)[0] in "PSZ" or unicodedata.category(ch) == "Cc" else ch for ch in text.casefold())
+    return frozenset(spaced.split())
+
+
 def thin_purpose(item: Item) -> str:
-    """'' when the purpose says something, 'empty' when it is blank, 'repeats' when every word of it is already in the name."""
+    """'' when the purpose says something, 'empty' when it is blank, 'repeats' when every word of it is already in the name. A purpose in another script
+    (Devanagari, Japanese ...) has no a-z word for `tokens` to count, so it is judged by its whole words instead of counting as saying nothing."""
     if not item.purpose.strip():
         return "empty"
     said = tokens(item.purpose)
+    if not said and not item.purpose.isascii():
+        return "repeats" if _words(item.purpose) <= _words(item.name) else ""
     return "repeats" if not said or said <= tokens(item.name) else ""
 
 
