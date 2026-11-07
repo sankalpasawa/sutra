@@ -11,6 +11,7 @@ const { isInternal, isSafeExternal } = require('./urls');
 const { splashPage, errorPage, dataUrl, THEMES } = require('./pages');
 const { menuTemplate } = require('./menu');
 const { runSelftest, record } = require('./selftest');
+const { createDesktopUpdates } = require('./update_main');
 
 const APP_NAME = 'Sutra Pro';
 const APP_ID = 'os.sutra.pro';
@@ -38,6 +39,9 @@ let win = null;
 let quitting = false;
 let stopped = false;
 let exitCode = 0;
+
+// the app updating itself (src/updater.js): a check a minute after launch and every 6 hours, a dialog when a verified update is ready, never in the self-test
+const updates = createDesktopUpdates({ app, dialog, shell, supervisor, log, folder, getWindow: () => win, isQuitting: () => quitting });
 
 function selftestDir() {
   return process.env.SUTRA_PRO_SELFTEST_DIR || path.join(folder, 'selftest');
@@ -103,6 +107,7 @@ async function startServer() {
     const { url } = await supervisor.start();
     if (!win || quitting) return;
     await win.loadURL(url);
+    if (!SELFTEST) updates.start();
   } catch (error) {
     if (quitting) return;
     await failed(error);
@@ -159,6 +164,7 @@ function installMenu() {
     openDataFolder: () => shell.openPath(folder),
     showLog: () => shell.showItemInFolder(log.file),
     openReleases: () => shell.openExternal(RELEASES_URL),
+    checkForUpdates: () => updates.checkNow({ manual: true }),
   };
   const devTools = !app.isPackaged || process.env.SUTRA_PRO_DEVTOOLS === '1';
   Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate({ appName: APP_NAME, isMac: process.platform === 'darwin', devTools, handlers })));
@@ -186,9 +192,12 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   if (quitting) return;
   quitting = true;
+  updates.stop();                                       // no timer and no dialog from here on
   if (win && !win.isDestroyed()) win.hide();
-  supervisor.stop().catch((error) => log.write(`stopping the server failed: ${error.message}`)).finally(() => {
+  supervisor.stop().catch((error) => log.write(`stopping the server failed: ${error.message}`)).finally(async () => {
     stopped = true;
+    // the server is stopped: only now may an update the owner chose replace the app (the helper waits for this process to end as well)
+    await updates.applyOnQuit().catch((error) => log.write(`the update was not applied: ${error.message}`));
     log.write('bye');
     if (SELFTEST) app.exit(exitCode);
     else app.quit();

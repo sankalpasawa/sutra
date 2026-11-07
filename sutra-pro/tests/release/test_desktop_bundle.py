@@ -412,3 +412,15 @@ def test_the_windows_installer_is_the_electron_layout_and_replaces_a_0_1_x_insta
     assert "resources\\python\\python.exe" in text, "the uninstaller and the upgrade stop the server of the new layout"
     assert "{app}\\python\\python.exe" in text, "and the upgrade stops a server of the old layout first"
     assert ".sutra-pro" in text and "never touched" in text, "the data folder is left alone, and the file says so"
+
+
+def test_the_installer_starts_the_app_again_when_the_app_updated_itself():
+    """The app runs this installer silently AFTER it quit (desktop/src/updater.js): the [Run] line with `skipifsilent` is skipped, and the Restart Manager has
+    no app left to restart, so a line that is not skipped starts it, only when the app's own switch is on the command line."""
+    text = INSTALLER.read_text()
+    updater = (DESKTOP / "src" / "updater.js").read_text()
+    assert "'/SutraRelaunch=1'" in updater and "'/SILENT'" in updater and "'/CLOSEAPPLICATIONS'" in updater and "'/RESTARTAPPLICATIONS'" in updater
+    assert "ExpandConstant('{param:SutraRelaunch|0}') = '1'" in text and "function RelaunchRequested: Boolean;" in text
+    line = next(entry for entry in text.splitlines() if "Check: RelaunchRequested" in entry)
+    assert line.startswith("Filename:") and "skipifsilent" not in line and "postinstall" not in line
+    assert "PrivilegesRequired=lowest" in text, "per user: the silent update needs no prompt"

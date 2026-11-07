@@ -3,6 +3,8 @@
    the shortcuts do nothing in a text field. */
 
 function menuTemplate({ appName, isMac, devTools, handlers }) {
+  // 'Check for Updates...' runs a check on demand (src/updater.js); a caller without the updater leaves the item out
+  const updates = typeof handlers.checkForUpdates === 'function' ? [{ label: 'Check for Updates...', click: handlers.checkForUpdates }] : [];
   const edit = {
     label: 'Edit',
     submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' },
@@ -19,12 +21,13 @@ function menuTemplate({ appName, isMac, devTools, handlers }) {
       { label: 'Show the Data Folder', click: handlers.openDataFolder },
       { label: 'Show the Log', click: handlers.showLog },
       { type: 'separator' },
+      ...(isMac ? [] : updates),
       { label: 'Releases', click: handlers.openReleases },
     ],
   };
   if (isMac) {
     return [
-      { label: appName, submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' },
+      { label: appName, submenu: [{ role: 'about' }, ...updates, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' },
         { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
       { label: 'File', submenu: [{ role: 'close' }] },
       edit,

@@ -70,6 +70,9 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app
 
 [Run]
 Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Description: "Start {#AppName}"; Flags: nowait postinstall skipifsilent
+; the app updating itself runs this installer with /SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /SutraRelaunch=1 after it has quit: nothing is left
+; for the Restart Manager to restart, and the line above is skipped on a silent install, so this one starts the app again (only when asked to)
+Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Flags: nowait; Check: RelaunchRequested
 
 [UninstallRun]
 ; a server that outlives the window (one the command line started) holds its files: ask it to stop. If nothing is running this does nothing
@@ -83,6 +86,12 @@ var
 begin
   if FileExists(Python) then
     Exec(Python, '-I -B -X utf8 -m sutra_app stop --wait 20', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+// /SutraRelaunch=1 (the app's own update; desktop/src/updater.js winInstallerArgs): start the app again when the installation is done
+function RelaunchRequested: Boolean;
+begin
+  Result := ExpandConstant('{param:SutraRelaunch|0}') = '1';
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
