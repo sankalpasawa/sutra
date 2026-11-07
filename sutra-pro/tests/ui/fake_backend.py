@@ -387,9 +387,9 @@ class FakeState:
     def chart(self) -> dict:
         return copy.deepcopy(self.fx.charts[self.chart_stage])
 
-    def changes(self, after: int = 0, limit: int = 50) -> list[dict]:
+    def changes(self, after: int = 0, limit: int = 50, newest: bool = False) -> list[dict]:
         rows = [c for c in self.fx.changes[self.chart_stage] if c["seq"] > after]
-        return copy.deepcopy(rows[:limit])
+        return copy.deepcopy(rows[-limit:] if newest else rows[:limit])
 
     def full_graph(self) -> dict:
         return copy.deepcopy(self.fx.graphs[self.graph_stage])
@@ -1097,8 +1097,8 @@ def register_api(app: FastAPI, state: FakeState) -> None:
         return JSONResponse(state.chart())
 
     @app.get("/api/chart/changes")
-    def chart_changes(after: int = 0, limit: int | None = None):
-        return JSONResponse(state.changes(max(after, 0), int_arg(limit, 50, 1, 500)))
+    def chart_changes(after: int = 0, limit: int | None = None, newest: bool = False):
+        return JSONResponse(state.changes(max(after, 0), int_arg(limit, 50, 1, 500), newest))
 
     @app.get("/api/graph")
     def graph(level: str = "chart", dept: str | None = None, task: str | None = None):

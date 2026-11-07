@@ -465,7 +465,7 @@ Bind `127.0.0.1` only (a non-loopback `SUTRA_HOST` is refused at startup). No ro
 | `POST /api/chats/{sid}/messages` | `ChatPost` -> `cs_org`: 202 `Accepted`; department or division: 200 `Delivery` (a division post goes to the department's Identity with the division as `scope_node_id`), 409 `busy`; function or step: 403 `read_only`; archived: 403 `read_only` (the J2 `/api/say?dept=` route calls `deliver_to_department` and answers an archived department with the same 403) [S3-web-12]; `cs_org` only: no usable connector: 503 before anything is stored (department and division posts never preflight) [S3-web-13] |
 | `POST /api/chats/cs_org/retry` | re-runs the last request in state `error` -> 202 |
 | `GET /api/needs-you` | `NeedsYouOut[]`: open department questions and pending approvals |
-| `GET /api/chart` · `GET /api/chart/changes?after=&limit=` | `ChartView` · `ChartChangeOut[]` |
+| `GET /api/chart` · `GET /api/chart/changes?after=&limit=&newest=` | `ChartView` · `ChartChangeOut[]` (oldest first; `newest=true` makes them the last `limit` rows above `after`) |
 | `POST /api/chart/changes` · `POST /api/chart/changes/{change_id}/decision` | a library `chart_change` JSON + `dry_run` (actor `user`) -> 200 `ChangeResult` \| 202 pending \| 422 `rules` · `{approve:bool}` -> `ChangeResult` \| 409 `already_decided` |
 | `GET /api/graph?level=chart\|full&dept=&task=` | `GraphView`. `chart`: root, live departments and divisions, each department's latest task step. `full`: adds the function nodes and every step of live or recent tasks. `dept=` limits to a department, `task=` to one task's steps |
 | `GET /api/graph/nodes/{id}` | `NodeDetail` (404) |

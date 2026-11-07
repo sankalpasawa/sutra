@@ -12,7 +12,7 @@
        dept    the team being viewed (default SutraCtx.dept): its box gets a ring.
      handle  {update(orgChart, changes), selectChange(seq), setFind(rows), setLive(state), refresh(), fail(err), destroy(), graphView, state(), el}
 
-   update(orgChart, changes): orgChart is GET /api/chart, changes GET /api/chart/changes?limit=50 (ChartChangeOut[]; leaving it out keeps
+   update(orgChart, changes): orgChart is GET /api/chart, changes GET /api/chart/changes?limit=50&newest=true (the newest 50 ChartChangeOut[]; leaving it out keeps
    the ones in hand). The newest change is selected until the owner picks another (a click on its row, or selectChange(seq)); picking
    the newest again follows the newest once more. A change that was not applied (pending_approval, rejected, stale, failed) marks nothing.
    The card of a node has its name and purpose, Open team page (a team), Show in graph and Open chat. Esc closes it.
@@ -215,7 +215,7 @@
     function refresh() {
       if (destroyed) return Promise.resolve(false);
       const mine = ++fetchSeq;
-      return Promise.all([C.api.get("/api/chart"), C.api.get("/api/chart/changes", {limit: 50})]).then(
+      return Promise.all([C.api.get("/api/chart"), C.api.get("/api/chart/changes", {limit: 50, newest: true})]).then(
         ([chart, changes]) => (destroyed || mine !== fetchSeq ? false : update(chart, changes)),
         err => {
           if (!destroyed && mine === fetchSeq) gv.fail(err);

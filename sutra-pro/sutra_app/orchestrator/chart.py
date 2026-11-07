@@ -179,10 +179,16 @@ class ChartStore:
         rows = self.db.conn().execute(f"SELECT {_COLUMNS} FROM chart_changes WHERE status = 'pending_approval' ORDER BY seq").fetchall()
         return [_out_of(r) for r in rows]
 
-    def history(self, after: int = 0, limit: int = 50) -> list[ChartChangeOut]:
-        """The change log, oldest first: rows with `seq` above `after` (a cursor), at most `limit` (1 to 500)."""
-        rows = self.db.conn().execute(
-            f"SELECT {_COLUMNS} FROM chart_changes WHERE seq > ? ORDER BY seq LIMIT ?", (max(int(after), 0), max(1, min(int(limit), MAX_LIMIT)))).fetchall()
+    def history(self, after: int = 0, limit: int = 50, *, newest: bool = False) -> list[ChartChangeOut]:
+        """The change log, oldest first: rows with `seq` above `after` (a cursor), at most `limit` (1 to 500). With `newest` they are the LAST
+        `limit` such rows (still oldest first), which is what a page that shows the latest changes asks for: from `after` 0 the first `limit` rows
+        of a longer log are the oldest ones."""
+        low, count = max(int(after), 0), max(1, min(int(limit), MAX_LIMIT))
+        if newest:
+            rows = self.db.conn().execute(
+                f"SELECT * FROM (SELECT {_COLUMNS} FROM chart_changes WHERE seq > ? ORDER BY seq DESC LIMIT ?) ORDER BY seq", (low, count)).fetchall()
+        else:
+            rows = self.db.conn().execute(f"SELECT {_COLUMNS} FROM chart_changes WHERE seq > ? ORDER BY seq LIMIT ?", (low, count)).fetchall()
         return [_out_of(r) for r in rows]
 
     def record(self, change_id: str) -> StoredChange:

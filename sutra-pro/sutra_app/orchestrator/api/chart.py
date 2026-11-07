@@ -1,7 +1,8 @@
 """Chart routes (orchestrator 6.2): the live chart, its change log, and the two ways to change it by hand.
 
     GET  /api/chart                                -> ChartView
-    GET  /api/chart/changes?after=&limit=          -> ChartChangeOut[]     (oldest first; `after` is a seq cursor; limit 1..500, default 50)
+    GET  /api/chart/changes?after=&limit=&newest=  -> ChartChangeOut[]     (oldest first; `after` is a seq cursor; limit 1..500, default 50;
+                                                      `newest=true`: the last `limit` rows, still oldest first, for a page that shows the latest)
     POST /api/chart/changes                        -> a library `chart_change` JSON + `dry_run` (actor `user`; needs the token)
                                                       200 ChangeResult | 202 pending approval | 409 stale_chart | 422 validation / rules
     POST /api/chart/changes/{change_id}/decision   -> {approve: bool}      (needs the token) 200 ChangeResult | 404 | 409 already_decided
@@ -68,8 +69,9 @@ def build_router() -> APIRouter:
         request: Request,
         after: int = Query(0, ge=0, description="return rows with a seq above this"),
         limit: int = Query(50, ge=1, le=500),
+        newest: bool = Query(False, description="the last `limit` rows above `after`, still oldest first"),
     ) -> RedactedJSONResponse:
-        rows = await run_blocking(lambda: _store(request).history(after, limit))
+        rows = await run_blocking(lambda: _store(request).history(after, limit, newest=newest))
         return _json(request, [_dump(row) for row in rows])
 
     @router.post("/changes", summary="Change the chart by hand", dependencies=[Depends(require_token)])

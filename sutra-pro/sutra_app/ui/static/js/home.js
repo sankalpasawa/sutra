@@ -161,7 +161,7 @@
   }
 
   async function fetchChart() {
-    const [chart, changes] = await Promise.all([api.get("/api/chart"), api.get("/api/chart/changes", {limit: 50})]);
+    const [chart, changes] = await Promise.all([api.get("/api/chart"), api.get("/api/chart/changes", {limit: 50, newest: true})]);
     S.chart = chart;
     S.changes = Array.isArray(changes) ? changes : [];
     if (S.chartView) S.chartView.update(S.chart, S.changes);

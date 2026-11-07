@@ -505,6 +505,11 @@ def test_history_is_oldest_first_with_an_after_cursor_and_a_limit(built):
     assert [r.seq for r in built.chart.history(after=1, limit=1)] == [2]
     assert built.chart.history(after=3) == []
     assert len(built.chart.history(limit=10_000)) == 3 and len(built.chart.history(limit=0)) == 1
+    # newest=True: the NEWEST `limit` rows above `after`, still oldest first (QA org-chat-teams: the log pane asked for the first 50 of a long log)
+    assert [r.seq for r in built.chart.history(limit=2, newest=True)] == [2, 3]
+    assert [r.seq for r in built.chart.history(after=1, limit=1, newest=True)] == [3]
+    assert [r.seq for r in built.chart.history(after=0, limit=10, newest=True)] == [1, 2, 3] == [r.seq for r in built.chart.history()]
+    assert built.chart.history(after=3, limit=5, newest=True) == [] and len(built.chart.history(limit=0, newest=True)) == 1
     two = rows[1]
     assert (two.id, two.decision, two.status, two.revision, two.added, two.task_id) == ("chg-0002", "add", "applied", 2, ["sales", "web"], "req-1")
     assert two.at.endswith("Z") and two.summary == "Added the Sales team and the Web team"

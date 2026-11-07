@@ -177,6 +177,15 @@ def test_home_reads_what_the_design_says_on_load_and_nothing_else(browser, fake)
 
 
 @browser_only
+def test_home_asks_for_the_newest_changes_not_the_first_of_a_long_log(browser, fake):
+    """QA org-chat-teams: `limit=50` alone is the OLDEST 50, so after change 50 the log pane, its marks and Show in the org chart never moved on."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake)
+    asked = [r["query"] for r in fake.log("/api/chart/changes") if r["path"] == "/api/chart/changes"]
+    assert asked and set(asked) == {"limit=50&newest=true"}
+
+
+@browser_only
 def test_home_boots_with_no_console_error_and_the_rail_shows_its_items(browser, fake):
     load(browser, fake, stage="full")
     assert texts(browser, "#rail > button, #rail .railhead, #rail .railsec > button") == ["Chat", "Workflow graph", "Org chart", "Teams", "Settings", "Appearance", "Connectors", "Engine"]
@@ -314,6 +323,7 @@ def test_a_choice_card_posts_the_chosen_option_to_the_org_chat(browser, fake):
 @browser_only
 def test_an_answered_approval_stays_closed_after_a_reload_and_the_open_cards_stay_open(browser, fake):
     """QA org-chat-teams: the answer lived only in the page, so a reload (or a second window) drew the answered card with Yes and No again."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
     load(browser, fake, stage="full")
     present(browser, '.c-approval [data-act="choose"]')
     browser.click('.c-approval [data-act="choose"]')

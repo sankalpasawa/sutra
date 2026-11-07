@@ -1265,7 +1265,7 @@ def test_something_that_is_not_a_chart_keeps_the_last_good_one_and_try_again_ask
     assert page.ids() == ["root", "web", "faq", "content", "menu"] and rows(page) == log
     page.b.click("[data-wretry]")
     page.b.wait_for("document.querySelector('.wbanner').hidden === true")
-    assert page.requests("/api/chart") == ["", ""] and page.requests("/api/chart/changes") == ["limit=50", "limit=50"]
+    assert page.requests("/api/chart") == ["", ""] and page.requests("/api/chart/changes") == ["limit=50", "limit=50&newest=true"]     # Try again asks for the newest 50
     assert page.js("window.view.update(" + json.dumps(fixture("chart.v3.json")) + ", 'not a list')") is True and rows(page) == log     # no list: the one in hand stays
     page.fake.fail("/api/chart/changes", 500)
     page.js("window.view.fail({code: 'x'}); window.view.refresh()")
