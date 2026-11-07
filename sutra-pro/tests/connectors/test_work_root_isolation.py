@@ -145,3 +145,17 @@ def test_the_id_file_is_private_and_a_damaged_one_is_made_again(tmp_path, privat
     second = ConnectorConfig(data_dir=data).resolved_work_root()
     assert second != first and len(mark.read_text().strip()) >= 16
     assert json.dumps(str(second))                                       # a plain path
+
+
+def test_the_working_folder_rule_still_refuses_this_folders_data_and_its_work_root(tmp_path, private_tmp):
+    """GAP3-workdir's rule (connectors/workdir.py, a separate branch until it merges) refuses the data folder and the work root it is given; the
+    root is now per folder, so the rule must be given THIS folder's root: it reads it from `resolved_work_root()`."""
+    workdir = pytest.importorskip("sutra_app.connectors.workdir")
+    data = tmp_path / "d"
+    data.mkdir()
+    cfg = ConnectorConfig(data_dir=data)
+    root = cfg.resolved_work_root()
+    (root / SID).mkdir(parents=True)
+    for refused in (data, data / "connectors", root, root / SID):
+        with pytest.raises(Exception, match="belongs to Sutra itself"):
+            workdir.check_folder(str(refused), data_dir=data, work_root=root)
