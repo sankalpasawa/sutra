@@ -379,6 +379,20 @@ def test_a_chart_change_reads_the_rail_and_the_needs_you_strip_again_so_a_rename
 
 
 @browser_only
+def test_an_approval_in_the_needs_you_strip_reads_approval_needed_not_a_leading_colon(browser, fake):
+    """QA org-chat-teams: an approval has no team, so its row began with ': Merge Corporate into Weddings?'."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake, stage="2")
+    browser.js("""(() => { const S = HomePage.state(); S.needs.push({message_id: 9, session_id: "cs_org", kind: "approval", dept_id: null, dept_name: "",
+      text: "Merge Corporate into Weddings? Their chats and history stay available.", options: ["Yes", "No"], asked_at: "2026-11-04T10:05:00Z"});
+      S.needs.push({message_id: 10, session_id: "cs_org", kind: "question", dept_id: null, dept_name: "", text: "Which colour?", options: [], asked_at: "2026-11-04T10:06:00Z"});
+      HomePage.renderNeeds(); })()""")
+    assert texts(browser, "#needs .needitem span") == ["Web: Should the menu show prices?",
+                                                       "Approval needed: Merge Corporate into Weddings? Their chats and history stay available.",
+                                                       "Which colour?"]                  # a team's name still leads its question; a line with neither team nor kind is just the words
+
+
+@browser_only
 def test_an_answer_goes_to_the_teams_own_session_and_the_card_then_reads_answered(browser, fake):
     load(browser, fake, stage="2")
     browser.click('.c-needs [data-act="answer-option"]')

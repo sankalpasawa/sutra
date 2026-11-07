@@ -600,7 +600,8 @@
     const ask = root.ChatView.parseAsk(item.text);
     const question = ask.qs.length ? ask.qs[0].q : "";
     const said = root.ChatView.stripTag(question || ask.say || item.text).split("\n")[0].trim();
-    return clean(item.dept_name) + (said ? ": " + said : "");
+    const who = clean(item.dept_name) || (item.kind === "approval" ? "Approval needed" : "");           // an approval belongs to no team
+    return who + (said ? (who ? ": " : "") + said : "");
   }
 
   // The strip: what waits on the owner (questions and approvals, each with how long it has waited) and the Heads up lane (heads_up_view.js).
