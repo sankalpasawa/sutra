@@ -16,8 +16,8 @@ scheduler's tick and every route that changes a limit call `start_ready`.
           carry none, so the number is "about" and a subscription's real limit is its quota. A limit of 0 or none is no limit.
   guard   plan windows (the 5-hour and weekly windows the CLIs report, GAP-providers). Warn from 70 % always; hold from 80 % only when the owner
           switched the guard on (default off). One Continue lets work proceed until the holding window resets (stored with its reset time, so a
-          restart does not undo it). It fails open: no snapshot, a window that has reset, or a snapshot too old to trust holds nothing, and so does
-          any error in here.
+          restart does not undo it). It fails open: no snapshot, a window that has reset, a snapshot too old to trust, or a window whose reset time no
+          clock can show (a CLI that sent milliseconds) holds nothing, and so does any error in here.
 
 The file `<data>/limits.json` (mode 0600, written atomically) holds the owner's two choices and the Continue marks; it never holds a figure the
 CLIs reported. A file that does not read is ignored (defaults), never an error.
@@ -56,6 +56,7 @@ GUARD_WARN = 0.70                # the old plugin guard: warn at 70, hold at 80
 GUARD_HOLD = 0.80
 MAX_LIMIT_USD = 100_000          # the old app's ceiling for a limit
 STALE_S = 6 * 3600               # a window with no reset time is trusted this long after it was seen
+_LATEST_RESET = 4_102_444_800    # 2100-01-01 UTC: a reset time later than this is a unit slip (milliseconds) or noise, not a time
 _MAX_BYTES = 64 * 1024
 _NAMES = {"claude": "Claude", "codex": "Codex"}
 WAIT_SPEND = "waiting: this month's spending limit is used up; raise it to continue"
@@ -138,7 +139,7 @@ def money(value: float) -> str:
 
 def reset_words(resets_at: float | None, now: float) -> str:
     """"resets 14:05" for a reset later today, "resets Fri 09:00" for a later day, "" when there is none. Local time of this machine."""
-    if resets_at is None or resets_at <= now:
+    if resets_at is None or not now < resets_at <= _LATEST_RESET:
         return ""
     moment = datetime.fromtimestamp(resets_at)
     same_day = moment.date() == datetime.fromtimestamp(now).date()
@@ -211,12 +212,18 @@ def _windows_of(quotas: Mapping[str, Any], now: float, providers: tuple[str, ...
         for key, label, used, resets_at in listed:
             if used is None or not math.isfinite(used):
                 continue
+            if resets_at is not None and not 0 <= resets_at <= _LATEST_RESET:                 # a figure no clock can show: not trusted, holds nothing
+                continue
             if resets_at is not None and resets_at <= now:
                 continue
             if resets_at is None and (seen_at is None or now - seen_at > STALE_S):
                 continue
             found.append(_Window(provider, key, label, float(used), resets_at))
     return found
+
+
+def _no_reading(enabled: bool) -> dict[str, Any]:
+    return {"enabled": enabled, "level": "none", "holding": False, "top": None, "line": "", "windows": []}
 
 
 def guard_reading(quotas: Mapping[str, Any], now: float, *, enabled: bool, continued: Mapping[str, int] | None = None,
@@ -232,7 +239,7 @@ def guard_reading(quotas: Mapping[str, Any], now: float, *, enabled: bool, conti
         level = "hold" if w.used >= hold else ("warn" if w.used >= warn else "ok")
         rows.append({"provider": w.provider, "key": w.key, "label": w.label, "used": round(w.used, 4), "resets_at": iso_z(w.resets_at) if w.resets_at else None,
                      "level": level, "continued": level == "hold" and marks.get(key, 0) > now, "_w": w})
-    out: dict[str, Any] = {"enabled": enabled, "level": "none", "holding": False, "top": None, "line": "", "windows": []}
+    out = _no_reading(enabled)
     if not rows:
         return out
     rank = {"ok": 0, "warn": 1, "hold": 2}
@@ -277,7 +284,11 @@ class Limits:
         moment = self._now(now)
         found = self.store.load()
         spend = spend_status(self.db.conn(), found.monthly_usd, moment)
-        guard = guard_reading(self._quotas(), moment, enabled=found.guard.enabled, continued=found.guard.continued)
+        try:
+            guard = guard_reading(self._quotas(), moment, enabled=found.guard.enabled, continued=found.guard.continued)
+        except Exception:                                                  # noqa: BLE001  (fails open like the gate: the page still gets its answer)
+            log.exception("the plan windows could not be read")
+            guard = _no_reading(found.guard.enabled)
         return {"spend": spend, "guard": guard}
 
     def update(self, *, monthly_usd: float | None | Literal["keep"] = "keep", guard_enabled: bool | None = None, now: float | None = None) -> dict[str, Any]:

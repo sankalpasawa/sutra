@@ -204,6 +204,26 @@ def test_a_missing_or_stale_snapshot_holds_nothing():
     assert guard_reading({"claude": nofigure}, NOW, enabled=True)["level"] == "none"
 
 
+@pytest.mark.parametrize("resets_at", [(NOW + DAY) * 1000, 1.0e12, 1.0e18, 4_102_444_801])
+def test_a_reset_time_no_clock_can_show_is_a_figure_that_cannot_be_trusted_and_holds_nothing(resets_at):
+    """QA recurring-limits: a CLI that reports milliseconds (or any value past the datetime range) made the reading raise, and GET /api/limits a 500."""
+    odd = quota(QuotaWindow(key="seven_day", label="Weekly", used=0.95, resets_at=resets_at))
+    out = guard_reading({"claude": odd}, NOW, enabled=True)
+    assert (out["level"], out["holding"], out["windows"], out["line"]) == ("none", False, [], "")
+    both = guard_reading({"claude": quota(window(used=0.9), QuotaWindow(key="five_hour", label="5-hour", used=0.95, resets_at=resets_at))}, NOW, enabled=True)
+    assert both["holding"] is True and [r["key"] for r in both["windows"]] == ["seven_day"]            # the readable window still counts
+    assert reset_words(resets_at, NOW) == ""
+
+
+def test_the_state_answers_even_when_the_plan_windows_cannot_be_read(tenv, tmp_path, monkeypatch):
+    made = Limits(tmp_path / "limits.json", tenv.db, quotas=quotas_of(claude=quota(window(used=0.9))), clock=tenv.clock)
+    made.update(guard_enabled=True)
+    monkeypatch.setattr("sutra_app.orchestrator.limits.guard_reading", lambda *a, **k: 1 / 0)
+    # the first call of guard_reading raises, the fallback call raises too: the answer must still come, so the fallback does not read the windows
+    out = made.state()
+    assert out["guard"]["level"] == "none" and out["guard"]["holding"] is False and out["guard"]["enabled"] is True and out["spend"]["level"] == "none"
+
+
 def test_an_older_snapshot_with_only_the_metering_window_is_read_too():
     old = Quota(status="warning", window="five_hour", used=0.9, resets_at=NOW + 600, seen_at=NOW - 30)
     out = guard_reading({"claude": old}, NOW, enabled=True)
