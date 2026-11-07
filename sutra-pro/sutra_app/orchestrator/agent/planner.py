@@ -55,6 +55,7 @@ LINES: dict[str, str] = {
     "save_failed": "I could not save that. Nothing was changed.",
     "task_failed": "I could not start that work: {reason}",
     "failed": "Something went wrong on my side. Nothing was changed. Please try again.",
+    "interrupted": "The app stopped before I finished your request. Please try again.",                 # a line left open by a stop or a crash (TurnRunner.recover)
     "suggest": "The {name} team looks like it {fits}. Run it with the {pack} practice?",                 # GAP2 rules-notes: the card after an add
     "pack_yes": "The {name} team now runs the {pack} practice.",
     "pack_no": "Okay, the {name} team stays on the defaults.",

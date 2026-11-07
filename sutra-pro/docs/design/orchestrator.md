@@ -449,7 +449,7 @@ Crash while the server runs: a task is `crashed` when no terminal event exists a
 | F5 | SQL error or `mkdir` failure inside `apply` | rollback | whole transaction undone; a `failed` row is logged in a second small transaction | "I could not save that. Nothing was changed." |
 | F6 | engine will not start (spawn fails, or `run.ended crashed`, `code` `start_failed`, "could not start: ...") [S1-contracts-11] | abort (that task) | task `crashed`, node `fault`; the chart change stays; other assignments go on | error note with Retry |
 | F7 | run crashes or vanishes (`run.ended crashed`, process gone without it) | abort | `crashed` + stderr tail; dependants `cancelled` | department chat "Something went wrong. Try again." (`j2_ui.html:1119`) + Retry |
-| F8 | app closed with live runs | pause | `stopped`; resume = follow-up task | the department chat offers to continue |
+| F8 | app closed with live runs, or closed (or killed) while the chat agent held an owner line (`state=pending`) | pause | `stopped`; resume = follow-up task. A held owner line: at the next start `TurnRunner.recover` makes it `error` and posts one template line, and `POST /api/chats/cs_org/retry` runs the newest again (a chart change the turn had already made stays; the retry plans from the chart as it is) | the department chat offers to continue; the org chat says "The app stopped before I finished your request. Please try again." and the bubble has Retry |
 | F9 | bad event line / unknown event | continue | skipped, noted | nothing |
 | F10 | database busy beyond 5 s | escalate | 503 `store_busy`, nothing half-written | "Try again in a moment." |
 

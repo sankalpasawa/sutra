@@ -177,6 +177,20 @@ class TurnRunner:
     def busy(self) -> bool:
         return self._active is not None or bool(self._waiting)
 
+    def recover(self) -> int:
+        """At start, before any turn runs: every owner line of the org chat still `pending` was accepted by an app that then stopped (closed in the
+        middle of a turn, killed, or lost power), and nothing will ever answer it. Each becomes `error`, with one template line saying so, and the
+        newest is what `retry` runs again. Returns how many lines it closed. (A turn that had already changed the chart is not undone: Retry plans
+        again from the chart as it is.)"""
+        with self.db.tx() as tx:
+            open_lines = [r["id"] for r in tx.conn.execute(
+                "SELECT id FROM chat_messages WHERE session_id = ? AND role = 'user' AND state = 'pending' ORDER BY id", (ORG,)).fetchall()]
+            for mid in open_lines:
+                self._set_state(tx, mid, "error")
+            if open_lines:
+                self._post(tx, kind="error", text=line("interrupted"))
+        return len(open_lines)
+
     # ---- accept helpers ---------------------------------------------------------------------------------------------------
 
     def _preflight(self) -> None:
