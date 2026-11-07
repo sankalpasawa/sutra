@@ -144,6 +144,15 @@ def test_head_before_bootstrap_says_to_bootstrap(db, settings):
 
 # ---- add a department ------------------------------------------------------------------------------------------------------------
 
+def test_a_team_named_like_a_windows_device_gets_an_id_and_a_folder_windows_can_make(env, settings):
+    """QA org-chat-teams: teams called CON and Nul. got the ids con and nul, and Windows cannot make a folder with those names."""
+    result = env.apply(dept_op("$c", "CON"), dept_op("$n", "Nul."))
+    assert result.added == ["department-con", "department-nul"]
+    folders = {p.name for p in (settings.data_dir / "departments").iterdir()}
+    assert {"department-con", "department-nul"} <= folders and not folders & {"con", "nul"}      # (listed, not probed: on Windows con exists in every folder)
+    assert json.loads(env.one("SELECT body FROM departments WHERE id = 'department-con'"))["home_dir"] == "departments/department-con"
+
+
 def test_adding_a_department_makes_its_row_folders_five_function_nodes_and_sessions(env, settings):
     result = env.apply(dept_op("$web", "Web"), add_op("$menu", "division", "Menu", "$web"))
     assert (result.status, result.decision, result.revision, result.added, result.ids_by_ref) == \
