@@ -5,11 +5,14 @@ route tests run `POST /api/chats/{sid}/direct` over the stub router (test_api_ch
 system text, so the whole path is covered: built from the record, scrubbed, written as `system.txt`, read by the connector on the turn."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from orchestrator.test_api_chat_v2 import H, rig, wait_for  # noqa: F401  (rig is a fixture)
 from orchestrator.test_chat_store import msg
 from orchestrator.test_graph_store import World
 
+from sutra_app.connectors.workdir import NO_FOLDER_TEXT, grounding_text
 from sutra_app.orchestrator.api import chat_v2
 from sutra_app.orchestrator.chat_ground import GROUND_CHARS, RULES, ChatGround, ground
 from sutra_app.orchestrator.chats import ChatStore
@@ -186,3 +189,59 @@ def test_a_grounding_that_cannot_be_built_does_not_fail_the_turn(rig, monkeypatc
     assert client.post(f"/api/chats/{sid}/direct", json={"text": "hello"}, headers=H).status_code == 202
     assert wait_for(lambda: len(chats.messages(sid)) == 2 and sid not in chat_v2._running)
     assert chats.messages(sid)[1].kind == "text"
+
+
+# ---- the working folder (GAP3-workdir): where to look, and that the file tools are read-only ------------------------------------------
+
+def test_with_a_folder_the_grounding_names_it_and_says_the_file_tools_are_read_only(world):
+    text = ChatGround(world.db, folder=lambda: "/work/my-project").text(world.session_of["web"])
+    assert grounding_text("/work/my-project") in text
+    assert "Working folder: /work/my-project" in text and "read-only" in text and "cannot run a command" in text
+    assert text.index("You are answering") < text.index("Working folder:") < text.index("How to answer:")       # after the record, before the rules
+    assert text.endswith(RULES) and len(text) <= GROUND_CHARS
+
+
+def test_with_no_folder_the_grounding_says_none_is_set_and_how_to_set_one(world):
+    for source in (lambda: None, lambda: ""):
+        text = ChatGround(world.db, folder=source).text(world.session_of["web"])
+        assert NO_FOLDER_TEXT in text and "Working folder:" not in text and "Settings" in text and text.endswith(RULES)
+
+
+def test_without_a_folder_source_the_text_is_what_it_was(world):
+    text = text_of(world, "web")
+    assert "working folder" not in text.lower() and text.endswith(RULES)
+
+
+def test_the_folder_paragraph_and_the_rules_are_never_pushed_out_by_a_long_record(world):
+    purpose(world, "web", "x" * 290)
+    for n in range(1, 40):
+        world.sql("INSERT INTO org_nodes(id, kind, name, created_rev, ts) VALUES (?, 'department', ?, 1, 0)", f"team{n:02d}", "T" * 80)
+    ask(world, "web", "q" * 590)
+    for n in range(1, 4):
+        ended(world, world.task(n, "web", "done", title="t" * 80), "done", "o" * 400)
+    text = ChatGround(world.db, folder=lambda: "/work/my-project").text(world.session_of["web"])
+    assert len(text) <= GROUND_CHARS and text.endswith(RULES) and "Working folder: /work/my-project" in text
+    assert "(more of the record was left out)" in text
+
+
+def test_a_folder_that_cannot_be_read_does_not_break_the_grounding(world):
+    def broken():
+        raise OSError("disk gone")
+    text = ChatGround(world.db, folder=broken).text(world.session_of["web"])
+    assert NO_FOLDER_TEXT in text and text.endswith(RULES)
+
+
+def test_ground_reads_the_folder_from_the_router_and_scrubs_it_like_the_rest(world):
+    svc = Svc(world.db)
+    svc.connector_router = SimpleNamespace(chat_folder=lambda: f"/work/{SECRET_A}/p")
+    text = ground(svc, world.session_of["web"])
+    assert "Working folder: /work/" in text and SECRET_A not in text and "[redacted:openai-key]" in text
+
+
+def test_the_direct_route_writes_the_folder_paragraph_into_the_session_system_text(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    assert client.post(f"/api/chats/{sid}/direct", json={"text": "where do I look?"}, headers=H).status_code == 202
+    assert wait_for(lambda: len(chats.messages(sid)) == 2 and sid not in chat_v2._running)
+    system = stub_of(services).calls[-1].system
+    assert NO_FOLDER_TEXT in system and system.endswith(RULES)              # the stub rig runs offline: no folder is ever given

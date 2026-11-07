@@ -13,7 +13,9 @@ a `ConnectorError` follows its kind: cli_missing, auth and unavailable 503, quot
 `AppError`, answered by the app's handler. Bodies go through the app's redacting JSON response.
 
 Routes (GET unless noted): status, models, policy (GET, PUT), `{provider}/test` (POST), `codex/sign-in` (POST), `codex/sign-in/{id}`
-(GET, DELETE), `sessions/{session_id}/provider` (PUT), tools, mediated (GET), `mediated/refresh` (POST) and `{provider}/path` (PUT,
+(GET, DELETE), `sessions/{session_id}/provider` (PUT), tools, mediated (GET), `mediated/refresh` (POST), `workdir` (GET open; PUT and
+DELETE behind the guard: the one folder of the owner's files a chat may read, read-only, GAP3-workdir; the answer is `{path, usable, problem,
+preview}`, the preview being the folder's top-level names only) and `{provider}/path` (PUT,
 GAP-providers: the CLI file the owner chose in Settings, `{"path": "/full/path/to/claude"}` or `{"path": null}` to forget it; checked
 and stored by bins.py, followed at once by the running router through discover.use_cli; answers `{provider, path, installed, signed_in,
 detail}`; a path that cannot be the command is the 422 envelope with the reason).
@@ -47,6 +49,7 @@ from .router import Router
 from .tools.github_tools import gh_env
 from .tools.mediated import MediatedConnectors, RefreshTooSoon
 from .tools.profiles import PROFILES, tool_catalog, tools_status
+from .workdir import MAX_PATH as WORKDIR_MAX_PATH, WorkFolder, preview_of
 
 __all__ = ["build_api_router", "PREFIX", "TEST_PROMPT", "MAX_POLICY_BYTES", "status_for"]
 
@@ -111,6 +114,11 @@ class _CliPath(BaseModel):
     path: Optional[str] = Field(..., max_length=MAX_PATH)
 
 
+class _Workdir(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    path: str = Field(..., max_length=WORKDIR_MAX_PATH)
+
+
 def _offline(router: Router, what: str) -> ApiFailure:
     return ApiFailure(409, "offline", f"{what} is not available while the app runs offline (no CLI is started)", {"kind": "unavailable"})
 
@@ -162,6 +170,19 @@ def build_api_router(*, router: Router, write_guard: Callable[..., Any], mediate
             held["m"] = MediatedConnectors(cfg_of_router())
         return held["m"]                                    # type: ignore[return-value]
 
+    def folders() -> WorkFolder:
+        found = getattr(router, "folders", None)
+        if found is not None:
+            return found
+        cfg = cfg_of_router()
+        return WorkFolder(cfg.data_dir, cfg.resolved_work_root())
+
+    def workdir_body(store: WorkFolder) -> dict:
+        stored = store.stored()
+        problem = store.problem(stored)
+        usable = stored is not None and problem is None
+        return {"path": stored, "usable": usable, "problem": problem, "preview": preview_of(stored) if usable and stored is not None else None}
+
     def connector_of(name: str):
         found = router.connectors.get(name)
         if found is None:
@@ -204,6 +225,10 @@ def build_api_router(*, router: Router, write_guard: Callable[..., Any], mediate
     @api.get("/policy", summary="The routing policy in force")
     def get_policy() -> dict:
         return router.policy.model_dump(mode="json")
+
+    @api.get("/workdir", summary="The working folder chats may read (read-only) and the top of what is in it")
+    def get_workdir() -> dict:
+        return workdir_body(folders())
 
     @api.get("/tools", summary="The read-only tools the models may use")
     def get_tools() -> dict:
@@ -278,6 +303,18 @@ def build_api_router(*, router: Router, write_guard: Callable[..., Any], mediate
         use_cli(router, provider, stored)                                  # the running router follows at once; `connector.health` goes out
         status = router.provider_summary(provider, refresh=True)
         return {"provider": provider, "path": stored, "installed": status.installed, "signed_in": status.signed_in, "detail": status.detail}
+
+    @api.put("/workdir", dependencies=guard, summary="Choose the working folder (checked first; chats read it, read-only)")
+    def put_workdir(body: _Workdir = Body(...)) -> dict:
+        store = folders()
+        store.set(body.path)                                # InvalidRequestError (with the reason) becomes the 422 envelope
+        return workdir_body(store)
+
+    @api.delete("/workdir", dependencies=guard, summary="Forget the working folder (chats go back to a private empty folder)")
+    def delete_workdir() -> dict:
+        store = folders()
+        store.clear()
+        return workdir_body(store)
 
     @api.post("/mediated/refresh", dependencies=guard, summary="Ask Claude now which connectors it holds (at most once a minute)")
     def post_mediated_refresh() -> dict:

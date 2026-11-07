@@ -37,6 +37,7 @@ from .errors import (
 from .models import AuthStatus, Capabilities, ConnectorEvent, ModelInfo, Quota, SessionState, TurnResult, Usage
 from .process import Command, ExitInfo
 from .quota_windows import windows_from_claude
+from .workdir import READ_TOOLS
 
 __all__ = ["ClaudeConnector", "ClaudeParser", "CLAUDE_ERROR_MAP", "SYSTEM_FILE_THRESHOLD", "PROBED_FLAGS", "MODEL_ENV_NAMES"]
 
@@ -46,10 +47,13 @@ PROBED_FLAGS = (
     "--output-format", "--verbose", "--model", "--effort", "--system-prompt", "--tools", "--strict-mcp-config",
     "--disable-slash-commands", "--setting-sources", "--no-session-persistence", "--session-id", "--resume",
     "--include-partial-messages", "--json-schema", "--input-format", "--mcp-config", "--restricted", "--allowedTools",
-    "--permission-mode", "--permission-prompts", "--max-budget-usd",
+    "--permission-mode", "--permission-prompts", "--max-budget-usd", "--disallowedTools",
 )
 _MCP_SERVER = "sutra"
 _ALLOWED_TOOLS = f"mcp__{_MCP_SERVER}__*"
+# with an owner's working folder (GAP3-workdir): the only tools are the four read-only ones, and everything that writes, runs a command or
+# reaches the network is denied by name as well, so no setting or later default can widen it
+_DENIED_TOOLS = ("Bash", "PowerShell", "Edit", "MultiEdit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite")
 _IMAGE_MAGIC = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF87a", "image/gif"), (b"GIF89a", "image/gif"),
                 (b"%PDF-", "application/pdf"))        # a PDF goes as a document block (ABS-4)
 _RESULT_TEXT_CHARS = 300             # how much of the CLI's own text an error keeps
@@ -387,7 +391,8 @@ class ClaudeConnector(ModelConnector):
                 argv += ["--system-prompt-file", str(path)]
             else:
                 argv += ["--system-prompt", plan.system]
-            argv += ["--tools", "", "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", ""]
+            argv += ["--tools", ",".join(READ_TOOLS) if plan.folder else "", "--strict-mcp-config", "--disable-slash-commands",
+                     "--setting-sources", ""]
             if plan.oneshot:
                 argv.append("--no-session-persistence")
             elif plan.resume:
@@ -407,11 +412,16 @@ class ClaudeConnector(ModelConnector):
                     cleanup.append(files)
                 config = Path(files) / "mcp.json"
                 write_private_file(config, json.dumps({"mcpServers": self.mcp_servers(plan.tools)}, ensure_ascii=False))
-                argv += ["--mcp-config", str(config), "--restricted", "--allowedTools", _ALLOWED_TOOLS,
-                         "--permission-mode", "dontAsk", "--permission-prompts", "none"]
+                argv += ["--mcp-config", str(config)]
+            if plan.tools or plan.folder:
+                allowed = ([*READ_TOOLS] if plan.folder else []) + ([_ALLOWED_TOOLS] if plan.tools else [])
+                argv += ["--restricted", "--allowedTools", ",".join(allowed)]
+                if plan.folder:
+                    argv += ["--disallowedTools", ",".join(_DENIED_TOOLS)]
+                argv += ["--permission-mode", "dontAsk", "--permission-prompts", "none"]
             if plan.max_budget_usd is not None:
                 argv += ["--max-budget-usd", format(plan.max_budget_usd, ".6f").rstrip("0").rstrip(".") or "0"]
-            return Command(argv=tuple(argv), cwd=plan.workdir, env=self._env(), stdin_text=stdin, cleanup=tuple(cleanup),
+            return Command(argv=tuple(argv), cwd=plan.folder or plan.workdir, env=self._env(), stdin_text=stdin, cleanup=tuple(cleanup),
                            provider="claude")
         except BaseException:
             for path in cleanup:

@@ -95,7 +95,7 @@ def test_every_write_route_has_the_write_guard_in_its_dependency_tree(client):
     routes = [r for r in client.api.routes if isinstance(r, APIRoute) and r.path.startswith(PREFIX)]
     writes = [r for r in routes if r.methods & {"PUT", "POST", "DELETE", "PATCH"}]
     reads = [r for r in routes if not r.methods & {"PUT", "POST", "DELETE", "PATCH"}]
-    assert len(writes) == 7 and len(reads) == 6
+    assert len(writes) == 9 and len(reads) == 7          # GAP3-workdir adds GET, PUT and DELETE /workdir
     for route in writes:
         assert require_token in calls(route.dependant), (route.methods, route.path)
     for route in reads:
@@ -103,7 +103,7 @@ def test_every_write_route_has_the_write_guard_in_its_dependency_tree(client):
 
 
 WRITES = [("PUT", "/policy"), ("POST", "/claude/test"), ("POST", "/codex/sign-in"), ("DELETE", "/codex/sign-in/abc"),
-          ("PUT", "/sessions/s1/provider"), ("POST", "/mediated/refresh"), ("PUT", "/claude/path")]
+          ("PUT", "/sessions/s1/provider"), ("POST", "/mediated/refresh"), ("PUT", "/claude/path"), ("PUT", "/workdir"), ("DELETE", "/workdir")]
 
 
 @pytest.mark.parametrize("method,path", WRITES)
@@ -122,7 +122,7 @@ def test_a_write_from_another_origin_is_refused(client):
 
 
 def test_reads_need_no_token(client):
-    for path in ("/status", "/models", "/policy", "/tools", "/mediated"):
+    for path in ("/status", "/models", "/policy", "/tools", "/mediated", "/workdir"):
         assert client.get(url(path)).status_code == 200, path
 
 

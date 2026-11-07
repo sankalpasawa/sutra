@@ -309,6 +309,7 @@ class FakeState:
             self.layers = {"global": copy.deepcopy(es["global"]), "dept": {"web": copy.deepcopy(es.get("department", {}))}}
             self.codex_signed_in = bool(self.fx.health["connectors"]["codex"]["signed_in"])
             self.cli_paths: dict[str, str] = {}                 # PUT /api/connectors/{provider}/path (GAP-providers)
+            self.workdir: str | None = None                      # PUT /api/connectors/workdir (GAP3-workdir)
             self.signins: dict[str, dict] = {}
             self.signin_sequence = "success"
             self.heads_up: list[dict] = []          # gap attention: GET /api/heads-up (set by /__fake/heads-up), emptied of a task on its retry
@@ -656,6 +657,26 @@ class FakeState:
             installed = provider in self.cli_paths or bool(self.fx.health["connectors"].get(provider, {}).get("installed"))
         self.publish("connector.health", {"provider": provider, "state": "ok", "until": None, "reason": None})
         return {"provider": provider, "path": self.cli_paths.get(provider), "installed": installed, "signed_in": True, "detail": "signed in"}
+
+    def workdir_body(self) -> dict:
+        """The answer of GET /api/connectors/workdir: the folder and the top of it (the fake lists the same two names for any folder)."""
+        if self.workdir is None:
+            return {"path": None, "usable": False, "problem": None, "preview": None}
+        return {"path": self.workdir, "usable": True, "problem": None,
+                "preview": {"entries": [{"name": "src", "kind": "dir"}, {"name": "README.md", "kind": "file"}], "total": 2, "shown": 2, "capped": False, "readable": True}}
+
+    def set_workdir(self, body: Any) -> dict:
+        """The real route's rules in small: a full path, never the app's own data folder (the fake has no file system to look at)."""
+        if not isinstance(body, dict) or set(body) != {"path"} or not isinstance(body["path"], str):
+            raise ApiError(422, "validation", "The body must be {\"path\": text}.")
+        path = body["path"].strip()
+        if not path.startswith(("/", "~")):
+            raise ApiError(422, "invalid_request", "Write the full path, starting with / (or ~ for your home folder)")
+        if path == "/data" or path.startswith("/data/"):
+            raise ApiError(422, "invalid_request", "That folder belongs to Sutra itself (its data and chat state). Choose a folder of your own")
+        with self.lock:
+            self.workdir = "/home/owner" + path[1:] if path.startswith("~") else path
+        return self.workdir_body()
 
     def connector_test(self, provider: str) -> dict:
         tests = self.fx.connectors["test"]
@@ -1388,6 +1409,22 @@ def register_api(app: FastAPI, state: FakeState) -> None:
     async def connector_path(provider: str, request: Request):
         require_token(request, state)
         return JSONResponse(state.set_cli_path(provider, await json_body(request)))
+
+    @app.get("/api/connectors/workdir")
+    def workdir_get():
+        return JSONResponse(state.workdir_body())
+
+    @app.put("/api/connectors/workdir")
+    async def workdir_put(request: Request):
+        require_token(request, state)
+        return JSONResponse(state.set_workdir(await json_body(request)))
+
+    @app.delete("/api/connectors/workdir")
+    def workdir_delete(request: Request):
+        require_token(request, state)
+        with state.lock:
+            state.workdir = None
+        return JSONResponse(state.workdir_body())
 
     @app.post("/api/connectors/codex/sign-in")
     def sign_in_start(request: Request):

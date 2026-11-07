@@ -148,6 +148,13 @@ body.home .rail.tabs button[aria-current="page"], body.home .rail.tabs button[ar
 .setpath .setlabel { flex: 1 1 100%; font-size: 13.5px; font-weight: 600; }
 .setpath input[type="text"] { flex: 1 1 260px; min-width: 0; background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; font: 500 12.5px var(--mono); }
 .setpath .sethint, .setpath .seterr, .setpath .settest { flex: 1 1 100%; margin: 0; font-size: 12px; }
+/* the working folder group (GAP3-workdir): the top-level names the model can see */
+.wdstatus { overflow-wrap: anywhere; }
+.wdlist { list-style: none; margin: 0 0 6px; padding: 8px 10px; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2);
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 14px; font: 500 12.5px var(--mono); color: var(--ink); }
+.wdlist li { overflow-wrap: anywhere; }
+.wdlist li[data-kind="dir"] { color: var(--accent); }
+.wdmore { margin: 0; }
 .setpathd { margin: 6px 0 2px; font-size: 13px; }
 .setpathd summary { color: var(--muted); cursor: pointer; }
 .settest { color: var(--muted); font-size: 13.5px; }

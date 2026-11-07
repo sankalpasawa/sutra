@@ -217,6 +217,7 @@ class SessionState(M):
     effort: Effort
     tool_profile: str = "none"
     workdir: str
+    work_folder: str = ""          # the owner's working folder this provider session was started in ("" none); Claude keys a session by its cwd
     turns: int = Field(0, ge=0)
     switches: int = Field(0, ge=0)
     pinned: Optional[Provider] = None
