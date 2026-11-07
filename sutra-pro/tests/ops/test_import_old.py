@@ -208,3 +208,133 @@ def test_json_output_has_the_counts(old, tmp_path, capsys):
     code, out = run(["--source", str(old), "--data-dir", str(tmp_path / "data"), "--json"], capsys)
     doc = json.loads(out.out)
     assert code == 0 and (doc["chats"], doc["non_empty"], doc["messages"], doc["notes"], doc["thinking_dropped"], doc["applied"]) == (4, 3, 6, 2, 1, False)
+
+
+# ---- chats the store cannot hold (QA ops-cli): none of them may stop the import or end it with a traceback ---------------------------
+
+CUT = "\\ud83d"          # the JSON escape of half an emoji: what JavaScript leaves when it cuts a string between the two halves
+
+
+def add_chat(root: Path, name: str, sid, **doc) -> None:
+    """A chat file beside the fixture's four; `doc` overrides its fields. The text `{CUT}` anywhere in it is written as the escape of half an emoji."""
+    body = json.dumps({"sutra_id": sid, "title": "extra", "cwd": "", "created": "2026-10-01T09:00:00Z", "updated": "2026-10-01T09:00:00Z", "provider_history": [],
+                       "messages": [{"role": "user", "ts": "2026-10-01T09:00:00Z", "blocks": [text("extra hello")]}], **doc})
+    (root / name).write_text(body.replace("{CUT}", CUT), encoding="utf-8")
+
+
+def session_ids(db_path: Path) -> set[str]:
+    return {r["id"] for r in rows(db_path, "SELECT id FROM chat_sessions")}
+
+
+@pytest.mark.parametrize("bad_id", [12345678901234567890, True, 1.5, None, ["a" * 32], "a" * 12 + "\n", "ABCDEF" * 3])
+def test_an_id_that_is_not_a_hex_string_makes_the_file_unreadable_not_a_crash_and_the_rest_import(old, tmp_path, capsys, bad_id):
+    add_chat(old, "bbbb-bad-id.json", bad_id)                    # sorts between the good chats, so a crash would leave some of them out
+    chats, bad = import_old.read_chats(old)
+    assert [c.sutra_id for c in chats] == [ID_A, ID_B, ID_C, ID_D] and sorted(bad) == ["bbbb-bad-id.json", "broken.json"]
+    data = tmp_path / "data"
+    code, out = run(["--source", str(old), "--data-dir", str(data)], capsys)
+    assert code == 0 and "Could not read 2 file(s): bbbb-bad-id.json, broken.json" in out.out
+    code, out = run(["--source", str(old), "--data-dir", str(data), "--apply"], capsys)
+    assert code == 0 and "Traceback" not in out.err and out.err == "" and session_ids(data / "db.sqlite3") == {"cs_old_" + c * 12 for c in "abcd"}
+
+
+def test_a_string_cut_inside_an_emoji_is_repaired_reported_and_a_whole_emoji_is_left_alone(old, tmp_path, capsys):
+    add_chat(old, "e" * 32 + ".json", "e" * 32, title="cut title {CUT}", messages=[{"role": "user", "blocks": [text("tail {CUT}")]}])
+    add_chat(old, "f" * 32 + ".json", "f" * 32, title="whole \U0001F600", messages=[{"role": "user", "blocks": [text("pair \U0001F600 and cut {CUT}")]}])
+    data = tmp_path / "data"
+    code, out = run(["--source", str(old), "--data-dir", str(data)], capsys)
+    assert code == 0 and "6 (" in out.out and "2 chat(s) hold a lone surrogate half" in out.out and "stored as U+FFFD" in out.out
+    code, out = run(["--source", str(old), "--data-dir", str(data), "--apply"], capsys)
+    assert code == 0 and out.err == ""
+    db = data / "db.sqlite3"
+    assert rows(db, "SELECT title FROM chat_sessions WHERE id = ?", "cs_old_" + "e" * 12) == [{"title": "cut title \ufffd"}]
+    assert rows(db, "SELECT text FROM chat_messages WHERE session_id = ?", "cs_old_" + "e" * 12) == [{"text": "tail \ufffd"}]
+    assert rows(db, "SELECT title FROM chat_sessions WHERE id = ?", "cs_old_" + "f" * 12) == [{"title": "whole \U0001F600"}]
+    assert rows(db, "SELECT text FROM chat_messages WHERE session_id = ?", "cs_old_" + "f" * 12) == [{"text": "pair \U0001F600 and cut \ufffd"}]
+
+
+@pytest.mark.parametrize("when", ["1969-12-31T23:59:59Z", "0001-01-01T00:00:00Z", "1969-12-31T23:59:59", "1900-06-01T00:00:00+02:00"])
+def test_a_time_before_1970_reads_as_unknown_like_an_unreadable_one_and_the_chat_imports(old, tmp_path, capsys, when):
+    add_chat(old, "9" * 32 + ".json", "9" * 32, created=when, updated=when, messages=[{"role": "user", "ts": when, "blocks": [text("old time")]}])
+    data = tmp_path / "data"
+    code, out = run(["--source", str(old), "--data-dir", str(data), "--apply"], capsys)
+    assert code == 0 and out.err == ""
+    session, = rows(data / "db.sqlite3", "SELECT created_at, updated_at FROM chat_sessions WHERE id = ?", "cs_old_" + "9" * 12)
+    assert session == {"created_at": 0, "updated_at": 0}
+    assert rows(data / "db.sqlite3", "SELECT at, text FROM chat_messages WHERE session_id = ?", "cs_old_" + "9" * 12) == [{"at": 0, "text": "old time"}]
+
+
+def test_epoch_gives_the_fallback_for_negative_overflowing_and_unparseable_times():
+    assert import_old._epoch("2026-10-01T10:00:00Z") == 1790848800
+    assert import_old._epoch("1969-12-31T23:59:59Z", 7) == 7 and import_old._epoch("0001-01-01T00:00:00Z", 7) == 7
+    assert import_old._epoch("garbage", 5) == 5 and import_old._epoch("", 5) == 5 and import_old._epoch(None, 5) == 5     # type: ignore[arg-type]
+    assert import_old._epoch("1970-01-01T00:00:00Z", 5) == 0
+
+
+class RefusingGate:
+    """The real gate, except that it refuses the chat titled `poison`: a payload the store will not hold, for a reason nobody predicted."""
+
+    def __init__(self, real):
+        self._real = real
+
+    def check(self, family, model, **kw):
+        if family == "chat_session" and model.title == "poison":
+            raise ValueError("refused for the test")
+        return self._real.check(family, model, **kw)
+
+
+def test_a_chat_the_store_refuses_is_skipped_and_named_the_rest_import_and_a_rerun_ends_the_same_way(old, tmp_path, capsys, monkeypatch):
+    add_chat(old, "bbbb-poison.json", "1" * 32, title="poison")
+    monkeypatch.setattr(import_old, "GATE", RefusingGate(import_old.GATE))
+    data = tmp_path / "data"
+    code, out = run(["--source", str(old), "--data-dir", str(data), "--apply"], capsys)
+    assert code == 0 and out.err == "" and "Imported 4 chat(s) (0 already there), 8 message(s) added." in out.out
+    assert "Could not store 1 chat(s): bbbb-poison.json" in out.out
+    assert session_ids(data / "db.sqlite3") == {"cs_old_" + c * 12 for c in "abcd"}
+    assert not rows(data / "db.sqlite3", "SELECT 1 FROM chat_messages WHERE src_ref LIKE ?", "old:" + "1" * 32 + "%")       # nothing of it is half stored
+    code, again = run(["--source", str(old), "--data-dir", str(data), "--apply", "--json"], capsys)
+    payload = json.loads(again.out)
+    assert code == 0 and payload["unstorable"] == ["bbbb-poison.json"] and payload["chats_present"] == 4 and payload["messages_added"] == 0
+
+
+def test_the_dry_run_names_the_chats_the_store_would_refuse_and_still_writes_nothing(old, tmp_path, capsys, monkeypatch):
+    add_chat(old, "bbbb-poison.json", "1" * 32, title="poison")
+    monkeypatch.setattr(import_old, "GATE", RefusingGate(import_old.GATE))
+    data = tmp_path / "data"
+    code, out = run(["--source", str(old), "--data-dir", str(data)], capsys)
+    assert code == 0 and "Could not store 1 chat(s): bbbb-poison.json" in out.out and "Dry run: nothing was written" in out.out and not data.exists()
+    code, out = run(["--source", str(old), "--data-dir", str(data), "--json"], capsys)
+    assert json.loads(out.out)["unstorable"] == ["bbbb-poison.json"]
+
+
+@pytest.mark.parametrize("error", [sqlite3.OperationalError("disk I/O error"), OSError(28, "No space left on device")])
+def test_a_failure_of_the_store_ends_with_a_sentence_and_exit_1_not_a_traceback(old, tmp_path, capsys, monkeypatch, error):
+    def fail(db, chats, redactor):
+        raise error
+
+    monkeypatch.setattr(import_old, "import_chats", fail)
+    data = tmp_path / "data"
+    code, out = run(["--source", str(old), "--data-dir", str(data), "--apply"], capsys)
+    assert code == 1 and out.err.startswith("sutra-pro: the import stopped") and str(error) in out.err and "run it again" in out.err
+    assert not lock.is_locked(data)
+
+
+def test_a_damaged_database_stops_the_import_at_the_backup_with_a_sentence(old, tmp_path, capsys):
+    data = tmp_path / "data"
+    run(["--source", str(old), "--data-dir", str(data), "--apply"], capsys)
+    with open(data / "db.sqlite3", "r+b") as handle:
+        for n in range(6):
+            handle.seek(8192 + n * 3000)
+            handle.write(b"\xff" * 200)
+    code, out = run(["--source", str(old), "--data-dir", str(data), "--apply"], capsys)
+    assert code == 1 and out.err.startswith("sutra-pro: the import stopped") and "integrity check" in out.err and "Imported" not in out.out
+
+
+def test_a_dry_run_whose_rehearsal_cannot_run_still_answers_and_says_so(old, tmp_path, capsys, monkeypatch):
+    def no_room(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(import_old, "rehearse", no_room)
+    code, out = run(["--source", str(old), "--data-dir", str(tmp_path / "data")], capsys)
+    assert code == 0 and "could not run" in out.out and "No space left on device" in out.out and "Dry run: nothing was written" in out.out
+    assert out.err == ""

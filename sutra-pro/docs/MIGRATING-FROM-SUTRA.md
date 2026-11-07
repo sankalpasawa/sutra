@@ -30,14 +30,15 @@ Old chats live in `~/.sutra-ui/chats` as one file per chat. Import is explicit, 
 sutra-pro import-old-chats
 ```
 
-That is a dry run: it prints the number of chats and messages and what would be flattened. To write them:
+That is a dry run: it prints the number of chats and messages and what would be flattened. It also names the files it could not read, and runs the import
+into a throwaway database to name any chat the store would refuse (a big folder takes a few seconds). To write them:
 
 ```bash
 sutra-pro stop
 sutra-pro import-old-chats --apply
 ```
 
-`--apply` takes the usual backup first, refuses while Sutra Pro is running on the same data folder, and writes one transaction per chat. A second run adds nothing. Each old chat becomes an archived, read-only chat of kind "legacy": find it under Older chats and in search. Text is kept; tool calls and results become one note per turn (names and counts only); thinking is dropped; credential shapes are scrubbed first. Not imported: archive marks, the providers' own transcripts, the registry of departments (tell the chat agent which teams you want, it builds the chart), settings, agents, drafts and connectors.
+`--apply` takes the usual backup first, refuses while Sutra Pro is running on the same data folder, and writes one transaction per chat. A second run adds nothing. A chat that cannot be stored never stops the import: a file whose id is not a hex string is listed as unreadable; a string cut inside an emoji is stored with U+FFFD in its place; a time before 1970 counts as unknown; any other chat the store refuses is skipped and named ("Could not store ..."). A new data folder is created private (mode 700). Each old chat becomes an archived, read-only chat of kind "legacy": find it under Older chats and in search. Text is kept; tool calls and results become one note per turn (names and counts only); thinking is dropped; credential shapes are scrubbed first. Not imported: archive marks, the providers' own transcripts, the registry of departments (tell the chat agent which teams you want, it builds the chart), settings, agents, drafts and connectors.
 
 ## Already done differently in Sutra Pro
 
