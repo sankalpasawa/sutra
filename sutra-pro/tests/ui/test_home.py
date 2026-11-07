@@ -6,7 +6,7 @@ Runs only with SUTRA_BROWSER=1 (the gate skips it): headless Chrome over CDP aga
   start page    the greeting, J2's four example briefs, nothing written to the server until the first Send, no console error and no failed request
   org chat      send (the bubble at once, the box emptied only when the server accepts), the progress bar, the task card and its link, the chart_change card,
                 the first graph taking the right pane, a choice card, Retry for a message that turned into an error, a refusal (503, 401) in words
-  needs you     the strip, "Answer in Chat" focusing the card, an answer going to the DEPARTMENT's session (never cs_org), the card reading "Answered"
+  needs you     the strip, "Answer in <team>'s chat" opening the team's own chat (tests/ui/test_home_team_chat.py), an answer going to the DEPARTMENT's session (never cs_org), the card reading "Answered"
   rail, panes   Chat | Workflow graph | Org chart | Teams | Settings, deep links, the root node focusing the chat, a node opening the panel, the phone toggle
   settings      Appearance, the Connectors rows (Test; Sign in for codex only, link and code, polling, Cancel), the Engine group (editable fields, locked
                 fields read-only, the {set, unset} body, `dept` in the query, a 422 beside its field)
@@ -315,14 +315,17 @@ def test_a_choice_card_posts_the_chosen_option_to_the_org_chat(browser, fake):
 # needs you
 # ---------------------------------------------------------------------------------------------------------------------
 @browser_only
-def test_the_needs_you_strip_lists_the_question_and_answer_in_chat_finds_its_card(browser, fake):
+def test_the_needs_you_strip_lists_the_question_and_its_button_opens_the_teams_own_chat(browser, fake):
+    browser.expect_failed("/providers")                      # the fake has no provider pills (an older gap)
     load(browser, fake, stage="2")
     assert texts(browser, "#needs .needitem span") == ["Web: Should the menu show prices?"]
     assert texts(browser, "#needcount") == ["1"]
     assert browser.js("document.getElementById('barbadge').textContent") == "1" and not browser.js("document.getElementById('barbadge').hidden")
     assert browser.js("document.getElementById('railtoggle').getAttribute('aria-label')") == "Menu, 1 waiting on you"
+    assert texts(browser, "#needs [data-needmsg]") == ["Answer in Web's chat"]        # the button says which chat the question is in (gap dept-chats)
     browser.click("#needs [data-needmsg]")
-    browser.wait_for("document.activeElement && document.activeElement.classList.contains('nmsg') && !!document.activeElement.querySelector('.c-needs')")
+    browser.wait_for("!document.getElementById('teamchat').hidden && document.activeElement && document.activeElement.classList.contains('nmsg') "
+                     "&& document.activeElement.dataset.kind === 'question'")                # the team's own chat, with the question in view
 
 
 @browser_only

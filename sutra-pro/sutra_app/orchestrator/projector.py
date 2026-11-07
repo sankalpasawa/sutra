@@ -32,12 +32,11 @@ from sutra_app.library.gate import GATE, GateError
 from sutra_app.library.node import STEP_REF_RE, FunctionNode, NodeStats, NodeTokens, make_edge, step_node_id
 from sutra_app.library.types import FUNCTIONS, clip, function_node_id
 from sutra_app.orchestrator.attempts import attempt_in
-from sutra_app.orchestrator.chats import parse_options
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.ids import ORG_SESSION_ID, Clock, SystemClock, iso_z, parse_iso_z
 from sutra_app.orchestrator.models import (
-    DoneCard, DoneReceipt, EventParseError, NeedsYouCard, RunAtom, RunEnded, RunNode, RunSay, RunStarted, RunStep, RunUsage, parse_event,
+    DoneCard, DoneReceipt, EventParseError, RunAtom, RunEnded, RunNode, RunSay, RunStarted, RunStep, RunUsage, TeamChatCard, parse_event,
 )
 from sutra_app.orchestrator.tasks import TaskGraph, TaskRow, TaskStore
 from sutra_app.orchestrator.usage import UsageStore
@@ -302,7 +301,8 @@ class Projector:
             return tx.now()
 
     def _ask(self, batch: _Batch, posted: Any, ev: RunSay) -> None:
-        """Identity asked the owner: the task waits, Identity is `waiting_on_you`, and the org chat gets the `needs_you` card."""
+        """Identity asked the owner: the task waits, Identity is `waiting_on_you`, and the org chat gets a pointer to the team's own chat (a
+        `team_chat` card, GAP3 dept-chats). The question and its answer stay in the team's chat: the card carries none of its words."""
         tx, row = batch.tx, batch.row
         if row.status in ("starting", "running"):
             row = self.store.update(tx, row.id, status="waiting_user")
@@ -312,8 +312,8 @@ class Projector:
         if identity is not None and identity.state != "waiting_on_you":
             self.graph.put_node(tx, GATE.check("node", identity.evolve(state="waiting_on_you", wait_on="you", ts_updated=max(identity.ts_updated, tx.now())), ctx=tx.ctx))
         name = tx.conn.execute("SELECT name FROM org_nodes WHERE id = ?", (row.dept_id,)).fetchone()
-        card = NeedsYouCard(type="needs_you", dept_id=row.dept_id, dept_name=name["name"] if name is not None else row.dept_id,
-                            question_message_id=posted.id, text=ev.text, options=parse_options(ev.text))
+        card = TeamChatCard(type="team_chat", node_id=row.dept_id, name=name["name"] if name is not None else row.dept_id, kind="department",
+                            session_id=posted.session_id, about="question", question_message_id=posted.id)
         self._post(batch, ORG_SESSION_ID, who="sutra", kind="card", card=card.model_dump(mode="json"), src_ref=f"{batch.run}#needs:{ev.id}")
 
     def _speaks_to(self, batch: _Batch, source: str, target: str, say_id: int) -> None:

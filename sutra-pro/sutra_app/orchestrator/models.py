@@ -273,6 +273,19 @@ class NeedsYouCard(Value):
     options: Annotated[list[Annotated[str, StringConstraints(max_length=500)]], Field(max_length=20)] = []
 
 
+class TeamChatCard(Value):
+    """The org chat's pointer to a team's own chat (GAP3 dept-chats): "Started <name>: open its chat" when the turn made the team,
+    "<name> has a question for you" when its Identity asked the owner. It carries no words of the team: the conversation stays in
+    the team's chat (`session_id`). `node_id` is a department or a division."""
+    type: Literal["team_chat"]
+    node_id: NodeId
+    name: Name
+    kind: Literal["department", "division"] = "department"
+    session_id: SessionId
+    about: Literal["started", "question"] = "started"
+    question_message_id: Annotated[int, Field(ge=1)] | None = None       # about `question`: the message in the team's chat that asks
+
+
 class DoneReceipt(Value):
     """What a finished task cost and took, evidence only (GAP-model-quality): `usd` sums the ledger's Claude figures (a floor: a failed call
     has none, so the page says "about"), `tokens` the token counts (what a Codex-only task shows), `seconds` from start to end, the atoms of
@@ -318,7 +331,7 @@ class AtomCard(Value):
 
 
 ChatCard = Annotated[
-    Union[ChartChangeCard, TaskCard, ApprovalCard, ChoiceCard, NeedsYouCard, DoneCard, AtomCard],
+    Union[ChartChangeCard, TaskCard, ApprovalCard, ChoiceCard, NeedsYouCard, TeamChatCard, DoneCard, AtomCard],
     Field(discriminator="type"),
 ]
 
@@ -338,15 +351,18 @@ class ChatMessageOut(Value):
     at: Iso
     blocks: Annotated[list[ChatBlock], Field(max_length=500)] = []        # the typed provider blocks of a settled chat turn (ABS-6)
     turn: Annotated[int, Field(ge=1)] | None = None                       # a direct-chat reply: the id of the owner's line it answers
+    passed_on: Annotated[int, Field(ge=1)] | None = None                  # the owner's line the org chat passed on to this team: the id of the original in cs_org
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
-        """The wire shape of a message without blocks (or a turn) is what it always was: the keys are left out when empty."""
+        """The wire shape of a message without blocks (or a turn, or a pass-on) is what it always was: the keys are left out when empty."""
         data = handler(self)
         if not data.get("blocks"):
             data.pop("blocks", None)
         if data.get("turn") is None:
             data.pop("turn", None)
+        if data.get("passed_on") is None:
+            data.pop("passed_on", None)
         return data
 
 

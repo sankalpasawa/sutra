@@ -73,6 +73,22 @@ body.home :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px
 .scompose .row { align-items: flex-end; }
 .scompose .row #ssend { height: 56px; }
 
+/* ---------------------------------------------------------------- the chat switcher and a team's own chat (gap dept-chats; chat_switch.js, home.js)
+   The org chat and every team have their own chat. The strip names them; the active one is selected and its name is the pane's heading. A team's chat is
+   the node panel's Chat tab shown inline (#teamchat): while it is open the org chat's own parts are hidden, not removed, so Back to Sutra finds them as they were. */
+.cswitch { flex: 0 0 auto; display: flex; gap: 2px; overflow-x: auto; padding: 6px 10px 0; border-bottom: 1px solid var(--line); background: var(--panel); scrollbar-width: thin; }
+.cswitch[hidden] { display: none; }
+.cstab { flex: 0 0 auto; max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); padding: 7px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+.cstab:hover { color: var(--ink); }
+.cstab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.cstab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.csbadge { margin-left: 6px; border: 1px solid var(--validator); border-radius: 10px; padding: 0 6px; font-size: 11.5px; font-weight: 600; color: var(--validator); }
+.schat.team-open > :not(.cswitch):not(.npinline) { display: none !important; }
+.npinline { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 10px 14px 0; background: var(--bg); }
+.npinline[hidden] { display: none; }
+.npinline :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.npinline h3:focus { outline: none; }
+
 /* ---------------------------------------------------------------- the rail: current pane, Teams, Settings */
 body.home .rail.tabs button[aria-current="page"], body.home .rail.tabs button[aria-current="true"] {
   color: var(--vio); background: color-mix(in srgb, var(--vio) 13%, transparent); font-weight: 600;

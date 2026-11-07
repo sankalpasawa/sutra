@@ -15,7 +15,7 @@
      loadSeen(storage), saveSeen(storage, seen, items)   the "Got it" marks, per browser (localStorage key sutra:headsup:seen); every
                                      storage call is in a try, a mark of a row that is gone is dropped on save
 
-   Buttons carry data-act: retry-task (data-task), headsup-seen (data-task), headsup-more. A team link is a real <a href="/d/<dept>/">.
+   Buttons carry data-act: retry-task (data-task), headsup-seen (data-task), headsup-more, open-team-chat (data-node: the team's own chat). A team link is a real <a href="/d/<dept>/">.
    A classic script with ONE global, HeadsUpView; in node it is module.exports. */
 (function (root) {
   "use strict";
@@ -99,6 +99,12 @@
     return dept ? '<a class="huopen" href="/d/' + encodeURIComponent(dept) + '/?view=simple">Open team</a>' : "";
   }
 
+  // "Open its chat": the team's own chat in Home's chat column (data-act open-team-chat); a row of no team has none.
+  function chatButton(i) {
+    const dept = idOf(i.dept_id);
+    return dept ? '<button type="button" class="linkbtn" data-act="open-team-chat" data-node="' + esc(dept) + '">Open its chat</button>' : "";
+  }
+
   function rowHtml(i) {
     const tone = TONES.includes(i.tone) ? i.tone : "warn";
     const task = idOf(i.task_id);
@@ -107,6 +113,8 @@
     const why = i.kind === "problem" && clean(i.outcome) ? '<small class="huwhy">' + esc(clean(i.outcome)) + "</small>" : "";
     const acts = [];
     if (i.retry === true && i.kind !== "quiet") acts.push('<button type="button" data-act="retry-task" data-task="' + esc(task) + '">Try again</button>');
+    const chat = chatButton(i);
+    if (chat) acts.push(chat);
     const link = teamLink(i);
     if (link) acts.push(link);
     if (i.kind !== "quiet") acts.push('<button type="button" class="linkbtn" data-act="headsup-seen" data-task="' + esc(task) + '">Got it</button>');

@@ -73,7 +73,16 @@ def _message_out(row: sqlite3.Row) -> ChatMessageOut:
         id=row["id"], session_id=row["session_id"], role=row["role"], who=row["who"], kind=row["kind"], text=row["text"],
         card=json.loads(row["card_json"]) if row["card_json"] else None, pause=row["pause"], answered_by=row["answered_by"],
         task_id=row["task_id"], state=row["state"], at=iso_z(row["at"]), blocks=_blocks_of(row["meta_json"]),
-        turn=_turn_of(row["src_ref"]))
+        turn=_turn_of(row["src_ref"]), passed_on=_passed_on_of(row["session_id"], row["src_ref"]))
+
+
+def _passed_on_of(session_id: str, src_ref: str | None) -> int | None:
+    """The org chat's line a team's first message is a copy of: the turn runner stores it in the team's session with the `src_ref`
+    `req:<org message id>:<task id>` (agent/runner.py `_create_tasks`). In the org chat itself that shape is not a copy."""
+    if session_id == "cs_org":
+        return None
+    found = re.fullmatch(r"req:([1-9][0-9]{0,15}):tsk_[0-9a-f]{12}", src_ref or "")
+    return int(found.group(1)) if found else None
 
 
 def _turn_of(src_ref: str | None) -> int | None:

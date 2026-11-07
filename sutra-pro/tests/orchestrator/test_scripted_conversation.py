@@ -240,8 +240,10 @@ def test_a_new_team_is_made_from_one_sentence(convo):
     spec = json.loads((convo.run_dir(task) / "task.json").read_text())
     assert spec["run_id"] == row["run_id"] and spec["dept_id"] == "web" and spec["user_text"] == "I need a landing page for my coffee shop."
     convo.until("run.started", lambda: convo.task_status(task) == "running")
-    assert convo.sutra()[-3:] == [("text", "I set up a Web team and gave it your request."), ("card", "chart_change"), ("card", "task")]
+    assert convo.sutra()[-4:] == [("text", "I set up a Web team and gave it your request."), ("card", "chart_change"), ("card", "team_chat"), ("card", "task")]
     assert convo.cards("chart_change")[-1]["decision"] == "add" and convo.cards("task")[-1]["dept_id"] == "web"
+    started = convo.cards("team_chat")[-1]
+    assert (started["node_id"], started["name"], started["about"], started["session_id"]) == ("web", "Web", "started", convo.session_of("web"))
 
 
 def test_the_events_of_a_new_team_come_in_the_designed_order(convo):
@@ -276,8 +278,9 @@ def test_the_question_reaches_needs_you_the_department_chat_and_the_org_chat(con
     assert (needs["kind"], needs["dept_id"], needs["text"]) == ("question", "web", ASK) and needs["options"]
     question = [m for m in convo.messages(convo.session_of("web")) if m["kind"] == "question"]
     assert [m["text"] for m in question] == [ASK]
-    [card] = convo.cards("needs_you")
-    assert (card["dept_id"], card["text"], card["question_message_id"]) == ("web", ASK, question[0]["id"])
+    [card] = [c for c in convo.cards("team_chat") if c["about"] == "question"]               # the org chat only points at the team's own chat
+    assert (card["node_id"], card["session_id"], card["question_message_id"]) == ("web", convo.session_of("web"), question[0]["id"])
+    assert ASK not in json.dumps(convo.messages("cs_org")) and not convo.cards("needs_you")
     assert convo.one("SELECT state FROM graph_nodes WHERE id = 'web.identity'") == "waiting_on_you"
     adaptation = convo.messages(convo.session_of("web.adaptation"))
     assert [m["text"] for m in adaptation] == ["Checking the shop's tone first."]

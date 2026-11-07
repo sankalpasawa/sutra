@@ -144,8 +144,9 @@ def test_identity_asked_needs_you_listed_it_and_the_answer_in_the_department_cha
     [need] = journey.needs
     assert (need["kind"], need["dept_id"], need["text"]) == ("question", "web", journey.question)
     assert need["session_id"] == live.session_of("web") and "business called" in need["text"]
-    [asked] = [c for c in live.cards("needs_you")]
-    assert asked["dept_id"] == "web" and asked["text"] == journey.question
+    [asked] = [c for c in live.cards("team_chat") if c["about"] == "question"]      # the org chat points at the team's chat (GAP3 dept-chats), it holds no question
+    assert (asked["node_id"], asked["session_id"]) == ("web", live.session_of("web")) and journey.question not in json.dumps(live.messages(ORG))
+    assert live.cards("needs_you") == []
     assert journey.answer_response["delivered"] == "answer" and journey.answer_response["task_id"] == journey.task
     inbox = [json.loads(line) for line in (live.run_dir(journey.task) / "inbox.jsonl").read_text().splitlines()]
     assert [(line["kind"], line["n"]) for line in inbox] == [("user", 1)] and inbox[0]["text"].startswith("It's called Little Fig")

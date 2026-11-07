@@ -68,7 +68,7 @@ def test_the_card_is_a_template_question_and_its_ref_round_trips():
 
 def test_a_payments_team_gets_the_card_after_the_add_and_a_website_team_gets_none(renv):
     add_team(renv)
-    assert renv.sutra()[-4:] == [("text", "I set up a Servicing team and gave it your request."), ("card", "chart_change"), ("card", "task"), ("card", "choice")]
+    assert renv.sutra()[-5:] == [("text", "I set up a Servicing team and gave it your request."), ("card", "chart_change"), ("card", "team_chat"), ("card", "task"), ("card", "choice")]
     card = renv.cards("choice")[-1]
     assert card.question == "The Servicing team looks like it moves or posts money. Run it with the Money movement practice?"
     assert [o.id for o in card.options] == ["yes", "no"]
