@@ -259,6 +259,7 @@
     // ---- state
     let data = null;                 // {kind: "graph", raw, have} or {kind: "chart", graph, marks, ring}
     let shown = null;                // {graph, layout, warnings}: what is on the page
+    let drawnPicture = "";           // the fingerprint of what accept() last drew (pictureOf), "" when there is none
     let selected = "";
     let hoverId = "";
     let focusId = "";
@@ -470,8 +471,23 @@
       bannerEl.hidden = false;
     }
 
+    // What a picture of `next` depends on (the data, what the owner asked for, which nodes are unread): equal fingerprints draw the same picture, so a
+    // refetch that brought the same data (an event about another team, the poll while the stream is down) is not laid out and drawn again (Fluid.signature).
+    function pictureOf(next) {
+      const F = root.Fluid;
+      if (!F || typeof F.signature !== "function" || shown === null) return "";
+      const sig = F.signature({k: next.kind, g: next.kind === "chart" ? next.graph : next.raw, h: next.have, w: next.kind === "graph" ? wants() : null, m: next.marks, r: next.ring});
+      return sig === "" ? "" : sig + "|" + Array.from(unreadIds(shown)).sort().join(",");
+    }
+
     // Take new data. Returns false (and keeps the last good picture, with the banner) when it is not a graph.
     function accept(next, announce) {
+      const same = pictureOf(next);
+      if (same !== "" && same === drawnPicture) {
+        data = next;
+        hideBanner();
+        return true;
+      }
       const previous = data;
       data = next;
       let prep;
@@ -483,6 +499,7 @@
         return false;
       }
       commit(prep, announce);
+      drawnPicture = pictureOf(next);
       hideBanner();
       return true;
     }

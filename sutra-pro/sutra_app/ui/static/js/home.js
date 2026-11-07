@@ -293,10 +293,20 @@
   function renderChat() {
     const shown = S.messages.concat(S.pending.map(p => p.msg));
     const session = S.session || {kind: "org", writable: true, status: "active", title: "Sutra"};
-    const html = root.ChatView.transcript(session, shown, {deptName: "", live: true, answers: answersMap(), deptSessions: deptSessions(), retryTasks: retryTasks()}) + startHtml();
+    const view = {deptName: "", live: true, answers: answersMap(), deptSessions: deptSessions(), retryTasks: retryTasks()};
     const el = $("smsgs");
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-    if (!ctx.paint(el, html)) return;
+    // Fluid.patchList edits the list in place: the lines that did not change are not touched, a new line enters (a long chat is not rebuilt per message)
+    let changed;
+    if (root.Fluid) {
+      const items = root.ChatView.transcriptItems(session, shown, view);
+      const start = startHtml();
+      if (start !== "") items.push({key: "starter", html: start});
+      changed = root.Fluid.patchList(el, items, {enter: "nmsg-in"}).changed;
+    } else {
+      changed = ctx.paint(el, root.ChatView.transcript(session, shown, view) + startHtml());
+    }
+    if (!changed) return;
     follow(el, shown, near);
   }
 
@@ -388,7 +398,9 @@
   // The composer of the direct chat (ABS-15). "Plan with Sutra" is the staged path as it was; "Ask directly" is POST /direct on the org chat (D115): the
   // chosen model answers, streamed, with attachments and a Stop. The mode is the owner's, per page load.
   function composer() {
-    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", onChange: () => { renderBar(); renderComposer(); }}) : null;
+    // one repaint per animation frame, however many chunks of a reply arrived in it (Fluid.frame; without fluid.js it is at once, as before)
+    const repaint = () => { renderBar(); renderComposer(); };
+    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", onChange: () => (root.Fluid ? root.Fluid.frame(repaint, repaint) : repaint())}) : null;
     return S.cc;
   }
   const directOn = () => { const c = composer(); return c !== null && c.state().mode === "direct"; };
@@ -403,9 +415,7 @@
     const html = CC.bar(c.state(), {labels: {team: "Plan with Sutra", direct: "Ask directly"}});
     ctx.paint(bar, html);
     bar.hidden = html === "";
-    const row = CC.streamRow(c.state(), CC.providerOf(providersOf(), S.pillData ? S.pillData.chosen : null));
-    ctx.paint($("sstream"), row);
-    $("sstream").hidden = row === "";
+    $("sstream").hidden = !CC.paintStreamRow($("sstream"), c.state(), CC.providerOf(providersOf(), S.pillData ? S.pillData.chosen : null));       // a chunk adds to the end of the row
     keepFollowing();
   }
 

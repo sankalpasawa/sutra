@@ -137,6 +137,8 @@
     let rules = noRules("");         // the standing rules of the team on show (GAP2 rules-notes, rules_view.js); read again every time a node opens
     const composers = new Map();     // session id -> its composer controller: the mode, the files and a running turn outlive a closed panel
     const scrollMem = new Map();     // session id -> where it was read when it closed (ChatScroll.remember / restore)
+    const frameKey = {};             // this panel's job in the page's frame batch (Fluid.frame)
+    const later = fn => (root.Fluid ? root.Fluid.frame(frameKey, fn) : fn());
     const draftStore = () => { if (!drafts && root.ChatDraft) drafts = root.ChatDraft.create(); return drafts; };
 
     /* ------------------------------------------------ the skeleton */
@@ -346,8 +348,9 @@
       const el = chatRefs.msgs;
       const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_PX;
       const list = activeMessages();
-      const html = CV().transcript(session, list, {deptName: deptName(), live: !st.view});
-      const changed = paintTo(el, html);
+      const view = {deptName: deptName(), live: !st.view};
+      // Fluid.patchList edits the list in place: the lines that did not change are not touched (no flicker, no lost selection), a new line enters
+      const changed = root.Fluid ? root.Fluid.patchList(el, CV().transcriptItems(session, list, view), {enter: "nmsg-in"}).changed : paintTo(el, CV().transcript(session, list, view));
       const last = list.reduce((n, m) => Math.max(n, Number(m.id) || 0), 0);
       const CS = CSc();
       if (!CS) {
@@ -392,8 +395,8 @@
       chatRefs.note.textContent = state.note;
       const problem = st.banner || "";
       chatRefs.banner.hidden = problem === "";
-      chatRefs.banner.innerHTML = problem === "" ? "" : esc(problem) + (st.gone ? ' <button type="button" class="linkbtn" data-npclose>Close</button>' : "") +
-        (st.retry ? ' <button type="button" class="linkbtn" data-act="retry-load">Try again</button>' : "");
+      paintTo(chatRefs.banner, problem === "" ? "" : esc(problem) + (st.gone ? ' <button type="button" class="linkbtn" data-npclose>Close</button>' : "") +
+        (st.retry ? ' <button type="button" class="linkbtn" data-act="retry-load">Try again</button>' : ""));
       keepFollowing();
     }
 
@@ -407,7 +410,8 @@
         let c = composers.get(sid);              // the same chat opened again: its mode, its files and a running turn (with Stop) are still there
         const again = c !== undefined;
         if (!again) {
-          c = CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => { if (st && chatRefs) { paintComposer(); paintBar(); } }});
+          // one repaint per animation frame, however many chunks of a reply arrived in it
+          c = CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => later(() => { if (st && chatRefs) { paintComposer(); paintBar(); } })});
           composers.set(sid, c);
         }
         st.cc = {sid, c};                        // set first: rejoin and reconcile repaint, and the repaint asks for this composer again
@@ -437,9 +441,7 @@
       const html = CC.bar(c.state(), {labels: {team: "Tell the team", direct: "Ask the model"}});
       chatRefs.bar.hidden = html === "";
       paintTo(chatRefs.bar, html);
-      const row = CC.streamRow(c.state(), CC.providerOf(data.providers, data.chosen));
-      chatRefs.stream.hidden = row === "";
-      paintTo(chatRefs.stream, row);
+      chatRefs.stream.hidden = !CC.paintStreamRow(chatRefs.stream, c.state(), CC.providerOf(data.providers, data.chosen));       // a chunk adds to the end of the row
       keepFollowing();
     }
 

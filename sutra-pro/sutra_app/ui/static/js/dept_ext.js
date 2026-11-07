@@ -138,7 +138,7 @@
     const d = doc();
     const root_ = byId("nodepanel");
     if (!d || !root_ || !root.NodePanel) return null;
-    for (const name of ["chat_pill", "chat_fold", "chat_search", "chat_composer", "chat_markdown", "chat_draft", "chat_scroll", "rules_view"]) {           // the J2 page is not edited: the chat scripts of ABS-9, ABS-10, ABS-15, GAP-markdown and GAP-chat-comfort are added from here
+    for (const name of ["fluid", "chat_pill", "chat_fold", "chat_search", "chat_composer", "chat_markdown", "chat_draft", "chat_scroll", "rules_view"]) {           // the J2 page is not edited: the chat scripts of ABS-9, ABS-10, ABS-15, GAP-markdown and GAP-chat-comfort (and fluid.js, gap package fluid) are added from here
       if (d.head && !d.getElementById(name + "-js")) {
         const tag = d.createElement("script");
         tag.id = name + "-js";

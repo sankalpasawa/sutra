@@ -23,6 +23,7 @@
                                        starts again from what comes next (the stored reply has all of it)
          reconcile(messages)           the turn ends when the reply that answers the owner's line (`turn` = its id) is in the list
      bar(state, opts)                  the mode toggle, the file chips, the attach button and the limits note
+     streamParts(state, provider)      {who, text} of that row, or null; paintStreamRow(el, state, provider) draws it into el by appending (Fluid.paintStream)
      streamRow(state, provider)        the streaming row ("Claude is writing" plus the text so far), or ""
      button(state, value, flags)       {label, act, disabled} of the Send button: Send, or Stop while a direct turn is answering
      askBlock(providers)               "" when a model can answer, else the sentence that says none can (the pill's rule: only runnable providers)
@@ -140,6 +141,29 @@
     const CP = pillOf();
     if (!CP || s.active !== true) return "";
     return CP.indicator({active: true, text: text(s.text)}, provider);
+  }
+
+  // The streaming row as parts, and drawn INTO an element: with fluid.js and the markdown script a streamed chunk touches the end of the row (the blocks
+  // that are done stay, the tail is written again) instead of the whole row; without them the row is the html string, as before. True when a row shows.
+  function streamParts(state, provider) {
+    const s = isObj(state) && isObj(state.turn) ? state.turn : {};
+    const CP = pillOf();
+    if (!CP || s.active !== true || typeof CP.streamParts !== "function") return null;
+    return CP.streamParts({active: true, text: text(s.text)}, provider);
+  }
+
+  function paintStreamRow(el, state, provider) {
+    if (!el) return false;
+    const F = root.Fluid;
+    const MD = root.ChatMarkdown;
+    if (F && MD && typeof F.paintStream === "function") {
+      const parts = streamParts(state, provider);
+      F.paintStream(el, parts, {render: MD.render});
+      return parts !== null;
+    }
+    const html = streamRow(state, provider);
+    if (el.__html !== html) { el.innerHTML = html; el.__html = html; }
+    return html !== "";
   }
 
   function button(state, value, flags) {
@@ -368,7 +392,7 @@
     return {state: () => state, setMode, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile};
   }
 
-  const ChatComposer = {create, bar, chips, streamRow, button, askBlock, providerOf, filesOf, hasFiles, size, MAX_FILES};
+  const ChatComposer = {create, bar, chips, streamRow, streamParts, paintStreamRow, button, askBlock, providerOf, filesOf, hasFiles, size, MAX_FILES};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatComposer;
   else root.ChatComposer = ChatComposer;
 })(globalThis);

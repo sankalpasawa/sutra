@@ -79,6 +79,7 @@ EVENT_NAMES = (
     "connector.mode",
 )
 CONTROL_EVENTS = ("server.hello", "server.resync")  # no `id:` line, never in the ring
+PARTIAL_EVENT = "chat.partial"  # a streamed piece of a reply (ABS-7): it has no sample, needs its data, is never stored or replayed
 DEPT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,39}$")
 HOSTS = ("127.0.0.1", "localhost")
 TASK_STATUS = {"running": "running", "waiting_on_you": "waiting_user", "filed": "done", "left_open": "done_with_open_items",
@@ -715,7 +716,7 @@ class FakeState:
     # -- the event stream --------------------------------------------------------------------------------------------
     def publish(self, event: str, data: Any) -> dict:
         """One event with the next id, kept in the ring and sent to every open stream that wants it."""
-        if event in CONTROL_EVENTS:
+        if event in CONTROL_EVENTS or event == PARTIAL_EVENT:
             return self.publish_control(event, data)
         with self.lock:
             self.seq += 1
@@ -741,6 +742,10 @@ class FakeState:
         return copy.deepcopy(self.fx.script["samples"][event])
 
     def emit(self, event: str, data: Any = None) -> dict:
+        if event == PARTIAL_EVENT:
+            if not isinstance(data, dict) or not isinstance(data.get("session_id"), str) or not isinstance(data.get("delta"), str):
+                raise ApiError(422, "validation", "chat.partial needs {session_id, delta, message_id?}")
+            return self.publish(event, data)
         if event not in EVENT_NAMES:
             raise ApiError(422, "validation", f"{event!r} is not an event; the events are {', '.join(EVENT_NAMES)}")
         if data is None:
@@ -1693,6 +1698,11 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
 # The test-only controls
 # ---------------------------------------------------------------------------------------------------------------------
 def register_controls(app: FastAPI, state: FakeState, fixtures: Fixtures) -> None:
+    @app.get("/__fake/probe.js")
+    def probe():
+        """The frame-time probe of the fluid package (tests/ui/perf/fluid_probe.js), for `await import("/__fake/probe.js")` in a pane."""
+        return Response((HERE / "perf" / "fluid_probe.js").read_bytes(), media_type="text/javascript", headers={"Cache-Control": "no-store"})
+
     @app.post("/__fake/emit")
     async def emit(request: Request):
         body = await json_body(request)

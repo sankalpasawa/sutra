@@ -95,3 +95,13 @@ test("the switch notice names both providers and what was carried", () => {
   assert.equal(switchNotice({}), "");
   assert.equal(switchNotice(null), "");
 });
+
+test("fluid. streamParts is the streaming row without markup: who writes and the text so far, or null when nothing streams", () => {
+  assert.deepEqual(ChatPill.streamParts({active: true, text: "Hello **w"}, "claude"), {who: "Claude", text: "Hello **w"});
+  assert.deepEqual(ChatPill.streamParts({active: true, text: ""}, ""), {who: "The model", text: ""});
+  assert.deepEqual(ChatPill.streamParts({active: true, text: "<b>x</b>"}, "codex"), {who: "Codex", text: "<b>x</b>"}, "escaping is the painter's job: the text is data here");
+  assert.equal(ChatPill.streamParts({active: false, text: "x"}, "claude"), null);
+  assert.equal(ChatPill.streamParts(null, "claude"), null);
+  assert.equal(ChatPill.streamParts(idleState(), "claude"), null);
+});
+function idleState() { return ChatPill.settle(); }

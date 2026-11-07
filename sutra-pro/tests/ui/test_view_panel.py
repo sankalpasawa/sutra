@@ -25,7 +25,7 @@ import pytest
 import fake_backend
 
 STATIC = Path(__file__).resolve().parents[2] / "sutra_app" / "ui" / "static"
-SCRIPTS = ("sutra_ctx.js", "sutra_events.js", "fnode_view.js", "chat_view.js", "chat_draft.js", "chat_scroll.js", "node_panel.js")
+SCRIPTS = ("sutra_ctx.js", "sutra_events.js", "fluid.js", "fnode_view.js", "chat_view.js", "chat_draft.js", "chat_scroll.js", "node_panel.js")
 DEPT_SESSION = "cs_5e0a77b19c3d"          # the Web team's chat (the department node)
 IDENTITY_LOG = "cs_77aa10c2e9b4"          # Identity's own working log
 ADAPTATION_LOG = "cs_b37b2000ef36"

@@ -11,6 +11,7 @@
      choiceRequest(sid, name)   {method, path, body} for the PUT; name null clears the choice (the policy decides again)
      partial(state, event)      the streaming state after a `chat.partial` event of this chat: {active, text}
      settle(state)              the state once the stored message arrived: nothing is shown
+     streamParts(state, provider)   {who, text} of the streaming row without markup, or null (Fluid.paintStream draws it by appending)
      indicator(state)           the streaming row ("Claude is writing" plus the text so far), or "" when nothing streams; the text is drawn by
                                 ChatMarkdown.render(text, {streaming: true}) when chat_markdown.js is on the page (GAP-markdown), else escaped
      switchNotice(event)        "Switched Claude to Codex; carried 40 messages" from a `switched` event {from, to, plan}
@@ -117,6 +118,13 @@
       (body === "" ? "" : '<div class="cstream-text">' + body + "</div>") + "</div>";
   }
 
+  // streamParts(state, provider) -> {who, text} or null: what the row says, without any markup, for Fluid.paintStream (which appends to the row as the
+  // text grows instead of writing it again). indicator() is the same row as one string.
+  function streamParts(state, provider) {
+    if (!isObj(state) || state.active !== true) return null;
+    return {who: clean(provider) ? label(clean(provider)) : "The model", text: text(state.text)};
+  }
+
   function switchNotice(event) {
     const d = isObj(event) && isObj(event.data) ? event.data : event;
     if (!isObj(d) || !clean(d.to)) return "";
@@ -128,7 +136,7 @@
     return from + "; " + carried + (omitted > 0 ? ", " + omitted + " earlier shortened" : "");
   }
 
-  const ChatPill = {pill, selectable, choiceRequest, partial, settle, indicator, switchNotice, idle, NAMES};
+  const ChatPill = {pill, selectable, choiceRequest, partial, settle, indicator, streamParts, switchNotice, idle, NAMES};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatPill;
   else root.ChatPill = ChatPill;
 })(globalThis);
