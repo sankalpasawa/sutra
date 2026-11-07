@@ -14,7 +14,8 @@
                                        are attached (in team mode the box switches to the model, with a one-line note: the team's route takes no
                                        files) and the upload's promise is returned
          removeFile(key)
-         send(text)                    POST /direct with the uploaded refs -> {ok, message_id} | {ok:false, error}; the files are kept on a refusal
+         send(text)                    POST /direct with the uploaded refs -> {ok, message_id} | {ok:false, error}; the files are kept on a refusal; a text over
+                                       MAX_MESSAGE (8000) characters is refused first, in words, with nothing sent (QA direct-chat bug 7)
          retry(lineId, text, {files})  the same line asked again, once: POST /direct with the same text (and the same files when this page sent
                                        them; else text only, and the note says so)
          stop()                        POST /direct/stop; the turn ends when the stored reply (or the error line) arrives
@@ -29,6 +30,7 @@
      providerOf(providers, chosen)     the name to show in the streaming row: the chosen one if it can run, else ""
      filesOf(transfer)                 the files of a clipboardData or dataTransfer, or null when there is none (then the page lets it be)
      hasFiles(transfer)                a drag carries files (dragover: the files themselves are not readable yet)
+     tooLong(text)                     "" or the sentence "Messages can be up to 8000 characters; this one has 8500."
      sendKey(event)                    true when a keydown in the message box means "send": Enter alone, never while an IME composition is open (the Enter that
                                        confirms a candidate, Safari's included: keyCode 229) and never with Shift (a new line). Home and the panel share it.
      stopPress(event)                  false for the second click of a double-click: a double-click on Send would send, and as the label turns into Stop under
@@ -53,6 +55,7 @@
   const pillOf = () => need("ChatPill");
   const searchOf = () => need("ChatSearch");
   const MAX_FILES = 10;
+  const MAX_MESSAGE = 8000;            // the longest message POST /direct takes (chat_v2.MAX_CHARS), counted in characters
   const SIZE_UNITS = ["B", "KB", "MB"];
 
   const idle = () => ({active: false, stopping: false, text: "", messageId: null});
@@ -118,6 +121,13 @@
     const type = clean(file && file.type).toLowerCase();
     const ext = hasOwn(PASTE_EXT, type) ? PASTE_EXT[type] : (IMAGE_EXT.exec(name) || [".png"])[0].toLowerCase();
     return "pasted-image-" + n + ext;
+  }
+
+  // "" when `body` fits in one message, else the sentence the server would refuse it with. Characters are counted as the server counts them (a code
+  // point is one, as in Python), not in UTF-16 units: an emoji is one character here and two in `.length`.
+  function tooLong(body) {
+    const n = Array.from(text(body)).length;
+    return n > MAX_MESSAGE ? "Messages can be up to " + MAX_MESSAGE + " characters; this one has " + n + "." : "";
   }
 
   // The Enter that confirms an IME candidate is not a send: `isComposing` is true in Chrome and Firefox; Safari ends the composition first and then
@@ -278,6 +288,8 @@
       const body = text(value).trim();
       if (state.mode !== "direct") return {ok: false, error: "This message goes to the team."};
       if (body === "") return {ok: false, error: "Write a message first."};
+      const long = tooLong(body);
+      if (long !== "") return refuse(long);                              // nothing is sent and the box keeps the words
       if (state.turn.active) return refuse("This chat is already answering.");
       if (state.files.some(f => f.status === "uploading")) return refuse("Wait for the files to finish uploading.");
       const ready = state.files.filter(f => f.status === "ready");
@@ -383,7 +395,7 @@
     return {state: () => state, setMode, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile};
   }
 
-  const ChatComposer = {create, bar, chips, streamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, size, MAX_FILES};
+  const ChatComposer = {create, bar, chips, streamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, tooLong, size, MAX_FILES, MAX_MESSAGE};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatComposer;
   else root.ChatComposer = ChatComposer;
 })(globalThis);

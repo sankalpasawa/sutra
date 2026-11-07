@@ -359,3 +359,25 @@ test("QA bug 5: a reset partial empties the streaming row, then the next attempt
   assert.equal(c.partial({session_id: SID, message_id: 4, delta: "", reset: true}), false);            // another turn's reset is ignored like its pieces
   assert.equal(c.state().turn.text, "Here is a streamed answer.");
 });
+
+test("QA bug 7: a message over 8000 characters is refused before anything is sent, in a sentence that names the limit, and the box keeps it", async () => {
+  const {api, c} = rig({[DIRECT]: () => ({message_id: 9})});
+  const out = await c.send("x".repeat(8500));
+  assert.deepEqual(out, {ok: false, error: "Messages can be up to 8000 characters; this one has 8500."});
+  assert.equal(api.calls.filter(x => x.p === DIRECT).length, 0);
+  assert.equal(c.state().turn.active, false);
+  assert.equal(c.state().note, "Messages can be up to 8000 characters; this one has 8500.");
+  assert.match(bar(c.state()), /class="ccnote"[^>]*>Messages can be up to 8000 characters; this one has 8500\./);
+  assert.equal((await c.send("x".repeat(8000))).ok, true);                                  // the longest message goes
+  assert.equal(api.calls.filter(x => x.p === DIRECT).length, 1);
+});
+
+test("QA bug 7: the length is counted as the server counts it (characters, not UTF-16 units) and on the trimmed text", async () => {
+  const {api, c} = rig({[DIRECT]: () => ({message_id: 9})});
+  assert.equal((await c.send("  " + "😀".repeat(8000) + "  ")).ok, true);                  // 8000 characters, 16000 UTF-16 units, padded with spaces
+  assert.deepEqual(api.calls.map(x => x.body.text.length), [16000]);
+  const again = rig({[DIRECT]: () => ({message_id: 10})});
+  assert.equal((await again.c.send("😀".repeat(8001))).error, "Messages can be up to 8000 characters; this one has 8001.");
+  assert.equal(ChatComposer.tooLong("short"), "");
+  assert.equal(ChatComposer.MAX_MESSAGE, 8000);
+});

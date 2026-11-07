@@ -35,13 +35,14 @@ from sutra_app.connectors.egress import scan
 from sutra_app.connectors.errors import CallCancelledError, ConnectorError
 from sutra_app.library.base import Value
 from sutra_app.library.gate import GATE
+from sutra_app.library.types import violation
 from sutra_app.orchestrator.api.chat import ID_PATTERN, respond
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
 from sutra_app.orchestrator.chat_ground import ground
 from sutra_app.orchestrator.chat_v2 import MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
 from sutra_app.orchestrator.db import run_blocking
-from sutra_app.orchestrator.direct_turns import Ending, attached_line, failed, finished, stopped
-from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly
+from sutra_app.orchestrator.direct_turns import MAX_TEXT, Ending, attached_line, failed, finished, stopped
+from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly, validation_error
 from sutra_app.orchestrator.events import PARTIAL
 from sutra_app.orchestrator.records import ChatMessage
 
@@ -49,6 +50,7 @@ __all__ = ["router", "build_router", "ChoiceIn", "UploadIn", "DirectIn"]
 
 log = logging.getLogger(__name__)
 PARTIAL_EVERY_CHARS = 60
+MAX_CHARS = 8000                                                      # the longest message the owner can send (the page's box says the same: chat_composer.js)
 _running: set[str] = set()
 _running_lock = threading.Lock()
 
@@ -66,7 +68,9 @@ class UploadIn(Value):
 
 
 class DirectIn(Value):
-    text: Annotated[str, StringConstraints(min_length=1, max_length=8000)]
+    # the model only bounds what the store could hold; the cap of MAX_CHARS is checked in the route so that the refusal can say what it is (a pydantic
+    # refusal is the generic "The request was refused")
+    text: Annotated[str, StringConstraints(min_length=1, max_length=MAX_TEXT)]
     attachments: Annotated[list[Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]], Field(max_length=MAX_PER_MESSAGE)] = []
     # the owner's names of the attachments, in order: only for the record on the owner's line (GAP-chat-comfort); the model's input is unchanged
     names: Annotated[list[Annotated[str, StringConstraints(max_length=200)]], Field(max_length=MAX_PER_MESSAGE)] = []
@@ -161,6 +165,9 @@ def build_router() -> APIRouter:
         session = await run_blocking(chats.session, sid)
         if session.status != "active" or not session.writable or session.kind not in ("org", "department", "division"):
             raise ReadOnly("This chat cannot be asked directly")
+        if len(body.text) > MAX_CHARS:
+            sentence = f"Messages can be up to {MAX_CHARS} characters; this one has {len(body.text)}."
+            raise validation_error([violation("text", "string_too_long", sentence)], sentence)
         refs = []
         for ref_id in body.attachments:
             path = attachments.get(ref_id)

@@ -237,3 +237,31 @@ def test_a_credential_typed_in_a_direct_chat_is_never_stored(rig):
     assert wait_for(lambda: len(chats.messages(sid)) == 2)
     user = chats.messages(sid)[0]
     assert "sk-abcdefgh12345678" not in user.text and "[redacted:openai-key]" in user.text
+
+
+# ---- QA direct-chat bug 7: a message over the cap is refused in words -------------------------------------------------------------------------------
+
+def test_a_direct_message_over_8000_characters_is_refused_with_a_sentence_that_names_the_limit(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "x" * 8500}, headers=H)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "validation"
+    assert r.json()["error"]["message"] == "Messages can be up to 8000 characters; this one has 8500."
+    violation = r.json()["error"]["details"]["violations"][0]
+    assert violation["path"] == "text" and "8000" in violation["message"]
+    assert chats.messages(sid) == [] and sid not in chat_v2._running               # nothing was stored or started
+
+
+def test_the_cap_counts_characters_not_bytes_and_the_longest_message_is_taken(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    assert client.post(f"/api/chats/{sid}/direct", json={"text": "é" * 8000}, headers=H).status_code == 202          # 16 000 bytes, 8 000 characters
+    assert wait_for(lambda: len(chats.messages(sid)) == 2 and sid not in chat_v2._running)
+    over = client.post(f"/api/chats/{sid}/direct", json={"text": "é" * 8001}, headers=H)
+    assert over.status_code == 422 and over.json()["error"]["message"].endswith("this one has 8001.")
+
+
+def test_a_message_far_over_the_cap_is_still_refused_by_the_model_check(rig):
+    client, world, *_ = rig
+    sid = world.session_of["web"]
+    assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": "x" * 250_000}, headers=H), 422) == "validation"
