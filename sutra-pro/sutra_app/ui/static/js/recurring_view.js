@@ -177,7 +177,7 @@
 
   function recurringHtml(list, form) {
     const f = isObj(form) ? form : {};
-    const head = '<section class="setgrp" data-group="recurring" aria-labelledby="set-recurring-h"><h3 id="set-recurring-h">Recurring work</h3><p class="setnote">' + esc(NOTE) + "</p>";
+    const head = '<section class="setgrp" data-group="recurring" aria-labelledby="set-recurring-h"><h3 id="set-recurring-h" tabindex="-1">Recurring work</h3><p class="setnote">' + esc(NOTE) + "</p>";
     if (!Array.isArray(list)) return head + '<p class="setempty">The standing tasks are not loaded yet.</p></section>';
     const rows = list.filter(isObj).map(r => rowHtml(r, f)).filter(Boolean);
     return head + (rows.length ? '<ul class="reclist">' + rows.join("") + "</ul>" : '<p class="setempty">Nothing is scheduled yet.</p>') + addHtml(f) + "</section>";

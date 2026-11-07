@@ -122,6 +122,28 @@ def test_the_notifications_group_sends_both_times_and_the_cap_and_refuses_equal_
 
 
 @browser_only
+def test_quiet_right_now_follows_the_pages_clock_not_the_servers_reading_at_the_last_fetch(browser, fake):
+    """QA recurring-limits: the line kept saying what the server said when the page last read it. The fake answers quiet_now: false whatever the window is,
+    so a window around the browser's own minute can only read as quiet through the page's twin of the rule."""
+    browser.expect_failed("/api/notes", 404)                                  # the fake backend has no notes route (the rules-notes package; not this test's business)
+    open_home(browser, fake)
+    open_settings(browser, "notices")
+    minute = browser.js("(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })()")
+    hm = lambda m: f"{(m % 1440) // 60:02d}:{(m % 1440) % 60:02d}"
+
+    def save_window(start, end):
+        browser.js("(() => { const set = (n, v) => { const e = document.querySelector('#set-notices [data-input=' + n + ']'); e.value = v; e.dispatchEvent(new Event('input', {bubbles: true})); };"
+                   f"set('quiet_start', '{start}'); set('quiet_end', '{end}'); }})()")
+        browser.click('#set-notices [data-act="save-notices"]')
+
+    save_window(hm(minute - 60), hm(minute + 60))
+    browser.wait_for("document.querySelector('#set-notices .sethint').textContent.indexOf('Quiet right now.') === 0")
+    save_window(hm(minute + 120), hm(minute + 180))
+    browser.wait_for("document.querySelector('#set-notices .sethint').textContent.indexOf('Leave both empty') === 0")
+    assert console_errors(browser) == []
+
+
+@browser_only
 def test_recurring_work_add_run_now_pause_and_remove(browser, fake):
     open_home(browser, fake, "full")
     open_settings(browser, "recurring")
@@ -148,6 +170,68 @@ def test_recurring_work_add_run_now_pause_and_remove(browser, fake):
     browser.click('#set-recurring [data-act="rec-delete-yes"]')
     absent(browser, "#set-recurring .recrow")
     assert [(r["method"], r["token"]) for r in posts(fake) if r["method"] == "DELETE" and r["path"].startswith("/api/recurring/")] == [("DELETE", True)]
+    assert console_errors(browser) == []
+
+
+REC = {"id": "rec_0123456789ab", "dept_id": "web", "dept_name": "Web", "text": "Write the pipeline summary", "schedule": {"every": "weekdays", "hour": 9, "minute": 0, "weekday": 0},
+       "human": "Every weekday at 9:00 AM (local)", "enabled": True, "paused_reason": "", "next_due_at": "2999-01-01T09:00:00Z", "created_at": "2026-11-01T08:00:00Z",
+       "last_run": None, "never_fired_on_schedule": False}
+
+
+def focused(browser):
+    """What the keyboard is on: the data-act or data-input of the control, else its id or tag."""
+    return browser.js("(() => { const a = document.activeElement; return a ? (a.dataset.act || a.dataset.input || a.id || a.tagName) : ''; })()")
+
+
+@browser_only
+def test_the_keyboard_keeps_its_place_in_the_recurring_group_after_each_action(browser, fake):
+    """QA recurring-limits: every action repainted the group and focus fell to the page; after Remove the confirm could not be reached from the keyboard."""
+    browser.expect_failed("/api/notes", 404)
+    open_home(browser, fake, "full")
+    fake.request("POST", "/__fake/recurring", {"items": [REC]})
+    open_settings(browser, "recurring")
+    present(browser, '#set-recurring [data-act="rec-toggle"]')
+    browser.js("document.querySelector('#set-recurring [data-act=rec-toggle]').focus()")
+    browser.press("Enter")                                                                          # Pause
+    browser.wait_for("document.querySelector('#set-recurring .recrow').dataset.enabled === 'false'")
+    assert focused(browser) == "rec-toggle"                                                         # the same button, now "Switch on"
+    browser.press("Enter")                                                                          # Switch on again
+    browser.wait_for("document.querySelector('#set-recurring .recrow').dataset.enabled === 'true'")
+    assert focused(browser) == "rec-toggle"
+    browser.js("document.querySelector('#set-recurring [data-act=rec-delete]').focus()")
+    browser.press("Enter")                                                                          # Remove asks: the safe answer has the focus
+    present(browser, '#set-recurring [data-act="rec-delete-yes"]')
+    assert focused(browser) == "rec-delete-no"
+    browser.press("Enter")                                                                          # No: back to Remove
+    absent(browser, '#set-recurring [data-act="rec-delete-yes"]')
+    assert focused(browser) == "rec-delete" and [r for r in posts(fake) if r["method"] == "DELETE"] == []
+    browser.press("Enter")
+    present(browser, '#set-recurring [data-act="rec-delete-yes"]')
+    browser.js("document.querySelector('#set-recurring [data-act=rec-delete-yes]').focus()")
+    browser.press("Enter")                                                                          # Yes: the row is gone, the keyboard stays in the group
+    absent(browser, "#set-recurring .recrow")
+    assert focused(browser) == "set-recurring-h"
+    assert console_errors(browser) == []
+
+
+@browser_only
+def test_enter_in_the_limit_and_notice_fields_saves_like_the_button(browser, fake):
+    browser.expect_failed("/api/notes", 404)
+    open_home(browser, fake)
+    open_settings(browser, "limits")
+    browser.type("#set-limits [data-input=monthly_usd]", "77")
+    browser.press("Enter")
+    browser.wait_for("document.querySelector('#set-limits .setstatus').textContent === 'Saved.'")
+    sent = [r for r in posts(fake) if r["path"] == "/api/limits"]
+    assert [(r["method"], r["token"], r["body"]) for r in sent] == [("PUT", True, {"monthly_usd": 77.0})]
+    assert focused(browser) == "monthly_usd"                                                        # the field keeps the caret for the next change
+    open_settings(browser, "notices")
+    browser.js("document.querySelector('#set-notices [data-input=nudges_per_hour]').select()")
+    browser.type("#set-notices [data-input=nudges_per_hour]", "2")
+    browser.press("Enter")
+    browser.wait_for("document.querySelector('#set-notices .setstatus').textContent === 'Saved.'")
+    sent = [r for r in posts(fake) if r["path"] == "/api/ops/attention"]
+    assert [(r["method"], r["body"]) for r in sent] == [("PUT", {"quiet_hours": None, "nudges_per_hour": 2})]
     assert console_errors(browser) == []
 
 

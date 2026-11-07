@@ -1019,8 +1019,42 @@
     const a = doc.activeElement;
     return !!(a && el && el.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== "checkbox" && a.type !== "button");
   };
-  function paintLimits() { if (LV() && !typingIn($("set-limits"))) ctx.paint($("set-limits"), LV().limitsHtml(S.limits, S.limitsForm)); }
-  function paintNotices() { if (LV() && !typingIn($("set-notices"))) ctx.paint($("set-notices"), LV().noticesHtml(S.notices, S.noticesForm)); }
+  // A repaint replaces the group's elements, so the control the owner was on from the keyboard would lose focus to the page. The group remembers which control it
+  // was (what it does and for which row, not the element) and gives focus to the same one again. A confirm that takes the place of its button is met on "No", the safe
+  // answer; a control that is gone (the row was removed) leaves focus on the group's heading, which takes focus for this only (tabindex -1). A button that is
+  // disabled while its action runs cannot hold focus, so the group keeps the key for the next repaint (when the action ends) if focus is still nowhere.
+  const KEEP_MS = 10000;
+  const FOCUS_AFTER = {"rec-delete": "rec-delete-no", "rec-delete-no": "rec-delete", "rec-delete-yes": "rec-delete"};
+  const sameControl = (x, k) => x.tagName === k.tag && (x.dataset.act || "") === k.act && (x.dataset.id || "") === k.id &&
+    (x.dataset.input || "") === k.input && ("guard" in x.dataset) === k.guard;
+  function paintGroup(el, html) {
+    if (!el) return false;
+    const a = doc.activeElement;
+    const kept = el.__kept && Date.now() - el.__kept.at < KEEP_MS && (!a || a === doc.body) ? el.__kept.key : null;
+    const key = a && a !== el && el.contains(a) && a.dataset ? {tag: a.tagName, act: a.dataset.act || "", id: a.dataset.id || "", input: a.dataset.input || "", guard: "guard" in a.dataset} : kept;
+    const drawn = ctx.paint(el, html);
+    if (drawn) el.__kept = null;
+    if (drawn && key) {
+      const all = Array.from(el.querySelectorAll("button, input, select, textarea"));
+      const after = FOCUS_AFTER[key.act];
+      const next = all.find(x => sameControl(x, key)) || (after && all.find(x => sameControl(x, Object.assign({}, key, {act: after})))) || el.querySelector("h3");
+      if (next) {
+        next.focus();
+        if (doc.activeElement !== next) el.__kept = {key, at: Date.now()};
+        if (next.tagName === "INPUT" && next.type === "text") { const n = next.value.length; try { next.setSelectionRange(n, n); } catch (e) { /* no caret in this input */ } }
+      }
+    }
+    return drawn;
+  }
+  // `force` repaints although the owner is in a text field: for Enter, which finishes the typing and saves.
+  function paintLimits(force) { if (LV() && (force === true || !typingIn($("set-limits")))) paintGroup($("set-limits"), LV().limitsHtml(S.limits, S.limitsForm)); }
+  // "Quiet right now." follows this page's clock, with the same twin of the rule the notices obey (ChatAttention.windowActive), not the server's reading at the
+  // last fetch, which is minutes old by the time the window begins or ends. No twin or no answer yet: the form carries nothing and the server's reading is used.
+  const quietNowOf = () => {
+    const twin = root.ChatAttention && root.ChatAttention.windowActive;
+    return typeof twin === "function" && S.notices ? {quietNow: !!twin(attentionPrefs().quiet, new Date())} : {};
+  };
+  function paintNotices(force) { if (LV() && (force === true || !typingIn($("set-notices")))) paintGroup($("set-notices"), LV().noticesHtml(S.notices, Object.assign({}, S.noticesForm, quietNowOf()))); }
   function recDraft() {
     if (!S.recForm.draft && RV()) S.recForm.draft = Object.assign({}, RV().DEFAULT_DRAFT);
     return S.recForm.draft || {};
@@ -1028,7 +1062,7 @@
   function paintRecurring(force) {
     if (!RV() || (force !== true && typingIn($("set-recurring")))) return;
     const teams = S.departments.filter(d => isObj(d) && d.id).map(d => ({id: d.id, name: d.name || d.id}));
-    ctx.paint($("set-recurring"), RV().recurringHtml(S.recurring, Object.assign({}, S.recForm, {draft: recDraft(), now: Date.now(), teams})));
+    paintGroup($("set-recurring"), RV().recurringHtml(S.recurring, Object.assign({}, S.recForm, {draft: recDraft(), now: Date.now(), teams})));
   }
 
   // The notices obey what the owner chose: the window and the cap come from the last read of /api/ops/attention. Unknown until it was read.
@@ -1050,14 +1084,14 @@
   }
   const refetchRecurring = SutraEvents.coalesce(single(fetchRecurring), COALESCE_MS);
 
-  async function saveLimit(raw) {
+  async function saveLimit(raw, force) {
     S.limitsForm = Object.assign({}, S.limitsForm, {busy: true, saved: false, error: ""});
-    paintLimits();
+    paintLimits(force);
     const r = await LV().saveLimit(api, raw);
     limitsWrites += 1;
     if (r.ok && isObj(r.state)) S.limits = r.state;
     S.limitsForm = r.ok ? {saved: true} : {raw, error: r.error};
-    paintLimits();
+    paintLimits(force);
     renderNeeds();
   }
 
@@ -1086,14 +1120,14 @@
   const noticeInput = name => { const el = $("set-notices").querySelector('[data-input="' + name + '"]'); return el ? el.value : ""; };
   const readNotices = () => ({start: noticeInput("quiet_start"), end: noticeInput("quiet_end"), nudges: noticeInput("nudges_per_hour")});
 
-  async function saveNotices(form) {
+  async function saveNotices(form, force) {
     S.noticesForm = Object.assign({}, form, {busy: true});
-    paintNotices();
+    paintNotices(force);
     const r = await LV().saveNotices(api, form);
     limitsWrites += 1;
     if (r.ok && isObj(r.state)) { S.notices = r.state; S.noticesForm = {saved: true}; }
     else S.noticesForm = Object.assign({}, form, {error: r.error});
-    paintNotices();
+    paintNotices(force);
     renderNeeds();                                                                     // a window that now covers this minute may change what the notices do
   }
 
@@ -1151,6 +1185,12 @@
       else if (name === "rec_text") recDraft().text = t.value;
       else if (name === "rec_time") recDraft().time = t.value;
       else if (name === "rec_minute") recDraft().minute = t.value;
+    });
+    pane.addEventListener("keydown", e => {                                                          // Enter in a field of Limits or Notifications saves, like its Save button
+      const t = e.target;
+      if (e.key !== "Enter" || e.isComposing || !t || !t.dataset || !LV()) return;
+      if (t.dataset.input === "monthly_usd") { e.preventDefault(); if (S.limitsForm.busy !== true) saveLimit(t.value, true); }
+      else if (/^(quiet_start|quiet_end|nudges_per_hour)$/.test(t.dataset.input || "")) { e.preventDefault(); if (S.noticesForm.busy !== true) saveNotices(readNotices(), true); }
     });
     pane.addEventListener("change", e => {
       const t = e.target;

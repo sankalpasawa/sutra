@@ -53,6 +53,10 @@ test("runWords says what happened to a due time, honestly", () => {
   assert.equal(RV.runWords(null), "");
 });
 
+test("the group's heading can take focus (tabindex -1): home.js leaves the keyboard there when the control it was on is gone", () => {
+  assert.match(RV.recurringHtml([], form()), /<h3 id="set-recurring-h" tabindex="-1">Recurring work<\/h3>/);
+});
+
 test("a folded count that reached the cap is told as many, not as an exact figure", () => {
   assert.equal(RV.runWords(run({trigger: "catch_up", folded: 71})), "Wed 4 Nov, 9:00 AM: started as a catch-up (71 earlier times folded in), done");
   assert.equal(RV.runWords(run({trigger: "catch_up", folded: 1998})), "Wed 4 Nov, 9:00 AM: started as a catch-up (1998 earlier times folded in), done");
