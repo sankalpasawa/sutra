@@ -42,13 +42,20 @@ _LINKS = (("session_id", "chat_sessions"), ("node_id", "graph_nodes"), ("task_id
 UsageGroup = dict[str, Any]
 
 
+MAX_EPOCH = 253_402_300_799              # 9999-12-31T23:59:59Z: the last second ISO-8601 can write; a larger number is not a time (and SQLite holds 63 bits)
+
+
 def parse_since(text: str | int) -> int:
-    """`since` as epoch seconds: whole seconds, or an ISO time like 2026-11-04T10:00:06Z. Anything else is a ValueError."""
+    """`since` as epoch seconds: whole seconds (up to the year 9999), or an ISO time like 2026-11-04T10:00:06Z. Anything else is a ValueError."""
     if isinstance(text, int) and not isinstance(text, bool):
-        return text
-    if isinstance(text, str) and text.isdigit():
-        return int(text)
-    return parse_iso_z(text)
+        seconds = text
+    elif isinstance(text, str) and text.isdigit():
+        seconds = int(text)
+    else:
+        return parse_iso_z(text)
+    if not 0 <= seconds <= MAX_EPOCH:
+        raise ValueError(f"not a time: {str(seconds)[:40]} seconds is outside the years 1970 to 9999")
+    return seconds
 
 
 def _round(value: float | None) -> float | None:

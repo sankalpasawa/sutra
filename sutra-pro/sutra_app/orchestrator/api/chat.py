@@ -71,7 +71,7 @@ def build_router() -> APIRouter:
     async def get_messages(
         request: Request,
         sid: str = Path(pattern=ID_PATTERN),
-        after: int = Query(0, ge=0, description="only messages with an id above this"),
+        after: int = Query(0, ge=0, le=2**53 - 1, description="only messages with an id above this"),
         limit: int = Query(200, ge=1, le=500),
     ) -> RedactedJSONResponse:
         found = await run_blocking(lambda: _store(request).messages(sid, after=after, limit=limit))

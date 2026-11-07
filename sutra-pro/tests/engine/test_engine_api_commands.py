@@ -64,6 +64,15 @@ def test_a_body_that_is_not_a_json_object_is_400_bad_json(api):
         assert (got.status_code, got.json()) == (400, {"error": "bad json"}), raw
 
 
+def test_a_body_nested_thousands_deep_is_400_bad_json_on_every_post_not_a_500(api):
+    """QA: 3000 nested objects made json.loads raise RecursionError and every POST answered 500 `internal` with a traceback in the log."""
+    nested = b'{"a":' * 3000 + b"1" + b"}" * 3000
+    for path in ("/api/say", "/api/output", "/api/reset", "/api/playbooks/clear", "/api/lessons/clear"):
+        got = api.client.post(path + "?dept=web", content=nested, headers={**TOKEN, "Content-Type": "application/json"})
+        assert (got.status_code, got.json()) == (400, {"error": "bad json"}), path
+    assert api.svc.deliveries == []
+
+
 def test_say_while_the_team_works_is_409_ok_false(api):
     api.svc.busy = True
     got = api.client.post("/api/say?dept=web", json={"text": "more"}, headers=TOKEN)

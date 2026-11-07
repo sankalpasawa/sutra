@@ -66,7 +66,7 @@ def build_router() -> APIRouter:
     @router.get("/changes", summary="The change log, oldest first")
     async def get_changes(
         request: Request,
-        after: int = Query(0, ge=0, description="return rows with a seq above this"),
+        after: int = Query(0, ge=0, le=2**53 - 1, description="return rows with a seq above this"),
         limit: int = Query(50, ge=1, le=500),
     ) -> RedactedJSONResponse:
         rows = await run_blocking(lambda: _store(request).history(after, limit))

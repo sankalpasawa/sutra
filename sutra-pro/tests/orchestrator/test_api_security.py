@@ -1,6 +1,8 @@
 """The security rules of the whole app (ORCH-8, orchestrator 6.1, S3-web-03, S3-web-14): the write token (header only), the Origin and Host
 checks, the route walk over every router and plug-in, and redaction in every response type. The client always speaks to
 `http://127.0.0.1:8780`, the address the app is designed for."""
+import asyncio
+import base64
 import json
 
 import pytest
@@ -10,7 +12,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from sutra_app.config import Settings
-from sutra_app.main import create_app
+from sutra_app.main import MAX_BODY_BYTES, MAX_UPLOAD_BODY_BYTES, BodyLimitMiddleware, create_app
 from sutra_app.orchestrator.api.deps import require_token
 from sutra_app.orchestrator.testing.fake_engine import FakeLauncher
 from sutra_app.orchestrator.testing.scripted import ScriptedConnector
@@ -293,3 +295,131 @@ def test_the_log_file_never_shows_the_token(secretive):
         for h in [h for h in root.handlers if getattr(h, "_sutra_app", False)]:
             root.removeHandler(h)
             h.close()
+
+
+# ============================================ body size, depth and big numbers (QA security-privacy P3s) ======================
+
+JSON = {"content-type": "application/json"}
+
+
+def test_a_declared_body_over_the_cap_is_413_before_the_token_and_before_a_byte_is_read():
+    """QA: a 600 MB post to /api/notes grew the server to 2 GB (read, parsed, then 422) with no token at all."""
+    async def run():
+        sent: list[dict] = []
+
+        async def app(scope, receive, send):
+            raise AssertionError("the app must not run for an oversized body")
+
+        async def receive():
+            raise AssertionError("not one byte of the body may be read")
+
+        async def send(message):
+            sent.append(message)
+        scope = {"type": "http", "method": "POST", "path": "/api/notes", "headers": [(b"content-length", str(600 * 1024 * 1024).encode())]}
+        await BodyLimitMiddleware(app)(scope, receive, send)
+        return sent
+    sent = asyncio.run(run())
+    assert sent[0]["status"] == 413
+    body = json.loads(sent[1]["body"])
+    assert body["error"]["code"] == "payload_too_large" and body["error"]["details"] == {"limit": MAX_BODY_BYTES, "size": 600 * 1024 * 1024}
+
+
+def _chunked(parts: list[bytes], path: str = "/api/notes"):
+    """Run the middleware on a body with no Content-Length (chunked). Returns (the response messages, the body the app saw or None)."""
+    async def run():
+        sent: list[dict] = []
+        seen: list[bytes] = []
+        queue = [{"type": "http.request", "body": part, "more_body": i < len(parts) - 1} for i, part in enumerate(parts)]
+
+        async def app(scope, receive, send):
+            body = b""
+            while True:
+                message = await receive()
+                body += message.get("body", b"")
+                if not message.get("more_body"):
+                    break
+            seen.append(body)
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+
+        async def receive():
+            return queue.pop(0) if queue else {"type": "http.disconnect"}
+
+        async def send(message):
+            sent.append(message)
+        scope = {"type": "http", "method": "POST", "path": path, "headers": [(b"transfer-encoding", b"chunked")]}
+        await BodyLimitMiddleware(app)(scope, receive, send)
+        return sent, (seen[0] if seen else None)
+    return asyncio.run(run())
+
+
+def test_a_chunked_body_is_cut_off_at_the_cap_and_a_small_one_reaches_the_app_whole():
+    sent, seen = _chunked([b"a" * (MAX_BODY_BYTES // 2 + 1)] * 2)
+    assert sent[0]["status"] == 413 and seen is None
+    sent, seen = _chunked([b'{"a":', b" 1}"])
+    assert sent[0]["status"] == 200 and seen == b'{"a": 1}'
+
+
+def test_the_attachment_upload_has_the_larger_cap_and_nothing_else_does():
+    cap = BodyLimitMiddleware(None)
+    assert cap._limit_for({"method": "POST", "path": "/api/chats/cs_org/attachments"}) == MAX_UPLOAD_BODY_BYTES > MAX_BODY_BYTES
+    for method, path in (("POST", "/api/notes"), ("GET", "/api/chats/cs_org/attachments"), ("POST", "/api/chats/cs_org/direct"), ("PUT", "/api/connectors/policy")):
+        assert cap._limit_for({"method": method, "path": path}) == MAX_BODY_BYTES, (method, path)
+    # a full 20 MB file, base64 in JSON, fits the upload cap (and not the ordinary one)
+    assert 20 * 1024 * 1024 * 4 // 3 + 200 < MAX_UPLOAD_BODY_BYTES and 20 * 1024 * 1024 * 4 // 3 > MAX_BODY_BYTES
+
+
+def test_an_oversized_post_through_the_whole_app_is_413_in_the_envelope_with_a_request_id(app_client):
+    _, client = app_client
+    big = b'{"group":"work","text":"' + b"a" * (MAX_BODY_BYTES + 10) + b'"}'
+    for headers in ({**JSON}, {**JSON, **HEADERS}):                                      # with the token and without: the size is judged first
+        response = client.post("/api/notes", content=big, headers=headers)
+        assert response.status_code == 413 and code_of(response) == "payload_too_large"
+        assert len(response.headers["x-request-id"]) == 12
+    assert client.post("/api/notes", json={"group": "work", "text": "plain note"}, headers=HEADERS).status_code == 201     # a normal post is untouched
+
+
+def test_a_file_of_a_few_megabytes_still_uploads(app_client):
+    """The upload route is past the ordinary cap on purpose: 3 MB as base64 in JSON is 4 MB."""
+    _, client = app_client
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 3_000_000
+    content = base64.b64encode(png).decode()
+    assert len(content) > MAX_BODY_BYTES
+    response = client.post("/api/chats/cs_org/attachments", json={"name": "big.png", "content_b64": content}, headers=HEADERS)
+    assert response.status_code == 200 and response.json()["size"] == len(png)
+
+
+NESTED = b'{"a":' * 3000 + b"1" + b"}" * 3000
+
+
+def test_the_engine_settings_put_with_a_body_nested_thousands_deep_is_a_clean_422(app_client):
+    """QA: RecursionError became 500 `internal` with a traceback in the log (the engine's own POST routes are in tests/engine)."""
+    _, client = app_client
+    response = client.put("/api/engine/settings", content=NESTED, headers={**JSON, **HEADERS})
+    assert response.status_code == 422 and code_of(response) == "validation", response.text
+
+
+def test_a_policy_nested_thousands_deep_is_422_policy_invalid(app_client):
+    _, client = app_client
+    response = client.put("/api/connectors/policy", content=NESTED, headers={**JSON, **HEADERS})
+    assert response.status_code == 422 and code_of(response) == "policy_invalid"
+    assert "nested too deeply" in response.json()["error"]["message"]
+
+
+@pytest.mark.parametrize("path", [
+    "/api/tasks?offset=99999999999999999999", "/api/chats/cs_org/messages?after=99999999999999999999", "/api/atoms?offset=99999999999999999999",
+    "/api/atoms/log?after=99999999999999999999", "/api/usage?after=99999999999999999999", "/api/usage?since=99999999999999999999",
+    "/api/chart/changes?after=99999999999999999999", "/api/tasks?offset=9223372036854775808", "/api/usage?since=253402300800",
+])
+def test_an_integer_too_large_for_the_database_is_422_not_500(app_client, path):
+    """QA: OverflowError 'Python int too large to convert to SQLite INTEGER' became 500 on six list routes."""
+    _, client = app_client
+    response = client.get(path)
+    assert response.status_code == 422, (path, response.status_code)
+    assert code_of(response) == "validation"
+
+
+def test_the_largest_sensible_offset_and_since_still_work(app_client):
+    _, client = app_client
+    for path in ("/api/tasks?offset=9007199254740991", "/api/usage?since=253402300799", "/api/usage?since=0", "/api/chats/cs_org/messages?after=9007199254740991"):
+        assert client.get(path).status_code == 200, path
