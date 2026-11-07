@@ -121,7 +121,7 @@ class Database:
         self._all: list[sqlite3.Connection] = []
         self._lock = threading.Lock()
         self._closed = False
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)       # the file holds the owner's work: a folder made here is private, as `Settings.ensure_dirs` makes it
 
     # ---- connections ----------------------------------------------------------------------------------------
 

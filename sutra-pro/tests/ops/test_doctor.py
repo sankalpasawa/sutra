@@ -134,6 +134,19 @@ def test_the_database_may_be_absent_older_current_but_never_newer_or_broken(tmp_
     assert check(run(settings), "database").status == "fail"
 
 
+def test_a_database_that_fails_sqlites_integrity_check_is_a_failure_with_a_fix(tmp_path):
+    settings = make_settings(tmp_path)
+    migrated_db(settings)
+    with open(settings.db_path, "r+b") as handle:                    # a few stretches past the first page: the file still opens and reads its version
+        for n in range(6):
+            handle.seek(8192 + n * 3000)
+            handle.write(b"\xff" * 200)
+    broken = check(run(settings), "database")
+    assert broken.status == "fail" and "integrity check" in broken.detail and "\n" not in broken.detail
+    assert "sutra-pro restore" in broken.fix and "backup" in broken.fix
+    assert not run(settings).ok
+
+
 def test_the_env_file_may_be_absent_must_be_private_when_there(tmp_path):
     settings = make_settings(tmp_path)
     absent = check(run(settings), "env_file")

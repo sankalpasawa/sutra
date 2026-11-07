@@ -204,6 +204,7 @@ def _check_disk(data_dir: Path, minimum: int) -> Check:
 
 
 def _check_database(settings: Settings) -> Check:
+    from sutra_app.ops.backup import integrity_problem
     from sutra_app.orchestrator.schema import SCHEMA_VERSION
     path = settings.db_path
     if not path.exists():
@@ -213,11 +214,16 @@ def _check_database(settings: Settings) -> Check:
         try:
             version = int(conn.execute("PRAGMA user_version").fetchone()[0])
             conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            problem = integrity_problem(conn)            # reading the version proves little: a damaged file still opens and reads its first page
         finally:
             conn.close()
     except sqlite3.Error as exc:
         return Check("database", "Database", "fail", f"{path.name} cannot be opened ({exc})",
                      "if it is not a Sutra database move it away; otherwise restore a backup")
+    if problem is not None:
+        return Check("database", "Database", "fail", f"{path.name} fails SQLite's integrity check ({problem})",
+                     "stop Sutra Pro and restore the newest good backup (`sutra-pro restore FILE`, backups are in the data folder's backups/); "
+                     "a backup of this file cannot be restored, so none is made")
     if version > SCHEMA_VERSION:
         return Check("database", "Database", "fail", f"schema version {version} is newer than this app's {SCHEMA_VERSION}",
                      "update the app (a newer version wrote this file); do not open it with an older one")

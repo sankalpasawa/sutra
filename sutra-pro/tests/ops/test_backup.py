@@ -3,6 +3,7 @@
 Most tests use a small data folder made here (a real migrated database plus a few files); the last test starts the REAL app (stub
 connector, Brew Lab scenario of GAP-E2E), backs it up while it is live, restores into a new folder, starts a second app on it and compares.
 """
+import errno
 import hashlib
 import io
 import json
@@ -19,9 +20,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "e2e"))
 from harness import LiveApp, run_new_team                                            # noqa: E402
 
-from sutra_app import __version__                                                    # noqa: E402
+from sutra_app import __version__, oslayer                                           # noqa: E402
 from sutra_app.config import Settings                                                # noqa: E402
-from sutra_app.ops import backup, cli                                                # noqa: E402
+from sutra_app.ops import backup, cli, lock                                          # noqa: E402
 from sutra_app.ops.lock import InstanceLock                                          # noqa: E402
 from sutra_app.orchestrator import schema                                            # noqa: E402
 from sutra_app.orchestrator.db import Database                                       # noqa: E402
@@ -273,6 +274,66 @@ def test_backup_command_exits_1_without_a_database(tmp_path, capsys):
     assert "no database" in capsys.readouterr().err
 
 
+def damage(settings: Settings) -> None:
+    """Overwrite a few stretches of the database with 0xFF, past its first page: the file still opens, but `PRAGMA integrity_check` fails."""
+    conn = sqlite3.connect(settings.db_path, isolation_level=None)
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    conn.close()
+    with open(settings.db_path, "r+b") as handle:
+        for n in range(6):
+            handle.seek(8192 + n * 3000)
+            handle.write(b"\xff" * 200)
+    conn = sqlite3.connect(settings.db_path, isolation_level=None)
+    try:
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok", "the test's damage did not damage the database"
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("target", [None, "elsewhere"])
+def test_a_damaged_database_is_refused_with_the_reason_and_no_archive_or_scratch_is_left(data, tmp_path, target):
+    damage(data)
+    folder = tmp_path / "elsewhere" if target else data.data_dir / "backups"
+    with pytest.raises(backup.BackupError) as caught:
+        backup.create_backup(data, to=folder if target else None)
+    text = str(caught.value)
+    assert "integrity check" in text and "no backup was written" in text and "sutra-pro restore" in text and "\n" not in text
+    assert list(folder.iterdir()) == []                               # no archive, no .part file, no scratch folder
+
+
+def test_a_damaged_database_never_pushes_the_good_backups_out_of_the_rotation(data, tmp_path):
+    folder = data.data_dir / "backups"
+    good_ones = [backup.create_backup(data, now=lambda i=i: 1_800_000_000.0 + i).path for i in range(backup.KEEP_AUTOMATIC)]
+    damage(data)
+    for _ in range(backup.KEEP_AUTOMATIC + 1):
+        with pytest.raises(backup.BackupError, match="integrity check"):
+            backup.create_backup(data)
+    assert sorted(p.name for p in folder.glob("sutra-pro-backup-*.tar.gz")) == sorted(p.name for p in good_ones)
+    restored = backup.restore_backup(settings_for(tmp_path / "back"), max(good_ones))               # the newest kept backup still restores
+    assert restored.files >= 1 and sqlite3.connect(tmp_path / "back" / "db.sqlite3").execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_integrity_problem_is_none_for_a_sound_file_one_line_for_a_damaged_one_and_raises_for_other_errors(data):
+    conn = sqlite3.connect(data.db_path, isolation_level=None)
+    assert backup.integrity_problem(conn) is None
+    conn.close()
+    damage(data)
+    conn = sqlite3.connect(data.db_path, isolation_level=None)
+    text = backup.integrity_problem(conn)
+    assert text and "\n" not in text and len(text) <= 160
+    conn.close()
+    with pytest.raises(sqlite3.ProgrammingError):                       # a closed connection is not a damaged file
+        backup.integrity_problem(conn)
+
+
+def test_backup_command_says_why_and_exits_1_for_a_damaged_database(data, capsys):
+    damage(data)
+    assert cli.main(["backup", "--data-dir", str(data.data_dir)]) == 1
+    captured = capsys.readouterr()
+    assert "Backup written" not in captured.out and "integrity check" in captured.err and "sutra-pro restore" in captured.err
+    assert not list((data.data_dir / "backups").glob("*.tar.gz"))
+
+
 def test_the_commands_are_registered_in_cli_commands():
     cli.build_parser()
     assert {"backup", "restore"} <= set(cli.COMMANDS)
@@ -359,6 +420,49 @@ def test_restore_over_an_existing_folder_moves_it_aside_and_carries_env_and_back
     assert not (data.data_dir / "marker.txt").exists() and (data.data_dir / "db.sqlite3").is_file()
     assert (data.data_dir / ".env").read_text() == "J2_OVERRIDE_KEY=secret-value" and (aside / ".env").is_file()
     assert not (data.data_dir / "logs").exists() and (aside / "logs" / "server.log").is_file()
+
+
+def watch_the_folder_rename(monkeypatch, data, *, refuse_open_files: bool, really_rename: bool) -> list[bool]:
+    """Wrap os.rename: note whether the instance lock (an open file inside the data folder) is held when the data folder itself is renamed.
+    `refuse_open_files` makes the wrapper answer as Windows does (a folder with a file open in it is "Access is denied"); without
+    `really_rename` the folder is never moved, the wrapper fails it, so the test needs no working rename."""
+    seen: list[bool] = []
+    real = os.rename
+
+    def rename(src, dst, *args, **kwargs):
+        if Path(src) == data.data_dir:
+            seen.append(lock.is_locked(data.data_dir))
+            if (refuse_open_files and seen[-1]) or not really_rename:
+                raise PermissionError(errno.EACCES, "Access is denied")
+        return real(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "rename", rename)
+    return seen
+
+
+@pytest.mark.parametrize("windows", [True, False])
+def test_the_instance_lock_is_dropped_before_the_data_folder_is_renamed_on_windows_and_held_through_it_elsewhere(good, data, monkeypatch, windows):
+    # Windows cannot rename a folder that has a file open in it, this process's own app.lock included; elsewhere an open lock follows the
+    # folder and keeps a server from starting on it halfway through the swap
+    archive, _ = good
+    monkeypatch.setattr(oslayer, "IS_WINDOWS", windows)
+    seen = watch_the_folder_rename(monkeypatch, data, refuse_open_files=False, really_rename=False)
+    with pytest.raises(backup.RestoreError, match="could not be put in place"):
+        backup.restore_backup(data, archive)
+    assert seen == [not windows]
+    assert (data.data_dir / "engine.json").is_file() and not list(data.data_dir.parent.glob("*.restore-*")) and not lock.is_locked(data.data_dir)
+
+
+@pytest.mark.skipif(oslayer.IS_WINDOWS, reason="the real folder rename is what the Windows leg skips for the other restore-over-a-folder tests")
+def test_restore_over_an_existing_folder_completes_when_the_system_refuses_to_rename_a_folder_with_an_open_file(good, data, monkeypatch):
+    archive, _ = good
+    write(data.data_dir / "marker.txt", "mine")
+    monkeypatch.setattr(oslayer, "IS_WINDOWS", True)
+    seen = watch_the_folder_rename(monkeypatch, data, refuse_open_files=True, really_rename=True)
+    result = backup.restore_backup(data, archive, now=lambda: 1_800_000_000.0)
+    assert seen == [False] and result.moved_to is not None and (result.moved_to / "marker.txt").read_text() == "mine"
+    assert (data.data_dir / "db.sqlite3").is_file() and not (data.data_dir / "marker.txt").exists()
+    assert (data.data_dir / ".env").read_text() == "J2_OVERRIDE_KEY=secret-value" and not lock.is_locked(data.data_dir)
 
 
 def test_restore_moves_the_backups_folder_into_the_new_data_folder(data):
