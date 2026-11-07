@@ -100,25 +100,51 @@ def test_saved_goes_as_soon_as_a_field_of_its_group_is_edited_again(browser, fak
     open_home(browser, fake)
     open_settings(browser, "limits")
     browser.type("#set-limits [data-input=monthly_usd]", "5")
-    browser.click('#set-limits [data-act="save-limit"]')
+    press(browser, '#set-limits [data-act="save-limit"]')
     browser.wait_for("document.querySelector('#set-limits .setstatus').textContent === 'Saved.'")
     browser.type("#set-limits [data-input=monthly_usd]", "7")
     assert status_of(browser, "limits") == ""
     assert browser.js("HomePage.state().limitsForm.saved") is False                                  # and the next repaint does not bring it back
     open_settings(browser, "notices")
     browser.js("(() => { const e = document.querySelector('#set-notices [data-input=nudges_per_hour]'); e.value = '2'; e.dispatchEvent(new Event('input', {bubbles: true})); })()")
-    browser.click('#set-notices [data-act="save-notices"]')
+    press(browser, '#set-notices [data-act="save-notices"]')
     browser.wait_for("document.querySelector('#set-notices .setstatus').textContent === 'Saved.'")
     browser.type("#set-notices [data-input=nudges_per_hour]", "9")
     assert status_of(browser, "notices") == ""
     open_settings(browser, "engine")
     present(browser, '#set-engine [data-input="budget"]')
     browser.js("document.querySelector('#set-engine [data-input=budget]').value = '250'")
-    browser.click('#set-engine [data-act="save-engine"]')
+    press(browser, '#set-engine [data-act="save-engine"]')
     browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
     browser.type("#set-engine [data-input=budget]", "1")
     assert status_of(browser, "engine") == ""
     assert browser.js("HomePage.state().saved") is False
+    assert console_errors(browser) == []
+
+
+@browser_only
+def test_enter_in_a_settings_field_presses_the_save_of_its_group(browser, fake):
+    """QA firstrun-settings: there is no <form>, so Enter did nothing in Limits, Notifications or Engine and a keyboard-only owner had to Tab to Save."""
+    browser.expect_failed("/api/notes", 404)                                                         # the fake serves no notes
+    open_home(browser, fake)
+    open_settings(browser, "limits")
+    browser.type("#set-limits [data-input=monthly_usd]", "1234")
+    browser.press("Enter")
+    present(browser, '#set-limits [data-act="clear-limit"]')
+    assert [(r["method"], r["body"]) for r in posts(fake) if r["path"] == "/api/limits"] == [("PUT", {"monthly_usd": 1234.0})]
+    open_settings(browser, "notices")
+    browser.js("document.querySelector('#set-notices [data-input=nudges_per_hour]').value = ''")            # it holds the default 3
+    browser.type("#set-notices [data-input=nudges_per_hour]", "4")
+    browser.press("Enter")
+    browser.wait_for("document.querySelector('#set-notices .setstatus').textContent === 'Saved.'")
+    assert [r["body"] for r in posts(fake) if r["path"] == "/api/ops/attention"] == [{"quiet_hours": None, "nudges_per_hour": 4}]
+    open_settings(browser, "engine")
+    present(browser, '#set-engine [data-input="budget"]')
+    browser.js("document.querySelector('#set-engine [data-input=budget]').value = ''")
+    browser.type("#set-engine [data-input=budget]", "250")
+    browser.press("Enter")
+    browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
+    assert [r["body"] for r in posts(fake, "/api/engine/settings")] == [{"set": {"budget": 250}, "unset": []}]
     assert console_errors(browser) == []
 
 
@@ -134,8 +160,9 @@ def test_the_guard_switch_saves_at_once(browser, fake):
 
 
 def press(browser, selector):
-    """The click event itself, in one step: Settings repaints a group when its read lands, and a real press that straddles a repaint is lost."""
-    assert browser.js(f"(() => {{ const e = document.querySelector({selector!r}); if (!e) return false; e.click(); return true; }})()"), selector
+    """The press itself, in one step: Settings repaints a group when its read lands, and a real press that straddles a repaint is lost. The button takes
+    the focus first, as a mouse press gives it: a group is not repainted while a field of it has the focus, so the answer of a save would not show."""
+    assert browser.js(f"(() => {{ const e = document.querySelector({selector!r}); if (!e) return false; e.focus(); e.click(); return true; }})()"), selector
 
 
 @browser_only
