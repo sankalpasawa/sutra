@@ -124,6 +124,7 @@ These are optional, mostly for the Mac launcher, for development and for tests.
 | `SUTRA_START_TIMEOUT` | `60` | Mac launcher: seconds to wait for `/api/health` |
 | `SUTRA_PRO_START_TIMEOUT` | `60` | desktop app: seconds to wait for the server to answer, 1 to 600 (a cold machine that is scanning a fresh install is slow) |
 | `SUTRA_PRO_PYTHON` | `unset` | desktop app run from a checkout (`npm start`): the Python that runs the server; default the checkout's `.venv`, else `python3`. An installed app always runs the Python inside it |
+| `SUTRA_PRO_DESKTOP` | `unset` | set to `1` by the desktop app in the environment of the server it starts: Settings, About and the welcome card then say the automatic update check applies to this copy (the server itself checks nothing by itself; the app's timer does) |
 | `SUTRA_PRO_DEVTOOLS` | `unset` | desktop app: `1` adds View, Toggle Developer Tools to an installed app (a checkout has it) |
 | `SUTRA_PRO_SELFTEST` | `unset` | desktop app: `1` runs the self-test and quits with its verdict as the exit status (`scripts/prove_desktop_app.py` does this on the packaged app) |
 | `SUTRA_PRO_SELFTEST_DIR` | `<data>/selftest` | desktop app: where the self-test writes `selftest.json` and `selftest.png` |
