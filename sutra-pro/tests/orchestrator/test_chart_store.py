@@ -144,6 +144,15 @@ def test_head_before_bootstrap_says_to_bootstrap(db, settings):
 
 # ---- add a department ------------------------------------------------------------------------------------------------------------
 
+def test_a_team_named_like_a_windows_device_gets_an_id_and_a_folder_windows_can_make(env, settings):
+    """QA org-chat-teams: teams called CON and Nul. got the ids con and nul, and Windows cannot make a folder with those names."""
+    result = env.apply(dept_op("$c", "CON"), dept_op("$n", "Nul."))
+    assert result.added == ["department-con", "department-nul"]
+    folders = {p.name for p in (settings.data_dir / "departments").iterdir()}
+    assert {"department-con", "department-nul"} <= folders and not folders & {"con", "nul"}      # (listed, not probed: on Windows con exists in every folder)
+    assert json.loads(env.one("SELECT body FROM departments WHERE id = 'department-con'"))["home_dir"] == "departments/department-con"
+
+
 def test_adding_a_department_makes_its_row_folders_five_function_nodes_and_sessions(env, settings):
     result = env.apply(dept_op("$web", "Web"), add_op("$menu", "division", "Menu", "$web"))
     assert (result.status, result.decision, result.revision, result.added, result.ids_by_ref) == \
@@ -505,6 +514,11 @@ def test_history_is_oldest_first_with_an_after_cursor_and_a_limit(built):
     assert [r.seq for r in built.chart.history(after=1, limit=1)] == [2]
     assert built.chart.history(after=3) == []
     assert len(built.chart.history(limit=10_000)) == 3 and len(built.chart.history(limit=0)) == 1
+    # newest=True: the NEWEST `limit` rows above `after`, still oldest first (QA org-chat-teams: the log pane asked for the first 50 of a long log)
+    assert [r.seq for r in built.chart.history(limit=2, newest=True)] == [2, 3]
+    assert [r.seq for r in built.chart.history(after=1, limit=1, newest=True)] == [3]
+    assert [r.seq for r in built.chart.history(after=0, limit=10, newest=True)] == [1, 2, 3] == [r.seq for r in built.chart.history()]
+    assert built.chart.history(after=3, limit=5, newest=True) == [] and len(built.chart.history(limit=0, newest=True)) == 1
     two = rows[1]
     assert (two.id, two.decision, two.status, two.revision, two.added, two.task_id) == ("chg-0002", "add", "applied", 2, ["sales", "web"], "req-1")
     assert two.at.endswith("Z") and two.summary == "Added the Sales team and the Web team"

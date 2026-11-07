@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from orchestrator.test_chat_agent import decide
 from orchestrator.test_scripted_conversation import (
     HEADERS, TOKEN, ATOM, FixedClock, Scenario, SurvivingLauncher, asked, make_scenario, new_team,
 )
@@ -22,6 +23,7 @@ import sutra_app
 from sutra_app import main as main_module
 from sutra_app.library import node as node_module
 from sutra_app.orchestrator import schema
+from sutra_app.orchestrator.agent import planner
 from sutra_app.config import Settings
 from sutra_app.main import GRACEFUL_SHUTDOWN_S, bind_socket, build_parser, create_app, run
 from sutra_app.orchestrator.testing.fake_engine import FakeLauncher, ev
@@ -29,6 +31,7 @@ from sutra_app.orchestrator.testing.scripted import ScriptedConnector
 
 REPO = Path(__file__).resolve().parents[2]
 BASE = "http://127.0.0.1:8780"
+ORG = "cs_org"
 
 
 def settings_in(tmp_path: Path, **changes) -> Settings:
@@ -178,6 +181,57 @@ def test_reconcile_starting_without_events(tmp_path):
         services = app2.state.services
         assert services.reconciled.crashed == [task]
         assert services.tasks.store.row(task).outcome == "the app was closed while it ran"
+
+
+def pending_request_folder(tmp_path: Path, *lines: str) -> Path:
+    """The data folder of an app that died while the chat agent held the owner's request: the line is stored `pending` and no turn ever ended
+    (a copy taken while the first app was up, so nothing was settled; a graceful stop drops the queue the same way)."""
+    first = tmp_path / "first"
+    app, connector = make_scenario(first)
+    with TestClient(app, base_url=BASE) as client:
+        c = Scenario(client, app, connector)
+        for text in lines:
+            c.services.runner._store_user_line(text, None)                       # what POST /messages stores before the turn runs behind it
+        c.db.checkpoint()
+        shutil.copytree(first, tmp_path / "crashed")
+    return tmp_path / "crashed"
+
+
+def test_a_request_accepted_before_the_app_stopped_comes_back_as_an_error_with_a_retry(tmp_path):
+    """QA org-chat-teams: a line accepted mid-turn stayed `pending` for ever after a stop or a kill (a dimmed bubble, no answer, Retry said 404)."""
+    folder = pending_request_folder(tmp_path, "Write a press release for the shop reopening")
+    app, connector = make_scenario(folder)
+    with TestClient(app, base_url=BASE) as client:
+        c = Scenario(client, app, connector)
+        mine = [m for m in c.messages() if m["role"] == "user"]
+        assert [(m["text"], m["state"]) for m in mine] == [("Write a press release for the shop reopening", "error")]
+        assert c.messages()[-1]["kind"] == "error" and c.messages()[-1]["text"] == planner.line("interrupted")
+        assert c.services.runner.busy is False and client.get("/api/chats/cs_org").json()["phase"] in ("ready", "working")
+        connector.push(decide("smalltalk", "none", reuse=()))
+        retried = client.post(f"/api/chats/{ORG}/retry", headers=HEADERS)                   # Try again now finds the request
+        assert retried.status_code == 202 and retried.json()["message_id"] == mine[0]["id"]
+        c.until("the retried turn to end", lambda: not c.services.runner.busy)
+        assert c.one("SELECT state FROM chat_messages WHERE id = ?", mine[0]["id"]) == "ok"
+
+
+def test_every_request_the_app_left_open_is_told_once_and_a_second_start_changes_nothing(tmp_path):
+    folder = pending_request_folder(tmp_path, "Draft a menu", "Write a press release")
+    app, connector = make_scenario(folder)
+    with TestClient(app, base_url=BASE) as client:
+        c = Scenario(client, app, connector)
+        assert [m["state"] for m in c.messages() if m["role"] == "user"] == ["error", "error"]
+        assert [m["kind"] for m in c.messages()].count("error") == 1                           # one line for both, not one each
+        before = c.one("SELECT count(*) FROM chat_messages")
+    app2, _ = make_scenario(folder)
+    with TestClient(app2, base_url=BASE) as client2:
+        assert Scenario(client2, app2, ScriptedConnector()).one("SELECT count(*) FROM chat_messages") == before
+
+
+def test_a_quiet_start_posts_nothing_about_requests(tmp_path):
+    app, connector = make_scenario(tmp_path)
+    with TestClient(app, base_url=BASE) as client:
+        c = Scenario(client, app, connector)
+        assert [m["kind"] for m in c.messages()] == ["text"] and c.services.runner.recover() == 0
 
 
 # ============================================ shutdown =======================================================================

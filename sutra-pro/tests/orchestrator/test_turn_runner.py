@@ -122,6 +122,15 @@ def test_an_add_request_makes_the_team_and_says_so_in_a_template(renv):
     assert renv.cards("task")[-1].dept_name == "Cafe" and renv.cards("task")[-1].status in ("starting", "queued", "running")
 
 
+def test_the_add_lines_name_a_vowel_team_with_an_and_a_division_as_a_division(renv):
+    """QA org-chat-teams: 'I set up a Event Booking team', and 'I set up a Weddings team' for a division."""
+    renv.connector.push(decide(change="add", reuse=(), why=SECRET_SENTENCE),
+                        change_reply(add_dept("$e", "Event Booking", "Bookings for events"), add_div("$w", "Weddings", "$e", "Wedding events"), reason=SECRET_SENTENCE),
+                        assignments(draft("a1", "event-booking", brief=SECRET_SENTENCE)))
+    renv.say("Set up event booking with a weddings part")
+    assert renv.sutra()[-3] == ("text", "I set up an Event Booking team and gave it your request. I set up a Weddings division.")
+
+
 def test_event_order_of_a_new_team(renv):
     renv.connector.push(decide(change="add", reuse=()), change_reply(add_dept("$cafe", "Cafe", "Coffee")), assignments(draft("a1", "cafe")))
     renv.events.batches.clear()
@@ -253,7 +262,7 @@ def test_a_new_division_with_work_for_it(renv):
     first = renv.say("Start a blog")
     [task] = renv.tasks_of(f"req-{first.message_id}")
     assert task["scope_node_id"] == "blog"
-    assert renv.sutra()[-4:] == [("text", "I set up a Blog team and gave it your request. I gave this to the Web team."),
+    assert renv.sutra()[-4:] == [("text", "I set up a Blog division and gave it your request. I gave this to the Web team."),
                                  ("card", "chart_change"), ("card", "team_chat"), ("card", "task")]
     pointer = renv.cards("team_chat")[-1]                          # a division has its own chat session too, and the card points at it
     assert (pointer.node_id, pointer.kind, pointer.name) == ("blog", "division", "Blog")
@@ -335,6 +344,43 @@ def test_the_card_buttons_answer_too_and_a_second_click_is_refused(renv):
     with pytest.raises(AlreadyDecided) as info:
         renv.say("Yes", choice=ChatChoice(message_id=card_id, option="Yes"))
     assert info.value.result.status == "applied"
+
+
+def test_a_card_the_owner_answered_reads_answered_whenever_the_chat_is_read_again(renv):
+    """QA org-chat-teams: Home drew an answered approval or choice card open again after a reload, because the server never said it was answered.
+    A button press stores the owner's line as `choice:<card id>`; the card's `answered_by` is that line, read from the stored rows (so it
+    holds after a restart too), and a card nobody pressed stays open."""
+    renv.connector.push(decide("clarify", "none", reuse=("quotes", "web"), why="two fit"))
+    renv.say("Do the thing for me")
+    merge_request(renv)
+    choice, approval = [m for m in renv.messages() if m.kind == "card"]
+    assert (choice.card.type, approval.card.type) == ("choice", "approval") and choice.answered_by is None and approval.answered_by is None
+    no = renv.say("No", choice=ChatChoice(message_id=approval.id, option="no"))
+    assert renv.chats.message(approval.id).answered_by == no.message_id
+    quotes = renv.say("Quotes", choice=ChatChoice(message_id=choice.id, option="quotes"))
+    again = {m.id: m.answered_by for m in type(renv.chats)(renv.db).messages(ORG)}                  # a new store over the same rows: a reload
+    assert again[approval.id] == no.message_id and again[choice.id] == quotes.message_id
+    assert type(renv.chats).message_in(renv.db.conn(), choice.id).answered_by == quotes.message_id          # the row an event carries says it too
+    assert all(by is None for mid, by in again.items() if mid not in (approval.id, choice.id))      # lines and the other cards are as they were
+
+
+@pytest.mark.parametrize("word,status", [("Yes", "applied"), ("no", "rejected")])
+def test_an_approval_decided_without_its_button_reads_answered_too(renv, word, status):
+    """A typed yes or no (or the decision route) presses no button, so no line is the card's answer: the card points at itself, and is open
+    exactly while its change waits."""
+    merge_request(renv)
+    [approval] = [m for m in renv.messages() if m.kind == "card" and m.card.type == "approval"]
+    assert approval.answered_by is None and [n.kind for n in renv.chats.needs_you()] == ["approval"]
+    renv.say(word)
+    assert renv.chart.record(approval.card.change_id).out.status == status and renv.chats.needs_you() == []
+    assert renv.chats.message(approval.id).answered_by == approval.id
+
+
+def test_an_approval_decided_by_the_route_reads_answered(renv):
+    merge_request(renv)
+    [approval] = [m for m in renv.messages() if m.kind == "card" and m.card.type == "approval"]
+    renv.go(lambda: renv.runner.decide(approval.card.change_id, False))
+    assert renv.chats.message(approval.id).answered_by == approval.id
 
 
 def test_a_merge_for_a_task_asks_stage_c_after_the_yes(renv):

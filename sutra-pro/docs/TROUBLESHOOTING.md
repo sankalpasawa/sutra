@@ -48,6 +48,7 @@ Each entry: what you see, what the app did about it, what you do.
 - **You see:** after the next start, the team chat offers to continue; the node is dashed "left open".
 - **The app:** live runs were stopped cleanly (the work so far is kept), or, after a crash of the server itself, settled at the next start.
 - **Do:** write in the team's chat; the next request is a follow-up that starts from the old records. No data is lost either way (see [OPERATIONS.md](OPERATIONS.md), section 2).
+- **A request you had just sent in the org chat:** if the app stopped before Sutra answered it, the bubble comes back marked as failed with Retry, and Sutra says "The app stopped before I finished your request. Please try again." Press Retry (it runs your newest request again), or send it again. Check the org chart first when the request was about changing it: a change made before the stop stays.
 
 ### F9 A bad line in a run's event file
 - **You see:** nothing.

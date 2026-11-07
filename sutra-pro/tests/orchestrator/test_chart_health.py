@@ -104,6 +104,18 @@ def test_an_empty_purpose_and_a_purpose_that_only_repeats_the_name_are_flagged(b
     assert (thin_purpose(Item("a", "division", "Quotes", "Prices we send")), thin_purpose(Item("a", "division", "Quotes", "  "))) == ("", "empty")
 
 
+def test_a_purpose_in_another_script_is_judged_by_its_own_words_not_flagged_for_having_no_latin_letters(bare):
+    """QA org-chat-teams: `tokens` reads a-z only, so any purpose written in Devanagari or Japanese came back as 'only repeats its name'."""
+    for name, purpose in (("बेकरी टीम", "बेकरी के लिए वेबसाइट बनाना और ऑर्डर लेना"), ("日本語チーム", "日本のお客様向け"), ("Cafe", "कैफ़े के लिए मेन्यू")):
+        assert thin_purpose(Item("a", "department", name, purpose)) == "", name
+    assert thin_purpose(Item("a", "department", "बेकरी टीम", "बेकरी  टीम!")) == "repeats"         # the same words again, whatever the spacing and marks
+    assert thin_purpose(Item("a", "department", "日本語チーム", "日本語チーム")) == "repeats"
+    assert thin_purpose(Item("a", "department", "Sales", "to do it for us")) == "repeats"            # Latin text with nothing but stop words and short words says nothing
+    assert thin_purpose(Item("a", "department", "बेकरी", "bakery orders")) == ""                    # mixed scripts: the Latin words count
+    bare.apply(add_op("$b", "department", "बेकरी टीम", "root", "बेकरी के लिए वेबसाइट बनाना और ऑर्डर लेना"))
+    assert [n.words for n in notes(bare, 0).notes if n.kind == "no_purpose" and n.nodes[0].label == "बेकरी टीम"] == []
+
+
 # ---- quiet -------------------------------------------------------------------------------------------------------------------------
 
 def test_a_team_idle_for_ninety_days_is_flagged_by_an_injected_clock_and_not_ten_days_after_its_last_task(bare):

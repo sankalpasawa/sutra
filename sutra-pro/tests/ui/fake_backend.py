@@ -226,6 +226,7 @@ class Chat:
         self.visible = self.initial
         self.extra: list[dict] = []
         self.text_override: dict[int, str] = {}
+        self.pressed: dict[int, int] = {}        # card message id -> the owner line that pressed one of its buttons (the real server's `choice:<id>` line)
 
     @property
     def sid(self) -> str:
@@ -236,7 +237,8 @@ class Chat:
         return max(ids, default=0) + 1
 
     def messages(self) -> list[dict]:
-        """What the session shows now, with each question's `answered_by` read live from the owner's next line."""
+        """What the session shows now, with each question's `answered_by` read live from the owner's next line and each pressed approval or
+        choice card's from the line that pressed it (what ChatStore reads from `choice:<card id>`)."""
         shown = [copy.deepcopy(m) for m in self.fixture[: self.visible]] + copy.deepcopy(self.extra)
         for m in shown:
             if m["id"] in self.text_override:
@@ -244,6 +246,8 @@ class Chat:
         for index, m in enumerate(shown):
             if m["kind"] == "question":
                 m["answered_by"] = next((later["id"] for later in shown[index + 1:] if later["role"] == "user"), None)
+            elif m["kind"] == "card" and m["id"] in self.pressed:
+                m["answered_by"] = self.pressed[m["id"]]
         return shown
 
     def session_out(self) -> dict:
@@ -385,9 +389,9 @@ class FakeState:
     def chart(self) -> dict:
         return copy.deepcopy(self.fx.charts[self.chart_stage])
 
-    def changes(self, after: int = 0, limit: int = 50) -> list[dict]:
+    def changes(self, after: int = 0, limit: int = 50, newest: bool = False) -> list[dict]:
         rows = [c for c in self.fx.changes[self.chart_stage] if c["seq"] > after]
-        return copy.deepcopy(rows[:limit])
+        return copy.deepcopy(rows[-limit:] if newest else rows[:limit])
 
     def full_graph(self) -> dict:
         return copy.deepcopy(self.fx.graphs[self.graph_stage])
@@ -1119,8 +1123,8 @@ def register_api(app: FastAPI, state: FakeState) -> None:
         return JSONResponse(state.chart())
 
     @app.get("/api/chart/changes")
-    def chart_changes(after: int = 0, limit: int | None = None):
-        return JSONResponse(state.changes(max(after, 0), int_arg(limit, 50, 1, 500)))
+    def chart_changes(after: int = 0, limit: int | None = None, newest: bool = False):
+        return JSONResponse(state.changes(max(after, 0), int_arg(limit, 50, 1, 500), newest))
 
     @app.get("/api/graph")
     def graph(level: str = "chart", dept: str | None = None, task: str | None = None):
@@ -1175,6 +1179,8 @@ def register_api(app: FastAPI, state: FakeState) -> None:
                 message = state.play_flow("first_task", flow, text)[0]
             else:
                 message = state.add_message(chat, "user", "user", "text", text)
+            if isinstance(body.get("choice"), dict):
+                chat.pressed[body["choice"]["message_id"]] = message["id"]
             return JSONResponse({"message_id": message["id"], "turn": "started"}, status_code=202)
         return JSONResponse(state.deliver(chat, text))
 

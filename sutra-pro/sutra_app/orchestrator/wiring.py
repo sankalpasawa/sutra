@@ -78,6 +78,7 @@ class AppServices(Services):
     reconciled: ReconcileReport | None = None
     swept: int = 0
     refreshed: int = 0
+    interrupted: int = 0               # owner lines of the org chat the last run accepted and never answered (closed as errors at start)
     started: bool = False
     stopped: bool = False
     problems: list[str] = field(default_factory=list)
@@ -209,7 +210,8 @@ def refresh_function_nodes(services: Services) -> int:
 async def start_services(services: AppServices) -> AppServices:
     """Orchestrator 5.1 steps 2, 3, 5, 6 and 7, in this order: migrate; bootstrap the chart when there is no root; sweep empty
     department folders and refresh stale function nodes; reconcile the tasks a previous run left (ends with `server.resync`
-    restart); the scheduler's catch-up tick and loop (recurring.py: one run for the time the app was away); start queued work.
+    restart) and close the org-chat requests it accepted and never answered (`TurnRunner.recover`); the scheduler's catch-up tick and loop
+    (recurring.py: one run for the time the app was away); start queued work.
     Idempotent: a second start finds the root, nothing to sweep, nothing stale."""
     if services.started:
         return services
@@ -224,13 +226,14 @@ async def start_services(services: AppServices) -> AppServices:
     marked = await run_blocking(recover_interrupted, services.db, services.chats)     # a direct turn the last process did not finish gets its error line
     if marked:
         log.info("%d direct chat turn(s) of the last run were interrupted and are marked", marked)
+    services.interrupted = await run_blocking(services.runner.recover)         # an owner line the last run accepted and never answered becomes an error with Retry
     if services.recurring is not None:                      # the one catch-up for the time the app was away, before the first start_ready
         await services.recurring.start()
     await services.tasks.start_ready()
     services.started = True
     services.stopped = False
-    log.info("sutra started: %d department folder(s) swept, %d function node(s) refreshed, %d task(s) reconciled",
-             services.swept, services.refreshed, len(services.reconciled.all()))
+    log.info("sutra started: %d department folder(s) swept, %d function node(s) refreshed, %d task(s) reconciled, %d request(s) left open by the last run",
+             services.swept, services.refreshed, len(services.reconciled.all()), services.interrupted)
     return services
 
 

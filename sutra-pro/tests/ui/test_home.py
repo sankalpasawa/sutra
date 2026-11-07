@@ -177,6 +177,15 @@ def test_home_reads_what_the_design_says_on_load_and_nothing_else(browser, fake)
 
 
 @browser_only
+def test_home_asks_for_the_newest_changes_not_the_first_of_a_long_log(browser, fake):
+    """QA org-chat-teams: `limit=50` alone is the OLDEST 50, so after change 50 the log pane, its marks and Show in the org chart never moved on."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake)
+    asked = [r["query"] for r in fake.log("/api/chart/changes") if r["path"] == "/api/chart/changes"]
+    assert asked and set(asked) == {"limit=50&newest=true"}
+
+
+@browser_only
 def test_home_boots_with_no_console_error_and_the_rail_shows_its_items(browser, fake):
     load(browser, fake, stage="full")
     assert texts(browser, "#rail > button, #rail .railhead, #rail .railsec > button") == ["Chat", "Workflow graph", "Org chart", "Teams", "Settings", "Appearance", "Connectors", "Engine"]
@@ -218,6 +227,49 @@ def test_the_progress_bar_and_sentence_follow_the_turn(browser, fake):
     assert browser.text("#sstatus") == ""
     fake.emit("chat.turn", {"session_id": "cs_other", "turn": 1, "phase": "planning", "detail": ""})         # another session's turn is not the org chat's
     assert browser.js("HomePage.state().turn.phase") == "error"
+
+
+@browser_only
+def test_the_enter_that_confirms_an_ime_candidate_does_not_send_the_half_typed_line(browser, fake):
+    """QA org-chat-teams: Enter while composing (Japanese, Chinese, Korean, phonetic Hindi) sent the line; the node panel's box already waited."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake)
+    enter = lambda init: browser.js(                                                      # noqa: E731  (what the keydown carries is the point of the test)
+        "(() => { const t = document.getElementById('sbox'); t.focus(); const e = new KeyboardEvent('keydown', Object.assign({key: 'Enter', bubbles: true, cancelable: true}, "
+        + json.dumps(init) + ")); t.dispatchEvent(e); return [e.defaultPrevented, HomePage.state().pending.length]; })()")
+    browser.js("(() => { const t = document.getElementById('sbox'); t.value = 'nihongo wo nyuuryoku'; t.dispatchEvent(new CompositionEvent('compositionstart', {bubbles: true})); })()")
+    assert enter({"keyCode": 229, "isComposing": True}) == [False, 0]                    # Chrome: the candidate is being accepted
+    assert enter({"keyCode": 229, "isComposing": False}) == [False, 0]                   # Safari reports the key after the composition ended with keyCode 229
+    assert browser.js("document.getElementById('sbox').value") == "nihongo wo nyuuryoku" and posts(fake) == []
+    assert enter({"keyCode": 13, "isComposing": False}) == [True, 1]                     # a plain Enter still sends
+    assert enter({"keyCode": 13, "shiftKey": True}) [0] is False                         # Shift+Enter is a new line, as before
+
+
+@browser_only
+def test_a_reload_during_a_turn_brings_the_progress_bar_and_sentence_back_from_the_servers_phase(browser, fake):
+    """QA org-chat-teams: the strip and 'Planning...' went blank after a reload while the server still said planning; the dimmed bubble looked stuck."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake)
+    reload = lambda: (browser.goto(fake.url + "/"), browser.wait_for("window.HomePage && HomePage.state().loaded === true"))   # noqa: E731
+    fake.emit("chat.turn", {"session_id": "cs_org", "turn": 1, "phase": "planning", "detail": "Planning"})
+    browser.wait_for("!document.getElementById('sprog').hidden")
+    reload()                                                                              # the page starts with no memory of the turn
+    assert not browser.js("document.getElementById('sprog').hidden")
+    assert attrs(browser, "#sprog > div", "class") == ["done", "done", "on", "", ""] and browser.text("#sstatus") == "Planning…"
+    assert browser.js("HomePage.state().turn.active") is True                               # the box waits for the answer as it did before the reload
+    fake.emit("chat.turn", {"session_id": "cs_org", "turn": 1, "phase": "building", "detail": "Setting up the team"})    # the real server's word for applying
+    reload()
+    assert attrs(browser, "#sprog > div", "class") == ["done", "done", "done", "on", ""] and browser.text("#sstatus") == "Setting up the team…"
+    fake.emit("chat.turn", {"session_id": "cs_org", "turn": 1, "phase": "done", "detail": ""})                             # no turn: the phase is ready, the strip stays hidden
+    reload()
+    assert browser.js("document.getElementById('sprog').hidden") and browser.text("#sstatus") == ""
+    assert browser.js("HomePage.state().turn.active") is False
+    fake.emit("chat.turn", {"session_id": "cs_org", "turn": 2, "phase": "planning", "detail": "Planning"})
+    reload()                                                                              # resumed again: now the turn ends while no event reaches the page
+    assert browser.js("HomePage.state().turn.active") is True
+    fake.emit("chat.turn", {"phase": "done"})                                              # (no session_id: the page ignores it, the server's phase becomes ready)
+    assert wait_until(browser, lambda: browser.js("HomePage.state().turn.active") is False)    # the 2.5 s re-read of the session ends it
+    assert attrs(browser, "#sprog > div", "class")[-1] == "on" and browser.text("#sstatus") == ""
 
 
 @browser_only
@@ -311,6 +363,22 @@ def test_a_choice_card_posts_the_chosen_option_to_the_org_chat(browser, fake):
     assert browser.count(".c-choice [data-act=\"choose\"]") == 3                            # the other card is still open
 
 
+@browser_only
+def test_an_answered_approval_stays_closed_after_a_reload_and_the_open_cards_stay_open(browser, fake):
+    """QA org-chat-teams: the answer lived only in the page, so a reload (or a second window) drew the answered card with Yes and No again."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake, stage="full")
+    present(browser, '.c-approval [data-act="choose"]')
+    browser.click('.c-approval [data-act="choose"]')
+    present(browser, ".c-approval[data-answered]")
+    browser.goto(fake.url + "/")                                                              # the reload: the page starts from what the server holds
+    browser.wait_for("window.HomePage && HomePage.state().loaded === true")
+    present(browser, ".c-approval[data-answered]")
+    assert browser.count('.c-approval [data-act="choose"]') == 0
+    assert "You answered: Yes" in texts(browser, ".c-approval")[0]
+    assert browser.count('.c-choice [data-act="choose"]') == 3 and browser.count(".c-choice[data-answered]") == 0
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # needs you
 # ---------------------------------------------------------------------------------------------------------------------
@@ -326,6 +394,32 @@ def test_the_needs_you_strip_lists_the_question_and_its_button_opens_the_teams_o
     browser.click("#needs [data-needmsg]")
     browser.wait_for("!document.getElementById('teamchat').hidden && document.activeElement && document.activeElement.classList.contains('nmsg') "
                      "&& document.activeElement.dataset.kind === 'question'")                # the team's own chat, with the question in view
+
+
+@browser_only
+def test_a_chart_change_reads_the_rail_and_the_needs_you_strip_again_so_a_renamed_team_shows_its_new_name(browser, fake):
+    """QA org-chat-teams: a rename (from the chat or another window) moved the graph and the org chart but the rail and the Needs-you line kept the old name."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake, stage="2")
+    reads = lambda path: len([r for r in fake.log(path) if r["path"] == path])        # noqa: E731
+    before = (reads("/api/departments"), reads("/api/needs-you"))
+    fake.emit("chart.changed", {"revision": 2, "version": 2, "change_id": "chg-0002", "kind": "rearrange", "added": [], "moved": [], "merged": [],
+                                "summary": "Renamed Web to Site", "archived": []})
+    assert wait_until(browser, lambda: reads("/api/departments") > before[0] and reads("/api/needs-you") > before[1])
+
+
+@browser_only
+def test_an_approval_in_the_needs_you_strip_reads_approval_needed_not_a_leading_colon(browser, fake):
+    """QA org-chat-teams: an approval has no team, so its row began with ': Merge Corporate into Weddings?'."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake, stage="2")
+    browser.js("""(() => { const S = HomePage.state(); S.needs.push({message_id: 9, session_id: "cs_org", kind: "approval", dept_id: null, dept_name: "",
+      text: "Merge Corporate into Weddings? Their chats and history stay available.", options: ["Yes", "No"], asked_at: "2026-11-04T10:05:00Z"});
+      S.needs.push({message_id: 10, session_id: "cs_org", kind: "question", dept_id: null, dept_name: "", text: "Which colour?", options: [], asked_at: "2026-11-04T10:06:00Z"});
+      HomePage.renderNeeds(); })()""")
+    assert texts(browser, "#needs .needitem span") == ["Web: Should the menu show prices?",
+                                                       "Approval needed: Merge Corporate into Weddings? Their chats and history stay available.",
+                                                       "Which colour?"]                  # a team's name still leads its question; a line with neither team nor kind is just the words
 
 
 @browser_only
@@ -760,6 +854,27 @@ def test_every_refusal_has_its_sentence_and_only_the_right_ones_link_to_settings
     assert server["text"] == "Something went wrong. Try again."                           # a server error is not shown raw
     assert busy["text"] == "The team is working."                                          # the server's own sentence for a 4xx
     assert empty["text"] == "Something went wrong. Try again."
+
+
+@browser_only
+def test_a_refusal_with_a_reason_says_the_reason_so_a_too_long_message_names_its_limit(browser, fake):
+    """QA org-chat-teams: a message over 8000 characters came back as 'The request was refused' and the violation's own words were dropped."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake)
+    too_long = {"violations": [{"path": "body.text", "code": "string_too_long", "message": "String should have at most 8000 characters"}]}
+    words = browser.js("""(details => [HomePage.errorWords({status: 422, code: "validation", message: "The request was refused", details: details}),
+      HomePage.errorWords({status: 422, code: "validation", message: "The request was refused", details: {violations: [{path: "x", code: "c", message: "  "}]}}),
+      HomePage.errorWords({status: 422, code: "validation", message: "The request was refused", details: {}}),
+      HomePage.errorWords({status: 500, code: "internal", message: "boom", details: details})])(""" + json.dumps(too_long) + ")")
+    assert words[0] == {"text": "The request was refused: String should have at most 8000 characters", "settings": False}
+    assert words[1]["text"] == "The request was refused" and words[2]["text"] == "The request was refused"       # no reason given: the server's own sentence, as before
+    assert words[3]["text"] == "Something went wrong. Try again."                           # a server fault is still never shown raw
+    fake.fail("/api/chats/cs_org/messages", 422, count=1, message="The request was refused", details=too_long)
+    browser.expect_failed("/api/chats/cs_org/messages", 422)
+    send_text(browser, "x" * 8001)
+    browser.wait_for("!document.getElementById('sbanner').hidden")
+    assert "String should have at most 8000 characters" in texts(browser, "#sbanner")[0]
+    assert browser.js("document.getElementById('sbox').value.length") == 8001                  # nothing is lost: the text stays in the box
 
 
 @browser_only

@@ -530,10 +530,15 @@ class ChartChangeInvalid(Exception):
 
 # ---- ids ----------------------------------------------------------------------------------------------------------
 
+_WINDOWS_DEVICES = frozenset({"con", "prn", "aux", "nul", *(f"{device}{n}" for device in ("com", "lpt") for n in range(1, 10))})
+
+
 def slug_id(kind: str, name: str, taken: Collection[str]) -> str:
     """A node id from a name: lowercase letters, digits and hyphens, then "-2", "-3" ... until it is free.
     A name with no usable letters (or none first) starts from the kind ("division-3d-printing", "department"), and an
-    id is 2 to 40 characters, so it always fits NodeId and the department URL and folder rules."""
+    id is 2 to 40 characters, so it always fits NodeId and the department URL and folder rules. A name that slugs to a
+    Windows device name (con, prn, aux, nul, com1-9, lpt1-9) also starts from the kind ("department-con"): a team's
+    folder carries its id, and Windows cannot make a folder with such a name."""
     def slug(text: str) -> str:
         ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower()
         return re.sub(r"[^a-z0-9]+", "-", ascii_text).strip("-")
@@ -543,6 +548,8 @@ def slug_id(kind: str, name: str, taken: Collection[str]) -> str:
     if not base or not base[0].isalpha():
         base = f"{prefix}-{base}".strip("-")
     elif len(base) < 2:
+        base = f"{prefix}-{base}"
+    if base in _WINDOWS_DEVICES:
         base = f"{prefix}-{base}"
     for n in count(1):                                  # ends within len(taken) + 1 steps: the candidates differ
         suffix = "" if n == 1 else f"-{n}"

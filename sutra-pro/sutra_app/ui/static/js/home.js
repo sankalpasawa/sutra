@@ -71,7 +71,7 @@
     departments: [], departmentsLoaded: false, needs: [], needsLoaded: false,
     graph: null, chart: null, changes: [],
     health: null, settings: null, scope: "", errors: {}, saved: false, saving: false, conn: {test: {}, signin: null}, signer: null,
-    pane: "graph", turn: {seen: false, phase: "", n: 0, active: false}, awaitGraph: false,
+    pane: "graph", turn: {seen: false, phase: "", n: 0, active: false, resumed: false}, awaitGraph: false,
     banner: null, blocked: "", sending: false, live: "offline", theme: null, loaded: false,
     graphView: null, chartView: null, panel: null, stream: null, watch: null, values: null,
     // gap attention: the Heads up lane, the age of each ask, the "Got it" marks of this browser, the tab title and the desktop notice
@@ -92,10 +92,12 @@
     const status = e && Number.isInteger(e.status) ? e.status : 0;
     const code = e && typeof e.code === "string" ? e.code : "";
     const said = clean(e && e.message);
+    const found = e && isObj(e.details) && Array.isArray(e.details.violations) ? e.details.violations.find(v => isObj(v) && clean(v.message) !== "") : null;
     if (status === 401 || code === "bad_token") return {text: NO_TOKEN, settings: false, blocked: true};
     if (code === "provider_unavailable" || code === "cli_missing") return {text: said || "No model is available right now.", settings: true};
     if (status === 429) return {text: TOO_MANY, settings: false};
     if (status === 0 || code === "network") return {text: DOWN, settings: false, retry: true};
+    if (status === 422 && found && said) return {text: said.replace(/[.:\s]+$/, "") + ": " + clean(found.message), settings: false};     // "... refused: String should have at most 8000 characters"
     return {text: status >= 500 || !said ? FAILED : said, settings: false};
   }
 
@@ -138,7 +140,30 @@
     return w;
   }
 
-  async function fetchSession() { S.session = await api.get("/api/chats/" + ORG); }
+  async function fetchSession() { S.session = await api.get("/api/chats/" + ORG); syncTurn(S.session); }
+
+  // A page opened while a turn runs has no chat.turn events behind it, so the phase word of GET /api/chats/cs_org (reading, planning, building) stands in
+  // for them until the first event arrives. Until then the session is read again every 2.5 s: a turn that ended before this page's event stream opened
+  // does not leave the strip and the "one at a time" note on the screen.
+  const TURN_WORD = {reading: "reading_chart", planning: "planning", building: "applying"};
+  function syncTurn(session) {
+    if (S.turn.seen && !S.turn.resumed) return;                                          // the page's own events know better
+    const word = isObj(session) && hasOwn(TURN_WORD, session.phase) ? TURN_WORD[session.phase] : "";
+    if (word === "" && !S.turn.resumed) return;
+    S.turn.seen = true;
+    S.turn.resumed = word !== "";
+    S.turn.phase = word || "done";
+    S.turn.active = word !== "";
+    renderProgress();
+    renderComposer();
+    if (word !== "") watchTurn();
+    else reloadMessages();
+  }
+  let turnTimer = null;                                                                  // one re-read at a time, however often the page loads everything again
+  function watchTurn() {
+    if (turnTimer !== null) return;
+    turnTimer = root.setTimeout(() => { turnTimer = null; if (S.turn.resumed) fetchSession().catch(watchTurn); }, 2500);
+  }
 
   // The org chat, oldest first. all=true reads it from the start (a message can change after it was read, such as one that turned into an error);
   // otherwise only what is newer than the last one seen.
@@ -169,7 +194,7 @@
   }
 
   async function fetchChart() {
-    const [chart, changes] = await Promise.all([api.get("/api/chart"), api.get("/api/chart/changes", {limit: 50})]);
+    const [chart, changes] = await Promise.all([api.get("/api/chart"), api.get("/api/chart/changes", {limit: 50, newest: true})]);
     S.chart = chart;
     S.changes = Array.isArray(changes) ? changes : [];
     if (S.chartView) S.chartView.update(S.chart, S.changes);
@@ -275,19 +300,9 @@
     return map;
   }
 
-  // The answer of every card the owner has dealt with: what the owner clicked here, a message the server marks answered, and a team question
-  // that /api/needs-you no longer lists (then the card just reads "Answered").
-  function answersMap() {
-    const out = Object.assign({}, S.answers);
-    S.messages.forEach(m => {
-      if (m.kind !== "card" || !isObj(m.card) || hasOwn(out, m.id)) return;
-      const c = m.card;
-      if (m.answered_by !== null && m.answered_by !== undefined) out[m.id] = "";
-      else if ((c.type === "needs_you" || (c.type === "team_chat" && c.about === "question")) && S.needsLoaded &&
-        !S.needs.some(n => String(n.message_id) === String(c.question_message_id) && (!n.dept_id || !c.dept_id || n.dept_id === c.dept_id))) out[m.id] = "";
-    });
-    return out;
-  }
+  // The answer of every card the owner has dealt with (ChatView.answersOf): what the owner clicked here, a card the server says was answered (also after
+  // a reload: an approval or choice whose button was pressed), and a team question that /api/needs-you no longer lists (then the card just reads "Answered").
+  const answersMap = () => root.ChatView.answersOf(S.messages, {local: S.answers, needs: S.needs, needsLoaded: S.needsLoaded});
 
   function startHtml() {
     if (hasWritten() || S.messages.length === 0) return "";
@@ -656,7 +671,8 @@
     const ask = root.ChatView.parseAsk(item.text);
     const question = ask.qs.length ? ask.qs[0].q : "";
     const said = root.ChatView.stripTag(question || ask.say || item.text).split("\n")[0].trim();
-    return clean(item.dept_name) + (said ? ": " + said : "");
+    const who = clean(item.dept_name) || (item.kind === "approval" ? "Approval needed" : "");           // an approval belongs to no team
+    return who + (said ? (who ? ": " : "") + said : "");
   }
 
   // A question is answered in its team's own chat, and the button says which one; an approval waits in the org chat.
@@ -1444,6 +1460,7 @@
       case "chat.turn":
         if (d.session_id === ORG) {
           S.turn.seen = true;
+          S.turn.resumed = false;
           S.awaitGraph = true;
           S.turn.phase = clean(d.phase);
           S.turn.n = Number.isFinite(d.turn) ? d.turn : S.turn.n;
@@ -1462,7 +1479,7 @@
           S.graphView.noteMessage(d.session_id, d.message.id);
         }
         break;
-      case "chart.changed": refetchChart(); refetchGraph(); break;
+      case "chart.changed": refetchChart(); refetchGraph(); refetchDepartments(); refetchNeeds(); break;                // a rename also changes the rail and the Needs-you lines
       case "chart.approval": refetchMessages(); break;
       case "graph.updated": refetchGraph(); break;
       case "task.updated": refetchDepartments(); refetchHeads(); refetchLimits(); if (S.recurring !== null) refetchRecurring(); break;
@@ -1613,6 +1630,7 @@
   function renderAll() {
     renderChat();
     renderComposer();
+    renderProgress();
     renderNeeds();
     renderRail();
     renderBanner();

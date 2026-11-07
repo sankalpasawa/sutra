@@ -798,6 +798,16 @@ def test_chart_change_invalid_carries_every_violation_and_a_readable_message():
     ("division", "x" * 60, {"x" * 40}, "x" * 38 + "-2"),
     ("division", "word " * 12, set(), "-".join(["word"] * 8)),
     ("division", "word " * 12, {"-".join(["word"] * 8)}, "-".join(["word"] * 7) + "-wor-2"),            # cut to fit "-2"
+    ("department", "CON", set(), "department-con"),                          # Windows cannot make a folder named con, prn, aux, nul, com1-9 or lpt1-9 (QA org-chat-teams)
+    ("department", "Nul.", set(), "department-nul"),
+    ("division", "COM1", set(), "division-com1"),
+    ("division", "COM\u00b9", set(), "division-com1"),                        # a superscript digit folds to the digit first
+    ("division", "lpt9", set(), "division-lpt9"),
+    ("department", "Aux", {"department-aux"}, "department-aux-2"),
+    ("department", "prn", {"prn"}, "department-prn"),
+    ("division", "Console", set(), "console"),                               # only the exact device names
+    ("division", "com10", set(), "com10"),
+    ("division", "Aux Desk", set(), "aux-desk"),
 ])
 def test_slug_id_examples(kind, name, taken, expected):
     made = slug_id(kind, name, taken)

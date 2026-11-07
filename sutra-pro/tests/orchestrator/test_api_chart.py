@@ -68,8 +68,19 @@ def test_the_change_log_pages_by_seq_and_limit_and_needs_no_token(client):
     assert [r.seq for r in rows] == [1, 2, 3]
     assert [r["seq"] for r in client.get("/api/chart/changes", params={"after": 1, "limit": 1}).json()] == [2]
     assert client.get("/api/chart/changes", params={"after": 3}).json() == []
-    for bad in ({"limit": 0}, {"limit": 501}, {"after": -1}, {"limit": "x"}):
+    for bad in ({"limit": 0}, {"limit": 501}, {"after": -1}, {"limit": "x"}, {"newest": "maybe"}):
         error_of(client.get("/api/chart/changes", params=bad), 422, "validation")
+
+
+def test_the_change_log_can_be_asked_for_its_newest_rows_still_oldest_first(client, built, auth):
+    """QA org-chat-teams: the pages asked for `limit=50` and got changes 1 to 50 of a longer log, so the newest rows (and a pending approval) never showed."""
+    for name in ("Support", "Billing", "Legal", "Logistics"):
+        assert client.post("/api/chart/changes", json=payload(built, dept_op("$d", name)), headers=auth).status_code == 200
+    assert [r["seq"] for r in client.get("/api/chart/changes", params={"limit": 3}).json()] == [1, 2, 3]
+    assert [r["seq"] for r in client.get("/api/chart/changes", params={"limit": 3, "newest": "true"}).json()] == [5, 6, 7]
+    assert [r["seq"] for r in client.get("/api/chart/changes", params={"limit": 3, "newest": 1, "after": 1}).json()] == [5, 6, 7]
+    assert [r["seq"] for r in client.get("/api/chart/changes", params={"limit": 50, "newest": "true"}).json()] == [1, 2, 3, 4, 5, 6, 7]
+    assert [r["seq"] for r in client.get("/api/chart/changes", params={"limit": 2, "newest": "false"}).json()] == [1, 2]
 
 
 def test_unwired_stores_answer_500_internal_not_a_crash(built, settings):

@@ -317,14 +317,38 @@ def test_the_greeting_is_the_chart_stores():
     assert planner.LINES["greeting"] == GREETING
 
 
+@pytest.mark.parametrize("name, kind, said", [
+    ("Web", "department", "a Web team"),
+    ("Event Booking", "department", "an Event Booking team"),                 # QA org-chat-teams: 'a Event Booking team'
+    ("General Team", "department", "a General Team"),                         # ... and 'a General Team team'
+    ("sales team", "department", "a sales team"),
+    ("Weddings", "division", "a Weddings division"),                          # a division is not a team
+    ("Events", "division", "an Events division"),
+    ("Weddings Division", "division", "a Weddings Division"),
+    ("Umbrella", "department", "an Umbrella team"),
+    ("University", "department", "a University team"),                        # a vowel letter, a consonant sound
+    ("Hours", "department", "an Hours team"),
+    ("HR", "department", "an HR team"),                                       # an acronym follows how its first letter is said
+    ("SEO", "department", "an SEO team"),
+    ("UX", "department", "a UX team"),
+    ("3D Printing", "division", "a 3D Printing division"),
+    ("  Sales  ", "department", "a Sales team"),
+])
+def test_what_was_added_reads_with_the_right_article_the_right_noun_and_no_doubled_word(name, kind, said):
+    assert planner.added(name, kind) == said
+
+
 def test_every_line_has_a_matching_pattern_and_no_free_prose_matches():
     for key, template in planner.LINES.items():
-        values = {name: "X" for _, name, _, _ in __import__("string").Formatter().parse(template) if name}
+        values = {name: ("a X team" if name == "what" else "X") for _, name, _, _ in __import__("string").Formatter().parse(template) if name}
         sentence = planner.line(key, **{k: ("Menu is busy with Cafe" if key == "busy" else v) for k, v in values.items()})
         assert planner.matches_template(sentence), key
     assert planner.matches_template("I moved Menu under Content. I set up a Content team.")
     assert not planner.matches_template("Sure! I will build you a lovely website right away.")
     assert not planner.matches_template("I set up a Web team and gave it your request. Also here is a joke.")
+    assert planner.matches_template("I set up an Event Booking team and gave it your request. I set up a Weddings division. I set up a General Team.")
+    assert not planner.matches_template("I set up a Web team and gave it your request. Also I set up a free joke.")
+    assert not planner.matches_template("I set up whatever you like.")
     with pytest.raises(ValueError):
         planner.line("reuse")
     assert planner.names_phrase(["A"]) == "A" and planner.names_phrase(["A", "B", "C"]) == "A, B and C" and planner.names_phrase([]) == ""

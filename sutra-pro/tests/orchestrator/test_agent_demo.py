@@ -18,6 +18,7 @@ from sutra_app.orchestrator.agent import demo, prompts
 from sutra_app.orchestrator.agent.agent import ChatAgent, PlanRequest
 from sutra_app.orchestrator.agent.demo import DemoBook, DemoStub, demo_book, topic_name
 from sutra_app.orchestrator.models import ChangeContext
+from sutra_app.orchestrator.notes import AGENT_HEADING
 from sutra_app.orchestrator.wiring import build_services
 
 CAFE = "A website for my cafe"
@@ -29,17 +30,17 @@ DIGEST_TWO = "\n".join([DIGEST_EMPTY, CAFE_LINE, "  menu | Menu | The menu page"
 
 # ---- prompts as the chat agent builds them -------------------------------------------------------------------------------------
 
-def decide_prompt(message, digest=DIGEST_EMPTY):
+def decide_prompt(message, digest=DIGEST_EMPTY, notes=""):
     return prompts.render("decide", revision=1, digest=digest, conversation="(no earlier messages)", pending="(nothing)",
-                          message=message, notes="", field_digest="F", schema="{}")
+                          message=message, notes=notes, field_digest="F", schema="{}")
 
 
 def change_prompt(message, digest=DIGEST_EMPTY, kind="add"):
     return prompts.render("change", revision=1, digest=digest, field_digest="F", message=message, decision="{}", kind=kind, schema="{}")
 
 
-def assign_prompt(message, digest):
-    return prompts.render("assign", digest=digest, field_digest="F", message=message, notes="", schema="{}")
+def assign_prompt(message, digest, notes=""):
+    return prompts.render("assign", digest=digest, field_digest="F", message=message, notes=notes, schema="{}")
 
 
 RETRY = "\n\n" + prompts.render("retry", n=1, max=3, violations="- request: x: y", delta="nothing")
@@ -127,6 +128,50 @@ def test_assign_prefers_the_team_named_like_the_topic_and_falls_back_to_the_newe
     assert parse("chat_turn", answer("assign", assign_prompt("Something else entirely", other)), "assignments").assignments[0].dept == "marketing"
 
 
+# ---- the owner's notes ride in the same block as the message (QA org-chat-teams) ---------------------------------------------------
+
+def notes_block(*lines):
+    """What `OwnerNotes.agent_block` appends to `{message}` in the decide and assign prompts: a newline, the heading, one `- Group: text` line each."""
+    return "\n" + AGENT_HEADING + "".join(f"\n- {line}" for line in lines)
+
+
+NOTES = notes_block("About you: I run a small florist shop in Jaipur", "How you like things done: Reply in short sentences")
+SHOP_LINE = "bookkeeping | Bookkeeping Service Small Shop | Books for the small shop | live: - | last: -"      # shares 'small' and 'shop' with the NOTES only
+DIGEST_SHOP = "\n".join([DIGEST_EMPTY, SHOP_LINE])
+
+
+def test_the_owners_notes_are_context_and_never_part_of_the_request_the_demo_reads():
+    """The regex that finds `OWNER REQUEST:` took the notes block with the message, so a new bakery went to the shop team on the words of the notes,
+    and the task title and brief read 'Design a logo ... OWNER NOTES (facts and house'."""
+    message = "Design a logo for my new bakery"
+    decision = parse("chat_turn", answer("decide", decide_prompt(message, DIGEST_SHOP, NOTES)), "decide")
+    assert (decision.change, decision.reuse_nodes) == ("add", [])                              # no team shares a word with the OWNER's words
+    assert answer("decide", decide_prompt(message, DIGEST_SHOP, NOTES)) == answer("decide", decide_prompt(message, DIGEST_SHOP))
+    after = "\n".join([DIGEST_EMPTY, SHOP_LINE, "bakery-logo | Design Logo New Bakery | Design a logo for my new bakery | live: - | last: -"])
+    plan = parse("chat_turn", answer("assign", assign_prompt(message, after, NOTES)), "assignments")
+    assert [(d.dept, d.title, d.brief) for d in plan.assignments] == [("bakery-logo", message, message)]
+    assert answer("assign", assign_prompt(message, after, NOTES)) == answer("assign", assign_prompt(message, after))
+
+
+def test_a_reused_team_gets_the_owners_words_as_the_title_and_the_brief_with_notes_present():
+    reuse = parse("chat_turn", answer("decide", decide_prompt("Add a menu to the cafe page", DIGEST_TWO, NOTES)), "decide")
+    assert (reuse.change, reuse.reuse_nodes) == ("reuse", ["website-cafe"])
+    assert (reuse.assignments[0].title, reuse.assignments[0].brief) == ("Add a menu to the cafe page", "Add a menu to the cafe page")
+
+
+def test_a_bare_yes_is_not_matched_to_a_team_by_the_words_of_the_notes():
+    digest = "\n".join([DIGEST_EMPTY, "signage | Shop Signage | Signs for the shop | live: - | last: -"])
+    assert parse("chat_turn", answer("decide", decide_prompt("yes", digest, NOTES)), "decide").change == "add"
+
+
+def test_a_message_that_quotes_the_notes_heading_keeps_its_own_words():
+    """Only the block at the end is cut: the heading is looked for from the right, after the message."""
+    message = "Why does the prompt say\n" + AGENT_HEADING + "\nfor my bakery"
+    assert parse("chat_turn", answer("decide", decide_prompt(message, DIGEST_EMPTY, NOTES)), "decide").change == "add"
+    from_book = demo._read(decide_prompt(message, DIGEST_EMPTY, NOTES))[0]
+    assert from_book == message
+
+
 def test_assign_without_a_department_is_a_clear_error():
     with pytest.raises(ValueError, match="no department"):
         answer("assign", assign_prompt(CAFE, DIGEST_EMPTY))
@@ -198,10 +243,10 @@ def test_offline_services_use_the_demo_book_and_nothing_else_does(tmp_path):
 class Demo:
     """The chat agent over the offline stub, on a real chart; `say` plans one message and applies its change like the runner does."""
 
-    def __init__(self, db, settings, clock, events, tmp_path) -> None:
+    def __init__(self, db, settings, clock, events, tmp_path, notes=None) -> None:
         self.env = Env(db, settings, clock, events)
         self.router = router_for(tmp_path, replybook=demo_book())
-        self.agent = ChatAgent(AsyncConnector(self.router), self.env.chart, clock=clock)
+        self.agent = ChatAgent(AsyncConnector(self.router), self.env.chart, clock=clock, notes=notes)
         self.n = 0
 
     def say(self, text):
@@ -234,3 +279,22 @@ def test_three_messages_make_reuse_and_add_teams(db, settings, clock, events, tm
     assert {c.rule for c in stub.calls} == {"book"} and [c.stage for c in stub.calls] == ["decide", "change", "assign", "decide", "decide", "change", "assign"]
     assert all(c.function == "chat_agent" for c in stub.calls)
 
+
+
+def test_with_owner_notes_written_the_demo_still_names_teams_and_routes_by_the_owners_words(db, settings, clock, events, tmp_path):
+    """QA org-chat-teams, through the real ChatAgent and the real notes hook: once any note existed, a new bakery went to the shop team, and the task title
+    and brief carried the notes preamble."""
+    from sutra_app.orchestrator.notes import OwnerNotes, prompt_notes
+    from sutra_app.orchestrator.owner_words import local_today
+    store = OwnerNotes(db)
+    store.add("about-you", "I run a small florist shop in Jaipur", None, local_today(clock))
+    store.add("preferences", "Reply in short sentences", None, local_today(clock))
+    d = Demo(db, settings, clock, events, tmp_path, notes=prompt_notes(db, None, clock))
+    first = d.say("Design a logo for my new bakery")
+    assert first.decision.change == "add" and [name for _, name, _ in d.departments()] == [topic_name("Design a logo for my new bakery")]
+    assert [(x.title, x.brief) for x in first.drafts] == [("Design a logo for my new bakery", "Design a logo for my new bakery")]
+    second = d.say("Write product descriptions for the shop")
+    assert [x.title for x in second.drafts] == ["Write product descriptions for the shop"] and "OWNER NOTES" not in second.drafts[0].brief
+    assert len(d.departments()) == 2                                                          # 'shop' (a word of the notes) did not send it to the first team
+    asked = [c.prompt for c in d.router.connectors["stub"].calls if c.stage in ("decide", "assign")]
+    assert asked and all(AGENT_HEADING in prompt for prompt in asked)                          # the notes did reach the prompts: only the demo ignores them

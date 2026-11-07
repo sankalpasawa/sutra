@@ -197,7 +197,7 @@ ChartChangeResult(Value): chart: OrgChart · ids: dict[Ref, NodeId] · aliases: 
 LinkPlan(Value): keep: dict[NodeId, SessionId] · move: dict[SessionId, NodeId] · archive: dict[SessionId, NodeId]
 class ChartChangeInvalid(Exception): violations: list[Violation]
 apply_change(chart, change, *, new_id: Callable[[kind, name, taken], NodeId] = slug_id) -> ChartChangeResult   # pure; raises ChartChangeInvalid with ALL violations, not the first
-slug_id(kind, name, taken) -> NodeId: lowercase slug of the name, "-2", "-3" ... until free (the orchestrator may inject its own generator)
+slug_id(kind, name, taken) -> NodeId: lowercase slug of the name, "-2", "-3" ... until free; a name that slugs to a Windows device name (con, prn, aux, nul, com1-9, lpt1-9) starts from the kind ("department-con"), because the id is the team's folder (the orchestrator may inject its own generator)
 carry_links(links: Mapping[NodeId, SessionId], result) -> LinkPlan        resolve_alias(aliases, node_id) -> NodeId   # follows chains (a merged-away target may itself be merged)
 ```
 Ops run in order on a working copy, so a later op can use a `Ref` an earlier op added (an add and a move in one change is a `rearrange`).
