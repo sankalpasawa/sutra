@@ -312,3 +312,40 @@ test("4g. the settled blocks rendered one by one read as the whole reply rendere
   assert.ok(strip(whole).startsWith(parts), "block by block is the same markup as all at once");
   assert.ok(s.blocks.length >= 4);
 });
+
+test("4h. a list that begins in the middle of a group, a list item continued by a one-space or a tab indent: never cut apart", () => {
+  const inGroup = splitStream("Steps:\n1. one\n\n   detail of one\n\n2. two\n\nAfter the list, long enough\n\nand the tail here, long enough");
+  assert.deepEqual(inGroup.blocks, ["Steps:\n1. one\n\n   detail of one\n\n2. two\n\n", "After the list, long enough\n\n"], "the intro's list goes on after a blank line");
+  const loose = splitStream("Options:\n- first\n\n- second\n\nAfter the list, long enough\n\nand the tail here, long enough");
+  assert.equal(loose.blocks[0], "Options:\n- first\n\n- second\n\n");
+  const tab = splitStream("- item\n\n\tcontinued with a tab\n\n- next\n\nAfter the list, long enough\n\nand the tail here, long enough");
+  assert.equal(tab.blocks[0], "- item\n\n\tcontinued with a tab\n\n- next\n\n");
+  const space = splitStream("- item\n\n continued with one space\n\nAfter the list, long enough\n\nand the tail here, long enough");
+  assert.equal(space.blocks[0], "- item\n\n continued with one space\n\n");
+  const apart = splitStream("A paragraph, long enough.\n\n- a list after it\n\nAnother paragraph, long enough.\n\n- a second list\n\nand the tail here, long enough");
+  assert.equal(apart.blocks.length, 4, "a paragraph between two lists still ends the first one");
+});
+
+test("4i. drawn chunk by chunk (settled blocks kept, tail drawn again), a reply reads as the same text drawn at once, at every chunk", () => {
+  const strip = html => (html.startsWith('<div class="cmd">') && html.endsWith("</div>") ? html.slice('<div class="cmd">'.length, html.length - "</div>".length) : html);
+  const texts = [
+    "Steps:\n1. one\n\n   detail of one\n\n2. two\n\nDone, and this paragraph is long enough.\n",
+    "Options:\n- first\n\n- second\n\n- third\n\nThat is all of it, long enough.\n\nBye bye bye bye.",
+    "+ plus item\nShort\n\n1.\n=====\n2. second\n\n2. second\n",
+    "- item\n\n\ttabbed\n\n- next item\n\n> a quote\n\n> goes on\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```js\nlet a;\n\nlet b;\n```\n\nThe end, long enough.",
+  ];
+  texts.forEach(text => {
+    [1, 3, 7].forEach(step => {
+      let settled = "";
+      let drawn = "";                                    // the html of the settled blocks, as the row keeps it
+      for (let n = step; n <= text.length + step; n += step) {
+        const now = text.slice(0, Math.min(n, text.length));
+        const plan = streamParts(settled, now);
+        if (plan.reset) drawn = "";
+        plan.add.forEach(b => { drawn += strip(ChatMarkdown.render(b, {streaming: false})); });
+        settled = plan.settledText;
+        assert.equal(drawn + strip(ChatMarkdown.render(plan.tail, {streaming: true})), strip(ChatMarkdown.render(now, {streaming: true})), JSON.stringify(now));
+      }
+    });
+  });
+});

@@ -4,7 +4,7 @@ The owner said: "The animation is a bit choppy. I want it very fluid, so make su
 
 Built: `ui/static/js/fluid.js` (new, one global `Fluid`), `ChatView.transcriptItems`, `ChatPill.streamParts`, `ChatComposer.streamParts` and `paintStreamRow`, edits in `home.js`,
 `node_panel.js`, `graph_view.js`, `dept_ext.js`, `home.html`, and the motion section of `ui/static/css/sutra-panel.css` (plus `sutra-graph.css`, `run-settings.css`).
-Tests: `tests/ui/js/fluid.test.js` 25, `tests/ui/js/motion_css.test.js` 7, one test each added to `chat_view.test.js`, `chat_pill.test.js` and `chat_composer.test.js`,
+Tests: `tests/ui/js/fluid.test.js` 27, `tests/ui/js/motion_css.test.js` 7, one test each added to `chat_view.test.js`, `chat_pill.test.js` and `chat_composer.test.js`,
 `tests/ui/test_fluid.py` 9 (4 wiring, 5 in a real browser with `SUTRA_BROWSER=1`), one browser test in `tests/ui/test_view_graph.py`.
 The probe that made the numbers: `tests/ui/perf/fluid_probe.js` (served by the fake backend at `/__fake/probe.js`).
 
@@ -18,7 +18,7 @@ around its motion. Causes, in the order they cost:
    replaced alone, an open `<details data-key>` stays open). A line that arrives gets `.nmsg-in`; a history loaded at once (more than 6 lines) does not animate line by line.
 2. **A streamed reply written again per chunk.** Each `chat.partial` rebuilt the markdown of the whole text so far (up to 4000 characters), replaced the whole streaming row with
    `innerHTML` and repainted the composer (`paintComposer` + `paintBar`, a forced layout each). Fix: `Fluid.paintStream` appends: the blocks that are done (`Fluid.splitStream`: the
-   next block has begun; a list, quote or table is never cut apart; a fence keeps its blank lines) are drawn once and stay as the same nodes, only the tail is drawn again; the
+   next block has begun; a list, quote or table is never cut apart, even a list that begins in the middle of a paragraph's group or goes on with a one-space or tab indent; a fence keeps its blank lines) are drawn once and stay as the same nodes, only the tail is drawn again; the
    composer's repaint is one job per animation frame (`Fluid.frame`) however many chunks came in it. The row and its `aria-live` region are written once.
 3. **A graph or org chart redrawn for data that did not change** (an event about another team, the 2 s poll while the stream is down): layout, SVG string, compare. Fix: `GraphView.accept`
    keeps a fingerprint of the picture (data, what the owner asked for, which nodes are unread; `Fluid.signature`) and skips an update that brings the same one. The org chart goes
@@ -55,7 +55,7 @@ for them the numbers show that the new motion costs no frame, and the gain is in
 fewer elements; a slower machine, or a longer reply, is where that shows). The transcript is the finding the owner will have felt: every message in a long chat was a 50 ms hitch.
 
 ## Test results
-`node --test tests/ui/js/*.test.js`: 918 tests, 916 pass, 2 skipped, 0 fail. `scripts/py -m pytest tests/ui tests/library tests/test_docs.py tests/test_traceability.py tests/test_ownership.py tests/test_layout.py`:
+`node --test tests/ui/js/*.test.js`: 920 tests, 918 pass, 2 skipped, 0 fail. `scripts/py -m pytest tests/ui tests/library tests/test_docs.py tests/test_traceability.py tests/test_ownership.py tests/test_layout.py`:
 3212 passed, 213 skipped (the browser tests skip without `SUTRA_BROWSER=1`). With `SUTRA_BROWSER=1`: `test_fluid.py`, `test_view_graph.py` (61) and `test_view_panel.py` pass; see Known limits for the rest.
 
 ## Riders (small changes in shared files, so the merge is easy)

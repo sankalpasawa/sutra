@@ -184,9 +184,12 @@
   }
 
   /* ---------------------------------------------------------------- a streamed reply: blocks that are done and a tail that is not */
-  // What a line says about the block it starts: a list item, an indented line, a quote or a table row continues the block before it when that one is
-  // of the same kind (it began with such a line too), so a list that has a blank line between its items stays one list. A paragraph is a block of its own.
-  const CONTINUES = /^(?:[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]|[ \t]{2,}\S|[ \t]*>|[ \t]*\|)/;
+  // What a line says about the block it starts: a list item, an indented line (any indent: ChatMarkdown's list takes one space or a tab as a
+  // continuation too), a quote or a table row continues the block before it when that one is OPEN, that is, when ANY of its lines was such a line (a
+  // list may begin in the middle of a group: "Steps:\n1. one" is one group whose list goes on after a blank line), so a list that has a blank line
+  // between its items stays one list. Joining too much only makes a bigger block; joining too little draws a list in two pieces while it streams.
+  // A paragraph is a block of its own.
+  const CONTINUES = /^(?:[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]|[ \t]+\S|[ \t]*>|[ \t]*\|)/;
   const FENCE_OPEN = /^[ \t]*(`{3,}|~{3,})(.*)$/;
   const FENCE_CLOSE = /^[ \t]*(`{3,}|~{3,})[ \t]*$/;
   const LONG_ENOUGH = 14;       // a first line this long can no longer turn into a list marker ("123456789. " is 11)
@@ -207,7 +210,7 @@
   function splitStream(value) {
     const text = typeof value === "string" ? value : "";
     const lines = text.split("\n");
-    const groups = [];                                  // {from: offset, first: its first line, complete: bool}
+    const groups = [];                                  // {from: offset, open: a line of it can be continued, complete: its first line is finished}
     let offset = 0;
     let fence = "";
     let afterBlank = true;
@@ -221,10 +224,11 @@
       }
       if (blank(line)) { afterBlank = true; return; }
       if (afterBlank) {
-        const joins = groups.length > 0 && CONTINUES.test(line) && CONTINUES.test(groups[groups.length - 1].first);
-        if (!joins) groups.push({from: start, first: line, complete: !last || line.length >= LONG_ENOUGH});
+        const joins = groups.length > 0 && CONTINUES.test(line) && groups[groups.length - 1].open;
+        if (!joins) groups.push({from: start, open: false, complete: !last || line.length >= LONG_ENOUGH});
         afterBlank = false;
       }
+      if (CONTINUES.test(line)) groups[groups.length - 1].open = true;
       const marker = fenceMarker(line);
       if (marker !== "") fence = marker;
     });
