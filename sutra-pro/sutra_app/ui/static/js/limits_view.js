@@ -12,7 +12,7 @@
                                  "" when nothing is near. Never counted on the badge: it is a state, not a question.
      parseLimit(raw)             {ok, value, error}: "" or 0 clears (value null); "10", "12.50" and "$1,250" are dollars; anything else says why
      noticesBody(form)           {ok, body, error}: the PUT body of /api/ops/attention from what was typed (both times or neither; start and end differ)
-     load(api)                   {limits, notices}: both reads, a failed one is null
+     load(api, {notices})        {limits, notices}: both reads (notices: false reads the limits only), a failed one is null
      saveLimit(api, raw) / saveGuard(api, enabled) / continueGuard(api) / saveNotices(api, form)    -> {ok, state|prefs, error}
 
    Buttons carry data-act: save-limit, clear-limit, guard-continue, save-notices, clear-quiet; the switch is input[data-guard]. A classic script with ONE
@@ -159,9 +159,11 @@
   /* ---------------------------------------------------------------- the calls */
   const said = e => clean(e && e.message) || "That did not work. Try again.";
 
-  async function load(api) {
+  // load(api, {notices: false}) reads the limits only: they move with every task, the owner's quiet hours and cap only when the owner changes them.
+  async function load(api, options) {
     const read = async path => { try { return await api.get(path); } catch (e) { return null; } };
-    const [limits, notices] = await Promise.all([read(LIMITS_PATH), read(ATTENTION_PATH)]);
+    const both = !(isObj(options) && options.notices === false);
+    const [limits, notices] = await Promise.all([read(LIMITS_PATH), both ? read(ATTENTION_PATH) : Promise.resolve(null)]);
     return {limits: isObj(limits) ? limits : null, notices: isObj(notices) ? notices : null};
   }
 

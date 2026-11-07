@@ -311,6 +311,13 @@ class FakeState:
             self.signin_sequence = "success"
             self.heads_up: list[dict] = []          # gap attention: GET /api/heads-up (set by /__fake/heads-up), emptied of a task on its retry
             self.retried: list[str] = []
+            # gap routines-limits: GET /api/limits, GET and PUT /api/ops/attention, /api/recurring (set by /__fake/limits and /__fake/recurring)
+            self.limits = {"spend": {"limit": None, "spent": 0.0, "pct": None, "level": "none", "unpriced_calls": 0, "month": "2026-11",
+                                     "month_ends_at": "2026-12-01T00:00:00Z", "line": ""},
+                           "guard": {"enabled": False, "level": "none", "holding": False, "top": None, "line": "", "windows": []}}
+            self.attention = {"quiet_hours": None, "nudges_per_hour": 3, "default_nudges_per_hour": 3, "max_nudges_per_hour": 10, "quiet_now": False}
+            self.recurring: list[dict] = []
+            self.recurring_runs: dict[str, list[dict]] = {}
             for chat in self.chats.values():
                 chat.reset()
             self._apply_visibility()
@@ -1149,6 +1156,139 @@ def register_api(app: FastAPI, state: FakeState) -> None:
         with state.lock:
             return JSONResponse(copy.deepcopy(state.heads_up))
 
+    # ---- gap routines-limits: the limits, quiet hours and the cap, and the standing tasks (the real routes are sutra_app/orchestrator/api/limits.py and recurring.py,
+    # sutra_app/ops/attention_api.py; this is just enough for the page: the answers are what the real ones look like)
+    @app.get("/api/limits")
+    def get_limits():
+        with state.lock:
+            return JSONResponse(copy.deepcopy(state.limits))
+
+    @app.put("/api/limits")
+    async def put_limits(request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        if not isinstance(body, dict) or not set(body) & {"monthly_usd", "guard_enabled"} or set(body) - {"monthly_usd", "guard_enabled"}:
+            raise ApiError(422, "validation", "send monthly_usd or guard_enabled")
+        with state.lock:
+            spend, guard = state.limits["spend"], state.limits["guard"]
+            if "monthly_usd" in body:
+                value = body["monthly_usd"]
+                if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 or value > 100000):
+                    raise ApiError(422, "validation", "The request was refused")
+                spend["limit"] = float(value) if value else None
+                spend["pct"] = round(spend["spent"] / spend["limit"], 4) if spend["limit"] else None
+                spend["level"] = "none" if not spend["limit"] else ("over" if spend["pct"] >= 1 else ("warn" if spend["pct"] >= 0.8 else "ok"))
+                spend["line"] = "" if not spend["limit"] else f"About ${spend['spent']:.2f} of your ${spend['limit']:g} monthly limit"
+            if "guard_enabled" in body:
+                guard["enabled"] = bool(body["guard_enabled"])
+                guard["holding"] = guard["enabled"] and guard["level"] == "hold" and not (guard["top"] or {}).get("continued")
+            out = copy.deepcopy(state.limits)
+        state.publish("task.updated", {"task": None})
+        return JSONResponse(out)
+
+    @app.post("/api/limits/continue")
+    def continue_limits(request: Request):
+        require_token(request, state)
+        with state.lock:
+            guard = state.limits["guard"]
+            if guard["level"] == "hold" and isinstance(guard["top"], dict):
+                guard["top"]["continued"] = True
+            guard["holding"] = False
+            return JSONResponse(copy.deepcopy(state.limits))
+
+    @app.get("/api/ops/attention")
+    def get_attention():
+        with state.lock:
+            return JSONResponse(copy.deepcopy(state.attention))
+
+    @app.put("/api/ops/attention")
+    async def put_attention(request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        if not isinstance(body, dict) or not set(body) & {"quiet_hours", "nudges_per_hour"} or set(body) - {"quiet_hours", "nudges_per_hour"}:
+            raise ApiError(422, "validation", "send quiet_hours or nudges_per_hour")
+        with state.lock:
+            if "quiet_hours" in body:
+                window = body["quiet_hours"]
+                if window is not None and (not isinstance(window, dict) or set(window) != {"start", "end"} or window["start"] == window["end"]):
+                    raise ApiError(422, "validation", "Quiet hours that start and end at the same time could mean all day or no time at all: choose different times")
+                state.attention["quiet_hours"] = window
+            if "nudges_per_hour" in body:
+                n = body["nudges_per_hour"]
+                if isinstance(n, bool) or not isinstance(n, int):
+                    raise ApiError(422, "validation", "nudges_per_hour must be a whole number")
+                state.attention["nudges_per_hour"] = max(0, min(10, n))
+            return JSONResponse(copy.deepcopy(state.attention))
+
+    def recurring_row(rec_id: str) -> dict:
+        found = next((r for r in state.recurring if r["id"] == rec_id), None)
+        if found is None:
+            raise ApiError(404, "not_found", "that schedule was not found")
+        return found
+
+    @app.get("/api/recurring")
+    def get_recurring():
+        with state.lock:
+            return JSONResponse(copy.deepcopy(state.recurring))
+
+    @app.post("/api/recurring")
+    async def post_recurring(request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        if not isinstance(body, dict) or set(body) != {"dept_id", "text", "schedule"} or not isinstance(body["schedule"], dict):
+            raise ApiError(422, "validation", "The request was refused")
+        if body["schedule"].get("every") not in ("hour", "day", "weekdays", "week"):
+            raise ApiError(422, "validation", "A schedule runs at most once an hour: choose hour, day, weekdays or week.")
+        with state.lock:
+            s = body["schedule"]
+            clock = f"{(s.get('hour', 0) % 12) or 12}:{s.get('minute', 0):02d} {'AM' if s.get('hour', 0) < 12 else 'PM'}"
+            human = {"hour": "Every hour (local)", "day": f"Every day at {clock} (local)", "weekdays": f"Every weekday at {clock} (local)",
+                     "week": f"Every week at {clock} (local)"}[s["every"]]
+            rec = {"id": f"rec_{len(state.recurring) + 1:012x}", "dept_id": body["dept_id"], "dept_name": body["dept_id"].title(), "text": body["text"].strip(),
+                   "schedule": {"every": s["every"], "hour": s.get("hour", 0), "minute": s.get("minute", 0), "weekday": s.get("weekday", 0)}, "human": human,
+                   "enabled": True, "paused_reason": "", "next_due_at": "2026-11-05T09:00:00Z", "created_at": "2026-11-04T10:00:00Z", "last_run": None,
+                   "never_fired_on_schedule": False}
+            state.recurring.append(rec)
+            return JSONResponse(copy.deepcopy(rec), status_code=201)
+
+    @app.put("/api/recurring/{rec_id}")
+    async def put_recurring(rec_id: str, request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        with state.lock:
+            rec = recurring_row(rec_id)
+            if isinstance(body, dict) and "enabled" in body:
+                rec["enabled"] = bool(body["enabled"])
+                rec["next_due_at"] = "2026-11-05T09:00:00Z" if rec["enabled"] else None
+            if isinstance(body, dict) and "text" in body:
+                rec["text"] = str(body["text"]).strip()
+            return JSONResponse(copy.deepcopy(rec))
+
+    @app.delete("/api/recurring/{rec_id}")
+    def delete_recurring(rec_id: str, request: Request):
+        require_token(request, state)
+        with state.lock:
+            state.recurring.remove(recurring_row(rec_id))
+            return JSONResponse({"deleted": rec_id})
+
+    @app.post("/api/recurring/{rec_id}/run")
+    def run_recurring(rec_id: str, request: Request):
+        require_token(request, state)
+        with state.lock:
+            rec = recurring_row(rec_id)
+            run = {"id": len(state.recurring_runs.get(rec_id, [])) + 1, "due_at": "2026-11-04T10:00:00Z", "at": "2026-11-04T10:00:00Z", "trigger": "manual",
+                   "result": "working", "task_id": "tsk_000000000009", "folded": 0, "reason": ""}
+            state.recurring_runs.setdefault(rec_id, []).insert(0, run)
+            rec["last_run"] = run
+            rec["never_fired_on_schedule"] = True
+            return JSONResponse(run, status_code=201)
+
+    @app.get("/api/recurring/{rec_id}/runs")
+    def recurring_history(rec_id: str, limit: int = 20):
+        with state.lock:
+            recurring_row(rec_id)
+            return JSONResponse(copy.deepcopy(state.recurring_runs.get(rec_id, [])[: int_arg(limit, 20, 1, 200)]))
+
     @app.post("/api/tasks/{task_id}/retry")
     def retry_task(task_id: str, request: Request):
         """Try again (gap attention): a row that offers it leaves the lane (the real server lists a retried task no more) and
@@ -1520,6 +1660,28 @@ def register_controls(app: FastAPI, state: FakeState, fixtures: Fixtures) -> Non
         with state.lock:
             state.heads_up = copy.deepcopy(body["items"])
         state.publish("task.updated", {"task": None})
+        return JSONResponse({"items": len(body["items"])})
+
+    @app.post("/__fake/limits")
+    async def set_limits(request: Request):
+        """Set what GET /api/limits answers: {spend: {...}, guard: {...}} (each merged over the current one)."""
+        body = await json_body(request)
+        if not isinstance(body, dict) or set(body) - {"spend", "guard"}:
+            raise ApiError(422, "validation", "limits needs {spend?, guard?}")
+        with state.lock:
+            for key in ("spend", "guard"):
+                if isinstance(body.get(key), dict):
+                    state.limits[key].update(copy.deepcopy(body[key]))
+        state.publish("task.updated", {"task": None})
+        return JSONResponse({"ok": True})
+
+    @app.post("/__fake/recurring")
+    async def set_recurring(request: Request):
+        body = await json_body(request)
+        if not isinstance(body, dict) or not isinstance(body.get("items"), list):
+            raise ApiError(422, "validation", "recurring needs {items: [...]}")
+        with state.lock:
+            state.recurring = copy.deepcopy(body["items"])
         return JSONResponse({"items": len(body["items"])})
 
     @app.post("/__fake/fail")

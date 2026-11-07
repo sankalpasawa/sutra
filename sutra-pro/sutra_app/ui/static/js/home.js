@@ -17,6 +17,10 @@
    Gap package attention: the strip shows how long each ask has waited and a Heads up lane (HeadsUpView); the badge, the strip's count and the tab
    title count the asks plus the problems not marked "Got it"; ChatAttention sends one desktop notice per new one while the window is not in front.
 
+   Gap package routines-limits: GET /api/limits, GET and PUT /api/ops/attention (quiet hours and the cap the notices obey), GET/POST/PUT/DELETE /api/recurring
+   and POST /api/recurring/{id}/run. The strip gains one line when the monthly limit or a plan window is near (with Continue while the guard holds work), and
+   Settings gains the Limits, Notifications and Recurring work groups (LimitsView, RecurringView); a block near the end of the Settings section is the controller.
+
    A classic script with one global, HomePage. It does nothing on a page that is not Home (no #sview). */
 (function (root) {
   "use strict";
@@ -69,6 +73,8 @@
     // gap attention: the Heads up lane, the age of each ask, the "Got it" marks of this browser, the tab title and the desktop notice
     heads: [], headsLoaded: false, needsAt: 0, seen: {}, fyiMore: false, attention: null,
     scroll: {parked: false, seenId: 0, pill: 0}, own: false, drafts: undefined,          // the reader's place and the box's draft (GAP-chat-comfort)
+    // gap routines-limits: the limits (strip line, Settings), the owner's quiet hours and cap, the standing tasks (LimitsView, RecurringView)
+    limits: null, limitsForm: {}, notices: null, noticesForm: {}, recurring: null, recForm: {draft: null, open: {}, confirm: "", error: {}, busy: false, saved: false},
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -204,6 +210,20 @@
 
   async function fetchHealth() { S.health = await api.get("/api/health"); paintConnectors(); }
 
+  // GET /api/limits and /api/ops/attention (gap routines-limits): the strip line, the Settings groups, and the quiet hours and cap the notices obey. Never
+  // rejects: a read that fails keeps what the page had (a page with no answer yet shows no line and sends no finished notice).
+  let limitsWrites = 0;                                     // counts the owner's saves: a read that began before one ended is out of date and is dropped
+  async function fetchLimits(withNotices) {
+    if (!LV()) return;
+    const before = limitsWrites;
+    const got = await LV().load(api, {notices: withNotices !== false});
+    if (before !== limitsWrites) return;
+    if (got.limits) S.limits = got.limits;
+    if (got.notices) S.notices = got.notices;
+    renderNeeds();
+    if (S.pane === "settings") { paintLimits(); paintNotices(); }
+  }
+
   const reloadMessages = single(() => fetchMessages(true));
   const refetchMessages = SutraEvents.coalesce(single(() => fetchMessages(false)), COALESCE_MS);
   const refetchGraph = SutraEvents.coalesce(single(fetchGraph), COALESCE_MS);
@@ -211,12 +231,13 @@
   const refetchNeeds = SutraEvents.coalesce(single(fetchNeeds), COALESCE_MS);
   const refetchHeads = SutraEvents.coalesce(single(fetchHeads), COALESCE_MS);
   const refetchDepartments = SutraEvents.coalesce(single(fetchDepartments), COALESCE_MS);
+  const refetchLimits = SutraEvents.coalesce(single(() => fetchLimits(false)), COALESCE_MS);          // after an event or a minute: the limits only
 
   const settled = list => Promise.allSettled(list.map(f => f()));
 
   // Everything Home shows, once: on load, on server.resync, and for "Retry". Each part fails on its own and keeps what it had.
   async function loadAll() {
-    const results = await settled([fetchSession, () => fetchMessages(true), fetchChart, fetchGraph, fetchDepartments, fetchNeeds, fetchHealth, fetchHeads]);
+    const results = await settled([fetchSession, () => fetchMessages(true), fetchChart, fetchGraph, fetchDepartments, fetchNeeds, fetchHealth, fetchHeads, fetchLimits]);
     const failed = results.filter(r => r.status === "rejected");
     if (failed.length === results.length) handleFetchError(failed[0].reason);
     else if (failed.length === 0) clearBanner();
@@ -228,7 +249,7 @@
 
   // What polling asks every 2 s when the stream is down (docs/design/ui.md 9, X4).
   function pollAll() {
-    return settled([() => fetchMessages(false), fetchGraph, fetchChart, fetchNeeds, fetchDepartments, fetchHeads]);
+    return settled([() => fetchMessages(false), fetchGraph, fetchChart, fetchNeeds, fetchDepartments, fetchHeads, () => fetchLimits(false)]);
   }
 
   /* ---------------------------------------------------------------- the org chat */
@@ -594,7 +615,7 @@
     ctx.paint($("needs"), '<h2>Needs you <span class="needbadge" id="needcount">' + n + "</span></h2>" + (sum ? '<p class="needsum">' + esc(sum) + "</p>" : "") +
       (items.length ? (lane ? '<h3 class="nylane">Waiting on you</h3>' : "") + items.map(i => '<div class="needitem"><span>' + esc(needLine(i)) + "</span>" +
         (hv ? hv.waitedHtml(i, elapsed) : "") + '<button type="button" data-needmsg="' + esc(i.message_id) + '">Answer in Chat</button></div>').join("")
-        : (n === 0 ? '<span class="none">Nothing needs you right now.</span>' : "")) + lane + offerHtml());
+        : (n === 0 ? '<span class="none">Nothing needs you right now.</span>' : "")) + lane + limitLines() + offerHtml());
     barBadge();
   }
 
@@ -602,8 +623,11 @@
   // there at the first read is not news.
   function attend() {
     if (!S.attention || !S.needsLoaded || !S.headsLoaded) return;
-    protect("attention", () => S.attention.update(root.ChatAttention.itemsOf(S.needs, S.heads, S.seen)));
+    protect("attention", () => S.attention.update(root.ChatAttention.itemsOf(S.needs, S.heads, S.seen, {finished: true})));
   }
+
+  // The monthly limit from 80 % and the plan window from 70 %, one line each, with Continue while the guard holds work (limits_view.js). Not counted.
+  const limitLines = () => (LV() ? protect("limit lines", () => LV().stripHtml(S.limits)) || "" : "");
 
   function offerHtml() {
     if (!S.attention || !protect("offer", () => S.attention.offered())) return "";
@@ -665,6 +689,7 @@
     } else if (act === "headsup-more") { S.fyiMore = true; renderNeeds(); }
     else if (act === "notify-on" && S.attention) S.attention.enable().then(renderNeeds, renderNeeds);
     else if (act === "notify-off" && S.attention) { S.attention.decline(); renderNeeds(); }
+    else if (act === "guard-continue") continueGuard();
   }
 
   function storage() { try { return root.localStorage; } catch (e) { return null; } }
@@ -775,6 +800,9 @@
     paintAppearance();
     paintConnectors();
     paintEngine();
+    paintLimits();
+    paintNotices();
+    paintRecurring();
   }
 
   async function loadEngineSettings() {
@@ -793,6 +821,8 @@
     renderSettings();
     if (S.settings === null) loadEngineSettings();
     if (S.health === null) fetchHealth().catch(handleFetchError);
+    if (S.notices === null) fetchLimits(); else refetchLimits();                          // the notices are read at load; read them again here only if that failed
+    if (S.recurring === null) fetchRecurring();
     if (group) {
       const el = $("pane-settings").querySelector('.setgrp[data-group="' + group.replace(/[^\w-]/g, "") + '"]');
       if (el && el.scrollIntoView) el.scrollIntoView({block: "start"});
@@ -868,6 +898,162 @@
     else if (act === "save-engine") saveEngine(S.scope, readEngineForm());
     else if (act === "set-path") setCliPath(b.dataset.provider, cliPathState(b.dataset.provider).value);
     else if (act === "clear-path") setCliPath(b.dataset.provider, null);
+    else routinesLimits(act, b);
+  }
+
+  /* ---------------------------------------------------------------- gap routines-limits: Limits, Notifications and Recurring work (docs/notes/GAP2-routines-limits.md)
+     The words and the checks are in limits_view.js and recurring_view.js; this is only what is fetched, kept while the owner types, and clicked. */
+  const LV = () => root.LimitsView || null;
+  const RV = () => root.RecurringView || null;
+
+  // A group is not redrawn while the owner is typing in it (a repaint would take the focus and the caret away); what was typed is kept in the state, so the
+  // next repaint, after Save or the next event, shows it. `force` is for the select that changes the form's own fields.
+  const typingIn = el => {
+    const a = doc.activeElement;
+    return !!(a && el && el.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== "checkbox" && a.type !== "button");
+  };
+  function paintLimits() { if (LV() && !typingIn($("set-limits"))) ctx.paint($("set-limits"), LV().limitsHtml(S.limits, S.limitsForm)); }
+  function paintNotices() { if (LV() && !typingIn($("set-notices"))) ctx.paint($("set-notices"), LV().noticesHtml(S.notices, S.noticesForm)); }
+  function recDraft() {
+    if (!S.recForm.draft && RV()) S.recForm.draft = Object.assign({}, RV().DEFAULT_DRAFT);
+    return S.recForm.draft || {};
+  }
+  function paintRecurring(force) {
+    if (!RV() || (force !== true && typingIn($("set-recurring")))) return;
+    const teams = S.departments.filter(d => isObj(d) && d.id).map(d => ({id: d.id, name: d.name || d.id}));
+    ctx.paint($("set-recurring"), RV().recurringHtml(S.recurring, Object.assign({}, S.recForm, {draft: recDraft(), now: Date.now(), teams})));
+  }
+
+  // The notices obey what the owner chose: the window and the cap come from the last read of /api/ops/attention. Unknown until it was read.
+  const attentionPrefs = () => ({
+    quiet: S.notices && isObj(S.notices.quiet_hours) ? S.notices.quiet_hours : null,
+    nudges: S.notices && Number.isInteger(S.notices.nudges_per_hour) ? S.notices.nudges_per_hour : null,
+  });
+
+  async function fetchRecurring() {
+    if (!RV()) return;
+    const got = await RV().load(api);
+    if (got.ok) { S.recurring = got.list; if (S.recForm.error[""]) S.recForm.error = {}; }
+    else if (S.recurring === null) S.recForm.error = {"": got.error};
+    for (const id of Object.keys(S.recForm.open)) {                                   // a history that is open stays current
+      const h = await RV().history(api, id);
+      if (h.ok) S.recForm.open[id] = h.runs;
+    }
+    paintRecurring();
+  }
+  const refetchRecurring = SutraEvents.coalesce(single(fetchRecurring), COALESCE_MS);
+
+  async function saveLimit(raw) {
+    S.limitsForm = Object.assign({}, S.limitsForm, {busy: true, saved: false, error: ""});
+    paintLimits();
+    const r = await LV().saveLimit(api, raw);
+    limitsWrites += 1;
+    if (r.ok && isObj(r.state)) S.limits = r.state;
+    S.limitsForm = r.ok ? {saved: true} : {raw, error: r.error};
+    paintLimits();
+    renderNeeds();
+  }
+
+  async function saveGuard(enabled) {
+    S.limitsForm = Object.assign({}, S.limitsForm, {busy: true, saved: false, error: ""});
+    paintLimits();
+    const r = await LV().saveGuard(api, enabled);
+    limitsWrites += 1;
+    if (r.ok && isObj(r.state)) S.limits = r.state;
+    S.limitsForm = r.ok ? {saved: true} : Object.assign({}, S.limitsForm, {busy: false, error: r.error});
+    paintLimits();
+    renderNeeds();
+    refetchDepartments();                                                              // switching the guard off may start work that waited for it
+  }
+
+  async function continueGuard() {
+    const r = await LV().continueGuard(api);
+    limitsWrites += 1;
+    if (r.ok && isObj(r.state)) S.limits = r.state;
+    else showBanner({text: r.error});
+    renderNeeds();
+    if (S.pane === "settings") paintLimits();
+    refetchDepartments();
+  }
+
+  const noticeInput = name => { const el = $("set-notices").querySelector('[data-input="' + name + '"]'); return el ? el.value : ""; };
+  const readNotices = () => ({start: noticeInput("quiet_start"), end: noticeInput("quiet_end"), nudges: noticeInput("nudges_per_hour")});
+
+  async function saveNotices(form) {
+    S.noticesForm = Object.assign({}, form, {busy: true});
+    paintNotices();
+    const r = await LV().saveNotices(api, form);
+    limitsWrites += 1;
+    if (r.ok && isObj(r.state)) { S.notices = r.state; S.noticesForm = {saved: true}; }
+    else S.noticesForm = Object.assign({}, form, {error: r.error});
+    paintNotices();
+    renderNeeds();                                                                     // a window that now covers this minute may change what the notices do
+  }
+
+  async function recAct(act, id) {
+    const rf = S.recForm;
+    if (act === "rec-add") {
+      Object.assign(rf, {busy: true, saved: false, error: {}});
+      paintRecurring();
+      const r = await RV().create(api, recDraft());
+      rf.busy = false;
+      if (r.ok) { rf.saved = true; recDraft().text = ""; await fetchRecurring(); } else { rf.error = {"": r.error}; paintRecurring(); }
+      return;
+    }
+    if (act === "rec-delete" || act === "rec-delete-no") { rf.confirm = act === "rec-delete" ? id : ""; paintRecurring(); return; }
+    if (act === "rec-history") {
+      if (Array.isArray(rf.open[id])) delete rf.open[id];
+      else rf.open[id] = (await RV().history(api, id)).runs;
+      paintRecurring();
+      return;
+    }
+    Object.assign(rf, {busy: true, error: {}, saved: false});
+    paintRecurring();
+    let r;
+    if (act === "rec-run") r = await RV().runNow(api, id);
+    else if (act === "rec-toggle") r = await RV().toggle(api, (S.recurring || []).find(x => isObj(x) && x.id === id));
+    else r = await RV().remove(api, id);
+    rf.busy = false;
+    rf.confirm = "";
+    if (!r.ok) rf.error = {[id]: r.error};
+    else if (act === "rec-delete-yes") delete rf.open[id];
+    await fetchRecurring();
+    if (act === "rec-run") { refetchDepartments(); refetchHeads(); }
+  }
+
+  function routinesLimits(act, b) {
+    if (!LV() || !RV()) return;
+    if (act === "save-limit") saveLimit(($("set-limits").querySelector('[data-input="monthly_usd"]') || {}).value || "");
+    else if (act === "clear-limit") saveLimit("");
+    else if (act === "guard-continue") continueGuard();
+    else if (act === "save-notices") saveNotices(readNotices());
+    else if (act === "clear-quiet") saveNotices(Object.assign(readNotices(), {start: "", end: ""}));
+    else if (/^rec-/.test(act)) recAct(act, b.dataset.id || "");
+  }
+
+  // What the owner types is kept in the state, so a repaint (the limits move with every task) never takes it away; a switch and a select act at once.
+  function wireRoutinesLimits() {
+    const pane = $("pane-settings");
+    pane.addEventListener("input", e => {
+      const t = e.target;
+      const name = t && t.dataset ? t.dataset.input : "";
+      if (name === "monthly_usd") S.limitsForm = Object.assign({}, S.limitsForm, {raw: t.value, saved: false});
+      else if (name === "quiet_start") S.noticesForm = Object.assign({}, S.noticesForm, {start: t.value});
+      else if (name === "quiet_end") S.noticesForm = Object.assign({}, S.noticesForm, {end: t.value});
+      else if (name === "nudges_per_hour") S.noticesForm = Object.assign({}, S.noticesForm, {nudges: t.value});
+      else if (name === "rec_text") recDraft().text = t.value;
+      else if (name === "rec_time") recDraft().time = t.value;
+      else if (name === "rec_minute") recDraft().minute = t.value;
+    });
+    pane.addEventListener("change", e => {
+      const t = e.target;
+      if (!t || !t.matches) return;
+      if (t.matches("input[data-guard]")) { if (LV()) saveGuard(t.checked); return; }
+      const name = t.dataset ? t.dataset.input : "";
+      if (name === "rec_dept") recDraft().dept_id = t.value;
+      else if (name === "rec_weekday") recDraft().weekday = t.value;
+      else if (name === "rec_every") { recDraft().every = t.value; paintRecurring(true); }                 // the cadence decides which fields the form shows
+    });
   }
 
   /* ---------------------------------------------------------------- events */
@@ -908,7 +1094,8 @@
       case "chart.changed": refetchChart(); refetchGraph(); break;
       case "chart.approval": refetchMessages(); break;
       case "graph.updated": refetchGraph(); break;
-      case "task.updated": refetchDepartments(); refetchHeads(); break;
+      case "task.updated": refetchDepartments(); refetchHeads(); refetchLimits(); if (S.recurring !== null) refetchRecurring(); break;
+      case "connector.health": refetchLimits(); break;                                                // a plan window moved: the guard's line may change
       case "needs_you.changed": refetchNeeds(); break;
       case "server.resync": loadAll(); break;
       default: break;
@@ -937,9 +1124,9 @@
     S.panel = root.NodePanel.mount($("nodepanel"), {getGraph: () => S.graph, navigate: url => root.location.assign(url)});
     S.watch = SV().watchHealth(api, h => { S.health = h; paintConnectors(); }, () => {});
     if (root.HeadsUpView) S.seen = root.HeadsUpView.loadSeen(storage());
-    if (root.ChatAttention) S.attention = protect("ChatAttention.create", () => root.ChatAttention.create({onOpen: openAttention})) || null;
+    if (root.ChatAttention) S.attention = protect("ChatAttention.create", () => root.ChatAttention.create({onOpen: openAttention, prefs: attentionPrefs})) || null;
     // a quiet team and the age of each ask move with time, not with events: read the lane again and redraw the strip every minute
-    root.setInterval(() => { refetchHeads(); renderNeeds(); }, MINUTE_MS);
+    root.setInterval(() => { refetchHeads(); refetchLimits(); renderNeeds(); if (S.pane === "settings" && S.recurring !== null) refetchRecurring(); }, MINUTE_MS);
     const link = deepLink();
     wire();
     selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false});
@@ -981,6 +1168,7 @@
     });
     $("needs").addEventListener("click", onNeedsClick);
     $("pane-settings").addEventListener("click", onSettingsClick);
+    wireRoutinesLimits();
     $("pane-settings").addEventListener("input", e => {
       if (e.target && e.target.matches && e.target.matches("input[data-path]")) cliPathState(e.target.dataset.path).value = e.target.value;
     });

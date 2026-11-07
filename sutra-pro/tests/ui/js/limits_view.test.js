@@ -219,3 +219,10 @@ test("load reads both and tolerates a failing one", async () => {
   const none = await LV.load(fakeApi({"GET /api/limits": [1], "GET /api/ops/attention": "text"}));
   assert.deepEqual([none.limits, none.notices], [null, null]);
 });
+
+test("load can read the limits alone, which is what an event or the minute tick asks for", async () => {
+  const api = fakeApi({"GET /api/limits": WARN, "GET /api/ops/attention": {nudges_per_hour: 3}});
+  const got = await LV.load(api, {notices: false});
+  assert.deepEqual([got.limits === WARN, got.notices], [true, null]);
+  assert.deepEqual(api.calls.map(c => c.path), ["/api/limits"]);
+});

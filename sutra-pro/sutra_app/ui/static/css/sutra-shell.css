@@ -139,6 +139,30 @@ body.home .rail.tabs button[aria-current="page"], body.home .rail.tabs button[ar
 .appear .sethint { margin: 0; }
 .setgrp button:focus-visible, .setgrp select:focus-visible, .setgrp input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* gap routines-limits: the limit line of the Needs strip and the Limits, Notifications and Recurring work groups (limits_view.js, recurring_view.js). J2's tokens only */
+.needs .nylimit { flex: 1 1 100%; margin: 4px 0 0; border-top: 1px solid var(--line); border-left: 3px solid var(--accent); padding: 6px 0 0 8px; color: var(--ink); font-size: 13.5px; overflow-wrap: anywhere; }
+.needs .nylimit[data-level="bad"] { border-left-color: var(--bad); }
+.needs .nylimit .linkbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.setlimline { margin: 4px 0 8px; font-size: 13.5px; overflow-wrap: anywhere; }
+.setlimline[data-level="over"], .setlimline[data-level="hold"] { color: var(--bad); }
+.setfield input[type="time"], .recwords textarea { background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; font: inherit; min-width: 0; }
+.setfield label { display: inline-flex; align-items: center; gap: 6px; }
+.setfield .setlabel:has(input[type="checkbox"]) { font-weight: 500; }
+.reclist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.recrow { border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); padding: 10px 12px; }
+.rechead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.recteam { font-size: 14.5px; }
+.recwhen, .recnext, .reclast { color: var(--muted); font-size: 13px; }
+.reclast { margin: 2px 0; }
+.rectext { margin: 6px 0 2px; overflow-wrap: anywhere; white-space: pre-wrap; max-height: 6.5em; overflow: auto; }
+.recwhy { margin: 4px 0; color: var(--bad); font-size: 13px; }
+.recruns { margin: 6px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+.recruns li[data-result="crashed"] { color: var(--bad); }
+.recsure { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--ink); font-size: 13.5px; }
+.recwords { margin-top: 10px; flex-direction: column; align-items: stretch; }
+.recwords textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.setgrp textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 @media (prefers-reduced-motion: reduce) {
   #smsgs, .sright * { scroll-behavior: auto; animation: none !important; transition: none !important; }
 }
