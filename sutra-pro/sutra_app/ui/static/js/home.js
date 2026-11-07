@@ -1188,7 +1188,7 @@
           S.graphView.noteMessage(d.session_id, d.message.id);
         }
         break;
-      case "chart.changed": refetchChart(); refetchGraph(); break;
+      case "chart.changed": refetchChart(); refetchGraph(); refetchDepartments(); refetchNeeds(); break;                // a rename also changes the rail and the Needs-you lines
       case "chart.approval": refetchMessages(); break;
       case "graph.updated": refetchGraph(); break;
       case "task.updated": refetchDepartments(); refetchHeads(); refetchLimits(); if (S.recurring !== null) refetchRecurring(); break;

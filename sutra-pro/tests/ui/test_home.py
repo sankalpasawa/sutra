@@ -367,6 +367,18 @@ def test_the_needs_you_strip_lists_the_question_and_answer_in_chat_finds_its_car
 
 
 @browser_only
+def test_a_chart_change_reads_the_rail_and_the_needs_you_strip_again_so_a_renamed_team_shows_its_new_name(browser, fake):
+    """QA org-chat-teams: a rename (from the chat or another window) moved the graph and the org chart but the rail and the Needs-you line kept the old name."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake, stage="2")
+    reads = lambda path: len([r for r in fake.log(path) if r["path"] == path])        # noqa: E731
+    before = (reads("/api/departments"), reads("/api/needs-you"))
+    fake.emit("chart.changed", {"revision": 2, "version": 2, "change_id": "chg-0002", "kind": "rearrange", "added": [], "moved": [], "merged": [],
+                                "summary": "Renamed Web to Site", "archived": []})
+    assert wait_until(browser, lambda: reads("/api/departments") > before[0] and reads("/api/needs-you") > before[1])
+
+
+@browser_only
 def test_an_answer_goes_to_the_teams_own_session_and_the_card_then_reads_answered(browser, fake):
     load(browser, fake, stage="2")
     browser.click('.c-needs [data-act="answer-option"]')
