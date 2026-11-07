@@ -36,6 +36,7 @@ from typing import Annotated, Literal
 
 from pydantic import StringConstraints, ValidationError
 
+from sutra_app.connectors.egress import scrubbed
 from sutra_app.library.base import Value
 from sutra_app.library.types import clip, violation
 from sutra_app.orchestrator.db import Database, run_blocking
@@ -123,9 +124,10 @@ class Recurring:
     `tick_async`, which talk to the task service and the loop."""
 
     def __init__(self, db: Database, tasks: object, *, clock: Clock | None = None, tz: tzinfo | None = None,
-                 new_id: Callable[[], str] = _new_id, tick_s: float = TICK_S) -> None:
+                 new_id: Callable[[], str] = _new_id, tick_s: float = TICK_S, redact: Callable[[str], str] | None = None) -> None:
         self.db = db
         self.tasks = tasks
+        self._redact = redact
         self.clock = clock or SystemClock()
         self.tz = tz
         self._new_id = new_id
@@ -179,9 +181,10 @@ class Recurring:
 
     # ---- the owner's changes --------------------------------------------------------------------------------------------------
 
-    @staticmethod
-    def _text(text: str) -> str:
-        body = (text or "").strip()
+    def _text(self, text: str) -> str:
+        """The standing words as they are stored: stripped, the app's secret values and the credential shapes replaced (the task each due time
+        makes starts from this text, so a secret never reaches a task, a chat line or a run)."""
+        body = scrubbed((text or "").strip(), self._redact)
         if not body:
             raise validation_error([violation("text", "empty", "write what the team should do each time")], "Write what the team should do each time")
         if len(body) > MAX_TEXT:

@@ -85,6 +85,31 @@ def test_an_org_chat_post_is_accepted_at_once_and_the_turn_runs_behind(renv, aut
     assert renv.tasks_of(f"req-{accepted.message_id}")
 
 
+LEAK = "sk-proj-REPRO1234567890abcdefghij"
+
+
+def test_a_credential_in_the_org_chat_is_stored_replaced_and_so_is_the_team_s_first_line_and_task(renv, auth):
+    renv.connector.push(decide())
+    with TestClient(make_app(renv), base_url="http://127.0.0.1:8780") as client:
+        accepted = Accepted.model_validate(post(client, "cs_org", f"use {LEAK} for the build", auth).json())
+        settle(renv)
+        shown = client.get("/api/chats/cs_org/messages").text
+        assert LEAK not in shown and "use [redacted:openai-key] for the build" in shown
+    [task] = renv.tasks_of(f"req-{accepted.message_id}")
+    assert task["user_text"] == "use [redacted:openai-key] for the build"
+    team_session = renv.one("SELECT chat_session_id FROM graph_nodes WHERE id = ?", task["dept_id"])
+    assert [m.text for m in renv.messages(team_session) if m.who == "user"] == ["use [redacted:openai-key] for the build"]
+    assert LEAK not in "\n".join(renv.db.conn().iterdump()) and all(LEAK not in str(call) for call in renv.connector.calls)
+
+
+def test_a_credential_in_a_team_chat_post_is_stored_replaced(renv, auth):
+    session = renv.one("SELECT chat_session_id FROM graph_nodes WHERE id = 'sales'")
+    with TestClient(make_app(renv), base_url="http://127.0.0.1:8780") as client:
+        assert post(client, session, f"Quote Ana, our key is {LEAK}", auth).status_code == 200
+    assert LEAK not in "\n".join(renv.db.conn().iterdump())
+    assert [m.text for m in renv.messages(session) if m.who == "user"] == ["Quote Ana, our key is [redacted:openai-key]"]
+
+
 def test_no_connector_is_503_before_anything_is_stored(renv, auth):
     renv.connector.set_status({"claude": {"installed": False}, "codex": {"installed": False}})
     before = len(renv.messages())

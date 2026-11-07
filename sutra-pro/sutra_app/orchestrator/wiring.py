@@ -169,7 +169,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     router.choice_source = ChatChoices(db).get                       # the pill governs the org chat agent too (ABS-8)
     attachments = Attachments(settings.data_dir)
     chat_port = RouterChatPort(router, attachments=attachments.store)
-    recurring = Recurring(db, tasks, clock=clock)
+    recurring = Recurring(db, tasks, clock=clock, redact=redactor)
     limits = Limits(settings.data_dir / LIMITS_FILE, db, quotas=lambda: {name: router.health.quota(name) for name in ("claude", "codex")},
                     clock=clock, offline=settings.offline or router_settings.connector == "stub")
     tasks.start_gate = limits.gate

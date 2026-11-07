@@ -21,7 +21,6 @@ from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.models import TASK_STATUSES
 from sutra_app.orchestrator.tasks import TaskService
-from sutra_app.orchestrator.textutil import one_line_title
 
 __all__ = ["router", "build_router", "TaskIn", "ID_PATTERN"]
 
@@ -67,7 +66,7 @@ def build_router() -> APIRouter:
 
         def create() -> str:
             with service.db.tx() as tx:
-                created = service.create(tx, dept_id=body.dept_id, text=text, title=body.title or one_line_title(text), scope_id=body.scope_id,
+                created = service.create(tx, dept_id=body.dept_id, text=text, title=body.title, scope_id=body.scope_id,
                                          follows=body.follows, settings=body.settings)
                 return created.id
 

@@ -16,12 +16,13 @@ import os
 import re
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional
 
 from sutra_app import oslayer
 
-__all__ = ["SHAPES", "Egress", "scan"]
+__all__ = ["SHAPES", "Egress", "scan", "scrubbed"]
 
 log = logging.getLogger(__name__)
 MAX_ROW_BYTES = 8192
@@ -72,6 +73,13 @@ def scan(text: str, *, replace: bool = False) -> tuple[str, dict[str, int]]:
         if n:
             counts[name] = counts.get(name, 0) + n                    # a shape may have more than one pattern
     return text, counts
+
+
+def scrubbed(text: str, redact: Optional[Callable[[str], str]] = None) -> str:
+    """`text` with the app's secret values (through `redact`, the app's `Redactor`, when given) and every credential shape replaced. What the
+    owner types is put through this where it enters (a chat line, a task, a team answer, a schedule), so the stored line, the line a model gets
+    and the files of a run are one and the same text and no secret ever lands in a store."""
+    return scan(redact(text) if redact is not None else text, replace=True)[0]
 
 
 class Egress:
