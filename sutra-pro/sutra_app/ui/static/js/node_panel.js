@@ -338,8 +338,9 @@
       const el = chatRefs.msgs;
       const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_PX;
       const list = activeMessages();
-      const html = CV().transcript(session, list, {deptName: deptName(), live: !st.view});
-      const changed = paintTo(el, html);
+      const view = {deptName: deptName(), live: !st.view};
+      // Fluid.patchList edits the list in place: the lines that did not change are not touched (no flicker, no lost selection), a new line enters
+      const changed = root.Fluid ? root.Fluid.patchList(el, CV().transcriptItems(session, list, view), {enter: "nmsg-in"}).changed : paintTo(el, CV().transcript(session, list, view));
       const last = list.reduce((n, m) => Math.max(n, Number(m.id) || 0), 0);
       const CS = CSc();
       if (!CS) {

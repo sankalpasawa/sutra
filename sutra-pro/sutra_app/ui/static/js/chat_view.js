@@ -321,11 +321,17 @@
   // answer the owner gave an approval, a choice or a needs_you card, `deptSessions` maps a department id to its session id (a needs_you card answers
   // there). Option buttons are on only for the last open question of a session the owner can write in. In an org session and on cards, an Identity
   // carries the department's name. opts.retryTasks {task_id: true} puts Try again (data-act retry-task) on those tasks' done cards (gap attention).
+  // transcriptItems takes the same arguments and gives [{key, html}], one per message (html is ONE element): the page draws them with Fluid.patchList,
+  // which touches only the lines that changed. An empty transcript is one item, key "empty".
   function transcript(session, messages, opts) {
+    return transcriptItems(session, messages, opts).map(it => it.html).join("");
+  }
+
+  function transcriptItems(session, messages, opts) {
     const s = isObj(session) ? session : {};
     const o = isObj(opts) ? opts : {};
     const list = (Array.isArray(messages) ? messages : []).filter(isObj);
-    if (list.length === 0) return '<p class="empty nempty">' + esc(s.writable === false ? "Nothing in this log yet." : "No messages yet.") + "</p>";
+    if (list.length === 0) return [{key: "empty", html: '<p class="empty nempty">' + esc(s.writable === false ? "Nothing in this log yet." : "No messages yet.") + "</p>"}];
     const answers = isObj(o.answers) ? o.answers : {};
     const sessions = isObj(o.deptSessions) ? o.deptSessions : {};
     const canAnswer = o.live !== false && s.writable !== false && clean(s.status) !== "archived";
@@ -337,7 +343,7 @@
       ? ' <button type="button" class="linkbtn" data-act="retry-direct" data-turn="' + m.turn + '">Retry</button>' : "");
     const log = clean(s.kind) === "function" || clean(s.kind) === "step";                 // a working log shows the agents' addresses as they are
     let asked = null;
-    return list.map((m, i) => {
+    const html = (m, i) => {
       const kind = clean(m.kind) || "text";
       const who = clean(m.who);
       const cardIn = kind === "card" && isObj(m.card) ? m.card : null;
@@ -372,7 +378,8 @@
       // a settled provider turn: its tool calls fold into ONE row (ChatFold, ABS-10); nothing is drawn while the message is pending
       if (root.ChatFold && Array.isArray(m.blocks) && m.blocks.length > 0) inner += root.ChatFold.fold(m.blocks, {settled: clean(m.state) !== "pending"});
       return '<div class="' + klass + '"' + attrs + "><small>" + esc(label) + "</small>" + inner + "</div>";
-    }).join("");
+    };
+    return list.map((m, i) => ({key: text(m.id) !== "" ? "m" + text(m.id) : "i" + i, html: html(m, i)}));
   }
 
   /* ---------------------------------------------------------------- the message box */
@@ -409,7 +416,7 @@
 
   const providerLabel = connector => (hasOwn(PROVIDERS, connector) ? PROVIDERS[connector] : clean(connector));
 
-  const ChatView = {transcript, card, composerState, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, BUSY, ONE_AT_A_TIME, PROVIDERS, PERSONA};
+  const ChatView = {transcript, transcriptItems, card, composerState, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, BUSY, ONE_AT_A_TIME, PROVIDERS, PERSONA};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatView;
   else root.ChatView = ChatView;
 })(globalThis);

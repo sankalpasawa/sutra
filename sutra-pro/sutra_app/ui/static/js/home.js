@@ -286,10 +286,20 @@
   function renderChat() {
     const shown = S.messages.concat(S.pending.map(p => p.msg));
     const session = S.session || {kind: "org", writable: true, status: "active", title: "Sutra"};
-    const html = root.ChatView.transcript(session, shown, {deptName: "", live: true, answers: answersMap(), deptSessions: deptSessions(), retryTasks: retryTasks()}) + startHtml();
+    const view = {deptName: "", live: true, answers: answersMap(), deptSessions: deptSessions(), retryTasks: retryTasks()};
     const el = $("smsgs");
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-    if (!ctx.paint(el, html)) return;
+    // Fluid.patchList edits the list in place: the lines that did not change are not touched, a new line enters (a long chat is not rebuilt per message)
+    let changed;
+    if (root.Fluid) {
+      const items = root.ChatView.transcriptItems(session, shown, view);
+      const start = startHtml();
+      if (start !== "") items.push({key: "starter", html: start});
+      changed = root.Fluid.patchList(el, items, {enter: "nmsg-in"}).changed;
+    } else {
+      changed = ctx.paint(el, root.ChatView.transcript(session, shown, view) + startHtml());
+    }
+    if (!changed) return;
     follow(el, shown, near);
   }
 

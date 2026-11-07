@@ -803,3 +803,19 @@ test("an owner's line with files shows the words and the names as chips; the rec
   assert.doesNotMatch(hostile, /<b /);
   dom(hostile);
 });
+
+// ---------------------------------------------------------------- transcriptItems (gap package fluid): the same lines, one item each, for Fluid.patchList
+test("fluid. transcriptItems is the transcript cut into one keyed element per message, and an empty one is one item", () => {
+  const session = ORG.session;
+  const items = ChatView.transcriptItems(session, ORG.messages, {deptName: ""});
+  assert.equal(items.map(i => i.html).join(""), transcript(session, ORG.messages, {deptName: ""}), "joined, the items are the transcript");
+  assert.equal(items.length, ORG.messages.length);
+  assert.deepEqual(items.map(i => i.key), ORG.messages.map(m => "m" + m.id), "a message is keyed by its id");
+  items.forEach(i => assert.match(i.html, /^<div class="nmsg[^"]*"/, "one element per item"));
+  assert.equal(new Set(items.map(i => i.key)).size, items.length);
+  const empty = ChatView.transcriptItems(session, [], {});
+  assert.deepEqual(empty.map(i => i.key), ["empty"]);
+  assert.equal(empty[0].html, transcript(session, [], {}));
+  const noIds = ChatView.transcriptItems(session, [{kind: "text", who: "sutra", text: "a"}, {kind: "text", who: "sutra", text: "b"}], {});
+  assert.deepEqual(noIds.map(i => i.key), ["i0", "i1"], "a line without an id is keyed by its place");
+});
