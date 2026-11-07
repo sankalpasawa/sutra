@@ -6,6 +6,7 @@
     status_report(chart, tasks)       the answer to a question about progress, built from the chart and the tasks (with `now`, how long a
                                       team has waited for the owner: gap package attention)
     LINES / line(key, **kw)           every Sutra sentence of the org chat; no model sentence is ever shown
+    added(name, kind)                 what a new node is called in the "I set up ..." lines: `a Web team`, `an Event Booking team`, `a Weddings division`
     matches_template(text)            True when `text` is made only of those sentences (what the no-prose test asks)
 
 `tokens(text)` is lowercase `[a-z0-9]{3,}` minus a fixed stop-word list (`textutil`). A department's score is the number of words
@@ -21,7 +22,7 @@ from sutra_app.orchestrator.textutil import tokens
 from sutra_app.orchestrator.waiting import age_words
 
 __all__ = [
-    "LINES", "STATUS_HEADER", "NO_TEAMS", "NONE_OF_THESE", "Candidate", "Fallback", "TaskLine", "line", "names_phrase",
+    "LINES", "STATUS_HEADER", "NO_TEAMS", "NONE_OF_THESE", "Candidate", "Fallback", "TaskLine", "line", "names_phrase", "added",
     "matches_template", "candidates", "fallback_plan", "status_report", "MIN_SCORE",
 ]
 
@@ -33,8 +34,8 @@ NONE_OF_THESE = "None of these"
 # Every sentence Sutra says in the org chat (design 5.2). `{x}` are filled by code from names in the chart.
 LINES: dict[str, str] = {
     "greeting": "Hello. Tell me what you need and I will give it to the right team.",          # ChartStore.bootstrap posts it (GREETING)
-    "add": "I set up a {name} team and gave it your request.",
-    "add_only": "I set up a {name} team.",
+    "add": "I set up {what} and gave it your request.",                                              # {what} is `added(name, kind)`: `a Web team`, `a Weddings division`
+    "add_only": "I set up {what}.",
     "reuse": "I gave this to the {name} team.",
     "move": "I moved {x} under {y}.",
     "merge": "I merged {a} into {b}.",
@@ -60,7 +61,11 @@ LINES: dict[str, str] = {
     "pack_yes": "The {name} team now runs the {pack} practice.",
     "pack_no": "Okay, the {name} team stays on the defaults.",
 }
-_SPECIAL = {"busy": r".+? is busy with .+?"}          # {reason} alone would match anything: the rules' sentence has this shape
+_SPECIAL = {
+    "busy": r".+? is busy with .+?",                                      # {reason} alone would match anything: the rules' sentence has this shape
+    "add": r"I set up an? .+? and gave it your request\.",                 # {what} alone would match anything: it begins with its article ...
+    "add_only": r"I set up an? .+? (?i:team|division)\.",                  # ... and ends with the noun, so free prose that ends in a full stop is not one
+}
 
 
 def line(key: str, **values: str) -> str:
@@ -70,6 +75,30 @@ def line(key: str, **values: str) -> str:
     if wanted != set(values):
         raise ValueError(f"line {key!r} takes {sorted(wanted)}, got {sorted(values)}")
     return template.format(**values)
+
+
+_SAID_LIKE_A_CONSONANT = ("uni", "use", "usu", "uti", "uk", "ufo", "ubi", "eu", "one", "once")     # a vowel letter said as "you" or "wun": a University
+_SILENT_H = ("hour", "honest", "honor", "honour", "heir")
+_LETTERS_SAID_WITH_A_VOWEL = frozenset("aefhilmnorsx")                                                # an HR, an SEO, an FAQ, an MBA; a UX, a UK
+
+
+def _article(name: str) -> str:
+    """`a` or `an` by how the first word is said: after the sound, not the letter (`a University`, `an Hours`, `an HR`, `a UX`)."""
+    word = name.split()[0].strip("\"'([")
+    if len(word) > 1 and word.isupper() and word[0].isalpha():              # an acronym is said letter by letter
+        return "an" if word[0].lower() in _LETTERS_SAID_WITH_A_VOWEL else "a"
+    low = word.lower()
+    if low.startswith(_SILENT_H) or (low[:1] in ("a", "e", "i", "o", "u") and not low.startswith(_SAID_LIKE_A_CONSONANT)):
+        return "an"
+    return "a"
+
+
+def added(name: str, kind: str) -> str:
+    """What a new node is called in "I set up {what}": `a Web team`, `an Event Booking team`, `a Weddings division`. A division is not a team, and a
+    name that already ends in the noun (`General Team`) does not get it twice."""
+    clean = " ".join(name.split()) or "new"
+    noun = "division" if kind == "division" else "team"
+    return f"{_article(clean)} {clean if clean.split()[-1].lower() == noun else f'{clean} {noun}'}"
 
 
 def names_phrase(names: Sequence[str]) -> str:

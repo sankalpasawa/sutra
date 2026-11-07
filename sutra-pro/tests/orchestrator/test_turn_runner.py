@@ -122,6 +122,15 @@ def test_an_add_request_makes_the_team_and_says_so_in_a_template(renv):
     assert renv.cards("task")[-1].dept_name == "Cafe" and renv.cards("task")[-1].status in ("starting", "queued", "running")
 
 
+def test_the_add_lines_name_a_vowel_team_with_an_and_a_division_as_a_division(renv):
+    """QA org-chat-teams: 'I set up a Event Booking team', and 'I set up a Weddings team' for a division."""
+    renv.connector.push(decide(change="add", reuse=(), why=SECRET_SENTENCE),
+                        change_reply(add_dept("$e", "Event Booking", "Bookings for events"), add_div("$w", "Weddings", "$e", "Wedding events"), reason=SECRET_SENTENCE),
+                        assignments(draft("a1", "event-booking", brief=SECRET_SENTENCE)))
+    renv.say("Set up event booking with a weddings part")
+    assert renv.sutra()[-3] == ("text", "I set up an Event Booking team and gave it your request. I set up a Weddings division.")
+
+
 def test_event_order_of_a_new_team(renv):
     renv.connector.push(decide(change="add", reuse=()), change_reply(add_dept("$cafe", "Cafe", "Coffee")), assignments(draft("a1", "cafe")))
     renv.events.batches.clear()
@@ -253,7 +262,7 @@ def test_a_new_division_with_work_for_it(renv):
     first = renv.say("Start a blog")
     [task] = renv.tasks_of(f"req-{first.message_id}")
     assert task["scope_node_id"] == "blog"
-    assert renv.sutra()[-3:] == [("text", "I set up a Blog team and gave it your request. I gave this to the Web team."),
+    assert renv.sutra()[-3:] == [("text", "I set up a Blog division and gave it your request. I gave this to the Web team."),     # a division, not a team (QA org-chat-teams)
                                  ("card", "chart_change"), ("card", "task")]
 
 

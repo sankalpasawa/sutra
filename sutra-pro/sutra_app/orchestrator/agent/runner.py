@@ -662,7 +662,8 @@ class TurnRunner:
             if isinstance(op, AddOp):
                 new_id = ids.get(op.node.ref, op.node.ref)
                 said.add(new_id)
-                out.append(line("add", name=op.node.name) if new_id in receiving else line("add_only", name=op.node.name))
+                what = planner.added(op.node.name, op.node.kind)
+                out.append(line("add", what=what) if new_id in receiving else line("add_only", what=what))
             elif isinstance(op, MoveOp):
                 out.append(line("move", x=name(op.node), y=name(op.to_parent)))
             elif isinstance(op, RenameOp):
