@@ -79,6 +79,12 @@ the engine plays its mock mode, so nothing is spent and nothing needs a login. T
 The window you see is Home. Left: the chat with Sutra. Right: the graph, the org chart or Settings, chosen from the menu. On a
 phone-width window the same two sides become a Chat | Graph switch.
 
+Until you press **Got it**, Home opens with a welcome card of four readings from this machine: which of Claude and Codex can answer right
+now (and, for one that cannot, the one line that fixes it, such as `claude auth login`), where the data lives and how to back it up, what
+leaves the machine (prompts go only to your own CLIs, on a subscription login, never an API key, with credential shapes scrubbed) and what
+Sutra does by itself and what it asks you. **Got it** is stored in the data folder's database, so another browser does not bring the card
+back; **Not now** hides it for this page load only.
+
 ## 4. The first message
 
 Type what you need in the box ("Tell Sutra what you need") and press Send, for example: *Build a landing page for a coffee shop*.
