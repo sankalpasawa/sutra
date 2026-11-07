@@ -24,6 +24,7 @@ from collections.abc import Mapping, Sequence
 from sutra_app.connectors.models import Message
 from sutra_app.library.gate import GATE, Checked
 from sutra_app.library.org_chart import LinkPlan
+from sutra_app.orchestrator import direct_running
 from sutra_app.orchestrator.chat_v2 import ChatSegments
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.errors import NotFound
@@ -57,7 +58,7 @@ def _session_out(row: sqlite3.Row, phase: str | None = None) -> ChatSessionOut:
     return ChatSessionOut(
         id=row["id"], node_id=row["node_id"], kind=row["kind"], title=row["title"], writable=bool(row["writable"]), status=row["status"],
         filed_under=row["filed_under"], connector=row["connector"], model=row["model"], provider_session_id=row["provider_session_id"],
-        last_message_id=row["last_message_id"], note=row["note"], phase=phase)
+        last_message_id=row["last_message_id"], note=row["note"], phase=phase, direct_turn=direct_running.turn_of(row["id"]))
 
 
 def _session_record(row: sqlite3.Row) -> ChatSession:

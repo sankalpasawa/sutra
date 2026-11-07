@@ -7,7 +7,8 @@
 Every route needs the token (`require_token`). The org chat belongs to the chat agent (`TurnRunner`): the call returns at once and the
 turn runs behind it; a missing or signed-out connector is 503 `provider_unavailable` / `cli_missing` before anything is stored, a full
 queue is 429 `too_many_pending`. A department or division chat takes the owner's words to the team's Identity through
-`TaskService.deliver` (409 `busy` while it works); a function or step chat, and an archived one, is 403 `read_only`.
+`TaskService.deliver` (409 `busy` while it works); a function or step chat, and an archived one, is 403 `read_only`. Either route is 409 `busy` while a
+direct turn is answering in that chat (`direct_running`).
 
 The decision route has the same path as the one in `api/chart.py` on purpose: this one finishes the request the change belongs to
 (assignments, tasks, lines, cards), the chart router's only decides. `create_app` includes THIS router BEFORE the chart router, so
@@ -20,7 +21,8 @@ from pydantic import BaseModel, ConfigDict
 
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
 from sutra_app.orchestrator.db import run_blocking
-from sutra_app.orchestrator.errors import AlreadyDecided, AppError, ReadOnly
+from sutra_app.orchestrator import direct_running
+from sutra_app.orchestrator.errors import AlreadyDecided, AppError, Busy, ReadOnly
 from sutra_app.orchestrator.ids import ORG_SESSION_ID
 from sutra_app.orchestrator.models import ChatPost
 
@@ -58,6 +60,8 @@ def build_router() -> APIRouter:
         session = await run_blocking(chats.session, sid)                       # 404 for an unknown chat
         if session.status != "active" or not session.writable or session.kind in ("function", "step"):
             raise ReadOnly("This chat is read-only" if session.status == "active" else "This chat is archived and read-only")
+        if direct_running.answering(sid):                                     # the owner asked the model directly and it is still writing: two answers would interleave
+            raise Busy("This chat is already answering")
         if session.kind == "org":
             accepted = await _need(request, "runner").post_user_message(sid, body.text, body.choice)
             return _json(request, accepted.model_dump(mode="json"), 202)

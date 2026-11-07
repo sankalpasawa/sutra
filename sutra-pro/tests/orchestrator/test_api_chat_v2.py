@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from orchestrator.test_chat_store import msg
 from orchestrator.test_graph_store import World
 
+from sutra_app.connectors.chat_models import ChatEvent
 from sutra_app.connectors.chat_port import RouterChatPort
 from sutra_app.connectors.factory import build_router
 from sutra_app.connectors.models import ConnectorConfig
@@ -265,3 +266,59 @@ def test_a_message_far_over_the_cap_is_still_refused_by_the_model_check(rig):
     client, world, *_ = rig
     sid = world.session_of["web"]
     assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": "x" * 250_000}, headers=H), 422) == "validation"
+
+
+# ---- QA direct-chat bug 3: a page that did not start the turn can learn that the chat is answering ---------------------------------------------------
+
+def test_the_session_says_which_line_the_running_direct_turn_answers_and_not_before_or_after(rig):
+    from sutra_app.orchestrator import direct_running
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    assert client.get(f"/api/chats/{sid}").json()["direct_turn"] is None
+    assert {s["id"]: s["direct_turn"] for s in client.get("/api/chats").json()}[sid] is None
+    assert direct_running.begin(sid)
+    try:
+        assert client.get(f"/api/chats/{sid}").json()["direct_turn"] is None         # claimed, the owner's line not stored yet: nothing to name
+        direct_running.attach(sid, 41)
+        assert client.get(f"/api/chats/{sid}").json()["direct_turn"] == 41
+        assert {s["id"]: s["direct_turn"] for s in client.get("/api/chats").json()}[sid] == 41
+        assert client.get("/api/chats/cs_org").json()["direct_turn"] is None          # another chat is not answering
+    finally:
+        direct_running.end(sid)
+    assert client.get(f"/api/chats/{sid}").json()["direct_turn"] is None
+
+
+def test_the_session_names_a_real_running_direct_turn_until_its_reply_is_stored(rig):
+    """The real route, with a port that waits for the test: while it waits the session names the owner's line; when it is stored the name is gone."""
+    import threading
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    gate, started = threading.Event(), threading.Event()
+
+    class Waiting:
+        def stream(self, sid_, turn):
+            started.set()
+            gate.wait(10)
+            yield ChatEvent(kind="turn_done", data={"text": "done", "provider": "claude", "model": None, "usd": None, "blocks": [], "switched": None})
+
+        def set_system(self, *a):
+            return None
+
+        def stop(self, sid_):
+            return False
+
+    services.chat_port = Waiting()
+    assert client.post(f"/api/chats/{sid}/direct", json={"text": "slow one"}, headers=H).status_code == 202
+    assert started.wait(10)
+    line = chats.messages(sid)[0]
+    assert client.get(f"/api/chats/{sid}").json()["direct_turn"] == line.id
+    assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": "again"}, headers=H), 409) == "busy"
+    gate.set()
+    assert wait_for(lambda: len(chats.messages(sid)) == 2 and sid not in chat_v2._running)
+    assert client.get(f"/api/chats/{sid}").json()["direct_turn"] is None
+    assert chats.messages(sid)[1].turn == line.id
+
+
+def test_the_old_name_of_the_running_set_is_the_same_set(rig):
+    from sutra_app.orchestrator import direct_running
+    assert chat_v2._running is direct_running.RUNNING

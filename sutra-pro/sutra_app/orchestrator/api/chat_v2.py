@@ -23,7 +23,6 @@ import asyncio
 import base64
 import binascii
 import logging
-import threading
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
@@ -38,6 +37,7 @@ from sutra_app.library.gate import GATE
 from sutra_app.library.types import violation
 from sutra_app.orchestrator.api.chat import ID_PATTERN, respond
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
+from sutra_app.orchestrator import direct_running
 from sutra_app.orchestrator.chat_ground import ground
 from sutra_app.orchestrator.chat_v2 import MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
 from sutra_app.orchestrator.db import run_blocking
@@ -51,8 +51,8 @@ __all__ = ["router", "build_router", "ChoiceIn", "UploadIn", "DirectIn"]
 log = logging.getLogger(__name__)
 PARTIAL_EVERY_CHARS = 60
 MAX_CHARS = 8000                                                      # the longest message the owner can send (the page's box says the same: chat_composer.js)
-_running: set[str] = set()
-_running_lock = threading.Lock()
+_running = direct_running.RUNNING                                   # the chats with a direct turn answering: one at a time (a Busy for the next), shared with the team route
+_running_lock = direct_running.LOCK
 
 
 class ChoiceIn(Value):
@@ -174,17 +174,16 @@ def build_router() -> APIRouter:
             if path is None:
                 raise NotFound("that attachment")
             refs.append(AttachmentRef(id=ref_id, name=path.name, kind=_kind_of(path.name), size=path.stat().st_size))
-        with _running_lock:
-            if sid in _running:
-                raise Busy("This chat is already answering")
-            _running.add(sid)
+        if not direct_running.begin(sid):
+            raise Busy("This chat is already answering")
         try:
             said = _clean(services, body.text)          # stored and sent without credential shapes: a secret never lands in the chat store
             attached = _clean(services, attached_line(list(body.names), [r.kind for r in refs]))
             message_id = await run_blocking(_store_user_line, services, sid, said, attached)
+            direct_running.attach(sid, message_id)       # from here any page can read which line is being answered (GET /api/chats/{sid}: direct_turn)
             await run_blocking(_ground, services, port, sid)
         except BaseException:
-            _running.discard(sid)
+            direct_running.end(sid)
             raise
         asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, ChatTurnIn(text=said, attachments=refs)))
         return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started"})
@@ -290,8 +289,7 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
         except Exception:
             log.exception("could not store the failed turn of %s", sid)
     finally:
-        with _running_lock:
-            _running.discard(sid)
+        direct_running.end(sid)
 
 
 router = build_router()
