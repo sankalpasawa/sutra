@@ -8,6 +8,7 @@ const runtime = require('./runtime');
 const { Supervisor } = require('./server');
 const { createLog } = require('./log');
 const { isInternal, isSafeExternal } = require('./urls');
+const { permissionHandlers } = require('./permissions');
 const { splashPage, errorPage, dataUrl, THEMES } = require('./pages');
 const { menuTemplate } = require('./menu');
 const { runSelftest, record } = require('./selftest');
@@ -77,10 +78,12 @@ function show(html) {
   if (win) win.loadURL(dataUrl(html)).catch((error) => log.write(`could not show a page: ${error.message}`));
 }
 
-/* The window shows the server and nothing else. Whatever else a link asks for goes to the browser, and only if it is a web address. */
+/* The window shows the server and nothing else. Whatever else a link asks for goes to the browser, and only if it is a web address.
+   Permissions are refused except the clipboard write of the server's own page (src/permissions.js). */
 function guardNavigation() {
-  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  const permissions = permissionHandlers(() => supervisor.origin);
+  session.defaultSession.setPermissionRequestHandler(permissions.request);
+  session.defaultSession.setPermissionCheckHandler(permissions.check);
   app.on('web-contents-created', (_event, contents) => {
     contents.setWindowOpenHandler(({ url }) => {
       if (isSafeExternal(url)) shell.openExternal(url);
