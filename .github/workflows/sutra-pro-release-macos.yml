@@ -1,5 +1,5 @@
 # Build Sutra Pro.app (the Electron desktop app) and the installable DMG for each Mac architecture and attach them to a GitHub Release of the Sutra
-# repository (D98, D100, D105, D108), modelled on the old Sutra repo's release-dmg.yml. How to cut a release and what a downloader sees: docs/RELEASE-macos.md (the wheel is release-wheel.yml).
+# repository (D98, D100, D120, D123), modelled on the old Sutra repo's release-dmg.yml. How to cut a release and what a downloader sees: docs/RELEASE-macos.md (the wheel is release-wheel.yml).
 #
 # THE ASSETS (stable, version-free names; the link is /releases/download/<tag>/<name>, because the release is never "Latest", D100)
 #   Sutra-Pro-arm64.dmg    Sutra-Pro-arm64.dmg.sha256      Apple Silicon, built natively on macos-15
@@ -7,7 +7,7 @@
 # Each leg writes the checksum of the DMG it built (a hand-uploaded aggregate goes stale silently when a re-run replaces a DMG).
 # The release BODY is not set here: release-wheel.yml owns it, and two workflows writing one body would overwrite each other.
 #
-# WHAT THE APP IS (D105, D108). scripts/build_desktop_app.py makes `Sutra Pro.app` = the Electron window (sutra-pro/desktop) + a bundled
+# WHAT THE APP IS (D120, D123). scripts/build_desktop_app.py makes `Sutra Pro.app` = the Electron window (sutra-pro/desktop) + a bundled
 # python-build-standalone CPython 3.11 + the wheel installed into it, at BUILD time. The window starts `python -m sutra_app` on the interpreter inside
 # the app, shows its page and stops the server when it closes. The app is built natively: installing the wheel RUNS the bundled interpreter, and a
 # cross-built one needs Rosetta, which the runners do not have. The 0.1.x apps were a bash launcher around the browser: the id (os.sutra.pro), the name
@@ -215,7 +215,7 @@ jobs:
       - name: Sign the app
         run: scripts/sign_desktop_app.sh "build/Sutra Pro.app"
 
-      # The proof that matters: the SIGNED app is run the way a person runs it (scripts/prove_desktop_app.py, D109). The real window opens, starts its
+      # The proof that matters: the SIGNED app is run the way a person runs it (scripts/prove_desktop_app.py, D124). The real window opens, starts its
       # server on the Python inside the app, draws the page, gets /api/health from inside the page, saves a picture and quits, which stops the server; then
       # the server alone runs a team's first turn on that Python. No network (every proxy points at a closed port) and no model. The picture and the logs
       # are kept as an artifact, so a failed run can be looked at, not guessed at.

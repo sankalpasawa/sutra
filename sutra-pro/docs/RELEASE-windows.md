@@ -2,9 +2,9 @@
 
 The wheel release (`docs/RELEASE.md`, `sutra-pro-release-wheel.yml`), the Mac release (`docs/RELEASE-macos.md`) and this one share a tag.
 Pushing `sutra-pro-vX.Y.Z` (or `sutra-pro-vX.Y.Z-beta.N`) runs all three; `sutra-pro-release-windows.yml` adds the installer and the
-zip to the same GitHub Release. Nothing here runs locally by itself. The decisions behind it are D98 to D102 and D105 to D109.
+zip to the same GitHub Release. Nothing here runs locally by itself. The decisions behind it are D98 to D102 and D120 to D124.
 
-The Windows app is the **desktop app** (D105): an Electron window around the local server, with the Python the server runs on inside the app. The 0.1.x app
+The Windows app is the **desktop app** (D120): an Electron window around the local server, with the Python the server runs on inside the app. The 0.1.x app
 was a launcher with a notification-area icon that opened your browser. The installer's id, the names and the asset names are the same, so installing the
 new one over the old one is an upgrade: it clears what the old layout left and keeps your data.
 
@@ -57,7 +57,7 @@ Exactly as the Mac release, there is one tag: see `docs/RELEASE.md`. What the `s
 | `exe` (windows-latest) | builds the wheel and sets up Node 22; `scripts/build_desktop_app.py --target win-x64` makes `Sutra Pro/`; **proves the folder runs**; compiles the installer with Inno Setup; **proves the installer** (silent install, the installed copy proved, silent uninstall, nothing left); zips the folder; writes a checksum per file; attaches all four files to the release |
 | `verify` (windows-latest) | downloads what was **published**, checks the checksums and the sizes, installs the published installer and proves the installed copy, uninstalls it, **installs the real 0.1.0 installer and the published one over it** (the old layout must be gone and the new app must prove itself; skipped with a notice if the 0.1.0 release is no longer there), unzips the published zip and proves that too |
 
-The proof (`scripts/prove_desktop_app.py`, D109) runs the app the way the Start menu entry does, offline, with every proxy pointing at a closed port. First the
+The proof (`scripts/prove_desktop_app.py`, D124) runs the app the way the Start menu entry does, offline, with every proxy pointing at a closed port. First the
 window: `Sutra Pro.exe` starts with `SUTRA_PRO_SELFTEST=1`, starts its server on `resources\python\python.exe`, draws the page, and the app asks the page whether it
 finished loading, is the server's own, drew something, and gets `/api/health` (with the wheel's version) from inside it; it saves a picture, writes
 `selftest.json` and quits, which must stop the server and leave no process of the data folder. Then the server alone, on that interpreter: a message posts with the
@@ -72,7 +72,7 @@ Repair an old tag: `gh workflow run sutra-pro-release-windows -f tag=sutra-pro-v
 
 | Path | What |
 |---|---|
-| `Sutra Pro.exe` and Electron's files | the window; the exe carries the old Sutra's icon (`assets/icon/sutra-pro.ico`, D106) and the product name `Sutra Pro` |
+| `Sutra Pro.exe` and Electron's files | the window; the exe carries the old Sutra's icon (`assets/icon/sutra-pro.ico`, D121) and the product name `Sutra Pro` |
 | `resources/app.asar` | `desktop/package.json` and `desktop/src` and nothing else |
 | `resources/python/` | python-build-standalone CPython 3.11 (the release pinned in `scripts/build_macos_app.py`, its sha256 checked) with the wheel and its dependencies installed by that interpreter |
 | `resources/build-info.json`, `resources/sutra-pro-1024.png` | what went in; the window's own picture of the logo for its first pages |

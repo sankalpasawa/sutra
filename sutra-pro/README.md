@@ -30,8 +30,8 @@ https://github.com/sankalpasawa/sutra/releases/download/sutra-pro-v0.2.0/Sutra-P
 ```
 
 The Mac app is signed with a Developer ID and notarized by Apple; the Windows files are not signed yet (D102), so SmartScreen says "Windows protected your PC" the
-first time (More info, Run anyway). Every file has a `.sha256` next to it. The apps are **desktop apps** (D105): an Electron window around the local server, which
-runs on a Python that ships inside the app; closing the window stops it. The logo is the old Sutra's (D106).
+first time (More info, Run anyway). Every file has a `.sha256` next to it. The apps are **desktop apps** (D120): an Electron window around the local server, which
+runs on a Python that ships inside the app; closing the window stops it. The logo is the old Sutra's (D121).
 
 ## Install and run from the command line
 

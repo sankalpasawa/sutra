@@ -1,4 +1,4 @@
-"""The desktop app and what ships with it (D105, D108): scripts/build_desktop_app.py, the entitlements, the signing script, the Windows installer script.
+"""The desktop app and what ships with it (D120, D123): scripts/build_desktop_app.py, the entitlements, the signing script, the Windows installer script.
 
 The builder installs the wheel by RUNNING the bundled interpreter, which only a machine of the target system can do, so these tests give it a
 fake interpreter (a script named python3 or python.exe, runnable on any POSIX system with `allow_foreign_host=True`) and a fake packager, and

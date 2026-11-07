@@ -1,5 +1,5 @@
 'use strict';
-/* <data folder>/logs/desktop.log: what the app did and what the server it started printed (D107). The server's own log, app.log, sits beside it.
+/* <data folder>/logs/desktop.log: what the app did and what the server it started printed (D122). The server's own log, app.log, sits beside it.
    The data folder holds the user's work, so it and the log folder are private (0700), as the server makes them. */
 const fs = require('node:fs');
 const path = require('node:path');

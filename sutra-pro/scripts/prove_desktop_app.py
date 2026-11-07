@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove that a built or installed desktop app works, by running it the way a person does (D109).
+"""Prove that a built or installed desktop app works, by running it the way a person does (D124).
 
     python scripts/prove_desktop_app.py --app "build/Sutra Pro.app" --version 0.2.0            # a Mac
     python scripts/prove_desktop_app.py --app "build/Sutra Pro" --version 0.2.0                # Windows: the folder that holds `Sutra Pro.exe`

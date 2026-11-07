@@ -294,11 +294,11 @@
     "D102",
     "D103",
     "D104",
-    "D105",
-    "D106",
-    "D107",
-    "D108",
-    "D109"
+    "D120",
+    "D121",
+    "D122",
+    "D123",
+    "D124"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -2568,15 +2568,15 @@
    "diagram": "key only, label \"Windows tests named, not hidden\"."
   },
   {
-   "id": "D105",
+   "id": "D120",
    "title": "The desktop app is an Electron window around the local server, on a Python that ships inside it",
    "packages": [],
    "status": "documented only",
    "superseded_by": [],
-   "diagram": "new box \"Desktop app · Electron window\" in the Experience band, pill D105."
+   "diagram": "new box \"Desktop app · Electron window\" in the Experience band, pill D120."
   },
   {
-   "id": "D106",
+   "id": "D121",
    "title": "The logo is the old Sutra's, derived from its icon and never redrawn",
    "packages": [],
    "status": "documented only",
@@ -2584,7 +2584,7 @@
    "diagram": "key label \"logo = the old Sutra's\", pill on the Desktop app box."
   },
   {
-   "id": "D107",
+   "id": "D122",
    "title": "The window and the server: attach or start, and end together",
    "packages": [
     "GAP-OPS-1"
@@ -2594,7 +2594,7 @@
    "diagram": "key label \"attach or start; ends with the window\", pill on the Desktop app box."
   },
   {
-   "id": "D108",
+   "id": "D123",
    "title": "Packaging: the packager, the verified Python inside it, our own signing, the same secrets",
    "packages": [],
    "status": "documented only",
@@ -2602,7 +2602,7 @@
    "diagram": "key label \"packager + Python inside; signed inside out\", pill on the Desktop app box."
   },
   {
-   "id": "D109",
+   "id": "D124",
    "title": "The packaged app proves itself before anything is uploaded",
    "packages": [],
    "status": "documented only",

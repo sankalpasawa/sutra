@@ -6,13 +6,13 @@ workflows of its own in the same folder; none of them starts on a change to this
 product's starts on a change to the old one (`tests/release/` checks both directions against the old files).
 
 One tag releases everything: the wheel, the two Mac DMGs, the Windows installer and zip land on one GitHub Release. The Mac and Windows downloads are
-the **desktop app** (D105): an Electron window (`desktop/`) around the local server, which runs on a Python that ships inside the app. Releases up to
+the **desktop app** (D120): an Electron window (`desktop/`) around the local server, which runs on a Python that ships inside the app. Releases up to
 0.1.x were a launcher that opened the browser; the app ids, names and asset names are the same, so a new download replaces the old app in place.
 
 | Part | Workflow | Doc |
 |---|---|---|
 | the wheel | `sutra-pro-release-wheel` | this file |
-| the Mac desktop app and its DMGs (work package REL-2, D105) | `sutra-pro-release-macos` | `docs/RELEASE-macos.md` |
+| the Mac desktop app and its DMGs (work package REL-2, D120) | `sutra-pro-release-macos` | `docs/RELEASE-macos.md` |
 | the Windows desktop app: installer and zip | `sutra-pro-release-windows` | `docs/RELEASE-windows.md` |
 
 ## The tag, and why it is not `v*` (D100)
@@ -63,7 +63,7 @@ skipped by name with the reason (`tests/conftest.py`).
 **sutra-pro-ci / desktop.** Node 22 (the packager needs 22.12 or newer), `npm ci --ignore-scripts` in `desktop/` (Electron's own 100 MB download is skipped: nothing
 here starts it), then `npm test`: the supervisor against a fake server (attach, start, crash, slow start, the stop ladder), the navigation guard, the
 pages, the menu, the log, the self-test's verdict and the packager's options. The same tests run on three systems; those that need POSIX signals say so
-and skip on Windows. That the packaged app really runs is proved by the release workflows (D109).
+and skip on Windows. That the packaged app really runs is proved by the release workflows (D124).
 
 **sutra-pro-ci / package.** `uv build` (the sdist, then the wheel from that sdist), `scripts/check_wheel.py` on the wheel, an install of the
 wheel into a clean environment outside the checkout, `sutra-pro --help`, and the built `dist/` kept as a workflow artifact.
@@ -138,4 +138,4 @@ Needs [uv](https://docs.astral.sh/uv/) (it fetches Python 3.11 when the machine 
 - No upload to PyPI, no signing of the wheel (the checksums are integrity, not authorship), and no sdist among the release assets
   (`sutra-pro-ci` keeps the sdist as a workflow artifact).
 - No signing of the Windows files until a certificate exists (D102); the Mac app is ad hoc signed, or Developer ID signed and notarized when all five
-  secrets exist. No auto-update on either (the release is never "Latest", D100, which is what an updater would read; D105 lists the options).
+  secrets exist. No auto-update on either (the release is never "Latest", D100, which is what an updater would read; D120 lists the options).

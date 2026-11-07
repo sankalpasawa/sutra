@@ -1,5 +1,5 @@
 'use strict';
-/* Which addresses the window may show and which go to the user's browser (D107). The window shows the local server and nothing else: the page
+/* Which addresses the window may show and which go to the user's browser (D122). The window shows the local server and nothing else: the page
    renders repository text and agent output, so a link in it is not trusted input. */
 
 function parse(url) {

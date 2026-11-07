@@ -1,4 +1,4 @@
-"""The logo of Sutra Pro is the logo of the old Sutra (D106): every icon is derived from the old product's `Sutra.icns`, none is redrawn.
+"""The logo of Sutra Pro is the logo of the old Sutra (D121): every icon is derived from the old product's `Sutra.icns`, none is redrawn.
 
 The files are checked by their bytes (no Pillow needed); `scripts/make_icons.py --check` compares the pictures when Pillow is there.
 """

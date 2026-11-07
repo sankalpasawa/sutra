@@ -4,7 +4,7 @@ The wheel release (`docs/RELEASE.md`, `sutra-pro-release-wheel.yml`), the Window
 Pushing `sutra-pro-vX.Y.Z` (or `sutra-pro-vX.Y.Z-beta.N`) runs all three; `sutra-pro-release-macos.yml` adds the app and the DMGs to the same
 GitHub Release, which is never marked "Latest" (D100). Nothing here runs locally by itself.
 
-The Mac app is the **desktop app** (D105): an Electron window around the local server, with the Python the server runs on inside the app. The 0.1.x
+The Mac app is the **desktop app** (D120): an Electron window around the local server, with the Python the server runs on inside the app. The 0.1.x
 apps were a launcher script that opened your browser; the id, the name and the asset names are the same, so the new app replaces the old one in place.
 
 ## What a downloader gets
@@ -53,7 +53,7 @@ What each `dmg` leg does:
    `Sutra Pro.app` from Electron and `desktop/src`, unpacks the python-build-standalone CPython 3.11 (its sha256 checked, the download cached) into
    `Contents/Resources/python` and installs the wheel into it with that interpreter, then checks that every symbolic link stays inside the app;
 3. `scripts/sign_desktop_app.sh` signs inside out (below) and audits every Mach-O file;
-4. **proves** the signed app (`scripts/prove_desktop_app.py`, D109), with the network cut (outbound requests go to a closed proxy port): the real window
+4. **proves** the signed app (`scripts/prove_desktop_app.py`, D124), with the network cut (outbound requests go to a closed proxy port): the real window
    starts its server on the Python inside the app, draws the page, gets `/api/health` from inside the page with the wheel's version, saves a picture and quits,
    which must stop the server and leave nothing running; then the server alone runs a team's first turn (a department, a task, an engine process that
    reaches `waiting_user`) and a stop request ends it. Afterwards `codesign --verify` must still pass: running the app changed no byte of what was signed.
@@ -88,7 +88,7 @@ every Mach-O file in the app, found by what it is and not by its name, must carr
 ## Facts to know
 
 - Bundle identifier `os.sutra.pro`, name "Sutra Pro", executable `Sutra Pro` (Electron's), version = the wheel's `X.Y.Z`, icon the old Sutra's
-  (`assets/icon/sutra-pro.icns` is that product's `Sutra.icns` byte for byte, D106; the bundle carries it as `Contents/Resources/electron.icns`). Minimum macOS 13.
+  (`assets/icon/sutra-pro.icns` is that product's `Sutra.icns` byte for byte, D121; the bundle carries it as `Contents/Resources/electron.icns`). Minimum macOS 13.
   `Contents/Resources/build-info.json` says what went in: version, target, Electron's version, the interpreter archive and its sha256, the wheel and its sha256.
 - Build the app by hand (needs Node 22 or newer and the network): `scripts/py scripts/build_desktop_app.py --wheel dist/sutra_pro-X.Y.Z-py3-none-any.whl --target mac-arm64 --out build`
   on an Apple Silicon Mac (`mac-x64` on an Intel Mac); `--skip-npm` when `desktop/node_modules` is already installed, `--python-archive FILE` uses a local interpreter
@@ -100,5 +100,5 @@ every Mach-O file in the app, found by what it is and not by its name, must carr
   release's `SHA256SUMS`, and against `PINNED_SHA256` once a digest is listed there. The desktop builder uses the same table.
 - The 0.1.x launcher (`scripts/macos/launcher.sh`, `Info.plist.tmpl`, `build_app` in `scripts/build_macos_app.py`) stays in the tree with its tests but no workflow builds it
   any more; its interpreter download and wheel installation are what the desktop builder reuses.
-- Not done (decisions in `docs/DECISIONS.md` D105): no auto-update (the release is never "Latest", which is what an updater would read), and Electron's
+- Not done (decisions in `docs/DECISIONS.md` D120): no auto-update (the release is never "Latest", which is what an updater would read), and Electron's
   fuses (`RunAsNode` and the like) are left at their defaults.
