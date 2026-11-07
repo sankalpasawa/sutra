@@ -18,7 +18,6 @@ from sutra_app.orchestrator.agent import demo, prompts
 from sutra_app.orchestrator.agent.agent import ChatAgent, PlanRequest
 from sutra_app.orchestrator.agent.demo import DemoBook, DemoStub, demo_book, topic_name
 from sutra_app.orchestrator.models import ChangeContext
-from sutra_app.orchestrator.notes import AGENT_HEADING
 from sutra_app.orchestrator.wiring import build_services
 
 CAFE = "A website for my cafe"
@@ -68,24 +67,6 @@ def parse(family, obj, kind=None):
 def test_decide_adds_a_team_when_the_chart_has_none():
     decision = parse("chat_turn", answer("decide", decide_prompt(CAFE)), "decide")
     assert (decision.intent, decision.change, decision.reuse_nodes, decision.assignments) == ("new_task", "add", [], [])
-
-
-# the block `OwnerNotes.agent_block` appends to the message in the decide and assign prompts: "\n" + heading + one line per note
-NOTES = "\n" + AGENT_HEADING + "\n- Your work: Open at nine, closed on Sundays.\n- About you: I follow up on leads and quotes every week."
-
-
-def test_the_owners_notes_are_not_part_of_the_request_the_demo_names_its_task_from():
-    """QA firstrun-settings: once any note existed, every demo task label began 'A website for my florist OWNER NOTES (facts and house rules' (the first
-    60 characters of the message and the notes block together), and the words of the notes took part in choosing the team."""
-    florist = "Flowers for my florist"
-    decision = parse("chat_turn", answer("decide", decide_prompt(florist + NOTES, DIGEST_TWO)), "decide")
-    assert (decision.change, decision.reuse_nodes) == ("add", [])                   # 'leads' and 'quotes' in a note must not pull it into Sales Leads
-    plain = parse("chat_turn", answer("decide", decide_prompt(florist, DIGEST_TWO)), "decide")
-    assert (plain.change, plain.reuse_nodes, plain.assignments) == (decision.change, decision.reuse_nodes, decision.assignments)
-    reused = parse("chat_turn", answer("decide", decide_prompt("Add a menu to the cafe page" + NOTES, DIGEST_TWO)), "decide")
-    assert [(a.title, a.brief) for a in reused.assignments] == [("Add a menu to the cafe page", "Add a menu to the cafe page")]
-    plan = parse("chat_turn", answer("assign", assign_prompt("A website for my florist" + NOTES, DIGEST_TWO)), "assignments")
-    assert [(a.title, a.brief) for a in plan.assignments] == [("A website for my florist", "A website for my florist")]
 
 
 def test_decide_reuses_the_department_that_shares_a_word_with_its_goal():

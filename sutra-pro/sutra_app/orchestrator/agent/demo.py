@@ -21,7 +21,6 @@ from sutra_app.connectors.stub import ReplyBook, StubConnector
 from sutra_app.library.org_chart import AddOp, ChartChangeRequest, NewNode
 from sutra_app.library.types import clip
 from sutra_app.orchestrator.agent.replies import AssignmentDraft, AssignmentPlan, ChatDecision
-from sutra_app.orchestrator.notes import AGENT_HEADING
 from sutra_app.orchestrator.textutil import STOP_WORDS, one_line_title
 
 __all__ = ["DemoBook", "DemoStub", "demo_book", "FUNCTION", "topic_name"]
@@ -70,11 +69,7 @@ def _read(prompt: str) -> tuple[str, str, list[_Dept]]:
         parts = [p.strip() for p in line.split(" | ")]
         if line[:1] not in (" ", "") and len(parts) >= 3 and not line.startswith("Org chart"):
             depts.append(_Dept(parts[0], parts[1], parts[2]))
-    message = asked.group(1)
-    notes_at = message.find("\n" + AGENT_HEADING)                 # the owner's notes block follows the message in the same slot (`{message}{notes}`): not part of the request
-    if notes_at >= 0:
-        message = message[:notes_at]
-    return message, root.group(1) if root else "root", depts
+    return asked.group(1), root.group(1) if root else "root", depts
 
 
 def _best(message: str, depts: list[_Dept]) -> tuple[_Dept | None, int]:
