@@ -1,6 +1,7 @@
 """The Projector, the RunWatcher and reconcile (ORCH-6): every event of the run protocol becomes the rows of orchestrator 5.6, a replay
 changes nothing, a dead process is a crash, a silent one is only flagged, and the start-up pass settles what the last run left."""
 import json
+from pathlib import Path
 
 import pytest
 from orchestrator.test_tasks import TEnv, dept_messages, ev, tenv, tenv_with  # noqa: F401  (tenv is a fixture)
@@ -364,6 +365,22 @@ def test_crash_pid_gone(tenv):
     assert "ValueError: boom" in row.outcome and "sk-secret" not in row.outcome and "[redacted]" in row.outcome
     assert len(row.outcome) <= 2000
     assert dept_messages(tenv)[-1].text == "Something went wrong. Try again."
+
+
+def test_a_crash_card_names_files_not_this_machines_folders_and_the_log_keeps_the_whole_tail(tenv):
+    """gap chart-insight: the 2 KB the owner reads says 'tools.py', never the home or the data folder; run.stderr.log is not touched."""
+    task = tenv.started()
+    home_file = str(Path.home() / ".local" / "share" / "uv" / "tools" / "sutra-pro" / "lib" / "tools.py")
+    data_file = str(tenv.run_dir(task) / "build" / "index.html")
+    tail = f'Traceback...\n  File "{home_file}", line 12, in run\nFileNotFoundError: {data_file}.\nrelative build/v1/index.html on 5/6/2026 and /home/about\n'
+    (tenv.run_dir(task) / "run.stderr.log").write_text(tail)
+    tenv.launcher.kill(tenv.row(task).pid)
+    assert tenv.run(tenv.watcher.tick(task)) is True
+    said = tenv.row(task).outcome
+    assert 'File "tools.py", line 12, in run' in said and "FileNotFoundError: index.html." in said
+    assert str(Path.home()) not in said and str(tenv.settings.data_dir) not in said
+    assert "build/v1/index.html on 5/6/2026 and /home/about" in said                      # a relative path, a date and a site's page stay
+    assert (tenv.run_dir(task) / "run.stderr.log").read_text() == tail                    # the log keeps the full tail
 
 
 def test_a_process_that_wrote_its_last_lines_as_it_died_is_not_a_crash(tenv):

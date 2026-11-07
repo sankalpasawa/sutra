@@ -321,6 +321,14 @@ def test_a_spawn_failure_crashes_that_task_only(tenv):
     assert tenv.graph.get("web").state == "fault"
 
 
+def test_a_spawn_failure_names_the_file_not_the_folder_for_the_owner(tenv):
+    """gap chart-insight: the owner-facing 'could not start' line carries file names; the data folder and the home stay out of it."""
+    tenv.launcher.fail_with = OSError(f"[Errno 2] No such file or directory: '{tenv.settings.data_dir}/departments/web/python3'")
+    task = tenv.new()
+    tenv.run(tenv.service.start_ready())
+    assert tenv.row(task.id).outcome == "could not start: [Errno 2] No such file or directory: 'python3'"
+
+
 # ---- the child environment ------------------------------------------------------------------------------------------------------------
 
 def test_child_env_allowlist():
