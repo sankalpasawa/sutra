@@ -32,6 +32,7 @@ const MAX_REDIRECTS = 5;
 const FIRST_CHECK_MS = 60 * 1000;
 const EVERY_MS = 6 * 60 * 60 * 1000;
 const KEEP_VERSIONS = 2;
+const MAX_AUTO_TRIES = 3;                                // the timer downloads one version at most this many times in a session when every try fails
 const HELPER_WAIT_S = 90;                                // how long the macOS helper waits for the new app to answer before it puts the old one back
 const USER_AGENT = 'sutra-pro-update';
 
@@ -528,6 +529,7 @@ function createUpdater(options) {
   let installOnQuit = false;
   const offered = new Set();
   const told = new Set();
+  const tries = new Map();                               // version -> downloads that ended in a failure this session (the timer stops at MAX_AUTO_TRIES)
 
   const report = async (state, version, message) => {
     try {
@@ -747,10 +749,16 @@ function createUpdater(options) {
     if (!plan.ok) return tellOnly({ ...plan, manual }, plan.why);
     const can = await canVerify();
     if (!can.ok) return tellOnly({ ...plan, manual }, can.why);
+    if (!manual && (tries.get(plan.version) || 0) >= MAX_AUTO_TRIES) {
+      log(`${plan.version} failed its checks ${MAX_AUTO_TRIES} times: not trying again until the next launch or a Check for Updates click`);
+      return { state: 'failed' };
+    }
     log(`${plan.version} is out (this is ${o.version}): downloading it to check it`);
     try {
       staged = await ensureStaged(plan, can.identity);
+      tries.delete(plan.version);
     } catch (error) {
+      tries.set(plan.version, (tries.get(plan.version) || 0) + 1);
       log(`${plan.version} was not used: ${error && error.message}`);
       await report('failed', plan.version, failSentence(plan.version, error));
       if (manual) await o.info({ message: 'The update was not installed.', detail: failSentence(plan.version, error) });

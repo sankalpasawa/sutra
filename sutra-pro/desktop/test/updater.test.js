@@ -47,6 +47,7 @@ function transport(routes) {
     return typeof route === 'function' ? route() : response(route.status || 200, route.body, route.headers);
   };
   get.seen = seen;
+  get.routes = routes;
   return get;
 }
 
@@ -570,6 +571,32 @@ test('macOS: a different Team Identifier, bundle id, a version that is not newer
     const detached = w.runs.filter((r) => r.args[0] === 'detach').length;
     assert.equal(detached >= (name === 'the image will not open' ? 0 : 1) && (attached === 0 || name === 'the image will not open' || detached >= attached), true, `${name}: the image is always unmounted`);
   }
+});
+
+test('a download that keeps failing its checks is not fetched again and again by the timer: three tries, then only the owner\'s own menu click', async () => {
+  const w = harness({ mac: { teamId: 'ZZZZZ99999' } });                       // every download fails the same-developer check
+  const downloads = () => w.get.seen.filter((url) => url.endsWith('.dmg')).length;
+  for (let tick = 0; tick < 6; tick += 1) assert.equal((await w.updater.checkNow({ manual: false })).state, 'failed');
+  assert.equal(downloads(), 3, 'the timer gave up after three downloads');
+  assert.ok(w.logs.some((line) => /not trying again/.test(line)));
+  assert.match(w.reports.at(-1).message, /not signed by the same developer/);
+  assert.equal(w.planCalls.length, 6, 'the check itself is still asked every time: it is one small request');
+  assert.equal((await w.updater.checkNow({ manual: true })).state, 'failed');
+  assert.equal(downloads(), 4, 'the owner\'s own click tries again');
+});
+
+test('a failed download of one version does not hold back the next version', async () => {
+  const w = harness({ mac: { teamId: 'ZZZZZ99999' } });
+  for (let tick = 0; tick < 4; tick += 1) await w.updater.checkNow({ manual: false });
+  assert.equal(w.get.seen.filter((url) => url.endsWith('.dmg')).length, 3);
+  const next = '0.3.1';
+  w.answer = answerFor({ latest: next });
+  const asset = u.assetFor('darwin', 'arm64');
+  const url = u.downloadUrl(next, asset);
+  w.get.routes[url] = { body: ASSET_BYTES, headers: { 'content-length': String(ASSET_BYTES.length) } };
+  w.get.routes[`${url}.sha256`] = { body: `${sha(ASSET_BYTES)}  ${asset}\n` };
+  await w.updater.checkNow({ manual: false });
+  assert.ok(w.get.seen.includes(url), 'the newer version is downloaded');
 });
 
 test('macOS: a folder the owner cannot write to is not elevated: the verified app is revealed and the owner is told where to drag it', async () => {
