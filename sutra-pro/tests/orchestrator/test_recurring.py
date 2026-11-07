@@ -11,7 +11,7 @@ from orchestrator.test_tasks import TEnv, tenv  # noqa: F401  (tenv is a fixture
 
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound
 from sutra_app.orchestrator.recurring import CRASH_LIMIT, MAX_RECURRING, Recurring
-from sutra_app.orchestrator.schedule import Schedule
+from sutra_app.orchestrator.schedule import COUNT_CAP, Schedule
 
 UTC = timezone.utc
 WEEKDAYS_9 = Schedule(every="weekdays", hour=9, minute=0)
@@ -101,6 +101,32 @@ def test_three_days_down_then_start_makes_one_task_and_says_how_many_slots_it_fo
     assert rec.tick(at(2026, 11, 4, 10, 30)).started == []                                   # nothing more is owed
 
 
+def test_an_absence_past_the_count_cap_is_told_as_many_and_a_shorter_one_as_a_figure(tenv, rec):
+    """QA recurring-limits: 120 days of hourly times printed 'folded 1999' as if it were exact (the count stops at COUNT_CAP)."""
+    hourly = Schedule(every="hour", minute=0)
+    short = rec.create("web", "Hourly digest", hourly, now=at(2026, 11, 1, 0, 30))
+    rec.tick(at(2026, 11, 4, 0, 30))                                                         # 72 whole hours away: an exact figure
+    assert "71 earlier due times were missed" in rows_of(tenv, short.id)[0]["reason"] and rows_of(tenv, short.id)[0]["folded"] == 71
+    rec.delete(short.id)
+    tenv.sql("UPDATE tasks SET status = 'done', ended_at = created_at, outcome = 'x'")
+    long = rec.create("web", "Hourly digest", hourly, now=at(2026, 1, 1, 0, 30))
+    ((_, task),) = rec.tick(at(2026, 5, 1, 0, 30)).started                                   # about 120 days: more than the cap
+    (row,) = rows_of(tenv, long.id)
+    assert row["folded"] == COUNT_CAP - 1                                                    # the figure that is stored is the least it was
+    assert row["reason"].startswith("many earlier due times were missed") and "1999" not in row["reason"] and "1,999" not in row["reason"]
+    note = tenv.one("SELECT text FROM chat_messages WHERE task_id = ? AND kind = 'note'", task)
+    assert "Many earlier due times were missed" in note and "1999" not in note
+
+
+def test_the_page_names_the_same_cap_as_the_schedule_counts_to():
+    """recurring_view.js tells a folded count at the cap as 'many'; its constant is COUNT_CAP - 1 (the count includes the run's own due time)."""
+    import re
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[2] / "sutra_app" / "ui" / "static" / "js" / "recurring_view.js").read_text(encoding="utf-8")
+    found = re.search(r"const MANY_FOLDED = (\d+);", source)
+    assert found is not None and int(found.group(1)) == COUNT_CAP - 1
+
+
 def test_a_single_late_slot_is_a_catch_up_too_but_folds_nothing(tenv, rec):
     made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 4, 8))
     rec.tick(at(2026, 11, 4, 11, 0))                                                         # two hours late
@@ -160,6 +186,42 @@ def test_two_restarts_add_no_second_row_for_the_same_due_time(tenv, rec):
     assert Recurring(tenv.db, tenv.service, clock=Now(at(2026, 11, 4, 9, 3)), tz=UTC).tick(at(2026, 11, 4, 9, 3)).started == []
     assert len(rows_of(tenv, made.id)) == 1 and len(tasks_of(tenv)) == 1
     assert tenv.one("SELECT cursor_at FROM recurring WHERE id = ?", made.id) == at(2026, 11, 4, 9)
+
+
+# ---- a clock that ran ahead and was corrected -------------------------------------------------------------------------------------------
+
+def test_a_clock_that_ran_ahead_and_was_corrected_does_not_silence_the_schedule(tenv, rec):
+    """QA recurring-limits: a bad time sync a month ahead, one catch-up, then the clock is right again. The cursor must not stay in the future."""
+    made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 9, 8))
+    ((_, first),) = rec.tick(at(2026, 12, 9, 10)).started                                    # the clock is 30 days ahead: one catch-up
+    end(tenv, first, "done")
+    assert tenv.one("SELECT cursor_at FROM recurring WHERE id = ?", made.id) == at(2026, 12, 9, 9)
+    assert rec.tick(at(2026, 11, 9, 8, 30)).started == []                                    # corrected: nothing is due yet, and nothing is stuck
+    assert tenv.one("SELECT cursor_at FROM recurring WHERE id = ?", made.id) == at(2026, 11, 9, 8, 30)
+    for day in range(9, 13):                                                                 # the schedule fires on its days again
+        ((_, task),) = rec.tick(at(2026, 11, day, 9, 0, ) + 40).started
+        end(tenv, task, "done")
+    assert [r["due_at"] for r in rows_of(tenv, made.id)[1:]] == [at(2026, 11, day, 9) for day in range(9, 13)]
+    rec.clock.t = at(2026, 11, 12, 10)
+    assert rec.get(made.id).next_due_at == "2026-11-13T09:00:00Z"                            # the promise the list makes is the one the tick keeps
+
+
+def test_a_schedule_made_while_the_clock_was_ahead_fires_once_the_clock_is_right(tenv, rec):
+    made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 12, 9, 10))               # created on the wrong clock
+    assert rec.tick(at(2026, 11, 10, 8)).started == []                                       # the first tick on the right clock moves the cursor back
+    assert len(rec.tick(at(2026, 11, 10, 9, 0) + 30).started) == 1
+    assert rows_of(tenv, made.id)[0]["due_at"] == at(2026, 11, 10, 9)
+
+
+def test_an_hour_the_clock_ran_ahead_does_not_run_a_slot_twice_when_it_is_corrected(tenv, rec):
+    """The slot that fired on the early clock is still refused by its unique row, and a refused repeat is not reported as a skip."""
+    made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 9, 8))
+    ((_, first),) = rec.tick(at(2026, 11, 9, 10)).started                                    # the clock ran two hours ahead: 09:00 fires
+    assert rec.tick(at(2026, 11, 9, 8, 30)).started == []                                    # corrected back before 09:00
+    again = rec.tick(at(2026, 11, 9, 9, 0) + 30)                                             # the real 09:00: the team is still on its first task
+    assert (again.started, again.skipped) == ([], [])
+    end(tenv, first, "done")
+    assert len(rows_of(tenv, made.id)) == 1 and len(tasks_of(tenv)) == 1
 
 
 def test_the_catch_up_happens_when_the_app_starts_and_only_once(tenv, rec):
@@ -320,6 +382,42 @@ def test_a_failing_schedule_does_not_keep_the_others_from_running(tenv, rec, mon
     assert report.paused == [first.id] and [r for r, _ in report.started] == [second.id]
 
 
+MONTHLY = '{"every":"month","hour":9,"minute":0,"weekday":0}'            # a cadence this build does not have (a downgrade, a hand-edited file)
+
+
+def test_one_unreadable_schedule_does_not_hide_the_others_and_is_listed_as_paused_with_its_reason(tenv, rec):
+    """QA recurring-limits: one bad schedule_json made the whole list a 500, so the owner could neither see 'Set it again' nor remove the row."""
+    good = rec.create("web", "Good one", DAILY_9, now=at(2026, 11, 4, 8))
+    bad = rec.create("web", "Bad one", DAILY_9, now=at(2026, 11, 4, 8))
+    tenv.sql("UPDATE recurring SET schedule_json = ? WHERE id = ?", MONTHLY, bad.id)
+    listed = {r.id: r for r in rec.listing()}                                                # before the tick has paused it
+    assert set(listed) == {good.id, bad.id} and listed[good.id].enabled is True and listed[good.id].next_due_at == "2026-11-04T09:00:00Z"
+    one = listed[bad.id]
+    assert (one.enabled, one.schedule, one.next_due_at, one.never_fired_on_schedule) == (False, None, None, False)
+    assert one.paused_reason == "Paused: its schedule could not be read. Set it again." and one.text == "Bad one" and one.human
+    assert rec.get(bad.id).paused_reason == one.paused_reason
+    assert rec.tick(at(2026, 11, 4, 9, 1)).paused == [bad.id]                                # the tick pauses it and says so, as before
+    again = {r.id: r for r in rec.listing()}
+    assert again[bad.id].enabled is False and again[bad.id].paused_reason == one.paused_reason
+    assert again[good.id].last_run is not None and again[good.id].schedule == DAILY_9
+    rec.delete(bad.id)                                                                       # the owner can remove it
+    assert [r.id for r in rec.listing()] == [good.id]
+
+
+def test_an_unreadable_schedule_can_be_set_again_and_a_manual_run_of_it_says_so_instead_of_failing(tenv, rec):
+    made = rec.create("web", "Bad one", DAILY_9, now=at(2026, 11, 4, 8))
+    tenv.sql("UPDATE recurring SET schedule_json = ? WHERE id = ?", MONTHLY, made.id)
+    with pytest.raises(AppError) as refused:
+        rec.run_now(made.id)
+    assert refused.value.code == "validation" and "schedule could not be read" in refused.value.message and tasks_of(tenv) == []
+    assert rec.tick(at(2026, 11, 4, 9, 1)).paused == [made.id]
+    with pytest.raises(AppError) as still:                                                   # switching it on alone would only be paused again, with another note
+        rec.update(made.id, enabled=True)
+    assert still.value.code == "validation" and tenv.one("SELECT enabled FROM recurring WHERE id = ?", made.id) == 0
+    fixed = rec.update(made.id, schedule=WEEKDAYS_9, enabled=True, now=at(2026, 11, 4, 8, 5))
+    assert fixed.schedule == WEEKDAYS_9 and fixed.enabled and fixed.paused_reason == "" and fixed.next_due_at == "2026-11-04T09:00:00Z"
+
+
 def test_a_daily_time_in_a_zone_that_springs_forward_fires_once_that_day(tenv):
     zoneinfo = pytest.importorskip("zoneinfo")
     try:
@@ -351,6 +449,51 @@ def test_the_tick_starts_work_a_limit_was_holding_once_the_limit_lifts(tenv, tmp
     Limits(path, tenv.db, quotas=lambda: {}, clock=tenv.clock).update(monthly_usd=50.0)     # raised from outside this service
     tenv.run(rec.tick_async())
     assert tenv.status(task.id) == "starting"
+
+
+def over_the_limit(tenv, tmp_path):
+    """The monthly limit is used up: every start is held, the way the app wires it."""
+    from sutra_app.orchestrator.limits import Limits
+    limits = Limits(tmp_path / "limits.json", tenv.db, quotas=lambda: {}, clock=tenv.clock)
+    tenv.service.start_gate = limits.gate
+    limits.update(monthly_usd=1.0)
+    tenv.sql("INSERT INTO usage_ledger(at, provider, purpose, usd) VALUES (?,?,?,?)", at(2026, 11, 4, 9), "claude", "test", 5.0)
+    return limits
+
+
+def test_a_run_whose_task_the_spending_limit_holds_is_not_called_working(tenv, tmp_path, rec):
+    """QA recurring-limits: Run now, and a scheduled run, said 'working' for a task that was queued behind the limit and had not started."""
+    limits = over_the_limit(tenv, tmp_path)
+    made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 4, 8))
+    manual = rec.run_now(made.id)
+    tenv.run(tenv.service.start_ready())
+    assert tenv.status(manual.task_id) == "queued"                                           # held: nothing is running
+    assert (rec.runs(made.id)[0].result, rec.get(made.id).last_run.result) == ("held", "held")
+    assert rec.run_out(manual.id).result == "held"                                          # what the route answers once start_ready has decided
+    limits.update(monthly_usd=50.0)
+    tenv.run(tenv.service.start_ready())
+    assert tenv.status(manual.task_id) == "starting" and rec.runs(made.id)[0].result == "working"     # raised: it started, and now it is working
+    end(tenv, manual.task_id, "done")
+    assert rec.runs(made.id)[0].result == "done"
+    ((_, scheduled),) = rec.tick(at(2026, 11, 4, 9, 1)).started                              # the same holds for a due time
+    limits.update(monthly_usd=1.0)
+    tenv.run(tenv.service.start_ready())
+    assert tenv.status(scheduled) == "queued" and rec.runs(made.id)[0].result == "held"
+
+
+def test_both_limit_holds_begin_with_the_words_a_held_run_is_told_by():
+    from sutra_app.orchestrator.limits import WAIT_GUARD, WAIT_SPEND
+    from sutra_app.orchestrator.recurring import HELD, result_of
+    assert WAIT_SPEND.startswith(HELD) and WAIT_GUARD.startswith(HELD)
+    assert result_of("started", "queued", WAIT_SPEND) == "held" and result_of("started", "queued", "waiting to start") == "working"
+    assert result_of("started", "starting", WAIT_SPEND) == "working" and result_of("skipped", "queued", WAIT_SPEND) == "skipped"
+
+
+def test_a_queued_task_that_waits_for_a_slot_or_the_team_is_still_working(tenv, rec):
+    """Only a limit makes a run 'held': a task that has just been made and is about to start is not."""
+    made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 4, 8))
+    run = rec.run_now(made.id)
+    assert tenv.status(run.task_id) == "queued" and rec.runs(made.id)[0].result == "working"
 
 
 def test_the_loop_runs_ticks_and_stops_cleanly(tenv):

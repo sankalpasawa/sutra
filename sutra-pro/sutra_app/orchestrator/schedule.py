@@ -22,7 +22,7 @@ from pydantic import Field, field_validator, model_validator
 
 from sutra_app.library.base import Value
 
-__all__ = ["Schedule", "EVERY", "WEEKDAY_NAMES", "HOURLY_FLOOR", "next_due", "latest_due", "owed", "human", "clock12"]
+__all__ = ["Schedule", "EVERY", "WEEKDAY_NAMES", "HOURLY_FLOOR", "COUNT_CAP", "next_due", "latest_due", "owed", "human", "clock12"]
 
 EVERY = ("hour", "day", "weekdays", "week")
 WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")

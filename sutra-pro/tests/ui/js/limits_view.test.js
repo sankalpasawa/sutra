@@ -170,6 +170,22 @@ test("the Notifications group holds the stored choices, keeps typed ones beside 
   assert.match(html, /never capped/);                                                               // a question, an approval and a problem are not capped
 });
 
+test("the headings of Limits and Notifications can take focus (tabindex -1): home.js leaves the keyboard there when the control it was on is gone", () => {
+  assert.match(LV.limitsHtml(state(), {}), /<h3 id="set-limits-h" tabindex="-1">Limits<\/h3>/);
+  assert.match(LV.limitsHtml(null, {}), /<h3 id="set-limits-h" tabindex="-1">Limits<\/h3>/);
+  assert.match(LV.noticesHtml({quiet_hours: null, nudges_per_hour: 3}, {}), /<h3 id="set-notices-h" tabindex="-1">Notifications<\/h3>/);
+});
+
+test("'Quiet right now.' follows the clock the page hands in, not the answer the server gave when it was read", () => {
+  const prefs = {quiet_hours: {start: "21:00", end: "08:00"}, nudges_per_hour: 3, quiet_now: true, max_nudges_per_hour: 10};
+  assert.match(LV.noticesHtml(prefs, {}), /Quiet right now\./);                                      // no clock handed in: the server's reading
+  assert.doesNotMatch(LV.noticesHtml(prefs, {quietNow: false}), /Quiet right now\./);               // the window ended since the read
+  assert.match(LV.noticesHtml(prefs, {quietNow: false}), /Leave both empty for no quiet hours/);
+  const idle = {quiet_hours: {start: "21:00", end: "08:00"}, nudges_per_hour: 3, quiet_now: false, max_nudges_per_hour: 10};
+  assert.match(LV.noticesHtml(idle, {quietNow: true}), /Quiet right now\./);                         // the window began since the read
+  assert.match(LV.noticesHtml(idle, {quietNow: "yes"}), /Leave both empty/);                         // only a real boolean overrides the server
+});
+
 // ---- the calls -----------------------------------------------------------------------------------------------------------------------------
 
 test("saveLimit sends the dollars, null to clear, and nothing at all for an amount it refuses", async () => {

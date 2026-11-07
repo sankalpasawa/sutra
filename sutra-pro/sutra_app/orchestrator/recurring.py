@@ -12,7 +12,9 @@ last one dealt with (`recurring.cursor_at`) is ONE run, and its row says how man
 missed slot.
 
 A due time is dealt with exactly once. Its row in `recurring_runs` is unique on (recurring_id, due_at) and is written in the same transaction
-as the task and the new cursor, so a restart, a second tick or a slow clock cannot start the same slot twice. What a due time becomes:
+as the task and the new cursor, so a restart, a second tick or a slow clock cannot start the same slot twice. A cursor that is later than the
+clock (the clock ran ahead, a catch-up moved the cursor, and the clock was corrected) is moved back to "now" by the next tick, so the schedule
+does not go silent for the length of the error; a due time in the one tick between the correction and that tick is not owed. What a due time becomes:
 
     the team is free            a task made through `TaskService.create_scheduled` (an ordinary queued task, titled "... (scheduled)", with a
                                 note in the team's chat), then `start_ready` as for any task: the caps, the one-live-task-per-team rule, the
@@ -42,7 +44,7 @@ from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound, validation_error
 from sutra_app.orchestrator.ids import Clock, SystemClock, iso_z
 from sutra_app.orchestrator.models import Count, Iso, Name, TaskOut
-from sutra_app.orchestrator.schedule import Schedule, human, next_due, owed
+from sutra_app.orchestrator.schedule import COUNT_CAP, Schedule, human, next_due, owed
 from sutra_app.orchestrator.textutil import one_line_title
 
 __all__ = ["Recurring", "RecurringOut", "RunOut", "TickReport", "TICK_S", "LATE_S", "MAX_RECURRING", "MAX_TEXT", "CRASH_LIMIT", "result_of"]
@@ -55,14 +57,16 @@ MAX_TEXT = 4000                  # the words of one standing task
 CRASH_LIMIT = 3                  # crashes in a row that pause a schedule
 _OPEN = ("starting", "running", "waiting_user", "queued", "blocked")
 _PAUSED = f"Paused after {CRASH_LIMIT} runs in a row ended with a problem. Look at the team's last attempts, then switch it on again."
+_UNREADABLE = "Paused: its schedule could not be read. Set it again."
 _RESULT = {"queued": "working", "blocked": "working", "starting": "working", "running": "working", "waiting_user": "waiting",
            "done": "done", "done_with_open_items": "open_items", "crashed": "crashed", "stopped": "stopped", "cancelled": "stopped"}
-Result = Literal["skipped", "working", "waiting", "done", "open_items", "crashed", "stopped"]
+Result = Literal["skipped", "working", "held", "waiting", "done", "open_items", "crashed", "stopped"]
+HELD = "waiting:"                # how a queued task's detail begins when a limit holds its start (limits.WAIT_SPEND, limits.WAIT_GUARD)
 
 
 class RunOut(Value):
-    """One due time that was dealt with. `result` is read from the task's status (never stored): skipped, working, waiting (for the owner),
-    done, open_items (done with open items), crashed or stopped."""
+    """One due time that was dealt with. `result` is read from the task's status (never stored): skipped, working, held (queued behind a limit:
+    nothing has started), waiting (for the owner), done, open_items (done with open items), crashed or stopped."""
 
     id: Count
     due_at: Iso
@@ -79,7 +83,7 @@ class RecurringOut(Value):
     dept_id: str
     dept_name: Name
     text: Annotated[str, StringConstraints(max_length=MAX_TEXT)]
-    schedule: Schedule
+    schedule: Schedule | None = None                                     # None only for a stored schedule this build cannot read (listed as paused)
     human: str
     enabled: bool
     paused_reason: Annotated[str, StringConstraints(max_length=300)] = ""      # empty on a schedule the owner paused; the app's words otherwise
@@ -99,10 +103,13 @@ class TickReport:
         return bool(self.started or self.skipped or self.paused)
 
 
-def result_of(outcome: str, task_status: str | None) -> str:
-    """The word for a run: a skip is `skipped`; a started run is whatever its task's status says (a missing task reads as `stopped`)."""
+def result_of(outcome: str, task_status: str | None, detail: str = "") -> str:
+    """The word for a run: a skip is `skipped`; a started run is whatever its task's status says (a missing task reads as `stopped`), except a
+    task still `queued` with a limit's waiting words, which is `held`: the owner is told it has not started, not that it is working."""
     if outcome == "skipped":
         return "skipped"
+    if task_status == "queued" and (detail or "").startswith(HELD):
+        return "held"
     return _RESULT.get(task_status or "", "stopped")
 
 
@@ -136,21 +143,31 @@ class Recurring:
 
     def _run_out(self, r: sqlite3.Row) -> RunOut:
         return RunOut(
-            id=r["id"], due_at=iso_z(r["due_at"]), at=iso_z(r["at"]), trigger=r["trigger"], result=result_of(r["outcome"], r["status"]),
+            id=r["id"], due_at=iso_z(r["due_at"]), at=iso_z(r["at"]), trigger=r["trigger"], result=result_of(r["outcome"], r["status"], r["detail"]),
             task_id=r["task_id"], folded=r["folded"], reason=clip(r["reason"], 300))
 
-    _RUN_SQL = ("SELECT r.id, r.due_at, r.at, r.trigger, r.outcome, r.task_id, r.folded, r.reason, t.status FROM recurring_runs r"
-                " LEFT JOIN tasks t ON t.id = r.task_id")
+    _RUN_SQL = ("SELECT r.id, r.due_at, r.at, r.trigger, r.outcome, r.task_id, r.folded, r.reason, t.status, g.detail FROM recurring_runs r"
+                " LEFT JOIN tasks t ON t.id = r.task_id"
+                " LEFT JOIN graph_nodes g ON g.task_id = r.task_id AND g.step_ref = 'task' AND g.kind = 'step'")
+
+    @staticmethod
+    def _read(raw: str) -> Schedule | None:
+        """The stored schedule, or None when it does not read (a build with another cadence wrote it, or the file was edited by hand)."""
+        try:
+            return Schedule.model_validate_json(raw)
+        except ValidationError:
+            return None
 
     def _out(self, conn: sqlite3.Connection, r: sqlite3.Row, now: int) -> RecurringOut:
-        schedule = Schedule.model_validate_json(r["schedule_json"])
+        schedule = self._read(r["schedule_json"])
         last = conn.execute(f"{self._RUN_SQL} WHERE r.recurring_id = ? ORDER BY r.id DESC LIMIT 1", (r["id"],)).fetchone()
         kinds = {x[0] for x in conn.execute("SELECT DISTINCT trigger FROM recurring_runs WHERE recurring_id = ?", (r["id"],))}
-        enabled = bool(r["enabled"])
+        enabled = bool(r["enabled"]) and schedule is not None         # a schedule that does not read will not fire: the tick pauses it, the list says so now
         return RecurringOut(
             id=r["id"], dept_id=r["dept_id"], dept_name=clip(r["dept_name"] or r["dept_id"], 80), text=r["text"], schedule=schedule,
-            human=human(schedule), enabled=enabled, paused_reason=r["paused_reason"],
-            next_due_at=iso_z(next_due(schedule, now, self.tz)) if enabled else None, created_at=iso_z(r["created_at"]),
+            human=human(schedule) if schedule is not None else "Its schedule could not be read", enabled=enabled,
+            paused_reason=r["paused_reason"] if schedule is not None else _UNREADABLE,
+            next_due_at=iso_z(next_due(schedule, now, self.tz)) if enabled and schedule is not None else None, created_at=iso_z(r["created_at"]),
             last_run=self._run_out(last) if last is not None else None,
             never_fired_on_schedule=enabled and "manual" in kinds and not (kinds & {"schedule", "catch_up"}))
 
@@ -168,6 +185,12 @@ class Recurring:
             if found is None:
                 raise NotFound("that schedule")
             return self._out(conn, found, now)
+
+    def run_out(self, run_id: int) -> RunOut | None:
+        """One run row as it reads now (None when it is gone): the route reads it again after `start_ready` has decided whether a limit holds it."""
+        with self.db.read() as conn:
+            found = conn.execute(f"{self._RUN_SQL} WHERE r.id = ?", (run_id,)).fetchone()
+            return self._run_out(found) if found is not None else None
 
     def runs(self, rec_id: str, limit: int = 20) -> list[RunOut]:
         """The newest rows first, at most `limit` (1 to 200)."""
@@ -218,6 +241,8 @@ class Recurring:
             if schedule is not None and schedule.model_dump_json() != found["schedule_json"]:
                 sets.update(schedule_json=schedule.model_dump_json(), cursor_at=moment)
             if enabled is not None and bool(found["enabled"]) != enabled:
+                if enabled and schedule is None and self._read(found["schedule_json"]) is None:      # switching on would only be paused again, with another note
+                    raise validation_error([violation("schedule", "unreadable", "set the schedule again")], "Its schedule could not be read. Set it again")
                 sets.update(enabled=int(enabled), paused_reason="")
                 if enabled:
                     top = tx.conn.execute("SELECT coalesce(max(id), 0) FROM recurring_runs WHERE recurring_id = ?", (rec_id,)).fetchone()[0]
@@ -270,6 +295,9 @@ class Recurring:
                 raise NotFound("that schedule")
             if not self._team_active(tx.conn, rec["dept_id"]):
                 raise NotFound("that team")
+            schedule = self._read(rec["schedule_json"])
+            if schedule is None:
+                raise validation_error([violation("schedule", "unreadable", "set the schedule again")], "Its schedule could not be read. Set it again")
             busy = self._busy(tx.conn, rec["dept_id"])
             if busy:
                 raise Busy(busy[0].upper() + busy[1:] + ". Try again when it is free")
@@ -279,7 +307,7 @@ class Recurring:
             if made.rowcount == 0:
                 raise Busy("It was started a moment ago")
             row_id = made.lastrowid
-            task_id = self._start(tx, rec, Schedule.model_validate_json(rec["schedule_json"]), "started by you, now")
+            task_id = self._start(tx, rec, schedule, "started by you, now")
             tx.conn.execute("UPDATE recurring_runs SET task_id = ? WHERE id = ?", (task_id, row_id))
             out = self._run_out(tx.conn.execute(f"{self._RUN_SQL} WHERE r.id = ?", (row_id,)).fetchone())
         return out
@@ -331,13 +359,16 @@ class Recurring:
                 self._pause(tx, rec, _PAUSED, now)
                 report.paused.append(rec_id)
                 return
-            try:
-                schedule = Schedule.model_validate_json(rec["schedule_json"])
-            except ValidationError:
-                self._pause(tx, rec, "Paused: its schedule could not be read. Set it again.", now)
+            schedule = self._read(rec["schedule_json"])
+            if schedule is None:
+                self._pause(tx, rec, _UNREADABLE, now)
                 report.paused.append(rec_id)
                 return
-            latest, count = owed(schedule, rec["cursor_at"], now, self.tz)
+            cursor = rec["cursor_at"]
+            if cursor > now:                      # the clock ran ahead (a bad time sync) and was corrected: a cursor cannot be later than "now"
+                cursor = now
+                conn.execute("UPDATE recurring SET cursor_at = ?, updated_at = ? WHERE id = ?", (cursor, now, rec_id))
+            latest, count = owed(schedule, cursor, now, self.tz)
             if latest is None:
                 return
             if not self._team_active(conn, rec["dept_id"]):
@@ -348,13 +379,16 @@ class Recurring:
             trigger = "catch_up" if folded or now - latest > LATE_S else "schedule"
             busy = self._busy(conn, rec["dept_id"])
             if busy:
-                self._row(conn, rec_id, latest, now, trigger, "skipped", folded, busy)
+                written = self._row(conn, rec_id, latest, now, trigger, "skipped", folded, busy)
                 conn.execute("UPDATE recurring SET cursor_at = ?, updated_at = ? WHERE id = ?", (latest, now, rec_id))
-                report.skipped.append(rec_id)
+                if written is not None:             # a due time dealt with already (after a corrected clock) is not a new skip
+                    report.skipped.append(rec_id)
                 return
             reason = ""
             if folded:
-                reason = f"{folded} earlier due time{'' if folded == 1 else 's'} {'was' if folded == 1 else 'were'} missed while the app was away and folded into this one run"
+                many = count >= COUNT_CAP                              # the count stopped at its cap: told as many, never as a figure that looks exact
+                reason = (f"{'many' if many else folded} earlier due time{'' if folded == 1 else 's'} {'was' if folded == 1 else 'were'} "
+                          "missed while the app was away and folded into this one run")
             elif trigger == "catch_up":
                 reason = "started late: the app was not running at the due time"
             made = self._row(conn, rec_id, latest, now, trigger, "started", folded, reason)
@@ -378,11 +412,8 @@ class Recurring:
 
     def _pause(self, tx: object, rec: sqlite3.Row, reason: str, now: int) -> None:
         tx.conn.execute("UPDATE recurring SET enabled = 0, paused_reason = ?, updated_at = ? WHERE id = ?", (reason, now, rec["id"]))
-        try:
-            schedule = Schedule.model_validate_json(rec["schedule_json"])
-            what = human(schedule)
-        except ValidationError:
-            what = "A scheduled task"
+        schedule = self._read(rec["schedule_json"])
+        what = human(schedule) if schedule is not None else "A scheduled task"
         try:
             self.tasks.post_note(tx, rec["dept_id"], f"{what}: {reason}")
         except AppError:

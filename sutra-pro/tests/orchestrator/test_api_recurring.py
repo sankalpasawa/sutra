@@ -111,6 +111,34 @@ def test_run_now_starts_a_task_and_the_history_says_manual(client, auth, tenv):
     assert client.get("/api/recurring").json()[0]["never_fired_on_schedule"] is True
 
 
+def test_one_unreadable_schedule_leaves_the_list_a_200_and_can_still_be_removed(client, auth, tenv):
+    good, bad = add(client, auth), add(client, auth, text="Another")
+    tenv.sql("UPDATE recurring SET schedule_json = ? WHERE id = ?", '{"every":"month","hour":9,"minute":0,"weekday":0}', bad.id)
+    listed = client.get("/api/recurring")
+    assert listed.status_code == 200, listed.text
+    rows = {x["id"]: RecurringOut.model_validate(x) for x in listed.json()}
+    assert set(rows) == {good.id, bad.id} and rows[good.id].enabled is True
+    assert rows[bad.id].enabled is False and rows[bad.id].schedule is None and rows[bad.id].paused_reason == "Paused: its schedule could not be read. Set it again."
+    assert client.get(f"/api/recurring/{good.id}/runs").status_code == 200
+    error_of(client.post(f"/api/recurring/{bad.id}/run", headers=auth), 422, "validation")
+    assert client.delete(f"/api/recurring/{bad.id}", headers=auth).status_code == 200
+    assert [x["id"] for x in client.get("/api/recurring").json()] == [good.id]
+
+
+def test_run_now_under_a_used_up_limit_answers_held_not_working(client, auth, tenv, tmp_path):
+    from sutra_app.orchestrator.limits import Limits
+    limits = Limits(tmp_path / "limits.json", tenv.db, quotas=lambda: {}, clock=tenv.clock)
+    tenv.service.start_gate = limits.gate
+    limits.update(monthly_usd=1.0)
+    tenv.sql("INSERT INTO usage_ledger(at, provider, purpose, usd) VALUES (?,?,?,?)", int(tenv.clock.now()) - 60, "claude", "test", 5.0)
+    rec = add(client, auth)
+    run = client.post(f"/api/recurring/{rec.id}/run", headers=auth)
+    assert run.status_code == 201, run.text
+    assert tenv.status(run.json()["task_id"]) == "queued" and run.json()["result"] == "held"
+    assert client.get(f"/api/recurring/{rec.id}/runs").json()[0]["result"] == "held"
+    assert client.get("/api/recurring").json()[0]["last_run"]["result"] == "held"
+
+
 def test_delete_removes_it_and_a_second_delete_is_404(client, auth):
     rec = add(client, auth)
     assert client.delete(f"/api/recurring/{rec.id}", headers=auth).json() == {"deleted": rec.id}

@@ -5,7 +5,7 @@
     POST   /api/recurring                 {dept_id, text, schedule} -> 201 RecurringOut
     PUT    /api/recurring/{id}            {text?, schedule?, enabled?} -> RecurringOut   (a new cadence, or switching on, starts from now)
     DELETE /api/recurring/{id}            -> {"deleted": id}   (its history goes with it; the tasks it made stay)
-    POST   /api/recurring/{id}/run        -> 201 RunOut   (run now: a team that is busy is 409, not skipped quietly)
+    POST   /api/recurring/{id}/run        -> 201 RunOut   (run now: a team that is busy is 409, not skipped quietly; `result` is `held` when a limit holds the start)
     GET    /api/recurring/{id}/runs?limit= -> RunOut[]   (newest first; each says started or skipped and why, and how the task ended)
 
 `schedule` is {every: hour|day|weekdays|week, hour, minute, weekday} and nothing else: a free cron line, or a cadence below one an hour,
@@ -101,8 +101,10 @@ def build_router() -> APIRouter:
 
     @router.post("/recurring/{rec_id}/run", summary="Run a standing task now", dependencies=[Depends(require_token)], status_code=201)
     async def run_recurring(request: Request, rec_id: str = Path(pattern=REC_ID_PATTERN)) -> RedactedJSONResponse:
-        run = await run_blocking(_service(request).run_now, rec_id)
+        service = _service(request)
+        run = await run_blocking(service.run_now, rec_id)
         await services_of(request).tasks.start_ready()
+        run = await run_blocking(service.run_out, run.id) or run                          # a limit may hold it: say that, not "working"
         return _json(request, run.model_dump(mode="json"), 201)
 
     @router.get("/recurring/{rec_id}/runs", summary="What each due time came to")

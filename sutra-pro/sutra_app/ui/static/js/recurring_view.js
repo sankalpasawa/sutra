@@ -11,7 +11,8 @@
                                    teams [{id, name}], draft {dept_id, text, every, time, minute, weekday}, open {id: runs[]} for the rows whose history is shown,
                                    confirm the id waiting for its second click, error {id|"": sentence}
      scheduleBody(draft)           {ok, body, error}: the POST body from the add form, checked before any request is made
-     runWords(run)                 one history line: "Wed 4 Nov, 9:00 AM: started on schedule, done" / "... skipped: the team is waiting for your answer"
+     runWords(run)                 one history line: "Wed 4 Nov, 9:00 AM: started on schedule, done" / "... skipped: the team is waiting for your answer" /
+                                   "... queued by you, waiting on a limit" (the task is held back by the spending limit or the plan-window guard)
      nextWords(iso, nowMs)         "today 9:00 AM", "tomorrow 9:00 AM", "Fri 9:00 AM" from an ISO time, in local time
      load(api) / create(api, draft) / toggle(api, rec) / runNow(api, id) / remove(api, id) / history(api, id)    -> {ok, ..., error}
 
@@ -30,11 +31,12 @@
   const ID = /^rec_[0-9a-f]{12}$/;
   const HM = /^([01]\d|2[0-3]):([0-5]\d)$/;
   const MAX_TEXT = 4000;
+  const MANY_FOLDED = 1999;                                                              // schedule.py COUNT_CAP - 1: a count that reached it is "at least", told as many
   const EVERY = [["hour", "Every hour"], ["day", "Every day"], ["weekdays", "Every weekday"], ["week", "Every week"]];
   const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];                 // Date.getDay() order
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const RESULT = {skipped: "skipped", working: "working", waiting: "waiting for you", done: "done", open_items: "done, with open items", crashed: "ended with a problem", stopped: "stopped"};
+  const RESULT = {skipped: "skipped", working: "working", held: "waiting on a limit", waiting: "waiting for you", done: "done", open_items: "done, with open items", crashed: "ended with a problem", stopped: "stopped"};
   const TRIGGER = {schedule: "on schedule", catch_up: "as a catch-up", manual: "by you"};                 // after "started "
   const NOTE = "A team's standing task. At each due time the team gets an ordinary task with these words, at most once an hour, in your local time. " +
     "If the app was closed or the machine asleep, ONE catch-up run starts when Sutra opens, never one per missed time. A team that is still working, or waiting for you, " +
@@ -76,8 +78,9 @@
     const when = dueWords(run.due_at);
     const why = clean(run.reason);
     if (run.result === "skipped") return (when ? when + ": " : "") + "skipped" + (why ? ", " + why : "");
-    const folded = finite(run.folded) && run.folded > 0 ? " (" + run.folded + " earlier time" + (run.folded === 1 ? "" : "s") + " folded in)" : "";
-    return (when ? when + ": " : "") + "started " + how + folded + (result ? ", " + result : "");
+    const folded = finite(run.folded) && run.folded > 0
+      ? " (" + (run.folded >= MANY_FOLDED ? "many" : run.folded) + " earlier time" + (run.folded === 1 ? "" : "s") + " folded in)" : "";
+    return (when ? when + ": " : "") + (run.result === "held" ? "queued " : "started ") + how + folded + (result ? ", " + result : "");   // held: a limit keeps it from starting
   }
 
   /* ---------------------------------------------------------------- the rows */
@@ -174,7 +177,7 @@
 
   function recurringHtml(list, form) {
     const f = isObj(form) ? form : {};
-    const head = '<section class="setgrp" data-group="recurring" aria-labelledby="set-recurring-h"><h3 id="set-recurring-h">Recurring work</h3><p class="setnote">' + esc(NOTE) + "</p>";
+    const head = '<section class="setgrp" data-group="recurring" aria-labelledby="set-recurring-h"><h3 id="set-recurring-h" tabindex="-1">Recurring work</h3><p class="setnote">' + esc(NOTE) + "</p>";
     if (!Array.isArray(list)) return head + '<p class="setempty">The standing tasks are not loaded yet.</p></section>';
     const rows = list.filter(isObj).map(r => rowHtml(r, f)).filter(Boolean);
     return head + (rows.length ? '<ul class="reclist">' + rows.join("") + "</ul>" : '<p class="setempty">Nothing is scheduled yet.</p>') + addHtml(f) + "</section>";

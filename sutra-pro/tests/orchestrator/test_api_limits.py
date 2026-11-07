@@ -54,6 +54,15 @@ def test_the_answer_has_both_readings_and_needs_no_token(client):
     assert body["guard"] == {"enabled": False, "level": "none", "holding": False, "top": None, "line": "", "windows": []}
 
 
+@pytest.mark.parametrize("resets_at", [(NOW + 86400) * 1000, 1.0e12])
+def test_a_plan_window_with_an_impossible_reset_time_does_not_make_the_answer_a_500(tenv, tmp_path, resets_at):
+    odd = Quota(status="warning", windows=[QuotaWindow(key="seven_day", label="Weekly", used=0.9, resets_at=resets_at)], seen_at=NOW - 5)
+    client = make_client(tenv, tmp_path, quotas={"claude": odd})
+    got = client.get("/api/limits")
+    assert got.status_code == 200, got.text
+    assert got.json()["guard"]["level"] == "none" and got.json()["guard"]["holding"] is False
+
+
 def test_every_write_needs_the_token(client, auth):
     for method, path, body in (("put", "/api/limits", {"monthly_usd": 5}), ("post", "/api/limits/continue", None)):
         kwargs = {"json": body} if body is not None else {}

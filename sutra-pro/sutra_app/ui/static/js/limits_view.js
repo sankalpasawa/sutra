@@ -7,7 +7,8 @@
      limitsHtml(limits, form)    the Limits group from GET /api/limits: the monthly limit (a field, the month so far as a meter, one honest sentence about
                                  what the dollars are), the plan-window guard (a switch, what the windows say, Continue). form {raw, error, busy, saved}
      noticesHtml(prefs, form)    the Notifications group from GET /api/ops/attention: quiet hours (two times) and the cap on finished notices.
-                                 form {start, end, nudges, error, busy, saved} (what the owner typed is kept beside a refusal)
+                                 form {start, end, nudges, error, busy, saved, quietNow} (what the owner typed is kept beside a refusal; quietNow, a boolean
+                                 the page works out from its own clock, decides "Quiet right now." instead of the server's reading at the last fetch)
      stripHtml(limits)           the lines of the Needs strip: the monthly limit from 80 %, the plan window from 70 %, with Continue while the guard holds work.
                                  "" when nothing is near. Never counted on the badge: it is a state, not a question.
      parseLimit(raw)             {ok, value, error}: "" or 0 clears (value null); "10", "12.50" and "$1,250" are dollars; anything else says why
@@ -74,7 +75,7 @@
 
   function limitsHtml(limits, form) {
     const f = isObj(form) ? form : {};
-    const head = '<section class="setgrp" data-group="limits" aria-labelledby="set-limits-h"><h3 id="set-limits-h">Limits</h3>';
+    const head = '<section class="setgrp" data-group="limits" aria-labelledby="set-limits-h"><h3 id="set-limits-h" tabindex="-1">Limits</h3>';
     if (!isObj(limits) || !isObj(limits.spend) || !isObj(limits.guard)) return head + '<p class="setempty">The limits are not loaded yet.</p></section>';
     const spend = limits.spend;
     const guard = limits.guard;
@@ -135,19 +136,20 @@
 
   function noticesHtml(prefs, form) {
     const f = isObj(form) ? form : {};
-    const head = '<section class="setgrp" data-group="notices" aria-labelledby="set-notices-h"><h3 id="set-notices-h">Notifications</h3>';
+    const head = '<section class="setgrp" data-group="notices" aria-labelledby="set-notices-h"><h3 id="set-notices-h" tabindex="-1">Notifications</h3>';
     if (!isObj(prefs)) return head + '<p class="setempty">The notification settings are not loaded yet.</p></section>';
     const quiet = isObj(prefs.quiet_hours) ? prefs.quiet_hours : {};
     const start = typeof f.start === "string" ? f.start : clean(quiet.start);
     const end = typeof f.end === "string" ? f.end : clean(quiet.end);
     const nudges = typeof f.nudges === "string" ? f.nudges : (finite(prefs.nudges_per_hour) ? String(prefs.nudges_per_hour) : "");
     const max = finite(prefs.max_nudges_per_hour) ? prefs.max_nudges_per_hour : MAX_NUDGES;
+    const quietNow = typeof f.quietNow === "boolean" ? f.quietNow : prefs.quiet_now === true;          // the server's reading is as old as the last fetch
     return head + '<p class="setnote">' + esc(NOTICE_NOTE) + "</p>" +
       '<div class="setfields">' +
       '<div class="setfield" data-field="quiet_hours"><span class="setlabel" id="setf-quiet-l">Quiet hours (your local time)</span>' +
       '<span role="group" aria-labelledby="setf-quiet-l"><label>From <input type="time" data-input="quiet_start" value="' + esc(start) + '"></label> ' +
       '<label>to <input type="time" data-input="quiet_end" value="' + esc(end) + '"></label></span>' +
-      '<span class="sethint">' + (prefs.quiet_now === true ? "Quiet right now." : "Leave both empty for no quiet hours. Wraps midnight when the end is earlier.") + "</span></div>" +
+      '<span class="sethint">' + (quietNow ? "Quiet right now." : "Leave both empty for no quiet hours. Wraps midnight when the end is earlier.") + "</span></div>" +
       '<div class="setfield" data-field="nudges_per_hour"><label class="setlabel" for="setf-nudges">Finished-work notices per hour (0 means never unasked)</label>' +
       '<input type="number" min="0" max="' + esc(max) + '" step="1" inputmode="numeric" id="setf-nudges" data-input="nudges_per_hour" value="' + esc(nudges) + '"></div>' +
       "</div>" + (f.error ? '<p class="seterr setgen" role="alert">' + esc(f.error) + "</p>" : "") +
