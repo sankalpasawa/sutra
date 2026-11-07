@@ -789,6 +789,27 @@ def test_every_refusal_has_its_sentence_and_only_the_right_ones_link_to_settings
 
 
 @browser_only
+def test_a_refusal_with_a_reason_says_the_reason_so_a_too_long_message_names_its_limit(browser, fake):
+    """QA org-chat-teams: a message over 8000 characters came back as 'The request was refused' and the violation's own words were dropped."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake)
+    too_long = {"violations": [{"path": "body.text", "code": "string_too_long", "message": "String should have at most 8000 characters"}]}
+    words = browser.js("""(details => [HomePage.errorWords({status: 422, code: "validation", message: "The request was refused", details: details}),
+      HomePage.errorWords({status: 422, code: "validation", message: "The request was refused", details: {violations: [{path: "x", code: "c", message: "  "}]}}),
+      HomePage.errorWords({status: 422, code: "validation", message: "The request was refused", details: {}}),
+      HomePage.errorWords({status: 500, code: "internal", message: "boom", details: details})])(""" + json.dumps(too_long) + ")")
+    assert words[0] == {"text": "The request was refused: String should have at most 8000 characters", "settings": False}
+    assert words[1]["text"] == "The request was refused" and words[2]["text"] == "The request was refused"       # no reason given: the server's own sentence, as before
+    assert words[3]["text"] == "Something went wrong. Try again."                           # a server fault is still never shown raw
+    fake.fail("/api/chats/cs_org/messages", 422, count=1, message="The request was refused", details=too_long)
+    browser.expect_failed("/api/chats/cs_org/messages", 422)
+    send_text(browser, "x" * 8001)
+    browser.wait_for("!document.getElementById('sbanner').hidden")
+    assert "String should have at most 8000 characters" in texts(browser, "#sbanner")[0]
+    assert browser.js("document.getElementById('sbox').value.length") == 8001                  # nothing is lost: the text stays in the box
+
+
+@browser_only
 def test_a_team_that_is_busy_refuses_the_answer_in_the_servers_words_and_the_card_stays_open(browser, fake):
     load(browser, fake, stage="2")
     sentence = "The team is working. You can write again when it asks you something or is done"

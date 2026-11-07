@@ -85,10 +85,12 @@
     const status = e && Number.isInteger(e.status) ? e.status : 0;
     const code = e && typeof e.code === "string" ? e.code : "";
     const said = clean(e && e.message);
+    const found = e && isObj(e.details) && Array.isArray(e.details.violations) ? e.details.violations.find(v => isObj(v) && clean(v.message) !== "") : null;
     if (status === 401 || code === "bad_token") return {text: NO_TOKEN, settings: false, blocked: true};
     if (code === "provider_unavailable" || code === "cli_missing") return {text: said || "No model is available right now.", settings: true};
     if (status === 429) return {text: TOO_MANY, settings: false};
     if (status === 0 || code === "network") return {text: DOWN, settings: false, retry: true};
+    if (status === 422 && found && said) return {text: said.replace(/[.:\s]+$/, "") + ": " + clean(found.message), settings: false};     // "... refused: String should have at most 8000 characters"
     return {text: status >= 500 || !said ? FAILED : said, settings: false};
   }
 
