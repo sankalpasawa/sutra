@@ -6,6 +6,7 @@
       "id": "money-movement",
       "name": "Money movement",
       "use_case": "A team that moves or posts money: disbursals, collections, refunds, reconciliation.",
+      "fits": "moves or posts money",
       "keywords": ["payment", "payout", "disbursal", "emi", "refund", "reconciliation", "billing", "invoice", "collection", "ledger", "bank", "loan", "lending", "settlement"],
       "lines": [
         {"function": "identity", "tag": "ask", "text": "A payment above the owner's line is put to the owner and never done on its own, whatever other rule applies."},
@@ -24,6 +25,7 @@
       "id": "product-build",
       "name": "Product build",
       "use_case": "A team that builds and ships a product to users.",
+      "fits": "builds and ships a product to users",
       "keywords": ["product", "ship", "shipping", "release", "launch", "user", "customer", "feature", "app", "version", "mvp", "roadmap"],
       "lines": [
         {"function": "identity", "tag": "always", "text": "Every shipped version is judged against the done line before it counts as shipped."},

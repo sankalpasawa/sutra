@@ -61,6 +61,7 @@ class PackOut(BaseModel):
     id: str
     name: str
     use_case: str
+    fits: str
     lines: list[PackLineOut]
 
 
@@ -83,7 +84,7 @@ def packs_out() -> list[PackOut]:
 
 
 def _pack_out(pack: practice.PracticePack) -> PackOut:
-    return PackOut(id=pack.id, name=pack.name, use_case=pack.use_case,
+    return PackOut(id=pack.id, name=pack.name, use_case=pack.use_case, fits=pack.fits,
                    lines=[PackLineOut(function=l.function, tag=l.tag, text=l.text) for l in pack.lines])
 
 

@@ -68,6 +68,7 @@ class PracticePack(Value):
     id: _ID
     name: Annotated[str, StringConstraints(min_length=1, max_length=60)]
     use_case: Annotated[str, StringConstraints(min_length=1, max_length=300)]
+    fits: Annotated[str, StringConstraints(min_length=1, max_length=80)]         # "moves or posts money": finishes the org chat's question about the pick
     keywords: Annotated[list[Annotated[str, StringConstraints(pattern=r"^[a-z0-9]{3,20}$")]], Field(min_length=3, max_length=30)]
     lines: Annotated[list[PackLine], Field(min_length=1, max_length=len(FUNCTIONS) * MAX_PACK_LINES)]
 
@@ -148,6 +149,9 @@ def law_problems(packs: Sequence[PracticePack]) -> list[str]:
     seen_ids: set[str] = set()
     for pack in packs:
         where = f"pack {pack.id}"
+        for label, words in (("name", pack.name), ("use case", pack.use_case), ("fits", pack.fits)):
+            if BANNED.search(words) or FOUNDER_ID.search(words):
+                found.append(f"{where}: the {label} uses a word the screen does not say")
         if pack.id in seen_ids:
             found.append(f"{where}: the id is used twice")
         seen_ids.add(pack.id)

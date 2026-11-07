@@ -197,7 +197,7 @@ def test_the_packs_are_listed_with_the_lines_each_adds(client):
     packs = client.get("/api/packs").json()
     assert [p["id"] for p in packs] == ["money-movement", "product-build"]
     assert {l["function"] for l in packs[0]["lines"]} == {"identity", "adaptation", "priority", "coordination", "audit"}
-    assert set(packs[0]) == {"id", "name", "use_case", "lines"} and set(packs[0]["lines"][0]) == {"function", "tag", "text"}
+    assert set(packs[0]) == {"id", "name", "use_case", "fits", "lines"} and set(packs[0]["lines"][0]) == {"function", "tag", "text"}
 
 
 def test_reading_the_rules_needs_no_token_and_writing_does(client, auth):

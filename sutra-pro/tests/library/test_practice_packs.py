@@ -15,7 +15,7 @@ from sutra_app.library.types import FUNCTIONS
 
 
 def pack(lines, pack_id="test-pack"):
-    return PracticePack(id=pack_id, name="Test", use_case="A test pick.", keywords=["alpha", "beta", "gamma"], lines=lines)
+    return PracticePack(id=pack_id, name="Test", use_case="A test pick.", fits="does a test", keywords=["alpha", "beta", "gamma"], lines=lines)
 
 
 def line(function="audit", tag="always", text="Checks every claim against its source."):
