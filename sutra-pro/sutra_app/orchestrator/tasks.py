@@ -36,6 +36,7 @@ from pydantic import ValidationError
 
 from sutra_app.config import Settings
 from sutra_app.connectors.egress import scan
+from sutra_app.engine.paths import DataPaths
 from sutra_app.library.gate import GATE, Checked, GateError
 from sutra_app.library.node import StructuralNode, step_node_id
 from sutra_app.library.types import clip, violation, violations_from_validation_error
@@ -788,7 +789,9 @@ class TaskService:
 
     def _follow_up(self, tx: Tx, dept_id: str, sid: str, body: str, scope_id: str | None, settings: dict | None) -> Delivery:
         """No live task: a NEW task (new run id, folder and process; the old folder is never written again). It continues from the
-        department's latest run that has a folder; a question left open by an ended task becomes its framing."""
+        department's latest run that has a folder; a question left open by an ended task becomes its framing. After the owner's reset
+        ('+ New run', `page.json.since_run`) a run at or before the marker is not continued: the page was blank, so the brief starts a
+        fresh run (no seed, no parent, no framing from the old question); a run made after the reset is continued again."""
         conn = tx.conn
         latest = self.store.latest_in(conn, dept_id)
         seed = None
@@ -797,6 +800,10 @@ class TaskService:
             if (self.store.runs_dir_in(conn, dept_id) / prior.run_id).is_dir():
                 seed = prior
                 break
+        marker = self._reset_marker(dept_id)
+        fresh = marker is not None and seed is not None and seed.run_id <= marker          # the engine's own test: engine/api/ctx.py current_ref
+        if fresh:
+            seed, latest = None, None
         framing, orphan = "", None
         q = conn.execute(
             "SELECT m.id, m.text, m.task_id FROM chat_messages m JOIN tasks t ON t.id = m.task_id WHERE m.session_id = ? AND m.kind = 'question'"
@@ -804,7 +811,7 @@ class TaskService:
             (sid,)).fetchone()
         if q is not None:
             orphan = q["id"]
-            framing = clip(f"Earlier the team asked the owner: {q['text']}", 20_000)
+            framing = "" if fresh else clip(f"Earlier the team asked the owner: {q['text']}", 20_000)
         row = self._insert(
             tx, dept_id=dept_id, text=body, title=None, scope_id=scope_id, framing=framing, depends_on=(), follows=None, request=None,
             change_id=None, settings=settings, seed_run=seed.run_id if seed is not None else None,
@@ -813,6 +820,16 @@ class TaskService:
         if orphan is not None:
             self.chats.mark_answered(tx, orphan, posted.id)
         return Delivery(message_id=posted.id, delivered="follow_up", task_id=row.id)
+
+    def _reset_marker(self, dept_id: str) -> str | None:
+        """`since_run` of the team's `page.json`, the run the owner's reset left behind (engine design F9), or None when there is no
+        file, it is torn or odd (the page then starts clean as well: `engine/api/ctx.py read_page`). The engine writes it; this only reads."""
+        try:
+            data = json.loads(DataPaths.for_dept(self.store.data_dir, dept_id).page_json.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        since = data.get("since_run") if isinstance(data, dict) else None
+        return since if isinstance(since, str) else None
 
     # ---- stopping ------------------------------------------------------------------------------------------------------------
 

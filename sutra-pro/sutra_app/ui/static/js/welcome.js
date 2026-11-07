@@ -67,7 +67,8 @@
     const e = isObj(egress) ? egress : {};
     return "<p>Your messages go only to the Claude or Codex program on this computer, signed in with your own subscription. Sutra never uses an API key " +
       "and refuses one if it finds it.</p>" +
-      (e.scrub === false ? "" : "<p>Anything shaped like a key, token or password is removed before a message leaves. No usage data is sent to Sutra.</p>") +
+      (e.scrub === false ? "" : "<p>Anything shaped like a key, token or password is removed from a chat message before it leaves. A team's own prompts go out as written, " +
+        "so keep keys out of a brief: Sutra only notes, without the text, that one was seen. No usage data is sent to Sutra.</p>") +
       updateFact(e.auto_update);
   }
 

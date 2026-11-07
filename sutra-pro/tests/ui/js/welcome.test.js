@@ -76,7 +76,14 @@ test("the copy never claims an API key is used: it says the key is refused", () 
   assert.match(html, /refuses one/);
   assert.doesNotMatch(html, /uses (your|an|the) API key(?!.*refuses)/);
   assert.match(html, /own subscription/);
-  assert.match(html, /key, token or password is removed/);
+  assert.match(html, /key, token or password is removed from a chat message/);
+});
+
+test("the copy does not promise a scrub for a team's prompts: they go out as written and only a count-only note is kept (D109)", () => {
+  const html = welcomeHtml(FACTS);
+  assert.match(html, /team's own prompts go out as written/);
+  assert.match(html, /keep keys out of a brief/);
+  assert.doesNotMatch(html, /removed before a message leaves/);
 });
 
 test("the email line follows the engine's mode and is left out when it is not known", () => {

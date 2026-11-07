@@ -414,6 +414,86 @@ def test_followup_seed_from_is_the_latest_run_that_has_a_folder(tenv):
     assert tenv.row(result.task_id).seed_from == tenv.row(first).run_id and tenv.row(result.task_id).parent_task_id == second.id
 
 
+def reset_after(tenv, run_id: str | None, raw: str | None = None) -> None:
+    """What the engine's reset leaves for the team: `page.json.since_run` (engine/api/ctx.py `write_page`)."""
+    page = tenv.settings.data_dir / "departments" / "web" / "page.json"
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text(raw if raw is not None else json.dumps({"since_run": run_id, "next_settings": {}}))
+
+
+def finished_run(tenv) -> str:
+    task = tenv.started()
+    tenv.write_events(task, ev("run.ended", status="done", outcome="Done."))
+    tenv.drain(task)
+    return task
+
+
+def test_a_brief_written_after_a_reset_starts_a_fresh_run_not_a_change_request(tenv):
+    """QA dept-run P2: '+ New run' showed a blank page but the next brief was seeded from the run the owner had just left."""
+    first = finished_run(tenv)
+    reset_after(tenv, tenv.row(first).run_id)                                   # the engine's reset wrote the marker
+    result = tenv.service.deliver_to_department("web", "A brand new website for a dental clinic")
+    new = tenv.row(result.task_id)
+    assert result.delivered == "follow_up" and (new.seed_from, new.parent_task_id) == (None, None)
+    tenv.run(tenv.service.start_ready())
+    spec = RunSpec.model_validate_json((tenv.run_dir(new.id) / "task.json").read_text())
+    assert (spec.seed_from, spec.parent_run_id) == (None, None) and spec.user_text == "A brand new website for a dental clinic"
+    assert tenv.row(first).status == "done" and tenv.run_dir(first).is_dir()      # history is kept
+
+
+def test_the_reset_marker_covers_only_the_runs_before_it(tenv):
+    first = finished_run(tenv)
+    reset_after(tenv, tenv.row(first).run_id)
+    second = tenv.service.deliver_to_department("web", "A brand new website for a dental clinic").task_id
+    tenv.run(tenv.service.start_ready())
+    tenv.write_events(second, ev("run.ended", status="done", outcome="Done."))
+    tenv.drain(second)
+    third = tenv.row(tenv.service.deliver_to_department("web", "Make the header darker").task_id)
+    assert (third.seed_from, third.parent_task_id) == (tenv.row(second).run_id, second)      # a later message continues the new run
+
+
+def test_a_reset_by_the_chat_path_starts_fresh_too(tenv):
+    first = finished_run(tenv)
+    reset_after(tenv, tenv.row(first).run_id)
+    delivery = tenv.service.deliver(tenv.graph.get("web").chat_session_id, "A brand new website for a dental clinic")
+    assert (tenv.row(delivery.task_id).seed_from, tenv.row(delivery.task_id).parent_task_id) == (None, None)
+
+
+def test_the_engines_own_reset_command_leaves_the_marker_this_service_reads(tenv):
+    """The two halves together: `DeptCommands.reset` (engine/api/commands.py) then `DeptCommands.say`, over the real TaskService."""
+    from types import SimpleNamespace
+
+    from sutra_app.engine.api.commands import DeptCommands
+    first = finished_run(tenv)
+    services = SimpleNamespace(data_dir=tenv.settings.data_dir, stop_live=tenv.service.stop_live, resolve_run=tenv.service.resolve_run,
+                               deliver_to_department=tenv.service.deliver_to_department)
+    commands = DeptCommands(services, "web")
+    assert commands.reset() is True
+    assert commands.say("A brand new website for a dental clinic") is True
+    new = tenv.store.latest_in(tenv.db.conn(), "web")
+    assert new.id != first and new.user_text == "A brand new website for a dental clinic" and (new.seed_from, new.parent_task_id) == (None, None)
+
+
+@pytest.mark.parametrize("raw", ["{not json", "[]", '{"since_run": 7}', '{"since_run": null}', '{"next_settings": {}}'])
+def test_a_page_file_without_a_usable_marker_changes_nothing(tenv, raw):
+    first = finished_run(tenv)
+    reset_after(tenv, None, raw)
+    new = tenv.row(tenv.service.deliver_to_department("web", "Make the logo bigger").task_id)
+    assert (new.seed_from, new.parent_task_id) == (tenv.row(first).run_id, first)
+
+
+def test_a_question_left_open_by_a_reset_is_closed_but_not_carried_into_the_fresh_run(tenv):
+    task = tenv.started()
+    ask(tenv, task, "Which colours?\nOption 1: Green\nOption 2: Blue")
+    tenv.projector.mark_ended(task, "stopped", "reset by you")
+    reset_after(tenv, tenv.row(task).run_id)
+    question = [m for m in dept_messages(tenv) if m.kind == "question"][0]
+    result = tenv.service.deliver_to_department("web", "A brand new website for a dental clinic")
+    row = tenv.row(result.task_id)
+    assert (row.framing, row.seed_from, row.parent_task_id) == ("", None, None)
+    assert [m for m in dept_messages(tenv) if m.id == question.id][0].answered_by == result.message_id
+
+
 def test_retry_has_no_seed(tenv):
     first = tenv.started(settings={"J2_FIXES": "1"})
     tenv.projector.mark_ended(first, "crashed", "boom")
