@@ -45,7 +45,9 @@ with mode 0600 through the same `write_private_file` the other connector files u
 not a full path (relative, empty, a control character, over 1024 characters); no such folder; a file; the top of the disk (the filesystem
 root, or a drive root on Windows); the app's **data folder or work root, or anything inside them**; a folder this account cannot read. The
 path is resolved with `realpath` first, so a link into the data folder is refused after resolving and a link to a folder is stored as the folder
-it leads to. A refusal writes nothing and keeps the old choice.
+it leads to. "Inside" is decided by the spelling and then by the folders themselves (`os.path.samefile` on each level up): macOS's default
+file system ignores case, `normcase` changes nothing there and `realpath` does not repair a spelling, so the data folder typed in another case
+(`data` for `Data`) is still refused. A refusal writes nothing and keeps the old choice.
 
 `get()` is what a chat turn reads. It gives the stored folder only while it is still a usable folder; one that has vanished, or that now lies
 inside the app's own folders, is ignored (the chat then runs in its private empty folder) and `GET /workdir` still reports the stored path with

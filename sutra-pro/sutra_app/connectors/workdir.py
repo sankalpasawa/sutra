@@ -56,9 +56,23 @@ class WorkdirFile(M):
 
 
 def _inside(path: str, parent: str) -> bool:
-    """`path` is `parent` or lies below it (case-insensitive where the file system is: Windows, and macOS by default)."""
+    """`path` is `parent` or lies below it. Spelled alike first (normcase folds the case on Windows only); then the folders themselves are compared,
+    because macOS's default file system ignores case (and Unicode form) while `normcase` there changes nothing, and realpath does not repair a
+    spelling: `<data>` typed in another case is still `<data>` on disk. Some folder from `path` up to the top is `parent` itself, or it is not inside."""
     a, b = os.path.normcase(os.path.normpath(path)), os.path.normcase(os.path.normpath(parent))
-    return a == b or a.startswith(b.rstrip("\\/") + os.sep)
+    if a == b or a.startswith(b.rstrip("\\/") + os.sep):
+        return True
+    here = path
+    while True:
+        try:
+            if os.path.samefile(here, parent):
+                return True
+        except OSError:                                    # `parent` is not there (nothing to be inside of) or this level cannot be read: go on up
+            pass
+        up = os.path.dirname(here)
+        if up == here:
+            return False
+        here = up
 
 
 def _is_root(path: str) -> bool:

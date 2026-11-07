@@ -123,6 +123,21 @@ def test_a_link_into_the_data_folder_is_refused_after_resolving_it(dirs):
     assert "belongs to Sutra itself" in says(e)
 
 
+@pytest.mark.parametrize("own", ["data", "work"])
+def test_the_apps_own_folders_spelled_in_another_case_are_refused_where_the_file_system_ignores_case(dirs, own):
+    """macOS's default file system (and Windows) treats `data` and `DATA` as one folder; `normcase` changes nothing on macOS and realpath does not
+    repair a spelling, so a text comparison alone let the data folder through when it was typed in another case."""
+    real = getattr(dirs, own)
+    (real / "deep").mkdir()
+    twin = dirs.root / real.name.swapcase()
+    if not twin.exists():
+        pytest.skip("this file system tells data from DATA")
+    for path in (twin, twin / "deep"):
+        with pytest.raises(InvalidRequestError) as e:
+            check_folder(str(path), data_dir=dirs.data, work_root=dirs.work)
+        assert "belongs to Sutra itself" in says(e), path
+
+
 def test_a_sibling_whose_name_starts_like_the_data_folder_is_not_inside_it(dirs):
     sibling = dirs.root / "data-backup"
     sibling.mkdir()
