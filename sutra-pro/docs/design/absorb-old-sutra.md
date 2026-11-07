@@ -198,7 +198,9 @@ credential shapes (OpenAI/Anthropic-style keys, `ghp_`/`github_pat_`, AWS access
 existing `Redactor` values) are matched. For `ChatPort` and `AsyncConnector` the match is replaced by `[redacted:<shape>]`. For `ModelPort` (J2's
 agents) the scrub is **observe only**: it writes the audit row and changes nothing, because J2's prompts are not ours to edit (the same stance as
 function nodes in observe mode, D52). The row (`<data>/connectors/egress.jsonl`, append only, 0600) holds time, session, provider, byte count and
-shape names with counts; never a payload, never a match.
+shape names with counts; never a payload, never a match. The engine process builds its own Router (`make_port` of `engine_port.py`), so
+`port_from_config` attaches the same `Egress` there: a department run's prompts leave one observe row each (QA dept-run: it was missing). The Welcome
+card says only chat messages are scrubbed and that a team's prompts go out as written.
 
 ### 2.5 Model budget (D110)
 
