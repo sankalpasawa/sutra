@@ -179,6 +179,7 @@ test("a provider that cannot run is never the one shown, and with none runnable 
   assert.equal(askBlock(READY), "");
   assert.match(askBlock(NONE), /No model can answer right now/);
   assert.match(askBlock(null), /No model can answer right now/);
+  assert.match(askBlock([{name: "claude", ready: false, why_not: "not signed in"}]), /Sign in to Claude or Codex in Settings/);
   assert.equal(button({mode: "direct", files: [], turn: {active: false}}, "x", {blocked: true}).disabled, true);
 });
 
@@ -579,4 +580,12 @@ test("QA P3: a note the owner has since replaced is not cleared by the page read
   await c.send("x".repeat(8001));                                                    // a newer refusal replaces the 'not responding' note
   await c.resync();
   assert.match(c.state().note, /Messages can be up to 8000 characters/);
+});
+
+test("QA P3: the offline demo has no model to ask, and the sentence does not send the owner to a sign-in that cannot work there", () => {
+  const words = askBlock([]);                                                      // the server listed no provider at all: nothing to sign in to
+  assert.match(words, /offline demo/i);
+  assert.match(words, /Plan with Sutra|Tell the team/);
+  assert.doesNotMatch(words, /Sign in/);
+  assert.equal(askBlock([{name: "codex", ready: true}]), "");
 });

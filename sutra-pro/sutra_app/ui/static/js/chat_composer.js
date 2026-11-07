@@ -32,7 +32,8 @@
      bar(state, opts)                  the mode toggle, the file chips, the attach button and the limits note
      streamRow(state, provider)        the streaming row ("Claude is writing" plus the text so far), or ""
      button(state, value, flags)       {label, act, disabled} of the Send button: Send, or Stop while a direct turn is answering
-     askBlock(providers)               "" when a model can answer, else the sentence that says none can (the pill's rule: only runnable providers)
+     askBlock(providers)               "" when a model can answer, else the sentence that says none can (the pill's rule: only runnable providers; an empty list
+                                       is the offline demo, which says so instead of asking for a sign-in)
      providerOf(providers, chosen)     the name to show in the streaming row: the chosen one if it can run, else ""
      filesOf(transfer)                 the files of a clipboardData or dataTransfer, or null when there is none (then the page lets it be)
      hasFiles(transfer)                a drag carries files (dragover: the files themselves are not readable yet)
@@ -81,7 +82,10 @@
   }
 
   function askBlock(providers) {
-    return ready(providers).length > 0 ? "" : "No model can answer right now. Sign in to Claude or Codex in Settings, then try again.";
+    if (ready(providers).length > 0) return "";
+    // no provider listed at all is the offline demo (the stub answers the team's agent, but is not a model to choose): there is nothing to sign in to
+    if (Array.isArray(providers) && providers.length === 0) return "This is the offline demo: there is no Claude or Codex to ask directly. Plan with Sutra (or tell the team) works here.";
+    return "No model can answer right now. Sign in to Claude or Codex in Settings, then try again.";
   }
 
   // What a file is, from the server's kind once it is uploaded, else from its name: image, pdf or text.
