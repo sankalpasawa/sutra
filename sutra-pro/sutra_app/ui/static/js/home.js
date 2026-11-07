@@ -67,7 +67,7 @@
     departments: [], departmentsLoaded: false, needs: [], needsLoaded: false,
     graph: null, chart: null, changes: [],
     health: null, settings: null, scope: "", errors: {}, saved: false, saving: false, conn: {test: {}, signin: null}, signer: null,
-    pane: "graph", turn: {seen: false, phase: "", n: 0, active: false}, awaitGraph: false,
+    pane: "graph", turn: {seen: false, phase: "", n: 0, active: false, resumed: false}, awaitGraph: false,
     banner: null, blocked: "", sending: false, live: "offline", theme: null, loaded: false,
     graphView: null, chartView: null, panel: null, stream: null, watch: null, values: null,
     // gap attention: the Heads up lane, the age of each ask, the "Got it" marks of this browser, the tab title and the desktop notice
@@ -133,7 +133,30 @@
     return w;
   }
 
-  async function fetchSession() { S.session = await api.get("/api/chats/" + ORG); }
+  async function fetchSession() { S.session = await api.get("/api/chats/" + ORG); syncTurn(S.session); }
+
+  // A page opened while a turn runs has no chat.turn events behind it, so the phase word of GET /api/chats/cs_org (reading, planning, building) stands in
+  // for them until the first event arrives. Until then the session is read again every 2.5 s: a turn that ended before this page's event stream opened
+  // does not leave the strip and the "one at a time" note on the screen.
+  const TURN_WORD = {reading: "reading_chart", planning: "planning", building: "applying"};
+  function syncTurn(session) {
+    if (S.turn.seen && !S.turn.resumed) return;                                          // the page's own events know better
+    const word = isObj(session) && hasOwn(TURN_WORD, session.phase) ? TURN_WORD[session.phase] : "";
+    if (word === "" && !S.turn.resumed) return;
+    S.turn.seen = true;
+    S.turn.resumed = word !== "";
+    S.turn.phase = word || "done";
+    S.turn.active = word !== "";
+    renderProgress();
+    renderComposer();
+    if (word !== "") watchTurn();
+    else reloadMessages();
+  }
+  let turnTimer = null;                                                                  // one re-read at a time, however often the page loads everything again
+  function watchTurn() {
+    if (turnTimer !== null) return;
+    turnTimer = root.setTimeout(() => { turnTimer = null; if (S.turn.resumed) fetchSession().catch(watchTurn); }, 2500);
+  }
 
   // The org chat, oldest first. all=true reads it from the start (a message can change after it was read, such as one that turned into an error);
   // otherwise only what is newer than the last one seen.
@@ -1174,6 +1197,7 @@
       case "chat.turn":
         if (d.session_id === ORG) {
           S.turn.seen = true;
+          S.turn.resumed = false;
           S.awaitGraph = true;
           S.turn.phase = clean(d.phase);
           S.turn.n = Number.isFinite(d.turn) ? d.turn : S.turn.n;
@@ -1332,6 +1356,7 @@
   function renderAll() {
     renderChat();
     renderComposer();
+    renderProgress();
     renderNeeds();
     renderRail();
     renderBanner();

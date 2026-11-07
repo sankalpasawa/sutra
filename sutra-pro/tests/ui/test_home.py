@@ -246,6 +246,33 @@ def test_the_enter_that_confirms_an_ime_candidate_does_not_send_the_half_typed_l
 
 
 @browser_only
+def test_a_reload_during_a_turn_brings_the_progress_bar_and_sentence_back_from_the_servers_phase(browser, fake):
+    """QA org-chat-teams: the strip and 'Planning...' went blank after a reload while the server still said planning; the dimmed bubble looked stuck."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake)
+    reload = lambda: (browser.goto(fake.url + "/"), browser.wait_for("window.HomePage && HomePage.state().loaded === true"))   # noqa: E731
+    fake.emit("chat.turn", {"session_id": "cs_org", "turn": 1, "phase": "planning", "detail": "Planning"})
+    browser.wait_for("!document.getElementById('sprog').hidden")
+    reload()                                                                              # the page starts with no memory of the turn
+    assert not browser.js("document.getElementById('sprog').hidden")
+    assert attrs(browser, "#sprog > div", "class") == ["done", "done", "on", "", ""] and browser.text("#sstatus") == "Planning…"
+    assert browser.js("HomePage.state().turn.active") is True                               # the box waits for the answer as it did before the reload
+    fake.emit("chat.turn", {"session_id": "cs_org", "turn": 1, "phase": "building", "detail": "Setting up the team"})    # the real server's word for applying
+    reload()
+    assert attrs(browser, "#sprog > div", "class") == ["done", "done", "done", "on", ""] and browser.text("#sstatus") == "Setting up the team…"
+    fake.emit("chat.turn", {"session_id": "cs_org", "turn": 1, "phase": "done", "detail": ""})                             # no turn: the phase is ready, the strip stays hidden
+    reload()
+    assert browser.js("document.getElementById('sprog').hidden") and browser.text("#sstatus") == ""
+    assert browser.js("HomePage.state().turn.active") is False
+    fake.emit("chat.turn", {"session_id": "cs_org", "turn": 2, "phase": "planning", "detail": "Planning"})
+    reload()                                                                              # resumed again: now the turn ends while no event reaches the page
+    assert browser.js("HomePage.state().turn.active") is True
+    fake.emit("chat.turn", {"phase": "done"})                                              # (no session_id: the page ignores it, the server's phase becomes ready)
+    assert wait_until(browser, lambda: browser.js("HomePage.state().turn.active") is False)    # the 2.5 s re-read of the session ends it
+    assert attrs(browser, "#sprog > div", "class")[-1] == "on" and browser.text("#sstatus") == ""
+
+
+@browser_only
 def test_the_first_graph_after_a_turn_takes_the_right_pane_and_the_task_card_links_to_the_team(browser, fake):
     load(browser, fake, query="?pane=chart")
     assert shown(browser, "#pane-chart") and not shown(browser, "#pane-graph")
