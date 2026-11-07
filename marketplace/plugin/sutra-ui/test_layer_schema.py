@@ -1186,7 +1186,7 @@ def _cases():
     est = {"calls": 4, "usd": 0.2}
     return [
         ("impl", "identity/v1"), ("impl", "audit/v12"), ("impl", "identity/v0"), ("impl", "nobody/v1"), ("impl", "identity/v1 "), ("impl", 7),
-        ("id.item", "D1"), ("id.item", "D12"), ("id.item", "D0"), ("id.item", "d1"), ("id.item", "D123"), ("id.item", ["D1"]),
+        ("id.item", "D1"), ("id.item", "D12"), ("id.item", "D0"), ("id.item", "d1"), ("id.item", "D119"), ("id.item", ["D1"]),
         ("name", "Booking"), ("name", "Facts 2"), ("name", "-x"), ("name", ""), ("name", "x" * 41), ("name", None),
         ("identity.done_item", ok), ("identity.done_item", dict(ok, how="code")), ("identity.done_item", {"id": "D1"}),
         ("identity.done_item", dict(ok, colour="red")), ("identity.done_item", dict(ok, text="")), ("identity.done_item", dict(ok, text="x" * 301)),

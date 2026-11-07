@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the desktop app: the Electron window (desktop/) + a bundled CPython + the sutra-pro wheel installed into it (D120, D123).
+"""Build the desktop app: the Electron window (desktop/) + a bundled CPython + the sutra-pro wheel installed into it (D116, D119).
 
     scripts/py scripts/build_desktop_app.py --wheel dist/sutra_pro-0.2.0-py3-none-any.whl --target mac-arm64 --out build
     scripts/py scripts/build_desktop_app.py --wheel W --target win-x64 --out build

@@ -8,7 +8,7 @@
 #
 # `desktop` runs the node tests of the Electron window (sutra-pro/desktop: the supervisor, the navigation guard, the pages, the packager options) on
 # the same three systems. Electron itself is NOT downloaded here (npm ci --ignore-scripts skips its install script, about 100 MB): none of these tests
-# starts it. That the packaged app really runs is proved by the release workflows on their runners (scripts/prove_desktop_app.py, D124).
+# starts it. That the packaged app really runs is proved by the release workflows on their runners (scripts/prove_desktop_app.py, D120).
 #
 # `package` builds the sdist and the wheel the way a release does, looks inside the wheel (scripts/check_wheel.py), installs it in
 # a clean environment and starts the command. It proves the wheel carries every data file and the `sutra-pro` command (D86, D88).

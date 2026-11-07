@@ -1,5 +1,5 @@
 'use strict';
-/* What the desktop app needs to know about its surroundings, as pure functions (D122). Nothing here touches Electron, so
+/* What the desktop app needs to know about its surroundings, as pure functions (D118). Nothing here touches Electron, so
    `node --test` covers all of it on every system. */
 const fs = require('node:fs');
 const os = require('node:os');

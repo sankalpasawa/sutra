@@ -1,5 +1,5 @@
 'use strict';
-/* The server the window shows (D122): find the one that is running or start our own, wait until it answers, stop it when the app ends.
+/* The server the window shows (D118): find the one that is running or start our own, wait until it answers, stop it when the app ends.
 
    A SERVER WE ONLY ATTACHED TO has no process of ours to watch, so it is watched through its health: when it has not answered for `watchMisses` checks in a
    row (3 s apart: 12 s, longer than any answer the server is slow to give) the supervisor reports it as it reports one of its own that died, and the window

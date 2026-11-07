@@ -1,5 +1,5 @@
 'use strict';
-/* The two pages the window shows before the server's own: "starting" and "could not start" (D122). Plain HTML with no script, loaded as a data
+/* The two pages the window shows before the server's own: "starting" and "could not start" (D118). Plain HTML with no script, loaded as a data
    address, and every piece of text that comes from outside is escaped. The colours are those of the app's own dark and light themes. */
 
 const THEMES = {

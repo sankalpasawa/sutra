@@ -1,5 +1,5 @@
 'use strict';
-/* The application menu as data (D122), so a test can read it. On a Mac the Edit menu is not decoration: without its copy, paste and select-all roles
+/* The application menu as data (D118), so a test can read it. On a Mac the Edit menu is not decoration: without its copy, paste and select-all roles
    the shortcuts do nothing in a text field. */
 
 function menuTemplate({ appName, isMac, devTools, handlers }) {

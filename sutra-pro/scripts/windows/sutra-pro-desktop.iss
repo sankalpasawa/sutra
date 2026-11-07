@@ -1,4 +1,4 @@
-; Sutra Pro installer (Inno Setup 6) for the Electron app (D123). Built by .github/workflows/sutra-pro-release-windows.yml:
+; Sutra Pro installer (Inno Setup 6) for the Electron app (D119). Built by .github/workflows/sutra-pro-release-windows.yml:
 ;
 ;   ISCC.exe /DAppVersion=0.2.0 /DSourceDir=<build>\Sutra Pro /DOutputDir=<release> /DIconFile=<assets>\icon\sutra-pro.ico scripts\windows\sutra-pro-desktop.iss
 ;

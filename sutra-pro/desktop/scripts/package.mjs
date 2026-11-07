@@ -1,4 +1,4 @@
-/* Package the window (D123): Electron plus src/ into "Sutra Pro.app" (macOS) or the "Sutra Pro-win32-x64" folder (Windows).
+/* Package the window (D119): Electron plus src/ into "Sutra Pro.app" (macOS) or the "Sutra Pro-win32-x64" folder (Windows).
 
      node scripts/package.mjs --platform darwin --arch arm64 --out out --version 0.2.0
      node scripts/package.mjs --platform win32 --arch x64 --out out --version 0.2.0

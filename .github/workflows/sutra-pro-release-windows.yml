@@ -1,5 +1,5 @@
 # Build the Windows app of Sutra Pro (the Electron desktop app), an installer and a portable zip, and attach them to the GitHub Release of the Sutra
-# repository (D98, D100, D101, D120, D123). The Windows counterpart of sutra-pro-release-macos.yml: the same guard, the same stable asset names, the same rules.
+# repository (D98, D100, D101, D116, D119). The Windows counterpart of sutra-pro-release-macos.yml: the same guard, the same stable asset names, the same rules.
 #
 # THE ASSETS (stable, version-free names; the link is /releases/download/<tag>/<name>, because the release is never "Latest", D100)
 #   Sutra-Pro-Setup-x64.exe   Sutra-Pro-Setup-x64.exe.sha256     the installer (Inno Setup, per user, no administrator rights)
@@ -7,7 +7,7 @@
 # Each is the checksum of the file this job built (see the wheel workflow for why the files are per asset). The release BODY is not set
 # here: sutra-pro-release-wheel.yml owns it, and two workflows writing one body would overwrite each other.
 #
-# WHAT THE APP IS (D120, D123). scripts/build_desktop_app.py makes `Sutra Pro/` = the Electron window (sutra-pro/desktop: `Sutra Pro.exe` and its
+# WHAT THE APP IS (D116, D119). scripts/build_desktop_app.py makes `Sutra Pro/` = the Electron window (sutra-pro/desktop: `Sutra Pro.exe` and its
 # files) + a python-build-standalone CPython 3.11 with the wheel installed into it, in `resources\python`, and `sutra-pro.cmd` for the command line.
 # `Sutra Pro.exe` opens a window, starts `python -m sutra_app` on that interpreter, shows its page and stops the server when the window closes. The
 # 0.1.x app was a launcher around the browser with a notification-area icon; the installer's id is the same, so installing over it is an upgrade, and
@@ -16,7 +16,7 @@
 # UNSIGNED (D102). Windows SmartScreen says "Windows protected your PC" the first time: More info, then Run anyway. A code-signing
 # certificate would remove that and needs a paid account; the checksums on the release are the integrity check meanwhile.
 #
-# THE PROOFS. Before anything is uploaded the built folder is run (scripts/prove_desktop_app.py, D124: offline, network cut; the real window starts its
+# THE PROOFS. Before anything is uploaded the built folder is run (scripts/prove_desktop_app.py, D120: offline, network cut; the real window starts its
 # server, draws the page, answers health from inside the page and quits, which must stop the server; then a team runs its first turn on the bundled
 # Python and a stop request ends it, leaving nothing running); then the INSTALLER is run silently into a scratch folder, the installed copy is proved
 # the same way, and the uninstaller must remove it. The window's picture and the logs are kept as an artifact. `verify` does the installer part again on the files that were

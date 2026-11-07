@@ -520,27 +520,27 @@
   "anchor": null
  },
  {
-  "id": "D120",
+  "id": "D116",
   "label": "Electron window around the local server",
   "anchor": "Desktop app · Electron window"
  },
  {
-  "id": "D121",
+  "id": "D117",
   "label": "logo = the old Sutra's, never redrawn",
   "anchor": "Desktop app · Electron window"
  },
  {
-  "id": "D122",
+  "id": "D118",
   "label": "attach or start; ends with the window",
   "anchor": "Desktop app · Electron window"
  },
  {
-  "id": "D123",
+  "id": "D119",
   "label": "packager + Python inside; signed inside out",
   "anchor": "Desktop app · Electron window"
  },
  {
-  "id": "D124",
+  "id": "D120",
   "label": "the packaged app proves itself",
   "anchor": "Desktop app · Electron window"
  }

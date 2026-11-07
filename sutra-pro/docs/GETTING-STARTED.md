@@ -43,7 +43,7 @@ The apps need no Python and no uv. Download them from the [Sutra Pro releases](h
 
 The Mac app is signed with a Developer ID and notarized by Apple (an ad-hoc build, made when the signing secrets are missing, needs "right-click, Open").
 The Windows files are unsigned for now (D102), so the first launch needs one extra click: "More info, Run anyway".
-An app is a window (D120): it starts its own server on this computer, shows it, and stops it when you close the window. If the command (`sutra-pro`) is already
+An app is a window (D116): it starts its own server on this computer, shows it, and stops it when you close the window. If the command (`sutra-pro`) is already
 serving your data folder, the app shows that server instead and leaves it running when you close the window. Its own logs are `~/.sutra-pro/logs/desktop.log`
 (the window) and `app.log` (the server).
 

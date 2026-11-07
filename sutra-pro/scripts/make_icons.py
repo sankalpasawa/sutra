@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Derive every Sutra Pro icon from the old Sutra's: the logo is the same (D121). The outputs are committed; this runs only when the old icon changes.
+"""Derive every Sutra Pro icon from the old Sutra's: the logo is the same (D117). The outputs are committed; this runs only when the old icon changes.
 
     uv run --no-project --with pillow python scripts/make_icons.py            # writes assets/icon/ and sutra_app/assets/icon.png
     uv run --no-project --with pillow python scripts/make_icons.py --check    # exit 1 when a committed file is not what this derives

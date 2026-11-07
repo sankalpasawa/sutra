@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sign "Sutra Pro.app" INSIDE OUT (D123). The order and its reasons are those of the old Sutra's make-dmg.sh, which signs an Electron app that
+# Sign "Sutra Pro.app" INSIDE OUT (D119). The order and its reasons are those of the old Sutra's make-dmg.sh, which signs an Electron app that
 # carries its own CPython with the same Developer ID certificate:
 #
 #   SIGN_IDENTITY="Developer ID Application: ..." scripts/sign_desktop_app.sh "build/Sutra Pro.app"

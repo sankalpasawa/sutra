@@ -1,5 +1,5 @@
 'use strict';
-/* Sutra Pro, the desktop app (D120, D122): a window around the local server. The server is the Python app that ships inside this one (or, from a
+/* Sutra Pro, the desktop app (D116, D118): a window around the local server. The server is the Python app that ships inside this one (or, from a
    checkout, the checkout's). The app finds the server that is running for the data folder or starts its own, shows its page, and stops its own when
    the window closes. src/server.js has the rules, src/runtime.js where everything is. */
 const { app, BrowserWindow, Menu, dialog, nativeImage, nativeTheme, session, shell } = require('electron');

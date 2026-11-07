@@ -1,5 +1,5 @@
 'use strict';
-/* The app proving itself (D124). With SUTRA_PRO_SELFTEST=1 the real window, the real server and the real page run as usual and, once the page is
+/* The app proving itself (D120). With SUTRA_PRO_SELFTEST=1 the real window, the real server and the real page run as usual and, once the page is
    up, the app asks the page a few questions, saves a picture of the window, writes selftest.json and selftest.png to SUTRA_PRO_SELFTEST_DIR (default
    <data folder>/selftest), prints one SELFTEST line and quits through the normal path, which stops the server. The exit status is 0 only when every
    answer was right. The release workflows run it on the packaged app, on a runner, before anything is uploaded.

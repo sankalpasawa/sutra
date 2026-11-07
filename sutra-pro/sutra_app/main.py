@@ -14,7 +14,7 @@ GAP-OPS-1: the whole app is wrapped in the request-id middleware (`X-Request-Id`
 router of `sutra_app.ops.api` is mounted when that module exists. The instance lock, the log file and the first-run doctor belong to
 `run` (the server process), not to `create_app`: a library call must not lock a folder or change the process's logging.
 
-`--exit-when-stdin-closes` is for a program that starts the server and owns its standard input (the Electron desktop app, D122): the server
+`--exit-when-stdin-closes` is for a program that starts the server and owns its standard input (the Electron desktop app, D118): the server
 stops, the way a SIGTERM stops it, when that input reaches end of file, so it ends with its starter even when the starter is killed.
 
 The server binds 127.0.0.1 only. Port: `--port N` or `SUTRA_PORT` means exactly that port; otherwise 8780, then the next free port up

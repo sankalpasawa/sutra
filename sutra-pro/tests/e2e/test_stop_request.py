@@ -4,7 +4,7 @@ On Windows a server with no console cannot be signalled, so `sutra-pro stop` wri
 for it, shuts down the way a SIGTERM would. The file works everywhere, so this test drives it on every system; the command is driven
 too, through whichever way the system it runs on takes (SIGTERM on POSIX, the file on Windows).
 
-The desktop app (D122) ends its server a third way: it holds the write end of the server's standard input, and `--exit-when-stdin-closes`
+The desktop app (D118) ends its server a third way: it holds the write end of the server's standard input, and `--exit-when-stdin-closes`
 makes the server stop when that pipe closes, so a killed app cannot leave a server running.
 """
 import os
