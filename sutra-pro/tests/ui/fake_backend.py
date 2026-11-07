@@ -1039,6 +1039,7 @@ def make_app(fixtures_dir: str | Path = FIXTURES_DIR, *, pages_dir: str | Path |
     register_api(app, state)
     register_j2(app, state)
     register_controls(app, state, fixtures)
+    register_welcome_settings(app, state)
     services = _Services(state)
     if pages_dir is None and static_dir is None:
         mount(app, services)
@@ -1572,6 +1573,94 @@ def register_controls(app: FastAPI, state: FakeState, fixtures: Fixtures) -> Non
         boot = (BootContext(page="dept", token=state.token, dept=row["id"], dept_label=row["name"], version=state.version)
                 if row else BootContext(page="home", token=state.token, version=state.version))
         return Response(render_page(source, boot), media_type="text/html", headers={"Cache-Control": "no-store"})
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# welcome-settings: the first-run card, the default-model controls and the owner-click update check
+# ---------------------------------------------------------------------------------------------------------------------
+WELCOME_FACTS = {
+    "models": [{"name": "claude", "state": "ready", "why": "", "fix": ""},
+               {"name": "codex", "state": "not_ready", "why": "0.5.2: not signed in", "fix": "run `codex login`"}],
+    "data": {"dir": "/data/sutra-pro", "db_bytes": 1_310_720, "free_bytes": 42_949_672_960, "backup": "sutra-pro backup"},
+    "egress": {"scrub": True, "api_key_refused": True, "only_your_cli": True},
+    "autonomy": {"budget": 30, "send_mode": "dry-run", "asks": True},
+}
+UPDATE_UP_TO_DATE = {"current": VERSION, "latest": VERSION, "newer": False, "url": "https://github.com/sankalpasawa/sutra/releases?q=sutra-pro",
+                     "notes_url": "https://github.com/sankalpasawa/sutra/releases/tag/sutra-pro-v" + VERSION, "how": "Run `git pull`.", "kind": "checkout",
+                     "error": None, "said": f"You have {VERSION}: up to date."}
+
+
+def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
+    """The welcome card (seen by default, so no other test is covered by it; `/__fake/welcome` shows it), GET and PUT /api/connectors/policy with the real
+    validation, GET /api/connectors/models, GET /api/ops/info and POST /api/ops/update-check (`/__fake/update` sets the answer). Reset with the story."""
+    from sutra_app.connectors.errors import PolicyInvalidError
+    from sutra_app.connectors.model_catalog import claude_options
+    from sutra_app.connectors.policy import load_default_policy, parse_policy
+
+    def fresh() -> dict:
+        return {"seen": True, "facts": copy.deepcopy(WELCOME_FACTS), "policy": load_default_policy().model_dump(mode="json"), "update": copy.deepcopy(UPDATE_UP_TO_DATE)}
+
+    state.ws = fresh()
+    original_reset = state.reset
+
+    def reset(*args: Any, **kw: Any) -> None:
+        original_reset(*args, **kw)
+        state.ws = fresh()
+    state.reset = reset                                    # type: ignore[method-assign]
+
+    @app.get("/api/ops/welcome")
+    def welcome_get():
+        return JSONResponse({"seen": state.ws["seen"], "facts": None if state.ws["seen"] else state.ws["facts"]})
+
+    @app.post("/api/ops/welcome/seen")
+    def welcome_seen(request: Request):
+        require_token(request, state)
+        state.ws["seen"] = True
+        return JSONResponse({"seen": True})
+
+    @app.get("/api/ops/info")
+    def ops_info():
+        return JSONResponse({"app": "Sutra Pro", "version": state.version, "data_dir": "/data/sutra-pro", "db_bytes": 1_310_720, "free_bytes": 42_949_672_960})
+
+    @app.get("/api/connectors/policy")
+    def policy_get():
+        return JSONResponse(state.ws["policy"])
+
+    @app.put("/api/connectors/policy")
+    async def policy_put(request: Request):
+        require_token(request, state)
+        try:
+            policy = parse_policy(await request.body())
+        except PolicyInvalidError as exc:
+            return envelope(422, "policy_invalid", exc.user_message(), {"kind": "unavailable", "errors": list(exc.detail.get("errors", []))})
+        state.ws["policy"] = policy.model_dump(mode="json")
+        return JSONResponse(state.ws["policy"])
+
+    @app.get("/api/connectors/models")
+    def models_get():
+        codex = [{"slug": "gpt-5.6-luna", "label": "GPT-5.6 Luna", "efforts": ["low", "medium", "high"], "context_window": 258400, "images": True, "listed": True,
+                  "note": "", "group": "main", "provider": "codex"}]
+        return JSONResponse({"models": [{**o.model_dump(mode="json"), "images": True, "listed": True, "provider": "claude"} for o in claude_options()] + codex})
+
+    @app.post("/api/ops/update-check")
+    def update_check(request: Request):
+        require_token(request, state)
+        return JSONResponse(state.ws["update"])
+
+    @app.post("/__fake/welcome")
+    async def welcome_control(request: Request):
+        body = await json_body(request)
+        state.ws["seen"] = bool(isinstance(body, dict) and body.get("seen", False))
+        if isinstance(body, dict) and isinstance(body.get("facts"), dict):
+            state.ws["facts"] = body["facts"]
+        return JSONResponse({"seen": state.ws["seen"]})
+
+    @app.post("/__fake/update")
+    async def update_control(request: Request):
+        body = await json_body(request)
+        if isinstance(body, dict):
+            state.ws["update"] = {**copy.deepcopy(UPDATE_UP_TO_DATE), **body}
+        return JSONResponse(state.ws["update"])
 
 
 # ---------------------------------------------------------------------------------------------------------------------

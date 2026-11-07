@@ -23,6 +23,14 @@
      watchHealth(api, onHealth, onError) -> {onEvent(type), refetch()}   GET /api/health again on connector.health, connector.switch, connector.mode
      loadEngine(api, scope) / saveEngine(api, settings, scope, form)     GET and PUT /api/engine/settings; `dept` is put in the query by hand and
                                           left out for all teams (these paths are outside J2_PATHS, so the fetch wrapper never adds it)
+     policyHtml(policy, health, {models, errors, saved, busy}) -> html   the Default model group under Connectors (welcome-settings, item 3): per provider
+                                          Make first, On or Off and the model, read-modify-write of GET /api/connectors/policy
+     policyBody(policy, edits) -> policy   the PUT body: the whole current policy with only defaults.order, providers.<p>.enabled and providers.<p>.model changed
+     policyProblem(policy, edits) -> ""|sentence   what the page refuses before sending (no model left on, a first model that is off, an empty model)
+     policyErrors(error) -> {provider: sentence}   what a 422 policy_invalid names, key "" for a sentence about the whole policy
+     loadPolicy(api) / savePolicy(api, policy, edits)   GET policy and models, and the checked PUT
+     aboutHtml(info, update) -> html              the About group (welcome-settings, item 2): version, data folder, Check for updates and its answer
+     checkUpdate(api) -> {step, answer, message}  POST /api/ops/update-check on the owner's click: the only request the app makes of its own, and it downloads nothing
 
    There is no control to pin a chat to a provider in v1 (S1-contracts-08). Every word from the wire goes through esc(); a sign-in link is a link
    only when it is https.
@@ -88,7 +96,10 @@
   const FLAGS01 = freeze(["fixes"]);                   // 0 or 1 on the wire, a toggle on the page
   const FLOATS = freeze(["bargain_minutes", "delay"]); // JSON cannot tell 15.0 from 15, so the float fields are named
   const NULLABLE = freeze(["budget_cap"]);             // empty means "not set" (null)
-  const GROUPS = freeze({appearance: "Appearance", connectors: "Connectors", engine: "Engine"});
+  const GROUPS = freeze({appearance: "Appearance", connectors: "Connectors", engine: "Engine", models: "Default model", about: "About"});
+  const POLICY_PATH = "/api/connectors/policy";
+  const MODELS_PATH = "/api/connectors/models";
+  const UPDATE_PATH = "/api/ops/update-check";
 
   const textOf = field => (hasOwn(FIELD_TEXT, field) ? FIELD_TEXT[field] : [field.replace(/_/g, " "), ""]);
 
@@ -431,6 +442,188 @@
       providerOrder(connectors).map(n => connectorRow(n, isObj(connectors[n]) ? connectors[n] : {}, state)).join("") + "</section>";
   }
 
+  /* ---------------------------------------------------------------- Default model group (welcome-settings, item 3) */
+  const clone = v => JSON.parse(JSON.stringify(v));
+  const POLICY_WHAT = "New chats and the chat agent try the first model first, and the other one when it cannot answer. A chat you pinned with its pill keeps its pill, " +
+    "and the image checks of Audit keep their own order.";
+
+  // The providers of a policy in the order they are tried: defaults.order first, then any other provider (never "stub").
+  function policyOrder(policy) {
+    const have = isObj(policy) && isObj(policy.providers) ? Object.keys(policy.providers).filter(n => n !== "stub") : [];
+    const order = isObj(policy) && isObj(policy.defaults) && Array.isArray(policy.defaults.order) ? policy.defaults.order.filter(n => have.includes(n)) : [];
+    return order.concat(providerOrder(Object.fromEntries(have.filter(n => !order.includes(n)).map(n => [n, 1]))));
+  }
+
+  // Can this provider answer now? From the health answer ({claude: {installed, signed_in, health: {state}}}); an unknown provider is not ready.
+  function isReady(c) {
+    if (!isObj(c) || c.installed === false || c.signed_in === false) return false;
+    const state = isObj(c.health) ? clean(c.health.state) : "";
+    return !BLOCKS.includes(state) && state !== "missing" && state !== "signed_out";
+  }
+
+  // The provider that answers a new chat now: the first one that is on and ready, in order (null when none).
+  function answering(policy, health) {
+    const conns = isObj(health) && isObj(health.connectors) ? health.connectors : null;
+    if (conns === null) return null;
+    return policyOrder(policy).find(n => policy.providers[n].enabled === true && isReady(conns[n])) || null;
+  }
+
+  // policyBody(policy, edits) -> the whole policy with only the three kinds of key changed. `edits`: {first: "claude", enabled: {codex: false}, model: {claude: "opus"}}.
+  // Everything else (rules, rates, timeouts, sandbox, concurrency, every key this page does not know) is copied as it was.
+  function policyBody(policy, edits) {
+    const body = clone(policy);
+    const e = isObj(edits) ? edits : {};
+    if (isObj(e.enabled)) Object.keys(e.enabled).forEach(n => { if (isObj(body.providers[n]) && typeof e.enabled[n] === "boolean") body.providers[n].enabled = e.enabled[n]; });
+    if (isObj(e.model)) Object.keys(e.model).forEach(n => { if (isObj(body.providers[n]) && typeof e.model[n] === "string") body.providers[n].model = clean(e.model[n]); });
+    if (typeof e.first === "string" && isObj(body.providers[e.first])) {
+      body.defaults.order = [e.first].concat((Array.isArray(body.defaults.order) ? body.defaults.order : []).filter(n => n !== e.first));
+    }
+    return body;
+  }
+
+  // The sentence for an edit the page refuses before it sends anything; "" when the edit is fine. The server checks the same file again (a second line).
+  function policyProblem(policy, edits) {
+    if (!isObj(policy) || !isObj(policy.providers)) return "The routing policy is not loaded yet.";
+    const body = policyBody(policy, edits);
+    const names = Object.keys(body.providers).filter(n => n !== "stub");
+    if (!names.some(n => body.providers[n].enabled === true)) return "At least one model must stay on, or nothing could answer.";
+    const e = isObj(edits) ? edits : {};
+    if (typeof e.first === "string" && isObj(body.providers[e.first]) && body.providers[e.first].enabled !== true) {
+      return "Turn " + providerName(e.first) + " on before making it first.";
+    }
+    for (const n of names) {
+      if (isObj(e.model) && typeof e.model[n] === "string" && clean(e.model[n]) === "") return "Choose a model for " + providerName(n) + ".";
+    }
+    return "";
+  }
+
+  // policyErrors(error) -> {provider: sentence}. A 422 `policy_invalid` lists lines "providers.codex.model: <why>"; any other line, and any other error, is one
+  // sentence for the whole group under the key "".
+  function policyErrors(error) {
+    const out = {};
+    const details = isObj(error) && isObj(error.details) ? error.details : {};
+    (Array.isArray(details.errors) ? details.errors : []).forEach(line => {
+      const text = clean(line);
+      const m = /^providers\.([A-Za-z0-9_-]+)\.([^:]*):\s*(.*)$/.exec(text);
+      if (m) { if (!hasOwn(out, m[1])) out[m[1]] = clean(m[2] + ": " + m[3]); } else if (text !== "" && !hasOwn(out, "")) out[""] = text;
+    });
+    if (Object.keys(out).length === 0) out[""] = clean(isObj(error) ? error.message : "") || "The choice could not be saved.";
+    return out;
+  }
+
+  function modelOptions(models, current) {
+    const list = Array.isArray(models) ? models.filter(m => isObj(m) && clean(m.slug) !== "") : [];
+    const html = m => '<option value="' + esc(clean(m.slug)) + '"' + (clean(m.slug) === current ? " selected" : "") + ">" + esc(clean(m.label) || clean(m.slug)) + "</option>";
+    const main = list.filter(m => clean(m.group) !== "more");
+    const more = list.filter(m => clean(m.group) === "more");
+    // the saved model is always there, so the select never shows a model the policy does not hold
+    const extra = current !== "" && !list.some(m => clean(m.slug) === current) ? '<option value="' + esc(current) + '" selected>' + esc(current) + "</option>" : "";
+    return extra + main.map(html).join("") + (more.length ? '<optgroup label="More models">' + more.map(html).join("") + "</optgroup>" : "");
+  }
+
+  function policyRow(name, policy, conns, rank, replacement, o) {
+    const entry = policy.providers[name];
+    const on = entry.enabled === true;
+    const state = !on ? "off" : (rank === 0 ? "first" : "second");
+    const word = !on ? "Off" : (rank === 0 ? "First" : "Second");
+    const unusable = on && rank === 0 && conns !== null && !isReady(conns[name]);
+    const note = unusable ? "Your saved choice could not be used; " + (replacement ? providerName(replacement) + " is answering." : "no other model is ready either.") : "";
+    const models = isObj(o.models) && Array.isArray(o.models[name]) ? o.models[name] : [];
+    const err = isObj(o.errors) && o.errors[name] ? '<span class="seterr" role="alert">' + esc(o.errors[name]) + "</span>" : "";
+    const dis = o.busy === true ? " disabled" : "";
+    return '<div class="setmodel" data-provider="' + esc(name) + '" data-state="' + state + '">' +
+      '<div class="sethead"><b>' + esc(providerName(name)) + '</b><span class="setchip ' + (state === "first" ? "st-ok" : "") + '">' + word + "</span></div>" +
+      (note ? '<p class="setdetail setunusable" role="status">' + esc(note) + "</p>" : "") +
+      '<div class="setacts"><button type="button" class="ghost" data-act="make-first" data-provider="' + esc(name) + '"' + (!on || rank === 0 || o.busy === true ? " disabled" : "") + ">Make first</button>" +
+      '<label class="setswitch"><input type="checkbox" data-policy-on="' + esc(name) + '"' + (on ? " checked" : "") + dis + "> On</label>" +
+      '<label class="setmlabel">Model <select data-policy-model="' + esc(name) + '" aria-label="Model for ' + esc(providerName(name)) + '"' + dis + ">" +
+      modelOptions(models, clean(entry.model)) + "</select></label>" + err + "</div></div>";
+  }
+
+  // policyHtml(policy, health, options). `policy` is GET /api/connectors/policy, `health` GET /api/health (for "could not be used"), options {models: {provider: [ModelInfo]},
+  // errors: {provider|"": sentence}, saved, busy}. Nothing here sends anything: the page reads the change events and calls savePolicy.
+  function policyHtml(policy, health, options) {
+    const o = isObj(options) ? options : {};
+    const head = '<section class="setgrp" data-group="models" aria-labelledby="set-models-h"><h3 id="set-models-h">' + GROUPS.models + "</h3>";
+    if (!isObj(policy) || !isObj(policy.providers) || !isObj(policy.defaults)) return head + '<p class="setempty">The routing policy is not loaded yet.</p></section>';
+    const conns = isObj(health) && isObj(health.connectors) ? health.connectors : null;
+    const order = policyOrder(policy);
+    const replacement = answering(policy, health);
+    const ranks = order.filter(n => policy.providers[n].enabled === true);
+    return head + '<p class="setnote">' + esc(POLICY_WHAT) + "</p>" +
+      (o.errors && o.errors[""] ? '<p class="seterr setgen" role="alert">' + esc(o.errors[""]) + "</p>" : "") +
+      order.map(n => policyRow(n, policy, conns, ranks.indexOf(n), replacement, o)).join("") +
+      '<div class="setacts"><span class="setstatus" role="status">' + (o.saved === true ? "Saved. New chats use this from now on." : "") + "</span></div></section>";
+  }
+
+  // loadPolicy(api) -> {policy, models}: the policy in force and the models each provider lists, by provider (a provider that cannot list is left out).
+  async function loadPolicy(api) {
+    const policy = await api.get(POLICY_PATH);
+    let models = {};
+    try {
+      const answer = await api.get(MODELS_PATH);
+      (isObj(answer) && Array.isArray(answer.models) ? answer.models : []).forEach(m => {
+        if (!isObj(m) || clean(m.provider) === "") return;
+        (models[m.provider] = models[m.provider] || []).push(m);
+      });
+    } catch (e) {
+      models = {};                                      // the page still works: each select then holds the saved model alone
+    }
+    return {policy, models};
+  }
+
+  // savePolicy(api, policy, edits) -> {ok, policy, errors}. A refused edit sends nothing; the server's 422 is mapped to the provider it names.
+  async function savePolicy(api, policy, edits) {
+    const problem = policyProblem(policy, edits);
+    if (problem !== "") return {ok: false, policy, errors: {"": problem}};
+    try {
+      const answer = await api.put(POLICY_PATH, policyBody(policy, edits));
+      return {ok: true, policy: isObj(answer) ? answer : policyBody(policy, edits), errors: {}};
+    } catch (e) {
+      return {ok: false, policy, errors: policyErrors(e)};
+    }
+  }
+
+  /* ---------------------------------------------------------------- About group (welcome-settings, item 2) */
+  const ABOUT_NOTE = "Sutra Pro contacts the internet only when you press Check for updates. It downloads and installs nothing.";
+
+  // The words of an update answer: the server's own sentence (`said`), else built from the fields. A release link is a link only on github.com over https.
+  function updateWords(answer) {
+    if (!isObj(answer)) return "";
+    if (clean(answer.said) !== "") return clean(answer.said);
+    if (clean(answer.error) !== "") return clean(answer.error);
+    return answer.newer === true ? "You have " + clean(answer.current) + "; " + clean(answer.latest) + " is out." : "You have " + clean(answer.current) + ": up to date.";
+  }
+
+  function aboutHtml(info, update) {
+    const i = isObj(info) ? info : {};
+    const u = isObj(update) ? update : {step: "idle"};
+    const answer = isObj(u.answer) ? u.answer : null;
+    const newer = u.step === "ok" && answer !== null && answer.newer === true && !clean(answer.error);
+    const tone = u.step === "error" || (answer && clean(answer.error)) ? "error" : (newer ? "new" : u.step);
+    const line = u.step === "running" ? "Checking…" : (u.step === "error" ? clean(u.message) || "The check did not work." : (u.step === "ok" ? updateWords(answer) : ""));
+    const link = newer && /^https:\/\/github\.com\//.test(clean(answer.notes_url || answer.url))
+      ? '<p class="setdetail"><a class="sulink" href="' + esc(clean(answer.notes_url || answer.url)) + '" target="_blank" rel="noopener noreferrer">Release notes and download</a></p>' : "";
+    const how = newer && clean(answer.how) ? '<p class="setdetail">' + esc(clean(answer.how)) + "</p>" : "";
+    return '<section class="setgrp" data-group="about" aria-labelledby="set-about-h"><h3 id="set-about-h">' + GROUPS.about + "</h3>" +
+      '<p class="setnote">' + ABOUT_NOTE + "</p>" +
+      '<div class="setfields"><div class="setfield"><span class="setlabel">Version</span><span class="setvalue">' + esc(clean(i.version) || "unknown") + "</span></div>" +
+      '<div class="setfield"><span class="setlabel">Data folder</span><span class="setvalue setpathv">' + esc(clean(i.data_dir) || "unknown") + "</span></div></div>" +
+      '<div class="setacts"><button type="button" class="ghost" data-act="check-update"' + (u.step === "running" ? " disabled" : "") + ">Check for updates</button>" +
+      '<span class="settest" data-step="' + esc(tone) + '" role="status">' + esc(line) + "</span></div>" + link + how + "</section>";
+  }
+
+  // checkUpdate(api) -> {step: "ok"|"error", answer, message}. A POST (never a link, never on load); a 409 offline or any other refusal is its own sentence.
+  async function checkUpdate(api) {
+    try {
+      const answer = await api.post(UPDATE_PATH, {});
+      if (!isObj(answer)) return {step: "error", answer: null, message: "The app answered something unexpected."};
+      return {step: "ok", answer, message: ""};
+    } catch (e) {
+      return {step: "error", answer: null, message: clean(e && e.message) || "The check did not work."};
+    }
+  }
+
   /* ---------------------------------------------------------------- flows (the caller hands in the api) */
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -568,6 +761,7 @@
   const SettingsView = {
     engineHtml, engineBody, engineErrors, formProblems, connectorsHtml, signInState, appearanceHtml,
     testConnector, signIn, watchHealth, loadEngine, saveEngine, enginePath, testLine, kindOf, parseValue, setCliPath,
+    policyHtml, policyBody, policyProblem, policyErrors, loadPolicy, savePolicy, answering, aboutHtml, checkUpdate, updateWords,
     HEALTH_EVENTS, NOTE_LOCKED, NOTE_NEXT_RUN,
   };
   if (typeof module === "object" && module !== null && module.exports) module.exports = SettingsView;

@@ -69,6 +69,8 @@
     // gap attention: the Heads up lane, the age of each ask, the "Got it" marks of this browser, the tab title and the desktop notice
     heads: [], headsLoaded: false, needsAt: 0, seen: {}, fyiMore: false, attention: null,
     scroll: {parked: false, seenId: 0, pill: 0}, own: false, drafts: undefined,          // the reader's place and the box's draft (GAP-chat-comfort)
+    // welcome-settings: the default-model controls (policy and the models each provider lists), the About group (version, folder, the update answer)
+    policy: null, models: null, pol: {busy: false, saved: false, errors: {}}, info: null, update: {step: "idle"},
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -202,7 +204,7 @@
     }
   }
 
-  async function fetchHealth() { S.health = await api.get("/api/health"); paintConnectors(); }
+  async function fetchHealth() { S.health = await api.get("/api/health"); paintConnectors(); paintModels(); }
 
   const reloadMessages = single(() => fetchMessages(true));
   const refetchMessages = SutraEvents.coalesce(single(() => fetchMessages(false)), COALESCE_MS);
@@ -784,10 +786,53 @@
     ctx.paint($("set-engine"), SV().engineHtml(S.settings, {scope: S.scope, departments: S.departments, errors: S.errors, values: S.values, saved: S.saved, busy: S.saving}));
   }
 
+  function paintModels() {
+    ctx.paint($("set-models"), SV().policyHtml(S.policy, S.health, {models: S.models, errors: S.pol.errors, saved: S.pol.saved, busy: S.pol.busy}));
+  }
+  function paintAbout() { ctx.paint($("set-about"), SV().aboutHtml(S.info, S.update)); }
+
   function renderSettings() {
     paintAppearance();
     paintConnectors();
+    paintModels();
     paintEngine();
+    paintAbout();
+  }
+
+  // The Default model group (welcome-settings, item 3): one change is one read-modify-write of the routing policy (SettingsView.savePolicy).
+  async function loadPolicyState() {
+    try {
+      const got = await SV().loadPolicy(api);
+      S.policy = got.policy;
+      S.models = got.models;
+      S.pol = {busy: false, saved: false, errors: {}};
+    } catch (e) {
+      S.pol = {busy: false, saved: false, errors: {"": errorWords(e).text}};
+    }
+    paintModels();
+  }
+  async function changePolicy(edits) {
+    if (S.policy === null || S.pol.busy) return null;
+    S.pol = {busy: true, saved: false, errors: {}};
+    paintModels();
+    const out = await SV().savePolicy(api, S.policy, edits);
+    if (out.ok) S.policy = out.policy;
+    S.pol = {busy: false, saved: out.ok, errors: out.errors};
+    paintModels();
+    return out;
+  }
+
+  async function loadAbout() {
+    try { S.info = await api.get("/api/ops/info"); } catch (e) { S.info = {}; }
+    paintAbout();
+  }
+  async function checkForUpdates() {
+    if (S.update.step === "running") return null;
+    S.update = {step: "running"};
+    paintAbout();
+    S.update = await SV().checkUpdate(api);
+    paintAbout();
+    return S.update;
   }
 
   async function loadEngineSettings() {
@@ -805,6 +850,8 @@
   function openSettings(group) {
     renderSettings();
     if (S.settings === null) loadEngineSettings();
+    if (S.policy === null) loadPolicyState();
+    if (S.info === null) loadAbout();
     if (S.health === null) fetchHealth().catch(handleFetchError);
     if (group) {
       const el = $("pane-settings").querySelector('.setgrp[data-group="' + group.replace(/[^\w-]/g, "") + '"]');
@@ -881,6 +928,8 @@
     else if (act === "save-engine") saveEngine(S.scope, readEngineForm());
     else if (act === "set-path") setCliPath(b.dataset.provider, cliPathState(b.dataset.provider).value);
     else if (act === "clear-path") setCliPath(b.dataset.provider, null);
+    else if (act === "make-first") changePolicy({first: b.dataset.provider});
+    else if (act === "check-update") checkForUpdates();
   }
 
   /* ---------------------------------------------------------------- events */
@@ -948,7 +997,7 @@
     try { root.matchMedia("(prefers-color-scheme: light)").addEventListener("change", themeApply); } catch (e) { /* no matchMedia */ }
     BARWIDE.addEventListener("change", barInit);
     S.panel = root.NodePanel.mount($("nodepanel"), {getGraph: () => S.graph, navigate: url => root.location.assign(url)});
-    S.watch = SV().watchHealth(api, h => { S.health = h; paintConnectors(); }, () => {});
+    S.watch = SV().watchHealth(api, h => { S.health = h; paintConnectors(); paintModels(); }, () => {});
     if (root.HeadsUpView) S.seen = root.HeadsUpView.loadSeen(storage());
     if (root.ChatAttention) S.attention = protect("ChatAttention.create", () => root.ChatAttention.create({onOpen: openAttention})) || null;
     // a quiet team and the age of each ask move with time, not with events: read the lane again and redraw the strip every minute
@@ -1000,7 +1049,10 @@
       if (e.target && e.target.matches && e.target.matches("input[data-path]")) cliPathState(e.target.dataset.path).value = e.target.value;
     });
     $("pane-settings").addEventListener("change", e => {
-      if (e.target && e.target.matches && e.target.matches("select[data-scope]")) { S.scope = e.target.value; S.settings = null; S.errors = {}; loadEngineSettings(); }
+      const t = e.target;
+      if (t && t.matches && t.matches("select[data-scope]")) { S.scope = t.value; S.settings = null; S.errors = {}; loadEngineSettings(); }
+      else if (t && t.matches && t.matches("input[data-policy-on]")) changePolicy({enabled: {[t.dataset.policyOn]: t.checked}});
+      else if (t && t.matches && t.matches("select[data-policy-model]")) changePolicy({model: {[t.dataset.policyModel]: t.value}});
     });
     doc.querySelector(".stoggle").addEventListener("click", e => {
       const b = e.target.closest("[data-show]");
