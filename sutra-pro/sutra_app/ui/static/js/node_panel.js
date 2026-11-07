@@ -926,6 +926,10 @@
         target = Array.from(doc.querySelectorAll("[data-id]")).find(e => e.getAttribute("data-id") === opener.id) || null;
       }
       if (target && typeof target.focus === "function") target.focus();
+      if (inline) {                                // a closed pane leaves nothing behind: no second Chat tab or message box for a page to find by selector
+        host.innerHTML = "";
+        refs = null;
+      }
       if (onClose) {
         try { onClose(); } catch (e) { if (root.console) root.console.error("NodePanel: onClose failed", e); }
       }

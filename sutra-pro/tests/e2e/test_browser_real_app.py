@@ -94,10 +94,11 @@ def test_the_whole_first_day_walk_on_the_real_app(app, browser):
     # 2. send a brief: progress, chart_change and task cards, the chart marks "added", the graph draws the team
     browser.js("window.__sameDocument = true")
     browser.click(f'[data-brief="{BRIEF}"]')
-    present(browser, ".c-needs:not([data-answered])", timeout=40)                         # Identity's question arrives last: the task card and the others are before it
+    present(browser, ".c-teamchat[data-about=question]:not([data-answered])", timeout=40)    # Identity's question arrives last: the org chat only points at it (GAP3 dept-chats)
     assert texts(browser, "#sprog > div") == PROGRESS
     assert "Added the Web team" in texts(browser, ".c-chart .csum")
     assert texts(browser, ".c-task h2") == ["Your Web team is on it"] and texts(browser, ".c-task .ctitle")[0].startswith("Cafe page")
+    assert texts(browser, ".c-teamchat[data-about=started] .cteamlead") == ["Started Web:"]     # the line that says the team has its own chat
     assert [m["text"] for m in live.messages(ORG) if m["role"] == "user"] == [BRIEF]            # the write carried the real token: the server took it
     present(browser, '#pane-graph .wnode[data-id="web"]')
     browser.click('#rail [data-pane="chart"]')
@@ -142,13 +143,20 @@ def test_the_whole_first_day_walk_on_the_real_app(app, browser):
     browser.click("[data-npclose]")
     browser.wait_for("document.getElementById('nodepanel').hidden")
 
-    # 5. Identity's question card is answered in the card; the steps turn green in the SAME document from atom.updated + graph.updated, then the Done card
+    # 5. Identity's question is answered in the TEAM's own chat (the pointer in the org chat opens it); the steps turn green in the SAME document from
+    #    atom.updated + graph.updated, then the Done card
     assert browser.count("#pane-graph g.wnode.st-filed") == 0                                # nothing is filed while Identity waits for the owner
     mark = len(live.sse.snapshot())
-    browser.type(".c-needs .canswerbox", ANSWER)
-    browser.click('.c-needs [data-act="answer"]')
-    present(browser, ".c-needs[data-answered]")
-    assert texts(browser, ".c-needs .canswer") == ["Answered"]
+    browser.click(".c-teamchat[data-about=question] .chatchip")
+    browser.wait_for("!document.getElementById('teamchat').hidden && document.getElementById('npititle').textContent === 'Web'")
+    browser.wait_for("Array.from(document.querySelectorAll('#teamchat .nmsg')).some(e => e.textContent.includes('a few quick questions'))")   # the question is in the team's chat
+    present(browser, "#teamchat .nbox")
+    assert not any("a few quick questions" in t for t in texts(browser, "#smsgs .nmsg"))        # and not in the org chat
+    browser.type("#teamchat .nbox", ANSWER)
+    browser.click('#teamchat [data-act="send"]')
+    browser.wait_for("document.querySelector('.c-teamchat[data-about=question]').dataset.answered === 'true'")
+    browser.click("#teamchat [data-npclose]")                                               # back to the org chat for the Done card
+    browser.wait_for("document.getElementById('teamchat').hidden")
     answers = [m["text"] for m in live.messages(live.session_of("web")) if m["who"] == "user"]
     assert answers[-1] == ANSWER                                                             # to the department's session, never to the org chat
     present(browser, "#pane-graph g.wnode.st-filed", timeout=60)
