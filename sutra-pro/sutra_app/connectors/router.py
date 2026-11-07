@@ -52,6 +52,7 @@ from .schema import fits_native, schema_sha, to_json_schema
 from .budget import carry_chars
 from .discover import explain_missing
 from .transcript import render_carry_over
+from .independence import NOT_INDEPENDENT, Independence
 from .usage import Attempt, UsageIn, UsageSink, build_usage_row, load_session_state, new_request_id, save_session_state
 
 __all__ = [
@@ -250,6 +251,8 @@ class _Request(Hooks):
             usd_basis=turn.usd_basis if turn is not None else "none", seconds=record.seconds, cli_version=record.cli_version,
             billing=auth.billing if auth is not None else "unknown"))
         self.usd_spent += usd or 0.0
+        if record.ok:
+            self.router.independence.note(self.ctx, provider)
         self.router._count_today(provider, usage.total if usage is not None else 0, usd or 0.0)
         if record.code == "structured" and record.native_schema_sha:
             self.router._block_native(provider, record.native_schema_sha)
@@ -323,6 +326,7 @@ class Router:
         self._pins: dict[str, str] = {}
         self.choice_source: Optional[Callable[[str], Optional[str]]] = None      # session id -> the owner's persisted provider choice (ABS-8)
         self.egress: Optional[Any] = None                      # an `egress.Egress`, set by the factory (ABS-2); None = no scrub, no row
+        self.independence = Independence()                     # who built a run's work, so Audit can go to the other model (off unless the policy says so)
         self._today: dict[str, list] = {}                      # provider -> [date, calls, tokens, usd]
         self._background: list[threading.Thread] = []
 
@@ -415,6 +419,8 @@ class Router:
             order = [self._restrict]
             pinned = pinned if pinned == self._restrict else None
         avoid = set(req.ctx.avoid)
+        if self.policy.defaults.independent_audit:                  # GAP2 rules-notes: the checker is not the maker (soft: tried last)
+            avoid |= set(self.independence.avoid_for(req.ctx))
         if avoid:
             order = [p for p in order if p not in avoid] + [p for p in order if p in avoid]
         if pinned is not None and pinned in self._connectors:
@@ -487,6 +493,14 @@ class Router:
     def _may_fall_back(self, err: ConnectorError, resolved: Resolved) -> bool:
         return err.fallback_ok or (err.code == "invalid_json" and resolved.fallback_on_invalid_json)
 
+    def _independence_note(self, state: "_Request", provider: str, note: Optional[str]) -> Optional[str]:
+        """With independent audit on: when a call of Audit was answered by a model that built this run's work (the other one was not
+        available, or the team is pinned), the note says the audit was not independent. The note rides the usage row and J2's progress line."""
+        tag = state.ctx.tag
+        if not self.policy.defaults.independent_audit or tag.function != "audit" or provider not in self.independence.builders(tag.run_id):
+            return note
+        return f"{note}; {NOT_INDEPENDENT}" if note else NOT_INDEPENDENT
+
     def _note(self, failures: Sequence[tuple[str, ConnectorError]], answered_by: str) -> Optional[str]:
         if not failures:
             return None
@@ -521,7 +535,7 @@ class Router:
                         state.failures.append((provider, err))
                         break
                     raise
-                state.note = self._note(state.failures, provider)
+                state.note = self._independence_note(state, provider, self._note(state.failures, provider))
                 return result
         raise AssertionError("unreachable: the last provider returns or raises")       # pragma: no cover
 
