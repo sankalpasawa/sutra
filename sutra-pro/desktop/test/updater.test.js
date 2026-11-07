@@ -471,6 +471,22 @@ test('a file is hashed through one open handle, and a missing one is an error', 
   await assert.rejects(u.hashFile(path.join(dir, 'none')));
 });
 
+test('a staged file that is a link is refused, not followed to what it points at', { skip: process.platform === 'win32' && 'links need a privilege here' }, async () => {
+  const dir = tmp();
+  const real = path.join(dir, 'real.bin');
+  const link = path.join(dir, 'link.bin');
+  fs.writeFileSync(real, ASSET_BYTES);
+  fs.symlinkSync(real, link);
+  await assert.rejects(u.hashFile(link), (error) => error.code === 'ELOOP' || error.code === 'EMLINK' || error instanceof u.UpdateError);
+  const w = harness({ choices: [0] });                                         // a staged download that was swapped for a link to a file with the same bytes
+  fs.mkdirSync(path.dirname(w.staged), { recursive: true });
+  fs.symlinkSync(real, w.staged);
+  fs.writeFileSync(`${w.staged}.sha256`, `${sha(ASSET_BYTES)}  ${path.basename(w.staged)}\n`);
+  assert.equal((await w.updater.checkNow({ manual: true })).state, 'restarting');
+  assert.ok(w.logs.some((line) => /no longer checks out/.test(line)), 'the linked file was thrown away');
+  assert.equal(fs.lstatSync(w.staged).isSymbolicLink(), false, 'and a fresh download took its place');
+});
+
 test('only the newest two staged versions are kept', () => {
   const root = tmp();
   for (const v of ['0.2.1', '0.2.2', '0.3.0', '0.10.0', '0.9.0']) fs.mkdirSync(path.join(root, v));
