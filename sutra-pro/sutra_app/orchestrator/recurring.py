@@ -12,7 +12,9 @@ last one dealt with (`recurring.cursor_at`) is ONE run, and its row says how man
 missed slot.
 
 A due time is dealt with exactly once. Its row in `recurring_runs` is unique on (recurring_id, due_at) and is written in the same transaction
-as the task and the new cursor, so a restart, a second tick or a slow clock cannot start the same slot twice. What a due time becomes:
+as the task and the new cursor, so a restart, a second tick or a slow clock cannot start the same slot twice. A cursor that is later than the
+clock (the clock ran ahead, a catch-up moved the cursor, and the clock was corrected) is moved back to "now" by the next tick, so the schedule
+does not go silent for the length of the error; a due time in the one tick between the correction and that tick is not owed. What a due time becomes:
 
     the team is free            a task made through `TaskService.create_scheduled` (an ordinary queued task, titled "... (scheduled)", with a
                                 note in the team's chat), then `start_ready` as for any task: the caps, the one-live-task-per-team rule, the
@@ -337,7 +339,11 @@ class Recurring:
                 self._pause(tx, rec, "Paused: its schedule could not be read. Set it again.", now)
                 report.paused.append(rec_id)
                 return
-            latest, count = owed(schedule, rec["cursor_at"], now, self.tz)
+            cursor = rec["cursor_at"]
+            if cursor > now:                      # the clock ran ahead (a bad time sync) and was corrected: a cursor cannot be later than "now"
+                cursor = now
+                conn.execute("UPDATE recurring SET cursor_at = ?, updated_at = ? WHERE id = ?", (cursor, now, rec_id))
+            latest, count = owed(schedule, cursor, now, self.tz)
             if latest is None:
                 return
             if not self._team_active(conn, rec["dept_id"]):
@@ -348,9 +354,10 @@ class Recurring:
             trigger = "catch_up" if folded or now - latest > LATE_S else "schedule"
             busy = self._busy(conn, rec["dept_id"])
             if busy:
-                self._row(conn, rec_id, latest, now, trigger, "skipped", folded, busy)
+                written = self._row(conn, rec_id, latest, now, trigger, "skipped", folded, busy)
                 conn.execute("UPDATE recurring SET cursor_at = ?, updated_at = ? WHERE id = ?", (latest, now, rec_id))
-                report.skipped.append(rec_id)
+                if written is not None:             # a due time dealt with already (after a corrected clock) is not a new skip
+                    report.skipped.append(rec_id)
                 return
             reason = ""
             if folded:

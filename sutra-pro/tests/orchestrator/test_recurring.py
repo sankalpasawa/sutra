@@ -162,6 +162,42 @@ def test_two_restarts_add_no_second_row_for_the_same_due_time(tenv, rec):
     assert tenv.one("SELECT cursor_at FROM recurring WHERE id = ?", made.id) == at(2026, 11, 4, 9)
 
 
+# ---- a clock that ran ahead and was corrected -------------------------------------------------------------------------------------------
+
+def test_a_clock_that_ran_ahead_and_was_corrected_does_not_silence_the_schedule(tenv, rec):
+    """QA recurring-limits: a bad time sync a month ahead, one catch-up, then the clock is right again. The cursor must not stay in the future."""
+    made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 9, 8))
+    ((_, first),) = rec.tick(at(2026, 12, 9, 10)).started                                    # the clock is 30 days ahead: one catch-up
+    end(tenv, first, "done")
+    assert tenv.one("SELECT cursor_at FROM recurring WHERE id = ?", made.id) == at(2026, 12, 9, 9)
+    assert rec.tick(at(2026, 11, 9, 8, 30)).started == []                                    # corrected: nothing is due yet, and nothing is stuck
+    assert tenv.one("SELECT cursor_at FROM recurring WHERE id = ?", made.id) == at(2026, 11, 9, 8, 30)
+    for day in range(9, 13):                                                                 # the schedule fires on its days again
+        ((_, task),) = rec.tick(at(2026, 11, day, 9, 0, ) + 40).started
+        end(tenv, task, "done")
+    assert [r["due_at"] for r in rows_of(tenv, made.id)[1:]] == [at(2026, 11, day, 9) for day in range(9, 13)]
+    rec.clock.t = at(2026, 11, 12, 10)
+    assert rec.get(made.id).next_due_at == "2026-11-13T09:00:00Z"                            # the promise the list makes is the one the tick keeps
+
+
+def test_a_schedule_made_while_the_clock_was_ahead_fires_once_the_clock_is_right(tenv, rec):
+    made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 12, 9, 10))               # created on the wrong clock
+    assert rec.tick(at(2026, 11, 10, 8)).started == []                                       # the first tick on the right clock moves the cursor back
+    assert len(rec.tick(at(2026, 11, 10, 9, 0) + 30).started) == 1
+    assert rows_of(tenv, made.id)[0]["due_at"] == at(2026, 11, 10, 9)
+
+
+def test_an_hour_the_clock_ran_ahead_does_not_run_a_slot_twice_when_it_is_corrected(tenv, rec):
+    """The slot that fired on the early clock is still refused by its unique row, and a refused repeat is not reported as a skip."""
+    made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 9, 8))
+    ((_, first),) = rec.tick(at(2026, 11, 9, 10)).started                                    # the clock ran two hours ahead: 09:00 fires
+    assert rec.tick(at(2026, 11, 9, 8, 30)).started == []                                    # corrected back before 09:00
+    again = rec.tick(at(2026, 11, 9, 9, 0) + 30)                                             # the real 09:00: the team is still on its first task
+    assert (again.started, again.skipped) == ([], [])
+    end(tenv, first, "done")
+    assert len(rows_of(tenv, made.id)) == 1 and len(tasks_of(tenv)) == 1
+
+
 def test_the_catch_up_happens_when_the_app_starts_and_only_once(tenv, rec):
     made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 1, 10))
 
