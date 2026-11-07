@@ -544,3 +544,39 @@ test("QA P3: a turn the server lost, and a refused send, are told apart: only th
   assert.equal(ended, 1);
   assert.doesNotThrow(() => rigLive({}, {id: SID}, [], {onTurnEnd: "not a function"}).c.reconcile([]));          // a missing or odd hook is no hook
 });
+
+// ---- QA direct-chat P3: 'The app is not responding.' goes when the app answers again ------------------------------------------------------------------
+
+const down = () => Object.assign(new Error("The app is not responding."), {name: "ApiError", status: 0, code: "network"});
+
+test("QA P3: the note of a send that found the app down goes when the page reads the session again, a note of another kind stays", async () => {
+  let session = down();
+  const {c, changes} = rigLive({[DIRECT]: () => { throw down(); }}, () => session, []);
+  assert.deepEqual(await c.send("hello"), {ok: false, error: "The app is not responding."});
+  assert.equal(c.state().note, "The app is not responding.");
+  assert.equal(await c.resync(), false);                                            // the app is still down (the read fails): the note stays
+  assert.equal(c.state().note, "The app is not responding.");
+  session = {id: SID, direct_turn: null};                                           // the app is back and the page read it
+  const before = changes();
+  await c.resync();
+  assert.equal(c.state().note, "");
+  assert.ok(changes() > before);                                                    // and the page was told to repaint
+  // a refusal of another kind is the owner's to read until they act
+  const busy = rigLive({[DIRECT]: () => { throw Object.assign(new Error("This chat is already answering."), {name: "ApiError", status: 409, code: "busy"}); }}, {id: SID, direct_turn: null}, []);
+  await busy.c.send("hello");
+  await busy.c.resync();
+  assert.equal(busy.c.state().note, "This chat is already answering.");
+  const long = rigLive({}, {id: SID, direct_turn: null}, []);
+  await long.c.send("x".repeat(8001));
+  await long.c.resync();
+  assert.match(long.c.state().note, /Messages can be up to 8000 characters/);
+});
+
+test("QA P3: a note the owner has since replaced is not cleared by the page reading the session", async () => {
+  const {c} = rigLive({[DIRECT]: () => { throw down(); }}, {id: SID, direct_turn: null}, []);
+  await c.send("hello");
+  await c.send("");                                                                  // an empty line is refused first (and sets no note)
+  await c.send("x".repeat(8001));                                                    // a newer refusal replaces the 'not responding' note
+  await c.resync();
+  assert.match(c.state().note, /Messages can be up to 8000 characters/);
+});

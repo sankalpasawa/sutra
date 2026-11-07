@@ -24,7 +24,8 @@
          partial(data)                 a `chat.partial` of this chat adds to the streaming text (the ChatPill rules)
          resync()                      ask GET /api/chats/{sid} whether a direct turn answers: a turn this page does not know is shown with its Stop (a reload, a
                                        second tab); a turn this page showed that the server no longer runs (it died with the last process) is over. Async,
-                                       never rejects. The pages call it after they load and when the event stream says to read everything again.
+                                       never rejects. The pages call it after they load and when the event stream says to read everything again; the app answering also
+                                       clears the note a send put up because the app was down ("The app is not responding.").
          rejoin()                      the page shows this chat again after it was closed: the text streamed meanwhile is lost, so the row
                                        starts again from what comes next (the stored reply has all of it)
          reconcile(messages)           the turn ends when the reply that answers the owner's line (`turn` = its id) is in the list
@@ -202,6 +203,8 @@
     const readFile = typeof o.readFile === "function" ? o.readFile : defaultRead;
     const changed = () => { if (typeof o.onChange === "function") o.onChange(); };
     const ended = () => { if (typeof o.onTurnEnd === "function") o.onTurnEnd(); };
+    let downNote = "";                       // the note a transport failure ("The app is not responding.") put up: it goes when the page reads the session again
+    const failNote = (e, fallback) => { const words = asError(e, fallback); downNote = isObj(e) && e.code === "network" ? words : ""; return words; };
     const state = {mode: o.mode === "direct" ? "direct" : "team", files: [], note: "", turn: idle()};
     let seq = 0;
     let pastes = 0;
@@ -326,7 +329,7 @@
         return {ok: true, message_id: id};
       } catch (e) {
         state.turn = idle();
-        state.note = asError(e, "That did not work. Try again.");
+        state.note = failNote(e, "That did not work. Try again.");
         changed();
         return {ok: false, error: state.note};
       }
@@ -365,6 +368,11 @@
         running = isObj(session) && Number.isInteger(session.direct_turn) && session.direct_turn > 0 ? session.direct_turn : null;
       } catch (e) {
         return false;
+      }
+      if (downNote !== "" && state.note === downNote) {              // the app answered: what the failed send said about it is stale
+        state.note = "";
+        downNote = "";
+        changed();
       }
       const turn = state.turn;
       if (running === null) {
@@ -409,7 +417,7 @@
         return {ok: true, stopped: true};
       } catch (e) {
         state.turn.stopping = false;
-        state.note = asError(e, "The turn could not be stopped.");
+        state.note = failNote(e, "The turn could not be stopped.");
         changed();
         return {ok: false, error: state.note};
       }
