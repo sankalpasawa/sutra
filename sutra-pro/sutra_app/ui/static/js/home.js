@@ -66,7 +66,7 @@
     cc: undefined, session: null, messages: [], lastId: 0, pending: [], localSeq: 0, answers: {},
     departments: [], departmentsLoaded: false, needs: [], needsLoaded: false,
     graph: null, chart: null, changes: [],
-    health: null, settings: null, scope: "", errors: {}, saved: false, saving: false, conn: {test: {}, signin: null}, signer: null,
+    health: null, settings: null, scope: "", errors: {}, saved: false, saving: false, conn: {test: {}, signin: null, windows: typeof navigator !== "undefined" && /Windows/i.test(String(navigator.userAgent || ""))}, signer: null,
     pane: "graph", turn: {seen: false, phase: "", n: 0, active: false}, awaitGraph: false,
     banner: null, blocked: "", sending: false, live: "offline", theme: null, loaded: false,
     graphView: null, chartView: null, panel: null, stream: null, watch: null, values: null,

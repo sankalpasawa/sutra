@@ -171,6 +171,21 @@ test("a CLI that was not found gets an open Choose the file box; a found one has
   assert.equal(row(connectorsHtml(extra, {}), "zeta").includes("setpath"), false);           // only claude and codex have a file to choose
 });
 
+// QA firstrun-settings: the box said "/full/path/to/claude" and "In Terminal, which claude prints the full path" on Windows too.
+test("on Windows the box has a drive-letter placeholder, says where, not which, and does not promise the installers' folders", () => {
+  const health = clone(HEALTH);
+  health.connectors.claude.installed = false;
+  const win = row(connectorsHtml(health, {windows: true}), "claude");
+  assert.match(win, /placeholder="C:\\full\\path\\to\\claude\.exe"/);
+  assert.match(win, /<code>where claude<\/code> prints the full path/);
+  assert.equal(win.includes("which"), false);
+  assert.equal(win.includes("nvm"), false);
+  const mac = row(connectorsHtml(health, {windows: false}), "claude");
+  assert.match(mac, /placeholder="\/full\/path\/to\/claude"/);
+  assert.match(mac, /<code>which claude<\/code> prints the full path/);
+  assert.equal(row(connectorsHtml(health, {}), "claude"), mac);                                   // no flag, the Mac wording as before
+});
+
 test("the box keeps what was typed, disables itself while saving and shows the server's reason, escaped", () => {
   const health = clone(HEALTH);
   health.connectors.claude.installed = false;

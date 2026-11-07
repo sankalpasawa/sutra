@@ -392,14 +392,16 @@
     if (!CHOOSABLE.includes(name)) return "";
     const p = isObj(state) && isObj(state.path) && isObj(state.path[name]) ? state.path[name] : {step: "idle"};
     const id = "setpath-" + name;
+    const win = isObj(state) && state.windows === true;           // Windows has no folder search and no `which`: its own placeholder and hint
     const box = '<div class="setpath" data-provider="' + name + '"><label class="setlabel" for="' + id + '">' +
       (c.installed === false ? "Choose the file" : "The file to use") + '</label><input type="text" id="' + id + '" data-path="' + name +
-      '" spellcheck="false" autocomplete="off" maxlength="1024" placeholder="/full/path/to/' + name + '" value="' + esc(clean(p.value)) + '">' +
+      '" spellcheck="false" autocomplete="off" maxlength="1024" placeholder="' + (win ? "C:\\full\\path\\to\\" + name + ".exe" : "/full/path/to/" + name) + '" value="' + esc(clean(p.value)) + '">' +
       '<button type="button" class="ghost" data-act="set-path" data-provider="' + name + '"' + (p.step === "saving" ? " disabled" : "") + ">Use this file</button>" +
       (c.installed === false ? "" : '<button type="button" class="ghost" data-act="clear-path" data-provider="' + name + '"' + (p.step === "saving" ? " disabled" : "") +
         ">Find it again</button>") +
-      '<span class="sethint">Sutra looked on PATH and in the folders installers use (nvm, Volta, pnpm, mise, asdf, Homebrew). In Terminal, <code>which ' + name +
-      "</code> prints the full path.</span>" +
+      '<span class="sethint">' + (win ? "Sutra looked on PATH. In a terminal, <code>where " + name + "</code> prints the full path."
+        : "Sutra looked on PATH and in the folders installers use (nvm, Volta, pnpm, mise, asdf, Homebrew). In Terminal, <code>which " + name + "</code> prints the full path.") +
+      "</span>" +
       (p.step === "error" ? '<span class="seterr" role="alert">' + esc(clean(p.message) || "That file was refused.") + "</span>" : "") +
       (p.step === "ok" && clean(p.message) ? '<span class="settest" data-step="ok" role="status">' + esc(clean(p.message)) + "</span>" : "") + "</div>";
     if (c.installed === false) return box;
