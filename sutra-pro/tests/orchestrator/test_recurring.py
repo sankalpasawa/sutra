@@ -356,6 +356,42 @@ def test_a_failing_schedule_does_not_keep_the_others_from_running(tenv, rec, mon
     assert report.paused == [first.id] and [r for r, _ in report.started] == [second.id]
 
 
+MONTHLY = '{"every":"month","hour":9,"minute":0,"weekday":0}'            # a cadence this build does not have (a downgrade, a hand-edited file)
+
+
+def test_one_unreadable_schedule_does_not_hide_the_others_and_is_listed_as_paused_with_its_reason(tenv, rec):
+    """QA recurring-limits: one bad schedule_json made the whole list a 500, so the owner could neither see 'Set it again' nor remove the row."""
+    good = rec.create("web", "Good one", DAILY_9, now=at(2026, 11, 4, 8))
+    bad = rec.create("web", "Bad one", DAILY_9, now=at(2026, 11, 4, 8))
+    tenv.sql("UPDATE recurring SET schedule_json = ? WHERE id = ?", MONTHLY, bad.id)
+    listed = {r.id: r for r in rec.listing()}                                                # before the tick has paused it
+    assert set(listed) == {good.id, bad.id} and listed[good.id].enabled is True and listed[good.id].next_due_at == "2026-11-04T09:00:00Z"
+    one = listed[bad.id]
+    assert (one.enabled, one.schedule, one.next_due_at, one.never_fired_on_schedule) == (False, None, None, False)
+    assert one.paused_reason == "Paused: its schedule could not be read. Set it again." and one.text == "Bad one" and one.human
+    assert rec.get(bad.id).paused_reason == one.paused_reason
+    assert rec.tick(at(2026, 11, 4, 9, 1)).paused == [bad.id]                                # the tick pauses it and says so, as before
+    again = {r.id: r for r in rec.listing()}
+    assert again[bad.id].enabled is False and again[bad.id].paused_reason == one.paused_reason
+    assert again[good.id].last_run is not None and again[good.id].schedule == DAILY_9
+    rec.delete(bad.id)                                                                       # the owner can remove it
+    assert [r.id for r in rec.listing()] == [good.id]
+
+
+def test_an_unreadable_schedule_can_be_set_again_and_a_manual_run_of_it_says_so_instead_of_failing(tenv, rec):
+    made = rec.create("web", "Bad one", DAILY_9, now=at(2026, 11, 4, 8))
+    tenv.sql("UPDATE recurring SET schedule_json = ? WHERE id = ?", MONTHLY, made.id)
+    with pytest.raises(AppError) as refused:
+        rec.run_now(made.id)
+    assert refused.value.code == "validation" and "schedule could not be read" in refused.value.message and tasks_of(tenv) == []
+    assert rec.tick(at(2026, 11, 4, 9, 1)).paused == [made.id]
+    with pytest.raises(AppError) as still:                                                   # switching it on alone would only be paused again, with another note
+        rec.update(made.id, enabled=True)
+    assert still.value.code == "validation" and tenv.one("SELECT enabled FROM recurring WHERE id = ?", made.id) == 0
+    fixed = rec.update(made.id, schedule=WEEKDAYS_9, enabled=True, now=at(2026, 11, 4, 8, 5))
+    assert fixed.schedule == WEEKDAYS_9 and fixed.enabled and fixed.paused_reason == "" and fixed.next_due_at == "2026-11-04T09:00:00Z"
+
+
 def test_a_daily_time_in_a_zone_that_springs_forward_fires_once_that_day(tenv):
     zoneinfo = pytest.importorskip("zoneinfo")
     try:

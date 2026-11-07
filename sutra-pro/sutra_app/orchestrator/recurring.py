@@ -57,6 +57,7 @@ MAX_TEXT = 4000                  # the words of one standing task
 CRASH_LIMIT = 3                  # crashes in a row that pause a schedule
 _OPEN = ("starting", "running", "waiting_user", "queued", "blocked")
 _PAUSED = f"Paused after {CRASH_LIMIT} runs in a row ended with a problem. Look at the team's last attempts, then switch it on again."
+_UNREADABLE = "Paused: its schedule could not be read. Set it again."
 _RESULT = {"queued": "working", "blocked": "working", "starting": "working", "running": "working", "waiting_user": "waiting",
            "done": "done", "done_with_open_items": "open_items", "crashed": "crashed", "stopped": "stopped", "cancelled": "stopped"}
 Result = Literal["skipped", "working", "waiting", "done", "open_items", "crashed", "stopped"]
@@ -81,7 +82,7 @@ class RecurringOut(Value):
     dept_id: str
     dept_name: Name
     text: Annotated[str, StringConstraints(max_length=MAX_TEXT)]
-    schedule: Schedule
+    schedule: Schedule | None = None                                     # None only for a stored schedule this build cannot read (listed as paused)
     human: str
     enabled: bool
     paused_reason: Annotated[str, StringConstraints(max_length=300)] = ""      # empty on a schedule the owner paused; the app's words otherwise
@@ -144,15 +145,24 @@ class Recurring:
     _RUN_SQL = ("SELECT r.id, r.due_at, r.at, r.trigger, r.outcome, r.task_id, r.folded, r.reason, t.status FROM recurring_runs r"
                 " LEFT JOIN tasks t ON t.id = r.task_id")
 
+    @staticmethod
+    def _read(raw: str) -> Schedule | None:
+        """The stored schedule, or None when it does not read (a build with another cadence wrote it, or the file was edited by hand)."""
+        try:
+            return Schedule.model_validate_json(raw)
+        except ValidationError:
+            return None
+
     def _out(self, conn: sqlite3.Connection, r: sqlite3.Row, now: int) -> RecurringOut:
-        schedule = Schedule.model_validate_json(r["schedule_json"])
+        schedule = self._read(r["schedule_json"])
         last = conn.execute(f"{self._RUN_SQL} WHERE r.recurring_id = ? ORDER BY r.id DESC LIMIT 1", (r["id"],)).fetchone()
         kinds = {x[0] for x in conn.execute("SELECT DISTINCT trigger FROM recurring_runs WHERE recurring_id = ?", (r["id"],))}
-        enabled = bool(r["enabled"])
+        enabled = bool(r["enabled"]) and schedule is not None         # a schedule that does not read will not fire: the tick pauses it, the list says so now
         return RecurringOut(
             id=r["id"], dept_id=r["dept_id"], dept_name=clip(r["dept_name"] or r["dept_id"], 80), text=r["text"], schedule=schedule,
-            human=human(schedule), enabled=enabled, paused_reason=r["paused_reason"],
-            next_due_at=iso_z(next_due(schedule, now, self.tz)) if enabled else None, created_at=iso_z(r["created_at"]),
+            human=human(schedule) if schedule is not None else "Its schedule could not be read", enabled=enabled,
+            paused_reason=r["paused_reason"] if schedule is not None else _UNREADABLE,
+            next_due_at=iso_z(next_due(schedule, now, self.tz)) if enabled and schedule is not None else None, created_at=iso_z(r["created_at"]),
             last_run=self._run_out(last) if last is not None else None,
             never_fired_on_schedule=enabled and "manual" in kinds and not (kinds & {"schedule", "catch_up"}))
 
@@ -220,6 +230,8 @@ class Recurring:
             if schedule is not None and schedule.model_dump_json() != found["schedule_json"]:
                 sets.update(schedule_json=schedule.model_dump_json(), cursor_at=moment)
             if enabled is not None and bool(found["enabled"]) != enabled:
+                if enabled and schedule is None and self._read(found["schedule_json"]) is None:      # switching on would only be paused again, with another note
+                    raise validation_error([violation("schedule", "unreadable", "set the schedule again")], "Its schedule could not be read. Set it again")
                 sets.update(enabled=int(enabled), paused_reason="")
                 if enabled:
                     top = tx.conn.execute("SELECT coalesce(max(id), 0) FROM recurring_runs WHERE recurring_id = ?", (rec_id,)).fetchone()[0]
@@ -272,6 +284,9 @@ class Recurring:
                 raise NotFound("that schedule")
             if not self._team_active(tx.conn, rec["dept_id"]):
                 raise NotFound("that team")
+            schedule = self._read(rec["schedule_json"])
+            if schedule is None:
+                raise validation_error([violation("schedule", "unreadable", "set the schedule again")], "Its schedule could not be read. Set it again")
             busy = self._busy(tx.conn, rec["dept_id"])
             if busy:
                 raise Busy(busy[0].upper() + busy[1:] + ". Try again when it is free")
@@ -281,7 +296,7 @@ class Recurring:
             if made.rowcount == 0:
                 raise Busy("It was started a moment ago")
             row_id = made.lastrowid
-            task_id = self._start(tx, rec, Schedule.model_validate_json(rec["schedule_json"]), "started by you, now")
+            task_id = self._start(tx, rec, schedule, "started by you, now")
             tx.conn.execute("UPDATE recurring_runs SET task_id = ? WHERE id = ?", (task_id, row_id))
             out = self._run_out(tx.conn.execute(f"{self._RUN_SQL} WHERE r.id = ?", (row_id,)).fetchone())
         return out
@@ -333,10 +348,9 @@ class Recurring:
                 self._pause(tx, rec, _PAUSED, now)
                 report.paused.append(rec_id)
                 return
-            try:
-                schedule = Schedule.model_validate_json(rec["schedule_json"])
-            except ValidationError:
-                self._pause(tx, rec, "Paused: its schedule could not be read. Set it again.", now)
+            schedule = self._read(rec["schedule_json"])
+            if schedule is None:
+                self._pause(tx, rec, _UNREADABLE, now)
                 report.paused.append(rec_id)
                 return
             cursor = rec["cursor_at"]
@@ -385,11 +399,8 @@ class Recurring:
 
     def _pause(self, tx: object, rec: sqlite3.Row, reason: str, now: int) -> None:
         tx.conn.execute("UPDATE recurring SET enabled = 0, paused_reason = ?, updated_at = ? WHERE id = ?", (reason, now, rec["id"]))
-        try:
-            schedule = Schedule.model_validate_json(rec["schedule_json"])
-            what = human(schedule)
-        except ValidationError:
-            what = "A scheduled task"
+        schedule = self._read(rec["schedule_json"])
+        what = human(schedule) if schedule is not None else "A scheduled task"
         try:
             self.tasks.post_note(tx, rec["dept_id"], f"{what}: {reason}")
         except AppError:
