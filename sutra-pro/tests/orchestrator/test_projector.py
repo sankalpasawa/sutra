@@ -149,7 +149,7 @@ def test_say_routes_each_voice_to_its_session(tenv):
     assert all(m.role != "user" for m in dept_messages(tenv))                       # the owner's own lines are never in events.jsonl
 
 
-def test_a_question_makes_the_team_wait_and_posts_the_needs_you_card(tenv):
+def test_a_question_makes_the_team_wait_and_points_the_org_chat_at_the_teams_own_chat(tenv):
     task = tenv.started()
     result = go(tenv, task, ev("say", id=1, who="identity", text="Name?\nOption 1: Sweet Bean\nOption 2: Other", to_user=True, act="ASK_REQUESTER", pause="info", next="user"))
     assert result.freed_slot
@@ -159,9 +159,11 @@ def test_a_question_makes_the_team_wait_and_posts_the_needs_you_card(tenv):
     assert tenv.graph.get("web").state == "waiting_on_you" and tenv.graph.get("root").state == "waiting_on_you"
     question = dept_messages(tenv)[-1]
     assert (question.kind, question.pause) == ("question", "info")
-    card = [m for m in tenv.chats.messages("cs_org") if m.card is not None][-1].card
-    assert (card.type, card.dept_id, card.dept_name, card.question_message_id) == ("needs_you", "web", "Web", question.id)
-    assert card.options == ["Sweet Bean", "Other"]
+    org = [m for m in tenv.chats.messages("cs_org") if m.card is not None][-1]
+    card = org.card
+    assert (card.type, card.node_id, card.name, card.kind, card.about, card.question_message_id) == ("team_chat", "web", "Web", "department", "question", question.id)
+    assert card.session_id == question.session_id and card.session_id != "cs_org"       # it points at the team's own chat, where the question is
+    assert "Sweet Bean" not in org.model_dump_json() and "Name?" not in org.model_dump_json()     # and carries none of the team's words
     assert [n.message_id for n in tenv.chats.needs_you()] == [question.id]
     assert "needs_you.changed" in [e.type for e in tenv.env.events.events]
 

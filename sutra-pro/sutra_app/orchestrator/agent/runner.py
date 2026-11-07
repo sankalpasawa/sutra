@@ -545,6 +545,7 @@ class TurnRunner:
         if applied is not None and applied.result.status == "applied" and plan.change is not None and plan.change.model.kind != "reuse":
             cards.append(self._chart_card(plan.change, applied))
         conn = self.db.conn()
+        cards.extend(self._started_cards(conn, applied))
         for task_id in task_ids:
             task = self.tasks.store.out_in(conn, task_id)
             cards.append({"type": "task", "task_id": task.id, "dept_id": task.dept_id, "dept_name": task.dept_name, "title": task.title,
@@ -552,6 +553,24 @@ class TurnRunner:
         self._write_cards(mid, sentences, cards, error=failure is not None)
         if failure is None:
             self._suggest_packs(applied)
+
+    @staticmethod
+    def _started_cards(conn: sqlite3.Connection, applied: _Applied | None) -> list[dict]:
+        """One short pointer per department or division this turn made: "Started <name>: open its chat" (GAP3 dept-chats). The team has its own
+        chat session since its node was made; the org chat only says so and links to it, it never holds the team's lines."""
+        if applied is None or applied.result.status != "applied":
+            return []
+        out: list[dict] = []
+        for node_id in applied.result.added:
+            node = applied.after.node(node_id)
+            if node is None or node.kind not in ("department", "division"):
+                continue
+            found = conn.execute("SELECT chat_session_id FROM graph_nodes WHERE id = ?", (node_id,)).fetchone()
+            if found is None or not found["chat_session_id"]:
+                continue
+            out.append({"type": "team_chat", "node_id": node_id, "name": node.name, "kind": node.kind, "session_id": found["chat_session_id"],
+                        "about": "started"})
+        return out
 
     def _suggest_packs(self, applied: _Applied | None) -> None:
         """After a team was added: one choice card (code only, no model prose) for each added team whose name and purpose fit a practice pick,

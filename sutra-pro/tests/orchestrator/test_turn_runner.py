@@ -115,7 +115,7 @@ def test_an_add_request_makes_the_team_and_says_so_in_a_template(renv):
                         assignments(draft("a1", "cafe", brief=SECRET_SENTENCE)))
     accepted = renv.say("Plan my coffee shop launch")
     assert renv.connector.calls and [c.step for c in renv.connector.calls] == ["decide", "change", "assign"]
-    assert renv.sutra()[-3:] == [("text", "I set up a Cafe team and gave it your request."), ("card", "chart_change"), ("card", "task")]
+    assert renv.sutra()[-4:] == [("text", "I set up a Cafe team and gave it your request."), ("card", "chart_change"), ("card", "team_chat"), ("card", "task")]
     card = renv.cards("chart_change")[-1]
     assert card.decision == "add" and [(a.id, a.name, a.kind) for a in card.added] == [("cafe", "Cafe", "department")] and not card.pending
     assert renv.one("SELECT count(*) FROM departments WHERE id = 'cafe'") == 1 and renv.tasks_of(f"req-{accepted.message_id}")[0]["dept_id"] == "cafe"
@@ -253,8 +253,11 @@ def test_a_new_division_with_work_for_it(renv):
     first = renv.say("Start a blog")
     [task] = renv.tasks_of(f"req-{first.message_id}")
     assert task["scope_node_id"] == "blog"
-    assert renv.sutra()[-3:] == [("text", "I set up a Blog team and gave it your request. I gave this to the Web team."),
-                                 ("card", "chart_change"), ("card", "task")]
+    assert renv.sutra()[-4:] == [("text", "I set up a Blog team and gave it your request. I gave this to the Web team."),
+                                 ("card", "chart_change"), ("card", "team_chat"), ("card", "task")]
+    pointer = renv.cards("team_chat")[-1]                          # a division has its own chat session too, and the card points at it
+    assert (pointer.node_id, pointer.kind, pointer.name) == ("blog", "division", "Blog")
+    assert pointer.session_id == renv.one("SELECT chat_session_id FROM graph_nodes WHERE id = 'blog'") != renv.one("SELECT chat_session_id FROM graph_nodes WHERE id = 'web'")
 
 
 # ============================================ approvals =======================================================================
