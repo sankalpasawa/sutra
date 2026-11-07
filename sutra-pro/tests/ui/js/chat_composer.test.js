@@ -513,3 +513,34 @@ test("QA bug 4: Stop on a turn the server does not run ends the page's turn; Sto
   assert.equal(live.c.state().turn.active, true);                                    // the turn is about to start or to be stored: the old rule
   assert.equal(live.c.state().turn.stopping, false);
 });
+
+// ---- QA direct-chat P3: the provider pill is read again when a turn ends ------------------------------------------------------------------------------
+
+test("QA P3: the page is told when a turn ends, so the provider pill can be read again (the turn may have switched the chat to the other model)", async () => {
+  let ended = 0;
+  const {c} = rigLive({[DIRECT]: () => ({message_id: 3})}, {id: SID, direct_turn: 3}, [], {onTurnEnd: () => { ended += 1; }});
+  await c.send("hello");
+  assert.equal(ended, 0);                                                           // sending is not the end
+  c.partial({session_id: SID, message_id: 3, delta: "hi"});
+  assert.equal(ended, 0);
+  assert.equal(c.reconcile([{id: 4, role: "agent", kind: "text", turn: 2}]), false);          // another line's reply is not this turn's
+  assert.equal(ended, 0);
+  assert.equal(c.reconcile([{id: 4, role: "agent", kind: "text", turn: 3}]), true);           // the stored reply ends it
+  assert.equal(ended, 1);
+  assert.equal(c.reconcile([{id: 4, role: "agent", kind: "text", turn: 3}]), false);          // once
+  assert.equal(ended, 1);
+});
+
+test("QA P3: a turn the server lost, and a refused send, are told apart: only the lost turn (it ran, then ended) asks for the pill again", async () => {
+  let session = {id: SID, direct_turn: 5};
+  let ended = 0;
+  const {c} = rigLive({[DIRECT]: () => ({message_id: 5})}, () => session, [], {onTurnEnd: () => { ended += 1; }});
+  await c.send("crash me");
+  session = {id: SID, direct_turn: null};
+  assert.equal(await c.resync(), true);
+  assert.equal(ended, 1);
+  const refused = rigLive({[DIRECT]: () => { throw Object.assign(new Error("no"), {status: 409}); }}, {id: SID, direct_turn: null}, [], {onTurnEnd: () => { ended += 1; }});
+  assert.equal((await refused.c.send("x")).ok, false);                              // nothing ran: the pill cannot have changed
+  assert.equal(ended, 1);
+  assert.doesNotThrow(() => rigLive({}, {id: SID}, [], {onTurnEnd: "not a function"}).c.reconcile([]));          // a missing or odd hook is no hook
+});

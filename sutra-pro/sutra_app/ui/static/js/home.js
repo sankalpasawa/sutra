@@ -361,6 +361,14 @@
     el.hidden = html === "";
   }
 
+  // A turn that ended may have moved the chat to the other model (the router switches on a failure): read the pill again, keeping what it shows until the answer comes.
+  async function rereadPill() {
+    let fresh = null;
+    try { fresh = await api.get("/api/chats/" + ORG + "/providers"); } catch (e) { fresh = null; }
+    if (fresh) S.pillData = fresh;
+    return renderPill();
+  }
+
   function onPillClick(e) {
     const b = e.target.closest("button[data-act=choose-provider]");
     if (!b || !root.ChatPill) return;
@@ -384,7 +392,7 @@
   // The composer of the direct chat (ABS-15). "Plan with Sutra" is the staged path as it was; "Ask directly" is POST /direct on the org chat (D115): the
   // chosen model answers, streamed, with attachments and a Stop. The mode is the owner's, per page load.
   function composer() {
-    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", onChange: () => { renderBar(); renderComposer(); }}) : null;
+    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", onChange: () => { renderBar(); renderComposer(); }, onTurnEnd: rereadPill}) : null;
     return S.cc;
   }
   const directOn = () => { const c = composer(); return c !== null && c.state().mode === "direct"; };

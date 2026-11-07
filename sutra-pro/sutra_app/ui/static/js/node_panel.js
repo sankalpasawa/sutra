@@ -399,7 +399,8 @@
         let c = composers.get(sid);              // the same chat opened again: its mode, its files and a running turn (with Stop) are still there
         const again = c !== undefined;
         if (!again) {
-          c = CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => { if (st && chatRefs) { paintComposer(); paintBar(); } }});
+          c = CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => { if (st && chatRefs) { paintComposer(); paintBar(); } },
+                         onTurnEnd: () => { if (st && st.sid === sid && chatRefs) { st.pillSid = ""; paintPill(); } }});          // the turn may have moved the chat to the other model: read the pill again
           composers.set(sid, c);
         }
         st.cc = {sid, c};                        // set first: rejoin and reconcile repaint, and the repaint asks for this composer again

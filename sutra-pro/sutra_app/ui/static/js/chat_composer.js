@@ -5,7 +5,9 @@
    that, for the node panel and for Home. Strings in, strings out, plus ONE small controller that owns the state and takes everything it touches
    (the api, the file reader, the repaint) as an argument, so node tests drive it without a page. Every word from the wire is escaped.
 
-     create({api, sid, readFile, onChange, mode, objectUrl})   the controller (objectUrl {create, revoke}: the page's URL by default):
+     create({api, sid, readFile, onChange, onTurnEnd, mode, objectUrl})   the controller (objectUrl {create, revoke}: the page's URL by default; onTurnEnd: called
+                                       once when a turn that ran is over, by its stored reply or because the server lost it, so the page can read the provider
+                                       pill again: a turn may have moved the chat to the other model):
          state()                       {mode, files, note, turn: {active, stopping, text, messageId}}
          setMode("team" | "direct")    where Send goes (the panel keeps the team's plain message route as it was)
          addFiles(files, {pasted})     check (ChatSearch.checkFile), read, upload to POST /api/chats/{sid}/attachments; the chips show each one, an
@@ -199,6 +201,7 @@
     const sid = clean(o.sid);
     const readFile = typeof o.readFile === "function" ? o.readFile : defaultRead;
     const changed = () => { if (typeof o.onChange === "function") o.onChange(); };
+    const ended = () => { if (typeof o.onTurnEnd === "function") o.onTurnEnd(); };
     const state = {mode: o.mode === "direct" ? "direct" : "team", files: [], note: "", turn: idle()};
     let seq = 0;
     let pastes = 0;
@@ -368,6 +371,7 @@
         if (!turn.active || known === null || turn.messageId !== known) return false;
         state.turn = idle();
         changed();
+        ended();
         return true;
       }
       if (turn.active && (turn.messageId === null || turn.messageId === running)) return false;
@@ -431,6 +435,7 @@
       if (!done) return false;
       state.turn = idle();
       changed();
+      ended();
       return true;
     }
 
