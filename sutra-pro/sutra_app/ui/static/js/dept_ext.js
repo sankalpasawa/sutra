@@ -167,6 +167,21 @@
     return true;
   }
 
+  /* ---- the model picker under the chat pill (model_pick.js, gap package welcome-settings): J2's page is not edited, so its script is added from here;
+     chat_pill.js draws it when the script is there and the pill is as it was when it is not */
+  function pickers() {
+    const d = doc();
+    if (!d || !d.head) return false;
+    for (const name of ["model_pick", "tab_heal"]) {
+      if (d.getElementById(name + "-js")) continue;
+      const tag = d.createElement("script");
+      tag.id = name + "-js";
+      tag.src = "/ui/js/" + name + ".js";
+      d.head.appendChild(tag);
+    }
+    return true;
+  }
+
   function openNode(node) {
     const panel = drawers();
     if (!panel || !isObj(node) || clean(node.id) === "") return;
@@ -326,6 +341,7 @@
     chip();
     title();
     drawers();
+    pickers();
     attention();
     const d = doc();
     if (d && typeof d.addEventListener === "function") {

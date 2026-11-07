@@ -344,6 +344,19 @@
     api.put(req.path, req.body).then(() => { S.pillData = undefined; return renderPill(); }, err => showBanner({text: clean(err && err.message) || "That model cannot answer right now.", settings: false}));
   }
 
+  // The model list and the effort under the pill (model_pick.js): one select changed is one PUT /choice, then the pill is read again.
+  function onPillChange(e) {
+    const t = e.target && e.target.closest ? e.target.closest("select[data-act]") : null;
+    if (!t || !root.ModelPick) return;
+    const req = root.ModelPick.selectRequest(ORG, providersOf(), t.dataset.act, t.dataset.provider, t.value);
+    if (!req) { S.pillData = undefined; renderPill(); return; }
+    api.put(req.path, req.body).then(() => { S.pillData = undefined; return renderPill(); }, err => {
+      S.pillData = undefined;
+      renderPill();
+      showBanner({text: clean(err && err.message) || "That model cannot be used right now.", settings: false});
+    });
+  }
+
   // The composer of the direct chat (ABS-15). "Plan with Sutra" is the staged path as it was; "Ask directly" is POST /direct on the org chat (D115): the
   // chosen model answers, streamed, with attachments and a Stop. The mode is the owner's, per page load.
   function composer() {
@@ -955,7 +968,7 @@
 
   function wire() {
     $("smsgs").addEventListener("click", onChatClick);
-    if ($("spill")) $("spill").addEventListener("click", onPillClick);
+    if ($("spill")) { $("spill").addEventListener("click", onPillClick); $("spill").addEventListener("change", onPillChange); }
     $("ssend").addEventListener("click", () => ($("ssend").dataset.act === "composer-stop" ? stopDirect() : send($("sbox").value)));
     $("sbar").addEventListener("click", e => {
       const b = e.target.closest("[data-act]");

@@ -512,6 +512,21 @@
       });
     }
 
+    // The model list and the effort under the pill (model_pick.js): one select changed is one PUT /choice, then the pill is read again.
+    function changePick(t) {
+      const MP = root.ModelPick;
+      const sid = pillOwner();
+      if (!MP || !sid) return;
+      const req = MP.selectRequest(sid, pillData().providers, t.dataset.act, t.dataset.provider, t.value);
+      if (!req) { st.pillSid = ""; st.pill = null; paintChat(); return; }
+      settle(api().put(req.path, req.body)).then(r => {
+        if (!st || st.sid !== sid) return;
+        st.pillSid = ""; st.pill = null;
+        st.banner = r.error ? (clean(r.error.message) || "That model cannot be used right now.") : "";
+        paintChat();
+      });
+    }
+
     function paintChat() {
       if (!st || st.tab !== "chat" || !chatRefs) return;
       const gap = st.loading ? "Loading\u2026" : (st.nodeGone || st.chatNote);
@@ -1083,6 +1098,7 @@
     host.addEventListener("click", onClick);
     host.addEventListener("change", e => {
       const t = e.target;
+      if (st && t && t.dataset && (t.dataset.act === "choose-model" || t.dataset.act === "choose-effort")) { changePick(t); return; }
       const c = st && t && t.classList && t.classList.contains("ccinput") ? composerOf() : null;
       if (!c) return;
       c.addFiles(t.files);
