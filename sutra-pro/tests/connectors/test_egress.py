@@ -76,6 +76,39 @@ def test_a_long_text_is_scanned_in_bounded_time():
     assert time.perf_counter() - t < 5
 
 
+@pytest.mark.parametrize("name,text", [
+    ("many colons and no @ after a database scheme", "postgres://" + ":" * 60_000),
+    ("a database scheme repeated", "postgres://a:" * 5_000),
+    ("a bare token= repeated", "token=" * 10_000),
+    ("a bare secret: repeated", "secret:" * 8_000),
+    ("eyJ repeated with no dot", "eyJ" * 20_000),
+])
+def test_no_shape_rescans_a_long_run_from_every_start(name, text):
+    """QA: `postgres://` and 20 000 colons took 2.3 s (60 000 took 21 s) because `[^\\s/@]*:[^\\s]*@` is quadratic when there is no `@`. Each of these
+    inputs used to cost seconds; now every shape is linear, so the whole table runs in a fraction of a second."""
+    t = time.perf_counter()
+    scan(text, replace=True)
+    assert time.perf_counter() - t < 2, name
+
+
+@pytest.mark.parametrize("text,kept,gone", [
+    ("postgres://user:hunter2hunter2@host/db", "postgres://[redacted:db-uri-credentials]host/db", "hunter2"),
+    ("postgres://a:b:c@host:5432/db", "postgres://[redacted:db-uri-credentials]host:5432/db", "a:b:c"),
+    ("mysql://root:p@ss@word@db.example/app", "mysql://[redacted:db-uri-credentials]db.example/app", "p@ss"),
+    ("redis://:onlypassword@cache:6379", "redis://[redacted:db-uri-credentials]cache:6379", "onlypassword"),
+    ("see postgres://host/db and mongodb://host", "see postgres://host/db and mongodb://host", None),
+])
+def test_the_linear_db_uri_shape_matches_what_the_old_one_did(text, kept, gone):
+    out, _ = scan(text, replace=True)
+    assert out == kept and (gone is None or gone not in out)
+
+
+def test_a_jwt_after_a_label_or_a_header_is_still_found():
+    jwt = SAMPLES["jwt"]
+    for text in (f"token={jwt}", f"Authorization: Bearer {jwt}", f"(jwt:{jwt})", f"\n{jwt}\n"):
+        assert jwt not in scan(text, replace=True)[0], text
+
+
 def test_an_unwritable_log_never_stops_the_call(tmp_path):
     (tmp_path / "blocker").write_text("x")
     e = Egress(tmp_path / "blocker" / "egress.jsonl")

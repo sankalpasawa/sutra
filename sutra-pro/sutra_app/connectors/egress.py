@@ -41,7 +41,7 @@ SHAPES: list[tuple[str, "re.Pattern[str]", bool]] = [        # (name, pattern, k
     ("slack-token", re.compile(r"xox[abprs]-[A-Za-z0-9-]{10,}"), False),
     ("aws-key-id", re.compile(r"(?<![A-Z0-9])(?:AKIA|ASIA)[0-9A-Z]{16}"), False),           # AKIA long-lived, ASIA temporary (STS)
     ("bearer", re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]{16,}"), False),
-    ("jwt", re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), False),
+    ("jwt", re.compile(r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), False),   # starts at the head of a run: `eyJeyJ...` is one start
     ("pem-private-key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----" + _PEM_BODY + r"-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----", re.DOTALL), False),
     ("stripe-key", re.compile(r"(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}"), False),
     ("slack-webhook", re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/_-]{10,}"), False),
@@ -53,12 +53,15 @@ SHAPES: list[tuple[str, "re.Pattern[str]", bool]] = [        # (name, pattern, k
     ("sendgrid-key", re.compile(_NOT_PART_OF_A_WORD + r"SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"), False),
     # `Basic <base64 of user:password>`: the word "basic" is common, so the value must look like base64 (a digit, + or /, or = padding)
     ("basic-auth", re.compile(r"\b[Bb]asic\s+(?:(?=[A-Za-z0-9+/]*[0-9+/])[A-Za-z0-9+/]{16,}={0,2}|[A-Za-z0-9+/]{16,}={1,2})"), False),
-    ("db-uri-credentials", re.compile(r"(?i)\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://)[^\s/@]*:[^\s]*@(?=[^\s@/]+)"), True),
+    # `scheme://user:password@host`: the user stops at its first colon and both parts are bounded, so many colons and no `@` cost a fixed amount
+    # per `scheme://` (the old `[^\s/@]*:[^\s]*@` took 2.3 s for 20 000 colons)
+    ("db-uri-credentials", re.compile(r"(?i)\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://)[^\s/@:]{0,256}:[^\s]{0,1024}@(?=[^\s@/]+)"), True),
     ("private-key-env", re.compile(
         r"(?i)" + _NOT_PART_OF_A_WORD + r"((?:api[_-]?key|secret[_-]?(?:access[_-]?)?key|client[_-]?secret|(?:access|auth|refresh)[_-]?token"
         r"|private[_-]?key|password|passwd|passphrase)" + _AFTER_NAME + r")" + _VALUE), True),
-    # a bare `token` or `secret` is also an ordinary word: its value must hold a digit, as a real token does (`token: refresh it daily` stays)
-    ("private-key-env", re.compile(r"(?i)" + _NOT_PART_OF_A_WORD + r"((?:token|secret)" + _AFTER_NAME + r")(?=['\"]?[A-Za-z0-9._~\-/+!@#$%^&*=:?]*[0-9])" + _VALUE), True),
+    # a bare `token` or `secret` is also an ordinary word: its value must hold a digit, as a real token does (`token: refresh it daily` stays);
+    # the digit is looked for in the first 256 characters only, so `token=token=token=...` is not rescanned to its end from every `token`
+    ("private-key-env", re.compile(r"(?i)" + _NOT_PART_OF_A_WORD + r"((?:token|secret)" + _AFTER_NAME + r")(?=['\"]?[A-Za-z0-9._~\-/+!@#$%^&*=:?]{0,256}[0-9])" + _VALUE), True),
 ]
 
 
