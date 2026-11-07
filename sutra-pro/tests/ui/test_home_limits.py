@@ -88,6 +88,40 @@ def test_the_limits_group_saves_a_limit_clears_it_and_refuses_a_bad_amount_witho
     assert console_errors(browser) == []
 
 
+def status_of(browser, group):
+    return browser.js(f"document.querySelector('#set-{group} .setstatus').textContent")
+
+
+@browser_only
+def test_saved_goes_as_soon_as_a_field_of_its_group_is_edited_again(browser, fake):
+    """QA firstrun-settings: "Saved." stayed on screen beside a new value that the server did not have (Limits, Notifications and Engine; a group is not
+    repainted while the owner types in it, so the line has to be cleared in place)."""
+    browser.expect_failed("/api/notes", 404)                                                         # the fake serves no notes
+    open_home(browser, fake)
+    open_settings(browser, "limits")
+    browser.type("#set-limits [data-input=monthly_usd]", "5")
+    browser.click('#set-limits [data-act="save-limit"]')
+    browser.wait_for("document.querySelector('#set-limits .setstatus').textContent === 'Saved.'")
+    browser.type("#set-limits [data-input=monthly_usd]", "7")
+    assert status_of(browser, "limits") == ""
+    assert browser.js("HomePage.state().limitsForm.saved") is False                                  # and the next repaint does not bring it back
+    open_settings(browser, "notices")
+    browser.js("(() => { const e = document.querySelector('#set-notices [data-input=nudges_per_hour]'); e.value = '2'; e.dispatchEvent(new Event('input', {bubbles: true})); })()")
+    browser.click('#set-notices [data-act="save-notices"]')
+    browser.wait_for("document.querySelector('#set-notices .setstatus').textContent === 'Saved.'")
+    browser.type("#set-notices [data-input=nudges_per_hour]", "9")
+    assert status_of(browser, "notices") == ""
+    open_settings(browser, "engine")
+    present(browser, '#set-engine [data-input="budget"]')
+    browser.js("document.querySelector('#set-engine [data-input=budget]').value = '250'")
+    browser.click('#set-engine [data-act="save-engine"]')
+    browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
+    browser.type("#set-engine [data-input=budget]", "1")
+    assert status_of(browser, "engine") == ""
+    assert browser.js("HomePage.state().saved") is False
+    assert console_errors(browser) == []
+
+
 @browser_only
 def test_the_guard_switch_saves_at_once(browser, fake):
     open_home(browser, fake)

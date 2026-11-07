@@ -1150,11 +1150,27 @@
     else if (/^rec-/.test(act)) recAct(act, b.dataset.id || "");
   }
 
+  // "Saved." says what the server holds, so it goes as soon as a field of its group is edited. The group is not repainted while the owner types (typingIn), so
+  // the line is cleared in place as well as in the state that the next repaint reads (QA firstrun-settings: it stayed beside a value the server did not have).
+  function staleSaved(t) {
+    const group = t && t.closest ? t.closest(".setgrp") : null;
+    if (!group) return;
+    const line = group.querySelector(".setstatus");
+    if (line) line.textContent = "";
+    const key = group.dataset.group;
+    if (key === "engine") S.saved = false;
+    else if (key === "limits") S.limitsForm = Object.assign({}, S.limitsForm, {saved: false});
+    else if (key === "notices") S.noticesForm = Object.assign({}, S.noticesForm, {saved: false});
+    else if (key === "notes") NS.saved = "";
+    else if (key === "recurring") S.recForm.saved = false;
+  }
+
   // What the owner types is kept in the state, so a repaint (the limits move with every task) never takes it away; a switch and a select act at once.
   function wireRoutinesLimits() {
     const pane = $("pane-settings");
     pane.addEventListener("input", e => {
       const t = e.target;
+      staleSaved(t);
       const name = t && t.dataset ? t.dataset.input : "";
       if (name === "monthly_usd") S.limitsForm = Object.assign({}, S.limitsForm, {raw: t.value, saved: false});
       else if (name === "quiet_start") S.noticesForm = Object.assign({}, S.noticesForm, {start: t.value});
