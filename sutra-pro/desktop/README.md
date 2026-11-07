@@ -26,6 +26,7 @@ From a checkout the developer tools are in the View menu.
 | `src/server.js` | the supervisor: attach to the server `app.pid` names, or start one; wait for `/api/health`; stop it (D118) |
 | `src/runtime.js` | the data folder (and the check that a folder can be made and written), the interpreter, the server's command line and environment, the start timeout |
 | `src/urls.js` | which addresses the window may show (its own origin) and which go to the browser (web addresses only) |
+| `src/permissions.js` | which permissions the window grants: the server's own page may write text to the clipboard (the Copy buttons), nothing else |
 | `src/pages.js`, `src/menu.js`, `src/log.js` | the "starting" and "could not start" pages, the application menu, `<data>/logs/desktop.log` |
 | `src/selftest.js` | the self-test (D120) |
 | `scripts/package.mjs` | `@electron/packager` with the app's identity and icons; only `package.json` and `src/` go into the app archive |
