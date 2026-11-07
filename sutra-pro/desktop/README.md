@@ -15,7 +15,7 @@ npm test                     # the node tests: no Electron needed
 
 It uses `~/.sutra-pro` unless `SUTRA_DATA_DIR` names another folder; with `SUTRA_DATA_DIR` set the window's own state (Chromium's cache, the single-instance
 lock) lives in `<data>/electron`, so a test run never meets the app you use every day. The app makes that folder first: when it cannot (a missing drive, a file
-in the way, a read-only folder) the window opens, says it cannot use the data folder and why, and keeps its log in the system's own user-data folder.
+in the way, a read-only folder) the window opens, says it cannot use the data folder and why (Try Again looks at the folder again), and keeps its state and its log in `data-folder-error` inside the system's user-data folder (not in that folder itself: the app you use every day holds its lock).
 From a checkout the developer tools are in the View menu.
 
 ## What is where

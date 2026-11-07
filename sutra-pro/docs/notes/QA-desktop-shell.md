@@ -2,8 +2,8 @@
 
 QA ran the packaged app (Electron 45.2.1) against scratch data folders and reported three P2 bugs. Each was reproduced first on the unfixed sources (the same Electron
 binary, started from a checkout through a stub that `require`s `desktop/src/main.js` of the base commit and then of this branch, with its own settings folder so a
-real installed app is never met), fixed at its root, and given a test that fails before and passes after. Nothing outside `sutra-pro/desktop/` and two doc lines
-changed; no J2 file, prompt, route or golden is touched, and no Python file changed.
+real installed app is never met), fixed at its root, and given a test that fails before and passes after. Nothing outside `sutra-pro/desktop/` and three doc
+paragraphs (`RELEASE-macos.md`, D118 in `DECISIONS.md`, this note) changed; no J2 file, prompt, route or golden is touched, and no Python file changed.
 
 ## 1. The Copy buttons said "Copy failed" (P2): fixed
 
@@ -32,10 +32,10 @@ changed; no J2 file, prompt, route or golden is touched, and no Python file chan
   cannot create the lock file, so a folder it could not write made the app exit as if it were a second instance. The log could not be written either (the log
   folder is inside the same unusable folder).
 - Fix: `runtime.folderProblem(dir)` makes the folder (recursively, 0700) and checks it is a folder the app can read, write and enter; it returns `null` or one line
-  with the reason. `main.js` checks `<data>/electron` first. When it is usable the behaviour is unchanged. When it is not, the app keeps the system's own user-data
-  folder (so the lock works) and puts its log there, opens the window, and shows the existing could-not-start page and dialog with the message "Sutra Pro cannot use
-  its data folder <folder>: <reason>" (the dialog says "cannot use its data folder" instead of "could not start its server"; Try Again starts the server on the folder
-  in case it is usable by now, Show the Log reveals the fallback log, Quit quits). In the self-test mode the same failure is recorded and the exit status is 1.
+  with the reason. `main.js` checks `<data>/electron` first. When it is usable the behaviour is unchanged. When it is not, the app keeps its state and its log in `data-folder-error` inside the system's user-data
+  folder (a folder of its own: see "Found in review" below), opens the window, and shows the existing could-not-start page and dialog with the message "Sutra Pro cannot use
+  its data folder <folder>: <reason>" (the dialog says "cannot use its data folder" instead of "could not start its server"; Try Again looks at the folder again and starts the
+  server in it when it is usable by now, Show the Log reveals the fallback log, Quit quits). In the self-test mode the same failure is recorded and the exit status is 1.
   As a safety net for the same ambiguity, a refused lock while the settings folder is itself unusable now shows an error box and exits 1; a refused lock with a usable
   folder is still a second instance and exits 0.
 - Tests (`desktop/test/runtime.test.js`, 1): nested folders are made and a present folder is fine; a regular file where the folder should be, and a folder below a
@@ -66,6 +66,17 @@ changed; no J2 file, prompt, route or golden is touched, and no Python file chan
 - Live, after the fix: the same set-up (live pid in the stale file, port of server Y) starts a server of its own, the window shows `dataX`, and Y is untouched.
   Legitimate attaches still work (a server started by the command line with an absolute `--data-dir`, and one with a relative `--data-dir`).
 
+## Found in review (two changes to bug 2's fix)
+
+- The first fix fell back to the system's own user-data folder. The app a person uses every day holds its single-instance lock there, so with an unusable
+  `SUTRA_DATA_DIR` and the everyday app open, the new instance was still refused the lock, signalled the everyday app and exited 0 without a word: the original
+  bug again, in the environment QA and the owner actually work in. Seen live (a stub holding the lock of the same user-data folder, then a data folder that is a
+  file): exit 0, no window, and the holder got the second-instance signal. Now `runtime.windowState` gives the window `data-folder-error` inside the system folder,
+  so its lock is its own; the window opens, shows the reason, and the holder is not disturbed. Test: `windowState` in `desktop/test/runtime.test.js`.
+- Try Again went straight to the supervisor, whose child process cannot start in a missing or file "data folder": the page changed from the reason to
+  "could not start its server: spawn ENOTDIR". `startServer` now looks at the data folder again first (while the window opened for a folder problem) and
+  reports the folder again when it is still unusable; `folderProblem` says "exists and is not a folder" for a file in the way instead of the raw `EEXIST`.
+
 ## Skipped
 
 None: all three reproduced and were fixed.
@@ -76,8 +87,8 @@ None: all three reproduced and were fixed.
   health shape is pinned by contract tests and the UI's fake backend, and this fix had to stay in `desktop/`.
 - A server we attached to is watched through `/api/health` only. If it dies and a server of another folder takes the same port within the four missed checks, the watch
   does not notice. Narrower than the reported case; not addressed.
-- After "cannot use its data folder", Try Again can start the server (the folder may be mounted by then) but the window's own state stays in the system's user-data
-  folder for that session.
+- After "cannot use its data folder", Try Again can start the server (the folder may be mounted by then) but the window's own state stays in `data-folder-error` for that
+  session.
 - With `SUTRA_DATA_DIR` unset and `~/.sutra-pro` unusable, nothing changed: the server prints its reason and the existing error page shows it.
 - Notifications are refused by design (the docs say so), so the chat attention feature (`chat_attention.js`) cannot show system notifications in the desktop window.
 - The four packager tests (`test/package.test.js`) need `npm ci` in `desktop/` (they import `@electron/packager`); in a fresh worktree they fail the same way on the base.
