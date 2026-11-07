@@ -105,9 +105,22 @@ function guardNavigation() {
   });
 }
 
+function dataFolderError(problem) {
+  const error = new Error(`${APP_NAME} cannot use its data folder ${folder}: ${problem}`);
+  error.dataFolder = true;
+  return error;
+}
+
+let folderBlocked = Boolean(folderProblem);             // the window opened because the data folder was unusable: look at it again before any start
+
 async function startServer() {
   show(splashPage({ logo: logoDataUri(), dark: nativeTheme.shouldUseDarkColors }));
   try {
+    if (folderBlocked) {                                // Try Again: a server started in a folder that is still unusable would only say "spawn ENOTDIR"
+      const problem = runtime.folderProblem(folder);
+      if (problem) throw dataFolderError(problem);
+      folderBlocked = false;
+    }
     const { url } = await supervisor.start();
     if (!win || quitting) return;
     await win.loadURL(url);
@@ -187,9 +200,7 @@ async function boot() {
   createWindow();
   supervisor.on('exit', onServerExit);
   if (folderProblem) {
-    const error = new Error(`${APP_NAME} cannot use its data folder ${folder}: ${folderProblem}`);
-    error.dataFolder = true;
-    await failed(error);                                // Try Again starts the server on the folder, in case it is usable by now
+    await failed(dataFolderError(folderProblem));       // Try Again looks at the folder again and starts the server in it when it is usable by now
     return;
   }
   await startServer();

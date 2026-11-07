@@ -103,7 +103,7 @@ test('a folder the app needs is made, and one it cannot make or write to is repo
 
   const file = path.join(base, 'a-file');
   fs.writeFileSync(file, 'not a folder');
-  assert.match(runtime.folderProblem(file) || '', /\S/, 'a regular file where the folder should be');
+  assert.match(runtime.folderProblem(file) || '', /not a folder/, 'a regular file where the folder should be');
   const underFile = runtime.folderProblem(path.join(file, 'electron')) || '';
   assert.match(underFile, /\S/, 'a folder below a regular file cannot be made');
   assert.ok(underFile.includes(file), 'the answer names the path');

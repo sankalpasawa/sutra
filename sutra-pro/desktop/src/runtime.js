@@ -30,6 +30,7 @@ function folderProblem(dir) {
     fs.accessSync(dir, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
     return null;
   } catch (error) {
+    if (error && error.code === 'EEXIST') return `${dir} exists and is not a folder`;                     // a file (or a link to one) where the folder should be
     return error && error.code === 'EACCES' && fs.existsSync(dir) ? `${dir} is not writable (${error.code})` : String(error && error.message ? error.message : error);
   }
 }
