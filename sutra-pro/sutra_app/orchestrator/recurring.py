@@ -60,12 +60,13 @@ _PAUSED = f"Paused after {CRASH_LIMIT} runs in a row ended with a problem. Look 
 _UNREADABLE = "Paused: its schedule could not be read. Set it again."
 _RESULT = {"queued": "working", "blocked": "working", "starting": "working", "running": "working", "waiting_user": "waiting",
            "done": "done", "done_with_open_items": "open_items", "crashed": "crashed", "stopped": "stopped", "cancelled": "stopped"}
-Result = Literal["skipped", "working", "waiting", "done", "open_items", "crashed", "stopped"]
+Result = Literal["skipped", "working", "held", "waiting", "done", "open_items", "crashed", "stopped"]
+HELD = "waiting:"                # how a queued task's detail begins when a limit holds its start (limits.WAIT_SPEND, limits.WAIT_GUARD)
 
 
 class RunOut(Value):
-    """One due time that was dealt with. `result` is read from the task's status (never stored): skipped, working, waiting (for the owner),
-    done, open_items (done with open items), crashed or stopped."""
+    """One due time that was dealt with. `result` is read from the task's status (never stored): skipped, working, held (queued behind a limit:
+    nothing has started), waiting (for the owner), done, open_items (done with open items), crashed or stopped."""
 
     id: Count
     due_at: Iso
@@ -102,10 +103,13 @@ class TickReport:
         return bool(self.started or self.skipped or self.paused)
 
 
-def result_of(outcome: str, task_status: str | None) -> str:
-    """The word for a run: a skip is `skipped`; a started run is whatever its task's status says (a missing task reads as `stopped`)."""
+def result_of(outcome: str, task_status: str | None, detail: str = "") -> str:
+    """The word for a run: a skip is `skipped`; a started run is whatever its task's status says (a missing task reads as `stopped`), except a
+    task still `queued` with a limit's waiting words, which is `held`: the owner is told it has not started, not that it is working."""
     if outcome == "skipped":
         return "skipped"
+    if task_status == "queued" and (detail or "").startswith(HELD):
+        return "held"
     return _RESULT.get(task_status or "", "stopped")
 
 
@@ -139,11 +143,12 @@ class Recurring:
 
     def _run_out(self, r: sqlite3.Row) -> RunOut:
         return RunOut(
-            id=r["id"], due_at=iso_z(r["due_at"]), at=iso_z(r["at"]), trigger=r["trigger"], result=result_of(r["outcome"], r["status"]),
+            id=r["id"], due_at=iso_z(r["due_at"]), at=iso_z(r["at"]), trigger=r["trigger"], result=result_of(r["outcome"], r["status"], r["detail"]),
             task_id=r["task_id"], folded=r["folded"], reason=clip(r["reason"], 300))
 
-    _RUN_SQL = ("SELECT r.id, r.due_at, r.at, r.trigger, r.outcome, r.task_id, r.folded, r.reason, t.status FROM recurring_runs r"
-                " LEFT JOIN tasks t ON t.id = r.task_id")
+    _RUN_SQL = ("SELECT r.id, r.due_at, r.at, r.trigger, r.outcome, r.task_id, r.folded, r.reason, t.status, g.detail FROM recurring_runs r"
+                " LEFT JOIN tasks t ON t.id = r.task_id"
+                " LEFT JOIN graph_nodes g ON g.task_id = r.task_id AND g.step_ref = 'task' AND g.kind = 'step'")
 
     @staticmethod
     def _read(raw: str) -> Schedule | None:
@@ -180,6 +185,12 @@ class Recurring:
             if found is None:
                 raise NotFound("that schedule")
             return self._out(conn, found, now)
+
+    def run_out(self, run_id: int) -> RunOut | None:
+        """One run row as it reads now (None when it is gone): the route reads it again after `start_ready` has decided whether a limit holds it."""
+        with self.db.read() as conn:
+            found = conn.execute(f"{self._RUN_SQL} WHERE r.id = ?", (run_id,)).fetchone()
+            return self._run_out(found) if found is not None else None
 
     def runs(self, rec_id: str, limit: int = 20) -> list[RunOut]:
         """The newest rows first, at most `limit` (1 to 200)."""

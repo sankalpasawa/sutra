@@ -425,6 +425,51 @@ def test_the_tick_starts_work_a_limit_was_holding_once_the_limit_lifts(tenv, tmp
     assert tenv.status(task.id) == "starting"
 
 
+def over_the_limit(tenv, tmp_path):
+    """The monthly limit is used up: every start is held, the way the app wires it."""
+    from sutra_app.orchestrator.limits import Limits
+    limits = Limits(tmp_path / "limits.json", tenv.db, quotas=lambda: {}, clock=tenv.clock)
+    tenv.service.start_gate = limits.gate
+    limits.update(monthly_usd=1.0)
+    tenv.sql("INSERT INTO usage_ledger(at, provider, purpose, usd) VALUES (?,?,?,?)", at(2026, 11, 4, 9), "claude", "test", 5.0)
+    return limits
+
+
+def test_a_run_whose_task_the_spending_limit_holds_is_not_called_working(tenv, tmp_path, rec):
+    """QA recurring-limits: Run now, and a scheduled run, said 'working' for a task that was queued behind the limit and had not started."""
+    limits = over_the_limit(tenv, tmp_path)
+    made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 4, 8))
+    manual = rec.run_now(made.id)
+    tenv.run(tenv.service.start_ready())
+    assert tenv.status(manual.task_id) == "queued"                                           # held: nothing is running
+    assert (rec.runs(made.id)[0].result, rec.get(made.id).last_run.result) == ("held", "held")
+    assert rec.run_out(manual.id).result == "held"                                          # what the route answers once start_ready has decided
+    limits.update(monthly_usd=50.0)
+    tenv.run(tenv.service.start_ready())
+    assert tenv.status(manual.task_id) == "starting" and rec.runs(made.id)[0].result == "working"     # raised: it started, and now it is working
+    end(tenv, manual.task_id, "done")
+    assert rec.runs(made.id)[0].result == "done"
+    ((_, scheduled),) = rec.tick(at(2026, 11, 4, 9, 1)).started                              # the same holds for a due time
+    limits.update(monthly_usd=1.0)
+    tenv.run(tenv.service.start_ready())
+    assert tenv.status(scheduled) == "queued" and rec.runs(made.id)[0].result == "held"
+
+
+def test_both_limit_holds_begin_with_the_words_a_held_run_is_told_by():
+    from sutra_app.orchestrator.limits import WAIT_GUARD, WAIT_SPEND
+    from sutra_app.orchestrator.recurring import HELD, result_of
+    assert WAIT_SPEND.startswith(HELD) and WAIT_GUARD.startswith(HELD)
+    assert result_of("started", "queued", WAIT_SPEND) == "held" and result_of("started", "queued", "waiting to start") == "working"
+    assert result_of("started", "starting", WAIT_SPEND) == "working" and result_of("skipped", "queued", WAIT_SPEND) == "skipped"
+
+
+def test_a_queued_task_that_waits_for_a_slot_or_the_team_is_still_working(tenv, rec):
+    """Only a limit makes a run 'held': a task that has just been made and is about to start is not."""
+    made = rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 4, 8))
+    run = rec.run_now(made.id)
+    assert tenv.status(run.task_id) == "queued" and rec.runs(made.id)[0].result == "working"
+
+
 def test_the_loop_runs_ticks_and_stops_cleanly(tenv):
     rec = Recurring(tenv.db, tenv.service, clock=Now(at(2026, 11, 4, 10)), tz=UTC, tick_s=0.01)
     rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 4, 8))

@@ -125,6 +125,20 @@ def test_one_unreadable_schedule_leaves_the_list_a_200_and_can_still_be_removed(
     assert [x["id"] for x in client.get("/api/recurring").json()] == [good.id]
 
 
+def test_run_now_under_a_used_up_limit_answers_held_not_working(client, auth, tenv, tmp_path):
+    from sutra_app.orchestrator.limits import Limits
+    limits = Limits(tmp_path / "limits.json", tenv.db, quotas=lambda: {}, clock=tenv.clock)
+    tenv.service.start_gate = limits.gate
+    limits.update(monthly_usd=1.0)
+    tenv.sql("INSERT INTO usage_ledger(at, provider, purpose, usd) VALUES (?,?,?,?)", int(tenv.clock.now()) - 60, "claude", "test", 5.0)
+    rec = add(client, auth)
+    run = client.post(f"/api/recurring/{rec.id}/run", headers=auth)
+    assert run.status_code == 201, run.text
+    assert tenv.status(run.json()["task_id"]) == "queued" and run.json()["result"] == "held"
+    assert client.get(f"/api/recurring/{rec.id}/runs").json()[0]["result"] == "held"
+    assert client.get("/api/recurring").json()[0]["last_run"]["result"] == "held"
+
+
 def test_delete_removes_it_and_a_second_delete_is_404(client, auth):
     rec = add(client, auth)
     assert client.delete(f"/api/recurring/{rec.id}", headers=auth).json() == {"deleted": rec.id}

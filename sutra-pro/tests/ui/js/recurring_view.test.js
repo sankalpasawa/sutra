@@ -53,6 +53,15 @@ test("runWords says what happened to a due time, honestly", () => {
   assert.equal(RV.runWords(null), "");
 });
 
+test("a run held back by a limit is queued and waiting on the limit, never started or working", () => {
+  assert.equal(RV.runWords(run({trigger: "manual", result: "held"})), "Wed 4 Nov, 9:00 AM: queued by you, waiting on a limit");
+  assert.equal(RV.runWords(run({result: "held"})), "Wed 4 Nov, 9:00 AM: queued on schedule, waiting on a limit");
+  assert.equal(RV.runWords(run({trigger: "catch_up", folded: 2, result: "held"})), "Wed 4 Nov, 9:00 AM: queued as a catch-up (2 earlier times folded in), waiting on a limit");
+  const html = RV.recurringHtml([rec({last_run: run({trigger: "manual", result: "held"})})], form());
+  assert.match(html, /Last: Wed 4 Nov, 9:00 AM: queued by you, waiting on a limit\./);
+  assert.doesNotMatch(/<p class="reclast">[^<]*<\/p>/.exec(html)[0], /started|working/);
+});
+
 // ---- the group ------------------------------------------------------------------------------------------------------------------------------
 
 test("not loaded yet is said, and an empty list says nothing is scheduled and still offers the form", () => {
