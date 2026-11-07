@@ -6,3 +6,4 @@ sutra_app/orchestrator/chart.py:ChartStore.record        # read: returns one sto
 sutra_app/orchestrator/chats.py:ChatStore.apply_links    # gated: executes the library's carry_links plan; each session row is re-checked as a chat_session
 sutra_app/orchestrator/atoms.py:AtomStore.apply_transition  # gated: takes the engine's atom event; the atom, its ledger row and the node are checked inside
 sutra_app/orchestrator/usage.py:UsageStore.record        # gated: takes the router's UsageIn and checks it as a usage_record inside
+sutra_app/orchestrator/tasks.py:TaskService.post_note  # gated: builds the system note and checks it as a chat_message before storing it

@@ -461,7 +461,12 @@ class TaskService:
 
     def post_note(self, tx: Tx, dept_id: str, text: str, *, task_id: str | None = None) -> None:
         """One system note in a team's chat (the owner did not write it; Sutra did)."""
-        self._post(tx, self._dept_session(tx.conn, dept_id), role="system", who="sutra", kind="note", text=text, task_id=task_id)
+        sid = self._dept_session(tx.conn, dept_id)
+        payload = dict(kind="note", session_id=sid, role="system", who="sutra", text=text, task_id=task_id, src_ref=None, at=tx.now())
+        try:
+            self.chats.post(tx, sid, GATE.check("chat_message", payload, ctx=tx.ctx))
+        except GateError as exc:
+            raise from_gate_error(exc) from None
 
     def _insert(self, tx: Tx, *, dept_id: str, text: str, title: str | None, scope_id: str | None, framing: str, depends_on: Sequence[str],
                 follows: str | None, request: str | None, change_id: str | None, settings: dict[str, Any] | None, seed_run: str | None,
