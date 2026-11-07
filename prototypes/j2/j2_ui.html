@@ -70,6 +70,13 @@ main>*{min-width:0}
 @media (max-width:1100px){main{grid-template-columns:minmax(0,1fr);grid-template-rows:60vh auto 70vh}.lanes{border-right:0;border-bottom:1px solid var(--line);max-height:40vh}}
 .chat{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
 .msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.chatfn{font-size:12.5px;color:var(--muted);padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}.chatfn b{color:var(--ink)}.chatfn[hidden]{display:none}
+.msgs>[hidden]{display:none}.msgs[hidden]{display:none}
+/* a function's feed (activity/1): its messages as bubbles, its other doings as one card each, the kind on the left where the avatar sits */
+.feed[hidden]{display:none}.fev{display:grid;grid-template-columns:30px 1fr;gap:9px}.fev .fk{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font:700 10px var(--mono);color:var(--on);background:var(--c)}
+.fev .fbody{border:1px solid var(--line);border-left:3px solid var(--c);border-radius:4px 12px 12px 12px;padding:7px 11px;min-width:0;background:var(--panel)}.fev .ftitle{font:600 13px var(--body)}.fev .ftitle span{font:400 11px var(--mono);color:var(--muted);margin-left:6px}
+.fev .ftext{font-size:13px;margin:3px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}.fev ul{margin:4px 0 0;padding-left:18px;font-size:12.5px;color:var(--muted)}.fev li{margin:1px 0}.fev details>summary{cursor:pointer;color:var(--muted);font-size:12px}
+.fev.qa .fbody{border-left-color:var(--accent)}.fev .fq{font-size:13px;color:var(--muted);margin:0 0 4px}
 .msg{display:grid;grid-template-columns:30px 1fr;gap:9px}
 .av{width:30px;height:30px;border-radius:8px;background:var(--c);color:var(--on);display:grid;place-items:center;font:700 12px var(--display)}
 .bubble{background:var(--panel);border:1px solid var(--line);border-radius:4px 12px 12px 12px;padding:8px 11px;min-width:0}
@@ -371,6 +378,18 @@ body.simple #dview{display:none}
 @media (prefers-reduced-motion: reduce){.treesvg .tnode,.treesvg .tedge{transition:none}}
 .mapsvg{background:var(--mapdots),radial-gradient(circle at 50% 45%,var(--sky0) 0%,var(--sky1) 75%);border:1px solid var(--line);border-radius:12px}.mapsvg .rowlab{text-transform:uppercase}.mapsvg .mapnode:focus{outline:none}.mapsvg .mapnode:focus-visible circle:first-of-type{stroke-width:3}
 .mappanel{border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:10px 0;background:var(--panel)}.mappanelhead{display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:4px}.mappanel .sub{color:var(--muted);font-size:13px;margin:2px 0}
+/* Adaptation > Map: the plan as a tree (goal, stages, workflows) on the maps' sky. A workflow's square is tinted by its certainty zone; its badge is the
+   judge's score against the gate; "v2" marks one a change revised; a halo marks where a change started; a dashed blue edge a reader asked to reread */
+.pmwrap{overflow-x:auto}.pmsvg{display:block;width:var(--w,720px);max-width:none;height:auto;background:var(--mapdots),radial-gradient(circle at 50% 45%,var(--sky0) 0%,var(--sky1) 75%);border:1px solid var(--line);border-radius:12px;font-family:var(--body)}
+.pmsvg .rowdiv{stroke:var(--line);stroke-width:1}.pmsvg .rowlab{fill:var(--muted);font:500 11px var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.pmsvg .pedge{fill:none;stroke:var(--edge);stroke-width:1.4;stroke-linecap:round;transition:opacity .25s,stroke-width .25s}.pmsvg.ehot .pedge:not(.hot){opacity:.25}.pmsvg .pedge.hot{stroke-width:2.4;stroke:var(--e-makes)}
+.pmsvg .pedge.reads{stroke:var(--e-reads);stroke-dasharray:4 4}.pmsvg .pedge.reads.open{animation:cflow .9s linear infinite;stroke-width:1.8}.pmsvg .parr{fill:var(--edge)}.pmsvg .parr.reads{fill:var(--e-reads)}
+.pmsvg .pnode{cursor:pointer}.pmsvg .pnode:focus{outline:none}.pmsvg .plab{fill:var(--ink);font-size:12.5px;paint-order:stroke;stroke:var(--skyink);stroke-width:6px;stroke-linejoin:round}.pmsvg .psub{fill:var(--muted);font-size:11px;paint-order:stroke;stroke:var(--skyink);stroke-width:6px;stroke-linejoin:round}
+.pmsvg .pglyph{fill:var(--team)}.pmsvg .pnode:hover .pdot,.pmsvg .pnode:focus-visible .pdot,.pmsvg .pnode.sel .pdot{filter:drop-shadow(0 0 6px color-mix(in srgb,var(--warm1) 60%,transparent))}.pmsvg .pnode.sel .pdot{stroke:var(--ink)!important;stroke-width:2.4!important}
+.pmsvg .pbadge text{font:600 9px var(--mono);fill:var(--on)}.pmsvg .pver{font:600 9px var(--mono);fill:var(--team)}.pmsvg .phalo{fill:none;stroke:var(--validator);stroke-width:2;animation:cpulse 1.6s ease-in-out infinite}
+.pmlegend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:10px 0 0;font-size:13px;color:var(--muted)}.pmlegend span{display:inline-flex;align-items:center;gap:6px}.pmlegend i{width:10px;height:10px;border-radius:3px;background:var(--c)}
+.pmhead{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin:0 0 8px;font-size:13px;color:var(--muted)}.pmhead b{color:var(--ink);font-size:14px}
+@media (prefers-reduced-motion:reduce){.pmsvg .pedge.reads.open,.pmsvg .phalo{animation:none}}
 /* ---- Home: Needs you strip, Map, Chat docked right. The rail has Map, Chat and one Internals folder. */
 .needs{margin:var(--gut) var(--gut) 12px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
 .needs:focus{outline:2px solid var(--vio);outline-offset:2px}.needs h2{font-size:15px;margin:0;display:flex;align-items:center;gap:8px}
@@ -584,7 +603,7 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 .wbar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
 .wbar>div{flex:1;min-width:0}.wbar select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:4px 6px;font:inherit}
 .wtitle{font-size:18px;margin:0}.wsub{display:block;color:var(--muted);font-size:13px}
-#dview .pane:not(.preview){width:100%;max-width:880px;margin:0 auto}
+#dview .pane:not(.preview){width:100%;max-width:880px;margin:0 auto}#dview #pane-planmap{max-width:none}      /* the Adaptation map takes the whole card, as the home Map does */
 @media (max-width:900px){#dview .dcol{overflow:auto}#dview main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(460px,70vh);flex:none}}
 @media (max-width:600px){
   #dview{--gut:12px}
@@ -715,6 +734,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <button role="tab" id="tab-story" data-tab="story" aria-selected="false" hidden>Board story</button>
       <button role="tab" data-tab="preview" aria-selected="false">Preview</button>
       <button role="tab" data-tab="goal" aria-selected="false">Goal</button>
+      <button role="tab" data-tab="planmap" aria-selected="false">Map</button>
       <button role="tab" data-tab="workflows" aria-selected="false">Workflows</button>
       <button role="tab" data-tab="conflicts" aria-selected="false">Conflicts</button>
       <button role="tab" data-tab="priorities" aria-selected="false">Priorities</button>
@@ -742,6 +762,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
     <div class="pane preview" id="pane-preview" hidden><div class="doclinks" id="doclinks" hidden></div><iframe id="frame" title="Website preview" src="/site/latest"></iframe></div>
     <div class="pane" id="pane-goal" hidden></div>
     <div class="pane" id="pane-workflows" hidden></div>
+    <div class="pane" id="pane-planmap" hidden></div>
     <div class="pane" id="pane-conflicts" hidden></div>
     <div class="pane" id="pane-priorities" hidden></div>
     <div class="pane" id="pane-timeline" hidden></div>
@@ -784,7 +805,9 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
   <section class="chat" id="chatp" aria-label="Team chat">
     <header class="ch"><div><b>Team chat</b><small>Client Lead and the team, as it happens</small></div><button type="button" class="chx" id="chatx" aria-label="Close chat">✕</button></header>
     <div class="cfil" role="group" aria-label="Show"><button type="button" aria-pressed="true" data-cf="all">All</button><button type="button" aria-pressed="false" data-cf="you">With you</button><button type="button" aria-pressed="false" data-cf="team">Between the team</button></div>
+    <div class="chatfn" id="chatfn" hidden></div>
     <div class="msgs" id="msgs" role="log" aria-live="polite" aria-label="Messages" data-f="all"></div>
+    <div class="msgs feed" id="feed" hidden></div>
     <div class="typing" id="typing"></div>
     <div class="compose">
       <div class="waiting" id="waiting" hidden></div>
@@ -850,7 +873,7 @@ const GKSVG = `<svg viewBox="0 0 48 50" aria-hidden="true" style="--mc:var(--m4)
 const YOUSVG = `<svg viewBox="0 0 48 50" aria-hidden="true"><circle class="youc" cx="24" cy="25" r="20"/><text class="yout" x="24" y="30" text-anchor="middle">You</text></svg>`;
 const AVA = {};
 function chatAva(k){
-  if (!(k in AVA)){ const b = RAILBOT[k] && document.querySelector(`#rail .${RAILBOT[k][0]} svg`);
+  if (!(k in AVA)){ const e = RAILBOT[k] && document.querySelector(`#rail .${RAILBOT[k][0]} svg`), b = e && typeof e.outerHTML === "string" ? e : null;      // the page-less render has no real rail
     AVA[k] = b ? b.outerHTML.replace("<svg ", `<svg style="--mc:var(${RAILBOT[k][1]})" `).replace(/<text class="alert"[^<]*<\/text>/, "") : k === "validator" ? GKSVG : k === "user" ? YOUSVG : ""; }
   return AVA[k] || esc(who(k)[1]);
 }
@@ -860,16 +883,85 @@ function chatDay(){      // the run's date from its id (YYYYMMDD), else today
   const d = String(viewRun || (CTX && CTX.saved) || "").match(/(\d{4})(\d{2})(\d{2})-/), t = new Date(), x = d ? new Date(+d[1], +d[2] - 1, +d[3]) : t;
   return x.toDateString() === t.toDateString() ? "Today" : x.toLocaleDateString("en-GB", {weekday: "long", day: "numeric", month: "long", year: "numeric"});
 }
+// The chat follows the open section: under Identity, Adaptation, Priority, Coordination or Audit it shows that function's messages (the ones it
+// wrote, the ones that address it with @Name, hand to it or are meant for it); the home Map and Chat show everything. "Show all" lifts it until the
+// section changes. A message's functions are read once, here, from its own fields.
+let CHATFN = "", CHATALL = false;
+function msgFns(m){
+  const out = [m.who], add = f => { if (f && !out.includes(f)) out.push(f); };
+  for (const x of String(m.text || "").matchAll(/@(Identity|Adaptation|Priority|Coordination|Audit|Validator)\b/gi)) add(x[1].toLowerCase());
+  add(m.next); add(m.audience === "user" ? "" : m.audience); return out;
+}
+const chatHide = el => !!CHATFN && !CHATALL && !(el.dataset.fn || "").split(" ").includes(CHATFN);
+function chatFnFilter(){
+  const all = [...$("msgs").children], msgs = all.filter(el => el.classList.contains("msg")); all.forEach(el => { el.hidden = chatHide(el); });
+  const bar = $("chatfn"), name = CHATFN ? who(CHATFN)[0] : ""; bar.hidden = !CHATFN;
+  if (CHATFN) bar.innerHTML = CHATALL ? `All ${msgs.length} messages · <button type="button" class="linkbtn" data-chatonly>Only ${esc(name)}</button>`
+    : `<b>${esc(name)}</b> · everything it did, in order${FEED.found ? ` · ${FEED.events.length} entries` : ""} · <button type="button" class="linkbtn" data-chatall>Whole chat</button> · <button type="button" class="linkbtn" data-agent="${esc(CHATFN)}">Conversation and thinking</button>`;
+  $("msgs").scrollTop = $("msgs").scrollHeight; chatSwap();
+}
+function chatFollow(tab){      // the section of the tab (RAILSEC, the one declared table); the first showTab runs before that table exists, so it reads as no section
+  let sec = ""; try { sec = RAILSEC[tab] || ""; } catch (e) {}
+  const fn = ["identity", "adaptation", "priority", "coordination", "audit"].includes(sec) ? sec : "";
+  if (fn !== CHATFN){ CHATFN = fn; CHATALL = false; } chatFnFilter();
+}
+document.addEventListener("click", e => { if (e.target.closest("[data-chatall]")){ CHATALL = true; chatFnFilter(); } else if (e.target.closest("[data-chatonly]")){ CHATALL = false; chatFnFilter(); } });
+// The function's feed (activity/1, /api/activity): under its section the right column shows everything it did, in order: its messages and
+// hand-offs as bubbles, each AI call, and for Adaptation each planning decision, every judge round with the scores, every revision and the
+// changes it handled. Questions typed in Ask mode go to /api/ask and come back answered from its records; they are shown here, not saved.
+const FEED = {who: "", found: false, events: []}, QA = [];      // QA: this viewer's questions and the answers, per function
+let FEEDKEY = "", ASKMODE = "change";
+const FKIND = {call: ["AI", "var(--builder)"], plan: ["PL", "var(--adaptation)"], wf: ["W", "var(--team)"], judge: ["J", "var(--validator)"], revise: ["RV", "var(--warm2)"], change: ["CH", "var(--purple)"]};
+async function loadFeed(force){
+  if (!CHATFN) return; const key = CHATFN + "|" + (state ? state.total : 0) + runQ(); if (!force && key === FEEDKEY) return; FEEDKEY = key;
+  try { const r = await fetch(`/api/activity?who=${encodeURIComponent(CHATFN)}${runQ()}`, {cache: "no-store"}); if (r.ok){ const v = await r.json(); for (const k of Object.keys(FEED)) delete FEED[k]; Object.assign(FEED, v); } } catch (e) {}
+  paintFeed();
+}
+function feedEvent(e){
+  if (e.kind === "msg"){ const m = e.msg; return m.who === "system" ? `<div class="sys">${esc(dv(m.text))}</div>` : `<div class="msg ${esc(m.who)}${m.to_user ? " touser" : ""}" style="--c:${col(m.who)}" data-id="${esc(m.id)}">${msgInner(m)}</div>`; }
+  const [k, c] = FKIND[e.kind] || ["·", "var(--muted)"], items = (e.items || []).map(x => `<li>${esc(x)}</li>`).join("");
+  return `<div class="fev f-${esc(e.kind)}" style="--c:${c}"><div class="fk" title="${esc(e.kind)}">${k}</div><div class="fbody"><div class="ftitle">${esc(e.title || "")}<span>${esc(e.t || "")}</span></div>${e.text ? `<div class="ftext">${esc(e.text)}</div>` : ""}`
+    + (items ? (e.items.length > 3 ? `<details><summary>${e.items.length} details</summary><ul>${items}</ul></details>` : `<ul>${items}</ul>`) : "") + (e.given && e.given.length ? `<div class="ftext empty">was given: ${esc(e.given.join(", "))}</div>` : "") + `</div></div>`;
+}
+function renderFeed(){      // the function's events and this viewer's questions, in one time order: a question sits where it was asked, later work below it
+  const name = who(CHATFN)[0], qa = QA.filter(x => x.who === CHATFN);
+  if (!FEED.found && !qa.length) return `<p class="empty">This run recorded nothing for ${esc(name)} yet.</p>`;
+  const rows = [...(FEED.found ? FEED.events : []).map((e, i) => ({t: e.t || "", i, html: feedEvent(e)})),
+    ...qa.map((x, i) => ({t: x.t || "", i: 1e6 + i, html: `<div class="fev qa" style="--c:var(--accent)"><div class="fk">Q</div><div class="fbody"><div class="fq">You asked ${esc(name)} <span class="empty">${esc(x.t || "")}</span>: ${esc(x.q)}</div><div class="ftext">${x.a == null ? '<span class="empty">Thinking…</span>' : esc(x.a)}</div>${x.from === "records" && x.a != null ? '<div class="ftext empty">answered from its records, no AI call</div>' : ""}</div></div>`}))];
+  rows.sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : a.i - b.i));
+  return rows.map(r => r.html).join("");
+}
+function paintFeed(){ const f = $("feed"); const html = renderFeed(); if (f.__html !== html){ f.innerHTML = html; f.__html = html; f.scrollTop = f.scrollHeight; if (CHATFN) chatFnFilter(); } }
+function chatSwap(){      // which list shows: the whole chat, or the function's feed. Under a function's section the box only asks that function
+  const fn = !!CHATFN && !CHATALL; $("msgs").hidden = fn; $("feed").hidden = !fn;
+  ASKMODE = CHATFN ? "ask" : "change";
+  if (CHATFN) $("box").placeholder = `Ask ${who(CHATFN)[0]} about this run: a workflow, a score, a decision…`;
+  if (state){ const busy = state.status === "running" || !!state.saved, canAsk = ASKMODE === "ask" && !!CHATFN; $("box").disabled = busy && !canAsk; $("send").disabled = busy && !canAsk; }
+  if (fn) loadFeed();
+}
+async function askFn(text){
+  const q = {who: CHATFN, q: text, a: null, from: "", t: new Date().toTimeString().slice(0, 8)}; QA.push(q); paintFeed();
+  try { const r = await fetch("/api/ask", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({who: CHATFN, q: text, run: viewRun || ""})});
+    const v = r.ok ? await r.json() : {answer: "The question could not be sent."}; q.a = v.answer || "No answer came back."; q.from = v.from || ""; } catch (e) { q.a = "The question could not be sent."; }
+  paintFeed();
+}
 let CHATLAST = null;      // the time of the last message shown: a day divider before the first message and when the clock goes back past midnight
 function addMsg(m){
   const box = $("msgs");
   if (m.t && (CHATLAST === null || m.t < CHATLAST)){ const d = document.createElement("div"); d.className = "day";
     d.textContent = CHATLAST === null ? chatDay() : "Next day"; box.appendChild(d); }
   if (m.t) CHATLAST = m.t;
-  const el = document.createElement("div");
+  box.appendChild(msgEl(m));
+  if (m.who !== "system" && !CHAT.on && m.id > CHAT.seen) CHAT.unread++;
+}
+function msgEl(m){      // one message as its element (the chat appends it; the feed reuses its inner part)
+  const el = document.createElement("div"); el.dataset.fn = msgFns(m).join(" "); el.hidden = chatHide(el);
   if (m.who === "system"){ el.className = "sys"; if (m.test) el.style.cssText = "color:var(--bad);font-weight:700";
-    el.textContent = dv(m.text); box.appendChild(el); return; }
+    el.textContent = dv(m.text); return el; }
   el.className = "msg " + m.who + (m.to_user || m.audience === "user" ? " touser" : "") + (withYou(m) ? " withyou" : ""); el.style.setProperty("--c", col(m.who)); el.dataset.id = m.id; el.dataset.who = m.who;
+  el.innerHTML = msgInner(m); return el;
+}
+function msgInner(m){      // the avatar, the speaker line, the text and the tags of one message
   const to = m.audience || (m.next && !m.to_user ? m.next : "");
   let t = to && m.who !== "user" ? `<span class="tag to">→ ${esc(to === "user" ? "you" : chatName(to))}</span>` : "";
   if (m.act) t += `<span class="tag ${m.act==="PARK"||m.act==="DISPUTE"?"bad":m.act==="LESSON"?"ok":""}">${m.act}</span>`;
@@ -898,10 +990,8 @@ function addMsg(m){
   if (m.version) t += `<span class="tag">site v${m.version}</span>`;
   if (m.audit !== undefined) t += `<span class="tag ${m.audit?"ok":"bad"}">${m.audit?"all criteria pass":"criteria failing"}</span>`;
   const role = chatRole(m.who), long = String(m.text || "").length > CHATFOLD;
-  el.innerHTML = `<div class="ava" aria-hidden="true">${chatAva(m.who)}</div><div class="bubble"><div class="who"><b>${isAgent(m.who) ? `<button type="button" class="whobtn" data-agent="${esc(m.who)}" title="See conversation and thinking">${esc(chatName(m.who))}</button>` : esc(chatName(m.who))}</b>${role ? `<span class="role">${esc(role)}</span>` : ""}<time>${esc(String(m.t || "").slice(0, 5))}</time></div>
+  return `<div class="ava" aria-hidden="true">${chatAva(m.who)}</div><div class="bubble"><div class="who"><b>${isAgent(m.who) ? `<button type="button" class="whobtn" data-agent="${esc(m.who)}" title="See conversation and thinking">${esc(chatName(m.who))}</button>` : esc(chatName(m.who))}</b>${role ? `<span class="role">${esc(role)}</span>` : ""}<time>${esc(String(m.t || "").slice(0, 5))}</time></div>
     <div class="text${long ? " clip" : ""}">${md(m.text).replace(/<b>@([\w-]+)<\/b>/g, '<span class="mention">@$1</span>')}</div>${long ? '<button type="button" class="more" aria-expanded="false">Show more</button>' : ""}${t ? `<div class="tags">${t}</div>` : ""}</div>`;
-  box.appendChild(el);
-  if (!CHAT.on && m.id > CHAT.seen) CHAT.unread++;
 }
 // Grouping: a message from the sender of the message just above it (as filtered) drops its avatar and name line.
 function chatGroup(){
@@ -1843,7 +1933,8 @@ async function poll(){
     if (s.chat.length && !allChat.length && CHAT.seen > Math.max(...s.chat.map(m => +m.id || 0))) CHAT.seen = 0;
     s.chat.forEach(addMsg);
     allChat = allChat.concat(s.chat); s.allChat = allChat;
-    if (s.chat.length){ seen = s.total; chatGroup(); if (CHAT.on) chatSeenAll(); else chatBadge(); $("msgs").scrollTop = $("msgs").scrollHeight; }
+    if (s.chat.length){ seen = s.total; chatGroup(); if (CHAT.on) chatSeenAll(); else chatBadge(); $("msgs").scrollTop = $("msgs").scrollHeight; if (CHATFN) chatFnFilter(); }      // the section's count follows the new messages
+    if (CHATFN && !CHATALL) loadFeed();
     renderSteps(s);
     $("typing").innerHTML = s.thinking ? `<b style="color:${col(s.thinking)}">${esc(who(s.thinking)[0])}</b> is working…`
       : s.status === "running" ? "Working…" : s.status === "waiting" ? "Your turn." : "";
@@ -1854,8 +1945,9 @@ async function poll(){
     $("waiting").hidden = !p || busy;
     if (p) $("waiting").innerHTML = `<b>Identity is waiting on your answer</b> · ${esc(p.label)} <span class="empty">(message ${p.msg})</span>`
       + (p.questions.length ? `<ol>${p.questions.map(q => `<li>${esc(q.question)}${q.options.map((o,i) => `<div class="opt">Option ${i+1}: ${esc(o)}</div>`).join("")}</li>`).join("")}</ol>` : "");
-    $("box").placeholder = p ? "Answer your Client Lead's question…" : s.total ? "Ask your Client Lead for a change…" : "Describe the website you want. The agents take it from there…";
-    $("box").disabled = busy; $("send").disabled = busy;
+    $("box").placeholder = CHATFN ? `Ask ${who(CHATFN)[0]} about this run: a workflow, a score, a decision…` : p ? "Answer your Client Lead's question…" : s.total ? "Ask your Client Lead for a change…" : "Describe the website you want. The agents take it from there…";
+    const canAsk = ASKMODE === "ask" && !!CHATFN;      // a question to a function works on a saved run and while the run is busy
+    $("box").disabled = busy && !canAsk; $("send").disabled = busy && !canAsk;
     $("mode").textContent = (viewRun || s.saved ? `run ${viewRun || s.saved} · ` : "") + (s.mock ? "mock functions" : `model: ${s.model}`) + ` · ${s.calls} AI calls · cycle ${s.cycle}` + ((((s.report || {}).metrics || {}).minutes) != null ? ` · ${s.report.metrics.minutes} min` : "") + (prioModel(s).total != null ? ` · budget ${prioModel(s).total} credits` : "");
     $("fixes").textContent = s.fixes ? "J2_FIXES=1 (fixes)" : "J2_FIXES=0 (baseline, as in the diagram)";
     $("otype").textContent = `output: ${s.output_label}`;
@@ -1878,6 +1970,7 @@ async function poll(){
       $("ver").value = versions ? "v"+versions : ""; $("frame").src = `/site/${versions ? "v"+versions : "latest"}?t=${Date.now()}${runQ()}`;
     }
     paint($("pane-goal"), renderGoal(s)); paint($("pane-workflows"), renderWorkflows(s));
+    paint($("pane-planmap"), renderPlanMap());
     paint($("pane-conflicts"), renderConflicts(s)); paint($("pane-priorities"), renderPriorities(s)); paint($("pane-audit"), renderAudit(s));
     paint($("reportbody"), renderReport(s)); railPaint();
     paint($("pane-charter"), renderCharter(s));
@@ -1931,6 +2024,7 @@ function focusQuestion(id){
 }
 $("needs").addEventListener("click", e => { const b = e.target.closest("[data-needmsg]"); if (b) focusQuestion(b.dataset.needmsg); const g = e.target.closest("[data-gotab]"); if (g) showTab(g.dataset.gotab); });
 const TABHINT = {preview: "What the team has built so far.", goal: "What you asked for and what the team took from it.",
+  planmap: "The goal, the stages the Strategist chose and the workflows under each: their certainty zone, the judge's score, and what a change revised.",
   workflows: "The stages the Strategist chose, the jobs the work was split into by cycle, and the budget.", priorities: "How the Prioritiser ranked the work each cycle, what it deferred and why, and the credits spent.", conflicts: "Where the agents disagreed and how it was settled.",
   timeline: "Every message, in order.", audit: "The checks run on each version of the site.", charter: "The list of things you confirmed.",
   docs: "The design documents the team wrote.", artifacts: "The files and records this run produced.",
@@ -1946,9 +2040,10 @@ function showTab(name){
   const tb = document.querySelector(`.tabs [data-tab="${name}"]`);
   $("wtitle").textContent = tb ? tb.textContent.trim() : name; $("wsub").textContent = TABHINT[name] || ""; $("wsub").removeAttribute("title"); $("ver").hidden = name !== "preview"; if (name === "artifacts") try { artHead(); } catch (e) {}      // a ?tab=artifacts link runs before the Artifacts code is set up
   // the Map has its own heading, so the title bar is only for the other views
+  chatFollow(name);
   $("backmap").hidden = name === "map" || name === "artifacts";      // Artifacts has its own header: a breadcrumb and a count chip; the theme lives on the rail
   ["wcrumb", "wcnt"].forEach(i => $(i).hidden = name !== "artifacts"); document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map"); railReveal(name);
-  ["preview","goal","workflows","conflicts","priorities","timeline","audit","charter","docs","artifacts","board","library","story","map","style","lessons","playbooks","report","rundetails","runsettings"].forEach(t => $("pane-"+t).hidden = t !== name);
+  ["preview","goal","planmap","workflows","conflicts","priorities","timeline","audit","charter","docs","artifacts","board","library","story","map","style","lessons","playbooks","report","rundetails","runsettings"].forEach(t => $("pane-"+t).hidden = t !== name);
 }
 document.querySelectorAll(".tabs [role=tab]").forEach(b => b.onclick = () => { if (b.dataset.tab === "workflows" && WFSTEP.length){ WFSTEP = []; if (state) paint($("pane-workflows"), renderWorkflows(state)); } showTab(b.dataset.tab); });
 showTab("map");
@@ -3530,7 +3625,7 @@ function mapGo(id){
 async function loadMap(){
   try { const r = await fetch(`/api/map?${runQ().slice(1)}`, {cache:"no-store"}); if (r.ok) Object.assign(MAP, await r.json()); } catch (e) {}
   if (state) paint($("needs"), renderNeeds(state));      // the outcome line names what the Map shows left open
-  paintMap(); railPaint(); loadPlan();
+  paintMap(); railPaint(); loadPlan(); loadPlanMap();
 }
 function mapLight(svg, id){      // hover or focus: light the dot, the lines that touch it and the dots at their other ends; fade the rest ("" clears)
   const els = [...svg.querySelectorAll("[data-from],[data-id]")], hot = new Set(id ? [id] : []);
@@ -3950,6 +4045,7 @@ $("pane-workflows").addEventListener("click", e => { const a = e.target.closest(
 async function send(){
   const text = $("box").value.trim(); if (!text) return;
   $("box").value = "";
+  if (ASKMODE === "ask" && CHATFN) return askFn(text);
   await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text})});
 }
 $("send").onclick = send;
@@ -4048,7 +4144,7 @@ try { matchMedia("(prefers-color-scheme: light)").addEventListener("change", the
 themeApply();
 // ---- Left bar (icon rail): the Internals tabs in sections. A tab is placed by RAILSEC (the one declared table); a tab it does not name goes to the function whose Map node
 // carries it as its tab (FN_TAB in j2_map.py), else to Other. The function headers, the conflicts and the actions come from the run's records (state and Map).
-const RAILSEC = {conflicts: "conflicts", goal: "identity", charter: "identity", report: "identity", lessons: "adaptation", playbooks: "adaptation", workflows: "adaptation", priorities: "priority", timeline: "coordination",
+const RAILSEC = {conflicts: "conflicts", goal: "identity", charter: "identity", report: "identity", lessons: "adaptation", playbooks: "adaptation", planmap: "adaptation", workflows: "adaptation", priorities: "priority", timeline: "coordination",
   board: "coordination", story: "coordination", library: "library", audit: "audit", preview: "artifacts", docs: "artifacts", artifacts: "artifacts", runsettings: "settings", rundetails: "settings"};
 const RAILORDER = [["conflicts", "Conflicts"], ["identity", "Identity"], ["adaptation", "Adaptation"], ["priority", "Priority"], ["coordination", "Coordination"], ["audit", "Audit"],
   ["artifacts", "Artifacts"], ["actions", "Actions"], ["library", "Library"], ["other", "Other"], ["settings", "Settings"]];
@@ -4059,6 +4155,7 @@ function auditFindings(audits){      // a finding is a check that failed in some
   const all = Object.values(seen); return {n: all.length, fixed: all.filter(x => x.last).length, open: all.filter(x => !x.last).length};
 }
 const RAILDIM = {goal: s => !s.goal && "no charter recorded", charter: s => !s.goal && "no charter recorded", report: s => !s.report && !s.outcome && "no report yet",
+  planmap: s => !PLANMAP.found && "no plan record",
   workflows: s => !(s.workflows || []).length && "no workflows yet", priorities: s => !prioModel(s).has && "no ranking records", timeline: s => !(s.allChat || s.chat || []).length && "no messages recorded",
   audit: s => !(s.audits || []).length && "no audit yet", preview: s => !s.versions && "nothing built yet",
   docs: s => !(s.docset || []).length && !["prd", "hld", "lld"].some(k => DOCS[k] && DOCS[k].text) && "this run made no documents",
@@ -4087,6 +4184,76 @@ function renderPriorities(s){
 // Workflows (Adaptation creates them): the stages the Strategist chose with the plan's reasons (/api/plan, realization.json), then the workflows by cycle with a link to their Map focus, then the replans.
 const PLAN = {found: false};
 async function loadPlan(){ try { const r = await fetch(`/api/plan?${runQ().slice(1)}`, {cache: "no-store"}); if (r.ok){ for (const k of Object.keys(PLAN)) delete PLAN[k]; Object.assign(PLAN, await r.json()); if (state) paint($("pane-workflows"), renderWorkflows(state)); } } catch (e) {} }
+// Adaptation > Map (plan-map/1, /api/plan-map): the goal, the stages the Strategist chose and the workflows under each, drawn from the run's records only.
+// A workflow's square is tinted by its certainty zone; its badge is the judge's score against the gate (a tick at or above, an arrow below); "v2" marks
+// one a change revised; a halo marks where a change started; a dashed blue edge is a reader asked to reread a changed document. Click a dot for its panel.
+const PLANMAP = {found: false}; let PMSEL = "";
+async function loadPlanMap(){ try { const r = await fetch(`/api/plan-map?${runQ().slice(1)}`, {cache: "no-store"}); if (r.ok){ for (const k of Object.keys(PLANMAP)) delete PLANMAP[k]; Object.assign(PLANMAP, await r.json()); paint($("pane-planmap"), renderPlanMap()); railPaint(); } } catch (e) {} }
+const PMZONE = {operate: "Known: just build it.", analyze: "A few options: weigh them, then build.", experiment: "Unknown: test it with real people first.", stabilize: "Something broke: fix only that."};
+const pmZc = z => PMZONE[z] ? `var(--${z === "operate" ? "bld" : z === "analyze" ? "warm1" : z === "experiment" ? "purple" : "fix"})` : "var(--muted)";
+function pmWrap(s, n){ const lines = [""]; for (const w of String(s || "").split(/\s+/)){ const cur = lines[lines.length - 1]; if (cur && (cur + " " + w).length > n) lines.push(w); else lines[lines.length - 1] = (cur + " " + w).trim(); }
+  if (lines.length > 2){ lines.length = 2; lines[1] = lines[1].slice(0, n - 1) + "…"; } return lines; }
+function renderPlanMap(){
+  const m = PLANMAP; if (!m.found) return `<p class="empty">No plan record in this run: Adaptation's stages, zones and judge scores were not recorded (realization.json).</p>`;
+  const wf = Object.fromEntries((m.workflows || []).map(w => [w.id, w])), gate = m.threshold || 0.8, span = n => Math.max(1, Math.min(4, Math.ceil(n / 5)));
+  const cols = m.stages.map(s => ({...s, span: span(s.workflows.length)}));
+  if (m.unplaced.length) cols.push({id: "", thinking: "", workflows: m.unplaced, span: span(m.unplaced.length), unplaced: true});
+  const L = 100, CW = 170, gy = 58, sy = 190, wy = 310, step = 58, total = cols.reduce((a, s) => a + s.span, 0), Wd = L + total * CW, gcx = L + (total - 1) * CW / 2;
+  let edges = "", nodes = "", rows = `<text class="rowlab" x="16" y="${gy + 4}">goal</text>`, col = 0, maxRows = 1; const P = {};
+  const node = (k, x, y, cls, aria, inner) => `<g class="pnode ${cls}${PMSEL === k ? " sel" : ""}" data-pm="${esc(k)}" transform="translate(${x},${y})" tabindex="0" role="button" aria-label="${esc(aria)}">${inner}</g>`;
+  nodes += node("goal", gcx, gy, "pgoal", `The goal${m.zone ? ", certainty " + m.zone : ""}`, `<circle class="pdot" r="22" fill="color-mix(in srgb,var(--art) 45%,var(--node))" stroke="var(--team)" stroke-width="1.6"/><circle r="5.5" class="pglyph"/>
+    <text class="plab" y="39" text-anchor="middle">${esc(m.goal || "Goal")}</text><text class="psub" y="53" text-anchor="middle">${m.zone ? `certainty: <tspan style="fill:${pmZc(m.zone)};font-weight:600">${esc(m.zone)}</tspan>` : "certainty not recorded"}${m.confidence != null ? ` · plan ${(+m.confidence).toFixed(2)}` : ""}</text>`);
+  cols.forEach(s => {
+    const c0 = col; col += s.span; const sx = L + c0 * CW + (s.span - 1) * CW / 2, ids = s.workflows.filter(id => wf[id]), sid = s.id || "unplaced"; maxRows = Math.max(maxRows, Math.ceil(ids.length / s.span));
+    edges += `<path class="pedge" data-from="goal" data-to="${esc(sid)}" d="M${gcx} ${gy + 22} C${gcx} ${gy + 80}, ${sx} ${sy - 80}, ${sx} ${sy - 20}" marker-end="url(#pmarr)"/>`;
+    const glyph = s.unplaced ? "" : [0, 72, 144, 216, 288].map(a => { const q = a * Math.PI / 180 - Math.PI / 2; return `<circle cx="${(9 * Math.cos(q)).toFixed(1)}" cy="${(9 * Math.sin(q)).toFixed(1)}" r="2.6" class="pglyph"/>`; }).join("");
+    nodes += node(sid, sx, sy, "pstage", s.unplaced ? "Workflows with no stage recorded" : `${s.id}, a stage`, `<circle class="pdot" r="18" fill="var(--node)" stroke="${s.unplaced ? "var(--muted)" : "var(--team)"}" stroke-width="1.6"${s.unplaced ? ' stroke-dasharray="3 3"' : ""}/>${glyph}
+      <text class="plab" y="35" text-anchor="middle">${esc(s.unplaced ? "no stage" : s.id)}</text><text class="psub" y="49" text-anchor="middle">${ids.length} workflow${ids.length === 1 ? "" : "s"}${s.confidence != null ? ` · ${(+s.confidence).toFixed(2)}` : ""}</text>`);
+    ids.forEach((id, j) => {
+      const w = wf[id], c = j % s.span, r = Math.floor(j / s.span), x = L + (c0 + c) * CW - 60, y = wy + r * step, sc = w.score; P[id] = {x, y};
+      edges += r === 0 ? `<path class="pedge" data-from="${esc(sid)}" data-to="${esc(id)}" d="M${sx} ${sy + 18} C${sx} ${sy + 55}, ${x} ${wy - 45}, ${x} ${wy - 15}" marker-end="url(#pmarr)"/>`
+        : `<path class="pedge" data-from="${esc(sid)}" data-to="${esc(id)}" d="M${x} ${y - step + 15} L${x} ${y - 15}" marker-end="url(#pmarr)"/>`;
+      const held = /^(held|unfunded|not_ready|failed)$/.test(w.status), lines = pmWrap(w.name, 18), zc = pmZc(w.zone);
+      const badge = sc == null ? "" : `<g class="pbadge" transform="translate(11,-11)"><circle r="7" fill="${sc >= gate ? "var(--ok)" : "var(--validator)"}"/><text y="3.2" text-anchor="middle">${sc >= gate ? "✓" : "↻"}</text></g>`;
+      const ver = (w.revisions || []).length ? `<text class="pver" x="-14" y="26">v${w.revisions.length + 1}</text>` : "", halo = w.change_start ? `<rect class="phalo" x="-19" y="-19" width="38" height="38" rx="9"/>` : "";
+      const sub = [esc(w.id), w.zone ? `<tspan style="fill:${zc};font-weight:600">${esc(w.zone)}</tspan>` : "no zone", sc != null ? (+sc).toFixed(2) : "", w.revises ? "revises " + esc(w.revises) : ""].filter(Boolean).join(" · ");
+      nodes += node(id, x, y, "pwf", `${w.id} ${w.name}, ${w.zone || "no zone recorded"}${sc != null ? ", score " + (+sc).toFixed(2) : ""}, ${w.status}`, `${halo}<rect class="pdot" x="-14" y="-14" width="28" height="28" rx="6" fill="color-mix(in srgb,${zc} 38%,var(--node))" stroke="${held ? "var(--bad)" : zc}" stroke-width="1.6"${held ? ' stroke-dasharray="4 3"' : w.status === "registered" ? ' stroke-dasharray="2 3"' : ""}/>${badge}${ver}
+        <text class="plab" x="22" y="${lines[1] ? -5 : -1}">${esc(lines[0])}</text>${lines[1] ? `<text class="plab" x="22" y="8">${esc(lines[1])}</text>` : ""}<text class="psub" x="22" y="${lines[1] ? 21 : 13}">${sub}</text>`);
+    });
+  });
+  (m.workflows || []).forEach(w => (w.read || []).forEach(r => { const a = P[r.doc_id], b = P[w.id]; if (!a || !b || a === b) return;
+    edges += `<path class="pedge reads${r.agree || r.affected ? "" : " open"}" data-from="${esc(r.doc_id)}" data-to="${esc(w.id)}" d="M${a.x} ${a.y - 14} C${a.x} ${a.y - 66}, ${b.x} ${b.y - 66}, ${b.x} ${b.y - 14}" marker-end="url(#pmarrr)"><title>${esc(w.id)} reread ${esc(r.doc || r.doc_id)}: ${r.affected ? "affected, revised" : r.agree ? "agreed" : r.round ? "objected, round " + r.round : "asked"}</title></path>`; }));
+  rows += `<line class="rowdiv" x1="0" y1="${sy - 52}" x2="${Wd}" y2="${sy - 52}"/><text class="rowlab" x="16" y="${sy - 36}">stages · realization</text><line class="rowdiv" x1="0" y1="${wy - 54}" x2="${Wd}" y2="${wy - 54}"/><text class="rowlab" x="16" y="${wy - 38}">workflows · certainty</text>`;
+  const H = Math.max(440, wy + maxRows * step + 6), n = (m.workflows || []).length;
+  const head = `<div class="pmhead"><b>${esc(m.goal || "The plan")}</b><span>${m.stages.length} stage${m.stages.length === 1 ? "" : "s"} · ${n} workflow${n === 1 ? "" : "s"}${m.unplaced.length ? ` · ${m.unplaced.length} with no stage` : ""}</span>${(m.changes || []).map(c => `<span>${esc(c.id)}: ${esc(c.request)}${c.closed || !c.phase ? "" : ` (${esc(c.phase)})`}</span>`).join("")}<span>Click a stage or a workflow for its details.</span></div>`;
+  const legend = `<div class="pmlegend"><span><i style="--c:var(--bld)"></i>operate · just build</span><span><i style="--c:var(--warm1)"></i>analyze · weigh options first</span><span><i style="--c:var(--purple)"></i>experiment · test first</span><span><i style="--c:var(--fix)"></i>stabilize · fix what broke</span><span><i style="--c:var(--ok);border-radius:50%"></i>judge score at or above ${gate.toFixed(2)}</span><span><i style="--c:var(--validator);border-radius:50%"></i>below the gate</span><span>v2 · revised by a change</span><span>dashed red · held or unfunded</span><span><i style="--c:var(--e-reads);border-radius:0;height:2px;width:16px"></i>reread after a change</span></div>`;
+  return head + `<div class="pmwrap"><svg class="pmsvg" style="--w:${Wd}px" viewBox="0 0 ${Wd} ${H}" role="group" aria-label="Adaptation map: the goal, the stages and the workflows under each"><defs><marker id="pmarr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8z" class="parr"/></marker><marker id="pmarrr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8z" class="parr reads"/></marker></defs>${rows}<g class="pedges">${edges}</g><g class="pnodes">${nodes}</g></svg></div>` + legend + pmPanel(m, wf, gate);
+}
+function pmPanel(m, wf, gate){
+  if (!PMSEL) return "";
+  const close = `<button type="button" class="linkbtn" data-pmclose>Close (Esc)</button>`, w = wf[PMSEL], s = m.stages.find(x => x.id === PMSEL);
+  if (PMSEL === "goal") return `<aside class="mappanel" data-pmpanel="goal"><div class="mappanelhead"><b>The goal</b>${close}</div><div class="sub">${esc(m.statement || m.goal)}</div><div class="sub">Certainty ${m.zone ? `<b>${esc(m.zone)}</b>: ${esc(PMZONE[m.zone] || "")}` : "not recorded"}${m.confidence != null ? ` · plan confidence <b>${(+m.confidence).toFixed(2)}</b>, its weakest stage` : ""}</div></aside>`;
+  if (s) return `<aside class="mappanel" data-pmpanel="${esc(s.id)}"><div class="mappanelhead"><b>${esc(s.id)}</b>${close}</div><div class="sub">A stage is one kind of thinking the goal needs. ${esc(s.thinking)}${s.goal ? ` <span class="empty">${esc(s.goal)}</span>` : ""}</div><div class="sub">${s.workflows.length} workflow${s.workflows.length === 1 ? "" : "s"}: ${esc(s.workflows.join(", ") || "none")}${s.confidence != null ? ` · confidence <b>${(+s.confidence).toFixed(2)}</b>, its weakest workflow` : ""}${s.zone ? ` · zone ${esc(s.zone)}` : ""}</div></aside>`;
+  if (PMSEL === "unplaced") return `<aside class="mappanel" data-pmpanel="unplaced"><div class="mappanelhead"><b>No stage recorded</b>${close}</div><div class="sub">${esc(m.unplaced.join(", "))}: registered without a stage. The planning rule says every workflow belongs to a stage.</div></aside>`;
+  if (!w) return "";
+  const rounds = (w.rounds || []).map(x => (+x).toFixed(2)), sc = w.score;
+  return `<aside class="mappanel" data-pmpanel="${esc(w.id)}"><div class="mappanelhead"><b>${esc(w.id)} ${esc(w.name)}</b>${close}</div>
+    <div class="sub">${w.zone ? `<b style="color:${pmZc(w.zone)}">${esc(w.zone)}</b> · ${esc(PMZONE[w.zone] || "")}${w.zone_from && w.zone_from !== "plan" ? ` <span class="empty">(${esc(w.zone_from)})</span>` : ""}` : "No certainty zone recorded: registered before revisions inherited one."} ${esc(w.purpose)}</div>
+    ${sc != null ? `<div class="sub">Judge score <b>${(+sc).toFixed(2)}</b>${rounds.length > 1 ? ` (rounds: ${rounds.join(" → ")})` : ""}, ${sc >= gate ? "at or above" : "below"} the ${gate.toFixed(2)} gate${w.weakest ? ` · weakest check: ${esc(w.weakest)}` : ""}.</div>` : ""}
+    <div class="sub">cycle ${esc(w.cycle)} · <span class="pill ${esc(w.status)}">${esc(w.status)}</span>${w.cost != null ? ` · ${esc(w.cost)} credits` : ""}${w.revises ? ` · revises ${esc(w.revises)}` : ""}${(w.revisions || []).length ? ` · revised by ${esc(w.revisions.join(", "))}, now v${w.revisions.length + 1}` : ""}</div>
+    ${w.change_start ? `<div class="sub"><b>${esc(w.change_start.change)}</b> started here: ${esc(w.change_start.reason || w.change_start.request)}</div>` : ""}
+    ${(w.read || []).map(r => `<div class="sub">Asked to reread ${esc(r.doc || r.doc_id || "")} (${esc(r.change)}): ${r.affected ? "affected, revised after it" : r.agree ? "agreed" : r.round ? `objected in round ${esc(r.round)}` : "no answer recorded"}</div>`).join("")}
+    <div class="sub" style="margin-top:6px"><button type="button" class="gobtn" data-pmopen="${esc(w.id)}">Open in Workflows</button></div></aside>`;
+}
+$("pane-planmap").addEventListener("click", e => {
+  const n = e.target.closest("[data-pm]"); if (n){ PMSEL = PMSEL === n.dataset.pm ? "" : n.dataset.pm; paint($("pane-planmap"), renderPlanMap()); return; }
+  if (e.target.closest("[data-pmclose]")){ PMSEL = ""; paint($("pane-planmap"), renderPlanMap()); return; }
+  const o = e.target.closest("[data-pmopen]"); if (o) mapOpenIn("wf", o.dataset.pmopen);
+});
+$("pane-planmap").addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.dataset && e.target.dataset.pm){ e.preventDefault(); e.target.click(); } else if (e.key === "Escape" && PMSEL){ PMSEL = ""; paint($("pane-planmap"), renderPlanMap()); } });
+$("pane-planmap").addEventListener("mouseover", e => { const svg = e.target.closest(".pmsvg"); if (!svg) return; const g = e.target.closest("[data-pm]"); svg.classList.toggle("ehot", !!g);
+  svg.querySelectorAll(".pedge").forEach(p => p.classList.toggle("hot", !!g && (p.dataset.from === g.dataset.pm || p.dataset.to === g.dataset.pm))); });
+$("pane-planmap").addEventListener("mouseleave", () => { const svg = $("pane-planmap").querySelector(".pmsvg"); if (svg){ svg.classList.remove("ehot"); svg.querySelectorAll(".pedge.hot").forEach(p => p.classList.remove("hot")); } });
 function renderPlanView(s){
   const wfs = s.workflows || [], word = st => st === "done" ? "done" : st === "held" ? "blocked" : st === "running" ? "running" : esc(st || "not recorded"), byCycle = {};
   wfs.forEach(w => (byCycle[w.cycle || 1] = byCycle[w.cycle || 1] || []).push(w));
@@ -4125,8 +4292,8 @@ function railModel(s, m, tabs){
 // in a section not listed here (Other) shows under Settings, so no tab is ever lost.
 var RAILITEMS = {map: {secs: []}, identity: {secs: ["identity"], col: "--mid"}, adaptation: {secs: ["adaptation"], col: "--m1"}, priority: {secs: ["priority", "conflicts"], col: "--m2"},
   coordination: {secs: ["coordination"], col: "--m3"}, audit: {secs: ["audit"], col: "--m5"}, artifacts: {secs: ["artifacts"]}, actions: {secs: ["actions"]}, library: {secs: ["library"]}, settings: {secs: ["settings", "other"]}};
-var RAILTABS = ["goal", "charter", "report", "workflows", "lessons", "playbooks", "priorities", "conflicts", "timeline", "board", "story", "audit", "preview", "docs", "artifacts", "library", "rundetails", "runsettings"];
-var TABSUB = {goal: "what you asked for", charter: "the done-when list", report: "the summary at the end", workflows: "the jobs, by stage and cycle", lessons: "what earlier runs taught",
+var RAILTABS = ["goal", "charter", "report", "planmap", "workflows", "lessons", "playbooks", "priorities", "conflicts", "timeline", "board", "story", "audit", "preview", "docs", "artifacts", "library", "rundetails", "runsettings"];
+var TABSUB = {goal: "what you asked for", charter: "the done-when list", report: "the summary at the end", planmap: "goal, stages and workflows", workflows: "the jobs, by stage and cycle", lessons: "what earlier runs taught",
   playbooks: "plans reused from earlier runs", priorities: "what comes first and the budget", conflicts: "where the team disagreed", timeline: "what happened when", board: "messages between the team",
   story: "the board as a story", audit: "the checks on each version", preview: "the latest version", docs: "the design documents", artifacts: "files and records", library: "start a run from a saved template",
   rundetails: "run id, model, budget", runsettings: "appearance, what to build, saved runs"};
@@ -4201,6 +4368,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && RAIL.open)
 document.addEventListener("click", e => { if (RAIL.open && !e.target.closest("#rfly") && !e.target.closest("#rail .ri[data-ri]")) railClose(false); });
 $("rtheme").onclick = () => { THEME = document.documentElement.dataset.theme === "light" ? "dark" : "light"; try { localStorage.setItem("j2theme", THEME); } catch (err) {} themeApply(); sThemeBtn(); };
 railPaint();
+chatFollow((document.querySelector('.tabs [role=tab][aria-selected="true"]') || {dataset: {}}).dataset.tab);      // a deep link's tab was shown before RAILSEC existed
 poll();
 </script>
 </body>

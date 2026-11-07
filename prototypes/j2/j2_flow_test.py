@@ -38,7 +38,9 @@ import re
 import sys
 import time
 
+import atexit
 import hashlib
+import shutil
 import tempfile
 
 os.environ["STUDIO_MOCK"] = "1"
@@ -47,6 +49,7 @@ os.environ["J2_REALIZATION"] = "0"   # the classic path (realization is on by de
 # Every memory file of this test session lives in a temp folder, set before j2 is imported, so no test can write
 # lessons or playbooks into the real memory/ (it once wrote 109 mock cafe playbooks there; a live run reused one).
 SESSION_MEMORY = tempfile.mkdtemp(prefix="j2-test-memory-")
+atexit.register(shutil.rmtree, SESSION_MEMORY, ignore_errors=True)   # 112 of these once piled up 2.9 GB in %TEMP%
 os.environ["J2_MEMORY_FILE"] = os.path.join(SESSION_MEMORY, "lessons.jsonl")
 os.environ["J2_PLAYBOOK_FILE"] = os.path.join(SESSION_MEMORY, "playbooks.jsonl")
 os.environ["J2_RUNS_DIR"] = os.path.join(SESSION_MEMORY, "runs")   # runs/ holds real runs only: report evidence
@@ -7770,6 +7773,112 @@ def map_line():
           "no horizontal page scroll, the legend chip in the card corner covering nothing; wheel, + and - (0.25x to 4x), Fit after zoom and pan gives back the same transform; a click on a dot keeps the view; a narrower card refits ok")
 
 
+def late_judge_run():
+    """A mock run with realization on and one forced Audit failure: every planned workflow is registered with its stage and zone from
+    the plan; the fix Adaptation proposes after the failure inherits the stage and zone of the workflow it revises, is judged once
+    (Priority's exchanges resend it; the judgement is cached) and recorded in realization.json under "late" with a system line."""
+    import j2_realization
+    keep = {k: os.environ.get(k) for k in ("J2_REALIZATION", "J2_CHANGE", "J2_FORCE_AUDIT_FAIL")}
+    os.environ.update(J2_REALIZATION="1", J2_CHANGE="1", J2_FORCE_AUDIT_FAIL="1")
+    try:
+        run = j2.J2Run(); say(run, BREW_LAB); finish(run)
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+    wfs = run._all_wfs()
+    assert run.real is not None and wfs and all(w.get("stage") and w.get("certainty") and w.get("certainty_from") == ("plan" if not w.get("revises") else "inherited from " + w["revises"]) for w in wfs), \
+        [(w["id"], w.get("stage"), w.get("certainty"), w.get("certainty_from")) for w in wfs]
+    late = run.real.get("late") or []
+    assert late and all(x["revises"] and x["zone"] and x["stage"] and x["score"] >= j2_realization.THRESHOLD and x["ready"] for x in late), late
+    names = [x["workflow"] for x in late]
+    assert len(names) == len(set(names)), ("a resent proposal is judged once", names)
+    src = next(w for w in wfs if w["id"] == late[0]["revises"])
+    assert late[0]["zone"] == src["certainty"] and late[0]["stage"] == src["stage"], (late[0], src)
+    fix = next(w for w in wfs if w.get("revises") == src["id"])
+    assert fix["certainty"] == src["certainty"] and fix["stage"] == src["stage"] and fix["judge"]["score"] == late[0]["score"] and fix["judge"]["ready"],         ("the registered fix carries the inherited zone and its judgement", fix)
+    posts = [m for m in run.chat if m.get("judge")]
+    assert posts and "scored 0.95" in posts[0]["text"] and f"zone {src['certainty']}, stage {src['stage']}" in posts[0]["text"], posts[0]["text"]
+    saved = json.load(open(os.path.join(run.dir, "realization.json"), encoding="utf-8"))
+    assert saved.get("late") == late, "the late judgements are saved with the plan"
+    print(f"late judge: {len(wfs)} planned workflows placed from the plan; {len(late)} late judgement(s) inherited stage and zone and were judged once")
+
+
+def plan_map_view():
+    """Adaptation > Map (plan-map/1): the goal, the stages the Strategist chose and every registered workflow under each, from the run's own
+    records (realization.json, workflows.json, change.json, goal.json). Browser-free: the pane draws the goal, every stage, a no-stage column and
+    every workflow, tints by zone, shows the judge's score against the gate, marks a revised workflow and where a change started, and dashes a held one."""
+    import j2_map as M
+    import j2_realization as R
+    td = tempfile.mkdtemp(prefix="j2-planmap-")
+    rz = {"plan": {"certainty_assessment": {"zone": "analyze"}, "stages": [{"id": "product", "thinking": "scope"}, {"id": "build", "thinking": "make it"}],
+                   "workflows": [{"name": "Plan", "stage": "product", "certainty": "analyze", "goal": "fix the scope"},
+                                 {"name": "Shell", "stage": "build", "certainty": "operate", "goal": "page shell"}]},
+          "scores": {"Plan": {"score": 0.95, "weakest": None}, "Shell": {"score": 0.79, "weakest": "done_test"}}, "history": {"Plan": [0.95], "Shell": [0.75, 0.79]},
+          "plan_confidence": 0.79, "stages": {"product": {"confidence": 0.95, "zone": "analyze"}, "build": {"confidence": 0.79, "zone": "operate"}}}
+    wfs = [{"id": "W-1", "name": "Plan", "stage": "product", "cycle": 1, "status": "done", "cost": 20},
+           {"id": "W-2", "name": "Shell", "stage": "build", "cycle": 1, "status": "held", "cost": 30},
+           {"id": "W-3", "name": "Plan (change 1)", "stage": "product", "cycle": 2, "status": "done", "cost": 20, "revises": "W-1",
+            "certainty": "analyze", "certainty_from": "inherited from W-1", "judge": {"score": 0.9, "weakest": "done_test", "rounds": [0.7, 0.9], "ready": True}},
+           {"id": "W-4", "name": "Extra", "cycle": 2, "status": "registered", "cost": 10}]
+    ch = [{"id": "C-1", "request": "Rename the levels", "phase": "relay",
+           "nodes": {"W-1": {"name": "Plan", "verdict": "change-here", "revisions": ["W-3"], "reason": "the levels live in the plan"}},
+           "relay": [{"name": "Shell", "doc": "Plan (change 1)", "affected": False, "agree": True, "round": 0}]}]
+    for f, obj in (("realization.json", rz), ("workflows.json", wfs), ("change.json", ch), ("goal.json", {"site_name": "Sudoku", "statement": "a sudoku page"})):
+        json.dump(obj, open(os.path.join(td, f), "w", encoding="utf-8"))
+    m = M.plan_map(td)
+    assert m["found"] and m["goal"] == "Sudoku" and m["zone"] == "analyze" and m["confidence"] == 0.79 and m["threshold"] == R.THRESHOLD         and [s["id"] for s in m["stages"]] == ["product", "build"] and m["stages"][0]["workflows"] == ["W-1", "W-3"] and m["unplaced"] == ["W-4"], m
+    w = {x["id"]: x for x in m["workflows"]}
+    assert w["W-2"]["zone"] == "operate" and w["W-2"]["score"] == 0.79 and w["W-2"]["rounds"] == [0.75, 0.79] and w["W-2"]["weakest"] == "done_test"         and w["W-3"]["zone"] == "analyze" and w["W-3"]["zone_from"] == "inherited from W-1" and w["W-3"]["score"] == 0.9 and w["W-3"]["rounds"] == [0.7, 0.9] and w["W-1"]["zone_from"] == "plan" and w["W-4"]["zone"] is None and w["W-3"]["revises"] == "W-1" and w["W-1"]["revisions"] == ["W-3"] and w["W-1"]["change_start"]["change"] == "C-1"         and w["W-2"]["read"] == [{"change": "C-1", "doc": "Plan (change 1)", "affected": False, "agree": True, "round": 0, "doc_id": "W-1"}], w
+    assert M.plan_map(tempfile.mkdtemp(prefix="j2-planmap-empty-")) == {"found": False} and M.plan_map(None) == {"found": False}
+    out = render_node({"workflows": wfs, "chat": []}, docs={"docs": {}, "planmap": m})["planmap"]
+    assert all(f'data-pm="{i}"' in out for i in ("goal", "product", "build", "unplaced", "W-1", "W-2", "W-3", "W-4")) and "Shell" in out, "every node is drawn"
+    assert "var(--warm1)" in out and "var(--bld)" in out and out.count('class="pbadge"') == 3 and 'fill="var(--ok)"' in out and 'fill="var(--validator)"' in out,         "zones tint the squares; the badge is green at the gate and amber below it"
+    assert 'class="pver"' in out and ">v2<" in out and 'class="phalo"' in out and "pedge reads" in out and 'stroke-dasharray="4 3"' in out, "v2, the change halo, the reread edge, the held dash"
+    assert "No plan record" in render_node({"workflows": [], "chat": []}, docs={"docs": {}, "planmap": {"found": False}})["planmap"]
+    ui = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "j2_ui.html"), encoding="utf-8").read()
+    nav = ui[ui.index('id="railsub"'):ui.index("</nav>", ui.index('id="railsub"'))]
+    assert nav.index('data-tab="planmap"') < nav.index('data-tab="workflows"') and 'planmap: "adaptation"' in ui, "Map sits under Adaptation, before Workflows"
+    # the chat follows the open section: a message belongs to its speaker and to every function it addresses, hands to or is meant for
+    fns = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "msgs": [
+        {"who": "priority", "text": "@Adaptation GRANT for P-R1 and P-R2 at your estimates."}, {"who": "adaptation", "text": "@Priority two workflows", "next": "priority"},
+        {"who": "W-1", "text": "@Coordination done", "audience": "audit"}, {"who": "identity", "text": "@Requester thanks", "audience": "user"}, {"who": "system", "text": "cycle 2"}]})["msgfns"]
+    assert fns == [["priority", "adaptation"], ["adaptation", "priority"], ["W-1", "coordination", "audit"], ["identity"], ["system"]], fns
+    assert "chatFollow(name);" in ui and 'id="chatfn"' in ui and "data-chatall" in ui, "showTab filters the chat to the open section, with a Show all"
+    # activity/1: everything a function did, in order, from the records; a question answered from them (code only, or a model given the records)
+    import j2_agent as AG
+    td2 = tempfile.mkdtemp(prefix="j2-activity-")
+    chat = [{"id": 1, "t": "10:00:00", "who": "user", "text": "Build it"}, {"id": 2, "t": "10:00:05", "who": "identity", "text": "@Adaptation the charter is recorded", "next": "adaptation"},
+            {"id": 3, "t": "10:01:00", "who": "adaptation", "text": "Plan by realization: 2 stages", "realization": True}, {"id": 4, "t": "10:01:10", "who": "adaptation", "text": "@Priority proposing 2 workflows", "next": "priority"},
+            {"id": 5, "t": "10:02:00", "who": "priority", "text": "@Coordination go", "next": "coordination"}, {"id": 6, "t": "10:03:00", "who": "user", "text": "Rename the levels"}]
+    open(os.path.join(td2, "chat.jsonl"), "w", encoding="utf-8").write("".join(json.dumps(m) + chr(10) for m in chat))
+    calls = [{"id": 1, "fn": "adaptation", "t": "10:00:50", "step": 2, "cycle": 1, "seconds": 3.5, "reason": "two stages suffice", "inputs": [["charter", "x"]], "reply": {"say": "ok", "proposals": [1, 2]}},
+             {"id": 2, "fn": "priority", "t": "10:02:00", "step": 3, "seconds": 1}]
+    open(os.path.join(td2, "calls.jsonl"), "w", encoding="utf-8").write("".join(json.dumps(c) + chr(10) for c in calls))
+    rz["rounds"] = [{"round": 0, "scores": {"Plan": {"score": 0.95, "weakest": None}, "Shell": {"score": 0.79, "weakest": "done_test", "missing": ["no pass line"]}}, "changes": [], "plan_faults": []}]
+    rz["late"] = [{"workflow": "Plan (change 1)", "revises": "W-1", "t": "10:03:30", "score": 0.9, "weakest": "done_test", "missing": ["no pass line"], "rounds": [0.7, 0.9], "ready": True, "zone": "analyze", "stage": "product"}]
+    json.dump(rz, open(os.path.join(td2, "realization.json"), "w", encoding="utf-8")); json.dump(wfs, open(os.path.join(td2, "workflows.json"), "w", encoding="utf-8"))
+    json.dump([dict(ch[0], chat0=5)], open(os.path.join(td2, "change.json"), "w", encoding="utf-8"))
+    act = AG.activity(td2, "adaptation"); kinds = [e["kind"] for e in act["events"]]
+    assert act["found"] and act["persona"] == "Strategist" and kinds.count("msg") == 3 and kinds.count("call") == 1 and kinds.count("judge") == 2 and "revise" not in kinds and kinds.count("wf") == 2 and kinds.count("change") == 3, kinds
+    late = [e for e in act["events"] if e["kind"] == "judge"][-1]
+    assert late["t"] == "10:03:30" and "Judged Plan (change 1) (revises W-1): 0.90 after one improvement" in late["title"] and "rounds: 0.70 → 0.90" in late["items"][1], late
+    ts = [e["t"] for e in act["events"]]
+    assert ts == sorted(ts) and ts[kinds.index("call")] == "10:00:50" and all(e["t"] == "10:01:00" for e in act["events"] if e["kind"] in ("plan", "wf") or (e["kind"] == "judge" and "round" in e["title"])) \
+        and all(e["t"] == "10:03:00" for e in act["events"] if e["kind"] == "change") and kinds.index("judge") > kinds.index("wf") and kinds[-1] == "judge" and kinds[-2] == "change", (kinds, ts)
+    judge = next(e for e in act["events"] if e["kind"] == "judge")
+    assert "1 below" in judge["title"] and any("Shell: 0.79" in x and "done_test" in x and "no pass line" in x for x in judge["items"]), judge
+    assert AG.activity(td2, "audit") == {"schema": "activity/1", "who": "audit", "persona": "Quality Reviewer", "found": False, "names": act["names"], "events": []}
+    ans = AG.answer(td2, "adaptation", "what did the judge say about Shell?")
+    assert ans["from"] == "records" and "Shell: 0.79" in ans["answer"], ans
+    assert "nothing about that" in AG.answer(td2, "adaptation", "zzzz")["answer"] and "nothing for" in AG.answer(tempfile.mkdtemp(prefix="j2-act-empty-"), "adaptation", "x")["answer"]
+    asked = {}
+    got = AG.answer(td2, "adaptation", "why?", ask=lambda system, user, mock, **kw: asked.update(system=system, user=user) or "Because the judge said so.")
+    assert got["from"] == "model" and got["answer"] == "Because the judge said so." and "YOUR RECORDS" in asked["user"] and "Shell: 0.79" in asked["user"] and "Strategist" in asked["system"], "the model gets the records and the question"
+    feed = render_node({"workflows": wfs, "chat": []}, docs={"docs": {}, "activity": act})["feed"]
+    assert feed.count('class="fev') == len(act["events"]) - 3 and feed.count('class="msg ') == 3 and "f-judge" in feed and "Judge round 0" in feed and "Created Plan in product" in feed and "C-1: Rename the levels" in feed, "the feed draws every event: messages as bubbles, the rest as cards"
+    print("plan map: the Sudoku-shaped record builds, the pane draws every node with zone, score, v2, change halo and reread edge; Map sits under Adaptation; the chat follows the section; the feed and the question answer from the records")
+
+
 def left_bar():
     """Left bar data (the icon rail draws it; left_bar_toggle tests the rail itself): the tabs in sections (Conflicts only when the run has conflicts, the five functions,
     Artifacts, Actions, Other, Settings); no Internals folder. Every rail item's status line and badge come from the same records. Every run under runs/ (browser-free): every tab sits in exactly one section and Other is empty; Workflows is
@@ -7816,9 +7925,9 @@ def left_bar():
                     "playbooks_used": (summ.get("playbooks") or {}).get("used", []), "playbook_saved": (summ.get("playbooks") or {}).get("saved"), "has_templates": os.path.isfile(os.path.join(d, "templates.json"))}
             t = A.tree(d, m)
             docs_ = {k: {"asked": "", "text": open(os.path.join(d, k + ".md"), encoding="utf-8").read()} for k in docfiles}
-            plan = M.plan_view(d)
+            plan, planmap = M.plan_view(d), M.plan_map(d)
             gr = A.groups(d, m)
-            out = render_node(snap, docs={"docs": docs_, "map": m, "railtabs": tabs, "plan": plan, "artifacts": {"tree": t, "groups": gr}})
+            out = render_node(snap, docs={"docs": docs_, "map": m, "railtabs": tabs, "plan": plan, "planmap": planmap, "artifacts": {"tree": t, "groups": gr}})
             model = out["rail"]
             assert [x["id"] for x in model] == order, (name, "the sections, in order")
             # deep links from the Map: every workflow has its row in Workflows, every artifact and section on the Map its item in Artifacts
@@ -7845,7 +7954,7 @@ def left_bar():
             placed = [t_["tab"] for x in model for t_ in x["tabs"]]
             assert sorted(placed) == sorted(tabs), (name, "every tab is in exactly one section")
             assert sec["other"]["tabs"] == [] and not sec["other"]["shown"], (name, "Other is empty", sec["other"]["tabs"])
-            assert [t_["tab"] for t_ in sec["adaptation"]["tabs"]] == ["workflows", "lessons", "playbooks"] or sorted(t_["tab"] for t_ in sec["adaptation"]["tabs"]) == ["lessons", "playbooks", "workflows"], (name, "Workflows is under Adaptation")
+            assert [t_["tab"] for t_ in sec["adaptation"]["tabs"]] == ["planmap", "workflows", "lessons", "playbooks"], (name, "Map, then Workflows, under Adaptation")
             assert [t_["tab"] for t_ in sec["priority"]["tabs"]] == ["priorities"] and "workflows" not in [t_["tab"] for t_ in sec["coordination"]["tabs"]], (name, "Priorities under Priority")
             assert sorted(t_["tab"] for t_ in sec["coordination"]["tabs"]) == ["board", "story", "timeline"], (name, "Coordination keeps Timeline, Board, Board story")
             conf = snap["conflicts"]
@@ -7887,7 +7996,8 @@ def left_bar():
             # dimmed tabs: exactly those whose data this run lacks
             lacks = {"goal": not snap["goal"], "charter": not snap["goal"], "report": not report and not summ.get("outcome"), "workflows": not wfs, "priorities": not has, "timeline": not chat,
                      "audit": not snap["audits"], "preview": not versions, "docs": not snap["docset"] and not docfiles, "artifacts": not any(g["count"] for g in t["groups"]),
-                     "lessons": not (snap["lessons_used"] or snap["lessons_saved"]), "playbooks": not (snap["playbooks_used"] or snap["playbook_saved"])}
+                     "lessons": not (snap["lessons_used"] or snap["lessons_saved"]), "playbooks": not (snap["playbooks_used"] or snap["playbook_saved"]),
+                     "planmap": not planmap["found"]}
             dimmed = {t_["tab"] for x in model for t_ in x["tabs"] if t_["dim"]}
             assert dimmed == {k for k, v in lacks.items() if v}, (name, "dimmed tabs are the ones with no data", dimmed ^ {k for k, v in lacks.items() if v})
             assert all(t_["dim"] for x in model for t_ in x["tabs"] if t_["tab"] in ("lessons", "playbooks") and lacks[t_["tab"]]) and not any(t_["dim"] for x in model for t_ in x["tabs"] if t_["tab"] in ("rundetails", "runsettings", "conflicts", "map")), (name, "reasons given; the settings are never dimmed")
@@ -8031,7 +8141,7 @@ def left_bar_toggle():
     srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), Wrap)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base, seen = f"http://127.0.0.1:{srv.server_address[1]}", 0
-    want_tabs = {"identity": ["goal", "charter", "report"], "adaptation": ["workflows", "lessons", "playbooks"], "priority": ["priorities", "conflicts"], "coordination": ["timeline", "board", "story"],
+    want_tabs = {"identity": ["goal", "charter", "report"], "adaptation": ["planmap", "workflows", "lessons", "playbooks"], "priority": ["priorities", "conflicts"], "coordination": ["timeline", "board", "story"],
                  "audit": ["audit"], "artifacts": ["preview", "docs"], "library": ["library"], "settings": ["rundetails", "runsettings"], "map": [], "actions": []}
     try:
         for run in runs:
@@ -9783,7 +9893,7 @@ def map_tab():
     rail = ui[ui.index('<nav class="rail tabs"'):ui.index("</nav>", ui.index('<nav class="rail tabs"'))]
     top, inside = rail.split('id="railsub"')
     # the Board story is the first entry under Internals (shown only when the run has a board); the rest are the old order
-    old_tabs = ["story", "preview", "goal", "workflows", "conflicts", "priorities", "timeline", "audit", "charter", "docs", "artifacts", "board", "library", "lessons", "playbooks", "report", "rundetails", "runsettings"]      # the Style guide is under Artifacts > Specs
+    old_tabs = ["story", "preview", "goal", "planmap", "workflows", "conflicts", "priorities", "timeline", "audit", "charter", "docs", "artifacts", "board", "library", "lessons", "playbooks", "report", "rundetails", "runsettings"]      # the Style guide is under Artifacts > Specs
     assert re.findall(r'data-ri="(\w+)"', top) == ["map", "identity", "adaptation", "priority", "coordination", "audit", "artifacts", "actions", "library", "settings"] and 'id="gochat"' in top and 'id="internals"' not in top and "Internals" not in rail, "the icon rail: Map, Chat, the five functions, Artifacts, Actions, Library, Settings; no Internals folder"
     assert re.findall(r'data-tab="(\w+)"', inside) == ["map"] + old_tabs, "every tab is in the rail's panel pool, in the old order"
     assert top.count("<svg") == 11, "an icon for every rail item"
@@ -10928,6 +11038,8 @@ if __name__ == "__main__":
             map_line()
             map_logic()
             left_bar()
+            plan_map_view()
+            late_judge_run()
             left_bar_toggle()
             chat_panel()
             view_kept()
