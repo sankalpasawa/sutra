@@ -4,9 +4,11 @@
     sutra-pro update-check [--json]                                        the same on the command line (`register`)
     POST /api/ops/update-check                                             the Settings -> About button (ops/update_api.py)
 
-NOTHING HERE RUNS ON IMPORT, ON BOOT OR ON A TIMER. The outbound requests of the app are made inside `check`, and `check` is called only by the owner's
-click or the owner's command. It is ONE request while the newest Sutra Pro release is on the first page of the list; the list is shared with the older
-product, whose releases are many and large, so a further page (at most MAX_PAGES in all) is asked only when the pages so far held no Sutra Pro release. It downloads and installs nothing (D34): it reads the list of releases and says what it found, with the one line the
+NOTHING HERE RUNS ON IMPORT, ON BOOT OR ON A TIMER. The outbound requests of the app are made inside `check` (and `plan`, which is `check` plus the asset
+of one platform), and they are called only by the owner's click, the owner's command, or the desktop app's own timer asking POST /api/ops/update-plan
+while "Check for updates automatically" is on (ops/update_api.py; gap package autoupdate). It is ONE request while the newest Sutra Pro release is on the first page of the list; the list is shared with the older
+product, whose releases are many and large, so a further page (at most MAX_PAGES in all) is asked only when the pages so far held no Sutra Pro release. It downloads and installs nothing (D34; the desktop app's updater does that, and it
+is told here only the facts of the matching release's assets): it reads the list of releases and says what it found, with the one line the
 owner follows for their kind of install. It sends nothing but the GET itself (no cookie, no identifier, no version header beyond a fixed User-Agent).
 
 The feed is the Sutra repository's release list, filtered here (D100): a Sutra Pro tag is exactly `sutra-pro-vX.Y.Z` or `sutra-pro-vX.Y.Z-beta.N`, never
@@ -33,7 +35,7 @@ from pydantic import BaseModel, ConfigDict
 import sutra_app
 from sutra_app.ops import cli
 
-__all__ = ["check", "Answer", "install_kind", "how_to_update", "parse_tag", "default_fetch", "register", "REPO", "RELEASE_API", "RELEASES_PAGE",
+__all__ = ["check", "plan", "Answer", "Plan", "AssetFact", "ASSET_NAMES", "PLATFORM_ASSETS", "MAX_ASSET_BYTES", "install_kind", "how_to_update", "parse_tag", "default_fetch", "register", "REPO", "RELEASE_API", "RELEASES_PAGE",
            "TIMEOUT_S", "MAX_BODY", "PER_PAGE", "MAX_PAGES", "NET_ERRORS"]
 
 REPO = "sankalpasawa/sutra"
@@ -54,6 +56,23 @@ VERSION_RE = re.compile(rf"(?P<v>{_NUM}\.{_NUM}\.{_NUM})(?:(?:-beta\.|b)(?P<beta
 
 Fetch = Callable[[str, float], bytes]
 
+# The assets the desktop app's updater may take (D100's stable, version-free names): one disk image per Mac architecture, the per-user Windows installer.
+# Each has a `<name>.sha256` beside it on the release (`shasum -a 256 <name>`: "<hex>  <name>").
+ASSET_NAMES = ("Sutra-Pro-arm64.dmg", "Sutra-Pro-x86_64.dmg", "Sutra-Pro-Setup-x64.exe")
+PLATFORM_ASSETS = {("darwin", "arm64"): "Sutra-Pro-arm64.dmg", ("darwin", "x64"): "Sutra-Pro-x86_64.dmg", ("win32", "x64"): "Sutra-Pro-Setup-x64.exe"}
+MAX_ASSET_BYTES = 1 << 30             # 1 GB: a larger asset is no build of ours
+MAX_CHECKSUM_BYTES = 4096             # a .sha256 file is one line
+
+
+class AssetFact(BaseModel):
+    """One downloadable file of a release, as the feed states it and only after every field passed its check (see `_asset_facts`)."""
+
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    url: str                             # https://github.com/<repo>/releases/download/<tag>/<name>, exactly
+    size: int                            # bytes, 1 .. MAX_ASSET_BYTES
+    sha256_url: str                      # the same, for `<name>.sha256`
+
 
 class Answer(BaseModel):
     """What the check found. `error` is a sentence for the owner when the question could not be answered (every other field is then as far as it got)."""
@@ -67,6 +86,15 @@ class Answer(BaseModel):
     how: str = ""                        # the one line for this install
     kind: str = "command"
     error: str | None = None
+    tag: str | None = None               # the tag of `latest`, "sutra-pro-v0.2.0"
+    assets: dict[str, AssetFact] = {}    # the usable assets of that release by name (empty when the feed lists none that passed), newer or not
+
+
+class Plan(Answer):
+    """What the desktop app's updater needs: the answer plus the asset for ITS platform and architecture. `asset` is set only when `newer` and no `error`."""
+
+    channel: str = "stable"              # "beta" when the running version is a beta (it is offered newer betas and stables), else "stable" (stables only)
+    asset: AssetFact | None = None
 
 
 def parse_tag(tag: object, *, beta_ok: bool = True) -> tuple[tuple[int, int, int, int], str] | None:
@@ -128,8 +156,39 @@ def default_fetch(url: str, timeout: float) -> bytes:
     return body
 
 
-def _pick(releases: Any, beta_ok: bool) -> tuple[tuple[int, int, int, int], str, str] | None:
-    """The newest (key, version, release page) among the Sutra Pro releases of a list, or None."""
+Picked = tuple[tuple[int, int, int, int], str, str, str, dict[str, AssetFact]]
+
+
+def _size_ok(value: Any, high: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= high
+
+
+def _asset_facts(item: dict, tag: str) -> dict[str, AssetFact]:
+    """The usable assets of one release. An asset is kept only when its name is one of ASSET_NAMES, GitHub says it is uploaded, its address is EXACTLY
+    https://github.com/<repo>/releases/download/<tag>/<name> (built here from the release's own tag, never taken from the feed's text), its size is a
+    sane whole number, and the release carries `<name>.sha256` the same way. Anything else drops that one asset: a feed cannot point the updater elsewhere."""
+    listed = item.get("assets")
+    if not isinstance(listed, list):
+        return {}
+    uploaded: dict[str, tuple[str, Any]] = {}
+    for entry in listed:
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str) and entry.get("state") == "uploaded" and entry["name"] not in uploaded:
+            url = entry.get("browser_download_url")
+            uploaded[entry["name"]] = (url if isinstance(url, str) else "", entry.get("size"))
+    base = f"https://github.com/{REPO}/releases/download/{tag}/"
+    facts: dict[str, AssetFact] = {}
+    for name in ASSET_NAMES:
+        main, side = uploaded.get(name), uploaded.get(name + ".sha256")
+        if main is None or side is None:
+            continue
+        if main[0] != base + name or side[0] != base + name + ".sha256" or not _size_ok(main[1], MAX_ASSET_BYTES) or not _size_ok(side[1], MAX_CHECKSUM_BYTES):
+            continue
+        facts[name] = AssetFact(name=name, url=base + name, size=main[1], sha256_url=base + name + ".sha256")
+    return facts
+
+
+def _pick(releases: Any, beta_ok: bool) -> Picked | None:
+    """The newest (key, version, release page, tag, assets) among the Sutra Pro releases of a list, or None."""
     if not isinstance(releases, list):
         raise ValueError("the release list is not a list")
     best = None
@@ -139,9 +198,10 @@ def _pick(releases: Any, beta_ok: bool) -> tuple[tuple[int, int, int, int], str,
         parsed = parse_tag(item.get("tag_name"), beta_ok=beta_ok)
         if parsed is None or (item.get("prerelease") is True and not beta_ok):
             continue
-        page = item.get("html_url")
         if best is None or parsed[0] > best[0]:
-            best = (parsed[0], parsed[1], page if isinstance(page, str) and _SAFE_PAGE.fullmatch(page) else RELEASES_PAGE)
+            page = item.get("html_url")
+            best = (parsed[0], parsed[1], page if isinstance(page, str) and _SAFE_PAGE.fullmatch(page) else RELEASES_PAGE, item["tag_name"],
+                    _asset_facts(item, item["tag_name"]))
     return best
 
 
@@ -149,7 +209,7 @@ def _page_url(url: str, page: int) -> str:
     return url if page == 1 else url + ("&" if "?" in url else "?") + f"page={page}"
 
 
-def _newest(fetch: Fetch, url: str, beta_ok: bool) -> tuple[tuple[int, int, int, int], str, str] | None:
+def _newest(fetch: Fetch, url: str, beta_ok: bool) -> Picked | None:
     """The newest Sutra Pro release, reading the list newest first and going on to the next page only while a full page held none."""
     for page in range(1, MAX_PAGES + 1):
         releases = json.loads(fetch(_page_url(url, page), TIMEOUT_S))
@@ -172,9 +232,21 @@ def check(current: str, fetch: Fetch | None = None, url: str = RELEASE_API, how:
         return answer.model_copy(update={"error": "The answer from GitHub could not be read."})
     if picked is None:
         return answer.model_copy(update={"error": "No Sutra Pro release was found on GitHub yet."})
-    key, version, page = picked
+    key, version, page, tag, assets = picked
     newer = running is not None and key > running[0]
-    return answer.model_copy(update={"latest": version, "newer": newer, "notes_url": page, "url": page if newer else RELEASES_PAGE})
+    return answer.model_copy(update={"latest": version, "newer": newer, "notes_url": page, "url": page if newer else RELEASES_PAGE, "tag": tag, "assets": assets})
+
+
+def plan(current: str, platform: str | None, arch: str | None, fetch: Fetch | None = None, url: str = RELEASE_API, how: str | None = None) -> Plan:
+    """`check` plus the asset of `(platform, arch)` (Node's names: darwin/win32, arm64/x64) for the desktop app's updater. Never raises. One request
+    while the newest release is on the first page, like `check`. No asset for a platform that has none, and none when nothing newer is out."""
+    answer = check(current, fetch=fetch, url=url, how=how)
+    running = _running(current)
+    asset = None
+    if answer.newer and not answer.error:
+        wanted = PLATFORM_ASSETS.get((platform, arch)) if isinstance(platform, str) and isinstance(arch, str) else None
+        asset = answer.assets.get(wanted) if wanted else None
+    return Plan(**answer.model_dump(), channel="beta" if running is not None and running[1] else "stable", asset=asset)
 
 
 def _words(exc: BaseException) -> str:
