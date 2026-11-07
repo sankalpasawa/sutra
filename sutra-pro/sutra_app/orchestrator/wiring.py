@@ -39,7 +39,7 @@ from sutra_app.orchestrator.agent.runner import TurnRunner
 from sutra_app.orchestrator.atoms import AtomStore
 from sutra_app.orchestrator.chart import ChartStore
 from sutra_app.orchestrator.attachments import Attachments
-from sutra_app.orchestrator.chat_v2 import ChatChoices
+from sutra_app.orchestrator.chat_v2 import ChatChoices, recover_interrupted
 from sutra_app.orchestrator.chats import ChatStore, ChatTranscripts
 from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.departments import DepartmentStore
@@ -221,6 +221,9 @@ async def start_services(services: AppServices) -> AppServices:
     services.reconciled = await reconcile(
         tasks=services.tasks.store, projector=services.projector, watcher=services.watcher, launcher=services.launcher,
         publish=services.bus.publish_one, clock=services.clock)
+    marked = await run_blocking(recover_interrupted, services.db, services.chats)     # a direct turn the last process did not finish gets its error line
+    if marked:
+        log.info("%d direct chat turn(s) of the last run were interrupted and are marked", marked)
     if services.recurring is not None:                      # the one catch-up for the time the app was away, before the first start_ready
         await services.recurring.start()
     await services.tasks.start_ready()

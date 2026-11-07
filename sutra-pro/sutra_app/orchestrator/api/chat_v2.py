@@ -23,6 +23,7 @@ import asyncio
 import base64
 import binascii
 import logging
+import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
@@ -39,7 +40,7 @@ from sutra_app.orchestrator.api.chat import ID_PATTERN, respond
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
 from sutra_app.orchestrator import direct_running
 from sutra_app.orchestrator.chat_ground import ground
-from sutra_app.orchestrator.chat_v2 import MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
+from sutra_app.orchestrator.chat_v2 import DIRECT_ASK, MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
 from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.direct_turns import MAX_TEXT, Ending, attached_line, failed, finished, stopped
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly, validation_error
@@ -229,8 +230,10 @@ def _post_all(services: Any, sid: str, endings: list[Ending]) -> None:
 
 
 def _store_user_line(services: Any, sid: str, text: str, attached: str = "") -> int:
-    """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself)."""
-    return _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""))
+    """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself). Its src_ref marks it as the
+    start of a direct turn, so that a start after a crash can find the ones that never got an ending (`chat_v2.recover_interrupted`)."""
+    return _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""),
+                 src_ref=DIRECT_ASK + uuid.uuid4().hex[:16])
 
 
 def _ground(services: Any, port: Any, sid: str) -> None:

@@ -4,6 +4,7 @@
     ChatSearch(db).search("deploy", scope="dept:web", include_archived=False)          # at most 50 rows, scope applied in SQL
     ChatArchive(db).archive(tx, sid) / .unarchive(tx, sid)                             # a mark, never a delete
     ChatChoices(db).set(tx, sid, "codex") / .get(sid)                                  # the owner's choice, survives a restart
+    recover_interrupted(db, chats)                                                    # at start: the direct turns the last process did not finish
 
 There is no delete anywhere in this module. The tables and triggers are created by `schema._v2`.
 """
@@ -14,11 +15,14 @@ import re
 import sqlite3
 from typing import Any
 
+from sutra_app.library.gate import GATE
+from sutra_app.orchestrator import direct_turns
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.ids import iso_z
+from sutra_app.orchestrator.records import ChatMessage
 
-__all__ = ["ChatSegments", "ChatSearch", "ChatArchive", "ChatChoices", "MAX_RESULTS", "SCOPE_RE"]
+__all__ = ["ChatSegments", "ChatSearch", "ChatArchive", "ChatChoices", "MAX_RESULTS", "SCOPE_RE", "DIRECT_ASK", "INTERRUPTED", "recover_interrupted"]
 
 MAX_RESULTS = 50
 SCOPE_RE = re.compile(r"^(all|node:[a-z][a-z0-9_.-]{1,60}|dept:[a-z][a-z0-9_-]{1,40})$")
@@ -187,3 +191,28 @@ class ChatChoices:
         cur = tx.conn.execute("UPDATE chat_sessions SET pinned = ? WHERE id = ?", (value, session_id))
         if cur.rowcount == 0:
             raise NotFound("that chat")
+
+
+# ---- direct turns the last process did not finish ---------------------------------------------------------------------------------------------------
+
+DIRECT_ASK = "direct-ask:"           # the src_ref prefix of the owner's line that starts a direct turn (api/chat_v2._store_user_line adds a random tail)
+INTERRUPTED = "Interrupted: the app closed before the model answered."
+
+
+def recover_interrupted(db: Database, chats: Any) -> int:
+    """Marks every owner's direct line that has no ending: the error line `INTERRUPTED`, stored like any failed turn's (`direct_turns.failed`: src_ref
+    `direct:<id>`, so the page offers Retry and the line is answered for good). A process that dies mid-turn (SIGKILL, a crash, a power cut) cannot say so itself;
+    a graceful stop already stores its own note. Called once at start, before any turn of this process exists. The team route's lines carry no mark and are
+    never touched. -> how many lines were marked."""
+    rows = db.conn().execute(
+        "SELECT m.session_id AS sid, m.id AS id FROM chat_messages m WHERE m.src_ref LIKE ? AND NOT EXISTS ("
+        " SELECT 1 FROM chat_messages r WHERE r.session_id = m.session_id AND r.src_ref = 'direct:' || m.id) ORDER BY m.id", (DIRECT_ASK + "%",)).fetchall()
+    marked = 0
+    for row in rows:
+        with db.tx() as tx:
+            for ending in direct_turns.failed(int(row["id"]), "", INTERRUPTED):
+                posted = chats.post(tx, row["sid"], GATE.check("chat_message", ChatMessage(
+                    kind=ending.kind, session_id=row["sid"], role="agent", who="sutra", text=ending.text, blocks=ending.blocks, src_ref=ending.src_ref,
+                    at=tx.now()), ctx=tx.ctx))
+                marked += 1 if posted is not None else 0
+    return marked
