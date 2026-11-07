@@ -11,7 +11,7 @@ import pytest
 from orchestrator.test_api_chat_v2 import H, rig, wait_for, world  # noqa: F401  (the fixtures of the chat v2 routes)
 
 from sutra_app.connectors.chat_models import ChatEvent, ChatTurnIn
-from sutra_app.connectors.errors import CallCancelledError, CrashedError
+from sutra_app.connectors.errors import CallCancelledError, CrashedError, ReplyTruncatedError
 from sutra_app.orchestrator import direct_turns
 from sutra_app.orchestrator.api import chat_v2
 from sutra_app.orchestrator.events import PARTIAL
@@ -73,6 +73,17 @@ def test_a_crash_midway_keeps_the_partial_reply_and_the_real_reason(rig):
     assert [(r["kind"], r["src_ref"]) for r in rows] == [("text", f"direct:{user}"), ("error", f"direct-error:{user}")]
     assert rows[0]["text"] == LONG.strip() and rows[1]["text"] == crash.user_message()        # the store trims a message's ends, as for every reply
     assert [m.turn for m in out] == [user, user]
+
+
+def test_a_reply_cut_by_the_length_limit_says_so_in_words_the_owner_can_act_on(rig):
+    """QA direct-chat P3: the line read 'reply was cut off (partial text in detail)', and no detail is anywhere the owner can open."""
+    user, rows, out, _ = run(rig, partial(LONG), ReplyTruncatedError("", provider="claude", detail={"reason": "max_output_tokens"}))
+    assert [(r["kind"], r["src_ref"]) for r in rows] == [("text", f"direct:{user}"), ("error", f"direct-error:{user}")]      # the written part is kept
+    sentence = rows[1]["text"]
+    assert "detail" not in sentence and "partial" not in sentence
+    assert sentence == "The reply was cut off because it reached the model's length limit. Ask for a shorter answer, or say \"continue\"."
+    user, rows, out, _ = run(rig, ReplyTruncatedError("", provider="claude"))                    # nothing written: the sentence alone ends the turn
+    assert [(r["kind"], r["text"]) for r in rows] == [("error", sentence)]
 
 
 def test_a_failure_with_nothing_written_is_the_error_line_as_before(rig):

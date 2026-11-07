@@ -133,7 +133,7 @@ class ConnectorConfig(M):    # paths and executables; tests point these at the f
 | `empty_reply` | `EmptyReplyError` | bad_output | yes | yes | "{provider} returned nothing" |
 | `structured` | `StructuredError`(`StructuredOutputFailed`) | bad_output | no (strategy switch) | no | "the structured reply could not be produced" |
 | `invalid_json` | `InvalidJsonError` | bad_output | no | by policy | pydantic or parse errors (first 500 chars) |
-| `reply_truncated`, `invalid_request` | `ReplyTruncatedError`, `InvalidRequestError` | bad_output | no | no | "reply was cut off (partial text in detail)" / what was wrong (bad schema, missing image, prompt too long) |
+| `reply_truncated`, `invalid_request` | `ReplyTruncatedError`, `InvalidRequestError` | bad_output | no | no | "The reply was cut off because it reached the model's length limit." (the direct chat adds what to do next) / what was wrong (bad schema, missing image, prompt too long) |
 | `envelope_exceeded` | `EnvelopeExceededError` | quota | no | no | "the envelope allows no more calls, money or time" |
 | `cancelled`, `policy_invalid` | `CallCancelledError`, `PolicyInvalidError` | unavailable | no | no | "stopped" / the policy file errors |
 

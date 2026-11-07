@@ -32,7 +32,7 @@ from pydantic import ConfigDict, Field, StringConstraints
 from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE
 from sutra_app.connectors.chat_models import AttachmentRef, ChatTurnIn
 from sutra_app.connectors.egress import scan
-from sutra_app.connectors.errors import CallCancelledError, ConnectorError
+from sutra_app.connectors.errors import CallCancelledError, ConnectorError, ReplyTruncatedError
 from sutra_app.library.base import Value
 from sutra_app.library.gate import GATE
 from sutra_app.library.types import violation
@@ -286,6 +286,8 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
             endings = stopped(user_message_id, shown)
         else:
             message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
+            if isinstance(exc, ReplyTruncatedError):                 # the part that was written is kept above; say what the owner can do next
+                message += " Ask for a shorter answer, or say \"continue\"."
             endings = failed(user_message_id, shown, message)
         try:
             _post_all(services, sid, endings)
