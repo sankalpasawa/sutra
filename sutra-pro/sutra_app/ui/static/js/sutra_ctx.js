@@ -178,6 +178,22 @@
 
   const needsToken = method => method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
 
+  // A server restart kills the launch token of a page that stays open (tab_heal.js, gap package welcome-settings): a write refused with 401 `bad_token` gets
+  // the fresh token from the page's own boot block and is repeated ONCE. tab_heal.js is looked up when needed (a global in the page, a require in node); without
+  // it, or when the heal fails, the refusal is passed on as before and the page shows its "opened without its access token" banner.
+  function healer() {
+    if (root.TabHeal) return root.TabHeal;
+    if (typeof module === "object" && module !== null && module.exports && typeof require === "function") {
+      try { return require("./tab_heal.js"); } catch (e) { return null; }
+    }
+    return null;
+  }
+  async function healToken() {
+    const h = healer();
+    if (!h) return false;
+    try { return (await h.heal(ctx, state.origFetch || root.fetch)) === true; } catch (e) { return false; }
+  }
+
   // A copy of `init` (an object: it names the write method) whose headers carry the token; one the caller set is kept.
   // Headers as a Headers object, a list of pairs or a plain object; `init` itself is not changed.
   function withToken(init, token) {
@@ -205,8 +221,18 @@
     const original = win.fetch;
     const wrapped = function sutraFetch(input, init) {
       const token = tokenOf();
-      const nextInit = token !== "" && isRootRelative(input) && needsToken(methodOf(init)) ? withToken(init, token) : init;
-      return original.call(win, withDept(input), nextInit);
+      const signed = token !== "" && isRootRelative(input) && needsToken(methodOf(init));
+      const first = original.call(win, withDept(input), signed ? withToken(init, token) : init);
+      // J2's own writes heal too: a 401 `bad_token` (read from a clone, the caller still gets its response) is repeated once with the fresh token, and only
+      // when the body can be sent again (none, or a string)
+      if (!signed || !(init.body === undefined || typeof init.body === "string")) return first;
+      return first.then(async res => {
+        if (!res || res.status !== 401 || typeof res.clone !== "function") return res;
+        let dead = false;
+        try { dead = (await res.clone().json())?.error?.code === "bad_token"; } catch (e) { dead = false; }
+        if (!dead || !(await healToken())) return res;
+        return original.call(win, withDept(input), withToken(init, tokenOf()));
+      });
     };
     wrapped.sutraWrapped = true;
     if (win === root) state.origFetch = original;
@@ -243,7 +269,7 @@
   }
 
   // These calls never go through the wrapper above: they carry the token themselves and must never get `dept`.
-  async function send(method, path, query, body) {
+  async function send(method, path, query, body, repeated) {
     const url = buildUrl(path, query);
     const init = {method: method, cache: "no-store", headers: {Accept: "application/json"}};
     if (needsToken(method)) {
@@ -276,7 +302,9 @@
       if (!readable) throw new ApiError({status: res.status, code: "bad_payload"});
       return data;
     }
-    throw failure(res.status, data);
+    const refused = failure(res.status, data);
+    if (!repeated && needsToken(method) && refused.status === 401 && refused.code === "bad_token" && (await healToken())) return send(method, path, query, body, true);
+    throw refused;
   }
 
   const api = {
