@@ -137,10 +137,35 @@ def test_the_pill_offers_the_model_list_and_a_change_is_one_put_that_the_page_re
     assert browser.js("document.querySelector('#spill optgroup').label") == "More models"
     assert browser.js("document.querySelector('#spill select[data-act=choose-model]').value") == "sonnet"
     browser.js("(() => { const s = document.querySelector('#spill select[data-act=choose-model]'); s.value = 'haiku'; s.dispatchEvent(new Event('change', {bubbles: true})); })()")
-    browser.wait_for("document.querySelector('#spill select[data-act=choose-model]').value === 'haiku'")
+    # wait for the page's own state: the server's answer, read back (the select already shows what the test set, so its value proves nothing)
+    browser.wait_for("(HomePage.state().pillData || {providers: []}).providers.some(p => p.chat_model === 'haiku')")
     browser.js("(() => { const s = document.querySelector('#spill select[data-act=choose-effort]'); s.value = 'max'; s.dispatchEvent(new Event('change', {bubbles: true})); })()")
-    browser.wait_for("document.querySelector('#spill select[data-act=choose-effort]').value === 'max'")
+    browser.wait_for("(HomePage.state().pillData || {providers: []}).providers.some(p => p.chat_effort === 'max')")
+    assert browser.js("document.querySelector('#spill select[data-act=choose-model]').value") == "haiku"
+    assert browser.js("document.querySelector('#spill select[data-act=choose-effort]').value") == "max"
     puts = [r for r in posts(fake, "/api/chats/") if r["method"] == "PUT"]
     assert [(r["path"], r["token"], r["body"]) for r in puts] == [
         ("/api/chats/cs_org/choice", True, {"provider": "claude", "model": "haiku"}), ("/api/chats/cs_org/choice", True, {"provider": "claude", "effort": "max"})]
     assert shown(browser, "#spill") and browser.console_errors == []
+
+
+HEAL_PAGE = ('<!doctype html><html><head><meta charset="utf-8"><!--SUTRA-BOOT-->'
+             '<script src="/ui/js/sutra_ctx.js"></script><script src="/ui/js/tab_heal.js"></script></head><body>heal</body></html>')
+
+
+@browser_only
+def test_a_page_that_outlives_a_restart_takes_the_new_token_from_its_own_boot_block_and_the_write_goes_through(browser, fake):
+    """welcome-settings, item 5, end to end with the real scripts: the launch token changes under an open page; its next write is refused with a 401, the
+    page reads its own path again, takes the fresh token, and repeats that one write, which is accepted."""
+    fake.post("/__fake/page", {"name": "heal", "html": HEAL_PAGE}, token=False)
+    browser.goto(fake.url + "/__fake/mount/heal.html")
+    browser.wait_for("window.SutraCtx && window.TabHeal && SutraCtx.boot.token")
+    old = browser.js("SutraCtx.boot.token")
+    fake.post("/__fake/restart", {"token": "restarted-token-0123456789abcdef"}, token=False)
+    browser.expect_failed("/api/ops/welcome/seen", 401)                                              # the first, refused attempt is on purpose
+    browser.js("window.__out = null; SutraCtx.api.post('/api/ops/welcome/seen', {}).then(r => { window.__out = {ok: true, r}; }, e => { window.__out = {ok: false, code: e.code}; })")
+    browser.wait_for("window.__out !== null")
+    assert browser.js("window.__out") == {"ok": True, "r": {"seen": True}}
+    assert browser.js("SutraCtx.boot.token") == "restarted-token-0123456789abcdef" != old
+    writes = [(r["status"], r["token"]) for r in fake.log("/api/ops/welcome/seen") if r["method"] == "POST"]
+    assert writes == [(401, True), (200, True)]                                                      # one refused write, one repeated: no third

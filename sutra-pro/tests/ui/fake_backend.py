@@ -1602,11 +1602,12 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
                 "pill": False, "choice": {"provider": None, "model": None, "effort": None}}
 
     state.ws = fresh()
-    original_reset = state.reset
+    original_reset, original_token = state.reset, state.token
 
     def reset(*args: Any, **kw: Any) -> None:
         original_reset(*args, **kw)
         state.ws = fresh()
+        state.token = original_token
     state.reset = reset                                    # type: ignore[method-assign]
 
     @app.get("/api/ops/welcome")
@@ -1694,6 +1695,15 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
         if isinstance(body, dict) and isinstance(body.get("facts"), dict):
             state.ws["facts"] = body["facts"]
         return JSONResponse({"seen": state.ws["seen"]})
+
+    @app.post("/__fake/restart")
+    async def restart_control(request: Request):
+        """A server restart: the launch token changes, so every page that is open holds a dead one. Only a page rendered by `/__fake/mount/<name>.html` reads
+        the new token (the real pages were built with the first one), which is what the heal test uses."""
+        body = await json_body(request)
+        if isinstance(body, dict) and isinstance(body.get("token"), str) and len(body["token"]) >= 16:
+            state.token = body["token"]
+        return JSONResponse({"restarted": True})
 
     @app.post("/__fake/update")
     async def update_control(request: Request):
