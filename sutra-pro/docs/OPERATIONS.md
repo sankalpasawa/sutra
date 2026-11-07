@@ -102,6 +102,7 @@ They only read; they never overwrite a file or fill a non-empty folder.
 
 ## 4. Upgrade
 
+0. Is there a newer release? Settings, About, **Check for updates** (or `sutra-pro update-check`) asks GitHub once, only when you press it, and says "You have 0.1.0; 0.2.0 is out", "up to date" or "could not reach GitHub", with the page of the release and the one line for your kind of install. It downloads and installs nothing, it is refused under `--offline`, and nothing else in the app contacts the internet by itself. `sutra-pro update-check --json` prints one JSON document; `sutra-pro update-check --data-dir D` reads the offline setting of another data folder.
 1. Stop it: `sutra-pro stop`.
 2. Back up: `sutra-pro backup`.
 3. Install the new version. A release: `uv tool install --reinstall <url of the new wheel>`. A checkout: pull and `uv pip install --python .venv/bin/python -e ".[dev]"`. The Mac app: replace it in Applications.

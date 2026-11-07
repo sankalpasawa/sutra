@@ -63,7 +63,7 @@ ROUTERS = (events_api, chat_v2, agent, chat, atoms, usage, graph, chart, departm
 # plug-ins: (module, how to mount it), in the order orchestrator 6.4 fixes; the library's schema router sits before the UI
 PLUGINS = ("sutra_app.engine.api", "sutra_app.connectors.api", "sutra_app.library.api", "sutra_app.ui")
 OPS_API = "sutra_app.ops.api"           # GAP-CONSOLE's router (`router`); mounted after the orchestrator's routers when the module exists
-OPS_MORE = ("sutra_app.ops.welcome",)       # the first-run welcome (`build_router()`)
+OPS_MORE = ("sutra_app.ops.welcome", "sutra_app.ops.update_api")       # the first-run welcome and the owner-click update check (`build_router()`)
 
 
 class LoopbackHostMiddleware:
