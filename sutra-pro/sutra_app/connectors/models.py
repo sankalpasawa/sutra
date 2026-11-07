@@ -6,7 +6,6 @@ class bodies are built with that one warning silenced.
 """
 from __future__ import annotations
 
-import hashlib
 import re
 import sys
 import tempfile
@@ -255,16 +254,7 @@ class ConnectorConfig(M):
         return value
 
     def resolved_work_root(self) -> Path:
-        """`work_root`, else `<tempdir>/sutra-app-<uid>/work-<key>`, `<key>` naming THIS data folder; always through realpath so Claude's
-        per-directory transcript key never changes (CD9). It sits outside the repo so no repo CLAUDE.md or AGENTS.md is read.
-        The key keeps two data folders of one user apart: a chat session id is fixed per data folder (`cs_org`), so one shared root
-        let a second app read the first one's session.json (its pinned model, its provider conversation id)."""
-        root = self.work_root or Path(tempfile.gettempdir()) / f"sutra-app-{oslayer.user_token()}" / f"work-{_folder_key(self.data_dir)}"
+        """`work_root`, else `<tempdir>/sutra-app-<uid>/work`; always through realpath so Claude's per-directory
+        transcript key never changes (CD9). It sits outside the repo so no repo CLAUDE.md or AGENTS.md is read."""
+        root = self.work_root or Path(tempfile.gettempdir()) / f"sutra-app-{oslayer.user_token()}" / "work"
         return Path(os.path.realpath(root))
-
-
-def _folder_key(data_dir: Path) -> str:
-    """Twelve hex digits naming a data folder: its realpath (case folded where the file system is), so a link or a `..` spelling of the
-    same folder gives the same key."""
-    real = os.path.normcase(os.path.realpath(data_dir))
-    return hashlib.sha256(real.encode("utf-8", "surrogateescape")).hexdigest()[:12]

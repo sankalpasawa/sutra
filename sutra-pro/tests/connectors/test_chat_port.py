@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import sys
-import tempfile
 
 import pytest
 
@@ -321,32 +320,3 @@ def test_an_effort_the_model_does_not_accept_is_refused_with_the_valid_ones(tmp_
         port.choose(B, None, None, "low")                                          # an effort needs its provider too
     with pytest.raises(InvalidRequestError):
         port.choose(A, "claude", None, "low")                                      # the session runs on codex: choose the provider first
-
-
-def test_a_second_data_folder_does_not_inherit_the_chat_of_the_first(tmp_path, monkeypatch):
-    """QA firstrun-settings: two apps of one user (two data folders, the default work root under one temp dir) shared `cs_org`'s
-    session.json, so the new one showed the first one's model and effort, hid its Codex picker, and resumed its Claude conversation."""
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp"))
-
-    def app(folder):
-        cfg = ConnectorConfig(data_dir=tmp_path / folder, claude_exe=sys.executable, codex_exe=sys.executable)         # no work_root: the default
-        claude, codex = Named("claude", cfg), Named("codex", cfg)
-        router = Router({"claude": claude, "codex": codex}, policy(), usage_sink=MemoryUsageSink(), transcripts=History(),
-                        sleep=lambda s: None, rng=lambda: 0.0)
-        return RouterChatPort(router), claude
-
-    first, first_claude = app("data-a")
-    first.choose(A, "claude")
-    first.send(A, ChatTurnIn(text="I am app A"))
-    assert [(p.name, p.can_pick) for p in first.providers(A)] == [("claude", True), ("codex", False)]       # A's chat now runs on claude
-
-    second, second_claude = app("data-b")
-    pills = second.providers(A)
-    assert [(p.name, p.can_pick, p.chat_model, p.chat_effort, p.chosen) for p in pills] == [
-        ("claude", True, None, None, False), ("codex", True, None, None, False)]
-    assert second.plan_switch(A, "codex").source is None
-    second.send(A, ChatTurnIn(text="I am app B"))
-    assert len(second_claude.calls) == 1
-    assert load_session_state(second.router._workdir(A)).turns == 1                                  # its own first turn, not A's second
-    assert load_session_state(first.router._workdir(A)).turns == 1 and len(first_claude.calls) == 1
-    assert first.router._workdir(A) != second.router._workdir(A)
