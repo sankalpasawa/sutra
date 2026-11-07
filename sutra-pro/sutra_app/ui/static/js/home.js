@@ -21,6 +21,10 @@
    and POST /api/recurring/{id}/run. The strip gains one line when the monthly limit or a plan window is near (with Continue while the guard holds work), and
    Settings gains the Limits, Notifications and Recurring work groups (LimitsView, RecurringView); a block near the end of the Settings section is the controller.
 
+   Gap package dept-chats: every team the org chat makes has its own chat, and the chat column shows ONE chat at a time. A strip of tabs (ChatSwitch) names
+   the org chat and each team's; the "Started <team>: open its chat" line of the org chat and the strip's "Answer in <team>'s chat" open a team's chat in
+   the column, with the node panel's own Chat tab shown inline (#teamchat). Nothing of a team's chat is copied into the org chat.
+
    A classic script with one global, HomePage. It does nothing on a page that is not Home (no #sview). */
 (function (root) {
   "use strict";
@@ -63,7 +67,7 @@
 
   /* ---------------------------------------------------------------- state */
   const S = {
-    cc: undefined, session: null, messages: [], lastId: 0, pending: [], localSeq: 0, answers: {},
+    cc: undefined, session: null, messages: [], lastId: 0, pending: [], localSeq: 0, answers: {}, chat: {sid: ORG, node: ""}, team: null,
     departments: [], departmentsLoaded: false, needs: [], needsLoaded: false,
     graph: null, chart: null, changes: [],
     health: null, settings: null, scope: "", errors: {}, saved: false, saving: false, conn: {test: {}, signin: null}, signer: null,
@@ -171,6 +175,7 @@
     const nodes = isObj(graph) && Array.isArray(graph.nodes) ? graph.nodes : [];
     doc.body.classList.toggle("has-site", nodes.length > 1 || S.pane !== "graph");
     if (S.graphView) S.graphView.update(graph);
+    renderSwitch();
     // The first graph with something in it after a turn takes the right pane (a phone only gets its Graph toggle).
     if (S.awaitGraph && nodes.length > 1) {
       S.awaitGraph = false;
@@ -271,7 +276,7 @@
       if (m.kind !== "card" || !isObj(m.card) || hasOwn(out, m.id)) return;
       const c = m.card;
       if (m.answered_by !== null && m.answered_by !== undefined) out[m.id] = "";
-      else if (c.type === "needs_you" && S.needsLoaded &&
+      else if ((c.type === "needs_you" || (c.type === "team_chat" && c.about === "question")) && S.needsLoaded &&
         !S.needs.some(n => String(n.message_id) === String(c.question_message_id) && (!n.dept_id || !c.dept_id || n.dept_id === c.dept_id))) out[m.id] = "";
     });
     return out;
@@ -536,6 +541,11 @@
   }
 
   function focusCard(messageId) {
+    const need = S.needs.find(n => isObj(n) && String(n.message_id) === String(messageId));
+    if (need && need.kind !== "approval" && clean(need.dept_id) !== "" && clean(need.session_id) !== "" && need.session_id !== ORG && S.team) {
+      openTeamChat(need.dept_id, need.session_id, {question: need.message_id});          // the question is in the team's own chat
+      return true;
+    }
     const el = $("smsgs").querySelector('.c-needs[data-question="' + String(messageId).replace(/[^\w-]/g, "") + '"]');
     selectPane("chat");
     if (!el) { $("sbox").focus(); return false; }
@@ -559,6 +569,9 @@
     const numeric = /^\d+$/.test(messageId) ? Number(messageId) : messageId;
     if (act === "open-team") {
       if (b.tagName !== "A") openTeamFrom(b);                                         // a real link navigates by itself
+    } else if (act === "open-team-chat") {
+      const pointer = b.closest(".c-teamchat");
+      openTeamChat(b.dataset.node, b.dataset.session, {question: pointer ? Number(pointer.dataset.question) : 0});
     } else if (act === "show-node") {
       selectPane("graph", {reveal: true});
       if (S.graphView) S.graphView.select(b.dataset.node);
@@ -598,6 +611,9 @@
     return clean(item.dept_name) + (said ? ": " + said : "");
   }
 
+  // A question is answered in its team's own chat, and the button says which one; an approval waits in the org chat.
+  const needButton = item => (item.kind !== "approval" && clean(item.dept_name) !== "" && clean(item.session_id) !== ORG ? "Answer in " + clean(item.dept_name) + "'s chat" : "Answer in Chat");
+
   // The strip: what waits on the owner (questions and approvals, each with how long it has waited) and the Heads up lane (heads_up_view.js).
   // The count is the questions and approvals plus the problems the owner has not marked "Got it"; quiet teams and finished work never count.
   const HV = () => root.HeadsUpView || null;
@@ -614,9 +630,10 @@
     $("needs").classList.toggle("on", n > 0);
     ctx.paint($("needs"), '<h2>Needs you <span class="needbadge" id="needcount">' + n + "</span></h2>" + (sum ? '<p class="needsum">' + esc(sum) + "</p>" : "") +
       (items.length ? (lane ? '<h3 class="nylane">Waiting on you</h3>' : "") + items.map(i => '<div class="needitem"><span>' + esc(needLine(i)) + "</span>" +
-        (hv ? hv.waitedHtml(i, elapsed) : "") + '<button type="button" data-needmsg="' + esc(i.message_id) + '">Answer in Chat</button></div>').join("")
+        (hv ? hv.waitedHtml(i, elapsed) : "") + '<button type="button" data-needmsg="' + esc(i.message_id) + '">' + esc(needButton(i)) + "</button></div>").join("")
         : (n === 0 ? '<span class="none">Nothing needs you right now.</span>' : "")) + lane + limitLines() + offerHtml());
     barBadge();
+    renderSwitch();
   }
 
   // The tab title count and one desktop notice per new question or problem (chat_attention.js), once both lists have been read: what is
@@ -682,6 +699,7 @@
     const act = b.dataset.act;
     const hv = HV();
     if (act === "retry-task") retryTask(b.dataset.task, b);
+    else if (act === "open-team-chat") openTeamChat(b.dataset.node, b.dataset.session || "", {});
     else if (act === "headsup-seen" && hv) {
       S.seen[text(b.dataset.task)] = true;
       protect("seen", () => hv.saveSeen(storage(), S.seen, S.heads));
@@ -700,6 +718,84 @@
     const rows = S.departments.filter(isObj).map(d => '<a class="railteam st-' + esc(d.node_status || "idle") + '" href="/d/' + enc(d.id) + '/" data-dept="' + esc(d.id) + '">' +
       '<span class="rtname">' + esc(d.name || d.id) + '</span><span class="rtstat">' + esc(statusWord(d.node_status)) + "</span></a>");
     ctx.paint($("railteams"), rows.length ? rows.join("") : '<p class="railnone">No teams yet. Tell Sutra what you need and a team appears here.</p>');
+    renderSwitch();
+  }
+
+  /* ---------------------------------------------------------------- the chat switcher and a team's own chat (gap dept-chats) */
+  // The chat column shows ONE chat: the org chat, or the own chat of a team or division (the node panel's Chat tab, inline in #teamchat). S.chat names the
+  // one on show: {sid, node}; the org chat is {sid: "cs_org", node: ""}. The org chat's own parts stay in the page, hidden, while a team's chat shows.
+  const CS = () => root.ChatSwitch || null;
+  const switchEntries = () => (CS() ? CS().entries(S.departments, S.graph, S.needs) : []);
+
+  function renderSwitch() {
+    const el = $("cswitch");
+    if (!el || !CS()) return;
+    const items = switchEntries();
+    const had = el.contains(doc.activeElement) ? doc.activeElement.id : "";
+    const html = CS().bar(items, S.chat.sid);
+    if (ctx.paint(el, html) && had) { const back = doc.getElementById(had); if (back && back !== doc.activeElement) back.focus(); }   // a repaint must not drop the owner's place
+    el.hidden = html === "";
+    if ($("schat")) $("schat").setAttribute("aria-label", CS().heading(items, S.chat.sid));
+  }
+
+  // Show a team's (or a division's) own chat in the chat column. `sid` is the chat session when the caller knows it (a pointer card carries it).
+  // opts.question: the message of that chat to bring into view (a question that waits).
+  function openTeamChat(node, sid, opts) {
+    const nodeId = clean(node);
+    if (nodeId === "" || !S.team) return Promise.resolve(false);
+    const known = CS() ? CS().entryOf(switchEntries(), nodeId) : null;
+    S.chat = {sid: clean(sid) || (known ? known.id : ""), node: nodeId};
+    $("schat").classList.add("team-open");
+    doc.body.classList.remove("sp-preview");                                       // a phone: the chat column, not the graph
+    markRail();
+    renderSwitch();
+    const question = isObj(opts) && Number.isInteger(opts.question) && opts.question > 0 ? opts.question : 0;
+    return Promise.resolve(S.team.open(nodeId, "chat")).then(() => {
+      if (S.chat.node === nodeId && S.chat.sid === "") { const found = CS() ? CS().entryOf(switchEntries(), nodeId) : null; if (found) { S.chat.sid = found.id; renderSwitch(); } }
+      if (question) focusTeamLine(question);
+      return true;
+    }, () => false);
+  }
+
+  function focusTeamLine(messageId) {
+    const row = $("teamchat").querySelector('.nmsg[data-id="' + String(messageId).replace(/\D/g, "") + '"]');
+    if (!row) return false;
+    row.tabIndex = -1;
+    row.classList.add("flash");
+    if (row.scrollIntoView) row.scrollIntoView({block: "center"});
+    row.focus();
+    root.setTimeout(() => row.classList.remove("flash"), 2500);
+    return true;
+  }
+
+  // Back to the org chat. The panel's own Back button and Esc land here too (its onClose), so a second call finds everything done.
+  function showOrgChat() {
+    const was = S.chat.sid !== ORG;
+    S.chat = {sid: ORG, node: ""};
+    $("schat").classList.remove("team-open");
+    renderSwitch();
+    if (S.team && S.team.isOpen()) S.team.close();
+    if (!was) return;
+    const tab = doc.getElementById("cstab-" + ORG);                                  // the owner's place: the Sutra tab, or the box when there is no strip
+    if (tab && !tab.closest("[hidden]")) tab.focus();
+    else if ($("sbox") && !$("sbox").disabled) $("sbox").focus();
+  }
+
+  function onSwitchClick(e) {
+    const b = e.target.closest("button[data-act=switch-chat]");
+    if (!b || !$("cswitch").contains(b)) return;
+    if (b.dataset.session === ORG) showOrgChat();
+    else if (S.team && (b.dataset.session !== S.chat.sid || !S.team.isOpen())) openTeamChat(b.dataset.node, b.dataset.session, {});
+  }
+
+  // Arrow keys, Home and End move between the tabs (the chat itself is chosen with Enter or Space, a button's own click).
+  function onSwitchKey(e) {
+    const tabs = Array.from($("cswitch").querySelectorAll("button[data-act=switch-chat]"));
+    const at = tabs.indexOf(doc.activeElement);
+    const to = CS() ? CS().nextIndex(e.key, tabs.length, at) : -1;
+    if (to < 0 || at < 0) return;
+    e.preventDefault();
+    tabs[to].focus();
   }
 
   function markRail() {
@@ -743,6 +839,7 @@
     const o = isObj(options) ? options : {};
     const reveal = o.reveal !== false;
     if (name === "chat") {
+      if (S.chat.sid !== ORG) showOrgChat();                                          // the rail's Chat and a notice about an approval mean the org chat
       doc.body.classList.remove("sp-preview");
       markRail();
       if ($("sbox") && !$("sbox").disabled && o.focus !== false) $("sbox").focus();
@@ -1168,6 +1265,8 @@
     try { root.matchMedia("(prefers-color-scheme: light)").addEventListener("change", themeApply); } catch (e) { /* no matchMedia */ }
     BARWIDE.addEventListener("change", barInit);
     S.panel = root.NodePanel.mount($("nodepanel"), {getGraph: () => S.graph, navigate: url => root.location.assign(url)});
+    if ($("teamchat")) S.team = root.NodePanel.mount($("teamchat"), {inline: true, idPrefix: "npi", getGraph: () => S.graph, navigate: url => root.location.assign(url),
+      onClose: () => { if (S.chat.sid !== ORG) showOrgChat(); }});
     S.watch = SV().watchHealth(api, h => { S.health = h; paintConnectors(); }, () => {});
     if (root.HeadsUpView) S.seen = root.HeadsUpView.loadSeen(storage());
     if (root.ChatAttention) S.attention = protect("ChatAttention.create", () => root.ChatAttention.create({onOpen: openAttention, prefs: attentionPrefs})) || null;
@@ -1187,6 +1286,7 @@
 
   function wire() {
     $("smsgs").addEventListener("click", onChatClick);
+    if ($("cswitch")) { $("cswitch").addEventListener("click", onSwitchClick); $("cswitch").addEventListener("keydown", onSwitchKey); }
     if ($("spill")) $("spill").addEventListener("click", onPillClick);
     $("ssend").addEventListener("click", () => ($("ssend").dataset.act === "composer-stop" ? stopDirect() : send($("sbox").value)));
     $("sbar").addEventListener("click", e => {

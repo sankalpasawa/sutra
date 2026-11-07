@@ -127,3 +127,12 @@ test("Got it marks are kept per browser, dropped for rows that are gone, and sto
   assert.equal(HV.saveSeen(broken, {[tid(1)]: true}, []), false);
   assert.deepEqual(HV.loadSeen(null), {});
 });
+
+// Gap package dept-chats: a row of a team offers that team's own chat (Home's chat column opens it); a row of no team offers none.
+test("a heads up row has Open its chat for its team, beside Open team, and none without a team", () => {
+  const html = HV.laneHtml([row(1, "problem"), row(2, "finished", {dept_id: ""})], {});
+  wellFormed(html);
+  assert.match(html, /<button type="button" class="linkbtn" data-act="open-team-chat" data-node="web">Open its chat<\/button><a class="huopen" href="\/d\/web\/\?view=simple">Open team<\/a>/);
+  assert.equal((html.match(/data-act="open-team-chat"/g) || []).length, 1);
+  assert.doesNotMatch(HV.laneHtml([row(3, "problem", {dept_id: '"><img src=x>'})], {}), /<img|open-team-chat/);
+});

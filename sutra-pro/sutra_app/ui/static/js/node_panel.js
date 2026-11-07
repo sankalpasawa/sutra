@@ -12,6 +12,11 @@
    While it is open the panel keeps itself current: its own SutraEvents stream (chat.message of its session, atom.updated of its node, task and graph
    updates) refetches what changed, coalesced, and a dropped stream falls back to polling the same two calls (docs/design/ui.md 9, X4).
 
+   mount(host, {inline: true, idPrefix, onClose}) (gap package dept-chats) makes the same panel a pane of the page instead of a drawer: Home shows a team's
+   own chat in its chat column with it. An inline panel is not the drawer: it keeps `body.nodeopen` and the Agent drawer alone, owns the keys typed
+   inside it only (Esc closes it, then `onClose` runs), uses its own element ids (`<idPrefix>title`, `<idPrefix>tab-chat`) and its close button reads
+   "Back to Sutra"; it is not the panel that the static NodePanel.open() reaches.
+
    A classic script with ONE global, NodePanel (see sutra_ctx.js for why). It needs SutraCtx, FnodeView and ChatView, which are read when they are used. */
 (function (root) {
   "use strict";
@@ -117,6 +122,9 @@
     const getGraph = typeof opts.getGraph === "function" ? opts.getGraph : () => null;
     const navigate = typeof opts.navigate === "function" ? opts.navigate : url => root.location.assign(url);
     const doc = host.ownerDocument || root.document;
+    const inline = opts.inline === true;
+    const idp = inline ? (clean(opts.idPrefix).replace(/[^A-Za-z0-9_-]/g, "") || "npi") : "np";
+    const onClose = typeof opts.onClose === "function" ? opts.onClose : null;
     const withAgent = () => (typeof opts.withAgent === "boolean" ? opts.withAgent : (ctx() && ctx().boot && ctx().boot.page === "dept") === true);
     const deptPage = () => (ctx() && typeof ctx().dept === "string" ? ctx().dept : "");
 
@@ -134,14 +142,14 @@
     /* ------------------------------------------------ the skeleton */
     function ensureShell() {
       if (refs) return;
-      host.innerHTML = '<div class="adhead nphead"><div class="npname"><h3 id="nptitle"></h3><span class="npsub"></span></div>' +
+      host.innerHTML = '<div class="adhead nphead"><div class="npname"><h3 id="' + idp + 'title"></h3><span class="npsub"></span></div>' +
         '<span class="nstatus" hidden></span><span class="npprovider" title="The model behind this chat" hidden></span>' +
-        '<button type="button" class="linkbtn npclose" data-npclose>Close (Esc)</button></div><p class="npnote" hidden></p>' +
-        '<div class="nptabs" role="tablist" aria-label="Panel"><button type="button" role="tab" id="nptab-chat" data-nptab="chat" aria-selected="false">Chat</button>' +
-        '<button type="button" role="tab" id="nptab-details" data-nptab="details" aria-selected="false">Details</button></div>' +
+        '<button type="button" class="linkbtn npclose" data-npclose>' + (inline ? "Back to Sutra" : "Close (Esc)") + '</button></div><p class="npnote" hidden></p>' +
+        '<div class="nptabs" role="tablist" aria-label="Panel"><button type="button" role="tab" id="' + idp + 'tab-chat" data-nptab="chat" aria-selected="false">Chat</button>' +
+        '<button type="button" role="tab" id="' + idp + 'tab-details" data-nptab="details" aria-selected="false">Details</button></div>' +
         '<div class="npbody" role="tabpanel"></div>';
       refs = {
-        title: host.querySelector("#nptitle"), sub: host.querySelector(".npsub"), status: host.querySelector(".nstatus"), provider: host.querySelector(".npprovider"),
+        title: host.querySelector("#" + idp + "title"), sub: host.querySelector(".npsub"), status: host.querySelector(".nstatus"), provider: host.querySelector(".npprovider"),
         close: host.querySelector(".npclose"), note: host.querySelector(".npnote"), body: host.querySelector(".npbody"),
         tabs: Array.from(host.querySelectorAll("[data-nptab]")),
       };
@@ -770,14 +778,19 @@
         opener: opener, conn: null, refresh: null};
       if (!opener.id) opener.id = id;
       rules = noRules("");                                  // the team's rules are read again: they may have changed since this team was last on show
-      doc.body.classList.add("nodeopen");
-      closeAgentDrawer();
+      if (!inline) {
+        doc.body.classList.add("nodeopen");
+        closeAgentDrawer();
+      }
       host.hidden = false;
       chatRefs = null;
       refs.body.innerHTML = "";
       refs.body.__html = undefined;
       paintAll();
-      if (refs.close && typeof refs.close.focus === "function") refs.close.focus();
+      if (inline && refs.title) {                       // the pane names the chat it now shows: focus lands on its name, so a screen reader says it
+        refs.title.tabIndex = -1;
+        refs.title.focus();
+      } else if (refs.close && typeof refs.close.focus === "function") refs.close.focus();
 
       const detailP = loadDetail(g);
       let sidP;
@@ -902,7 +915,7 @@
       gen += 1;
       chatRefs = null;
       host.hidden = true;
-      doc.body.classList.remove("nodeopen");
+      if (!inline) doc.body.classList.remove("nodeopen");
       if (refs) {
         refs.body.innerHTML = "";
         refs.body.__html = undefined;
@@ -913,6 +926,9 @@
         target = Array.from(doc.querySelectorAll("[data-id]")).find(e => e.getAttribute("data-id") === opener.id) || null;
       }
       if (target && typeof target.focus === "function") target.focus();
+      if (onClose) {
+        try { onClose(); } catch (e) { if (root.console) root.console.error("NodePanel: onClose failed", e); }
+      }
       return true;
     }
 
@@ -1148,6 +1164,7 @@
     // Esc: first it stops a direct answer that is running, else it closes the panel (the draft is already saved, so nothing is lost).
     function onKeyDown(e) {
       if (!st) return;
+      if (inline && !(e.target && typeof host.contains === "function" && host.contains(e.target))) return;       // a pane owns the keys typed in it, not the page's
       if (e.key === "Escape" && !e.defaultPrevented && !e.isComposing) {
         const turn = st.cc && st.cc.sid === pillOwner() ? st.cc.c.state().turn : null;
         if (st.tab === "chat" && turn && turn.active && !turn.stopping) { stopDirect(); return; }
@@ -1214,7 +1231,7 @@
       isOpen: () => st !== null && host.hidden === false,
       destroy,
     };
-    current = handle;
+    if (!inline) current = handle;
     return handle;
   }
 

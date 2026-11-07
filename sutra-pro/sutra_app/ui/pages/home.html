@@ -19,7 +19,8 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
   <header class="shead"><b id="stitle">Sutra</b><span class="meta" id="sotype">&middot; your teams</span><span class="spacer"></span></header>
   <main class="smain">
     <div class="stoggle" role="tablist" aria-label="Show"><button type="button" role="tab" data-show="chat" aria-selected="true">Chat</button><button type="button" role="tab" data-show="right" aria-selected="false">Graph</button></div>
-    <section class="schat" aria-label="Chat with Sutra">
+    <section class="schat" id="schat" aria-label="Chat with Sutra">
+      <div class="cswitch" id="cswitch" role="tablist" aria-label="Chats" hidden></div>
       <div class="sprog" id="sprog" aria-label="Progress" hidden></div>
       <div class="smsgs" id="smsgs" aria-live="polite"></div>
       <div class="cjump" id="sjump" hidden></div>
@@ -29,6 +30,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <div class="snote" id="snote" hidden></div>
       <div class="npill" id="spill" hidden></div>
       <div class="scompose" id="scompose"><div class="ccbar" id="sbar" hidden></div><div class="row"><textarea id="sbox" aria-label="Your message" placeholder="Tell Sutra what you need&hellip;"></textarea><button class="send" id="ssend" type="button">Send</button></div></div>
+      <section class="npinline" id="teamchat" aria-labelledby="npititle" hidden></section>
     </section>
     <section class="sprev sright" id="sright" aria-label="Teams and settings">
       <section class="needs" id="needs" aria-label="Needs you" tabindex="-1"></section>
@@ -85,6 +87,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <script src="/ui/js/chat_composer.js"></script>
 <script src="/ui/js/chat_draft.js"></script>
 <script src="/ui/js/chat_scroll.js"></script>
+<script src="/ui/js/chat_switch.js"></script>
 <script src="/ui/js/node_panel.js"></script>
 <script src="/ui/js/plan_meter.js"></script>
 <script src="/ui/js/settings_view.js"></script>

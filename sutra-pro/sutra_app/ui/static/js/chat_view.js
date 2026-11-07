@@ -2,7 +2,7 @@
    S4-fnodes-12).
 
    Strings in, strings out: transcript() draws a session's messages in J2's bubble look (.sb.team, .sb.me, .opts), card() draws one chat card
-   (task, chart_change, approval, choice, needs_you, done and, in a function node's working log, atom), composerState() says whether the
+   (task, chart_change, approval, choice, needs_you, team_chat, done and, in a function node's working log, atom), composerState() says whether the
    message box shows, is disabled and what it says, whoLabel() names an author, and safeText() is the one door a message text goes through.
    Nothing touches the DOM, every word that came from the wire is escaped, and the markup is well formed XML.
 
@@ -12,7 +12,7 @@
    script is on the page: escaped first too, then paragraphs, lists, code blocks, tables, headings and quotes, and still no link and no HTML.
    Every other line (the owner's, a team's, Sutra's, a note, an error, a card) keeps safeText.
 
-   Buttons carry data-act (open-team, show-node, show-change, choose, option, answer-option, answer, retry, retry-task, retry-direct) and the data they need; the page that
+   Buttons carry data-act (open-team, open-team-chat, show-node, show-change, choose, option, answer-option, answer, retry, retry-task, retry-direct) and the data they need; the page that
    shows the transcript (the node panel, Home) listens for them. A link that opens a team page is a real <a href>, so it also works without a script.
 
    A classic script with ONE global, ChatView (see sutra_ctx.js for why); in node it is module.exports. */
@@ -223,6 +223,28 @@
       "</div>";
   }
 
+  // The org chat's pointer to a team's own chat (GAP3 dept-chats): "Started Web: [open its chat]" when a turn made the team, "Web has a question for
+  // you: [open its chat]" when its Identity asked. The chip is a real <button> (focusable, Enter and Space work) that carries the team's node and chat
+  // session in data-node and data-session; the page that shows the transcript opens that chat (Home switches its chat pane). The words of the
+  // team are never in the card. ctx.answered closes a question pointer ("Web's question was answered"); the chip stays, so the chat can still be read.
+  const chatChip = (c, label) => {
+    const session = clean(c.session_id);
+    const node = clean(c.node_id);
+    return node === "" ? "" : '<button type="button" class="lbtn chatchip" data-act="open-team-chat" data-node="' + esc(node) + '"' + (session ? ' data-session="' + esc(session) + '"' : "") +
+      ' aria-label="' + esc(label + " " + (clean(c.name) || node)) + '">' + esc(label) + "</button>";
+  };
+
+  function teamChatCard(c, ctx) {
+    const name = clean(c.name) || clean(c.node_id) || "The team";
+    const asking = clean(c.about) === "question";
+    const done = asking && isObj(ctx) && ctx.answered === true;
+    const lead = asking ? (done ? "<b>" + esc(name) + "</b>'s question was answered. " : "<b>" + esc(name) + "</b> has a question for you. ") : "Started <b>" + esc(name) + "</b>: ";
+    const label = asking && !done ? "Answer in its chat" : "Open its chat";
+    return '<div class="ncard c-teamchat" data-card="team_chat" data-about="' + (asking ? "question" : "started") + '" data-node="' + esc(clean(c.node_id)) + '"' +
+      (clean(c.session_id) ? ' data-session="' + esc(clean(c.session_id)) + '"' : "") + (asking && Number.isInteger(c.question_message_id) ? ' data-question="' + c.question_message_id + '"' : "") +
+      (done ? ' data-answered="true"' : "") + '><p class="cteam"><span class="cteamlead">' + lead.trim() + "</span>" + chatChip(c, label) + "</p></div>";
+  }
+
   const DONE_TONE = freeze({done: "ok", done_with_open_items: "warn", crashed: "bad", stopped: "bad"});
   const DONE_HEAD = freeze({done: "is done", done_with_open_items: "is done, with some things left open", crashed: "ran into a problem", stopped: "was stopped"});
 
@@ -296,6 +318,7 @@
       case "approval": return choiceCard(value, c, "approval");
       case "choice": return choiceCard(value, c, "choice");
       case "needs_you": return needsYouCard(value, c);
+      case "team_chat": return teamChatCard(value, c);
       case "done": return doneCard(value, c);
       case "atom": return c.sessionKind === "function" ? atomCard(value) : plainCard(Object.assign({}, value, {text: clean(value.label) + (clean(value.goal) ? ": " + clean(value.goal) : "")}));
       default: return plainCard(value);
@@ -312,6 +335,10 @@
     if (clean(m.who) === "system" && kind === "text") return "nmsg sys";
     return "nmsg sb team";
   }
+
+  // The owner's request that the org chat passed on to a team (ChatMessageOut.passed_on: the id of the original in the org chat): the first line of the
+  // team's chat says where it came from.
+  const passedOnHtml = m => (Number.isInteger(m.passed_on) && m.passed_on > 0 ? '<small class="npassed">Passed on from your chat with Sutra</small>' : "");
 
   // A model's reply to the owner's direct line (D115): ChatMessageOut.turn names the line it answers. Its error line and notes are not replies.
   const directReply = m => clean(m.role) === "agent" && (clean(m.kind) || "text") === "text" && Number.isInteger(m.turn) && m.turn > 0;
@@ -350,7 +377,7 @@
         const chosen = picked && asked && asked.qs[0] && asked.qs[0].opts[Number(picked[1]) - 1];
         const failed = clean(m.state) === "error";
         const att = attachedOf(m.text);
-        return '<div class="' + klass + (failed ? " failed" : "") + '"' + attrs + ">" + safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
+        return '<div class="' + klass + (failed ? " failed" : "") + '"' + attrs + ">" + passedOnHtml(m) + safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
           (failed ? '<div class="nerr">Something went wrong. Try again.' + (clean(s.kind) === "org" ? ' <button type="button" class="linkbtn" data-act="retry">Retry</button>' : "") + "</div>" : "") + "</div>";
       }
       if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + safeText(text(m.text)) + retryOf(m) + "</div>";
