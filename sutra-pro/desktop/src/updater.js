@@ -322,14 +322,16 @@ function macSwapScript() {
 
 // ---------------------------------------------------------------- what a command printed
 
-/* `codesign -dv` writes to standard error: Identifier=..., TeamIdentifier=ABCDE12345 or "not set", Signature=adhoc for an ad hoc seal. */
+/* `codesign -dv` writes to standard error: Identifier=..., TeamIdentifier=ABCDE12345 or "not set", Signature=adhoc for an ad hoc seal.
+   Some of that text is chosen by whoever signed the app (the signing identifier, the executable's file name) and may hold a line break, so a signer can
+   put a second `TeamIdentifier=<someone else's id>` line into the output. The team is therefore read only when exactly ONE line names it: a display
+   that names it twice (a forged line before or after the real one) names no team, and the app is refused as unsigned. */
 function parseCodesignDisplay(text) {
   const own = String(text || '');
-  const pick = (key) => {
-    const found = new RegExp(`^${key}=(.*)$`, 'm').exec(own);
-    return found ? found[1].trim() : '';
-  };
-  const team = pick('TeamIdentifier');
+  const all = (key) => Array.from(own.matchAll(new RegExp(`^${key}=(.*)$`, 'gm')), (found) => found[1].trim());
+  const pick = (key) => all(key)[0] || '';
+  const teams = all('TeamIdentifier');
+  const team = teams.length === 1 ? teams[0] : '';
   return {
     identifier: pick('Identifier'), teamId: /^[A-Z0-9]{10}$/.test(team) ? team : null,
     adhoc: pick('Signature') === 'adhoc' || /^CodeDirectory .*flags=0x[0-9a-f]+\(.*adhoc/m.test(own),

@@ -103,6 +103,7 @@ function harness({ platform = 'darwin', arch = 'arm64', packaged = true, env = {
       if (args[0] === '--verify') return done(world.mac.verify);
       const running = norm(args[args.length - 1]) === norm(bundle);
       const team = running ? world.mac.runningTeam : world.mac.teamId;
+      if (!running && world.mac.display) return done(0, '', world.mac.display);                // the raw text of `codesign -dv`, for a hostile one
       return done(0, '', `Identifier=os.sutra.pro\nTeamIdentifier=${team}\nSignature=Developer ID\n`);
     }
     if (f.endsWith('powershell.exe')) {
@@ -417,6 +418,48 @@ test('the signature display of codesign is read for the team, and ad hoc is told
   const adhoc = 'Identifier=os.sutra.pro\nCodeDirectory v=20400 size=293 flags=0x2(adhoc) hashes=3+3\nSignature=adhoc\nTeamIdentifier=not set\n';
   assert.deepEqual(u.parseCodesignDisplay(adhoc), { identifier: 'os.sutra.pro', teamId: null, adhoc: true });
   assert.equal(u.parseCodesignDisplay('TeamIdentifier=short').teamId, null);
+});
+
+/* `codesign -dv` prints text the SIGNER chose (the signing identifier, the executable's file name) on lines of its own, before and after the real
+   `TeamIdentifier=` line. A signer who puts a newline and `TeamIdentifier=<someone else's id>` in one of them must not be read as that team. */
+test('a codesign display that names the team twice names no team at all', () => {
+  const real = 'TeamIdentifier=ZZZZZ99999\n';
+  const forged = (first, second) => `Executable=/m/Sutra Pro.app/Contents/MacOS/run\nIdentifier=x${first}\nFormat=app bundle\nAuthority=Developer ID Application: Eve (ZZZZZ99999)\n${real}Sealed Resources version=2${second}\n`;
+  for (const [name, text] of [
+    ['a line before the real one', forged('\nTeamIdentifier=ABCDE12345', '')],
+    ['a line after the real one', forged('', '\nTeamIdentifier=ABCDE12345')],
+    ['a carriage return', forged('\rTeamIdentifier=ABCDE12345', '')],
+    ['a line separator', forged('\u2028TeamIdentifier=ABCDE12345', '')],
+    ['the same id twice', forged('\nTeamIdentifier=ZZZZZ99999', '')],
+  ]) {
+    assert.equal(u.parseCodesignDisplay(text).teamId, null, name);
+  }
+  assert.equal(u.parseCodesignDisplay(forged('', '')).teamId, 'ZZZZZ99999', 'one honest line is still read');
+  const adhocForged = 'Identifier=x\nTeamIdentifier=ABCDE12345\nSignature=adhoc\nTeamIdentifier=not set\n';
+  assert.equal(u.parseCodesignDisplay(adhocForged).teamId, null, 'an ad hoc seal cannot borrow a team through its identifier');
+});
+
+test('an app whose signing identifier forges the running app\'s team is refused, and nothing is installed', async () => {
+  const hostile = 'Executable=/m/Sutra Pro.app/Contents/MacOS/run\nIdentifier=x\nTeamIdentifier=ABCDE12345\nFormat=app bundle\nSignature=Developer ID\nTeamIdentifier=ZZZZZ99999\n';
+  const w = harness({ choices: [0], mac: { display: hostile } });
+  assert.equal((await w.updater.checkNow({ manual: false })).state, 'failed');
+  assert.equal(w.asked.length, 0, 'no dialog offers it');
+  assert.equal(w.spawned.length, 0);
+  assert.ok(!fs.existsSync(path.join(w.data, 'updates', VERSION)), 'what failed to verify is deleted');
+  assert.match(w.reports.at(-1).message, /not signed by the same developer/);
+});
+
+test('the real codesign: a signing identifier with a newline and a forged team line is not read as that team', { skip: process.platform !== 'darwin' && 'codesign is a macOS program' }, () => {
+  const dir = tmp();
+  const app = path.join(dir, 'Sutra Pro.app');
+  fs.mkdirSync(path.join(app, 'Contents', 'MacOS'), { recursive: true });
+  fs.writeFileSync(path.join(app, 'Contents', 'Info.plist'), '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>run</string>'
+    + '<key>CFBundleIdentifier</key><string>os.sutra.pro</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>');
+  fs.writeFileSync(path.join(app, 'Contents', 'MacOS', 'run'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  childProcess.execFileSync('/usr/bin/codesign', ['--force', '--sign', '-', '--identifier', 'x\nTeamIdentifier=ABCDE12345', app], { stdio: 'ignore' });
+  const shown = childProcess.spawnSync('/usr/bin/codesign', ['-dv', '--verbose=2', app], { encoding: 'utf8' });
+  assert.ok(/^TeamIdentifier=ABCDE12345$/m.test(shown.stderr), 'this codesign prints the identifier raw, so the forged line is really in its output');
+  assert.equal(u.parseCodesignDisplay(`${shown.stderr}\n${shown.stdout}`).teamId, null);
 });
 
 test('a file is hashed through one open handle, and a missing one is an error', async () => {
