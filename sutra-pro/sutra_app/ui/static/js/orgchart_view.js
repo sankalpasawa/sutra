@@ -10,13 +10,18 @@
        onOpen  the card's Open chat: the host opens the node's chat panel (the id is the graph node's id: a chart node keeps its id, D44).
        onShow  the card's Show in graph: the host switches to the Workflow graph and selects the node. Without it there is no such button.
        dept    the team being viewed (default SutraCtx.dept): its box gets a ring.
-     handle  {update(orgChart, changes), selectChange(seq), setLive(state), refresh(), fail(err), destroy(), graphView, state(), el}
+     handle  {update(orgChart, changes), selectChange(seq), setFind(rows), setLive(state), refresh(), fail(err), destroy(), graphView, state(), el}
 
    update(orgChart, changes): orgChart is GET /api/chart, changes GET /api/chart/changes?limit=50 (ChartChangeOut[]; leaving it out keeps
    the ones in hand). The newest change is selected until the owner picks another (a click on its row, or selectChange(seq)); picking
    the newest again follows the newest once more. A change that was not applied (pending_approval, rejected, stale, failed) marks nothing.
    The card of a node has its name and purpose, Open team page (a team), Show in graph and Open chat. Esc closes it.
    refresh() asks GET /api/chart and GET /api/chart/changes itself (what Try again does).
+
+   Gap package chart-insight: under the log, "Chart notes" (chart_notes.js; GET /api/chart/notes, read again when the chart changes or a minute has
+   passed): teams that look alike, a node with no purpose, a team nobody uses, each name a button that opens its card. The card of a division also
+   says where it sits ("Bakery site > Menu"). setFind(rows) keeps the boxes the rail's search found lit and fades the rest (team_find.js); null clears it.
+   Both scripts are optional: without one, that part is simply not drawn.
 
    A classic script with ONE global, OrgChartView (see sutra_ctx.js for why); it needs graph_view.js, chart_marks.js and sutra_ctx.js
    loaded before it, and in node it is module.exports. */
@@ -29,6 +34,17 @@
     return found;
   }
 
+  // A script this view can do without (chart_notes.js, team_find.js): the global when the page has it, else a require in node, else undefined.
+  function optional(name, file) {
+    if (root[name]) return root[name];
+    try {
+      return typeof require === "function" ? require(file) : undefined;
+    } catch (e) {
+      return undefined;
+    }
+  }
+
+  const NOTES_EVERY_MS = 60000;
   const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
   const finite = Number.isFinite;
   const ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
@@ -53,14 +69,20 @@
     const doc = host.ownerDocument || root.document;
     const dept = typeof o.dept === "string" && o.dept !== "" ? o.dept : (typeof C.dept === "string" ? C.dept : "");
 
-    host.innerHTML = '<div class="ocpane"><div class="ocgraph"></div><section class="ocard" role="region" hidden></section><div class="oclog"></div></div>';
+    host.innerHTML = '<div class="ocpane"><div class="ocgraph"></div><section class="ocard" role="region" hidden></section><div class="oclog"></div>' +
+      '<section class="ocnotes" aria-label="Chart notes" hidden></section><style class="ocfind"></style></div>';
     const paneEl = host.firstElementChild;
     const cardEl = paneEl.querySelector(".ocard");
     const logEl = paneEl.querySelector(".oclog");
+    const notesEl = paneEl.querySelector(".ocnotes");
+    const findEl = paneEl.querySelector("style.ocfind");
 
-    const state = {graph: null, changes: [], selectedSeq: null, cardId: "", marks: {}};     // selectedSeq null: follow the newest change
+    // selectedSeq null: follow the newest change; notes, notesAt, notesVersion: the Chart notes and when they were read; find: the rows of the rail's search
+    const state = {graph: null, changes: [], selectedSeq: null, cardId: "", marks: {}, notes: null, notesAt: 0, notesVersion: null, find: null};
     let destroyed = false;
     let fetchSeq = 0;
+    let notesSeq = 0;
+    let notesTimer = 0;
 
     const gv = GV.create(paneEl.querySelector(".ocgraph"), {mode: "chart", title: "Org chart", dept, onSelect: node => showCard(node), onRetry: () => refresh()});
 
@@ -94,8 +116,10 @@
       if (typeof o.onOpen === "function") acts.push('<button type="button" class="ocbtn" data-oc="chat">Open chat</button>');
       cardEl.setAttribute("aria-label", node.label);
       cardEl.hidden = false;
+      const CN = optional("ChartNotes", "./chart_notes.js");
+      const address = CN ? CN.addressOf(state.graph.nodes, node.id) : "";
       C.paint(cardEl, '<div class="ochead"><h4>' + esc(node.label) + '</h4><button type="button" class="occlose" data-oc="close" aria-label="Close">\u00d7</button></div>' +
-        (node.detail !== "" ? '<p class="ocpurpose">' + esc(node.detail) + "</p>" : "") + (mark ? '<p class="octag">' + esc(mark.tag) + "</p>" : "") +
+        (address !== "" ? '<p class="ocaddr">' + esc(address) + "</p>" : "") + (node.detail !== "" ? '<p class="ocpurpose">' + esc(node.detail) + "</p>" : "") + (mark ? '<p class="octag">' + esc(mark.tag) + "</p>" : "") +
         '<div class="ocacts">' + acts.join("") + "</div>");
     }
 
@@ -109,7 +133,58 @@
       const ok = gv.update(state.graph, {marks: state.marks, ring: dept});
       paintLog();
       paintCard();
+      applyFind();
       return ok;
+    }
+
+    // The Chart notes under the log. A team page loads chart_notes.js after this script (J2's page cannot list it), so a note that arrives first waits for it.
+    function paintNotes(tries) {
+      if (destroyed || !state.notes) return;
+      const CN = optional("ChartNotes", "./chart_notes.js");
+      if (!CN) {
+        if (tries < 10 && typeof root.setTimeout === "function") notesTimer = root.setTimeout(() => paintNotes(tries + 1), 150);
+        return;
+      }
+      const markup = CN.html(state.notes);
+      notesEl.hidden = markup === "";
+      C.paint(notesEl, markup);
+    }
+
+    // Read the notes when the chart has a new version or the last read is a minute old (a team goes quiet with time, not with a change). A failed read keeps what it had.
+    function loadNotes(chart) {
+      if (destroyed || !C.api || typeof C.api.get !== "function") return;
+      const version = isObj(chart) ? chart.version : null;
+      if (state.notes !== null && version === state.notesVersion && Date.now() - state.notesAt < NOTES_EVERY_MS) return;
+      state.notesVersion = version;
+      state.notesAt = Date.now();
+      const mine = ++notesSeq;
+      Promise.resolve().then(() => C.api.get("/api/chart/notes")).then(out => {
+        if (destroyed || mine !== notesSeq || !isObj(out)) return;
+        state.notes = out;
+        paintNotes(0);
+      }, () => { state.notesAt = 0; });
+    }
+
+    // setFind(rows): the rows of GET /api/find (team_find.js). Their boxes stay lit, the boxes above them stay in view, the rest fade. Nothing or null clears it.
+    function applyFind() {
+      const TF = optional("TeamFind", "./team_find.js");
+      if (!TF || !state.find || !state.graph) {
+        findEl.textContent = "";
+        paneEl.removeAttribute("data-find");
+        return;
+      }
+      const lit = TF.dimming(state.find, state.graph.nodes);
+      const css = TF.dimCss(".ocpane[data-find]", lit.hits, lit.ancestors);
+      findEl.textContent = css;
+      if (css === "") paneEl.removeAttribute("data-find");
+      else paneEl.setAttribute("data-find", "1");
+    }
+
+    function setFind(rows) {
+      if (destroyed) return false;
+      state.find = Array.isArray(rows) && rows.length > 0 ? rows : null;
+      applyFind();
+      return state.find !== null;
     }
 
     function update(chart, changes) {
@@ -123,7 +198,9 @@
       }
       state.graph = graph;
       if (Array.isArray(changes)) state.changes = changes.filter(isObj);
-      return draw();
+      const ok = draw();
+      loadNotes(chart);
+      return ok;
     }
 
     function selectChange(seq) {
@@ -157,6 +234,11 @@
       e.preventDefault();
       selectChange(Number(row.getAttribute("data-change")));
     });
+    notesEl.addEventListener("click", e => {
+      const button = e.target && e.target.closest ? e.target.closest("[data-note-node]") : null;
+      const node = button && state.graph ? state.graph.nodes.find(n => n.id === button.getAttribute("data-note-node")) : undefined;
+      if (node) showCard(node);
+    });
     cardEl.addEventListener("click", e => {
       const button = e.target && e.target.closest ? e.target.closest("[data-oc]") : null;
       if (!button) return;
@@ -178,7 +260,7 @@
     });
 
     return {
-      el: paneEl, graphView: gv, update, selectChange, refresh,
+      el: paneEl, graphView: gv, update, selectChange, refresh, setFind,
       setLive: s => gv.setLive(s),
       fail: err => gv.fail(err),
       state: () => ({selected: pickedSeq() === undefined ? null : pickedSeq(), card: state.cardId, changes: state.changes.map(c => c.seq), marks: Object.assign({}, state.marks)}),
@@ -186,6 +268,8 @@
         if (destroyed) return;
         destroyed = true;
         fetchSeq += 1;
+        notesSeq += 1;
+        if (notesTimer && typeof root.clearTimeout === "function") root.clearTimeout(notesTimer);
         gv.destroy();
         host.innerHTML = "";
       },

@@ -25,6 +25,8 @@ Test-only controls (not under /api, no token):
     POST /__fake/fixture {name, version}      name chart (the chart and its change log) | graph | stage | sign_in (see STAGES)
     POST /__fake/fail {path, status, ...}     answer `path` with `status` (method, code, message, details, count are optional;
                                                status null or 200 clears); failing /api/events also ends the open streams
+    POST /__fake/chart-notes {notes}          what GET /api/chart/notes answers (gap chart-insight; none by default)
+    POST /__fake/find {teams, messages}       what GET /api/find answers to any query of two characters or more (none by default)
     GET  /__fake/log[?prefix=]                the requests seen: [{n, method, path, query, status, token, body}]
     GET  /__fake/state                        stages, failures, open streams, last event id
     POST /__fake/reset                        back to stage 1, empty log and ring (open streams get server.resync)
@@ -318,6 +320,8 @@ class FakeState:
             self.attention = {"quiet_hours": None, "nudges_per_hour": 3, "default_nudges_per_hour": 3, "max_nudges_per_hour": 10, "quiet_now": False}
             self.recurring: list[dict] = []
             self.recurring_runs: dict[str, list[dict]] = {}
+            self.chart_notes: list[dict] = []       # gap chart-insight: GET /api/chart/notes (set by /__fake/chart-notes)
+            self.find: dict = {"teams": [], "messages": []}       # GET /api/find answers this (set by /__fake/find)
             for chat in self.chats.values():
                 chat.reset()
             self._apply_visibility()
@@ -1288,6 +1292,20 @@ def register_api(app: FastAPI, state: FakeState) -> None:
         with state.lock:
             recurring_row(rec_id)
             return JSONResponse(copy.deepcopy(state.recurring_runs.get(rec_id, [])[: int_arg(limit, 20, 1, 200)]))
+    @app.get("/api/chart/notes")
+    def chart_notes():
+        with state.lock:
+            return JSONResponse({"notes": copy.deepcopy(state.chart_notes), "total": len(state.chart_notes)})
+
+    @app.get("/api/find")
+    def find(q: str = ""):
+        """The teams and messages a test staged with /__fake/find, whatever the query says; a query under two characters finds nothing."""
+        if not any(len(word) >= 2 for word in q.split()):
+            return JSONResponse({"teams": [], "counts": {"department": 0, "division": 0}, "truncated": False, "messages": []})
+        with state.lock:
+            teams = copy.deepcopy(state.find["teams"])
+            counts = {"department": sum(1 for t in teams if t.get("kind") == "department"), "division": sum(1 for t in teams if t.get("kind") == "division")}
+            return JSONResponse({"teams": teams, "counts": counts, "truncated": False, "messages": copy.deepcopy(state.find["messages"])})
 
     @app.post("/api/tasks/{task_id}/retry")
     def retry_task(task_id: str, request: Request):
@@ -1683,6 +1701,23 @@ def register_controls(app: FastAPI, state: FakeState, fixtures: Fixtures) -> Non
         with state.lock:
             state.recurring = copy.deepcopy(body["items"])
         return JSONResponse({"items": len(body["items"])})
+    @app.post("/__fake/chart-notes")
+    async def set_chart_notes(request: Request):
+        body = await json_body(request)
+        if not isinstance(body, dict) or not isinstance(body.get("notes"), list) or not all(isinstance(n, dict) for n in body["notes"]):
+            raise ApiError(422, "validation", "chart-notes needs {notes: [...]}")
+        with state.lock:
+            state.chart_notes = copy.deepcopy(body["notes"])
+        return JSONResponse({"notes": len(body["notes"])})
+
+    @app.post("/__fake/find")
+    async def set_find(request: Request):
+        body = await json_body(request)
+        if not isinstance(body, dict) or not isinstance(body.get("teams", []), list) or not isinstance(body.get("messages", []), list):
+            raise ApiError(422, "validation", "find needs {teams: [...], messages: [...]}")
+        with state.lock:
+            state.find = {"teams": copy.deepcopy(body.get("teams", [])), "messages": copy.deepcopy(body.get("messages", []))}
+        return JSONResponse({"teams": len(state.find["teams"]), "messages": len(state.find["messages"])})
 
     @app.post("/__fake/fail")
     async def fail(request: Request):

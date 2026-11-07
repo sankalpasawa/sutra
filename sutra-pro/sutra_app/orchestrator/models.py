@@ -255,6 +255,7 @@ class ApprovalCard(Value):
     change_id: ChangeId
     question: Annotated[str, StringConstraints(max_length=500)]
     options: Annotated[list[ChatOption], Field(max_length=10)]
+    impact: Annotated[list[Annotated[str, StringConstraints(max_length=160)]], Field(max_length=8)] = []      # what a yes would do (reorg_preview.py)
 
 
 class ChoiceCard(Value):

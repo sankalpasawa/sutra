@@ -31,6 +31,7 @@ from sutra_app.connectors.env import PASS_NAMES, is_secret_name
 from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.ids import Clock, SystemClock, iso_z
 from sutra_app.orchestrator.models import RunSpec
+from sutra_app.orchestrator.pathwords import machine_roots, shorten
 
 __all__ = [
     "STOP_GRACE_S", "TERM_GRACE_S", "SILENT_AFTER_S", "STDERR_TAIL_BYTES", "EXTRA_PASS_NAMES", "child_environment", "RunLauncher",
@@ -391,7 +392,8 @@ class RunWatcher:
         return False
 
     def crash_outcome(self, row: Any) -> str:
-        """'the team process stopped unexpectedly', the exit code when known and the redacted stderr tail (up to 2 KB)."""
+        """'the team process stopped unexpectedly', the exit code when known and the redacted stderr tail (up to 2 KB), with this machine's
+        folders shortened to file names (pathwords: the owner reads 'tools.py', not the install folder; run.stderr.log keeps the whole tail)."""
         text = "the team process stopped unexpectedly"
         code = getattr(self.launcher, "exit_code", lambda pid: None)(row.pid)
         if code is not None:
@@ -402,7 +404,7 @@ class RunWatcher:
         except Exception:                                      # noqa: BLE001
             tail = ""
         if tail:
-            text += ": " + self.redact(tail)[-STDERR_TAIL_BYTES:]
+            text += ": " + shorten(self.redact(tail)[-STDERR_TAIL_BYTES:], machine_roots([getattr(self.tasks, "data_dir", None) or ""]))
         return text[:2000]
 
 

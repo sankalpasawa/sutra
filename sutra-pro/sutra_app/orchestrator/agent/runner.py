@@ -41,6 +41,7 @@ from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AlreadyDecided, AppError, NotFound
 from sutra_app.orchestrator.ids import ORG_SESSION_ID, IdFactory
 from sutra_app.orchestrator.models import Accepted, ChangeContext, ChangeResult, ChatChoice
+from sutra_app.orchestrator.reorg_preview import ReorgPreview, card_lines
 from sutra_app.orchestrator.standing_rules import StandingRules
 from sutra_app.orchestrator.tasks import TaskService
 from sutra_app.orchestrator.textutil import one_line_title, parse_yes_no
@@ -428,9 +429,22 @@ class TurnRunner:
         question = self._approval_question(plan.change.model if plan.change else None, applied.before)  # type: ignore[union-attr]
         card = {"type": "approval", "change_id": applied.result.id, "question": question,
                 "options": [{"id": YES, "label": "Yes"}, {"id": NO, "label": "No"}]}
+        impact = await run_blocking(self._impact_of, plan.change.model if plan.change else None, applied.before)
+        if impact:
+            card["impact"] = impact                                            # what a yes would do, in words; `question` is unchanged
         await run_blocking(self._write_cards, mid, [], [card])
         self._phase(mid, "done")
         await self._call_hook(self.hooks.on_done, mid)
+
+    def _impact_of(self, change: Any, before: OrgChart) -> list[str]:
+        """The lines of the approval card (reorg_preview.py). A courtesy: a failure here leaves the card as it was, never without it."""
+        if change is None:
+            return []
+        try:
+            return card_lines(ReorgPreview(self.db).describe(change, before))
+        except Exception:                                                      # noqa: BLE001
+            log.exception("could not describe what the change would do")
+            return []
 
     async def _decide_flow(self, change_id: str, approve: bool, mid: int | None, *, raise_already: bool) -> ChangeResult:
         """Answer a pending change. For a change the chat agent planned, finish its request (stage C if it is still missing, tasks,

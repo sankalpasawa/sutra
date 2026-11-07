@@ -185,12 +185,18 @@
     return (Array.isArray(options) ? options : []).map(o => (isObj(o) ? {id: clean(o.id), label: clean(o.label) || clean(o.id)} : {id: "", label: clean(o)})).filter(o => o.label !== "");
   }
 
+  // What a yes would do (ApprovalCard.impact, written by code in orchestrator/reorg_preview.py): at most 8 lines of 160 characters, shown while the card is open.
+  const impactList = (c, done) => {
+    const lines = done || !Array.isArray(c.impact) ? [] : c.impact.map(clean).filter(Boolean).slice(0, 8).map(l => l.slice(0, 160));
+    return lines.length ? '<ul class="cimpact" aria-label="What a yes would do">' + lines.map(l => "<li>" + esc(l) + "</li>").join("") + "</ul>" : "";
+  };
+
   function choiceCard(c, ctx, type) {
     const options = optionList(c.options);
     const answer = clean(ctx.answer);
     const done = answer !== "" || ctx.answered === true;
     return '<div class="ncard c-' + type + '" data-card="' + type + '"' + changeRef(c) + (done ? ' data-answered="true"' : "") + ">" +
-      '<p class="sq">' + safeText(clean(c.question)) + "</p>" +
+      '<p class="sq">' + safeText(clean(c.question)) + "</p>" + (type === "approval" ? impactList(c, done) : "") +
       (done ? '<p class="canswer">' + (answer ? "You answered: <b>" + esc(answer) + "</b>" : "Answered") + "</p>"
         : '<div class="opts">' + options.map(o => '<button type="button" data-act="choose" data-id="' + esc(o.id) + '" data-option="' + esc(o.label) + '">' + esc(o.label) + "</button>").join("") + "</div>") +
       "</div>";

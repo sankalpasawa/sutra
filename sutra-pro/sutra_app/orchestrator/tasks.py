@@ -50,6 +50,7 @@ from sutra_app.orchestrator.models import (
     LIVE_STATUSES, TERMINAL_STATUSES, Delivery, RunRef, RunSpec, TaskOut, TaskSettings, UpstreamRef,
 )
 from sutra_app.orchestrator.nodes import ensure_node, node_init
+from sutra_app.orchestrator.pathwords import machine_roots, shorten
 from sutra_app.orchestrator.runs import stderr_tail
 from sutra_app.orchestrator.textutil import one_line_title
 from sutra_app.orchestrator.headsup import STOP_KEY
@@ -669,7 +670,8 @@ class TaskService:
             pid = await self.launcher.start(spec, run_dir)
         except Exception as exc:                          # noqa: BLE001  (a spawn failure ends this task only)
             log.warning("could not start task %s: %s", task_id, exc)
-            await run_blocking(self.projector.mark_ended, task_id, "crashed", f"could not start: {self.redact(str(exc))}", "start_failed")
+            said = shorten(self.redact(str(exc)), machine_roots([self.settings.data_dir]))         # the owner reads file names, the log above keeps the paths
+            await run_blocking(self.projector.mark_ended, task_id, "crashed", f"could not start: {said}", "start_failed")
             return
         alive = await run_blocking(self._store_pid, task_id, pid)
         if alive and self.watcher is not None:
