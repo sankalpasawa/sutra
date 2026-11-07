@@ -18,7 +18,10 @@ __all__ = ["WINDOWS", "DEFAULT_WINDOWS", "FLOOR_WINDOW", "CHARS_PER_TOKEN", "REP
 
 WINDOWS: dict[str, dict[str, int]] = {
     "claude": {"fable": 1_000_000, "opus": 1_000_000, "sonnet": 1_000_000, "haiku": 200_000, "best": 1_000_000,
-               "opus[1m]": 1_000_000, "sonnet[1m]": 1_000_000},
+               "opus[1m]": 1_000_000, "sonnet[1m]": 1_000_000,
+               # the pinned snapshots of the model picker (model_catalog.py): DECLARED, NOT MEASURED, carried over from their siblings as the old
+               # app did; if one is smaller the failure is an over-sized carry-over, which is why the assumption is written here
+               "claude-opus-4-8": 1_000_000, "claude-opus-4-7": 1_000_000, "claude-opus-4-6": 1_000_000, "claude-sonnet-4-6": 1_000_000},
     "codex": {},
 }
 DEFAULT_WINDOWS = {"codex": 258_400}          # what codex enforces (a provider whose default is knowable)
