@@ -34,7 +34,9 @@
      policyProblem(policy, edits) -> ""|sentence   what the page refuses before sending (no model left on, a first model that is off, an empty model)
      policyErrors(error) -> {provider: sentence}   what a 422 policy_invalid names, key "" for a sentence about the whole policy
      loadPolicy(api) / savePolicy(api, policy, edits)   GET policy and models, and the checked save (GET the stored policy again, then PUT it with the edit)
-     aboutHtml(info, update) -> html              the About group (welcome-settings, item 2): version, data folder, Check for updates and its answer
+     aboutHtml(info, update, auto) -> html        the About group (welcome-settings, item 2): version, data folder, Check for updates and its answer; with `auto`
+                                          (GET /api/ops/update-setting) also the switch "Check for updates automatically", what it sends and the last check
+     setAutoUpdate(api, on) -> {ok, auto, message}   PUT /api/ops/update-setting {auto}: the owner's switch (gap package autoupdate)
      checkUpdate(api) -> {step, answer, message}  POST /api/ops/update-check on the owner's click: the only request the app makes of its own, and it downloads nothing
 
    There is no control to pin a chat to a provider in v1 (S1-contracts-08). Every word from the wire goes through esc(); a sign-in link is a link
@@ -105,6 +107,7 @@
   const POLICY_PATH = "/api/connectors/policy";
   const MODELS_PATH = "/api/connectors/models";
   const UPDATE_PATH = "/api/ops/update-check";
+  const UPDATE_SETTING_PATH = "/api/ops/update-setting";
 
   const textOf = field => (hasOwn(FIELD_TEXT, field) ? FIELD_TEXT[field] : [field.replace(/_/g, " "), ""]);
 
@@ -658,7 +661,10 @@
   }
 
   /* ---------------------------------------------------------------- About group (welcome-settings, item 2) */
-  const ABOUT_NOTE = "Sutra Pro contacts the internet only when you press Check for updates. It downloads and installs nothing.";
+  const ABOUT_NOTE = "Sutra Pro contacts the internet when you press Check for updates and, in the desktop app, for the automatic check you can turn off below. It never installs an update without your choice.";
+  const AUTO_NOTE = "The Sutra Pro desktop app asks GitHub for the list of releases about a minute after it opens and every 6 hours. It sends one request and nothing about you or your files. " +
+    "If a newer version is found it is downloaded and checked, and installed only when you choose Restart. The command line and a browser-only start never check by themselves.";
+  const AUTO_OFFLINE = "Offline mode is on, so no automatic check is made whatever this switch says.";
 
   // The words of an update answer: the server's own sentence (`said`), else built from the fields. A release link is a link only on github.com over https.
   function updateWords(answer) {
@@ -668,7 +674,37 @@
     return answer.newer === true ? "You have " + clean(answer.current) + "; " + clean(answer.latest) + " is out." : "You have " + clean(answer.current) + ": up to date.";
   }
 
-  function aboutHtml(info, update) {
+  // The "Last check" line: `last` is {at (seconds), state, version, message} from the server. The time is the browser's own formatting; no time is better than "NaN".
+  function lastCheckHtml(last) {
+    if (!isObj(last) || clean(last.message) === "") return '<p class="setdetail setlast">Last check: none yet.</p>';
+    const at = finite(last.at) ? new Date(last.at * 1000) : null;
+    const when = at !== null && finite(at.getTime()) ? at.toLocaleString() : "";
+    const bad = last.state === "error" || last.state === "failed";
+    const words = esc(clean(last.message));
+    return '<p class="setdetail setlast" data-state="' + esc(clean(last.state)) + '">Last check: ' + (when ? esc(when) + ": " : "") + (bad ? '<span class="seterr">' + words + "</span>" : words) + "</p>";
+  }
+
+  // Whether THIS copy installs an update itself: `install` is {can, why}, said once by the desktop app at start. A copy that cannot tell who signed an update only tells.
+  function installHtml(install) {
+    if (!isObj(install) || typeof install.can !== "boolean") return "";
+    if (install.can) return '<p class="setdetail setinstall" data-can="yes">This copy installs an update only after checking that it is signed by the same developer, and only when you choose Restart.</p>';
+    return '<p class="setdetail setinstall" data-can="no">This copy of Sutra Pro only tells you when an update is out; it cannot install one by itself.' +
+      (clean(install.why) ? " " + esc(clean(install.why)) : "") + "</p>";
+  }
+
+  // The switch and what is said around it. `auto` is the GET answer {auto, chosen, offline, last, install} (plus the page's own `busy` and `message`); null = not loaded yet.
+  function autoUpdateHtml(auto) {
+    if (!isObj(auto)) return "";
+    const on = auto.auto === true;
+    const busy = auto.busy === true;
+    const said = clean(auto.message);
+    return '<div class="setacts setauto"><label class="setswitch"><input type="checkbox" role="switch" data-act="toggle-auto-update" aria-checked="' + (on ? "true" : "false") + '"' +
+      (on ? " checked" : "") + (busy ? " disabled" : "") + "> Check for updates automatically</label>" +
+      (said ? ' <span class="seterr" role="alert">' + esc(said) + "</span>" : "") + "</div>" +
+      '<p class="setdetail">' + AUTO_NOTE + "</p>" + (auto.offline === true ? '<p class="setdetail">' + AUTO_OFFLINE + "</p>" : "") + lastCheckHtml(auto.last) + installHtml(auto.install);
+  }
+
+  function aboutHtml(info, update, auto) {
     const i = isObj(info) ? info : {};
     const u = isObj(update) ? update : {step: "idle"};
     const answer = isObj(u.answer) ? u.answer : null;
@@ -683,7 +719,18 @@
       '<div class="setfields"><div class="setfield"><span class="setlabel">Version</span><span class="setvalue">' + esc(clean(i.version) || "unknown") + "</span></div>" +
       '<div class="setfield"><span class="setlabel">Data folder</span><span class="setvalue setpathv">' + esc(clean(i.data_dir) || "unknown") + "</span></div></div>" +
       '<div class="setacts"><button type="button" class="ghost" data-act="check-update"' + (u.step === "running" ? " disabled" : "") + ">Check for updates</button>" +
-      '<span class="settest" data-step="' + esc(tone) + '" role="status">' + esc(line) + "</span></div>" + link + how + "</section>";
+      '<span class="settest" data-step="' + esc(tone) + '" role="status">' + esc(line) + "</span></div>" + link + how + autoUpdateHtml(auto) + "</section>";
+  }
+
+  // setAutoUpdate(api, on) -> {ok, auto, message}: one PUT with the owner's choice. `auto` is the server's answer (what is stored now), null when it failed.
+  async function setAutoUpdate(api, on) {
+    try {
+      const answer = await api.put(UPDATE_SETTING_PATH, {auto: on === true});
+      if (!isObj(answer) || typeof answer.auto !== "boolean") return {ok: false, auto: null, message: "The app answered something unexpected."};
+      return {ok: true, auto: answer, message: ""};
+    } catch (e) {
+      return {ok: false, auto: null, message: clean(e && e.message) || "The setting could not be saved."};
+    }
   }
 
   // checkUpdate(api) -> {step: "ok"|"error", answer, message}. A POST (never a link, never on load); a 409 offline or any other refusal is its own sentence.
@@ -863,7 +910,7 @@
   const SettingsView = {
     engineHtml, engineBody, engineErrors, formProblems, connectorsHtml, signInState, appearanceHtml,
     testConnector, signIn, watchHealth, loadEngine, saveEngine, enginePath, testLine, kindOf, parseValue, setCliPath,
-    policyHtml, policyBody, policyProblem, policyErrors, loadPolicy, savePolicy, answering, aboutHtml, checkUpdate, updateWords,
+    policyHtml, policyBody, policyProblem, policyErrors, loadPolicy, savePolicy, answering, aboutHtml, checkUpdate, updateWords, setAutoUpdate,
     workdirHtml, loadWorkdir, saveWorkdir, clearWorkdir, WORKDIR_PATH, WORKDIR_WORDS,
     HEALTH_EVENTS, NOTE_LOCKED, NOTE_NEXT_RUN,
   };

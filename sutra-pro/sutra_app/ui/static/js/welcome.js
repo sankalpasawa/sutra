@@ -67,7 +67,17 @@
     const e = isObj(egress) ? egress : {};
     return "<p>Your messages go only to the Claude or Codex program on this computer, signed in with your own subscription. Sutra never uses an API key " +
       "and refuses one if it finds it.</p>" +
-      (e.scrub === false ? "" : "<p>Anything shaped like a key, token or password is removed before a message leaves. No usage data is sent to Sutra.</p>");
+      (e.scrub === false ? "" : "<p>Anything shaped like a key, token or password is removed before a message leaves. No usage data is sent to Sutra.</p>") +
+      updateFact(e.auto_update);
+  }
+
+  // The automatic update check (gap package autoupdate): what it asks, how often, and where it is switched off. Absent from an older server's answer: no paragraph.
+  function updateFact(auto) {
+    if (!isObj(auto)) return "";
+    if (auto.on !== true) return "<p>The automatic check for a newer Sutra Pro is switched off (Settings, About). Sutra Pro then asks GitHub for releases only when you press Check for updates.</p>";
+    return "<p>The Sutra Pro desktop app asks GitHub for the list of Sutra Pro releases about a minute after it opens and every 6 hours. It is one request, and nothing about you or your files is sent. " +
+      "If a newer version is found it is downloaded only to be checked, and installed only when you say so. You can turn this off in Settings, About. " +
+      "The command line and a browser-only start never check by themselves" + (auto.desktop === false ? ", and this copy was not started by the desktop app, so it makes no automatic check" : "") + ".</p>";
   }
 
   function autonomyFact(a) {

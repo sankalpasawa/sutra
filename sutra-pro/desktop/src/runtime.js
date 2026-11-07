@@ -83,6 +83,7 @@ function childEnv(env, { platform = process.platform, home = os.homedir(), dataD
   out.PYTHONUNBUFFERED = '1';          // the server's lines reach the log as they happen
   if (platform === 'win32') out.PYTHONUTF8 = '1';
   out.SUTRA_DATA_DIR = folder;
+  out.SUTRA_PRO_DESKTOP = '1';         // the server tells the page (Settings, About) that this app, and so the automatic update check, is the one in front
   return out;
 }
 
