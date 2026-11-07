@@ -77,6 +77,7 @@
     limits: null, limitsForm: {}, notices: null, noticesForm: {}, recurring: null, recForm: {draft: null, open: {}, confirm: "", error: {}, busy: false, saved: false},
     // welcome-settings: the default-model controls (policy and the models each provider lists), the About group (version, folder, the update answer)
     policy: null, models: null, pol: {busy: false, saved: false, errors: {}}, info: null, update: {step: "idle"},
+    pillStale: false, pillSeq: 0,          // the org chat's pill is read again when its session may have moved (renderPill)
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -146,6 +147,7 @@
       after = Number.isFinite(page.next_after) ? page.next_after : got[got.length - 1].id;
     }
     mergeMessages(fresh, all);
+    if (fresh.length > 0) pillMoved();
     if (S.cc && S.cc.reconcile(S.messages)) renderBar();
     renderChat();
     renderComposer();
@@ -347,13 +349,23 @@
   }
 
   // The provider pill of the org chat (ABS-9): the choice also governs the chat agent (ABS-8).
+  // The pill is read once, and again whenever the chat's session may have moved: a reply ends a turn, and the turn is what pins the model, the effort and
+  // the provider the session runs on (the pickers wait for it: "can be chosen after your next message"), and connector.switch is the session starting on the
+  // other provider. pillMoved() says so; the pill on screen stays until the new answer is in, and an older answer never replaces a newer one.
+  const pillMoved = () => { S.pillStale = true; };
+
   async function renderPill() {
     const el = $("spill");
     const CP = root.ChatPill;
     if (!el || !CP) return;
-    if (S.pillData === undefined) {
-      S.pillData = null;
-      try { S.pillData = await api.get("/api/chats/" + ORG + "/providers"); } catch (e) { S.pillData = null; }
+    if (S.pillData === undefined || S.pillStale) {
+      const first = S.pillData === undefined;
+      const mine = ++S.pillSeq;
+      S.pillStale = false;
+      if (first) S.pillData = null;
+      let got = null;
+      try { got = await api.get("/api/chats/" + ORG + "/providers"); } catch (e) { got = null; }
+      if (mine === S.pillSeq && (got !== null || first)) S.pillData = got;          // a failed read of a pill already shown keeps it
     }
     const html = S.pillData ? CP.pill(S.pillData.providers, S.pillData.chosen) : "";
     ctx.paint(el, html);
@@ -1192,6 +1204,7 @@
         break;
       case "chat.message":
         if (d.session_id === ORG) {
+          pillMoved();
           if (isObj(d.message)) { mergeMessages([d.message], false); renderChat(); }
           refetchMessages();
         } else if (S.graphView && isObj(d.message)) {
@@ -1203,6 +1216,7 @@
       case "graph.updated": refetchGraph(); break;
       case "task.updated": refetchDepartments(); refetchHeads(); refetchLimits(); if (S.recurring !== null) refetchRecurring(); break;
       case "connector.health": refetchLimits(); break;                                                // a plan window moved: the guard's line may change
+      case "connector.switch": if (d.session_id === ORG) { pillMoved(); renderPill(); } break;           // the org chat's session now runs on the other provider
       case "needs_you.changed": refetchNeeds(); break;
       case "server.resync": loadAll(); break;
       default: break;
