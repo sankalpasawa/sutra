@@ -11,6 +11,7 @@ real static files. What it proves, on stage "2" of the fake's story (the Web tea
   back            the panel's Back button and Esc return to the org chat, and the Sutra tab is selected again
   the strip       "Needs you" says which chat the question is in ("Answer in Web's chat") and opens it with the question in view
   keys            the arrow keys move between the tabs; the chip and the tabs are buttons (Enter and Space work)
+  division        a division has its own tab after its team's (the graph names the team in `dept_id`), and its chat is named and selected
 """
 from __future__ import annotations
 
@@ -142,3 +143,16 @@ def test_a_question_pointer_reads_answered_once_the_question_is_gone_and_a_start
     present(browser, ".c-teamchat[data-about=question]")
     assert texts(browser, ".c-teamchat .cteamlead") == ["Web's question was answered."] and texts(browser, ".c-teamchat .chatchip") == ["Open its chat"]
     assert attrs(browser, ".c-teamchat", "data-answered") == ["true"]
+
+
+@browser_only
+def test_a_division_has_its_tab_under_its_team_and_its_chat_is_named_and_selected(browser, fake):
+    browser.expect_failed("/providers")
+    load(browser, fake, stage="full")                                        # two teams, two divisions: the graph names a division's team in `dept_id`
+    present(browser, "#cswitch .cstab")
+    assert browser.js("Array.from(document.querySelectorAll('#cswitch .cstab'), t => [t.dataset.kind, t.dataset.node, t.firstChild.textContent])") == [
+        ["org", "root", "Sutra"], ["department", "web", "Web"], ["division", "faq", "FAQ"], ["department", "content", "Content"], ["division", "menu", "Menu"]]
+    browser.click('#cswitch .cstab[data-node="faq"]')
+    browser.wait_for("!document.getElementById('teamchat').hidden && document.getElementById('npititle').textContent === 'FAQ'")
+    assert browser.js("document.getElementById('schat').getAttribute('aria-label')") == "Chat with FAQ"
+    assert attrs(browser, "#cswitch .cstab", "aria-selected") == ["false", "false", "true", "false", "false"]

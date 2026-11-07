@@ -13,8 +13,9 @@ const DEPTS = [{id: "print", name: "Print", session_id: "cs_aaaaaaaaaaaa"}, {id:
 const GRAPH = {nodes: [
   {id: "root", kind: "root", chat_session_id: "cs_org"},
   {id: "web", kind: "department", chat_session_id: "cs_bbbbbbbbbbbb"},
-  {id: "blog", kind: "division", label: "Blog", parent_id: "web", department_id: "web", chat_session_id: "cs_cccccccccccc"},
-  {id: "web.identity", kind: "function", chat_session_id: "cs_dddddddddddd", department_id: "web"},
+  // the shape GET /api/graph really sends (GraphNodeOut): a division names its team in `dept_id`; there is no `department_id` or `parent_id`
+  {id: "blog", kind: "division", label: "Blog", org_node_id: "blog", dept_id: "web", chat_session_id: "cs_cccccccccccc"},
+  {id: "web.identity", kind: "function", chat_session_id: "cs_dddddddddddd", dept_id: "web"},
 ]};
 
 test("the org chat comes first, then each team followed by its divisions, in the order the server listed them", () => {
@@ -22,6 +23,18 @@ test("the org chat comes first, then each team followed by its divisions, in the
   assert.deepEqual(list.map(e => [e.id, e.kind, e.label]), [["cs_org", "org", "Sutra"], ["cs_aaaaaaaaaaaa", "department", "Print"], ["cs_bbbbbbbbbbbb", "department", "Web"], ["cs_cccccccccccc", "division", "Blog"]]);
   assert.equal(list[3].parent, "Web");
   assert.equal(list[0].node, "root");
+});
+
+test("a division is listed under the team its `dept_id` names, and under no other", () => {
+  const graph = {nodes: [
+    {id: "menu", kind: "division", label: "Menu", dept_id: "print", chat_session_id: "cs_111111111111"},
+    {id: "blog", kind: "division", label: "Blog", dept_id: "web", chat_session_id: "cs_cccccccccccc"},
+    {id: "orphan", kind: "division", label: "Orphan", dept_id: "gone", chat_session_id: "cs_222222222222"},
+  ]};
+  const list = entries(DEPTS, graph, []);
+  assert.deepEqual(list.map(e => [e.node, e.kind, e.parent]), [["root", "org", ""], ["print", "department", ""], ["menu", "division", "Print"], ["web", "department", ""], ["blog", "division", "Web"]]);
+  assert.match(bar(list, "cs_cccccccccccc"), /data-session="cs_cccccccccccc" data-node="blog" data-kind="division" aria-selected="true"/);
+  assert.equal(heading(list, "cs_cccccccccccc"), "Chat with Blog");
 });
 
 test("functions and steps are not chats the owner switches to", () => {

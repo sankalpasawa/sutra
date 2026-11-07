@@ -7,7 +7,7 @@
    Strings in, strings out, like chat_view.js: nothing touches the DOM and every word from the wire is escaped.
 
      entries(departments, graph, needs)    the chats the owner can switch to: the org chat first, then each team (GET /api/departments) followed by
-                                           its divisions (the division nodes of GET /api/graph). Each entry is
+                                           its divisions (the division nodes of GET /api/graph, which name their team in `dept_id`). Each entry is
                                            {id, node, kind: org|department|division, label, parent, waiting}; `id` is the chat session, `waiting` the
                                            number of the team's questions that wait for the owner (GET /api/needs-you, by session). A row without
                                            a usable id or chat is dropped.
@@ -57,7 +57,7 @@
       if (node === "" || sid === "" || seen.has(sid)) return;
       seen.add(sid);
       out.push({id: sid, node, kind: "department", label: clean(d.name) || node, parent: "", waiting: waiting[sid] || 0});
-      divisions.filter(n => idOf(n.department_id) === node || idOf(n.parent_id) === node).forEach(n => {
+      divisions.filter(n => idOf(n.dept_id) === node).forEach(n => {
         const dsid = idOf(n.chat_session_id);
         if (seen.has(dsid)) return;
         seen.add(dsid);
