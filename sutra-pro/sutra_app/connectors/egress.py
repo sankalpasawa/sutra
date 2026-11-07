@@ -27,20 +27,37 @@ log = logging.getLogger(__name__)
 MAX_ROW_BYTES = 8192
 _PEM_BODY = r".{0,20000}?"                                    # bounded: many BEGIN lines and no END cannot go quadratic
 
+# What an assignment's value may hold: letters, digits and the symbols a password or a key carries, never a bracket, a quote or a space, so
+# `password = hash(password)` and a quoted sentence are not mistaken for a value.
+_VALUE = r"['\"]?[A-Za-z0-9._~\-/+!@#$%^&*=:?]{12,}['\"]?"
+_NOT_PART_OF_A_WORD = r"(?<![A-Za-z0-9])"                      # `OPENAI_API_KEY=` counts (an underscore is not a letter); `mypassword=` does not
+_AFTER_NAME = r"['\"]?\s*[=:]\s*"                              # `name=`, `name: ` and the JSON or dict form `"name": `
+
 SHAPES: list[tuple[str, "re.Pattern[str]", bool]] = [        # (name, pattern, keep the prefix group)
     ("openai-key", re.compile(r"sk-[A-Za-z0-9_-]{8,}"), False),
-    ("github-token", re.compile(r"ghp_[A-Za-z0-9]{20,}"), False),
+    ("github-token", re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"), False),                     # ghp (personal), gho (OAuth: what `gh auth token` prints), ghu, ghs, ghr
     ("github-pat", re.compile(r"github_pat_[A-Za-z0-9_]{20,}"), False),
     ("slack-token", re.compile(r"xox[abprs]-[A-Za-z0-9-]{10,}"), False),
-    ("aws-key-id", re.compile(r"AKIA[0-9A-Z]{16}"), False),
-    ("bearer", re.compile(r"(?i)bearer\s+[A-Za-z0-9._-]{16,}"), False),
+    ("aws-key-id", re.compile(r"(?<![A-Z0-9])(?:AKIA|ASIA)[0-9A-Z]{16}"), False),           # AKIA long-lived, ASIA temporary (STS)
+    ("bearer", re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]{16,}"), False),
     ("jwt", re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), False),
-    ("pem-private-key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----" + _PEM_BODY + r"-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL), False),
+    ("pem-private-key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----" + _PEM_BODY + r"-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----", re.DOTALL), False),
     ("stripe-key", re.compile(r"(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}"), False),
     ("slack-webhook", re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/_-]{10,}"), False),
     ("discord-webhook", re.compile(r"https://discord(?:app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{10,}"), False),
+    ("google-api-key", re.compile(r"AIza[0-9A-Za-z_-]{30,}"), False),
+    ("gitlab-token", re.compile(r"glpat-[A-Za-z0-9_-]{20,}"), False),
+    ("npm-token", re.compile(_NOT_PART_OF_A_WORD + r"npm_[A-Za-z0-9]{30,}"), False),
+    ("huggingface-token", re.compile(_NOT_PART_OF_A_WORD + r"hf_[A-Za-z0-9]{30,}"), False),
+    ("sendgrid-key", re.compile(_NOT_PART_OF_A_WORD + r"SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"), False),
+    # `Basic <base64 of user:password>`: the word "basic" is common, so the value must look like base64 (a digit, + or /, or = padding)
+    ("basic-auth", re.compile(r"\b[Bb]asic\s+(?:(?=[A-Za-z0-9+/]*[0-9+/])[A-Za-z0-9+/]{16,}={0,2}|[A-Za-z0-9+/]{16,}={1,2})"), False),
     ("db-uri-credentials", re.compile(r"(?i)\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://)[^\s/@]*:[^\s]*@(?=[^\s@/]+)"), True),
-    ("private-key-env", re.compile(r"(?i)\b((?:api[_-]?key|secret[_-]?key|access[_-]?token|password|passwd)\s*[=:]\s*)['\"]?[A-Za-z0-9._\-/+]{12,}['\"]?"), True),
+    ("private-key-env", re.compile(
+        r"(?i)" + _NOT_PART_OF_A_WORD + r"((?:api[_-]?key|secret[_-]?(?:access[_-]?)?key|client[_-]?secret|(?:access|auth|refresh)[_-]?token"
+        r"|private[_-]?key|password|passwd|passphrase)" + _AFTER_NAME + r")" + _VALUE), True),
+    # a bare `token` or `secret` is also an ordinary word: its value must hold a digit, as a real token does (`token: refresh it daily` stays)
+    ("private-key-env", re.compile(r"(?i)" + _NOT_PART_OF_A_WORD + r"((?:token|secret)" + _AFTER_NAME + r")(?=['\"]?[A-Za-z0-9._~\-/+!@#$%^&*=:?]*[0-9])" + _VALUE), True),
 ]
 
 
@@ -53,7 +70,7 @@ def scan(text: str, *, replace: bool = False) -> tuple[str, dict[str, int]]:
         else:
             n = sum(1 for _ in pattern.finditer(text))
         if n:
-            counts[name] = n
+            counts[name] = counts.get(name, 0) + n                    # a shape may have more than one pattern
     return text, counts
 
 
