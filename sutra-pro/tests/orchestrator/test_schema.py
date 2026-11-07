@@ -55,7 +55,7 @@ def change(db, id_="chg-0001", **over):
 # ---- migrations and pragmas --------------------------------------------------------------------------------------
 
 def test_migrate_creates_every_table_and_sets_the_version(db):
-    assert db.version() == schema.SCHEMA_VERSION == 3
+    assert db.version() == schema.SCHEMA_VERSION >= 3                      # not == 3: another package appends a migration too
     assert {n for n in names(db) if not n.startswith("chat_search")} - {"sqlite_sequence"} == set(schema.TABLES)      # chat_search is FTS5: it brings its shadow tables
 
 
@@ -91,7 +91,7 @@ def test_a_database_at_version_two_gets_the_recurring_tables_and_keeps_its_rows(
     old.migrate(schema.MIGRATIONS[:2])
     sql(old, "INSERT INTO meta VALUES ('k','v')")
     assert old.version() == 2 and not {"recurring", "recurring_runs"} & names(old)
-    assert old.migrate() == schema.SCHEMA_VERSION == 3
+    assert old.migrate() == schema.SCHEMA_VERSION >= 3
     assert {"recurring", "recurring_runs"} <= names(old) and sql(old, "SELECT count(*) FROM meta").fetchone()[0] == 1
     old.close()
 
