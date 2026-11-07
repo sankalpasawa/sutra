@@ -1779,9 +1779,11 @@ WELCOME_FACTS = {
     "models": [{"name": "claude", "state": "ready", "why": "", "fix": ""},
                {"name": "codex", "state": "not_ready", "why": "0.5.2: not signed in", "fix": "run `codex login`"}],
     "data": {"dir": "/data/sutra-pro", "db_bytes": 1_310_720, "free_bytes": 42_949_672_960, "backup": "sutra-pro backup"},
-    "egress": {"scrub": True, "api_key_refused": True, "only_your_cli": True},
+    "egress": {"scrub": True, "api_key_refused": True, "only_your_cli": True, "auto_update": {"on": True, "desktop": True}},
     "autonomy": {"budget": 30, "send_mode": "dry-run", "asks": True},
 }
+UPDATE_SETTING = {"auto": True, "chosen": False, "default": True, "desktop": True, "offline": False, "last": None}
+UPDATE_STATES = ("up_to_date", "available", "error", "downloading", "ready", "failed", "tell_only", "installing")
 UPDATE_UP_TO_DATE = {"current": VERSION, "latest": VERSION, "newer": False, "url": "https://github.com/sankalpasawa/sutra/releases?q=sutra-pro",
                      "notes_url": "https://github.com/sankalpasawa/sutra/releases/tag/sutra-pro-v" + VERSION, "how": "Run `git pull`.", "kind": "checkout",
                      "error": None, "said": f"You have {VERSION}: up to date."}
@@ -1789,14 +1791,15 @@ UPDATE_UP_TO_DATE = {"current": VERSION, "latest": VERSION, "newer": False, "url
 
 def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
     """The welcome card (seen by default, so no other test is covered by it; `/__fake/welcome` shows it), GET and PUT /api/connectors/policy with the real
-    validation, GET /api/connectors/models, GET /api/ops/info and POST /api/ops/update-check (`/__fake/update` sets the answer). Reset with the story."""
+    validation, GET /api/connectors/models, GET /api/ops/info and POST /api/ops/update-check (`/__fake/update` sets the answer). The automatic check (gap package
+    autoupdate): GET and PUT /api/ops/update-setting and POST /api/ops/update-status and update-plan, stateful (`/__fake/auto` sets the GET answer). Reset with the story."""
     from sutra_app.connectors.errors import PolicyInvalidError
     from sutra_app.connectors.model_catalog import claude_options
     from sutra_app.connectors.policy import load_default_policy, parse_policy
 
     def fresh() -> dict:
         return {"seen": True, "facts": copy.deepcopy(WELCOME_FACTS), "policy": load_default_policy().model_dump(mode="json"), "update": copy.deepcopy(UPDATE_UP_TO_DATE),
-                "pill": False, "choice": {"provider": None, "model": None, "effort": None}}
+                "auto": copy.deepcopy(UPDATE_SETTING), "pill": False, "choice": {"provider": None, "model": None, "effort": None}}
 
     state.ws = fresh()
     original_reset, original_token = state.reset, state.token
@@ -1841,10 +1844,48 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
                   "note": "", "group": "main", "provider": "codex"}]
         return JSONResponse({"models": [{**o.model_dump(mode="json"), "images": True, "listed": True, "provider": "claude"} for o in claude_options()] + codex})
 
+    def remember(answer: dict) -> None:
+        state.ws["auto"]["last"] = {"at": time.time(), "state": "available" if answer.get("newer") else "up_to_date", "version": answer.get("latest") if answer.get("newer") else None,
+                                    "message": answer.get("said") or ""}
+
     @app.post("/api/ops/update-check")
     def update_check(request: Request):
         require_token(request, state)
+        remember(state.ws["update"])
         return JSONResponse(state.ws["update"])
+
+    @app.post("/api/ops/update-plan")
+    async def update_plan(request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        if not isinstance(body, dict) or not set(body) <= {"auto", "platform", "arch"}:
+            raise ApiError(422, "validation", "The request was refused")
+        if body.get("auto") is True and not state.ws["auto"]["auto"]:
+            return envelope(409, "update_off", "Automatic update checks are switched off in Settings, About.")
+        remember(state.ws["update"])
+        return JSONResponse({**state.ws["update"], "tag": None, "assets": {}, "channel": "stable", "asset": None})
+
+    @app.get("/api/ops/update-setting")
+    def update_setting_get():
+        return JSONResponse(state.ws["auto"])
+
+    @app.put("/api/ops/update-setting")
+    async def update_setting_put(request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        if not isinstance(body, dict) or set(body) != {"auto"} or not isinstance(body["auto"], bool):
+            raise ApiError(422, "validation", "auto is true or false.")
+        state.ws["auto"] = {**state.ws["auto"], "auto": body["auto"], "chosen": True}
+        return JSONResponse(state.ws["auto"])
+
+    @app.post("/api/ops/update-status")
+    async def update_status(request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        if not isinstance(body, dict) or body.get("state") not in UPDATE_STATES:
+            raise ApiError(422, "validation", "That state is not one the app reports.")
+        state.ws["auto"]["last"] = {"at": time.time(), "state": body["state"], "version": body.get("version"), "message": str(body.get("message") or "")[:240]}
+        return JSONResponse(state.ws["auto"])
 
     # the pill of a chat (item 4): the fake serves none until a test asks (`/__fake/pill`), as it never did, so no other test sees a pill
     def pill_of(sid: str) -> dict:
@@ -1901,6 +1942,13 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
         if isinstance(body, dict) and isinstance(body.get("token"), str) and len(body["token"]) >= 16:
             state.token = body["token"]
         return JSONResponse({"restarted": True})
+
+    @app.post("/__fake/auto")
+    async def auto_control(request: Request):
+        body = await json_body(request)
+        if isinstance(body, dict):
+            state.ws["auto"] = {**state.ws["auto"], **body}
+        return JSONResponse(state.ws["auto"])
 
     @app.post("/__fake/update")
     async def update_control(request: Request):

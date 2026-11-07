@@ -77,6 +77,8 @@
     limits: null, limitsForm: {}, notices: null, noticesForm: {}, recurring: null, recForm: {draft: null, open: {}, confirm: "", error: {}, busy: false, saved: false},
     // welcome-settings: the default-model controls (policy and the models each provider lists), the About group (version, folder, the update answer)
     policy: null, models: null, pol: {busy: false, saved: false, errors: {}}, info: null, update: {step: "idle"},
+    // autoupdate: the "Check for updates automatically" setting (GET /api/ops/update-setting) and the switch's own busy flag and sentence
+    auto: null, autoBusy: false, autoMsg: "",
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -856,7 +858,7 @@
   function paintModels() {
     ctx.paint($("set-models"), SV().policyHtml(S.policy, S.health, {models: S.models, errors: S.pol.errors, saved: S.pol.saved, busy: S.pol.busy}));
   }
-  function paintAbout() { ctx.paint($("set-about"), SV().aboutHtml(S.info, S.update)); }
+  function paintAbout() { ctx.paint($("set-about"), SV().aboutHtml(S.info, S.update, S.auto ? {...S.auto, busy: S.autoBusy, message: S.autoMsg} : null)); }
 
   function renderSettings() {
     paintAppearance();
@@ -896,6 +898,23 @@
   async function loadAbout() {
     try { S.info = await api.get("/api/ops/info"); } catch (e) { S.info = {}; }
     paintAbout();
+    await loadAutoUpdate();
+  }
+  async function loadAutoUpdate() {                    // a read: it asks GitHub nothing
+    try { S.auto = await api.get("/api/ops/update-setting"); } catch (e) { /* the group stays as it was, without the switch */ }
+    paintAbout();
+  }
+  async function toggleAutoUpdate(on) {
+    if (S.autoBusy || S.auto === null) return null;
+    S.autoBusy = true;
+    S.autoMsg = "";
+    paintAbout();
+    const out = await SV().setAutoUpdate(api, on);
+    if (out.ok) S.auto = out.auto;
+    S.autoMsg = out.message;
+    S.autoBusy = false;
+    paintAbout();
+    return out;
   }
   async function checkForUpdates() {
     if (S.update.step === "running") return null;
@@ -903,6 +922,7 @@
     paintAbout();
     S.update = await SV().checkUpdate(api);
     paintAbout();
+    loadAutoUpdate();                                  // the server wrote the "last check" line: show it
     return S.update;
   }
 
@@ -923,7 +943,7 @@
     if (S.settings === null) loadEngineSettings();
     if (NS.data === null) loadNotes();
     if (S.policy === null) loadPolicyState();
-    if (S.info === null) loadAbout();
+    if (S.info === null) loadAbout(); else loadAutoUpdate();                              // the last check line moves on by itself: read it again when About opens
     if (S.health === null) fetchHealth().catch(handleFetchError);
     if (S.notices === null) fetchLimits(); else refetchLimits();                          // the notices are read at load; read them again here only if that failed
     if (S.recurring === null) fetchRecurring();
@@ -1286,6 +1306,7 @@
       const t = e.target;
       if (t && t.matches && t.matches("select[data-scope]")) { S.scope = t.value; S.settings = null; S.errors = {}; loadEngineSettings(); }
       else if (t && t.matches && t.matches("input[data-policy-on]")) changePolicy({enabled: {[t.dataset.policyOn]: t.checked}});
+      else if (t && t.matches && t.matches('input[data-act="toggle-auto-update"]')) toggleAutoUpdate(t.checked);
       else if (t && t.matches && t.matches("select[data-policy-model]")) changePolicy({model: {[t.dataset.policyModel]: t.value}});
     });
     doc.querySelector(".stoggle").addEventListener("click", e => {

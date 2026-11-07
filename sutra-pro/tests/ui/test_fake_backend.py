@@ -1413,6 +1413,9 @@ WRITES = [  # every non-GET route that is not a test control: (method, a concret
     ("POST", "/api/ops/welcome/seen", {}, "/api/ops/welcome/seen"),
     ("PUT", "/api/connectors/policy", {}, "/api/connectors/policy"),
     ("POST", "/api/ops/update-check", {}, "/api/ops/update-check"),
+    ("POST", "/api/ops/update-plan", {}, "/api/ops/update-plan"),
+    ("PUT", "/api/ops/update-setting", {"auto": False}, "/api/ops/update-setting"),
+    ("POST", "/api/ops/update-status", {"state": "ready"}, "/api/ops/update-status"),
     ("PUT", "/api/chats/cs_org/choice", {"provider": None}, "/api/chats/{sid}/choice"),
     ("POST", "/api/chats/cs_org/messages", {"text": "x"}, "/api/chats/{sid}/messages"),
     ("POST", "/api/chats/cs_org/retry", {}, "/api/chats/cs_org/retry"),
@@ -1450,6 +1453,22 @@ def test_every_write_route_of_the_fake_is_in_the_list_above_and_every_one_wants_
         status, _, raw = write_request(fake_server, method, path, body, {})
         assert status == 401, (method, path)
         assert json.loads(raw)["error"]["code"] == "bad_token"
+
+
+def test_the_automatic_update_setting_is_stateful_in_the_fake_and_strict_like_the_real_route(fake):
+    status, body = fake.get("/api/ops/update-setting")
+    assert status == 200 and body["auto"] is True and body["chosen"] is False and body["last"] is None
+    for bad in ({"auto": "no"}, {"auto": 0}, {}, {"auto": True, "x": 1}):
+        assert fake.request("PUT", "/api/ops/update-setting", bad, token=True)[0] == 422, bad
+    status, body = fake.request("PUT", "/api/ops/update-setting", {"auto": False}, token=True)
+    assert status == 200 and body["auto"] is False and body["chosen"] is True
+    assert fake.get("/api/ops/update-setting")[1]["auto"] is False
+    assert error_of(fake.post("/api/ops/update-plan", {"auto": True}), 409, "update_off")                      # off: refused, as the real route does
+    assert fake.post("/api/ops/update-plan", {})[0] == 200
+    assert fake.post("/api/ops/update-status", {"state": "ready", "version": "0.2.0", "message": "ready"})[1]["last"]["state"] == "ready"
+    assert fake.post("/api/ops/update-status", {"state": "weird"})[0] == 422
+    fake.post("/__fake/reset", token=False)
+    assert fake.get("/api/ops/update-setting")[1]["chosen"] is False                                              # reset with the story
 
 
 def test_a_wrong_token_is_refused_and_the_right_one_is_not(fake_server, fake):
