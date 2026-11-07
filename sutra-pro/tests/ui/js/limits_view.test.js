@@ -137,10 +137,15 @@ test("the strip is empty until a limit is near, then one line each", () => {
 
 // ---- the Notifications group --------------------------------------------------------------------------------------------------------------
 
-test("noticesBody: both times or neither, different, 24-hour, and a whole cap that stops at the ceiling", () => {
+test("noticesBody: both times or neither, different, 24-hour, and a whole cap that the ceiling refuses to pass", () => {
   assert.deepEqual(LV.noticesBody({start: "21:00", end: "08:00", nudges: "3"}), {ok: true, body: {quiet_hours: {start: "21:00", end: "08:00"}, nudges_per_hour: 3}, error: ""});
   assert.deepEqual(LV.noticesBody({start: "", end: "", nudges: "0"}).body, {quiet_hours: null, nudges_per_hour: 0});                     // 0 stays 0
-  assert.equal(LV.noticesBody({start: "21:00", end: "08:00", nudges: "99"}).body.nudges_per_hour, 10);
+  assert.equal(LV.noticesBody({start: "21:00", end: "08:00", nudges: "10"}).body.nudges_per_hour, 10);                                 // the ceiling itself is fine
+  for (const over of ["11", "50", "99", "999"]) {                                                                                       // QA firstrun-settings: these were silently saved as 10
+    const refused = LV.noticesBody({start: "", end: "", nudges: over});
+    assert.deepEqual([refused.ok, refused.body], [false, null], over);
+    assert.match(refused.error, /whole number from 0 to 10/, over);
+  }
   assert.match(LV.noticesBody({start: "21:00", end: "", nudges: "3"}).error, /both times for quiet hours, or neither/);
   assert.match(LV.noticesBody({start: "", end: "08:00", nudges: "3"}).error, /both times/);
   assert.match(LV.noticesBody({start: "9:00", end: "17:00", nudges: "3"}).error, /like 21:00/);
