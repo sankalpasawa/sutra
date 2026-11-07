@@ -15,6 +15,7 @@ from sutra_app.orchestrator.chart import ChangeFailed
 from sutra_app.orchestrator.errors import AlreadyDecided, AppError, NotFound
 from sutra_app.orchestrator.ids import iso_z
 from sutra_app.orchestrator.models import ChatChoice, Event
+from sutra_app.orchestrator.reorg_preview import ReorgPreview
 from sutra_app.orchestrator.testing.scripted import ScriptedConnector
 
 ORG = "cs_org"
@@ -273,6 +274,26 @@ def test_a_merge_asks_first_and_changes_nothing(renv):
     assert pending.task_id == f"req-{first.message_id}"
     assert renv.chart.record(pending.id).plan["message_id"] == first.message_id
     assert renv.chats.needs_you()[0].kind == "approval"
+
+
+def test_the_approval_card_says_what_a_yes_would_do_and_its_question_is_unchanged(renv):
+    """gap chart-insight: the card carries code-written impact lines (reorg_preview.py); `question` stays the one template sentence."""
+    merge_request(renv)
+    [card] = renv.cards("approval")
+    assert card.question == "Merge Leads into Quotes? Their chats and history stay available."
+    assert any(line.startswith("The chat of Leads (") and line.endswith("becomes read-only history under Quotes.") for line in card.impact)
+    assert card.impact[-1] == "Nothing is running in Leads." and len(card.impact) <= 8
+    assert SECRET_SENTENCE not in " ".join(card.impact)                                      # no sentence of the model is ever shown
+
+
+def test_a_preview_that_fails_leaves_the_card_without_its_lines_never_without_the_card(renv, monkeypatch):
+    def boom(self, change, before):
+        raise RuntimeError("the preview broke")
+    monkeypatch.setattr(ReorgPreview, "describe", boom)
+    merge_request(renv)
+    [card] = renv.cards("approval")
+    assert card.impact == [] and [(o.id, o.label) for o in card.options] == [("yes", "Yes"), ("no", "No")]
+    assert renv.chart.pending() and renv.chats.needs_you()[0].kind == "approval"
 
 
 def test_a_bare_yes_applies_it_with_no_model_call(renv):
