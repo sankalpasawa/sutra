@@ -138,6 +138,9 @@ checks run before any request); `static/js/chat_attention.js` (additive: `window
   the catch-up covers the time it was not.
 - **A per-schedule budget or model choice**, **a monthly or every-N-hours cadence**, **a calendar of firings**: not in the old evidence.
 - **Pausing a run already in flight at the limit**: the engine process is J2's.
+- **Editing a standing task in the page** (its words, time or team): `PUT /api/recurring/{id}` takes `{text?, schedule?, enabled?}` and works, but the row has no
+  edit control; the owner removes it and adds it again (its history goes with it). A schedule paused because its team left the chart cannot be re-pointed to
+  another team: the route has no `dept_id` either. Found by QA (docs/notes/QA-recurring-limits.md).
 - **docs**: `docs/design/gaps.md` G23 should now say the dollar guard exists and is separate from the calls-per-hour idea; absorb rows 35 and 36 and D107's LATER
   triggers are answered; the docs package records the routes. Nothing under `docs/design` or `docs/DECISIONS.md` is edited here.
 
