@@ -66,7 +66,7 @@
     cc: undefined, session: null, messages: [], lastId: 0, pending: [], localSeq: 0, answers: {},
     departments: [], departmentsLoaded: false, needs: [], needsLoaded: false,
     graph: null, chart: null, changes: [],
-    health: null, settings: null, scope: "", errors: {}, saved: false, saving: false, conn: {test: {}, signin: null, windows: typeof navigator !== "undefined" && /Windows/i.test(String(navigator.userAgent || ""))}, signer: null,
+    health: null, settings: null, scope: "", errors: {}, saved: false, saving: false, conn: {test: {}, signin: null}, signer: null,
     pane: "graph", turn: {seen: false, phase: "", n: 0, active: false}, awaitGraph: false,
     banner: null, blocked: "", sending: false, live: "offline", theme: null, loaded: false,
     graphView: null, chartView: null, panel: null, stream: null, watch: null, values: null,
@@ -832,7 +832,9 @@
   const SV = () => root.SettingsView;
 
   function paintAppearance() { ctx.paint($("set-appearance"), SV().appearanceHtml(themePref())); themeApply(); }
-  function paintConnectors() { ctx.paint($("set-connectors"), SV().connectorsHtml(S.health, S.conn)); }
+  // Windows words the CLI file box its own way (a drive letter, `where`): the page runs in the browser of the machine the app runs on.
+  const ON_WINDOWS = typeof navigator !== "undefined" && /Windows/i.test(String(navigator.userAgent || ""));
+  function paintConnectors() { ctx.paint($("set-connectors"), SV().connectorsHtml(S.health, Object.assign({windows: ON_WINDOWS}, S.conn))); }
   function paintEngine() {
     ctx.paint($("set-engine"), SV().engineHtml(S.settings, {scope: S.scope, departments: S.departments, errors: S.errors, values: S.values, saved: S.saved, busy: S.saving,
       dataDir: S.info && S.info.data_dir}));
