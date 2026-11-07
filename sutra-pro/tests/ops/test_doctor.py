@@ -190,7 +190,7 @@ def test_claude_desktop_without_claude_code_is_named_and_never_called_a_path_pro
 
 def test_an_api_key_login_is_refused_and_an_unknown_answer_is_not_trusted(monkeypatch, tmp_path):
     keyed = judged(monkeypatch, tmp_path, provider(billing="api_key", method="API key", version="2.1.308"), provider(signed_in=None, detail="odd output"))
-    assert "API key, which is refused (D34)" in check(keyed, "claude").detail
+    assert "API key, which is refused" in check(keyed, "claude").detail and "(D34)" not in check(keyed, "claude").detail
     assert "could not tell" in check(keyed, "codex").detail and check(keyed, "codex").status == "fail"
 
 

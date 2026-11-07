@@ -43,8 +43,8 @@ FLAG_COOLDOWN_S = 10 * 60.0
 BREAKER_CRASHES = 3
 BREAKER_WINDOW_S = 60.0
 BREAKER_OPEN_S = 60.0
-# the reason shown for an API-key login (D7, S1-contracts-17): refused with no override
-API_KEY_REFUSED = "API-key login refused (D7): sign in with your subscription"
+# the reason shown for an API-key login (D7, S1-contracts-17): refused with no override. Plain words only: the owner reads it in the pill and the welcome card.
+API_KEY_REFUSED = "API-key login is refused: sign in with your subscription"
 _NAMES = {"claude": "Claude", "codex": "Codex", "stub": "Stub"}
 log = logging.getLogger("sutra_app.connectors.health")
 

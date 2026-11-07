@@ -272,7 +272,8 @@ def test_skip_reason_signed_out_but_unknown_is_allowed(book):
 
 def test_api_key_login_is_refused_with_no_override_but_unknown_billing_passes(book):
     got = book.skip_reason("codex", installed_probe=Probe(True), auth_probe=Probe(auth("codex", billing="api_key")))
-    assert got == API_KEY_REFUSED == "API-key login refused (D7): sign in with your subscription"
+    assert got == API_KEY_REFUSED == "API-key login is refused: sign in with your subscription"
+    assert "(D7)" not in got                                                   # a decision id is for the design notes, not for the owner
     assert book.skip_reason("claude", installed_probe=Probe(True), auth_probe=Probe(auth(billing="unknown"))) is None
 
 
