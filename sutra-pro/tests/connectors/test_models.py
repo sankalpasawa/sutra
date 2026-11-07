@@ -200,7 +200,7 @@ def test_session_state_checks_the_id_too_and_has_the_design_defaults():
 def test_session_state_round_trips_the_design_example():
     example = {"session_id": "cs_5e0a77b19c3d", "provider": "claude", "provider_session_id": "092c7b68-7118-42da-ba0a-57fa2e5ef699",
                "model": "sonnet", "effort": "low", "tool_profile": "none", "workdir": "/private/var/folders/x/sutra-app-501/work/cs_5e0a77b19c3d",
-               "turns": 2, "switches": 0, "pinned": None, "cum_usd": 0.0190348,
+               "work_folder": "", "turns": 2, "switches": 0, "pinned": None, "cum_usd": 0.0190348,
                "cum_usage": {"input_tokens": 6, "cached_input_tokens": 1728, "cache_write_tokens": 4570, "output_tokens": 57, "reasoning_tokens": 0},
                "created_at": 1793748000.0}
     assert m.SessionState.model_validate(example).model_dump() == example

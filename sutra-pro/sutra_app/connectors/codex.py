@@ -491,8 +491,8 @@ class CodexConnector(ModelConnector):
         return super().call_text(prompt, **kw)
 
     def stream(self, s: SessionState, m: Any, *, timeout_s: Optional[float] = None, partials: bool = False,
-               hooks: Optional[Hooks] = None) -> Iterator[ConnectorEvent]:
-        return super().stream(s, m, timeout_s=timeout_s, partials=False, hooks=hooks)
+               hooks: Optional[Hooks] = None, folder: str = "") -> Iterator[ConnectorEvent]:
+        return super().stream(s, m, timeout_s=timeout_s, partials=False, hooks=hooks, folder=folder)
 
     # ---- one spawn: notices before the first event, the rollout quota after the last --------------------------------------------
     def _spawn(self, plan: TurnPlan, hooks: Hooks, box: dict) -> Iterator[ConnectorEvent]:
@@ -574,10 +574,12 @@ class CodexConnector(ModelConnector):
         if plan.resume:
             argv.append("resume")
         argv += ["--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules"]
+        sandbox = "read-only" if plan.folder else self.sandbox       # the owner's working folder (GAP3-workdir) is only ever read, whatever the policy says
+        cwd = plan.folder or plan.workdir
         if not plan.resume:                                  # `exec resume` takes no -s and no -C: sandbox_mode below, cwd of the process
             if plan.oneshot:
                 argv.append("--ephemeral")
-            argv += ["-s", self.sandbox, "-C", plan.workdir]
+            argv += ["-s", sandbox, "-C", cwd]
         for image in plan.images:                            # one -i per file, before -m: `-i <FILE>...` would swallow the final `-`
             argv += ["-i", os.path.abspath(image)]
         effort = self.effective_effort(plan.model, plan.effort)
@@ -585,7 +587,7 @@ class CodexConnector(ModelConnector):
             self._note(f"effort {plan.effort} is not supported by {plan.model}; using {effort}", model=plan.model, asked=plan.effort, used=effort)
         argv += ["-m", plan.model, "-c", f'model_reasoning_effort="{effort}"']
         if plan.resume:
-            argv += ["-c", f'sandbox_mode="{self.sandbox}"']
+            argv += ["-c", f'sandbox_mode="{sandbox}"']
         if plan.tools:
             argv += self._mcp_flags(plan.tools)
         cleanup: list[str] = []
@@ -604,7 +606,7 @@ class CodexConnector(ModelConnector):
             prompt = plan.prompt
             if plan.system and not plan.resume:              # the thread keeps the system text from its first turn
                 prompt = f"<system>\n{plan.system}\n</system>\n\n{plan.prompt}"
-            return Command(argv=tuple(argv), cwd=plan.workdir, env=self._env(), stdin_text=prompt, cleanup=tuple(cleanup),
+            return Command(argv=tuple(argv), cwd=cwd, env=self._env(), stdin_text=prompt, cleanup=tuple(cleanup),
                            provider="codex")
         except BaseException:
             for path in cleanup:

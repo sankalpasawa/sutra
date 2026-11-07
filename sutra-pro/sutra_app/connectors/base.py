@@ -93,7 +93,8 @@ class TurnPlan:
     session: Optional[SessionState] = None       # a chat turn
     resume: bool = False                         # chat turn n (the provider session exists)
     provider_session_id: Optional[str] = None    # the id to create (turn 1) or to resume (turn n)
-    workdir: str = ""                            # the child's cwd: the session dir, or a fresh empty one-shot dir
+    workdir: str = ""                            # the session dir (session.json, system.txt), or a fresh empty one-shot dir; the child's cwd unless `folder`
+    folder: str = ""                             # the owner's working folder (GAP3-workdir): the child's cwd, with read-only file tools; "" none
     oneshot: bool = True
     max_budget_usd: Optional[float] = None       # only with Allowance.max_usd
     cum_usd: float = 0.0                         # the session's counters BEFORE this turn (delta rules, CD5)
@@ -374,8 +375,9 @@ class ModelConnector(ABC):
                          timeout: float = DEFAULT_TIMEOUT_S, *, system: str = "", ctx: Optional[RouteContext] = None,
                          effort: Optional[Effort] = None, model: Optional[str] = None, images: Sequence[str] = (),
                          hooks: Optional[Hooks] = None, on_event: Optional[Callable[[ConnectorEvent], None]] = None,
-                         force_prompted: bool = False, repair_rounds: Optional[int] = None) -> JsonResult:
-        """The JSON strategy of one connector (3.6). `force_prompted` is the Router's `native_blocked`: skip the native path."""
+                         force_prompted: bool = False, repair_rounds: Optional[int] = None, folder: str = "") -> JsonResult:
+        """The JSON strategy of one connector (3.6). `force_prompted` is the Router's `native_blocked`: skip the native path. `folder` is the
+        owner's working folder (GAP3-workdir): only the org chat agent's calls carry one."""
         ctx = ctx or RouteContext()
         counting = _CountingHooks(hooks or self.hooks)
         rounds = self.repair_rounds if repair_rounds is None else repair_rounds
@@ -390,7 +392,7 @@ class ModelConnector(ABC):
         def spawn(text: str, native_now: bool, kind: str) -> TurnResult:
             plan = self._oneshot_plan(text, system=system, kind=kind, model=model, effort=effort or "low", timeout=timeout,
                                       ctx=ctx, images=images, tools=tools, schema=sent if native_now else None, partials=False,
-                                      spent=sum(u for u in spent if u is not None))
+                                      spent=sum(u for u in spent if u is not None), folder=folder)
             turn = self._execute(plan, counting, on_event)
             turns.append(turn)
             spent.append(turn.usd)
@@ -432,14 +434,14 @@ class ModelConnector(ABC):
 
     def _oneshot_plan(self, prompt: str, *, system: str, kind: str, model: Optional[str], effort: str, timeout: float,
                       ctx: RouteContext, images: Sequence[str], tools: Sequence[str], schema: Optional[dict], partials: bool,
-                      spent: float) -> TurnPlan:
+                      spent: float, folder: str = "") -> TurnPlan:
         self._check_prompt(prompt)
         self._check_effort(effort)
         images = self._check_images(images)
         return TurnPlan(
             prompt=prompt, ctx=ctx, system=system or "", model=self.resolve_model(model), effort=effort, kind=kind,
             timeout_s=_positive(timeout, "timeout"), idle_timeout_s=self.idle_timeout_s if partials else None,
-            partials=partials, schema=schema, images=images, tools=tool_names(tools),
+            partials=partials, schema=schema, images=images, tools=tool_names(tools), folder=folder,
             max_budget_usd=self._budget_left(ctx, spent))
 
     @staticmethod
@@ -638,21 +640,22 @@ class ModelConnector(ABC):
         return expected
 
     def send(self, s: SessionState, m: Message, *, timeout_s: Optional[float] = None,
-             on_event: Optional[Callable[[ConnectorEvent], None]] = None, hooks: Optional[Hooks] = None) -> TurnResult:
+             on_event: Optional[Callable[[ConnectorEvent], None]] = None, hooks: Optional[Hooks] = None, folder: str = "") -> TurnResult:
         """One turn, consuming `stream()` (no partials)."""
         box: dict[str, TurnResult] = {}
-        for event in self._turn(s, m, timeout_s, False, hooks or self.hooks, box):
+        for event in self._turn(s, m, timeout_s, False, hooks or self.hooks, box, folder):
             if on_event is not None and event.kind != "turn_done":
                 on_event(event)
         return box["turn"]
 
     def stream(self, s: SessionState, m: Message, *, timeout_s: Optional[float] = None, partials: bool = True,
-               hooks: Optional[Hooks] = None) -> Iterator[ConnectorEvent]:
-        """The events of one turn; the last one is `turn_done` with `data["result"]` (the TurnResult as JSON)."""
-        return self._turn(s, m, timeout_s, partials, hooks or self.hooks, {})
+               hooks: Optional[Hooks] = None, folder: str = "") -> Iterator[ConnectorEvent]:
+        """The events of one turn; the last one is `turn_done` with `data["result"]` (the TurnResult as JSON). `folder` is the owner's
+        working folder for this turn (GAP3-workdir): the child runs in it with read-only file tools; the session's own files stay in its work dir."""
+        return self._turn(s, m, timeout_s, partials, hooks or self.hooks, {}, folder)
 
     def _turn(self, s: SessionState, m: Message, timeout_s: Optional[float], partials: bool, hooks: Hooks,
-              box: dict) -> Iterator[ConnectorEvent]:
+              box: dict, folder: str = "") -> Iterator[ConnectorEvent]:
         if m.role != "user":
             raise InvalidRequestError("a chat turn is sent as a user message", provider=self.name)
         if s.provider != self.name:
@@ -670,14 +673,16 @@ class ModelConnector(ABC):
             directory.mkdir(parents=True, exist_ok=True, mode=_PRIVATE_DIR)
             if not (directory / "session.json").is_file():       # the work dir was lost: the provider session is lost with it
                 s.provider_session_id = None
-            resume = s.provider_session_id is not None
+            # a provider session belongs to the folder it began in (Claude keys it by its cwd): a turn in another folder starts a new one
+            # (the Router adds the carry-over first, so nothing the owner said is lost)
+            resume = s.provider_session_id is not None and s.work_folder == folder
             plan = TurnPlan(
                 prompt=m.text, ctx=RouteContext(session_id=s.session_id), system=self._session_system(directory),
                 model=self.resolve_model(s.model), effort=s.effort, kind="chat", timeout_s=timeout,
                 idle_timeout_s=self.idle_timeout_s if partials else None, partials=partials, images=images,
                 tools=tool_names(() if s.tool_profile == "none" else (s.tool_profile,)), session=s, resume=resume,
                 provider_session_id=s.provider_session_id if resume else self.new_provider_session_id(),
-                workdir=str(directory), oneshot=False, cum_usd=s.cum_usd, cum_usage=s.cum_usage)
+                workdir=str(directory), folder=folder, oneshot=False, cum_usd=s.cum_usd, cum_usage=s.cum_usage)
             holder: dict[str, Any] = {}
             for event in self._events(plan, hooks, holder):
                 yield event
@@ -700,6 +705,7 @@ class ModelConnector(ABC):
 
     def _commit_turn(self, s: SessionState, plan: TurnPlan, turn: TurnResult, parser: Optional[LineParser]) -> None:
         s.turns += 1
+        s.work_folder = plan.folder
         s.provider_session_id = turn.provider_session_id or plan.provider_session_id
         if parser is not None and parser.cum_usd is not None:
             s.cum_usd = parser.cum_usd

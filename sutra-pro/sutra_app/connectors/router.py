@@ -54,6 +54,7 @@ from .discover import explain_missing
 from .transcript import render_carry_over
 from .independence import NOT_INDEPENDENT, Independence
 from .usage import Attempt, UsageIn, UsageSink, build_usage_row, load_session_state, new_request_id, save_session_state
+from .workdir import grounding_text
 
 __all__ = [
     "Router", "Plan", "RouterStatus", "ProviderStatus", "PolicyInfo", "ModelBrief", "TodayCounts", "TranscriptSource",
@@ -66,6 +67,7 @@ CONNECTOR_MODES = ("auto", "claude", "codex", "stub")
 TRANSCRIPT_LIMIT = 20                 # `resume_info` gives at most 20 messages (ORCH 3.4), so the carry-over cap rarely bites
 NEW_MESSAGE_LABEL = "New message:"    # separates the carry-over block from the message in the first prompt of a new session
 _STUB_CONCURRENCY = 64
+AGENT_FUNCTIONS = ("chat_agent",)     # the one-shot calls that get the owner's working folder (the org chat agent); the engine's calls never do
 _SESSION_ID = re.compile(SESSION_ID_PATTERN)
 
 # the words of the note "claude out of quota, answered by codex" (J2 llm.py:173,187)
@@ -326,6 +328,7 @@ class Router:
         self._pins: dict[str, str] = {}
         self.choice_source: Optional[Callable[[str], Optional[str]]] = None      # session id -> the owner's persisted provider choice (ABS-8)
         self.egress: Optional[Any] = None                      # an `egress.Egress`, set by the factory (ABS-2); None = no scrub, no row
+        self.folders: Optional[Any] = None                     # a `workdir.WorkFolder`, set by the factory (GAP3-workdir); None = no working folder
         self.independence = Independence()                     # who built a run's work, so Audit can go to the other model (off unless the policy says so)
         self._today: dict[str, list] = {}                      # provider -> [date, calls, tokens, usd]
         self._background: list[threading.Thread] = []
@@ -338,6 +341,17 @@ class Router:
     @property
     def mode(self) -> str:
         return "offline" if self._restrict == "stub" else "live"
+
+    def chat_folder(self) -> str:
+        """The owner's working folder for a chat turn that starts now ("" none), read from its file on every call so a change applies to the
+        next message. Offline nothing runs, so none."""
+        if self.folders is None or self._restrict == "stub":
+            return ""
+        try:
+            return self.folders.get() or ""
+        except Exception:
+            log.warning("could not read the working folder", exc_info=True)
+            return ""
 
     def _emit(self, type_: str, data: dict) -> None:
         if self._events is None:
@@ -658,10 +672,14 @@ class Router:
         schema = req.schema if req.schema is not None else {"type": "object"}
         force = req.schema is None or self._is_blocked(provider, connector, to_json_schema(schema))
         kw: dict[str, Any] = {"scripted": req.scripted} if provider == "stub" and req.scripted is not None else {}
+        system = req.system
+        folder = self.chat_folder() if req.ctx.tag.function in AGENT_FUNCTIONS else ""      # the org chat agent reads the owner's folder; a team's run never does
+        if folder:
+            system = (system + "\n\n" if system else "") + grounding_text(folder)
         return connector.call_json_result(
-            req.user, plan.tools, schema, state.timeout_s(), system=req.system, ctx=state.connector_ctx(), effort=plan.resolved.effort,
+            req.user, plan.tools, schema, state.timeout_s(), system=system, ctx=state.connector_ctx(), effort=plan.resolved.effort,
             model=plan.models[provider], images=req.images, hooks=state, on_event=_progress(on_progress), force_prompted=force,
-            repair_rounds=plan.resolved.repair_rounds, **kw)
+            repair_rounds=plan.resolved.repair_rounds, folder=folder, **kw)
 
     # ---- the engine seam ------------------------------------------------------------------------------------------------------
     def complete(self, req: CompletionRequest, on_progress: Optional[Callable[[dict], None]] = None) -> CompletionResult:
@@ -831,11 +849,15 @@ class Router:
                    partials: bool) -> Iterator[ConnectorEvent]:
         sid = state.ctx.session_id or ""
         lost = False
+        folder = self.chat_folder()            # the working folder of THIS turn (a change applies to the next message)
         for round_no in (1, 2):
             old = load_session_state(self._workdir(sid))
             session: Optional[SessionState] = None
             text, replaces = m.text, False
-            if old is not None and not lost and old.provider == provider and old.provider_session_id is not None:
+            # a provider session belongs to the folder it began in (Claude stores and resumes it per working directory): in another folder
+            # it starts a new one with the carry-over below, and the chat's transcript, which is the app's own, is untouched
+            moved = old is not None and old.provider == provider and old.provider_session_id is not None and old.work_folder != folder
+            if old is not None and not lost and old.provider == provider and old.provider_session_id is not None and not moved:
                 session = connector.resume(old)
                 if session.provider_session_id is None:         # the work dir was lost: the provider session went with it
                     session = None
@@ -854,7 +876,7 @@ class Router:
             turn: Optional[TurnResult] = None
             try:
                 for event in connector.stream(session, Message(role="user", text=text, images=list(m.images)),
-                                              timeout_s=state.timeout_s(), partials=partials, hooks=state):
+                                              timeout_s=state.timeout_s(), partials=partials, hooks=state, folder=folder):
                     if event.kind == "turn_done":
                         turn = TurnResult.model_validate(event.data["result"])
                     else:
@@ -869,16 +891,18 @@ class Router:
                     if self._chat_active.get(sid, (None, None))[1] is session:
                         del self._chat_active[sid]
             assert turn is not None
-            self._after_turn(state, provider, old, session, previous_id, replaces, lost, plan)
+            self._after_turn(state, provider, old, session, previous_id, replaces, lost, plan, moved and not lost)
             return turn
         raise AssertionError("unreachable")       # pragma: no cover
 
     def _after_turn(self, state: _Request, provider: str, old: Optional[SessionState], session: SessionState,
-                    previous_id: Optional[str], replaces: bool, lost: bool, plan: Plan) -> None:
+                    previous_id: Optional[str], replaces: bool, lost: bool, plan: Plan, folder_moved: bool = False) -> None:
         sid = state.ctx.session_id or ""
         if replaces and old is not None:
             if lost:
                 reason = "session lost"
+            elif folder_moved:
+                reason = "working folder changed"
             elif state.failures:
                 reason = fallback_phrase(state.failures[-1][1].code)
             elif old.pinned == provider:
