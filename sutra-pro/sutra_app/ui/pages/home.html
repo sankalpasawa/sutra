@@ -48,7 +48,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
   <button type="button" id="gochat" aria-current="page"><span>Chat</span></button>
   <button type="button" data-pane="graph" aria-current="true"><span>Workflow graph</span></button>
   <button type="button" data-pane="chart"><span>Org chart</span></button>
-  <div class="railsec" aria-labelledby="rail-teams-h"><h3 class="railhead" id="rail-teams-h">Teams</h3><div id="railteams"></div></div>
+  <div class="railsec" aria-labelledby="rail-teams-h"><h3 class="railhead" id="rail-teams-h">Teams</h3><input type="search" id="railfind" class="railfind" placeholder="Find a team or its work" aria-label="Find a team or its work" autocomplete="off" maxlength="200"><div id="railfindres" class="railfindres" role="region" aria-label="Search results" hidden></div><div id="railteams"></div></div>
   <div class="railsec" aria-labelledby="rail-settings-h"><h3 class="railhead" id="rail-settings-h">Settings</h3>
     <button type="button" data-pane="settings" data-group="appearance"><span>Appearance</span></button>
     <button type="button" data-pane="settings" data-group="connectors"><span>Connectors</span></button>
@@ -66,6 +66,8 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <script src="/ui/js/graph_render.js"></script>
 <script src="/ui/js/graph_view.js"></script>
 <script src="/ui/js/orgchart_view.js"></script>
+<script src="/ui/js/chart_notes.js"></script>
+<script src="/ui/js/team_find.js"></script>
 <script src="/ui/js/fnode_view.js"></script>
 <script src="/ui/js/chat_markdown.js"></script>
 <script src="/ui/js/chat_view.js"></script>

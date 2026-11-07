@@ -10,7 +10,7 @@
    renderSettings, saveEngine, testConnector, signIn. They are on window.HomePage with the state (HomePage.state()), so a test can look at both.
 
    Reads: GET /api/chats/cs_org and its messages, /api/chart, /api/chart/changes, /api/graph?level=chart, /api/departments, /api/needs-you, /api/health,
-   /api/engine/settings, /api/heads-up. Writes (each with X-Sutra-Token, through SutraCtx.api): POST /api/chats/cs_org/messages and .../retry, POST /api/chats/{department
+   /api/engine/settings, /api/heads-up, /api/find (the rail's search, team_find.js; the Org chart pane also reads /api/chart/notes). Writes (each with X-Sutra-Token, through SutraCtx.api): POST /api/chats/cs_org/messages and .../retry, POST /api/chats/{department
    session}/messages (an answer to a team's question, never to cs_org), the connector Test and Sign in calls, PUT /api/engine/settings, POST
    /api/tasks/{id}/retry (Try again, from the Heads up lane or a done card).
 
@@ -697,6 +697,20 @@
     S.chartView = root.OrgChartView.create($("pane-chart"), {onOpen: openNode, onShow(node) { selectPane("graph", {reveal: true}); if (S.graphView) S.graphView.select(node.id); }});
     S.chartView.setLive(S.live);
     if (S.chart) S.chartView.update(S.chart, S.changes);
+    if (S.find) S.chartView.setFind(S.find);
+  }
+
+  // Gap package chart-insight: the rail's search (team_find.js). A hit is a team or a division; the Org chart keeps the hits lit and fades the rest, and a
+  // chat hit opens the node that owns it (an archived chat opens the node it was filed under).
+  function wireFind() {
+    if (!root.TeamFind || !$("railfind") || !$("railfindres")) return;
+    S.finder = root.TeamFind.mount({input: $("railfind"), out: $("railfindres"), api, onChange: rows => {
+      S.find = rows;
+      if (S.chartView) S.chartView.setFind(rows);
+    }, onOpenChat: sid => api.get("/api/chats/" + enc(sid)).then(s => {
+      if (isObj(s) && s.kind === "org") selectPane("chat");
+      else if (isObj(s)) openNode({id: s.filed_under || s.node_id, kind: s.kind});
+    }, () => {})});
   }
 
   // selectPane("chat"|"graph"|"chart"|"settings", {reveal, group}). reveal (default true) also shows the right column on a phone.
@@ -942,6 +956,7 @@
     root.setInterval(() => { refetchHeads(); renderNeeds(); }, MINUTE_MS);
     const link = deepLink();
     wire();
+    wireFind();
     selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false});
     renderProgress();
     renderComposer();

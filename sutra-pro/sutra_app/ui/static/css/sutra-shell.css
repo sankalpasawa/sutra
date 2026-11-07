@@ -87,6 +87,14 @@ body.home .rail.tabs button[aria-current="page"], body.home .rail.tabs button[ar
 .railteam.st-waiting_on_you .rtstat, .railteam.st-waiting .rtstat { color: var(--validator); font-weight: 600; }
 .railteam.st-fault .rtstat { color: var(--bad); font-weight: 600; }
 .railnone { margin: 2px 8px; color: var(--muted); font-size: 12px; }
+/* the rail's search (team_find.js, gap package chart-insight): the box, then "Found in teams" and "Found in chats" above the Teams list */
+.railfind { box-sizing: border-box; width: calc(100% - 16px); margin: 2px 8px 6px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); color: var(--ink); font: inherit; font-size: 13px; }
+.railfind:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.railfindres { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px; }
+.railfindres[hidden] { display: none; }
+.rfhead { margin: 4px 8px 2px; font: 600 11px var(--body); letter-spacing: .06em; color: var(--muted); }
+.rail.tabs button.rfmsg { display: flex; flex-direction: column; color: var(--ink); font-weight: 400; cursor: pointer; }
+.railteam.rfound .rtstat, .railteam.rfmsg .rtstat { overflow-wrap: anywhere; }
 
 /* ---------------------------------------------------------------- Settings */
 #pane-settings { max-width: 880px; }
