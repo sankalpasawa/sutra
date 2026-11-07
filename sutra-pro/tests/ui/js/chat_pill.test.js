@@ -95,3 +95,16 @@ test("the switch notice names both providers and what was carried", () => {
   assert.equal(switchNotice({}), "");
   assert.equal(switchNotice(null), "");
 });
+
+test("QA bug 5: a partial with reset starts the streaming text again, a plain one keeps adding", () => {
+  let s = partial(ChatPill.idle(), {delta: "Here is a streamed answer. It has sev"});
+  s = partial(s, {delta: "", reset: true});                                  // the router retried: what was shown is void
+  assert.equal(s.text, "");
+  assert.equal(s.active, true);
+  s = partial(s, {delta: "Here is a streamed answer."});
+  assert.equal(s.text, "Here is a streamed answer.");
+  s = partial(s, {data: {delta: " More.", reset: false}});
+  assert.equal(s.text, "Here is a streamed answer. More.");
+  s = partial(s, {data: {delta: "New", reset: true}});                      // a reset can carry text of its own
+  assert.equal(s.text, "New");
+});

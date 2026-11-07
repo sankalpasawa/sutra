@@ -17,7 +17,7 @@ __all__ = ["AttachmentRef", "ProviderPill", "Choice", "CarryPlan", "ChatTurnIn",
 
 BlockType = Literal["text", "thinking", "tool_use", "tool_result"]
 BlockKind = Literal["read", "edit", "run", "search", "web", "other"]
-EVENT_KINDS = ("partial", "block", "usage", "switched", "turn_done")
+EVENT_KINDS = ("partial", "block", "restart", "usage", "switched", "turn_done")
 
 
 class M(BaseModel):
@@ -84,7 +84,10 @@ class ChatTurnIn(M):
 
 
 class ChatEvent(M):
-    kind: Literal["partial", "block", "usage", "switched", "turn_done"]
+    """`restart` (no data): a new attempt of the same turn began (the router retried, or fell back to the other provider), so what the earlier attempt
+    streamed (its text, its blocks) is void and the caller starts its row again."""
+
+    kind: Literal["partial", "block", "restart", "usage", "switched", "turn_done"]
     data: dict = {}
 
 

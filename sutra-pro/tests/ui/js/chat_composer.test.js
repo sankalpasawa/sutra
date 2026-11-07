@@ -345,3 +345,17 @@ test("QA bug 6: the second click of a double-click is not a Stop; a single click
   assert.equal(stopPress({}), true);
   assert.equal(stopPress(undefined), true);
 });
+
+test("QA bug 5: a reset partial empties the streaming row, then the next attempt's pieces fill it", async () => {
+  const {c} = rig({[DIRECT]: () => ({message_id: 5})});
+  await c.send("hi");
+  c.partial({session_id: SID, message_id: 5, delta: "Here is a streamed answer. It has sev"});
+  assert.equal(c.partial({session_id: SID, message_id: 5, delta: "", reset: true}), true);
+  assert.equal(c.state().turn.text, "");
+  assert.equal(c.state().turn.active, true);
+  assert.equal(c.state().turn.messageId, 5);
+  c.partial({session_id: SID, message_id: 5, delta: "Here is a streamed answer."});
+  assert.equal(c.state().turn.text, "Here is a streamed answer.");
+  assert.equal(c.partial({session_id: SID, message_id: 4, delta: "", reset: true}), false);            // another turn's reset is ignored like its pieces
+  assert.equal(c.state().turn.text, "Here is a streamed answer.");
+});

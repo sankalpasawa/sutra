@@ -183,13 +183,24 @@ class RouterChatPort:
         return self._ctx.model_copy(update={"session_id": session_id, "tag": turn.tag})
 
     def stream(self, session_id: str, turn: ChatTurnIn) -> Iterator[ChatEvent]:
-        """partial* / block* / usage / switched? / turn_done. The last event is always `turn_done` (errors raise while iterating)."""
+        """(partial | block | restart)* / usage / switched? / turn_done. The last event is always `turn_done` (errors raise while iterating).
+        A `restart` marks a new attempt of this turn (the router retried): what the earlier attempt streamed is void, so the text and the blocks
+        it produced are forgotten here and the caller starts again from the next event."""
         message = self._message(session_id, turn)
         before = load_session_state(self._work_dir(session_id))
         saw_partial = False
+        begun = False
         blocks: list[dict] = []
         kinds: dict = {}
         for event in self.router.chat_stream(session_id, message, self._ctx_for(session_id, turn)):
+            if event.kind == "started":                    # the first event of every attempt: the first one begins the turn, a later one is a retry
+                if begun:
+                    saw_partial = False
+                    blocks.clear()
+                    kinds.clear()
+                    yield ChatEvent(kind="restart")
+                begun = True
+                continue
             out = self._map(event, saw_partial, kinds, before.provider if before is not None else "claude")
             if event.kind == "text_delta" and event.data.get("kind", "text") == "text":
                 saw_partial = True

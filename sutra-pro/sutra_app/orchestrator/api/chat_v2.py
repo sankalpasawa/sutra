@@ -12,7 +12,8 @@
 `/direct` stores the owner's line, writes the session's grounding (the node's own record and the rules, `orchestrator/chat_ground.py`, through
 `ChatPort.set_system`), then answers through `ChatPort.stream`. The pieces of the reply travel as `chat.partial` events
 ({session_id, message_id, delta}); they are NOT stored and NOT in the replay ring, so a client that reconnects mid-turn gets the stored
-message only. The agent's message is written once, at `turn_done` (with its typed blocks); a stopped turn keeps what was written and adds a
+message only. When the router retries the turn, the port says `restart` and the pieces shown so far are void: one more `chat.partial` with
+`reset: true` and an empty delta tells the page to start its row again (and the kept partial reply of a failed turn is the last attempt's). The agent's message is written once, at `turn_done` (with its typed blocks); a stopped turn keeps what was written and adds a
 calm note, a failed one keeps it and adds the `error` line, a provider switch is noted (orchestrator/direct_turns.py, GAP-chat-comfort).
 The org chat's staged agent path (`POST /api/chats/cs_org/messages`) is unchanged, and so is a team chat's plain message route; `/direct` on cs_org\nis the owner's opt-in "ask directly" (D115), never the default.
 """
@@ -258,6 +259,11 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
                 buffered += event.data.get("delta", "")
                 if len(buffered) >= PARTIAL_EVERY_CHARS:
                     flush()
+            elif event.kind == "restart":                            # the router tried again: the earlier attempt's text is void, on the page and in the store
+                seen_any = shown != ""
+                buffered, shown = "", ""
+                if seen_any and bus is not None:
+                    bus.publish_one(PARTIAL, {"session_id": sid, "message_id": user_message_id, "delta": "", "reset": True})
             elif event.kind == "turn_done":
                 done = event.data
         flush()

@@ -150,3 +150,53 @@ def test_a_direct_line_with_files_records_their_names_and_the_model_gets_the_wor
 def test_every_message_that_ends_a_turn_points_back_at_the_owners_line(ref, turn):
     from sutra_app.orchestrator.chats import _turn_of
     assert _turn_of(ref) == turn
+
+
+# ---- QA direct-chat bug 5: a retried attempt starts the reply again ----------------------------------------------------------------------------------
+
+def restart():
+    return ChatEvent(kind="restart")
+
+
+def partials_of(bus_events):
+    return [d for t, d in bus_events if t == PARTIAL]
+
+
+def run_watching(rig, *script, text="Write the menu"):
+    """`run`, plus every control event the turn published."""
+    client, world, chats, bus, services = rig
+    seen = []
+    real = bus.publish_one
+    bus.publish_one = lambda type_, data=None: (seen.append((type_, data)), real(type_, data))[1]
+    return (*run(rig, *script, text=text), seen)
+
+
+def test_a_turn_that_fails_after_several_attempts_keeps_the_last_attempts_text_not_all_of_them_glued_together(rig):
+    first = "Here is a streamed answer. It has several pieces, written one after another, so the owner sees it grow."
+    crash = CrashedError("claude stopped unexpectedly", provider="claude", detail={"exit": 137})
+    user, rows, out, bus, seen = run_watching(rig, partial(first), restart(), partial(first), restart(), partial(first), crash)
+    assert [(r["kind"], r["src_ref"]) for r in rows] == [("text", f"direct:{user}"), ("error", f"direct-error:{user}")]
+    assert rows[0]["text"] == first                                     # once, not three times with no separator
+    assert [m.turn for m in out] == [user, user]
+
+
+def test_the_open_page_is_told_to_start_its_row_again_at_each_restart(rig):
+    """A `chat.partial` with `reset: true` and no text: the pieces shown so far (sent before the restart) are void."""
+    user, rows, out, bus, seen = run_watching(rig, partial(LONG), restart(), partial("Second try."), done("Second try."))
+    sent = partials_of(seen)
+    resets = [i for i, d in enumerate(sent) if d.get("reset") is True]
+    assert len(resets) == 1 and sent[resets[0]]["delta"] == "" and sent[resets[0]]["message_id"] == user
+    after = sent[resets[0] + 1:]
+    assert "".join(d["delta"] for d in after) == "Second try." and all("reset" not in d for d in after)
+    assert "".join(d["delta"] for d in sent[:resets[0]]).startswith("The menu has three parts.")
+    assert [(r["kind"], r["text"]) for r in rows] == [("text", "Second try.")]
+
+
+def test_a_restart_with_nothing_shown_yet_sends_no_reset(rig):
+    user, rows, out, bus, seen = run_watching(rig, restart(), partial("Fine."), done("Fine."))
+    assert [d for d in partials_of(seen) if d.get("reset")] == []
+
+
+def test_a_stop_after_a_restart_keeps_only_what_the_last_attempt_wrote(rig):
+    user, rows, out, bus, seen = run_watching(rig, partial(LONG), restart(), partial("Starters"), CallCancelledError("stopped"))
+    assert [(r["kind"], r["text"]) for r in rows] == [("text", "Starters"), ("note", direct_turns.STOPPED)]
