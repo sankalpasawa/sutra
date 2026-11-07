@@ -5,7 +5,7 @@
    test): this file touches no DOM, no timer of its own and no global but its own, so `node --test` runs all of it.
 
      engineHtml(settings, {scope, departments, errors, values, saved, busy}) -> html   the Engine group: a toggle or a number field for every `editable`
-                                          field of GET /api/engine/settings, every `locked` field read-only with the note "edit data/engine.json",
+                                          field of GET /api/engine/settings, every `locked` field read-only with the note "edit <data folder>/engine.json",
                                           a scope select (all teams, or one team), and the line "Changes apply to the next run."
                                           (`values` are what the owner typed, kept beside a refusal)
      engineBody(settings, form) -> {set, unset}   the PUT body: only the fields that changed; a field that goes back to the value of the layer
@@ -58,7 +58,14 @@
 
   const ENGINE_PATH = "/api/engine/settings";
   const HEALTH_PATH = "/api/health";
-  const NOTE_LOCKED = "edit data/engine.json";
+  // The locked fields live in engine.json in the data folder, which is ~/.sutra-pro in the installed apps: there is no data/ folder to point at (QA firstrun-settings).
+  // The note names the real file when the page knows the data folder (GET /api/ops/info), else says where to look.
+  const NOTE_LOCKED = "edit engine.json in your data folder (About shows where it is)";
+  function lockedNote(dataDir) {
+    const dir = clean(dataDir);
+    if (dir === "") return NOTE_LOCKED;
+    return "edit " + dir.replace(/[\\/]+$/, "") + (dir.indexOf("\\") >= 0 && dir.indexOf("/") < 0 ? "\\" : "/") + "engine.json";
+  }
   const NOTE_NEXT_RUN = "Changes apply to the next run.";
   const HEALTH_EVENTS = freeze(["connector.health", "connector.switch", "connector.mode"]);
   const SIGN_IN_GRACE_S = 30;      // seconds past `expires_in` after which the page stops asking by itself
@@ -257,12 +264,12 @@
       (errors[field] ? '<span class="seterr" role="alert">' + esc(errors[field]) + "</span>" : "") + "</div>";
   }
 
-  function lockedRow(settings, field) {
+  function lockedRow(settings, field, note) {
     const effective = isObj(settings.effective) ? settings.effective : {};
     const [label] = textOf(field);
     return '<div class="setfield" data-field="' + esc(field) + '" data-locked="true">' +
       '<span class="setlabel">' + esc(label) + '</span><span class="setvalue" data-readonly="true">' + esc(showValue(effective[field])) + "</span>" +
-      '<span class="setlock">' + NOTE_LOCKED + "</span></div>";
+      '<span class="setlock">' + esc(note) + "</span></div>";
   }
 
   function scopeSelect(scope, departments) {
@@ -289,7 +296,7 @@
       scopeSelect(o.scope, o.departments) +
       (errors[""] ? '<p class="seterr setgen" role="alert">' + esc(errors[""]) + "</p>" : "") +
       '<div class="setfields">' + editable.map(f => editableRow(settings, f, errors, values)).join("") + "</div>" +
-      (locked.length ? '<h4 class="setsub">Locked</h4><div class="setfields setlocked">' + locked.map(f => lockedRow(settings, f)).join("") + "</div>" : "") +
+      (locked.length ? '<h4 class="setsub">Locked</h4><div class="setfields setlocked">' + locked.map(f => lockedRow(settings, f, lockedNote(o.dataDir))).join("") + "</div>" : "") +
       '<div class="setacts"><button type="button" class="ghost" data-act="save-engine"' + (o.busy === true ? " disabled" : "") + ">Save</button>" +
       '<span class="setstatus" role="status">' + (o.saved === true ? "Saved. " + NOTE_NEXT_RUN : "") + "</span></div></section>";
   }
@@ -400,14 +407,16 @@
     if (!CHOOSABLE.includes(name)) return "";
     const p = isObj(state) && isObj(state.path) && isObj(state.path[name]) ? state.path[name] : {step: "idle"};
     const id = "setpath-" + name;
+    const win = isObj(state) && state.windows === true;           // Windows has no folder search and no `which`: its own placeholder and hint
     const box = '<div class="setpath" data-provider="' + name + '"><label class="setlabel" for="' + id + '">' +
       (c.installed === false ? "Choose the file" : "The file to use") + '</label><input type="text" id="' + id + '" data-path="' + name +
-      '" spellcheck="false" autocomplete="off" maxlength="1024" placeholder="/full/path/to/' + name + '" value="' + esc(clean(p.value)) + '">' +
+      '" spellcheck="false" autocomplete="off" maxlength="1024" placeholder="' + (win ? "C:\\full\\path\\to\\" + name + ".exe" : "/full/path/to/" + name) + '" value="' + esc(clean(p.value)) + '">' +
       '<button type="button" class="ghost" data-act="set-path" data-provider="' + name + '"' + (p.step === "saving" ? " disabled" : "") + ">Use this file</button>" +
       (c.installed === false ? "" : '<button type="button" class="ghost" data-act="clear-path" data-provider="' + name + '"' + (p.step === "saving" ? " disabled" : "") +
         ">Find it again</button>") +
-      '<span class="sethint">Sutra looked on PATH and in the folders installers use (nvm, Volta, pnpm, mise, asdf, Homebrew). In Terminal, <code>which ' + name +
-      "</code> prints the full path.</span>" +
+      '<span class="sethint">' + (win ? "Sutra looked on PATH. In a terminal, <code>where " + name + "</code> prints the full path."
+        : "Sutra looked on PATH and in the folders installers use (nvm, Volta, pnpm, mise, asdf, Homebrew). In Terminal, <code>which " + name + "</code> prints the full path.") +
+      "</span>" +
       (p.step === "error" ? '<span class="seterr" role="alert">' + esc(clean(p.message) || "That file was refused.") + "</span>" : "") +
       (p.step === "ok" && clean(p.message) ? '<span class="settest" data-step="ok" role="status">' + esc(clean(p.message)) + "</span>" : "") + "</div>";
     if (c.installed === false) return box;
@@ -590,14 +599,17 @@
     const on = entry.enabled === true;
     const state = !on ? "off" : (rank === 0 ? "first" : "second");
     const word = !on ? "Off" : (rank === 0 ? "First" : "Second");
-    const unusable = on && rank === 0 && conns !== null && !isReady(conns[name]);
-    const note = unusable ? "Your saved choice could not be used; " + (replacement ? providerName(replacement) + " is answering." : "no other model is ready either.") : "";
+    // Offline (and the stub connector) the built-in demo answers every call by design: a choice that no CLI serves is kept for later, not a fault (QA firstrun-settings).
+    const demo = conns !== null && isObj(conns.stub) && isReady(conns.stub);
+    const unusable = on && rank === 0 && conns !== null && !demo && !isReady(conns[name]);
+    const note = unusable ? "Your saved choice could not be used; " + (replacement ? providerName(replacement) + " is answering." : "no other model is ready either.")
+      : (on && rank === 0 && demo && !isReady(conns[name]) ? "Kept for when the app is not offline: its built-in demo answers for now." : "");
     const models = isObj(o.models) && Array.isArray(o.models[name]) ? o.models[name] : [];
     const err = isObj(o.errors) && o.errors[name] ? '<span class="seterr" role="alert">' + esc(o.errors[name]) + "</span>" : "";
     const dis = o.busy === true ? " disabled" : "";
     return '<div class="setmodel" data-provider="' + esc(name) + '" data-state="' + state + '">' +
       '<div class="sethead"><b>' + esc(providerName(name)) + '</b><span class="setchip ' + (state === "first" ? "st-ok" : "") + '">' + word + "</span></div>" +
-      (note ? '<p class="setdetail setunusable" role="status">' + esc(note) + "</p>" : "") +
+      (note ? '<p class="setdetail' + (unusable ? " setunusable" : "") + '"' + (unusable ? ' role="status"' : "") + ">" + esc(note) + "</p>" : "") +
       '<div class="setacts"><button type="button" class="ghost" data-act="make-first" data-provider="' + esc(name) + '"' + (!on || rank === 0 || o.busy === true ? " disabled" : "") + ">Make first</button>" +
       '<label class="setswitch"><input type="checkbox" data-policy-on="' + esc(name) + '"' + (on ? " checked" : "") + dis + "> On</label>" +
       '<label class="setmlabel">Model <select data-policy-model="' + esc(name) + '" aria-label="Model for ' + esc(providerName(name)) + '"' + dis + ">" +
@@ -912,7 +924,7 @@
     testConnector, signIn, watchHealth, loadEngine, saveEngine, enginePath, testLine, kindOf, parseValue, setCliPath,
     policyHtml, policyBody, policyProblem, policyErrors, loadPolicy, savePolicy, answering, aboutHtml, checkUpdate, updateWords, setAutoUpdate,
     workdirHtml, loadWorkdir, saveWorkdir, clearWorkdir, WORKDIR_PATH, WORKDIR_WORDS,
-    HEALTH_EVENTS, NOTE_LOCKED, NOTE_NEXT_RUN,
+    HEALTH_EVENTS, NOTE_LOCKED, lockedNote, NOTE_NEXT_RUN,
   };
   if (typeof module === "object" && module !== null && module.exports) module.exports = SettingsView;
   else root.SettingsView = SettingsView;

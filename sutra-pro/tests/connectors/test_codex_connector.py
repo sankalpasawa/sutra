@@ -261,8 +261,8 @@ def test_an_api_key_login_is_refused_with_the_d7_reason_and_no_override(fake, ma
     conn = make("ok_plain")
     status = conn.auth_status()
     assert (status.signed_in, status.billing, status.method, status.detail) == (True, "api_key", "API key", API_KEY_REFUSED)
-    assert API_KEY_REFUSED == "API-key login refused (D7): sign in with your subscription"
-    with pytest.raises(NotSignedInError, match="API-key login refused"):
+    assert API_KEY_REFUSED == "API-key login is refused: sign in with your subscription"
+    with pytest.raises(NotSignedInError, match="API-key login is refused"):
         conn.call_text("x")
     assert fake.model_calls("codex") == []
 

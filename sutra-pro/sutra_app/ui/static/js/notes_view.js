@@ -30,6 +30,7 @@
   const GROUPS = Object.freeze([["about-you", "About you"], ["work", "Your work"], ["preferences", "How you like things done"]]);
   const LABEL = Object.freeze(Object.fromEntries(GROUPS));
   const FALLBACK = "That note could not be kept. Try again.";
+  const EMPTY = "Write the note first.";
   const INTRO = "Things that stay true. Write one once and it binds at once: Sutra passes the ones that matter to a team in the brief it writes, and the " +
     "direct chats see them. Nothing is guessed. Never type a key or a password here.";
 
@@ -114,7 +115,9 @@
   /* ---------------------------------------------------------------- flows */
   const loadNotes = api => api.get(PATH);
 
+  // An empty (or blank) note is never sent: the server would answer with pydantic's "String should have at least 1 character".
   async function send(api, req) {
+    if (isObj(req.body) && req.body.text === "") return {ok: false, data: null, error: EMPTY};
     try {
       await (req.method === "POST" ? api.post(req.path, req.body) : req.method === "PUT" ? api.put(req.path, req.body) : api.del(req.path));
     } catch (e) {

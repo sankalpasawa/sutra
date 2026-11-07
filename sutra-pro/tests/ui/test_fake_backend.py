@@ -1475,7 +1475,8 @@ def test_the_automatic_update_setting_is_stateful_in_the_fake_and_strict_like_th
 
 def test_a_wrong_token_is_refused_and_the_right_one_is_not(fake_server, fake):
     status, _, raw = write_request(fake_server, "POST", "/api/chats/cs_org/retry", {}, {"X-Sutra-Token": "nope"})
-    assert status == 401 and json.loads(raw)["error"]["message"].startswith("This page was opened without its access token")
+    # the real server's words (orchestrator/api/deps.py): the page, not the server, turns them into "Reload it from the app" (sutra_ctx.js failure())
+    assert status == 401 and json.loads(raw)["error"]["message"] == "A valid X-Sutra-Token header is required for this request"
     status, _, raw = write_request(fake_server, "POST", "/api/chats/cs_org/retry", {}, {"X-Sutra-Token": fb.TOKEN})
     assert status == 202
     status, _, raw = write_request(fake_server, "POST", "/api/chats/cs_org/retry", {}, {"X-Sutra-Token": fb.TOKEN + "x"})

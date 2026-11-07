@@ -259,10 +259,15 @@
 
   // A server answer that is not an error is JSON, or empty (204). An error is the envelope {error: {code, message, details}};
   // anything else (J2's {error: "text"}, a FastAPI {detail: "text"}, a proxy page) becomes code http_<status>.
+  // The one server sentence that is always reworded: a write refused with the dead launch token (401 `bad_token`) says "A valid X-Sutra-Token header is
+  // required", which names a header the owner cannot act on. Every view prints `e.message` beside its field, so the ApiError itself says what to do.
+  const NO_TOKEN = "This page was opened without its access token. Reload it from the app.";
+
   function failure(status, data) {
     const err = data?.error;
     if (typeof err?.code === "string" && err.code !== "") {
-      return new ApiError({status: status, code: err.code, message: err.message, details: err.details});
+      const message = status === 401 && err.code === "bad_token" ? NO_TOKEN : err.message;
+      return new ApiError({status: status, code: err.code, message: message, details: err.details});
     }
     const sentence = typeof err === "string" ? err : (typeof data?.detail === "string" ? data.detail : "");
     return new ApiError({status: status, code: "http_" + status, message: sentence || "The app answered " + status + "."});

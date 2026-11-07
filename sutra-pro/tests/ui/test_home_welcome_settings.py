@@ -6,6 +6,7 @@ page and the real static files. The fake serves the welcome card seen by default
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 from test_home import absent, attrs, open_settings, posts, present, shown, texts
@@ -165,6 +166,43 @@ def test_the_pill_offers_the_model_list_and_a_change_is_one_put_that_the_page_re
     assert [(r["path"], r["token"], r["body"]) for r in puts] == [
         ("/api/chats/cs_org/choice", True, {"provider": "claude", "model": "haiku"}), ("/api/chats/cs_org/choice", True, {"provider": "claude", "effort": "max"})]
     assert shown(browser, "#spill") and browser.console_errors == []
+
+
+def org_reply(number, text="ok"):
+    return {"session_id": "cs_org", "message": {"id": number, "session_id": "cs_org", "role": "agent", "who": "sutra", "kind": "text", "text": text, "card": None,
+                                                "pause": None, "answered_by": None, "answered_at": None, "task_id": None, "state": "ok", "at": "2026-11-04T10:09:30Z"}}
+
+
+@browser_only
+def test_the_pill_reads_the_server_again_when_the_chat_answers_so_the_pickers_appear_without_a_reload(browser, fake):
+    """QA firstrun-settings: after a switch, the pill kept saying "can be chosen after your next message" and drew no select until a reload, because
+    the page read GET /providers once and only a click on the pill read it again."""
+    load(browser, fake, choice={"provider": "claude"}, can_pick=False)
+    present(browser, "#spill .cpick .cpick-note")
+    assert not browser.js("!!document.querySelector('#spill select')")
+    assert "after your next message" in browser.js("document.querySelector('#spill .cpick').innerText")
+    fake.post("/__fake/pill", {"on": True, "can_pick": True, "choice": {"provider": "claude", "model": "haiku", "effort": "high"}}, token=False)   # the answer ran: the server now knows
+    fake.emit("chat.message", org_reply(51))
+    present(browser, "#spill .cpick select[data-act=choose-model]")
+    assert browser.js("document.querySelector('#spill select[data-act=choose-model]').value") == "haiku"
+    assert browser.js("document.querySelector('#spill select[data-act=choose-effort]').value") == "high"
+    assert "after your next message" not in browser.js("document.getElementById('spill').innerText")
+    assert shown(browser, "#spill") and browser.console_errors == []
+
+
+@browser_only
+def test_a_provider_switch_of_the_org_chat_reads_the_pill_again_and_another_chat_does_not(browser, fake):
+    load(browser, fake, choice={"provider": "claude"}, can_pick=False)
+    present(browser, "#spill .cpick .cpick-note")
+    reads = lambda: len([r for r in fake.log("/api/chats/cs_org/providers") if r["method"] == "GET"])
+    before = reads()
+    fake.post("/__fake/pill", {"on": True, "can_pick": True, "choice": {"provider": "claude", "model": "sonnet", "effort": "high"}}, token=False)
+    fake.emit("connector.switch", {"session_id": "cs_other", "from": "codex", "to": "claude", "reason": "pinned"})
+    time.sleep(0.6)
+    assert reads() == before and not browser.js("!!document.querySelector('#spill select')")             # a switch of another chat is not this pill's business
+    fake.emit("connector.switch", {"session_id": "cs_org", "from": "codex", "to": "claude", "reason": "pinned"})
+    present(browser, "#spill .cpick select[data-act=choose-model]")
+    assert reads() == before + 1 and browser.console_errors == []
 
 
 HEAL_PAGE = ('<!doctype html><html><head><meta charset="utf-8"><!--SUTRA-BOOT-->'

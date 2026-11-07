@@ -114,13 +114,28 @@ test("a row says which layer set its value", () => {
   assert.match(found.limit_add, /data-source="default"/);
 });
 
-test("every locked field is read-only, shows its value and says to edit data/engine.json", () => {
+test("every locked field is read-only, shows its value and says where engine.json is", () => {
   const found = rows(engineHtml(FOR_ALL, {}));
-  FOR_ALL.locked.forEach(field => assert.match(found[field], /edit data\/engine\.json/, field));
+  FOR_ALL.locked.forEach(field => assert.match(found[field], /edit engine\.json in your data folder \(About shows where it is\)/, field));
+  FOR_ALL.locked.forEach(field => assert.equal(found[field].includes("data/engine.json"), false, field));              // the installed apps have no data/ folder
   assert.match(found.send_mode, /dry-run/);
   assert.match(found.test_email, /\(empty\)/);
   assert.match(found.milestone_emails, />off</);
   assert.match(found.send_cap, />10</);
+});
+
+// QA firstrun-settings: every locked row said "edit data/engine.json", a folder that does not exist in the installed apps (they use ~/.sutra-pro).
+test("the locked rows name the real file when the data folder is known, with the separator of its system, and escape it", () => {
+  const note = (dataDir) => rows(engineHtml(FOR_ALL, {dataDir}))[FOR_ALL.locked[0]].match(/<span class="setlock">([^<]*)<\/span>/)[1];
+  assert.equal(note("/home/x/.sutra-pro"), "edit /home/x/.sutra-pro/engine.json");
+  assert.equal(note("/home/x/.sutra-pro/"), "edit /home/x/.sutra-pro/engine.json");                                      // no doubled slash
+  assert.equal(note("C:\\Users\\x\\.sutra-pro"), "edit C:\\Users\\x\\.sutra-pro\\engine.json");                          // Windows keeps its backslashes
+  assert.equal(note("C:\\Users\\x\\.sutra-pro\\"), "edit C:\\Users\\x\\.sutra-pro\\engine.json");
+  assert.equal(note(""), SettingsView.NOTE_LOCKED);                                                                       // not known yet (or the read failed): where to look
+  assert.equal(note(undefined), SettingsView.NOTE_LOCKED);
+  const hostile = engineHtml(FOR_ALL, {dataDir: '/x/<img src=x onerror="alert(1)">'});
+  assert.equal(hostile.includes("<img"), false);
+  assert.match(hostile, /edit \/x\/&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;\/engine\.json/);
 });
 
 test("the scope select offers all teams, then each team, and marks the one in use", () => {

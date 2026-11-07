@@ -43,6 +43,11 @@ class BinsFile(M):
     bins: dict[Literal["claude", "codex"], str] = {}
 
 
+def _finder(provider: str) -> str:
+    """The terminal command that prints where a command is: `which` on a Mac or Linux, `where` on Windows."""
+    return f"`where {provider}`" if oslayer.IS_WINDOWS else f"`which {provider}`"
+
+
 def is_executable_file(path: str) -> bool:
     """A regular file (a link to one counts) that this user may run."""
     try:
@@ -62,11 +67,12 @@ def check_path(provider: str, raw: str, *, home: Optional[str] = None) -> str:
     name = _NAMES[provider]
     text = raw.strip() if isinstance(raw, str) else ""
     if not text or len(text) > MAX_PATH or any(ord(c) < 32 or ord(c) == 127 for c in text):
-        raise InvalidRequestError(f"Write the full path of the {provider} command, as `which {provider}` prints it in Terminal")
-    if text == "~" or text.startswith("~/"):
+        raise InvalidRequestError(f"Write the full path of the {provider} command, as {_finder(provider)} prints it in {'a terminal' if oslayer.IS_WINDOWS else 'Terminal'}")
+    if text == "~" or text.startswith(("~/", "~\\") if oslayer.IS_WINDOWS else "~/"):
         text = (home or os.path.expanduser("~")) + text[1:]
     if not os.path.isabs(text):
-        raise InvalidRequestError(f"Write the full path, starting with / (or ~ for your home folder), as `which {provider}` prints it")
+        start = "a drive letter, like C:\\" if oslayer.IS_WINDOWS else "/"
+        raise InvalidRequestError(f"Write the full path, starting with {start} (or ~ for your home folder), as {_finder(provider)} prints it")
     full = os.path.normpath(text)
     if os.path.basename(full) not in _allowed_names(provider):
         raise InvalidRequestError(f"Choose the file named {provider}: {os.path.basename(full)} is not the {name} command")

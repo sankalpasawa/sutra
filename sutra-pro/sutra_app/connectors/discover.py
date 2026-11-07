@@ -21,7 +21,7 @@ to 25 s), it runs no CLI, and it installs nothing (D34).
     use_cli(router, provider, stored)     the running router follows a new choice at once: the connector's executable and PATH change,
                                           what was cached about the old file is forgotten, and `connector.health` goes out
 
-POSIX only: on Windows the installer's PATH is used as it is (`connector_config` gives the defaults).
+POSIX only: on Windows the installer's PATH is used as it is (`connector_config` gives the defaults, plus the file the owner chose in Settings).
 """
 from __future__ import annotations
 
@@ -137,7 +137,10 @@ def connector_config(data_dir: Path, *, environ: Optional[Mapping[str, str]] = N
                      isdir: Callable[[str], bool] = os.path.isdir, **fields: Any) -> ConnectorConfig:
     """The running app's ConnectorConfig. `fields` are other ConnectorConfig fields (work_root, python) passed through unchanged."""
     if oslayer.IS_WINDOWS:
-        return ConnectorConfig(data_dir=data_dir, **fields)
+        # No folder discovery on Windows (the installer's PATH is used), but the file the owner chose in Settings is still theirs to keep: it is read
+        # here exactly as on a Mac, or the choice the page confirmed ("Using that file.") would be forgotten at the next start.
+        chosen = {f"{name}_exe": path for name, path in BinStore(Path(data_dir)).load().items()}
+        return ConnectorConfig(data_dir=data_dir, **{**chosen, **fields})
     env = os.environ if environ is None else environ
     home_dir = _home_of(env, home)
     stored = BinStore(Path(data_dir)).load()

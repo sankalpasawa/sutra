@@ -83,6 +83,7 @@
     policy: null, models: null, pol: {busy: false, saved: false, errors: {}}, info: null, update: {step: "idle"},
     // autoupdate: the "Check for updates automatically" setting (GET /api/ops/update-setting) and the switch's own busy flag and sentence
     auto: null, autoBusy: false, autoMsg: "",
+    pillStale: false, pillSeq: 0,          // the org chat's pill is read again when its session may have moved (renderPill)
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -152,6 +153,7 @@
       after = Number.isFinite(page.next_after) ? page.next_after : got[got.length - 1].id;
     }
     mergeMessages(fresh, all);
+    if (fresh.length > 0) pillMoved();
     if (S.cc && S.cc.reconcile(S.messages)) renderBar();
     renderChat();
     renderComposer();
@@ -365,13 +367,23 @@
   }
 
   // The provider pill of the org chat (ABS-9): the choice also governs the chat agent (ABS-8).
+  // The pill is read once, and again whenever the chat's session may have moved: a reply ends a turn, and the turn is what pins the model, the effort and
+  // the provider the session runs on (the pickers wait for it: "can be chosen after your next message"), and connector.switch is the session starting on the
+  // other provider. pillMoved() says so; the pill on screen stays until the new answer is in, and an older answer never replaces a newer one.
+  const pillMoved = () => { S.pillStale = true; };
+
   async function renderPill() {
     const el = $("spill");
     const CP = root.ChatPill;
     if (!el || !CP) return;
-    if (S.pillData === undefined) {
-      S.pillData = null;
-      try { S.pillData = await api.get("/api/chats/" + ORG + "/providers"); } catch (e) { S.pillData = null; }
+    if (S.pillData === undefined || S.pillStale) {
+      const first = S.pillData === undefined;
+      const mine = ++S.pillSeq;
+      S.pillStale = false;
+      if (first) S.pillData = null;
+      let got = null;
+      try { got = await api.get("/api/chats/" + ORG + "/providers"); } catch (e) { got = null; }
+      if (mine === S.pillSeq && (got !== null || first)) S.pillData = got;          // a failed read of a pill already shown keeps it
     }
     const html = S.pillData ? CP.pill(S.pillData.providers, S.pillData.chosen) : "";
     ctx.paint(el, html);
@@ -938,7 +950,9 @@
   const SV = () => root.SettingsView;
 
   function paintAppearance() { ctx.paint($("set-appearance"), SV().appearanceHtml(themePref())); themeApply(); }
-  function paintConnectors() { ctx.paint($("set-connectors"), SV().connectorsHtml(S.health, S.conn)); }
+  // Windows words the CLI file box its own way (a drive letter, `where`): the page runs in the browser of the machine the app runs on.
+  const ON_WINDOWS = typeof navigator !== "undefined" && /Windows/i.test(String(navigator.userAgent || ""));
+  function paintConnectors() { ctx.paint($("set-connectors"), SV().connectorsHtml(S.health, Object.assign({windows: ON_WINDOWS}, S.conn))); }
 
   /* ---- the working folder (GAP3-workdir; settings_view.js draws it, this part keeps what was typed and calls the server) */
   const WD = {data: null, loaded: false, value: "", dirty: false, step: "idle", message: ""};
@@ -972,7 +986,8 @@
     return r;
   }
   function paintEngine() {
-    ctx.paint($("set-engine"), SV().engineHtml(S.settings, {scope: S.scope, departments: S.departments, errors: S.errors, values: S.values, saved: S.saved, busy: S.saving}));
+    ctx.paint($("set-engine"), SV().engineHtml(S.settings, {scope: S.scope, departments: S.departments, errors: S.errors, values: S.values, saved: S.saved, busy: S.saving,
+      dataDir: S.info && S.info.data_dir}));
   }
 
   /* ---- the owner's notes (GAP2 rules-notes; notes_view.js draws them, this part reads the fields and calls the server) */
@@ -1047,6 +1062,7 @@
   async function loadAbout() {
     try { S.info = await api.get("/api/ops/info"); } catch (e) { S.info = {}; }
     paintAbout();
+    paintEngine();                                                                    // its locked rows name the data folder
     await loadAutoUpdate();
   }
   async function loadAutoUpdate() {                    // a read: it asks GitHub nothing
@@ -1343,11 +1359,27 @@
     else if (/^rec-/.test(act)) recAct(act, b.dataset.id || "");
   }
 
+  // "Saved." says what the server holds, so it goes as soon as a field of its group is edited. The group is not repainted while the owner types (typingIn), so
+  // the line is cleared in place as well as in the state that the next repaint reads (QA firstrun-settings: it stayed beside a value the server did not have).
+  function staleSaved(t) {
+    const group = t && t.closest ? t.closest(".setgrp") : null;
+    if (!group) return;
+    const line = group.querySelector(".setstatus");
+    if (line) line.textContent = "";
+    const key = group.dataset.group;
+    if (key === "engine") S.saved = false;
+    else if (key === "limits") S.limitsForm = Object.assign({}, S.limitsForm, {saved: false});
+    else if (key === "notices") S.noticesForm = Object.assign({}, S.noticesForm, {saved: false});
+    else if (key === "notes") NS.saved = "";
+    else if (key === "recurring") S.recForm.saved = false;
+  }
+
   // What the owner types is kept in the state, so a repaint (the limits move with every task) never takes it away; a switch and a select act at once.
   function wireRoutinesLimits() {
     const pane = $("pane-settings");
     pane.addEventListener("input", e => {
       const t = e.target;
+      staleSaved(t);
       const name = t && t.dataset ? t.dataset.input : "";
       if (name === "monthly_usd") S.limitsForm = Object.assign({}, S.limitsForm, {raw: t.value, saved: false});
       else if (name === "quiet_start") S.noticesForm = Object.assign({}, S.noticesForm, {start: t.value});
@@ -1371,6 +1403,26 @@
       if (name === "rec_dept") recDraft().dept_id = t.value;
       else if (name === "rec_weekday") recDraft().weekday = t.value;
       else if (name === "rec_every") { recDraft().every = t.value; paintRecurring(true); }                 // the cadence decides which fields the form shows
+    });
+  }
+
+  // Enter in a text, number, time or date field presses the Save of its own place, as in a form (the Settings groups have no <form>): a note row, the CLI file
+  // box or the add form of Recurring work first, else the group's. A disabled button (a save in flight) is left alone. The button takes the focus first, as
+  // a mouse press would: a group is not repainted while a field of it has the focus (typingIn), so the answer of a save would not show. A key that another
+  // handler of the pane already took (preventDefault) is left to it.
+  const ENTER_SAVES = '[data-act="save-limit"], [data-act="save-notices"], [data-act="save-engine"], [data-act="note-add"], [data-act="note-save"], ' +
+    '[data-act="rec-add"], [data-act="set-path"]';
+  function wireEnterSaves() {
+    $("pane-settings").addEventListener("keydown", e => {
+      const t = e.target;
+      if (e.defaultPrevented || e.key !== "Enter" || e.isComposing || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (!t || t.tagName !== "INPUT" || !/^(text|number|time|date)$/.test(t.type)) return;
+      const scope = t.closest(".noteadd, li.note, .setpath, .setgrp");
+      const b = scope ? scope.querySelector(ENTER_SAVES) : null;
+      if (!b || b.disabled) return;
+      e.preventDefault();
+      b.focus();
+      b.click();
     });
   }
 
@@ -1403,6 +1455,7 @@
         break;
       case "chat.message":
         if (d.session_id === ORG) {
+          pillMoved();
           if (isObj(d.message)) { mergeMessages([d.message], false); renderChat(); }
           refetchMessages();
         } else if (S.graphView && isObj(d.message)) {
@@ -1414,6 +1467,7 @@
       case "graph.updated": refetchGraph(); break;
       case "task.updated": refetchDepartments(); refetchHeads(); refetchLimits(); if (S.recurring !== null) refetchRecurring(); break;
       case "connector.health": refetchLimits(); break;                                                // a plan window moved: the guard's line may change
+      case "connector.switch": if (d.session_id === ORG) { pillMoved(); renderPill(); } break;           // the org chat's session now runs on the other provider
       case "needs_you.changed": refetchNeeds(); break;
       case "server.resync": loadAll(); break;
       default: break;
@@ -1498,6 +1552,7 @@
     $("needs").addEventListener("click", onNeedsClick);
     $("pane-settings").addEventListener("click", onSettingsClick);
     wireRoutinesLimits();
+    wireEnterSaves();
     $("pane-settings").addEventListener("input", e => {
       if (e.target && e.target.matches && e.target.matches("input[data-path]")) cliPathState(e.target.dataset.path).value = e.target.value;
       else if (e.target && e.target.matches && e.target.matches("input[data-workdir-input]")) { WD.value = e.target.value; WD.dirty = true; }

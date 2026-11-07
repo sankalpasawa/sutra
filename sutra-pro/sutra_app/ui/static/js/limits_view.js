@@ -129,8 +129,9 @@
     else if (start === end) return {ok: false, body: null, error: "Quiet hours that start and end at the same time could mean all day or no time at all: choose different times."};
     else body.quiet_hours = {start, end};
     const n = clean(f.nudges);
-    if (!/^\d{1,3}$/.test(n)) return {ok: false, body: null, error: "The cap is a whole number from 0 to " + MAX_NUDGES + "."};
-    body.nudges_per_hour = Math.min(MAX_NUDGES, Number(n));
+    // Above the ceiling is refused, whatever its length: the field used to turn 11 to 999 into 10 and say "Saved." but refuse 1000 (QA firstrun-settings).
+    if (!/^\d{1,3}$/.test(n) || Number(n) > MAX_NUDGES) return {ok: false, body: null, error: "The cap is a whole number from 0 to " + MAX_NUDGES + "."};
+    body.nudges_per_hour = Number(n);
     return {ok: true, body, error: ""};
   }
 

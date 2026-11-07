@@ -52,7 +52,7 @@ __all__ = [
     "strip_ansi",
 ]
 
-API_KEY_REFUSED = "API-key login refused (D7): sign in with your subscription"
+API_KEY_REFUSED = "API-key login is refused: sign in with your subscription"
 SANDBOXES = ("read-only", "workspace-write")          # `danger-full-access` is never offered
 CATALOG_TTL_S = 3600.0                                # `codex debug models` is cached an hour
 CATALOG_RETRY_S = 60.0                                # a failed read is not retried at once

@@ -1095,7 +1095,7 @@ def require_token(request: Request, state: FakeState) -> None:
     if origin is not None and origin != "http://" + request.headers.get("host", ""):
         raise ApiError(403, "bad_origin", "This request came from another origin.")
     if not hmac.compare_digest(request.headers.get("x-sutra-token", "").encode(), state.token.encode()):
-        raise ApiError(401, "bad_token")
+        raise ApiError(401, "bad_token", "A valid X-Sutra-Token header is required for this request")       # the real server's words (orchestrator/api/deps.py), not the page's
 
 
 async def json_body(request: Request) -> Any:
@@ -1846,7 +1846,7 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
 
     def fresh() -> dict:
         return {"seen": True, "facts": copy.deepcopy(WELCOME_FACTS), "policy": load_default_policy().model_dump(mode="json"), "update": copy.deepcopy(UPDATE_UP_TO_DATE),
-                "auto": copy.deepcopy(UPDATE_SETTING), "pill": False, "choice": {"provider": None, "model": None, "effort": None}}
+                "auto": copy.deepcopy(UPDATE_SETTING), "pill": False, "can_pick": True, "choice": {"provider": None, "model": None, "effort": None}}
 
     state.ws = fresh()
     original_reset, original_token = state.reset, state.token
@@ -1941,7 +1941,7 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
         return {"providers": [
             {"name": "claude", "ready": True, "why_not": "", "model": "sonnet", "models": [], "plan": None, "billing": "subscription", "chosen": claude,
              "quota": None, "model_options": [o.model_dump(mode="json") for o in claude_options()], "chat_model": choice["model"] if claude else None,
-             "chat_effort": choice["effort"] if claude else None, "can_pick": True},
+             "chat_effort": choice["effort"] if claude else None, "can_pick": state.ws["can_pick"]},
             {"name": "codex", "ready": False, "why_not": "not signed in", "model": "gpt-5.6-luna", "models": [], "plan": None, "billing": "unknown",
              "chosen": False, "quota": None, "model_options": [], "chat_model": None, "chat_effort": None, "can_pick": True}], "chosen": choice["provider"]}
 
@@ -1969,6 +1969,8 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
     async def pill_control(request: Request):
         body = await json_body(request)
         state.ws["pill"] = bool(isinstance(body, dict) and body.get("on", True))
+        if isinstance(body, dict) and "can_pick" in body:
+            state.ws["can_pick"] = bool(body["can_pick"])          # False: the chat's session still runs on the other provider (the model waits for the switch)
         if isinstance(body, dict) and isinstance(body.get("choice"), dict):
             state.ws["choice"] = {"provider": None, "model": None, "effort": None, **body["choice"]}
         return JSONResponse({"pill": state.ws["pill"], "choice": state.ws["choice"]})

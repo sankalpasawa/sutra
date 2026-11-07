@@ -88,6 +88,66 @@ def test_the_limits_group_saves_a_limit_clears_it_and_refuses_a_bad_amount_witho
     assert console_errors(browser) == []
 
 
+def status_of(browser, group):
+    return browser.js(f"document.querySelector('#set-{group} .setstatus').textContent")
+
+
+@browser_only
+def test_saved_goes_as_soon_as_a_field_of_its_group_is_edited_again(browser, fake):
+    """QA firstrun-settings: "Saved." stayed on screen beside a new value that the server did not have (Limits, Notifications and Engine; a group is not
+    repainted while the owner types in it, so the line has to be cleared in place)."""
+    browser.expect_failed("/api/notes", 404)                                                         # the fake serves no notes
+    open_home(browser, fake)
+    open_settings(browser, "limits")
+    browser.type("#set-limits [data-input=monthly_usd]", "5")
+    press(browser, '#set-limits [data-act="save-limit"]')
+    browser.wait_for("document.querySelector('#set-limits .setstatus').textContent === 'Saved.'")
+    browser.type("#set-limits [data-input=monthly_usd]", "7")
+    assert status_of(browser, "limits") == ""
+    assert browser.js("HomePage.state().limitsForm.saved") is False                                  # and the next repaint does not bring it back
+    open_settings(browser, "notices")
+    browser.js("(() => { const e = document.querySelector('#set-notices [data-input=nudges_per_hour]'); e.value = '2'; e.dispatchEvent(new Event('input', {bubbles: true})); })()")
+    press(browser, '#set-notices [data-act="save-notices"]')
+    browser.wait_for("document.querySelector('#set-notices .setstatus').textContent === 'Saved.'")
+    browser.type("#set-notices [data-input=nudges_per_hour]", "9")
+    assert status_of(browser, "notices") == ""
+    open_settings(browser, "engine")
+    present(browser, '#set-engine [data-input="budget"]')
+    browser.js("document.querySelector('#set-engine [data-input=budget]').value = '250'")
+    press(browser, '#set-engine [data-act="save-engine"]')
+    browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
+    browser.type("#set-engine [data-input=budget]", "1")
+    assert status_of(browser, "engine") == ""
+    assert browser.js("HomePage.state().saved") is False
+    assert console_errors(browser) == []
+
+
+@browser_only
+def test_enter_in_a_settings_field_presses_the_save_of_its_group(browser, fake):
+    """QA firstrun-settings: there is no <form>, so Enter did nothing in Limits, Notifications or Engine and a keyboard-only owner had to Tab to Save."""
+    browser.expect_failed("/api/notes", 404)                                                         # the fake serves no notes
+    open_home(browser, fake)
+    open_settings(browser, "limits")
+    browser.type("#set-limits [data-input=monthly_usd]", "1234")
+    browser.press("Enter")
+    present(browser, '#set-limits [data-act="clear-limit"]')
+    assert [(r["method"], r["body"]) for r in posts(fake) if r["path"] == "/api/limits"] == [("PUT", {"monthly_usd": 1234.0})]
+    open_settings(browser, "notices")
+    browser.js("document.querySelector('#set-notices [data-input=nudges_per_hour]').value = ''")            # it holds the default 3
+    browser.type("#set-notices [data-input=nudges_per_hour]", "4")
+    browser.press("Enter")
+    browser.wait_for("document.querySelector('#set-notices .setstatus').textContent === 'Saved.'")
+    assert [r["body"] for r in posts(fake) if r["path"] == "/api/ops/attention"] == [{"quiet_hours": None, "nudges_per_hour": 4}]
+    open_settings(browser, "engine")
+    present(browser, '#set-engine [data-input="budget"]')
+    browser.js("document.querySelector('#set-engine [data-input=budget]').value = ''")
+    browser.type("#set-engine [data-input=budget]", "250")
+    browser.press("Enter")
+    browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
+    assert [r["body"] for r in posts(fake, "/api/engine/settings")] == [{"set": {"budget": 250}, "unset": []}]
+    assert console_errors(browser) == []
+
+
 @browser_only
 def test_the_guard_switch_saves_at_once(browser, fake):
     open_home(browser, fake)
@@ -97,6 +157,44 @@ def test_the_guard_switch_saves_at_once(browser, fake):
     sent = [r for r in posts(fake) if r["path"] == "/api/limits"]
     assert [(r["method"], r["token"], r["body"]) for r in sent] == [("PUT", True, {"guard_enabled": True})]
     assert console_errors(browser) == []
+
+
+def press(browser, selector):
+    """The press itself, in one step: Settings repaints a group when its read lands, and a real press that straddles a repaint is lost. The button takes
+    the focus first, as a mouse press gives it: a group is not repainted while a field of it has the focus, so the answer of a save would not show."""
+    assert browser.js(f"(() => {{ const e = document.querySelector({selector!r}); if (!e) return false; e.focus(); e.click(); return true; }})()"), selector
+
+
+@browser_only
+def test_a_write_the_heal_cannot_rescue_says_to_reload_the_page_beside_its_field_not_the_name_of_a_header(browser, fake):
+    """QA firstrun-settings: with the launch token dead and the heal refused, Limits, the guard, Notifications, About (and Engine, Default model and Connectors)
+    printed the server's "A valid X-Sutra-Token header is required for this request". The fake's real pages hold the first token, so the heal reads the
+    same one again and gives up, as it does inside its 60 seconds; Notes and the chat already said "Reload it from the app"."""
+    plain = "This page was opened without its access token. Reload it from the app."
+    browser.expect_failed("/api/notes", 404)                                                         # the fake serves no notes (the Settings tests of this package know it)
+    for path in ("/api/limits", "/api/ops/attention", "/api/ops/update-check"):
+        browser.expect_failed(path, 401)
+    open_home(browser, fake)
+    open_settings(browser, "limits")
+    fake.post("/__fake/restart", {"token": "restarted-token-0123456789abcdef"}, token=False)
+    browser.js("(() => { const e = document.querySelector('#set-limits [data-input=monthly_usd]'); e.value = '12'; e.dispatchEvent(new Event('input', {bubbles: true})); })()")
+    press(browser, '#set-limits [data-act="save-limit"]')
+    present(browser, "#set-limits .seterr")
+    assert texts(browser, "#set-limits .seterr") == [plain]
+    press(browser, "#set-limits [data-guard]")
+    browser.wait_for("document.querySelector('#set-limits [data-guard]').checked === false && document.querySelectorAll('#set-limits .seterr').length > 0")
+    assert texts(browser, "#set-limits .seterr") == [plain]
+    open_settings(browser, "notices")
+    browser.js("(() => { const e = document.querySelector('#set-notices [data-input=nudges_per_hour]'); e.value = '4'; e.dispatchEvent(new Event('input', {bubbles: true})); })()")
+    press(browser, '#set-notices [data-act="save-notices"]')
+    present(browser, "#set-notices .seterr")
+    assert texts(browser, "#set-notices .seterr") == [plain]
+    open_settings(browser, "about")
+    press(browser, '#set-about [data-act="check-update"]')
+    browser.wait_for("document.querySelector('#set-about .settest[data-step=error]') !== null")
+    assert texts(browser, "#set-about .settest") == [plain]
+    assert "X-Sutra-Token" not in browser.js("document.getElementById('pane-settings').innerText")
+    assert [line for line in console_errors(browser) if "401" not in line] == []                      # the refused writes are the announced 401s, nothing else
 
 
 @browser_only

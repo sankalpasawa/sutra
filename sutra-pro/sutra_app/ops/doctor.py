@@ -263,7 +263,7 @@ def _judge(name: str, status: Any, desktop: bool = False) -> tuple[str, str, str
             f"install the {name} CLI (or choose its file in Settings, Connectors), then run `{login}`"
     version = status.version or "unknown version"
     if status.billing == "api_key":
-        return "bad", f"{version}: signed in with an API key, which is refused (D34)", f"sign out, then `{login}` with your subscription account"
+        return "bad", f"{version}: signed in with an API key, which is refused", f"sign out, then `{login}` with your subscription account"
     if status.signed_in is False:
         return "bad", f"{version}: not signed in", f"run `{login}`"
     if status.signed_in is None:
