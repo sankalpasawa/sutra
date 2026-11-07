@@ -3957,7 +3957,7 @@ def test_console_errors_failed_requests_dialogs_and_csp_violations_are_collected
 
 
 STUB_VIEWS = {
-    "graph_layout.js": "", "chart_marks.js": "", "graph_render.js": "", "fnode_view.js": "", "chat_view.js": "",
+    "graph_layout.js": "", "chart_marks.js": "", "graph_render.js": "", "fnode_view.js": "", "chat_view.js": "", "fluid.js": "",
     "graph_view.js": "window.GraphView = {create: function (host, opts) { window.__gv = {host: host, opts: opts, updates: [], live: []};"
                      " return {update: function (g) { window.__gv.updates.push(g); }, setLive: function (s) { window.__gv.live.push(s); }}; }};",
     "orgchart_view.js": "window.OrgChartView = {create: function (host, opts) { window.__ov = {host: host, opts: opts, updates: []};"

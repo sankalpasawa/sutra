@@ -167,6 +167,19 @@ test("3e. patchList draws a list, then adds only the new lines and leaves every 
   assert.deepEqual(d.container.children[2].classList.names, ["in"], "a new line enters");
 });
 
+test("3e2. a history loaded at once does not enter line by line: only an arrival does", () => {
+  const d = fakeDom();
+  patchList(d.container, [item("empty")], {make: d.make, enter: "in"});                    // "No messages yet" was on the page
+  const many = Array.from({length: 30}, (_, i) => item("m" + i));
+  patchList(d.container, many, {make: d.make, enter: "in"});
+  assert.equal(d.container.children.length, 30);
+  assert.deepEqual(d.container.children.filter(n => n.classList.names.includes("in")).length, 0, "thirty lines at once are a page, not thirty arrivals");
+  patchList(d.container, many.concat([item("m30"), item("m31")]), {make: d.make, enter: "in"});
+  assert.deepEqual(d.container.children.slice(30).map(n => n.classList.names), [["in"], ["in"]], "two new lines are arrivals");
+  patchList(d.container, many.concat([item("m30"), item("m31")]).concat(Array.from({length: 4}, (_, i) => item("n" + i))), {make: d.make, enter: "in", enterMax: 3});
+  assert.equal(d.container.children.slice(32).filter(n => n.classList.names.includes("in")).length, 0, "enterMax is the limit");
+});
+
 test("3f. the same items touch nothing", () => {
   const d = fakeDom();
   patchList(d.container, [item("1"), item("2")], {make: d.make});

@@ -169,9 +169,11 @@
     });
     nodes.splice(edit.removeFrom, edit.removeCount).forEach(n => container.removeChild(n));
     const anchor = nodes[edit.removeFrom] || null;      // the first node that stays after the stretch (null: the end)
+    // a line that arrives enters; a whole history that is loaded at once (more than enterMax lines, default 6) does not: that is a page, not an arrival
+    const enters = o.enter && prev.length > 0 && edit.insert.length <= (Number.isFinite(o.enterMax) ? o.enterMax : 6);
     const added = edit.insert.map(item => {
       const node = nodeOf(item);
-      if (o.enter && prev.length > 0 && node.classList) node.classList.add(o.enter);
+      if (enters && node.classList) node.classList.add(o.enter);
       if (anchor) container.insertBefore(node, anchor);
       else container.appendChild(node);
       return node;
