@@ -84,6 +84,7 @@ class Defaults(M):
     fallback_on_invalid_json: bool = False
     tool_profile: ToolProfile = "none"
     idle_timeout_s: float = Field(120, gt=0, allow_inf_nan=False)
+    independent_audit: bool = False      # GAP2 rules-notes: Audit's calls try the other closed model first (independence.py); off until measured
 
     @field_validator("retry_delays_s")
     @classmethod

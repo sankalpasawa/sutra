@@ -796,6 +796,35 @@
     ctx.paint($("set-engine"), SV().engineHtml(S.settings, {scope: S.scope, departments: S.departments, errors: S.errors, values: S.values, saved: S.saved, busy: S.saving}));
   }
 
+  /* ---- the owner's notes (GAP2 rules-notes; notes_view.js draws them, this part reads the fields and calls the server) */
+  const NS = {data: null, error: "", editing: 0, draft: null, busy: false, saved: ""};
+  const NV = () => root.NotesView || null;
+  function paintNotes() { if (NV() && $("set-notes")) ctx.paint($("set-notes"), NV().notesHtml(NS)); }
+  async function loadNotes() {
+    if (!NV()) return;
+    try { NS.data = await NV().loadNotes(api); NS.error = ""; } catch (e) { NS.error = NV().errorWords(e); }
+    paintNotes();
+  }
+  function noteFields(box) {
+    const at = sel => { const el = box ? box.querySelector(sel) : null; return el ? el.value : ""; };
+    return {group: at("[data-note-group]"), text: at("[data-note-text]"), expires: at("[data-note-date]")};
+  }
+  async function noteAct(act, b) {
+    const N = NV();
+    const host = $("set-notes");
+    if (!N || !host || NS.busy) return;
+    const id = Number(b.dataset.id) || 0;
+    if (act === "note-edit" || act === "note-cancel") { NS.editing = act === "note-edit" ? id : 0; NS.draft = null; NS.error = ""; NS.saved = ""; paintNotes(); return; }
+    const form = act === "note-add" ? noteFields(host.querySelector(".noteadd")) : act === "note-save" ? noteFields(host.querySelector('li[data-note="' + id + '"]')) : null;
+    NS.busy = true;
+    paintNotes();
+    const out = act === "note-add" ? await N.addNote(api, form) : act === "note-save" ? await N.editNote(api, id, form) : await N.forgetNote(api, id);
+    NS.busy = false;
+    if (out.ok) { if (out.data) NS.data = out.data; NS.error = out.error; NS.draft = null; NS.editing = 0; NS.saved = act === "note-forget" ? "Forgotten." : "Saved. It applies from the next request."; }
+    else { NS.error = out.error; NS.saved = ""; NS.draft = act === "note-save" ? Object.assign({id: id}, form) : form; }
+    paintNotes();
+  }
+
   function renderSettings() {
     paintAppearance();
     paintConnectors();
@@ -803,6 +832,7 @@
     paintLimits();
     paintNotices();
     paintRecurring();
+    paintNotes();
   }
 
   async function loadEngineSettings() {
@@ -820,6 +850,7 @@
   function openSettings(group) {
     renderSettings();
     if (S.settings === null) loadEngineSettings();
+    if (NS.data === null) loadNotes();
     if (S.health === null) fetchHealth().catch(handleFetchError);
     if (S.notices === null) fetchLimits(); else refetchLimits();                          // the notices are read at load; read them again here only if that failed
     if (S.recurring === null) fetchRecurring();
@@ -898,6 +929,7 @@
     else if (act === "save-engine") saveEngine(S.scope, readEngineForm());
     else if (act === "set-path") setCliPath(b.dataset.provider, cliPathState(b.dataset.provider).value);
     else if (act === "clear-path") setCliPath(b.dataset.provider, null);
+    else if (act.indexOf("note-") === 0) noteAct(act, b);
     else routinesLimits(act, b);
   }
 

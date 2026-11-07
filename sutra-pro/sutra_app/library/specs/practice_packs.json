@@ -1,0 +1,44 @@
+{
+  "kind": "practice_packs",
+  "version": 1,
+  "packs": [
+    {
+      "id": "money-movement",
+      "name": "Money movement",
+      "use_case": "A team that moves or posts money: disbursals, collections, refunds, reconciliation.",
+      "fits": "moves or posts money",
+      "keywords": ["payment", "payout", "disbursal", "emi", "refund", "reconciliation", "billing", "invoice", "collection", "ledger", "bank", "loan", "lending", "settlement"],
+      "lines": [
+        {"function": "identity", "tag": "ask", "text": "A payment above the owner's line is put to the owner and never done on its own, whatever other rule applies."},
+        {"function": "identity", "tag": "always", "text": "Every money effect names its source record (the bank file, a ledger row or a payment reference) before it is judged."},
+        {"function": "adaptation", "tag": "always", "text": "A change to anything that moves money is proposed with a dry run on last week's records, never straight to live."},
+        {"function": "adaptation", "tag": "always", "text": "A reconciliation break seen twice is proposed as a standing check for Audit."},
+        {"function": "priority", "tag": "always", "text": "Keeps room in today's budget for anything due to a customer or a bank; internal work never spends that room."},
+        {"function": "priority", "tag": "always", "text": "Work that would post money after the bank's cut-off is held for the next window, and says so on its row."},
+        {"function": "coordination", "tag": "never", "text": "A payment and its reconciliation are never held by the same person or model: one makes, another checks."},
+        {"function": "coordination", "tag": "always", "text": "A hand-off that carries money names the amount and its source record."},
+        {"function": "audit", "tag": "always", "text": "Each morning, reconciles every payment posted against the bank file; a break is flagged the same day."},
+        {"function": "audit", "tag": "always", "text": "Checks that every payment above the owner's line carries the owner's approval."}
+      ]
+    },
+    {
+      "id": "product-build",
+      "name": "Product build",
+      "use_case": "A team that builds and ships a product to users.",
+      "fits": "builds and ships a product to users",
+      "keywords": ["product", "ship", "shipping", "release", "launch", "user", "customer", "feature", "app", "version", "mvp", "roadmap"],
+      "lines": [
+        {"function": "identity", "tag": "always", "text": "Every shipped version is judged against the done line before it counts as shipped."},
+        {"function": "identity", "tag": "ask", "text": "A promise to a user outside the team (a date, a feature, a price) is put to the owner first."},
+        {"function": "adaptation", "tag": "always", "text": "Reads what users did with shipped versions, not only the asks made inside the team."},
+        {"function": "adaptation", "tag": "always", "text": "A feature asked for by three users or more is proposed as the next slice."},
+        {"function": "priority", "tag": "always", "text": "Keeps room in the budget for the next shippable slice; work that ships something a user can use is never held while other work spends that room."},
+        {"function": "priority", "tag": "always", "text": "Work with no link to the done line is priced from what is left once work that has one is covered."},
+        {"function": "coordination", "tag": "always", "text": "Design, build and review of a slice each have a named holder before work on the slice starts."},
+        {"function": "coordination", "tag": "always", "text": "A shipped slice is handed to its first users with a named person to hear back from them."},
+        {"function": "audit", "tag": "always", "text": "Checks that every claim in a shipped version traces to its source."},
+        {"function": "audit", "tag": "always", "text": "Checks that what the done line counts as shipped matches the versions actually filed."}
+      ]
+    }
+  ]
+}

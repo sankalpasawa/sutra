@@ -53,6 +53,7 @@ from sutra_app.orchestrator.nodes import ensure_node, node_init
 from sutra_app.orchestrator.runs import stderr_tail
 from sutra_app.orchestrator.textutil import one_line_title
 from sutra_app.orchestrator.headsup import STOP_KEY
+from sutra_app.orchestrator.standing_rules import framing_for
 from sutra_app.orchestrator.waiting import why_waiting
 
 __all__ = [
@@ -650,7 +651,8 @@ class TaskService:
         return RunSpec(
             run_id=run_id, task_id=row.id, dept_id=row.dept_id, dept_label=clip(dept["name"] if dept else row.dept_id, 200),
             scope_id=row.scope_node_id, scope_label=clip(scope["name"], 200) if scope is not None else None, user_text=row.user_text,
-            framing=row.framing, parent_run_id=parent.run_id if parent is not None else None, seed_from=row.seed_from, upstream=upstream,
+            framing=framing_for(conn, row.dept_id, row.framing),                  # the team's standing rules in front, read now (GAP2 rules-notes)
+            parent_run_id=parent.run_id if parent is not None else None, seed_from=row.seed_from, upstream=upstream,
             settings=TaskSettings.model_validate(row.settings), connector=connector)
 
     def _files_of(self, conn: sqlite3.Connection, dep: TaskRow) -> list[str]:

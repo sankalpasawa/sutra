@@ -125,6 +125,8 @@
     let refs = null;                 // the skeleton's elements
     let chatRefs = null;             // the Chat tab's elements (rebuilt when the tab is)
     let drafts = null;               // the per-chat drafts (ChatDraft), made on first use
+    const noRules = dept => ({dept: dept, data: null, packs: null, error: "", busy: false, saved: "", draft: null});
+    let rules = noRules("");         // the standing rules of the team on show (GAP2 rules-notes, rules_view.js); read again every time a node opens
     const composers = new Map();     // session id -> its composer controller: the mode, the files and a running turn outlive a closed panel
     const scrollMem = new Map();     // session id -> where it was read when it closed (ChatScroll.remember / restore)
     const draftStore = () => { if (!drafts && root.ChatDraft) drafts = root.ChatDraft.create(); return drafts; };
@@ -556,12 +558,89 @@
         html = FV().nodeHtml(raw, {nodes: isObj(graph) && Array.isArray(graph.nodes) ? graph.nodes : [], withAgent: withAgent(), openIds: st.openIds});
         st.openIds = [];
       }
+      keepRulesDraft(el);
       paintTo(el, html);
+      paintRules(el);
       const slot = el.querySelector("[data-fnagent]");
       if (slot && st.agentHtml && slot.__agent !== st.agentHtml) {
         slot.innerHTML = st.agentHtml;
         slot.__agent = st.agentHtml;
       }
+    }
+
+    /* ------------------------------------------------ the standing rules of a team, at the foot of its Details tab (GAP2 rules-notes) */
+    // The rules block is drawn only for a department node, from rules_view.js (read when used: a page that does not load it shows nothing). A repaint
+    // of the node's own HTML replaces the block, so what the owner had typed and not yet added is kept in `rules.draft` first.
+    function keepRulesDraft(el) {
+      const box = el.querySelector("[data-teamrules]");
+      const text = box ? box.querySelector("[data-rules-text]") : null;
+      const tag = box ? box.querySelector("[data-rules-tag]") : null;
+      if (text && text.value !== "") rules.draft = {tag: tag ? tag.value : "always", text: text.value};
+    }
+
+    function paintRules(el) {
+      const RV = root.RulesView;
+      const dept = RV && st && st.node && st.node.kind === "department" ? clean(st.node.id) : "";
+      let slot = el.querySelector("[data-teamrules]");
+      if (dept === "") { if (slot) slot.remove(); return; }
+      if (!slot) {
+        slot = el.ownerDocument.createElement("div");
+        slot.setAttribute("data-teamrules", "");
+        el.appendChild(slot);
+      }
+      if (rules.dept !== dept) {
+        rules = noRules(dept);
+        loadTeamRules(dept);
+      }
+      paintTo(slot, RV.rulesHtml(rules));
+    }
+
+    async function loadTeamRules(dept) {
+      try {
+        const got = await root.RulesView.loadRules(api(), dept);
+        if (rules.dept !== dept) return;
+        rules.data = got.data;
+        rules.packs = got.packs;
+        rules.error = "";
+      } catch (e) {
+        if (rules.dept !== dept) return;
+        rules.error = root.RulesView.errorWords(e);
+      }
+      if (st && st.tab === "details") paintDetails();
+    }
+
+    async function onRules(name, button) {
+      const RV = root.RulesView;
+      const dept = rules.dept;
+      const box = refs && refs.body ? refs.body.querySelector("[data-teamrules]") : null;
+      if (!RV || dept === "" || !box || rules.busy || rules.data === null) return;
+      let body = null;
+      let added = null;                                       // the line an add sends
+      if (name === "rules-add") {
+        const text = box.querySelector("[data-rules-text]").value;
+        const tag = box.querySelector("[data-rules-tag]").value;
+        rules.draft = {tag: tag, text: text};
+        if (clean(text) === "") { rules.error = "Write the rule first."; paintDetails(); return; }
+        body = RV.addBody(rules.data, tag, text);
+        added = text;
+      } else if (name === "rules-remove") body = RV.removeBody(rules.data, Number(button.dataset.index));
+      else if (name === "rules-pack") body = RV.packBody(button.dataset.pack || "");
+      if (body === null) return;
+      rules.busy = true;
+      rules.error = "";
+      rules.saved = "";
+      paintDetails();
+      const out = await RV.saveRules(api(), dept, body);
+      if (rules.dept !== dept) return;                       // the panel moved to another team while the request ran
+      rules.busy = false;
+      if (out.ok) {
+        rules.data = out.data || rules.data;
+        rules.draft = null;
+        const field = added !== null && refs && refs.body ? refs.body.querySelector("[data-teamrules] [data-rules-text]") : null;
+        if (field && clean(field.value) === clean(added)) field.value = "";      // keepRulesDraft reads the live field: left as it is, it would bring the saved line back
+        rules.saved = "Saved. It applies from the team's next task.";
+      } else rules.error = out.error;
+      if (st && st.tab === "details") paintDetails();
     }
 
     function paintBody() {
@@ -690,6 +769,7 @@
         openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: false, reopen: true, scroll: {parked: false, seenId: 0, pill: 0},
         opener: opener, conn: null, refresh: null};
       if (!opener.id) opener.id = id;
+      rules = noRules("");                                  // the team's rules are read again: they may have changed since this team was last on show
       doc.body.classList.add("nodeopen");
       closeAgentDrawer();
       host.hidden = false;
@@ -1037,6 +1117,7 @@
       else if (name === "retry-load") { const node = st.nodeId; const tab = st.tab; open(node, tab); }
       else if (name === "jump-latest") jumpLatest();
       else if (name === "retry-direct") retryDirect(act.dataset.turn);
+      else if (name.indexOf("rules-") === 0) onRules(name, act);
     }
 
     // J2's convention: an option button answers "Option N"; a question that is one of several adds "<q>. Option N" to the box instead.

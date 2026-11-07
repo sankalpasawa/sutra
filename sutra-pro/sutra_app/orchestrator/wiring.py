@@ -47,6 +47,7 @@ from sutra_app.orchestrator.events import EventBus
 from sutra_app.orchestrator.graph import GraphStore
 from sutra_app.orchestrator.limits import LIMITS_FILE, Limits
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock
+from sutra_app.orchestrator.notes import prompt_notes
 from sutra_app.orchestrator.projector import Projector
 from sutra_app.orchestrator.recurring import Recurring
 from sutra_app.orchestrator.redact import Redactor
@@ -172,7 +173,8 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     limits = Limits(settings.data_dir / LIMITS_FILE, db, quotas=lambda: {name: router.health.quota(name) for name in ("claude", "codex")},
                     clock=clock, offline=settings.offline or router_settings.connector == "stub")
     tasks.start_gate = limits.gate
-    agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout)
+    agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout,
+                      notes=prompt_notes(db, redactor, clock))                 # the owner's notes, in the decide and assign prompts (GAP2 rules-notes)
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
                         publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor)
     return AppServices(

@@ -121,7 +121,7 @@ def test_the_page_has_the_skeleton_and_the_hooks_the_script_and_the_tests_use():
     assert 'class="stoggle"' in HOME and 'data-show="chat"' in HOME and 'data-show="right"' in HOME
     assert [m for m in re.findall(r'<button[^>]*data-pane="(\w+)"[^>]*data-group="(\w+)"', HOME)] == [
         ("settings", "appearance"), ("settings", "connectors"), ("settings", "limits"), ("settings", "notices"), ("settings", "recurring"),
-        ("settings", "engine")]
+        ("settings", "engine"), ("settings", "notes")]
     assert re.findall(r'<button[^>]*data-pane="(\w+)"(?![^>]*data-group)', HOME) == ["graph", "chart"]
     assert 'id="pane-chart" hidden' in HOME and 'id="pane-settings" hidden' in HOME and 'id="pane-graph" hidden' not in HOME
 

@@ -29,7 +29,8 @@ from typing import Any
 
 from sutra_app.library.gate import GATE, Checked
 from sutra_app.library.org_chart import AddOp, MergeOp, MoveOp, OrgChart, RenameOp, SplitOp
-from sutra_app.orchestrator.agent import planner
+from sutra_app.library.practice import load_packs, pack_by_id
+from sutra_app.orchestrator.agent import planner, suggest
 from sutra_app.orchestrator.agent.agent import ChartBusy, ChatAgent, Plan, PlanRequest, StaleChart
 from sutra_app.orchestrator.agent.planner import TaskLine, line, names_phrase
 from sutra_app.orchestrator.agent.ports import PENDING_TURNS, ConnectorFailure, ConnectorPort, hint, missing_cli, usable
@@ -40,6 +41,7 @@ from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AlreadyDecided, AppError, NotFound
 from sutra_app.orchestrator.ids import ORG_SESSION_ID, IdFactory
 from sutra_app.orchestrator.models import Accepted, ChangeContext, ChangeResult, ChatChoice
+from sutra_app.orchestrator.standing_rules import StandingRules
 from sutra_app.orchestrator.tasks import TaskService
 from sutra_app.orchestrator.textutil import one_line_title, parse_yes_no
 
@@ -73,6 +75,7 @@ class _Pick:
     approve: bool = False
     node_id: str | None = None
     origin: int = 0                 # the request message a `choice` card belongs to
+    pack: str | None = None         # kind `pack`: the practice a suggestion card offered (node_id is the team)
 
 
 @dataclass
@@ -208,6 +211,9 @@ class TurnRunner:
             return _Resolved(_Pick("approval", change_id=card["change_id"], approve=option["id"] == YES), option["label"])
         if conn.execute("SELECT 1 FROM chat_messages WHERE session_id = ? AND src_ref = ?", (ORG, f"choice:{choice.message_id}")).fetchone():
             raise AlreadyDecided(None)
+        offered = suggest.parse_ref(row["src_ref"])
+        if offered is not None:                                    # a practice suggestion after an add (GAP2 rules-notes): Yes or No
+            return _Resolved(_Pick("pack", node_id=offered[0], pack=offered[1], approve=option["id"] == suggest.YES), option["label"])
         origin = _CHOICE_REF.fullmatch(row["src_ref"] or "")
         if origin is None:
             raise AppError("validation", "that question is not waiting for an answer")
@@ -322,6 +328,8 @@ class TurnRunner:
             await self._decide_flow(pick.change_id, pick.approve, mid, raise_already=False)
         elif pick.kind == "none":
             await self._reply(mid, [line("smalltalk")])
+        elif pick.kind == "pack":
+            await self._answer_pack(pick, mid)
         else:
             assert pick.node_id is not None
             origin = await run_blocking(self.chats.message, pick.origin)
@@ -335,6 +343,21 @@ class TurnRunner:
                     await self._finish_error(mid, line("stale"))
             except ConnectorFailure as exc:
                 await self._connector_down(mid, exc)
+
+    async def _answer_pack(self, pick: _Pick, mid: int) -> None:
+        """The owner's Yes or No on a suggested practice: Yes puts the pick on the team, No keeps the defaults and is remembered."""
+        pack = pack_by_id(pick.pack)
+        node = (await run_blocking(self.chart.head)).model.node(pick.node_id or "")
+        if pack is None or node is None or pick.node_id is None:
+            await self._finish_error(mid, line("failed"))
+            return
+        rules = StandingRules(self.db, self._redact)
+        try:
+            await run_blocking(rules.accept if pick.approve else rules.decline, pick.node_id, pack.id)
+        except AppError:
+            await self._finish_error(mid, line("failed"))
+            return
+        await self._reply(mid, [line("pack_yes", name=node.name, pack=pack.name) if pick.approve else line("pack_no", name=node.name)])
 
     def _request_of(self, mid: int, text: str) -> PlanRequest:
         rows = self.chats.last_messages(ORG, self.agent.history + 2, kinds=("text", "error"))
@@ -513,6 +536,31 @@ class TurnRunner:
             cards.append({"type": "task", "task_id": task.id, "dept_id": task.dept_id, "dept_name": task.dept_name, "title": task.title,
                           "status": task.status})
         self._write_cards(mid, sentences, cards, error=failure is not None)
+        if failure is None:
+            self._suggest_packs(applied)
+
+    def _suggest_packs(self, applied: _Applied | None) -> None:
+        """After a team was added: one choice card (code only, no model prose) for each added team whose name and purpose fit a practice pick,
+        at most two, unless the team already wears one or the owner said no to it. A suggestion never fails the turn."""
+        if applied is None or applied.result.status != "applied":
+            return
+        try:
+            packs, rules, made = load_packs(), StandingRules(self.db), 0
+            for dept_id in applied.result.added:
+                node = applied.after.node(dept_id)
+                pack = suggest.suggest_pack(node.name, node.purpose, packs) if node is not None and node.kind == "department" else None
+                if node is None or pack is None:
+                    continue
+                state = rules.get(dept_id)
+                if state.pack is not None or pack.id in state.declined:
+                    continue
+                with self.db.tx() as tx:
+                    self._post(tx, kind="card", card=suggest.card_for(node.name, pack), src_ref=suggest.pack_ref(dept_id, pack.id))
+                made += 1
+                if made == 2:
+                    break
+        except Exception:                                          # noqa: BLE001
+            log.exception("a practice suggestion could not be made")
 
     def _write_cards(self, mid: int | None, sentences: Sequence[str], cards: Sequence[dict], *, error: bool = False,
                      src_ref: str | None = None) -> None:
