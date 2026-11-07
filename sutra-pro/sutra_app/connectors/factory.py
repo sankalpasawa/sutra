@@ -39,6 +39,7 @@ from .policy import load_policy
 from .quota_store import QUOTA_FILE, attach_quota_store
 from .router import Router, TranscriptSource
 from .stub import ReplyBook, StubConnector
+from .workdir import WorkFolder
 
 __all__ = ["build_router", "REQUIRED_FLAGS", "TESTED_VERSIONS"]
 
@@ -82,6 +83,7 @@ def build_router(settings: Any, *, usage_sink: Any = None, events: Optional[Call
         connectors = build_connectors(cfg, load.policy, only=None if mode == "auto" else mode)
     router = Router(connectors, load.policy, usage_sink=usage_sink, transcripts=transcripts, events=events, session_hook=session_hook,
                     connector=mode, offline=offline, policy_source=load.source, policy_error=load.error, **router_kw)
+    router.folders = WorkFolder(data_dir, cfg.resolved_work_root())          # the owner's working folder, read on every chat turn (GAP3-workdir)
     if not stub_only:
         router.egress = Egress(data_dir / "connectors" / "egress.jsonl", redactor=redactor)
         attach_quota_store(router.health, data_dir / "connectors" / QUOTA_FILE)          # the plan meters survive a restart
