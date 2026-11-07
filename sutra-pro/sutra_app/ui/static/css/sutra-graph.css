@@ -144,3 +144,16 @@
 .chglog .chgstatus { color: var(--validator); font-style: italic; }
 .chglog .chgreason { margin-top: 4px; color: var(--muted); font-size: 12.5px; }
 .chglog .chgnone { margin: 0; color: var(--muted); }
+
+/* ---------------------------------------------------------------- chart notes and the card's address (chart_notes.js, gap package chart-insight) */
+.ocpane .ocaddr { margin: 2px 0 4px; color: var(--muted); font-size: 12.5px; }
+.ocpane .ocnotes { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font-size: 13px; }
+.ocpane .ocnotes[hidden] { display: none; }
+.ocpane .ocnotes h4 { margin: 0 0 6px; font-size: 13px; }
+.ocpane .ocnotelist { margin: 0; padding-left: 18px; }
+.ocpane .ocnote + .ocnote { margin-top: 4px; }
+.ocpane .ocsay { color: var(--muted); font-style: italic; }
+.ocpane .ocnone, .ocpane .ocinfo, .ocpane .ocmore { margin: 6px 0 0; color: var(--muted); }
+.ocpane .ocnone { margin-top: 0; }
+.ocpane .ocnodebtn { color: var(--accent); font-weight: 600; }
+.ocpane .ocnodebtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
