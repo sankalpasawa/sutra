@@ -518,5 +518,30 @@
   "id": "D104",
   "label": "Windows tests named, not hidden",
   "anchor": null
+ },
+ {
+  "id": "D116",
+  "label": "Electron window around the local server",
+  "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D117",
+  "label": "logo = the old Sutra's, never redrawn",
+  "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D118",
+  "label": "attach or start; ends with the window",
+  "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D119",
+  "label": "packager + Python inside; signed inside out",
+  "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D120",
+  "label": "the packaged app proves itself",
+  "anchor": "Desktop app · Electron window"
  }
 ]

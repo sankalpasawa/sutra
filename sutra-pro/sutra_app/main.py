@@ -1,7 +1,7 @@
 """The app shell: `create_app`, the lifespan and the command line (orchestrator 5.1, 6.4; work packages ORCH-8 and GAP-OPS-1).
 
     app = create_app(settings=None, *, connector=None, launcher=None, clock=None, ids=None)       # a FastAPI app
-    python -m sutra_app [serve] [--port N] [--data-dir D] [--offline] [--no-browser] [--browser B] [--verbose]    # the server (`run`)
+    python -m sutra_app [serve] [--port N] [--data-dir D] [--offline] [--no-browser] [--browser B] [--exit-when-stdin-closes] [--verbose]   # the server (`run`)
     python -m sutra_app doctor | status | stop | config | open ...                               # the operator commands (`ops.cli`)
 
 `create_app` builds the services (`wiring.build_services`), puts the app-wide Host guard in front (400 `bad_host`), installs the error
@@ -13,6 +13,9 @@ they are broken offline); `/openapi.json` stays. The lifespan runs `wiring.start
 GAP-OPS-1: the whole app is wrapped in the request-id middleware (`X-Request-Id` on every response, even a 400 or a 500), and the
 router of `sutra_app.ops.api` is mounted when that module exists. The instance lock, the log file and the first-run doctor belong to
 `run` (the server process), not to `create_app`: a library call must not lock a folder or change the process's logging.
+
+`--exit-when-stdin-closes` is for a program that starts the server and owns its standard input (the Electron desktop app, D118): the server
+stops, the way a SIGTERM stops it, when that input reaches end of file, so it ends with its starter even when the starter is killed.
 
 The server binds 127.0.0.1 only. Port: `--port N` or `SUTRA_PORT` means exactly that port; otherwise 8780, then the next free port up
 to 8799. The socket is bound before the app is built, so the port in `/api/config` is the real one.
@@ -26,6 +29,7 @@ import logging
 import os
 import socket
 import sys
+import threading
 from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -50,7 +54,7 @@ from sutra_app.ops import logsetup
 from sutra_app.orchestrator.wiring import AppServices, build_services, start_services, stop_services
 
 __all__ = [
-    "create_app", "lifespan", "LoopbackHostMiddleware", "build_parser", "run", "bind_socket", "AppServer", "FIRST_PORT", "LAST_PORT",
+    "create_app", "lifespan", "LoopbackHostMiddleware", "build_parser", "run", "bind_socket", "AppServer", "watch_stdin", "FIRST_PORT", "LAST_PORT",
     "GRACEFUL_SHUTDOWN_S", "PLUGINS", "OPS_API",
 ]
 
@@ -168,6 +172,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-browser", action="store_true", help="do not open the browser")
     parser.add_argument("--browser", choices=ops_browser.PREFER, default="auto",
                         help="auto/chrome: open Chrome when it is installed (the measured browser); default: the system default browser")
+    parser.add_argument("--exit-when-stdin-closes", action="store_true",
+                        help="stop when standard input reaches end of file: for a program that starts the server and keeps its input open")
     parser.add_argument("--verbose", action="store_true", help="log at DEBUG level")
     return parser
 
@@ -200,6 +206,31 @@ def bind_socket(host: str, port: int, *, scan: bool, last: int = LAST_PORT) -> s
     if scan:
         raise OSError(f"no free port between {port} and {max(port, last)}")
     raise error if error is not None else OSError("could not bind")
+
+
+def watch_stdin(server: uvicorn.Server, stream: Any = None) -> threading.Thread | None:
+    """Stop `server` when standard input reaches end of file; the thread that watches it is returned (None when there is no input to watch).
+
+    The Electron app holds the write end of the pipe that is the server's standard input. When the app ends, however it ends (a crash, a kill
+    from the Activity Monitor), the pipe closes and the server follows within a second, as it does for a stop request. Without this a killed app
+    would leave a server running with nobody to stop it."""
+    source = stream if stream is not None else getattr(sys.stdin, "buffer", None)      # a program with no console has no sys.stdin
+    if source is None:
+        return None
+    read = getattr(source, "read1", source.read)                       # read1 returns what has arrived; read(n) would wait for n bytes
+
+    def watch() -> None:
+        try:
+            while read(4096):
+                pass
+        except (OSError, ValueError):                                  # a broken or closed pipe ends the input as well
+            pass
+        log.info("standard input closed: stopping")
+        server.should_exit = True
+
+    thread = threading.Thread(target=watch, name="sutra-stdin-watch", daemon=True)
+    thread.start()
+    return thread
 
 
 class AppServer(uvicorn.Server):
@@ -330,5 +361,7 @@ def _serve(args: argparse.Namespace, settings: Settings, instance: Any, cli: Any
     server.opener = lambda target: ops_browser.open_url(target, args.browser)       # after construction: a test double needs no new argument
     server.stop_path = settings.data_dir / instance_lock.STOP_NAME                   # likewise
     server.after_shutdown = instance.release
+    if args.exit_when_stdin_closes:
+        watch_stdin(server)
     server.run(sockets=[sock])
     return 0

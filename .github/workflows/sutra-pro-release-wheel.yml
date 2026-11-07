@@ -153,13 +153,13 @@ jobs:
 
             | System | Download |
             |---|---|
-            | macOS, Apple silicon (M1 and later) | [`Sutra-Pro-arm64.dmg`](https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/Sutra-Pro-arm64.dmg) |
-            | macOS, Intel | [`Sutra-Pro-x86_64.dmg`](https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/Sutra-Pro-x86_64.dmg) |
+            | macOS 13 or newer, Apple silicon (M1 and later) | [`Sutra-Pro-arm64.dmg`](https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/Sutra-Pro-arm64.dmg) |
+            | macOS 13 or newer, Intel | [`Sutra-Pro-x86_64.dmg`](https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/Sutra-Pro-x86_64.dmg) |
             | Windows 10 and 11, 64-bit | [`Sutra-Pro-Setup-x64.exe`](https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/Sutra-Pro-Setup-x64.exe) (installer, no administrator rights) or [`Sutra-Pro-win-x64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.ref_name }}/Sutra-Pro-win-x64.zip) (portable) |
 
-            - **macOS:** open the DMG and drag **Sutra Pro** onto Applications. When the release was built with the repository's signing secrets the app is signed with a Developer ID and notarized by Apple; if macOS says it cannot verify the app, right-click it and choose Open.
-            - **Windows:** the files are not signed. SmartScreen says "Windows protected your PC": choose "More info", then "Run anyway".
-            - Opening the app starts the server and your browser opens on it. For real work you need the `claude` and/or `codex` command line tools signed in; `Sutra Pro Doctor` (Windows) or `sutra-pro doctor` says what is missing.
+            - **macOS:** open the DMG and drag **Sutra Pro** onto Applications (it replaces an earlier Sutra Pro in place). When the release was built with the repository's signing secrets the app is signed with a Developer ID and notarized by Apple; if macOS says it cannot verify the app, right-click it and choose Open.
+            - **Windows:** the files are not signed. SmartScreen says "Windows protected your PC": choose "More info", then "Run anyway". The installer upgrades an earlier Sutra Pro in place.
+            - Opening the app opens its window. The app starts its own server on this computer (127.0.0.1 only), shows it in the window and stops it when you close the window; your data stays in `~/.sutra-pro` (`%USERPROFILE%\.sutra-pro` on Windows). For real work you need the `claude` and/or `codex` command line tools signed in; `Sutra Pro Doctor` (Windows) or `sutra-pro doctor` says what is missing.
             - Every file has a `.sha256` next to it: `shasum -a 256 -c <file>.sha256` (macOS, Linux) or `certutil -hashfile <file> SHA256` (Windows).
 
             ### Or install the command with uv

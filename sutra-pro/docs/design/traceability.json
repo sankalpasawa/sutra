@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 115,
+  "decisions": 120,
   "packages": 78,
   "endpoints": 30,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 115,
+ "max_decision": 120,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -304,7 +304,12 @@
     "D112",
     "D113",
     "D114",
-    "D115"
+    "D115",
+    "D116",
+    "D117",
+    "D118",
+    "D119",
+    "D120"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -2514,8 +2519,7 @@
    "title": "sutra-pro lives inside the Sutra repository, in the folder `sutra-pro/`",
    "packages": [
     "ABS-12",
-    "REL-1",
-    "REL-2"
+    "REL-1"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -2678,7 +2682,7 @@
    ],
    "status": "documented only",
    "superseded_by": [],
-   "diagram": "key only, label \"J2 sync 2 (D114)\"."
+   "diagram": "key only, label \"J2 sync 2 and 3 (D114)\"."
   },
   {
    "id": "D115",
@@ -2693,11 +2697,54 @@
     "ORCH-2",
     "UI-3",
     "UI-6",
+    "UI-7",
     "UI-8"
    ],
    "status": "implemented",
    "superseded_by": [],
    "diagram": "key only, label \"direct chat composer (D115)\"."
+  },
+  {
+   "id": "D116",
+   "title": "The desktop app is an Electron window around the local server, on a Python that ships inside it",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "new box \"Desktop app · Electron window\" in the Experience band, pill D116."
+  },
+  {
+   "id": "D117",
+   "title": "The logo is the old Sutra's, derived from its icon and never redrawn",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key label \"logo = the old Sutra's\", pill on the Desktop app box."
+  },
+  {
+   "id": "D118",
+   "title": "The window and the server: attach or start, and end together",
+   "packages": [
+    "GAP-OPS-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"attach or start; ends with the window\", pill on the Desktop app box."
+  },
+  {
+   "id": "D119",
+   "title": "Packaging: the packager, the verified Python inside it, our own signing, the same secrets",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key label \"packager + Python inside; signed inside out\", pill on the Desktop app box."
+  },
+  {
+   "id": "D120",
+   "title": "The packaged app proves itself before anything is uploaded",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key label \"the packaged app proves itself\", pill on the Desktop app box."
   }
  ],
  "packages": [

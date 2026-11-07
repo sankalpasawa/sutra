@@ -18,6 +18,7 @@ from orchestrator.test_scripted_conversation import (
     HEADERS, TOKEN, ATOM, FixedClock, Scenario, SurvivingLauncher, asked, make_scenario, new_team,
 )
 
+import sutra_app
 from sutra_app import main as main_module
 from sutra_app.library import node as node_module
 from sutra_app.orchestrator import schema
@@ -309,7 +310,7 @@ def test_health_reports_the_version_the_schema_and_the_connectors(tmp_path):
     app, _ = make_scenario(tmp_path)
     with TestClient(app, base_url=BASE) as client:
         body = client.get("/api/health").json()
-        assert body["ok"] is True and body["version"] == "0.1.0" and body["schema"] == schema.SCHEMA_VERSION and set(body["connectors"]) == {"stub"}
+        assert body["ok"] is True and body["version"] == sutra_app.__version__ and body["schema"] == schema.SCHEMA_VERSION and set(body["connectors"]) == {"stub"}
         assert body["connectors"]["stub"]["installed"] is True
 
 
@@ -354,12 +355,41 @@ def test_help_exits_zero_and_lists_the_flags(capsys):
         build_parser().parse_args(["--help"])
     assert info.value.code == 0
     text = capsys.readouterr().out
-    assert all(flag in text for flag in ("--port", "--data-dir", "--offline", "--no-browser"))
+    assert all(flag in text for flag in ("--port", "--data-dir", "--offline", "--no-browser", "--exit-when-stdin-closes"))
 
 
 def test_the_module_answers_help_offline_with_exit_zero():
     done = subprocess.run([str(REPO / "scripts" / "py"), "-m", "sutra_app", "--help"], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0 and "--no-browser" in done.stdout
+
+
+class _Server:
+    should_exit = False
+
+
+class _BrokenPipe:
+    def read(self, size):
+        raise OSError("the pipe broke")
+
+
+def test_the_input_watcher_stops_the_server_when_the_input_ends():
+    import io
+    server = _Server()
+    thread = main_module.watch_stdin(server, io.BytesIO(b"bytes that are read and dropped"))
+    thread.join(timeout=10)
+    assert not thread.is_alive() and server.should_exit is True
+
+
+def test_the_input_watcher_treats_a_broken_pipe_as_the_end():
+    server = _Server()
+    main_module.watch_stdin(server, _BrokenPipe()).join(timeout=10)
+    assert server.should_exit is True
+
+
+def test_the_input_watcher_does_nothing_for_a_program_with_no_input(monkeypatch):
+    monkeypatch.setattr(main_module.sys, "stdin", None)             # pythonw: no console, no sys.stdin
+    server = _Server()
+    assert main_module.watch_stdin(server) is None and server.should_exit is False
 
 
 def test_a_bad_setting_is_a_message_and_exit_two(tmp_path, monkeypatch, capsys):

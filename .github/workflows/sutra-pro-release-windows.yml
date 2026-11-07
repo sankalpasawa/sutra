@@ -1,23 +1,25 @@
-# Build the Windows app of Sutra Pro, an installer and a portable zip, and attach them to the GitHub Release of the Sutra repository
-# (D98, D100, D101). The Windows counterpart of sutra-pro-release-macos.yml: the same guard, the same stable asset names, the same rules.
+# Build the Windows app of Sutra Pro (the Electron desktop app), an installer and a portable zip, and attach them to the GitHub Release of the Sutra
+# repository (D98, D100, D101, D116, D119). The Windows counterpart of sutra-pro-release-macos.yml: the same guard, the same stable asset names, the same rules.
 #
 # THE ASSETS (stable, version-free names; the link is /releases/download/<tag>/<name>, because the release is never "Latest", D100)
 #   Sutra-Pro-Setup-x64.exe   Sutra-Pro-Setup-x64.exe.sha256     the installer (Inno Setup, per user, no administrator rights)
-#   Sutra-Pro-win-x64.zip     Sutra-Pro-win-x64.zip.sha256       the same app folder, portable: unzip anywhere, run "Sutra Pro.cmd"
+#   Sutra-Pro-win-x64.zip     Sutra-Pro-win-x64.zip.sha256       the same app folder, portable: unzip anywhere, run "Sutra Pro.exe"
 # Each is the checksum of the file this job built (see the wheel workflow for why the files are per asset). The release BODY is not set
 # here: sutra-pro-release-wheel.yml owns it, and two workflows writing one body would overwrite each other.
 #
-# WHAT THE APP IS (D12: there is no desktop shell). scripts/build_windows_app.py makes `Sutra Pro/` = a python-build-standalone CPython
-# 3.11 with the wheel (and the tray icon extra) installed into it, `python\SutraPro.exe` (a copy of pythonw.exe) and a few .cmd files.
-# The shortcut runs `SutraPro.exe -I -X utf8 -m sutra_app.desktop`: it starts the server, opens the browser and keeps an icon in the
-# notification area. Nothing in it is a native program, so there is nothing to compile and nothing for a virus scanner to guess at.
+# WHAT THE APP IS (D116, D119). scripts/build_desktop_app.py makes `Sutra Pro/` = the Electron window (sutra-pro/desktop: `Sutra Pro.exe` and its
+# files) + a python-build-standalone CPython 3.11 with the wheel installed into it, in `resources\python`, and `sutra-pro.cmd` for the command line.
+# `Sutra Pro.exe` opens a window, starts `python -m sutra_app` on that interpreter, shows its page and stops the server when the window closes. The
+# 0.1.x app was a launcher around the browser with a notification-area icon; the installer's id is the same, so installing over it is an upgrade, and
+# it clears what the old layout left.
 #
 # UNSIGNED (D102). Windows SmartScreen says "Windows protected your PC" the first time: More info, then Run anyway. A code-signing
 # certificate would remove that and needs a paid account; the checksums on the release are the integrity check meanwhile.
 #
-# THE PROOFS. Before anything is uploaded the built folder is run (scripts/prove_windows_app.py: offline, network cut, a team runs its
-# first turn, a stop request ends it and leaves nothing running); then the INSTALLER is run silently into a scratch folder, the installed
-# copy is proved the same way, and the uninstaller must remove it. `verify` does the installer part again on the files that were
+# THE PROOFS. Before anything is uploaded the built folder is run (scripts/prove_desktop_app.py, D120: offline, network cut; the real window starts its
+# server, draws the page, answers health from inside the page and quits, which must stop the server; then a team runs its first turn on the bundled
+# Python and a stop request ends it, leaving nothing running); then the INSTALLER is run silently into a scratch folder, the installed copy is proved
+# the same way, and the uninstaller must remove it. The window's picture and the logs are kept as an artifact. `verify` does the installer part again on the files that were
 # PUBLISHED, not on the ones the build job had on disk.
 #
 # A tag comes from a push or a dispatch input and may hold shell metacharacters, so it reaches scripts only through `env:`.
@@ -93,6 +95,12 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
+      # @electron/packager needs Node 22.12 or newer
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Create the virtual environment (scripts/py needs it)
         run: uv venv .venv --python 3.11
 
@@ -109,6 +117,13 @@ jobs:
           path: ~/.cache/sutra-pro-bundle
           key: sutra-pro-bundle-${{ runner.os }}-x64-v1
 
+      # Electron's own download (the packager fetches the zip for the target, and checks it against the release's checksums); the lock file pins the version.
+      - name: Cache the Electron download
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/electron/Cache
+          key: sutra-pro-electron-${{ runner.os }}-x64-${{ hashFiles('sutra-pro/desktop/package-lock.json') }}
+
       # The wheel name must carry the version the tag promises (a beta publishes the wheel of its X.Y.Z), as in the other workflows.
       - name: Build the app folder
         run: |
@@ -121,11 +136,21 @@ jobs:
           [ "$(basename "${wheels[0]}")" = "sutra_pro-$want-py3-none-any.whl" ] \
             || { echo "::error::the build made $(basename "${wheels[0]}") but tag $TAG promises sutra_pro-$want-py3-none-any.whl"; exit 1; }
           echo "VERSION=$want" >> "$GITHUB_ENV"
-          scripts/py scripts/build_windows_app.py --wheel "${wheels[0]}" --out build
+          scripts/py scripts/build_desktop_app.py --wheel "${wheels[0]}" --target win-x64 --out build
 
-      # The proof that matters: the folder runs its OWN interpreter, offline, a team runs, a stop request ends everything.
+      # The proof that matters: the window runs, starts its server on the folder's OWN interpreter, draws the page, answers health and quits, which
+      # stops the server; then a team runs its first turn on that interpreter and a stop request ends everything. Offline.
       - name: Prove the app folder runs
-        run: scripts/py scripts/prove_windows_app.py --app "build/Sutra Pro" --version "$VERSION"
+        run: scripts/py scripts/prove_desktop_app.py --app "build/Sutra Pro" --version "$VERSION" --keep proof
+
+      - name: Keep the proof's picture and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-win-x64
+          path: sutra-pro/proof/
+          retention-days: 14
+          if-no-files-found: ignore
 
       # Inno Setup is on the runner image in some versions and not in others; the installer script needs 6.3 or later (x64compatible).
       - name: Install Inno Setup
@@ -147,7 +172,7 @@ jobs:
           set -euo pipefail
           mkdir -p release
           "$ISCC" "/DAppVersion=$VERSION" "/DSourceDir=$(cygpath -w "$PWD/build/Sutra Pro")" "/DOutputDir=$(cygpath -w "$PWD/release")" \
-            "/DIconFile=$(cygpath -w "$PWD/assets/icon/sutra-pro.ico")" scripts/windows/sutra-pro.iss
+            "/DIconFile=$(cygpath -w "$PWD/assets/icon/sutra-pro.ico")" scripts/windows/sutra-pro-desktop.iss
           ls -l release
           [ -s release/Sutra-Pro-Setup-x64.exe ] || { echo "::error::the installer was not made"; exit 1; }
 
@@ -160,11 +185,11 @@ jobs:
           set -euo pipefail
           target="$(cygpath -w "$RUNNER_TEMP/installed")"
           release/Sutra-Pro-Setup-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- "/DIR=$target" "/LOG=$(cygpath -w "$RUNNER_TEMP/setup.log")"
-          [ -f "$RUNNER_TEMP/installed/python/SutraPro.exe" ] || { cat "$RUNNER_TEMP/setup.log"; echo "::error::the installer installed nothing"; exit 1; }
-          scripts/py scripts/prove_windows_app.py --app "$RUNNER_TEMP/installed" --version "$VERSION"
+          [ -f "$RUNNER_TEMP/installed/Sutra Pro.exe" ] || { cat "$RUNNER_TEMP/setup.log"; echo "::error::the installer installed nothing"; exit 1; }
+          scripts/py scripts/prove_desktop_app.py --app "$RUNNER_TEMP/installed" --version "$VERSION"
           "$RUNNER_TEMP/installed/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-          for _ in $(seq 1 60); do [ -e "$RUNNER_TEMP/installed/python/python.exe" ] || break; sleep 1; done
-          [ ! -e "$RUNNER_TEMP/installed/python/python.exe" ] || { echo "::error::the uninstaller left the app behind"; exit 1; }
+          for _ in $(seq 1 60); do [ -e "$RUNNER_TEMP/installed/Sutra Pro.exe" ] || break; sleep 1; done
+          [ ! -e "$RUNNER_TEMP/installed/Sutra Pro.exe" ] || { echo "::error::the uninstaller left the app behind"; exit 1; }
 
       - name: Make the portable zip
         run: |
@@ -243,11 +268,37 @@ jobs:
           version="${version%-beta.*}"
           target="$(cygpath -w "$RUNNER_TEMP/installed")"
           released/Sutra-Pro-Setup-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- "/DIR=$target" "/LOG=$(cygpath -w "$RUNNER_TEMP/setup.log")"
-          [ -f "$RUNNER_TEMP/installed/python/SutraPro.exe" ] || { cat "$RUNNER_TEMP/setup.log"; echo "::error::the installer installed nothing"; exit 1; }
-          python scripts/prove_windows_app.py --app "$RUNNER_TEMP/installed" --version "$version"
+          [ -f "$RUNNER_TEMP/installed/Sutra Pro.exe" ] || { cat "$RUNNER_TEMP/setup.log"; echo "::error::the installer installed nothing"; exit 1; }
+          python scripts/prove_desktop_app.py --app "$RUNNER_TEMP/installed" --version "$version"
           "$RUNNER_TEMP/installed/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-          for _ in $(seq 1 60); do [ -e "$RUNNER_TEMP/installed/python/python.exe" ] || break; sleep 1; done
-          [ ! -e "$RUNNER_TEMP/installed/python/python.exe" ] || { echo "::error::the uninstaller left the app behind"; exit 1; }
+          for _ in $(seq 1 60); do [ -e "$RUNNER_TEMP/installed/Sutra Pro.exe" ] || break; sleep 1; done
+          [ ! -e "$RUNNER_TEMP/installed/Sutra Pro.exe" ] || { echo "::error::the uninstaller left the app behind"; exit 1; }
+
+      # An earlier Sutra Pro is replaced in place (the installer keeps the 0.1.x AppId): the real 0.1.0 installer is installed, the published one goes over it,
+      # the old layout must be gone, and the new app must prove itself. Skipped, loudly, when the 0.1.0 release is no longer there to download.
+      - name: The published installer upgrades a 0.1.0 install in place
+        env:
+          MSYS2_ARG_CONV_EXCL: "*"
+        run: |
+          set -euo pipefail
+          version="${TAG#sutra-pro-v}"
+          version="${version%-beta.*}"
+          if ! gh release download sutra-pro-v0.1.0 --repo "$GITHUB_REPOSITORY" --dir old --pattern 'Sutra-Pro-Setup-x64.exe'; then
+            echo "::notice::the 0.1.0 installer is not on its release any more: the upgrade is not proved this time"
+            exit 0
+          fi
+          target="$(cygpath -w "$RUNNER_TEMP/upgraded")"
+          old/Sutra-Pro-Setup-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- "/DIR=$target" "/LOG=$(cygpath -w "$RUNNER_TEMP/old-setup.log")"
+          [ -f "$RUNNER_TEMP/upgraded/python/SutraPro.exe" ] || { cat "$RUNNER_TEMP/old-setup.log"; echo "::error::the 0.1.0 installer did not install the 0.1.0 layout"; exit 1; }
+          released/Sutra-Pro-Setup-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- "/DIR=$target" "/LOG=$(cygpath -w "$RUNNER_TEMP/new-setup.log")"
+          [ -f "$RUNNER_TEMP/upgraded/Sutra Pro.exe" ] || { cat "$RUNNER_TEMP/new-setup.log"; echo "::error::the upgrade installed nothing"; exit 1; }
+          for leftover in python "Sutra Pro.cmd" "Quit Sutra Pro.cmd" icon; do
+            [ ! -e "$RUNNER_TEMP/upgraded/$leftover" ] || { echo "::error::the upgrade left the 0.1.0 layout behind: $leftover"; exit 1; }
+          done
+          python scripts/prove_desktop_app.py --app "$RUNNER_TEMP/upgraded" --version "$version"
+          "$RUNNER_TEMP/upgraded/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          for _ in $(seq 1 60); do [ -e "$RUNNER_TEMP/upgraded/Sutra Pro.exe" ] || break; sleep 1; done
+          [ ! -e "$RUNNER_TEMP/upgraded/Sutra Pro.exe" ] || { echo "::error::the uninstaller left the upgraded app behind"; exit 1; }
 
       - name: The published zip unpacks to the same app
         run: |
@@ -255,4 +306,4 @@ jobs:
           version="${TAG#sutra-pro-v}"
           version="${version%-beta.*}"
           python -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" released/Sutra-Pro-win-x64.zip "$RUNNER_TEMP/portable"
-          python scripts/prove_windows_app.py --app "$RUNNER_TEMP/portable/Sutra Pro" --version "$version"
+          python scripts/prove_desktop_app.py --app "$RUNNER_TEMP/portable/Sutra Pro" --version "$version"

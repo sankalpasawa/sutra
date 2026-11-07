@@ -5,13 +5,15 @@ modelled on the old product's (`test-native.yml`, `plugin-release-gate.yml`, `re
 workflows of its own in the same folder; none of them starts on a change to this folder or on a tag of this product, and none of this
 product's starts on a change to the old one (`tests/release/` checks both directions against the old files).
 
-One tag releases everything: the wheel, the two Mac DMGs, the Windows installer and zip land on one GitHub Release.
+One tag releases everything: the wheel, the two Mac DMGs, the Windows installer and zip land on one GitHub Release. The Mac and Windows downloads are
+the **desktop app** (D116): an Electron window (`desktop/`) around the local server, which runs on a Python that ships inside the app. Releases up to
+0.1.x were a launcher that opened the browser; the app ids, names and asset names are the same, so a new download replaces the old app in place.
 
 | Part | Workflow | Doc |
 |---|---|---|
 | the wheel | `sutra-pro-release-wheel` | this file |
-| the Mac app and its DMGs (work package REL-2) | `sutra-pro-release-macos` | `docs/RELEASE-macos.md` |
-| the Windows installer and zip | `sutra-pro-release-windows` | `docs/RELEASE-windows.md` |
+| the Mac desktop app and its DMGs (work package REL-2, D116) | `sutra-pro-release-macos` | `docs/RELEASE-macos.md` |
+| the Windows desktop app: installer and zip | `sutra-pro-release-windows` | `docs/RELEASE-windows.md` |
 
 ## The tag, and why it is not `v*` (D100)
 
@@ -24,7 +26,8 @@ installed apps read `/releases/latest`. So a tag of this product never starts wi
 ## Cut a release
 
 1. Tag only a commit whose `sutra-pro-ci` run is green. The release workflows build and verify the artifacts; they do not run the test gate again.
-2. Set `[project].version` in `pyproject.toml` to `X.Y.Z` (plain integers), commit it and merge it.
+2. Set the version to `X.Y.Z` (plain integers) in `pyproject.toml`, `sutra_app/__init__.py` and `desktop/package.json` (`npm version X.Y.Z --no-git-tag-version` in
+   `desktop/` also updates the lock file); `tests/release/` fails when the three differ. Commit it and merge it.
 3. Tag that commit and push the tag:
 
        git tag sutra-pro-vX.Y.Z
@@ -46,7 +49,7 @@ default branch; a tag push runs the workflow files of the tagged commit.
 
 | Workflow | Runs on | Jobs |
 |---|---|---|
-| `sutra-pro-ci` | a push to any branch or a pull request that changes `sutra-pro/**` (or the workflow), manual (input `slow`) | `test` (ubuntu-latest, macos-15 and windows-latest), `package` (ubuntu-latest) |
+| `sutra-pro-ci` | a push to any branch or a pull request that changes `sutra-pro/**` (or the workflow), manual (input `slow`) | `test` and `desktop` (ubuntu-latest, macos-15 and windows-latest), `package` (ubuntu-latest) |
 | `sutra-pro-release-wheel` | push of a tag `sutra-pro-v*`, manual (input `tag`) | `guard`, `build`, `verify` (ubuntu-latest, macos-15 and windows-latest) |
 | `sutra-pro-release-macos` | the same tag, manual | `guard`, `dmg` (arm64 and x86_64), `verify` |
 | `sutra-pro-release-windows` | the same tag, manual | `guard`, `exe`, `verify` |
@@ -56,6 +59,11 @@ default branch; a tag push runs the workflow files of the tagged commit.
 never run by default; a manual run with `slow=true` adds `SUTRA_SLOW=1 scripts/py -m pytest`. All systems run to the end (no fail-fast), so a
 macOS-only or Windows-only break is not hidden by the ubuntu leg going red first. On Windows the tests that need POSIX process semantics are
 skipped by name with the reason (`tests/conftest.py`).
+
+**sutra-pro-ci / desktop.** Node 22 (the packager needs 22.12 or newer), `npm ci --ignore-scripts` in `desktop/` (Electron's own 100 MB download is skipped: nothing
+here starts it), then `npm test`: the supervisor against a fake server (attach, start, crash, slow start, the stop ladder), the navigation guard, the
+pages, the menu, the log, the self-test's verdict and the packager's options. The same tests run on three systems; those that need POSIX signals say so
+and skip on Windows. That the packaged app really runs is proved by the release workflows (D120).
 
 **sutra-pro-ci / package.** `uv build` (the sdist, then the wheel from that sdist), `scripts/check_wheel.py` on the wheel, an install of the
 wheel into a clean environment outside the checkout, `sutra-pro --help`, and the built `dist/` kept as a workflow artifact.
@@ -71,14 +79,17 @@ release text. A beta tag makes a pre-release.
 the stable-name file is byte-for-byte the versioned wheel, installs the wheel in a fresh environment and runs `sutra-pro --help`,
 on ubuntu-latest, macos-15 and windows-latest.
 
-**sutra-pro-release-macos / guard.** The same tag check. **sutra-pro-release-macos / dmg.** Two legs, one per architecture, each built natively: the app is
-built, signed (ad hoc, or Developer ID and notarized when all five secrets exist), proved by running its own launcher with the network cut, put into a
-DMG, and attached with its checksum. **sutra-pro-release-macos / verify.** Both architectures are on the release and the published bytes match their
-checksums. Details in `docs/RELEASE-macos.md`.
+**sutra-pro-release-macos / guard.** The same tag check. **sutra-pro-release-macos / dmg.** Two legs, one per architecture, each built natively: the Electron app is
+built with the Python inside it, signed (ad hoc, or Developer ID and notarized when all five secrets exist; `scripts/sign_desktop_app.sh` audits every Mach-O
+file before the round trip to Apple), proved by running the signed app with the network cut (`scripts/prove_desktop_app.py`: the window starts its server,
+draws the page and stops it; a team runs its first turn), put into a DMG, and attached with its checksum; the proof's picture and logs are kept as an
+artifact. **sutra-pro-release-macos / verify.** Both architectures are on the release and the published bytes match their checksums. Details in
+`docs/RELEASE-macos.md`.
 
-**sutra-pro-release-windows / guard.** The same tag check. **sutra-pro-release-windows / exe.** Builds the app folder, proves it runs, compiles the
-installer, proves the installer installs, runs and uninstalls, zips the folder, attaches the four files. **sutra-pro-release-windows / verify.** Installs
-the *published* installer and proves the installed copy, and proves the published zip. Details in `docs/RELEASE-windows.md`.
+**sutra-pro-release-windows / guard.** The same tag check. **sutra-pro-release-windows / exe.** Builds the app folder (the Electron app with the Python in
+`resources\python`), proves it runs, compiles the installer, proves the installer installs, runs and uninstalls, zips the folder, attaches the four files.
+**sutra-pro-release-windows / verify.** Installs the *published* installer and proves the installed copy, and proves the published zip. Details in
+`docs/RELEASE-windows.md`.
 
 ## Assets
 
@@ -126,5 +137,5 @@ Needs [uv](https://docs.astral.sh/uv/) (it fetches Python 3.11 when the machine 
 
 - No upload to PyPI, no signing of the wheel (the checksums are integrity, not authorship), and no sdist among the release assets
   (`sutra-pro-ci` keeps the sdist as a workflow artifact).
-- No signing of the apps until a certificate exists (D102): the Mac app is ad hoc signed (or Developer ID signed and notarized when all five
-  secrets exist), the Windows files are unsigned. No auto-update on either.
+- No signing of the Windows files until a certificate exists (D102); the Mac app is ad hoc signed, or Developer ID signed and notarized when all five
+  secrets exist. No auto-update on either (the release is never "Latest", D100, which is what an updater would read; D116 lists the options).

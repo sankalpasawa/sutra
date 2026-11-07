@@ -37,6 +37,12 @@ bma = importlib.util.module_from_spec(_spec)
 sys.modules["build_macos_app"] = bma
 _spec.loader.exec_module(bma)
 
+sys.path.insert(0, str(ROOT / "scripts"))
+_dspec = importlib.util.spec_from_file_location("build_desktop_app", ROOT / "scripts" / "build_desktop_app.py")
+bda = importlib.util.module_from_spec(_dspec)
+sys.modules["build_desktop_app"] = bda
+_dspec.loader.exec_module(bda)
+
 HOST = bma.host_arch()
 OTHER = "x86_64" if HOST == "arm64" else "arm64"
 
@@ -991,7 +997,7 @@ def test_the_matrix_builds_each_architecture_natively_on_its_own_runner():
     assert dmg["runs-on"] == "${{ matrix.runner }}"
     assert dmg["strategy"]["fail-fast"] is False
     assert dmg["strategy"]["matrix"]["include"] == [
-        {"arch": "arm64", "runner": "macos-15"}, {"arch": "x86_64", "runner": "macos-15-intel"},
+        {"arch": "arm64", "target": "mac-arm64", "runner": "macos-15"}, {"arch": "x86_64", "target": "mac-x64", "runner": "macos-15-intel"},
     ]
     assert {e["arch"] for e in dmg["strategy"]["matrix"]["include"]} == set(bma.ARCHES)
 
@@ -1075,12 +1081,24 @@ def test_the_steps_run_in_the_order_that_makes_the_release_trustworthy():
     assert step_index("dmg", "Import the signing certificate") < step_index("dmg", "Sign the app")
 
 
-def test_the_build_uses_the_builder_natively_per_arch_and_checks_the_wheel_name_against_the_tag():
+def test_the_build_uses_the_desktop_builder_natively_per_target_and_checks_the_wheel_name_against_the_tag():
     build_step = step_named("dmg", "Build Sutra Pro.app")["run"]
-    assert 'scripts/py scripts/build_macos_app.py --wheel "${wheels[0]}" --arch "$ARCH" --out build' in build_step
+    assert 'scripts/py scripts/build_desktop_app.py --wheel "${wheels[0]}" --target "$TARGET" --out build' in build_step
     assert 'sutra_pro-$want-py3-none-any.whl' in build_step and "${TAG#sutra-pro-v}" in build_step and "%-beta.*" in build_step
-    assert "--allow-foreign-arch" not in build_step and "--python-archive" not in build_step
-    assert wf()["jobs"]["dmg"]["env"] == {"ARCH": "${{ matrix.arch }}", "TAG": "${{ inputs.tag || github.ref_name }}"}
+    assert 'echo "VERSION=$want" >> "$GITHUB_ENV"' in build_step, "the proof asks the app for exactly the version the tag promises"
+    assert "--allow-foreign" not in build_step and "--python-archive" not in build_step and "--skip-npm" not in build_step
+    assert wf()["jobs"]["dmg"]["env"] == {"ARCH": "${{ matrix.arch }}", "TARGET": "${{ matrix.target }}", "TAG": "${{ inputs.tag || github.ref_name }}"}
+    assert {e["target"] for e in wf()["jobs"]["dmg"]["strategy"]["matrix"]["include"]} <= set(bda.TARGETS)
+
+
+def test_node_22_is_set_up_before_the_build_and_the_electron_download_is_cached_by_the_lock_file():
+    job = wf()["jobs"]["dmg"]
+    node = step_named("dmg", "Set up Node")
+    assert node["uses"] == "actions/setup-node@v4" and str(node["with"]["node-version"]) == "22", "@electron/packager needs Node 22.12 or newer"
+    cache = step_named("dmg", "Cache the Electron download")
+    assert cache["uses"] == "actions/cache@v4" and cache["with"]["path"] == "~/Library/Caches/electron"
+    assert "hashFiles('sutra-pro/desktop/package-lock.json')" in cache["with"]["key"] and "${{ matrix.arch }}" in cache["with"]["key"]
+    assert job["steps"].index(node) < step_index("dmg", "Build Sutra Pro.app")
 
 
 def test_the_cpython_download_is_cached_per_architecture():
@@ -1091,16 +1109,14 @@ def test_the_cpython_download_is_cached_per_architecture():
 
 
 def test_ad_hoc_signing_is_the_default_and_developer_id_adds_the_hardened_runtime():
-    sign = step_named("dmg", "Sign the app")["run"]
-    assert 'identity="${SIGN_IDENTITY:--}"' in sign
-    assert '--force --sign "$identity"' in sign
-    assert 'if [ "$identity" != "-" ]' in sign and "--timestamp --options runtime --entitlements" in sign
-    assert sign.index("Mach-O") < sign.index('codesign "${args[@]}" "$app"')          # inside out: files first, the bundle last
-    assert 'codesign --verify --deep --strict' in sign
-    plist = re.search(r"<<'PLIST'\n(.*?)\nPLIST\n", sign, re.S).group(1)
-    assert set(re.findall(r"<key>(.*?)</key>", plist)) == {
-        "com.apple.security.cs.disable-library-validation", "com.apple.security.cs.allow-unsigned-executable-memory"}
-    assert plistlib.loads(re.sub(r"<!--.*?-->", "", plist, flags=re.S).encode())
+    assert step_named("dmg", "Sign the app")["run"] == 'scripts/sign_desktop_app.sh "build/Sutra Pro.app"', "SIGN_IDENTITY comes from the import step"
+    script = (ROOT / "scripts" / "sign_desktop_app.sh").read_text(encoding="utf-8")
+    assert 'IDENTITY="${SIGN_IDENTITY:--}"' in script and '(--force --sign "$IDENTITY")' in script
+    assert 'if [ "$IDENTITY" != "-" ]' in script and "--options runtime" in script and "--timestamp" in script
+    order = [script.index(marker) for marker in ("# 1. the Python", "# 2. everything under Frameworks", "# 3. the helper apps", "# 4. the app", "# 5. the audit")]
+    assert order == sorted(order), "inside out: the Python's files, Electron's binaries, helpers and frameworks, the app, then the audit"
+    assert "codesign --verify --deep --strict" in script and "would be rejected by notarization" in script
+    assert "--deep " not in script.replace("--verify --deep --strict", ""), "--deep is deprecated for signing and is only used to verify"
 
 
 def test_developer_id_signing_notarizes_staples_and_validates_both_the_app_and_the_dmg():
@@ -1114,15 +1130,25 @@ def test_developer_id_signing_notarizes_staples_and_validates_both_the_app_and_t
     assert validate.count("xcrun stapler validate") == 2 and "spctl --assess" in validate
 
 
-def test_the_signed_bundle_is_proved_through_the_real_launcher_with_the_network_cut():
+def test_the_signed_app_is_proved_by_running_it_and_the_seal_is_checked_after():
     prove = step_named("dmg", "Prove the bundle")["run"]
-    for needle in ("Contents/MacOS/SutraPro", "api/health", "HTTP_PROXY=http://127.0.0.1:9", "PIP_NO_INDEX=1", "SUTRA_NO_DIALOG=1",
-                   'kill -TERM "$launcher"', "build-info.json", 'codesign --verify --deep --strict "$app"'):
-        assert needle in prove, needle
-    assert prove.index("api/health") < prove.index('kill -TERM "$launcher"') < prove.rindex("codesign --verify")
-    # the bundled Python that checks the version is not the launcher's: without -B it writes .pyc files of the standard library into
-    # the signed bundle and the seal breaks (found by running the step on a real build, D98)
-    assert 'python/bin/python3" -B -I -c' in prove
+    assert 'scripts/py scripts/prove_desktop_app.py --app "build/Sutra Pro.app" --version "$VERSION" --keep proof' in prove
+    assert prove.index("prove_desktop_app.py") < prove.index('codesign --verify --deep --strict "build/Sutra Pro.app"'), \
+        "running it must not have changed one byte of what was signed"
+    assert step_index("dmg", "Sign the app") < step_index("dmg", "Prove the bundle") < step_index("dmg", "Notarize and staple the app")
+    keep = step_named("dmg", "Keep the proof")
+    assert keep["if"] == "always()" and keep["uses"] == "actions/upload-artifact@v4"
+    assert keep["with"]["path"] == "sutra-pro/proof/" and keep["with"]["name"] == "proof-${{ matrix.target }}"
+
+
+def test_the_proof_cuts_the_network_and_asks_for_no_model():
+    """The proof's environment is built by scripts/prove_windows_app.py's `clean_environment`, which prove_desktop_app.py uses."""
+    spec = importlib.util.spec_from_file_location("prove_windows_app", ROOT / "scripts" / "prove_windows_app.py")
+    legacy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(legacy)
+    env = legacy.clean_environment(Path("/x/data"))
+    assert env["HTTP_PROXY"] == env["HTTPS_PROXY"] == env["ALL_PROXY"] == "http://127.0.0.1:9" and env["SUTRA_OFFLINE"] == "1"
+    assert env["NO_PROXY"] == "127.0.0.1,localhost" and env["SUTRA_DATA_DIR"] == str(Path("/x/data"))
 
 
 def test_the_dmg_is_made_with_hdiutil_from_the_app_and_an_applications_link():
