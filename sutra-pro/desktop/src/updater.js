@@ -485,7 +485,7 @@ const WHY = {
 /* options (everything that touches the world is an argument):
      platform, arch, version (the running app), packaged, env, execPath, pid, dataDir, tmpDir, log(line), now
      api.plan({ auto, platform, arch }) -> answer (rejects with .code 'offline' / 'update_off' for the server's refusals); setting() -> bool (the switch)
-     report(state, version, message) -> Promise (tells the server what to show in Settings, About; best effort)
+     report(state, version, message) -> Promise (tells the server what to show in Settings, About; best effort)    install(can, why) -> Promise (can this copy install, or only tell)
      get(url) -> { status, headers, stream }    run(file, args, { envName, envValue }) -> { code, stdout, stderr }    spawnDetached(file, args)
      ask({ message, detail, buttons, defaultId, cancelId }) -> index    info({ message, detail })    reveal(path)    openExternal(url)    quit()    isQuitting()
      isWritable(dir), timers, firstCheckMs, everyMs */
@@ -883,6 +883,20 @@ function createUpdater(options) {
     return true;
   }
 
+  /* Once the server is up: say (in Settings, About) whether THIS copy can install an update itself or only tells. Never throws, makes no outside request. */
+  async function announce() {
+    if (stopped || parseBool(o.env.SUTRA_PRO_SELFTEST) || typeof o.install !== 'function') return null;
+    try {
+      const can = await canVerify();
+      log(can.ok ? 'this copy can check who signed an update, so it can install one' : `this copy only tells about updates: ${can.why}`);
+      await o.install(can.ok, can.ok ? '' : can.why);
+      return can.ok;
+    } catch (error) {
+      log(`could not say whether this copy installs updates: ${error && error.message}`);
+      return null;
+    }
+  }
+
   /* Quit: no more timers, no more dialogs. */
   function stop() {
     stopped = true;
@@ -893,7 +907,7 @@ function createUpdater(options) {
   }
 
   return {
-    start, stop, checkNow, applyOnQuit, autoEligible,
+    start, stop, checkNow, applyOnQuit, autoEligible, announce,
     pending: () => installOnQuit && prepared !== null,
     staged: () => staged && { version: staged.version, file: staged.file },
   };

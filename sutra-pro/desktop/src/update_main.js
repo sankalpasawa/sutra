@@ -94,6 +94,7 @@ function localApi({ origin, request = http.request }) {
       }
     },
     report: (state, version, message) => send('POST', '/api/ops/update-status', { state, version, message }, 10000),
+    install: (can, why) => send('POST', '/api/ops/update-install', { can, why }, 10000),
   };
 }
 
@@ -139,7 +140,7 @@ function createDesktopUpdates({ app, dialog, shell, supervisor, log, folder, get
   return createUpdater({
     platform: process.platform, arch: process.arch, version: app.getVersion(), packaged: app.isPackaged, env: process.env, execPath: process.execPath, pid: process.pid,
     dataDir: folder, log: (line) => log.write(line), isQuitting,
-    api: { plan: api.plan }, setting: api.setting, report: api.report,
+    api: { plan: api.plan }, setting: api.setting, report: api.report, install: api.install,
     get: httpsGet, run, spawnDetached: (file, args) => spawnDetached(file, args, (line) => log.write(line)),
     ask: async (question) => (await box(question)).response,
     info: async ({ message, detail }) => {

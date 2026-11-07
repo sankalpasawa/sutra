@@ -5,6 +5,7 @@
     GET  /api/ops/update-setting  -> {auto, chosen, default, desktop, offline, last}                                     an open read on loopback
     PUT  /api/ops/update-setting  {auto: bool} -> the same GET answer                                                    needs the token
     POST /api/ops/update-status   {state, version, message} -> the same GET answer                                       needs the token
+    POST /api/ops/update-install  {can, why} -> the same GET answer                                                      needs the token
 
 The two POSTs that ask GitHub are POSTs on purpose: they make an outbound request, so a page that was merely loaded (or a link, or an image tag) can
 never start them, and they need the launch token like every other write. Each answers 200 with `error` set when GitHub could not be asked or understood
@@ -16,7 +17,9 @@ else `update_check.default_fetch`.
 asset of that platform and architecture, so the versions, the channels (a beta install sees newer betas and stables, a stable install only stables) and
 the feed's parsing have ONE implementation, here. With `auto: true` it is refused with 409 `update_off` and NO request while the owner's setting
 "Check for updates automatically" is off; the desktop checks the setting first and the server enforces it again. Every plan records the "last check"
-line the About group shows; the desktop adds its own as it goes (`update-status`: downloading, ready, failed, tell_only, installing).
+line the About group shows; the desktop adds its own as it goes (`update-status`: downloading, ready, failed, tell_only, installing). The desktop also says,
+once at start (`update-install`), whether THIS copy can install an update itself or can only tell (an ad hoc or unsigned copy cannot tell who signed one);
+the About group says which.
 
 Nothing else here, and nothing at boot, makes a request. The setting and the last line are two `meta` rows (ops/update_state.py).
 """
@@ -32,7 +35,7 @@ from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token,
 from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.errors import error_body, validation_error
 
-__all__ = ["build_router", "OFFLINE_WORDS", "OFF_WORDS", "UpdatePlanBody", "UpdateStatusBody", "UpdateSettingBody"]
+__all__ = ["build_router", "OFFLINE_WORDS", "OFF_WORDS", "UpdatePlanBody", "UpdateStatusBody", "UpdateSettingBody", "UpdateInstallBody"]
 
 OFFLINE_WORDS = "Update check is not available while the app runs offline: it would need the internet, and offline mode makes no outside request."
 OFF_WORDS = "Automatic update checks are switched off in Settings, About."
@@ -60,6 +63,12 @@ class UpdateStatusBody(BaseModel):
     message: str = Field("", max_length=update_state.MAX_MESSAGE)
 
 
+class UpdateInstallBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    can: bool
+    why: str = Field("", max_length=update_state.MAX_MESSAGE)
+
+
 def _offline(services: Any) -> bool:
     return bool(services.settings.offline or services.settings.connector == "stub")
 
@@ -67,7 +76,7 @@ def _offline(services: Any) -> bool:
 def _setting_answer(services: Any) -> dict[str, Any]:
     on, chosen = update_state.get_auto(services)
     return {"auto": on, "chosen": chosen, "default": True, "desktop": os.environ.get("SUTRA_PRO_DESKTOP") == "1", "offline": _offline(services),
-            "last": update_state.get_last(services)}
+            "last": update_state.get_last(services), "install": update_state.get_install(services)}
 
 
 def _scrubbed(request: Request, content: Any) -> RedactedJSONResponse:
@@ -137,6 +146,15 @@ def build_router() -> APIRouter:
 
         def save() -> dict[str, Any]:
             update_state.set_last(services, body.state, body.version, body.message)
+            return _setting_answer(services)
+        return _scrubbed(request, await run_blocking(save))
+
+    @api.post("/update-install", summary="The desktop app says whether this copy can install an update itself or only tells", dependencies=[Depends(require_token)])
+    async def post_update_install(request: Request, body: UpdateInstallBody) -> RedactedJSONResponse:
+        services = services_of(request)
+
+        def save() -> dict[str, Any]:
+            update_state.set_install(services, body.can, body.why)
             return _setting_answer(services)
         return _scrubbed(request, await run_blocking(save))
 

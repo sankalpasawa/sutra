@@ -107,7 +107,10 @@ async function startServer() {
     const { url } = await supervisor.start();
     if (!win || quitting) return;
     await win.loadURL(url);
-    if (!SELFTEST) updates.start();
+    if (!SELFTEST) {
+      updates.start();
+      updates.announce();
+    }
   } catch (error) {
     if (quitting) return;
     await failed(error);

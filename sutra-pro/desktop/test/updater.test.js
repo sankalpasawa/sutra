@@ -60,7 +60,7 @@ function harness({ platform = 'darwin', arch = 'arm64', packaged = true, env = {
   fs.mkdirSync(path.join(bundle, 'Contents', 'MacOS'), { recursive: true });
   const execPath = platform === 'darwin' ? path.join(bundle, 'Contents', 'MacOS', 'Sutra Pro') : path.join(root, 'Sutra Pro.exe');
   const world = {
-    root, data, bundle, installDir, execPath, logs: [], asked: [], infos: [], reports: [], runs: [], spawned: [], revealed: [], opened: [], quits: 0, settingCalls: 0, planCalls: [],
+    root, data, bundle, installDir, execPath, logs: [], asked: [], infos: [], reports: [], runs: [], spawned: [], revealed: [], opened: [], installs: [], quits: 0, settingCalls: 0, planCalls: [],
     mac: { runningTeam: TEAM, runningId: 'os.sutra.pro', teamId: TEAM, bundleId: 'os.sutra.pro', version: VERSION, verify: 0, spctl: 0, apps: 1, attach: 0, ditto: 0, ...mac },
     win: { runningSubject: 'CN=Sutra', runningValid: true, subject: 'CN=Sutra', valid: true, ...win },
     setting: true, choices: [...choices], answer: answer === undefined ? answerFor({ platform, arch }) : answer, planError: null,
@@ -123,6 +123,7 @@ function harness({ platform = 'darwin', arch = 'arm64', packaged = true, env = {
     api: { plan: async (body) => { world.planCalls.push(body); if (world.planError) throw world.planError; return world.answer; } },
     setting: async () => { world.settingCalls += 1; return world.setting; },
     report: async (state, version, message) => { world.reports.push({ state, version, message }); },
+    install: async (can, why) => { world.installs.push({ can, why }); },
     get: world.get, run: world.run,
     spawnDetached: (file, args) => world.spawned.push({ file, args }),
     ask: async (question) => { world.asked.push(question); return world.choices.length ? world.choices.shift() : 2; },
@@ -728,4 +729,25 @@ test('the macOS swap helper really swaps and rolls back, with throwaway apps (op
   const proof = childProcess.spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'prove_mac_swap.js')], { encoding: 'utf8', timeout: 240000 });
   assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
   assert.match(proof.stdout, /PROOF OK/);
+});
+
+test('the app says once, in Settings, whether this copy installs updates itself or only tells', async () => {
+  const signed = harness();
+  assert.equal(await signed.updater.announce(), true);
+  assert.deepEqual(signed.installs, [{ can: true, why: '' }]);
+  for (const [name, options, wanted] of [['ad hoc', { mac: { runningTeam: 'not set' } }, /not signed with a developer certificate/], ['a checkout', { packaged: false }, /source checkout/],
+    ['Windows unsigned', { platform: 'win32', arch: 'x64', win: { runningValid: false } }, /not signed with a developer certificate/]]) {
+    const w = harness(options);
+    assert.equal(await w.updater.announce(), false, name);
+    assert.equal(w.installs.length, 1, name);
+    assert.equal(w.installs[0].can, false, name);
+    assert.match(w.installs[0].why, wanted, name);
+    assert.equal(w.get.seen.length, 0, 'nothing is downloaded to say so');
+  }
+  const selftest = harness({ env: { SUTRA_PRO_SELFTEST: '1' } });
+  assert.equal(await selftest.updater.announce(), null);
+  assert.equal(selftest.installs.length, 0);
+  const quiet = harness();
+  quiet.updater.stop();
+  assert.equal(await quiet.updater.announce(), null, 'not while quitting');
 });

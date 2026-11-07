@@ -399,7 +399,7 @@ def test_update_setting_get_is_open_and_says_whether_the_desktop_started_this_se
     with TestClient(app, base_url=BASE) as client:
         monkeypatch.delenv("SUTRA_PRO_DESKTOP", raising=False)
         got = client.get("/api/ops/update-setting")
-        assert got.status_code == 200 and got.json() == {"auto": True, "chosen": False, "default": True, "desktop": False, "offline": False, "last": None}
+        assert got.status_code == 200 and got.json() == {"auto": True, "chosen": False, "default": True, "desktop": False, "offline": False, "last": None, "install": None}
         monkeypatch.setenv("SUTRA_PRO_DESKTOP", "1")
         assert client.get("/api/ops/update-setting").json()["desktop"] is True
         monkeypatch.setenv("SUTRA_PRO_DESKTOP", "yes")
@@ -462,3 +462,20 @@ def test_no_schema_change_the_two_rows_live_in_meta(tmp_path):
         after = {r["name"] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         keys = {r["key"] for r in db.execute("SELECT key FROM meta")}
     assert before == after and {update_state.AUTO_KEY, update_state.LAST_KEY} <= keys
+
+
+def test_the_desktop_says_whether_this_copy_can_install_or_only_tells_and_the_words_are_cleaned(tmp_path, counted):
+    app = make_app(tmp_path)
+    with TestClient(app, base_url=BASE) as client:
+        assert client.get("/api/ops/update-setting").json()["install"] is None
+        assert client.post("/api/ops/update-install", json={"can": False, "why": "not signed"}).status_code == 401            # a write: it needs the token
+        said = client.post("/api/ops/update-install", json={"can": False, "why": "This copy is not signed.\x1b[2J\n  Download it."}, headers=HEADERS)
+        assert said.status_code == 200 and said.json()["install"] == {"can": False, "why": "This copy is not signed. [2J Download it."}
+        assert client.get("/api/ops/update-setting").json()["install"]["can"] is False
+        assert client.post("/api/ops/update-install", json={"can": True}, headers=HEADERS).json()["install"] == {"can": True, "why": ""}
+        for body in ({}, {"can": "yes"}, {"can": 1}, {"can": True, "why": "x" * 241}, {"can": True, "extra": 1}, {"why": "x"}):
+            assert client.post("/api/ops/update-install", json=body, headers=HEADERS).status_code == 422, body
+    assert counted.calls == []                                                          # none of it reaches the network
+    again = make_app(tmp_path)                                                          # stored in the database: a new app over the same folder reads it
+    with TestClient(again, base_url=BASE) as client:
+        assert client.get("/api/ops/update-setting").json()["install"] == {"can": True, "why": ""}

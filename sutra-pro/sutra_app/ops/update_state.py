@@ -5,6 +5,8 @@
     get_last(services) -> dict | None           key `update_last`: {at, state, version, message}; never raises (a value that is not that reads as None)
     set_last(services, state, version, message) written by the server after every update-plan, and by the desktop app as it downloads and verifies
                                                 (POST /api/ops/update-status): the one line the About group shows under "Last check"
+    get_install(services) / set_install(services, can, why)   key `update_install`: whether THIS copy of the desktop app can install an update itself (it can tell
+                                                who signed one) or only tells, with the reason; written by the desktop app at start (POST /api/ops/update-install)
 
 No migration: `meta` is a plain key/value table (like `welcome_seen_at`). The default is ON because the only thing that ever acts on it is the desktop
 app's own timer; the command line and a browser-only start never check by themselves whatever this says.
@@ -16,10 +18,12 @@ import json
 import re
 from typing import Any
 
-__all__ = ["get_auto", "set_auto", "get_last", "set_last", "clean_message", "clean_version", "AUTO_KEY", "LAST_KEY", "STATES", "MAX_MESSAGE"]
+__all__ = ["get_auto", "set_auto", "get_last", "set_last", "get_install", "set_install", "clean_message", "clean_version", "AUTO_KEY", "LAST_KEY", "INSTALL_KEY", "STATES",
+           "MAX_MESSAGE"]
 
 AUTO_KEY = "update_auto"
 LAST_KEY = "update_last"
+INSTALL_KEY = "update_install"
 MAX_MESSAGE = 240
 STATES = ("up_to_date", "available", "error", "downloading", "ready", "failed", "tell_only", "installing")
 _NUM = r"(?:0|[1-9][0-9]{0,8})"                       # the same 9-digit limit as ops/update_check.py
@@ -77,4 +81,22 @@ def set_last(services: Any, state: str, version: str | None, message: str) -> di
         raise ValueError(f"unknown update state {state!r}")
     record = {"at": float(services.clock.now()), "state": state, "version": clean_version(version), "message": clean_message(message)}
     _put(services, LAST_KEY, json.dumps(record, separators=(",", ":")))
+    return record
+
+
+def get_install(services: Any) -> dict[str, Any] | None:
+    """`{can, why}` as the desktop app last said it, or None (never said, or not readable)."""
+    try:
+        row = services.db.conn().execute("SELECT value FROM meta WHERE key = ?", (INSTALL_KEY,)).fetchone()
+        found = json.loads(row["value"]) if row is not None else None
+    except Exception:                                                              # noqa: BLE001
+        return None
+    if not isinstance(found, dict) or not isinstance(found.get("can"), bool):
+        return None
+    return {"can": found["can"], "why": clean_message(found.get("why"))}
+
+
+def set_install(services: Any, can: bool, why: str) -> dict[str, Any]:
+    record = {"can": bool(can), "why": clean_message(why)}
+    _put(services, INSTALL_KEY, json.dumps(record, separators=(",", ":")))
     return record

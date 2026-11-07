@@ -623,7 +623,15 @@
     return '<p class="setdetail setlast" data-state="' + esc(clean(last.state)) + '">Last check: ' + (when ? esc(when) + ": " : "") + (bad ? '<span class="seterr">' + words + "</span>" : words) + "</p>";
   }
 
-  // The switch and what is said around it. `auto` is the GET answer {auto, chosen, offline, last} (plus the page's own `busy` and `message`); null = not loaded yet.
+  // Whether THIS copy installs an update itself: `install` is {can, why}, said once by the desktop app at start. A copy that cannot tell who signed an update only tells.
+  function installHtml(install) {
+    if (!isObj(install) || typeof install.can !== "boolean") return "";
+    if (install.can) return '<p class="setdetail setinstall" data-can="yes">This copy installs an update only after checking that it is signed by the same developer, and only when you choose Restart.</p>';
+    return '<p class="setdetail setinstall" data-can="no">This copy of Sutra Pro only tells you when an update is out; it cannot install one by itself.' +
+      (clean(install.why) ? " " + esc(clean(install.why)) : "") + "</p>";
+  }
+
+  // The switch and what is said around it. `auto` is the GET answer {auto, chosen, offline, last, install} (plus the page's own `busy` and `message`); null = not loaded yet.
   function autoUpdateHtml(auto) {
     if (!isObj(auto)) return "";
     const on = auto.auto === true;
@@ -632,7 +640,7 @@
     return '<div class="setacts setauto"><label class="setswitch"><input type="checkbox" role="switch" data-act="toggle-auto-update" aria-checked="' + (on ? "true" : "false") + '"' +
       (on ? " checked" : "") + (busy ? " disabled" : "") + "> Check for updates automatically</label>" +
       (said ? ' <span class="seterr" role="alert">' + esc(said) + "</span>" : "") + "</div>" +
-      '<p class="setdetail">' + AUTO_NOTE + "</p>" + (auto.offline === true ? '<p class="setdetail">' + AUTO_OFFLINE + "</p>" : "") + lastCheckHtml(auto.last);
+      '<p class="setdetail">' + AUTO_NOTE + "</p>" + (auto.offline === true ? '<p class="setdetail">' + AUTO_OFFLINE + "</p>" : "") + lastCheckHtml(auto.last) + installHtml(auto.install);
   }
 
   function aboutHtml(info, update, auto) {

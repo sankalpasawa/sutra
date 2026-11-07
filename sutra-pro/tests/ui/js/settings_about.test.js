@@ -182,3 +182,15 @@ test("a refused or failed save is the owner's sentence and no setting, never a t
   assert.equal((await setAutoUpdate(putApi({auto: "yes"}), true)).ok, false);
   assert.equal((await setAutoUpdate(putApi(null), true)).ok, false);
 });
+
+test("the About group says whether this copy installs an update itself or only tells, with the reason, escaped", () => {
+  const can = aboutHtml(INFO, {step: "idle"}, {...AUTO, install: {can: true, why: ""}});
+  assert.match(can, /data-can="yes">This copy installs an update only after checking that it is signed by the same developer/);
+  const no = aboutHtml(INFO, {step: "idle"}, {...AUTO, install: {can: false, why: 'Not signed with a developer certificate. <img src=x onerror=alert(1)>'}});
+  assert.match(no, /data-can="no">This copy of Sutra Pro only tells you when an update is out; it cannot install one by itself\. Not signed with a developer certificate\./);
+  assert.doesNotMatch(no, /<img/);
+  assert.match(no, /&lt;img/);
+  for (const odd of [null, undefined, "x", {}, {can: "no"}, {why: "x"}]) assert.doesNotMatch(aboutHtml(INFO, {step: "idle"}, {...AUTO, install: odd}), /setinstall/, JSON.stringify(odd));
+  assert.doesNotMatch(aboutHtml(INFO, {step: "idle"}, AUTO), /setinstall/, "said nothing yet: nothing is claimed");
+  assert.doesNotMatch(aboutHtml(INFO, {step: "idle"}), /setinstall/);
+});
