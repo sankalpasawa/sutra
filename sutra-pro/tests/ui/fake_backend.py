@@ -1598,7 +1598,8 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
     from sutra_app.connectors.policy import load_default_policy, parse_policy
 
     def fresh() -> dict:
-        return {"seen": True, "facts": copy.deepcopy(WELCOME_FACTS), "policy": load_default_policy().model_dump(mode="json"), "update": copy.deepcopy(UPDATE_UP_TO_DATE)}
+        return {"seen": True, "facts": copy.deepcopy(WELCOME_FACTS), "policy": load_default_policy().model_dump(mode="json"), "update": copy.deepcopy(UPDATE_UP_TO_DATE),
+                "pill": False, "choice": {"provider": None, "model": None, "effort": None}}
 
     state.ws = fresh()
     original_reset = state.reset
@@ -1646,6 +1647,45 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
     def update_check(request: Request):
         require_token(request, state)
         return JSONResponse(state.ws["update"])
+
+    # the pill of a chat (item 4): the fake serves none until a test asks (`/__fake/pill`), as it never did, so no other test sees a pill
+    def pill_of(sid: str) -> dict:
+        choice = state.ws["choice"]
+        claude = choice["provider"] == "claude"
+        return {"providers": [
+            {"name": "claude", "ready": True, "why_not": "", "model": "sonnet", "models": [], "plan": None, "billing": "subscription", "chosen": claude,
+             "quota": None, "model_options": [o.model_dump(mode="json") for o in claude_options()], "chat_model": choice["model"] if claude else None,
+             "chat_effort": choice["effort"] if claude else None, "can_pick": True},
+            {"name": "codex", "ready": False, "why_not": "not signed in", "model": "gpt-5.6-luna", "models": [], "plan": None, "billing": "unknown",
+             "chosen": False, "quota": None, "model_options": [], "chat_model": None, "chat_effort": None, "can_pick": True}], "chosen": choice["provider"]}
+
+    @app.get("/api/chats/{sid}/providers")
+    def pill_get(sid: str):
+        if not state.ws["pill"]:
+            raise ApiError(404, "not_found", "This chat is gone.")
+        return JSONResponse(pill_of(sid))
+
+    @app.put("/api/chats/{sid}/choice")
+    async def pill_choice(sid: str, request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        provider, model, effort = body.get("provider"), body.get("model"), body.get("effort")
+        slugs = [o.slug for o in claude_options()]
+        if provider is not None and provider != "claude":
+            raise ApiError(422, "validation", f"{provider} cannot run: not signed in")
+        if model is not None and model not in slugs:
+            raise ApiError(422, "validation", f"{model} is not a model claude offers. Choose one of: {', '.join(slugs[:4])}")
+        state.ws["choice"] = {"provider": provider, "model": model or (state.ws["choice"]["model"] if provider else None),
+                              "effort": effort or (state.ws["choice"]["effort"] if provider else None)}
+        return JSONResponse({"session_id": sid, **state.ws["choice"]})
+
+    @app.post("/__fake/pill")
+    async def pill_control(request: Request):
+        body = await json_body(request)
+        state.ws["pill"] = bool(isinstance(body, dict) and body.get("on", True))
+        if isinstance(body, dict) and isinstance(body.get("choice"), dict):
+            state.ws["choice"] = {"provider": None, "model": None, "effort": None, **body["choice"]}
+        return JSONResponse({"pill": state.ws["pill"], "choice": state.ws["choice"]})
 
     @app.post("/__fake/welcome")
     async def welcome_control(request: Request):
