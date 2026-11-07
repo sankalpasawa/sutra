@@ -112,6 +112,11 @@ def test_the_port_refuses_a_pdf_for_codex_with_its_name(tmp_path):
 
 # ---- QA direct-chat P3: names, the PDF refusal, the data fence ------------------------------------------------------------------------------------
 
+def test_an_emoji_keeps_its_skin_tone_modifier_in_a_name():
+    assert clean_name("thumbs \U0001F44D\U0001F3FD.txt") == "thumbs \U0001F44D\U0001F3FD.txt"            # the modifier is a symbol of its own (Sk), not a format character
+    assert clean_name("a^b`c.txt") == "a_b_c.txt" and clean_name("a\u00b4b.txt") == "a_b.txt"             # other modifier symbols stay out, as the old rule had them
+
+
 def test_a_name_keeps_its_letters_of_any_script_and_loses_what_could_break_a_list_or_a_prompt():
     assert clean_name("weird 日本語 😀.txt") == "weird 日本語 😀.txt"
     assert clean_name("résumé.pdf") == "résumé.pdf" and clean_name("报告.pdf") == "报告.pdf" and clean_name("Zoë (final)-2.md") == "Zoë (final)-2.md"

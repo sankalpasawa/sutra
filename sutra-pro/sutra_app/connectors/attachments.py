@@ -57,7 +57,7 @@ def _name_char(c: str) -> bool:
     if c in _PLAIN or ("a" <= c <= "z") or ("A" <= c <= "Z") or ("0" <= c <= "9"):
         return True
     kind = unicodedata.category(c)
-    return ord(c) > 127 and (kind[0] in "LNM" or kind == "So")      # letters, digits and accents of any script, and emoji; never a control or format character
+    return ord(c) > 127 and (kind[0] in "LNM" or kind == "So" or "\U0001F3FB" <= c <= "\U0001F3FF")      # letters, digits and accents of any script, emoji (and their skin tones); never a control or format character
 
 
 def clean_name(name: object) -> str:
