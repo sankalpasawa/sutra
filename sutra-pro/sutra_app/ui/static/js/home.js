@@ -75,6 +75,8 @@
     scroll: {parked: false, seenId: 0, pill: 0}, own: false, drafts: undefined,          // the reader's place and the box's draft (GAP-chat-comfort)
     // gap routines-limits: the limits (strip line, Settings), the owner's quiet hours and cap, the standing tasks (LimitsView, RecurringView)
     limits: null, limitsForm: {}, notices: null, noticesForm: {}, recurring: null, recForm: {draft: null, open: {}, confirm: "", error: {}, busy: false, saved: false},
+    // welcome-settings: the default-model controls (policy and the models each provider lists), the About group (version, folder, the update answer)
+    policy: null, models: null, pol: {busy: false, saved: false, errors: {}}, info: null, update: {step: "idle"},
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -208,7 +210,7 @@
     }
   }
 
-  async function fetchHealth() { S.health = await api.get("/api/health"); paintConnectors(); }
+  async function fetchHealth() { S.health = await api.get("/api/health"); paintConnectors(); paintModels(); }
 
   // GET /api/limits and /api/ops/attention (gap routines-limits): the strip line, the Settings groups, and the quiet hours and cap the notices obey. Never
   // rejects: a read that fails keeps what the page had (a page with no answer yet shows no line and sends no finished notice).
@@ -363,6 +365,19 @@
     if (!b || !root.ChatPill) return;
     const req = root.ChatPill.choiceRequest(ORG, b.dataset.provider || null);
     api.put(req.path, req.body).then(() => { S.pillData = undefined; return renderPill(); }, err => showBanner({text: clean(err && err.message) || "That model cannot answer right now.", settings: false}));
+  }
+
+  // The model list and the effort under the pill (model_pick.js): one select changed is one PUT /choice, then the pill is read again.
+  function onPillChange(e) {
+    const t = e.target && e.target.closest ? e.target.closest("select[data-act]") : null;
+    if (!t || !root.ModelPick) return;
+    const req = root.ModelPick.selectRequest(ORG, providersOf(), t.dataset.act, t.dataset.provider, t.value);
+    if (!req) { S.pillData = undefined; renderPill(); return; }
+    api.put(req.path, req.body).then(() => { S.pillData = undefined; return renderPill(); }, err => {
+      S.pillData = undefined;
+      renderPill();
+      showBanner({text: clean(err && err.message) || "That model cannot be used right now.", settings: false});
+    });
   }
 
   // The composer of the direct chat (ABS-15). "Plan with Sutra" is the staged path as it was; "Ask directly" is POST /direct on the org chat (D115): the
@@ -838,15 +853,57 @@
     else { NS.error = out.error; NS.saved = ""; NS.draft = act === "note-save" ? Object.assign({id: id}, form) : form; }
     paintNotes();
   }
+  function paintModels() {
+    ctx.paint($("set-models"), SV().policyHtml(S.policy, S.health, {models: S.models, errors: S.pol.errors, saved: S.pol.saved, busy: S.pol.busy}));
+  }
+  function paintAbout() { ctx.paint($("set-about"), SV().aboutHtml(S.info, S.update)); }
 
   function renderSettings() {
     paintAppearance();
     paintConnectors();
+    paintModels();
     paintEngine();
     paintLimits();
     paintNotices();
     paintRecurring();
     paintNotes();
+    paintAbout();
+  }
+
+  // The Default model group (welcome-settings, item 3): one change is one read-modify-write of the routing policy (SettingsView.savePolicy).
+  async function loadPolicyState() {
+    try {
+      const got = await SV().loadPolicy(api);
+      S.policy = got.policy;
+      S.models = got.models;
+      S.pol = {busy: false, saved: false, errors: {}};
+    } catch (e) {
+      S.pol = {busy: false, saved: false, errors: {"": errorWords(e).text}};
+    }
+    paintModels();
+  }
+  async function changePolicy(edits) {
+    if (S.policy === null || S.pol.busy) return null;
+    S.pol = {busy: true, saved: false, errors: {}};
+    paintModels();
+    const out = await SV().savePolicy(api, S.policy, edits);
+    S.policy = out.policy;                               // what is stored now: the answer of the PUT, or the policy savePolicy read again when it refused or failed
+    S.pol = {busy: false, saved: out.ok, errors: out.errors};
+    paintModels();
+    return out;
+  }
+
+  async function loadAbout() {
+    try { S.info = await api.get("/api/ops/info"); } catch (e) { S.info = {}; }
+    paintAbout();
+  }
+  async function checkForUpdates() {
+    if (S.update.step === "running") return null;
+    S.update = {step: "running"};
+    paintAbout();
+    S.update = await SV().checkUpdate(api);
+    paintAbout();
+    return S.update;
   }
 
   async function loadEngineSettings() {
@@ -865,6 +922,8 @@
     renderSettings();
     if (S.settings === null) loadEngineSettings();
     if (NS.data === null) loadNotes();
+    if (S.policy === null) loadPolicyState();
+    if (S.info === null) loadAbout();
     if (S.health === null) fetchHealth().catch(handleFetchError);
     if (S.notices === null) fetchLimits(); else refetchLimits();                          // the notices are read at load; read them again here only if that failed
     if (S.recurring === null) fetchRecurring();
@@ -944,6 +1003,8 @@
     else if (act === "set-path") setCliPath(b.dataset.provider, cliPathState(b.dataset.provider).value);
     else if (act === "clear-path") setCliPath(b.dataset.provider, null);
     else if (act.indexOf("note-") === 0) noteAct(act, b);
+    else if (act === "make-first") changePolicy({first: b.dataset.provider});
+    else if (act === "check-update") checkForUpdates();
     else routinesLimits(act, b);
   }
 
@@ -1168,7 +1229,7 @@
     try { root.matchMedia("(prefers-color-scheme: light)").addEventListener("change", themeApply); } catch (e) { /* no matchMedia */ }
     BARWIDE.addEventListener("change", barInit);
     S.panel = root.NodePanel.mount($("nodepanel"), {getGraph: () => S.graph, navigate: url => root.location.assign(url)});
-    S.watch = SV().watchHealth(api, h => { S.health = h; paintConnectors(); }, () => {});
+    S.watch = SV().watchHealth(api, h => { S.health = h; paintConnectors(); paintModels(); }, () => {});
     if (root.HeadsUpView) S.seen = root.HeadsUpView.loadSeen(storage());
     if (root.ChatAttention) S.attention = protect("ChatAttention.create", () => root.ChatAttention.create({onOpen: openAttention, prefs: attentionPrefs})) || null;
     // a quiet team and the age of each ask move with time, not with events: read the lane again and redraw the strip every minute
@@ -1181,13 +1242,15 @@
     renderComposer();
     renderBar();
     S.stream = SutraEvents.connect({url: "/api/events", onEvent, onState: setLive, pollFn: pollAll, pollMs: POLL_MS});
+    // the first-run welcome card (welcome.js): mounted outside #sview, shown until the owner says Got it (stored on the server)
+    if (root.Welcome) Promise.resolve().then(() => root.Welcome.start(doc, api)).catch(e => { if (root.console) root.console.error("HomePage: welcome failed", e); });
     await loadAll();
     applyDeepLink(link);
   }
 
   function wire() {
     $("smsgs").addEventListener("click", onChatClick);
-    if ($("spill")) $("spill").addEventListener("click", onPillClick);
+    if ($("spill")) { $("spill").addEventListener("click", onPillClick); $("spill").addEventListener("change", onPillChange); }
     $("ssend").addEventListener("click", () => ($("ssend").dataset.act === "composer-stop" ? stopDirect() : send($("sbox").value)));
     $("sbar").addEventListener("click", e => {
       const b = e.target.closest("[data-act]");
@@ -1220,7 +1283,10 @@
       if (e.target && e.target.matches && e.target.matches("input[data-path]")) cliPathState(e.target.dataset.path).value = e.target.value;
     });
     $("pane-settings").addEventListener("change", e => {
-      if (e.target && e.target.matches && e.target.matches("select[data-scope]")) { S.scope = e.target.value; S.settings = null; S.errors = {}; loadEngineSettings(); }
+      const t = e.target;
+      if (t && t.matches && t.matches("select[data-scope]")) { S.scope = t.value; S.settings = null; S.errors = {}; loadEngineSettings(); }
+      else if (t && t.matches && t.matches("input[data-policy-on]")) changePolicy({enabled: {[t.dataset.policyOn]: t.checked}});
+      else if (t && t.matches && t.matches("select[data-policy-model]")) changePolicy({model: {[t.dataset.policyModel]: t.value}});
     });
     doc.querySelector(".stoggle").addEventListener("click", e => {
       const b = e.target.closest("[data-show]");

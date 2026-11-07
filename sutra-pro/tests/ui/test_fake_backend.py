@@ -1410,6 +1410,10 @@ def test_every_404_says_what_is_missing_in_the_words_the_page_shows(fake):
 
 # ---- the write guard, the Host check -----------------------------------------------------------------------------------------
 WRITES = [  # every non-GET route that is not a test control: (method, a concrete path, a body, the route as registered)
+    ("POST", "/api/ops/welcome/seen", {}, "/api/ops/welcome/seen"),
+    ("PUT", "/api/connectors/policy", {}, "/api/connectors/policy"),
+    ("POST", "/api/ops/update-check", {}, "/api/ops/update-check"),
+    ("PUT", "/api/chats/cs_org/choice", {"provider": None}, "/api/chats/{sid}/choice"),
     ("POST", "/api/chats/cs_org/messages", {"text": "x"}, "/api/chats/{sid}/messages"),
     ("POST", "/api/chats/cs_org/retry", {}, "/api/chats/cs_org/retry"),
     ("POST", "/api/tasks/tsk_000000000001/retry", {}, "/api/tasks/{task_id}/retry"),

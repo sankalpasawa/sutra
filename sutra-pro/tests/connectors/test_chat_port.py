@@ -236,3 +236,87 @@ def test_the_real_claude_gets_the_system_text_on_argv_and_codex_in_front_of_its_
     port.send("cs_real", ChatTurnIn(text="second"))                           # claude is out of quota: a new codex thread
     router.drain()
     assert fake.model_calls("codex")[0]["stdin"].startswith("<system>\n" + grounding + "\n</system>")
+
+
+# ---- the model picker: names and notes, a model the provider does not offer refused when chosen, an effort per chat (welcome-settings, item 4) ------------
+
+class CodexListing(Named):
+    """A Codex that lists two models, one of which takes only two efforts (what `codex debug models` would say)."""
+
+    def models(self):
+        from sutra_app.connectors.models import ModelInfo
+        return [ModelInfo(slug="gpt-wide", label="GPT Wide", efforts=["low", "medium", "high"], context_window=258_400, images=False, listed=True),
+                ModelInfo(slug="gpt-slim", label="GPT Slim", efforts=["low", "medium"], context_window=258_400, images=False, listed=True)]
+
+
+def test_the_pill_carries_the_model_list_with_notes_and_a_more_fold(tmp_path):
+    pills = {p.name: p for p in make(tmp_path, CodexListing)[0].providers(A)}
+    claude = pills["claude"].model_options
+    assert [o.slug for o in claude[:4]] == ["best", "opus", "sonnet", "haiku"] and claude[0].group == "main" and claude[-1].group == "more"
+    assert all(o.note for o in claude) and any(o.slug == "opus[1m]" and o.group == "more" for o in claude)
+    assert [(o.slug, o.label, o.efforts) for o in pills["codex"].model_options] == [
+        ("gpt-wide", "GPT Wide", ["low", "medium", "high"]), ("gpt-slim", "GPT Slim", ["low", "medium"])]
+    assert pills["claude"].model_dump(mode="json")["model_options"][0] == {
+        "slug": "best", "label": "Best available", "note": "the newest model this account can run", "group": "main",
+        "efforts": ["low", "medium", "high", "xhigh", "max"], "context_window": 1_000_000}
+
+
+def test_a_model_the_provider_does_not_offer_is_refused_with_the_list_and_nothing_is_stored(tmp_path):
+    port, router, history, cfg, claude, codex = make(tmp_path)
+    with pytest.raises(InvalidRequestError) as caught:
+        port.choose(A, "claude", "opuss")                                          # a typo
+    assert "opuss is not a model claude offers" in str(caught.value) and "best, opus, sonnet, haiku" in str(caught.value)
+    assert load_session_state(cfg.resolved_work_root() / A) is None                # no session was started, nothing pinned
+    assert router._pins.get(A) is None
+    port.send(A, ChatTurnIn(text="hello"))
+    with pytest.raises(InvalidRequestError):
+        port.choose(A, "claude", "gpt-5")                                          # another provider's name
+    assert load_session_state(cfg.resolved_work_root() / A).model != "gpt-5"
+
+
+def test_a_codex_model_is_checked_against_what_codex_lists(tmp_path):
+    port, router, history, cfg, claude, codex = make(tmp_path, CodexListing)
+    assert port.choose(B, "codex", "gpt-slim").model == "gpt-slim"
+    with pytest.raises(InvalidRequestError) as caught:
+        port.choose(B, "codex", "gpt-slimm")
+    assert "gpt-wide, gpt-slim" in str(caught.value)
+    assert load_session_state(cfg.resolved_work_root() / B).model == "gpt-slim"
+
+
+def test_a_choice_picks_the_model_and_the_effort_of_a_new_chat_and_leaves_the_policy_alone(tmp_path):
+    port, router, history, cfg, claude, codex = make(tmp_path)
+    choice = port.choose(A, "claude", "haiku", "max")
+    assert (choice.provider, choice.model, choice.effort) == ("claude", "haiku", "max")
+    stored = load_session_state(cfg.resolved_work_root() / A)
+    assert (stored.model, stored.effort) == ("haiku", "max")
+    assert router.policy.model_for("claude") == "sonnet" and router.policy.model_for("codex") == policy().model_for("codex")      # the default is untouched
+    pill = next(p for p in port.providers(A) if p.name == "claude")
+    assert (pill.chat_model, pill.chat_effort, pill.can_pick) == ("haiku", "max", True)
+    other = next(p for p in port.providers(A) if p.name == "codex")
+    assert (other.chat_model, other.chat_effort, other.can_pick) == (None, None, False)      # the session runs on claude: a codex model waits for the switch
+
+
+def test_an_effort_is_written_to_the_stored_session_and_the_next_turn_runs_on_it(tmp_path):
+    port, router, history, cfg, claude, codex = make(tmp_path)
+    port.send(A, ChatTurnIn(text="one"))
+    assert load_session_state(cfg.resolved_work_root() / A).effort == "high"                     # the policy's text effort until the owner picks one
+    choice = port.choose(A, "claude", None, "xhigh")                               # an effort alone keeps the model
+    assert (choice.model, choice.effort) == (load_session_state(cfg.resolved_work_root() / A).model, "xhigh")
+    port.send(A, ChatTurnIn(text="two"))
+    assert load_session_state(cfg.resolved_work_root() / A).effort == "xhigh"
+    assert load_session_state(cfg.resolved_work_root() / A).turns == 2          # base.chat_turn reads the effort of the stored state on every turn (base.py `effort=s.effort`)
+
+
+def test_an_effort_the_model_does_not_accept_is_refused_with_the_valid_ones(tmp_path):
+    port, router, history, cfg, claude, codex = make(tmp_path, CodexListing)
+    with pytest.raises(InvalidRequestError) as caught:
+        port.choose(A, "codex", "gpt-slim", "max")
+    assert "does not accept the effort max" in str(caught.value) and "low, medium" in str(caught.value)
+    assert load_session_state(cfg.resolved_work_root() / A) is None
+    assert port.choose(A, "codex", "gpt-wide", "high").effort == "high"
+    with pytest.raises(InvalidRequestError):
+        port.choose(A, "codex", None, "max")                                       # the chat's model, gpt-wide, takes only three
+    with pytest.raises(InvalidRequestError):
+        port.choose(B, None, None, "low")                                          # an effort needs its provider too
+    with pytest.raises(InvalidRequestError):
+        port.choose(A, "claude", None, "low")                                      # the session runs on codex: choose the provider first

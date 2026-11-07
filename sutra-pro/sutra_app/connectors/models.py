@@ -184,6 +184,8 @@ class ModelInfo(M):
     context_window: Optional[int]
     images: bool
     listed: bool
+    note: str = ""                                   # one short line for a picker (model_catalog.py); empty when the provider has none
+    group: Literal["main", "more"] = "main"          # "more": behind the "More models" fold (pinned snapshots, explicit 1M spellings)
 
 
 class Capabilities(M):

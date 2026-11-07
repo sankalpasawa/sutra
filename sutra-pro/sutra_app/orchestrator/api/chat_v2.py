@@ -3,7 +3,8 @@
     GET  /api/chats/search?q=&scope=&include=archived   -> {results: [{session_id, message_id, title, snippet, at, archived}]}   (at most 50)
     POST /api/chats/{sid}/archive | /unarchive          -> {session_id, archived}      (a mark, never a delete)
     GET  /api/chats/{sid}/providers                     -> {providers: ProviderPill[], chosen}
-    PUT  /api/chats/{sid}/choice  {provider, model?}    -> {session_id, provider, model}   (null provider clears; the policy default is untouched)
+    PUT  /api/chats/{sid}/choice  {provider, model?, effort?} -> {session_id, provider, model, effort}   (null provider clears; the policy default is untouched;
+                                                           a model the provider does not offer is a 422 that names the valid ones)
     POST /api/chats/{sid}/attachments {name, content_b64} -> AttachmentRef                (20 MB a file)
     POST /api/chats/{sid}/direct  {text, attachments?, names?} -> 202 {message_id, turn}  (the org, a department or a division chat answered by the chat model)
     POST /api/chats/{sid}/direct/stop                   -> {session_id, stopped}          (ends the turn that is answering; false when none is)
@@ -55,6 +56,7 @@ class ChoiceIn(Value):
     model_config = ConfigDict(extra="forbid", strict=True)
     provider: Annotated[str, StringConstraints(pattern=r"^(claude|codex)$")] | None = None
     model: Annotated[str, StringConstraints(max_length=100)] | None = None
+    effort: Annotated[str, StringConstraints(pattern=r"^(low|medium|high|xhigh|max)$")] | None = None
 
 
 class UploadIn(Value):
@@ -126,7 +128,7 @@ def build_router() -> APIRouter:
         await run_blocking(chats.session, sid)
 
         def run() -> Any:
-            choice = port.choose(sid, body.provider, body.model)          # refuses a provider that cannot run (422 below)
+            choice = port.choose(sid, body.provider, body.model, body.effort)          # refuses a provider that cannot run, an unknown model or effort (422 below)
             with db.tx() as tx:
                 ChatChoices(db).set(tx, sid, body.provider)
             return choice
@@ -135,7 +137,7 @@ def build_router() -> APIRouter:
             choice = await run_blocking(run)
         except ConnectorError as exc:
             raise AppError("validation", exc.user_message()) from None
-        return respond(request, {"session_id": sid, "provider": choice.provider, "model": choice.model})
+        return respond(request, {"session_id": sid, "provider": choice.provider, "model": choice.model, "effort": choice.effort})
 
     @router.post("/chats/{sid}/attachments", summary="Attach a file", dependencies=[Depends(require_token)])
     async def attach(request: Request, body: UploadIn, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:

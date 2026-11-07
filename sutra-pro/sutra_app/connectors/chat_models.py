@@ -9,7 +9,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .models import CallTag, Provider, Quota
+from .model_catalog import ModelOption
+from .models import CallTag, Effort, Provider, Quota
 
 __all__ = ["AttachmentRef", "ProviderPill", "Choice", "CarryPlan", "ChatTurnIn", "ChatTurnOut", "ChatEvent", "BlockType", "BlockKind",
            "EVENT_KINDS"]
@@ -44,6 +45,13 @@ class ProviderPill(M):
     billing: str = "unknown"
     chosen: bool = False
     quota: Optional[Quota] = None            # the last snapshot with every usage window (GAP-providers): the pill shows the fullest one
+    # the model picker (model_catalog.py): the models a chat can run on, with names and notes; what THIS chat runs on now (only when its
+    # live session is on this provider, else None); and whether a model can be set now (a chat whose session runs on the other provider
+    # takes a new model only after the switch, because a switch starts a fresh session on the policy's model)
+    model_options: list[ModelOption] = []
+    chat_model: Optional[str] = None
+    chat_effort: Optional[Effort] = None
+    can_pick: bool = True
 
 
 class Choice(M):
@@ -52,6 +60,7 @@ class Choice(M):
     session_id: str
     provider: Optional[Provider] = None
     model: Optional[str] = None
+    effort: Optional[Effort] = None
 
 
 class CarryPlan(M):

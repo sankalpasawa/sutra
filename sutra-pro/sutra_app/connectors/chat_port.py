@@ -20,6 +20,7 @@ import re
 
 from .models import SESSION_ID_PATTERN, AskRequest, ConnectorEvent, Message, RouteContext, SessionSpec
 from .health import API_KEY_REFUSED
+from .model_catalog import ModelOption, efforts_of, names_of, options_for
 from .router import TRANSCRIPT_LIMIT, Router
 from .tool_kinds import classify, title_of
 from .transcript import FULL_CHARS, TAIL_MESSAGES, render_carry_over
@@ -33,7 +34,7 @@ PROVIDERS = ("claude", "codex")             # the providers a person can choose;
 @runtime_checkable
 class ChatPort(Protocol):
     def providers(self, session_id: Optional[str] = None) -> list[ProviderPill]: ...
-    def choose(self, session_id: str, provider: Optional[str], model: Optional[str] = None) -> Choice: ...
+    def choose(self, session_id: str, provider: Optional[str], model: Optional[str] = None, effort: Optional[str] = None) -> Choice: ...
     def plan_switch(self, session_id: str, target: str) -> CarryPlan: ...
     def send(self, session_id: str, turn: ChatTurnIn, on_event: Optional[Callable[[ChatEvent], None]] = None) -> ChatTurnOut: ...
     def stream(self, session_id: str, turn: ChatTurnIn) -> Iterator[ChatEvent]: ...
@@ -77,6 +78,7 @@ class RouterChatPort:
     def providers(self, session_id: Optional[str] = None) -> list[ProviderPill]:
         """The providers a person can choose, each with the reason when it cannot run. The chosen one (pinned for this session) is marked."""
         chosen = self._chosen(session_id) if session_id else None
+        stored = load_session_state(self._work_dir(session_id)) if session_id else None
         pills = []
         for name in PROVIDERS:
             if name not in self.router.connectors:
@@ -84,8 +86,11 @@ class RouterChatPort:
             status = self.router.provider_summary(name, models=True)
             why = self._why_not(name)
             slugs = [m.slug for m in status.models]
+            live = stored is not None and stored.provider == name         # this chat's session runs on this provider: its model and effort are known
             pills.append(ProviderPill(name=name, ready=not why, why_not=why, model=self.router.policy.model_for(name),    # type: ignore[arg-type]
-                                      models=slugs, plan=status.plan, billing=status.billing, chosen=name == chosen, quota=status.quota))
+                                      models=slugs, plan=status.plan, billing=status.billing, chosen=name == chosen, quota=status.quota,
+                                      model_options=self._options(name), chat_model=stored.model if live else None,     # type: ignore[union-attr]
+                                      chat_effort=stored.effort if live else None, can_pick=stored is None or live))                  # type: ignore[union-attr]
         return pills
 
     def _chosen(self, session_id: str) -> Optional[str]:
@@ -94,29 +99,55 @@ class RouterChatPort:
             return stored.pinned
         return self.router._pins.get(session_id)          # the in-memory pin, until ABS-6 persists the choice
 
-    def choose(self, session_id: str, provider: Optional[str], model: Optional[str] = None) -> Choice:
-        """Pins the provider for THIS session; `None` clears it. The policy default is never touched."""
+    def _options(self, provider: str) -> list[ModelOption]:
+        return options_for(provider, self.router.connectors[provider])
+
+    def _check_choice(self, provider: str, model: Optional[str], effort: Optional[str], current: Optional[str]) -> None:
+        """A model the provider does not offer, or an effort the model does not accept, is refused HERE with the valid ones named: stored, it
+        would fail at the next turn as `model_not_found`. A provider that cannot list its models (Codex when its CLI cannot be asked) is not
+        narrowed: only the shape of the name is checked then, as before."""
+        options = self._options(provider)
+        if model is not None and options and model not in {o.slug for o in options}:
+            raise InvalidRequestError(f"{model} is not a model {provider} offers. Choose one of: {names_of(options)}",
+                                      detail={"models": [o.slug for o in options]})
+        if effort is not None:
+            allowed = efforts_of(options, model or current)
+            if effort not in allowed:
+                raise InvalidRequestError(f"{model or current or provider} does not accept the effort {effort}. Choose one of: {', '.join(allowed)}",
+                                          detail={"efforts": allowed})
+
+    def choose(self, session_id: str, provider: Optional[str], model: Optional[str] = None, effort: Optional[str] = None) -> Choice:
+        """Pins the provider for THIS session; `None` clears it. A `model` and an `effort` are per chat as well: both are checked against what
+        the provider offers (a typo is refused here, not at the next turn), written to the chat's stored session state, and used from its next
+        turn on. The policy default is never touched."""
         if provider is not None:
             pill = next((p for p in self.providers() if p.name == provider), None)
             if pill is None:
                 raise InvalidRequestError(f"{provider} is not a provider you can choose")
             if not pill.ready:
                 raise InvalidRequestError(f"{provider} cannot run: {pill.why_not}", detail={"why_not": pill.why_not})
-        if model is not None:
+        if model is not None or effort is not None:
             if provider is None:
-                raise InvalidRequestError("a model can be chosen only together with its provider")
+                raise InvalidRequestError("a model or an effort can be chosen only together with its provider")
             existing = load_session_state(self._work_dir(session_id))
+            if existing is not None and existing.provider != provider:     # a switch starts a fresh session on the provider's policy model: never silently ignored
+                what = "model" if model is not None else "effort"
+                raise InvalidRequestError(f"the {what} of {provider} cannot be set while this chat runs on {existing.provider}; choose the provider first")
+            self._check_choice(provider, model, effort, existing.model if existing is not None else self.router.policy.model_for(provider))      # type: ignore[arg-type]
             if existing is None:
-                self.router.chat_start(SessionSpec(session_id=session_id, provider=provider, model=model), self._ctx)
-            elif existing.provider == provider:
-                if existing.model != model:                  # the chat keeps its provider session; its next turn runs on this model
-                    existing.model = model
+                self.router.chat_start(SessionSpec(session_id=session_id, provider=provider, model=model, effort=effort), self._ctx)       # type: ignore[arg-type]
+            else:                                                          # the chat keeps its provider session; its next turn runs on these
+                changed = False
+                if model is not None and existing.model != model:
+                    existing.model, changed = model, True
+                if effort is not None and existing.effort != effort:
+                    existing.effort, changed = effort, True                # type: ignore[assignment]
+                if changed:
                     save_session_state(existing)
-            else:                                            # a switch starts a fresh session on the provider's policy model: never silently ignored
-                raise InvalidRequestError(f"the model of {provider} cannot be set while this chat runs on {existing.provider}; choose the provider first")
         self.router.chat_pin(session_id, provider)
         stored = load_session_state(self._work_dir(session_id))
-        return Choice(session_id=session_id, provider=provider, model=stored.model if stored is not None and provider else None)
+        return Choice(session_id=session_id, provider=provider, model=stored.model if stored is not None and provider else None,       # type: ignore[arg-type]
+                      effort=stored.effort if stored is not None and provider else None)
 
     # ---- the dry run ----------------------------------------------------------------------------------------------------------------
     def _history(self, session_id: str) -> Sequence[Message]:

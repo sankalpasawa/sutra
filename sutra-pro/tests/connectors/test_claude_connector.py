@@ -468,7 +468,9 @@ def test_probe_flags_reads_the_help_once(fake, make):
 
 def test_models_version_and_capabilities(fake, make):
     conn = make(FAKE_CLAUDE_VERSION="2.2.0")
-    assert [m.slug for m in conn.models()] == ["sonnet", "opus", "fable"] and all(m.listed and m.images for m in conn.models())
+    # the catalog of model_catalog.py (item 4 of welcome-settings): the main rows first, then the "More models" rows; sonnet, opus and fable are all still there
+    assert [m.slug for m in conn.models()][:4] == ["best", "opus", "sonnet", "haiku"] and {"sonnet", "opus", "fable"} <= {m.slug for m in conn.models()}
+    assert all(m.listed and m.images for m in conn.models())
     assert conn.version() == "2.2.0"
     assert conn.capabilities.native_schema and conn.capabilities.resume and conn.capabilities.partials
     assert ClaudeConnector(ConnectorConfig(data_dir=Path("/nonexistent"), claude_exe="/nonexistent/claude")).version() is None

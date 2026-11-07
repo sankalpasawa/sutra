@@ -203,6 +203,11 @@ body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #
 .cpill-opt.off{color:var(--muted);cursor:default}
 .cpill-opt.off small,.cpill-note{color:var(--muted);font-size:12px}
 .cpill-opt.auto{color:var(--muted);font-size:12px}
+.cpick{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:6px 0 0;font-size:13px;color:var(--ink)}
+.cpick-l{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+.cpick select{max-width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:3px 6px;font:inherit}
+.cpick select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.cpick-note{flex:1 1 100%;color:var(--muted);font-size:12px}
 .cstream{margin:6px 0;color:var(--ink)}
 .cstream small{color:var(--muted)}
 .cstream-text{white-space:normal;overflow-wrap:anywhere}

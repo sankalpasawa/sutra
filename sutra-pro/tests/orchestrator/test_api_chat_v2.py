@@ -118,6 +118,32 @@ def test_clearing_a_choice_is_accepted(rig):
     assert r.status_code == 200 and r.json()["provider"] is None
 
 
+def test_the_choice_route_passes_model_and_effort_and_a_refusal_names_the_valid_ones(rig):
+    """welcome-settings, item 4: PUT /choice {provider, model, effort}; the 422 carries the port's sentence with the models it offers."""
+    from sutra_app.connectors.chat_models import Choice
+    from sutra_app.connectors.errors import InvalidRequestError
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    seen = []
+
+    class Port:
+        def choose(self, session_id, provider, model=None, effort=None):
+            seen.append((session_id, provider, model, effort))
+            if model == "opuss":
+                raise InvalidRequestError("opuss is not a model claude offers. Choose one of: best, opus, sonnet")
+            return Choice(session_id=session_id, provider=provider, model=model, effort=effort)
+
+    services.chat_port = Port()
+    ok = client.put(f"/api/chats/{sid}/choice", json={"provider": "claude", "model": "opus", "effort": "max"}, headers=H)
+    assert ok.status_code == 200 and ok.json() == {"session_id": sid, "provider": "claude", "model": "opus", "effort": "max"}
+    assert client.put(f"/api/chats/{sid}/choice", json={"provider": "claude"}, headers=H).json()["effort"] is None
+    bad = client.put(f"/api/chats/{sid}/choice", json={"provider": "claude", "model": "opuss"}, headers=H)
+    assert error_code(bad, 422) == "validation" and "best, opus, sonnet" in bad.json()["error"]["message"]
+    assert error_code(client.put(f"/api/chats/{sid}/choice", json={"provider": "claude", "effort": "ultra"}, headers=H), 422) == "validation"
+    assert error_code(client.put(f"/api/chats/{sid}/choice", json={"provider": "claude", "model": "opus", "effort": "max"}), 401) == "bad_token"
+    assert seen == [(sid, "claude", "opus", "max"), (sid, "claude", None, None), (sid, "claude", "opuss", None)]      # the refused and the unauthorised never passed on
+
+
 # ---- attachments -------------------------------------------------------------------------------------------------------------------
 
 def test_an_upload_stores_the_file_once_and_refuses_what_is_not_a_kind_we_take(rig):

@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css"><link rel="stylesheet" href="/ui/css/sutra-shell.css">
 <!--SUTRA-BOOT-->
 <script src="/ui/js/sutra_ctx.js"></script>
+<script src="/ui/js/tab_heal.js"></script>
 <script>/* the viewer's Appearance before the first paint (Settings sets it): light, dark or system; dark by default; one choice for Home and the team pages */
 try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset.theme = tp === "light" ? "light" : tp === "system" && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } catch (e) { document.documentElement.dataset.theme = "dark"; }</script>
 </head>
@@ -37,11 +38,13 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <div class="pane" id="pane-settings" hidden>
         <div id="set-appearance"></div>
         <div id="set-connectors"></div>
+        <div id="set-models"></div>
         <div id="set-limits"></div>
         <div id="set-notices"></div>
         <div id="set-recurring"></div>
         <div id="set-engine"></div>
         <div id="set-notes"></div>
+        <div id="set-about"></div>
       </div>
     </section>
   </main>
@@ -61,6 +64,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
     <button type="button" data-pane="settings" data-group="recurring"><span>Recurring work</span></button>
     <button type="button" data-pane="settings" data-group="engine"><span>Engine</span></button>
     <button type="button" data-pane="settings" data-group="notes"><span>Notes</span></button>
+    <button type="button" data-pane="settings" data-group="about"><span>About</span></button>
   </div>
   <div class="railsec" aria-labelledby="rail-owner-h"><h3 class="railhead" id="rail-owner-h">Owner</h3>
     <a class="railteam" href="/console" id="goconsole"><span class="rtname">Usage and log</span><span class="rtstat">cost, Atom log, health</span></a>
@@ -79,6 +83,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <script src="/ui/js/fnode_view.js"></script>
 <script src="/ui/js/chat_markdown.js"></script>
 <script src="/ui/js/chat_view.js"></script>
+<script src="/ui/js/model_pick.js"></script>
 <script src="/ui/js/chat_pill.js"></script>
 <script src="/ui/js/chat_fold.js"></script>
 <script src="/ui/js/chat_search.js"></script>
@@ -94,6 +99,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <script src="/ui/js/rules_view.js"></script>
 <script src="/ui/js/heads_up_view.js"></script>
 <script src="/ui/js/chat_attention.js"></script>
+<script src="/ui/js/welcome.js"></script>
 <script src="/ui/js/home.js"></script>
 </body>
 </html>

@@ -6,6 +6,7 @@
                                 reason for one that cannot. A provider that cannot run is never offered (the old app's rule). Selecting calls
                                 PUT /api/chats/{sid}/choice; there is no text detector (one mechanism, D111). A button carries its fullest usage
                                 window ("5-hour 62%") when the provider sent a quota (GAP-providers; a third argument `nowMs` is for a test).
+                                (welcome-settings item 4: under the buttons of the chosen provider, model_pick.js adds its model list and effort selects)
      selectable(providers)      the names the pill offers
      choiceRequest(sid, name)   {method, path, body} for the PUT; name null clears the choice (the policy decides again)
      partial(state, event)      the streaming state after a `chat.partial` event of this chat: {active, text}
@@ -66,7 +67,15 @@
     });
     const auto = picked === "" ? '<span class="cpill-note">chosen by the app</span>' :
       '<button type="button" class="cpill-opt auto" data-act="choose-provider" data-provider="" aria-pressed="false">Let the app choose</button>';
-    return '<div class="cpill" role="group" aria-label="Which model answers this chat">' + parts.join("") + auto + "</div>";
+    return '<div class="cpill" role="group" aria-label="Which model answers this chat">' + parts.join("") + auto + "</div>" + pickOf(items, picked);
+  }
+
+  // The model list and the effort of the chosen provider (model_pick.js, welcome-settings item 4), under the buttons; looked up when drawn, so the order of the
+  // script tags does not matter, and without it the pill is as it was.
+  function pickOf(items, picked) {
+    const MP = root.ModelPick || (typeof module === "object" && module !== null && module.exports && typeof require === "function" ? require("./model_pick.js") : null);
+    const chosen = items.find(p => p.name === picked && p.ready === true);
+    return MP && chosen ? MP.pickHtml(chosen) : "";
   }
 
   function choiceRequest(sid, name) {

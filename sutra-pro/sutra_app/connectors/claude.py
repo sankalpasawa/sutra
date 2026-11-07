@@ -26,6 +26,7 @@ from typing import Any, Mapping, Optional
 
 from sutra_app.config import DB_FILENAME
 
+from . import model_catalog
 from .base import LineParser, ModelConnector, TurnPlan, write_private_file
 from .errors import (
     AccountBlockedError, CallCancelledError, CallTimeoutError, ConnectorError, CliMissingError, CrashedError, EmptyReplyError,
@@ -356,10 +357,9 @@ class ClaudeConnector(ModelConnector):
         return super().resolve_model(requested)
 
     def models(self) -> list[ModelInfo]:
-        """Aliases only: the CLI has no list command."""
-        efforts = ["low", "medium", "high", "xhigh", "max"]
-        return [ModelInfo(slug=slug, label=f"{label} (alias)", efforts=efforts, context_window=None, images=True, listed=True)
-                for slug, label in (("sonnet", "Sonnet"), ("opus", "Opus"), ("fable", "Fable"))]
+        """Claude's table (model_catalog.py): the CLI has no list command, so the ids are the ones probed on the tested CLI."""
+        return [ModelInfo(slug=o.slug, label=o.label, efforts=list(o.efforts), context_window=o.context_window, images=True, listed=True,
+                          note=o.note, group=o.group) for o in model_catalog.claude_options()]
 
     def mcp_servers(self, tools: tuple[str, ...]) -> dict[str, Any]:
         """The MCP entry for a tool profile: the app's own stdlib server, one server for `sutra` and `github` tools. CN-8's
