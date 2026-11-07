@@ -133,9 +133,33 @@ Needs [uv](https://docs.astral.sh/uv/) (it fetches Python 3.11 when the machine 
   without one. It is for scripts that fetch a file knowing only the tag.
 - The apps are the easier way for a person: the DMG on a Mac, the installer on Windows.
 
+## Updates
+
+What a person who downloaded the desktop app gets (how it is built and what it will not do: [docs/notes/GAP3-autoupdate.md](notes/GAP3-autoupdate.md)):
+
+- **It checks by itself.** The desktop app asks GitHub for the list of releases a minute after it opens and every 6 hours while it runs: one request, nothing about the
+  owner or the data. Settings, About has the switch "Check for updates automatically" (on by default in the desktop app) and shows the last check. The command line and a
+  browser-only start never check by themselves, and nothing is asked in offline mode, with the stub connector or during the release self-test. Help (Windows) or the app
+  menu (Mac) has "Check for Updates..." for a check on demand.
+- **It verifies before anything is replaced.** A newer version of the platform's asset (`Sutra-Pro-arm64.dmg`, `Sutra-Pro-x86_64.dmg` or `Sutra-Pro-Setup-x64.exe`) is
+  downloaded in the background into `<data>/updates/<version>/`, its SHA-256 is compared with the published `.sha256`, and then its signature: on a Mac the app inside the
+  DMG must have the same Team Identifier and bundle id as the running app, a newer version, an intact seal and Gatekeeper's approval; on Windows the installer must carry a
+  valid Authenticode signature from the same publisher. Anything that fails is deleted and nothing is installed.
+- **It installs on the owner's word.** One dialog: "Sutra Pro X.Y.Z is ready": Restart Now, Install on Quit, or Later (asked again at the next launch). The app stops its
+  own server first; a Mac swaps the bundle with a small helper and puts the old app back if the new one does not answer, Windows runs the verified installer for the
+  current user (no prompt). The data folder is never touched.
+- **A copy that cannot tell who signed an update only tells.** That is any app signed ad hoc or not signed (a build made without the release secrets, a checkout), and
+  today every Windows build: the installer is unsigned until a certificate exists (D102), so on Windows the app tells and the owner runs the new installer. Settings, About says which.
+- **The channel rule.** A stable install is offered newer stable releases only; a beta install is offered newer betas and stables. The feed is the `sutra-pro-v*` releases of
+  this repository (D100), never the older product's `v*-desktop` releases and never "Latest". One thing a release manager must know: `pyproject.toml` stays at `X.Y.Z` for
+  every beta of that version and the packager takes `X.Y.Z` only, so a beta build carries no beta marker and reports itself as the stable `X.Y.Z`; until a build can say it is a beta,
+  every installed app is on the stable channel.
+- **What a release must publish** for the updater: the three assets above, each with its `<asset>.sha256` (`<hex>  <name>`), under the tag's own download address. The
+  release workflows already do; an asset that is missing, renamed or larger than 1 GiB makes that platform tell instead of download.
+
 ## Not built
 
 - No upload to PyPI, no signing of the wheel (the checksums are integrity, not authorship), and no sdist among the release assets
   (`sutra-pro-ci` keeps the sdist as a workflow artifact).
 - No signing of the Windows files until a certificate exists (D102); the Mac app is ad hoc signed, or Developer ID signed and notarized when all five
-  secrets exist. No auto-update on either (the release is never "Latest", D100, which is what an updater would read; D116 lists the options).
+  secrets exist. The desktop app updates itself only when it can verify a signature (see Updates above): the updater reads the Sutra Pro release list, never "Latest" (D100).
