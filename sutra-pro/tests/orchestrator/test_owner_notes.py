@@ -258,6 +258,19 @@ def test_the_note_routes_add_edit_and_forget(client, auth):
     assert client.get("/api/notes").json()["notes"] == [] and client.delete(f"/api/notes/{note['id']}", headers=auth).status_code == 404
 
 
+# the shapes the first table missed (QA security-privacy): the token `gh auth token` prints, an AWS temporary key, the other vendors' keys
+MISSED_SHAPES = ["gho_QAFAKE0gho1234567890abcdefghijklmn", "ghs_QAFAKE0ghs1234567890abcdefghijklmn", "ASIAQAFAKE0AWS123456",
+                 "AIzaSyQAFAKE0google1234567890abcdefghi", "glpat-QAFAKE0gitlab123456789", "npm_QAFAKE0npm1234567890abcdefghijklmnopqr",
+                 "hf_QAFAKE0hf1234567890abcdefghijklmnop", "SG.QAFAKE0sendgrid1234.QAFAKE0sendgridsecret12345678901234567890"]
+
+
+@pytest.mark.parametrize("secret", MISSED_SHAPES)
+def test_a_note_that_holds_a_vendor_token_is_refused_not_stored(client, auth, secret):
+    refused_note = client.post("/api/notes", json={"group": "work", "text": f"remember {secret} for later"}, headers=auth)
+    assert refused_note.status_code == 422 and secret not in refused_note.text
+    assert client.get("/api/notes").json()["notes"] == []
+
+
 def test_the_note_routes_refuse_in_the_error_envelope(client, auth):
     secret = client.post("/api/notes", json={"group": "work", "text": f"key {SECRET_A}"}, headers=auth)
     assert secret.status_code == 422 and secret.json()["error"]["code"] == "validation" and SECRET_A not in secret.text
