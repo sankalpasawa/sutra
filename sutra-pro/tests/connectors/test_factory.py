@@ -9,7 +9,7 @@ import pytest
 
 from sutra_app.connectors.claude import ClaudeConnector
 from sutra_app.connectors.codex import CodexConnector
-from sutra_app.connectors.errors import NoProviderError
+from sutra_app.connectors.errors import ConnectorError, NoProviderError
 from sutra_app.connectors.factory import REQUIRED_FLAGS, TESTED_VERSIONS, build_router
 from sutra_app.connectors.models import AskRequest, ConnectorConfig
 from sutra_app.connectors.policy import load_default_policy, user_policy_path
@@ -254,3 +254,36 @@ def test_the_app_redactor_reaches_the_egress_and_scrubs_secret_values_in_a_chat_
     RouterChatPort(router).send("cs_fac1", ChatTurnIn(text="please use custom-token-xyz now"))
     assert all("custom-token-xyz" not in str(c) for c in fake.model_calls())
     assert router.egress.rows()[0]["shapes"] == {"secret-value": 1}
+
+
+# ---- QA direct-chat P3: a CLI that cannot start is not 'a CLI that does not accept a needed flag' ----------------------------------------------------
+
+def _help_cannot_start(monkeypatch):
+    """Every `--help` ends with exit 127 and one line on stderr, as a broken node shebang does; the other probes run as before."""
+    from sutra_app.connectors.base import ModelConnector
+    from sutra_app.connectors.process import ExitInfo
+    real = ModelConnector._run_probe
+
+    def run(self, argv, **kw):
+        if "--help" in argv:
+            return ExitInfo(returncode=127, reason="exit", stderr_tail=f"{self.name}: fatal: cannot start", seconds=0.0, pid=1), []
+        return real(self, argv, **kw)
+
+    monkeypatch.setattr(ModelConnector, "_run_probe", run)
+
+
+def test_a_help_that_could_not_run_says_why_and_is_not_read_as_a_missing_flag(env, fake, monkeypatch):
+    _help_cannot_start(monkeypatch)
+    router, events = env()
+    for name in ("claude", "codex"):
+        assert router.health.state(name).state != "cooldown" and router.health.state(name).reason != "the CLI does not accept a needed flag"
+        with pytest.raises(ConnectorError, match=rf"--help gave no usable answer \(exit 127\): {name}: fatal: cannot start"):
+            router.connectors[name].probe_flags()
+        assert router.connectors[name]._flags is None                        # nothing was learned: the next read asks again
+    assert events.of("connector.health") == []
+
+
+def test_a_help_that_ran_and_lacks_a_needed_flag_still_marks_the_provider_degraded(env, fake):
+    fake.set(FAKE_HELP_MISSING="--effort")
+    router, events = env()
+    assert router.health.state("claude").reason == "the CLI does not accept a needed flag"
