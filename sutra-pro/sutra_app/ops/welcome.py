@@ -13,7 +13,9 @@ Every fact is a reading, never an illustration:
   models    one row per provider the app can use: `ready`, or the reason it cannot answer and the doctor's one-line fix ("run `claude auth login`").
             Offline (or the stub connector) the one row says that a built-in stub answers and no real model is called.
   data      the data folder, the database's size, the free space and the command that backs it up
-  egress    where a prompt goes (only the owner's own CLIs, on a subscription login, an API key is refused) and that credential shapes are scrubbed
+  egress    where a prompt goes (only the owner's own CLIs, on a subscription login, an API key is refused) and that credential shapes are scrubbed,
+            and `auto_update`: whether the desktop app's automatic update check is on (the owner's setting, Settings -> About) and whether this server was
+            started by the desktop app (`SUTRA_PRO_DESKTOP=1`), which is the only thing that ever checks by itself
   autonomy  what the app does by itself and what it asks (the engine's budget and email mode as the next run would read them)
 
 The answer holds no token, no key and no account name: it goes through the app's redactor like every ops read.
@@ -25,6 +27,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 
 from sutra_app.ops import api as ops_api
+from sutra_app.ops import update_state
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
 from sutra_app.orchestrator.db import run_blocking
 
@@ -107,7 +110,8 @@ def facts_of(app: Any, services: Any) -> dict[str, Any]:
     return {
         "models": _models(services, report),
         "data": {"dir": info["data_dir"], "db_bytes": info["db_bytes"], "free_bytes": info["free_bytes"], "backup": BACKUP_COMMAND},
-        "egress": {"scrub": True, "api_key_refused": True, "only_your_cli": True},
+        "egress": {"scrub": True, "api_key_refused": True, "only_your_cli": True,
+                   "auto_update": {"on": update_state.get_auto(services)[0], "desktop": os.environ.get("SUTRA_PRO_DESKTOP") == "1"}},
         "autonomy": _autonomy(services),
     }
 

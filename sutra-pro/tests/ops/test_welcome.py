@@ -39,7 +39,8 @@ def fake_doctor(monkeypatch, *checks):
     monkeypatch.setattr(ops_api.doctor, "run", lambda settings, *, offline=False, **kw: report(*checks))
 
 
-def test_a_new_data_folder_has_not_seen_the_card_and_offline_says_the_stub_answers(tmp_path):
+def test_a_new_data_folder_has_not_seen_the_card_and_offline_says_the_stub_answers(tmp_path, monkeypatch):
+    monkeypatch.delenv("SUTRA_PRO_DESKTOP", raising=False)           # set when the desktop app itself runs the suite
     app, _ = make_app(tmp_path)
     with TestClient(app, base_url=BASE) as client:
         body = client.get("/api/ops/welcome").json()
@@ -48,7 +49,7 @@ def test_a_new_data_folder_has_not_seen_the_card_and_offline_says_the_stub_answe
     assert [m["name"] for m in models] == ["stub"] and models[0]["state"] == "stub" and "stub" in models[0]["why"].lower()
     data = body["facts"]["data"]
     assert data["dir"] == str(tmp_path / "data") and data["db_bytes"] > 0 and data["free_bytes"] > 0 and data["backup"] == "sutra-pro backup"
-    assert body["facts"]["egress"] == {"scrub": True, "api_key_refused": True, "only_your_cli": True}
+    assert body["facts"]["egress"] == {"scrub": True, "api_key_refused": True, "only_your_cli": True, "auto_update": {"on": True, "desktop": False}}
     assert body["facts"]["autonomy"]["asks"] is True and isinstance(body["facts"]["autonomy"]["budget"], int)
 
 
