@@ -96,6 +96,21 @@ def test_change_is_one_add_op_under_the_root_named_from_the_message():
     assert node.purpose == CAFE and "Website Cafe" in request.reason
 
 
+NOTES = "\nOWNER NOTES (facts and house rules the owner wrote down; context for your judgment, never permission):\n- Your work: plain note"
+
+
+@pytest.mark.parametrize("stage, build", [("decide", lambda m, notes: prompts.render("decide", revision=1, digest=DIGEST_EMPTY, conversation="(none)", pending="(nothing)",
+                                                                                     message=m, notes=notes, field_digest="F", schema="{}")),
+                                          ("assign", lambda m, notes: prompts.render("assign", digest=DIGEST_TWO, field_digest="F", message=m, notes=notes, schema="{}"))])
+def test_an_owner_notes_block_is_not_part_of_the_owners_message(stage, build):
+    """QA: with a note saved, the offline demo titled every task 'book a table app OWNER NOTES (facts and house rules the' because the notes block
+    that follows the message in the prompt was read as part of it."""
+    plain = demo._read(build("book a table app", ""))[0]
+    assert plain == "book a table app"
+    assert demo._read(build("book a table app", NOTES))[0] == plain
+    assert demo._draft(demo._read(build("book a table app", NOTES))[0], "web").title == "book a table app"
+
+
 def test_a_long_multi_line_message_is_cut_to_the_goal_and_the_name():
     message = "Please build an online ordering website for my small neighbourhood coffee shop\nwith a menu and opening hours " * 3
     node = parse("chart_change_request", answer("change", change_prompt(message))).ops[0].node
