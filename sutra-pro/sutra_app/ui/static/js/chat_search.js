@@ -8,7 +8,7 @@
      results(rows)                        the list: active matches first, "Older chats" below
      archiveButton(session)               the Archive or Un-archive button, "" where the app refuses it (the org chat, an imported chat)
      limits / checkFile(file)             the attachment limits shown to the owner and the check of one file ("" when it is fine)
-     limitsNote()                         "Up to 10 files, 20 MB each: images, PDFs and text files."
+     limitsNote()                         "Up to 10 files, 20 MB each: images, PDFs and text files. The model reads the first 40,000 characters of a text file."
 
    Buttons carry data-act (open-chat with data-sid and data-mid, archive, unarchive). A classic script with ONE global, ChatSearch. */
 (function (root) {
@@ -63,7 +63,7 @@
       : '<button type="button" class="linkbtn" data-act="archive" data-sid="' + esc(clean(s.id)) + '">Archive this chat</button>';
   }
 
-  const limitsNote = () => "Up to " + limits.files + " files, " + limits.bytes / (1024 * 1024) + " MB each: " + limits.kinds + ".";
+  const limitsNote = () => "Up to " + limits.files + " files, " + limits.bytes / (1024 * 1024) + " MB each: " + limits.kinds + ". The model reads the first 40,000 characters of a text file.";
 
   function checkFile(file) {
     if (!isObj(file)) return "That file could not be read.";

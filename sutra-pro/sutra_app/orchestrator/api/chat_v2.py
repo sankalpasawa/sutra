@@ -29,7 +29,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import ConfigDict, Field, StringConstraints
 
-from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE
+from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE, clean_name
 from sutra_app.connectors.chat_models import AttachmentRef, ChatTurnIn
 from sutra_app.connectors.egress import scan
 from sutra_app.connectors.errors import CallCancelledError, ConnectorError, ReplyTruncatedError
@@ -172,11 +172,14 @@ def build_router() -> APIRouter:
             sentence = f"Messages can be up to {MAX_CHARS} characters; this one has {len(body.text)}."
             raise validation_error([violation("text", "string_too_long", sentence)], sentence)
         refs = []
-        for ref_id in body.attachments:
+        owner_names = list(body.names) if len(body.names) == len(body.attachments) else []          # the page sends one per file or none (as attached_line reads them)
+        for n, ref_id in enumerate(body.attachments):
             path = attachments.get(ref_id)
             if path is None:
                 raise NotFound("that attachment")
-            refs.append(AttachmentRef(id=ref_id, name=path.name, kind=_kind_of(path.name), size=path.stat().st_size))
+            # the model is told the owner's file name (cleaned), never the content hash the store keeps the file under
+            named = clean_name(owner_names[n]) if owner_names else ""
+            refs.append(AttachmentRef(id=ref_id, name=named or f"attachment-{n + 1}{path.suffix}", kind=_kind_of(path.name), size=path.stat().st_size))
         if not direct_running.begin(sid):
             raise Busy("This chat is already answering")
         try:

@@ -135,6 +135,28 @@ def test_the_attached_line_names_the_files_and_nothing_else_about_them():
     assert direct_turns.attached_line([], []) == ""
 
 
+def test_the_attached_line_keeps_a_name_readable_in_any_script():
+    """QA direct-chat P3: 'weird 日本語 😀.txt' was recorded as 'weird ___ _.txt', 'résumé.pdf' as 'r_sum_.pdf'."""
+    assert direct_turns.attached_line(["weird 日本語 😀.txt", "résumé.pdf", "报告.pdf"], ["text", "pdf", "pdf"]) == "(attached: weird 日本語 😀.txt, résumé.pdf, 报告.pdf)"
+    assert direct_turns.attached_line(["a\nb.txt"], ["text"]) == "(attached: a_b.txt)"
+
+
+def test_the_model_is_told_the_owners_file_names_or_a_plain_one_never_the_stored_hash(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    port = FakePort(done("ok"))
+    services.chat_port = port
+    ids = [client.post(f"/api/chats/{sid}/attachments", json={"name": n, "content_b64": base64.b64encode(b).decode()}, headers=H).json()["id"]
+           for n, b in (("note.txt", b"one"), ("日本語 😀.txt", b"two"))]
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "read", "attachments": ids, "names": ["note.txt", "日本語 😀.txt"]}, headers=H)
+    assert r.status_code == 202 and wait_for(lambda: sid not in chat_v2._running)
+    assert [a.name for a in port.turns[0].attachments] == ["note.txt", "日本語 😀.txt"]
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "again", "attachments": ids}, headers=H)                 # no names from the page: a plain one
+    assert r.status_code == 202 and wait_for(lambda: sid not in chat_v2._running and len(port.turns) == 2)
+    names = [a.name for a in port.turns[1].attachments]
+    assert names == ["attachment-1.txt", "attachment-2.txt"] and not any(i in n for i in ids for n in names)
+
+
 def test_a_direct_line_with_files_records_their_names_and_the_model_gets_the_words_unchanged(rig):
     client, world, chats, bus, services = rig
     sid = world.session_of["web"]
@@ -148,6 +170,7 @@ def test_a_direct_line_with_files_records_their_names_and_the_model_gets_the_wor
     assert line.text == "read this\n(attached: menu.txt)"
     assert up["id"] not in line.text and "soup" not in line.text                # the record is the name; the content and the id stay out
     assert port.turns[0].text == "read this" and [a.id for a in port.turns[0].attachments] == [up["id"]]
+    assert [a.name for a in port.turns[0].attachments] == ["menu.txt"]          # the model is told the owner's name, not the hash the store keeps it under
     plain = client.post(f"/api/chats/{sid}/direct", json={"text": "and now?"}, headers=H)
     assert plain.status_code == 202
     assert wait_for(lambda: len(chats.messages(sid)) == 4 and sid not in chat_v2._running)

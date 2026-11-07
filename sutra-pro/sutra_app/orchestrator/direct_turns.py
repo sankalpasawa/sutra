@@ -20,6 +20,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import ConfigDict, StringConstraints
 
+from sutra_app.connectors.attachments import clean_name as _clean_file_name
 from sutra_app.library.base import Value
 
 __all__ = ["Ending", "finished", "stopped", "failed", "switch_notice", "attached_line", "clean_name",
@@ -90,9 +91,9 @@ def failed(user_id: int, shown: str, sentence: str) -> list[Ending]:
 
 
 def clean_name(name: Any) -> str:
-    """A file name as the attachment store cleans it (letters, digits, space . _ ( ) -; at most 80), so a name never breaks the list."""
-    base = re.split(r"[\\/]", str(name or "").strip())[-1]
-    return re.sub(r"[^A-Za-z0-9 ._()-]", "_", base).strip()[:80]
+    """A file name as the attachment store cleans it (`connectors.attachments.clean_name`: letters, digits and accents of any script, emoji, space
+    . _ ( ) -; at most 80), so a name never breaks the list or a line."""
+    return _clean_file_name(name)
 
 
 def attached_line(names: list[str], kinds: list[str]) -> str:
