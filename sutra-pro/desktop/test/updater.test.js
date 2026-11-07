@@ -596,6 +596,58 @@ test('macOS: a copy that cannot be made, or one that fails its check after copyi
   assert.equal(fs.existsSync(path.join(w.bundle, 'Contents', 'MacOS')), true, 'the installed app is where it was');
 });
 
+/* An earlier `.old` (or `.bad`) that cannot be removed (files the owner may not delete, e.g. an app a device-management tool installed as root) would make
+   `mv app app.old` put the app INSIDE it, and a rollback would then put that folder back as the app. Making such a folder needs a user who is not root. */
+const NOT_ROOT = process.platform === 'win32' ? 'no POSIX permissions here' : (typeof process.getuid === 'function' && process.getuid() === 0 ? 'root can delete anything' : false);
+
+function undeletable(dir) {
+  fs.mkdirSync(path.join(dir, 'sub'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'sub', 'f'), 'x');
+  fs.chmodSync(path.join(dir, 'sub'), 0o555);                                  // nothing in it can be unlinked
+  return () => fs.chmodSync(path.join(dir, 'sub'), 0o755);
+}
+
+test('macOS: an earlier copy beside the app that cannot be removed stops the update before the app quits, and says so', { skip: NOT_ROOT }, async () => {
+  const w = harness({ choices: [0] });
+  const undo = undeletable(`${w.bundle}.old`);
+  try {
+    const result = await w.updater.checkNow();
+    assert.equal(result.state, 'not_installed');
+    assert.equal(w.quits, 0, 'the app is not asked to quit for an update that cannot be applied');
+    assert.equal(w.updater.pending(), false);
+    assert.match(w.infos[0].detail, /earlier copy/);
+    assert.match(w.infos[0].detail, /nothing was changed/);
+    assert.equal(fs.existsSync(`${w.bundle}.new`), false);
+  } finally {
+    undo();
+  }
+});
+
+test('the swap helper never moves the app into an old copy it could not remove, and the installed app stays as it was', { skip: NOT_ROOT }, () => {
+  const root = tmp();
+  const app = path.join(root, 'My Apps', 'Sutra Pro.app');
+  const data = path.join(root, 'data');
+  fs.mkdirSync(path.join(app, 'Contents'), { recursive: true });
+  fs.writeFileSync(path.join(app, 'Contents', 'marker'), 'old');
+  fs.mkdirSync(path.join(`${app}.new`, 'Contents'), { recursive: true });
+  fs.writeFileSync(path.join(`${app}.new`, 'Contents', 'marker'), 'new');
+  const undo = undeletable(`${app}.old`);
+  const script = path.join(root, 'apply-update.sh');
+  fs.writeFileSync(script, u.macSwapScript(), { mode: 0o700 });
+  fs.mkdirSync(path.join(data, 'logs'), { recursive: true });
+  const gone = childProcess.spawnSync(process.execPath, ['-e', 'process.exit(0)']).pid;                  // a process number that has ended
+  try {
+    const args = u.macHelperArgs({ script, pid: gone, app, newApp: `${app}.new`, oldApp: `${app}.old`, badApp: `${app}.bad`, dataDir: data, logFile: path.join(data, 'logs', 'desktop.log'), waitSeconds: 1 });
+    const ran = childProcess.spawnSync('/bin/sh', args, { encoding: 'utf8', timeout: 60000 });
+    assert.equal(ran.status, 1, ran.stderr);
+    assert.equal(fs.readFileSync(path.join(app, 'Contents', 'marker'), 'utf8'), 'old', 'the installed app is the one that was there');
+    assert.deepEqual(fs.readdirSync(`${app}.old`), ['sub'], 'and nothing was moved into the old copy');
+    assert.match(fs.readFileSync(path.join(data, 'logs', 'desktop.log'), 'utf8'), /could not be removed: nothing was changed/);
+  } finally {
+    undo();
+  }
+});
+
 test('a copy that cannot tell who signed it (ad hoc, a checkout) only tells, downloads nothing and never installs', async () => {
   for (const [name, options, wanted] of [
     ['ad hoc', { mac: { runningTeam: 'not set' } }, /not signed with a developer certificate/],

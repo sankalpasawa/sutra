@@ -277,7 +277,7 @@ back() {
   while [ -n "$(mine)" ] && [ "$n" -lt 20 ]; do n=$((n + 1)); sleep 0.5; done
   for p in $(mine); do kill -9 "$p" 2>/dev/null; done
   [ -e "$app" ] && mv "$app" "$bad" 2>/dev/null
-  if mv "$old" "$app"; then
+  if [ ! -e "$app" ] && mv "$old" "$app"; then
     say "the old app is back"
     rm -rf "$bad"
     open "$app"
@@ -286,8 +286,18 @@ back() {
   fi
 }
 
-[ -d "$new" ] || die "the staged copy is gone: nothing was changed"
+if [ ! -d "$new" ]; then
+  open "$app"
+  die "the staged copy is gone: nothing was changed"
+fi
 rm -rf "$old" "$bad"
+# a copy beside the app that could not be removed (files the owner may not delete) would take the app INSIDE it on the next move, and a rollback would put
+# that folder back as the app: leave everything as it is
+if [ -e "$old" ] || [ -L "$old" ] || [ -e "$bad" ] || [ -L "$bad" ]; then
+  rm -rf "$new"
+  open "$app"
+  die "an earlier copy of the app beside it could not be removed: nothing was changed"
+fi
 if ! mv "$app" "$old"; then
   rm -rf "$new"
   open "$app"
@@ -466,6 +476,16 @@ function pruneStaged(root, { keep = KEEP_VERSIONS, protect = [] } = {}) {
     }
   });
   return gone;
+}
+
+/* Whether something is at `target`, a link that points nowhere included. */
+function existsEvenIfBroken(target) {
+  try {
+    fs.lstatSync(target);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function canWrite(dir) {
@@ -774,6 +794,14 @@ function createUpdater(options) {
         log(`${paths.dir} is not writable: the verified app is at ${kept}`);
         return { ok: false, sentence: `Sutra Pro ${version} was downloaded and checked, but ${paths.dir} is not writable by you, so it was not installed. Drag the Sutra Pro that just opened in Finder into that folder yourself.` };
       }
+      for (const leftover of [paths.oldApp, paths.badApp]) {                       // what an earlier update left beside the app; the helper refuses to go on while it is there
+        try {
+          fs.rmSync(leftover, { recursive: true, force: true });
+        } catch {
+          // reported below
+        }
+        if (existsEvenIfBroken(leftover)) throw new UpdateError('leftover', `An earlier copy of the app (${path.basename(leftover)}) beside the installed one could not be removed.`);
+      }
       fs.rmSync(paths.newApp, { recursive: true, force: true });
       await withMountedApp(file, async (app) => {
         const copied = await o.run(DITTO, dittoArgs(app, paths.newApp));
@@ -783,7 +811,11 @@ function createUpdater(options) {
       prepared = { mode: 'swap', ...paths };
       return { ok: true };
     } catch (error) {
-      fs.rmSync(paths.newApp, { recursive: true, force: true });
+      try {
+        fs.rmSync(paths.newApp, { recursive: true, force: true });
+      } catch {
+        // a copy that cannot be removed is replaced by the next attempt
+      }
       log(`could not prepare ${version}: ${error && error.message}`);
       return { ok: false, sentence: `Sutra Pro ${version} could not be prepared (${cleanSentence(error && (error.sentence || error.message), 160)}), so nothing was changed.` };
     }
