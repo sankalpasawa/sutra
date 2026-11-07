@@ -133,6 +133,12 @@ compacts the database (`VACUUM`) while holding the instance lock.
 - `<data>/logs/server.log`: one line per event, `INFO` and up (`--verbose` adds `DEBUG`), rotated at 5 MB with five old files (mode 600). The terminal shows warnings and up.
 - Every HTTP response carries `X-Request-Id` (12 hex characters), also in the log line of that request and on an error page, so a failure in the browser can be found in the log.
 - Secrets are scrubbed on the way in: the per-launch token, the override key, every value in `.env`, secret-looking names, bearer and Basic values and the key and token shapes of `connectors/egress.py` (OpenAI and Anthropic keys, every GitHub token, AWS ids and secret keys, Google, GitLab, npm, Hugging Face, SendGrid, Slack, Stripe, JWTs, private-key blocks). Whatever the owner types into the org chat, a team chat or answer, a task or a schedule is stored as `[redacted:<shape>]`, as in the direct chat. If one leaks anyway, treat that as a bug.
+- Two limits of that scrub, both by design (D71, the same rule as J2's). The environment rule goes by **name**: a variable whose name contains KEY, TOKEN, SECRET, PASSWORD
+  or AUTH has its value hidden wherever it appears and a note that holds it is refused, so `GIT_AUTHOR_NAME`, `KEYBOARD_LAYOUT` or `SSH_AUTH_SOCK` count too. If your own name or
+  your shop's name comes out as `[redacted]`, unset that variable before you start the server (`env | grep -i -E 'key|token|secret|password|auth'` lists them). A `.env`
+  line is read as dotenv tools read it: ` # a comment` after a value and the quotes around it are not part of the value, `\"` inside double quotes is a quote.
+- A request body over 2 MB is refused with 413 `payload_too_large` before it is read (a file attached to a chat may be 20 MB). A JSON body nested thousands of levels deep,
+  or a list position or time too large for the database, is a 400 or 422, never a 500.
 - Each run has `run.stdout.log`, `run.stderr.log` and `trace.jsonl` in its folder. The macOS app also keeps `~/.sutra-pro/logs/app.log` for its launcher.
 - For a bug report, download the diagnostics zip (section 7), not the raw folder.
 

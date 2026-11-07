@@ -124,6 +124,7 @@ The API answers errors as `{"error": {"code", "message", "details"}}`; the code 
 | `bad_host` | 400 | the request came with a Host other than `127.0.0.1` or `localhost`. Use that address |
 | `bad_origin` | 403 | a write came from a page of another origin. Use the app's own page |
 | `validation` | 422 | the request is malformed; `details.violations` lists each path and reason |
+| `payload_too_large` | 413 | the request body is over 2 MB (a chat attachment may be 20 MB). Send less; nothing was read or changed |
 | `rules` | 422 | the org chart rules refused a well-formed change; the message says which rule |
 | `not_found` | 404 | no such team, task, node or run |
 | `busy` | 409 | the team already runs a task, or the task has ended. Wait, or stop it first |
