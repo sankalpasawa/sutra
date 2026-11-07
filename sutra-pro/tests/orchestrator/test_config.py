@@ -117,6 +117,35 @@ def test_read_env_file(tmp_path):
     assert read_env_file(tmp_path / "missing") == {} and read_env_file(None) == {}
 
 
+@pytest.mark.parametrize("after_equals, value", [
+    ("qacomment-VALUE-5544332211 # my key from the vault", "qacomment-VALUE-5544332211"),          # a comment after a space is not the value
+    ('"qa\\"escaped\\"-VALUE-7766554433"', 'qa"escaped"-VALUE-7766554433'),                       # an escaped quote inside double quotes
+    ('"two # words" # and a comment', "two # words"),                                                  # a hash inside quotes stays
+    ("'single # kept' # gone", "single # kept"),
+    ('"back\\\\slash"', "back\\slash"),
+    ("pass#word", "pass#word"),                                                                        # a hash with no space before it is the value's
+    ('say "hi"', 'say "hi"'),                                                                          # the quote marks of an unquoted value stay
+    ("trailing-quote\"", 'trailing-quote"'),
+    ('"never closed', "never closed"),                                                                  # as before
+    ("  spaced  ", "spaced"), ("", ""), ('""', ""),
+])
+def test_env_value_reads_a_line_the_way_dotenv_tools_do(after_equals, value):
+    assert config.env_value(after_equals) == value
+
+
+def test_the_env_file_values_the_redactor_holds_occur_in_the_text(tmp_path):
+    """QA: the parser kept ' # my key from the vault' inside a value and left the escapes in, so the redactor held strings that never
+    occur in text and the real secret was stored in clear. Both readings of a line are hidden now."""
+    from sutra_app.orchestrator.redact import Redactor
+    path = tmp_path / ".env"
+    path.write_text('QA_COMMENT=qacomment-VALUE-5544332211 # my key from the vault\nQA_ESC="qa\\"escaped\\"-VALUE-7766554433"\n', encoding="utf-8")
+    assert read_env_file(path) == {"QA_COMMENT": "qacomment-VALUE-5544332211", "QA_ESC": 'qa"escaped"-VALUE-7766554433'}
+    redactor = Redactor(path, environ={})
+    assert redactor("use qacomment-VALUE-5544332211 ok") == "use [redacted] ok"
+    assert redactor('use qa"escaped"-VALUE-7766554433 ok') == "use [redacted] ok"
+    assert redactor('use qa\\"escaped\\"-VALUE-7766554433 ok') == "use [redacted] ok"                      # as written in the file
+
+
 def test_override_key_from_environment_then_file_and_env_wins(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(f"J2_OVERRIDE_KEY={KEY}\n", encoding="utf-8")

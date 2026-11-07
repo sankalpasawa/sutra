@@ -10,6 +10,7 @@ leaves the server: both fields are excluded from `model_dump`, `repr` and JSON, 
 shows) lists neither. The server binds loopback only: a non-loopback `SUTRA_HOST` is refused at load.
 """
 import os
+import re
 import secrets
 from collections.abc import Mapping
 from pathlib import Path
@@ -19,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints,
 
 __all__ = [
     "Settings", "SettingsError", "ENV_NAMES", "LOOPBACK_HOSTS", "OVERRIDE_KEY_NAME", "MIN_TOKEN_LENGTH", "DB_FILENAME", "project_root",
-    "default_data_dir", "default_env_file", "read_env_file", "new_token",
+    "default_data_dir", "default_env_file", "read_env_file", "env_value", "new_token",
 ]
 
 MIN_TOKEN_LENGTH = 16
@@ -70,10 +71,34 @@ def default_env_file(environ: Mapping[str, str] | None = None) -> Path:
     return root / ".env" if (root / "pyproject.toml").is_file() else default_data_dir(env) / ".env"
 
 
-def read_env_file(path: str | os.PathLike[str] | None) -> dict[str, str]:
-    """Every `KEY=value` pair of a `.env` file as text. Blank lines and `#` comments are skipped, a leading `export ` and one
-    pair of quotes around a value are understood, a later line wins. A missing or unreadable file is an empty file. This is
-    only a reader: nothing is put into `os.environ`."""
+_INLINE_COMMENT = re.compile(r"\s+#")
+
+
+def env_value(text: str) -> str:
+    """The value of a `.env` line from the text after its `=`, as dotenv tools read it. A value in double quotes ends at the closing quote
+    (`\\"` and `\\\\` inside it are a quote and a backslash), one in single quotes at the next single quote, and what follows the closing
+    quote (a comment) is not part of it. An unquoted value ends at a ` #` (space, then a hash: a comment), a `#` inside it stays, and its
+    quote marks are kept. A quote that never closes is dropped from the ends, as before."""
+    text = text.strip()
+    if text[:1] in ('"', "'"):
+        quote, chars, i = text[0], [], 1
+        while i < len(text):
+            char = text[i]
+            if char == quote:
+                return "".join(chars)
+            if quote == '"' and char == "\\" and text[i + 1:i + 2] in ('"', "\\"):
+                char, i = text[i + 1], i + 1
+            chars.append(char)
+            i += 1
+        return text.strip('"').strip("'")                       # no closing quote: the old reading
+    return _INLINE_COMMENT.split(text, maxsplit=1)[0].strip()
+
+
+def read_env_file(path: str | os.PathLike[str] | None, *, whole_line: bool = False) -> dict[str, str]:
+    """Every `KEY=value` pair of a `.env` file as text (`env_value` reads each value). Blank lines and `#` comments are skipped, a leading
+    `export ` is understood, a later line wins. A missing or unreadable file is an empty file. This is only a reader: nothing is put into
+    `os.environ`. `whole_line=True` keeps everything after the `=` (a comment too, the quote marks of the ends dropped): another tool may read
+    a line that way (Docker's `--env-file` does), so the redactor hides that reading as well."""
     if path is None:
         return {}
     try:
@@ -90,7 +115,7 @@ def read_env_file(path: str | os.PathLike[str] | None) -> dict[str, str]:
         if key.startswith("export "):
             key = key[len("export "):].strip()
         if key:
-            pairs[key] = value.strip().strip('"').strip("'")
+            pairs[key] = value.strip().strip('"').strip("'") if whole_line else env_value(value)
     return pairs
 
 

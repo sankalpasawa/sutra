@@ -44,7 +44,8 @@ class Redactor:
         with self._lock:
             if stamp != self._file_stamp:
                 self._file_stamp = stamp
-                self._file_values = frozenset(read_env_file(self._env_file).values()) if stamp is not None else frozenset()
+                self._file_values = frozenset(
+                    [*read_env_file(self._env_file).values(), *read_env_file(self._env_file, whole_line=True).values()]) if stamp is not None else frozenset()
             return self._file_values
 
     def secrets(self) -> list[str]:
