@@ -134,3 +134,16 @@ test("a refusal gives the sentence and no second read; a failed re-read still co
   const later = await forgetNote(fakeApi({"get /api/notes": down}), 1);
   assert.deepEqual(later, {ok: true, data: null, error: "The app is not responding."});
 });
+
+// QA firstrun-settings: an empty note was sent and the owner read pydantic's "String should have at least 1 character".
+test("an empty or blank note, added or edited, sends nothing and says to write it first", async () => {
+  for (const text of ["", "   ", "\n\t "]) {
+    const api = fakeApi();
+    assert.deepEqual(await addNote(api, {group: "work", text, expires: ""}), {ok: false, data: null, error: "Write the note first."}, JSON.stringify(text));
+    assert.deepEqual(await editNote(api, 3, {text, expires: ""}), {ok: false, data: null, error: "Write the note first."}, JSON.stringify(text));
+    assert.deepEqual(api.calls, [], "no request is made");
+  }
+  const forget = fakeApi();
+  assert.equal((await forgetNote(forget, 1)).ok, true);                                      // a forget has no text and still goes
+  assert.deepEqual(forget.calls.map(c => c[0] + " " + c[1]), ["del /api/notes/1", "get /api/notes"]);
+});
