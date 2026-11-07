@@ -4,6 +4,7 @@ The cases are the old app's test_j2ui_common C1-6, re-expressed over injected ro
 home, the data folder, the temp folder or the install folder is shortened, `~/...` and a Windows drive path too, and a page of a site
 ('/home/about') is left alone because it is not under a folder of this machine."""
 import os
+import sys
 
 import pytest
 
@@ -76,6 +77,7 @@ def test_a_text_that_is_not_text_or_is_empty_comes_back_as_it_is():
     assert shorten(12, ROOTS) == 12                # type: ignore[arg-type]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the folder roots are POSIX paths; a Windows path is shortened by the drive-path rule, tested above")
 def test_machine_roots_names_each_folder_as_named_and_as_resolved_longest_first(tmp_path):
     real = tmp_path / "data"
     real.mkdir()
@@ -88,6 +90,7 @@ def test_machine_roots_names_each_folder_as_named_and_as_resolved_longest_first(
     assert list(roots) == sorted(roots, key=lambda r: (-len(r), r))
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the folder roots are POSIX paths; a Windows path is shortened by the drive-path rule, tested above")
 def test_the_default_roots_hold_the_real_home_the_temp_folder_and_where_the_app_is_installed():
     roots = machine_roots()
     here = os.path.realpath(pathwords.__file__)
