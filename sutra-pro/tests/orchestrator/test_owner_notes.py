@@ -8,7 +8,7 @@ import json
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from orchestrator.test_chat_agent import AgentEnv, add_dept, aenv, assignments, change_reply, decide, draft, with_script  # noqa: F401  (aenv is a fixture)
+from orchestrator.test_chat_agent import add_dept, aenv, assignments, change_reply, decide, draft, with_script  # noqa: F401  (aenv is a fixture)
 from orchestrator.test_chat_ground import SECRET_A, Svc, ended, world  # noqa: F401  (world is a fixture)
 from orchestrator.test_tasks import tenv  # noqa: F401  (tenv is a fixture)
 

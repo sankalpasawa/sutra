@@ -4,7 +4,7 @@ The turn runner runs for real over the scripted connector and the fake launcher 
 question with Yes and No; Yes puts the pick on the team, No is remembered, and nothing changes without the click."""
 import pytest
 from orchestrator.test_chat_agent import add_dept, assignments, change_reply, decide, draft
-from orchestrator.test_turn_runner import ORG, RunnerEnv, renv  # noqa: F401  (renv is a fixture)
+from orchestrator.test_turn_runner import renv  # noqa: F401  (renv is a fixture)
 
 from sutra_app.library.practice import load_packs
 from sutra_app.orchestrator.agent import planner
