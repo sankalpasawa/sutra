@@ -52,6 +52,19 @@ def test_the_rules_block_is_drawn_for_a_department_only_and_its_buttons_are_hand
     assert "keepRulesDraft(el);\n      paintTo(el, html);\n      paintRules(el);" in PANEL_JS               # the typed rule survives a repaint of the node
 
 
+def test_a_saved_add_empties_the_field_and_every_opening_reads_the_rules_again():
+    """Two behaviours the node panel's glue must keep (no browser here, so the source is read): `keepRulesDraft` reads the LIVE field on every repaint,
+    so a saved add that only cleared `rules.draft` would get the line just added back in the box (and a second Add then says "already has this rule");
+    and the rules of a team opened before are not shown again from memory, because a pick made in the org chat since then would not show and a save
+    would be built from a stale list."""
+    on_rules = PANEL_JS.split("async function onRules")[1].split("function paintBody")[0]
+    saved = on_rules.split("if (out.ok) {")[1].split("} else rules.error")[0]
+    assert 'field.value = ""' in saved and saved.index('field.value = ""') < saved.index("rules.saved"), "a saved add must empty the live field"
+    assert "added = text;" in on_rules.split('name === "rules-add"')[1].split("rules-remove")[0]       # only an add empties it: a rule typed and not yet added stays
+    opened = PANEL_JS.split("async function open(nodeId, tab, freshGraph)")[1].split("paintAll();")[0]
+    assert 'rules = noRules("");' in opened, "open() must forget the rules an earlier opening read"
+
+
 def test_a_team_page_loads_rules_view_from_dept_ext_because_the_j2_page_is_not_edited():
     assert '"rules_view"' in DEPT_JS.split("function drawers")[1].split("if (S.panel === null)")[0]
     page = (UI / "pages" / "j2_ui.html").read_text(encoding="utf-8")

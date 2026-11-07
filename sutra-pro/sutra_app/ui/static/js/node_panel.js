@@ -125,7 +125,8 @@
     let refs = null;                 // the skeleton's elements
     let chatRefs = null;             // the Chat tab's elements (rebuilt when the tab is)
     let drafts = null;               // the per-chat drafts (ChatDraft), made on first use
-    let rules = {dept: "", data: null, packs: null, error: "", busy: false, saved: "", draft: null};   // the standing rules of the team on show (GAP2 rules-notes, rules_view.js)
+    const noRules = dept => ({dept: dept, data: null, packs: null, error: "", busy: false, saved: "", draft: null});
+    let rules = noRules("");         // the standing rules of the team on show (GAP2 rules-notes, rules_view.js); read again every time a node opens
     const composers = new Map();     // session id -> its composer controller: the mode, the files and a running turn outlive a closed panel
     const scrollMem = new Map();     // session id -> where it was read when it closed (ChatScroll.remember / restore)
     const draftStore = () => { if (!drafts && root.ChatDraft) drafts = root.ChatDraft.create(); return drafts; };
@@ -588,7 +589,7 @@
         el.appendChild(slot);
       }
       if (rules.dept !== dept) {
-        rules = {dept: dept, data: null, packs: null, error: "", busy: false, saved: "", draft: null};
+        rules = noRules(dept);
         loadTeamRules(dept);
       }
       paintTo(slot, RV.rulesHtml(rules));
@@ -614,12 +615,14 @@
       const box = refs && refs.body ? refs.body.querySelector("[data-teamrules]") : null;
       if (!RV || dept === "" || !box || rules.busy || rules.data === null) return;
       let body = null;
+      let added = null;                                       // the line an add sends
       if (name === "rules-add") {
         const text = box.querySelector("[data-rules-text]").value;
         const tag = box.querySelector("[data-rules-tag]").value;
         rules.draft = {tag: tag, text: text};
         if (clean(text) === "") { rules.error = "Write the rule first."; paintDetails(); return; }
         body = RV.addBody(rules.data, tag, text);
+        added = text;
       } else if (name === "rules-remove") body = RV.removeBody(rules.data, Number(button.dataset.index));
       else if (name === "rules-pack") body = RV.packBody(button.dataset.pack || "");
       if (body === null) return;
@@ -633,6 +636,8 @@
       if (out.ok) {
         rules.data = out.data || rules.data;
         rules.draft = null;
+        const field = added !== null && refs && refs.body ? refs.body.querySelector("[data-teamrules] [data-rules-text]") : null;
+        if (field && clean(field.value) === clean(added)) field.value = "";      // keepRulesDraft reads the live field: left as it is, it would bring the saved line back
         rules.saved = "Saved. It applies from the team's next task.";
       } else rules.error = out.error;
       if (st && st.tab === "details") paintDetails();
@@ -764,6 +769,7 @@
         openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: false, reopen: true, scroll: {parked: false, seenId: 0, pill: 0},
         opener: opener, conn: null, refresh: null};
       if (!opener.id) opener.id = id;
+      rules = noRules("");                                  // the team's rules are read again: they may have changed since this team was last on show
       doc.body.classList.add("nodeopen");
       closeAgentDrawer();
       host.hidden = false;
