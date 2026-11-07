@@ -37,7 +37,7 @@ the red button: the app ends with its last window). Opening it a second time bri
   the owner chooses in Settings, Connectors). Without them the app still starts; connectors report "not installed", or "Claude Desktop is
   installed, but Sutra needs Claude Code" when only Claude Desktop is there.
 - The window shows the server and nothing else: a link to another site opens in your browser (web addresses only), a permission request (camera, location,
-  notifications) is refused, and the page has no access to files or Node.
+  notifications, reading the clipboard) is refused, except that the server's own page may write text to the clipboard (its Copy buttons), and the page has no access to files or Node.
 - First launch of an AD-HOC build (below) on another Mac: Gatekeeper refuses a plain double-click. Right-click the app, Open, Open.
   If macOS says the app is damaged after a browser download: `xattr -dr com.apple.quarantine "/Applications/Sutra Pro.app"`.
 

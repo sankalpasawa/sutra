@@ -7,7 +7,11 @@
      stubborn       ignores the end of its input and SIGTERM: only a kill ends it
      crash          prints "boom" and exits 3 at once
      already        prints that another server runs and exits 0 at once
-     slow           waits FAKE_DELAY_MS before it listens */
+     slow           waits FAKE_DELAY_MS before it listens
+   FAKE_CONFIG chooses what /api/config says about the data folder (the real server answers its --data-dir as it was given):
+     normal         {data_dir: <the --data-dir argument>}
+     relative       {data_dir: <the folder's name only>}
+     none           404, as an old server that has no such route */
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
@@ -25,10 +29,15 @@ if (mode === 'already') {
   process.exit(0);
 }
 
+const configMode = process.env.FAKE_CONFIG || 'normal';
+
 const server = http.createServer((request, response) => {
   if (request.url === '/api/health') {
     response.setHeader('content-type', 'application/json');
     response.end(JSON.stringify({ ok: true, version: '0.0.0-test' }));
+  } else if (request.url === '/api/config' && configMode !== 'none') {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ data_dir: configMode === 'relative' ? path.basename(dataDir) : dataDir, offline: true }));
   } else {
     response.statusCode = 404;
     response.end('{}');

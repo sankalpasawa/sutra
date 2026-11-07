@@ -7,7 +7,9 @@
 
    ONE SERVER PER DATA FOLDER. The server holds a lock on <data>/app.lock and writes "<pid> <port>" to <data>/app.pid. When that file names a live
    server that answers /api/health (the command line's, a browser launcher's, an earlier run of this app that crashed), the app ATTACHES to it and
-   leaves it running when the app quits. Otherwise it starts its own and stops it on the way out.
+   leaves it running when the app quits. Otherwise it starts its own and stops it on the way out. A pid file is only a claim (a crash leaves one behind, and
+   the pid may be reused by any process while the port is another Sutra server's, of another data folder): /api/health does not say which folder
+   answers, so the server on the port is asked (/api/config) and turned away when it names another one.
 
    HOW OUR OWN ENDS. The app holds the write end of the server's standard input and starts it with --exit-when-stdin-closes. Closing the pipe is
    the normal stop, the same on every system, and it is also what happens when the app is killed, so a crash leaves nothing running.
@@ -58,10 +60,10 @@ function pidAlive(pid) {
   }
 }
 
-/* GET /api/health on loopback: the parsed answer when it is a Sutra Pro server that says ok, else null. Never rejects, never uses a proxy. */
-function checkHealth(port, { timeoutMs = 2000, get = http.get } = {}) {
+/* GET `urlPath` on loopback: { status, json } with the parsed body, or null when nothing answered or the body is no JSON. Never rejects, never uses a proxy. */
+function getJson(port, urlPath, { timeoutMs = 2000, get = http.get } = {}) {
   return new Promise((resolve) => {
-    const request = get({ host: '127.0.0.1', port, path: '/api/health', timeout: timeoutMs, agent: false }, (response) => {
+    const request = get({ host: '127.0.0.1', port, path: urlPath, timeout: timeoutMs, agent: false }, (response) => {
       let body = '';
       response.setEncoding('utf8');
       response.on('data', (chunk) => {
@@ -71,8 +73,7 @@ function checkHealth(port, { timeoutMs = 2000, get = http.get } = {}) {
       response.on('error', () => resolve(null));
       response.on('end', () => {
         try {
-          const parsed = JSON.parse(body);
-          resolve(response.statusCode === 200 && parsed && parsed.ok === true ? parsed : null);
+          resolve({ status: response.statusCode, json: JSON.parse(body) });
         } catch {
           resolve(null);
         }
@@ -86,6 +87,38 @@ function checkHealth(port, { timeoutMs = 2000, get = http.get } = {}) {
   });
 }
 
+/* GET /api/health on loopback: the parsed answer when it is a Sutra Pro server that says ok, else null. */
+async function checkHealth(port, options) {
+  const answer = await getJson(port, '/api/health', options);
+  return answer && answer.status === 200 && answer.json && answer.json.ok === true ? answer.json : null;
+}
+
+/* GET /api/config on loopback: the data folder the server says it serves (as it was told it: absolute when the app or a launcher started it), else null. */
+async function fetchDataDir(port, options) {
+  const answer = await getJson(port, '/api/config', options);
+  const named = answer && answer.status === 200 && answer.json ? answer.json.data_dir : null;
+  return typeof named === 'string' && named.trim() ? named : null;
+}
+
+/* Is the folder a server names the folder this app means? 'same' or 'other' when the server names an absolute path (spelled any way: a link, a trailing
+   slash, another letter case on Windows). 'unknown' when it names nothing or a relative path, which is relative to a folder only that server knows
+   (a command line started elsewhere): that is not held against it, so a server that cannot say is taken as every server was before. */
+function folderVerdict(reported, ours, { platform = process.platform, realpath = fs.realpathSync.native } = {}) {
+  const flavor = platform === 'win32' ? path.win32 : path.posix;
+  const named = typeof reported === 'string' ? reported.trim() : '';
+  if (!named || !flavor.isAbsolute(named)) return 'unknown';
+  const key = (folder) => {
+    let resolved = flavor.resolve(folder);
+    try {
+      resolved = realpath(resolved);
+    } catch {
+      // not there (yet): its name is all there is
+    }
+    return platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  return key(named) === key(ours) ? 'same' : 'other';
+}
+
 function describeExit(state) {
   if (state.signal) return `signal ${state.signal}`;
   return `exit status ${state.code}`;
@@ -93,7 +126,7 @@ function describeExit(state) {
 
 class Supervisor extends EventEmitter {
   /* options: dataDir, command, args, env (the server's); log(line); platform; strictPid (the pid in app.pid must be the child's: true for the
-     bundled interpreter, false for a venv launcher on Windows); timeouts; and for tests spawn, health, readHolder, pidAlive, sleep, now. */
+     bundled interpreter, false for a venv launcher on Windows); timeouts; and for tests spawn, health, folderOf, readHolder, pidAlive, sleep, now. */
   constructor(options) {
     super();
     this.dataDir = options.dataDir;
@@ -106,6 +139,7 @@ class Supervisor extends EventEmitter {
     this.timeouts = { ...DEFAULT_TIMEOUTS, ...(options.timeouts || {}) };
     this.spawn = options.spawn || childProcess.spawn;
     this.health = options.health || ((port) => checkHealth(port));
+    this.folderOf = options.folderOf || ((port) => fetchDataDir(port));
     this.readHolder = options.readHolder || readHolder;
     this.pidAlive = options.pidAlive || pidAlive;
     this.sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
@@ -120,6 +154,7 @@ class Supervisor extends EventEmitter {
     this._stopping = null;
     this._cancelled = false;
     this._watcher = null;              // the interval that watches an attached server
+    this._turnedAway = new Set();      // "<port> <folder>" of the servers of other folders already logged
   }
 
   get origin() {
@@ -141,6 +176,7 @@ class Supervisor extends EventEmitter {
     this.expected = false;
     this.url = null;
     this.owned = false;
+    this._turnedAway.clear();
     this._unwatch();
     const attached = await this._attach();
     if (attached) {
@@ -168,7 +204,9 @@ class Supervisor extends EventEmitter {
         throw new StartError(`The server stopped while starting (${describeExit(state)})`, { output: this.recent.slice(), code: state.code });
       }
       const holder = this.readHolder(this.dataDir);
-      if (holder && holder.port && (!this.strictPid || holder.pid === child.pid) && (await this.health(holder.port))) {
+      // with strictPid the file is ours by its pid; without it (a launcher's child is the server) only the folder the port serves says so
+      if (holder && holder.port && (!this.strictPid || holder.pid === child.pid) && (await this.health(holder.port))
+        && (this.strictPid || (await this._servesOurFolder(holder.port)))) {
         this.url = `http://127.0.0.1:${holder.port}/`;
         this.owned = true;
         this.log(`the server is ready at ${this.url} (pid ${child.pid})`);
@@ -211,14 +249,27 @@ class Supervisor extends EventEmitter {
     this._watcher = null;
   }
 
-  /* The URL of a live server that app.pid names and that answers, else null. */
+  /* The URL of a live server that app.pid names, that answers and that serves this data folder, else null. */
   async _attach() {
     const holder = this.readHolder(this.dataDir);
     if (!holder || !holder.port || !this.pidAlive(holder.pid)) return null;
     if (!(await this.health(holder.port))) return null;
+    if (!(await this._servesOurFolder(holder.port))) return null;
     this.url = `http://127.0.0.1:${holder.port}/`;
     this.owned = false;
     return this.url;
+  }
+
+  /* Does the server on `port` serve this data folder? Only one that names ANOTHER folder is turned away; see folderVerdict. */
+  async _servesOurFolder(port) {
+    const reported = await this.folderOf(port);
+    if (folderVerdict(reported, this.dataDir) !== 'other') return true;
+    const seen = `${port} ${reported}`;
+    if (!this._turnedAway.has(seen)) {
+      this._turnedAway.add(seen);
+      this.log(`the server on port ${port} serves another data folder (${reported}), not ${this.dataDir}: it is not the one to attach to`);
+    }
+    return false;
   }
 
   _launch() {
@@ -338,4 +389,4 @@ class Supervisor extends EventEmitter {
   }
 }
 
-module.exports = { Supervisor, StartError, parseHolder, readHolder, pidAlive, checkHealth, DEFAULT_TIMEOUTS };
+module.exports = { Supervisor, StartError, parseHolder, readHolder, pidAlive, checkHealth, fetchDataDir, folderVerdict, DEFAULT_TIMEOUTS };

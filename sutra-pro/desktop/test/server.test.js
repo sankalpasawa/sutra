@@ -6,7 +6,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
-const { Supervisor, StartError, parseHolder, checkHealth, pidAlive } = require('../src/server');
+const { Supervisor, StartError, parseHolder, checkHealth, fetchDataDir, folderVerdict, pidAlive } = require('../src/server');
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'fake-server.js');
 const POSIX = process.platform !== 'win32';
@@ -208,7 +208,7 @@ test('on Windows the second step is the app.stop file, and the last is taskkill 
       }
       return child;
     },
-    health: async () => ({ ok: true }), readHolder: () => ({ pid: 4242, port: 9 }), pidAlive: () => false,
+    health: async () => ({ ok: true }), readHolder: () => ({ pid: 4242, port: 9 }), pidAlive: () => false, folderOf: async () => null,
   });
   await s.start();
   assert.equal(s.owned, true);
@@ -240,7 +240,7 @@ test('a server we attached to is watched: when it stops answering the app is tol
   let answering = true;
   const s = new Supervisor({
     dataDir: dir, command: 'python', args: [], env: {}, timeouts: { ...FAST, watchPoll: 15, watchMisses: 3 },
-    readHolder: () => ({ pid: process.pid, port: 8789 }), pidAlive: () => true, health: async () => (answering ? { ok: true } : null),
+    readHolder: () => ({ pid: process.pid, port: 8789 }), pidAlive: () => true, health: async () => (answering ? { ok: true } : null), folderOf: async () => null,
   });
   const events = [];
   s.on('exit', (event) => events.push(event));
@@ -259,7 +259,7 @@ test('a slow answer or two is not a death, and stopping ends the watch', async (
   let calls = 0;
   const s = new Supervisor({
     dataDir: dir, command: 'python', args: [], env: {}, timeouts: { ...FAST, watchPoll: 10, watchMisses: 3 },
-    readHolder: () => ({ pid: process.pid, port: 8788 }), pidAlive: () => true,
+    readHolder: () => ({ pid: process.pid, port: 8788 }), pidAlive: () => true, folderOf: async () => null,
     health: async () => ((++calls % 3 === 0) ? null : { ok: true }),          // every third answer is missing, never three in a row
   });
   const events = [];
@@ -305,7 +305,7 @@ test('when another server wins the data folder\'s lock our server exits 0 and th
       return child;
     },
     readHolder: () => (++calls.holder > 1 ? { pid: 500, port: 8785 } : null),   // nothing at first; the winner's file afterwards
-    pidAlive: (pid) => pid === 500,
+    pidAlive: (pid) => pid === 500, folderOf: async () => null,
     health: async (port) => (port === 8785 ? { ok: true } : null),
   });
   assert.deepEqual(await s.start(), { url: 'http://127.0.0.1:8785/', owned: false });
@@ -320,14 +320,149 @@ test('with strictPid the pid in app.pid must be the child\'s: a foreign holder i
   let holder = { pid: 999, port: 8790 };                                   // somebody else's file, and a port that answers
   const s = new Supervisor({
     dataDir: tempData(), command: 'python', args: [], env: {}, timeouts: { ...FAST, start: 200, poll: 5 },
-    spawn: () => child, readHolder: () => holder, pidAlive: () => false, health: async () => ({ ok: true }),
+    spawn: () => child, readHolder: () => holder, pidAlive: () => false, health: async () => ({ ok: true }), folderOf: async () => null,
   });
   await assert.rejects(s.start(), /did not answer/);
   holder = { pid: 11, port: 8791 };
   const t = new Supervisor({
     dataDir: tempData(), command: 'python', args: [], env: {}, timeouts: { ...FAST, poll: 5 },
-    spawn: () => child, readHolder: () => holder, pidAlive: () => false, health: async () => ({ ok: true }),
+    spawn: () => child, readHolder: () => holder, pidAlive: () => false, health: async () => ({ ok: true }), folderOf: async () => null,
   });
   assert.equal((await t.start()).url, 'http://127.0.0.1:8791/');
   await t.stop();
+});
+
+// ---------------------------------------------------------------- which data folder a server serves
+
+test('a server\'s answer about its folder: the same folder in another spelling is the same, another folder is another, what cannot be compared is unknown', (t) => {
+  const real = fs.realpathSync(tempData());
+  assert.equal(folderVerdict(real, real), 'same');
+  assert.equal(folderVerdict(`${real}${path.sep}.${path.sep}`, real), 'same');
+  assert.equal(folderVerdict(path.join(real, 'sub', '..'), real), 'same');
+  assert.equal(folderVerdict(path.join(real, 'other'), real), 'other');
+  assert.equal(folderVerdict(path.join(path.dirname(real), 'other'), real), 'other');
+  if (POSIX) {
+    const link = path.join(os.tmpdir(), `sutra-link-${process.pid}-${Date.now()}`);
+    fs.symlinkSync(real, link);
+    t.after(() => fs.rmSync(link, { force: true }));
+    assert.equal(folderVerdict(link, real), 'same', 'a link to the folder is the folder');
+    assert.equal(folderVerdict(real, link), 'same');
+  }
+  // a folder that does not exist (yet) is compared by its name
+  assert.equal(folderVerdict(path.join(real, 'not', 'there'), path.join(real, 'not', 'there')), 'same');
+  assert.equal(folderVerdict(path.join(real, 'not', 'there'), path.join(real, 'not', 'here')), 'other');
+  // a relative name is relative to somewhere only the server knows; no answer, no number, no text: nothing to hold against it
+  for (const reported of ['data', './data', '', '   ', undefined, null, 42, {}, [real]]) assert.equal(folderVerdict(reported, real), 'unknown', String(reported));
+  // Windows: letter case does not matter, the drive does
+  const win = { platform: 'win32', realpath: (value) => value };
+  assert.equal(folderVerdict('C:\\Users\\U\\Data', 'c:\\users\\u\\DATA', win), 'same');
+  assert.equal(folderVerdict('C:\\Users\\U\\Data\\', 'C:\\Users\\U\\Data', win), 'same');
+  assert.equal(folderVerdict('D:\\Users\\U\\Data', 'C:\\Users\\U\\Data', win), 'other');
+  assert.equal(folderVerdict('data', 'C:\\Users\\U\\Data', win), 'unknown');
+  assert.equal(folderVerdict('/srv/Data', '/srv/data', { platform: 'linux', realpath: (value) => value }), 'other', 'elsewhere letter case counts');
+});
+
+test('config: the data folder is read from a 200 answer of /api/config that names it as text, else null; a closed port is null, not an error', async (t) => {
+  const answers = { '/api/config': [200, '{"data_dir":"/srv/sutra","offline":true}'] };
+  const server = http.createServer((request, response) => {
+    const [status, body] = answers[request.url] || [404, '{}'];
+    response.statusCode = status;
+    response.end(body);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.listening && server.close());          // a failed assertion must not keep the run alive
+  const { port } = server.address();
+  assert.equal(await fetchDataDir(port), '/srv/sutra');
+  for (const bad of [[404, '{"data_dir":"/srv/sutra"}'], [200, '{"data_dir":7}'], [200, '{"data_dir":""}'], [200, '{}'], [200, '[]'], [200, 'null'], [200, 'not json']]) {
+    answers['/api/config'] = bad;
+    assert.equal(await fetchDataDir(port), null, bad.join(' '));
+  }
+  await new Promise((resolve) => server.close(resolve));
+  assert.equal(await fetchDataDir(port), null);
+});
+
+test('a pid file that names a live process and the port of a server of ANOTHER data folder is stale: it is not attached to, our own server is started', async (t) => {
+  const other = supervisor(tempData());                      // a Sutra server for another data folder, on a port of its own
+  t.after(() => other.stop());                               // a failed assertion must not leave a server running (the run would never end)
+  const { url: theirs } = await other.start();
+  const dir = tempData();
+  fs.writeFileSync(path.join(dir, 'app.pid'), `${process.pid} ${new URL(theirs).port}\n`);   // what a crash and a reused pid leave behind: a live pid, their port
+  const lines = [];
+  const mine = supervisor(dir, 'normal', { log: (line) => lines.push(line) });
+  t.after(() => mine.stop());
+  const { url, owned } = await mine.start();
+  assert.equal(owned, true, 'a server for this folder was started');
+  assert.notEqual(url, theirs, 'the window does not show the other folder\'s server');
+  assert.ok(lines.some((line) => line.includes('another data folder')), lines.join('|'));
+  assert.ok(await checkHealth(Number(new URL(theirs).port)), 'the other server was left alone');
+  await mine.stop();
+  assert.ok(await checkHealth(Number(new URL(theirs).port)), 'and is still running after ours stopped');
+  await other.stop();
+});
+
+test('a server of this folder is attached to whichever way its folder is spelled, and one that does not say which folder it serves is attached as before', async (t) => {
+  for (const config of ['normal', 'relative', 'none']) {
+    const dir = tempData();
+    const running = supervisor(dir, 'normal', { env: { ...process.env, FAKE_MODE: 'normal', FAKE_CONFIG: config } });
+    t.after(() => running.stop());
+    const { url: theirs } = await running.start();
+    const mine = supervisor(dir, 'normal', { spawn: () => assert.fail('a running server must not be started again') });
+    const { url, owned } = await mine.start();
+    assert.equal(owned, false, config);
+    assert.equal(url, theirs, config);
+    await mine.stop();
+  }
+  if (!POSIX) return t.skip('a link needs rights on Windows');
+  const dir = tempData();
+  const link = path.join(os.tmpdir(), `sutra-data-link-${process.pid}-${Date.now()}`);
+  fs.symlinkSync(dir, link);
+  t.after(() => fs.rmSync(link, { force: true }));
+  const running = supervisor(dir);                            // it was told the folder one way ...
+  t.after(() => running.stop());
+  const { url: theirs } = await running.start();
+  const mine = supervisor(link, 'normal', { spawn: () => assert.fail('the same folder through a link is the same folder') });   // ... the app another
+  assert.equal((await mine.start()).url, theirs);
+  await mine.stop();
+});
+
+test('when the winner of the data folder\'s lock is a server of another folder, our exit 0 is an error, not an attach', async () => {
+  const child = new EventEmitter();
+  child.pid = 78;
+  child.stdout = Object.assign(new EventEmitter(), { setEncoding() {} });
+  child.stderr = Object.assign(new EventEmitter(), { setEncoding() {} });
+  child.stdin = Object.assign(new EventEmitter(), { end() {} });
+  const dir = tempData();
+  let holder = null;
+  const s = new Supervisor({
+    dataDir: dir, command: 'python', args: [], env: {}, timeouts: { ...FAST, poll: 5 },
+    spawn: () => {
+      setTimeout(() => {
+        holder = { pid: 500, port: 8785 };                                // a stale file that appeared; nobody of ours holds it
+        child.emit('exit', 0, null);
+      }, 30);
+      return child;
+    },
+    readHolder: () => holder, pidAlive: () => true, health: async () => ({ ok: true }), folderOf: async () => path.join(dir, '..', 'someone-elses'),
+  });
+  await assert.rejects(s.start(), /stopped while starting \(exit status 0\)/);
+});
+
+test('without strictPid (a venv launcher on Windows) a stale file\'s port is not adopted as ours unless it serves this folder', async () => {
+  const child = new EventEmitter();
+  child.pid = 12;
+  child.stdout = Object.assign(new EventEmitter(), { setEncoding() {} });
+  child.stderr = Object.assign(new EventEmitter(), { setEncoding() {} });
+  child.stdin = Object.assign(new EventEmitter(), { end() { child.emit('exit', 0, null); } });
+  const dir = tempData();
+  let holder = { pid: 999, port: 8790 };                                  // the launcher's pid is not the child's; this file is somebody else's
+  const make = (extra = {}) => new Supervisor({
+    dataDir: dir, command: 'python', args: [], env: {}, strictPid: false, timeouts: { ...FAST, start: 200, poll: 5 },
+    spawn: () => child, readHolder: () => holder, pidAlive: () => false, health: async () => ({ ok: true }),
+    folderOf: async (port) => (port === 8791 ? dir : path.join(dir, '..', 'another')), ...extra,
+  });
+  await assert.rejects(make().start(), /did not answer/);
+  holder = { pid: 999, port: 8791 };                                      // the file of the server that serves this folder
+  const s = make({ timeouts: { ...FAST, poll: 5 } });
+  assert.equal((await s.start()).url, 'http://127.0.0.1:8791/');
+  await s.stop();
 });
