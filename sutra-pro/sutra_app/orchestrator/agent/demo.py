@@ -2,8 +2,9 @@
 
     demo_book()      a `DemoBook` for `connectors.factory.build_router(..., replybook=...)`; only `--offline` uses it
 
-Every reply is computed from the prompt text of the call, which carries the owner's message (`OWNER REQUEST:`) and the chart digest
-(`CHART ...:`), so the replies are deterministic and agree with each other:
+Every reply is computed from the prompt text of the call, which carries the owner's message (`OWNER REQUEST:`, with the owner's notes block after it
+when there are notes: that block is context for a model and is cut away here) and the chart digest (`CHART ...:`), so the replies are deterministic and
+agree with each other:
 
     decide   a department of the digest that shares a keyword with the message (name or goal) is reused, else a team is added
     change   one `AddOp` under the root: a department named from the first 2 to 4 words of the message, its goal the message
@@ -21,6 +22,7 @@ from sutra_app.connectors.stub import ReplyBook, StubConnector
 from sutra_app.library.org_chart import AddOp, ChartChangeRequest, NewNode
 from sutra_app.library.types import clip
 from sutra_app.orchestrator.agent.replies import AssignmentDraft, AssignmentPlan, ChatDecision
+from sutra_app.orchestrator.notes import AGENT_HEADING
 from sutra_app.orchestrator.textutil import STOP_WORDS, one_line_title
 
 __all__ = ["DemoBook", "DemoStub", "demo_book", "FUNCTION", "topic_name"]
@@ -33,6 +35,9 @@ _WORD = re.compile(r"[a-z0-9]{3,}")
 _MESSAGE = re.compile(r"OWNER REQUEST:\n(.*?)\n(?:MODELS:|YOUR DECISION:|Write the assignments)", re.S)
 _DIGEST = re.compile(r"CHART(?: AFTER THE CHANGE| \(revision \d+\)):\n(.*?)\n(?:CONVERSATION|MODELS:)", re.S)
 _ROOT = re.compile(r"Root id: ([^\s]+?)\.(?:\s|$)")
+# `{message}{notes}` sit together in the decide and assign prompts (OwnerNotes.agent_block): a newline, the heading, one "- Group: text" line per note,
+# then the next section. Only a block that ends the captured text is the notes; the same words inside the owner's message stay its own.
+_NOTES = re.compile(r"\n" + re.escape(AGENT_HEADING) + r"(?:\n- [^\n]*)*\Z")
 
 
 @dataclass(frozen=True)
@@ -69,7 +74,7 @@ def _read(prompt: str) -> tuple[str, str, list[_Dept]]:
         parts = [p.strip() for p in line.split(" | ")]
         if line[:1] not in (" ", "") and len(parts) >= 3 and not line.startswith("Org chart"):
             depts.append(_Dept(parts[0], parts[1], parts[2]))
-    return asked.group(1), root.group(1) if root else "root", depts
+    return _NOTES.sub("", asked.group(1)), root.group(1) if root else "root", depts
 
 
 def _best(message: str, depts: list[_Dept]) -> tuple[_Dept | None, int]:
