@@ -4,6 +4,7 @@ The feed is a fake `fetch(url, timeout) -> bytes` everywhere except the three te
 a throw-away server on 127.0.0.1 (never the real network). Every test that boots the app counts the requests that left it: none, until the owner asks.
 """
 import json
+import re
 import threading
 import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -100,6 +101,89 @@ def test_the_one_line_is_for_the_owners_kind_of_install(tmp_path):
     assert "dmg" in update_check.how_to_update("mac-app") and "exe" in update_check.how_to_update("windows-app")
     assert "uv tool install" in update_check.how_to_update("command") and "git pull" in update_check.how_to_update("checkout")
     assert update_check.check("0.1.0", fetch=feed(release("sutra-pro-v0.2.0")), how="mac-app").how == update_check.how_to_update("mac-app")
+
+
+def test_a_foreign_link_with_control_characters_or_markup_is_not_followed_either():
+    """A link is kept only when it is https://github.com/ followed by plain URL characters: it is drawn on a page AND printed in a terminal."""
+    for bad in ("https://github.com/x\x1b[2J\x07", 'https://github.com/x" onmouseover="alert(1)', "https://github.com/x y", "https://github.com/<b>", "https://github.com/\n",
+                "http://github.com/x", "https://github.com.evil.example/x", "https://github.com/" + "a" * 400):
+        odd = json.dumps([{"tag_name": "sutra-pro-v0.2.0", "html_url": bad}]).encode()
+        assert update_check.check("0.1.0", fetch=lambda u, t: odd, how="command").notes_url == update_check.RELEASES_PAGE, repr(bad)
+    good = ask("0.1.0", release("sutra-pro-v0.2.0-beta.1"), release("sutra-pro-v0.2.0"))
+    assert good.notes_url == PAGE + "sutra-pro-v0.2.0"
+
+
+def test_a_tag_with_an_absurd_number_is_skipped_and_never_poisons_the_answer():
+    huge = "9" * 5000                                                   # int() refuses a number this long: it used to make the whole answer unreadable
+    a = ask("0.1.0", release(f"sutra-pro-v{huge}.0.0"), release(f"sutra-pro-v0.{huge}.0"), release("sutra-pro-v0.2.0"))
+    assert (a.latest, a.newer, a.error) == ("0.2.0", True, None)
+    b = ask("0.1.0-beta.1", release("sutra-pro-v0.2.0-beta.99999999999", prerelease=True), release("sutra-pro-v0.2.0"))      # a beta number cannot outrank its stable release
+    assert b.latest == "0.2.0"
+    assert update_check.parse_tag("sutra-pro-v1.2.3") is not None and update_check.parse_tag("sutra-pro-v1234567890.0.0") is None
+
+
+# ============================================ the list is shared with the older product: page through it ======================================
+
+def old_product(n):
+    """A full page of the OLDER product's releases (`v2.x.y-desktop`), which is most of what the list holds."""
+    return [release(f"v2.{n}.{i}-desktop") for i in range(update_check.PER_PAGE)]
+
+
+def pages(*lists):
+    """A fetcher over `lists`, one per page (page 1 is the plain url); `calls` records every url asked."""
+    calls = []
+
+    def fetch(url, timeout):
+        calls.append(url)
+        found = re.search(r"[?&]page=(\d+)", url)                                  # `per_page=30` is not the page number
+        number = int(found.group(1)) if found else 1
+        return json.dumps(lists[number - 1] if number <= len(lists) else []).encode()
+    fetch.calls = calls
+    return fetch
+
+
+def test_one_request_while_the_newest_release_is_on_the_first_page():
+    fetch = pages([release("sutra-pro-v0.2.0")] + old_product(1)[:-1], old_product(2))
+    a = update_check.check("0.1.0", fetch=fetch, how="command")
+    assert (a.latest, a.error) == ("0.2.0", None) and fetch.calls == [update_check.RELEASE_API]
+
+
+def test_a_sutra_pro_release_the_first_pages_do_not_hold_is_found_on_a_later_page():
+    """The older product ships about 1.5 releases a day: a month later the newest Sutra Pro release is no longer on page 1 (and 50 or 100 to a page
+    does not fit MAX_BODY). Before: "No Sutra Pro release was found" although one exists."""
+    fetch = pages(old_product(1), old_product(2), [release("sutra-pro-v0.2.0")] + old_product(3)[:-1])
+    a = update_check.check("0.1.0", fetch=fetch, how="command")
+    assert (a.latest, a.newer, a.error) == ("0.2.0", True, None)
+    assert fetch.calls == [update_check.RELEASE_API, update_check.RELEASE_API + "&page=2", update_check.RELEASE_API + "&page=3"]
+
+
+def test_a_stable_install_goes_on_past_a_page_that_holds_only_betas():
+    fetch = pages([release("sutra-pro-v0.2.0-beta.1", prerelease=True)] + old_product(1)[:-1], [release("sutra-pro-v0.1.0")] + old_product(2)[:-1])
+    a = update_check.check("0.1.0", fetch=fetch, how="command")
+    assert (a.latest, a.newer, a.error) == ("0.1.0", False, None) and len(fetch.calls) == 2
+
+
+def test_a_short_page_ends_the_search_and_the_walk_is_capped():
+    short = pages(old_product(1)[:5])
+    assert "No Sutra Pro release" in update_check.check("0.1.0", fetch=short, how="command").error and len(short.calls) == 1
+    endless = pages(*[old_product(n) for n in range(update_check.MAX_PAGES + 5)])
+    assert "No Sutra Pro release" in update_check.check("0.1.0", fetch=endless, how="command").error
+    assert len(endless.calls) == update_check.MAX_PAGES                               # a feed of nothing but the other product is not walked forever
+
+
+def test_a_later_page_that_fails_is_an_answer_with_an_error_not_an_exception():
+    first = json.dumps(old_product(1)).encode()
+
+    def fetch(url, timeout):
+        if url.endswith("&page=2"):
+            raise urllib.error.URLError("down")
+        return first
+    assert update_check.check("0.1.0", fetch=fetch, how="command").error == "Could not reach GitHub. Check your connection and try again."
+
+
+def test_the_page_size_keeps_the_real_feed_far_under_the_body_limit():
+    assert update_check.PER_PAGE * 40 * 1024 < update_check.MAX_BODY                  # the older product's releases weigh about 28 KB each in the list
+    assert f"per_page={update_check.PER_PAGE}" in update_check.RELEASE_API
 
 
 # ============================================ never raises ===================================================================

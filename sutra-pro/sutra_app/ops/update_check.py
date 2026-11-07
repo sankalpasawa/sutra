@@ -4,8 +4,9 @@
     sutra-pro update-check [--json]                                        the same on the command line (`register`)
     POST /api/ops/update-check                                             the Settings -> About button (ops/update_api.py)
 
-NOTHING HERE RUNS ON IMPORT, ON BOOT OR ON A TIMER. The one outbound request of the app is made inside `check`, and `check` is called only by the owner's
-click or the owner's command. It downloads and installs nothing (D34): it reads the list of releases and says what it found, with the one line the
+NOTHING HERE RUNS ON IMPORT, ON BOOT OR ON A TIMER. The outbound requests of the app are made inside `check`, and `check` is called only by the owner's
+click or the owner's command. It is ONE request while the newest Sutra Pro release is on the first page of the list; the list is shared with the older
+product, whose releases are many and large, so a further page (at most MAX_PAGES in all) is asked only when the pages so far held no Sutra Pro release. It downloads and installs nothing (D34): it reads the list of releases and says what it found, with the one line the
 owner follows for their kind of install. It sends nothing but the GET itself (no cookie, no identifier, no version header beyond a fixed User-Agent).
 
 The feed is the Sutra repository's release list, filtered here (D100): a Sutra Pro tag is exactly `sutra-pro-vX.Y.Z` or `sutra-pro-vX.Y.Z-beta.N`, never
@@ -33,10 +34,12 @@ import sutra_app
 from sutra_app.ops import cli
 
 __all__ = ["check", "Answer", "install_kind", "how_to_update", "parse_tag", "default_fetch", "register", "REPO", "RELEASE_API", "RELEASES_PAGE",
-           "TIMEOUT_S", "MAX_BODY", "NET_ERRORS"]
+           "TIMEOUT_S", "MAX_BODY", "PER_PAGE", "MAX_PAGES", "NET_ERRORS"]
 
 REPO = "sankalpasawa/sutra"
-RELEASE_API = f"https://api.github.com/repos/{REPO}/releases?per_page=50"
+PER_PAGE = 30                         # the old product's releases are about 28 KB each in the list: 30 of them stay far under MAX_BODY (50 took 70% of it, 100 does not fit)
+MAX_PAGES = 6                         # newest first: 180 releases, then "no Sutra Pro release" rather than an endless walk
+RELEASE_API = f"https://api.github.com/repos/{REPO}/releases?per_page={PER_PAGE}"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases?q=sutra-pro"
 TIMEOUT_S = 8.0
 MAX_BODY = 2 * 1024 * 1024
@@ -44,7 +47,8 @@ USER_AGENT = "sutra-pro-update-check"
 # HTTPException is not an OSError (a body that stops short raises IncompleteRead), and a body that is not JSON is a ValueError
 NET_ERRORS = (urllib.error.URLError, http.client.HTTPException, OSError, ValueError, TimeoutError)
 
-_NUM = r"(?:0|[1-9][0-9]*)"
+_NUM = r"(?:0|[1-9][0-9]{0,8})"          # at most 9 digits: a longer number is no version of ours (int() refuses 4300+ digits, and a beta number must stay below the stable rank in `_key`)
+_SAFE_PAGE = re.compile(r"https://github\.com/[A-Za-z0-9._~%/+@:=,;&?#-]{0,300}")      # no space, quote, angle bracket or control character: the link is printed and drawn
 TAG_RE = re.compile(rf"sutra-pro-v(?P<v>{_NUM}\.{_NUM}\.{_NUM})(?:-beta\.(?P<beta>{_NUM}))?")
 VERSION_RE = re.compile(rf"(?P<v>{_NUM}\.{_NUM}\.{_NUM})(?:(?:-beta\.|b)(?P<beta>{_NUM}))?")     # 0.2.0, 0.2.0-beta.1 and PEP 440's 0.2.0b1
 
@@ -137,8 +141,22 @@ def _pick(releases: Any, beta_ok: bool) -> tuple[tuple[int, int, int, int], str,
             continue
         page = item.get("html_url")
         if best is None or parsed[0] > best[0]:
-            best = (parsed[0], parsed[1], page if isinstance(page, str) and page.startswith("https://github.com/") else RELEASES_PAGE)
+            best = (parsed[0], parsed[1], page if isinstance(page, str) and _SAFE_PAGE.fullmatch(page) else RELEASES_PAGE)
     return best
+
+
+def _page_url(url: str, page: int) -> str:
+    return url if page == 1 else url + ("&" if "?" in url else "?") + f"page={page}"
+
+
+def _newest(fetch: Fetch, url: str, beta_ok: bool) -> tuple[tuple[int, int, int, int], str, str] | None:
+    """The newest Sutra Pro release, reading the list newest first and going on to the next page only while a full page held none."""
+    for page in range(1, MAX_PAGES + 1):
+        releases = json.loads(fetch(_page_url(url, page), TIMEOUT_S))
+        picked = _pick(releases, beta_ok)                       # raises ValueError when the answer is not a list
+        if picked is not None or len(releases) < PER_PAGE:
+            return picked
+    return None
 
 
 def check(current: str, fetch: Fetch | None = None, url: str = RELEASE_API, how: str | None = None) -> Answer:
@@ -147,8 +165,7 @@ def check(current: str, fetch: Fetch | None = None, url: str = RELEASE_API, how:
     answer = Answer(current=str(current), kind=kind, how=how_to_update(kind))
     running = _running(current)
     try:
-        body = (fetch or default_fetch)(url, TIMEOUT_S)
-        picked = _pick(json.loads(body), beta_ok=running is not None and running[1])
+        picked = _newest(fetch or default_fetch, url, beta_ok=running is not None and running[1])
     except NET_ERRORS as exc:
         return answer.model_copy(update={"error": _words(exc)})
     except Exception:                                                                # noqa: BLE001  (a check must never break the page or the command)

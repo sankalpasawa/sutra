@@ -33,11 +33,15 @@ Five verified gaps of the old Sutra's behaviour, built once each, at a working a
 - The feed follows D100: the release LIST is read and filtered, never `releases/latest` (which belongs to the older product). A tag counts only if it is exactly
   `sutra-pro-vX.Y.Z` or `sutra-pro-vX.Y.Z-beta.N` (no leading zeros, no trailing newline, no `v` tag, no `-desktop` tag); drafts are dropped; a beta (or a release flagged
   pre-release) counts only when the running version is itself a beta; versions compare as tuples (0.10.0 is newer than 0.9.0; a beta is older than its stable release; PEP 440
-  `0.2.0b1` reads as `0.2.0-beta.1`); a version that cannot be read never looks newer. A release link is drawn only for https on github.com.
-- The one outbound request: nothing runs on import, on boot or on a timer. A test boots the app, reads every page and route, and counts zero requests, then one click is exactly
-  one. The default fetcher sends a `User-Agent` and an `Accept`, nothing else (no cookie, no token), reads at most 2 MB, with an 8 s timeout. It is tested against a throw-away
+  `0.2.0b1` reads as `0.2.0-beta.1`); a version that cannot be read never looks newer; a number of more than 9 digits is no version (one absurd tag cannot make the whole answer
+  unreadable). A release link is drawn only for `https://github.com/` followed by plain URL characters (no space, quote, angle bracket or control character: it is drawn on a page and
+  printed in a terminal).
+- The outbound requests: nothing runs on import, on boot or on a timer. A test boots the app, reads every page and route, and counts zero requests, then one click is exactly
+  one request while the newest Sutra Pro release is on the first page of the list. The list is shared with the older product (about 1.5 releases a day, about 28 KB each in the list), so the
+  page is 30 releases (50 took 70% of the 2 MB limit, 100 does not fit) and a further page is asked only when the pages so far held no Sutra Pro release, at most 6 pages in all
+  (review round 1: with one page of 50 the check would have said "no Sutra Pro release" about a month after the last one). The default fetcher sends a `User-Agent` and an `Accept`, nothing else (no cookie, no token), reads at most 2 MB, with an 8 s timeout. It is tested against a throw-away
   server on 127.0.0.1 (a body that stops short, a 500, a closed port, an oversized body), never the real network; everything else is an injected fetcher.
-- Not done / decided: no `SUTRA_RELEASE_API` environment override (the fetcher is injected instead, so a variable cannot redirect the app's one outbound request); the repository
+- Not done / decided: no `SUTRA_RELEASE_API` environment override (the fetcher is injected instead, so a variable cannot redirect the app's outbound requests); the repository
   slug (`sankalpasawa/sutra`) is a constant, as in the release docs. No staging, delta download, swap or countdown (old app: mandatory updates), no background poller.
 
 ## 3. Default-model controls in Settings -> Connectors
