@@ -34,8 +34,8 @@ From a checkout the developer tools are in the View menu.
 
 ## How the server's life works (D118)
 
-- **One server per data folder.** The server writes `"<pid> <port>"` to `<data>/app.pid`. When that names a live server that answers `/api/health`, the window **attaches** to it
-  and leaves it running on quit. Otherwise it starts `python -I -B -m sutra_app --no-browser --exit-when-stdin-closes --data-dir <data>`, on the first free port from 8780.
+- **One server per data folder.** The server writes `"<pid> <port>"` to `<data>/app.pid`. When that names a live server that answers `/api/health` and does not say (`/api/config`) that it serves another data folder, the window **attaches** to it
+  and leaves it running on quit. (A pid file is only a claim: a crash leaves one behind, and its pid may be reused while its port belongs to a server of another folder.) Otherwise it starts `python -I -B -m sutra_app --no-browser --exit-when-stdin-closes --data-dir <data>`, on the first free port from 8780.
 - **It ends with the window.** The window holds the write end of the server's standard input. Closing it is the normal stop (the same on every system), and it is
   also what happens when the window is killed, so a crash leaves nothing running. If the server does not follow: SIGTERM (Windows: the `app.stop` file), then SIGKILL
   (Windows: `taskkill /T /F`).
