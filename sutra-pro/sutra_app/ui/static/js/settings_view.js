@@ -619,9 +619,8 @@
     const at = finite(last.at) ? new Date(last.at * 1000) : null;
     const when = at !== null && finite(at.getTime()) ? at.toLocaleString() : "";
     const bad = last.state === "error" || last.state === "failed";
-    const live = last.state === "available" || last.state === "ready" || last.state === "downloading" || last.state === "installing";
-    return '<p class="setdetail setlast" role="status">Last check: ' + (when ? esc(when) + ": " : "") + '<span class="settest" data-step="' + (bad ? "error" : (live ? "new" : "ok")) + '">' +
-      esc(clean(last.message)) + "</span></p>";
+    const words = esc(clean(last.message));
+    return '<p class="setdetail setlast" data-state="' + esc(clean(last.state)) + '">Last check: ' + (when ? esc(when) + ": " : "") + (bad ? '<span class="seterr">' + words + "</span>" : words) + "</p>";
   }
 
   // The switch and what is said around it. `auto` is the GET answer {auto, chosen, offline, last} (plus the page's own `busy` and `message`); null = not loaded yet.

@@ -123,21 +123,23 @@ test("off is an unchecked switch with aria-checked false, and a save in flight d
 test("the last check is the browser's own time and the server's words, and a time that is not a number is left out", () => {
   const html = aboutHtml(INFO, {step: "idle"}, {...AUTO, last: LAST});
   const when = new Date(1700000000 * 1000).toLocaleString();
-  assert.ok(html.includes("Last check: " + when + ': <span class="settest" data-step="ok">You have 0.2.0: up to date.</span>'), html);
+  assert.ok(html.includes('data-state="up_to_date">Last check: ' + when + ": You have 0.2.0: up to date.</p>"), html);
+  assert.doesNotMatch(html, /class="settest"[^>]*>You have 0\.2\.0/);               // the owner's own answer line stays the only .settest
   for (const at of [NaN, Infinity, null, "soon", undefined, 1e30]) {
     const odd = aboutHtml(INFO, {step: "idle"}, {...AUTO, last: {...LAST, at}});
     assert.doesNotMatch(odd, /NaN|Invalid Date|undefined|null/, String(at));
-    assert.match(odd, /Last check: <span class="settest" data-step="ok">You have 0\.2\.0: up to date\.<\/span>/, String(at));
+    assert.match(odd, /Last check: You have 0\.2\.0: up to date\.<\/p>/, String(at));
   }
 });
 
-test("a failed or available state is coloured by its step and every word of the last check is escaped", () => {
+test("a failed state is drawn as an error and every word of the last check is escaped", () => {
   const evil = '<img src=x onerror="1"> and \u0007 bell';
   const bad = aboutHtml(INFO, {step: "idle"}, {...AUTO, last: {at: 1700000000, state: "failed", version: "0.3.0", message: evil}});
   assert.doesNotMatch(bad, /<img/);
-  assert.match(bad, /data-step="error">&lt;img src=x onerror=&quot;1&quot;&gt; and bell<\/span>/);
-  assert.match(aboutHtml(INFO, {step: "idle"}, {...AUTO, last: {...LAST, state: "ready", message: "Sutra Pro 0.3.0 is ready."}}), /data-step="new">Sutra Pro 0\.3\.0 is ready\./);
-  assert.match(aboutHtml(INFO, {step: "idle"}, {...AUTO, last: {...LAST, state: "error", message: "Could not reach GitHub."}}), /data-step="error">Could not reach GitHub\./);
+  assert.match(bad, /<span class="seterr">&lt;img src=x onerror=&quot;1&quot;&gt; and bell<\/span>/);
+  assert.match(aboutHtml(INFO, {step: "idle"}, {...AUTO, last: {...LAST, state: "ready", message: "Sutra Pro 0.3.0 is ready."}}), /data-state="ready">Last check: [^<]*Sutra Pro 0\.3\.0 is ready\./);
+  assert.match(aboutHtml(INFO, {step: "idle"}, {...AUTO, last: {...LAST, state: "error", message: "Could not reach GitHub."}}), /<span class="seterr">Could not reach GitHub\.<\/span>/);
+  assert.doesNotMatch(aboutHtml(INFO, {step: "idle"}, {...AUTO, last: {...LAST, state: '"><img>', message: "x"}}), /<img/);
   assert.match(aboutHtml(INFO, {step: "idle"}, {...AUTO, last: {...LAST, message: ""}}), /Last check: none yet\./);
   assert.match(aboutHtml(INFO, {step: "idle"}, {...AUTO, last: "junk"}), /Last check: none yet\./);
   assert.doesNotMatch(aboutHtml({version: evil, data_dir: evil}, {step: "idle"}, {...AUTO, message: evil}), /<img/);

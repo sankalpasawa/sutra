@@ -129,6 +129,24 @@ def test_about_checks_for_updates_only_when_the_owner_presses_the_button(browser
 
 
 @browser_only
+def test_about_has_the_automatic_check_switch_which_is_one_put_and_asks_github_nothing(browser, fake):
+    browser.expect_failed("/api/notes", 404)                                                           # the fake has no notes route (no other test of Settings is ahead of this one in that)
+    load(browser, fake)
+    open_settings(browser, "about")
+    browser.wait_for("document.querySelector('#set-about [data-act=toggle-auto-update]') !== null")
+    assert browser.js("document.querySelector('#set-about [data-act=toggle-auto-update]').checked") is True
+    text = browser.js("document.getElementById('set-about').innerText")
+    assert "Check for updates automatically" in text and "one request and nothing about you or your files" in text and "Last check: none yet." in text
+    assert posts(fake, "/api/ops/") == []                                                             # reading the setting asked nobody
+    browser.click('#set-about [data-act="toggle-auto-update"]')
+    browser.wait_for("HomePage.state().auto.auto === false && document.querySelector('#set-about [data-act=toggle-auto-update]').checked === false")
+    assert [(r["method"], r["path"], r["token"], r["body"]) for r in fake.log("/api/ops/") if r["method"] == "PUT"] == [("PUT", "/api/ops/update-setting", True, {"auto": False})]
+    assert [r for r in posts(fake, "/api/ops/")] == [r for r in posts(fake, "/api/ops/") if r["path"] != "/api/ops/update-check"]
+    browser.click('#set-about [data-act="check-update"]')                                              # the owner's own check writes the last-check line, which the page then shows
+    browser.wait_for("document.querySelector('#set-about .setlast').textContent.indexOf('up to date') !== -1")
+
+
+@browser_only
 def test_the_pill_offers_the_model_list_and_a_change_is_one_put_that_the_page_reads_back(browser, fake):
     load(browser, fake, choice={"provider": "claude"})
     present(browser, "#spill .cpick select[data-act=choose-model]")
