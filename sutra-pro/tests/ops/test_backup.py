@@ -273,6 +273,66 @@ def test_backup_command_exits_1_without_a_database(tmp_path, capsys):
     assert "no database" in capsys.readouterr().err
 
 
+def damage(settings: Settings) -> None:
+    """Overwrite a few stretches of the database with 0xFF, past its first page: the file still opens, but `PRAGMA integrity_check` fails."""
+    conn = sqlite3.connect(settings.db_path, isolation_level=None)
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    conn.close()
+    with open(settings.db_path, "r+b") as handle:
+        for n in range(6):
+            handle.seek(8192 + n * 3000)
+            handle.write(b"\xff" * 200)
+    conn = sqlite3.connect(settings.db_path, isolation_level=None)
+    try:
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok", "the test's damage did not damage the database"
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("target", [None, "elsewhere"])
+def test_a_damaged_database_is_refused_with_the_reason_and_no_archive_or_scratch_is_left(data, tmp_path, target):
+    damage(data)
+    folder = tmp_path / "elsewhere" if target else data.data_dir / "backups"
+    with pytest.raises(backup.BackupError) as caught:
+        backup.create_backup(data, to=folder if target else None)
+    text = str(caught.value)
+    assert "integrity check" in text and "no backup was written" in text and "sutra-pro restore" in text and "\n" not in text
+    assert list(folder.iterdir()) == []                               # no archive, no .part file, no scratch folder
+
+
+def test_a_damaged_database_never_pushes_the_good_backups_out_of_the_rotation(data, tmp_path):
+    folder = data.data_dir / "backups"
+    good_ones = [backup.create_backup(data, now=lambda i=i: 1_800_000_000.0 + i).path for i in range(backup.KEEP_AUTOMATIC)]
+    damage(data)
+    for _ in range(backup.KEEP_AUTOMATIC + 1):
+        with pytest.raises(backup.BackupError, match="integrity check"):
+            backup.create_backup(data)
+    assert sorted(p.name for p in folder.glob("sutra-pro-backup-*.tar.gz")) == sorted(p.name for p in good_ones)
+    restored = backup.restore_backup(settings_for(tmp_path / "back"), max(good_ones))               # the newest kept backup still restores
+    assert restored.files >= 1 and sqlite3.connect(tmp_path / "back" / "db.sqlite3").execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_integrity_problem_is_none_for_a_sound_file_one_line_for_a_damaged_one_and_raises_for_other_errors(data):
+    conn = sqlite3.connect(data.db_path, isolation_level=None)
+    assert backup.integrity_problem(conn) is None
+    conn.close()
+    damage(data)
+    conn = sqlite3.connect(data.db_path, isolation_level=None)
+    text = backup.integrity_problem(conn)
+    assert text and "\n" not in text and len(text) <= 160
+    conn.close()
+    with pytest.raises(sqlite3.ProgrammingError):                       # a closed connection is not a damaged file
+        backup.integrity_problem(conn)
+
+
+def test_backup_command_says_why_and_exits_1_for_a_damaged_database(data, capsys):
+    damage(data)
+    assert cli.main(["backup", "--data-dir", str(data.data_dir)]) == 1
+    captured = capsys.readouterr()
+    assert "Backup written" not in captured.out and "integrity check" in captured.err and "sutra-pro restore" in captured.err
+    assert not list((data.data_dir / "backups").glob("*.tar.gz"))
+
+
 def test_the_commands_are_registered_in_cli_commands():
     cli.build_parser()
     assert {"backup", "restore"} <= set(cli.COMMANDS)

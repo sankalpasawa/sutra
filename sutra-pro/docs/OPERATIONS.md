@@ -92,6 +92,8 @@ sutra-pro restore ~/Backups/sutra-pro-backup-20261104T180131Z.tar.gz
 - A backup never holds `.env`, the lock files or `logs/`: it is meant to be copied around. `--include-env` is refused with that reason.
   Keep your `.env` somewhere safe yourself.
 - The default folder keeps the newest 7 backups. A backup written with `--to` is yours and is never rotated.
+- `backup` first runs SQLite's `PRAGMA integrity_check` on the copy and refuses a damaged database (exit 1, nothing written, nothing rotated): such a copy could not
+  be restored and would push the good backups out of the 7. `doctor` runs the same check and fails the Database line; restore the newest good backup.
 - `restore` needs the server stopped. It verifies the manifest and every checksum, builds the new folder beside the old one, checks the database
   (`PRAGMA integrity_check`), then renames the old folder to `<data>.before-restore-<UTC>` and puts the new one in place. **Nothing is deleted**; remove the
   `.before-restore-*` folder yourself when you are happy. `.env` and `backups/` are carried over. A backup from an older version is accepted (the server migrates

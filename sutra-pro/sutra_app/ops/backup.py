@@ -15,6 +15,10 @@ or `logs/`: a backup is meant to be kept and copied around, and the override key
 A file is copied to a scratch file first and hashed and archived from the copy, so a log that grows while the server runs cannot
 make the manifest disagree with the archive.
 
+The database copy must pass `PRAGMA integrity_check` (the test restore applies) before anything is archived: `Connection.backup()` copies
+pages without reading them, so a damaged file would back up "successfully", fail every restore and, kept by the rotation below, push the
+good backups out. A damaged database is refused (nothing is written, nothing is rotated) and the message points at the older backups.
+
 Rotation: a backup written to the default folder keeps only the newest 7 `sutra-pro-backup-*.tar.gz` there (`prune_backups`); a backup
 written with `--to` is the owner's own copy and is never rotated. The `pre-upgrade-*.sqlite3` files are never rotated.
 
@@ -49,7 +53,7 @@ from sutra_app.ops import cli, lock
 from sutra_app.orchestrator import schema
 
 __all__ = ["BackupError", "RestoreError", "BackupResult", "RestoreResult", "create_backup", "restore_backup", "before_upgrade",
-           "prune_backups", "size_text", "snapshot_database", "connect_readonly", "collect_files", "register", "utc_stamp", "backups_dir",
+           "prune_backups", "size_text", "snapshot_database", "connect_readonly", "integrity_problem", "collect_files", "register", "utc_stamp", "backups_dir",
            "MANIFEST_NAME", "FORMAT", "KEEP_AUTOMATIC", "LOG_MAX_AGE_S", "ENV_REFUSAL"]
 
 FORMAT = 1
@@ -122,6 +126,36 @@ def connect_readonly(db_path: Path) -> sqlite3.Connection:
 
 def _user_version(conn: sqlite3.Connection) -> int:
     return int(conn.execute("PRAGMA user_version").fetchone()[0])
+
+
+def integrity_problem(conn: sqlite3.Connection) -> str | None:
+    """None when `PRAGMA integrity_check` answers ok; otherwise what it complains about, on one line (the first few findings). Depending on
+    the damage SQLite either lists findings or fails the pragma itself ("database disk image is malformed"); both come back as the text.
+    Any other error (a busy or unreadable file is not damage) is raised. The one test restore applies, shared with the backup and the doctor."""
+    try:
+        rows = [str(row[0]) for row in conn.execute("PRAGMA integrity_check(5)").fetchall()]
+    except sqlite3.DatabaseError as exc:
+        if type(exc) is not sqlite3.DatabaseError:            # OperationalError and the others: locked, no disk, no permission
+            raise
+        rows = [str(exc)]
+    return None if rows == ["ok"] else " ".join(" ".join(rows).split())[:160]
+
+
+def _refuse_a_damaged_copy(copy: Path, original: Path) -> None:
+    """Raise BackupError when the database copy fails `integrity_check`. Connection.backup() copies pages without looking at them, so a
+    damaged file backs up 'successfully' and then fails every restore; kept by the rotation it would also push out the good backups."""
+    try:
+        conn = sqlite3.connect(str(copy), isolation_level=None)
+        try:
+            problem = integrity_problem(conn)
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        problem = " ".join(str(exc).split())[:160]
+    if problem is not None:
+        raise BackupError(f"the database {original} fails SQLite's integrity check ({problem}), so no backup was written: a copy of a damaged "
+                          f"database cannot be restored, and it would push your good backups out of the {KEEP_AUTOMATIC} that are kept. "
+                          f"Do not delete the older backups; restore the newest good one (`sutra-pro restore FILE`) and run `sutra-pro doctor`")
 
 
 def snapshot_database(src: Path, dest: Path) -> int:
@@ -232,6 +266,7 @@ def create_backup(settings: Settings, *, to: Path | None = None, include_runs: b
             scratch = Path(scratch_name)
             db_copy = scratch / DB_FILENAME
             user_version = snapshot_database(settings.db_path, db_copy)
+            _refuse_a_damaged_copy(db_copy, settings.db_path)
             fd = os.open(part, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_TRUNC, _FILE_MODE)
             with os.fdopen(fd, "wb") as raw, tarfile.open(fileobj=raw, mode="w:gz") as tar:
                 def add(arcname: str, source: Path, mtime: float) -> None:
