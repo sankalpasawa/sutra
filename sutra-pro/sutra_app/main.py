@@ -39,11 +39,12 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 import sutra_app
 from sutra_app import oslayer
 from sutra_app.config import LOOPBACK_HOSTS, Settings, SettingsError
-from sutra_app.orchestrator.api import agent, atoms, chat_v2, chart, chat, departments, graph, system, tasks, usage
+from sutra_app.orchestrator.api import agent, atoms, chat_v2, chart, chat, departments, graph, limits, recurring, system, tasks, usage
 from sutra_app.orchestrator.api import events as events_api
 from sutra_app.orchestrator.api.deps import install_error_handlers, redacted_response_class
 from sutra_app.orchestrator.errors import error_body
 from sutra_app.orchestrator.ids import Clock, IdFactory
+from sutra_app.ops import attention_api
 from sutra_app.ops import browser as ops_browser
 from sutra_app.ops import logsetup
 from sutra_app.orchestrator.wiring import AppServices, build_services, start_services, stop_services
@@ -59,7 +60,7 @@ LAST_PORT = 8799
 STOP_POLL_S = 0.5                # how often the server looks for a stop request (the app.stop file)
 GRACEFUL_SHUTDOWN_S = 5                 # open connections are cancelled after this; the stop ladders then run in the lifespan
 # the orchestrator's own routers, in include order: the agent router first (it owns POST /api/chats/{sid}/messages and the decision route)
-ROUTERS = (events_api, chat_v2, agent, chat, atoms, usage, graph, chart, departments, tasks, system)
+ROUTERS = (events_api, chat_v2, agent, chat, atoms, usage, graph, chart, departments, tasks, recurring, limits, attention_api, system)
 # plug-ins: (module, how to mount it), in the order orchestrator 6.4 fixes; the library's schema router sits before the UI
 PLUGINS = ("sutra_app.engine.api", "sutra_app.connectors.api", "sutra_app.library.api", "sutra_app.ui")
 OPS_API = "sutra_app.ops.api"           # GAP-CONSOLE's router (`router`); mounted after the orchestrator's routers when the module exists

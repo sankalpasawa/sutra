@@ -409,6 +409,9 @@ class TaskService:
         self.redact = redact or (lambda text: text)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock: asyncio.Lock | None = None
+        # limits.py (gap routines-limits): called as gate(conn, now, dept_id) for a queued task that may otherwise start; a non-empty answer
+        # is the words it keeps waiting with. Only starts are gated: a run in flight is never touched.
+        self.start_gate: Callable[[sqlite3.Connection, int, str], str] | None = None
 
     # ---- loop plumbing -----------------------------------------------------------------------------------------------------
 
@@ -446,6 +449,17 @@ class TaskService:
         row = self._insert(tx, dept_id=dept_id, text=text, title=title, scope_id=scope_id, framing=framing, depends_on=depends_on,
                            follows=follows, request=request, change_id=change_id, settings=settings, seed_run=None, parent_task_id=None)
         return self.store.out_in(tx.conn, row.id)
+
+    def create_scheduled(self, tx: Tx, *, dept_id: str, text: str, title: str, note: str) -> TaskOut:
+        """The task a recurring schedule makes (recurring.py): an ordinary queued task, plus one system note in the team's chat that says it
+        was scheduled, so the owner who opens the team sees why it started. Raises like `create`."""
+        created = self.create(tx, dept_id=dept_id, text=text, title=title)
+        self.post_note(tx, dept_id, note, task_id=created.id)
+        return created
+
+    def post_note(self, tx: Tx, dept_id: str, text: str, *, task_id: str | None = None) -> None:
+        """One system note in a team's chat (the owner did not write it; Sutra did)."""
+        self._post(tx, self._dept_session(tx.conn, dept_id), role="system", who="sutra", kind="note", text=text, task_id=task_id)
 
     def _insert(self, tx: Tx, *, dept_id: str, text: str, title: str | None, scope_id: str | None, framing: str, depends_on: Sequence[str],
                 follows: str | None, request: str | None, change_id: str | None, settings: dict[str, Any] | None, seed_run: str | None,
@@ -575,6 +589,8 @@ class TaskService:
                     continue
                 waiting = why_waiting(busy_status=busy.get(row.dept_id), working=working, live=live,              # names the owner when it is the owner
                                       max_runs=self.settings.max_runs, max_live=self.settings.max_live)
+                if not waiting and self.start_gate is not None:                                                  # the spending limit, the plan window
+                    waiting = self.start_gate(tx.conn, tx.now(), row.dept_id)
                 if waiting:
                     self.taskgraph.sync(tx, row, waiting=waiting, announce=False)
                     continue

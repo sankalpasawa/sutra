@@ -19,6 +19,8 @@ import urllib.request
 import pytest
 from harness import REPO, dept_change_payload, pid_alive
 
+from sutra_app.orchestrator.schema import SCHEMA_VERSION
+
 STOP_WITHIN_S = 15
 
 
@@ -101,7 +103,7 @@ def test_the_cli_serves_health_the_home_page_and_one_message_and_stops_on_sigter
         except (OSError, AssertionError):
             assert time.time() < end
             time.sleep(0.1)
-    assert health["ok"] is True and health["schema"] == 2 and set(health["connectors"]) == {"stub"}
+    assert health["ok"] is True and health["schema"] == SCHEMA_VERSION and set(health["connectors"]) == {"stub"}
     assert server.json("/api/config")["offline"] is True
     # --- the Home page, its policy and the token it carries
     status, headers, page = server.request("GET", "/", token=False)

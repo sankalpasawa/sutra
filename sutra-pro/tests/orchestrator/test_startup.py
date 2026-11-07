@@ -20,6 +20,7 @@ from orchestrator.test_scripted_conversation import (
 
 from sutra_app import main as main_module
 from sutra_app.library import node as node_module
+from sutra_app.orchestrator import schema
 from sutra_app.config import Settings
 from sutra_app.main import GRACEFUL_SHUTDOWN_S, bind_socket, build_parser, create_app, run
 from sutra_app.orchestrator.testing.fake_engine import FakeLauncher, ev
@@ -50,7 +51,7 @@ def test_the_lifespan_makes_the_folders_the_database_the_root_and_the_org_chat(t
         c = Scenario(client, app, ScriptedConnector())
         assert (data / "db.sqlite3").is_file() and (data / "departments").is_dir() and (data / "logs").is_dir()
         assert oct(data.stat().st_mode & 0o777) == "0o700" and oct((data / "departments").stat().st_mode & 0o777) == "0o700"
-        assert c.one("SELECT kind FROM org_nodes") == "root" and c.one("PRAGMA user_version") == 2
+        assert c.one("SELECT kind FROM org_nodes") == "root" and c.one("PRAGMA user_version") == schema.SCHEMA_VERSION
         session = client.get("/api/chats/cs_org").json()
         assert session["node_id"] == "root" and session["writable"] is True and session["kind"] == "org"
         assert [m["who"] for m in client.get("/api/chats/cs_org/messages").json()["messages"]] == ["sutra"]
@@ -308,7 +309,7 @@ def test_health_reports_the_version_the_schema_and_the_connectors(tmp_path):
     app, _ = make_scenario(tmp_path)
     with TestClient(app, base_url=BASE) as client:
         body = client.get("/api/health").json()
-        assert body["ok"] is True and body["version"] == "0.1.0" and body["schema"] == 2 and set(body["connectors"]) == {"stub"}
+        assert body["ok"] is True and body["version"] == "0.1.0" and body["schema"] == schema.SCHEMA_VERSION and set(body["connectors"]) == {"stub"}
         assert body["connectors"]["stub"]["installed"] is True
 
 

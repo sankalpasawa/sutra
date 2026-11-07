@@ -55,13 +55,13 @@ def change(db, id_="chg-0001", **over):
 # ---- migrations and pragmas --------------------------------------------------------------------------------------
 
 def test_migrate_creates_every_table_and_sets_the_version(db):
-    assert db.version() == schema.SCHEMA_VERSION == 2
+    assert db.version() == schema.SCHEMA_VERSION >= 3                      # not == 3: another package appends a migration too
     assert {n for n in names(db) if not n.startswith("chat_search")} - {"sqlite_sequence"} == set(schema.TABLES)      # chat_search is FTS5: it brings its shadow tables
 
 
 def test_migrate_again_is_a_no_op(db):
     sql(db, "INSERT INTO meta VALUES ('k','v')")
-    assert db.migrate() == 2
+    assert db.migrate() == schema.SCHEMA_VERSION
     assert sql(db, "SELECT count(*) FROM meta").fetchone()[0] == 1
 
 
@@ -84,6 +84,28 @@ def test_a_failing_migration_leaves_the_file_untouched(settings, events):
     fresh.migrate([("CREATE TABLE a (x)",), lambda conn: conn.execute("CREATE TABLE b (y)")])
     assert fresh.version() == 2 and {"a", "b"} <= names(fresh)
     fresh.close()
+
+
+def test_a_database_at_version_two_gets_the_recurring_tables_and_keeps_its_rows(settings, events):
+    old = Database(settings.data_dir / "v2.sqlite3", events)
+    old.migrate(schema.MIGRATIONS[:2])
+    sql(old, "INSERT INTO meta VALUES ('k','v')")
+    assert old.version() == 2 and not {"recurring", "recurring_runs"} & names(old)
+    assert old.migrate() == schema.SCHEMA_VERSION >= 3
+    assert {"recurring", "recurring_runs"} <= names(old) and sql(old, "SELECT count(*) FROM meta").fetchone()[0] == 1
+    old.close()
+
+
+def test_a_due_time_is_unique_per_schedule_and_runs_go_with_their_schedule(db):
+    seed(db)
+    sql(db, "INSERT INTO recurring(id, dept_id, text, schedule_json, cursor_at, created_at, updated_at) VALUES ('rec_aaaaaaaaaaaa','web','t','{}',1,1,1)")
+    sql(db, "INSERT INTO recurring_runs(recurring_id, due_at, at, trigger, outcome) VALUES ('rec_aaaaaaaaaaaa', 100, 100, 'schedule', 'skipped')")
+    with pytest.raises(sqlite3.IntegrityError):
+        sql(db, "INSERT INTO recurring_runs(recurring_id, due_at, at, trigger, outcome) VALUES ('rec_aaaaaaaaaaaa', 100, 101, 'catch_up', 'started')")
+    with pytest.raises(sqlite3.IntegrityError):
+        sql(db, "INSERT INTO recurring_runs(recurring_id, due_at, at, trigger, outcome) VALUES ('rec_aaaaaaaaaaaa', 200, 200, 'nope', 'started')")
+    sql(db, "DELETE FROM recurring WHERE id = 'rec_aaaaaaaaaaaa'")
+    assert sql(db, "SELECT count(*) FROM recurring_runs").fetchone()[0] == 0
 
 
 def test_ddl_statements_are_complete_and_carry_the_settled_additions(db):

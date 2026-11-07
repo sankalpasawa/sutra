@@ -12,7 +12,7 @@ end for the next version; never edit an old one.
 from collections.abc import Callable, Sequence
 from sqlite3 import Connection
 
-__all__ = ["DDL_V1", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
+__all__ = ["DDL_V1", "DDL_V3_RECURRING", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
 
 DDL_V1: tuple[str, ...] = (
     # schema version = PRAGMA user_version; 'graph_version' and 'bootstrapped_at' live here
@@ -206,10 +206,29 @@ _FTS_TRIGGERS: tuple[str, ...] = (
     "INSERT INTO chat_search(body, session_id, message_id) VALUES (new.title, new.id, 0); END",
 )
 
+# Recurring work (gap package routines-limits): one row per standing task, one row per due time that was dealt with. UNIQUE(recurring_id,
+# due_at) is what makes a restart unable to fire the same slot twice; `cursor_at` is the last due time dealt with (fired, folded or skipped);
+# `streak_after` is the run row id above which crashes count toward the three-in-a-row pause (switching a schedule on again starts a new streak).
+DDL_V3_RECURRING: tuple[str, ...] = (
+    """CREATE TABLE recurring (
+  id TEXT PRIMARY KEY, dept_id TEXT NOT NULL REFERENCES departments(id), text TEXT NOT NULL, schedule_json TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)), paused_reason TEXT NOT NULL DEFAULT '',
+  cursor_at INTEGER NOT NULL, streak_after INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""",
+    "CREATE INDEX recurring_dept ON recurring(dept_id)",
+    """CREATE TABLE recurring_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, recurring_id TEXT NOT NULL REFERENCES recurring(id) ON DELETE CASCADE,
+  due_at INTEGER NOT NULL, at INTEGER NOT NULL,
+  trigger TEXT NOT NULL CHECK (trigger IN ('schedule','catch_up','manual')),
+  outcome TEXT NOT NULL CHECK (outcome IN ('started','skipped')),
+  task_id TEXT REFERENCES tasks(id), folded INTEGER NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '',
+  UNIQUE (recurring_id, due_at))""",
+    "CREATE INDEX recurring_runs_of ON recurring_runs(recurring_id, id)",
+)
+
 Migration = Sequence[str] | Callable[[Connection], None]
-MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2)
+MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING)
 SCHEMA_VERSION = len(MIGRATIONS)
 TABLES = (
     "meta", "org_charts", "chart_changes", "org_nodes", "org_edges", "departments", "tasks", "graph_nodes", "graph_edges",
-    "chat_sessions", "chat_messages", "chat_segments", "atoms", "atom_ledger", "usage_ledger",
+    "chat_sessions", "chat_messages", "chat_segments", "atoms", "atom_ledger", "usage_ledger", "recurring", "recurring_runs",
 )

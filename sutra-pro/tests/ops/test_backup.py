@@ -73,6 +73,8 @@ def data(tmp_path) -> Settings:
     write(root / "connectors" / "policy.json", "{}")
     write(root / "connectors" / "other.json", "not listed")
     write(root / "engine.json", "{}")
+    write(root / "limits.json", '{"version": 1}')
+    write(root / "attention.json", '{"version": 1}')
     write(root / ".env", "J2_OVERRIDE_KEY=secret-value")
     write(root / "app.lock", "")
     write(root / "app.pid", "1 2")
@@ -127,7 +129,7 @@ def test_backup_holds_the_listed_files_and_never_secrets_or_locks_or_logs(data):
     assert result.path.parent == data.data_dir / "backups" and result.path.name.startswith("sutra-pro-backup-")
     assert result.path.name.endswith("Z.tar.gz")
     names = names_of(result.path)
-    assert names == {"db.sqlite3", "MANIFEST.json", "engine.json", "connectors/policy.json", "library/index.json", "agents/j2/role.md",
+    assert names == {"db.sqlite3", "MANIFEST.json", "engine.json", "connectors/policy.json", "limits.json", "attention.json", "library/index.json", "agents/j2/role.md",
                      "departments/web/department.json", f"departments/web/runs/{RUN}/summary.json", f"departments/web/runs/{RUN}/events.jsonl",
                      f"departments/web/runs/{RUN}/run.stderr.log", f"departments/web/runs/{RUN}/site/index.html"}
     assert "secret-value" not in b"".join(contents(result.path).values()).decode("latin-1")
@@ -295,8 +297,9 @@ def test_before_upgrade_copies_the_database_when_it_is_older_than_this_build(dat
 
 
 def test_before_upgrade_names_both_versions(data, monkeypatch):
-    monkeypatch.setattr(schema, "SCHEMA_VERSION", 4)
-    assert backup.before_upgrade(data).name == "pre-upgrade-v2-to-v4.sqlite3"
+    current = schema.SCHEMA_VERSION                                              # the data fixture is migrated to this build's version
+    monkeypatch.setattr(schema, "SCHEMA_VERSION", current + 2)
+    assert backup.before_upgrade(data).name == f"pre-upgrade-v{current}-to-v{current + 2}.sqlite3"
 
 
 def test_before_upgrade_replaces_an_older_copy_of_the_same_name(data):

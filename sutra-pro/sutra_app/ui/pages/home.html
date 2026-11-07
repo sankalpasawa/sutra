@@ -37,6 +37,9 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <div class="pane" id="pane-settings" hidden>
         <div id="set-appearance"></div>
         <div id="set-connectors"></div>
+        <div id="set-limits"></div>
+        <div id="set-notices"></div>
+        <div id="set-recurring"></div>
         <div id="set-engine"></div>
       </div>
     </section>
@@ -52,6 +55,9 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
   <div class="railsec" aria-labelledby="rail-settings-h"><h3 class="railhead" id="rail-settings-h">Settings</h3>
     <button type="button" data-pane="settings" data-group="appearance"><span>Appearance</span></button>
     <button type="button" data-pane="settings" data-group="connectors"><span>Connectors</span></button>
+    <button type="button" data-pane="settings" data-group="limits"><span>Limits</span></button>
+    <button type="button" data-pane="settings" data-group="notices"><span>Notifications</span></button>
+    <button type="button" data-pane="settings" data-group="recurring"><span>Recurring work</span></button>
     <button type="button" data-pane="settings" data-group="engine"><span>Engine</span></button>
   </div>
   <div class="railsec" aria-labelledby="rail-owner-h"><h3 class="railhead" id="rail-owner-h">Owner</h3>
@@ -78,6 +84,8 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <script src="/ui/js/node_panel.js"></script>
 <script src="/ui/js/plan_meter.js"></script>
 <script src="/ui/js/settings_view.js"></script>
+<script src="/ui/js/limits_view.js"></script>
+<script src="/ui/js/recurring_view.js"></script>
 <script src="/ui/js/heads_up_view.js"></script>
 <script src="/ui/js/chat_attention.js"></script>
 <script src="/ui/js/home.js"></script>
