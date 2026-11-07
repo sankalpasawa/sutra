@@ -321,3 +321,27 @@ test("rejoin: a chat shown again mid-turn starts its row from what streams next,
   c.partial({session_id: SID, message_id: 5, delta: " again"});
   assert.equal(c.state().turn.text, " again");
 });
+
+// ---- QA direct-chat: the Enter that confirms an IME candidate, and the second click of a double-click ------------------------------------------------
+
+test("QA bug 2: Enter sends, but not while an IME composition is open (isComposing, or Safari's keyCode 229) and not with Shift", () => {
+  const {sendKey} = ChatComposer;
+  assert.equal(sendKey({key: "Enter"}), true);
+  assert.equal(sendKey({key: "Enter", shiftKey: false, isComposing: false, keyCode: 13}), true);
+  assert.equal(sendKey({key: "Enter", isComposing: true, keyCode: 13}), false);            // Chrome and Firefox: the Enter that confirms a candidate
+  assert.equal(sendKey({key: "Enter", isComposing: false, keyCode: 229}), false);           // Safari ends the composition first, then reports 229 on that Enter
+  assert.equal(sendKey({key: "Enter", shiftKey: true}), false);                             // a new line
+  assert.equal(sendKey({key: "a"}), false);
+  assert.equal(sendKey(null), false);
+  assert.equal(sendKey(undefined), false);
+});
+
+test("QA bug 6: the second click of a double-click is not a Stop; a single click, a keyboard press and an unknown event are", () => {
+  const {stopPress} = ChatComposer;
+  assert.equal(stopPress({detail: 1}), true);
+  assert.equal(stopPress({detail: 0}), true);                  // a keyboard activation of the button has no click count
+  assert.equal(stopPress({detail: 2}), false);                 // what a double-click on Send delivers to the button that has just become Stop
+  assert.equal(stopPress({detail: 3}), false);
+  assert.equal(stopPress({}), true);
+  assert.equal(stopPress(undefined), true);
+});

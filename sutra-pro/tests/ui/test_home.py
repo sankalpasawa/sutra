@@ -824,3 +824,20 @@ def test_the_org_chats_box_keeps_its_words_across_a_reload_and_an_accepted_send_
     browser.wait_for("window.HomePage && HomePage.state().loaded === true")
     assert browser.js("document.getElementById('sbox').value") == ""
     no_console_errors(browser)
+
+
+@browser_only
+def test_enter_that_confirms_an_ime_candidate_sends_nothing_until_the_second_enter(browser, fake):
+    """QA direct-chat bug 2: a Chinese, Japanese or Korean typist presses Enter to confirm a candidate; the box must not send the half-written line."""
+    no_pill_route(browser)
+    load(browser, fake)
+    browser.js("document.getElementById('sbox').focus()")
+    browser._send("Input.imeSetComposition", {"text": "にほんご", "selectionStart": 4, "selectionEnd": 4})
+    browser.press("Enter")                                                                 # keydown with isComposing: it only confirms the candidate
+    assert posts(fake, "/api/chats/cs_org/messages") == []
+    assert browser.count("#smsgs .sb.me") == 0
+    browser.js("(() => { const b = document.getElementById('sbox'); b.value = 'にほんご'; b.dispatchEvent(new Event('input', {bubbles: true})); })()")
+    browser.press("Enter")                                                                 # the second Enter (no composition) sends
+    browser.wait_for("document.querySelectorAll('#smsgs .sb.me').length >= 1")
+    assert [r["body"] for r in posts(fake, "/api/chats/cs_org/messages")] == [{"text": "にほんご"}]
+    no_console_errors(browser)

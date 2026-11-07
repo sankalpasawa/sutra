@@ -29,6 +29,10 @@
      providerOf(providers, chosen)     the name to show in the streaming row: the chosen one if it can run, else ""
      filesOf(transfer)                 the files of a clipboardData or dataTransfer, or null when there is none (then the page lets it be)
      hasFiles(transfer)                a drag carries files (dragover: the files themselves are not readable yet)
+     sendKey(event)                    true when a keydown in the message box means "send": Enter alone, never while an IME composition is open (the Enter that
+                                       confirms a candidate, Safari's included: keyCode 229) and never with Shift (a new line). Home and the panel share it.
+     stopPress(event)                  false for the second click of a double-click: a double-click on Send would send, and as the label turns into Stop under
+                                       the pointer stop the turn it just started. A deliberate (single, or keyboard) press is true.
 
    Buttons carry data-act (composer-mode, composer-attach, composer-remove, composer-stop) and the panel that shows the bar listens for them.
    A classic script with ONE global, ChatComposer; in node it is module.exports. */
@@ -114,6 +118,17 @@
     const type = clean(file && file.type).toLowerCase();
     const ext = hasOwn(PASTE_EXT, type) ? PASTE_EXT[type] : (IMAGE_EXT.exec(name) || [".png"])[0].toLowerCase();
     return "pasted-image-" + n + ext;
+  }
+
+  // The Enter that confirms an IME candidate is not a send: `isComposing` is true in Chrome and Firefox; Safari ends the composition first and then
+  // reports keyCode 229 on that Enter.
+  function sendKey(e) {
+    return isObj(e) && e.key === "Enter" && e.shiftKey !== true && e.isComposing !== true && e.keyCode !== 229;
+  }
+
+  // `detail` is the click count: the 2nd click of a double-click on the Send button (which has just become Stop) must not stop the turn the 1st started.
+  function stopPress(e) {
+    return !(isObj(e) && Number.isFinite(e.detail) && e.detail > 1);
   }
 
   function bar(state, opts) {
@@ -368,7 +383,7 @@
     return {state: () => state, setMode, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile};
   }
 
-  const ChatComposer = {create, bar, chips, streamRow, button, askBlock, providerOf, filesOf, hasFiles, size, MAX_FILES};
+  const ChatComposer = {create, bar, chips, streamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, size, MAX_FILES};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatComposer;
   else root.ChatComposer = ChatComposer;
 })(globalThis);

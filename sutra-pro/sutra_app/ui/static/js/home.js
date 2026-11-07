@@ -1251,7 +1251,10 @@
   function wire() {
     $("smsgs").addEventListener("click", onChatClick);
     if ($("spill")) { $("spill").addEventListener("click", onPillClick); $("spill").addEventListener("change", onPillChange); }
-    $("ssend").addEventListener("click", () => ($("ssend").dataset.act === "composer-stop" ? stopDirect() : send($("sbox").value)));
+    $("ssend").addEventListener("click", e => {
+      if ($("ssend").dataset.act !== "composer-stop") send($("sbox").value);
+      else if (!root.ChatComposer || root.ChatComposer.stopPress(e)) stopDirect();          // the 2nd click of a double-click on Send is not a Stop
+    });
     $("sbar").addEventListener("click", e => {
       const b = e.target.closest("[data-act]");
       const c = composer();
@@ -1267,7 +1270,9 @@
       c.addFiles(t.files);
       t.value = "";
     });
-    $("sbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send($("sbox").value); } });
+    $("sbox").addEventListener("keydown", e => {
+      if (root.ChatComposer ? root.ChatComposer.sendKey(e) : (e.key === "Enter" && !e.shiftKey && !e.isComposing)) { e.preventDefault(); send($("sbox").value); }
+    });
     wireComfort();
     $("sbanner").addEventListener("click", e => {
       const b = e.target.closest("button");

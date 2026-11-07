@@ -1109,7 +1109,7 @@
       const name = act.dataset.act;
       if (name === "chat") switchTab("chat");
       else if (name === "send") send(chatRefs ? chatRefs.box.value : "", true);
-      else if (name === "composer-stop") stopDirect();
+      else if (name === "composer-stop") { if (!root.ChatComposer || root.ChatComposer.stopPress(e)) stopDirect(); }          // the 2nd click of a double-click on Send is not a Stop
       else if (name === "composer-mode") { const c = composerOf(); if (c) { st.ccMode = act.dataset.mode === "direct" ? "direct" : "team"; c.setMode(st.ccMode); } }
       else if (name === "composer-attach") { const input = chatRefs && chatRefs.bar ? chatRefs.bar.querySelector(".ccinput") : null; if (input) input.click(); }
       else if (name === "composer-remove") { const c = composerOf(); if (c) c.removeFile(act.dataset.key); }
@@ -1170,7 +1170,7 @@
         return;
       }
       const t = e.target;
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing && t && t.classList && t.classList.contains("nbox")) {
+      if ((root.ChatComposer ? root.ChatComposer.sendKey(e) : (e.key === "Enter" && !e.shiftKey && !e.isComposing)) && t && t.classList && t.classList.contains("nbox")) {
         e.preventDefault();
         send(t.value, true);
       }
