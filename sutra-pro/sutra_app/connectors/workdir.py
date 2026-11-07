@@ -98,6 +98,9 @@ def check_folder(raw: Any, *, data_dir: "str | Path", work_root: "str | Path | N
     own = [os.path.realpath(str(data_dir))] + ([os.path.realpath(str(work_root))] if work_root is not None else [])
     if any(_inside(real, folder) for folder in own):
         raise InvalidRequestError("That folder belongs to Sutra itself (its data and chat state). Choose a folder of your own")
+    if any(_inside(folder, real) for folder in own):         # a folder that holds Sutra's own folders (the home folder) would let the file tools read them
+        raise InvalidRequestError("That folder holds Sutra's own data folder, and the model could read it from there. Choose a folder inside it, "
+                                  "for example the folder of your project")
     if not os.access(real, os.R_OK | os.X_OK):
         raise InvalidRequestError(f"{real} cannot be read by this account")
     return real

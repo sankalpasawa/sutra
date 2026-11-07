@@ -114,6 +114,14 @@ def test_the_apps_work_root_is_refused_too(dirs):
         assert "belongs to Sutra itself" in says(e)
 
 
+def test_a_folder_that_holds_the_apps_own_folders_is_refused(dirs):
+    for path in (dirs.root, dirs.root.parent):
+        with pytest.raises(InvalidRequestError) as e:
+            check_folder(str(path), data_dir=dirs.data, work_root=dirs.work)
+        assert "holds Sutra's own data folder" in says(e)
+    check_folder(str(dirs.mine), data_dir=dirs.data, work_root=dirs.work)                  # a sibling of the data folder is fine
+
+
 @POSIX
 def test_a_link_into_the_data_folder_is_refused_after_resolving_it(dirs):
     link = dirs.root / "sneaky"
