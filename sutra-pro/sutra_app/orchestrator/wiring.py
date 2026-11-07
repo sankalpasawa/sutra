@@ -45,6 +45,7 @@ from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.departments import DepartmentStore
 from sutra_app.orchestrator.events import EventBus
 from sutra_app.orchestrator.graph import GraphStore
+from sutra_app.orchestrator.limits import LIMITS_FILE, Limits
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock
 from sutra_app.orchestrator.projector import Projector
 from sutra_app.orchestrator.recurring import Recurring
@@ -72,6 +73,7 @@ class AppServices(Services):
     chat_port: Any = None              # ChatPort over the router (ABS-1), for the direct chat routes
     attachments: Any = None            # the attachment service (ABS-4)
     recurring: Any = None              # the schedules of recurring work and their ticker (GAP2 routines-limits)
+    limits: Any = None                 # the monthly spending limit and the plan-window guard, TaskService's start gate (GAP2 routines-limits)
     reconciled: ReconcileReport | None = None
     swept: int = 0
     refreshed: int = 0
@@ -167,6 +169,9 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     attachments = Attachments(settings.data_dir)
     chat_port = RouterChatPort(router, attachments=attachments.store)
     recurring = Recurring(db, tasks, clock=clock)
+    limits = Limits(settings.data_dir / LIMITS_FILE, db, quotas=lambda: {name: router.health.quota(name) for name in ("claude", "codex")},
+                    clock=clock, offline=settings.offline or router_settings.connector == "stub")
+    tasks.start_gate = limits.gate
     agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout)
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
                         publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor)
@@ -175,7 +180,8 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         bus=bus, chats=chats, atoms=atoms, usage=usage, graph=graph, chart=chart, departments=departments, tasks=tasks,
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
-        stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring)
+        stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring,
+        limits=limits)
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------

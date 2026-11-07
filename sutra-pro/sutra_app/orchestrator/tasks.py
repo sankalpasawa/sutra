@@ -409,6 +409,9 @@ class TaskService:
         self.redact = redact or (lambda text: text)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock: asyncio.Lock | None = None
+        # limits.py (gap routines-limits): called as gate(conn, now, dept_id) for a queued task that may otherwise start; a non-empty answer
+        # is the words it keeps waiting with. Only starts are gated: a run in flight is never touched.
+        self.start_gate: Callable[[sqlite3.Connection, int, str], str] | None = None
 
     # ---- loop plumbing -----------------------------------------------------------------------------------------------------
 
@@ -586,6 +589,8 @@ class TaskService:
                     continue
                 waiting = why_waiting(busy_status=busy.get(row.dept_id), working=working, live=live,              # names the owner when it is the owner
                                       max_runs=self.settings.max_runs, max_live=self.settings.max_live)
+                if not waiting and self.start_gate is not None:                                                  # the spending limit, the plan window
+                    waiting = self.start_gate(tx.conn, tx.now(), row.dept_id)
                 if waiting:
                     self.taskgraph.sync(tx, row, waiting=waiting, announce=False)
                     continue

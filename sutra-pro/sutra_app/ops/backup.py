@@ -6,7 +6,8 @@
 
 What a backup holds, all relative to the data folder: `db.sqlite3` (a consistent copy made with `sqlite3.Connection.backup()`, so it is
 WAL-safe and works while the server runs), `departments/**` (the run logs `run.stdout.log` / `run.stderr.log` only when younger than
-7 days; `--no-runs` leaves every `runs/` folder out), `library/`, `agents/`, `connectors/policy.json`, `engine.json`, and last a
+7 days; `--no-runs` leaves every `runs/` folder out), `library/`, `agents/`, `connectors/policy.json`, `engine.json`, the owner's limits and
+quiet hours (`limits.json`, `attention.json`), and last a
 `MANIFEST.json` (format, app version, `user_version`, UTC time, every file with size and sha256). NEVER `.env`, `app.lock`, `app.pid`
 or `logs/`: a backup is meant to be kept and copied around, and the override key and SMTP password live in `.env`
 (`--include-env` is refused with that reason). Only regular files go in; links are skipped.
@@ -61,7 +62,7 @@ ENV_REFUSAL = ("--include-env is refused: .env holds the owner override key and 
                "synced and mailed. Keep .env apart (config init writes a new one) or copy it by hand.")
 _DIR_MODE = 0o700
 _FILE_MODE = 0o600
-_ROOT_FILES = ("engine.json", "connectors/policy.json")
+_ROOT_FILES = ("engine.json", "connectors/policy.json", "limits.json", "attention.json")       # the owner's own choices: limits, quiet hours
 _ROOT_TREES = ("departments", "library", "agents")
 
 
