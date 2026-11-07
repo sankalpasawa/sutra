@@ -322,6 +322,28 @@ def test_preflight_refuses_an_api_key_login(fake, tmp_path):
     assert result.ok is False and API_KEY_REFUSED in result.message
 
 
+def test_a_live_engine_port_writes_an_observe_row_and_the_prompt_stays_byte_identical(fake, tmp_path):
+    """QA dept-run P1: the engine's port never had `router.egress`, so a key in a brief left no audit row at all (D109: J2's agents are
+    observed, never edited)."""
+    from sutra_app.connectors.egress import Egress
+    fake.sequence("ok_plain")
+    key = "sk-" + "A1b2C3d4" * 4
+    token = "ghp_" + "Z9y8X7w6V5" * 3
+    real_port(fake, tmp_path, "claude").complete(CompletionRequest(
+        system="You are a judge.", user=f"Our analytics key is {key} and our deploy token is {token}.", tag=TAG))
+    sent = fake.model_calls("claude")[0]["stdin"]
+    assert key in sent and token in sent and "[redacted" not in sent                    # observe only: J2's prompt is not edited
+    rows = Egress(tmp_path / "data" / "connectors" / "egress.jsonl").rows()
+    assert len(rows) == 1 and rows[0]["mode"] == "observe" and rows[0]["provider"] == "claude"
+    assert rows[0]["shapes"] == {"openai-key": 1, "github-token": 1}
+    assert key not in (tmp_path / "data" / "connectors" / "egress.jsonl").read_text()    # a row never holds a match
+
+
+def test_a_stub_only_engine_port_writes_no_egress_file(tmp_path):
+    make_port(spec(tmp_path)).complete(request_with(scripted=lambda: "x"))
+    assert not (tmp_path / "data" / "connectors" / "egress.jsonl").exists()
+
+
 def test_connector_claude_builds_only_claude(fake, tmp_path):
     port = real_port(fake, tmp_path, "claude")
     assert list(port.router.connectors) == ["claude"]

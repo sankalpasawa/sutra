@@ -9,7 +9,9 @@ otherwise it calls `make_port(PortSpec(mock=False, ...), usage_sink=EventUsageSi
 
 No `from __future__ import annotations` here on purpose: `inspect.signature(make_port)` shows real types.
 
-`port_from_config` is `make_port` with the `ConnectorConfig` supplied by the caller (tests point the executables at the fakes).
+`port_from_config` is `make_port` with the `ConnectorConfig` supplied by the caller (tests point the executables at the fakes). A live port gets the
+same `Egress` as the app's router (`<data>/connectors/egress.jsonl`), in observe mode only (D109): every prompt of a department run leaves one
+count-only audit row and goes out byte-identical; a stub-only port starts no process, so it writes no row.
 A live `make_port` finds the CLIs as the app's own router does (`discover.connector_config`: the file the owner chose in Settings, PATH,
 then the folders installers use; GAP-providers), so a department run uses the same file the Settings row and the chat use; a stub-only
 port keeps the defaults. `build_connectors` is the one place that turns a policy into connector objects; the factory (CN-9) can use it as
@@ -26,6 +28,7 @@ from .base import ModelConnector
 from .claude import ClaudeConnector
 from .codex import CodexConnector
 from .discover import connector_config
+from .egress import Egress
 from .errors import ConnectorError, NoProviderError
 from .models import AskRequest, ConnectorConfig, RouteContext
 from .policy import PolicyLoad, RoutingPolicy, load_policy
@@ -71,6 +74,8 @@ def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageS
         connectors = build_connectors(cfg, load.policy, only=None if mode == "auto" else mode)
     router = Router(connectors, load.policy, usage_sink=usage_sink, connector=mode, policy_source=load.source,
                     policy_error=load.error, **router_kw)
+    if not stub_only:                                  # D109: J2's agents are observed, never edited: one audit row per prompt, byte-identical text
+        router.egress = Egress(Path(spec.data_dir) / "connectors" / "egress.jsonl")
     return RouterPort(router, mock=stub_only, tag=CallTag(run_id=spec.run_id, dept_id=spec.dept_id, task_id=spec.task_id))
 
 
