@@ -134,13 +134,14 @@ Build = Callable[[Any], Awaitable[tuple[Any, list[Violation]]]]
 class ChatAgent:
     def __init__(self, connector: ConnectorPort, chart: ChartStore, *, redact: Callable[[str], str] | None = None, clock: Any = None,
                  attempts: int = ATTEMPTS, max_calls: int = MAX_CALLS, timeout: float = CALL_TIMEOUT, history: int = HISTORY,
-                 parser: ReplyParser | None = None) -> None:
+                 parser: ReplyParser | None = None, notes: Callable[[], str] | None = None) -> None:
         self.connector = connector
         self.chart = chart
         self._redact = redact or (lambda text: text)
         self._clock = clock
         self.attempts, self.max_calls, self.timeout, self.history = attempts, max_calls, timeout, history
         self._parser = parser or ReplyParser()
+        self._notes = notes or (lambda: "")             # the owner's notes block of the decide and assign prompts ("" when there are none)
 
     # ---- public ------------------------------------------------------------------------------------------------------------
 
@@ -230,7 +231,7 @@ class ChatAgent:
         schema = REGISTRY.transport_schema("chat_turn", kind="decide")
         prompt = prompts.render(
             "decide", revision=chart.revision, digest=digest, conversation=prompts.conversation(request.history, limit=self.history),
-            pending=prompts.pending_lines(request.pending), message=request.text,
+            pending=prompts.pending_lines(request.pending), message=request.text, notes=await run_blocking(self._notes),
             field_digest=prompts.field_digest(AssignmentDraft, ChatDecision), schema=_dump(schema))
 
         async def build(model: ChatDecision) -> tuple[Any, list[Violation]]:
@@ -280,7 +281,7 @@ class ChatAgent:
     async def _assign(self, request: PlanRequest, chart: OrgChart, digest: str, budget: _Budget) -> list[AssignmentDraft]:
         schema = REGISTRY.transport_schema("chat_turn", kind="assignments")
         prompt = prompts.render("assign", digest=digest, field_digest=prompts.field_digest(AssignmentDraft, AssignmentPlan),
-                                message=request.text, schema=_dump(schema))
+                                message=request.text, notes=await run_blocking(self._notes), schema=_dump(schema))
 
         async def build(model: AssignmentPlan) -> tuple[Any, list[Violation]]:
             found = await run_blocking(lambda: self.chart.check_assignments(model.assignments, chart))

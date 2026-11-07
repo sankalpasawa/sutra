@@ -27,9 +27,9 @@ __all__ = ["TEMPLATES", "PLACEHOLDERS", "PromptError", "template", "render", "fi
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 TEMPLATES = ("decide", "change", "assign", "retry")
 PLACEHOLDERS: dict[str, frozenset[str]] = {
-    "decide": frozenset({"revision", "digest", "conversation", "pending", "message", "field_digest", "schema"}),
+    "decide": frozenset({"revision", "digest", "conversation", "pending", "message", "notes", "field_digest", "schema"}),
     "change": frozenset({"revision", "digest", "field_digest", "message", "decision", "kind", "schema"}),
-    "assign": frozenset({"digest", "field_digest", "message", "schema"}),
+    "assign": frozenset({"digest", "field_digest", "message", "notes", "schema"}),
     "retry": frozenset({"n", "max", "violations", "delta"}),
 }
 

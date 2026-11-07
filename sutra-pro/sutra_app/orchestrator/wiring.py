@@ -46,6 +46,7 @@ from sutra_app.orchestrator.departments import DepartmentStore
 from sutra_app.orchestrator.events import EventBus
 from sutra_app.orchestrator.graph import GraphStore
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock
+from sutra_app.orchestrator.notes import prompt_notes
 from sutra_app.orchestrator.projector import Projector
 from sutra_app.orchestrator.redact import Redactor
 from sutra_app.orchestrator.runs import ProcessLauncher, ReconcileReport, RunWatcher, reconcile
@@ -164,7 +165,8 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     router.choice_source = ChatChoices(db).get                       # the pill governs the org chat agent too (ABS-8)
     attachments = Attachments(settings.data_dir)
     chat_port = RouterChatPort(router, attachments=attachments.store)
-    agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout)
+    agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout,
+                      notes=prompt_notes(db, redactor, clock))                 # the owner's notes, in the decide and assign prompts (GAP2 rules-notes)
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
                         publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor)
     return AppServices(

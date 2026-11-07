@@ -31,7 +31,7 @@ DIGEST_TWO = "\n".join([DIGEST_EMPTY, CAFE_LINE, "  menu | Menu | The menu page"
 
 def decide_prompt(message, digest=DIGEST_EMPTY):
     return prompts.render("decide", revision=1, digest=digest, conversation="(no earlier messages)", pending="(nothing)",
-                          message=message, field_digest="F", schema="{}")
+                          message=message, notes="", field_digest="F", schema="{}")
 
 
 def change_prompt(message, digest=DIGEST_EMPTY, kind="add"):
@@ -39,7 +39,7 @@ def change_prompt(message, digest=DIGEST_EMPTY, kind="add"):
 
 
 def assign_prompt(message, digest):
-    return prompts.render("assign", digest=digest, field_digest="F", message=message, schema="{}")
+    return prompts.render("assign", digest=digest, field_digest="F", message=message, notes="", schema="{}")
 
 
 RETRY = "\n\n" + prompts.render("retry", n=1, max=3, violations="- request: x: y", delta="nothing")

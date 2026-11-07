@@ -10,7 +10,7 @@ CONVERSATION (latest last):
 PENDING:
 {pending}
 OWNER REQUEST:
-{message}
+{message}{notes}
 MODELS:
 {field_digest}
 SCHEMA:

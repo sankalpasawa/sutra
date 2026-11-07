@@ -3,6 +3,10 @@
     ChatGround(db).text("cs_000000000003")      # the record of THAT session's node, then the fixed rules; at most GROUND_CHARS
     ground(services, sid)                        # the same text with the app's secrets and the credential shapes replaced: what is sent
 
+The owner's notes (GAP2 rules-notes, `notes.py`) stand between the record and the rules, in EVERY direct chat: they are the owner's own words about
+everything, the one thing that crosses chats. They are clipped to their own share, so neither they nor the record can push the fixed rules out. With
+no active note the text is byte for byte what it was.
+
 `POST /api/chats/{sid}/direct` writes it as the session's system text before every turn (`ChatPort.set_system`), so the model knows which team
 it sits on, what the team is for, how its latest tasks ended and what the team waits on, and what it may not do from here.
 
@@ -13,6 +17,7 @@ and no chat line except the open question is read.
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Callable
 from typing import Any
@@ -21,9 +26,12 @@ from sutra_app.connectors.egress import scan
 from sutra_app.library.types import clip
 from sutra_app.orchestrator.db import Database
 from sutra_app.orchestrator.ids import iso_z
+from sutra_app.orchestrator.notes import OwnerNotes
+from sutra_app.orchestrator.owner_words import local_today
 
 __all__ = ["ChatGround", "ground", "GROUND_CHARS", "RULES"]
 
+log = logging.getLogger(__name__)
 GROUND_CHARS = 3000
 TASKS_SHOWN = 3
 TEAMS_SHOWN = 25
@@ -64,9 +72,10 @@ class ChatGround:
     """Reads only; one connection of the calling thread. `scrub` is applied to every line of the record before it is fitted (the rules are
     fixed text), so a replacement can never push the rules out."""
 
-    def __init__(self, db: Database, scrub: Callable[[str], str] | None = None) -> None:
+    def __init__(self, db: Database, scrub: Callable[[str], str] | None = None, today: Callable[[], str] | None = None) -> None:
         self.db = db
         self.scrub = scrub or (lambda line: line)
+        self.today = today                    # the owner's date now (for a note's expiry); None leaves the notes out
 
     def text(self, session_id: str) -> str:
         """The grounding of `session_id`: the node's record, then `RULES`. A session that is not an org, department or division chat,
@@ -82,7 +91,18 @@ class ChatGround:
                 record = self._department(conn, node, session_id)
             elif node is not None and session["kind"] == "division" and node["kind"] == "division":
                 record = self._division(conn, node)
-        return _fit([self.scrub(line) for line in record], RULES, GROUND_CHARS)
+        return _fit([self.scrub(line) for line in record], self._notes_and_rules(), GROUND_CHARS)
+
+    def _notes_and_rules(self) -> str:
+        """The owner's active notes (scrubbed line by line) in front of the fixed rules; the rules alone with no note or no date source."""
+        if self.today is None:
+            return RULES
+        try:
+            block = OwnerNotes(self.db).chat_block(self.today())
+        except Exception:                                    # noqa: BLE001  (a grounding without notes is still a grounding)
+            log.exception("the owner notes could not be read for a direct chat")
+            return RULES
+        return "\n".join(self.scrub(line) for line in block.split("\n")) + "\n\n" + RULES if block else RULES
 
     # ---- the three kinds of chat ---------------------------------------------------------------------------------------------
 
@@ -164,4 +184,4 @@ def ground(services: Any, session_id: str) -> str:
     """`ChatGround(services.db).text(session_id)` through the app's redactor and the egress credential shapes (replaced, as the owner's own
     line is), so a secret that reached a task outcome or a question never reaches the model."""
     redact = services.redact
-    return ChatGround(services.db, scrub=lambda line: scan(redact(line), replace=True)[0]).text(session_id)
+    return ChatGround(services.db, scrub=lambda line: scan(redact(line), replace=True)[0], today=lambda: local_today(services.clock)).text(session_id)
