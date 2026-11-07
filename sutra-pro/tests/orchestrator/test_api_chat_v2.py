@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from orchestrator.test_chat_store import msg
 from orchestrator.test_graph_store import World
 
+from sutra_app.connectors.chat_models import ChatEvent
 from sutra_app.connectors.chat_port import RouterChatPort
 from sutra_app.connectors.factory import build_router
 from sutra_app.connectors.models import ConnectorConfig
@@ -230,6 +231,20 @@ def test_archiving_a_teams_chat_leaves_the_team_a_working_active_chat(rig):
     assert wait_for(lambda: len(chats.messages(row[0])) == 2)
 
 
+def test_a_message_to_an_archived_chat_is_refused_saying_it_was_archived(rig):
+    """QA direct-chat P3: a second tab that still showed the chat as live got 'This chat cannot be asked directly', which says nothing of the cause."""
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    assert client.post(f"/api/chats/{sid}/archive", headers=H).status_code == 200
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "still there?"}, headers=H)
+    assert r.status_code == 403 and r.json()["error"]["code"] == "read_only"
+    assert r.json()["error"]["message"] == "This chat was archived. Open the team's current chat to write."
+    assert chats.messages(sid) == []
+    org = client.post("/api/chats/cs_org/direct", json={"text": "hi"}, headers=H)               # a chat that is live but not for the model keeps its own words
+    assert org.status_code == 202
+    assert wait_for(lambda: "cs_org" not in chat_v2._running)
+
+
 def test_a_credential_typed_in_a_direct_chat_is_never_stored(rig):
     client, world, chats, bus, services = rig
     sid = world.session_of["web"]
@@ -237,3 +252,87 @@ def test_a_credential_typed_in_a_direct_chat_is_never_stored(rig):
     assert wait_for(lambda: len(chats.messages(sid)) == 2)
     user = chats.messages(sid)[0]
     assert "sk-abcdefgh12345678" not in user.text and "[redacted:openai-key]" in user.text
+
+
+# ---- QA direct-chat bug 7: a message over the cap is refused in words -------------------------------------------------------------------------------
+
+def test_a_direct_message_over_8000_characters_is_refused_with_a_sentence_that_names_the_limit(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "x" * 8500}, headers=H)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "validation"
+    assert r.json()["error"]["message"] == "Messages can be up to 8000 characters; this one has 8500."
+    violation = r.json()["error"]["details"]["violations"][0]
+    assert violation["path"] == "text" and "8000" in violation["message"]
+    assert chats.messages(sid) == [] and sid not in chat_v2._running               # nothing was stored or started
+
+
+def test_the_cap_counts_characters_not_bytes_and_the_longest_message_is_taken(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    assert client.post(f"/api/chats/{sid}/direct", json={"text": "é" * 8000}, headers=H).status_code == 202          # 16 000 bytes, 8 000 characters
+    assert wait_for(lambda: len(chats.messages(sid)) == 2 and sid not in chat_v2._running)
+    over = client.post(f"/api/chats/{sid}/direct", json={"text": "é" * 8001}, headers=H)
+    assert over.status_code == 422 and over.json()["error"]["message"].endswith("this one has 8001.")
+
+
+def test_a_message_far_over_the_cap_is_still_refused_by_the_model_check(rig):
+    client, world, *_ = rig
+    sid = world.session_of["web"]
+    assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": "x" * 250_000}, headers=H), 422) == "validation"
+
+
+# ---- QA direct-chat bug 3: a page that did not start the turn can learn that the chat is answering ---------------------------------------------------
+
+def test_the_session_says_which_line_the_running_direct_turn_answers_and_not_before_or_after(rig):
+    from sutra_app.orchestrator import direct_running
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    assert client.get(f"/api/chats/{sid}").json()["direct_turn"] is None
+    assert {s["id"]: s["direct_turn"] for s in client.get("/api/chats").json()}[sid] is None
+    assert direct_running.begin(sid)
+    try:
+        assert client.get(f"/api/chats/{sid}").json()["direct_turn"] is None         # claimed, the owner's line not stored yet: nothing to name
+        direct_running.attach(sid, 41)
+        assert client.get(f"/api/chats/{sid}").json()["direct_turn"] == 41
+        assert {s["id"]: s["direct_turn"] for s in client.get("/api/chats").json()}[sid] == 41
+        assert client.get("/api/chats/cs_org").json()["direct_turn"] is None          # another chat is not answering
+    finally:
+        direct_running.end(sid)
+    assert client.get(f"/api/chats/{sid}").json()["direct_turn"] is None
+
+
+def test_the_session_names_a_real_running_direct_turn_until_its_reply_is_stored(rig):
+    """The real route, with a port that waits for the test: while it waits the session names the owner's line; when it is stored the name is gone."""
+    import threading
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    gate, started = threading.Event(), threading.Event()
+
+    class Waiting:
+        def stream(self, sid_, turn):
+            started.set()
+            gate.wait(10)
+            yield ChatEvent(kind="turn_done", data={"text": "done", "provider": "claude", "model": None, "usd": None, "blocks": [], "switched": None})
+
+        def set_system(self, *a):
+            return None
+
+        def stop(self, sid_):
+            return False
+
+    services.chat_port = Waiting()
+    assert client.post(f"/api/chats/{sid}/direct", json={"text": "slow one"}, headers=H).status_code == 202
+    assert started.wait(10)
+    line = chats.messages(sid)[0]
+    assert client.get(f"/api/chats/{sid}").json()["direct_turn"] == line.id
+    assert error_code(client.post(f"/api/chats/{sid}/direct", json={"text": "again"}, headers=H), 409) == "busy"
+    gate.set()
+    assert wait_for(lambda: len(chats.messages(sid)) == 2 and sid not in chat_v2._running)
+    assert client.get(f"/api/chats/{sid}").json()["direct_turn"] is None
+    assert chats.messages(sid)[1].turn == line.id
+
+
+def test_the_old_name_of_the_running_set_is_the_same_set(rig):
+    from sutra_app.orchestrator import direct_running
+    assert chat_v2._running is direct_running.RUNNING

@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import re
 import sys
-import tempfile
 import os
-from sutra_app import oslayer
 import warnings
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
@@ -255,7 +253,9 @@ class ConnectorConfig(M):
         return value
 
     def resolved_work_root(self) -> Path:
-        """`work_root`, else `<tempdir>/sutra-app-<uid>/work`; always through realpath so Claude's per-directory
-        transcript key never changes (CD9). It sits outside the repo so no repo CLAUDE.md or AGENTS.md is read."""
-        root = self.work_root or Path(tempfile.gettempdir()) / f"sutra-app-{oslayer.user_token()}" / "work"
+        """`work_root`, else `<tempdir>/sutra-app-<uid>/work-<key>` of THIS data folder (workroot.py: two data folders never share session files);
+        always through realpath so Claude's per-directory transcript key never changes (CD9). It sits outside the repo so no repo CLAUDE.md or
+        AGENTS.md is read."""
+        from .workroot import default_work_root
+        root = self.work_root or default_work_root(self.data_dir)
         return Path(os.path.realpath(root))

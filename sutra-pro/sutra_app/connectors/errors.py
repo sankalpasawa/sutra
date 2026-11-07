@@ -319,7 +319,7 @@ class ReplyTruncatedError(ConnectorError):
     fallback_ok = False
 
     def user_message(self, *, tz: Optional[tzinfo] = None) -> str:
-        return "reply was cut off (partial text in detail)"
+        return "The reply was cut off because it reached the model's length limit."
 
 
 class InvalidRequestError(ConnectorError):

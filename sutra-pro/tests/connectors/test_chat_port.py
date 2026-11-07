@@ -144,6 +144,31 @@ def test_send_returns_the_turn_and_reports_a_switch(tmp_path):
     assert [e.kind for e in seen if e.kind == "switched"] == ["switched"]
 
 
+def test_the_switch_note_counts_what_was_carried_not_the_message_that_caused_the_switch(tmp_path):
+    """QA direct-chat P3: the owner's new line is stored before the call, so it was counted as carried ('carried 3 messages' for 2 that went)."""
+    port, router, history, cfg, claude, codex = make(tmp_path)
+    port.send(A, ChatTurnIn(text="one"))
+    earlier = [Message(role="user", text="one"), Message(role="assistant", text="[stub] one")]
+    history.messages_list = [*earlier, Message(role="user", text="two")]            # what the app has stored when the turn starts
+    port.choose(A, "codex")
+    out = port.send(A, ChatTurnIn(text="two"))
+    assert out.switched["to"] == "codex" and out.switched["plan"]["kept_messages"] == 2
+    assert "User: one" in codex.calls[-1].prompt and "Assistant: [stub] one" in codex.calls[-1].prompt        # the two the note counts are the two that went
+    assert codex.calls[-1].prompt.count("two") == 1                                  # and the new message went once, as the new message
+    history.messages_list = [*earlier, Message(role="user", text="two"), Message(role="assistant", text="[stub] two"), Message(role="user", text="back")]
+    port.choose(A, "claude")
+    assert port.send(A, ChatTurnIn(text="back")).switched["plan"]["kept_messages"] == 4
+
+
+def test_a_switch_with_only_the_new_message_stored_carries_nothing(tmp_path):
+    port, router, history, *_ = make(tmp_path)
+    port.send(A, ChatTurnIn(text="one"))
+    history.messages_list = [Message(role="user", text="two")]
+    port.choose(A, "codex")
+    switched = port.send(A, ChatTurnIn(text="two")).switched
+    assert switched["plan"]["kept_messages"] == 0 and switched["plan"]["tier"] == "none"          # the note then reads 'nothing to carry', not 'carried 1 message'
+
+
 def test_two_sessions_never_share_history_or_workdir(tmp_path):
     port, router, history, cfg, claude, codex = make(tmp_path)
     port.send(A, ChatTurnIn(text="secret-alpha"))

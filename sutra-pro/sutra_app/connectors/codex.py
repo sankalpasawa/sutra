@@ -669,8 +669,7 @@ class CodexConnector(ModelConnector):
 
     def probe_flags(self) -> dict[str, bool]:
         """Feature detection from `codex exec --help`, not a version table. Raises CliMissingError when the CLI is not there."""
-        _, lines = self._run_probe([self.cfg.codex_exe, "exec", "--help"])
-        present = set(re.findall(r"--[A-Za-z][A-Za-z0-9-]*", "\n".join(lines)))
+        present = self._help_flags([self.cfg.codex_exe, "exec", "--help"])
         return {flag: flag in present for flag in PROBED_FLAGS}
 
     def forget_command(self, s: SessionState) -> Optional[list[str]]:

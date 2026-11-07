@@ -91,7 +91,7 @@ MESSAGES = [
     (E.ModelNotFoundError("", provider="codex", detail={"model": "gpt-9"}), "model gpt-9 is not available"),
     (E.EmptyReplyError("", provider="codex"), "Codex returned nothing"),
     (E.StructuredError(""), "the structured reply could not be produced"),
-    (E.ReplyTruncatedError(""), "reply was cut off (partial text in detail)"),
+    (E.ReplyTruncatedError(""), "The reply was cut off because it reached the model's length limit."),
     (E.InvalidRequestError("image /x.png does not exist"), "image /x.png does not exist"),
     (E.EnvelopeExceededError(""), "the envelope allows no more calls, money or time"),
     (E.CallCancelledError(""), "stopped"),

@@ -14,7 +14,7 @@
          prune()                drop expired drafts and keep the newest MAX_CHATS
      grow(el, maxPx)            size a textarea to its text, from its CSS min-height up to maxPx (default 200), and let it scroll above that
 
-   Only text is kept (never a file, never file bytes), at most MAX_CHARS characters (the direct route's own cap), under the key sutra:draft:<sid>,
+   Only text is kept (never a file, never file bytes), at most MAX_CHARS characters (4 times the direct route's cap of 8000, so a draft the owner cannot send yet is not cut on reload), under the key sutra:draft:<sid>,
    for at most MAX_CHATS chats and TTL_DAYS days. A draft never leaves the browser. A chat id that is not a session id (letters, digits, _ and -, at
    most 64) is refused, so a hostile id cannot reach another key.
 
@@ -23,7 +23,7 @@
   "use strict";
 
   const PREFIX = "sutra:draft:";
-  const MAX_CHARS = 8000;
+  const MAX_CHARS = 32000;                // longer than a message can be (8000, chat_composer.js): a pasted log over the cap is kept whole, and Send then says why it cannot go
   const MAX_CHATS = 30;
   const TTL_DAYS = 14;
   const TTL_MS = TTL_DAYS * 24 * 60 * 60 * 1000;

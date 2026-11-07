@@ -499,8 +499,7 @@ class ClaudeConnector(ModelConnector):
     def probe_flags(self) -> dict[str, bool]:
         """Feature detection from `--help`, not a version table. `--system-prompt-file` is not listed in the help although it
         works, so it is not probed (C3b handles a CLI without it). Raises CliMissingError when the CLI is not there."""
-        _, lines = self._run_probe([self.cfg.claude_exe, "--help"])
-        present = set(re.findall(r"--[A-Za-z][A-Za-z0-9-]*", "\n".join(lines)))
+        present = self._help_flags([self.cfg.claude_exe, "--help"])
         return {flag: flag in present for flag in PROBED_FLAGS}
 
     def forget_command(self, s: SessionState) -> list[str]:

@@ -312,6 +312,16 @@ class ModelConnector(ABC):
     def _env(self) -> dict[str, str]:
         return child_env(self.name, self.cfg.extra_env)
 
+    def _help_flags(self, argv: Sequence[str]) -> set[str]:
+        """The long options a `--help` lists. A help that did not run (the CLI could not start: a broken node shebang gives exit 127 and a line on stderr)
+        lists nothing and says nothing about the flags, so it is an error with the CLI's own words, not "every flag is missing"."""
+        info, lines = self._run_probe(argv)
+        present = set(re.findall(r"--[A-Za-z][A-Za-z0-9-]*", "\n".join(lines)))
+        if not present and info.returncode != 0:
+            tail = (info.stderr_tail.strip() or "\n".join(lines).strip() or "no answer")[:200]
+            raise ProviderError(f"{self.name} {argv[-1]} gave no usable answer (exit {info.returncode}): {tail}", provider=self.name)
+        return present
+
     def _run_probe(self, argv: Sequence[str], *, timeout_s: float = PROBE_TIMEOUT_S) -> tuple[ExitInfo, list[str]]:
         """A short command that is not a model call: its stdout lines and how it ended. Raises CliMissingError."""
         lines: list[str] = []

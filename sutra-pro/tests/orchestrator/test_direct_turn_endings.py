@@ -11,7 +11,7 @@ import pytest
 from orchestrator.test_api_chat_v2 import H, rig, wait_for, world  # noqa: F401  (the fixtures of the chat v2 routes)
 
 from sutra_app.connectors.chat_models import ChatEvent, ChatTurnIn
-from sutra_app.connectors.errors import CallCancelledError, CrashedError
+from sutra_app.connectors.errors import CallCancelledError, CrashedError, ReplyTruncatedError
 from sutra_app.orchestrator import direct_turns
 from sutra_app.orchestrator.api import chat_v2
 from sutra_app.orchestrator.events import PARTIAL
@@ -75,6 +75,17 @@ def test_a_crash_midway_keeps_the_partial_reply_and_the_real_reason(rig):
     assert [m.turn for m in out] == [user, user]
 
 
+def test_a_reply_cut_by_the_length_limit_says_so_in_words_the_owner_can_act_on(rig):
+    """QA direct-chat P3: the line read 'reply was cut off (partial text in detail)', and no detail is anywhere the owner can open."""
+    user, rows, out, _ = run(rig, partial(LONG), ReplyTruncatedError("", provider="claude", detail={"reason": "max_output_tokens"}))
+    assert [(r["kind"], r["src_ref"]) for r in rows] == [("text", f"direct:{user}"), ("error", f"direct-error:{user}")]      # the written part is kept
+    sentence = rows[1]["text"]
+    assert "detail" not in sentence and "partial" not in sentence
+    assert sentence == "The reply was cut off because it reached the model's length limit. Ask for a shorter answer, or say \"continue\"."
+    user, rows, out, _ = run(rig, ReplyTruncatedError("", provider="claude"))                    # nothing written: the sentence alone ends the turn
+    assert [(r["kind"], r["text"]) for r in rows] == [("error", sentence)]
+
+
 def test_a_failure_with_nothing_written_is_the_error_line_as_before(rig):
     user, rows, out, _ = run(rig, RuntimeError("no"))
     assert [(r["kind"], r["src_ref"], r["text"]) for r in rows] == [("error", f"direct:{user}", "The model could not answer.")]
@@ -124,6 +135,28 @@ def test_the_attached_line_names_the_files_and_nothing_else_about_them():
     assert direct_turns.attached_line([], []) == ""
 
 
+def test_the_attached_line_keeps_a_name_readable_in_any_script():
+    """QA direct-chat P3: 'weird 日本語 😀.txt' was recorded as 'weird ___ _.txt', 'résumé.pdf' as 'r_sum_.pdf'."""
+    assert direct_turns.attached_line(["weird 日本語 😀.txt", "résumé.pdf", "报告.pdf"], ["text", "pdf", "pdf"]) == "(attached: weird 日本語 😀.txt, résumé.pdf, 报告.pdf)"
+    assert direct_turns.attached_line(["a\nb.txt"], ["text"]) == "(attached: a_b.txt)"
+
+
+def test_the_model_is_told_the_owners_file_names_or_a_plain_one_never_the_stored_hash(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    port = FakePort(done("ok"))
+    services.chat_port = port
+    ids = [client.post(f"/api/chats/{sid}/attachments", json={"name": n, "content_b64": base64.b64encode(b).decode()}, headers=H).json()["id"]
+           for n, b in (("note.txt", b"one"), ("日本語 😀.txt", b"two"))]
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "read", "attachments": ids, "names": ["note.txt", "日本語 😀.txt"]}, headers=H)
+    assert r.status_code == 202 and wait_for(lambda: sid not in chat_v2._running)
+    assert [a.name for a in port.turns[0].attachments] == ["note.txt", "日本語 😀.txt"]
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "again", "attachments": ids}, headers=H)                 # no names from the page: a plain one
+    assert r.status_code == 202 and wait_for(lambda: sid not in chat_v2._running and len(port.turns) == 2)
+    names = [a.name for a in port.turns[1].attachments]
+    assert names == ["attachment-1.txt", "attachment-2.txt"] and not any(i in n for i in ids for n in names)
+
+
 def test_a_direct_line_with_files_records_their_names_and_the_model_gets_the_words_unchanged(rig):
     client, world, chats, bus, services = rig
     sid = world.session_of["web"]
@@ -137,6 +170,7 @@ def test_a_direct_line_with_files_records_their_names_and_the_model_gets_the_wor
     assert line.text == "read this\n(attached: menu.txt)"
     assert up["id"] not in line.text and "soup" not in line.text                # the record is the name; the content and the id stay out
     assert port.turns[0].text == "read this" and [a.id for a in port.turns[0].attachments] == [up["id"]]
+    assert [a.name for a in port.turns[0].attachments] == ["menu.txt"]          # the model is told the owner's name, not the hash the store keeps it under
     plain = client.post(f"/api/chats/{sid}/direct", json={"text": "and now?"}, headers=H)
     assert plain.status_code == 202
     assert wait_for(lambda: len(chats.messages(sid)) == 4 and sid not in chat_v2._running)
@@ -150,3 +184,53 @@ def test_a_direct_line_with_files_records_their_names_and_the_model_gets_the_wor
 def test_every_message_that_ends_a_turn_points_back_at_the_owners_line(ref, turn):
     from sutra_app.orchestrator.chats import _turn_of
     assert _turn_of(ref) == turn
+
+
+# ---- QA direct-chat bug 5: a retried attempt starts the reply again ----------------------------------------------------------------------------------
+
+def restart():
+    return ChatEvent(kind="restart")
+
+
+def partials_of(bus_events):
+    return [d for t, d in bus_events if t == PARTIAL]
+
+
+def run_watching(rig, *script, text="Write the menu"):
+    """`run`, plus every control event the turn published."""
+    client, world, chats, bus, services = rig
+    seen = []
+    real = bus.publish_one
+    bus.publish_one = lambda type_, data=None: (seen.append((type_, data)), real(type_, data))[1]
+    return (*run(rig, *script, text=text), seen)
+
+
+def test_a_turn_that_fails_after_several_attempts_keeps_the_last_attempts_text_not_all_of_them_glued_together(rig):
+    first = "Here is a streamed answer. It has several pieces, written one after another, so the owner sees it grow."
+    crash = CrashedError("claude stopped unexpectedly", provider="claude", detail={"exit": 137})
+    user, rows, out, bus, seen = run_watching(rig, partial(first), restart(), partial(first), restart(), partial(first), crash)
+    assert [(r["kind"], r["src_ref"]) for r in rows] == [("text", f"direct:{user}"), ("error", f"direct-error:{user}")]
+    assert rows[0]["text"] == first                                     # once, not three times with no separator
+    assert [m.turn for m in out] == [user, user]
+
+
+def test_the_open_page_is_told_to_start_its_row_again_at_each_restart(rig):
+    """A `chat.partial` with `reset: true` and no text: the pieces shown so far (sent before the restart) are void."""
+    user, rows, out, bus, seen = run_watching(rig, partial(LONG), restart(), partial("Second try."), done("Second try."))
+    sent = partials_of(seen)
+    resets = [i for i, d in enumerate(sent) if d.get("reset") is True]
+    assert len(resets) == 1 and sent[resets[0]]["delta"] == "" and sent[resets[0]]["message_id"] == user
+    after = sent[resets[0] + 1:]
+    assert "".join(d["delta"] for d in after) == "Second try." and all("reset" not in d for d in after)
+    assert "".join(d["delta"] for d in sent[:resets[0]]).startswith("The menu has three parts.")
+    assert [(r["kind"], r["text"]) for r in rows] == [("text", "Second try.")]
+
+
+def test_a_restart_with_nothing_shown_yet_sends_no_reset(rig):
+    user, rows, out, bus, seen = run_watching(rig, restart(), partial("Fine."), done("Fine."))
+    assert [d for d in partials_of(seen) if d.get("reset")] == []
+
+
+def test_a_stop_after_a_restart_keeps_only_what_the_last_attempt_wrote(rig):
+    user, rows, out, bus, seen = run_watching(rig, partial(LONG), restart(), partial("Starters"), CallCancelledError("stopped"))
+    assert [(r["kind"], r["text"]) for r in rows] == [("text", "Starters"), ("note", direct_turns.STOPPED)]

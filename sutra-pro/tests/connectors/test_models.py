@@ -1,5 +1,6 @@
 """CN-1: the shared connector models (connectors design 3.1)."""
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -239,6 +240,7 @@ def test_work_root_default_is_under_the_temp_root_by_uid_and_is_a_realpath(tmp_p
     link.symlink_to(real)
     monkeypatch.setattr(tempfile, "tempdir", str(link))
     got = m.ConnectorConfig(data_dir="/d").resolved_work_root()
-    assert got == real / f"sutra-app-{os.getuid()}" / "work"
+    assert got.parent == real / f"sutra-app-{os.getuid()}" and re.fullmatch(r"work-[0-9a-f]{16}", got.name)         # one root per data folder (workroot.py)
+    assert m.ConnectorConfig(data_dir="/other").resolved_work_root() != got and m.ConnectorConfig(data_dir="/d").resolved_work_root() == got
     explicit = m.ConnectorConfig(data_dir="/d", work_root=link / "w").resolved_work_root()
     assert explicit == real / "w"

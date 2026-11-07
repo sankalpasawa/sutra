@@ -253,6 +253,7 @@
     failed.forEach(r => { const w = errorWords(r.reason); if (w.blocked) showBanner(w); });
     S.loaded = true;
     renderAll();
+    if (composer()) composer().resync();            // a direct turn this page did not start (a reload, another tab) gets its Stop; one the server lost (a restart) is over
     return results;
   }
 
@@ -377,6 +378,14 @@
     el.hidden = html === "";
   }
 
+  // A turn that ended may have moved the chat to the other model (the router switches on a failure): read the pill again, keeping what it shows until the answer comes.
+  async function rereadPill() {
+    let fresh = null;
+    try { fresh = await api.get("/api/chats/" + ORG + "/providers"); } catch (e) { fresh = null; }
+    if (fresh) S.pillData = fresh;
+    return renderPill();
+  }
+
   function onPillClick(e) {
     const b = e.target.closest("button[data-act=choose-provider]");
     if (!b || !root.ChatPill) return;
@@ -402,7 +411,7 @@
   function composer() {
     // one repaint per animation frame, however many chunks of a reply arrived in it (Fluid.frame; without fluid.js it is at once, as before)
     const repaint = () => { renderBar(); renderComposer(); };
-    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", onChange: () => (root.Fluid ? root.Fluid.frame(repaint, repaint) : repaint())}) : null;
+    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", onChange: () => (root.Fluid ? root.Fluid.frame(repaint, repaint) : repaint()), onTurnEnd: rereadPill}) : null;
     return S.cc;
   }
   const directOn = () => { const c = composer(); return c !== null && c.state().mode === "direct"; };
@@ -1456,7 +1465,10 @@
     $("smsgs").addEventListener("click", onChatClick);
     if ($("cswitch")) { $("cswitch").addEventListener("click", onSwitchClick); $("cswitch").addEventListener("keydown", onSwitchKey); }
     if ($("spill")) { $("spill").addEventListener("click", onPillClick); $("spill").addEventListener("change", onPillChange); }
-    $("ssend").addEventListener("click", () => ($("ssend").dataset.act === "composer-stop" ? stopDirect() : send($("sbox").value)));
+    $("ssend").addEventListener("click", e => {
+      if ($("ssend").dataset.act !== "composer-stop") send($("sbox").value);
+      else if (!root.ChatComposer || root.ChatComposer.stopPress(e)) stopDirect();          // the 2nd click of a double-click on Send is not a Stop
+    });
     $("sbar").addEventListener("click", e => {
       const b = e.target.closest("[data-act]");
       const c = composer();
@@ -1472,7 +1484,9 @@
       c.addFiles(t.files);
       t.value = "";
     });
-    $("sbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send($("sbox").value); } });
+    $("sbox").addEventListener("keydown", e => {
+      if (root.ChatComposer ? root.ChatComposer.sendKey(e) : (e.key === "Enter" && !e.shiftKey && !e.isComposing)) { e.preventDefault(); send($("sbox").value); }
+    });
     wireComfort();
     $("sbanner").addEventListener("click", e => {
       const b = e.target.closest("button");

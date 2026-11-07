@@ -231,10 +231,29 @@ def test_the_choice_is_stored_cleared_and_validated(db, world):
         choices.set(tx, "cs_000000000fff", "claude")
 
 
-def test_a_node_detail_lists_the_owner_archived_chat_as_an_earlier_chat(db, world):
+def test_a_node_detail_lists_the_owner_archived_chat_as_an_earlier_chat(db, world, chats):
     from sutra_app.orchestrator.graph import GraphStore  # noqa: F401
     sid = world.session_of["web"]
+    post(db, chats, sid, "an earlier question", who="user")             # a chat the owner archives has something in it (an empty one is not listed: next test)
     with db.tx() as tx:
         ChatArchive(db).archive(tx, sid)
     detail = world.store.node("web")
     assert [s.id for s in detail.archived_chats] == [sid] and detail.archived_chats[0].status == "archived"
+
+
+def test_archiving_and_bringing_a_chat_back_again_and_again_leaves_no_empty_earlier_chat(db, world, chats):
+    """QA direct-chat P3: every archive then unarchive left the empty chat that archiving had started in 'Earlier chats', all titled the same."""
+    sid = world.session_of["web"]
+    post(db, chats, sid, "the one real chat", who="user")
+    for _ in range(4):
+        with db.tx() as tx:
+            ChatArchive(db).archive(tx, sid)
+        with db.tx() as tx:
+            ChatArchive(db).unarchive(tx, sid)
+    stepped_aside = db.conn().execute("SELECT count(*) FROM chat_sessions WHERE node_id = 'web' AND status = 'archived'").fetchone()[0]
+    assert stepped_aside == 4                                            # the empty chats are kept, as before (archive is a mark) ...
+    detail = world.store.node("web")
+    assert detail.archived_chats == [] and detail.session.id == sid     # ... but 'Earlier chats' lists chats that have something in them
+    with db.tx() as tx:
+        ChatArchive(db).archive(tx, sid)                                 # archived for real now: the one chat with messages is the only earlier chat
+    assert [c.id for c in world.store.node("web").archived_chats] == [sid]

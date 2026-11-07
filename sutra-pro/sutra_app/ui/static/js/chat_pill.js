@@ -9,7 +9,8 @@
                                 (welcome-settings item 4: under the buttons of the chosen provider, model_pick.js adds its model list and effort selects)
      selectable(providers)      the names the pill offers
      choiceRequest(sid, name)   {method, path, body} for the PUT; name null clears the choice (the policy decides again)
-     partial(state, event)      the streaming state after a `chat.partial` event of this chat: {active, text}
+     partial(state, event)      the streaming state after a `chat.partial` event of this chat: {active, text}; an event with `reset: true` (the turn was tried
+                                again, QA direct-chat bug 5) starts the text again from its own delta
      settle(state)              the state once the stored message arrived: nothing is shown
      streamParts(state, provider)   {who, text} of the streaming row without markup, or null (Fluid.paintStream draws it by appending)
      indicator(state)           the streaming row ("Claude is writing" plus the text so far), or "" when nothing streams; the text is drawn by
@@ -101,8 +102,8 @@
   }
 
   function partial(state, event) {
-    const prev = isObj(state) && state.active ? state.text : "";
     const d = isObj(event) && isObj(event.data) ? event.data : (isObj(event) ? event : {});
+    const prev = isObj(state) && state.active && d.reset !== true ? state.text : "";          // `reset`: the router retried, so what was shown is void
     return {active: true, text: bounded(prev + text(d.delta))};
   }
 

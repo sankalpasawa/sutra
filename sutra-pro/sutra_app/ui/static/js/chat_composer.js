@@ -5,7 +5,9 @@
    that, for the node panel and for Home. Strings in, strings out, plus ONE small controller that owns the state and takes everything it touches
    (the api, the file reader, the repaint) as an argument, so node tests drive it without a page. Every word from the wire is escaped.
 
-     create({api, sid, readFile, onChange, mode, objectUrl})   the controller (objectUrl {create, revoke}: the page's URL by default):
+     create({api, sid, readFile, onChange, onTurnEnd, mode, objectUrl})   the controller (objectUrl {create, revoke}: the page's URL by default; onTurnEnd: called
+                                       once when a turn that ran is over, by its stored reply or because the server lost it, so the page can read the provider
+                                       pill again: a turn may have moved the chat to the other model):
          state()                       {mode, files, note, turn: {active, stopping, text, messageId}}
          setMode("team" | "direct")    where Send goes (the panel keeps the team's plain message route as it was)
          addFiles(files, {pasted})     check (ChatSearch.checkFile), read, upload to POST /api/chats/{sid}/attachments; the chips show each one, an
@@ -14,11 +16,16 @@
                                        are attached (in team mode the box switches to the model, with a one-line note: the team's route takes no
                                        files) and the upload's promise is returned
          removeFile(key)
-         send(text)                    POST /direct with the uploaded refs -> {ok, message_id} | {ok:false, error}; the files are kept on a refusal
+         send(text)                    POST /direct with the uploaded refs -> {ok, message_id} | {ok:false, error}; the files are kept on a refusal; a text over
+                                       MAX_MESSAGE (8000) characters is refused first, in words, with nothing sent (QA direct-chat bug 7)
          retry(lineId, text, {files})  the same line asked again, once: POST /direct with the same text (and the same files when this page sent
                                        them; else text only, and the note says so)
          stop()                        POST /direct/stop; the turn ends when the stored reply (or the error line) arrives
          partial(data)                 a `chat.partial` of this chat adds to the streaming text (the ChatPill rules)
+         resync()                      ask GET /api/chats/{sid} whether a direct turn answers: a turn this page does not know is shown with its Stop (a reload, a
+                                       second tab); a turn this page showed that the server no longer runs (it died with the last process) is over. Async,
+                                       never rejects. The pages call it after they load and when the event stream says to read everything again; the app answering also
+                                       clears the note a send put up because the app was down ("The app is not responding.").
          rejoin()                      the page shows this chat again after it was closed: the text streamed meanwhile is lost, so the row
                                        starts again from what comes next (the stored reply has all of it)
          reconcile(messages)           the turn ends when the reply that answers the owner's line (`turn` = its id) is in the list
@@ -26,10 +33,16 @@
      streamParts(state, provider)      {who, text} of that row, or null; paintStreamRow(el, state, provider) draws it into el by appending (Fluid.paintStream)
      streamRow(state, provider)        the streaming row ("Claude is writing" plus the text so far), or ""
      button(state, value, flags)       {label, act, disabled} of the Send button: Send, or Stop while a direct turn is answering
-     askBlock(providers)               "" when a model can answer, else the sentence that says none can (the pill's rule: only runnable providers)
+     askBlock(providers)               "" when a model can answer, else the sentence that says none can (the pill's rule: only runnable providers; an empty list
+                                       is the offline demo, which says so instead of asking for a sign-in)
      providerOf(providers, chosen)     the name to show in the streaming row: the chosen one if it can run, else ""
      filesOf(transfer)                 the files of a clipboardData or dataTransfer, or null when there is none (then the page lets it be)
      hasFiles(transfer)                a drag carries files (dragover: the files themselves are not readable yet)
+     tooLong(text)                     "" or the sentence "Messages can be up to 8000 characters; this one has 8500."
+     sendKey(event)                    true when a keydown in the message box means "send": Enter alone, never while an IME composition is open (the Enter that
+                                       confirms a candidate, Safari's included: keyCode 229) and never with Shift (a new line). Home and the panel share it.
+     stopPress(event)                  false for the second click of a double-click: a double-click on Send would send, and as the label turns into Stop under
+                                       the pointer stop the turn it just started. A deliberate (single, or keyboard) press is true.
 
    Buttons carry data-act (composer-mode, composer-attach, composer-remove, composer-stop) and the panel that shows the bar listens for them.
    A classic script with ONE global, ChatComposer; in node it is module.exports. */
@@ -50,6 +63,7 @@
   const pillOf = () => need("ChatPill");
   const searchOf = () => need("ChatSearch");
   const MAX_FILES = 10;
+  const MAX_MESSAGE = 8000;            // the longest message POST /direct takes (chat_v2.MAX_CHARS), counted in characters
   const SIZE_UNITS = ["B", "KB", "MB"];
 
   const idle = () => ({active: false, stopping: false, text: "", messageId: null});
@@ -69,7 +83,10 @@
   }
 
   function askBlock(providers) {
-    return ready(providers).length > 0 ? "" : "No model can answer right now. Sign in to Claude or Codex in Settings, then try again.";
+    if (ready(providers).length > 0) return "";
+    // no provider listed at all is the offline demo (the stub answers the team's agent, but is not a model to choose): there is nothing to sign in to
+    if (Array.isArray(providers) && providers.length === 0) return "This is the offline demo: there is no Claude or Codex to ask directly. Plan with Sutra (or tell the team) works here.";
+    return "No model can answer right now. Sign in to Claude or Codex in Settings, then try again.";
   }
 
   // What a file is, from the server's kind once it is uploaded, else from its name: image, pdf or text.
@@ -115,6 +132,24 @@
     const type = clean(file && file.type).toLowerCase();
     const ext = hasOwn(PASTE_EXT, type) ? PASTE_EXT[type] : (IMAGE_EXT.exec(name) || [".png"])[0].toLowerCase();
     return "pasted-image-" + n + ext;
+  }
+
+  // "" when `body` fits in one message, else the sentence the server would refuse it with. Characters are counted as the server counts them (a code
+  // point is one, as in Python), not in UTF-16 units: an emoji is one character here and two in `.length`.
+  function tooLong(body) {
+    const n = Array.from(text(body)).length;
+    return n > MAX_MESSAGE ? "Messages can be up to " + MAX_MESSAGE + " characters; this one has " + n + "." : "";
+  }
+
+  // The Enter that confirms an IME candidate is not a send: `isComposing` is true in Chrome and Firefox; Safari ends the composition first and then
+  // reports keyCode 229 on that Enter.
+  function sendKey(e) {
+    return isObj(e) && e.key === "Enter" && e.shiftKey !== true && e.isComposing !== true && e.keyCode !== 229;
+  }
+
+  // `detail` is the click count: the 2nd click of a double-click on the Send button (which has just become Stop) must not stop the turn the 1st started.
+  function stopPress(e) {
+    return !(isObj(e) && Number.isFinite(e.detail) && e.detail > 1);
   }
 
   function bar(state, opts) {
@@ -195,6 +230,9 @@
     const sid = clean(o.sid);
     const readFile = typeof o.readFile === "function" ? o.readFile : defaultRead;
     const changed = () => { if (typeof o.onChange === "function") o.onChange(); };
+    const ended = () => { if (typeof o.onTurnEnd === "function") o.onTurnEnd(); };
+    let downNote = "";                       // the note a transport failure ("The app is not responding.") put up: it goes when the page reads the session again
+    const failNote = (e, fallback) => { const words = asError(e, fallback); downNote = isObj(e) && e.code === "network" ? words : ""; return words; };
     const state = {mode: o.mode === "direct" ? "direct" : "team", files: [], note: "", turn: idle()};
     let seq = 0;
     let pastes = 0;
@@ -287,6 +325,8 @@
       const body = text(value).trim();
       if (state.mode !== "direct") return {ok: false, error: "This message goes to the team."};
       if (body === "") return {ok: false, error: "Write a message first."};
+      const long = tooLong(body);
+      if (long !== "") return refuse(long);                              // nothing is sent and the box keeps the words
       if (state.turn.active) return refuse("This chat is already answering.");
       if (state.files.some(f => f.status === "uploading")) return refuse("Wait for the files to finish uploading.");
       const ready = state.files.filter(f => f.status === "ready");
@@ -317,7 +357,7 @@
         return {ok: true, message_id: id};
       } catch (e) {
         state.turn = idle();
-        state.note = asError(e, "That did not work. Try again.");
+        state.note = failNote(e, "That did not work. Try again.");
         changed();
         return {ok: false, error: state.note};
       }
@@ -339,6 +379,50 @@
       return out;
     }
 
+    // Ask the server whether a direct turn answers in this chat, and make the page say what is true (QA direct-chat bugs 3 and 4). `direct_turn` of
+    // GET /api/chats/{sid} is the owner's line the running turn answers, else null.
+    //   - a turn answers that this page does not know (a reload, a second tab, the panel opened on it): it is shown, with its Stop, in direct mode; the pieces
+    //     that come from now on fill the row. Not when its reply is already stored (the server clears its note a moment after it stores the reply).
+    //   - nothing answers and this page showed a turn the server had accepted (the process that ran it is gone): the turn is over here too; its stored
+    //     reply, or the line that says it was interrupted, is in the transcript. The turn is judged by the id that was the page's BEFORE the read: a turn
+    //     whose POST was not answered yet, or one that began while the read travelled, is never ended by an older answer.
+    // Resolves to whether the page changed. Never rejects: a failed read changes nothing.
+    async function resync() {
+      if (!api || typeof api.get !== "function") return false;
+      const known = state.turn.active ? state.turn.messageId : null;
+      let running = null;
+      try {
+        const session = await api.get(base);
+        running = isObj(session) && Number.isInteger(session.direct_turn) && session.direct_turn > 0 ? session.direct_turn : null;
+      } catch (e) {
+        return false;
+      }
+      if (downNote !== "" && state.note === downNote) {              // the app answered: what the failed send said about it is stale
+        state.note = "";
+        downNote = "";
+        changed();
+      }
+      const turn = state.turn;
+      if (running === null) {
+        if (!turn.active || known === null || turn.messageId !== known) return false;
+        state.turn = idle();
+        changed();
+        ended();
+        return true;
+      }
+      if (turn.active && (turn.messageId === null || turn.messageId === running)) return false;
+      try {
+        const page = await api.get(base + "/messages", {after: running - 1, limit: 50});
+        const list = isObj(page) && Array.isArray(page.messages) ? page.messages : [];
+        if (list.some(m => isObj(m) && m.role === "agent" && m.turn === running)) return false;
+      } catch (e) { /* the list is not readable now: show the turn, the next reconcile ends it if it is over */ }
+      if (state.turn.active && (state.turn.messageId === null || state.turn.messageId === running)) return false;       // this page began it while we asked
+      state.mode = "direct";
+      state.turn = {active: true, stopping: false, text: "", messageId: running};
+      changed();
+      return true;
+    }
+
     function rejoin() {
       if (!state.turn.active || state.turn.text === "") return false;
       state.turn = Object.assign({}, state.turn, {text: ""});
@@ -352,15 +436,16 @@
       changed();
       try {
         const r = await api.post(base + "/direct/stop", {});
-        if (isObj(r) && r.stopped === false) {                     // nothing was running to stop: the reply is on its way or stored; reconcile ends the turn
-          state.turn.stopping = false;
+        if (isObj(r) && r.stopped === false) {                     // nothing was running to stop: the reply is on its way or stored (reconcile ends the turn), or the
+          state.turn.stopping = false;                             // server no longer runs this turn at all (resync ends it, so Stop is not a button that does nothing)
           changed();
+          await resync();
           return {ok: true, stopped: false};
         }
         return {ok: true, stopped: true};
       } catch (e) {
         state.turn.stopping = false;
-        state.note = asError(e, "The turn could not be stopped.");
+        state.note = failNote(e, "The turn could not be stopped.");
         changed();
         return {ok: false, error: state.note};
       }
@@ -386,13 +471,14 @@
       if (!done) return false;
       state.turn = idle();
       changed();
+      ended();
       return true;
     }
 
-    return {state: () => state, setMode, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile};
+    return {state: () => state, setMode, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile, resync};
   }
 
-  const ChatComposer = {create, bar, chips, streamRow, streamParts, paintStreamRow, button, askBlock, providerOf, filesOf, hasFiles, size, MAX_FILES};
+  const ChatComposer = {create, bar, chips, streamRow, streamParts, paintStreamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, tooLong, size, MAX_FILES, MAX_MESSAGE};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatComposer;
   else root.ChatComposer = ChatComposer;
 })(globalThis);

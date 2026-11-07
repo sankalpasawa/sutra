@@ -139,3 +139,11 @@ test("grow sizes the box to its text, up to the ceiling, and scrolls inside it o
   assert.equal(grow(null), 0);
   assert.equal(grow({}), 0);
 });
+
+test("QA bug 7: a draft longer than a message can be is kept whole, so a reload does not cut the tail of a pasted log", () => {
+  const {d} = rig();
+  const log = "line of a pasted log\n".repeat(425);                    // 8 925 characters: over what Send takes (8000), under what the draft keeps
+  assert.ok(log.length > 8000 && log.length < MAX_CHARS);
+  d.save(A, log);
+  assert.equal(d.load(A), log);
+});

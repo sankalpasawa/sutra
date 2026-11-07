@@ -12,7 +12,8 @@
 `/direct` stores the owner's line, writes the session's grounding (the node's own record and the rules, `orchestrator/chat_ground.py`, through
 `ChatPort.set_system`), then answers through `ChatPort.stream`. The pieces of the reply travel as `chat.partial` events
 ({session_id, message_id, delta}); they are NOT stored and NOT in the replay ring, so a client that reconnects mid-turn gets the stored
-message only. The agent's message is written once, at `turn_done` (with its typed blocks); a stopped turn keeps what was written and adds a
+message only. When the router retries the turn, the port says `restart` and the pieces shown so far are void: one more `chat.partial` with
+`reset: true` and an empty delta tells the page to start its row again (and the kept partial reply of a failed turn is the last attempt's). The agent's message is written once, at `turn_done` (with its typed blocks); a stopped turn keeps what was written and adds a
 calm note, a failed one keeps it and adds the `error` line, a provider switch is noted (orchestrator/direct_turns.py, GAP-chat-comfort).
 The org chat's staged agent path (`POST /api/chats/cs_org/messages`) is unchanged, and so is a team chat's plain message route; `/direct` on cs_org\nis the owner's opt-in "ask directly" (D115), never the default.
 """
@@ -22,25 +23,27 @@ import asyncio
 import base64
 import binascii
 import logging
-import threading
+import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import ConfigDict, Field, StringConstraints
 
-from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE
+from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE, clean_name
 from sutra_app.connectors.chat_models import AttachmentRef, ChatTurnIn
 from sutra_app.connectors.egress import scan
-from sutra_app.connectors.errors import CallCancelledError, ConnectorError
+from sutra_app.connectors.errors import CallCancelledError, ConnectorError, ReplyTruncatedError
 from sutra_app.library.base import Value
 from sutra_app.library.gate import GATE
+from sutra_app.library.types import violation
 from sutra_app.orchestrator.api.chat import ID_PATTERN, respond
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
+from sutra_app.orchestrator import direct_running
 from sutra_app.orchestrator.chat_ground import ground
-from sutra_app.orchestrator.chat_v2 import MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
+from sutra_app.orchestrator.chat_v2 import DIRECT_ASK, MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
 from sutra_app.orchestrator.db import run_blocking
-from sutra_app.orchestrator.direct_turns import Ending, attached_line, failed, finished, stopped
-from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly
+from sutra_app.orchestrator.direct_turns import MAX_TEXT, Ending, attached_line, failed, finished, stopped
+from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly, validation_error
 from sutra_app.orchestrator.events import PARTIAL
 from sutra_app.orchestrator.records import ChatMessage
 
@@ -48,8 +51,9 @@ __all__ = ["router", "build_router", "ChoiceIn", "UploadIn", "DirectIn"]
 
 log = logging.getLogger(__name__)
 PARTIAL_EVERY_CHARS = 60
-_running: set[str] = set()
-_running_lock = threading.Lock()
+MAX_CHARS = 8000                                                      # the longest message the owner can send (the page's box says the same: chat_composer.js)
+_running = direct_running.RUNNING                                   # the chats with a direct turn answering: one at a time (a Busy for the next), shared with the team route
+_running_lock = direct_running.LOCK
 
 
 class ChoiceIn(Value):
@@ -65,7 +69,9 @@ class UploadIn(Value):
 
 
 class DirectIn(Value):
-    text: Annotated[str, StringConstraints(min_length=1, max_length=8000)]
+    # the model only bounds what the store could hold; the cap of MAX_CHARS is checked in the route so that the refusal can say what it is (a pydantic
+    # refusal is the generic "The request was refused")
+    text: Annotated[str, StringConstraints(min_length=1, max_length=MAX_TEXT)]
     attachments: Annotated[list[Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]], Field(max_length=MAX_PER_MESSAGE)] = []
     # the owner's names of the attachments, in order: only for the record on the owner's line (GAP-chat-comfort); the model's input is unchanged
     names: Annotated[list[Annotated[str, StringConstraints(max_length=200)]], Field(max_length=MAX_PER_MESSAGE)] = []
@@ -158,25 +164,32 @@ def build_router() -> APIRouter:
         services = services_of(request)
         chats, port, attachments = _need(request, "chats"), _need(request, "chat_port"), _need(request, "attachments")
         session = await run_blocking(chats.session, sid)
-        if session.status != "active" or not session.writable or session.kind not in ("org", "department", "division"):
+        if session.status != "active":                    # a page that did not hear of the archive (another tab) is told the cause
+            raise ReadOnly("This chat was archived. Open the team's current chat to write.")
+        if not session.writable or session.kind not in ("org", "department", "division"):
             raise ReadOnly("This chat cannot be asked directly")
+        if len(body.text) > MAX_CHARS:
+            sentence = f"Messages can be up to {MAX_CHARS} characters; this one has {len(body.text)}."
+            raise validation_error([violation("text", "string_too_long", sentence)], sentence)
         refs = []
-        for ref_id in body.attachments:
+        owner_names = list(body.names) if len(body.names) == len(body.attachments) else []          # the page sends one per file or none (as attached_line reads them)
+        for n, ref_id in enumerate(body.attachments):
             path = attachments.get(ref_id)
             if path is None:
                 raise NotFound("that attachment")
-            refs.append(AttachmentRef(id=ref_id, name=path.name, kind=_kind_of(path.name), size=path.stat().st_size))
-        with _running_lock:
-            if sid in _running:
-                raise Busy("This chat is already answering")
-            _running.add(sid)
+            # the model is told the owner's file name (cleaned), never the content hash the store keeps the file under
+            named = clean_name(owner_names[n]) if owner_names else ""
+            refs.append(AttachmentRef(id=ref_id, name=named or f"attachment-{n + 1}{path.suffix}", kind=_kind_of(path.name), size=path.stat().st_size))
+        if not direct_running.begin(sid):
+            raise Busy("This chat is already answering")
         try:
             said = _clean(services, body.text)          # stored and sent without credential shapes: a secret never lands in the chat store
             attached = _clean(services, attached_line(list(body.names), [r.kind for r in refs]))
             message_id = await run_blocking(_store_user_line, services, sid, said, attached)
+            direct_running.attach(sid, message_id)       # from here any page can read which line is being answered (GET /api/chats/{sid}: direct_turn)
             await run_blocking(_ground, services, port, sid)
         except BaseException:
-            _running.discard(sid)
+            direct_running.end(sid)
             raise
         asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, ChatTurnIn(text=said, attachments=refs)))
         return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started"})
@@ -222,8 +235,10 @@ def _post_all(services: Any, sid: str, endings: list[Ending]) -> None:
 
 
 def _store_user_line(services: Any, sid: str, text: str, attached: str = "") -> int:
-    """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself)."""
-    return _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""))
+    """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself). Its src_ref marks it as the
+    start of a direct turn, so that a start after a crash can find the ones that never got an ending (`chat_v2.recover_interrupted`)."""
+    return _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""),
+                 src_ref=DIRECT_ASK + uuid.uuid4().hex[:16])
 
 
 def _ground(services: Any, port: Any, sid: str) -> None:
@@ -258,6 +273,11 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
                 buffered += event.data.get("delta", "")
                 if len(buffered) >= PARTIAL_EVERY_CHARS:
                     flush()
+            elif event.kind == "restart":                            # the router tried again: the earlier attempt's text is void, on the page and in the store
+                seen_any = shown != ""
+                buffered, shown = "", ""
+                if seen_any and bus is not None:
+                    bus.publish_one(PARTIAL, {"session_id": sid, "message_id": user_message_id, "delta": "", "reset": True})
             elif event.kind == "turn_done":
                 done = event.data
         flush()
@@ -271,14 +291,15 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
             endings = stopped(user_message_id, shown)
         else:
             message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
+            if isinstance(exc, ReplyTruncatedError):                 # the part that was written is kept above; say what the owner can do next
+                message += " Ask for a shorter answer, or say \"continue\"."
             endings = failed(user_message_id, shown, message)
         try:
             _post_all(services, sid, endings)
         except Exception:
             log.exception("could not store the failed turn of %s", sid)
     finally:
-        with _running_lock:
-            _running.discard(sid)
+        direct_running.end(sid)
 
 
 router = build_router()

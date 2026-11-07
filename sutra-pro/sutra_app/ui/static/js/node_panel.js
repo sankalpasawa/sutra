@@ -411,7 +411,8 @@
         const again = c !== undefined;
         if (!again) {
           // one repaint per animation frame, however many chunks of a reply arrived in it
-          c = CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => later(() => { if (st && chatRefs) { paintComposer(); paintBar(); } })});
+          c = CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => later(() => { if (st && chatRefs) { paintComposer(); paintBar(); } }),
+                         onTurnEnd: () => { if (st && st.sid === sid && chatRefs) { st.pillSid = ""; paintPill(); } }});          // the turn may have moved the chat to the other model: read the pill again
           composers.set(sid, c);
         }
         st.cc = {sid, c};                        // set first: rejoin and reconcile repaint, and the repaint asks for this composer again
@@ -419,6 +420,8 @@
           c.rejoin();
           c.reconcile(st.messages);              // a turn whose reply was stored while the chat was closed is over (no event of it reaches this page now)
         }
+        c.resync();                              // a direct turn answering in this chat that this page did not start (another tab, a reload) gets its Stop
+
       }
       return st.cc.c;
     }
@@ -896,6 +899,7 @@
           } else if (type === "server.resync") {
             refetchMessages();
             refetchDetail();
+            if (st.cc && st.cc.sid === st.sid) st.cc.c.resync();          // the server restarted: a turn it ran is gone, and one it runs now is shown
           }
         },
         pollFn: () => Promise.all([refreshMessages(g), refreshDetail(g)]),
@@ -1131,7 +1135,7 @@
       const name = act.dataset.act;
       if (name === "chat") switchTab("chat");
       else if (name === "send") send(chatRefs ? chatRefs.box.value : "", true);
-      else if (name === "composer-stop") stopDirect();
+      else if (name === "composer-stop") { if (!root.ChatComposer || root.ChatComposer.stopPress(e)) stopDirect(); }          // the 2nd click of a double-click on Send is not a Stop
       else if (name === "composer-mode") { const c = composerOf(); if (c) { st.ccMode = act.dataset.mode === "direct" ? "direct" : "team"; c.setMode(st.ccMode); } }
       else if (name === "composer-attach") { const input = chatRefs && chatRefs.bar ? chatRefs.bar.querySelector(".ccinput") : null; if (input) input.click(); }
       else if (name === "composer-remove") { const c = composerOf(); if (c) c.removeFile(act.dataset.key); }
@@ -1193,7 +1197,7 @@
         return;
       }
       const t = e.target;
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing && t && t.classList && t.classList.contains("nbox")) {
+      if ((root.ChatComposer ? root.ChatComposer.sendKey(e) : (e.key === "Enter" && !e.shiftKey && !e.isComposing)) && t && t.classList && t.classList.contains("nbox")) {
         e.preventDefault();
         send(t.value, true);
       }

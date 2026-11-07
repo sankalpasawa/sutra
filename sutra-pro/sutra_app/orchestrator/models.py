@@ -205,6 +205,7 @@ class ChatSessionOut(Value):
     last_message_id: Count = 0
     note: Annotated[str, StringConstraints(max_length=500)] = ""
     phase: Literal["reading", "planning", "building", "working", "ready"] | None = None     # the org chat only
+    direct_turn: Count | None = None        # the owner's line that a direct turn is answering right now (direct_running.py), else None: any page can offer Stop
 
 
 class ChatOption(Value):

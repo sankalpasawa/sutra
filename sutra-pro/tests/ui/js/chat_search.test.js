@@ -47,7 +47,7 @@ test("archive and un-archive appear where the app allows them", () => {
 });
 
 test("the attachment limits are shown and checked", () => {
-  assert.equal(CS.limitsNote(), "Up to 10 files, 20 MB each: images, PDFs and text files.");
+  assert.equal(CS.limitsNote(), "Up to 10 files, 20 MB each: images, PDFs and text files. The model reads the first 40,000 characters of a text file.");
   assert.equal(CS.checkFile({name: "a.png", size: 10}), "");
   assert.equal(CS.checkFile({name: "notes.md", size: 10}), "");
   assert.match(CS.checkFile({name: "a.exe", size: 10}), /Only images, PDFs and text files/);

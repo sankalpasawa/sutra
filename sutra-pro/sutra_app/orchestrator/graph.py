@@ -132,8 +132,10 @@ class GraphStore:
             out = self._outs(conn, [row], detail=True)[0]
             session = conn.execute("SELECT * FROM chat_sessions WHERE node_id = ? AND status = 'active'", (node_id,)).fetchone()
             archived = conn.execute(
-                "SELECT * FROM chat_sessions WHERE filed_under = ? OR (node_id = ? AND status = 'archived') ORDER BY created_at, id",
-                (node_id, node_id)).fetchall()      # merged-away chats filed under it, and the owner's own archived ones
+                "SELECT * FROM chat_sessions WHERE filed_under = ? OR (node_id = ? AND status = 'archived' "
+                "AND EXISTS (SELECT 1 FROM chat_messages m WHERE m.session_id = chat_sessions.id)) ORDER BY created_at, id",
+                (node_id, node_id)).fetchall()      # merged-away chats filed under it, and the owner's own archived ones (an empty one, such as the replacement
+                                                    # that archiving started and bringing the old chat back set aside, has nothing to show: not listed)
             return NodeDetail(
                 node=out, session=_session_out(session) if session is not None else None,
                 atoms=self._atoms(conn, node_id),

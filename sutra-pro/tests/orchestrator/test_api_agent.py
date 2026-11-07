@@ -205,3 +205,27 @@ def test_an_unwired_runner_is_a_500_not_a_crash(renv, auth):
     with TestClient(make_app(renv, wired=False), base_url="http://127.0.0.1:8780", raise_server_exceptions=False) as client:
         error_of(post(client, "cs_org", "hi", auth), 500, "internal")
         error_of(client.post("/api/chats/cs_org/retry", headers=auth), 500, "internal")
+
+
+# ---- QA direct-chat bug 3: the team route is refused while a direct turn answers ----------------------------------------------------------------
+
+def test_a_team_route_message_is_refused_while_a_direct_turn_answers_in_the_same_chat(renv, auth):
+    from sutra_app.orchestrator import direct_running
+    renv.connector.push(decide())
+    before = len(renv.messages())
+    with TestClient(make_app(renv), base_url="http://127.0.0.1:8780") as client:
+        assert direct_running.begin("cs_org")
+        try:
+            error = error_of(post(client, "cs_org", "A page please", auth), 409, "busy")
+            assert error["message"] == "This chat is already answering"
+            assert len(renv.messages()) == before                                   # nothing was stored, no turn started
+            dept = renv.one("SELECT chat_session_id FROM graph_nodes WHERE id = 'web'")
+            assert direct_running.begin(dept)                                       # a department chat answering directly refuses the team's route too
+            try:
+                error_of(post(client, dept, "and the menu?", auth), 409, "busy")
+            finally:
+                direct_running.end(dept)
+        finally:
+            direct_running.end("cs_org")
+        assert post(client, "cs_org", "A page please", auth).status_code == 202      # the turn is over: the route is open again
+        settle(renv)
