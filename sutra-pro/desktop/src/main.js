@@ -23,11 +23,11 @@ const SELFTEST = process.env.SUTRA_PRO_SELFTEST === '1';
 const folder = runtime.dataDir();
 // a test's or a developer's own data folder carries its own Chromium state too, and its own single-instance lock. Chromium reports a lock it could not
 // create (a missing drive, a file where the folder should be, a read-only folder) as it reports one another app holds, and the app would end as a
-// "second instance" without a word: so the folder is made and checked first. When it cannot be used the app keeps the system's user-data folder, and
-// its log, and says so in the window (boot).
-const ownState = process.env.SUTRA_DATA_DIR ? path.join(folder, 'electron') : '';
-const folderProblem = ownState ? runtime.folderProblem(ownState) : null;
-if (ownState && !folderProblem) app.setPath('userData', ownState);
+// "second instance" without a word: so the folder is made and checked first (runtime.windowState). When it cannot be used the window keeps its state in a
+// folder of its own, not the system's (the app of every day holds the lock there), and says so (boot).
+const windowState = runtime.windowState({ named: process.env.SUTRA_DATA_DIR, folder, systemUserData: app.getPath('userData') });
+const folderProblem = windowState.problem;
+if (windowState.userData) app.setPath('userData', windowState.userData);
 
 const log = createLog(folderProblem ? app.getPath('userData') : folder);
 const supervisor = new Supervisor({

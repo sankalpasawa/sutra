@@ -117,3 +117,27 @@ test('a folder the app needs is made, and one it cannot make or write to is repo
   fs.mkdirSync(path.join(base, 'locked'), { mode: 0o500 });
   assert.match(runtime.folderProblem(path.join(base, 'locked')) || '', /not writable/, 'it exists but nothing can be written in it');
 });
+
+test('the window\'s own state lives in <data>/electron; when that is unusable it moves to a folder of its own, never to the system\'s one the everyday app locks', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'sutra-state-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const system = path.join(base, 'system', 'Sutra Pro');
+  // no SUTRA_DATA_DIR: the system's folder, untouched
+  assert.deepEqual(runtime.windowState({ named: '', folder: path.join(base, 'data'), systemUserData: system }), { userData: null, problem: null });
+  assert.equal(fs.existsSync(path.join(base, 'data')), false, 'nothing is made when the system folder is used');
+  // a usable folder: its own state, as before
+  const data = path.join(base, 'data');
+  assert.deepEqual(runtime.windowState({ named: data, folder: data, systemUserData: system }), { userData: path.join(data, 'electron'), problem: null });
+  // a regular file where the folder should be: the reason, and a folder beside the system's own state, not the system folder itself
+  const file = path.join(base, 'a-file');
+  fs.writeFileSync(file, 'not a folder');
+  const state = runtime.windowState({ named: file, folder: file, systemUserData: system });
+  assert.match(state.problem || '', /\S/);
+  assert.equal(state.userData, path.join(system, runtime.ASIDE_NAME));
+  assert.notEqual(state.userData, system, 'the system folder holds the lock of the app of every day');
+  assert.ok(fs.statSync(state.userData).isDirectory(), 'it was made');
+  // even that folder cannot be made: the reason is still given, and the system folder is kept (the lock check then decides)
+  const stuck = runtime.windowState({ named: file, folder: file, systemUserData: path.join(file, 'Sutra Pro') });
+  assert.match(stuck.problem || '', /\S/);
+  assert.equal(stuck.userData, null);
+});

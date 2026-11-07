@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const DATA_DIR_NAME = '.sutra-pro';
+const ASIDE_NAME = 'data-folder-error';          // inside the system's user-data folder: where the window that reports an unusable data folder keeps its state
 const DEFAULT_START_TIMEOUT_S = 60;
 const MAX_START_TIMEOUT_S = 600;
 
@@ -31,6 +32,20 @@ function folderProblem(dir) {
   } catch (error) {
     return error && error.code === 'EACCES' && fs.existsSync(dir) ? `${dir} is not writable (${error.code})` : String(error && error.message ? error.message : error);
   }
+}
+
+/* Where Chromium keeps the window's own state (its cache and its single-instance lock), as { userData, problem }. `userData` is the folder to set, or null to
+   keep the system's own. Without SUTRA_DATA_DIR (`named` empty) it is the system's, as for an installed app. With it, the state lives in <data>/electron so a
+   test never meets the app a person uses every day; when that folder cannot be made or written (`problem` says why) the window must still open to say so, and
+   it must not use the system's folder for that: the app of every day holds the lock there, and a window that asked for another folder would be turned away as a
+   "second instance" without a word. It gets a folder of its own below the system's instead (null when even that cannot be made). */
+function windowState({ named, folder, systemUserData, check = folderProblem }) {
+  if (!named) return { userData: null, problem: null };
+  const own = path.join(folder, 'electron');
+  const problem = check(own);
+  if (!problem) return { userData: own, problem: null };
+  const aside = path.join(systemUserData, ASIDE_NAME);
+  return { userData: check(aside) ? null : aside, problem };
 }
 
 /* The interpreter that runs the server. Installed: the one inside the app (Contents/Resources/python on a Mac, resources\python on Windows), never
@@ -100,4 +115,4 @@ function childEnv(env, { platform = process.platform, home = os.homedir(), dataD
   return out;
 }
 
-module.exports = { dataDir, folderProblem, pythonPath, serverArgs, childEnv, pathExtras, startTimeoutMs, DATA_DIR_NAME };
+module.exports = { dataDir, folderProblem, windowState, pythonPath, serverArgs, childEnv, pathExtras, startTimeoutMs, DATA_DIR_NAME, ASIDE_NAME };
