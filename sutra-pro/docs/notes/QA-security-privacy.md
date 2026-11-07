@@ -65,7 +65,17 @@ are untouched.
 - A team folder that already exists under a reserved name (made on macOS or Linux, restored on Windows) is not renamed; only new ids avoid the names.
 - J2's own code: nothing in it was changed. If a secret appears in what J2's agents write on their own (not the owner's words), the D109 audit row of the dept-run branch is the record.
 
-## Verification
+## Verification (all run from `sutra-pro/` with `scripts/py -m pytest ...`)
 
-Commands and pass counts are in the answer of the run that wrote this note (tests touched, `node --test tests/ui/js/*.test.js`, the docs, traceability, ownership and layout tests,
-`tests/library` on its own, `tests/connectors/test_env_process.py` was not needed: no connector environment code changed).
+| Command | Result |
+|---|---|
+| `tests/connectors` except `test_env_process.py` | 1532 passed, 5 skipped |
+| `tests/connectors/test_env_process.py` (foreground) | 67 passed |
+| `tests/ops tests/engine` | 2187 passed, 10 skipped |
+| `tests/orchestrator` with `test_docs`, `test_traceability`, `test_ownership`, `test_layout` | 1447 passed, 1 skipped |
+| `tests/library` (on its own) | 2358 passed, 4 skipped |
+| `tests/e2e tests/integration tests/contracts tests/ui` and the smoke, packaging, markers and build-plan tests | 973 passed, 218 skipped (the browser and slow suites need their switches) |
+| `node --test tests/ui/js/*.test.js` | 965 tests, 963 passed, 2 skipped, 0 failed |
+
+Live check on a private server (offline, own port and data folder, stopped afterwards): the 24 sample shapes and an env secret and the launch token left no residue in the data folder;
+a declared 300 MB body is 413 in 0 s; 20 MB chunked is 413; nested JSON is 400 or 422; the seven large-integer URLs are 422; `postgres://` and 7 989 colons in the direct chat answers in 0.01 s; no traceback in `server.log`.
