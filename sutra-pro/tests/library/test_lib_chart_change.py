@@ -798,11 +798,25 @@ def test_chart_change_invalid_carries_every_violation_and_a_readable_message():
     ("division", "x" * 60, {"x" * 40}, "x" * 38 + "-2"),
     ("division", "word " * 12, set(), "-".join(["word"] * 8)),
     ("division", "word " * 12, {"-".join(["word"] * 8)}, "-".join(["word"] * 7) + "-wor-2"),            # cut to fit "-2"
+    ("department", "Con", set(), "con-2"),                                                                # a name Windows keeps for a device
+    ("department", "Aux", set(), "aux-2"), ("department", "NUL", set(), "nul-2"), ("department", "Prn", set(), "prn-2"),
+    ("department", "Com1", set(), "com1-2"), ("department", "LPT9", set(), "lpt9-2"), ("department", "com9", {"com9-2"}, "com9-3"),
+    ("department", "Console", set(), "console"), ("department", "Com10", set(), "com10"), ("department", "Con Air", set(), "con-air"),
 ])
 def test_slug_id_examples(kind, name, taken, expected):
     made = slug_id(kind, name, taken)
     assert made == expected
     assert NODE_ID_RE.fullmatch(made) and made not in taken
+
+
+def test_no_slug_id_is_a_device_name_windows_cannot_make_a_folder_of():
+    """QA: teams called Con, Aux, Nul, Prn, Com1 or Lpt1 got folders departments/con and so on, which Windows cannot create."""
+    from sutra_app.library.org_chart import WINDOWS_DEVICE_NAMES
+    assert WINDOWS_DEVICE_NAMES == {"con", "prn", "aux", "nul", *(f"com{n}" for n in range(1, 10)), *(f"lpt{n}" for n in range(1, 10))}
+    for device in sorted(WINDOWS_DEVICE_NAMES):
+        for name in (device, device.upper(), device.title(), f" {device}! "):
+            made = slug_id("department", name, set())
+            assert made == f"{device}-2" and made not in WINDOWS_DEVICE_NAMES and NODE_ID_RE.fullmatch(made)
 
 
 def test_slug_ids_are_always_node_ids_that_also_fit_a_department_url():
