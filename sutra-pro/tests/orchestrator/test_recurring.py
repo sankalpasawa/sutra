@@ -335,6 +335,24 @@ def test_a_daily_time_in_a_zone_that_springs_forward_fires_once_that_day(tenv):
     assert [r["trigger"] for r in rows_of(tenv, made.id)] == ["schedule", "schedule"]
 
 
+def test_the_tick_starts_work_a_limit_was_holding_once_the_limit_lifts(tenv, tmp_path):
+    """The spending limit and the plan window only gate STARTS, and nothing but time or the owner lifts them: the tick is what notices that a month
+    turned, a window reset or the limit file was raised, so a held task is not stranded."""
+    from sutra_app.orchestrator.limits import Limits
+    path = tmp_path / "limits.json"
+    limits = Limits(path, tenv.db, quotas=lambda: {}, clock=tenv.clock)
+    tenv.service.start_gate = limits.gate
+    limits.update(monthly_usd=1.0)
+    tenv.sql("INSERT INTO usage_ledger(at, provider, purpose, usd) VALUES (?,?,?,?)", at(2026, 11, 4, 9), "claude", "test", 5.0)
+    task = tenv.new()
+    rec = Recurring(tenv.db, tenv.service, clock=Now(at(2026, 11, 4, 10)), tz=UTC)
+    tenv.run(rec.tick_async())                                                              # nothing is due; the task is held by the limit
+    assert tenv.status(task.id) == "queued"
+    Limits(path, tenv.db, quotas=lambda: {}, clock=tenv.clock).update(monthly_usd=50.0)     # raised from outside this service
+    tenv.run(rec.tick_async())
+    assert tenv.status(task.id) == "starting"
+
+
 def test_the_loop_runs_ticks_and_stops_cleanly(tenv):
     rec = Recurring(tenv.db, tenv.service, clock=Now(at(2026, 11, 4, 10)), tz=UTC, tick_s=0.01)
     rec.create("web", "Daily digest", DAILY_9, now=at(2026, 11, 4, 8))

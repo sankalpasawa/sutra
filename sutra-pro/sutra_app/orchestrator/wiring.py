@@ -207,7 +207,8 @@ def refresh_function_nodes(services: Services) -> int:
 async def start_services(services: AppServices) -> AppServices:
     """Orchestrator 5.1 steps 2, 3, 5, 6 and 7, in this order: migrate; bootstrap the chart when there is no root; sweep empty
     department folders and refresh stale function nodes; reconcile the tasks a previous run left (ends with `server.resync`
-    restart); start queued work. Idempotent: a second start finds the root, nothing to sweep, nothing stale."""
+    restart); the scheduler's catch-up tick and loop (recurring.py: one run for the time the app was away); start queued work.
+    Idempotent: a second start finds the root, nothing to sweep, nothing stale."""
     if services.started:
         return services
     await run_blocking(services.db.migrate)
