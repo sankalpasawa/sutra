@@ -1,5 +1,6 @@
 """CN-1: the shared connector models (connectors design 3.1)."""
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -239,6 +240,35 @@ def test_work_root_default_is_under_the_temp_root_by_uid_and_is_a_realpath(tmp_p
     link.symlink_to(real)
     monkeypatch.setattr(tempfile, "tempdir", str(link))
     got = m.ConnectorConfig(data_dir="/d").resolved_work_root()
-    assert got == real / f"sutra-app-{os.getuid()}" / "work"
+    assert got.parent == real / f"sutra-app-{os.getuid()}" and re.fullmatch(r"work-[0-9a-f]{12}", got.name)
     explicit = m.ConnectorConfig(data_dir="/d", work_root=link / "w").resolved_work_root()
     assert explicit == real / "w"
+
+
+def test_two_data_folders_never_share_a_default_work_root(tmp_path, monkeypatch):
+    """QA firstrun-settings: the default root was `<tempdir>/sutra-app-<uid>/work` for EVERY data folder of one user, so a second
+    app (or a brand-new data folder) read the first one's session.json: its pinned model, its provider conversation id."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    a = m.ConnectorConfig(data_dir=tmp_path / "data-a").resolved_work_root()
+    b = m.ConnectorConfig(data_dir=tmp_path / "data-b").resolved_work_root()
+    assert a != b and a.parent == b.parent
+    assert m.ConnectorConfig(data_dir=tmp_path / "data-a").resolved_work_root() == a            # the same folder always gets the same root
+    assert m.ConnectorConfig(data_dir=tmp_path / "x" / ".." / "data-a").resolved_work_root() == a      # however the path is spelled
+
+
+def test_a_data_folder_reached_through_a_link_keeps_its_work_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    real = tmp_path / "real-data"
+    real.mkdir()
+    link = tmp_path / "link-data"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("this system cannot make a link here")
+    assert m.ConnectorConfig(data_dir=link).resolved_work_root() == m.ConnectorConfig(data_dir=real).resolved_work_root()
+
+
+def test_an_explicit_work_root_is_used_as_given_for_every_data_folder(tmp_path):
+    one = m.ConnectorConfig(data_dir=tmp_path / "a", work_root=tmp_path / "w").resolved_work_root()
+    two = m.ConnectorConfig(data_dir=tmp_path / "b", work_root=tmp_path / "w").resolved_work_root()
+    assert one == two == Path(os.path.realpath(tmp_path / "w"))

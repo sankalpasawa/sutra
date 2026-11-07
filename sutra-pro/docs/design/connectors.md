@@ -108,7 +108,7 @@ class SessionState(M):       # <work_root>/<session_id>/session.json, atomic wri
     workdir: str; turns: int = 0; switches: int = 0; pinned: Provider | None = None; cum_usd: float = 0.0; cum_usage: Usage = Usage(); created_at: float
 class ConnectorEvent(M): kind: Literal["started", "text_delta", "text", "tool_call", "tool_result", "quota", "notice", "turn_done"]; data: dict = {}
 class ConnectorConfig(M):    # paths and executables; tests point these at the fakes
-    data_dir: Path; work_root: Path | None = None            # default <tempdir>/sutra-app-<uid>/work, realpath (CD9)
+    data_dir: Path; work_root: Path | None = None            # default <tempdir>/sutra-app-<uid>/work-<key of data_dir>, realpath (CD9)
     claude_exe: str = "claude"; codex_exe: str = "codex"; gh_exe: str = "gh"; python: str = sys.executable
     extra_env: dict[str, str] = {}                            # validator: a name containing KEY, TOKEN, SECRET or PASSWORD is refused
 ```
@@ -374,7 +374,7 @@ The table `usage_ledger`, `UsageStore`, `UsageOut` and the read API belong to OR
 
 ## 4. Data
 - **No SQL of its own.** `usage_ledger` is ORCH's (3.8). Session state: `<work_root>/<session_id>/session.json` (`SessionState`), mode 0600.
-- **Work root** `<tempdir>/sutra-app-<uid>/work`, resolved with `realpath` so Claude's per-directory transcript key never changes. It sits outside the repo so no repo `CLAUDE.md` or `AGENTS.md` is picked up. UNVERIFIED which of those the CLIs read in `-p` mode with the flags above; a user-level `~/.claude/CLAUDE.md` would still apply.
+- **Work root** `<tempdir>/sutra-app-<uid>/work-<key>`, `<key>` = the first 12 hex digits of the SHA-256 of the data folder's realpath (two data folders of one user never share session state: the org chat's session id `cs_org` is the same in every data folder), resolved with `realpath` so Claude's per-directory transcript key never changes. It sits outside the repo so no repo `CLAUDE.md` or `AGENTS.md` is picked up. UNVERIFIED which of those the CLIs read in `-p` mode with the flags above; a user-level `~/.claude/CLAUDE.md` would still apply.
 - The CLIs keep their own transcripts (`~/.claude/projects`, `~/.codex/sessions`); `forget()` removes them.
 - **Policy:** `<data_dir>/connectors/policy.json` (optional) over the packaged default (3.6). `data_dir` is ORCH's `SUTRA_DATA_DIR` (ORCH §4.2).
 - **`session.json` example:** `{"session_id":"cs_5e0a77b19c3d","provider":"claude","provider_session_id":"092c7b68-7118-42da-ba0a-57fa2e5ef699","model":"sonnet","effort":"low","tool_profile":"none","workdir":"/private/var/folders/…/sutra-app-501/work/cs_5e0a77b19c3d","turns":2,"switches":0,"pinned":null,"cum_usd":0.0190348,"cum_usage":{"input_tokens":6,"cached_input_tokens":1728,"cache_write_tokens":4570,"output_tokens":57,"reasoning_tokens":0},"created_at":1793748000.0}`
