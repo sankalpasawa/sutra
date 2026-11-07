@@ -72,5 +72,10 @@ Built:
 - **`shorten` is applied to the crash tail and the 'could not start' line only**, as the package said: not the logs, not J2's documents or route bodies, not the retry brief
   (`attempts.py`, which goes to a model), not a `Stopped:` line the engine wrote itself. A Windows data folder outside Users, Windows, ProgramData or Documents is not
   recognised (a Windows drive path is shortened only under those folders).
-- **Pre-existing, not touched:** `tests/ui/test_fake_backend.py::test_the_panel_mount_page_opens_the_node_it_is_asked_for_on_the_graph_it_loaded` (browser) fails at the
-  base commit: its `mount_server` fixture copies a fixed list of scripts and lacks the two chat-comfort scripts (`chat_draft.js`, `chat_scroll.js`), so they 404.
+- **Pre-existing, not touched:** the browser suite of `tests/ui` (`SUTRA_BROWSER=1`) is already red at the base commit (59 failing or erroring tests, e.g. most of `test_home.py`
+  and `test_visual.py`: the fake backend has no `GET /api/chats/{sid}/providers`, so the provider pill's request 404s and the harness fails the test; and
+  `test_fake_backend.py::test_the_panel_mount_page_opens_...` whose `mount_server` copies a fixed script list that lacks the two chat-comfort scripts). With this package the same 59
+  are red and no other; `test_home.py::test_the_first_graph_after_a_turn_...` is flaky at the base commit too (its click on `show-node` sometimes does not select the box),
+  and it failed once in a full run here. The nine browser tests of this package (`tests/ui/test_chart_insight.py`) announce the one 404 they cause and pass.
+- Run here: `node --test tests/ui/js/*.test.js` 810 passed, 2 skipped; `pytest tests/orchestrator tests/contracts tests/ui` 1993 passed, 197 skipped (the browser tests);
+  `SUTRA_BROWSER=1 pytest tests/ui/test_chart_insight.py` 11 passed; `tests/test_docs.py`, `test_ownership.py`, `test_traceability.py`, `test_layout.py` green.
