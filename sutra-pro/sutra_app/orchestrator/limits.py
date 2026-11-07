@@ -257,6 +257,7 @@ class Limits:
 
     def __init__(self, path: Path, db: Database, *, quotas: Callable[[], Mapping[str, Any]], clock: Any = None, offline: bool = False) -> None:
         self.store = LimitsStore(path)
+        self._changes = threading.Lock()                # one owner change at a time: update and continue_now read, change and save the whole file
         self.db = db
         self.quotas = quotas
         self.clock = clock
@@ -281,23 +282,26 @@ class Limits:
 
     def update(self, *, monthly_usd: float | None | Literal["keep"] = "keep", guard_enabled: bool | None = None, now: float | None = None) -> dict[str, Any]:
         """Set the monthly limit (None or 0 clears it) and/or the guard switch. Switching the guard off forgets its Continue marks."""
-        found = self.store.load()
-        limit = found.monthly_usd if monthly_usd == "keep" else (float(monthly_usd) if monthly_usd else None)
-        guard = found.guard if guard_enabled is None else GuardSetting(enabled=guard_enabled, continued=found.guard.continued if guard_enabled else {})
-        self.store.save(LimitsFile(monthly_usd=limit, guard=guard))
+        with self._changes:                                # two requests at once must not each save from the file as it was before the other
+            found = self.store.load()
+            limit = found.monthly_usd if monthly_usd == "keep" else (float(monthly_usd) if monthly_usd else None)
+            guard = found.guard if guard_enabled is None else GuardSetting(enabled=guard_enabled, continued=found.guard.continued if guard_enabled else {})
+            self.store.save(LimitsFile(monthly_usd=limit, guard=guard))
         return self.state(now)
 
     def continue_now(self, now: float | None = None) -> dict[str, Any]:
         """One Continue: every window that holds work right now lets it proceed until that window resets (an hour when it names no reset time)."""
         moment = self._now(now)
-        found = self.store.load()
-        reading = guard_reading(self._quotas(), moment, enabled=True, continued=found.guard.continued)
-        marks = {k: v for k, v in found.guard.continued.items() if v > moment}
-        for row in reading["windows"]:
-            if row["level"] == "hold":
-                until = int(datetime.fromisoformat(row["resets_at"].replace("Z", "+00:00")).timestamp()) if row["resets_at"] else int(moment) + 3600
-                marks[f"{row['provider']}:{row['key']}"] = until
-        self.store.save(LimitsFile(monthly_usd=found.monthly_usd, guard=GuardSetting(enabled=found.guard.enabled, continued=marks)))
+        quotas = self._quotas()                             # read before the lock: the plan windows are not the file's business
+        with self._changes:
+            found = self.store.load()
+            reading = guard_reading(quotas, moment, enabled=True, continued=found.guard.continued)
+            marks = {k: v for k, v in found.guard.continued.items() if v > moment}
+            for row in reading["windows"]:
+                if row["level"] == "hold":
+                    until = int(datetime.fromisoformat(row["resets_at"].replace("Z", "+00:00")).timestamp()) if row["resets_at"] else int(moment) + 3600
+                    marks[f"{row['provider']}:{row['key']}"] = until
+            self.store.save(LimitsFile(monthly_usd=found.monthly_usd, guard=GuardSetting(enabled=found.guard.enabled, continued=marks)))
         return self.state(moment)
 
     def pinned_of(self, conn: sqlite3.Connection, dept_id: str) -> tuple[str, ...] | None:

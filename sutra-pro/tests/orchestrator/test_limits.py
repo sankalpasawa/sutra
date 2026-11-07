@@ -2,6 +2,7 @@
 real task queue (a queued task waits with the reason and starts when the reason ends; a running task is never touched), and the file."""
 import os
 import stat
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -321,3 +322,24 @@ def test_update_keeps_what_it_is_not_given(tenv, limits):
     assert state["spend"]["limit"] == 7.0 and state["guard"]["enabled"] is True
     limits.update(monthly_usd=None)
     assert limits.state()["spend"]["limit"] is None and limits.state()["guard"]["enabled"] is True
+
+
+def test_two_changes_at_once_both_land(tenv, limits):
+    """The routes run on worker threads, so a limit saved while the guard is switched (or Continue pressed) must not be undone by the other's save
+    of the file as it was before: the owner's spending limit would silently go."""
+    path = limits.store.path
+    for _ in range(25):
+        path.unlink(missing_ok=True)
+        gate = threading.Barrier(2)
+
+        def change(**what):
+            gate.wait()
+            limits.update(**what)
+
+        threads = [threading.Thread(target=change, kwargs={"monthly_usd": 10.0}), threading.Thread(target=change, kwargs={"guard_enabled": True})]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        found = limits.store.load()
+        assert found.monthly_usd == 10.0 and found.guard.enabled is True

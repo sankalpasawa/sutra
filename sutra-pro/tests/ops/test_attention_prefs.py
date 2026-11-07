@@ -4,6 +4,7 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -104,6 +105,26 @@ def test_a_file_that_does_not_read_degrades_toward_speaking_and_never_raises(pre
     assert prefs.read()["nudges_per_hour"] == 10                                      # a hand-edited number is clamped, not dropped
     prefs.write(nudges_per_hour=1)                                                    # the next save replaces what did not read
     assert prefs.read()["nudges_per_hour"] == 1
+
+
+def test_two_writes_at_once_through_separate_instances_both_land(tmp_path):
+    """The route builds a new AttentionPrefs for every request, so a lock of its own guards nothing: two overlapping PUTs (two tabs) must both land."""
+    path = tmp_path / "attention.json"
+    window = {"start": "21:00", "end": "08:00"}
+    for _ in range(25):
+        path.unlink(missing_ok=True)
+        gate = threading.Barrier(2)
+
+        def put(**change):
+            gate.wait()
+            AttentionPrefs(path).write(**change)
+
+        threads = [threading.Thread(target=put, kwargs={"quiet_hours": window}), threading.Thread(target=put, kwargs={"nudges_per_hour": 7})]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert AttentionPrefs(path).read() == {"quiet_hours": window, "nudges_per_hour": 7}
 
 
 def test_a_restart_in_a_new_process_reads_the_same_choices(prefs):

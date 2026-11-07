@@ -48,6 +48,7 @@ _NUDGES_KEY = "nudges_per_hour"
 _HM = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
 _MAX_BYTES = 64 * 1024
 UNSET: Any = object()                    # "leave it as it is" (None means clear)
+_WRITES = threading.Lock()               # shared by every AttentionPrefs: the route makes a new one per request, so a lock of its own would guard nothing
 
 
 def minutes_of(hm: str) -> int:
@@ -104,7 +105,7 @@ class AttentionPrefs:
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
-        self._lock = threading.Lock()
+        self._lock = _WRITES
 
     def _raw(self) -> dict[str, Any]:
         try:
