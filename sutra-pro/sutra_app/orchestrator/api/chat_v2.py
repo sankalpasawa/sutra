@@ -164,7 +164,9 @@ def build_router() -> APIRouter:
         services = services_of(request)
         chats, port, attachments = _need(request, "chats"), _need(request, "chat_port"), _need(request, "attachments")
         session = await run_blocking(chats.session, sid)
-        if session.status != "active" or not session.writable or session.kind not in ("org", "department", "division"):
+        if session.status != "active":                    # a page that did not hear of the archive (another tab) is told the cause
+            raise ReadOnly("This chat was archived. Open the team's current chat to write.")
+        if not session.writable or session.kind not in ("org", "department", "division"):
             raise ReadOnly("This chat cannot be asked directly")
         if len(body.text) > MAX_CHARS:
             sentence = f"Messages can be up to {MAX_CHARS} characters; this one has {len(body.text)}."

@@ -231,6 +231,20 @@ def test_archiving_a_teams_chat_leaves_the_team_a_working_active_chat(rig):
     assert wait_for(lambda: len(chats.messages(row[0])) == 2)
 
 
+def test_a_message_to_an_archived_chat_is_refused_saying_it_was_archived(rig):
+    """QA direct-chat P3: a second tab that still showed the chat as live got 'This chat cannot be asked directly', which says nothing of the cause."""
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    assert client.post(f"/api/chats/{sid}/archive", headers=H).status_code == 200
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "still there?"}, headers=H)
+    assert r.status_code == 403 and r.json()["error"]["code"] == "read_only"
+    assert r.json()["error"]["message"] == "This chat was archived. Open the team's current chat to write."
+    assert chats.messages(sid) == []
+    org = client.post("/api/chats/cs_org/direct", json={"text": "hi"}, headers=H)               # a chat that is live but not for the model keeps its own words
+    assert org.status_code == 202
+    assert wait_for(lambda: "cs_org" not in chat_v2._running)
+
+
 def test_a_credential_typed_in_a_direct_chat_is_never_stored(rig):
     client, world, chats, bus, services = rig
     sid = world.session_of["web"]
