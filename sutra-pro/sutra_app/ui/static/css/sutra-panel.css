@@ -277,3 +277,15 @@ body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #
 .cctile{font:600 10px var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 4px}
 .cattached{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:4px;white-space:normal}
 .cattached li{display:inline-flex;align-items:center;gap:4px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:12.5px;overflow-wrap:anywhere}
+/* the standing rules of a team, at the foot of its Details tab (GAP2 rules-notes, rules_view.js) */
+.tmrules .rulelist{list-style:none;padding-left:0}
+.tmrules .rule{padding:3px 0;overflow-wrap:anywhere}
+.tmrules .rtag{font-weight:600;color:var(--accent)}
+.tmrules .rtag[data-tag="never"]{color:var(--bad)}
+.tmrules .ruleadd,.tmrules .packpick{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0}
+.tmrules .ruleadd input[type="text"]{flex:1 1 180px;min-width:0}
+.tmrules .ruleadd select,.tmrules .ruleadd input{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:4px 7px;font:inherit}
+.tmrules .packpick button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.tmrules .packlines{margin-top:4px}
+.tmrules .seterr{color:var(--bad);font-size:12.5px}
+.tmrules .setstatus{color:var(--ok);font-size:12.5px;margin:4px 0 0}
