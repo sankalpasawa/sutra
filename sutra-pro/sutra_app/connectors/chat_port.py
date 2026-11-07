@@ -154,13 +154,21 @@ class RouterChatPort:
         source = self.router.transcripts
         return [] if source is None else list(source.messages(session_id, TRANSCRIPT_LIMIT))
 
+    def _carried(self, session_id: str, message: Message) -> Sequence[Message]:
+        """The history a switch caused by `message` carries: the stored transcript without the owner's new line, which is stored before the call and goes as
+        the new message (the router drops it the same way, `Router._transcript`)."""
+        history = self._history(session_id)
+        return history[:-1] if history and history[-1].role == "user" and history[-1].text == message.text else history
+
     def plan_switch(self, session_id: str, target: str) -> CarryPlan:
         """What a switch to `target` would carry. Reads the stored state and transcript; starts no process and writes nothing."""
         if target not in PROVIDERS or target not in self.router.connectors:
             raise InvalidRequestError(f"{target} is not a configured provider")
+        return self._plan(session_id, target, self._history(session_id))
+
+    def _plan(self, session_id: str, target: str, messages: Sequence[Message]) -> CarryPlan:
         stored = load_session_state(self._work_dir(session_id))
         source = stored.provider if stored is not None else None
-        messages = self._history(session_id)
         text = render_carry_over(messages, from_provider=source, to_provider=target)      # type: ignore[arg-type]
         if not messages:
             return CarryPlan(session_id=session_id, target=target, source=source)           # type: ignore[arg-type]
@@ -213,7 +221,7 @@ class RouterChatPort:
                 after = load_session_state(self._work_dir(session_id))
                 moved = before is not None and after is not None and before.provider != after.provider
                 switched = {"from": before.provider, "to": after.provider,           # type: ignore[union-attr]
-                            "plan": self.plan_switch(session_id, after.provider).model_dump()} if moved and after else None
+                            "plan": self._plan(session_id, after.provider, self._carried(session_id, message)).model_dump()} if moved and after else None
                 yield ChatEvent(kind="usage", data={"usd": result.get("usd"), "usage": result.get("usage")})
                 if switched is not None:
                     yield ChatEvent(kind="switched", data=switched)
