@@ -55,7 +55,7 @@ def build_router() -> APIRouter:
         fn: str | None = Query(None, pattern=ID_PATTERN),
         since: str | None = Query(None, max_length=40, description="epoch seconds or 2026-11-04T10:00:06Z"),
         include_stub: bool = Query(False),
-        after: int = Query(0, ge=0),
+        after: int = Query(0, ge=0, le=2**53 - 1),
         limit: int = Query(50, ge=1, le=500),
     ) -> RedactedJSONResponse:
         try:

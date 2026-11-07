@@ -35,7 +35,7 @@ import anyio.from_thread
 from pydantic import ValidationError
 
 from sutra_app.config import Settings
-from sutra_app.connectors.egress import scan
+from sutra_app.connectors.egress import scan, scrubbed
 from sutra_app.engine.paths import DataPaths
 from sutra_app.library.gate import GATE, Checked, GateError
 from sutra_app.library.node import StructuralNode, step_node_id
@@ -441,6 +441,11 @@ class TaskService:
             return asyncio.run_coroutine_threadsafe(factory(), loop).result()
         return asyncio.run(factory())
 
+    def clean(self, text: str) -> str:
+        """What the owner typed with the app's secret values and the credential shapes replaced (`connectors.egress.scrubbed`): the one text
+        a task row, a team's chat line, a run's inbox and the files of a run keep. Replacing twice changes nothing."""
+        return scrubbed(text, self.redact)
+
     # ---- create ------------------------------------------------------------------------------------------------------------
 
     def create(self, tx: Tx, *, dept_id: str, text: str, title: str | None = None, scope_id: str | None = None, framing: str = "",
@@ -474,7 +479,7 @@ class TaskService:
                 parent_task_id: str | None, status_override: str | None = None, attempt: int | None = None) -> TaskRow:
         conn = tx.conn
         problems = []
-        body = (text or "").strip()
+        body = self.clean((text or "").strip())
         if not body:
             problems.append(violation("text", "empty", "a task needs the owner's words"))
         if conn.execute("SELECT 1 FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active'", (dept_id,)).fetchone() is None:
@@ -517,7 +522,7 @@ class TaskService:
             if not request.startswith("req-") or not request[4:].isdigit():
                 raise validation_error([violation("request", "bad_request", "a request id is req-<number>")])
             origin = int(request[4:])
-        task_title = clip((title or one_line_title(body)).strip() or one_line_title(body), 200)
+        task_title = clip((self.clean(title) if title else one_line_title(body)).strip() or one_line_title(body), 200)
         row = TaskRow(
             id=self.ids.task_id(), dept_id=dept_id, scope_node_id=scope_id, title=task_title, user_text=body, framing=framing or "",
             status=status, run_id=None, parent_task_id=parent_task_id, depends_on=tuple(d.id for d in deps), request_id=request,
@@ -714,6 +719,7 @@ class TaskService:
         body = (text or "").strip()
         if not body:
             raise validation_error([violation("text", "empty", "write something first")])
+        said = self.clean(body)                          # the answer, the follow-up and the team's chat line; the override is read from `body`
         refusal: AppError | None = None
         with self.db.tx() as tx:
             if tx.conn.execute("SELECT 1 FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active'", (dept_id,)).fetchone() is None:
@@ -730,13 +736,13 @@ class TaskService:
                 else:
                     result = self._answer(tx, live, sid, "Owner override sent", {"kind": "override", "cmd": override}, answered=False)
             elif live is not None and live.status == "waiting_user":
-                result = self._answer(tx, live, sid, body, {"kind": "user", "text": body}, answered=True)
+                result = self._answer(tx, live, sid, said, {"kind": "user", "text": said}, answered=True)
             elif live is not None:
                 raise Busy()
             elif tx.conn.execute("SELECT 1 FROM tasks WHERE dept_id = ? AND status IN ('blocked','queued') LIMIT 1", (dept_id,)).fetchone():
                 raise Busy("The team has work waiting to start. You can write again when it is done")
             else:
-                result = self._follow_up(tx, dept_id, sid, body, scope_id, settings)
+                result = self._follow_up(tx, dept_id, sid, said, scope_id, settings)
         if refusal is not None:
             raise refusal
         if result.delivered == "follow_up":

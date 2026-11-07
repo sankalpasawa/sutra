@@ -36,7 +36,7 @@ def build_router() -> APIRouter:
         task_id: str | None = Query(None, pattern=ID_PATTERN),
         status: Literal["open", "verify_failed", "closed", "refused", "abandoned"] | None = Query(None, description="the display word"),
         limit: int = Query(50, ge=1, le=500),
-        offset: int = Query(0, ge=0),
+        offset: int = Query(0, ge=0, le=2**53 - 1),
     ) -> RedactedJSONResponse:
         found = await run_blocking(lambda: _store(request).find(node_id=node_id, task_id=task_id, status=status, limit=limit, offset=offset))
         return respond(request, found)
@@ -45,7 +45,7 @@ def build_router() -> APIRouter:
     async def atom_log(
         request: Request,
         node_id: str | None = Query(None, pattern=ID_PATTERN),
-        after: int = Query(0, ge=0, description="only rows with a seq above this"),
+        after: int = Query(0, ge=0, le=2**53 - 1, description="only rows with a seq above this"),
         limit: int = Query(50, ge=1, le=500),
     ) -> RedactedJSONResponse:
         return respond(request, await run_blocking(lambda: _store(request).log(node_id=node_id, after=after, limit=limit)))

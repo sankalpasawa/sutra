@@ -27,6 +27,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from sutra_app.connectors.egress import scrubbed
 from sutra_app.library.gate import GATE, Checked
 from sutra_app.library.org_chart import AddOp, MergeOp, MoveOp, OrgChart, RenameOp, SplitOp
 from sutra_app.library.practice import load_packs, pack_by_id
@@ -118,7 +119,7 @@ class TurnRunner:
         a model is needed and none is usable, 429 `too_many_pending`, 409 `already_decided` for a card answered before, 422 `validation`."""
         if session_id != ORG:
             raise AppError("validation", f"only the org chat {ORG} is answered by the chat agent")
-        body = text.strip()
+        body = scrubbed(text.strip(), self._redact)                # a secret never lands in the chat store, the team's first line or a prompt
         if not body:
             raise AppError("validation", "write something first")
         resolved = await run_blocking(self._resolve_choice, choice) if choice is not None else None

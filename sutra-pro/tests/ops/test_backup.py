@@ -536,6 +536,29 @@ def test_restore_refuses_unsafe_paths_in_the_manifest(good, tmp_path, bad):
     assert not (tmp_path / "evil.txt").exists()
 
 
+@pytest.mark.parametrize("name", [
+    ".env", "connectors/bins.json", "connectors/other.json", "connectors/policy.json.bak", "Connectors/policy.json", ".ENV", "app.lock", "app.pid",
+    "logs/server.log", "backups/old.tar.gz", "departments", "library", "sneaky.txt", "db.sqlite3-wal",
+])
+def test_restore_refuses_a_file_a_backup_never_writes_even_when_its_manifest_lists_it_with_a_true_checksum(good, tmp_path, name):
+    """The manifest comes from the archive, so it cannot be the allow-list: a crafted one planted `.env` (the override key) and
+    `connectors/bins.json` ({"claude": "/bin/sh"}) in a data folder."""
+    _, items = good
+    crafted = build_archive(tmp_path / "evil.tar.gz", {**items, name: b"SUTRA_OVERRIDE_KEY=planted"})
+    with pytest.raises(backup.RestoreError, match="never holds"):
+        restore_into(tmp_path / "t", crafted)
+    assert not (tmp_path / "t").exists() and sorted(p.name for p in tmp_path.iterdir() if "restore" in p.name) == []
+
+
+def test_restore_over_a_folder_with_a_crafted_archive_changes_nothing(good, data, tmp_path):
+    _, items = good
+    crafted = build_archive(tmp_path / "evil.tar.gz", {**items, ".env": b"SUTRA_OVERRIDE_KEY=planted"})
+    before = (data.data_dir / ".env").read_text()
+    with pytest.raises(backup.RestoreError, match="never holds"):
+        backup.restore_backup(data, crafted)
+    assert (data.data_dir / ".env").read_text() == before and sorted(p.name for p in data.data_dir.parent.iterdir() if p.name.startswith("data")) == ["data"]
+
+
 def test_restore_refuses_a_link_member(good, tmp_path):
     _, items = good
     link = tarfile.TarInfo("library/link")

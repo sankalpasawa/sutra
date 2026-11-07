@@ -278,8 +278,9 @@ def parse_policy(data: "str | bytes | Mapping[str, Any]") -> RoutingPolicy:
     if isinstance(data, (str, bytes)):
         try:
             data = json.loads(data)
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise PolicyInvalidError(f"the routing policy is not valid JSON: {exc}", detail={"errors": [f"policy: not JSON ({exc})"]}) from None
+        except (ValueError, UnicodeDecodeError, RecursionError) as exc:             # RecursionError: a document nested thousands of levels deep
+            why = "nested too deeply" if isinstance(exc, RecursionError) else str(exc)
+            raise PolicyInvalidError(f"the routing policy is not valid JSON: {why}", detail={"errors": [f"policy: not JSON ({why})"]}) from None
     if not isinstance(data, Mapping):
         raise PolicyInvalidError("the routing policy must be a JSON object", detail={"errors": ["policy: must be an object"]})
     try:

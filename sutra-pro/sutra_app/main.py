@@ -4,8 +4,8 @@
     python -m sutra_app [serve] [--port N] [--data-dir D] [--offline] [--no-browser] [--browser B] [--exit-when-stdin-closes] [--verbose]   # the server (`run`)
     python -m sutra_app doctor | status | stop | config | open ...                               # the operator commands (`ops.cli`)
 
-`create_app` builds the services (`wiring.build_services`), puts the app-wide Host guard in front (400 `bad_host`), installs the error
-envelope and the redacting responses, includes the orchestrator's routers and then, in this fixed order, the plug-ins: the engine's
+`create_app` builds the services (`wiring.build_services`), puts the app-wide Host guard in front (400 `bad_host`) and, behind it, the body
+size limit (413 `payload_too_large` before a byte of an oversized body is read), installs the error envelope and the redacting responses, includes the orchestrator's routers and then, in this fixed order, the plug-ins: the engine's
 routes (`sutra_app.engine.api.mount`), the connector routes, the library's `/api/schemas` and the UI pages (`sutra_app.ui.mount`).
 A plug-in that cannot be imported is logged and skipped. `docs_url` and `redoc_url` are off (their scripts come from a CDN, so
 they are broken offline); `/openapi.json` stays. The lifespan runs `wiring.start_services` and `wiring.stop_services`.
@@ -43,6 +43,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 import sutra_app
 from sutra_app import oslayer
 from sutra_app.config import LOOPBACK_HOSTS, Settings, SettingsError
+from sutra_app.connectors.attachments import MAX_BYTES as MAX_ATTACHMENT_BYTES
 from sutra_app.orchestrator.api import agent, atoms, chat_v2, chart, chat, departments, graph, insight, limits, recurring, rules_notes, system, tasks, usage
 from sutra_app.orchestrator.api import events as events_api
 from sutra_app.orchestrator.api.deps import install_error_handlers, redacted_response_class
@@ -54,13 +55,15 @@ from sutra_app.ops import logsetup
 from sutra_app.orchestrator.wiring import AppServices, build_services, start_services, stop_services
 
 __all__ = [
-    "create_app", "lifespan", "LoopbackHostMiddleware", "build_parser", "run", "bind_socket", "AppServer", "watch_stdin", "FIRST_PORT", "LAST_PORT",
+    "create_app", "lifespan", "LoopbackHostMiddleware", "BodyLimitMiddleware", "MAX_BODY_BYTES", "MAX_UPLOAD_BODY_BYTES", "build_parser", "run", "bind_socket", "AppServer", "watch_stdin", "FIRST_PORT", "LAST_PORT",
     "GRACEFUL_SHUTDOWN_S", "PLUGINS", "OPS_API",
 ]
 
 log = logging.getLogger(__name__)
 FIRST_PORT = 8780
 LAST_PORT = 8799
+MAX_BODY_BYTES = 2 * 1024 * 1024                 # the largest request body of any route but the file upload (the biggest JSON the app reads is about 1 MiB)
+MAX_UPLOAD_BODY_BYTES = MAX_ATTACHMENT_BYTES * 4 // 3 + 64 * 1024        # one file as base64 inside a JSON object, plus its name and quotes
 STOP_POLL_S = 0.5                # how often the server looks for a stop request (the app.stop file)
 GRACEFUL_SHUTDOWN_S = 5                 # open connections are cancelled after this; the stop ladders then run in the lifespan
 # the orchestrator's own routers, in include order: the agent router first (it owns POST /api/chats/{sid}/messages and the decision route)
@@ -103,6 +106,79 @@ class LoopbackHostMiddleware:
             return
         response = JSONResponse(error_body("bad_host", "This server answers only on 127.0.0.1 or localhost"), status_code=400)
         await response(scope, receive, send)
+
+
+class BodyLimitMiddleware:
+    """One cap on the size of a request body, checked before the body is read: a declared `Content-Length` over the cap is answered 413
+    `payload_too_large` (in the error envelope) without reading a byte, and a body with no length (chunked) is read up to the cap and refused
+    when it goes over. Without this the server read and parsed whatever it was sent, token or not, and a 600 MB post grew it to 2 GB. The cap is
+    `MAX_BODY_BYTES`, or `MAX_UPLOAD_BODY_BYTES` for `POST /api/chats/<id>/attachments` (a file travels as base64 in JSON)."""
+
+    def __init__(self, app: ASGIApp, limit: int = MAX_BODY_BYTES, upload_limit: int = MAX_UPLOAD_BODY_BYTES) -> None:
+        self.app = app
+        self.limit = limit
+        self.upload_limit = upload_limit
+
+    def _limit_for(self, scope: Scope) -> int:
+        path = scope.get("path", "")
+        if scope.get("method") == "POST" and path.startswith("/api/chats/") and path.endswith("/attachments"):
+            return self.upload_limit
+        return self.limit
+
+    @staticmethod
+    def _header(scope: Scope, name: bytes) -> bytes | None:
+        for key, value in scope.get("headers", ()):
+            if key == name:
+                return value
+        return None
+
+    @staticmethod
+    async def _refuse(scope: Scope, receive: Receive, send: Send, limit: int, size: int | None) -> None:
+        details: dict[str, Any] = {"limit": limit}
+        if size is not None:
+            details["size"] = size
+        message = f"The request is larger than the {limit // 1024} KB this server reads"
+        await JSONResponse(error_body("payload_too_large", message, details), status_code=413)(scope, receive, send)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        limit = self._limit_for(scope)
+        declared = self._header(scope, b"content-length")
+        if declared is not None:
+            if declared.strip().isdigit() and int(declared) > limit:
+                await self._refuse(scope, receive, send, limit, int(declared))
+                return
+            await self.app(scope, receive, send)               # the server frames the body by its length: no more than declared arrives
+            return
+        if self._header(scope, b"transfer-encoding") is None:
+            await self.app(scope, receive, send)               # no body
+            return
+        chunks: list[bytes] = []
+        total = 0
+        while True:                                            # a chunked body: read up to the cap, refuse beyond it, else hand it on whole
+            message = await receive()
+            if message["type"] != "http.request":
+                return                                         # the client went away: nobody to answer
+            piece = message.get("body", b"")
+            total += len(piece)
+            if total > limit:
+                await self._refuse(scope, receive, send, limit, None)
+                return
+            chunks.append(piece)
+            if not message.get("more_body", False):
+                break
+        whole = b"".join(chunks)
+        sent = False
+
+        async def replay() -> Any:
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": whole, "more_body": False}
+            return await receive()
+        await self.app(scope, replay, send)
 
 
 @asynccontextmanager
@@ -150,6 +226,7 @@ def create_app(settings: Settings | None = None, *, connector: Any = None, launc
     services = build_services(settings, connector=connector, launcher=launcher, clock=clock, ids=ids)
     app = FastAPI(title="Sutra Pro", version=services.version, docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.services = services
+    app.add_middleware(BodyLimitMiddleware)                      # added first, so it sits behind the Host guard (a bad Host is 400 before any size talk)
     app.add_middleware(LoopbackHostMiddleware)
     install_error_handlers(app, redacted_response_class(services.redact))
     for module in ROUTERS:

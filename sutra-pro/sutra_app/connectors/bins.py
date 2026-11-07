@@ -60,6 +60,12 @@ def _allowed_names(provider: str) -> set[str]:
     return {provider, f"{provider}.exe", f"{provider}.cmd"} if oslayer.IS_WINDOWS else {provider}
 
 
+def _named_as_its_command(provider: str, path: str) -> bool:
+    """A full path whose last part is the provider's command: the part of `check_path` that needs no file on disk. The file is not trusted
+    to have come from `set` (a restored or copied data folder, a hand edit), so `stored` asks this of every entry it reads."""
+    return os.path.isabs(path) and os.path.basename(os.path.normpath(path)) in _allowed_names(provider)
+
+
 def check_path(provider: str, raw: str, *, home: Optional[str] = None) -> str:
     """The full path of the chosen file, or InvalidRequestError with the sentence the owner reads."""
     if provider not in CHOOSABLE:
@@ -91,14 +97,19 @@ class BinStore:
         self._lock = threading.Lock()
 
     def stored(self) -> dict[str, str]:
-        """What the file holds ({} when there is none or it does not read); a path may have vanished since."""
+        """What the file holds ({} when there is none or it does not read); a path may have vanished since. An entry that is not named as its
+        provider's command is left out, as `check_path` would have refused it: the file runs as the model CLI, so it is never taken on trust."""
         try:
-            return dict(BinsFile.model_validate(json.loads(self.path.read_text(encoding="utf-8"))).bins)
+            found = dict(BinsFile.model_validate(json.loads(self.path.read_text(encoding="utf-8"))).bins)
         except FileNotFoundError:
             return {}
         except (OSError, ValueError, ValidationError) as exc:
             log.warning("the CLI path file %s is not used (%s)", self.path, type(exc).__name__)
             return {}
+        kept = {provider: path for provider, path in found.items() if _named_as_its_command(provider, path)}
+        if len(kept) != len(found):
+            log.warning("the CLI path file %s names a path that is not its provider's command; that entry is not used", self.path)
+        return kept
 
     def load(self) -> dict[str, str]:
         """The stored paths that are still executable files."""

@@ -55,6 +55,24 @@ def end(tenv, task_id, status="crashed"):
     assert tenv.projector.mark_ended(task_id, status, f"test: {status}")
 
 
+# ---- a credential in the standing words is never stored (QA security-privacy) ----------------------------------------------------------------
+
+def test_a_credential_in_the_standing_words_is_stored_replaced_and_so_is_every_task_it_makes(tenv):
+    from sutra_app.orchestrator.redact import Redactor
+    leak = "sk-proj-REPRO1234567890abcdefghij"
+    rec = Recurring(tenv.db, tenv.service, clock=Now(at(2026, 11, 4, 8)), tz=UTC,
+                    redact=Redactor(None, environ={"MY_API_TOKEN": "hunter2hunter2"}))
+    made = rec.create("web", f"Weekly: use {leak} and hunter2hunter2", WEEKDAYS_9, now=at(2026, 11, 4, 8))
+    assert made.text == "Weekly: use [redacted:openai-key] and [redacted]"
+    edited = rec.update(made.id, text=f"Weekly again: {leak}")
+    assert edited.text == "Weekly again: [redacted:openai-key]"
+    rec.tick(at(2026, 11, 4, 9, 0) + 10)
+    (task,) = tasks_of(tenv)
+    assert task["user_text"] == "Weekly again: [redacted:openai-key]"
+    everything = "\n".join(tenv.db.conn().iterdump())
+    assert leak not in everything and "hunter2hunter2" not in everything
+
+
 # ---- one due slot, one task -----------------------------------------------------------------------------------------------------------
 
 def test_one_due_slot_makes_exactly_one_task_with_the_stored_words(tenv, rec):

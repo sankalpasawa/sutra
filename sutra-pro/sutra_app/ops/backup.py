@@ -24,7 +24,9 @@ written with `--to` is the owner's own copy and is never rotated. The `pre-upgra
 
 Restore order (each step refuses before anything is touched): the instance lock must be free (it is held for the whole swap; on Windows,
 which cannot rename a folder with an open file in it, it is let go just before the rename); the
-manifest must be known and its `user_version` no newer than this build; every member must be a regular file named in the manifest
+manifest must be known and its `user_version` no newer than this build; every file the manifest lists must be one a backup writes (the
+database, `departments/**`, `library/**`, `agents/**` and the four root files above: the manifest comes from the archive, so it is not the
+allow-list, and a crafted one must not plant `.env` or `connectors/bins.json`); every member must be a regular file named in the manifest
 and every sha256 and size must match; the files go into a staging folder next to the data folder, the staged database must pass
 `PRAGMA integrity_check`; then the data folder is renamed to `<data>.before-restore-<UTC>`, the staging folder takes its place, and
 `.env` and `backups/` are carried over from the old folder (they are never in an archive). An older `user_version` is fine: the
@@ -375,12 +377,23 @@ def _safe_name(name: str) -> bool:
     return bool(name) and not path.is_absolute() and ".." not in path.parts and "." not in path.parts and "\\" not in name and "\x00" not in name
 
 
+def _is_backup_name(name: str) -> bool:
+    """True for a name `collect_files` and `create_backup` can write: the database, one of the four root files, or a file inside one of the
+    three trees. Exact and case-sensitive on purpose, so `.env`, `connectors/bins.json`, `app.lock`, `logs/` and `.ENV` are never restored."""
+    if name == DB_FILENAME or name in _ROOT_FILES:
+        return True
+    parts = PurePosixPath(name).parts
+    return len(parts) >= 2 and parts[0] in _ROOT_TREES
+
+
 def _manifest_files(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     files: dict[str, dict[str, Any]] = {}
     for item in manifest["files"]:
         if (not isinstance(item, dict) or not isinstance(item.get("path"), str) or not _safe_name(item["path"])
                 or not isinstance(item.get("sha256"), str) or isinstance(item.get("size"), bool) or not isinstance(item.get("size"), int)):
             raise RestoreError(f"{MANIFEST_NAME} lists a file entry that is malformed or unsafe: {str(item)[:80]}")
+        if not _is_backup_name(item["path"]):
+            raise RestoreError(f"{MANIFEST_NAME} lists {item['path']!r}, a file a Sutra Pro backup never holds; refusing to restore it. Nothing was changed")
         if item["path"] in files:
             raise RestoreError(f"{MANIFEST_NAME} lists {item['path']} twice")
         files[item["path"]] = item

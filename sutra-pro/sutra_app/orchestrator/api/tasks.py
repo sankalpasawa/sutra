@@ -21,7 +21,6 @@ from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.models import TASK_STATUSES
 from sutra_app.orchestrator.tasks import TaskService
-from sutra_app.orchestrator.textutil import one_line_title
 
 __all__ = ["router", "build_router", "TaskIn", "ID_PATTERN"]
 
@@ -67,7 +66,7 @@ def build_router() -> APIRouter:
 
         def create() -> str:
             with service.db.tx() as tx:
-                created = service.create(tx, dept_id=body.dept_id, text=text, title=body.title or one_line_title(text), scope_id=body.scope_id,
+                created = service.create(tx, dept_id=body.dept_id, text=text, title=body.title, scope_id=body.scope_id,
                                          follows=body.follows, settings=body.settings)
                 return created.id
 
@@ -81,7 +80,7 @@ def build_router() -> APIRouter:
         dept_id: str | None = Query(None, pattern=ID_PATTERN),
         status: Literal[TASK_STATUSES] | None = Query(None),                                  # type: ignore[valid-type]
         limit: int = Query(50, ge=1, le=500),
-        offset: int = Query(0, ge=0),
+        offset: int = Query(0, ge=0, le=2**53 - 1),
     ) -> RedactedJSONResponse:
         found = await run_blocking(lambda: _service(request).store.listing(dept_id=dept_id, status=status, limit=limit, offset=offset))
         return _json(request, [_dump(task) for task in found])

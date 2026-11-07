@@ -32,7 +32,8 @@ PURPOSE_CHARS = 120                       # the digest shows this much of a depa
 FILLER = frozenset({"team", "general"})   # words this module adds itself: they never count as a keyword
 _PROMPT: contextvars.ContextVar[str] = contextvars.ContextVar("demo_prompt", default="")
 _WORD = re.compile(r"[a-z0-9]{3,}")
-_MESSAGE = re.compile(r"OWNER REQUEST:\n(.*?)\n(?:MODELS:|YOUR DECISION:|Write the assignments)", re.S)
+# the message ends where the next block of the prompt starts: the owner-notes block (when there are notes) or the line after it
+_MESSAGE = re.compile(r"OWNER REQUEST:\n(.*?)\n(?:OWNER NOTES \(|MODELS:|YOUR DECISION:|Write the assignments)", re.S)
 _DIGEST = re.compile(r"CHART(?: AFTER THE CHANGE| \(revision \d+\)):\n(.*?)\n(?:CONVERSATION|MODELS:)", re.S)
 _ROOT = re.compile(r"Root id: ([^\s]+?)\.(?:\s|$)")
 # `{message}{notes}` sit together in the decide and assign prompts (OwnerNotes.agent_block): a newline, the heading, one "- Group: text" line per note,

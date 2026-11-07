@@ -649,6 +649,14 @@ def test_parse_since_takes_epoch_seconds_or_an_iso_time():
         parse_since("yesterday")
 
 
+def test_parse_since_refuses_a_number_that_is_no_time():
+    """QA: since=99999999999999999999 reached SQLite as a Python int too large for it and the route answered 500."""
+    assert parse_since("253402300799") == 253402300799 == parse_since("9999-12-31T23:59:59Z")
+    for text in ("253402300800", "99999999999999999999", "9" * 40, 2 ** 63, -1):
+        with pytest.raises(ValueError):
+            parse_since(text)
+
+
 def test_every_provider_row_keeps_its_atom_and_the_node_of_a_chat_agent_call_is_root(usage, world):
     usage.record(uin(node_id="root", session_id="cs_org", fn="chat_agent", purpose="chat_plan", atom_id="a-0000000009-01", call_ref="r:q"))
     assert world.sql("SELECT count(*) FROM usage_ledger WHERE provider != 'stub' AND atom_id IS NULL").fetchone()[0] == 0

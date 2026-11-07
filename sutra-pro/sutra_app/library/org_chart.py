@@ -535,6 +535,8 @@ _WINDOWS_DEVICES = frozenset({"con", "prn", "aux", "nul", *(f"{device}{n}" for d
 
 def slug_id(kind: str, name: str, taken: Collection[str]) -> str:
     """A node id from a name: lowercase letters, digits and hyphens, then "-2", "-3" ... until it is free.
+    A name Windows keeps for a device (con, prn, aux, nul, com1 to com9, lpt1 to lpt9) counts as taken, so a team called "Con" is `con-2`:
+    its folder `departments/<id>` can be made on every system.
     A name with no usable letters (or none first) starts from the kind ("division-3d-printing", "department"), and an
     id is 2 to 40 characters, so it always fits NodeId and the department URL and folder rules. A name that slugs to a
     Windows device name (con, prn, aux, nul, com1-9, lpt1-9) also starts from the kind ("department-con"): a team's
@@ -554,7 +556,7 @@ def slug_id(kind: str, name: str, taken: Collection[str]) -> str:
     for n in count(1):                                  # ends within len(taken) + 1 steps: the candidates differ
         suffix = "" if n == 1 else f"-{n}"
         candidate = base[: 40 - len(suffix)].rstrip("-") + suffix
-        if candidate not in taken:
+        if candidate not in taken and candidate not in _WINDOWS_DEVICES:
             return candidate
 
 

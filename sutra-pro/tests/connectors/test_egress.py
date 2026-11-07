@@ -22,6 +22,8 @@ SAMPLES = {
     "pem-private-key": "-----BEGIN RSA PRIVATE KEY-----\nMIIabc\n-----END RSA PRIVATE KEY-----",
     "slack-webhook": "https://hooks.slack.com/services/T000/B000/XXXXXXXXXX",
     "discord-webhook": "https://discord.com/api/webhooks/123456/abcdefghijk",
+    "google-api-key": "AIza" + "e" * 34, "gitlab-token": "glpat-" + "f" * 22, "npm-token": "npm_" + "g" * 36, "huggingface-token": "hf_" + "h" * 34,
+    "sendgrid-key": "SG." + "i" * 22 + "." + "j" * 43, "basic-auth": "Basic " + "dXNlcjpwYXNzd29yZDEyMw==",
 }
 
 
@@ -72,6 +74,39 @@ def test_a_long_text_is_scanned_in_bounded_time():
     t = time.perf_counter()
     scan(text, replace=True)
     assert time.perf_counter() - t < 5
+
+
+@pytest.mark.parametrize("name,text", [
+    ("many colons and no @ after a database scheme", "postgres://" + ":" * 60_000),
+    ("a database scheme repeated", "postgres://a:" * 5_000),
+    ("a bare token= repeated", "token=" * 10_000),
+    ("a bare secret: repeated", "secret:" * 8_000),
+    ("eyJ repeated with no dot", "eyJ" * 20_000),
+])
+def test_no_shape_rescans_a_long_run_from_every_start(name, text):
+    """QA: `postgres://` and 20 000 colons took 2.3 s (60 000 took 21 s) because `[^\\s/@]*:[^\\s]*@` is quadratic when there is no `@`. Each of these
+    inputs used to cost seconds; now every shape is linear, so the whole table runs in a fraction of a second."""
+    t = time.perf_counter()
+    scan(text, replace=True)
+    assert time.perf_counter() - t < 2, name
+
+
+@pytest.mark.parametrize("text,kept,gone", [
+    ("postgres://user:hunter2hunter2@host/db", "postgres://[redacted:db-uri-credentials]host/db", "hunter2"),
+    ("postgres://a:b:c@host:5432/db", "postgres://[redacted:db-uri-credentials]host:5432/db", "a:b:c"),
+    ("mysql://root:p@ss@word@db.example/app", "mysql://[redacted:db-uri-credentials]db.example/app", "p@ss"),
+    ("redis://:onlypassword@cache:6379", "redis://[redacted:db-uri-credentials]cache:6379", "onlypassword"),
+    ("see postgres://host/db and mongodb://host", "see postgres://host/db and mongodb://host", None),
+])
+def test_the_linear_db_uri_shape_matches_what_the_old_one_did(text, kept, gone):
+    out, _ = scan(text, replace=True)
+    assert out == kept and (gone is None or gone not in out)
+
+
+def test_a_jwt_after_a_label_or_a_header_is_still_found():
+    jwt = SAMPLES["jwt"]
+    for text in (f"token={jwt}", f"Authorization: Bearer {jwt}", f"(jwt:{jwt})", f"\n{jwt}\n"):
+        assert jwt not in scan(text, replace=True)[0], text
 
 
 def test_an_unwritable_log_never_stops_the_call(tmp_path):
@@ -131,3 +166,73 @@ def test_db_uri_credentials_with_at_colon_or_slash_in_the_password_are_fully_rep
 
 def test_a_uri_without_credentials_is_left_alone():
     assert scan("see postgres://host:5432/db and me@x.org", replace=True)[0] == "see postgres://host:5432/db and me@x.org"
+
+
+# ---- QA security-privacy: the shapes a real person pastes that the first table missed --------------------------------------------
+
+@pytest.mark.parametrize("token", ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"])
+def test_every_github_token_prefix_is_a_github_token(token):
+    sample = token + "A1b2C3d4" * 4
+    out, counts = scan(f"gh auth token printed {sample} ok", replace=True)
+    assert sample not in out and counts == {"github-token": 1}
+
+
+@pytest.mark.parametrize("key_id", ["AKIA" + "Q" * 16, "ASIA" + "Q" * 16])
+def test_an_aws_temporary_key_id_is_an_aws_key_id_like_a_long_lived_one(key_id):
+    out, counts = scan(f"id {key_id} here", replace=True)
+    assert key_id not in out and counts == {"aws-key-id": 1}
+
+
+def test_a_pgp_private_key_block_is_a_private_key_block():
+    block = "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQOYBF8abcdef\n=abcd\n-----END PGP PRIVATE KEY BLOCK-----"
+    out, counts = scan(f"here: {block} done", replace=True)
+    assert "lQOYBF8" not in out and out == "here: [redacted:pem-private-key] done" and counts == {"pem-private-key": 1}
+
+
+@pytest.mark.parametrize("line", [
+    "Bearer a/bcdefghijklmnopqrstuvwxyz0123456789",
+    "Authorization: Bearer ab+cd/efghijklmnopqrst==",
+])
+def test_a_bearer_value_with_a_slash_or_plus_is_replaced_whole(line):
+    out, counts = scan(line, replace=True)
+    assert counts == {"bearer": 1} and "efghijkl" not in out and "cdefghij" not in out
+
+
+@pytest.mark.parametrize("line,leak", [
+    ("aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYQAFAKEKEY", "wJalrXUtnFEMI"),
+    ("AWS_SECRET_ACCESS_KEY: wJalrXUtnFEMI/K7MDENG/bPxRfiCYQAFAKEKEY", "wJalrXUtnFEMI"),
+    ("client_secret=Zk3dQh9aVb7LmN2pXw5RtY8u", "Zk3dQh9aVb7LmN2pXw5RtY8u"),
+    ("OPENAI_API_KEY=abcdefghijklmnop", "abcdefghijklmnop"),
+    ("password=Hunter2!Hunter2!", "Hunter2"),
+    ('{"password": "Tr0ub4dor&3xKcd#99"}', "Tr0ub4dor"),
+    ("token: 9f8e7d6c5b4a39281706af", "9f8e7d6c5b4a39281706af"),
+    ("GITHUB_TOKEN=a1b2c3d4e5f6a7b8c9d0", "a1b2c3d4e5f6a7b8c9d0"),
+])
+def test_a_secret_assigned_to_a_secret_name_is_replaced_and_the_name_kept(line, leak):
+    out, counts = scan(line, replace=True)
+    assert leak not in out and "[redacted:" in out and sum(counts.values()) >= 1
+
+
+def test_the_name_in_front_of_an_assigned_secret_stays_readable():
+    out, _ = scan("set client_secret=Zk3dQh9aVb7LmN2pXw5RtY8u now", replace=True)
+    assert out == "set client_secret=[redacted:private-key-env] now"
+
+
+def test_basic_auth_in_a_header_is_replaced():
+    out, counts = scan("curl -H 'Authorization: Basic dXNlcjpwYXNzd29yZDEyMw==' https://x", replace=True)
+    assert "dXNlcjpwYXNz" not in out and counts == {"basic-auth": 1} and out.endswith("' https://x")
+
+
+@pytest.mark.parametrize("line", [
+    "the token: refresh it every morning please",
+    "a token = self.next_token_value",
+    "the secret: internationalization",
+    "basic understanding of internationalization needed",
+    "Basic Authentication",
+    "password: none set yet, ask later",
+    "my password manager is fine",
+    "see npm_config_user_agent and hf_hub_download and SG.something",
+    "ASIA PACIFIC REGION and ghost_writer_has_a_long_name",
+])
+def test_ordinary_words_that_only_look_like_a_name_are_left_alone(line):
+    assert scan(line, replace=True) == (line, {})

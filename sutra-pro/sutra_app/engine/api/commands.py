@@ -81,13 +81,14 @@ def _output_type(out: Any) -> str:
 
 
 async def read_json_body(request: Request) -> Optional[dict]:
-    """The JSON object of a POST; an empty body is {} (J2: `raw or b"{}"`); anything else that is not an object is None."""
+    """The JSON object of a POST; an empty body is {} (J2: `raw or b"{}"`); anything else that is not an object is None (a body nested too deeply
+    to parse is one too: a 400 `bad json`, not a 500)."""
     raw = await request.body()
     if not raw.strip():
         return {}
     try:
         body = json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
     return body if isinstance(body, dict) else None
 

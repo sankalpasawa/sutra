@@ -97,7 +97,8 @@ sutra-pro restore ~/Backups/sutra-pro-backup-20261104T180131Z.tar.gz
 - `restore` needs the server stopped. It verifies the manifest and every checksum, builds the new folder beside the old one, checks the database
   (`PRAGMA integrity_check`), then renames the old folder to `<data>.before-restore-<UTC>` and puts the new one in place. **Nothing is deleted**; remove the
   `.before-restore-*` folder yourself when you are happy. `.env` and `backups/` are carried over. A backup from an older version is accepted (the server migrates
-  it); one from a newer version is refused.
+  it); one from a newer version is refused. It also refuses an archive that lists any file a backup never writes (`.env`, `connectors/bins.json`, lock files, `logs/`):
+  the manifest belongs to the archive, so a restore only trusts names it knows, and nothing is changed.
 
 To keep one team's deliverables or the chart outside the app: `sutra-pro export team web`, `sutra-pro export chart`, `sutra-pro export usage --csv`.
 They only read; they never overwrite a file or fill a non-empty folder.
@@ -133,7 +134,13 @@ compacts the database (`VACUUM`) while holding the instance lock.
 
 - `<data>/logs/server.log`: one line per event, `INFO` and up (`--verbose` adds `DEBUG`), rotated at 5 MB with five old files (mode 600). The terminal shows warnings and up.
 - Every HTTP response carries `X-Request-Id` (12 hex characters), also in the log line of that request and on an error page, so a failure in the browser can be found in the log.
-- Secrets are scrubbed on the way in: the per-launch token, the override key, every value in `.env`, secret-looking names, bearer tokens and `sk-` keys. If one leaks anyway, treat that as a bug.
+- Secrets are scrubbed on the way in: the per-launch token, the override key, every value in `.env`, secret-looking names, bearer and Basic values and the key and token shapes of `connectors/egress.py` (OpenAI and Anthropic keys, every GitHub token, AWS ids and secret keys, Google, GitLab, npm, Hugging Face, SendGrid, Slack, Stripe, JWTs, private-key blocks). Whatever the owner types into the org chat, a team chat or answer, a task or a schedule is stored as `[redacted:<shape>]`, as in the direct chat. If one leaks anyway, treat that as a bug.
+- Two limits of that scrub, both by design (D71, the same rule as J2's). The environment rule goes by **name**: a variable whose name contains KEY, TOKEN, SECRET, PASSWORD
+  or AUTH has its value hidden wherever it appears and a note that holds it is refused, so `GIT_AUTHOR_NAME`, `KEYBOARD_LAYOUT` or `SSH_AUTH_SOCK` count too. If your own name or
+  your shop's name comes out as `[redacted]`, unset that variable before you start the server (`env | grep -i -E 'key|token|secret|password|auth'` lists them). A `.env`
+  line is read as dotenv tools read it: ` # a comment` after a value and the quotes around it are not part of the value, `\"` inside double quotes is a quote.
+- A request body over 2 MB is refused with 413 `payload_too_large` before it is read (a file attached to a chat may be 20 MB). A JSON body nested thousands of levels deep,
+  or a list position or time too large for the database, is a 400 or 422, never a 500.
 - Each run has `run.stdout.log`, `run.stderr.log` and `trace.jsonl` in its folder. The macOS app also keeps `~/.sutra-pro/logs/app.log` for its launcher.
 - For a bug report, download the diagnostics zip (section 7), not the raw folder.
 

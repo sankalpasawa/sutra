@@ -57,6 +57,18 @@ def test_post_task_creates_and_starts_it(client, auth, tenv):
     assert tenv.row(task.id).settings == {"J2_OUTPUT": "prd"}
 
 
+def test_post_task_stores_a_credential_in_its_words_and_title_replaced(client, auth, tenv):
+    leak = "sk-proj-REPRO1234567890abcdefghij"
+    tenv.service.redact = Redactor(None, environ={"MY_API_TOKEN": "hunter2hunter2"}, extra=[tenv.settings.token])
+    body = {"dept_id": "web", "text": f"deploy with {leak} and {tenv.settings.token}", "title": f"title {leak}"}
+    response = client.post("/api/tasks", json=body, headers=auth)
+    assert response.status_code == 201, response.text
+    row = tenv.row(response.json()["id"])
+    assert row.user_text == "deploy with [redacted:openai-key] and [redacted]" and row.title == "title [redacted:openai-key]"
+    stored = "\n".join(tenv.db.conn().iterdump()) + (tenv.run_dir(row.id) / "task.json").read_text()
+    assert leak not in stored and tenv.settings.token not in stored
+
+
 def test_post_task_title_scope_and_follows(client, auth, tenv):
     first = client.post("/api/tasks", json={"dept_id": "web", "text": "one", "title": "My title", "scope_id": "menu"}, headers=auth).json()
     assert (first["title"], first["scope_node_id"]) == ("My title", "menu")

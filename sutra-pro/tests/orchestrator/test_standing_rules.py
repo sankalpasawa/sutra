@@ -76,6 +76,14 @@ def test_a_rule_with_a_key_in_it_is_refused_by_name_and_nothing_is_stored(tenv):
     assert rules.get("web").rules == []                                                                  # all or nothing
 
 
+@pytest.mark.parametrize("token", ["gho_QAFAKE0gho1234567890abcdefghijklmn", "ghs_QAFAKE0ghs1234567890abcdefghijklmn", "client_secret=Zk3dQh9aVb7LmN2pXw5RtY8u"])
+def test_a_rule_with_a_github_or_named_secret_is_refused_too(tenv, token):
+    rules = rules_of(tenv)
+    with pytest.raises(AppError) as caught:
+        rules.put("web", [RuleIn(tag="always", text=f"Always use {token} when deploying.")])
+    assert caught.value.code == "validation" and token not in str(caught.value.details) and rules.get("web").rules == []
+
+
 def test_the_app_s_own_secret_values_are_refused_too(tenv):
     rules = StandingRules(tenv.db, Redactor(None, environ={"MY_API_TOKEN": "hunter2hunter2"}))
     with pytest.raises(AppError):

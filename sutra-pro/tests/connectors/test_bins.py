@@ -96,3 +96,28 @@ def test_check_path_runs_nothing(tmp_path, monkeypatch):
     import subprocess
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(AssertionError("a process was started")))
     assert check_path("codex", str(executable(tmp_path / "codex"))) == str(tmp_path / "codex")
+
+
+# ---- a file that was not written by `set` (QA security-privacy: a restored archive planted {"claude": "/bin/sh"}) ------------------------------
+
+def plant(tmp_path, bins):
+    path = tmp_path / "data" / "connectors" / BINS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"version": 1, "bins": bins}), encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(("provider", "planted"), [
+    ("claude", "/bin/sh"), ("codex", "/usr/bin/env"), ("claude", "/bin/ls"), ("claude", "claude"), ("codex", "~/codex"), ("claude", "/bin/claude/../sh"),
+])
+def test_a_stored_path_check_path_would_refuse_is_never_loaded(store, tmp_path, provider, planted):
+    plant(tmp_path, {provider: planted})
+    assert store.stored() == {} and store.load() == {}
+
+
+def test_only_the_planted_entry_is_dropped_and_a_later_set_does_not_write_it_back(store, tmp_path):
+    codex = executable(tmp_path / "tools" / "codex")
+    path = plant(tmp_path, {"claude": "/bin/sh", "codex": str(codex)})
+    assert store.load() == {"codex": str(codex)}
+    store.set("codex", str(codex))
+    assert json.loads(path.read_text(encoding="utf-8"))["bins"] == {"codex": str(codex)}

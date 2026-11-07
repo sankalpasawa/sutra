@@ -621,6 +621,70 @@ def test_a_bare_override_key_is_refused_and_a_near_miss_is_plain_text(db, settin
     assert json.loads((t.run_dir(task) / "inbox.jsonl").read_text())["kind"] == "user"
 
 
+# ---- a credential the owner types is never stored (QA security-privacy: only /direct scrubbed) ---------------------------------------------------
+
+LEAK = "sk-proj-REPRO1234567890abcdefghij"
+LEAK_SHOWN = "[redacted:openai-key]"
+
+
+def knowing(t: TEnv, *extra: str) -> TEnv:
+    """The service as `build_services` wires it: its redactor knows the launch token, an env secret and anything in `extra`."""
+    from sutra_app.orchestrator.redact import Redactor
+    t.service.redact = Redactor(None, environ={"MY_API_TOKEN": "hunter2hunter2"}, extra=[t.settings.token, *extra])
+    return t
+
+
+def test_a_credential_in_a_task_s_words_is_stored_replaced_in_the_row_the_title_and_the_run_files(tenv):
+    knowing(tenv)
+    task = tenv.started(text=f"Deploy with {LEAK} and {tenv.settings.token} please", title=f"Deploy {LEAK}")
+    row = tenv.row(task)
+    assert row.user_text == f"Deploy with {LEAK_SHOWN} and [redacted] please" and row.title == f"Deploy {LEAK_SHOWN}"
+    everything = whole_database_and_files(tenv)
+    assert LEAK not in everything and tenv.settings.token not in everything
+
+
+def test_a_default_title_is_made_from_the_replaced_words(tenv):
+    task = tenv.new(text=f"{LEAK} build the page")
+    assert task.title == f"{LEAK_SHOWN} build the page" and LEAK not in whole_database_and_files(tenv)
+
+
+def test_an_answer_with_a_credential_a_known_secret_or_the_launch_token_is_stored_and_sent_replaced(tenv):
+    knowing(tenv)
+    task = tenv.started()
+    ask(tenv, task)
+    said = f"The key is {LEAK}, my token is {tenv.settings.token} and the other is hunter2hunter2"
+    shown = f"The key is {LEAK_SHOWN}, my token is [redacted] and the other is [redacted]"
+    assert tenv.service.deliver_to_department("web", said).delivered == "answer"
+    inbox = [json.loads(line) for line in (tenv.run_dir(task) / "inbox.jsonl").read_text().splitlines()]
+    assert inbox[0]["text"] == shown and dept_messages(tenv)[-1].text == shown
+    everything = whole_database_and_files(tenv)
+    assert LEAK not in everything and tenv.settings.token not in everything and "hunter2hunter2" not in everything
+
+
+def test_a_follow_up_with_a_credential_is_stored_and_started_replaced(tenv):
+    knowing(tenv)
+    first = tenv.started()
+    tenv.write_events(first, ev("run.ended", status="done", outcome="Done."))
+    tenv.drain(first)
+    result = tenv.service.deliver_to_department("web", f"Now use {LEAK} for the build")
+    assert result.delivered == "follow_up" and tenv.row(result.task_id).user_text == f"Now use {LEAK_SHOWN} for the build"
+    assert dept_messages(tenv)[-1].text == f"Now use {LEAK_SHOWN} for the build"
+    tenv.run(tenv.service.start_ready())
+    assert LEAK not in whole_database_and_files(tenv)
+
+
+def test_the_override_still_works_when_the_override_key_is_one_of_the_app_s_secrets(db, settings, clock, events):
+    t = knowing(with_key(db, settings, clock, events), KEY)              # production: the redactor hides the override key at any length
+    task = t.started()
+    ask(t, task)
+    assert t.service.deliver_to_department("web", f"  {KEY} budget +5 ").delivered == "answer"
+    inbox = json.loads((t.run_dir(task) / "inbox.jsonl").read_text())
+    assert (inbox["kind"], inbox["cmd"]) == ("override", "budget +5") and dept_messages(t)[-1].text == "Owner override sent"
+    ask(t, task, say_id=2)
+    assert t.service.deliver_to_department("web", f"say it with {KEY} inside").delivered == "answer"      # not at the start: plain words
+    assert json.loads((t.run_dir(task) / "inbox.jsonl").read_text().splitlines()[-1])["text"] == "say it with [redacted] inside"
+
+
 # ---- stop, reset, resolve_run ------------------------------------------------------------------------------------------------------------
 
 def test_stop_live_waiting(tenv):

@@ -70,6 +70,15 @@ def test_create_and_list_answer_in_the_owners_words(client, auth):
     assert listed[0]["schedule"] == {"every": "weekdays", "hour": 9, "minute": 0, "weekday": 0} and listed[0]["next_due_at"].endswith("Z")
 
 
+def test_a_credential_in_the_words_is_stored_and_answered_replaced(client, auth, tenv):
+    leak = "ghp_QAFAKE0ghp1234567890abcdefghijklmn"
+    made = client.post("/api/recurring", json={"dept_id": "web", "text": f"weekly: use {leak}", "schedule": WEEKDAYS}, headers=auth)
+    assert made.status_code == 201 and made.json()["text"] == "weekly: use [redacted:github-token]"
+    put = client.put(f"/api/recurring/{made.json()['id']}", json={"text": f"now {leak}"}, headers=auth)
+    assert put.status_code == 200 and put.json()["text"] == "now [redacted:github-token]"
+    assert leak not in "\n".join(tenv.db.conn().iterdump())
+
+
 @pytest.mark.parametrize("every", ["minute", "30 minutes", "*/5 * * * *", "", 5])
 def test_a_cadence_below_an_hour_is_a_422_that_says_why(client, auth, every):
     refused = error_of(client.post("/api/recurring", json={"dept_id": "web", "text": "x", "schedule": {"every": every}}, headers=auth), 422, "validation")
