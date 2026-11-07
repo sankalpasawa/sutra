@@ -71,10 +71,11 @@
   /* ---------------------------------------------------------------- what stays lit in the Org chart */
   const hits = rows => Array.from(new Set((Array.isArray(rows) ? rows : []).filter(isObj).map(r => clean(r.node_id)).filter(id => ID.test(id))));
 
-  // The ids above the hits, nearest first, never a hit itself. `nodes` are the graph's ({id, parent}); a loop of parents ends.
+  // The ids above the hits, nearest first, never a hit itself. `nodes` are the graph's ({id, parent}); a loop of parents ends. A hit the chart does not
+  // hold (a division merged away since the search was made) lights nothing: kept, it would fade every box with no box lit.
   function dimming(rows, nodes) {
-    const found = hits(rows);
     const parent = new Map((Array.isArray(nodes) ? nodes : []).filter(isObj).map(n => [text(n.id), text(n.parent)]));
+    const found = hits(rows).filter(id => parent.has(id));
     const lit = new Set(found);
     const above = [];
     found.forEach(id => {

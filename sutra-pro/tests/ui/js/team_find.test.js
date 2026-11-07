@@ -63,6 +63,14 @@ test("the hits stay lit and the boxes above them stay in view", () => {
   assert.deepEqual(dimming([ROW({node_id: "a"})], [{id: "a", parent: "b"}, {id: "b", parent: "a"}]), {hits: ["a"], ancestors: ["b"]});          // a loop ends
 });
 
+test("a hit the chart no longer holds (merged away since the search) lights nothing and so never dims the whole chart", () => {
+  const gone = dimming([ROW({node_id: "leads"})], NODES);
+  assert.deepEqual(gone, {hits: [], ancestors: []});
+  assert.equal(dimCss(".ocpane[data-find]", gone.hits, gone.ancestors), "", "no hit, no rule: every box keeps its own look");
+  assert.deepEqual(dimming([ROW({node_id: "leads"}), ROW({node_id: "cakes"})], NODES), {hits: ["cakes"], ancestors: ["menu", "bakery", "root"]});
+  assert.deepEqual(dimming([ROW({node_id: "cakes"})], null), {hits: [], ancestors: []});
+});
+
 test("the style keeps hits lit, ancestors in view and dims the rest; nothing is written for a bad scope or no hit", () => {
   const css = dimCss(".ocpane[data-find]", ["cakes"], ["menu", "bakery"]);
   assert.match(css, /^\.ocpane\[data-find\] g\.wnode\{opacity:\.22\}\.ocpane\[data-find\] path\.wedge\{opacity:\.15\}/);
