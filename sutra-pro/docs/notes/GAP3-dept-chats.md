@@ -59,8 +59,8 @@ UI (`sutra_app/ui/`):
 - `static/js/chat_switch.js` (new): `ChatSwitch` (pure strings, one global, `module.exports` in node): `entries`, `bar`, `heading`, `nextIndex`, `entryOf`.
 - `static/js/chat_view.js`: `teamChatCard` (the line and the chip), `passedOnHtml` (the caption); `open-team-chat` joins the documented `data-act` set.
 - `static/js/node_panel.js`: `mount(host, {inline, idPrefix, onClose})`. An inline panel leaves `body.nodeopen` and the Agent drawer alone, owns only the keys
-  typed inside it, uses its own element ids (`npititle`, ...), reads "Back to Sutra", focuses its heading on open, and is not the panel the static
-  `NodePanel.open()` reaches. The default mount is unchanged.
+  typed inside it, uses its own element ids (`npititle`, ...), reads "Back to Sutra", focuses its heading on open, empties its host when it closes (so a page never
+  finds a second hidden Chat tab by selector), and is not the panel the static `NodePanel.open()` reaches. The default mount is unchanged.
 - `static/js/home.js`, `pages/home.html`, `static/css/sutra-shell.css`, `sutra-panel.css`: `#cswitch`, `#teamchat`, `renderSwitch`, `openTeamChat`,
   `showOrgChat`, the tab and key handlers, the strip button, `focusCard` opening the team's chat. `static/js/heads_up_view.js`: the Heads up button.
 
@@ -81,8 +81,13 @@ UI (`sutra_app/ui/`):
   escaping, the caption, the old `needs_you` card unchanged. `tests/ui/test_home_team_chat.py` (6, `SUTRA_BROWSER=1`, headless Chrome on the fake backend):
   the line and the strip, the chip opening the team's chat (its own lines, the org chat hidden, nothing sent, focus on the name), Back, a tab and Esc, the arrow
   keys, the strip button opening the chat with the question focused and an answer going to the team's session.
-- Six orchestrator tests and one browser test that asserted the old shape (a `needs_you` card in `cs_org`, the card order of a turn that adds a team, "Answer in
-  Chat" finding the org card) now assert the new one.
+- Six orchestrator tests, the e2e new-team scenario, one fake-backend browser test and the real-app browser walk (`tests/e2e/test_browser_real_app.py`) asserted
+  the old shape (a `needs_you` card in `cs_org`, the card order of a turn that adds a team, "Answer in Chat" finding and answering in the org card); they now
+  assert the new one. The real-app walk was run with `SUTRA_BROWSER=1` (Chrome) and passes: the brief, the "Started Web" line, the pointer, the question read and
+  answered in the team's own chat (and absent from the org chat), the pointer turning "answered", the Done card, the team page.
+- `tests/library/test_lib_records.py::test_all_does_not_freeze_the_registry_and_freeze_closes_it` fails when it runs after any test that builds the app in the same
+  pytest session (for example `tests/orchestrator/test_startup.py` before it): the registry is already frozen. That is order dependence that was there before this
+  package (reproduced with an untouched test module ahead of it); run `tests/library` in its own session, where it passes.
 
 ## Not done, and why
 
