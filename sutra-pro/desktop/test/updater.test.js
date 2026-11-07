@@ -364,6 +364,7 @@ test('the macOS swap script is a constant: nothing is interpolated, every path c
   assert.ok(text.includes('Sutra Pro.app'), 'it refuses anything that is not named Sutra Pro.app');
   assert.ok(text.includes('/api/health'), 'the old app goes only after the new one answered');
   assert.equal(/\beval\b|`/.test(text), false);
+  assert.ok(text.includes('pwd -P'), 'the new app is found by the path the system resolved too (a link in the folder shows the real path in ps)');
   assert.ok(text.indexOf('rm -rf "$old"\n    say "the new app answered') > text.indexOf('healthy'), 'the old app is removed only inside the healthy branch');
 });
 
@@ -719,4 +720,12 @@ test('a second check while one runs is not started', async () => {
   const w = harness({ choices: [2] });
   const [a, b] = await Promise.all([w.updater.checkNow(), w.updater.checkNow()]);
   assert.deepEqual([a.state, b.state].sort(), ['busy', 'later']);
+});
+
+test('the macOS swap helper really swaps and rolls back, with throwaway apps (opt in: SUTRA_PRO_PROVE_SWAP=1, on a Mac)', {
+  skip: (process.platform !== 'darwin' || process.env.SUTRA_PRO_PROVE_SWAP !== '1') && 'set SUTRA_PRO_PROVE_SWAP=1 on a Mac to run it (about a minute)',
+}, () => {
+  const proof = childProcess.spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'prove_mac_swap.js')], { encoding: 'utf8', timeout: 240000 });
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
+  assert.match(proof.stdout, /PROOF OK/);
 });

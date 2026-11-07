@@ -260,8 +260,10 @@ while [ -n "$spid" ] && [ "$n" -lt 50 ] && kill -0 "$spid" 2>/dev/null; do n=$((
 say "Sutra Pro has quit"
 
 mine() {
-  ps -axo pid=,command= | while read -r p c; do
+  real="$(cd "$app" 2>/dev/null && pwd -P)"
+  ps -axww -o pid=,command= | while read -r p c; do
     case "$c" in "$app/Contents/MacOS/"*) echo "$p" ;; esac
+    [ -n "$real" ] && case "$c" in "$real/Contents/MacOS/"*) echo "$p" ;; esac
   done
 }
 healthy() {
