@@ -2,7 +2,8 @@
 
     GET    /api/packs                      -> PackOut[]       the starter picks and the lines each one adds
     GET    /api/departments/{id}/rules     -> TeamRulesOut    the owner's rules for a team and its pick (404 not_found)
-    PUT    /api/departments/{id}/rules     {rules?, pack?}    replaces the owner's list and/or the pick (422 `validation`, each refused line named)
+    PUT    /api/departments/{id}/rules     {rules?, pack?, rev?}   replaces the owner's list and/or the pick (422 `validation`, each refused line named;
+                                                      with `rev` of the list that was read, a list that changed since is refused: `details.current`)
     GET    /api/notes                      -> NotesOut        every note, grouped; an expired one says `expired`
     POST   /api/notes                      {group, text, expires?} -> 201 NoteOut   (422: a secret, a full group, a repeat, a past date)
     PUT    /api/notes/{id}                 {text?, expires?}  -> NoteOut
@@ -64,7 +65,7 @@ def build_router() -> APIRouter:
     @router.put("/departments/{dept_id}/rules", summary="Replace the standing rules and/or the practice pick of a team", dependencies=[Depends(require_token)])
     async def put_rules(request: Request, body: RulesIn, dept_id: str = Path(pattern=DEPT_PATTERN)) -> RedactedJSONResponse:
         pack: Any = body.pack if "pack" in body.model_fields_set else False
-        return _json(request, _dump(await run_blocking(lambda: _rules(request).put(dept_id, body.rules, pack=pack))))
+        return _json(request, _dump(await run_blocking(lambda: _rules(request).put(dept_id, body.rules, pack=pack, rev=body.rev))))
 
     @router.get("/notes", summary="The owner's notes")
     async def get_notes(request: Request) -> RedactedJSONResponse:

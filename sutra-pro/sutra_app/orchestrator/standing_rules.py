@@ -3,6 +3,7 @@
     rules = StandingRules(db, redact=...)
     rules.get("web")                          # TeamRulesOut: the owner's lines, the pick, the picks the owner said no to
     rules.put("web", [RuleIn(...)], pack="money-movement")      # the owner's whole list (and the pick); refused lines raise 422 `validation`
+    rules.put("web", [RuleIn(...)], rev=got.rev)               # ... from the list the owner read: a list that changed since is refused, never overwritten
     rules.accept("web", "money-movement") / rules.decline("web", "money-movement")    # the org chat's suggestion card
     framing_for(conn, "web", framing)         # what `TaskService._run_spec` puts in a run's framing: the rules block, then the chat agent's own
                                               # paragraph; BYTE-IDENTICAL to `framing` for a team with no rules and no pick
@@ -11,6 +12,8 @@ Storage: one JSON document per team in the `meta` table under `rules:<dept_id>` 
 backup). Rules are read when a task STARTS, so a queued task picks up an edit. They reach the team only as the engine host's one system
 line "Context from the team lead: ...": guidance, not enforcement. Never read by J2's prompts or files.
 """
+import hashlib
+import json
 import logging
 import sqlite3
 from typing import Any, Literal
@@ -21,7 +24,7 @@ from sutra_app.library import practice
 from sutra_app.library.practice import MAX_RULES, RULE_CHARS, RuleLine, clean_text, compose_framing, load_packs, normalise, pack_by_id, rule_faults
 from sutra_app.library.types import violation
 from sutra_app.orchestrator.db import Database
-from sutra_app.orchestrator.errors import NotFound, validation_error
+from sutra_app.orchestrator.errors import AppError, NotFound, validation_error
 from sutra_app.orchestrator.owner_words import json_meta, refusal, save_meta
 
 __all__ = ["StandingRules", "RuleIn", "RulesIn", "RuleOut", "PackOut", "PackLineOut", "PackRef", "TeamRulesOut", "framing_for", "KEY",
@@ -39,11 +42,14 @@ class RuleIn(BaseModel):
 
 
 class RulesIn(BaseModel):
-    """`PUT /api/departments/{id}/rules`. A key left out is left as it is; `pack: null` takes the pick off."""
+    """`PUT /api/departments/{id}/rules`. A key left out is left as it is; `pack: null` takes the pick off. `rev` is the `rev` of the list the
+    owner edited (TeamRulesOut.rev): sent with `rules`, a list that changed since (another window saved first) is refused and nothing is stored;
+    left out, the list is replaced as it always was (a script)."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     rules: list[RuleIn] | None = Field(None, max_length=200)
     pack: str | None = Field(None, max_length=40)
+    rev: str | None = Field(None, min_length=1, max_length=64)
 
 
 class RuleOut(BaseModel):
@@ -75,8 +81,15 @@ class TeamRulesOut(BaseModel):
     rules: list[RuleOut]
     pack: PackOut | None
     declined: list[str]
+    rev: str                                 # a short digest of the owner's list: what a save says it was built from (RulesIn.rev)
     max_rules: int = MAX_RULES
     max_chars: int = RULE_CHARS
+
+
+def rules_rev(rules: list[RuleLine]) -> str:
+    """A digest of the owner's rules, tag and text in order (not the pick): equal lists have the same rev, any other edit has another."""
+    body = json.dumps([[r.tag, r.text] for r in rules], ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
 
 
 def packs_out() -> list[PackOut]:
@@ -131,7 +144,7 @@ class StandingRules:
     @staticmethod
     def _out(dept_id: str, rules: list[RuleLine], pack: practice.PracticePack | None, declined: list[str]) -> TeamRulesOut:
         return TeamRulesOut(dept_id=dept_id, rules=[RuleOut(tag=r.tag, text=r.text) for r in rules], pack=_pack_out(pack) if pack else None,
-                            declined=declined)
+                            declined=declined, rev=rules_rev(rules))
 
     @staticmethod
     def _need_team(conn: sqlite3.Connection, dept_id: str) -> None:
@@ -141,13 +154,20 @@ class StandingRules:
 
     # ---- writes -------------------------------------------------------------------------------------------------------------
 
-    def put(self, dept_id: str, rules: list[RuleIn] | None = None, *, pack: str | None | Literal[False] = False) -> TeamRulesOut:
+    def put(self, dept_id: str, rules: list[RuleIn] | None = None, *, pack: str | None | Literal[False] = False, rev: str | None = None) -> TeamRulesOut:
         """The owner's whole list and/or the pick. `rules` None leaves the list as it is; `pack` False leaves the pick, None takes it off.
-        Every refused line is named with its place; nothing is stored unless all lines pass."""
+        Every refused line is named with its place; nothing is stored unless all lines pass. With `rules` and a `rev`, a list that is no longer the
+        one that `rev` names (another window saved first) is refused as a 422 `validation` (violation `rev`, code `stale_rules`) whose
+        `details.current` is the list as it is now: a whole-list save from an old read would silently drop the other window's rule."""
         with self.db.tx() as tx:
             conn = tx.conn
             self._need_team(conn, dept_id)
             current, picked, declined = _read(conn, dept_id)
+            if rules is not None and rev is not None and rev != rules_rev(current):
+                found = AppError("validation", "The rules changed", {"violations": [violation(
+                    "rev", "stale_rules", "The rules were changed in another window. They are shown again: make your change once more.").model_dump()],
+                    "current": self._out(dept_id, current, picked, declined).model_dump(mode="json")})
+                raise found
             if pack is not False:
                 if pack is None:
                     picked = None

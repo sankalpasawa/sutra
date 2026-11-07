@@ -10,10 +10,12 @@
                                           packs   the answer of GET /api/packs
                                           error   one sentence for the block ("" for none)
                                           draft   what was typed and refused, kept beside the sentence {tag, text}
-     addBody(data, tag, text) / removeBody(data, index) / packBody(id)    the PUT body: the whole list with one line more or less, or just the pick
+     addBody(data, tag, text) / removeBody(data, index) / packBody(id)    the PUT body: the whole list with one line more or less (and the `rev` of the
+                                        list it was made from, so a list another window saved first is refused and not overwritten), or just the pick
      errorWords(error) -> sentence      the server's own words for a refusal (a key, a repeat, a full list, "cannot say it more loosely"), else a fallback
      loadRules(api, dept) -> Promise<{data, packs}>   GET /api/departments/{id}/rules and GET /api/packs
-     saveRules(api, dept, body) -> Promise<{ok, data, error}>          PUT /api/departments/{id}/rules
+     saveRules(api, dept, body) -> Promise<{ok, data, error}>          PUT /api/departments/{id}/rules; a refusal because the list changed since it was
+                                        read carries that list in `data` (details.current), for the page to show again; any other refusal has data null
 
    A rule is guidance the team reads in front of every task it is given: it is not a lock, and the block says so. A pick only ADDS lines (it never loosens
    a rule); the owner's rule that says a pick's line more loosely is refused by the server in a sentence this view shows as it is.
@@ -42,12 +44,16 @@
   const rulesOf = data => (isObj(data) && Array.isArray(data.rules) ? data.rules.filter(r => isObj(r) && hasOwn(TAG_WORD, r.tag) && clean(r.text) !== "") : []);
   const plain = list => list.map(r => ({tag: r.tag, text: clean(r.text)}));
 
+  // The digest of the list the owner is looking at (GET .../rules `rev`): sent back with an edit of the whole list, so the server can tell that another
+  // window saved since. An answer without one (an older server) sends none, and the list is replaced as it was.
+  const revOf = data => (isObj(data) && typeof data.rev === "string" && data.rev !== "" ? {rev: data.rev} : {});
+
   function addBody(data, tag, text) {
-    return {rules: plain(rulesOf(data)).concat([{tag: hasOwn(TAG_WORD, tag) ? tag : "always", text: clean(text)}])};
+    return Object.assign({rules: plain(rulesOf(data)).concat([{tag: hasOwn(TAG_WORD, tag) ? tag : "always", text: clean(text)}])}, revOf(data));
   }
 
   function removeBody(data, index) {
-    return {rules: plain(rulesOf(data)).filter((_, i) => i !== index)};
+    return Object.assign({rules: plain(rulesOf(data)).filter((_, i) => i !== index)}, revOf(data));
   }
 
   const packBody = id => ({pack: clean(id) === "" ? null : clean(id)});
@@ -119,7 +125,8 @@
       const data = await api.put(path(dept), body);
       return {ok: true, data: isObj(data) ? data : null, error: ""};
     } catch (e) {
-      return {ok: false, data: null, error: errorWords(e)};
+      const current = isObj(e) && isObj(e.details) && isObj(e.details.current) && Array.isArray(e.details.current.rules) ? e.details.current : null;
+      return {ok: false, data: current, error: errorWords(e)};
     }
   }
 

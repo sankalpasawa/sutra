@@ -654,7 +654,10 @@
         const field = added !== null && refs && refs.body ? refs.body.querySelector("[data-teamrules] [data-rules-text]") : null;
         if (field && clean(field.value) === clean(added)) field.value = "";      // keepRulesDraft reads the live field: left as it is, it would bring the saved line back
         rules.saved = "Saved. It applies from the team's next task.";
-      } else rules.error = out.error;
+      } else {
+        rules.error = out.error;
+        if (out.data) rules.data = out.data;                   // the list changed in another window: show it as it is now (what was typed stays in the box)
+      }
       if (st && st.tab === "details") paintDetails();
     }
 

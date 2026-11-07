@@ -226,3 +226,54 @@ def test_a_put_with_pack_null_takes_the_pick_off_and_an_empty_body_changes_nothi
     assert client.put("/api/departments/web/rules", json={}, headers=auth).json()["pack"]["id"] == "product-build"
     off = client.put("/api/departments/web/rules", json={"pack": None}, headers=auth).json()
     assert off["pack"] is None and off["rules"][0]["text"] == "Be brief."
+
+
+# ---- two windows (QA org-chat-teams) ---------------------------------------------------------------------------------------------
+
+def test_a_list_saved_from_a_stale_read_is_refused_and_nothing_is_lost(client, auth):
+    """Window B still shows the empty list when window A has added a rule: B's save used to replace A's rule without a word. The read carries a
+    `rev` of the list, the save hands it back, and a list that changed since is a 422 `validation` (violation `rev`, code `stale_rules`) that stores nothing
+    and carries the list as it is now in `details.current`."""
+    url = "/api/departments/web/rules"
+    empty = client.get(url).json()
+    assert isinstance(empty["rev"], str) and empty["rev"]
+    a = client.put(url, json={"rules": [{"tag": "always", "text": "Always quote prices in INR"}], "rev": empty["rev"]}, headers=auth)
+    assert a.status_code == 200 and a.json()["rev"] != empty["rev"] and client.get(url).json() == a.json()
+    b = client.put(url, json={"rules": [{"tag": "always", "text": "Always mention same-day delivery"}], "rev": empty["rev"]}, headers=auth)
+    error = b.json()["error"]
+    assert b.status_code == 422 and error["code"] == "validation"
+    assert [(v["path"], v["code"]) for v in error["details"]["violations"]] == [("rev", "stale_rules")] and "another window" in error["details"]["violations"][0]["message"]
+    assert error["details"]["current"] == a.json()                                              # the page can show the list as it is now
+    assert [r["text"] for r in client.get(url).json()["rules"]] == ["Always quote prices in INR"]
+    again = client.put(url, json={"rules": [*a.json()["rules"], {"tag": "always", "text": "Always mention same-day delivery"}], "rev": a.json()["rev"]}, headers=auth)
+    assert again.status_code == 200 and [r["text"] for r in again.json()["rules"]] == ["Always quote prices in INR", "Always mention same-day delivery"]
+
+
+def test_removing_by_place_from_a_stale_list_is_refused_too(client, auth):
+    url = "/api/departments/web/rules"
+    first = client.put(url, json={"rules": [{"tag": "always", "text": "Be brief."}, {"tag": "never", "text": "Never guess."}]}, headers=auth).json()
+    client.put(url, json={"rules": [{"tag": "never", "text": "Never guess."}], "rev": first["rev"]}, headers=auth)           # window A removes the first line
+    stale = client.put(url, json={"rules": [{"tag": "always", "text": "Be brief."}], "rev": first["rev"]}, headers=auth)    # window B removes by place from the old list
+    assert stale.status_code == 422 and [r["text"] for r in client.get(url).json()["rules"]] == ["Never guess."]
+
+
+def test_a_save_without_a_rev_and_a_pick_alone_work_as_before(client, auth):
+    url = "/api/departments/web/rules"
+    first = client.get(url).json()
+    client.put(url, json={"rules": [{"tag": "always", "text": "Be brief."}]}, headers=auth)                  # a script that sends no rev replaces the list
+    assert client.put(url, json={"rules": [{"tag": "never", "text": "Never guess."}]}, headers=auth).status_code == 200
+    picked = client.put(url, json={"pack": "product-build", "rev": first["rev"]}, headers=auth)              # no list in the body: a stale rev has nothing to protect
+    assert picked.status_code == 200 and picked.json()["pack"]["id"] == "product-build" and picked.json()["rules"][0]["text"] == "Never guess."
+    assert client.put(url, json={"rules": [], "rev": ""}, headers=auth).status_code == 422                   # a rev is a word, never empty
+
+
+def test_the_rev_follows_the_list_and_not_the_pick(tenv):
+    rules = rules_of(tenv)
+    one = rules.put("web", [RuleIn(tag="ask", text="Ask before a purchase.")])
+    assert rules.put("web", None, pack="money-movement").rev == one.rev and rules.get("web").rev == one.rev
+    two = rules.put("web", [RuleIn(tag="ask", text="Ask before a purchase."), RuleIn(tag="always", text="Be brief.")])
+    assert two.rev != one.rev
+    assert rules_of(tenv).get("sales").rev == rules_of(tenv).get("sales").rev != one.rev
+    with pytest.raises(AppError) as info:
+        rules.put("web", [], rev="not-the-current-one")
+    assert info.value.code == "validation" and info.value.details["violations"][0]["code"] == "stale_rules" and info.value.details["current"]["rev"] == two.rev

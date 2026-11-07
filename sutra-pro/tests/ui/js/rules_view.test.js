@@ -90,6 +90,16 @@ test("bodies: the whole list with one line more or less, or only the pick; nothi
   assert.deepEqual(packBody(undefined), {pack: null});
 });
 
+test("an edit of the list says which list it was made from, so another window's save is not overwritten", () => {
+  const read = {...DATA, rev: "0123456789abcdef"};
+  assert.deepEqual(addBody(read, "ask", "Ask before a purchase.").rev, "0123456789abcdef");
+  assert.deepEqual(removeBody(read, 0), {rules: [{tag: "always", text: "Use plain words."}], rev: "0123456789abcdef"});
+  assert.deepEqual(packBody("money-movement"), {pack: "money-movement"});                         // a pick alone has no list to protect
+  assert.equal("rev" in addBody(DATA, "ask", "x"), false);                                        // an answer without one (an older server) sends none
+  assert.equal("rev" in addBody({...DATA, rev: ""}, "ask", "x") || "rev" in addBody({...DATA, rev: 5}, "ask", "x"), false);
+  assert.equal("rev" in addBody(null, "never", "Never lie."), false);
+});
+
 test("errorWords takes the server's sentence for a refusal and a plain one otherwise", () => {
   const refused = {status: 422, message: "Some rules could not be kept", details: {violations: [{path: "rules.1.text", code: "refused", message: "That line is empty."}]}};
   assert.equal(errorWords(refused), "That line is empty.");
@@ -120,4 +130,13 @@ test("saveRules puts the body and gives the answer, or the server's sentence", a
   assert.deepEqual(api.calls[0], ["put", "/api/departments/web/rules", {pack: "money-movement"}]);
   const refusal = Object.assign(new Error("x"), {status: 422, details: {violations: [{message: "A rule cannot say it more loosely."}]}});
   assert.deepEqual(await saveRules(fakeApi({"put /api/departments/web/rules": refusal}), "web", {rules: []}), {ok: false, data: null, error: "A rule cannot say it more loosely."});
+});
+
+test("a save from a list another window changed is refused, and the list as it is now comes back to be shown", async () => {
+  const now = {...DATA, rules: [{tag: "always", text: "Always quote prices in INR"}], rev: "feedfacefeedface"};
+  const stale = Object.assign(new Error("The rules changed"), {status: 422, details: {violations: [{path: "rev", code: "stale_rules", message: "The rules were changed in another window. They are shown again: make your change once more."}], current: now}});
+  const out = await saveRules(fakeApi({"put /api/departments/web/rules": stale}), "web", {rules: [], rev: "0123456789abcdef"});
+  assert.deepEqual(out, {ok: false, data: now, error: "The rules were changed in another window. They are shown again: make your change once more."});
+  const odd = Object.assign(new Error("x"), {status: 422, details: {violations: [{message: "No."}], current: "not a list"}});
+  assert.equal((await saveRules(fakeApi({"put /api/departments/web/rules": odd}), "web", {rules: []})).data, null);
 });
