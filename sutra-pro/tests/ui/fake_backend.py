@@ -1069,7 +1069,7 @@ def require_token(request: Request, state: FakeState) -> None:
     if origin is not None and origin != "http://" + request.headers.get("host", ""):
         raise ApiError(403, "bad_origin", "This request came from another origin.")
     if not hmac.compare_digest(request.headers.get("x-sutra-token", "").encode(), state.token.encode()):
-        raise ApiError(401, "bad_token")
+        raise ApiError(401, "bad_token", "A valid X-Sutra-Token header is required for this request")       # the real server's words (orchestrator/api/deps.py), not the page's
 
 
 async def json_body(request: Request) -> Any:

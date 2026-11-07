@@ -839,10 +839,29 @@ test("an error answer in the envelope becomes an ApiError with its status, code,
   const { api } = app(reply(409, body));
   const error = await rejection(api.post("/api/chats/web/messages", {text: "x"}));
   assert.deepEqual(shape(error), {name: "ApiError", status: 409, code: "busy", message: body.error.message, details: {task_id: "tsk_1"}});
-  for (const [status, code] of [[401, "bad_token"], [403, "read_only"], [404, "not_found"], [422, "validation"], [429, "too_many_pending"], [503, "provider_unavailable"], [500, "internal"]]) {
+  for (const [status, code] of [[403, "read_only"], [404, "not_found"], [422, "validation"], [429, "too_many_pending"], [503, "provider_unavailable"], [500, "internal"]]) {
     const one = await rejection(app(reply(status, {error: {code, message: "m " + code, details: {violations: ["f"]}}})).api.get("/api/x"));
     assert.deepEqual(shape(one), {name: "ApiError", status, code, message: "m " + code, details: {violations: ["f"]}});
   }
+});
+
+// QA firstrun-settings: a write that the heal could not rescue showed the server's "A valid X-Sutra-Token header is required for this request" beside the
+// field in Limits, Notifications, Engine, Default model, About and Connectors, because each view prints e.message. The sentence names a header the owner
+// cannot act on; every ApiError of the dead token says what to do, as Notes and the chat always did.
+const NO_TOKEN = "This page was opened without its access token. Reload it from the app.";
+
+test("a 401 bad_token reads as the plain reload sentence whatever the server said, and keeps its status, code and details", async () => {
+  for (const message of ["A valid X-Sutra-Token header is required for this request", "m bad_token", undefined]) {
+    const one = await rejection(app(reply(401, {error: {code: "bad_token", message, details: {why: "x"}}})).api.put("/api/limits", {guard_enabled: true}));
+    assert.deepEqual(shape(one), {name: "ApiError", status: 401, code: "bad_token", message: NO_TOKEN, details: {why: "x"}}, String(message));
+  }
+});
+
+test("only the dead token is reworded: another 401 code and a bad_token that is not a 401 keep the server's words", async () => {
+  const other = await rejection(app(reply(401, {error: {code: "unauthorized", message: "Sign in first"}})).api.get("/api/x"));
+  assert.deepEqual(shape(other), {name: "ApiError", status: 401, code: "unauthorized", message: "Sign in first", details: {}});
+  const odd = await rejection(app(reply(403, {error: {code: "bad_token", message: "from the server"}})).api.get("/api/x"));
+  assert.equal(odd.message, "from the server");
 });
 
 test("an envelope without a message or details gets the code as its message and empty details", async () => {

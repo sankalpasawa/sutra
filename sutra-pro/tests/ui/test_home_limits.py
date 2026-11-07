@@ -99,6 +99,43 @@ def test_the_guard_switch_saves_at_once(browser, fake):
     assert console_errors(browser) == []
 
 
+def press(browser, selector):
+    """The click event itself, in one step: Settings repaints a group when its read lands, and a real press that straddles a repaint is lost."""
+    assert browser.js(f"(() => {{ const e = document.querySelector({selector!r}); if (!e) return false; e.click(); return true; }})()"), selector
+
+
+@browser_only
+def test_a_write_the_heal_cannot_rescue_says_to_reload_the_page_beside_its_field_not_the_name_of_a_header(browser, fake):
+    """QA firstrun-settings: with the launch token dead and the heal refused, Limits, the guard, Notifications, About (and Engine, Default model and Connectors)
+    printed the server's "A valid X-Sutra-Token header is required for this request". The fake's real pages hold the first token, so the heal reads the
+    same one again and gives up, as it does inside its 60 seconds; Notes and the chat already said "Reload it from the app"."""
+    plain = "This page was opened without its access token. Reload it from the app."
+    browser.expect_failed("/api/notes", 404)                                                         # the fake serves no notes (the Settings tests of this package know it)
+    for path in ("/api/limits", "/api/ops/attention", "/api/ops/update-check"):
+        browser.expect_failed(path, 401)
+    open_home(browser, fake)
+    open_settings(browser, "limits")
+    fake.post("/__fake/restart", {"token": "restarted-token-0123456789abcdef"}, token=False)
+    browser.js("(() => { const e = document.querySelector('#set-limits [data-input=monthly_usd]'); e.value = '12'; e.dispatchEvent(new Event('input', {bubbles: true})); })()")
+    press(browser, '#set-limits [data-act="save-limit"]')
+    present(browser, "#set-limits .seterr")
+    assert texts(browser, "#set-limits .seterr") == [plain]
+    press(browser, "#set-limits [data-guard]")
+    browser.wait_for("document.querySelector('#set-limits [data-guard]').checked === false && document.querySelectorAll('#set-limits .seterr').length > 0")
+    assert texts(browser, "#set-limits .seterr") == [plain]
+    open_settings(browser, "notices")
+    browser.js("(() => { const e = document.querySelector('#set-notices [data-input=nudges_per_hour]'); e.value = '4'; e.dispatchEvent(new Event('input', {bubbles: true})); })()")
+    press(browser, '#set-notices [data-act="save-notices"]')
+    present(browser, "#set-notices .seterr")
+    assert texts(browser, "#set-notices .seterr") == [plain]
+    open_settings(browser, "about")
+    press(browser, '#set-about [data-act="check-update"]')
+    browser.wait_for("document.querySelector('#set-about .settest[data-step=error]') !== null")
+    assert texts(browser, "#set-about .settest") == [plain]
+    assert "X-Sutra-Token" not in browser.js("document.getElementById('pane-settings').innerText")
+    assert [line for line in console_errors(browser) if "401" not in line] == []                      # the refused writes are the announced 401s, nothing else
+
+
 @browser_only
 def test_the_notifications_group_sends_both_times_and_the_cap_and_refuses_equal_times_without_a_request(browser, fake):
     open_home(browser, fake)
