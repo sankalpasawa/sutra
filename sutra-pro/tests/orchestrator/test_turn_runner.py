@@ -128,7 +128,9 @@ def test_the_add_lines_name_a_vowel_team_with_an_and_a_division_as_a_division(re
                         change_reply(add_dept("$e", "Event Booking", "Bookings for events"), add_div("$w", "Weddings", "$e", "Wedding events"), reason=SECRET_SENTENCE),
                         assignments(draft("a1", "event-booking", brief=SECRET_SENTENCE)))
     renv.say("Set up event booking with a weddings part")
-    assert renv.sutra()[-3] == ("text", "I set up an Event Booking team and gave it your request. I set up a Weddings division.")
+    said = renv.sutra()                                          # the line, then the chart change card, a pointer card per new team and the task card
+    assert said[said.index(("text", "I set up an Event Booking team and gave it your request. I set up a Weddings division."))][0] == "text"
+    assert [kind for kind, _ in said].count("card") >= 3
 
 
 def test_event_order_of_a_new_team(renv):
