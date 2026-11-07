@@ -203,17 +203,52 @@ test("loadPolicy reads the policy and the models by provider; a models failure l
   await assert.rejects(loadPolicy(fakeApi({"GET /api/connectors/policy": new Error("down")})));
 });
 
-test("savePolicy is one PUT of the whole policy with only the edit changed, and the answer is the new policy", async () => {
-  const api = fakeApi({"PUT /api/connectors/policy": body => body});
+test("savePolicy reads the stored policy again, then PUTs the whole of it with only the edit changed; the answer is the new policy", async () => {
+  const api = fakeApi({"GET /api/connectors/policy": POLICY, "PUT /api/connectors/policy": body => body});
   const out = await savePolicy(api, POLICY, {first: "codex"});
   assert.equal(out.ok, true);
-  assert.deepEqual(api.calls.map(c => [c.method, c.path]), [["PUT", "/api/connectors/policy"]]);
-  assert.deepEqual(api.calls[0].body.defaults.order, ["codex", "claude"]);
+  assert.deepEqual(api.calls.map(c => [c.method, c.path]), [["GET", "/api/connectors/policy"], ["PUT", "/api/connectors/policy"]]);
+  assert.deepEqual(api.calls[1].body.defaults.order, ["codex", "claude"]);
   assert.deepEqual(out.policy.defaults.order, ["codex", "claude"]);
-  assert.deepEqual(api.calls[0].body.rules, POLICY.rules);
+  assert.deepEqual(api.calls[1].body.rules, POLICY.rules);
 });
 
-test("savePolicy refuses what the page refuses without a request, and maps the server's 422 to the provider", async () => {
+test("another tab saved since this page loaded: the edit goes on top of what is stored now, and that save is not undone", async () => {
+  const stored = policyBody(POLICY, {model: {claude: "opus"}, first: "codex"});                      // the other tab: Claude's model changed, Codex made first
+  const api = fakeApi({"GET /api/connectors/policy": stored, "PUT /api/connectors/policy": body => body});
+  const out = await savePolicy(api, POLICY, {enabled: {codex: false}});                              // this page still holds the older copy
+  assert.equal(out.ok, true);
+  const sent = api.calls[1].body;
+  assert.equal(sent.providers.claude.model, "opus");                                                // the other tab's model survives
+  assert.deepEqual(sent.defaults.order, ["codex", "claude"]);                                       // and its order
+  assert.equal(sent.providers.codex.enabled, false);                                                // only this edit is new
+  assert.deepEqual(out.policy, sent);
+});
+
+test("an edit that is fine for this page's copy but not for the stored policy is refused, writes nothing and shows the stored policy", async () => {
+  const stored = policyBody(POLICY, {enabled: {codex: false}});                                      // the other tab turned Codex off
+  const api = fakeApi({"GET /api/connectors/policy": stored});
+  const out = await savePolicy(api, POLICY, {enabled: {claude: false}});
+  assert.equal(out.ok, false);
+  assert.match(out.errors[""], /At least one model must stay on/);
+  assert.deepEqual(out.policy, stored);
+  assert.deepEqual(api.calls.map(c => c.method), ["GET"]);                                          // no PUT
+});
+
+test("when the stored policy cannot be read again nothing is written", async () => {
+  const down = fakeApi({"GET /api/connectors/policy": new Error("down")});
+  const out = await savePolicy(down, POLICY, {first: "codex"});
+  assert.equal(out.ok, false);
+  assert.equal(out.policy, POLICY);
+  assert.deepEqual(down.calls.map(c => c.method), ["GET"]);
+  const odd = fakeApi({"GET /api/connectors/policy": {providers: {}}});
+  const bad = await savePolicy(odd, POLICY, {first: "codex"});
+  assert.equal(bad.ok, false);
+  assert.match(bad.errors[""], /could not be read again/);
+  assert.deepEqual(odd.calls.map(c => c.method), ["GET"]);
+});
+
+test("savePolicy refuses what the page refuses without any request, and maps the server's 422 to the provider", async () => {
   const one = policyBody(POLICY, {enabled: {codex: false}});
   const api = fakeApi({});
   const refused = await savePolicy(api, one, {enabled: {claude: false}});
@@ -221,6 +256,6 @@ test("savePolicy refuses what the page refuses without a request, and maps the s
   assert.match(refused.errors[""], /At least one model must stay on/);
   assert.deepEqual(api.calls, []);
   const err = Object.assign(new Error("not valid"), {details: {errors: ["providers.claude.model: too short"]}});
-  const failed = await savePolicy(fakeApi({"PUT /api/connectors/policy": err}), POLICY, {model: {claude: "x"}});
+  const failed = await savePolicy(fakeApi({"GET /api/connectors/policy": POLICY, "PUT /api/connectors/policy": err}), POLICY, {model: {claude: "x"}});
   assert.deepEqual([failed.ok, failed.errors, failed.policy], [false, {claude: "model: too short"}, POLICY]);
 });

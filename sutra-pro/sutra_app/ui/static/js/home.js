@@ -816,7 +816,7 @@
     S.pol = {busy: true, saved: false, errors: {}};
     paintModels();
     const out = await SV().savePolicy(api, S.policy, edits);
-    if (out.ok) S.policy = out.policy;
+    S.policy = out.policy;                               // what is stored now: the answer of the PUT, or the policy savePolicy read again when it refused or failed
     S.pol = {busy: false, saved: out.ok, errors: out.errors};
     paintModels();
     return out;

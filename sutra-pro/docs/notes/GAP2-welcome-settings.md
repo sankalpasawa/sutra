@@ -51,7 +51,8 @@ Five verified gaps of the old Sutra's behaviour, built once each, at a working a
   saved first choice cannot run (not signed in, out of quota), its row says "Your saved choice could not be used; Codex is answering." instead of falling back silently.
 - Where: `settings_view.js` (`policyHtml`, `policyBody`, `policyProblem`, `policyErrors`, `loadPolicy`, `savePolicy`, `answering`), `home.html` (`#set-models`), `home.js`
   (`paintModels`, `loadPolicyState`, `changePolicy`, one change handler, `make-first` in the click handler; the group repaints on `connector.health`).
-- A change is a read-modify-write: `GET /api/connectors/policy`, then `PUT` of the WHOLE policy with only `defaults.order`, `providers.<p>.enabled` and `providers.<p>.model`
+- A change is a read-modify-write: `GET /api/connectors/policy` (read again at every save, not only when Settings opens: review round 1, because a PUT replaces the whole policy and
+  the copy loaded at open would undo another tab's save), then `PUT` of the WHOLE policy with only `defaults.order`, `providers.<p>.enabled` and `providers.<p>.model`
   changed (rules, rates, timeouts, sandbox, concurrency and every other key are copied; a test compares them to the file the app ships). The server adopts it live.
 - The page refuses, without a request, to turn off the last provider that is on, to make an Off provider first and to save an empty model; a 422 `policy_invalid` is mapped to the
   provider its line names.

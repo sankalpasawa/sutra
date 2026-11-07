@@ -28,7 +28,7 @@
      policyBody(policy, edits) -> policy   the PUT body: the whole current policy with only defaults.order, providers.<p>.enabled and providers.<p>.model changed
      policyProblem(policy, edits) -> ""|sentence   what the page refuses before sending (no model left on, a first model that is off, an empty model)
      policyErrors(error) -> {provider: sentence}   what a 422 policy_invalid names, key "" for a sentence about the whole policy
-     loadPolicy(api) / savePolicy(api, policy, edits)   GET policy and models, and the checked PUT
+     loadPolicy(api) / savePolicy(api, policy, edits)   GET policy and models, and the checked save (GET the stored policy again, then PUT it with the edit)
      aboutHtml(info, update) -> html              the About group (welcome-settings, item 2): version, data folder, Check for updates and its answer
      checkUpdate(api) -> {step, answer, message}  POST /api/ops/update-check on the owner's click: the only request the app makes of its own, and it downloads nothing
 
@@ -573,14 +573,26 @@
   }
 
   // savePolicy(api, policy, edits) -> {ok, policy, errors}. A refused edit sends nothing; the server's 422 is mapped to the provider it names.
+  // A real read-modify-write: the stored policy is read again HERE and the edit goes on top of that, not of the copy the page loaded. A PUT replaces the whole
+  // policy, so a copy that is older than another tab's save (or a hand-edited file) would silently undo it. `policy` in the answer is the one read again, so the
+  // page shows what is stored; when it cannot be read again nothing is written.
   async function savePolicy(api, policy, edits) {
-    const problem = policyProblem(policy, edits);
-    if (problem !== "") return {ok: false, policy, errors: {"": problem}};
+    const early = policyProblem(policy, edits);
+    if (early !== "") return {ok: false, policy, errors: {"": early}};
+    let current;
     try {
-      const answer = await api.put(POLICY_PATH, policyBody(policy, edits));
-      return {ok: true, policy: isObj(answer) ? answer : policyBody(policy, edits), errors: {}};
+      current = await api.get(POLICY_PATH);
     } catch (e) {
       return {ok: false, policy, errors: policyErrors(e)};
+    }
+    if (!isObj(current) || !isObj(current.providers) || !isObj(current.defaults)) return {ok: false, policy, errors: {"": "The routing policy could not be read again."}};
+    const problem = policyProblem(current, edits);
+    if (problem !== "") return {ok: false, policy: current, errors: {"": problem}};
+    try {
+      const answer = await api.put(POLICY_PATH, policyBody(current, edits));
+      return {ok: true, policy: isObj(answer) ? answer : policyBody(current, edits), errors: {}};
+    } catch (e) {
+      return {ok: false, policy: current, errors: policyErrors(e)};
     }
   }
 
