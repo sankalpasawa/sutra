@@ -3,7 +3,7 @@
 The old org search re-expressed over Pro's tables: team names, purposes and divisions from the live chart, task titles and outcomes, ranked name over
 purpose over task over outcome, one character is not a search, a node that was merged away never comes back, and a read that writes nothing."""
 import pytest
-from factories_org import add_op, dept_op, div_op, merge_op, rename_op
+from factories_org import add_op, dept_op, merge_op, rename_op
 from orchestrator.test_chart_store import Env
 
 from sutra_app.orchestrator.team_find import LIMIT, MIN_CHARS, TeamFind, words_of

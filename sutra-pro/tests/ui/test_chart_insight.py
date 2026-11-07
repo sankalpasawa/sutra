@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 
 import pytest
-from test_home import HOME, SHELL_CSS, attrs, load, posts, present, absent, shown, texts
+from test_home import HOME, SHELL_CSS, absent, attrs, load, present, shown, texts
 
 from sutra_app.ui import STATIC_DIR
 
