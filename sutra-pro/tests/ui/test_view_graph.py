@@ -733,6 +733,33 @@ def test_an_event_makes_the_page_refetch_once_and_the_pane_redraws_what_changed(
 
 
 @browser_only
+def test_an_update_that_brings_the_same_data_is_not_laid_out_or_drawn_again_and_a_changed_one_is(page):
+    """Fluid: a refetch with nothing new (an event about another team, the poll while the stream is down) costs no layout and no redraw."""
+    page.fake.stage("2")
+    page.open(level="full")
+    out = page.js("""(async () => {
+      const raw = await SutraCtx.api.get('/api/graph', {level: 'full'});
+      let layouts = 0;
+      const layout = GraphLayout.layout;
+      GraphLayout.layout = function () { layouts += 1; return layout.apply(this, arguments); };
+      const svg = document.querySelector('svg.wgsvg');
+      let first = window.view.update(JSON.parse(JSON.stringify(raw)));
+      const afterFirst = layouts;
+      let second = window.view.update(JSON.parse(JSON.stringify(raw)));
+      const changed = JSON.parse(JSON.stringify(raw));
+      changed.nodes[1].label = changed.nodes[1].label + ' (renamed)';
+      let third = window.view.update(changed);
+      GraphLayout.layout = layout;
+      return {first, second, third, afterFirst, layouts, sameSvg: document.querySelector('svg.wgsvg') === svg,
+              banner: document.querySelector('.wbanner').hidden, label: document.querySelector('g.wnode[data-id="' + changed.nodes[1].id + '"]').textContent};
+    })()""")
+    assert out["first"] is True and out["second"] is True and out["third"] is True
+    assert out["layouts"] == out["afterFirst"] + 1 and out["afterFirst"] in (0, 1), "the same data is laid out at most once; the changed data once more"
+    assert "renamed" in out["label"], "and the change is on the page"
+    assert out["banner"] is True
+
+
+@browser_only
 def test_an_update_keeps_the_selection_and_the_zoom_marks_what_arrived_and_says_so(page):
     page.fake.stage("2")
     page.open(level="full")
