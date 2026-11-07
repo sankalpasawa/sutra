@@ -535,14 +535,17 @@
     const on = entry.enabled === true;
     const state = !on ? "off" : (rank === 0 ? "first" : "second");
     const word = !on ? "Off" : (rank === 0 ? "First" : "Second");
-    const unusable = on && rank === 0 && conns !== null && !isReady(conns[name]);
-    const note = unusable ? "Your saved choice could not be used; " + (replacement ? providerName(replacement) + " is answering." : "no other model is ready either.") : "";
+    // Offline (and the stub connector) the built-in demo answers every call by design: a choice that no CLI serves is kept for later, not a fault (QA firstrun-settings).
+    const demo = conns !== null && isObj(conns.stub) && isReady(conns.stub);
+    const unusable = on && rank === 0 && conns !== null && !demo && !isReady(conns[name]);
+    const note = unusable ? "Your saved choice could not be used; " + (replacement ? providerName(replacement) + " is answering." : "no other model is ready either.")
+      : (on && rank === 0 && demo && !isReady(conns[name]) ? "Kept for when the app is not offline: its built-in demo answers for now." : "");
     const models = isObj(o.models) && Array.isArray(o.models[name]) ? o.models[name] : [];
     const err = isObj(o.errors) && o.errors[name] ? '<span class="seterr" role="alert">' + esc(o.errors[name]) + "</span>" : "";
     const dis = o.busy === true ? " disabled" : "";
     return '<div class="setmodel" data-provider="' + esc(name) + '" data-state="' + state + '">' +
       '<div class="sethead"><b>' + esc(providerName(name)) + '</b><span class="setchip ' + (state === "first" ? "st-ok" : "") + '">' + word + "</span></div>" +
-      (note ? '<p class="setdetail setunusable" role="status">' + esc(note) + "</p>" : "") +
+      (note ? '<p class="setdetail' + (unusable ? " setunusable" : "") + '"' + (unusable ? ' role="status"' : "") + ">" + esc(note) + "</p>" : "") +
       '<div class="setacts"><button type="button" class="ghost" data-act="make-first" data-provider="' + esc(name) + '"' + (!on || rank === 0 || o.busy === true ? " disabled" : "") + ">Make first</button>" +
       '<label class="setswitch"><input type="checkbox" data-policy-on="' + esc(name) + '"' + (on ? " checked" : "") + dis + "> On</label>" +
       '<label class="setmlabel">Model <select data-policy-model="' + esc(name) + '" aria-label="Model for ' + esc(providerName(name)) + '"' + dis + ">" +

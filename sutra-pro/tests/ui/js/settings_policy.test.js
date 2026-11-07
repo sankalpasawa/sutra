@@ -143,6 +143,19 @@ test("a saved choice that cannot run is said, with the model that is answering i
   assert.equal(answering(POLICY, none), null);
 });
 
+// QA firstrun-settings: under --offline only the stub is in the health answer, and the Default model group said, in red, that the saved choice "could not be used"
+// and that "no other model is ready either", although the demo answers by design.
+test("while the demo stub answers (offline) no CLI is missing: a calm note, not the red 'could not be used' line", () => {
+  const offline = {connectors: {stub: {installed: true, signed_in: true, health: {state: "ok"}}}};
+  const html = policyHtml(POLICY, offline, {models: MODELS});
+  assert.doesNotMatch(html, /could not be used|no other model is ready|setunusable/);
+  assert.match(row(html, "claude"), /<p class="setdetail">Kept for when the app is not offline: its built-in demo answers for now\.<\/p>/);
+  assert.doesNotMatch(row(html, "codex"), /Kept for when/);                                                     // only the first row, as the red line was
+  assert.doesNotMatch(row(html, "claude"), /role="status"/);
+  const stuck = {connectors: {stub: {installed: true, signed_in: false, health: {state: "signed_out"}}}};            // a stub that cannot answer is a real fault again
+  assert.match(policyHtml(POLICY, stuck, {models: MODELS}), /Your saved choice could not be used; no other model is ready either\./);
+});
+
 test("no note while everything can run, and none without a health answer", () => {
   assert.doesNotMatch(policyHtml(POLICY, READY, {models: MODELS}), /saved choice/);
   assert.doesNotMatch(policyHtml(POLICY, null, {models: MODELS}), /saved choice/);
