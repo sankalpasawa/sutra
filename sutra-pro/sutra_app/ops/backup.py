@@ -22,7 +22,8 @@ good backups out. A damaged database is refused (nothing is written, nothing is 
 Rotation: a backup written to the default folder keeps only the newest 7 `sutra-pro-backup-*.tar.gz` there (`prune_backups`); a backup
 written with `--to` is the owner's own copy and is never rotated. The `pre-upgrade-*.sqlite3` files are never rotated.
 
-Restore order (each step refuses before anything is touched): the instance lock must be free (it is held for the whole swap); the
+Restore order (each step refuses before anything is touched): the instance lock must be free (it is held for the whole swap; on Windows,
+which cannot rename a folder with an open file in it, it is let go just before the rename); the
 manifest must be known and its `user_version` no newer than this build; every member must be a regular file named in the manifest
 and every sha256 and size must match; the files go into a staging folder next to the data folder, the staged database must pass
 `PRAGMA integrity_check`; then the data folder is renamed to `<data>.before-restore-<UTC>`, the staging folder takes its place, and
@@ -468,6 +469,12 @@ def restore_backup(settings: Settings, archive: Path, *, now: Callable[[], float
             shutil.rmtree(staging, ignore_errors=True)         # our own half-built folder, never the owner's data
             raise
         moved = None
+        if held is not None and oslayer.IS_WINDOWS:
+            # Windows will not rename a folder that has a file open in it, and the lock is exactly that: an open `app.lock` inside the folder.
+            # Let go just before the rename. A server that starts in that instant takes `app.lock` again and the rename is refused (the message
+            # below, the current data untouched). Elsewhere the open lock follows the renamed folder and is held to the end of the swap.
+            held.release()
+            held = None
         try:
             if data_dir.exists():
                 moved = _unique(data_dir.parent, f"{data_dir.name}.before-restore-{stamp}", "")

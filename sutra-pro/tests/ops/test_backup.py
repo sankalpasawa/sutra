@@ -3,6 +3,7 @@
 Most tests use a small data folder made here (a real migrated database plus a few files); the last test starts the REAL app (stub
 connector, Brew Lab scenario of GAP-E2E), backs it up while it is live, restores into a new folder, starts a second app on it and compares.
 """
+import errno
 import hashlib
 import io
 import json
@@ -19,9 +20,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "e2e"))
 from harness import LiveApp, run_new_team                                            # noqa: E402
 
-from sutra_app import __version__                                                    # noqa: E402
+from sutra_app import __version__, oslayer                                           # noqa: E402
 from sutra_app.config import Settings                                                # noqa: E402
-from sutra_app.ops import backup, cli                                                # noqa: E402
+from sutra_app.ops import backup, cli, lock                                          # noqa: E402
 from sutra_app.ops.lock import InstanceLock                                          # noqa: E402
 from sutra_app.orchestrator import schema                                            # noqa: E402
 from sutra_app.orchestrator.db import Database                                       # noqa: E402
@@ -419,6 +420,49 @@ def test_restore_over_an_existing_folder_moves_it_aside_and_carries_env_and_back
     assert not (data.data_dir / "marker.txt").exists() and (data.data_dir / "db.sqlite3").is_file()
     assert (data.data_dir / ".env").read_text() == "J2_OVERRIDE_KEY=secret-value" and (aside / ".env").is_file()
     assert not (data.data_dir / "logs").exists() and (aside / "logs" / "server.log").is_file()
+
+
+def watch_the_folder_rename(monkeypatch, data, *, refuse_open_files: bool, really_rename: bool) -> list[bool]:
+    """Wrap os.rename: note whether the instance lock (an open file inside the data folder) is held when the data folder itself is renamed.
+    `refuse_open_files` makes the wrapper answer as Windows does (a folder with a file open in it is "Access is denied"); without
+    `really_rename` the folder is never moved, the wrapper fails it, so the test needs no working rename."""
+    seen: list[bool] = []
+    real = os.rename
+
+    def rename(src, dst, *args, **kwargs):
+        if Path(src) == data.data_dir:
+            seen.append(lock.is_locked(data.data_dir))
+            if (refuse_open_files and seen[-1]) or not really_rename:
+                raise PermissionError(errno.EACCES, "Access is denied")
+        return real(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "rename", rename)
+    return seen
+
+
+@pytest.mark.parametrize("windows", [True, False])
+def test_the_instance_lock_is_dropped_before_the_data_folder_is_renamed_on_windows_and_held_through_it_elsewhere(good, data, monkeypatch, windows):
+    # Windows cannot rename a folder that has a file open in it, this process's own app.lock included; elsewhere an open lock follows the
+    # folder and keeps a server from starting on it halfway through the swap
+    archive, _ = good
+    monkeypatch.setattr(oslayer, "IS_WINDOWS", windows)
+    seen = watch_the_folder_rename(monkeypatch, data, refuse_open_files=False, really_rename=False)
+    with pytest.raises(backup.RestoreError, match="could not be put in place"):
+        backup.restore_backup(data, archive)
+    assert seen == [not windows]
+    assert (data.data_dir / "engine.json").is_file() and not list(data.data_dir.parent.glob("*.restore-*")) and not lock.is_locked(data.data_dir)
+
+
+@pytest.mark.skipif(oslayer.IS_WINDOWS, reason="the real folder rename is what the Windows leg skips for the other restore-over-a-folder tests")
+def test_restore_over_an_existing_folder_completes_when_the_system_refuses_to_rename_a_folder_with_an_open_file(good, data, monkeypatch):
+    archive, _ = good
+    write(data.data_dir / "marker.txt", "mine")
+    monkeypatch.setattr(oslayer, "IS_WINDOWS", True)
+    seen = watch_the_folder_rename(monkeypatch, data, refuse_open_files=True, really_rename=True)
+    result = backup.restore_backup(data, archive, now=lambda: 1_800_000_000.0)
+    assert seen == [False] and result.moved_to is not None and (result.moved_to / "marker.txt").read_text() == "mine"
+    assert (data.data_dir / "db.sqlite3").is_file() and not (data.data_dir / "marker.txt").exists()
+    assert (data.data_dir / ".env").read_text() == "J2_OVERRIDE_KEY=secret-value" and not lock.is_locked(data.data_dir)
 
 
 def test_restore_moves_the_backups_folder_into_the_new_data_folder(data):
