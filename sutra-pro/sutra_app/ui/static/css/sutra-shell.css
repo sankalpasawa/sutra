@@ -138,6 +138,27 @@ body.home .rail.tabs button[aria-current="page"], body.home .rail.tabs button[ar
 .appear { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .appear .sethint { margin: 0; }
 .setgrp button:focus-visible, .setgrp select:focus-visible, .setgrp input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* the first-run welcome card (welcome.js): a dialog on <body>, outside #sview, until the owner says Got it */
+.swelcome { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--bg); overflow-y: auto; }
+.swbox { width: min(640px, 100%); max-height: 100%; overflow-y: auto; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+.swbox:focus { outline: none; }
+.swbox h2 { margin: 0 0 4px; font-size: 20px; }
+.swlead { margin: 0 0 12px; color: var(--muted); font-size: 13.5px; }
+.swfact { border-top: 1px solid var(--line); padding: 10px 0 2px; }
+.swfact h3 { margin: 0 0 6px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.swfact p { margin: 0 0 6px; font-size: 13.5px; }
+.swnum { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px solid var(--accent); border-radius: 50%; color: var(--accent); font: 600 12px var(--mono); }
+.swmodels { list-style: none; margin: 0 0 6px; padding: 0; font-size: 13.5px; }
+.swmodel { margin: 0 0 6px; }
+.swchip { border: 1px solid var(--line); border-radius: 12px; padding: 1px 10px; font-size: 12px; color: var(--muted); }
+.swchip.st-ok { color: var(--ok); border-color: var(--ok); }
+.swchip.st-bad { color: var(--bad); border-color: var(--bad); }
+.swwhy { color: var(--muted); }
+.swfix { display: block; margin: 2px 0 0 0; font-size: 13px; }
+.swbox code { font: 500 12.5px var(--mono); background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; overflow-wrap: anywhere; }
+.swacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.swacts .sethint { margin: 0; }
+.swbox button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 @media (prefers-reduced-motion: reduce) {
   #smsgs, .sright * { scroll-behavior: auto; animation: none !important; transition: none !important; }

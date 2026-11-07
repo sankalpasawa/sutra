@@ -947,6 +947,8 @@
     renderComposer();
     renderBar();
     S.stream = SutraEvents.connect({url: "/api/events", onEvent, onState: setLive, pollFn: pollAll, pollMs: POLL_MS});
+    // the first-run welcome card (welcome.js): mounted outside #sview, shown until the owner says Got it (stored on the server)
+    if (root.Welcome) Promise.resolve().then(() => root.Welcome.start(doc, api)).catch(e => { if (root.console) root.console.error("HomePage: welcome failed", e); });
     await loadAll();
     applyDeepLink(link);
   }
