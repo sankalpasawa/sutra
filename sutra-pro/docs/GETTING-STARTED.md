@@ -157,8 +157,8 @@ the evidence. Every atom, with its cost, is also listed in the Atom log of the c
 
 ## 6. Answering a team's question
 
-A team asks through its Identity function: a needs-you card on Home, and the same question in the team's chat. Click an option button or
-type an answer in the card's box. The answer goes to that team's session only, never to the chat agent. Typical questions are "keep
+A team asks through its Identity function: the question is in the team's own chat (D123); the org chat only gets a pointer to it, and Home's needs-you
+list has an **Answer in Chat** button that opens it. Click an option button or type an answer in that chat's box. The answer goes to that team's session only, never to the chat agent. Typical questions are "keep
 going or finish as it is", a budget top-up, or a choice between two readings of your brief.
 
 Words the team understands in an answer: `continue`, `ship` (finish as it is), `drop` and `stop` (stop the whole run here). A budget

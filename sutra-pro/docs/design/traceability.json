@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 120,
+  "decisions": 124,
   "packages": 78,
   "endpoints": 30,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 120,
+ "max_decision": 124,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -309,7 +309,11 @@
     "D117",
     "D118",
     "D119",
-    "D120"
+    "D120",
+    "D121",
+    "D122",
+    "D123",
+    "D124"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -2626,7 +2630,8 @@
    "id": "D109",
    "title": "Egress scrub is in the Router for every port; for J2's agents it only observes",
    "packages": [
-    "ABS-2"
+    "ABS-2",
+    "CN-7"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -2695,6 +2700,7 @@
     "ABS-15",
     "GAP-CONSOLE",
     "ORCH-2",
+    "UI-0",
     "UI-3",
     "UI-6",
     "UI-7",
@@ -2745,6 +2751,38 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "key label \"the packaged app proves itself\", pill on the Desktop app box."
+  },
+  {
+   "id": "D121",
+   "title": "One working folder that chats may read, read-only; the engine's runs are unchanged",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key label \"chats read one folder, read-only\", pill on the Connector router box."
+  },
+  {
+   "id": "D122",
+   "title": "The page moves fluidly: one easing and duration scale, compositor properties only, lists edited in place",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key label \"motion: transform and opacity, edit in place\", pill on the Experience band."
+  },
+  {
+   "id": "D123",
+   "title": "A team's chat is its own: the org chat only points at it, and Home switches between them",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key label \"a team's chat is its own\", pill on the Chat sessions box."
+  },
+  {
+   "id": "D124",
+   "title": "The desktop app updates itself: a verified download, installed on the owner's word",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key label \"update: verified, then on your word\", pill on the Desktop app box."
   }
  ],
  "packages": [

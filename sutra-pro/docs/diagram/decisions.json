@@ -543,5 +543,25 @@
   "id": "D120",
   "label": "the packaged app proves itself",
   "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D121",
+  "label": "chats read one folder, read-only",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D122",
+  "label": "motion: transform and opacity, edit in place",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D123",
+  "label": "a team's chat is its own",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D124",
+  "label": "update: verified, then on your word",
+  "anchor": "Desktop app · Electron window"
  }
 ]

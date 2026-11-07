@@ -89,6 +89,7 @@ box(1040, 40, 210, 150, "card hot", "Workflow graph view", [
 box(392, 204, 320, 76, "card", "Console", [
     "usage and cost", "Atom log", "health and diagnostics"], ty=20, ly=38, lh=14.5)
 
+# v9: D121 to D124 are key labels and pills only (decisions.json); no box was added.
 # v8: the desktop app (D116 to D120): the Mac and Windows apps are an Electron window around the local server, which the pages above are shown in.
 # It sits on the second row, inside the band (which ends at x=1020), right of the arrow that reads the runtime (x=728) and under its label.
 box(746, 216, 266, 68, "card", "Desktop app · Electron window", [

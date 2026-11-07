@@ -175,4 +175,6 @@ Run end codes in `run.ended`: `start_failed` (F6), `process_gone` (F7) and `inte
 - **"already running":** a server owns that data folder; `sutra-pro open` opens it, `sutra-pro stop` stops it.
 - **The graph does not move:** the live stream is cut and the page polls every 2 seconds; a banner says so. Reload the page, check `sutra-pro status`.
 - **A team asks again and again:** answer in the team's chat, not in the org chat; the org chat is for new requests.
+- **The chat cannot see my files:** set the Working folder in Settings, Connectors (one folder, read-only, chats only; D121); the chat names it, or says none is set.
+- **The desktop app did not update by itself:** it checks about a minute after it starts and every 6 hours, only if Check for updates automatically is on in Settings, About; it installs only a download it could verify, and only when you choose Restart Now or Install on Quit (D124).
 - **Everything is red after an update:** run `sutra-pro doctor`, then `sutra-pro restore` the backup you took before the update (see [OPERATIONS.md](OPERATIONS.md), section 4).
