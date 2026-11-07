@@ -230,6 +230,22 @@ def test_the_progress_bar_and_sentence_follow_the_turn(browser, fake):
 
 
 @browser_only
+def test_the_enter_that_confirms_an_ime_candidate_does_not_send_the_half_typed_line(browser, fake):
+    """QA org-chat-teams: Enter while composing (Japanese, Chinese, Korean, phonetic Hindi) sent the line; the node panel's box already waited."""
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
+    load(browser, fake)
+    enter = lambda init: browser.js(                                                      # noqa: E731  (what the keydown carries is the point of the test)
+        "(() => { const t = document.getElementById('sbox'); t.focus(); const e = new KeyboardEvent('keydown', Object.assign({key: 'Enter', bubbles: true, cancelable: true}, "
+        + json.dumps(init) + ")); t.dispatchEvent(e); return [e.defaultPrevented, HomePage.state().pending.length]; })()")
+    browser.js("(() => { const t = document.getElementById('sbox'); t.value = 'nihongo wo nyuuryoku'; t.dispatchEvent(new CompositionEvent('compositionstart', {bubbles: true})); })()")
+    assert enter({"keyCode": 229, "isComposing": True}) == [False, 0]                    # Chrome: the candidate is being accepted
+    assert enter({"keyCode": 229, "isComposing": False}) == [False, 0]                   # Safari reports the key after the composition ended with keyCode 229
+    assert browser.js("document.getElementById('sbox').value") == "nihongo wo nyuuryoku" and posts(fake) == []
+    assert enter({"keyCode": 13, "isComposing": False}) == [True, 1]                     # a plain Enter still sends
+    assert enter({"keyCode": 13, "shiftKey": True}) [0] is False                         # Shift+Enter is a new line, as before
+
+
+@browser_only
 def test_the_first_graph_after_a_turn_takes_the_right_pane_and_the_task_card_links_to_the_team(browser, fake):
     load(browser, fake, query="?pane=chart")
     assert shown(browser, "#pane-chart") and not shown(browser, "#pane-graph")

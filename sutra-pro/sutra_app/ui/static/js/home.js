@@ -1257,7 +1257,9 @@
       c.addFiles(t.files);
       t.value = "";
     });
-    $("sbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send($("sbox").value); } });
+    // Enter sends, but not the Enter that accepts an input-method candidate (Japanese, Chinese, Korean, phonetic Hindi): Chrome marks that keydown
+    // isComposing, Safari reports it after the composition ended with keyCode 229. The box of the node panel waits the same way.
+    $("sbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send($("sbox").value); } });
     wireComfort();
     $("sbanner").addEventListener("click", e => {
       const b = e.target.closest("button");
