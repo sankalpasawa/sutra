@@ -834,7 +834,8 @@
   function paintAppearance() { ctx.paint($("set-appearance"), SV().appearanceHtml(themePref())); themeApply(); }
   function paintConnectors() { ctx.paint($("set-connectors"), SV().connectorsHtml(S.health, S.conn)); }
   function paintEngine() {
-    ctx.paint($("set-engine"), SV().engineHtml(S.settings, {scope: S.scope, departments: S.departments, errors: S.errors, values: S.values, saved: S.saved, busy: S.saving}));
+    ctx.paint($("set-engine"), SV().engineHtml(S.settings, {scope: S.scope, departments: S.departments, errors: S.errors, values: S.values, saved: S.saved, busy: S.saving,
+      dataDir: S.info && S.info.data_dir}));
   }
 
   /* ---- the owner's notes (GAP2 rules-notes; notes_view.js draws them, this part reads the fields and calls the server) */
@@ -908,6 +909,7 @@
   async function loadAbout() {
     try { S.info = await api.get("/api/ops/info"); } catch (e) { S.info = {}; }
     paintAbout();
+    paintEngine();                                                                    // its locked rows name the data folder
   }
   async function checkForUpdates() {
     if (S.update.step === "running") return null;

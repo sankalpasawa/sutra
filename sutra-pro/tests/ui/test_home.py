@@ -612,6 +612,8 @@ def test_a_connector_event_refetches_the_health_once(browser, fake):
 # ---------------------------------------------------------------------------------------------------------------------
 @browser_only
 def test_the_engine_group_shows_editable_fields_and_locked_ones_read_only(browser, fake):
+    browser.expect_failed("/api/chats/cs_org/providers", 404)                                      # the fake serves neither the pill's read nor the notes
+    browser.expect_failed("/api/notes", 404)
     load(browser, fake)
     open_settings(browser, "engine")
     browser.wait_for("document.querySelectorAll('#set-engine .setfield').length === 30")
@@ -619,7 +621,8 @@ def test_the_engine_group_shows_editable_fields_and_locked_ones_read_only(browse
     assert browser.count('.setfield[data-locked="false"] input[type="number"]') == 10
     assert browser.count('.setfield[data-locked="true"]') == 10
     assert browser.count('.setfield[data-locked="true"] input, .setfield[data-locked="true"] select') == 0
-    assert set(texts(browser, ".setfield[data-locked=true] .setlock")) == {"edit data/engine.json"}
+    browser.wait_for("document.querySelector('.setfield[data-locked=true] .setlock').textContent.indexOf('/data/sutra-pro/engine.json') >= 0")      # the fake's data folder, read from About's info
+    assert set(texts(browser, ".setfield[data-locked=true] .setlock")) == {"edit /data/sutra-pro/engine.json"}
     assert "Changes apply to the next run." in texts(browser, "#set-engine .setnote")[0]
     assert browser.js("document.querySelector('select[data-scope]').value") == ""                 # all teams
     assert [r["query"] for r in fake.log("/api/engine/settings")] == [""]                   # `dept` is left out for all teams

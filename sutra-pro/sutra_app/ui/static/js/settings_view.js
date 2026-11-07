@@ -5,7 +5,7 @@
    test): this file touches no DOM, no timer of its own and no global but its own, so `node --test` runs all of it.
 
      engineHtml(settings, {scope, departments, errors, values, saved, busy}) -> html   the Engine group: a toggle or a number field for every `editable`
-                                          field of GET /api/engine/settings, every `locked` field read-only with the note "edit data/engine.json",
+                                          field of GET /api/engine/settings, every `locked` field read-only with the note "edit <data folder>/engine.json",
                                           a scope select (all teams, or one team), and the line "Changes apply to the next run."
                                           (`values` are what the owner typed, kept beside a refusal)
      engineBody(settings, form) -> {set, unset}   the PUT body: only the fields that changed; a field that goes back to the value of the layer
@@ -51,7 +51,14 @@
 
   const ENGINE_PATH = "/api/engine/settings";
   const HEALTH_PATH = "/api/health";
-  const NOTE_LOCKED = "edit data/engine.json";
+  // The locked fields live in engine.json in the data folder, which is ~/.sutra-pro in the installed apps: there is no data/ folder to point at (QA firstrun-settings).
+  // The note names the real file when the page knows the data folder (GET /api/ops/info), else says where to look.
+  const NOTE_LOCKED = "edit engine.json in your data folder (About shows where it is)";
+  function lockedNote(dataDir) {
+    const dir = clean(dataDir);
+    if (dir === "") return NOTE_LOCKED;
+    return "edit " + dir.replace(/[\\/]+$/, "") + (dir.indexOf("\\") >= 0 && dir.indexOf("/") < 0 ? "\\" : "/") + "engine.json";
+  }
   const NOTE_NEXT_RUN = "Changes apply to the next run.";
   const HEALTH_EVENTS = freeze(["connector.health", "connector.switch", "connector.mode"]);
   const SIGN_IN_GRACE_S = 30;      // seconds past `expires_in` after which the page stops asking by itself
@@ -249,12 +256,12 @@
       (errors[field] ? '<span class="seterr" role="alert">' + esc(errors[field]) + "</span>" : "") + "</div>";
   }
 
-  function lockedRow(settings, field) {
+  function lockedRow(settings, field, note) {
     const effective = isObj(settings.effective) ? settings.effective : {};
     const [label] = textOf(field);
     return '<div class="setfield" data-field="' + esc(field) + '" data-locked="true">' +
       '<span class="setlabel">' + esc(label) + '</span><span class="setvalue" data-readonly="true">' + esc(showValue(effective[field])) + "</span>" +
-      '<span class="setlock">' + NOTE_LOCKED + "</span></div>";
+      '<span class="setlock">' + esc(note) + "</span></div>";
   }
 
   function scopeSelect(scope, departments) {
@@ -281,7 +288,7 @@
       scopeSelect(o.scope, o.departments) +
       (errors[""] ? '<p class="seterr setgen" role="alert">' + esc(errors[""]) + "</p>" : "") +
       '<div class="setfields">' + editable.map(f => editableRow(settings, f, errors, values)).join("") + "</div>" +
-      (locked.length ? '<h4 class="setsub">Locked</h4><div class="setfields setlocked">' + locked.map(f => lockedRow(settings, f)).join("") + "</div>" : "") +
+      (locked.length ? '<h4 class="setsub">Locked</h4><div class="setfields setlocked">' + locked.map(f => lockedRow(settings, f, lockedNote(o.dataDir))).join("") + "</div>" : "") +
       '<div class="setacts"><button type="button" class="ghost" data-act="save-engine"' + (o.busy === true ? " disabled" : "") + ">Save</button>" +
       '<span class="setstatus" role="status">' + (o.saved === true ? "Saved. " + NOTE_NEXT_RUN : "") + "</span></div></section>";
   }
@@ -776,7 +783,7 @@
     engineHtml, engineBody, engineErrors, formProblems, connectorsHtml, signInState, appearanceHtml,
     testConnector, signIn, watchHealth, loadEngine, saveEngine, enginePath, testLine, kindOf, parseValue, setCliPath,
     policyHtml, policyBody, policyProblem, policyErrors, loadPolicy, savePolicy, answering, aboutHtml, checkUpdate, updateWords,
-    HEALTH_EVENTS, NOTE_LOCKED, NOTE_NEXT_RUN,
+    HEALTH_EVENTS, NOTE_LOCKED, lockedNote, NOTE_NEXT_RUN,
   };
   if (typeof module === "object" && module !== null && module.exports) module.exports = SettingsView;
   else root.SettingsView = SettingsView;
