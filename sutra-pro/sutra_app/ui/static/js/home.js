@@ -378,7 +378,9 @@
   // The composer of the direct chat (ABS-15). "Plan with Sutra" is the staged path as it was; "Ask directly" is POST /direct on the org chat (D115): the
   // chosen model answers, streamed, with attachments and a Stop. The mode is the owner's, per page load.
   function composer() {
-    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", onChange: () => { renderBar(); renderComposer(); }}) : null;
+    // one repaint per animation frame, however many chunks of a reply arrived in it (Fluid.frame; without fluid.js it is at once, as before)
+    const repaint = () => { renderBar(); renderComposer(); };
+    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", onChange: () => (root.Fluid ? root.Fluid.frame(repaint, repaint) : repaint())}) : null;
     return S.cc;
   }
   const directOn = () => { const c = composer(); return c !== null && c.state().mode === "direct"; };
@@ -393,9 +395,7 @@
     const html = CC.bar(c.state(), {labels: {team: "Plan with Sutra", direct: "Ask directly"}});
     ctx.paint(bar, html);
     bar.hidden = html === "";
-    const row = CC.streamRow(c.state(), CC.providerOf(providersOf(), S.pillData ? S.pillData.chosen : null));
-    ctx.paint($("sstream"), row);
-    $("sstream").hidden = row === "";
+    $("sstream").hidden = !CC.paintStreamRow($("sstream"), c.state(), CC.providerOf(providersOf(), S.pillData ? S.pillData.chosen : null));       // a chunk adds to the end of the row
     keepFollowing();
   }
 

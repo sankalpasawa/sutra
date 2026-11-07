@@ -321,3 +321,37 @@ test("rejoin: a chat shown again mid-turn starts its row from what streams next,
   c.partial({session_id: SID, message_id: 5, delta: " again"});
   assert.equal(c.state().turn.text, " again");
 });
+
+test("fluid. paintStreamRow draws the row into an element: through Fluid.paintStream when the page has it, else the html as before", () => {
+  const {c} = rig({}), state = () => c.state();
+  const el = {innerHTML: "", __html: undefined};
+  // a row that is not streaming: nothing shows
+  assert.equal(ChatComposer.paintStreamRow(el, state(), "claude"), false);
+  assert.equal(ChatComposer.paintStreamRow(null, state(), "claude"), false);
+  // no Fluid: the whole row as html, written once for the same row
+  c.state().turn = {active: true, stopping: false, text: "so far", messageId: null};
+  assert.equal(ChatComposer.paintStreamRow(el, state(), "claude"), true);
+  assert.match(el.innerHTML, /Claude is writing/);
+  assert.match(el.innerHTML, /so far/);
+  const written = el.innerHTML;
+  el.innerHTML = "marker";                                          // a second paint of the same row does not write again
+  ChatComposer.paintStreamRow(el, state(), "claude");
+  assert.equal(el.innerHTML, "marker");
+  assert.equal(written.includes("marker"), false);
+  // with Fluid and the markdown script: the parts go to Fluid.paintStream with the renderer
+  const calls = [];
+  globalThis.Fluid = {paintStream: (target, parts, options) => calls.push({target, parts, render: options.render})};
+  globalThis.ChatMarkdown = {render: () => "<div class=\"cmd\"></div>"};
+  try {
+    assert.equal(ChatComposer.paintStreamRow(el, state(), "claude"), true);
+    assert.deepEqual(calls[0].parts, {who: "Claude", text: "so far"});
+    assert.equal(calls[0].target, el);
+    assert.equal(calls[0].render, globalThis.ChatMarkdown.render);
+    c.state().turn = {active: false, stopping: false, text: "", messageId: null};
+    assert.equal(ChatComposer.paintStreamRow(el, state(), "claude"), false);
+    assert.equal(calls[1].parts, null, "Fluid is told to clear the row");
+  } finally {
+    delete globalThis.Fluid;
+    delete globalThis.ChatMarkdown;
+  }
+});
