@@ -246,6 +246,7 @@
     failed.forEach(r => { const w = errorWords(r.reason); if (w.blocked) showBanner(w); });
     S.loaded = true;
     renderAll();
+    if (composer()) composer().resync();            // a direct turn this page did not start (a reload, another tab) gets its Stop; one the server lost (a restart) is over
     return results;
   }
 

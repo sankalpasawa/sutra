@@ -407,6 +407,8 @@
           c.rejoin();
           c.reconcile(st.messages);              // a turn whose reply was stored while the chat was closed is over (no event of it reaches this page now)
         }
+        c.resync();                              // a direct turn answering in this chat that this page did not start (another tab, a reload) gets its Stop
+
       }
       return st.cc.c;
     }
@@ -881,6 +883,7 @@
           } else if (type === "server.resync") {
             refetchMessages();
             refetchDetail();
+            if (st.cc && st.cc.sid === st.sid) st.cc.c.resync();          // the server restarted: a turn it ran is gone, and one it runs now is shown
           }
         },
         pollFn: () => Promise.all([refreshMessages(g), refreshDetail(g)]),

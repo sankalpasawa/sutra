@@ -381,3 +381,135 @@ test("QA bug 7: the length is counted as the server counts it (characters, not U
   assert.equal(ChatComposer.tooLong("short"), "");
   assert.equal(ChatComposer.MAX_MESSAGE, 8000);
 });
+
+// ---- QA direct-chat bugs 3 and 4: a page that did not start the turn, and a turn the server no longer runs --------------------------------------------
+
+const BASE = "/api/chats/" + SID;
+// An api with GET as well: `session` is what GET /api/chats/{sid} says (a function, so a test can change it), `messages` what the list answers.
+function liveApi(handlers, session, messages) {
+  const api = fakeApi(handlers || {});
+  api.gets = [];
+  api.get = async (p, params) => {
+    api.gets.push({p, params});
+    if (p === BASE) { const s = typeof session === "function" ? session() : session; if (s instanceof Error) throw s; return s; }
+    if (p === BASE + "/messages") return {messages: typeof messages === "function" ? messages() : (messages || [])};
+    throw Object.assign(new Error("no route"), {status: 404});
+  };
+  return api;
+}
+const rigLive = (handlers, session, messages, extra) => {
+  const api = liveApi(handlers, session, messages);
+  let changes = 0;
+  const c = create(Object.assign({api, sid: SID, mode: "direct", readFile: async () => "aGVsbG8=", onChange: () => { changes += 1; }}, extra || {}));
+  return {api, c, changes: () => changes};
+};
+
+test("QA bug 3: a reloaded page learns from the session that a direct turn answers, shows it and offers Stop", async () => {
+  const {c, changes} = rigLive({[STOP]: () => ({session_id: SID, stopped: true})}, {id: SID, direct_turn: 41}, [{id: 41, role: "user"}], {mode: "team"});          // a fresh page: Plan with Sutra
+  assert.equal(c.state().turn.active, false);
+  assert.equal(await c.resync(), true);
+  assert.deepEqual(c.state().turn, {active: true, stopping: false, text: "", messageId: 41});
+  assert.equal(c.state().mode, "direct");                                       // the Stop button lives in direct mode: the box shows that the model is answering
+  assert.deepEqual(button(c.state(), ""), {label: "Stop", act: "composer-stop", disabled: false});
+  assert.match(streamRow(c.state(), "claude"), /Claude is writing/);
+  assert.ok(changes() > 0);
+  assert.equal(c.partial({session_id: SID, message_id: 41, delta: "Hel"}), true);          // the pieces that come from now on fill the row
+  assert.equal(c.partial({session_id: SID, message_id: 40, delta: "old"}), false);
+  assert.equal(c.state().turn.text, "Hel");
+  assert.deepEqual(await c.stop(), {ok: true, stopped: true});                      // and Stop works from a page that did not start the turn
+  assert.equal(c.reconcile([{id: 41, role: "user"}, {id: 42, role: "agent", kind: "note", turn: 41}]), true);
+  assert.equal(c.state().turn.active, false);
+});
+
+test("QA bug 3: a turn whose reply is already stored is not shown as answering, whatever the session still says for a moment", async () => {
+  const {c} = rigLive({}, {id: SID, direct_turn: 41}, [{id: 41, role: "user"}, {id: 42, role: "agent", kind: "text", turn: 41}], {mode: "team"});
+  assert.equal(await c.resync(), false);
+  assert.equal(c.state().turn.active, false);
+  assert.equal(c.state().mode, "team");
+});
+
+test("QA bug 3: a session with no direct turn changes nothing, a failed read changes nothing, and a missing GET is no error", async () => {
+  const quiet = rigLive({}, {id: SID, direct_turn: null});
+  assert.equal(await quiet.c.resync(), false);
+  assert.deepEqual(quiet.c.state().turn, {active: false, stopping: false, text: "", messageId: null});
+  const down = rigLive({}, Object.assign(new Error("The app is not responding."), {status: 0}));
+  assert.equal(await down.c.resync(), false);
+  assert.equal(await rig({}).c.resync(), false);                                    // an api without get (the older tests' fake)
+  const old = rigLive({}, {id: SID});                                               // a server that does not send the field
+  assert.equal(await old.c.resync(), false);
+});
+
+test("QA bug 3: a second tab shows the turn of the first, and a later turn of another tab replaces an ended one", async () => {
+  let session = {id: SID, direct_turn: 41};
+  const {c} = rigLive({}, () => session, [{id: 41, role: "user"}]);
+  await c.resync();
+  assert.equal(c.state().turn.messageId, 41);
+  assert.equal(await c.resync(), false);                                            // the same turn again: nothing moves
+  c.partial({session_id: SID, message_id: 41, delta: "abc"});
+  assert.equal(c.state().turn.text, "abc");
+  session = {id: SID, direct_turn: 50};                                             // 41 ended and another turn began elsewhere
+  assert.equal(await c.resync(), true);
+  assert.deepEqual(c.state().turn, {active: true, stopping: false, text: "", messageId: 50});
+});
+
+test("QA bug 4: a turn this page started that the server no longer runs (it died with the last process) leaves the answering state", async () => {
+  let session = {id: SID, direct_turn: 3};
+  const {c} = rigLive({[DIRECT]: () => ({message_id: 3})}, () => session, []);
+  await c.send("crash me");
+  assert.equal(c.state().turn.messageId, 3);
+  c.partial({session_id: SID, message_id: 3, delta: "half"});
+  assert.equal(await c.resync(), false);                                            // the server still runs it: the page keeps it
+  assert.equal(c.state().turn.active, true);
+  session = {id: SID, direct_turn: null};                                           // the server was killed and started again: nothing answers
+  assert.equal(await c.resync(), true);
+  assert.deepEqual(c.state().turn, {active: false, stopping: false, text: "", messageId: null});
+  assert.deepEqual(button(c.state(), "x"), {label: "Send", act: "send", disabled: false});
+  assert.equal(streamRow(c.state(), "claude"), "");
+  assert.equal((await c.send("again")).ok, true);                                    // and the owner can write again
+});
+
+test("QA bug 4: a read that was asked before this page's POST was answered, or while another turn began, never ends a turn it did not see", async () => {
+  let release;
+  const slow = rigLive({[DIRECT]: () => new Promise(resolve => { release = () => resolve({message_id: 8}); })}, {id: SID, direct_turn: null});
+  const sending = slow.c.send("hello");
+  await Promise.resolve();
+  assert.equal(slow.c.state().turn.active, true);
+  assert.equal(await slow.c.resync(), false);                                       // the POST is in flight: the server may not have started the turn yet
+  assert.equal(slow.c.state().turn.active, true);
+  release(); await sending;
+  assert.equal(slow.c.state().turn.messageId, 8);
+  // a read that says "nothing answers" and arrives after this page moved on to another turn must not end that one
+  const ids = [8, 9];
+  const moved = rigLive({[DIRECT]: () => ({message_id: ids.shift()})}, {id: SID, direct_turn: null});
+  await moved.c.send("hello");
+  assert.equal(moved.c.state().turn.messageId, 8);
+  const pending = moved.c.resync();                                                  // asked while turn 8 is the page's: the answer is "nothing answers"
+  moved.c.reconcile([{id: 10, role: "agent", kind: "text", turn: 8}]);              // turn 8 is over and the owner sends the next line before the read is handled
+  await moved.c.send("and again");
+  assert.equal(moved.c.state().turn.messageId, 9);
+  await pending;
+  assert.equal(moved.c.state().turn.active, true);
+  assert.equal(moved.c.state().turn.messageId, 9);
+  // the session still names a turn whose reply the page already has (the registry is cleared a moment after the reply is stored): not adopted again
+  const stale = rigLive({[DIRECT]: () => ({message_id: 8})}, {id: SID, direct_turn: 8}, [{id: 9, role: "agent", kind: "text", turn: 8}]);
+  await stale.c.send("hello");
+  stale.c.reconcile([{id: 9, role: "agent", kind: "text", turn: 8}]);
+  assert.equal(stale.c.state().turn.active, false);
+  assert.equal(await stale.c.resync(), false);
+  assert.equal(stale.c.state().turn.active, false);
+});
+
+test("QA bug 4: Stop on a turn the server does not run ends the page's turn; Stop on one it still runs keeps waiting for the stored line", async () => {
+  let session = {id: SID, direct_turn: null};
+  const dead = rigLive({[DIRECT]: () => ({message_id: 3}), [STOP]: () => ({session_id: SID, stopped: false})}, () => session);
+  await dead.c.send("x");
+  assert.deepEqual(await dead.c.stop(), {ok: true, stopped: false});
+  assert.equal(dead.c.state().turn.active, false);                                   // no more Stop that does nothing
+  assert.deepEqual(button(dead.c.state(), ""), {label: "Send", act: "send", disabled: false});
+  session = {id: SID, direct_turn: 3};
+  const live = rigLive({[DIRECT]: () => ({message_id: 3}), [STOP]: () => ({session_id: SID, stopped: false})}, () => session);
+  await live.c.send("x");
+  assert.deepEqual(await live.c.stop(), {ok: true, stopped: false});
+  assert.equal(live.c.state().turn.active, true);                                    // the turn is about to start or to be stored: the old rule
+  assert.equal(live.c.state().turn.stopping, false);
+});

@@ -20,6 +20,9 @@
                                        them; else text only, and the note says so)
          stop()                        POST /direct/stop; the turn ends when the stored reply (or the error line) arrives
          partial(data)                 a `chat.partial` of this chat adds to the streaming text (the ChatPill rules)
+         resync()                      ask GET /api/chats/{sid} whether a direct turn answers: a turn this page does not know is shown with its Stop (a reload, a
+                                       second tab); a turn this page showed that the server no longer runs (it died with the last process) is over. Async,
+                                       never rejects. The pages call it after they load and when the event stream says to read everything again.
          rejoin()                      the page shows this chat again after it was closed: the text streamed meanwhile is lost, so the row
                                        starts again from what comes next (the stored reply has all of it)
          reconcile(messages)           the turn ends when the reply that answers the owner's line (`turn` = its id) is in the list
@@ -342,6 +345,44 @@
       return out;
     }
 
+    // Ask the server whether a direct turn answers in this chat, and make the page say what is true (QA direct-chat bugs 3 and 4). `direct_turn` of
+    // GET /api/chats/{sid} is the owner's line the running turn answers, else null.
+    //   - a turn answers that this page does not know (a reload, a second tab, the panel opened on it): it is shown, with its Stop, in direct mode; the pieces
+    //     that come from now on fill the row. Not when its reply is already stored (the server clears its note a moment after it stores the reply).
+    //   - nothing answers and this page showed a turn the server had accepted (the process that ran it is gone): the turn is over here too; its stored
+    //     reply, or the line that says it was interrupted, is in the transcript. The turn is judged by the id that was the page's BEFORE the read: a turn
+    //     whose POST was not answered yet, or one that began while the read travelled, is never ended by an older answer.
+    // Resolves to whether the page changed. Never rejects: a failed read changes nothing.
+    async function resync() {
+      if (!api || typeof api.get !== "function") return false;
+      const known = state.turn.active ? state.turn.messageId : null;
+      let running = null;
+      try {
+        const session = await api.get(base);
+        running = isObj(session) && Number.isInteger(session.direct_turn) && session.direct_turn > 0 ? session.direct_turn : null;
+      } catch (e) {
+        return false;
+      }
+      const turn = state.turn;
+      if (running === null) {
+        if (!turn.active || known === null || turn.messageId !== known) return false;
+        state.turn = idle();
+        changed();
+        return true;
+      }
+      if (turn.active && (turn.messageId === null || turn.messageId === running)) return false;
+      try {
+        const page = await api.get(base + "/messages", {after: running - 1, limit: 50});
+        const list = isObj(page) && Array.isArray(page.messages) ? page.messages : [];
+        if (list.some(m => isObj(m) && m.role === "agent" && m.turn === running)) return false;
+      } catch (e) { /* the list is not readable now: show the turn, the next reconcile ends it if it is over */ }
+      if (state.turn.active && (state.turn.messageId === null || state.turn.messageId === running)) return false;       // this page began it while we asked
+      state.mode = "direct";
+      state.turn = {active: true, stopping: false, text: "", messageId: running};
+      changed();
+      return true;
+    }
+
     function rejoin() {
       if (!state.turn.active || state.turn.text === "") return false;
       state.turn = Object.assign({}, state.turn, {text: ""});
@@ -355,9 +396,10 @@
       changed();
       try {
         const r = await api.post(base + "/direct/stop", {});
-        if (isObj(r) && r.stopped === false) {                     // nothing was running to stop: the reply is on its way or stored; reconcile ends the turn
-          state.turn.stopping = false;
+        if (isObj(r) && r.stopped === false) {                     // nothing was running to stop: the reply is on its way or stored (reconcile ends the turn), or the
+          state.turn.stopping = false;                             // server no longer runs this turn at all (resync ends it, so Stop is not a button that does nothing)
           changed();
+          await resync();
           return {ok: true, stopped: false};
         }
         return {ok: true, stopped: true};
@@ -392,7 +434,7 @@
       return true;
     }
 
-    return {state: () => state, setMode, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile};
+    return {state: () => state, setMode, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile, resync};
   }
 
   const ChatComposer = {create, bar, chips, streamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, tooLong, size, MAX_FILES, MAX_MESSAGE};
