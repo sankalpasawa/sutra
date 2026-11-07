@@ -285,7 +285,11 @@ def damage(settings: Settings) -> None:
             handle.write(b"\xff" * 200)
     conn = sqlite3.connect(settings.db_path, isolation_level=None)
     try:
-        assert conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok", "the test's damage did not damage the database"
+        try:
+            verdict = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        except sqlite3.DatabaseError:                     # some SQLite builds (macOS, Windows) fail the pragma itself on this damage: that is damage too
+            verdict = "malformed"
+        assert verdict != "ok", "the test's damage did not damage the database"
     finally:
         conn.close()
 
