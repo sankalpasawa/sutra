@@ -141,7 +141,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path == "/api/plan":       # the Workflows tab: the stages the Strategist chose and the replans (realization.json)
             d = j2.saved_dir(run) if run else RUN.dir
             return self._send(200, json.dumps(j2_map.plan_view(d if d and os.path.isdir(d) else None), ensure_ascii=False))
-        if u.path == "/api/library":    # the Library tab: every template, grouped by artifact and section (template-library/1)
+        if u.path == "/api/library":    # the Templates (this run) tab: every template, grouped by artifact and section (template-library/1)
             return self._send(200, json.dumps(j2_template_lib.library_view(), ensure_ascii=False))
         if u.path == "/api/catalog":    # the /library page: the committed library and the runs that gave it templates (library/ only)
             return self._send(200, json.dumps(j2_template_lib.catalog_view(), ensure_ascii=False))
