@@ -1,0 +1,18 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "40_self_goal",
+  "scope": "sutra/core",
+  "goals": [
+    "better_method_candidate"
+  ],
+  "budget": {
+    "compute": 8,
+    "money": 5,
+    "attention": 1
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ]
+}

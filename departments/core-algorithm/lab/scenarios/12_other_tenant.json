@@ -1,0 +1,14 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "12_other_tenant",
+  "evidence": [
+    {
+      "predicate": "customer_approved",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "orgB/doc",
+      "version": "orgB-v1",
+      "scope": "orgB/fulfillment"
+    }
+  ]
+}

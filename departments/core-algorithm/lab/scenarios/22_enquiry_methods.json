@@ -1,0 +1,47 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "22_enquiry_methods",
+  "methods": [
+    {
+      "id": "store-enquiry@1",
+      "effect": "record_stored",
+      "requires": [
+        "enquiry_valid"
+      ],
+      "provider": "local-provider",
+      "grant": "action:store-enquiry@1",
+      "cost": {
+        "compute": 2,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "readback-enquiry@1",
+      "effect": "record_retrievable",
+      "requires": [
+        "record_stored"
+      ],
+      "provider": "local-provider",
+      "grant": "action:readback-enquiry@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 5
+  },
+  "grants": [
+    "action:store-enquiry@1",
+    "action:readback-enquiry@1"
+  ]
+}

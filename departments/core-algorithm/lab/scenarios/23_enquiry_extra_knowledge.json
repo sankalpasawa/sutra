@@ -1,0 +1,33 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "23_enquiry_extra_knowledge",
+  "rules": [
+    {
+      "id": "R-ENQUIRY@2",
+      "head": "enquiry_complete",
+      "branches": [
+        [
+          "record_stored",
+          "record_retrievable",
+          "privacy_checked"
+        ],
+        [
+          "support_inbox_retrievable",
+          "privacy_checked"
+        ]
+      ],
+      "approved": true,
+      "source": "fixture/reviewed-domain-theory",
+      "replaces": "R-ENQUIRY@1"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "privacy_checked",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    }
+  ]
+}

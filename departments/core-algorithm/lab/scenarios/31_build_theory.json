@@ -1,0 +1,41 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "31_build_theory",
+  "evidence": [
+    {
+      "predicate": "capability_candidate_created",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "source_contract_reviewed",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "component_validate",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "component_store",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "component_read",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    }
+  ]
+}

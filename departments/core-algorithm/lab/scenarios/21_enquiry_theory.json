@@ -1,0 +1,51 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "21_enquiry_theory",
+  "rules": [
+    {
+      "id": "R-ENQUIRY@1",
+      "head": "enquiry_complete",
+      "branches": [
+        [
+          "record_stored",
+          "record_retrievable"
+        ],
+        [
+          "support_inbox_retrievable"
+        ]
+      ],
+      "approved": true,
+      "source": "fixture/reviewed-domain-theory"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "record_stored",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "record_retrievable",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "support_inbox_retrievable",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "enquiry_valid",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    }
+  ]
+}

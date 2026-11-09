@@ -1,0 +1,18 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "20_enquiry_goal",
+  "scope": "orgA/enquiries",
+  "goals": [
+    "enquiry_complete"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 2
+  },
+  "preference": [
+    "money",
+    "compute",
+    "attention"
+  ]
+}

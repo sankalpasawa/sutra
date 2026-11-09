@@ -1,0 +1,46 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "42_self_methods",
+  "methods": [
+    {
+      "id": "run-heldout-test@1",
+      "effect": "candidate_tested",
+      "requires": [
+        "benchmark_available"
+      ],
+      "provider": "local-provider",
+      "grant": "action:run-heldout-test@1",
+      "cost": {
+        "compute": 2,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "request-review@1",
+      "effect": "review_requested",
+      "requires": [
+        "candidate_tested"
+      ],
+      "provider": "local-provider",
+      "grant": "action:request-review@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 2
+  },
+  "grants": [
+    "action:run-heldout-test@1"
+  ]
+}

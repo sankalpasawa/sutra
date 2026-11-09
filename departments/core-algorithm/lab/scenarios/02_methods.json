@@ -1,0 +1,41 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "02_methods",
+  "methods": [
+    {
+      "id": "ship-original@1",
+      "effect": "original_delivered",
+      "requires": [
+        "original_stock"
+      ],
+      "provider": "local-provider",
+      "grant": "action:ship-original@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ship-replacement@1",
+      "effect": "replacement_delivered",
+      "requires": [
+        "substitute_stock",
+        "customer_approved"
+      ],
+      "provider": "local-provider",
+      "grant": "action:ship-replacement@1",
+      "cost": {
+        "compute": 2,
+        "money": 2,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ]
+}

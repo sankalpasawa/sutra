@@ -1,0 +1,7 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "43_self_review_grant",
+  "grants": [
+    "action:request-review@1"
+  ]
+}

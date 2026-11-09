@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+results/*
+!results/.gitkeep
+site/*
+!site/.gitkeep
+qa/independent_verification.json
+qa/browser_qa.json
+qa/*.png

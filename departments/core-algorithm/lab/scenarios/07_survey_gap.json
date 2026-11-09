@@ -1,0 +1,32 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "07_survey_gap",
+  "rules": [
+    {
+      "id": "R-ORDER@3",
+      "head": "order_complete",
+      "branches": [
+        [
+          "original_delivered"
+        ],
+        [
+          "replacement_delivered",
+          "customer_notified",
+          "survey_recorded"
+        ]
+      ],
+      "approved": true,
+      "source": "fixture/reviewed-domain-theory",
+      "replaces": "R-ORDER@2"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "survey_recorded",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    }
+  ]
+}

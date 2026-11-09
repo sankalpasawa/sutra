@@ -1,0 +1,11 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "04_admission",
+  "providers": {
+    "local-provider": 5
+  },
+  "grants": [
+    "action:ship-original@1",
+    "action:ship-replacement@1"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "30_build_goal",
+  "scope": "orgA/enquiries",
+  "goals": [
+    "capability_candidate_created"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 2
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ]
+}

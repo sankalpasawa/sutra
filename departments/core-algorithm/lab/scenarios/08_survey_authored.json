@@ -1,0 +1,26 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "08_survey_authored",
+  "methods": [
+    {
+      "id": "record-survey@1",
+      "effect": "survey_recorded",
+      "requires": [
+        "replacement_delivered"
+      ],
+      "provider": "local-provider",
+      "grant": "action:record-survey@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "grants": [
+    "action:record-survey@1"
+  ]
+}
