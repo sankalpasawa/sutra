@@ -1847,7 +1847,7 @@ function askParts(s, m, live){      // {say, qs}: a single question isn't number
 }
 // ---- the parts: one per section of the output (a fix rewrites its part, so it is the same line, marked "fixing")
 const sDocKind = n => (String(n || "").match(/^(PRD|HLD|LLD)\b/) || [])[1];
-const sPartLabel = w => plain(String((w && w.name) || "").replace(/_/g, " ")).replace(/^(?:PRD|HLD|LLD)\s+/, "").replace(/\s+section(?:\s+revision(?:\s+\d+)?)?$/i, "")
+const sPartLabel = w => plain(String((w && w.name) || "").replace(/_/g, " ").replace(/\bbuilders?\b/gi, "maker")).replace(/^(?:PRD|HLD|LLD)\s+/, "").replace(/\s+section(?:\s+revision(?:\s+\d+)?)?$/i, "")
   .replace(/\s+revision(?:\s+\d+)?$/i, "").replace(/^(?:Build|Write|Make)\s+(?=\S)/i, "").replace(/^./, c => c.toUpperCase()) || "A part";
 function sBase(s, w){ const ws = s.workflows || []; return ws.find(x => x.id === w.section && !x.revises) || ws.find(x => x.section === w.section && !x.revises) || w; }
 function sDocOf(s, w){      // which output a part belongs to: the run's record of each document's workflows (/api/docs), else the name, else the stage under way
@@ -1914,6 +1914,7 @@ function sPhase(s, open){      // one plain sentence for where the run is; no na
 const SCHIPS = ["A website for my bakery", "A product spec for a food delivery app", "A 4-week launch plan for my cafe"];      // a website, a document and a plan
 const sChipLabel = t => { t = String(t).split(/[:.]/)[0].trim(); return t.length > 48 ? t.slice(0, t.lastIndexOf(" ", 46)) + "…" : t; };      // a short label; the chip fills in the whole example
 const sParts = s => { const M = sModel(s); return {n: M.done, m: M.total}; };      // the parts, as the plan and the top bar count them
+const sFilesHTML = s => plainDocLinks(s);      // every design document's files, in plain words (the finish bar's All files)
 function sFinish(s){
   const q = runQ().replace("&", "?");
   const many = (s.docset || []).length > 1;      // design documents: the website (if any) and every document's files, in one list
@@ -2482,7 +2483,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && SV.drawer)
 $("sfinish").addEventListener("click", async e => { const b = e.target.closest("button"); if (!b) return;
   if (b.id === "sretry"){ await fetch("/api/reset", {method:"POST"}); location.reload(); return; }
   if (b.dataset.full !== undefined) return setView("detail", true);
-  if (b.dataset.files !== undefined) return sDrawer(`<h4>Your files</h4><div class="sdocs" style="flex-direction:column;align-items:flex-start">${plainDocLinks(state).replace(/<a /g, '<a class="sfile" ')}</div>`, "files");
+  if (b.dataset.files !== undefined) return sDrawer(`<h4>Your files</h4><div class="sdocs" style="flex-direction:column;align-items:flex-start">${sFilesHTML(state)}</div>`, "files");
   if (b.dataset.share !== undefined){ const url = `${location.origin}/site/latest${runQ().replace("&", "?")}`;
     try { await navigator.clipboard.writeText(url); b.textContent = "Link copied"; } catch (err) { b.textContent = url; } setTimeout(() => { b.textContent = "Copy share link"; }, 2500); } });
 $("shome").onclick = async () => {

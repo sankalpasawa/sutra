@@ -127,9 +127,11 @@ Sends (a test email or Slack message asked for in the brief, and milestone email
 is not built yet. They go only to `J2_TEST_EMAIL` or `J2_TEST_SLACK_TARGET`, never to an address in the brief. With
 the variable unset, nothing is sent. Asking in the brief ("email me updates") also turns milestone emails on.
 
-The page opens in the Simple view. "See how it works" opens the Detailed view, which starts on the Map. The rail
-on the left switches between Map, Chat (the Simple view) and Internals (the other tabs, including Board when the
-board is on). On a phone the rail runs along the bottom.
+The page opens in the Simple view (the studio): your work in the middle, your team and the plan on the left, Asha (your
+Client Lead) on the right. Turn on **Decide for me** (start page or top bar) if you'd rather the team answers its own questions;
+a real email is still never sent without you. "Detailed view" opens everything behind the scenes, starting on the Map. The
+rail on the left switches between Map, Chat (the Simple view) and Internals (the other tabs, including Board when the board is
+on). On a phone the rail runs along the bottom. Light by default; the moon button switches to dark.
 
 ## Settings
 

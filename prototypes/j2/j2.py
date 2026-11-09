@@ -2788,7 +2788,7 @@ def saved_snapshot(name, since=0):
             "has_templates": os.path.isfile(os.path.join(d, "templates.json")),
             "report": _read(d, "report.json"), "outcome": s.get("outcome"),
             "decide_for_me": bool((_read(d, "settings.json", {}) or {}).get("decide_for_me")),
-            "auto_answers": [{"msg": m["id"], "answer": m["text"], "label": m.get("auto_label")} for m in chat if m.get("auto")],
+            "auto_answers": [{"msg": m["id"], "answer": m["text"], "label": m.get("auto_label")} for m in chat if m.get("who") == "user" and m.get("auto")],
             "sections": [{"id": k, "owner": x["owner"], "workflow": x.get("workflow"),
                           "bytes": len((x["head"] + x["body"]).encode("utf-8"))} for k, x in sections.items()],
             "write_lock": None, "agents": {w["id"]: w.get("agent") or f"{w['id']} Builder" for w in wfs},
@@ -3517,6 +3517,8 @@ class J2Run:
 
     def _run_safe(self, auto_only=False):
         with self.lock:
+            if self.auto:      # a saved run reads Decide for me back from here
+                self.save("settings.json", {"decide_for_me": True})
             try:
                 if not auto_only:
                     self._run()
