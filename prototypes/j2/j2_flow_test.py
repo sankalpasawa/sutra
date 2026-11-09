@@ -1202,7 +1202,8 @@ def simple_redesign():
                  " r.say = __say.slice(); const sw = r.work ? S('sauto') : S('sautoland'); sw.click(); r.set = __set.slice(); r.sw = sw.getAttribute('aria-checked');"
                  " const f = S('sframe'), d = f.contentDocument; r.src = f.getAttribute('src') || '';"
                  " const L = d && d.querySelector('j2-layer'); r.ticks = L ? L.shadowRoot.querySelectorAll('.tick').length : 0;"
-                 " if (L && r.ticks){ L.shadowRoot.querySelector('.tick').click(); r.drawer = S('sdrawer').classList.contains('open') && /Goal/.test(S('sdbody').textContent) && /Method/.test(S('sdbody').textContent) && /Check/.test(S('sdbody').textContent); sDrawer('');"
+                 " if (L && r.ticks){ L.shadowRoot.querySelector('.tick').click(); await new Promise(ok => setTimeout(ok, 1500));"      # the record comes from /api/record
+                 "   r.drawer = S('sdrawer').classList.contains('open') && /Goal/.test(S('sdbody').textContent) && /Method/.test(S('sdbody').textContent) && /Check/.test(S('sdbody').textContent); sDrawer('');"
                  "   const el = [...sSections(d).values()][1][0]; el.dispatchEvent(new MouseEvent('mousemove', {bubbles: true})); const chg = L.shadowRoot.querySelector('.chg'); r.chg = !!chg; if (chg){ chg.click(); r.prefill = S('sbox').value; } }"
                  " if (r.work && innerWidth > 1180){ S('steam').click(); r.card = S('steamcard').open; S('steamfull').click(); r.full = [S('steamcard').open, document.body.classList.contains('simple')]; }"
                  " if (r.land){ const b = S('slandteam'); r.crew = [b.tagName, b.getAttribute('aria-label') || '', b.querySelectorAll('.av').length];"
@@ -1211,7 +1212,7 @@ def simple_redesign():
                  "   const dr = dl.getBoundingClientRect(); at(dr.left + 4, dr.top + 4); r.crewpad = dl.open; at(2, 2); r.crewout = dl.open;"
                  "   b.click(); dl.querySelector('[data-close]').click(); r.crewclose = dl.open; b.click(); S('steamfull').click(); r.crewfull = [dl.open, document.body.classList.contains('simple')]; }"
                  " r.err2 = __e.slice();")
-        page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { const r = {}; try { " + probe
+        page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(async () => { const r = {}; try { " + probe
                                                                 + " } catch (e) { r.error = String(e.stack || e); } (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); }, 6000)</script></body>")
         tmp = tempfile.mkdtemp(prefix="j2-simple-")
         open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
