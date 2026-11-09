@@ -2702,6 +2702,38 @@ def readable_decision():
     assert len(re_ask) == 4 and all(ln.startswith("   Option ") for ln in re_ask[1:]), re_ask
 
 
+def decision_negation():
+    """runs/j2-20261103-184249: "Add the credits and keep working. Don't leave anything out and don't finish as it
+    is." read as finish. parse_decision now reads negation: a negated option never selects that option; one option
+    affirmed with the others negated picks the affirmed one; all negated, or unclear, is None (asked again); a bare
+    number still picks that option."""
+    q = {"options": ["Add 40 work credits and keep going: you get more of what you asked for built. Or type your own "
+                     "number, up to 200", "Leave out item 2 Opening hours are listed: you get the site without it.",
+                     "Finish as it is: you get the site as it is now, with 2 things still not right"]}
+    choices, crit = ["continue", "drop", "ship"], ["The menu with prices is shown", "Opening hours are listed",
+                                                   "The address and a map link are shown"]
+    P = lambda a: j2.parse_decision(a, q, choices, crit)
+    assert P("Add the credits and keep working. Don't leave anything out and don't finish as it is.")["decision"] \
+        == "continue"
+    assert P("2") == {"decision": "drop", "add": None, "drop_items": []}
+    assert P("finish as it is")["decision"] == "ship"
+    assert P("don't add more, finish") == {"decision": "ship", "add": None, "drop_items": []}
+    assert P("Don't finish as it is and don't leave anything out")["decision"] is None, "all negated: asked again"
+    assert P("hmm, not sure")["decision"] is None and P("")["decision"] is None, "unclear: asked again"
+    assert P("not 2, and not finish")["decision"] is None, "a number in a negated clause is not a pick"
+    assert P("don't leave out the opening hours; finish") == {"decision": "ship", "add": None, "drop_items": []}
+    assert P("2. Add 25 more. Leave out the opening hours") == {"decision": "continue", "add": 25, "drop_items": [2]}
+    assert P("don't add 25 more; leave out the opening hours") == {"decision": "drop", "add": None, "drop_items": [2]}
+    assert P("no more credits, finish as it is")["decision"] == "ship"
+    assert j2.parse_decision("don't stop, keep going", q, ["continue", "stop"], crit)["decision"] == "continue"
+    assert j2.parse_decision("stop", {"options": ["Keep going", "Stop the whole run here"]}, ["continue", "stop"],
+                             crit)["decision"] == "stop"
+    assert j2.affirmed("Add the credits and keep working. Don't leave anything out and don't finish as it is.") == \
+        ("Add the credits and keep working.and.", {"drop", "ship"})
+    print("decision negation: a negated option never selects it, one affirmed with the rest negated picks the "
+          "affirmed one, all negated or unclear asks again, a bare number still picks ok")
+
+
 PRD_BRIEF = ("Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. Users: "
              "patients at small clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on "
              "average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS "
@@ -3597,7 +3629,7 @@ def atom_cards_render():
         card = card[card.index(f'data-key="atom-{a["id"]}"'):]
         card = card[:card.index("Run details")]
         blocks = re.findall(r'data-block="([a-z_]+)"', card)
-        assert blocks == ["goal", "how", "constraints", "context", "expected_output", "verification", "human_output",
+        assert blocks == ["goal", "how", "constraints", "context", "expected_output", "template_line", "verification", "human_output",
                           "agent_output", "result"], blocks
         assert all(f"<b>{x}</b>" in card for x in ("Notes", "Workflow output", "Result")) and "<b>Human output</b>" not in card
         assert re.findall(r'<h4 class="agroup">([^<]*)<', card) == ["1. Particles", "2. Defined output and verification",
@@ -5411,9 +5443,11 @@ def artifact_schemas():
     import subprocess
     import j2_artifact_models as AM
     # (e) the drift test: the templates are the code's own sections, in code order, with the conditions they come from
-    for kind, want in (("prd", j2.PRD_SECTIONS), ("hld", j2.HLD_SECTIONS), ("lld", j2.LLD_SECTIONS)):
+    for kind, want in (("prd", j2.PRD_SECTIONS), ("hld", j2.HLD_SECTIONS), ("lld", j2.lld_sections(True))):
         assert list(AM.SECTION_MODELS[kind]) == list(want), (kind, list(AM.SECTION_MODELS[kind]))
+        os.environ["J2_BACKEND"] = "1"      # the LLD's API endpoints and Data model templates name L7 and L8
         conds = {c["id"] for c in j2.load_conditions(kind + ".json")}
+        os.environ.pop("J2_BACKEND", None)
         for sec in want:
             named = AM.SECTION_CONDITIONS[kind][sec]
             assert named and set(named) <= conds, (kind, sec, named)
@@ -5427,6 +5461,9 @@ def artifact_schemas():
     assert list(AM.HLD.model_fields)[:6] == ["purpose", "pages", "components", "data_flows", "hosting", "risks"]
     assert list(AM.LLD.model_fields)[:6] == ["sections", "elements", "form_fields", "files", "responsive_rules",
                                              "accessibility_rules"]
+    assert list(AM.LLD.model_fields)[-2:] == ["endpoints", "tables"]      # J2_BACKEND=1
+    assert list(AM.SECTION_MODELS["lld"])[3:5] == ["API endpoints", "Data model"] and \
+        list(j2.LLD_SECTIONS) == [s for s in AM.SECTION_MODELS["lld"] if s not in ("API endpoints", "Data model")]
     assert list(AM.WebsiteSection.model_fields)[:3] == ["id", "anchor", "implements"]
     # (f) every transport schema: draft-07, closed objects, nothing the transport forbids, and the CLI accepts it
     chrome_free = ["minLength", "maxLength", "minItems", "maxItems", "pattern", "format", "$defs", "2020-12"]
@@ -5533,7 +5570,8 @@ def artifact_schemas():
         wf = next(w for w in snap["workflows"] if (w.get("atoms") or [{}])[0].get("id") in built)
         card = render_node(snap, docs={"docs": {}})["cards"][wf["id"]]
         order = re.findall(r'data-block="(\w+)"', card)
-        assert order.index("artifact_template") == order.index("expected_output") + 1, order
+        assert order.index("template_line") == order.index("expected_output") + 1, order      # the atom's Template line, then the artifact template
+        assert order.index("artifact_template") == order.index("template_line") + 1, order
         assert order.index("artifact_template") + 1 == order.index("verification"), order
         blk = card.split('data-block="artifact_template"')[1].split('data-block="verification"')[0]
         assert re.findall(r'data-artrow="(\w+)"', blk) == ["template", "schema", "rules", "rendered"], blk[:200]
@@ -5590,11 +5628,11 @@ def artifact_schema_failures():
     # (g) no usable structured output: both cases are failed attempts, with the subtype as the evidence
     import llm
     class FakeRun:
-        def __init__(self, payload):
-            self.payload, self.returncode, self.stderr = payload, 0, ""
+        def __init__(self, payload, returncode=0, stderr="", stdout=None):
+            self.payload, self.returncode, self.stderr, self._stdout = payload, returncode, stderr, stdout
         @property
         def stdout(self):
-            return json.dumps(self.payload)
+            return json.dumps(self.payload) if self._stdout is None else self._stdout
     for payload, want in (({"subtype": "error_max_structured_output_retries", "result": "", "is_error": True},
                            "error_max_structured_output_retries"),
                           ({"subtype": "success", "result": "{}", "is_error": False}, "no structured_output")):
@@ -5610,6 +5648,37 @@ def artifact_schema_failures():
             llm.subprocess.run = keep
         assert raised and want in raised, (want, raised)
         assert (llm.LAST_META.get("structured") or {}).get("subtype") == payload["subtype"], llm.LAST_META
+    # (h) the CLI refused the schema itself and never called the model (runs/j2-20261103-184249, W-24 to W-35: exit 1,
+    # nothing on stdout, the reason on stderr): the failure names the exit code, the empty stdout and the stderr
+    # text, never a bare "subtype None"
+    err = "Error: --json-schema is not a valid JSON Schema: can't resolve reference #/definitions/Palette from id #"
+    keep = llm.subprocess.run
+    llm.subprocess.run = lambda *a, **k: FakeRun({}, returncode=1, stderr=err + "\n", stdout="")
+    try:
+        raised = None
+        try:
+            llm._run_claude_cli(["claude"], None, "hi", {}, lambda e: None, {"type": "object"})
+        except RuntimeError as e:
+            raised = str(e)
+    finally:
+        llm.subprocess.run = keep
+    assert raised and "exit 1" in raised and "no stdout" in raised and "#/definitions/Palette" in raised \
+        and "subtype None" not in raised, raised
+    st = llm.LAST_META.get("structured") or {}
+    assert st.get("exit") == 1 and st.get("present") is False and "#/definitions/Palette" in st.get("stderr", ""), st
+    # and the cause: Design's transport schema keeps its definitions, which the first page builder's reply schema
+    # used to carry inside its "design" property; now every extra field is written with its definitions in place,
+    # so every $ref in the reply schema resolves at the root, with the model's section or a library's in its place
+    web = AM.model_for("website", "Section")
+    design = {k: v for k, v in AM.transport_schema(AM.Design).items() if k != "$schema"}
+    assert set(design["definitions"]) >= {"Palette", "Fonts"} and '"$ref"' in json.dumps(design), design.keys()
+    first = AM.reply_schema(web, {"design": design})
+    for sch in (first, j2.J2Run._with_section(first, AM.transport_schema(web)), AM.reply_schema(web, {})):
+        refs = set(re.findall(r'"#/definitions/(\w+)"', json.dumps(sch)))
+        assert refs <= set(sch.get("definitions") or {}), (refs, sorted(sch.get("definitions") or {}))
+        assert not any("definitions" in v for v in sch["properties"].values() if isinstance(v, dict)), sch["properties"].keys()
+    assert first["properties"]["design"]["properties"]["palette"]["type"] == "object", "Palette written in place"
+    assert set(first["properties"]["design"]["properties"]["palette"]["required"]) >= {"primary", "text"}
     # and in a run: the builder's first call brings nothing usable, the next one does
     state = {"done": False}
 
@@ -5629,7 +5698,8 @@ def artifact_schema_failures():
     print("artifact schema failures: a missing field fails the shape layer and the retry carries Pydantic's words; a "
           "component covering R9 fails the rules layer with that evidence and the retry fixes it (and a gap that "
           "stays goes to Adaptation); a reply with subtype error_max_structured_output_retries, and one with success "
-          "but no structured_output, are failed attempts with the subtype as the evidence ok")
+          "but no structured_output, are failed attempts with the subtype as the evidence; a refused --json-schema is reported "
+          "with its exit code and stderr, and the first page builder's reply schema has every $ref resolvable ok")
 
 
 def bad_ids_mock(target="W-9", skip=2, attempts=(1,)):
@@ -5678,11 +5748,13 @@ def rules_split():
             for path in paths:
                 head = path.split(".")[0].replace("[]", "")
                 assert head in model.model_fields, (kind, section, path, sorted(model.model_fields))
-            if spec.get("target"):      # "this.<path>" or "<doc>.<path>", and the field must exist there
-                where, _, tpath = spec["target"].partition(".")
-                assert where in ("this", "prd", "hld", "lld"), spec["target"]
+            targets = spec["target"] if isinstance(spec.get("target"), list) else [spec["target"]] if spec.get("target") else []
+            for target in targets:      # "this.<path>" or "<doc>.<path>", and the field must exist there
+                where, _, tpath = target.partition(".")
+                assert where in ("this", "prd", "hld", "lld"), target
                 target_model = AM.DOC_MODELS[kind if where == "this" else where]
-                assert tpath.split(".")[0].replace("[]", "") in target_model.model_fields, (spec["target"], kind)
+                assert tpath.split(".")[0].replace("[]", "") in target_model.model_fields, (target, kind)
+            assert len(targets) <= 1 or spec["rule"] == "ref_exists", spec
             for key in ("prefix", "values", "prefix"):
                 if spec["rule"] in ("ids_sequential",) and key == "prefix":
                     assert spec.get("prefix"), spec
@@ -5860,7 +5932,7 @@ def docs_views():
         card = out["cards"][w["id"]]
         a = w["atoms"][0]
         card = card[card.index(f'data-key="atom-{a["id"]}"'):].split("Run details")[0]
-        assert re.findall(r'data-block="([a-z_]+)"', card) == ["goal", "how", "constraints", "context", "expected_output",
+        assert re.findall(r'data-block="([a-z_]+)"', card) == ["goal", "how", "constraints", "context", "expected_output", "template_line",
                                                               "verification", "human_output", "agent_output", "result"], w["id"]
         pre = card.split('data-block="result"')[1]
         assert 'data-preview="frame"' in pre and "sandbox" in pre and "srcdoc=" in pre, pre[:200]
@@ -6560,6 +6632,8 @@ def artifact_types():
         for k in j2.DOC_SET:
             t, o = by[k], j2.OUTPUTS[k]
             chk(t["workflow"]["sections"] == list(o["sections"]), f"{k} sections")
+            if k == "lld":      # J2_BACKEND=1: the seven sections (j2.lld_sections(True))
+                chk(t["workflow"].get("backend_sections") == list(j2.lld_sections(True)), "lld backend sections")
             chk(t["file"] == o["file"] and t["export"] == "docx" and bool(o["export"]) and t["form"] == "doc", f"{k} file")
             chk(t["conditions"] == o["conditions"] and os.path.isfile(os.path.join(j2.CONDITIONS_DIR, t["conditions"])), f"{k} conditions")
             chk(getattr(j2, t["workflow"]["builder"].split(":", 1)[1], None) is o["builder"], f"{k} builder")
@@ -6586,6 +6660,7 @@ def artifact_types():
     assert problems(T) == [], problems(T)
     # drift on either side is caught
     for path, val in (("types.0.workflow.sections", ["Problem"]), ("types.1.color", "--x"), ("types.2.triggers", ["\\bLLD\\b"]),
+                      ("types.2.workflow.backend_sections", ["Data model"]),
                       ("types.3.cost.parts", {"form": 9}), ("types.0.file", "p.md"), ("types.1.tag", "H"), ("types.3.file", "x.html"),
                       ("types.2.conditions", "none.json"), ("groups.design-docs.members", ["prd"])):
         bent, node, keys = copy.deepcopy(T), None, path.split(".")
@@ -10000,7 +10075,7 @@ def map_tab():
     assert top.count("<svg") == 11, "an icon for every rail item"
     dvh = ui[ui.index('<div id="dview">'):ui.index('<dialog id="detail">')]
     panes = re.findall(r'<div class="pane[^"]*" id="pane-(\w+)"( hidden)?', dvh)
-    assert [n for n, h in panes if not h] == ["map"] and {n for n, _ in panes} == set(old_tabs) | {"map", "style"}, "the home shows only the Map pane; every old pane still exists"
+    assert [n for n, h in panes if not h] == ["map"] and {n for n, _ in panes} == set(old_tabs) | {"map", "style", "catalog"}, "the home shows only the Map pane; every old pane still exists (catalog: the shared template library, /library)"
     assert dvh.index('id="needs"') < dvh.index('<section class="work">') < dvh.index('<section class="chat" id="chatp"'), "Needs you, then the Map, then the Chat"
     assert "@media (max-width:900px){#dview .dcol{overflow:auto}#dview main{grid-template-columns:minmax(0,1fr)" in ui and "@media (max-width:600px){.mapsvgwrap{display:none}.mapcards{display:block}}" in ui, "stacked below 900px; map cards at 600px"
     # Needs you: every open question, a plain line each, a button into the Chat; nothing waiting says so
@@ -10798,6 +10873,34 @@ def template_library(demo=False):
                     assert d["rule"] in ("0", "e") and (d["rule"] == "e" or (empty(d) and d["reason"] == L.NOTHING_TO_SPECIALISE)), d
                 assert set(d) >= {"workflow", "atom", "artifact", "section", "action", "template", "version", "score",
                                   "reason"}, d
+        # (b2) every generator call is logged to template_calls.jsonl beside calls.jsonl: the workflow, the time, the
+        # meta schema's sha and the raw reply, one line per call, only for the workflows the router asked about
+        tcalls = list(j2._jsonl(r1.dir, "template_calls.jsonl"))
+        asked = {d["workflow"] for d in d1 if d["artifact"] != "design" and not empty(d)}
+        assert tcalls and {c["workflow"] for c in tcalls} == asked, ({c["workflow"] for c in tcalls}, asked)
+        for c in tcalls:
+            assert c["schema_sha"] == L.sha_of(L.meta_schema()) and c["model"] is None and c["seconds"] >= 0, c
+            assert json.loads(c["raw"])["action"] in ("reuse", "extend", "create") and c["t"] and c["prompt"], c
+        assert not any(c.get("fn") == "template generator" for c in calls_file(r1)), "the builders' call log is as it was"
+        # (b3) a router that crashes never blocks a run: every needy decision is the generic template with the error
+        # as its reason, the builders fill the generic one and the run still ends Done
+        keep_route = L.route
+
+        def boom(need, ctx, ask=None):
+            raise RuntimeError("planted router crash")
+        L.route = boom
+        try:
+            crashed = lib_run(BOUTIQUE_BRIEF)
+        finally:
+            L.route = keep_route
+        assert crashed.outcome.startswith("Done"), crashed.outcome
+        dc = [d for d in tpl_decisions(crashed) if d["artifact"] != "design"]
+        assert dc and all(d["action"] == "generic" and d["rule"] == "e" and d["kind"] == "generic"
+                          and d["reason"] == "the router could not run (RuntimeError: planted router crash)"
+                          for d in dc), [(d["workflow"], d["action"], d["reason"]) for d in dc][:3]
+        assert all(m["text"].startswith(f"{d['workflow']} template: generic ") for d in dc
+                   for m in crashed.chat if m["who"] == "system" and m["text"].startswith(f"{d['workflow']} template:"))
+        assert not [x for x in art_recs(crashed) if not x["pass"]], "the generic templates still pass every layer"
         # (c) extend: the same need plus a fact naming one more field makes v2; v1 is unchanged and still compiles
         need0 = L.make_need("prd", "Requirements", rs.context.business_type, rs.context.facts_used, "Still Point Yoga")
         assert need0["fingerprint"] == rs.context.fingerprint
@@ -10823,6 +10926,36 @@ def template_library(demo=False):
         assert L.transport(v1) == json.load(open(os.path.join(v1_dir, "schema.json"), encoding="utf-8")), "v1 compiles"
         again, rec2 = L.route(need, {"run": "extend-test-2", "workflow": "W-4", "atom": "W-4.a1"})
         assert rec2["action"] == "reused" and again.version == 2, rec2
+        # (c2) the extend threshold: an "extend" the generator sends for a candidate covering under 0.5 is overruled
+        # to a create, with that coverage as the record's score, in its reason and in the chat line; at 0.5 and above
+        # it stays an extend with the same number
+        keep_cands, gen_req = L.candidates, L.generic("prd", "Requirements")
+        made = []
+        for sc, want in ((0.08, "created"), (0.5, "extended"), (0.8, "extended")):
+            L.candidates = lambda n, sc=sc: [{**c, "score": sc, "fingerprint_match": False}
+                                             for c in keep_cands(n) if c["name"] == rs.name][:1]
+            try:
+                cands = L.candidates(need)
+                ref = f"{cands[0]['name']}@{cands[0]['version']}"
+                ext = L.mock_generator(need, gen_req, cands, "extend")
+                assert ext["action"] == "extend" and ext["template"] == ref, ext
+                tX, rX = L.route(need, {"run": "threshold-test", "workflow": "W-4", "atom": "W-4.a1"},
+                                 ask=lambda system, user, mock, schema: json.dumps(ext))
+            finally:
+                L.candidates = keep_cands
+            assert rX["action"] == want and rX["score"] == sc, (sc, rX["action"], rX["score"], rX["reason"])
+            line = j2.template_line("W-4", rX)
+            if want == "created":
+                assert rX["reason"].startswith(f"overruled: coverage {sc} < 0.5") and rX["overruled"] is True \
+                    and rX["rule"] == "d", rX
+                assert tX.name != rs.name and tX.version == 1 and tX.name.startswith(rs.name), tX.name
+                assert line == f"W-4 template: created {tX.name} v1 ({rX['reason']})", line
+                made.append(tX)
+            else:
+                assert "overruled" not in rX and "overruled" not in rX["reason"] and rX["rule"] == "c", rX
+                assert tX.name == rs.name and line.startswith(f"W-4 template: extended {rs.name} v") \
+                    and f"covers {len(need['facts'])} of {len(need['facts'])} facts" in line, line
+        assert len(made) == 1 and L.get(f"{made[0].name}@1", "prd", "Requirements") is not None, "the create is stored"
         # fix 1: the fingerprint includes the sorted needed field names
         fa = L.fingerprint("website", "Section", "boutique", ["f1"], ["form_fields", "elements"])
         assert fa == L.fingerprint("website", "Section", "boutique", ["f1"], ["elements", "form_fields"]), "sorted"
@@ -10958,7 +11091,7 @@ def template_library(demo=False):
         ex = L.run_example(r3.dir, tv["template"], L.slug(rs.name))
         assert ex and ex["workflow"] == req["workflow"] and "requirements" in ex["data"], ex
         ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
-        for s_ in ('data-tab="library"', 'id="pane-library"', 'data-tplmode="template"', 'data-tplmode="readable"',
+        for s_ in ('data-tab="library"', 'id="pane-library"', 'data-tplmode="${k}"', 'TPLTABS = ARTTABS',
                    'data-tplcopy=', 'data-link="tplview"', "/api/run-templates", '$("tab-library").hidden = !s.has_templates;'):
             assert s_ in ui, s_
         if BROWSER and j2.j2_check.find_chrome():
@@ -10976,7 +11109,7 @@ def template_library(demo=False):
           f"Thread & Loom created {len(made1)} templates, run 2 reused all of them (rule a, no new version, used_by both "
           f"runs); Still Point Yoga created its own ({req['template']} with classes day/time/price) and reused no "
           f"boutique template; the fingerprint holds the needed fields, rule (a) reuses only a template with every needed field, a "
-          f"need with no facts and no fields is generic; an extra field extends to v2 with v1 unchanged; six bad specs refused and never stored; "
+          f"need with no facts and no fields is generic; every generator call is logged to template_calls.jsonl and a crashing router leaves every decision generic with the error as its reason; an extra field extends to v2 with v1 unchanged; an extend of a candidate under 0.5 is overruled to a create with that coverage as its score, reason and chat line, and 0.5 and 0.8 stay extends; six bad specs refused and never stored; "
           f"an invalid generator falls back to generic twice and the run ends Done; {n} model.py files match their "
           "runtime classes; every builder's schema sha is its template's schema.json; the committed library/ is "
           "unchanged; every flagged run keeps its own copy of each template it used (created, extended, reused and generic, once "
@@ -10984,9 +11117,9 @@ def template_library(demo=False):
 
 
 def library_page(run, lib):
-    """--browser: the Library tab on a saved run, in headless Chrome: the routing table, a template opened in both
-    modes (Readable with enum chips and rule sentences; As template with four files, Copy buttons and shas), and the
-    atom card's template line."""
+    """--browser: the Templates (this run) tab on a saved run, in headless Chrome: the routing table, a template opened on its three
+    tabs (Summary with the rules; Human-readable with enum chips and this run's example; Agent-readable with four files, Copy buttons
+    and shas), and the atom card's template line."""
     import html as htmllib
     import shutil
     import socket
@@ -10999,9 +11132,10 @@ def library_page(run, lib):
              " r.tab = !document.getElementById('tab-library').hidden; document.getElementById('tab-library').click(); await wait(1500);"
              " r.rows = q('[data-tplrow]').length; r.reasons = q('[data-tplrow] td:last-child').map(x => x.textContent).slice(0, 3); r.sources = q('[data-tplsource]').map(x => x.dataset.tplsource);"
              " q('[data-tpltable] [data-tplopen]')[0].click(); await wait(1500);"
-             " r.head = (document.querySelector('#tplviewer h3') || {}).textContent || ''; r.readable = !!document.querySelector('[data-tplreadable]'); r.chips = q('#tplviewer .mappill').length; r.rules = q('#tplviewer li').length;"
+             " r.head = (document.querySelector('#tplviewer h3') || {}).textContent || ''; r.tabs = q('#tplviewer [data-tplmode]').map(x => x.dataset.tplmode); r.rules = q('#tplviewer .ackl li').length;"
+             " document.querySelector('[data-tplmode=human]').click(); await wait(300); r.readable = !!document.querySelector('[data-tplreadable]'); r.chips = q('#tplviewer .mappill').length;"
              " r.example = (document.querySelector('#tplviewer pre') || {}).textContent || '';"
-             " document.querySelector('[data-tplmode=template]').click(); await wait(300);"
+             " document.querySelector('[data-tplmode=agent]').click(); await wait(300);"
              " r.files = q('[data-tplfile]').map(x => x.dataset.tplfile); r.copies = q('[data-tplcopy]').length; r.shas = q('[data-tplfile] .empty').map(x => x.textContent);"
              " r.groups = q('[data-libart]').map(x => x.dataset.libart); r.card = typeof renderWorkflows === 'function' && renderWorkflows(state).includes('data-link=\"tplview\"');"
              " r.sw = [document.documentElement.scrollWidth, innerWidth];"
@@ -11029,13 +11163,957 @@ def library_page(run, lib):
     r = json.loads(htmllib.unescape(hit.group(1)))
     assert r["tab"] and r["rows"] >= 5 and all(r["reasons"]), r
     assert len(r["sources"]) == r["rows"] and all(x == "from this run" for x in r["sources"]) and "from this run" in r["head"], (r["sources"], r["head"])
-    assert r["readable"] and r["chips"] >= 1 and r["rules"] >= 1 and '"html"' in r["example"], r
-    assert r["files"] == ["spec.json", "model.py", "schema.json", "meta.json"] and r["copies"] == 4 and all(s.startswith("sha ") for s in r["shas"]), r
+    assert r["tabs"] == ["sum", "agent", "human"] and r["rules"] >= 1, r
+    assert r["readable"] and r["chips"] >= 1 and '"html"' in r["example"], r
+    assert r["files"] == ["spec.json", "schema.json", "model.py", "meta.json"] and r["copies"] == 4 and all(s.startswith("sha ") for s in r["shas"]), r
     assert set(r["groups"]) == {"prd", "hld", "lld", "design", "website"} and r["card"], r
     assert r["sw"][0] <= r["sw"][1], ("no horizontal scroll", r["sw"])
-    print(f"template library page: Library tab shown for a run with decisions, {r['rows']} routing rows with reasons, a template opened Readable "
-          f"({r['chips']} enum chips, {r['rules']} rules, an example from the run) and As template (4 files, Copy and sha each), every row and the viewer say "
+    print(f"template library page: Templates (this run) tab shown for a run with decisions, {r['rows']} routing rows with reasons, a template opened on its "
+          f"three tabs: Summary ({r['rules']} rules), Human-readable ({r['chips']} enum chips, an example from the run), Agent-readable (4 files, Copy and sha each); every row and the viewer say "
           "\"from this run\", the atom card links it ok")
+
+
+# ---- J2_BACKEND=1 (backend-checks/1, j2_backend.py): the checks on a generated server.py, each on a good file and
+# on bad ones. The good server is the fixture below (what the backend builder is expected to write for the Still
+# Point Yoga test brief, docs/backend-design.md section 10); the bad ones are one-line edits of it.
+GOOD_SERVER = '''import argparse
+import json
+import os
+import sqlite3
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIELDS = ("name", "email", "class", "preferred_date")
+COLUMNS = ("id",) + FIELDS + ("created_at",)
+
+
+def db_connect(path):
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE IF NOT EXISTS bookings (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, "
+                "email TEXT NOT NULL, class TEXT NOT NULL, preferred_date TEXT NOT NULL, created_at TEXT NOT NULL)")
+    con.commit()
+    return con
+
+
+class Handler(BaseHTTPRequestHandler):
+    db = None
+
+    def _json(self, status, obj):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        p = urlparse(self.path).path
+        if p in ("/", "/index.html"):
+            try:
+                with open(os.path.join(HERE, "index.html"), "rb") as f:
+                    data = f.read()
+            except OSError:
+                return self._json(404, {"error": "no index.html"})
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
+        if p == "/api/bookings":
+            con = db_connect(self.db)
+            rows = con.execute("SELECT id, name, email, class, preferred_date, created_at FROM bookings ORDER BY id").fetchall()
+            con.close()
+            return self._json(200, [dict(zip(COLUMNS, r)) for r in rows])
+        return self._json(404, {"error": "not found"})
+
+    def do_POST(self):
+        p = urlparse(self.path).path
+        if p != "/api/bookings":
+            return self._json(404 if not p.startswith("/api/") else 405, {"error": "not found"})
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            data = json.loads(self.rfile.read(n) or b"{}")
+        except ValueError:
+            return self._json(400, {"error": "body is not JSON"})
+        missing = [k for k in FIELDS if not str(data.get(k) or "").strip()]
+        if missing:
+            return self._json(400, {"error": "missing: " + ", ".join(missing)})
+        con = db_connect(self.db)
+        cur = con.execute("INSERT INTO bookings (name, email, class, preferred_date, created_at) VALUES (?, ?, ?, ?, "
+                          "datetime('now'))", tuple(str(data[k]).strip() for k in FIELDS))
+        con.commit()
+        bid = cur.lastrowid
+        con.close()
+        return self._json(201, {"id": bid, **{k: str(data[k]).strip() for k in FIELDS}})
+
+    def log_message(self, *args):
+        pass
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, required=True)
+    ap.add_argument("--db", default=os.path.join(HERE, "bookings.sqlite"))
+    a = ap.parse_args()
+    Handler.db = a.db
+    db_connect(a.db).close()
+    ThreadingHTTPServer(("127.0.0.1", a.port), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()
+'''
+E2E_PAGE = '''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Still Point Yoga</title></head><body><main><h1>Still Point Yoga</h1>
+<form id="booking" action="/api/bookings" method="post">
+<label>Name <input name="name" type="text" required></label>
+<label>Email <input name="email" type="email" required></label>
+<label>Class <select name="class" required><option value="">Choose a class</option><option value="Gentle Flow">Gentle Flow</option>
+<option value="Strength Yoga">Strength Yoga</option></select></label>
+<label>Preferred date <input name="preferred_date" type="date" required></label>
+<button type="submit">Book</button></form>
+<p id="booking-done" hidden></p></main>
+<script>
+document.getElementById("booking").addEventListener("submit", async e => { e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target).entries()), p = document.getElementById("booking-done");
+  try { const r = await fetch("/api/bookings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data)});
+    const j = await r.json(); p.textContent = r.ok ? "Booked #" + j.id : "Error: " + j.error; p.hidden = false; }
+  catch (err) { p.textContent = "Could not send the booking"; p.hidden = false; } });
+</script></body></html>
+'''
+BACKEND_ENDPOINTS = [
+    {"id": "A1", "method": "POST", "path": "/api/bookings", "expected_status": 201,
+     "expected_fields": ["id", "name", "email", "class", "preferred_date"],
+     "example_request": json.dumps({"name": "Test Person", "email": "test@stillpoint.example", "class": "Gentle Flow",
+                                    "preferred_date": "2026-11-10"})},
+    {"id": "A2", "method": "GET", "path": "/api/bookings", "expected_status": 200, "expected_fields": ["id", "name"]}]
+BACKEND_FIELDS = [{"name": "name", "type": "text"}, {"name": "email", "type": "email"}, {"name": "class", "type": "select"},
+                  {"name": "preferred_date", "type": "date"}]
+
+
+def backend_run(brief=YOGA_BRIEF, budget=1500, patch=None):
+    """A mock run with J2_BACKEND=1 only (it implies J2_ARTIFACT_SCHEMA=1), set around this run only."""
+    keep = {k: os.environ.get(k) for k in ("J2_BACKEND", "J2_ARTIFACT_SCHEMA")}
+    os.environ["J2_BACKEND"] = "1"
+    os.environ.pop("J2_ARTIFACT_SCHEMA", None)
+    try:
+        run = docs_run(brief, budget, patch=patch)
+        finish(run)
+    finally:
+        for k, v in keep.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    return run
+
+
+def backend_off():
+    """Backend builder, flag unset (J2_BACKEND): nothing of it exists. The LLD's lists are the import-time five, L1's
+    text is as before and L7/L8 are absent, parse_lld has its three keys, a library run of the Still Point brief writes
+    no backend/, backend.json or server.py, has no backend receipt and no backend template folder. plain_unchanged (in
+    the suite) guards the prompts against the checkpoint, prompt for prompt."""
+    import j2_backend
+    import j2_template_lib
+    os.environ.pop("J2_BACKEND", None)
+    assert not j2_backend.enabled() and not j2.artifact_schema_on()
+    assert j2.lld_sections() is j2.LLD_SECTIONS and j2.OUTPUTS["lld"]["sections"] is j2.LLD_SECTIONS
+    assert j2.output_sections("lld") is j2.LLD_SECTIONS and j2.OUTPUTS["lld"]["plan"] == j2.LLD_PLAN
+    assert "A1" not in j2.LLD_PLAN and "API endpoints" not in j2.LLD_PLAN
+    conds = j2.load_conditions("lld.json")
+    assert [c["id"] for c in conds] == [f"L{i}" for i in range(1, 7)], [c["id"] for c in conds]
+    assert conds[0]["text"] == "All five sections are present and not empty", conds[0]
+    assert not any(k in c for c in conds for k in ("flag", "backend_text")), "the flag keys never reach a reader"
+    run = lib_run(YOGA_BRIEF)
+    assert run.outcome.startswith("Done"), run.outcome
+    for rel in ("backend", "backend.json", os.path.join("site", "server.py")):
+        assert not os.path.exists(os.path.join(run.dir, rel)), rel
+    lld = open(os.path.join(run.dir, "lld.md"), encoding="utf-8").read()
+    heads = [h for lv, h, _ in j2.md_sections(lld) if lv == 2]
+    assert heads[:5] == list(j2.LLD_SECTIONS) and not {"API endpoints", "Data model"} & set(heads), heads
+    assert list(j2.parse_lld(lld)) == ["sections", "elements", "fields"]
+    assert list(run.chain["lld"]) == ["kind", "sections", "elements", "fields"], list(run.chain["lld"])
+    data = json.load(open(os.path.join(run.dir, "lld.json"), encoding="utf-8"))
+    assert list(data["sections"]) == list(j2.LLD_SECTIONS), list(data["sections"])
+    arch = json.load(open(os.path.join(run.dir, "stage-lld.json"), encoding="utf-8"))
+    assert [c["id"] for c in arch["audits"][-1]["conditions"]] == [f"L{i}" for i in range(1, 7)]
+    recs = j2._jsonl(run.dir, "receipts.jsonl")
+    assert recs and not [r for r in recs if str(r.get("type")).startswith("backend-")
+                         or r.get("type") == "page-calls-known-endpoints"]
+    assert "backend" not in j2_template_lib.artifacts() and j2_template_lib.generic_drift() == [], "the library's five artifacts"
+    assert not [d for d in tpl_decisions(run) if d["artifact"] == "backend"] and \
+        not os.path.exists(os.path.join(run.dir, "templates", "backend")), "nothing of the backend was routed or copied"
+    assert run._stage_cost("lld") == 10 * 4 + 48, run._stage_cost("lld")
+    print("backend off: five LLD sections, L1-L6 as before, parse_lld's three keys, a library run of the Still Point "
+          "brief writes no backend file and no backend receipt ok")
+
+
+def backend_lld():
+    """Backend builder, Phase 2 (J2_BACKEND=1): the LLD designs the backend. A mock run of the Still Point brief writes
+    seven LLD sections in order with A1.. endpoints and T1.. tables, code renders both from the builders' data and
+    reads them back (parse_lld), L1-L8 are met (L1 counts seven), the two templates pass all three layers with their
+    own rules, the data sits in lld.json, the chain and the blueprint carry the endpoints, and the page workflow that
+    builds a form gets that form's endpoints in its LLD slice. The flag off again, the same document reads as before."""
+    import j2_artifact_models as AM
+    run = backend_run()
+    assert run.outcome.startswith("Done"), run.outcome
+    lld = open(os.path.join(run.dir, "lld.md"), encoding="utf-8").read()
+    heads = [h for lv, h, _ in j2.md_sections(lld) if lv == 2]
+    assert heads[:7] == list(j2.LLD_SECTIONS_BACKEND), heads
+    os.environ["J2_BACKEND"] = "1"
+    try:
+        p = j2.parse_lld(lld)
+        assert list(p) == ["sections", "elements", "fields", "endpoints", "tables"]
+        eps, tables, fids = p["endpoints"], p["tables"], [f["id"] for f in p["fields"]]
+        assert [e["id"] for e in eps] == [f"A{i}" for i in range(1, len(eps) + 1)] and len(eps) >= 2, eps
+        assert [t["id"] for t in tables] == [f"T{i}" for i in range(1, len(tables) + 1)] and tables, tables
+        assert all(e["path"].startswith("/api/") and e["expected_status"] and e["example_request"] for e in eps), eps
+        assert fids and {f["from_field"] for e in eps for f in e["request_fields"]} >= set(fids), (fids, eps)
+        assert all(c["type"] in AM.COLUMN_TYPES for t in tables for c in t["columns"]), tables
+        assert {c["maps_to"] for t in tables for c in t["columns"] if c["maps_to"]} <= \
+            {f"{e['id']}.{f['name']}" for e in eps for f in e["request_fields"]}, tables
+        # the conditions: L1 counts seven, L7 and L8 exist and are met
+        arch = json.load(open(os.path.join(run.dir, "stage-lld.json"), encoding="utf-8"))
+        conds = arch["audits"][-1]["conditions"]
+        assert [c["id"] for c in conds] == [f"L{i}" for i in range(1, 9)] and all(c["met"] for c in conds), \
+            [(c["id"], c["met"], c["evidence"]) for c in conds if not c["met"]]
+        assert conds[0]["text"] == "All seven sections are present and not empty" and "7 sections" in conds[0]["evidence"]
+        assert "endpoint(s)" in conds[6]["evidence"] and "table(s)" in conds[7]["evidence"], conds[6:]
+        # the L7 and L8 checks catch what they name, on this document
+        lg = j2.stage_goal("lld", run.stage_archive[0]["goal"], {k: v["agent_output"] for k, v in run.docs.items()})
+        assert [i for i in lg["done_when"] if "API endpoints" in i] and len(lg["done_when"]) == 7, lg["done_when"]
+        src = j2.squash(" ".join(j2.strings(lg) + [YOGA_BRIEF]))
+        chk = lambda text: {c["id"]: c for c in j2.check_conditions(j2.load_conditions("lld.json"), text, lg, src,
+                                                                    j2.lld_sections())}
+        assert all(c["met"] for c in chk(lld).values()), [(c["id"], c["evidence"]) for c in chk(lld).values() if not c["met"]]
+        assert not chk(lld.replace("`/api/", "`/", 1))["L7"]["met"]
+        assert "map to no request field" in chk(re.sub(r", F1\)", ")", lld))["L7"]["evidence"]
+        assert not chk(re.sub(r"(?m)^- \*\*T1\*\*.*$", "- **T1** `x`: .", lld))["L8"]["met"]
+        assert "Data model (missing)" in chk(lld.replace("## Data model", "## Storage"))["L1"]["evidence"]
+    finally:
+        os.environ.pop("J2_BACKEND", None)
+    # the two templates: each builder atom passed shape, rules (with the section's own rules) and render
+    recs = art_recs(run)
+    for tpl, n_rules in (("LLD/1 · API endpoints", 7), ("LLD/1 · Data model", 4)):
+        mine = [r for r in recs if r.get("template") == tpl]
+        assert mine and {r["type"] for r in mine} == {"artifact-schema", "artifact-rules", "artifact-render"}, tpl
+        assert all(r["pass"] is True for r in mine), [(r["type"], r["evidence"]) for r in mine if not r["pass"]]
+        rules = [r for r in mine if r["type"] == "artifact-rules"][-1]
+        assert len(rules["rules"]) == n_rules and all(x["pass"] is True for x in rules["rules"]), \
+            [(x["name"], x["pass"], x["evidence"]) for x in rules["rules"]]
+    data = json.load(open(os.path.join(run.dir, "lld.json"), encoding="utf-8"))
+    assert list(data["sections"]) == list(j2.LLD_SECTIONS_BACKEND), list(data["sections"])
+    assert data["sections"]["API endpoints"]["endpoints"][0]["id"] == "A1" and data["sections"]["Data model"]["tables"][0]["id"] == "T1"
+    assert "server.py" in [f["path"] for f in data["sections"]["File structure"]["files"]]
+    assert run._stage_cost("lld") == 10 * 4 + 48, "the flag is off again: the five-section cost"
+    # the chain and the blueprint carry the endpoints; the form's page workflow gets them in its slice
+    assert run.chain["lld"]["endpoints"] and run.blueprint["endpoints"] and run.blueprint["tables"]
+    forms = {"#" + f["form"] for f in run.blueprint["fields"]}
+    slices = [(w, c["spec"]) for w in run._all_wfs() if w.get("lld_sections")
+              for c in (w.get("atoms") or [{}])[0].get("verification") or [] if c.get("type") == "lld-slice"]
+    assert slices, "the page workflows carry an LLD slice"
+    with_form = [(w, sp) for w, sp in slices if sp.get("fields")]
+    assert with_form and all(sp["endpoints"] and {x for e in sp["endpoints"] for x in e["called_by"]} & forms
+                             for _, sp in with_form), [(w["id"], sp.get("endpoints")) for w, sp in with_form]
+    assert all(not sp["endpoints"] or {x for e in sp["endpoints"] for x in e["called_by"]}
+               for _, sp in slices if not sp.get("fields")), "a slice with no form carries no form's endpoint"
+    # the flag off: the same document reads as the five-section one, nothing else changes
+    assert list(j2.parse_lld(lld)) == ["sections", "elements", "fields"]
+    assert j2.load_conditions("lld.json")[0]["text"] == "All five sections are present and not empty"
+    print(f"backend LLD (J2_BACKEND=1): seven sections, {len(eps)} endpoints A1.. and {len(tables)} table(s) T1.. rendered "
+          "and read back by code, L1-L8 met, both templates pass shape, rules and render, the form workflow's slice "
+          "carries its endpoints ok")
+
+
+# The Phase 3 test brief (docs/backend-design.md section 10), kept as the scenario file so the two never drift.
+YOGA_BACKEND_BRIEF = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "scenarios",
+                                       "still-point-yoga-backend.md"), encoding="utf-8").read().strip()
+
+
+def backend_wf(run):
+    """The one backend workflow of a run (J2_BACKEND=1), or None."""
+    b = [w for w in run._all_wfs() if w.get("backend")]
+    assert len(b) <= 1, [w["id"] for w in b]
+    return b[0] if b else None
+
+
+def backend_in_run():
+    """Backend builder, Phase 3 (J2_BACKEND=1): a mock run of the backend brief builds the backend. The LLD has seven
+    sections with A1.. and T1..; after the last page workflow code registers W-n Backend (no proposal, priced 15 from
+    rates_backend, lld_sections = the A and T ids), Priority's envelope check hands it to its builder, whose system
+    prompt is backend.md and whose prompt carries the LLD's endpoints, tables and fields and the page's /api/ calls;
+    the reply follows Backend/1 · server.py (three layer receipts, five rules met); site/server.py is written and
+    passes the safety scan; every check kind of backend-checks/1 is a receipt of its atom, each passed, but backend-e2e
+    could not run without Chrome (with --browser it passes through the proxy); backend.json, summary.json and
+    report.md carry the record; the form builder's prompt carried the BACKEND sentence and the page posts only to LLD
+    paths; the run ends Done; no server is left running; the website stage's least cost counts the backend. With the
+    flag off the same brief builds no backend and no builder sees the sentence."""
+    import j2_backend
+    run = backend_run(YOGA_BACKEND_BRIEF)
+    assert run.outcome.startswith("Done"), run.outcome
+    heads = [h for lv, h, _ in j2.md_sections(open(os.path.join(run.dir, "lld.md"), encoding="utf-8").read()) if lv == 2]
+    assert heads[:7] == list(j2.LLD_SECTIONS_BACKEND), heads
+    eps, tables = run.blueprint["endpoints"], run.blueprint["tables"]
+    assert [e["id"] for e in eps] == [f"A{i}" for i in range(1, len(eps) + 1)] and len(eps) >= 2, eps
+    assert [t["id"] for t in tables] == [f"T{i}" for i in range(1, len(tables) + 1)] and tables, tables
+    b = backend_wf(run)
+    assert b, "the backend workflow exists"
+    pages = [w for w in run.workflows if w.get("lld_sections") and not w.get("backend")]
+    assert pages and all(int(b["id"][2:]) > int(w["id"][2:]) for w in pages), "registered after the page workflows"
+    assert b["proposal_id"] is None and b["cost"] == 15 and b["charged"] and b["status"] == "done" and b["section"] is None, b
+    assert b["lld_sections"] == [e["id"] for e in eps] + [t["id"] for t in tables] and b["outputs"] == ["site/server.py"]
+    assert b["version"] and b["artifact"] == "site/server.py" and b["calls_used"] == 1 and b["agent"] == f"{b['id']} Builder"
+    # the chat: code registered it, Priority let it run, it reported to Coordination, then Audit
+    texts = [m["text"] for m in run.chat]
+    i = next(k for k, t in enumerate(texts) if t.startswith(f"The page workflows are done. Code registers {b['id']} Backend"))
+    assert f"server.py for {len(eps)} endpoint(s) and {len(tables)} table(s) of the LLD, priced 15 from the rate card (rates_backend)" in texts[i]
+    assert any(m["who"] == "priority" and f"Envelope check for {b['id']}" in m["text"] and "money 15" in m["text"] for m in run.chat[i:])
+    assert any(m["who"] == b["id"] and m.get("human_output") and m.get("artifact") == "site/server.py" for m in run.chat[i:])
+    assert any(t.startswith("Queue empty") for t in texts[i:]) and not any("proposal" in m and m["who"] == "adaptation"
+                                                                             and "Backend" in m["text"] for m in run.chat), "code registered it; Audit followed"
+    # its builder's one call: backend.md as its role file, the reply schema, the LLD in the prompt
+    calls = [c for c in j2._jsonl(run.dir, "calls.jsonl") if c["fn"] == b["id"]]
+    assert len(calls) == 1, len(calls)
+    c = calls[0]
+    assert "# Backend agent (one per registered backend workflow" in c["system"] and "## What you do" in c["system"], c["system"][:300]
+    assert "builder.md" not in c["system"] and f"You are {b['id']} Builder." in c["system"]
+    for part in ("YOUR OUTPUT IS ONE FILE, site/server.py", "YOUR TEMPLATE: Backend/1 · server.py", "THE LLD'S API ENDPOINTS",
+                 "THE LLD'S DATA MODEL", "THE LLD'S FORM FIELDS", "THE PAGE'S /api/ CALLS", "CHARTER:"):
+        assert part in c["prompt"], part
+    assert all(e["path"] in c["prompt"] for e in eps) and all(t["name"] in c["prompt"] for t in tables)
+    assert c["artifact_schema"]["template"] == "Backend/1 · server.py" and c["artifact_schema"]["attempt"] == 1 and c["atom"] == b["atoms"][0]["id"]
+    log = next(x for x in run.call_log if x["fn"] == b["id"])      # the reply summary for the detail view (in memory, as for pages)
+    assert log["reply"]["endpoints_implemented"] == [e["id"] for e in eps] and log["reply"]["code_chars"] > 1000, log["reply"]
+    assert log["reply"]["check"] == "usable server.py" and log["reason"], log
+    # the receipts: every check kind, the three layers, each passed but e2e without Chrome; every one names the template
+    recs = [r for r in j2._jsonl(run.dir, "receipts.jsonl") if r.get("atom") == b["atoms"][0]["id"]]
+    kinds = [r["type"] for r in recs if "check" in r]
+    assert set(kinds) == set(j2_backend.CHECK_TYPES) | {"artifact-schema", "artifact-rules", "artifact-render"}, kinds
+    assert kinds.count("backend-endpoint") == len(eps) and kinds[:3] == ["backend-compile", "backend-safety", "backend-start"]
+    assert kinds[-4:] == ["backend-files", "artifact-schema", "artifact-rules", "artifact-render"], kinds
+    assert all(r["attempt"] == 1 and r["by"] == "code" and r["template"] == "Backend/1 · server.py" for r in recs if "check" in r)
+    chrome = bool(j2.j2_check.find_chrome())
+    bad = [(r["type"], r["evidence"]) for r in recs if "check" in r and r["pass"] is not True]
+    assert bad == ([] if chrome else [("backend-e2e", "could not run: Chrome not found (set J2_CHROME)")]), bad
+    e2e = next(r for r in recs if r.get("type") == "backend-e2e")
+    assert e2e["target"] == "#" + run.blueprint["fields"][0]["form"], e2e["target"]
+    if chrome:
+        assert "the form submitted in the browser and GET " in e2e["evidence"] and "Test Person" in e2e["evidence"], e2e
+    ends = [r for r in recs if r.get("type") == "backend-endpoint"]
+    assert all(str(r["expect"]) in r["evidence"] for r in ends), [(r["target"], r["evidence"]) for r in ends]
+    assert "every one an LLD endpoint" in next(r for r in recs if r.get("type") == "page-calls-known-endpoints")["evidence"]
+    rules = next(r for r in recs if r.get("type") == "artifact-rules")
+    assert len(rules["rules"]) == 5 and all(x["pass"] is True for x in rules["rules"]), [(x["name"], x["pass"], x["evidence"]) for x in rules["rules"]]
+    exp = [r for r in recs if "expected" in r]
+    assert [x["met"] for x in exp] == [True, True if chrome else None], [(x["expected"], x["met"]) for x in exp]
+    a = b["atoms"][0]
+    assert a["status"] == ("passed" if chrome else "could not run") and a["human_output"]["text"], (a["status"], a.get("human_output"))
+    if chrome:
+        assert a["agent_output"]["kind"] == "backend" and a["agent_output"]["file"] == "site/server.py" and a["agent_output"]["implements"] == b["lld_sections"]
+    # the file: what was sent, safe, every LLD path and table in it
+    src = open(os.path.join(run.dir, "site", "server.py"), encoding="utf-8").read()
+    assert 'ThreadingHTTPServer(("127.0.0.1", a.port)' in src and all(e["path"] in src for e in eps) and all(t["name"] in src for t in tables)
+    assert not j2_backend.safety_problems(src) and src.endswith("\n")
+    assert sorted(os.listdir(os.path.join(run.dir, "backend"))) == ["check-1.sqlite", "start-1.log"], os.listdir(os.path.join(run.dir, "backend"))
+    # the record, the summary, the report
+    bj = json.load(open(os.path.join(run.dir, "backend.json"), encoding="utf-8"))
+    assert bj["schema"] == "backend/1" and bj["workflow"] == b["id"] and bj["atom"] == a["id"] and bj["status"] == "done" and bj["attempts"] == 1
+    assert bj["endpoints_implemented"] == [e["id"] for e in eps] and bj["tables_created"] == [t["id"] for t in tables] and bj["written"]
+    assert [e["id"] for e in bj["endpoints"]] == [e["id"] for e in eps] and [t["name"] for t in bj["tables"]] == [t["name"] for t in tables]
+    assert bj["template"]["template"] == "Backend/1 · server.py" and bj["template"]["version"] == 1 and bj["template"]["kind"] == "generic" \
+        and bj["template"]["action"] == "generic" and bj["template"]["schema_sha"] == c["artifact_schema"]["schema_sha"], bj["template"]
+    assert bj["passed"] == len(kinds) - (0 if chrome else 1) and bj["failed"] == 0 and bj["could_not_run"] == (0 if chrome else 1), bj
+    assert [x["type"] for x in bj["checks"]] == kinds and bj["port_arg"] == "--port" and bj["db_arg"] == "--db" and bj["cost"] == 15
+    assert bj["run_it"] == f"python {os.path.join(run.dir, 'site', 'server.py')} --port 8790", bj["run_it"]
+    s = summary(run)
+    assert s["backend"] == {k: bj[k] for k in ("workflow", "status", "attempts", "passed", "failed", "could_not_run", "cost", "template", "run_it")}, s["backend"]
+    rep = open(os.path.join(run.dir, "report.md"), encoding="utf-8").read()
+    assert "## Backend (J2_BACKEND=1, counted by code)" in rep and f"- {b['id']} wrote site/server.py in 1 attempt(s), status done: {bj['passed']} check(s) passed, 0 failed" in rep
+    assert f"- {len(eps)} endpoint(s) and {len(tables)} table(s) from the LLD; run it with `{bj['run_it']}`" in rep
+    # the form builders were told to post; the page posts only to LLD paths, no mailto; nothing left running
+    forms = [w for w in run.workflows if any(c.get("type") == "lld-slice" and c["spec"].get("endpoints")
+                                            for c in (w.get("atoms") or [{}])[0].get("verification") or [])]
+    told = {c["fn"] for c in j2._jsonl(run.dir, "calls.jsonl") if "BACKEND: the form posts to the site's own API. Give the form action=\"/api/" in c["prompt"]}
+    assert forms and told == {w["id"] for w in forms}, (told, [w["id"] for w in forms])
+    page = run.sites[-1]
+    assert set(j2_backend.page_calls(page)) == {e["path"] for e in eps if e["method"] == "POST"} and "mailto:" not in page
+    assert all(f'action="{e["path"]}" method="post"' in page for e in eps if e["method"] == "POST")
+    assert not j2_backend._LIVE
+    os.environ["J2_BACKEND"] = "1"
+    try:
+        assert run._stage_cost("website") == 5 + 10 * 3 + 15 + 15, run._stage_cost("website")
+        assert j2.RATE_BACKEND() == 15 and j2.RATES_WEB().get("backend") is None, "its own key: the website parts are unchanged"
+    finally:
+        os.environ.pop("J2_BACKEND", None)
+    assert run._stage_cost("website") == 5 + 10 * 3 + 15
+    # the flag off: the same brief builds no backend, no builder is told to post, the mock form keeps its plain action
+    run2 = docs_run(YOGA_BACKEND_BRIEF, 1500)
+    finish(run2)
+    assert run2.outcome.startswith("Done") and backend_wf(run2) is None, run2.outcome
+    for rel in ("backend", "backend.json", os.path.join("site", "server.py")):
+        assert not os.path.exists(os.path.join(run2.dir, rel)), rel
+    assert not any("BACKEND: the form posts" in c["prompt"] or "backend.md" in c["system"] for c in j2._jsonl(run2.dir, "calls.jsonl"))
+    assert not j2_backend.page_calls(run2.sites[-1]) and 'action="/send"' in run2.sites[-1]
+    assert "backend" not in summary(run2) and "## Backend" not in open(os.path.join(run2.dir, "report.md"), encoding="utf-8").read()
+    print(f"backend in a run (J2_BACKEND=1): {b['id']} Backend registered by code after the page workflows, priced 15, built "
+          f"from backend.md with the reply schema, server.py written and {bj['passed']} check(s) passed"
+          + (" (e2e through the proxy)" if chrome else " (e2e could not run without Chrome)")
+          + ", backend.json, summary and report carry it, the form builders were told to post, the flag off builds none ok")
+
+
+def backend_retry():
+    """Backend builder, retries (J2_BACKEND=1): a planted first reply is refused and the second attempt's prompt carries
+    the exact evidence. (a) `import subprocess`: compile passes, backend-safety fails naming line 1, start and the
+    endpoint checks fail as not started, the page check still passes; attempt 2 passes; backend.json says 2 attempts.
+    (b) a reply that is not JSON: an artifact-schema receipt fails, the second prompt quotes it. (c) a reply naming an
+    endpoint the LLD lacks: artifact-rules fails on both rules, the file's own checks pass, attempt 2 passes. Every
+    run ends Done."""
+    import j2_backend
+
+    def planted(change):
+        seen = []
+
+        def patch(run, orig):
+            def call(fn, fmt, task, mock, *a, **kw):
+                if kw.get("builder") == "backend.md":
+                    seen.append(task)
+                    if len(seen) == 1:
+                        first = change(json.loads(mock()))
+                        return orig(fn, fmt, task, lambda: first if isinstance(first, str) else json.dumps(first), *a, **kw)
+                return orig(fn, fmt, task, mock, *a, **kw)
+            return call
+        run = backend_run(YOGA_BACKEND_BRIEF, patch=patch)
+        assert run.outcome.startswith("Done"), run.outcome
+        b = backend_wf(run)
+        recs = [r for r in j2._jsonl(run.dir, "receipts.jsonl") if r.get("atom") == b["atoms"][0]["id"] and "check" in r]
+        bj = json.load(open(os.path.join(run.dir, "backend.json"), encoding="utf-8"))
+        assert len(seen) == 2 and "ATTEMPT 2 OF 3. THESE CHECKS FAILED ON YOUR LAST ATTEMPT:" in seen[1] and "ATTEMPT" not in seen[0]
+        assert bj["attempts"] == 2 and bj["status"] == "done" and bj["failed"] == 0 and b["calls_used"] == 2, (bj["attempts"], bj["failed"])
+        assert all(r["pass"] is not False for r in recs if r["attempt"] == 2), [(r["type"], r["evidence"]) for r in recs if r["attempt"] == 2 and r["pass"] is False]
+        assert not j2_backend._LIVE
+        return run, seen, recs, bj
+
+    def unsafe(rep):
+        rep["section"]["code"] = "import subprocess\n" + rep["section"]["code"]
+        return rep
+    run, seen, recs, bj = planted(unsafe)
+    one = {r["type"]: r for r in recs if r["attempt"] == 1}
+    assert one["backend-compile"]["pass"] is True and one["backend-safety"]["pass"] is False
+    assert one["backend-safety"]["evidence"].startswith("line 1: import subprocess is not allowed"), one["backend-safety"]["evidence"]
+    assert one["backend-start"]["evidence"] == "not started: backend-safety has not passed for this server.py" and one["backend-start"]["pass"] is False
+    assert one["backend-endpoint"]["pass"] is False and "the server is not running" in one["backend-endpoint"]["evidence"]
+    assert one["page-calls-known-endpoints"]["pass"] is True and one["artifact-schema"]["pass"] is True and one["artifact-rules"]["pass"] is True
+    assert "- server.py imports only the standard library, writes no file but its database and binds 127.0.0.1 (backend-safety site/server.py, expect True): line 1: import subprocess is not allowed" in seen[1], seen[1][-1500:]
+    assert sorted(os.listdir(os.path.join(run.dir, "backend"))) == ["check-2.sqlite", "start-2.log"], "attempt 1 never started"
+    assert any(m["who"] == "system" and f"Code ran {bj['workflow']}'s checks on attempt 1 of 3" in m["text"] and "tries again" in m["text"] for m in run.chat)
+    run, seen, recs, bj = planted(lambda rep: "Here is the server:\n```python\nprint(1)\n```")
+    one = [r for r in recs if r["attempt"] == 1]
+    assert [(r["type"], r["pass"]) for r in one] == [("artifact-schema", False)], one
+    assert one[0]["evidence"] == "reply: the reply is not one JSON object" and one[0]["template"] == "Backend/1 · server.py"
+    assert "(artifact-schema Backend/1 · server.py, expect True): reply: the reply is not one JSON object" in seen[1], seen[1][-600:]
+    assert not os.path.exists(os.path.join(run.dir, "backend", "start-1.log")), "nothing was written or started on attempt 1"
+    assert any(m["who"] == "system" and f"{bj['workflow']} attempt 1 can't be used: the reply must be one JSON object following Backend/1 · server.py"
+               in m["text"] for m in run.chat)
+
+    def wrong_ids(rep):
+        rep["section"]["endpoints_implemented"] = ["A1", "A9"]
+        return rep
+    run, seen, recs, bj = planted(wrong_ids)
+    one = {r["type"]: r for r in recs if r["attempt"] == 1}
+    assert one["backend-start"]["pass"] is True and one["backend-endpoint"]["pass"] is True and one["artifact-schema"]["pass"] is True
+    assert one["artifact-rules"]["pass"] is False, one["artifact-rules"]
+    ev = one["artifact-rules"]["evidence"]
+    assert "endpoints_implemented names A9, which is not an endpoint of the LLD" in ev and "are not in endpoints_implemented" in ev, ev
+    assert [x["pass"] for x in one["artifact-rules"]["rules"]] == [True, False, False, True, True]
+    assert "(artifact-rules server.py, expect True): endpoints_implemented names A9" in seen[1], seen[1][-800:]
+    # (d) a fix of the backend, proposed by Adaptation as any fix (revises W-n): the validator accepts the A and T ids as
+    # LLD citations, code registers it as a backend workflow writing server.py with its own checks (the proposed check
+    # is replaced), and its turn is _run_backend again: the record moves to the fix
+    b = backend_wf(run)
+    prop = {"name": "Backend fix", "goal_gap": "server.py fails backend-start", "parts": ["fix"], "fixes": ["F-9"],
+            "revises": b["id"], "covers": [], "lld_sections": b["lld_sections"], "outputs": ["site/server.py"],
+            "completion_check": "server.py passes the backend checks", "cost": 8,
+            "envelope": {"money_limit": 8, "model_call_limit": 2, "retry_limit": 1},
+            "atoms": [{"goal": "server.py starts and serves the endpoints", "how": {"kind": "AI", "agent": "Builder"},
+                       "constraints": ["standard library only"], "context": ["the receipts"],
+                       "expected_output": [{"text": "server.py starts", "kind": "file", "target": "site/server.py"}],
+                       "verification": [{"text": "server.py exists", "type": "file-exists", "target": "site/server.py",
+                                         "expect": True}]}]}
+    assert run._lld_gaps([prop]) == [], run._lld_gaps([prop])
+    n = len(run.workflows)
+    run._register([prop])
+    fix = run.workflows[n:]
+    assert len(fix) == 1 and not run.rejections[n:], (fix, run.rejections[-1:])
+    fix = fix[0]
+    assert fix["backend"] is True and fix["revises"] == b["id"] and fix["outputs"] == ["site/server.py"] and fix["cost"] == 8
+    assert fix["lld_sections"] == b["lld_sections"] and [c["type"] for c in fix["atoms"][0]["verification"]] == \
+        [c["type"] for c in b["atoms"][0]["verification"]], "code's checks replace the proposed one"
+    run._handoff(fix["id"], kind="build", wid=fix["id"])
+    run._turn_workflow_agent(run.handoff)
+    assert fix["status"] == "done" and fix["artifact"] == "site/server.py" and run.turn == "coordination", (fix["status"], run.turn)
+    assert run.backend["workflow"] == fix["id"] and run.backend["attempts"] == 1 and run.backend["failed"] == 0
+    assert json.load(open(os.path.join(run.dir, "backend.json"), encoding="utf-8"))["workflow"] == fix["id"]
+    assert not j2_backend._LIVE
+    print("backend retry (J2_BACKEND=1): an unsafe first file, a reply that isn't JSON and a wrong endpoint id each fail attempt 1 "
+          "with their own receipt, the second prompt quotes the exact evidence, attempt 2 passes, backend.json says 2 attempts; "
+          "a fix that revises the backend is registered with code's checks and rebuilds server.py ok")
+
+
+def backend_schema():
+    """Backend builder, the schemas (J2_BACKEND=1): reply_schema of Backend/1 · server.py and of the two LLD sections
+    keep inline_definitions' invariants (definitions at the root only, every $ref resolvable there, every object
+    closed, reason first and section required), the backend's section has its six fields with code,
+    endpoints_implemented and tables_created required, and normalise keeps the code as sent. The live acceptance of
+    the backend schema by `claude -p --json-schema` is the scratchpad's live build (not in the suite)."""
+    import j2_artifact_models as AM
+
+    def walk(x, root, depth=0):
+        if isinstance(x, dict):
+            if "definitions" in x and depth > 0:
+                raise AssertionError("nested definitions")
+            ref = x.get("$ref")
+            if ref is not None:
+                assert ref.startswith("#/definitions/") and ref[len("#/definitions/"):] in (root.get("definitions") or {}), ref
+            if x.get("type") == "object" or "properties" in x:
+                assert x.get("additionalProperties") is False and isinstance(x.get("required"), list), x.get("properties", {}).keys()
+            for v in x.values():
+                walk(v, root, depth + 1)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v, root, depth + 1)
+    for model in (AM.BackendServer, AM.LLDEndpoints, AM.LLDDataModel):
+        sch = AM.reply_schema(model, {})
+        walk(sch, sch)
+        assert sch["required"][0] == "reason" and sch["required"][-1] == "section" and sch["$schema"].endswith("draft-07/schema#")
+        assert len(json.dumps(sch)) < 8000 and len(AM.schema_sha(sch)) == 64
+    sec = AM.reply_schema(AM.BackendServer, {})["properties"]["section"]
+    assert sorted(sec["properties"]) == ["code", "db_arg", "endpoints_implemented", "notes", "port_arg", "tables_created"]
+    assert sec["required"] == ["code", "endpoints_implemented", "tables_created"] and "definitions" not in AM.reply_schema(AM.BackendServer, {})
+    assert sec["properties"]["endpoints_implemented"]["type"] == "array" and sec["properties"]["code"]["type"] == "string"
+    assert AM.BackendServer.template() == "Backend/1 · server.py"
+    data = {"code": "import os\n", "endpoints_implemented": ["A1"], "tables_created": ["T1"]}
+    obj, errs = AM.validate(AM.BackendServer, AM.normalise(AM.BackendServer, data))
+    assert not errs and obj.port_arg == "--port" and obj.db_arg == "--db" and obj.notes == "" and obj.code == "import os", \
+        (errs, "the model strips outer whitespace, as every artifact field; _run_backend writes the newline back")
+    assert AM.validate(AM.BackendServer, {**data, "extra": 1})[1] and AM.validate(AM.BackendServer, {"code": "x"})[1]
+    assert AM.render_section("backend", "server.py", data) == "import os\n" and AM.render_section("backend", "other", data) is None
+    print("backend schemas (J2_BACKEND=1): Backend/1 · server.py and the two LLD section schemas keep the inline-definitions "
+          "invariants, the backend section has six fields with three required, validate and render as sent ok")
+
+
+def backend_lib_run(brief=None, budget=1500, patch=None):
+    """A mock run with J2_BACKEND=1 and J2_TEMPLATE_LIBRARY=1 (into the current J2_LIBRARY_DIR)."""
+    keep = os.environ.get("J2_BACKEND")
+    os.environ["J2_BACKEND"] = "1"
+    try:
+        return lib_run(brief or YOGA_BACKEND_BRIEF, budget, patch=patch)
+    finally:
+        if keep is None:
+            os.environ.pop("J2_BACKEND", None)
+        else:
+            os.environ["J2_BACKEND"] = keep
+
+
+def backend_templates():
+    """Backend builder, Phase 4 (J2_BACKEND=1 with J2_TEMPLATE_LIBRARY=1): the backend sections go through the template
+    library like every other section. With the flag the library has a sixth artifact, backend, whose generic file is
+    generated from the model and the rules (no drift, flag on or off); run 1 into an empty library creates "Still
+    Point Yoga API endpoints", "... Data model" and "... server.py" (v1 each, extending the generic), the backend
+    need carries the LLD's A and T ids as enums and the created template narrows endpoints_implemented and
+    tables_created to them; its builder's --json-schema section is that template's schema.json; every backend
+    receipt and backend.json name the template; run 2 with the same brief reuses all three (rule a, no new version,
+    used_by lists both runs); each run keeps its copies under templates/lld/api-endpoints, templates/lld/data-model
+    and templates/backend/server-py; the Library view groups the backend; the committed library/ is unchanged."""
+    import copy as copy_
+    import j2_template_lib as L
+    here = os.path.dirname(os.path.abspath(__file__))
+    real_lib = os.path.join(here, "library")
+    real_before = tree_sha(real_lib)
+    keep_lib = os.environ.get("J2_LIBRARY_DIR")
+    lib = tempfile.mkdtemp(prefix="j2-lib-backend-")
+    os.environ["J2_LIBRARY_DIR"] = lib
+    try:
+        assert L.artifacts() == L.ARTIFACTS and L.generic_drift() == [], "flag off: five artifacts, no drift"
+        os.environ["J2_BACKEND"] = "1"
+        try:
+            assert L.artifacts() == L.ARTIFACTS + ("backend",) and L.generic_drift() == [], L.generic_drift()
+            gen = json.load(open(os.path.join(L.GENERIC_DIR, "backend", "generic.json"), encoding="utf-8"))
+            assert gen["artifact"] == "backend" and [t["section"] for t in gen["templates"]] == ["server.py"]
+            g = L.generic("backend", "server.py")
+            assert g.name == "Backend/1 · server.py" and [f.name for f in g.fields] == \
+                ["code", "port_arg", "db_arg", "endpoints_implemented", "tables_created", "notes"] and len(g.rules) == 5
+            assert gen["templates"][0]["sha"] == g.sha and "backend" in L.library_view()["groups"]
+        finally:
+            os.environ.pop("J2_BACKEND", None)
+        r1 = backend_lib_run()
+        idx1 = copy_.deepcopy(L.index())
+        r2 = backend_lib_run()
+        idx2 = copy_.deepcopy(L.index())
+        n1, n2 = (os.path.basename(r.dir) for r in (r1, r2))
+        for r in (r1, r2):
+            assert r.outcome.startswith("Done") and r.schemas and r.tpl_lib, r.outcome
+            assert not [x for x in art_recs(r) if not x["pass"]], [x["evidence"] for x in art_recs(r) if not x["pass"]][:3]
+        eps, tables = r1.blueprint["endpoints"], r1.blueprint["tables"]
+        a_ids, t_ids = [e["id"] for e in eps], [t["id"] for t in tables]
+        mine = lambda r: {(d["artifact"], d["section"]): d for d in tpl_decisions(r)
+                          if (d["artifact"], d["section"]) in (("lld", "API endpoints"), ("lld", "Data model"), ("backend", "server.py"))}
+        d1, d2 = mine(r1), mine(r2)
+        assert len(d1) == len(d2) == 3, (list(d1), list(d2))
+        for key, name in ((("lld", "API endpoints"), "Still Point Yoga API endpoints"), (("lld", "Data model"), "Still Point Yoga Data model"),
+                          (("backend", "server.py"), "Still Point Yoga server.py")):
+            x, y = d1[key], d2[key]
+            assert x["action"] == "created" and x["rule"] == "d" and x["kind"] == "specialised" and x["template"] == name and x["version"] == 1, x
+            assert y["action"] == "reused" and y["rule"] == "a" and y["template"] == name and y["version"] == 1, y
+            assert x["saved"] == y["saved"] == L.run_tpl_rel(x), (x["saved"], y["saved"])
+            for r in (r1, r2):
+                sd = os.path.join(r.dir, x["saved"])
+                assert sorted(os.listdir(sd)) == ["meta.json", "model.py", "schema.json", "spec.json"], sd
+                spec = json.load(open(os.path.join(sd, "spec.json"), encoding="utf-8"))
+                assert spec["kind"] == "specialised" and spec["extends"] == L.generic_ref(*key) and spec["name"] == name, spec["extends"]
+        assert d1[("lld", "API endpoints")]["saved"].startswith("templates/lld/api-endpoints/")
+        assert d1[("lld", "Data model")]["saved"].startswith("templates/lld/data-model/")
+        assert d1[("backend", "server.py")]["saved"] == "templates/backend/server-py/still-point-yoga-server-py@v1"
+        # the backend need: the A and T ids as enum fields; the created template narrows the generic's two lists to them
+        b1 = d1[("backend", "server.py")]
+        assert b1["needed_fields"] == ["endpoints_implemented", "tables_created"] and \
+            b1["needed_enums"] == {"endpoints_implemented": a_ids, "tables_created": t_ids}, b1
+        assert b1["covers"] == "covers 0 of 0 facts and 2 of 2 fields", b1["covers"]
+        t = L.get(f"{b1['template']}@1", "backend", "server.py")
+        assert t and [f.name for f in t.fields] == [f.name for f in g.fields] and L.keeps_problems(g, t) == []
+        en = {f.name: f.enum for f in t.fields}
+        assert en["endpoints_implemented"] == a_ids and en["tables_created"] == t_ids and en["code"] is None, en
+        assert t.rules == [], "no fact to add a rule from in this mock charter; the generic's five apply through extends"
+        # its builder: the template's schema.json was the section sent; the receipts and backend.json name it
+        for r, d in ((r1, d1), (r2, d2)):
+            b = backend_wf(r)
+            c = next(x for x in j2._jsonl(r.dir, "calls.jsonl") if x["fn"] == b["id"])
+            lib_ = c["artifact_schema"]["library"]
+            assert lib_["template"] == "Still Point Yoga server.py" and lib_["version"] == 1 and lib_["kind"] == "specialised"
+            assert lib_["sent_section_sha"] == lib_["schema_sha"] == d[("backend", "server.py")]["schema_sha"] == L.sha_of(L.transport(t)), lib_
+            assert c["artifact_schema"]["template"] == "Still Point Yoga server.py v1", c["artifact_schema"]      # build_model's name
+            recs = [x for x in j2._jsonl(r.dir, "receipts.jsonl") if x.get("atom") == b["atoms"][0]["id"] and "check" in x]
+            assert recs and all(x.get("template_route") == {"template": "Still Point Yoga server.py", "version": 1, "kind": "specialised",
+                                                            "action": d[("backend", "server.py")]["action"]} for x in recs), \
+                [(x["type"], x.get("template_route")) for x in recs][:3]
+            assert all(x["template"] == "Still Point Yoga server.py v1" and x["template_version"] == 1 for x in recs), \
+                sorted({(x["template"], x["template_version"]) for x in recs})
+            rules = next(x for x in recs if x["type"] == "artifact-rules")
+            assert len(rules["rules"]) == 5 and all(x["pass"] is True for x in rules["rules"]), [(x["name"], x["evidence"]) for x in rules["rules"] if not x["pass"]]
+            bj = json.load(open(os.path.join(r.dir, "backend.json"), encoding="utf-8"))
+            assert bj["template"] == {"template": "Still Point Yoga server.py", "version": 1, "kind": "specialised",
+                                      "action": d[("backend", "server.py")]["action"], "schema_sha": lib_["sent_section_sha"]}, bj["template"]
+            assert bj["failed"] == 0 and bj["endpoints_implemented"] == a_ids and bj["tables_created"] == t_ids
+            assert any(m["who"] == "system" and m.get("template_route", {}).get("workflow") == b["id"] for m in r.chat), "one template line in the chat"
+        # the library: v1 each, run 2 made no new version, used_by lists both runs; the view groups the backend
+        vers = lambda idx: sorted((e["name"], v["version"], v["sha"]) for e in idx["templates"] for v in e["versions"])
+        assert vers(idx1) == vers(idx2), "run 2 made no new version"
+        be = [e for e in idx2["templates"] if e["artifact"] == "backend"]
+        assert len(be) == 1 and be[0]["section"] == "server.py" and be[0]["section_slug"] == "server-py" and \
+            [v["version"] for v in be[0]["versions"]] == [1] and {u["run"] for u in be[0]["versions"][0]["used_by"]} == {n1, n2}, be
+        assert be[0]["versions"][0]["enums"] == {"endpoints_implemented": a_ids, "tables_created": t_ids}
+        for sec in ("API endpoints", "Data model"):
+            e = next(e for e in idx2["templates"] if e["artifact"] == "lld" and e["section"] == sec)
+            assert [v["version"] for v in e["versions"]] == [1] and {u["run"] for u in e["versions"][0]["used_by"]} == {n1, n2}, e["name"]
+        os.environ["J2_BACKEND"] = "1"
+        try:
+            lv = L.library_view()
+            assert set(lv["groups"]) == set(L.ARTIFACTS) | {"backend"} and lv["groups"]["backend"]["server.py"]["generic"]["name"] == g.name
+            assert [e["name"] for e in lv["groups"]["backend"]["server.py"]["templates"]] == ["Still Point Yoga server.py"]
+            got = L.template_view("backend", "server-py", "still-point-yoga-server-py", 1, run_dir=r1.dir)
+            assert got and got["template"]["name"] == "Still Point Yoga server.py" and got["source"] == "from this run" and \
+                got["files"], (got or {}).get("template")
+            assert L.generic_drift() == []
+        finally:
+            os.environ.pop("J2_BACKEND", None)
+        assert L.generic_drift() == [] and "backend" not in L.artifacts()
+        assert tree_sha(real_lib) == real_before, "the committed library/ is unchanged by tests"
+        print(f"backend templates (J2_BACKEND=1 + library): a sixth artifact with the flag, generic file in step with the model, "
+              f"run 1 created the API endpoints, Data model and server.py templates (v1, enums {a_ids} / {t_ids}), the builder "
+              "got the template's schema, every backend receipt and backend.json name it, run 2 reused all three (rule a, "
+              "used_by both runs), copies under templates/lld/api-endpoints, data-model and backend/server-py, library/ unchanged ok")
+    finally:
+        if keep_lib is None:
+            os.environ.pop("J2_LIBRARY_DIR", None)
+        else:
+            os.environ["J2_LIBRARY_DIR"] = keep_lib
+
+
+def backend_fixture(server=GOOD_SERVER, page=E2E_PAGE):
+    """A run folder with site/index.html and site/server.py, like a run's after the page builders and the backend
+    builder wrote them."""
+    d = tempfile.mkdtemp(prefix="j2-backend-")
+    os.makedirs(os.path.join(d, "site"))
+    with open(os.path.join(d, "site", "index.html"), "w", encoding="utf-8") as f:
+        f.write(page)
+    with open(os.path.join(d, "site", "server.py"), "w", encoding="utf-8") as f:
+        f.write(server)
+    return d
+
+
+def backend_up(server=GOOD_SERVER, page=E2E_PAGE):
+    """(run folder, start result) with the server scanned and started."""
+    import j2_backend as B
+    d = backend_fixture(server, page)
+    s = B.safety_check(os.path.join(d, "site", "server.py"), d)
+    assert s["pass"], s
+    return d, B.start_check(d)
+
+
+def backend_compile_check():
+    """backend-compile: py_compile of server.py, the bytecode thrown away; a syntax error fails with the file, the
+    line and Python's own message; a missing file fails; the dispatcher in j2.run_check reaches it."""
+    import j2_backend as B
+    d = backend_fixture()
+    r = B.compile_check(os.path.join(d, "site", "server.py"))
+    assert r["pass"] is True and "compiles" in r["evidence"], r
+    assert not os.path.exists(os.path.join(d, "site", "__pycache__")), "no bytecode is left in the run"
+    bad = backend_fixture(GOOD_SERVER.replace("def main():", "def main(:"))
+    r = B.compile_check(os.path.join(bad, "site", "server.py"))
+    assert r["pass"] is False and r["evidence"].startswith("SyntaxError: server.py:") and "invalid syntax" in r["evidence"], r
+    line = int(r["evidence"].split(":")[2])
+    assert GOOD_SERVER.splitlines()[line - 1].startswith("def main"), (line, r)
+    r = B.compile_check(os.path.join(bad, "site", "nothing.py"))
+    assert r["pass"] is False and "not found" in r["evidence"], r
+    r = j2.run_check({"type": "backend-compile", "target": "site/server.py", "expect": True}, os.path.join(d, "site"), E2E_PAGE)
+    assert r["pass"] is True, r
+    r = j2.run_check({"type": "backend-compile", "target": "site/server.py", "expect": True}, os.path.join(bad, "site"), E2E_PAGE)
+    assert r["pass"] is False and "SyntaxError" in r["evidence"], r
+    print("backend compile check: good file compiles, no bytecode left, syntax error named with file, line and message, "
+          "missing file, run_check dispatch ok")
+
+
+def backend_safety_check():
+    """backend-safety: the AST scan. The good server passes (and is remembered, so backend-start may run it); each
+    blocked thing fails naming its line and what it is: subprocess, os.system, eval, socket, urllib.request,
+    http.client, requests, a file write, a database path outside the run, a 0.0.0.0 bind, a non-literal bind,
+    from os import system, a relative import, getattr; a file with no server at all."""
+    import j2_backend as B
+    d = backend_fixture()
+    r = B.safety_check(os.path.join(d, "site", "server.py"), d)
+    assert r["pass"] is True and "127.0.0.1" in r["evidence"] and B._SAFE.get(d), r
+    cases = [("import subprocess\n", "import subprocess is not allowed"),
+             ("import socket\n", "import socket is not allowed"),
+             ("import urllib.request\n", "import urllib.request is not allowed"),
+             ("import urllib\n", "import urllib is not allowed"),
+             ("import http.client\n", "import http.client is not allowed"),
+             ("import requests\n", "import requests is not allowed"),
+             ("from os import system\n", "from os import system is not allowed"),
+             ("from http import client\n", "from http import client is not allowed"),
+             ("from . import helpers\n", "a relative import is not allowed"),
+             ("import shutil\n", "import shutil is not allowed")]
+    for ins, want in cases:
+        src = GOOD_SERVER.replace("import argparse\n", "import argparse\n" + ins, 1)
+        bad = B.safety_problems(src)
+        assert bad and want in bad[0] and bad[0].startswith("line 2:"), (ins, bad)
+    inline = [('    os.system("ls")\n', "os.system is not allowed"),
+              ('    eval("1")\n', "eval is not allowed"),
+              ('    exec("x = 1")\n', "exec is not allowed"),
+              ('    getattr(os, "system")("ls")\n', "getattr is not allowed"),
+              ('    open("x.txt", "w").close()\n', "open(..., 'w') writes a file"),
+              ('    open("x.txt", mode="a").close()\n', "open(..., 'a') writes a file"),
+              ('    open("x.txt", "r+").close()\n', "open(..., 'r+') writes a file"),
+              ('    open("x.txt", mode).close()\n', "open() needs a literal read mode"),
+              ('    sqlite3.connect("/tmp/x.db").close()\n', "sqlite3.connect('/tmp/x.db') points outside the run folder"),
+              ('    sqlite3.connect("../x.db").close()\n', "sqlite3.connect('../x.db') points outside the run folder"),
+              ('    os.remove("x")\n', "os.remove is not allowed"),
+              ('    print(os.environ)\n', "os.environ is not allowed"),
+              ('    __import__("subprocess")\n', "__import__ is not allowed")]
+    main_at = GOOD_SERVER.index("    ap = argparse.ArgumentParser()")
+    main_line = GOOD_SERVER[:main_at].count("\n") + 1
+    for ins, want in inline:
+        src = GOOD_SERVER[:main_at] + ins + GOOD_SERVER[main_at:]
+        bad = B.safety_problems(src)
+        assert bad and want in bad[0] and bad[0].startswith(f"line {main_line}:"), (ins, bad)
+    bad = B.safety_problems(GOOD_SERVER.replace('("127.0.0.1", a.port)', '("0.0.0.0", a.port)'))
+    assert any('"0.0.0.0" binds every interface' in x for x in bad) and any("binds '0.0.0.0'" in x for x in bad), bad
+    bad = B.safety_problems(GOOD_SERVER.replace('("127.0.0.1", a.port)', '("", a.port)'))
+    assert any("binds ''; it must bind 127.0.0.1 only" in x for x in bad), bad
+    bad = B.safety_problems(GOOD_SERVER.replace('("127.0.0.1", a.port)', 'addr'))
+    assert any('must be the literal ("127.0.0.1", port)' in x for x in bad), bad
+    bad = B.safety_problems(GOOD_SERVER.replace("    ThreadingHTTPServer((\"127.0.0.1\", a.port), Handler).serve_forever()\n", "    pass\n"))
+    assert bad == ["no HTTPServer, ThreadingHTTPServer or TCPServer is constructed, so there is nothing to start"], bad
+    # a subclass with its own name still counts as the server
+    sub = GOOD_SERVER.replace("ThreadingHTTPServer((\"127.0.0.1\", a.port), Handler)", "BookingServer((\"127.0.0.1\", a.port), Handler)") \
+        .replace("def main():", "class BookingServer(ThreadingHTTPServer):\n    allow_reuse_address = True\n\n\ndef main():")
+    assert B.safety_problems(sub) == [], B.safety_problems(sub)
+    # the result of a failed scan, and run_check's dispatch; a failed scan forgets the file, so start refuses it
+    badd = backend_fixture(GOOD_SERVER.replace("import argparse\n", "import argparse\nimport subprocess\n", 1))
+    r = j2.run_check({"type": "backend-safety", "target": "site/server.py", "expect": True}, os.path.join(badd, "site"), E2E_PAGE)
+    assert r["pass"] is False and r["evidence"].startswith("line 2: import subprocess is not allowed") and r["actual"], r
+    assert badd not in B._SAFE
+    r = B.start_check(badd)
+    assert r["pass"] is False and "backend-safety has not passed" in r["evidence"], r
+    assert not B._LIVE.get(badd), "a file the scan refused is never started"
+    print(f"backend safety check: good file passes and is remembered; {len(cases)} import cases, {len(inline)} call cases, three bind "
+          "cases, no server, a subclass server, the refused file is not started ok")
+
+
+def backend_start_check():
+    """backend-start: `python -I server.py --port P --db backend/check-n.sqlite` in the run folder with a fresh
+    environment, GET / within the timeout with index.html's bytes; the receipt carries port, pid, log and seconds;
+    backend-files stops it and reports what it wrote. Failures: exits at once (code and log tail), never answers
+    (timeout), serves another page, writes a second file."""
+    import j2_backend as B
+    d, r = backend_up()
+    try:
+        assert r["pass"] is True and r["actual"]["port"] and r["actual"]["pid"] and r["actual"]["log"] == "backend/start-1.log", r
+        assert "answered GET / with site/index.html" in r["evidence"] and f"127.0.0.1:{r['actual']['port']}" in r["evidence"], r
+        h = B._LIVE[d]
+        assert h["proc"].poll() is None and os.path.isfile(os.path.join(d, "backend", "start-1.log")), "the server stays up for the next checks"
+        assert os.path.isfile(os.path.join(d, "backend", "check-1.sqlite")), "the check's own database, in the run folder"
+        status, body = B._get(f"http://127.0.0.1:{h['port']}/")
+        assert status == 200 and body.decode() == E2E_PAGE, status
+        # start again: the first server is stopped first; attempt 2 gets its own log and database
+        r2 = B.start_check(d)
+        assert r2["pass"] is True and r2["actual"]["log"] == "backend/start-2.log" and h["proc"].poll() is not None, r2
+        assert B._LIVE[d] is not h
+        f = B.files_check(d)
+        assert f["pass"] is True and "check-2.sqlite" in f["evidence"] and d not in B._LIVE, f
+        assert B._LIVE.get(d) is None and B.files_check(d)["pass"] is False, "files after the stop: nothing to compare"
+    finally:
+        B.stop(d)
+    # exits at once
+    d2, r = backend_up(GOOD_SERVER.replace("    a = ap.parse_args()\n", "    a = ap.parse_args()\n    print('refusing to serve')\n    sys.exit(3)\n"))
+    assert r["pass"] is False and "exited with code 3" in r["evidence"] and "refusing to serve" in r["evidence"], r
+    assert d2 not in B._LIVE
+    # never answers (a sleep before serving): the timeout, shortened for the test
+    keep = B.START_TIMEOUT
+    B.START_TIMEOUT = 2
+    try:
+        d3, r = backend_up(GOOD_SERVER.replace("import sys\n", "import sys\nimport time\n", 1)
+                           .replace("    Handler.db = a.db\n", "    time.sleep(30)\n    Handler.db = a.db\n"))
+    finally:
+        B.START_TIMEOUT = keep
+    assert r["pass"] is False and "did not answer on 127.0.0.1" in r["evidence"] and "within 2 s" in r["evidence"], r
+    assert d3 not in B._LIVE and not any(os.path.exists(f"/proc/{p}") for p in [])      # stopped (checked by the handle)
+    # serves another page: the server is up (so the endpoint checks can still run) but the check fails
+    d4, r = backend_up(GOOD_SERVER.replace("                    data = f.read()\n", "                    data = b'<p>hello</p>'\n"))
+    try:
+        assert r["pass"] is False and "are not site/index.html" in r["evidence"] and d4 in B._LIVE, r
+    finally:
+        B.stop(d4)
+    # writes a second file: start passes, backend-files names it
+    d5, r = backend_up(GOOD_SERVER.replace("    db_connect(a.db).close()\n", "    db_connect(a.db).close()\n    sqlite3.connect('extra.sqlite').close()\n"))
+    try:
+        assert r["pass"] is True, r
+        f = B.files_check(d5)
+        assert f["pass"] is False and "the server wrote extra.sqlite outside its database backend/check-1.sqlite" in f["evidence"], f
+    finally:
+        B.stop(d5)
+    # the environment the server gets is built from scratch and the interpreter is isolated (-I): a server that
+    # prints both and exits shows it in its log
+    os.environ["J2_TEST_SECRET"] = "never"
+    try:
+        d6, r = backend_up(GOOD_SERVER.replace("    a = ap.parse_args()\n", "    a = ap.parse_args()\n    print('isolated', sys.flags.isolated, "
+                                               "'secret', os.getenv('J2_TEST_SECRET'), 'path', os.getenv('PATH'))\n    sys.exit(4)\n"))
+    finally:
+        os.environ.pop("J2_TEST_SECRET", None)
+    assert r["pass"] is False and "exited with code 4" in r["evidence"] and "isolated 1 secret None path /usr/bin:/bin" in r["evidence"], r
+    print("backend start check: starts on a free port in the run folder, answers index.html, keeps running, restart "
+          "stops the first, files check stops and compares; exit code with log tail, timeout, wrong page, extra file ok")
+
+
+def backend_endpoint_check():
+    """backend-endpoint: each LLD endpoint's example request; page-calls-known-endpoints: the page's /api/ calls."""
+    import j2_backend as B
+    d, r = backend_up()
+    try:
+        assert r["pass"]
+        a1 = B.endpoint_check(d, BACKEND_ENDPOINTS[0])
+        assert a1["pass"] is True and a1["evidence"].startswith("A1 POST /api/bookings: 201") and "id, name" in a1["evidence"], a1
+        a2 = B.endpoint_check(d, BACKEND_ENDPOINTS[1])
+        assert a2["pass"] is True and a2["evidence"].startswith("A2 GET /api/bookings: 200"), a2
+        assert a2["actual"]["status"] == 200 and "Test Person" in a2["actual"]["body"], a2
+        r = j2.run_check({"type": "backend-endpoint", "target": "A1", "expect": True, "spec": BACKEND_ENDPOINTS[0]}, os.path.join(d, "site"), E2E_PAGE)
+        assert r["pass"] is True, r
+        r = B.endpoint_check(d, {"id": "A3", "method": "GET", "path": "/api/none", "expected_status": 200})
+        assert r["pass"] is False and "A3 GET /api/none: expected 200, got 404" in r["evidence"], r
+        r = B.endpoint_check(d, {"id": "A4", "method": "GET", "path": "/bookings", "expected_status": 200})
+        assert r["pass"] is False and "does not start with /api/" in r["evidence"], r
+        r = B.endpoint_check(d, {**BACKEND_ENDPOINTS[0], "example_request": "{}"})
+        assert r["pass"] is False and "expected 201, got 400" in r["evidence"] and "missing: name" in r["evidence"], r
+    finally:
+        B.stop(d)
+    r = B.endpoint_check(d, BACKEND_ENDPOINTS[0])
+    assert r["pass"] is False and "the server is not running" in r["evidence"], r
+    # wrong status
+    d2, r = backend_up(GOOD_SERVER.replace("self._json(201,", "self._json(200,"))
+    try:
+        r = B.endpoint_check(d2, BACKEND_ENDPOINTS[0])
+        assert r["pass"] is False and "A1 POST /api/bookings: expected 201, got 200" in r["evidence"], r
+    finally:
+        B.stop(d2)
+    # missing endpoint
+    d3, r = backend_up(GOOD_SERVER.replace('        if p == "/api/bookings":\n            con = db_connect', '        if p == "/api/none":\n            con = db_connect'))
+    try:
+        r = B.endpoint_check(d3, BACKEND_ENDPOINTS[1])
+        assert r["pass"] is False and "A2 GET /api/bookings: expected 200, got 404" in r["evidence"], r
+    finally:
+        B.stop(d3)
+    # missing field in the reply
+    d4, r = backend_up(GOOD_SERVER.replace('self._json(201, {"id": bid, **', 'self._json(201, {**'))
+    try:
+        r = B.endpoint_check(d4, BACKEND_ENDPOINTS[0])
+        assert r["pass"] is False and "201 but the reply lacks fields: id" in r["evidence"], r
+        r = B.endpoint_check(d4, {**BACKEND_ENDPOINTS[1], "expected_fields": ["id", "created_by"]})
+        assert r["pass"] is False and "200 but the reply lacks fields: created_by" in r["evidence"], r
+    finally:
+        B.stop(d4)
+    # an empty list: the status passes and the item fields are not checked
+    d5, r = backend_up()
+    try:
+        r = B.endpoint_check(d5, BACKEND_ENDPOINTS[1])
+        assert r["pass"] is True and "the list is empty" in r["evidence"], r
+    finally:
+        B.stop(d5)
+    # the page's calls
+    r = B.page_calls_check(E2E_PAGE, BACKEND_ENDPOINTS)
+    assert r["pass"] is True and "the page calls /api/bookings (2 place(s))" in r["evidence"], r
+    r = B.page_calls_check(E2E_PAGE.replace('fetch("/api/bookings"', 'fetch("/api/book?x=1"'), BACKEND_ENDPOINTS)
+    assert r["pass"] is False and "the page calls /api/book, which no LLD endpoint has" in r["evidence"], r
+    r = B.page_calls_check("<form action='mailto:x@y.example'></form>", BACKEND_ENDPOINTS)
+    assert r["pass"] is False and "calls no /api/ path" in r["evidence"], r
+    assert B.page_calls("x.open('POST', '/api/bookings'); fetch(`/api/list`)") == ["/api/bookings", "/api/list"]
+    r = j2.run_check({"type": "page-calls-known-endpoints", "target": "index.html", "expect": True, "spec": BACKEND_ENDPOINTS}, os.path.join(d, "site"), E2E_PAGE)
+    assert r["pass"] is True, r
+    print("backend endpoint check: A1 201 with fields, A2 200 list, 404 for a missing endpoint, non-/api/ path, 400 on an empty "
+          "body, wrong status, missing endpoint, missing reply field, empty list; page calls known, unknown and none ok")
+
+
+def backend_e2e_check():
+    """backend-e2e: the form filled and submitted in headless Chrome through the same-origin proxy, the booking read
+    back from GET /api/bookings. --fast without --browser: could not run (pass None), never a failure."""
+    import j2_backend as B
+    d, r = backend_up()
+    spec = {"form": "#booking", "fields": BACKEND_FIELDS, "list_endpoint": {"method": "GET", "path": "/api/bookings"},
+            "confirm": "#booking-done"}
+    try:
+        assert r["pass"]
+        r = j2.run_check({"type": "backend-e2e", "target": "#booking", "expect": True, "spec": spec}, os.path.join(d, "site"), E2E_PAGE)
+        if not j2.j2_check.find_chrome():
+            assert r["pass"] is None and r["evidence"].startswith("could not run: Chrome not found"), r
+            print("backend e2e check: could not run without Chrome (pass None), server stopped ok")
+            return
+        assert r["pass"] is True, r
+        assert "test@stillpoint.example" in r["evidence"] and '"class": "Gentle Flow"' in r["evidence"] and "(1 row(s))" in r["evidence"], r
+        assert r["actual"]["row"]["name"] == "Test Person" and r["actual"]["row"]["id"] == 1, r["actual"]
+        # the page posts somewhere the server doesn't have: the page shows its error, the list stays empty, the check fails
+        d2, r2 = backend_up(page=E2E_PAGE.replace('fetch("/api/bookings"', 'fetch("/api/none"'))
+        try:
+            r2 = B.e2e_check(d2, E2E_PAGE.replace('fetch("/api/bookings"', 'fetch("/api/none"'), "#booking", BACKEND_FIELDS,
+                             {"method": "GET", "path": "/api/bookings"}, confirm="#booking-done")
+            assert r2["pass"] is False and "GET /api/bookings returned 0 row(s), none with" in r2["evidence"], r2
+        finally:
+            B.stop(d2)
+        # a confirmation element that never shows: the browser step fails and names it
+        r3 = B.e2e_check(d, E2E_PAGE, "#booking", BACKEND_FIELDS, {"method": "GET", "path": "/api/bookings"}, confirm="#never")
+        assert r3["pass"] is False and "did not submit in the browser" in r3["evidence"], r3
+    finally:
+        B.stop(d)
+    print("backend e2e check: form filled and submitted in Chrome through the proxy, booking read back; unknown path "
+          "fails on the empty list; a missing confirmation fails on the step ok")
 
 
 if __name__ == "__main__":
@@ -11166,6 +12244,17 @@ if __name__ == "__main__":
             artifact_schema_failures()
             rules_split()
             template_library()
+            backend_off()
+            backend_lld()
+            backend_in_run()
+            backend_retry()
+            backend_schema()
+            backend_templates()
+            backend_compile_check()
+            backend_safety_check()
+            backend_start_check()
+            backend_endpoint_check()
+            backend_e2e_check()
         board_disabled()
         board_functions_off()
         os.environ["J2_BOARD"] = "1"
@@ -11247,6 +12336,7 @@ if __name__ == "__main__":
     open_list()
     covers_by_text()
     readable_decision()
+    decision_negation()
     simple_messages()
     owner_override()
     form_submit()

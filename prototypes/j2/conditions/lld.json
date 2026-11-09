@@ -1,12 +1,13 @@
 {
-  "_note": "Necessary conditions for an LLD (design documents). Code checks each one on lld.md after every build; the LLD is workable only when all are met and Audit accepts. \"check\" names the code check in j2.condition_met(). \"plan\" (optional): words a workflow in Adaptation's plan must mention, or the plan is flagged before building.",
+  "_note": "Necessary conditions for an LLD (design documents). Code checks each one on lld.md after every build; the LLD is workable only when all are met and Audit accepts. \"check\" names the code check in j2.condition_met(). \"plan\" (optional): words a workflow in Adaptation's plan must mention, or the plan is flagged before building. \"flag\": the env var that must be 1 for the condition to exist (J2_BACKEND); \"backend_text\": the text used with that flag on.",
   "output": "lld",
   "conditions": [
     {
       "id": "L1",
       "text": "All five sections are present and not empty",
       "check": "sections-present",
-      "min_words": 1
+      "min_words": 1,
+      "backend_text": "All seven sections are present and not empty"
     },
     {
       "id": "L2",
@@ -37,6 +38,18 @@
       "text": "No invented facts: every number, email and proper name comes from the charter, the Requester's answers or the earlier documents, or sits in an Assumption: line",
       "check": "no-invented-facts",
       "names": true
+    },
+    {
+      "id": "L7",
+      "flag": "J2_BACKEND",
+      "text": "Every API endpoint has a method, an /api/ path, an example request and an expected status, and every form field maps to a request field",
+      "check": "lld-endpoints"
+    },
+    {
+      "id": "L8",
+      "flag": "J2_BACKEND",
+      "text": "Every table has columns with types",
+      "check": "lld-tables"
     }
   ]
 }

@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga PRD Goals",
+  "version": 1,
+  "sha": "bd3af332a236a669431f604d2f0ed5125ac076565773b280af22bf7d7673937c",
+  "schema_sha": "72f6a5c881e8ef5c666661245bd66b92aee5035bf2dc7d003db9a639a5c166a9",
+  "model_sha": "5e7a01b7b904268d85e04e199d02a9feed7f897a6d78a49d8e3530a550500623",
+  "class": "StillPointYogaPRDGoalsV1",
+  "created": "2026-11-03T16:34:45",
+  "fingerprints": [
+    "cf6a256522d1fef899dd7a1ddab7e10c42bfc6b57a2e25f3fcbc05110c7a251a"
+  ],
+  "made_by": {
+    "run": "j2-20261103-162711",
+    "workflow": "W-5",
+    "atom": "W-5.a1",
+    "agent": "template generator (claude-cli)",
+    "date": "2026-11-03 16:27:11"
+  },
+  "business": {
+    "name": "Still Point Yoga",
+    "type": "prd"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261103-162711",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261103-162711",
+      "workflow": "W-5",
+      "atom": "W-5.a1",
+      "action": "created"
+    }
+  ]
+}

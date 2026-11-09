@@ -122,7 +122,7 @@
           "Form fields",
           "File structure",
           "Responsive and accessibility rules"
-        ],
+        ], "backend_sections": ["Pages and sections", "Interactive elements", "Form fields", "API endpoints", "Data model", "File structure", "Responsive and accessibility rules"],
         "builder": "python:LLD_BUILDER",
         "refs": "^lld\\.md(#|$)"
       },

@@ -120,10 +120,13 @@ def ref_exists(spec, data, docs):
     """Every id named at path exists in the target: "this.<path>" (this document as recorded so far) or
     "<doc>.<path>" (an earlier document). With nothing recorded to check against, the answer is "not recorded":
     a rule marked required_target reports that as a failure, as the flow always has."""
-    target, path = spec["target"], spec["path"]
-    where, _, tpath = target.partition(".")
-    doc = (docs or {}).get("this" if where == "this" else where) or {}
-    known = {i for i in _ids(doc, tpath) if i}
+    targets, path = spec["target"], spec["path"]
+    targets = list(targets) if isinstance(targets, list) else [targets]      # several targets: any of them may hold the id
+    target, known = " or ".join(targets), set()
+    for t in targets:
+        where, _, tpath = t.partition(".")
+        doc = (docs or {}).get("this" if where == "this" else where) or {}
+        known |= {i for i in _ids(doc, tpath) if i}
     named = [(v, o) for v, o in walk(data, path)]
     flat = [(x, o) for v, o in named for x in (v if isinstance(v, list) else [v]) if x]
     if not known:
@@ -251,7 +254,33 @@ def url_prefix(spec, data, docs):
     return True, f"{len(got)} url(s) start with {spec['prefix']}"
 
 
-RULE_TYPES = {"ids_sequential": ids_sequential, "ids_unique": ids_unique, "ref_exists": ref_exists, "enum": enum,
+def prefix(spec, data, docs):
+    """Every value at the path starts with the prefix (an API path starts with /api/)."""
+    got = [(str(v), o) for v, o in walk(data, spec["path"]) if v is not None]
+    if not got:
+        return None, f"no {spec['path']} recorded"
+    bad = [(v, o) for v, o in got if not v.startswith(spec["prefix"])]
+    if bad:
+        return False, f"{_id(bad[0][1])} has {spec['path'].split('.')[-1]} {bad[0][0]!r}, which does not start with {spec['prefix']}"
+    return True, f"all {len(got)} value(s) start with {spec['prefix']}"
+
+
+def covers_all(spec, data, docs):
+    """Every id in the target list appears at least once at the path (every form field maps to a request field)."""
+    where, _, tpath = spec["target"].partition(".")
+    doc = (docs or {}).get("this" if where == "this" else where) or {}
+    want = [i for i in _ids(doc, tpath) if i]
+    if not want:
+        return None, f"{spec['target']} is not recorded, so {spec['path']} can't be checked"
+    have = {str(x) for v, _ in walk(data, spec["path"]) for x in (v if isinstance(v, list) else [v]) if x}
+    missing = [i for i in want if i not in have]
+    if missing:
+        return False, (spec.get("fail_text") or "{bad} of {target} never appear(s) at {path}").format(
+            bad=", ".join(missing), target=spec["target"], path=spec["path"])
+    return True, f"all {len(want)} of {spec['target']} appear at {spec['path']}"
+
+
+RULE_TYPES = {"ids_sequential": ids_sequential, "prefix": prefix, "covers_all": covers_all, "ids_unique": ids_unique, "ref_exists": ref_exists, "enum": enum,
               "hex": hex_colour, "css_safe": css_safe, "html_no_page_tags": html_no_page_tags,
               "anchor_selector": anchor_selector, "anchor_in_html": anchor_in_html, "not_empty": not_empty,
               "one_of_present": one_of_present, "url_prefix": url_prefix}
@@ -336,6 +365,53 @@ RULES = {
          "name": "type is one of " + ", ".join(FIELD_TYPES[:4]) + ", ...", "from": "L4"},
         {"rule": "ref_exists", "path": "form_fields[].section", "target": "this.sections[].id",
          "name": "section points at a section id of this document", "from": "L2"}],
+    # J2_BACKEND=1 (docs/backend-design.md section 2): the two sections exist only when the flag is on
+    ("lld", "API endpoints"): [
+        {"rule": "ids_sequential", "path": "endpoints", "prefix": "A",
+         "name": "ids A1, A2, ... unique and in order", "from": "L2"},
+        {"rule": "enum", "path": "endpoints[].method", "values": ["GET", "POST", "PUT", "DELETE"],
+         "name": "method is one of GET, POST, PUT, DELETE", "from": "L7"},
+        {"rule": "prefix", "path": "endpoints[].path", "prefix": "/api/",
+         "name": "every path starts with /api/", "from": "L7"},
+        {"rule": "not_empty", "path": ["endpoints[].purpose", "endpoints[].example_request",
+                                       "endpoints[].expected_status"],
+         "name": "every endpoint has a purpose, an example request and an expected status", "from": "L7"},
+        {"rule": "ref_exists", "path": "endpoints[].request_fields[].from_field", "target": "this.form_fields[].id",
+         "fail_text": "request field {id} carries {bad}, which is not a form field of this document",
+         "name": "every request field's from_field is a form field id of this document", "from": "L7"},
+        {"rule": "covers_all", "path": "endpoints[].request_fields[].from_field", "target": "this.form_fields[].id",
+         "fail_text": "form field(s) {bad} map to no request field",
+         "name": "every form field maps to a request field", "from": "L7"},
+        {"rule": "ref_exists", "path": "endpoints[].called_by",
+         "target": ["this.elements[].selector", "this.form_fields[].form"],
+         "fail_text": "{id} is called by {bad}, which is not an element or form selector of this document",
+         "name": "called_by names an element or form selector of this document", "from": "L7"}],
+    ("lld", "Data model"): [
+        {"rule": "ids_sequential", "path": "tables", "prefix": "T",
+         "name": "ids T1, T2, ... unique and in order", "from": "L2"},
+        {"rule": "not_empty", "path": ["tables[].name", "tables[].columns[].name"],
+         "name": "every table has a name and named columns", "from": "L8"},
+        {"rule": "enum", "path": "tables[].columns[].type", "values": ["INTEGER", "TEXT", "REAL", "BLOB"],
+         "name": "column type is one of INTEGER, TEXT, REAL, BLOB", "from": "L8"},
+        {"rule": "ref_exists", "path": "tables[].columns[].maps_to",
+         "target": "this.endpoints[].request_fields[].qualified",
+         "fail_text": "{id} stores {bad}, which is not a request field (A1.name) of this document",
+         "name": "maps_to names a request field of an endpoint", "from": "L8"}],
+    # J2_BACKEND=1: the backend builder's reply against the LLD (docs/backend-design.md section 3)
+    ("backend", "server.py"): [
+        {"rule": "not_empty", "path": "code", "name": "the file is not empty", "from": "backend-compile"},
+        {"rule": "ref_exists", "path": "endpoints_implemented", "target": "lld.endpoints[].id", "required_target": True,
+         "fail_text": "endpoints_implemented names {bad}, which is not an endpoint of the LLD",
+         "name": "every implemented endpoint is an LLD endpoint id", "from": "backend-endpoint"},
+        {"rule": "covers_all", "path": "endpoints_implemented", "target": "lld.endpoints[].id",
+         "fail_text": "LLD endpoint(s) {bad} are not in endpoints_implemented",
+         "name": "every LLD endpoint is implemented", "from": "backend-endpoint"},
+        {"rule": "ref_exists", "path": "tables_created", "target": "lld.tables[].id", "required_target": True,
+         "fail_text": "tables_created names {bad}, which is not a table of the LLD",
+         "name": "every created table is an LLD table id", "from": "backend-start"},
+        {"rule": "covers_all", "path": "tables_created", "target": "lld.tables[].id",
+         "fail_text": "LLD table(s) {bad} are not in tables_created",
+         "name": "every LLD table is created", "from": "backend-start"}],
     ("lld", "File structure"): [
         {"rule": "not_empty", "path": ["files[].path", "files[].purpose"],
          "name": "every file has a path and a purpose", "from": "L1"}],

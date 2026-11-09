@@ -540,9 +540,10 @@ f.addEventListener('load', () => setTimeout(async () => { const out = [];
 </script></body></html>"""
 
 
-def behavior(html, ops):
+def behavior(html, ops, serve=None):
     """Driver for behaviour steps: runs the ops in headless Chrome (1280px frame, virtual time, so waits are fast and
-    timers still fire) and returns {available, results}."""
+    timers still fire) and returns {available, results}. serve(folder) -> url: when given, the wrapper and the page
+    are opened over HTTP from that folder instead of file:// (the backend's e2e check, so the page's fetch() works)."""
     chrome = find_chrome()
     if not chrome:
         return {"available": False, "note": "Chrome not found (set J2_CHROME)"}
@@ -552,11 +553,12 @@ def behavior(html, ops):
             f.write(html)
         with open(os.path.join(tmp, "wrap.html"), "w", encoding="utf-8") as f:
             f.write(BEHAVIOR_WRAPPER % (json.dumps(ops), SETTLE_MS))
+        url = serve(tmp) if serve else "file://" + os.path.join(tmp, "wrap.html")
         for _ in range(2):             # one retry, as in check(): a Chrome hang isn't a failed check
             try:
                 p = run_chrome([chrome, "--headless=new", "--disable-gpu", "--allow-file-access-from-files",
                                     "--window-size=1300,1000", f"--virtual-time-budget={budget}", "--dump-dom",
-                                    "file://" + os.path.join(tmp, "wrap.html")], timeout=90)
+                                    url], timeout=90)
             except subprocess.TimeoutExpired:
                 continue
             m = re.search(r'data-j2="([^"]*)"', p.stdout)

@@ -166,9 +166,16 @@ def _run_claude_cli(cmd, images, user, env, progress, schema=None):
             if schema:
                 so = d.get("structured_output")
                 ok = p.returncode == 0 and sub == "success" and not d.get("is_error") and so is not None
-                LAST_META["structured"] = {"provider": "claude-cli", "subtype": sub, "present": so is not None}
+                err = (p.stderr or "").strip()[:300]
+                LAST_META["structured"] = {"provider": "claude-cli", "subtype": sub, "present": so is not None,
+                                           "exit": p.returncode, **({"stderr": err} if err else {})}
                 if not ok:
-                    why = (f"subtype {sub!r}" if sub != "success" else "no structured_output in the reply")
+                    # The whole verdict, so a CLI that never called the model (a refused --json-schema: exit 1, no
+                    # stdout, the reason on stderr) is never reported as a bare "subtype None"
+                    why = (f"exit {p.returncode}, "
+                           + ("no stdout" if not (p.stdout or "").strip() else
+                              f"subtype {sub!r}" if sub != "success" else "no structured_output in the reply")
+                           + (f", stderr: {err}" if err else ""))
                     last = RuntimeError(f"claude -p structured output failed: {why}")
                     progress({"note": f"{last}; retrying" if attempt == 0 else str(last)})
                     continue
