@@ -7875,7 +7875,7 @@ def plan_map_view():
     got = AG.answer(td2, "adaptation", "why?", ask=lambda system, user, mock, **kw: asked.update(system=system, user=user) or "Because the judge said so.")
     assert got["from"] == "model" and got["answer"] == "Because the judge said so." and "YOUR RECORDS" in asked["user"] and "Shell: 0.79" in asked["user"] and "Strategist" in asked["system"], "the model gets the records and the question"
     feed = render_node({"workflows": wfs, "chat": []}, docs={"docs": {}, "activity": act})["feed"]
-    assert feed.count('class="fev') == len(act["events"]) - 3 and feed.count('class="msg ') == 3 and "f-judge" in feed and "Judge round 0" in feed and "Created Plan in product" in feed and "C-1: Rename the levels" in feed, "the feed draws every event: messages as bubbles, the rest as cards"
+    assert feed.count(' fev f-') == len(act["events"]) - 3 and feed.count('class="msg ') == len(act["events"]) and feed.count('class="tag kind"') == len(act["events"]) - 3 and "f-judge" in feed and "Judge round 0" in feed and "Created Plan in product" in feed and "C-1: Rename the levels" in feed, "the feed draws every event in the chat's message style: messages as they are, the rest with a small label for their kind"
     print("plan map: the Sudoku-shaped record builds, the pane draws every node with zone, score, v2, change halo and reread edge; Map sits under Adaptation; the chat follows the section; the feed and the question answer from the records")
 
 
