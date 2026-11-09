@@ -1833,7 +1833,7 @@ function face(k, size, o){ const p = PEOPLE[k] || PEOPLE.asha, back = p.style ==
     + (back ? "" : sHair(p)) + (back ? `<path d="M20 24c3-4 7-5 12-5s9 1 12 5c-1-7-6-11-12-11s-11 4-12 11z" fill="${p.hair}"/>` : "")
     + `<circle cx="27.5" cy="28" r="1.6" fill="var(--av-line)"/><circle cx="36.5" cy="28" r="1.6" fill="var(--av-line)"/><path d="M28 33c2 2 6 2 8 0" stroke="var(--av-line)" stroke-width="1.5" fill="none" stroke-linecap="round"/>`
     + `<circle cx="24.5" cy="32" r="2.2" fill="var(--av-blush)" opacity=".35"/><circle cx="39.5" cy="32" r="2.2" fill="var(--av-blush)" opacity=".35"/>` + (o.prop === false ? "" : sProp(p)) + `</svg>`; }
-const SV = {arts: {}, akey: "", docmap: {}, dkey: "", unfold: new Set(), view: "", pick: "", want: "", loading: "", cur: "", secHTML: null, auto: null, drawer: "", talk: new Set(), cards: {}, steps: new Set(), firstVer: 0, decidedT: 0, decided: "", landKey: "", recent: null, chat: null};
+const SV = {arts: {}, akey: "", unfold: new Set(), view: "", pick: "", want: "", loading: "", cur: "", secHTML: null, auto: null, drawer: "", talk: new Set(), cards: {}, steps: new Set(), firstVer: 0, decidedT: 0, decided: "", landKey: "", recent: null, chat: null};
 const SREDUCE = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const SLATER = new Set();          // questions put off with "Answer later" (this page only; the run keeps waiting)
 let simpleHTML = null;
@@ -1846,37 +1846,11 @@ function askParts(s, m, live){      // {say, qs}: a single question isn't number
   if (pq.length){ if (ls.length > 1 && ls[ls.length - 1].trim() === String(pq[0].question).trim()) ls.pop(); return {say: ls.join("\n"), qs: pq.map(q => ({q: q.question, opts: q.options || []}))}; }
   return ls.length > 1 ? {qs: [{q: ls.pop(), opts: []}], say: ls.join("\n")} : {say: "", qs: [{q: a.say, opts: []}]};
 }
-// ---- the parts: one per section of the output (a fix rewrites its part, so it is the same line, marked "fixing")
-const sDocKind = n => (String(n || "").match(/^(PRD|HLD|LLD)\b/) || [])[1];
-const sPartLabel = w => plain(String((w && w.name) || "").replace(/_/g, " ").replace(/\bbuilders?\b/gi, "maker")).replace(/^(?:PRD|HLD|LLD)\s+/, "").replace(/\s+section(?:\s+revision(?:\s+\d+)?)?$/i, "")
-  .replace(/\s+revision(?:\s+\d+)?$/i, "").replace(/^(?:Build|Write|Make)\s+(?=\S)/i, "").replace(/^./, c => c.toUpperCase()) || "A part";
-function sBase(s, w){ const ws = s.workflows || []; return ws.find(x => x.id === w.section && !x.revises) || ws.find(x => x.section === w.section && !x.revises) || w; }
-function sDocOf(s, w){      // which output a part belongs to: the run's record of each document's workflows (/api/docs), else the name, else the stage under way
-  const b = sBase(s, w) || {}, k = SV.docmap[b.id] || SV.docmap[w.id] || (sDocKind(b.name) || "").toLowerCase();
-  return k || (s.doc ? s.output : "site"); }
-function sMaker(s, w){ const k = sDocOf(s, w); if (k === "prd") return "mira"; if (k === "hld") return "kabir"; if (k === "lld") return "dev";
-  const n = String((sBase(s, w) || {}).name || "").toLowerCase();
-  if (/form|calculat|filter|search|countdown|timer|toggle|sticky|\bnav|navigation|button|order|booking|\bbook\b|cart|checkout|\bmap\b|script|interactive|slider|carousel|accordion|send|email|subscribe|shell|responsive|loyalty card|tabs?\b/.test(n)) return "dev";
-  if (/style|styling|layout|\blook|design|hero|gallery|photo|image|visual|theme|colou?r|contrast|banner|logo|portfolio|lookbook/.test(n)) return "kabir";
-  return "mira"; }
-function sModel(s){
-  const ws = (s.workflows || []).filter(w => w.section !== "style"), by = new Map();
-  ws.forEach(w => { const k = w.section || w.id; if (!by.has(k)) by.set(k, []); by.get(k).push(w); });
-  const qw = s.paused && s.status !== "running" && s.paused.workflow;
-  let qsec = qw && ((ws.find(w => w.id === qw) || {}).section || qw);
-  if (!qsec && s.paused && s.status !== "running" && /^(limit|fact|audit)$/.test(s.paused.kind)){      // a question about what is still not right: the part that covers it
-    const au = (s.audits || [])[(s.audits || []).length - 1], bad = au ? au.results.filter(r => !/^PASS/.test(r.verdict || "")).map(r => String(r.item || String(r.id || "").replace(/^F-/, ""))) : [];
-    const w = [...ws].reverse().find(x => (x.covers || []).some(c => bad.includes(String(c)))); qsec = w ? w.section || w.id : null; }
-  const parts = [...by.entries()].map(([sec, list]) => {
-    const base = list.find(w => !w.revises) || list[0], last = list[list.length - 1], run = list.find(w => w.status === "running" || s.thinking === w.id);
-    const done = list.some(w => w.status === "done"), pend = list.filter(w => !/^(done|failed|refused|unfunded)$/.test(w.status || ""));
-    let st = run ? "doing" : last.status === "done" ? "done" : /^(failed|refused)$/.test(last.status || "") && !done ? "bad" : done && pend.length ? "fix" : "next";
-    if (qsec === sec) st = "ask";
-    return {sec, id: base.id, w: run || last, base, list, name: sPartLabel(base), person: sMaker(s, base), doc: sDocOf(s, base), st, fixing: !!(run && run.revises), fixes: list.filter(w => w.revises).length};
-  });
-  const done = parts.filter(p => p.st === "done").length;
-  return {parts, done, total: parts.length, qsec};
-}
+// ---- the parts, the people and the team stream come from the state (studio/1, j2_studio.py): one part per section of the output (a fix
+// rewrites its part, so it is the same line, marked fixing), each with the document it belongs to, its kind of work and its person.
+const sPartLabel = w => plain(String((w && w.name) || "A part"));
+function sModel(s){ const st = (s && s.studio) || {}, parts = (st.parts || []).map(p => ({...p, name: plain(p.name)}));
+  return {parts, done: st.done || 0, total: st.total || 0, qsec: st.qsec || null}; }
 const sAnd = xs => xs.length < 2 ? xs.join("") : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1];
 const sNum = n => n === 1 ? "one part" : `${n} parts`;
 function sCrew(s, M){
@@ -1907,9 +1881,9 @@ function sPhase(s, open){      // one plain sentence for where the run is; no na
   if (isReady(s)) return (s.docset || []).length > 1 ? "Your design documents are ready" : `Your ${what} is ready` + (/^Done with open items/.test(s.outcome || "") ? ". Some things were left as they are." : "");
   if (open.length) return APPROVE.includes((s.paused || {}).kind) ? "Waiting for your OK" : "Waiting for your answer";
   if (s.status !== "running") return s.saved ? "Saved project" : "Waiting for your message";
-  const w = (s.workflows || []).find(x => x.status === "running");
+  const w = sModel(s).parts.find(p => p.st === "doing");
   const st = stage(s);
-  return st === 0 ? "Reading your request" : st === 1 ? "Planning the work" : st === 2 ? (w ? `Building ${sPartLabel(sBase(s, w)).toLowerCase()}` : `Building your ${what}`)
+  return st === 0 ? "Reading your request" : st === 1 ? "Planning the work" : st === 2 ? (w ? `Building ${w.name.toLowerCase()}` : `Building your ${what}`)
     : s.doc ? "Checking the document" : "Checking it on a phone and a laptop";
 }
 const SCHIPS = ["A website for my bakery", "A product spec for a food delivery app", "A 4-week launch plan for my cafe"];      // a website, a document and a plan
@@ -1980,7 +1954,7 @@ function renderSimple(s){
     $("sfinish").hidden = !(ready || failed(s)); $("sfinish").innerHTML = failed(s) ? `<span class="sfmsg">${esc(sPhase(s, []))}</span><button type="button" class="pri" id="sretry">Start over</button>` : ready ? sFinish(s) : ""; }
   $("sframebox").classList.toggle("done", ready);
   document.body.classList.toggle("has-site", s.versions > 0);
-  sChanges(s); sDocMap(s); sArts(s);
+  sChanges(s); sArts(s);
   if (SV.drawer) sDrawerRefresh(s);
 }
 let sready = null;
@@ -2293,25 +2267,10 @@ function sTeamwork(s, M){
     return `<div${fresh ? ' class="new"' : ""}>${t.who ? face(t.who, 26, {prop: false, label: false}) : `<span class="rico" aria-hidden="true">${esc(t.role[0])}</span>`}<span><b>${esc(t.who ? PEOPLE[t.who].name : t.role)}</b> ${esc(t.text)}<small>${esc(t.t || "")}</small></span></div>`; }).join("") + `</div></section>`;
   return h;
 }
-function sTalk(s){      // the team's own messages as one plain line each, written here from what each message is (never the agents' words)
-  const ws = s.workflows || [], W = id => { const w = ws.find(x => x.id === id); return w ? sPartLabel(sBase(s, w)).toLowerCase() : "a part"; };
-  let audits = 0; const out = [];
-  (s.allChat || []).forEach(m => { const t = String(m.text || ""), ids = [...t.matchAll(/\bW-(\d+)\b/g)].map(x => "W-" + x[1]); let r = null;
-    if (m.who === "identity" && !m.to_user && !m.test) r = {who: "asha", text: /charter (?:is )?(?:recorded|ready)/i.test(t) ? "wrote down what you asked for and handed it to the team." : /\bdrop|leave out/i.test(t) ? "passed on what you chose to leave out." : "passed the next step to the team."};
-    else if (m.who === "adaptation") r = {role: "Planner", text: /resubmit|revis|rework/i.test(t) ? "reworked the plan." : /\bfix/i.test(t) ? "planned a fix." : /lesson/i.test(t) ? "noted a lesson for next time." : "proposed the parts to make."};
-    else if (m.who === "priority") r = {role: "Budget lead", text: /envelope check|runs now/i.test(t) && ids[0] ? `gave the go-ahead for ${W(ids[0])}.` : /\bGRANT\b/.test(t) ? "agreed the plan." : /\bCOUNTER\b/.test(t) ? "asked for a smaller plan." : /\bREFUSE\b/.test(t) ? "turned down part of the plan." : "checked the effort."};
-    else if (m.who === "coordination") r = {role: "Scheduler", text: ids.length ? `lined up ${W(ids[ids.length > 1 && /done/i.test(t) ? ids.length - 1 : 0])} next.` : "scheduled the work."};
-    else if (m.who === "validator") r = {role: "Gatekeeper", text: /^@?\S*\s*Registered/i.test(t.replace(/^@\w+\s*/, "")) || /Registered/.test(t) ? `opened ${ids.length || "the"} part${ids.length === 1 ? "" : "s"} for the team.` : /Rejected/i.test(t) ? "sent the plan back: some details were missing." : /valid/i.test(t) ? "checked the plan: ready to start." : "checked the work order."};
-    else if (m.who === "audit"){ const a = (s.audits || [])[audits++]; const n = a ? a.results.length : 0, ok = a ? a.results.filter(x => /^PASS/.test(x.verdict || "")).length : 0;
-      r = {who: "nora", text: a ? (ok === n ? `checked everything on your list: all ${n} good.` : `checked your list: ${ok} of ${n} good, the rest goes back to the team.`) : "checked the result."}; }
-    else if (isWf(m.who)){ const w = ws.find(x => x.id === m.who); if (w) r = {who: sMaker(s, w), text: `${w.revises ? "fixed" : "finished"} ${W(m.who)}.`}; }
-    if (r) out.push({id: m.id, t: m.t ? String(m.t).slice(0, 5) : "", ...r}); });
-  return out;
-}
+const sTalk = s => ((s.studio || {}).stream || []).map(x => ({...x, text: plain(x.text)}));      // the team's messages as plain lines (j2_studio.stream)
 // ---- the journey (Your idea, Plan, Build, Check, Ready, then a stop per change): sJourneyModel is the model; drawn as one road, walked by whoever is working
 const SJ = {on: false, changes: [], ckey: "", key: "", stops: []};
-const sPartName = (s, id) => { const ws = s.workflows || [], w = ws.find(x => x.section === id && !x.revises) || ws.find(x => x.section === id);
-  return w ? sPartLabel(w).toLowerCase() : "a part"; };
+const sPartName = (s, id) => { const p = sModel(s).parts.find(x => x.sec === id); return p ? p.name.toLowerCase() : "a part"; };
 function sJourneyModel(s){
   const ws = s.workflows || [], built = (s.sections || []).map(x => x.id).filter(id => id !== "style");
   const planned = [...new Set([...sModel(s).parts.map(p => p.sec), ...built])];      // every part of the plan, and anything built outside it
@@ -2366,11 +2325,6 @@ async function sArts(s){      // /api/artifacts, once per new message or status:
   const k = (s.total || 0) + "|" + s.status + "|" + s.versions + "|" + viewRun; if (k === SV.akey) return; SV.akey = k;
   try { const r = await fetch(`/api/artifacts?x=1${runQ()}`, {cache: "no-store"}); if (r.ok){ SV.arts = await r.json(); if (state) renderSimple(state); } } catch (e) {}
 }
-async function sDocMap(s){      // /api/docs, once per new message or status: each finished document's workflows
-  if (!(s.docset || []).length) return; const k = (s.total || 0) + "|" + s.status + "|" + viewRun; if (k === SV.dkey) return; SV.dkey = k;
-  try { const r = await fetch(`/api/docs?x=1${runQ()}`, {cache: "no-store"}); if (r.ok){ const d = await r.json(), m = {};
-    Object.entries(d).forEach(([kind, v]) => (v.workflows || []).forEach(id => m[id] = kind)); SV.docmap = m; if (state) renderSimple(state); } } catch (e) {}
-}
 async function sChanges(s){      // change.json, once per new message or status: the journey's change stops
   const k = (s.total || 0) + "|" + s.status + "|" + viewRun; if (k === SJ.ckey) return; SJ.ckey = k;
   try { const r = await fetch(`/api/changes?x=1${runQ()}`, {cache: "no-store"}); if (r.ok){ SJ.changes = (await r.json()).changes || []; if (state) renderSimple(state); } } catch (e) {}
@@ -2388,31 +2342,37 @@ function sMateHTML(s, k){
   if (talk.length) h += `<p class="sdk">Recently</p><div class="slog">${talk.map(x => `<div><b>${p.name}</b> ${esc(x.text)}</div>`).join("")}</div>`;
   return h + (k === "asha" && !s.saved ? `<button type="button" class="sbtn smore" data-chat>Message Asha</button>` : "");
 }
-function sOpenPart(sec){
-  const s = state; if (!s) return; const M = sModel(s), p = M.parts.find(x => x.sec === sec); if (!p) return;
-  const P = PEOPLE[p.person], w = p.list.filter(x => x.status === "done").pop() || p.w, a = (w.atoms || [])[0] || {}, au = (s.audits || [])[(s.audits || []).length - 1];
-  const covers = new Set([].concat(...p.list.map(x => x.covers || [])).map(String)), clip = (t, n) => { t = plain(t); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
-  const checks = au ? au.results.filter(r => covers.has(String(r.item || "")) || covers.has(String(r.id || "").replace(/^F-/, ""))) : [];
-  const outs = (a.expected_output || []).slice(0, 6), how = a.how && (a.how.steps || a.how.kind);
-  let h = `<div class="sdhead">${face(p.person, 52, {label: false})}<div><h4>${esc(p.name)}</h4><small>${P.name} · ${P.role} · ${p.st === "done" ? "done" : p.st === "doing" ? "being made now" : p.st === "ask" ? "waits on your answer" : "coming up"}${p.fixes ? ` · fixed ${p.fixes === 1 ? "once" : p.fixes + " times"}` : ""}</small></div></div><div class="sart">`
-    + `<div class="row"><span class="k">1</span><div><h5>Goal</h5><p>${esc(clip(a.goal || w.purpose || w.covers_text || "Make this part of your " + sNoun(s) + ".", 260))}</p></div></div>`
-    + `<div class="row"><span class="k">2</span><div><h5>Method</h5><p class="mono">${esc(clip(how || "Written by " + P.name + " to the plan.", 260))}</p></div></div>`
-    + `<div class="row"><span class="k">3</span><div><h5>Output</h5>${outs.length ? `<ul>${outs.map(o => `<li><i class="${o.met === true ? "y" : o.met === false ? "n" : "w"}">${o.met === true ? "✓" : o.met === false ? "✗" : "•"}</i><span>${esc(clip(o.text, 120))}</span></li>`).join("")}</ul>` : `<p>${p.st === "done" ? "The part, on the page." : "Not made yet."}</p>`}</div></div>`
-    + `<div class="row"><span class="k">4</span><div><h5>Check</h5>${checks.length ? `<ul>${checks.slice(0, 6).map(r => { const ok = /^PASS/.test(r.verdict || ""); return `<li><i class="${ok ? "y" : "n"}">${ok ? "✓" : "✗"}</i><span>${esc(clip(r.criterion, 140))}</span></li>`; }).join("")}</ul>` : `<p>${au ? "Checked with the whole " + sNoun(s) + "." : "Nora checks it once it lands."}</p>`}</div></div></div>`
+// a part or a deliverable: its goal, method, output and check, as the backend records them (/api/record, j2_studio.record)
+const sOk = v => v === true ? '<i class="y">✓</i>' : v === false ? '<i class="n">✗</i>' : '<i class="w">•</i>';
+const sRow = (n, h, body) => `<div class="row"><span class="k">${n}</span><div><h5>${h}</h5>${body}</div></div>`;
+async function sRecord(q){ try { const r = await fetch(`/api/record?${q}${runQ()}`, {cache: "no-store"}); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+async function sOpenPart(sec){
+  const s = state; if (!s) return; const p = sModel(s).parts.find(x => x.sec === sec); if (!p) return;
+  const P = PEOPLE[p.person], head = `<div class="sdhead">${face(p.person, 52, {label: false})}<div><h4>${esc(p.name)}</h4><small>${P.name} · ${P.role} · ${p.st === "done" ? "done" : p.st === "doing" ? "being made now" : p.st === "ask" ? "waits on your answer" : "coming up"}${p.fixes ? ` · fixed ${p.fixes === 1 ? "once" : p.fixes + " times"}` : ""}</small></div></div>`;
+  sDrawer(head + `<p class="snone">Opening its record…</p>`, "part:" + sec);
+  const r = await sRecord(`sec=${encodeURIComponent(sec)}`); if (SV.drawer !== "part:" + sec) return;
+  const li = xs => `<ul>${xs.map(o => `<li>${sOk(o.met)}<span>${esc(plain(o.text))}</span></li>`).join("")}</ul>`;
+  $("sdbody").innerHTML = head + (!r ? `<p class="snone">No record for this part yet.</p>` : `<div class="sart">`
+    + sRow(1, "Goal", `<p>${esc(plain(r.goal || "Make this part of your " + sNoun(s) + "."))}</p>`)
+    + sRow(2, "Method", `<p class="mono">${esc(plain(r.method || "Made by " + P.name + " to the plan."))}</p>`)
+    + sRow(3, "Output", r.output.length ? li(r.output) : `<p>${p.st === "done" ? "The part, on the page." : "Not made yet."}</p>`)
+    + sRow(4, "Check", r.check.length ? li(r.check) : `<p>${r.checked ? "Checked with the whole " + sNoun(s) + "." : "Nora checks it once it lands."}</p>`)
+    + (r.history.length > 1 ? sRow("↻", "History", li(r.history.map(h => ({text: h.fix ? "Fix: " + h.name : "First made", met: h.status === "done" ? true : undefined})))) : "") + `</div>`)
     + `<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="sbtn" data-go="${esc(p.sec)}">Show it</button><button type="button" class="sbtn" data-records>Every record, in the Detailed view</button></div>`;
-  sDrawer(h, "part:" + sec);
 }
-function sOpenArt(name){      // a deliverable: goal, method (its parts and who made them), output (open it), check (the latest round of checks)
+async function sOpenArt(name){
   const s = state, d = (SV.arts.deliverables || []).find(x => x.name === name); if (!s || !d) return;
-  const M = sModel(s), kind = d.form === "page" ? "site" : d.type || d.name, parts = M.parts.filter(p => p.doc === kind || (!(s.docset || []).length && kind === (s.doc ? s.output : "site")));
-  const au = (s.audits || [])[(s.audits || []).length - 1], ok = au ? au.results.filter(r => /^PASS/.test(r.verdict || "")).length : 0;
-  const who = [...new Set(parts.map(p => PEOPLE[p.person].name))], tab = sTabs(s).find(t => t.k === kind || t.k === "a:" + d.name || (kind !== "site" && sTabs(s).length && t.k === "site" && false));
-  sDrawer(`<div class="sdhead"><span class="sform" aria-hidden="true" style="width:52px;height:52px;font-size:20px">${{page: "▣", doc: "¶", image: "◩", data: "{ }"}[d.form] || "◇"}</span><div><h4>${esc(d.label || d.name)}</h4><small>${esc(String(d.file || "").split("/").pop())}${d.version ? ` · version ${d.version}` : ""}</small></div></div><div class="sart">`
-    + `<div class="row"><span class="k">1</span><div><h5>Goal</h5><p>${esc(plain((s.goal || {}).statement || "What you asked for.").slice(0, 260))}</p></div></div>`
-    + `<div class="row"><span class="k">2</span><div><h5>Method</h5><p>${parts.length ? `${parts.length} part${parts.length === 1 ? "" : "s"}, made by ${esc(sAnd(who))}:` : "Made by the team."}</p>${parts.length ? `<ul>${parts.slice(0, 12).map(p => `<li><i class="${p.st === "done" ? "y" : "w"}">${p.st === "done" ? "✓" : "•"}</i><span><button type="button" class="slink" data-part="${esc(p.sec)}">${esc(p.name)}</button></span></li>`).join("")}</ul>` : ""}</div></div>`
-    + `<div class="row"><span class="k">3</span><div><h5>Output</h5><p>${tab ? `<button type="button" class="slink" data-view="${esc(tab.k)}">Open it here</button> · ` : ""}<a class="slink" href="/api/artifact?name=${encodeURIComponent(d.file)}${runQ()}" target="_blank" rel="noopener">The file itself</a></p></div></div>`
-    + `<div class="row"><span class="k">4</span><div><h5>Check</h5><p>${!parts.length ? (au ? `Checked by Nora: ${ok} of ${au.results.length} items on your list met in the latest check.` : "Nora checks it once it lands.") : parts.every(p => p.st === "done") ? `Every part passed Nora's checks${parts.some(p => p.fixes) ? ", some after a fix" : ""}.` : `${parts.filter(p => p.st === "done").length} of ${parts.length} parts done and checked so far.`}</p></div></div></div>`
-    + `<button type="button" class="sbtn smore" data-records>Every record, in the Detailed view</button>`, "art:" + name);
+  const icon = {page: "▣", doc: "¶", image: "◩", data: "{ }"}[d.form] || "◇", head = `<div class="sdhead"><span class="sform" aria-hidden="true" style="width:52px;height:52px;font-size:20px">${icon}</span><div><h4>${esc(d.label || d.name)}</h4><small>${esc(String(d.file || "").split("/").pop())}${d.version ? ` · version ${d.version}` : ""}</small></div></div>`;
+  sDrawer(head + `<p class="snone">Opening its record…</p>`, "art:" + name);
+  const r = await sRecord(`art=${encodeURIComponent(name)}`); if (SV.drawer !== "art:" + name) return;
+  if (!r){ $("sdbody").innerHTML = head + `<p class="snone">No record yet.</p>`; return; }
+  const who = [...new Set(r.method.map(p => PEOPLE[p.person].name))], c = r.check, tab = sTabs(s).find(t => t.k === (d.form === "page" ? "site" : d.type) || t.k === "a:" + d.name);
+  $("sdbody").innerHTML = head + `<div class="sart">`
+    + sRow(1, "Goal", `<p>${esc(plain(r.goal || "What you asked for."))}</p>`)
+    + sRow(2, "Method", r.method.length ? `<p>${r.method.length} part${r.method.length === 1 ? "" : "s"}, made by ${esc(sAnd(who))}:</p><ul>${r.method.slice(0, 14).map(p => `<li>${sOk(p.st === "done" ? true : undefined)}<span><button type="button" class="slink" data-part="${esc(p.sec)}">${esc(plain(p.name))}</button></span></li>`).join("")}</ul>` : `<p>Made by the team.</p>`)
+    + sRow(3, "Output", `<p>${tab ? `<button type="button" class="slink" data-view="${esc(tab.k)}">Open it here</button> · ` : ""}<a class="slink" href="/api/artifact?name=${encodeURIComponent(d.file)}${runQ()}" target="_blank" rel="noopener">The file itself</a></p>`)
+    + sRow(4, "Check", `<p>${c.parts ? (c.parts_done === c.parts ? `Every part passed Nora's checks${c.fixed ? ", some after a fix" : ""}.` : `${c.parts_done} of ${c.parts} parts done and checked so far.`) : c.items ? `Checked by Nora: ${c.items_met} of ${c.items} items on your list met in the latest check.` : "Nora checks it once it lands."}</p>`) + `</div>`
+    + `<button type="button" class="sbtn smore" data-records>Every record, in the Detailed view</button>`;
 }
 // ---- top bar, dock and the rest
 function sToast(t){ const el = $("stoast"); if (!el || !el.classList) return; el.textContent = t; el.classList.add("on"); clearTimeout(sToast.t); sToast.t = setTimeout(() => el.classList.remove("on"), 2800); }

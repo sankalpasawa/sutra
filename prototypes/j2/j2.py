@@ -57,6 +57,7 @@ import j2_realization
 import j2_rules
 import j2_schema
 import j2_send
+import j2_studio
 import j2_template_lib
 import llm
 
@@ -2788,6 +2789,8 @@ def saved_snapshot(name, since=0):
             "has_templates": os.path.isfile(os.path.join(d, "templates.json")),
             "report": _read(d, "report.json"), "outcome": s.get("outcome"),
             "decide_for_me": bool((_read(d, "settings.json", {}) or {}).get("decide_for_me")),
+            "studio": j2_studio.build({"workflows": wfs, "chat": chat, "status": "saved", "audits": audits, "saved": name, "output": out,
+                                       "doc": bool(OUTPUTS[out]["sections"])}, docs),
             "auto_answers": [{"msg": m["id"], "answer": m["text"], "label": m.get("auto_label")} for m in chat if m.get("who") == "user" and m.get("auto")],
             "sections": [{"id": k, "owner": x["owner"], "workflow": x.get("workflow"),
                           "bytes": len((x["head"] + x["body"]).encode("utf-8"))} for k, x in sections.items()],
@@ -3011,6 +3014,7 @@ class J2Run:
                               "workflow": self.paused["handoff"].get("wid")}) if self.paused else None,
                 "outcome": self.outcome,          # read-only, for the Simple view
                 "decide_for_me": self.auto, "auto_answers": self.auto_log,
+                "studio": self.studio_view(),     # the Simple view's parts, people and team stream (j2_studio.py, studio/1)
                 "style": self.style, "rubric": RUBRIC,
                 "playbooks": load_playbooks() if self.memory else [], "playbooks_used": self.playbooks_used,
                 "playbook_saved": self.playbook_saved,
@@ -3029,6 +3033,12 @@ class J2Run:
                 "memory": self.memory, "lessons": load_lessons() if self.memory else [],
                 "lessons_used": self.lessons_used, "lessons_saved": [x["id"] for x in self.lessons_saved],
                 **output_info(self.output, self.dir, self.audits, [k for k in self.docset if k in self.docs])}
+
+    def studio_view(self):
+        """studio/1 (j2_studio.build) from the whole run, not the poll's slice of the chat."""
+        p = self.paused and {"kind": self.paused["kind"], "workflow": self.paused["handoff"].get("wid")}
+        return j2_studio.build({"workflows": self._all_wfs(), "chat": self.chat, "thinking": self.thinking, "status": self.status,
+                                "paused": p, "audits": self.audits, "output": self.output, "doc": self.doc, "saved": None}, self.docs)
 
     def _placeholders(self):
         out = []

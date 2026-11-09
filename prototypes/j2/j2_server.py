@@ -18,6 +18,7 @@ import j2_agent
 import j2_artifacts
 import j2_map
 import j2_story
+import j2_studio
 import j2_template_lib
 import llm
 from j2 import HERE, J2Run, clear_lessons
@@ -246,6 +247,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 data = f.read()
             return self._send(200, data, DOCX, name) if name.endswith(".docx") else \
                 self._send(200, data, "text/markdown")
+        if u.path == "/api/record":     # the Simple view's goal, method, output and check: one part (sec) or one deliverable (art), live or saved
+            snap = j2.saved_snapshot(run, 0) if run else {**RUN.snapshot(0), "saved": None}
+            d = j2.saved_dir(run) if run else RUN.dir
+            docs = (j2._read(d, "documents.json", {}) if d else {}) if run else RUN.docs
+            if q.get("art") is not None:
+                row = next((r for r in j2_artifacts.listing(d if d and os.path.isdir(d) else None)["deliverables"] if r["name"] == q["art"]), None)
+                rec = j2_studio.deliverable_record(snap, docs, row) if row and snap else None
+            else:
+                rec = j2_studio.record(snap, docs, q.get("sec")) if snap else None
+            return self._send(200, json.dumps(rec, ensure_ascii=False)) if rec else self._send(404, '{"error": "no such part"}')
         if u.path.startswith("/doc/") or u.path == "/view":      # the Simple view's output tabs: any file the run's artifact list names, as a readable page
             d = j2.saved_dir(run) if run else RUN.dir
             name = f"{u.path.rsplit('/', 1)[-1]}.md" if u.path.startswith("/doc/") else q.get("name")

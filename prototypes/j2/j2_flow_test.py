@@ -1354,6 +1354,8 @@ def studio_views():
     image shown, anything else as text) and nothing else; /doc/<kind> is a finished PRD, HLD or LLD; the open question names its workflow when
     it has one; parts map to their documents through /api/docs (a design-document run) and every saved run's tabs end with Team at work."""
     import threading
+    import urllib.error
+    import urllib.parse
     import urllib.request
     import j2_server
     here = os.path.dirname(os.path.abspath(__file__))
@@ -1366,6 +1368,7 @@ def studio_views():
         run = docs_run(DESIGN_BRIEF, 900)
         j2.RUNS_DIR = os.path.dirname(run.dir)
         name = os.path.basename(run.dir)
+        keep_run, j2_server.RUN = j2_server.RUN, run      # the server's live run could share this run's id (both made in the same second)
         arts = json.loads(get(f"/api/artifacts?run={name}"))
         files = [r["file"] for r in arts["deliverables"] + arts["records"]]
         assert "prd.md" in files, files
@@ -1376,18 +1379,83 @@ def studio_views():
         assert "isn't written yet" in get(f"/view?name=../j2.py&run={name}") and "isn't written yet" in get(f"/view?name=nope.md&run={name}") \
             and "isn't written yet" in get(f"/doc/nope?run={name}"), "only listed files are served"
         snap = json.loads(json.dumps(j2.saved_snapshot(name, 0), default=str))
-        docs = json.loads(get(f"/api/docs?run={name}"))
-        docmap = {w: k for k, v in docs.items() for w in v["workflows"]}
-        out = render_node(snap, docs={"docs": {}, "docmap": docmap, "arts": arts})
+        out = render_node(snap, docs={"docs": {}, "arts": arts})
         kinds = {p["doc"] for p in out["parts"]}
         assert {"prd", "hld", "lld", "site"} <= kinds and out["tabs"][:4] == ["prd", "hld", "lld", "site"] and out["tabs"][-1] == "team", (kinds, out["tabs"])
         assert all(p["person"] == {"prd": "mira", "hld": "kabir", "lld": "dev"}[p["doc"]] for p in out["parts"] if p["doc"] != "site"), "the PRD is Mira's, the HLD Kabir's, the LLD Dev's"
         assert "What the team made" in out["teamwork"] and out["teamwork"].count("data-art=") == len(arts["deliverables"]), "every deliverable on Team at work"
+        # /api/record: one part's goal, method, output and check, and a whole deliverable's, live or saved; an unknown part is a 404
+        sec = snap["studio"]["parts"][0]["sec"]
+        rec = json.loads(get(f"/api/record?sec={sec}&run={name}"))
+        assert rec["schema"] == "studio/1" and rec["goal"] and rec["method"] and rec["output"] and rec["doc"] == "prd" and rec["person"] == "mira", rec
+        drec = json.loads(get(f"/api/record?art={urllib.parse.quote(arts['deliverables'][0]['name'])}&run={name}"))
+        assert drec["goal"] == run.goal["statement"][:300] or drec["goal"].endswith("…"), drec["goal"]
+        assert drec["method"] and drec["check"]["parts"] == len(drec["method"]) and drec["output"]["file"] == arts["deliverables"][0]["file"], drec
+        try:
+            get(f"/api/record?sec=W-999&run={name}")
+            raise AssertionError("an unknown part is a 404")
+        except urllib.error.HTTPError as e:
+            assert e.code == 404
     finally:
         j2.RUNS_DIR = keep_dir
+        j2_server.RUN = locals().get("keep_run", j2_server.RUN)
         srv.shutdown()
     print("studio views: /view serves only listed files (markdown, page, image, text), /doc/<kind>, parts mapped to their documents with their people, "
-          "every deliverable on Team at work ok")
+          "every deliverable on Team at work, /api/record for a part and a deliverable ok")
+
+
+def studio_model():
+    """j2_studio.py (studio/1), code only: one part per section in plan order (a fix is the same part, marked fixing, counted in fixes);
+    each part's document from the run's documents record, else its name, else the stage under way; its kind and person (the PRD is
+    Mira's, the HLD Kabir's, the LLD Dev's; on a page, something that works is Dev's, the look Kabir's, words Mira's); the part the open
+    question is about; the team stream in plain lines with no agent words or ids, every function message once; every saved run builds."""
+    import j2_studio as St
+    assert St.part_name("PRD Requirements section revision 2") == "Requirements" and St.part_name("Build_menu") == "Menu" \
+        and St.part_name("W-3 builder notes") == "W-3 maker notes" and St.part_name("") == "A part"
+    assert [St.kind_of(n, "site") for n in ("Pre-order form", "Hero and gallery", "Our story", "Sticky menu with active section")] \
+        == ["developer", "designer", "writer", "developer"] and St.kind_of("Anything", "hld") == "designer"
+    wfs = [{"id": "W-1", "name": "Menu section", "section": "W-1", "status": "done", "covers": [1]},
+           {"id": "W-2", "name": "Order form", "section": "W-2", "status": "running", "covers": [2]},
+           {"id": "W-3", "name": "Menu fix", "section": "W-1", "status": "registered", "revises": "W-1", "covers": [1]},
+           {"id": "W-4", "name": "Gallery", "section": "W-4", "status": "registered", "covers": [3]}]
+    snap = {"workflows": wfs, "chat": [], "status": "running", "thinking": "W-2", "output": "website", "doc": False}
+    ps = St.parts(snap)
+    assert [(p["sec"], p["st"], p["person"], p["fixes"]) for p in ps] == [("W-1", "fix", "mira", 1), ("W-2", "doing", "dev", 0), ("W-4", "next", "kabir", 0)], ps
+    paused = {**snap, "status": "waiting", "thinking": None, "paused": {"kind": "limit"},
+              "audits": [{"results": [{"id": "F-3", "item": 3, "verdict": "NEEDS_REVISION"}, {"item": 1, "verdict": "PASS"}]}]}
+    assert St.build(paused)["qsec"] == "W-4" and St.build({**paused, "paused": {"kind": "approval", "workflow": "W-2"}})["qsec"] == "W-2" \
+        and St.build({**paused, "paused": {"kind": "info"}})["qsec"] is None, "the part a question is about"
+    assert St.parts({**snap, "workflows": [{"id": "W-1", "name": "Problem", "section": "W-1", "status": "done"}], "output": "prd", "doc": True})[0]["doc"] == "prd"
+    assert St.parts(snap, {"hld": {"workflows": ["W-4"]}})[2]["doc"] == "hld", "the documents record wins over the name"
+    here = os.path.dirname(os.path.abspath(__file__))
+    keep_dir, j2.RUNS_DIR = j2.RUNS_DIR, os.path.join(here, "runs")
+    n_runs = lines = 0
+    try:
+        for name in sorted(os.listdir(j2.RUNS_DIR)) if os.path.isdir(j2.RUNS_DIR) else []:
+            if not os.path.isfile(os.path.join(j2.RUNS_DIR, name, "workflows.json")):
+                continue
+            try:
+                sn = j2.saved_snapshot(name, 0)
+            except (KeyError, TypeError, ValueError):
+                continue
+            st = sn["studio"]
+            n_runs += 1
+            assert st["schema"] == "studio/1" and st["total"] == len(st["parts"]) and all(p["person"] in St.PEOPLE for p in st["parts"]), name
+            secs = {w.get("section") or w.get("id") for w in sn["workflows"] if w.get("section") != "style"}
+            assert {p["sec"] for p in st["parts"]} == secs and len(st["parts"]) == len(secs), (name, "one part per section")
+            text = " ".join(x["text"] for x in st["stream"])
+            bad = SIMPLE_FORBIDDEN.findall(text) + SIMPLE_FORBIDDEN_CASE.findall(text) + re.findall(r"\bW-\d+\b", text)
+            for p in st["parts"]:
+                text = text.replace(p["name"].lower(), " ")
+            bad = SIMPLE_FORBIDDEN.findall(text) + SIMPLE_FORBIDDEN_CASE.findall(text) + re.findall(r"\bW-\d+\b", text)
+            assert not bad, (name, bad)
+            fns = [m for m in sn["chat"] if m["who"] in ("adaptation", "priority", "coordination", "validator", "audit")]
+            assert len(st["stream"]) == min(St.STREAM_MAX, len(st["stream"])) and (len(st["stream"]) == St.STREAM_MAX or len(st["stream"]) >= len(fns)), name
+            lines += len(st["stream"])
+    finally:
+        j2.RUNS_DIR = keep_dir
+    print(f"studio model: parts one per section with their document, kind and person, fixes on the same part, the question's part, "
+          f"{n_runs} saved runs build with {lines} plain stream lines ok")
 
 
 def work_atoms():
@@ -11676,6 +11744,7 @@ if __name__ == "__main__":
     simple_redesign()
     decide_for_me()
     studio_views()
+    studio_model()
     plain_words()
     identity_prompt_is_plain()
     print("G simple view (plain words at the source and as fallback, buttons once, phone toggle, ready card) ok")
