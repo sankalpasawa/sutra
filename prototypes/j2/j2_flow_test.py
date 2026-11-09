@@ -8001,7 +8001,7 @@ def left_bar():
             for w in wfs:
                 assert f'data-wfrow="{htmllib.escape(w["id"])}"' in out["workflows"], (name, w["id"], "a workflow's deep link lands on no Workflows row")
             arts_html = "".join(render_node(snap, docs={"docs": {}, "map": m, "artifacts": {"groups": gr, "g": k, "sel": {}, "tab": "sum", "ver": ""}})["artifacts"]
-                                for k in ("plan", "guides", "site", "records"))      # every group's list (a row's data-node lists each Map node it holds)
+                                for k in ("plan", "guides", "site", "documents", "records"))      # every group's list (a row's data-node lists each Map node it holds)
             arts_html = re.sub(r'data-node="([^"]*)"', lambda x: " ".join(f'data-node="{v}"' for v in x.group(1).split()), arts_html)
             map_arts = {n["id"]: n for n in m["nodes"] if n["kind"] == "work"}
             ids = set(map_arts) | {a for C in (m.get("constellations") or {}).values() for a in [C["id"]] + [s_["section"] for s_ in C["slots"] if s_["section"]]}
@@ -11163,6 +11163,151 @@ def library_page(run, lib):
           "\"from this run\", the atom card links it ok")
 
 
+def agent_views():
+    """agent-views/1 (j2_agent_views.py, j2_agent_models.py): python3 j2_agent_views.py build <run> gives every artifact of a
+    saved run an agent-readable JSON where agent_view() looks (artifacts/<guide>.json, prd.json with model and valid,
+    site/sections/<id>.json, agent/<record>.json, agent/audits/A-n.json), each valid against its Pydantic model for real;
+    the Documents group and the audit rows carry them; a planted invalid JSON reads invalid. Browser-free with Node, and
+    with Chrome (--browser) the Agent-readable tab shows the model, the schema and the Valid / Invalid mark."""
+    import glob as globlib
+    import shutil
+    import subprocess
+    import j2_agent_models as G
+    import j2_agent_views as V
+    A = j2_artifacts
+    here = os.path.dirname(os.path.abspath(__file__))
+    names = [n for n in ("j2-20261103-132506", "j2-20261103-161111-3", "j2-20261103-184249") if os.path.isdir(os.path.join(here, "runs", n))]
+    if not names:
+        print("agent views: skipped (no saved test run in runs/)")
+        return
+    tmp = tempfile.mkdtemp(prefix="j2-agent-views-")
+    built, seen_kinds = {}, set()
+    try:
+        for n in names:
+            d = os.path.join(tmp, n)
+            shutil.copytree(os.path.join(here, "runs", n), d)
+            for p in globlib.glob(os.path.join(d, "agent", "**", "*.json"), recursive=True) + globlib.glob(os.path.join(d, "site", "sections", "*.json")) \
+                    + globlib.glob(os.path.join(d, "artifacts", "**", "*.json"), recursive=True):
+                os.remove(p)      # the test builds them itself
+            res = V.build(d, quiet=True)
+            assert res, (n, "nothing built")
+            assert all(r["valid"] for r in res), (n, [r for r in res if not r["valid"]])
+            built[n] = res
+            g = A.groups(d)
+            assert [x["id"] for x in g["groups"]] == ["plan", "guides", "site", "documents", "records"], [x["id"] for x in g["groups"]]
+            rows = [x for gr in g["groups"] for x in gr["rows"]]
+            for x in rows:
+                if x["id"] in ("audits", "shots"):      # the chart row and the screenshots keep their old views
+                    continue
+                v = x["views"]["agent"]
+                assert v and v["format"] == "json" and v["schema"] and v["model"] and v["valid"] is True, (n, x["kind"], x["id"], v)
+                assert A.served(d, v["file"]), (n, v["file"], "served")
+                rec = json.load(open(os.path.join(d, v["file"]), encoding="utf-8"))
+                cls = G.MODELS.get(rec.get("model"))
+                if cls is not None:      # the mark is real: the data validates again against the named model
+                    assert G.validate(cls, rec["data"])[0] is not None, (n, x["id"])
+                seen_kinds.add(x["kind"])
+            audits = [a for a in json.load(open(os.path.join(d, "audits.json"))) if a.get("kind") != "recheck"] if os.path.isfile(os.path.join(d, "audits.json")) else []
+            assert [x["id"] for x in rows if x["kind"] == "audit"] == [f"A-{i}" for i in range(1, len(audits) + 1)], (n, "one audit row per audit")
+            for x in [x for x in rows if x["kind"] == "audit"]:
+                rec = json.load(open(os.path.join(d, x["views"]["agent"]["file"]), encoding="utf-8"))["data"]
+                assert rec["id"] == x["id"] and rec["goal"] and rec["method"] and isinstance(rec["findings"], list) and isinstance(rec["evidence"], list), (n, x["id"])
+                assert x["views"]["human"] == {"format": "list", "file": x["views"]["agent"]["file"]}, x["views"]
+            docs = [x for x in rows if x["kind"] == "document"]
+            assert {x["id"] for x in docs} == {k for k in ("prd", "hld", "lld") if os.path.isfile(os.path.join(d, k + ".md"))}, (n, [x["id"] for x in docs])
+            for x in docs:
+                rec = json.load(open(os.path.join(d, x["views"]["agent"]["file"]), encoding="utf-8"))
+                assert rec["schema"] == "artifact-schema/1" and rec["model"] == x["id"].upper() and rec["valid"] is True and rec["validation"] \
+                    and all(v["valid"] for v in rec["validation"].values()) and "sections" in rec, (n, x["id"])      # the data file keeps its keys
+                assert x["views"]["human"] == {"format": "markdown", "file": f"{x['id']}.md"}
+            # a planted invalid JSON reads invalid, in the data and on the row
+            bp = os.path.join(d, "agent", "goal.json")
+            bad = json.load(open(bp, encoding="utf-8"))
+            bad["data"].pop("statement", None)
+            bad["data"]["planted"] = "<b>not a field</b>"
+            bad = G.envelope(G.Charter, bad["data"], bad["source"])
+            assert bad["valid"] is False and bad["errors"], bad["errors"]
+            json.dump(bad, open(bp, "w", encoding="utf-8"))
+            g2 = A.groups(d)
+            ch = next(x for gr in g2["groups"] for x in gr["rows"] if x["id"] == "charter")
+            assert ch["views"]["agent"]["valid"] is False and ch["views"]["agent"]["model"] == "Charter", ch["views"]
+            if shutil.which("node"):
+                def pane(group, sel, file):
+                    return render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": g2, "g": group, "sel": {group: sel}, "tab": "agent", "ver": ""},
+                                                                        "arttext": {file: open(os.path.join(d, file), encoding="utf-8").read()}})["artifacts"]
+                out = pane("plan", "charter", "agent/goal.json")
+                assert "Charter" in out and "agent-views/1" in out and "Invalid" in out and "&lt;b&gt;not a field&lt;/b&gt;" in out and "<b>not a field</b>" not in out, out[-500:]
+                out = pane("plan", "workflows", "agent/workflows.json")
+                assert "WorkflowPlan" in out and ">Valid<" in out or "Valid</" in out or "Valid" in out, out[-300:]
+                assert "Invalid" not in out, out[-300:]
+                out = pane("documents", "prd", "prd.json")
+                assert ">PRD<" in out or "PRD" in out, out[-300:]
+                assert "artifact-schema/1" in out and "Invalid" not in out and "Valid" in out, out[-400:]
+                if audits:
+                    out = pane("records", "A-1", "agent/audits/A-1.json")
+                    assert "AuditResult" in out and "Valid" in out and "Invalid" not in out, out[-400:]
+            r = subprocess.run([sys.executable, os.path.join(here, "j2_agent_views.py"), "build", d], capture_output=True, text=True, timeout=300)
+            assert r.returncode == 0 and "agent-readable JSON" in r.stdout and "INVALID" not in r.stdout.replace("Invalid", ""), (r.returncode, r.stdout[-300:], r.stderr[-300:])
+            if BROWSER and j2.j2_check.find_chrome():
+                agent_views_page(d, n)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    kinds = sorted(seen_kinds)
+    print(f"agent views: {', '.join(f'{n} ({len(built[n])} JSONs, all valid)' for n in names)}; rows with a valid agent JSON: {', '.join(kinds)}; "
+          "Documents group and audit rows A-n present; a planted invalid charter reads Invalid, the rest Valid ok")
+
+
+def agent_views_page(d, name):
+    """--browser: the Artifacts pane in headless Chrome on a saved run: the Documents group opens, the PRD row's Agent-readable
+    tab shows the model, the schema and Valid; an audit row's tab shows AuditResult and Valid; the planted charter shows Invalid."""
+    import html as htmllib
+    import shutil
+    import socket
+    import threading
+    import j2_server
+    here = os.path.dirname(os.path.abspath(__file__))
+    ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
+    chrome = j2.j2_check.find_chrome()
+    has_audit = os.path.isfile(os.path.join(d, "agent", "audits", "A-1.json"))
+    steps = ("(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), q = s => [...document.querySelectorAll(s)], r = {}, meta = () => (document.querySelector('#pane-artifacts .ameta') || {}).textContent || '';"
+             " await wait(2500); await artOpenGroup('documents', 'prd'); await wait(800); r.docTitle = document.getElementById('wtitle').textContent; r.docRows = q('#pane-artifacts .agrow').map(b => b.dataset.agrow);"
+             " q('#pane-artifacts [data-atab=agent]')[0].click(); await wait(1200); r.prd = meta();"
+             f" if ({'true' if has_audit else 'false'}) {{ await artOpenGroup('records', 'A-1'); await wait(800); q('#pane-artifacts [data-atab=agent]')[0].click(); await wait(1200); r.audit = meta(); q('#pane-artifacts [data-atab=human]')[0].click(); await wait(600); r.auditHuman = (document.querySelector('#pane-artifacts .agpane') || {{}}).textContent.slice(0, 400); }}"
+             " await artOpenGroup('plan', 'charter'); await wait(800); q('#pane-artifacts [data-atab=agent]')[0].click(); await wait(1200); r.charter = meta();"
+             " r.err = (window.__e || []).slice(); document.body.setAttribute('data-r', JSON.stringify(r)); })();")
+    port = socket.socket(); port.bind(("127.0.0.1", 0)); p_ = port.getsockname()[1]; port.close()
+    tmp = tempfile.mkdtemp(prefix="j2-agent-views-page-")
+    os.symlink(os.path.join(here, "vendor"), os.path.join(tmp, "vendor"))
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(ui.replace("<head>", "<head><script>window.__e = []; addEventListener('error', e => __e.push(String(e.message)));</script>", 1)
+                                                                        .replace("</body>", f"<script>setTimeout(() => {{ {steps} }}, 500)</script></body>"))
+    keep_here, runs_ = j2_server.HERE, j2.RUNS_DIR
+    j2_server.HERE, j2.RUNS_DIR = tmp, os.path.dirname(d)
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", p_), j2_server.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    prof = tempfile.mkdtemp(prefix="j2-avprof-")
+    try:
+        dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--user-data-dir={prof}", "--no-first-run", "--window-size=1440,900",
+                          "--virtual-time-budget=30000", "--dump-dom", f"http://127.0.0.1:{p_}/?view=detail&run={name}&tab=artifacts"],
+                         capture_output=True, text=True, timeout=120).stdout
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR = keep_here, runs_
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(prof, ignore_errors=True)
+    hit = re.search(r'data-r="([^"]*)"', dom)
+    assert hit, ("the page did not finish its steps", dom[-300:])
+    r = json.loads(htmllib.unescape(hit.group(1)))
+    assert r["docTitle"] == "Documents" and "prd" in r["docRows"], r
+    assert "PRD" in r["prd"] and "artifact-schema/1" in r["prd"] and "Valid" in r["prd"] and "Invalid" not in r["prd"], r["prd"]
+    if has_audit:
+        assert "AuditResult" in r["audit"] and "agent-views/1" in r["audit"] and "Valid" in r["audit"] and "Invalid" not in r["audit"], r["audit"]
+        assert "Not saved" not in r["auditHuman"], r["auditHuman"][:200]
+    assert "Charter" in r["charter"] and "Invalid" in r["charter"], r["charter"]
+    assert not r["err"], r["err"]
+    print(f"agent views page ({name}): Documents group lists the PRD, its Agent-readable tab shows PRD, artifact-schema/1 and Valid; "
+          f"{'audit A-1 shows AuditResult and Valid with a findings list; ' if has_audit else ''}the planted charter shows Invalid; no page error ok")
+
+
 if __name__ == "__main__":
     if "--template-demo" in sys.argv:
         # python3 j2_flow_test.py --fast --template-demo: the three template-library demo runs (template_library's
@@ -11272,6 +11417,7 @@ if __name__ == "__main__":
             view_kept()
             run_settings()
             artifacts_groups()
+            agent_views()
             graph_map()
             warm_ui()
             map_motion()
