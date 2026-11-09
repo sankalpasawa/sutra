@@ -40,6 +40,9 @@ class CallTag(BaseModel):
     atom: Optional[str] = None
     # agent_turn, summary, template, review, plan, judge, change, chat_plan, chat; the policy matches it exactly
     purpose: str = Field("agent_turn", pattern=PURPOSE_PATTERN)
+    # The most this call may do in the owner's working folder: "" none, "read" (file tools), "edit" (and change files). Data only: the router
+    # (`Router.folder_for`) turns it into a folder and the owner's access setting always caps it (D127).
+    workspace: Literal["", "read", "edit"] = ""
 
 
 class Allowance(BaseModel):

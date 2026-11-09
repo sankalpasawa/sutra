@@ -33,7 +33,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Optional, Protocol, Sequence
 
-from sutra_app.engine.port import Allowance, CompletionRequest, CompletionResult
+from sutra_app.engine.port import Allowance, CallTag, CompletionRequest, CompletionResult
 
 from .base import ModelConnector, Hooks, CallInfo, CallRecord, prompted_prompt
 from .errors import (
@@ -54,7 +54,8 @@ from .discover import explain_missing
 from .transcript import render_carry_over
 from .independence import NOT_INDEPENDENT, Independence
 from .usage import Attempt, UsageIn, UsageSink, build_usage_row, load_session_state, new_request_id, save_session_state
-from .workdir import grounding_text
+from .egress import scan
+from .workdir import Folder, grounding_text
 
 __all__ = [
     "Router", "Plan", "RouterStatus", "ProviderStatus", "PolicyInfo", "ModelBrief", "TodayCounts", "TranscriptSource",
@@ -67,7 +68,6 @@ CONNECTOR_MODES = ("auto", "claude", "codex", "stub")
 TRANSCRIPT_LIMIT = 20                 # `resume_info` gives at most 20 messages (ORCH 3.4), so the carry-over cap rarely bites
 NEW_MESSAGE_LABEL = "New message:"    # separates the carry-over block from the message in the first prompt of a new session
 _STUB_CONCURRENCY = 64
-AGENT_FUNCTIONS = ("chat_agent",)     # the one-shot calls that get the owner's working folder (the org chat agent); the engine's calls never do
 _SESSION_ID = re.compile(SESSION_ID_PATTERN)
 
 # the words of the note "claude out of quota, answered by codex" (J2 llm.py:173,187)
@@ -353,6 +353,27 @@ class Router:
             log.warning("could not read the working folder", exc_info=True)
             return ""
 
+    def folder_for(self, tag: CallTag) -> "Folder | str":
+        """The working folder ONE call gets (D127), `""` for none. The tag says the most the call may do there (`workspace`: "" none, `read`, `edit`);
+        the owner's access setting caps it: a `read` call gets the folder read-only, an `edit` call gets it editable only when the owner chose "read
+        and change". No folder set, or an offline router, is none. A tag is data: no function name is looked at here."""
+        want = getattr(tag, "workspace", "")
+        if want not in ("read", "edit"):
+            return ""
+        grant = self.chat_folder()
+        if not grant:
+            return ""
+        return grant if want == "edit" and getattr(grant, "edit", False) else Folder(str(grant), edit=False)
+
+    @staticmethod
+    def _grounded(system: str, folder: "Folder | str") -> str:
+        """The system text with the folder's grounding after it (where it is, what the tools can do, the project's own instructions), put through the
+        shape scan: a CLAUDE.md that holds a credential does not leave. Added AFTER the egress check, so the caller's own text is untouched; with no
+        folder the text is returned as it came."""
+        if not folder:
+            return system
+        return (system + "\n\n" if system else "") + scan(grounding_text(folder), replace=True)[0]
+
     def _emit(self, type_: str, data: dict) -> None:
         if self._events is None:
             return
@@ -596,15 +617,20 @@ class Router:
         on_event = _progress(on_progress)
         model = plan.models[provider]
         scripted = req.scripted if provider == "stub" else None
+        folder = self.folder_for(req.ctx.tag)              # the owner's folder when the call's tag asks for it (D127); "" leaves the call as it was
+        system = self._grounded(req.system, folder)
         if req.schema is None:
             kw: dict[str, Any] = {"scripted": scripted} if scripted is not None else {}
-            return connector.call_text(req.user, system=req.system, images=req.images, tools=plan.tools, timeout=state.timeout_s(),
+            if folder:
+                kw["folder"] = folder
+            return connector.call_text(req.user, system=system, images=req.images, tools=plan.tools, timeout=state.timeout_s(),
                                        ctx=state.connector_ctx(), effort=plan.resolved.effort, model=model, hooks=state,
                                        on_event=on_event, partials=req.partials, **kw)
-        return self._schema_text(state, plan, req, provider, connector, model, scripted, on_event)
+        return self._schema_text(state, plan, req, provider, connector, model, scripted, on_event, system, folder)
 
     def _schema_text(self, state: _Request, plan: Plan, req: AskRequest, provider: str, connector: ModelConnector, model: str,
-                     scripted: Optional[Callable[[], str]], on_event: Optional[Callable[[ConnectorEvent], None]]) -> TurnResult:
+                     scripted: Optional[Callable[[], str]], on_event: Optional[Callable[[ConnectorEvent], None]],
+                     system: Optional[str] = None, folder: "Folder | str" = "") -> TurnResult:
         """The native step of the JSON strategy and nothing more (`complete()` never repairs, D33): the reply text is returned as
         it came; the engine validates it. A `structured` error on the native path is remembered and the same request goes
         prompted once."""
@@ -613,9 +639,10 @@ class Router:
 
         def plan_for(native_now: bool):
             return connector._oneshot_plan(                           # the base's own plan builder: same checks as call_text
-                req.user if native_now else prompted_prompt(req.user, schema), system=req.system, kind="json", model=model,
-                effort=plan.resolved.effort, timeout=state.timeout_s(), ctx=state.connector_ctx(), images=req.images,
-                tools=plan.tools, schema=connector.transport_schema(schema) if native_now else None, partials=False, spent=0.0)
+                req.user if native_now else prompted_prompt(req.user, schema), system=req.system if system is None else system, kind="json",
+                model=model, effort=plan.resolved.effort, timeout=state.timeout_s(), ctx=state.connector_ctx(), images=req.images,
+                tools=plan.tools, schema=connector.transport_schema(schema) if native_now else None, partials=False, spent=0.0,
+                folder=folder)
 
         scope = connector._request(schema, scripted) if provider == "stub" else contextlib.nullcontext()   # type: ignore[attr-defined]
         with scope:
@@ -672,10 +699,8 @@ class Router:
         schema = req.schema if req.schema is not None else {"type": "object"}
         force = req.schema is None or self._is_blocked(provider, connector, to_json_schema(schema))
         kw: dict[str, Any] = {"scripted": req.scripted} if provider == "stub" and req.scripted is not None else {}
-        system = req.system
-        folder = self.chat_folder() if req.ctx.tag.function in AGENT_FUNCTIONS else ""      # the org chat agent reads the owner's folder; a team's run never does
-        if folder:
-            system = (system + "\n\n" if system else "") + grounding_text(folder)
+        folder = self.folder_for(req.ctx.tag)              # the call's tag decides (the org chat agent tags itself `edit`); the owner's access caps it
+        system = self._grounded(req.system, folder)
         return connector.call_json_result(
             req.user, plan.tools, schema, state.timeout_s(), system=system, ctx=state.connector_ctx(), effort=plan.resolved.effort,
             model=plan.models[provider], images=req.images, hooks=state, on_event=_progress(on_progress), force_prompted=force,

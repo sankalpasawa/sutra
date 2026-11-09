@@ -368,10 +368,12 @@ class ModelConnector(ABC):
     def call_text(self, prompt: str, *, system: str = "", images: Sequence[str] = (), tools: Sequence[str] = (),
                   timeout: float = DEFAULT_TIMEOUT_S, ctx: Optional[RouteContext] = None, effort: Optional[Effort] = None,
                   model: Optional[str] = None, hooks: Optional[Hooks] = None,
-                  on_event: Optional[Callable[[ConnectorEvent], None]] = None, partials: bool = False) -> TurnResult:
+                  on_event: Optional[Callable[[ConnectorEvent], None]] = None, partials: bool = False, folder: str = "") -> TurnResult:
+        """One text call. `folder` is the owner's working folder (a `workdir.Folder`, which also says whether files may be changed): the CLI then runs
+        in it with the file tools, as in a chat turn."""
         ctx = ctx or RouteContext()
         plan = self._oneshot_plan(prompt, system=system, kind="text", model=model, effort=effort or "high", timeout=timeout,
-                                  ctx=ctx, images=images, tools=tools, schema=None, partials=partials, spent=0.0)
+                                  ctx=ctx, images=images, tools=tools, schema=None, partials=partials, spent=0.0, folder=folder)
         return self._execute(plan, hooks or self.hooks, on_event)
 
     def call_json(self, prompt: str, tools: Sequence[str] = (), schema: "type[BaseModel] | dict | None" = None,

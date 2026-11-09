@@ -35,6 +35,7 @@ from .policy import PolicyLoad, RoutingPolicy, load_policy
 from .router import Router
 from .stub import StubConnector
 from .usage import UsageSink
+from .workdir import WorkFolder
 
 __all__ = ["make_port", "port_from_config", "build_connectors", "RouterPort"]
 
@@ -76,6 +77,7 @@ def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageS
                     policy_error=load.error, **router_kw)
     if not stub_only:                                  # D109: J2's agents are observed, never edited: one audit row per prompt, byte-identical text
         router.egress = Egress(Path(spec.data_dir) / "connectors" / "egress.jsonl")
+        router.folders = WorkFolder(spec.data_dir, cfg.resolved_work_root())      # D127: a call whose tag asks for the owner's folder gets it; read on every call
     return RouterPort(router, mock=stub_only, tag=CallTag(run_id=spec.run_id, dept_id=spec.dept_id, task_id=spec.task_id))
 
 
