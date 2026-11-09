@@ -1778,7 +1778,19 @@ function renderLessons(s){
 // ================= Simple view: one voice (the Client Lead), plain words, no internals; the run's own output type, never a fixed "site" =================
 // Order matters: specific phrases first, then names and words. Internals become plain words; nothing is invented.
 const AGENT = "(?:Identity|Adaptation|Priority|Coordination|Validator|W-\\d+(?: Builder)?|Builder)";
-const PLAIN = [[/@[\w-]+[,:]?/g, ""], [/\(?\bJ2(?:\.[a-h]|_[A-Z_]+(?:=\S*)?)?\)?/g, ""], [/\bClause:\s*/g, ""],
+// the render check's findings (j2_check.py problems(), j2.py's gate) as you'd say them: no error text, no pixel counts. END: up to a line's own "(failing)".
+const END = String.raw`[^\n]*?(?=\s\([a-z ,]+\)$|$)`;
+const TECH = [[new RegExp(String.raw`\b(?:\d+ )?(?:JS|JavaScript) errors?(?:\(s\))?(?: on load)?: ` + END, "gim"), "the page shows a script error"],
+  [new RegExp(String.raw`\bform (\d+) throws on submit: ` + END, "gim"), "form $1 breaks when someone sends it"],
+  [new RegExp(String.raw`\bUncaught \w*Error\b:? ` + END, "gm"), "a script error"],
+  [/\bform (\d+) never submits although every field is valid\b/gi, "form $1 doesn't send even when it's filled in right"],
+  [/\bform (\d+) has no submit (?:button|control)\b/gi, "form $1 has no send button"],
+  [/\bphone overflow \d+px\b/gi, "the page scrolls sideways on a phone"], [/\bdesktop overflow \d+px\b/gi, "the page scrolls sideways on a computer"],
+  [/\bbroken (?:in-page )?link #[\w-]+/gi, "a link on the page leads nowhere"],
+  [/\bno horizontal overflow at 360px and 1280px\b/gi, "no sideways scrolling on phones or computers"], [/\bhorizontal overflow\b/gi, "sideways scrolling"],
+  [/\b(?:JS|JavaScript) errors\b/g, "script errors"], [/\b(?:a )?JS error\b/g, "a script error"],
+  [/\bsubmit control\b/gi, "send button"], [/\s*\(action or mailto\)/gi, ""], [/\bNEEDS_REVISION\b/g, "needs work"]];
+const PLAIN = [...TECH, [/@[\w-]+[,:]?/g, ""], [/\(?\bJ2(?:\.[a-h]|_[A-Z_]+(?:=\S*)?)?\)?/g, ""], [/\bClause:\s*/g, ""],
   [/\s+(?:on|in|for|of) [CFW]-\d+\b/g, ""], [/\bF-(\d+)\b/g, "item $1"], [/\bC-\d+\b/g, ""],
   [/\b[Tt]he Requester\b/g, "you"], [/\bRequester's\b/g, "your"], [/\bRequester\b/g, "you"],
   [/\bCOUNTER\b/g, "a smaller offer"], [/\bGRANT\b/g, "a yes"], [/\bREFUSE\b/g, "a no"],

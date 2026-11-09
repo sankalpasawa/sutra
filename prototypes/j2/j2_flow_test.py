@@ -1926,7 +1926,8 @@ def detail_stays_open():
 
 def plain_words():
     """The Simple view's word list (fallback only): Audit becomes "our checks", never "the team", so nothing reads
-    "after the team"; other function names become "the team"; budget becomes effort. Runs the page's own JS in node."""
+    "after the team"; other function names become "the team"; budget becomes effort; the render check's findings (a JS error, a
+    form that throws, overflow in px, a broken link) read as plain sentences with no error text. Runs the page's own JS in node."""
     import shutil
     import subprocess
     if not shutil.which("node"):
@@ -1938,7 +1939,14 @@ def plain_words():
     cases = {"only 10 units stay for fixes after Audit": "Only 10 work credits stay for fixes after our checks",
              "Every done-when item passes with Audit's evidence.": "Every checklist item passes with our checks' evidence.",
              "@Adaptation Priority's final answer was COUNTER.": "The team's final answer was a smaller offer.",
-             "The Requester picked; the budget is over budget.": "You picked; the effort is more than planned."}
+             "The Requester picked; the budget is over budget.": "You picked; the effort is more than planned.",
+             # the render check's findings in a "Still not right" list (live run j2-20261109-231951): no error text, no pixel counts
+             "Still not right (5):\n- JS error: Uncaught SyntaxError: Failed to execute 'requestSubmit' on 'HTMLFormElement': Unexpected identifier 've' (failing)\n"
+             "- form 1 throws on submit: Uncaught SyntaxError: Unexpected identifier 've' (failing)\n- phone overflow 8px (failing)\n"
+             "- broken link #menu (failing)\n- Every form has a submit control and a destination (action or mailto) (failing)":
+             "Still not right (5):\n- the page shows a script error (failing)\n- form 1 breaks when someone sends it (failing)\n"
+             "- the page scrolls sideways on a phone (failing)\n- a link on the page leads nowhere (failing)\n- Every form has a send button and a destination (failing)",
+             "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px.": "The page has no script errors, no sideways scrolling on phones or computers."}
     out = subprocess.run(["node", "-e", js + "\nconst c = " + json.dumps(list(cases)) +
                           ";\nprocess.stdout.write(JSON.stringify(c.map(plain)));"], capture_output=True, text=True)
     got = json.loads(out.stdout or "null") or sys.exit(out.stderr)
