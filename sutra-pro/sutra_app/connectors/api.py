@@ -27,6 +27,7 @@ purpose `connector_test`; offline mode refuses test, sign-in and a mediated refr
 """
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Callable, Optional
 
@@ -49,7 +50,7 @@ from .router import Router
 from .tools.github_tools import gh_env
 from .tools.mediated import MediatedConnectors, RefreshTooSoon
 from .tools.profiles import PROFILES, tool_catalog, tools_status
-from .workdir import MAX_PATH as WORKDIR_MAX_PATH, WorkFolder, preview_of
+from .workdir import MAX_PATH as WORKDIR_MAX_PATH, WorkFolder, instructions_of, preview_of
 
 __all__ = ["build_api_router", "PREFIX", "TEST_PROMPT", "MAX_POLICY_BYTES", "status_for"]
 
@@ -116,7 +117,8 @@ class _CliPath(BaseModel):
 
 class _Workdir(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    path: str = Field(..., max_length=WORKDIR_MAX_PATH)
+    path: Optional[str] = Field(None, max_length=WORKDIR_MAX_PATH)       # none: only the access changes (the folder stays)
+    access: Optional[str] = Field(None, max_length=8)                    # "read" or "edit"; none: "edit" for a new folder, the same for the one chosen
 
 
 def _offline(router: Router, what: str) -> ApiFailure:
@@ -181,7 +183,10 @@ def build_api_router(*, router: Router, write_guard: Callable[..., Any], mediate
         stored = store.stored()
         problem = store.problem(stored)
         usable = stored is not None and problem is None
-        return {"path": stored, "usable": usable, "problem": problem, "preview": preview_of(stored) if usable and stored is not None else None}
+        name, text = instructions_of(stored) if usable and stored is not None else ("", "")
+        return {"path": stored, "usable": usable, "problem": problem, "access": store.stored_access() if stored is not None else None,
+                "preview": preview_of(stored) if usable and stored is not None else None,
+                "instructions": {"file": name, "chars": len(text)} if name else None}
 
     def connector_of(name: str):
         found = router.connectors.get(name)
@@ -226,7 +231,7 @@ def build_api_router(*, router: Router, write_guard: Callable[..., Any], mediate
     def get_policy() -> dict:
         return router.policy.model_dump(mode="json")
 
-    @api.get("/workdir", summary="The working folder chats may read (read-only) and the top of what is in it")
+    @api.get("/workdir", summary="The working folder, what the team may do in it, and the top of what is in it")
     def get_workdir() -> dict:
         return workdir_body(folders())
 
@@ -304,10 +309,14 @@ def build_api_router(*, router: Router, write_guard: Callable[..., Any], mediate
         status = router.provider_summary(provider, refresh=True)
         return {"provider": provider, "path": stored, "installed": status.installed, "signed_in": status.signed_in, "detail": status.detail}
 
-    @api.put("/workdir", dependencies=guard, summary="Choose the working folder (checked first; chats read it, read-only)")
+    @api.put("/workdir", dependencies=guard, summary="Choose the working folder (checked first) and what the team may do in it")
     def put_workdir(body: _Workdir = Body(...)) -> dict:
         store = folders()
-        store.set(body.path)                                # InvalidRequestError (with the reason) becomes the 422 envelope
+        if body.path is None:
+            store.set_access(body.access or "")             # InvalidRequestError (with the reason) becomes the 422 envelope
+        else:
+            same = store.stored() is not None and os.path.realpath(os.path.expanduser(body.path)) == store.stored()
+            store.set(body.path, access=body.access or (store.stored_access() if same else "edit"))
         return workdir_body(store)
 
     @api.delete("/workdir", dependencies=guard, summary="Forget the working folder (chats go back to a private empty folder)")

@@ -27,7 +27,7 @@ from collections.abc import Callable
 from typing import Any
 
 from sutra_app.connectors.egress import scan
-from sutra_app.connectors.workdir import grounding_text
+from sutra_app.connectors.workdir import INSTRUCTIONS_MAX, grounding_text
 from sutra_app.library.types import clip
 from sutra_app.orchestrator.db import Database
 from sutra_app.orchestrator.ids import iso_z
@@ -98,7 +98,9 @@ class ChatGround:
                 record = self._department(conn, node, session_id)
             elif node is not None and session["kind"] == "division" and node["kind"] == "division":
                 record = self._division(conn, node)
-        return _fit([self.scrub(line) for line in record], self._notes_and_rules(), GROUND_CHARS)
+        tail = self._notes_and_rules()
+        room = GROUND_CHARS + (INSTRUCTIONS_MAX + 600 if "<project-instructions>" in tail else 0)      # the project's own words are not cut to the record's share
+        return _fit([self.scrub(line) for line in record], tail, room)
 
     def _folder_block(self) -> str:
         """Where the owner's working folder is and that the file tools are read-only (or that none is set); empty without a folder source."""

@@ -18,7 +18,7 @@ from sutra_app.connectors.errors import InvalidRequestError
 from sutra_app.connectors.factory import build_router
 from sutra_app.connectors.models import ConnectorConfig
 from sutra_app.connectors.workdir import (
-    NO_FOLDER_TEXT, PREVIEW_MAX, WORKDIR_FILE, WorkFolder, check_folder, grounding_text, preview_of,
+    INSTRUCTIONS_MAX, NO_FOLDER_TEXT, PREVIEW_MAX, WORKDIR_FILE, Folder, WorkFolder, check_folder, grounding_text, instructions_of, preview_of,
 )
 from sutra_app.orchestrator.api.deps import install_error_handlers, require_token
 
@@ -172,7 +172,7 @@ def test_a_chosen_folder_is_stored_next_to_the_policy_and_read_back(store, dirs)
     assert store.set(str(dirs.mine)) == os.path.realpath(dirs.mine)
     path = dirs.data / "connectors" / WORKDIR_FILE
     assert path == store.path
-    assert json.loads(path.read_text(encoding="utf-8")) == {"version": 1, "path": os.path.realpath(dirs.mine)}
+    assert json.loads(path.read_text(encoding="utf-8")) == {"version": 1, "path": os.path.realpath(dirs.mine), "access": "edit"}
     assert store.stored() == store.get() == os.path.realpath(dirs.mine)
 
 
@@ -320,7 +320,7 @@ def route(path=""):
 def test_get_needs_no_token_and_says_none_is_set(client):
     response = client.get(route())
     assert response.status_code == 200
-    assert response.json() == {"path": None, "usable": False, "problem": None, "preview": None}
+    assert response.json() == {"path": None, "usable": False, "problem": None, "access": None, "preview": None, "instructions": None}
 
 
 def test_put_without_the_token_is_refused_and_writes_nothing(client):
@@ -374,3 +374,53 @@ def test_get_reports_a_folder_that_has_vanished_with_the_reason(client):
     body = client.get(route()).json()
     assert body["path"] == os.path.realpath(client.mine) and body["usable"] is False and "There is no folder at" in body["problem"]
     assert body["preview"] is None and client.router.chat_folder() == ""
+
+
+# ---- what the team may do, and the project's own instructions (D125) ------------------------------------------------------------------------------
+
+def test_the_access_is_chosen_stored_and_changed_without_choosing_the_folder_again(store, dirs):
+    assert store.stored_access() == "read"                                    # nothing chosen
+    store.set(str(dirs.mine))
+    assert store.stored_access() == "edit" and store.grant().edit is True and isinstance(store.grant(), str)
+    store.set_access("read")
+    assert store.stored_access() == "read" and store.grant().edit is False and store.get() == os.path.realpath(dirs.mine)
+    with pytest.raises(InvalidRequestError):
+        store.set(str(dirs.mine), access="root")
+    store.clear()
+    with pytest.raises(InvalidRequestError, match="Choose a working folder first"):
+        store.set_access("edit")
+
+
+def test_instructions_come_from_claude_md_then_agents_md_cut_to_the_limit_and_never_through_a_link(dirs):
+    assert instructions_of(str(dirs.mine)) == ("", "")
+    (dirs.mine / "AGENTS.md").write_text("agents words", encoding="utf-8")
+    assert instructions_of(str(dirs.mine)) == ("AGENTS.md", "agents words")
+    (dirs.mine / "CLAUDE.md").write_text("claude words\x00\n", encoding="utf-8")
+    assert instructions_of(str(dirs.mine)) == ("CLAUDE.md", "claude words")                                # the first that exists; control characters are dropped
+    (dirs.mine / "CLAUDE.md").write_text("w" * (INSTRUCTIONS_MAX + 50), encoding="utf-8")
+    name, text = instructions_of(str(dirs.mine))
+    assert name == "CLAUDE.md" and text.startswith("w" * INSTRUCTIONS_MAX) and text.endswith("read it with your file tools)")
+    if not sys.platform.startswith("win"):
+        outside = dirs.root / "secret.md"
+        outside.write_text("not the project's", encoding="utf-8")
+        (dirs.mine / "CLAUDE.md").unlink()
+        os.symlink(outside, dirs.mine / "CLAUDE.md")
+        assert instructions_of(str(dirs.mine)) == ("AGENTS.md", "agents words")                          # a link is skipped
+
+
+def test_a_folder_the_team_may_change_says_so_and_carries_the_projects_instructions(dirs):
+    (dirs.mine / "CLAUDE.md").write_text("Run the tests before you say it is done.", encoding="utf-8")
+    edit = grounding_text(Folder(str(dirs.mine), edit=True))
+    assert "create and change files" in edit and "cannot commit" in edit and "read-only" not in edit
+    assert "<project-instructions>\nRun the tests before you say it is done.\n</project-instructions>" in edit and "(CLAUDE.md)" in edit
+    read = grounding_text(Folder(str(dirs.mine), edit=False))
+    assert "read-only" in read and "create and change" not in read and "<project-instructions>" in read    # the instructions are read in both
+
+
+def test_put_changes_the_access_alone_and_the_answer_names_the_instructions(client):
+    (client.mine / "CLAUDE.md").write_text("be brief", encoding="utf-8")
+    body = client.put(route(), json={"path": str(client.mine)}, headers=HEADERS).json()
+    assert body["access"] == "edit" and body["instructions"] == {"file": "CLAUDE.md", "chars": 8}
+    assert client.put(route(), json={"access": "read"}, headers=HEADERS).json()["access"] == "read"
+    assert client.put(route(), json={"path": str(client.mine)}, headers=HEADERS).json()["access"] == "read"      # the same folder keeps what was chosen
+    assert client.put(route(), json={"access": "root"}, headers=HEADERS).status_code == 422

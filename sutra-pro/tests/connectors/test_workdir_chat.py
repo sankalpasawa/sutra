@@ -58,11 +58,11 @@ class Rig:
         self.folder_b.mkdir()
         self.session_dir = self.cfg.resolved_work_root() / SID
 
-    def choose(self, folder):
+    def choose(self, folder, access="read"):
         if folder is None:
             self.router.folders.clear()
         else:
-            self.router.folders.set(str(folder))
+            self.router.folders.set(str(folder), access=access)
 
     def turn(self, text="hello"):
         self.history.messages_list.append(Message(role="user", text=text))
@@ -304,3 +304,44 @@ def test_offline_nothing_is_given_a_folder(tmp_path):
     router.folders.set(str(tmp_path / "p"))
     assert router.chat_folder() == ""
     router.close()
+
+
+# ---- the owner lets the team change files (D125) --------------------------------------------------------------------------------
+
+EDIT = "Read,Glob,Grep,LS,Edit,MultiEdit,Write,Bash"
+GIT = ["Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)"]
+
+
+def test_claude_with_edit_access_may_change_files_and_run_only_the_git_reads(make, fake):
+    fake.sequence("ok_plain").reply(text="r")
+    rig = make("claude")
+    rig.choose(rig.folder_a, access="edit")
+    rig.turn()
+    argv = rig.calls("claude")[0]["argv"]
+    assert value(argv, "--tools") == EDIT
+    assert value(argv, "--allowedTools").split(",") == ["Read", "Glob", "Grep", "LS", "Edit", "MultiEdit", "Write", *GIT]
+    denied = set(value(argv, "--disallowedTools").split(","))
+    assert {"PowerShell", "NotebookEdit", "WebFetch", "WebSearch", "Task", "Agent"} <= denied
+    assert not denied & {"Edit", "MultiEdit", "Write", "Bash"}                      # what is offered is not denied
+    # the allowed tools may not do more than they say: no write into .git (its config can name a program git status runs), no git option that writes
+    # a file or reads outside the repository
+    assert {"Edit(.git/**)", "Edit(**/.git/**)", "Bash(git*--output*)", "Bash(git*--no-index*)", "Bash(git*--ext-diff*)", "Bash(git*--textconv*)"} <= denied
+    assert value(argv, "--setting-sources") == "" and "--restricted" in argv and value(argv, "--permission-mode") == "dontAsk"
+
+
+def test_codex_with_edit_access_writes_inside_the_folder_only(make, fake):
+    fake.sequence("ok_plain", cli="codex").reply(text="r")
+    rig = make("codex", sandbox="read-only")
+    rig.router.chat_pin(SID, "codex")
+    rig.choose(rig.folder_a, access="edit")
+    rig.turn()
+    argv = rig.calls("codex")[0]["argv"]
+    assert value(argv, "-s") == "workspace-write" and value(argv, "-C") == real(rig.folder_a)
+
+
+def test_a_folder_chosen_before_the_owner_could_say_stays_read_only(make, tmp_path):
+    rig = make("claude")
+    rig.router.folders.set(str(rig.folder_a))
+    stored = rig.router.folders.path
+    stored.write_text('{"version": 1, "path": "%s"}' % real(rig.folder_a), encoding="utf-8")
+    assert rig.router.folders.stored_access() == "read" and rig.router.folders.grant().edit is False

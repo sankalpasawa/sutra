@@ -348,7 +348,7 @@ class Router:
         if self.folders is None or self._restrict == "stub":
             return ""
         try:
-            return self.folders.get() or ""
+            return self.folders.grant() or ""
         except Exception:
             log.warning("could not read the working folder", exc_info=True)
             return ""
