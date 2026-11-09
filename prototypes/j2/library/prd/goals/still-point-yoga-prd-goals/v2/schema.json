@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "heading": {
+      "description": "the section heading",
+      "type": "string"
+    },
+    "studio_name": {
+      "description": "the studio the PRD is for",
+      "type": "string"
+    },
+    "goals": {
+      "description": "the goals, G1, G2, ... in order; G1 says visitors can see the classes and send a booking, with no target figure",
+      "items": {
+        "$ref": "#/definitions/Goal"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "assumptions behind the goals, such as no online payment is taken and payment is made at the studio",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "heading",
+    "studio_name"
+  ],
+  "type": "object",
+  "definitions": {
+    "Goal": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "G1, G2, ... in order",
+          "type": "string"
+        },
+        "statement": {
+          "description": "the goal in one line, with no invented figure",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "statement"
+      ],
+      "type": "object"
+    }
+  }
+}

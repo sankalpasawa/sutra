@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga Problem, Users and Goals",
+  "version": 1,
+  "sha": "de1ee3aa16507e2671cf86ea85535728f83b551a06fd900a234e881c5e77b852",
+  "schema_sha": "ceaf06ca21073b722efaa3f1316316afbfe70da5ee31a63561fb5eee5988cbc5",
+  "model_sha": "90add62705c130161af03dcd22ea235235773b7911084e95127a09d1baa9de27",
+  "class": "StillPointYogaProblemUsersAndGoalsV1",
+  "created": "2026-11-03T16:29:14",
+  "fingerprints": [
+    "5cc5d210ad77f952165b30c02b517fde69f20948754e33f7150817829d41e7da"
+  ],
+  "made_by": {
+    "run": "j2-20261103-162711",
+    "workflow": "W-1",
+    "atom": "W-1.a1",
+    "agent": "template generator (claude-cli)",
+    "date": "2026-11-03 16:27:11"
+  },
+  "business": {
+    "name": "Still Point Yoga",
+    "type": "prd"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261103-162711",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261103-162711",
+      "workflow": "W-1",
+      "atom": "W-1.a1",
+      "action": "created"
+    }
+  ]
+}
