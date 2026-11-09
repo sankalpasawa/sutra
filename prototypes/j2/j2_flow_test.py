@@ -6988,7 +6988,7 @@ def agent_view():
               " document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); r.closed = d.hidden; r.panel = !!document.querySelector('#pane-map .mappanel');"
               " const c = document.querySelector('#msgs [data-agent^=\"W-\"]'); r.chatbtn = c ? c.dataset.agent : null; c.click();"
               " setTimeout(() => { r.wf = d.hidden ? '' : d.querySelector('h3').textContent; document.querySelector('[data-agentclose]').click(); r.closed2 = d.hidden;"
-              "  artOpenGroup('site', 'W-8').then(() => { document.querySelector('#pane-artifacts [data-atab=code]').click();"
+              "  artOpenGroup('site', 'W-8').then(() => { document.querySelector('#pane-artifacts [data-atab=agent]').click();"
               "   setTimeout(() => { const pre = document.querySelector('#pane-artifacts pre.code'); r.code = pre ? [pre.querySelectorAll('.ln').length, getComputedStyle(pre).fontFamily, !!document.querySelector('[data-codecopy]'), document.querySelector('#pane-artifacts pre.code .hlt') ? 1 : 0] : null;"
               "    document.body.setAttribute('data-r', JSON.stringify(r)); }, 900); }); }, 900); }, 900);")
         tmp = tf.mkdtemp(prefix="j2-agent-")
@@ -8423,8 +8423,41 @@ def artifacts_groups():
     assert {x["id"] for x in G["records"]["rows"]} == {"receipts", "audits", "conditions", "shots"} and len(next(x for x in G["records"]["rows"] if x["id"] == "audits")["audits"]) == len(json.load(open(os.path.join(d, "audits.json"))))
     assert "realization.md" == next(x for x in G["plan"]["rows"] if x["id"] == "realization")["text"] and A.groups(None)["groups"][0]["rows"] == []
     assert not re.search(r'"(head|body)":', json.dumps(g)) and "<script" not in json.dumps(g), "no file contents in the groups: they load when an item opens"
+    for x in [r for G_ in g["groups"] for r in G_["rows"]] + list(g["documents"].values()):
+        v = x["views"]
+        assert v["summary"] is True and set(v) == {"summary", "agent", "human"}, x.get("id")
+        for vv in (v["agent"], v["human"]):
+            assert vv is None or A.served(d, vv["file"]), ("every file a view names is served", x.get("id"), vv)
+    V = {r["id"]: r["views"] for G_ in g["groups"] for r in G_["rows"]}
+    assert V["charter"]["agent"]["file"] == "goal.json" and V["realization"]["human"]["file"] == "realization.md" and V["W-5"]["agent"]["format"] == "code" \
+        and V["W-2"]["agent"] == {"format": "text", "file": "artifacts/architecture.md", "schema": None, "model": None, "valid": None} and V["shots"]["agent"] is None, V
+    tmpd = tempfile.mkdtemp(prefix="j2-views-")      # a teammate's Pydantic JSON beside a guide, and one for a section: picked up, served, drawn
+    try:
+        d2 = os.path.join(tmpd, name)
+        shutil.copytree(d, d2)
+        json.dump({"schema": "guide/1", "model": "ArchitectureGuide", "valid": False, "x": "<b>"}, open(os.path.join(d2, "artifacts", "architecture.json"), "w"))
+        os.makedirs(os.path.join(d2, "site", "sections"))
+        json.dump({"schema": "section/1", "model": "Hero", "valid": True}, open(os.path.join(d2, "site", "sections", "W-5.json"), "w"))
+        g2 = A.groups(d2)
+        R2 = {r["id"]: r for G_ in g2["groups"] for r in G_["rows"]}
+        assert R2["W-2"]["views"]["agent"] == {"format": "json", "file": "artifacts/architecture.json", "schema": "guide/1", "model": "ArchitectureGuide", "valid": False}, R2["W-2"]["views"]
+        assert R2["W-5"]["views"]["agent"]["file"] == "site/sections/W-5.json" and R2["W-5"]["views"]["agent"]["valid"] is True
+        assert A.served(d2, "artifacts/architecture.json") and A.served(d2, "site/sections/W-5.json")
+        if shutil.which("node"):
+            out = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": g2, "g": "guides", "sel": {"guides": "W-2"}, "tab": "agent", "ver": ""},
+                                                                 "arttext": {"artifacts/architecture.json": open(os.path.join(d2, "artifacts", "architecture.json")).read()}})["artifacts"]
+            assert "ArchitectureGuide" in out and "guide/1" in out and "Invalid" in out and "Open file" in out and "&quot;&lt;b&gt;&quot;" in out and "Source text" not in out, out[-600:]
+            out = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": g2, "g": "records", "sel": {"records": "shots"}, "tab": "agent", "ver": ""}, "arttext": {}})["artifacts"]
+            assert "Not saved for this artifact yet." in out, out[-300:]
+    finally:
+        shutil.rmtree(tmpd, ignore_errors=True)
+    for dn in [n for n in sorted(os.listdir(os.path.join(here, "runs"))) if os.path.isfile(os.path.join(here, "runs", n, "prd.md"))][-3:]:      # a document run: no website wording
+        gd = A.groups(os.path.join(here, "runs", dn))
+        if not os.path.isfile(os.path.join(here, "runs", dn, "site", "index.html")):
+            assert gd["site"] is None and not next(x for x in gd["groups"] if x["id"] == "site")["rows"], (dn, "a document run lists no website sections")
+        assert gd["documents"]["prd"]["views"]["human"] == {"format": "markdown", "file": "prd.md"}, (dn, gd["documents"]["prd"]["views"])
     if shutil.which("node"):      # escaped: a guide whose text holds markup shows it as text
-        out = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": g, "g": "guides", "sel": {"guides": arch["id"]}, "tab": "doc", "ver": ""},
+        out = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": g, "g": "guides", "sel": {"guides": arch["id"]}, "tab": "human", "ver": ""},
                                                              "arttext": {arch["file"]: "## Heading <b>x</b>\nAssumption: <img src=x onerror=alert(1)>"}})["artifacts"]
         assert "&lt;b&gt;x&lt;/b&gt;" in out and "<img src=x" not in out and "<b>x</b>" not in out, out[-400:]
     chrome = j2.j2_check.find_chrome()
@@ -8436,7 +8469,7 @@ def artifacts_groups():
     heads = sum(l.startswith("## ") for l in open(os.path.join(d, "artifacts", "architecture.md"), encoding="utf-8"))
     v1 = next(l for l in open(os.path.join(d, "artifacts", "architecture.v1.md"), encoding="utf-8") if l.strip()).lstrip("# ").strip()
     head = "<script>window.__e = []; addEventListener('error', e => __e.push(String(e.message))); window.__f = []; const __of = window.fetch; window.fetch = (u, o) => { __f.push(String(u)); return __of(u, o); };</script>"
-    probe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = {};"
+    probe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = window.__r = {};"
              " const lum = c => { const f = /^color\\(srgb/.test(c), v = (c.replace(/^color\\(srgb/, '').match(/[\\d.]+/g) || []).slice(0, 3).map(x => { x = f ? +x : x / 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };"
              " const ct = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }, bg = e => { while (e) { const c = getComputedStyle(e).backgroundColor; if (c && !/rgba\\(0, 0, 0, 0\\)|transparent/.test(c)) return c; e = e.parentElement; } return 'rgb(255, 255, 255)'; };"
              " const fit = () => [document.documentElement.scrollHeight, innerHeight, document.documentElement.scrollWidth <= innerWidth, document.querySelector('#dview .dcol').scrollHeight <= document.querySelector('#dview .dcol').clientHeight + 1];"
@@ -8453,24 +8486,24 @@ def artifacts_groups():
              " showTab('charter'); r.hdrOther = [vh('backmap'), vh('wcrumb'), vh('wcnt')]; showTab('artifacts');"
              " row('W-2').click(); await wait(400); r.f1 = files(); r.guide = [q('.aasm .ackl li').length, q('.atoc [data-ajump]').length, !!q('.aasm')[0], pane().textContent.includes('Guides are not audited')];"
              " r.mk = row('W-31').textContent.includes('Maker not recorded');"
-             " q('[data-atab=doc]')[0].click(); await wait(300); r.vers = q('.avers button').map(b => b.textContent + ':' + b.getAttribute('aria-pressed')); r.doch = q('.amd h3').length; r.scrolls = pane().scrollHeight > pane().clientHeight; r.fitDoc = fit();"
+             " q('[data-atab=agent]')[0].click(); await wait(400); r.gagent = [pane().textContent.includes('Source text: no structured form saved yet'), !!q('.ameta a')[0] && q('.ameta a')[0].textContent, q('.agpane pre.code .ln').length > 5]; q('[data-atab=human]')[0].click(); await wait(300); r.vers = q('.avers button').map(b => b.textContent + ':' + b.getAttribute('aria-pressed')); r.doch = q('.amd h3').length; r.scrolls = pane().scrollHeight > pane().clientHeight; r.fitDoc = fit();"
              " q('.avers button')[0].click(); await wait(400); r.v1 = [q('.amd h2, .amd h3, .amd p')[0] ? q('.amd h2, .amd h3, .amd p')[0].textContent.trim() : '', files().includes('artifacts/architecture.v1.md')];"
-             " q('[data-atab=sum]')[0].click(); await wait(200); q('.atoc [data-ajump]')[2].click(); await wait(300); const h2 = S('ah-2'); r.jump = [q('[data-atab=doc]')[0].getAttribute('aria-selected'), !!h2 && h2.getBoundingClientRect().top >= pane().getBoundingClientRect().top - 2 && h2.getBoundingClientRect().top < pane().getBoundingClientRect().top + 80];"
+             " q('[data-atab=sum]')[0].click(); await wait(200); q('.atoc [data-ajump]')[2].click(); await wait(300); const h2 = S('ah-2'); r.jump = [q('[data-atab=human]')[0].getAttribute('aria-selected'), !!h2 && h2.getBoundingClientRect().top >= pane().getBoundingClientRect().top - 2 && h2.getBoundingClientRect().top < pane().getBoundingClientRect().top + 80];"
              " q('#rail [data-ri=artifacts]')[0].click(); await wait(200); q('#rfl [data-artgo=site]')[0].click(); await wait(300); r.heads.site = [S('wtitle').textContent, S('wsub').textContent]; r.srows = rows();"
              " row('W-6').click(); await wait(300); r.script = [q('[data-atab]').map(b => b.textContent).join(','), pane().textContent.includes('Reused by'), !!pane().querySelector('.ashot img')];"
-             " r.f2 = files().length; q('[data-atab=code]')[0].click(); await wait(500); r.sblocks = q('.acode').map(b => b.dataset.acode + ':' + b.querySelectorAll('.ln').length + ':' + !!b.querySelector('[data-codecopy]'));"
-             " row('W-5').click(); await wait(200); r.f3 = files().length; q('[data-atab=code]')[0].click(); await wait(500); r.cblocks = q('.acode').map(b => b.dataset.acode); r.mono = getComputedStyle(q('.acode pre.code')[0]).fontFamily; r.fitCode = fit();"
-             " row('style').click(); await wait(400); r.style = [!!q('.astyle')[0], q('[data-atab]').map(b => b.textContent).join(',')];"
+             " r.f2 = files().length; q('[data-atab=agent]')[0].click(); await wait(500); r.sblocks = q('.acode').map(b => b.dataset.acode + ':' + b.querySelectorAll('.ln').length + ':' + !!b.querySelector('[data-codecopy]'));"
+             " row('W-5').click(); await wait(200); r.f3 = files().length; q('[data-atab=agent]')[0].click(); await wait(500); r.cblocks = q('.acode').map(b => b.dataset.acode); r.mono = getComputedStyle(q('.acode pre.code')[0]).fontFamily; r.fitCode = fit();"
+             " row('W-6').click(); await wait(200); q('[data-atab=human]')[0].click(); await wait(600); r.shuman = [pane().textContent.includes('This section has no visible part; it runs behind the page'), !q('iframe.asecview').length, q('.agpane .ackl li').length]; row('W-5').click(); await wait(200); q('[data-atab=human]')[0].click(); await wait(1500); const fr = q('iframe.asecview')[0], fe = fr && fr.contentDocument.querySelector(q('[data-aselname]')[0].textContent); r.viewer = [!!fr, fr ? fr.getAttribute('sandbox') : null, !!fe && /solid/.test(fe.style.outline), !!fe && fe.getBoundingClientRect().top < fr.clientHeight && fe.getBoundingClientRect().bottom > 0]; row('style').click(); await wait(400); q('[data-atab=human]')[0].click(); await wait(500); r.style = [!!q('.astyle')[0], q('[data-atab]').map(b => b.textContent).join(',')];"
              " q('#rail [data-ri=artifacts]')[0].click(); await wait(200); q('#rfl [data-artgo=plan]')[0].click(); await wait(300); r.heads.plan = [S('wtitle').textContent, S('wsub').textContent];"
-             " row('realization').click(); await wait(200); q('[data-atab=doc]')[0].click(); await wait(400); r.rz = [q('.amd h2, .amd h3').length, files().includes('realization.md')];"
+             " row('realization').click(); await wait(200); q('[data-atab=human]')[0].click(); await wait(400); r.rz = [q('.amd h2, .amd h3').length, files().includes('realization.md')];"
              " q('#rail [data-ri=artifacts]')[0].click(); await wait(200); q('#rfl [data-artgo=records]')[0].click(); await wait(300); r.heads.records = [S('wtitle').textContent, S('wsub').textContent];"
-             " row('audits').click(); await wait(200); r.bars = q('.abar').length; r.fit = fit(); r.listScroll = getComputedStyle(document.querySelector('.aglist')).overflowY;"
+             " row('audits').click(); await wait(200); q('[data-atab=agent]')[0].click(); await wait(500); r.aagent = [q('.agpane pre.code .ln').length > 10, !!q('.ameta [data-codecopy]')[0], !!q('.ameta a')[0]]; row('shots').click(); await wait(200); q('[data-atab=agent]')[0].click(); await wait(200); r.nosaved = pane().textContent.includes('Not saved for this artifact yet.'); row('audits').click(); await wait(200); q('[data-atab=human]')[0].click(); await wait(200); r.bars = q('.abar').length; r.fit = fit(); r.listScroll = getComputedStyle(document.querySelector('.aglist')).overflowY;"
              " r.emoji = /[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}]/u.test(S('pane-artifacts').innerText + S('rfly').innerText);"
              " r.themes = {}; for (const th of ['light', 'dark']){ THEME = th; themeApply(); await wait(30); const out = [];"
              "   for (const [g_, id] of [['guides', 'W-2'], ['site', 'W-8'], ['plan', 'charter'], ['records', 'conditions']]){ await artOpenGroup(g_, id); await wait(250);"
              "     out.push(...contrast(['#wcrumb', '#wcrumb b', '#wcnt', '.agrow.on .agt b', '.agrow:not(.on) .agt span', '.agrow .mono', '.aby', '.ablk h5', '.ackl li span', '.atabs button[aria-selected=false]', '.atabs button[aria-selected=true]', '.aasm p', '.atoc .linkbtn', '.agpane .empty', '.aev']).filter(x => x[1])); }"
              "   r.themes[th] = [out, fit()]; }"
-             " r.err = __e.slice(); (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); })()")
+             " r.err = __e.slice(); (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); })().catch(e => (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify({err: [String(e.stack || e), Object.keys(window.__r || {}).join(',')]})))")
     page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { " + probe + " }, 1500)</script></body>")
     tmp = tempfile.mkdtemp(prefix="j2-arts-")
     open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
@@ -8509,9 +8542,13 @@ def artifacts_groups():
             assert r["guide"] == [asm, heads, True, True] and r["mk"], (w, "assumptions, sections, guides not audited, maker not recorded", r["guide"], asm, heads)
             assert r["vers"] == ["v1 · W-2:false", "v2 · W-23:false", "current · W-27:true"] and r["doch"] == heads and r["scrolls"], (w, r["vers"], r["doch"])
             assert r["v1"] == [v1, True] and r["jump"] == ["true", True], (w, "the version switcher and a section link", r["v1"], r["jump"])
-            assert r["script"] == ["Summary,Script", True, True] and r["sblocks"] and r["sblocks"][0].split(":")[0] == "JavaScript" and int(r["sblocks"][0].split(":")[1]) >= 200 and r["sblocks"][0].endswith(":true"), (w, r["script"], r["sblocks"])
+            TABS = "Summary,Agent-readable,Human-readable"
+            assert r["gagent"] == [True, "Open file", True], (w, "a guide with no JSON shows its source text", r["gagent"])
+            assert r["shuman"][:2] == [True, True] and r["viewer"] == [True, "allow-same-origin", True, True], (w, "a script has no visible part; a section is outlined in view in the latest page", r["shuman"], r["viewer"])
+            assert r["aagent"] == [True, True, True] and r["nosaved"], (w, "audits.json in the code viewer with Copy and Open file; nothing saved says so", r["aagent"], r["nosaved"])
+            assert r["script"] == [TABS, True, True] and r["sblocks"] and r["sblocks"][0].split(":")[0] == "JavaScript" and int(r["sblocks"][0].split(":")[1]) >= 200 and r["sblocks"][0].endswith(":true"), (w, r["script"], r["sblocks"])
             assert r["cblocks"] == ["JavaScript", "CSS", "HTML"] and "mono" in r["mono"].lower() or "menlo" in r["mono"].lower(), (w, r["cblocks"], r["mono"])
-            assert r["style"] == [True, "Summary,Code"] and r["rz"][0] >= 3 and r["rz"][1] and r["bars"] == len(counts["records"]["rows"][1]["audits"]), (w, r["style"], r["rz"], r["bars"])
+            assert r["style"] == [True, TABS] and r["rz"][0] >= 3 and r["rz"][1] and r["bars"] == len(counts["records"]["rows"][1]["audits"]), (w, r["style"], r["rz"], r["bars"])
             for f_ in (r["fit"], r["fitDoc"], r["fitCode"]) + tuple(v[1] for v in r["themes"].values()):
                 assert f_[0] == f_[1] and f_[2] and f_[3], (w, "the page fits the window with no sideways scroll; only the panes scroll", f_)
             assert r["listScroll"] == "auto" and not r["emoji"], (w, r["listScroll"], r["emoji"])
@@ -8533,7 +8570,7 @@ def artifacts_groups():
               " r.pane = vis(); for (const b of q('#pane-docs [data-doc-kind]')) r.docs[b.dataset.docKind] = q('#docblock-' + b.dataset.docKind + ' [data-head]').map(h => h.dataset.head);"
               " for (let i = 0; i < 50 && !ARTS.groups; i++) await wait(100); const D = (ARTS.groups || {}).documents || {};"
               " for (const k of Object.keys(D)){ showTab('map'); let el = await mapOpenIn('art', 'work:' + k); r.links.push(['work:' + k, vis(), el ? el.id : '', '']);"
-              "   for (const [sid, h] of Object.entries(D[k])){ showTab('map'); el = await mapOpenIn('art', 'sec:work:' + k + ':' + sid); r.links.push([sid, vis(), el ? (el.dataset.head || el.id) : '', h, el ? inview(el) && el.classList.contains('dlhit') && !!el.closest('#docblock-' + k) : false]); } }"
+              "   for (const [sid, h] of Object.entries(D[k].sections)){ showTab('map'); el = await mapOpenIn('art', 'sec:work:' + k + ':' + sid); r.links.push([sid, vis(), el ? (el.dataset.head || el.id) : '', h, el ? inview(el) && el.classList.contains('dlhit') && !!el.closest('#docblock-' + k) : false]); } }"
               " r.groups = D; r.err = __e.slice(); document.body.setAttribute('data-r', JSON.stringify(r)); })()")
     page = ui.replace("<head>", "<head><script>window.__e = []; addEventListener('error', e => __e.push(String(e.message)));</script>", 1).replace("</body>", "<script>setTimeout(() => { " + dprobe + " }, 1500)</script></body>")
     tmp = tempfile.mkdtemp(prefix="j2-docs-")
@@ -8554,7 +8591,7 @@ def artifacts_groups():
             heads = {k: [l[3:].strip() for l in open(os.path.join(repo, n, k + ".md"), encoding="utf-8") if l.startswith("## ")] for k in made}
             assert not r["err"] and r["pane"] == "docs", (n, r["err"], r["pane"])
             assert all(r["docs"].get(k) and set(heads[k]) <= set(r["docs"][k]) for k in made), (n, "the Documents entry shows every document and its sections", r["docs"], heads)
-            assert set(r["groups"]) <= set(made) and all(set(v.values()) <= set(heads[k]) for k, v in r["groups"].items()), (n, r["groups"])
+            assert set(r["groups"]) <= set(made) and all(set(v["sections"].values()) <= set(heads[k]) for k, v in r["groups"].items()), (n, r["groups"])
             for x in r["links"]:
                 if x[0].startswith("work:"):
                     assert x[1] == "docs" and x[2] == "docblock-" + x[0][5:], (n, "a document's Map link opens it in Documents", x)
@@ -8567,7 +8604,8 @@ def artifacts_groups():
         shutil.rmtree(tmp, ignore_errors=True)
     print(f"artifacts groups: four groups from {name}'s files (guides by output file, sections by sections.json, versions folded, maker not guessed, checks final "
           f"attempt, escaped text); Chrome at 1440x900 and 390x844 ({seen} pages), light and dark: the rail keeps Preview and Documents and lists the groups with "
-          "counts, title and subtitle per group, files load on open, assumptions, sections, Read document and versions, Code and Script blocks with line numbers "
+          "counts, title and subtitle per group, files load on open, three tabs (Summary, Agent-readable, Human-readable), a saved JSON picked up with its model, schema and valid mark, "
+          "the section viewer outlining its first visible element, assumptions, sections, the document and its versions, Code and Script blocks with line numbers "
           "and Copy, the style guide, audit bars, page = window with only the panes scrolling, text 4.5:1, no emoji, no error; "
           f"{len(docruns)} document runs: every PRD, HLD and LLD and its sections in Documents, and {nsec} Map section links landing on their heading ok")
 

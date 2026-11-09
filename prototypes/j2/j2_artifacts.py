@@ -526,7 +526,7 @@ def groups(d, m=None):
         guides.append(row)
     # 3 Website sections: one row per section (sections.json), its versions the workflows recorded on it; then the style guide
     site = []
-    web = next((n for n in m["nodes"] if n["id"] == "work:website"), None)
+    web = next((n for n in m["nodes"] if n["id"] == "work:website" and (n.get("status") != "not_made" or has("site/index.html"))), None)      # a document run keeps an unmade website node
     if web:
         for sid in sorted((k for k in secs if k in by), key=_num):
             e = secs[sid] if isinstance(secs[sid], dict) else {}
@@ -578,19 +578,84 @@ def groups(d, m=None):
                     "shots": [{"file": f, "version": (aud.get(f) or {}).get("version"),
                                "passed": sum(1 for r in (aud.get(f) or {}).get("results") or [] if isinstance(r, dict) and r.get("pass")) if f in aud else None,
                                "total": len((aud.get(f) or {}).get("results") or []) if f in aud else None} for f in shots]})
-    # the documents (PRD, HLD, LLD) are in Documents, not here: each one's sections with their own heading, so a Map link can land on the heading
-    kinds = [t["name"] for t in load_types()["types"] if t["deliverable"] and t["form"] == "doc"]
-    decks = [n for n in m["nodes"] if n["id"] in {f"work:{k}" for k in kinds}]
-    documents = {}
+    # the documents (PRD, HLD, LLD) are in Documents, not here: each one's sections with their own heading, so a Map link can land on the heading,
+    # and its three views
+    doc_types = [t for t in load_types()["types"] if t["deliverable"] and t["form"] == "doc"]
+    decks = [n for n in m["nodes"] if n["id"] in {f"work:{t['name']}" for t in doc_types} and n.get("status") != "not_made"]
+    documents = {t["name"]: {"sections": {}, "file": t["file"], "kind": "document"} for t in doc_types if has(t["file"])}
     for deck, (_, ss) in sections_of(d, decks).items():
         for sid, e in (ss or {}).items():
             hit = re.search(r"^#{1,6}\s+(.+?)\s*$", ((e.get("head") or "") + "\n" + (e.get("body") or "")) if isinstance(e, dict) else "", re.M)
             if hit:
-                documents.setdefault(deck.split(":", 1)[1], {})[sid] = hit.group(1)
+                documents.setdefault(deck.split(":", 1)[1], {"sections": {}, "file": None, "kind": "document"})["sections"][sid] = hit.group(1)
+    for x in plan + guides + site + rec + list(documents.values()):
+        x["views"] = views(d, x)
     return {"schema": "artifacts-groups/1", "documents": documents,
             "site": {"version": (web or {}).get("version"), "audit": {"version": last.get("version"), "passed": sum(1 for r in last.get("results") or [] if isinstance(r, dict) and r.get("pass")),
                                                                      "total": len(last.get("results") or [])} if last else None} if web else None,
             "groups": [{**e, "rows": r} for e, r in zip(empty, (plan, guides, site, rec))]}
+
+
+# ------------------------------------------------------------------------------------------------------------- the views
+# Every row of groups() and every document carries views (artifact-views/1), the three tabs of the Artifacts pane:
+#   {"summary": true,
+#    "agent": {"format": "json"|"code"|"text", "file", "schema", "model", "valid"} or None,      what an agent reads
+#    "human": {"format": "list"|"markdown"|"table"|"page"|"style"|"chart"|"shots", "file"} or None}      what a person reads
+# A view the run did not save is None; the page then says "Not saved for this artifact yet." Every file named here is a file of
+# the run folder, so served() serves it.
+
+def _ok(d, f):
+    p = os.path.join(d, f) if d and f else ""
+    return bool(p) and os.path.isfile(p) and os.path.getsize(p) <= MAX_BYTES
+
+
+def agent_view(d, row):
+    """THE ONE PLACE a saved Pydantic JSON is picked up for a row's Agent-readable tab.
+
+    Looked for, in this order:
+      1. a Pydantic JSON beside the row's file, same name, .json:  artifacts/copy.md -> artifacts/copy.json,  prd.md -> prd.json.
+         A website section has no file of its own: its JSON is site/sections/<section id>.json (W-5 -> site/sections/W-5.json).
+      2. the row's own file when it is JSON already (goal.json, realization.json, workflows.json, audits.json, ...).
+      3. a website section (or the style guide's section): its code in the page (format "code", shown from /api/code).
+      4. any other file, as raw text (a guide's .md, receipts.jsonl).
+    The JSON may carry "schema", "model" (else "template") and "valid": the pane shows them above the JSON when present.
+    To pick up a JSON saved elsewhere, add its path to `cands` below; nothing else (j2_ui.html included) needs to change."""
+    f, sec = row.get("file"), row.get("section")
+    stem = os.path.splitext(f)[0] if f and not (sec and row.get("deck")) else None
+    cands = [f"{stem}.json"] if stem and not f.endswith(".json") else []
+    if sec and row.get("deck"):
+        cands.append(f"site/sections/{sec}.json")
+    if f and f.endswith(".json"):
+        cands.append(f)
+    for c in cands:
+        if _ok(d, c):
+            rec = _read(d, c)
+            if rec is None:
+                continue      # not JSON: not the agent's form
+            meta = rec if isinstance(rec, dict) and isinstance(rec.get("schema"), str) else {}      # only a JSON that names its schema says its model
+            valid = meta.get("valid")
+            return {"format": "json", "file": c, "schema": meta.get("schema"),
+                    "model": meta.get("model") or meta.get("template") or None, "valid": valid if isinstance(valid, bool) else None}
+    if sec and row.get("deck") and _ok(d, "site/index.html"):
+        return {"format": "code", "file": "site/index.html", "schema": None, "model": None, "valid": None}
+    if f and _ok(d, f):
+        return {"format": "text", "file": f, "schema": None, "model": None, "valid": None}
+    return None
+
+
+HUMAN = {"charter": "list", "realization": "markdown", "workflows": "table", "guide": "markdown", "document": "markdown", "section": "page",
+         "script": "page", "style": "style", "receipts": "table", "audits": "chart", "conditions": "list", "shots": "shots"}
+
+
+def human_view(d, row):
+    """What a person reads: the rendered view the pane drew before the tabs, from the file it was drawn from; None when nothing was saved."""
+    k = row.get("kind")
+    f = {"realization": row.get("text"), "shots": ((row.get("shots") or [{}])[0]).get("file")}.get(k, row.get("file"))
+    return {"format": HUMAN[k], "file": f} if k in HUMAN and _ok(d, f) else None
+
+
+def views(d, row):
+    return {"summary": True, "agent": agent_view(d, row), "human": human_view(d, row)}
 
 
 def _all_files(d):
