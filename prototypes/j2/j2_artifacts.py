@@ -604,10 +604,11 @@ def groups(d, m=None):
         mb = (st or {}).get("made_by") or {}
         olds = sorted(((int(mm.group(1)), f) for f in _all_files(d) for mm in [re.fullmatch(rf"site/{name}-v(\d+)\.md", f)] if mm))
         docs.append({"id": name, "kind": "document", "name": name.upper(), "file": info["file"], "maker": mb.get("persona"),
-                     "made_in": mb.get("workflows") or [], "sections": info["sections"], "nodes": [f"work:{name}"] if f"work:{name}" in node_ids else [],
+                     "made_in": mb.get("workflows") or [], "sections": info["sections"], "nodes": [],      # no Map node: a PRD / HLD / LLD link keeps landing on the Documents view
                      "versions": [{"workflow": None, "cycle": None, "purpose": "", "label": f"v{k}"} for k, _ in olds]
                                  + [{"workflow": None, "cycle": None, "purpose": "", "label": "current"}],
                      "docs": [{"label": f"v{k}", "file": f, "workflow": None} for k, f in olds] + [{"label": "current", "file": info["file"], "workflow": None}]})
+        docs[-1]["ok"] = (agent_view(d, docs[-1]) or {}).get("valid") is True      # the row's mark: the document's data file validates (agent-views/1)
     for x in plan + guides + site + docs + rec + list(documents.values()):
         x["views"] = views(d, x)
     return {"schema": "artifacts-groups/1", "documents": documents,

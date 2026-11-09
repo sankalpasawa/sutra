@@ -8237,7 +8237,7 @@ def left_bar_toggle():
                     if id_ == "actions":
                         assert len(p["gos"]) == max(1, len(sends)), (run, w, "each action once, or none in this run", p["gos"])
                     if id_ == "artifacts":      # Preview and Documents, then the four groups of the Artifacts section with their counts
-                        assert [x.split(" ")[0] for x in p["gos"]] == ["Run", "Guides", "Website", "Run"] and all(re.search(r"\d|no |nothing|loading", x) for x in p["gos"]), (run, w, p["gos"])
+                        assert [x.split(" ")[0] for x in p["gos"]] == ["Run", "Guides", "Website", "Documents", "Run"] and all(re.search(r"\d|no |nothing|loading", x) for x in p["gos"]), (run, w, p["gos"])
                 assert set(t_ for p in r["panels"].values() for t_ in p["tabs"]) == {t_ for v in want_tabs.values() for t_ in v}, (run, w, "no tab is lost")
                 assert r["pick"] == [True, True, True] and r["graph"] == [True, "line", True] and r["chat"] is True, (run, w, "a tab opens in the main area; Run graph opens the Map's graph; Chat opens the Simple view", r["pick"], r["graph"], r["chat"])
                 seen += 1
@@ -8808,7 +8808,8 @@ def artifacts_groups():
             r = json.loads(htmllib.unescape(hit.group(1)))
             assert not r["err"], (w, r["err"])
             nv = sum(len(x["versions"]) for x in counts["guides"]["rows"])
-            assert r["fly"] == [["preview", "docs"], [f"Run plan|3 files", f"Guides the makers read|5 guides · {nv} versions", "Website sections|13 sections · 1 script", "Run records|4 records"]], (w, r["fly"])
+            assert r["fly"][0] == ["preview", "docs"] and [x for x in r["fly"][1] if not x.startswith("Documents|")] == [f"Run plan|3 files", f"Guides the makers read|5 guides · {nv} versions", "Website sections|13 sections · 1 script", "Run records|4 records"] \
+                and any(x.startswith("Documents|") for x in r["fly"][1]), r["fly"]      # agent-views/1: the Documents group sits between the sections and the records, (w, r["fly"])
             assert r["f0"] == 0 and r["f1"] == ["artifacts/product-plan.md", "artifacts/architecture.md"] and r["f2"] == 3 and r["f3"] == 4, (w, "a file loads only when its item opens (a group opens its first item)", r["f0"], r["f1"], r["f2"], r["f3"])
             assert r["heads"]["guides"][:2] == ["Guides the makers read", "Each guide, who wrote it, and how it was checked."] and r["heads"]["guides"][2] is True, (w, r["heads"])
             assert r["heads"]["site"] == ["Website sections", "Website v33: the latest audit passes 19 of 19 items."] and r["heads"]["plan"][0] == "Run plan" and r["heads"]["records"][0] == "Run records", (w, r["heads"])
