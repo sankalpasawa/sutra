@@ -40,6 +40,15 @@ class M(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class Pick(M):
+    """The owner's choice for ONE agent (or a run, or a team): a provider, and optionally a model and an effort of that provider. An empty provider is
+    "Default": nobody chose, the next level of the cascade answers (D131). Shared by the server (it writes `choices.json`) and the engine (it reads it)."""
+
+    provider: str = ""
+    model: Optional[str] = Field(None, max_length=100)
+    effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
+
+
 class Usage(M):
     """One call's tokens, in disjoint parts; `reasoning_tokens` is a subset of `output_tokens`."""
 
