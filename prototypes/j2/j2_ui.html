@@ -380,10 +380,9 @@ body.simple #dview{display:none}
 a{color:var(--accent)}
 .needitem button,.mappanel .gobtn,.treebar .gobtn{border:1px solid var(--vio);background:color-mix(in srgb,var(--vio) 12%,transparent);color:var(--ink);border-radius:8px;padding:5px 11px}
 .msg.flash .bubble{outline:2px solid var(--vio);outline-offset:2px}.msg:focus{outline:none}
-#backmap{display:block;margin:0 0 2px;font-size:13px}.wcrumb{font-size:12px;color:var(--muted);margin:0 0 2px}.wcrumb span{margin:0 3px}.wcrumb b{color:var(--ink);font-weight:500}.wcrumb[hidden],.wcnt[hidden],.wtheme[hidden]{display:none}
+#backmap{display:block;margin:0 0 2px;font-size:13px}.wcrumb{font-size:12px;color:var(--muted);margin:0 0 2px}.wcrumb span{margin:0 3px}.wcrumb b{color:var(--ink);font-weight:500}.wcrumb[hidden],.wcnt[hidden]{display:none}
 .wtl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}.wcnt{font-size:12px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:99px;padding:1px 9px;white-space:nowrap}
-.wtheme{flex:none;display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:99px;background:var(--panel);color:var(--ink);cursor:pointer}.wtheme svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
-[data-theme=dark] .wtheme .tmoon,[data-theme=light] .wtheme .tsun{display:none}#dview[data-tab=artifacts] .wsub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#backmap[hidden]{display:none}
+#dview[data-tab=artifacts] .wsub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#backmap[hidden]{display:none}
 /* ---- Detailed view layout: icon rail, one title, two soft cards (message board + output), a collapsed Run details row.
    Everything is scoped to #dview so the Simple view is untouched. System serif for headings, no web fonts. */
 #dview{--serif:ui-serif,Georgia,"Times New Roman",serif;--gut:24px}
@@ -739,7 +738,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <section class="needs" id="needs" aria-label="Needs you" tabindex="-1"></section>
 <main>
   <section class="work">
-    <div class="wbar"><div><button type="button" class="linkbtn" id="backmap" hidden>← Back to map</button><div class="wcrumb" id="wcrumb" hidden>Artifacts <span aria-hidden="true">/</span> <b id="wcrumbg"></b></div><div class="wtl"><h2 class="wtitle" id="wtitle">Map</h2><span class="wcnt" id="wcnt" hidden></span></div><span class="wsub" id="wsub"></span></div><select id="ver" aria-label="Version"></select><button type="button" class="wtheme" id="wtheme" hidden title="Switch theme" aria-label="Switch theme"><svg class="tmoon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg><svg class="tsun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg></button></div>
+    <div class="wbar"><div><button type="button" class="linkbtn" id="backmap" hidden>← Back to map</button><div class="wcrumb" id="wcrumb" hidden>Artifacts <span aria-hidden="true">/</span> <b id="wcrumbg"></b></div><div class="wtl"><h2 class="wtitle" id="wtitle">Map</h2><span class="wcnt" id="wcnt" hidden></span></div><span class="wsub" id="wsub"></span></div><select id="ver" aria-label="Version"></select></div>
     <div class="pane preview" id="pane-preview" hidden><div class="doclinks" id="doclinks" hidden></div><iframe id="frame" title="Website preview" src="/site/latest"></iframe></div>
     <div class="pane" id="pane-goal" hidden></div>
     <div class="pane" id="pane-workflows" hidden></div>
@@ -1947,8 +1946,8 @@ function showTab(name){
   const tb = document.querySelector(`.tabs [data-tab="${name}"]`);
   $("wtitle").textContent = tb ? tb.textContent.trim() : name; $("wsub").textContent = TABHINT[name] || ""; $("wsub").removeAttribute("title"); $("ver").hidden = name !== "preview"; if (name === "artifacts") try { artHead(); } catch (e) {}      // a ?tab=artifacts link runs before the Artifacts code is set up
   // the Map has its own heading, so the title bar is only for the other views
-  $("backmap").hidden = name === "map" || name === "artifacts";      // Artifacts has its own header: a breadcrumb, a count chip and a theme button
-  ["wcrumb", "wcnt", "wtheme"].forEach(i => $(i).hidden = name !== "artifacts"); document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map"); railReveal(name);
+  $("backmap").hidden = name === "map" || name === "artifacts";      // Artifacts has its own header: a breadcrumb and a count chip; the theme lives on the rail
+  ["wcrumb", "wcnt"].forEach(i => $(i).hidden = name !== "artifacts"); document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map"); railReveal(name);
   ["preview","goal","workflows","conflicts","priorities","timeline","audit","charter","docs","artifacts","board","library","story","map","style","lessons","playbooks","report","rundetails","runsettings"].forEach(t => $("pane-"+t).hidden = t !== name);
 }
 document.querySelectorAll(".tabs [role=tab]").forEach(b => b.onclick = () => { if (b.dataset.tab === "workflows" && WFSTEP.length){ WFSTEP = []; if (state) paint($("pane-workflows"), renderWorkflows(state)); } showTab(b.dataset.tab); });
@@ -4152,7 +4151,7 @@ $("rfly").addEventListener("keydown", e => {      // the panel keeps the focus u
   const i = f.indexOf(document.activeElement); if (e.shiftKey && i <= 0){ e.preventDefault(); f[f.length - 1].focus(); } else if (!e.shiftKey && i === f.length - 1){ e.preventDefault(); f[0].focus(); } });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && RAIL.open){ e.stopImmediatePropagation(); railClose(true); } }, true);
 document.addEventListener("click", e => { if (RAIL.open && !e.target.closest("#rfly") && !e.target.closest("#rail .ri[data-ri]")) railClose(false); });
-$("wtheme").onclick = $("rtheme").onclick = () => { THEME = document.documentElement.dataset.theme === "light" ? "dark" : "light"; try { localStorage.setItem("j2theme", THEME); } catch (err) {} themeApply(); sThemeBtn(); };
+$("rtheme").onclick = () => { THEME = document.documentElement.dataset.theme === "light" ? "dark" : "light"; try { localStorage.setItem("j2theme", THEME); } catch (err) {} themeApply(); sThemeBtn(); };
 railPaint();
 poll();
 </script>

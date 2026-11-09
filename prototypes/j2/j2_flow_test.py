@@ -8449,9 +8449,8 @@ def artifacts_groups():
              " r.flyc = contrast(['#rfl [data-artgo] small', '#rfly .rnh']);"
              " r.f0 = files().length; r.heads = {}; r.err0 = __e.slice();"
              " q('#rfl [data-artgo=guides]')[0].click(); await wait(300); r.heads.guides = [S('wtitle').textContent, S('wsub').textContent, S('rfly').hidden]; r.grows = rows();"
-             " const vh = id => !S(id).hidden && S(id).getClientRects().length > 0; r.hdr = [S('wcrumb').textContent.replace(/\\s+/g, ' ').trim(), S('wcnt').textContent, vh('wcnt'), vh('backmap'), vh('wtheme'), S('wtheme').textContent.trim(), S('wtheme').querySelectorAll('svg').length, S('wtheme').getAttribute('aria-label'), S('wsub').getClientRects().length === 1 && S('wsub').getBoundingClientRect().height < 24];"
-             " const th0 = document.documentElement.dataset.theme; S('wtheme').click(); r.hdrTheme = [th0, document.documentElement.dataset.theme]; S('wtheme').click();"
-             " showTab('charter'); r.hdrOther = [vh('backmap'), vh('wcrumb'), vh('wcnt'), vh('wtheme')]; showTab('artifacts');"
+             " const vh = id => !S(id).hidden && S(id).getClientRects().length > 0; r.hdr = [S('wcrumb').textContent.replace(/\\s+/g, ' ').trim(), S('wcnt').textContent, vh('wcnt'), vh('backmap'), S('wtheme') === null, S('wsub').getClientRects().length === 1 && S('wsub').getBoundingClientRect().height < 24];"
+             " showTab('charter'); r.hdrOther = [vh('backmap'), vh('wcrumb'), vh('wcnt')]; showTab('artifacts');"
              " row('W-2').click(); await wait(400); r.f1 = files(); r.guide = [q('.aasm .ackl li').length, q('.atoc [data-ajump]').length, !!q('.aasm')[0], pane().textContent.includes('Guides are not audited')];"
              " r.mk = row('W-31').textContent.includes('Maker not recorded');"
              " q('[data-atab=doc]')[0].click(); await wait(300); r.vers = q('.avers button').map(b => b.textContent + ':' + b.getAttribute('aria-pressed')); r.doch = q('.amd h3').length; r.scrolls = pane().scrollHeight > pane().clientHeight; r.fitDoc = fit();"
@@ -8504,8 +8503,8 @@ def artifacts_groups():
             assert r["f0"] == 0 and r["f1"] == ["artifacts/product-plan.md", "artifacts/architecture.md"] and r["f2"] == 3 and r["f3"] == 4, (w, "a file loads only when its item opens (a group opens its first item)", r["f0"], r["f1"], r["f2"], r["f3"])
             assert r["heads"]["guides"][:2] == ["Guides the makers read", "Each guide, who wrote it, and how it was checked."] and r["heads"]["guides"][2] is True, (w, r["heads"])
             assert r["heads"]["site"] == ["Website sections", "Website v33: the latest audit passes 19 of 19 items."] and r["heads"]["plan"][0] == "Run plan" and r["heads"]["records"][0] == "Run records", (w, r["heads"])
-            assert r["hdr"] == ["Artifacts / Guides the makers read", f"5 guides · {nv} versions", True, False, True, "", 2, "Switch theme", True], (w, "the header: breadcrumb, count chip, no Back to map, an icon-only theme button, a one-line subtitle", r["hdr"])
-            assert r["hdrTheme"][0] != r["hdrTheme"][1] and r["hdrOther"] == [True, False, False, False], (w, "the theme button switches the theme; Back to map stays on the other views", r["hdrTheme"], r["hdrOther"])
+            assert r["hdr"] == ["Artifacts / Guides the makers read", f"5 guides · {nv} versions", True, False, True, True], (w, "the header: breadcrumb, count chip, no Back to map, no theme button (the rail has one), a one-line subtitle", r["hdr"])
+            assert r["hdrOther"] == [True, False, False], (w, "Back to map stays on the other views", r["hdrOther"])
             assert r["grows"] == [x["id"] for x in counts["guides"]["rows"]] and r["srows"] == [x["id"] for x in counts["site"]["rows"]], (w, r["grows"], r["srows"])
             assert r["guide"] == [asm, heads, True, True] and r["mk"], (w, "assumptions, sections, guides not audited, maker not recorded", r["guide"], asm, heads)
             assert r["vers"] == ["v1 · W-2:false", "v2 · W-23:false", "current · W-27:true"] and r["doch"] == heads and r["scrolls"], (w, r["vers"], r["doch"])
