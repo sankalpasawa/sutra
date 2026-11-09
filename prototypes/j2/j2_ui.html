@@ -2368,7 +2368,8 @@ function sMateHTML(s, k){
   if (k === "asha") h += `<p class="sdk">Behind the scenes, with Asha</p><div class="slog">${BACKSTAGE.map(([, n, d]) => `<div><b>${n}</b> ${esc(d)}</div>`).join("")}</div>`;
   const talk = sTalk(s).filter(x => x.who === k).slice(-4);
   if (talk.length) h += `<p class="sdk">Recently</p><div class="slog">${talk.map(x => `<div><b>${p.name}</b> ${esc(x.text)}</div>`).join("")}</div>`;
-  return h + (k === "asha" && !s.saved ? `<button type="button" class="sbtn smore" data-chat>Message Asha</button>` : "");
+  return h + `<div style="display:flex;gap:8px;flex-wrap:wrap">${k === "asha" && !s.saved ? `<button type="button" class="sbtn smore" data-chat>Message Asha</button>` : ""}`
+    + `<button type="button" class="sbtn smore" data-detail>${p.name}'s work in the Detailed view</button></div>`;      // the phone's way to the Detailed view (its top bar has no room for the button)
 }
 // a part or a deliverable: its goal, method, output and check, as the backend records them (/api/record, j2_studio.record)
 const sOk = v => v === true ? '<i class="y">✓</i>' : v === false ? '<i class="n">✗</i>' : '<i class="w">•</i>';
@@ -2451,12 +2452,13 @@ $("sashax").onclick = () => sChatOpen(false);
 document.querySelector("#sview .sdev").addEventListener("click", e => { const b = e.target.closest("[data-dev]"); if (!b) return;
   $("sframebox").classList.toggle("phone", b.dataset.dev === "phone"); document.querySelectorAll("#sview [data-dev]").forEach(x => x.setAttribute("aria-pressed", String(x === b))); setTimeout(sLayout, 400); });
 $("sview").addEventListener("click", e => {
-  const t = e.target.closest && e.target.closest("[data-view],[data-go],[data-part],[data-art],[data-mate],[data-plan],[data-chat],[data-records]"); if (!t || !$("sview").contains(t)) return;
+  const t = e.target.closest && e.target.closest("[data-view],[data-go],[data-part],[data-art],[data-mate],[data-plan],[data-chat],[data-records],[data-detail]"); if (!t || !$("sview").contains(t)) return;
   if (t.closest(".qcard")) return;
   if (t.dataset.view){ if (t.closest("#sdrawer")) sDrawer(""); SV.pick = t.dataset.view; if (state) renderSimple(state); return; }      // "Open it here" in a record: the drawer gives way to the output
   if (t.dataset.go) return sGo(t.dataset.go);
   if (t.dataset.part) return sOpenPart(t.dataset.part);
   if (t.dataset.art) return sOpenArt(t.dataset.art);
+  if (t.dataset.detail !== undefined){ sDrawer(""); setView("detail", true); return; }
   if (t.dataset.records !== undefined){ sDrawer(""); setView("detail", true); try { showTab("artifacts"); } catch (err) {} return; }
   if (t.dataset.plan !== undefined) return SV.drawer === "plan" ? sDrawer("") : (sDrawer(`<h4>The plan</h4><ol class="splan"></ol>`, "plan"), state && sDrawerRefresh(state));
   if (t.dataset.chat !== undefined){ sDrawer(""); const a = $("sapp"), on = matchMedia("(max-width: 820px)").matches ? !a.classList.contains("chatopen") : a.classList.contains("chatclosed"); sChatOpen(on); if (state) renderSimple(state); return; }
