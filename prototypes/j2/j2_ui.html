@@ -70,7 +70,7 @@ main>*{min-width:0}
 @media (max-width:1100px){main{grid-template-columns:minmax(0,1fr);grid-template-rows:60vh auto 70vh}.lanes{border-right:0;border-bottom:1px solid var(--line);max-height:40vh}}
 .chat{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
 .msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
-.chatfn{font-size:12.5px;color:var(--muted);padding:8px 16px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}.chatfn[hidden],.msgs[hidden],.chat .cfil[hidden],.quick[hidden]{display:none}
+.msgs[hidden],.chat .cfil[hidden],.chat .chsw[hidden],.asknote[hidden],.quick[hidden]{display:none}
 .msg{display:grid;grid-template-columns:30px 1fr;gap:9px}
 .av{width:30px;height:30px;border-radius:8px;background:var(--c);color:var(--on);display:grid;place-items:center;font:700 12px var(--display)}
 .bubble{background:var(--panel);border:1px solid var(--line);border-radius:4px 12px 12px 12px;padding:8px 11px;min-width:0}
@@ -495,6 +495,14 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 .chat .chx{margin-left:auto;background:none;border:0;color:var(--muted);font-size:15px;cursor:pointer;border-radius:8px;padding:4px 8px}.chat .chx:hover{background:var(--panel2)}
 .chat .cfil{display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px 4px}.chat .cfil button{border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:99px;padding:4px 11px;font:inherit;font-size:12.5px;cursor:pointer}
 .chat .cfil button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chat .chtl{display:flex;align-items:center;gap:8px;min-width:0}.chat .ch small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chat .ch>div{min-width:0;flex:1}#dview .chat .ch{flex-wrap:nowrap}@media (max-width:600px){#dview .chat .ch{padding:12px 10px 8px 14px;gap:6px}.chat .ch small{font-size:11.5px}}
+.chat .chseg{gap:0;flex-wrap:nowrap}.chat .chseg button{border-radius:0;margin-left:-1px;white-space:nowrap}.chat .chseg button:first-child{border-radius:99px 0 0 99px;margin-left:0}.chat .chseg button:last-child{border-radius:0 99px 99px 0}
+.chat .chsw{display:flex;align-items:center;gap:8px;padding:8px 16px 4px;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.chat .chsw input{appearance:none;-webkit-appearance:none;margin:0;width:28px;height:16px;border-radius:99px;background:var(--panel2);border:1px solid var(--edge);position:relative;cursor:pointer;flex:none;transition:background .15s}
+.chat .chsw input::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:var(--muted);transition:transform .15s}
+.chat .chsw input:checked{background:var(--accent);border-color:var(--accent)}.chat .chsw input:checked::after{transform:translateX(12px);background:var(--on)}
+.chat .cfil button:focus-visible,.chat .chsw input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.asknote{font-size:12px;color:var(--muted);margin:6px 2px 0}
 :is(#msgs,#chatfeed){gap:12px;padding:6px 16px 12px}:is(#msgs,#chatfeed) .day{align-self:center;font-size:11.5px;color:var(--muted);background:var(--bg);border-radius:99px;padding:2px 10px}
 :is(#msgs,#chatfeed) .sys{align-self:center;max-width:92%;font:12.5px/1.45 var(--body);color:var(--muted)}:is(#msgs,#chatfeed) .sys::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:6px;vertical-align:middle}
 :is(#msgs,#chatfeed) .msg{display:flex;gap:10px;align-items:flex-start}:is(#msgs,#chatfeed) .msg:focus{outline:none}
@@ -514,7 +522,7 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 :is(#msgs,#chatfeed) .msg.user{flex-direction:row-reverse}:is(#msgs,#chatfeed) .msg.user .who{flex-direction:row-reverse}:is(#msgs,#chatfeed) .msg.user .who b{color:var(--accent)}:is(#msgs,#chatfeed) .msg.user .who time{margin:0 auto 0 0}
 :is(#msgs,#chatfeed) .msg.user .text{background:var(--accent);color:var(--on);border-color:var(--accent);border-radius:14px 4px 14px 14px;cursor:default}:is(#msgs,#chatfeed) .msg.user .mention{color:inherit;text-decoration:underline}
 :is(#msgs,#chatfeed) .msg.touser .bubble{border:0;background:none}:is(#msgs,#chatfeed) .msg.touser .text{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 22%,transparent)}
-#chatfeed .text{white-space:pre-wrap;overflow-wrap:anywhere}#chatfeed .tag.kind{font:11px var(--body);padding:1px 8px;background:none;border:1px solid var(--line);color:var(--muted)}#chatfeed .fqa .text{border-color:var(--accent)}
+#chatfeed .text{white-space:pre-wrap;overflow-wrap:anywhere}#chatfeed .tag.kind{font:11px var(--body);padding:1px 8px;background:none;border:1px solid var(--line);color:var(--muted)}
 #msgs[data-f=you] .msg:not(.withyou),#msgs[data-f=you] .sys,#msgs[data-f=team] .msg.withyou{display:none}
 @media (max-width:900px){#dview.chaton .dcol{margin-right:0}#dview .chat{left:96px;width:auto}#dview.chaton .chatfab{display:none}}
 @media (max-width:600px){#dview .chat{left:72px;right:8px;top:8px;bottom:8px}.chatfab{right:12px;bottom:12px}}
@@ -798,9 +806,10 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
     </div>
   </section>
   <section class="chat" id="chatp" aria-label="Team chat">
-    <header class="ch"><div><b id="chath">Team chat</b><small id="chatsub">Client Lead and the team, as it happens</small></div><button type="button" class="chx" id="chatx" aria-label="Close chat">✕</button></header>
+    <header class="ch"><div><div class="chtl"><b id="chath">Team chat</b><span class="wcnt" id="chatcnt" hidden></span></div><small id="chatsub">Client Lead and the team, as it happens</small></div><button type="button" class="chx" id="chatx" aria-label="Close chat">✕</button></header>
+    <div class="cfil chseg" id="chseg" role="group" aria-label="Chat view" hidden><button type="button" aria-pressed="true" data-chmode="fn" id="chsegfn"></button><button type="button" aria-pressed="false" data-chmode="all">Whole chat</button></div>
+    <label class="chsw" id="chsw" hidden><input type="checkbox" role="switch" id="chthink"><span>Show AI calls and thinking</span></label>
     <div class="cfil" id="cfil" role="group" aria-label="Show"><button type="button" aria-pressed="true" data-cf="all">All</button><button type="button" aria-pressed="false" data-cf="you">With you</button><button type="button" aria-pressed="false" data-cf="team">Between the team</button></div>
-    <div class="chatfn" id="chatfn" hidden></div>
     <div class="msgs" id="msgs" role="log" aria-live="polite" aria-label="Messages" data-f="all"></div>
     <div class="msgs" id="chatfeed" hidden></div>
     <div class="typing" id="typing"></div>
@@ -811,6 +820,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
         <textarea id="box" placeholder="Describe the website you want. The agents take it from there…" aria-label="Message"></textarea>
         <button class="send" id="send">Send</button>
       </div>
+      <div class="asknote" id="asknote" hidden>Answers from this run's records. It cannot change the run.</div>
     </div>
   </section>
 </main>
@@ -888,31 +898,35 @@ function msgFns(m){
   add(m.next); add(m.audience === "user" ? "" : m.audience); return out;
 }
 const CHATHEAD = ["Team chat", "Client Lead and the team, as it happens"];
-function chatFnFilter(){      // the panel's header, filters and bar for the mode: Adaptation's feed and questions, or the whole chat
+let CHATTHINK = false;      // the function view shows its messages; the switch adds its AI calls, planning, judging and changes
+function chatFnFilter(){      // the panel's header, toggle, switch and filters for the mode: a function's chat, or the whole chat
   const fn = !!CHATFN && !CHATALL, name = CHATFN ? who(CHATFN)[0] : "";
-  $("chath").textContent = fn ? name : CHATHEAD[0];
+  $("chath").textContent = fn ? name + " chat" : CHATHEAD[0];
   $("chatsub").textContent = fn ? `${chatRole(CHATFN)} · answers from the run's records` : CHATHEAD[1];
+  $("chseg").hidden = !CHATFN; $("chsegfn").textContent = name;
+  document.querySelectorAll("[data-chmode]").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.chmode === "fn") === fn)));
+  $("chsw").hidden = !fn; $("chthink").checked = CHATTHINK; $("asknote").hidden = !fn;
   $("cfil").hidden = fn; $("quick").hidden = fn; if (fn) $("waiting").hidden = true;
-  const bar = $("chatfn"); bar.hidden = !CHATFN;
-  if (CHATFN) bar.innerHTML = CHATALL ? `<button type="button" class="linkbtn" data-chatonly>Back to ${esc(name)}</button>`
-    : `${FEED.found ? `${FEED.events.length} ${FEED.events.length === 1 ? "entry" : "entries"}` + " · " : ""}<button type="button" class="linkbtn" data-chatall>Whole chat</button> · <button type="button" class="linkbtn" data-agent="${esc(CHATFN)}">Conversation and thinking</button>`;
+  const n = fn ? feedCount() : 0; $("chatcnt").hidden = !fn || !n; $("chatcnt").textContent = n;
   chatSwap();
 }
-function chatFollow(tab){      // Adaptation > Map shows Adaptation's feed and its questions; every other view keeps the whole chat
-  const fn = tab === "planmap" ? "adaptation" : "";
-  if (fn !== CHATFN){ CHATFN = fn; CHATALL = false; } chatFnFilter();
+function chatFollow(tab){      // the rail item that holds the view: a function's item opens its chat; every other view keeps the Team chat
+  let fn = ""; try { const sec = RAILSEC[tab]; fn = ["identity", "adaptation", "priority", "coordination", "audit"].find(k => RAILITEMS[k].secs.includes(sec)) || ""; } catch (e) {}      // the first showTab runs before those tables exist
+  if (fn !== CHATFN){ CHATFN = fn; CHATALL = false; for (const k of Object.keys(FEED)) delete FEED[k]; Object.assign(FEED, {who: fn, found: false, events: []}); FEEDKEY = ""; } chatFnFilter();
 }
-document.addEventListener("click", e => { if (e.target.closest("[data-chatall]")){ CHATALL = true; chatFnFilter(); } else if (e.target.closest("[data-chatonly]")){ CHATALL = false; chatFnFilter(); } });
+document.addEventListener("click", e => { const b = e.target.closest("[data-chmode]"); if (b){ CHATALL = b.dataset.chmode === "all"; chatFnFilter(); } });
+document.addEventListener("change", e => { if (e.target.id === "chthink"){ CHATTHINK = e.target.checked; paintFeed(); } });
 // Adaptation's feed (activity/1, /api/activity): its messages and hand-offs, each AI call, each planning decision, every judge round with the scores,
 // every revision and the changes it handled, all in the chat's own message style with a small label for the kind. A question typed here goes to
 // /api/ask and is answered from the run's records only; questions and answers sit in the same time order and are not saved.
-const boxHint = s => ASKMODE === "ask" ? `Ask ${who(CHATFN)[0]} about this run: a workflow, a score, a decision…` : s && s.paused ? "Answer your Client Lead's question…" : s && s.total ? "Ask your Client Lead for a change…" : "Describe the website you want. The agents take it from there…";
+const boxHint = s => ASKMODE === "ask" ? `Ask ${who(CHATFN)[0]} about this run…` : s && s.paused ? "Answer your Client Lead's question…" : s && s.total ? "Ask your Client Lead for a change…" : "Describe the website you want. The agents take it from there…";
 const FEED = {who: "", found: false, events: []}, QA = [];      // QA: this viewer's questions and the answers, per function
 let FEEDKEY = "", ASKMODE = "change";
 const FKIND = {call: "AI call", plan: "plan", wf: "workflow", judge: "judge", revise: "revision", change: "change"};
 async function loadFeed(force){
   if (!CHATFN) return; const key = CHATFN + "|" + (state ? state.total : 0) + runQ(); if (!force && key === FEEDKEY) return; FEEDKEY = key;
-  try { const r = await fetch(`/api/activity?who=${encodeURIComponent(CHATFN)}${runQ()}`, {cache: "no-store"}); if (r.ok){ const v = await r.json(); for (const k of Object.keys(FEED)) delete FEED[k]; Object.assign(FEED, v); } } catch (e) {}
+  try { const r = await fetch(`/api/activity?who=${encodeURIComponent(CHATFN)}${runQ()}`, {cache: "no-store"}); if (r.ok){ const v = await r.json(); if (key !== FEEDKEY) return;      // a newer request (another function or run) owns the feed
+    for (const k of Object.keys(FEED)) delete FEED[k]; Object.assign(FEED, v); } } catch (e) {}
   paintFeed();
 }
 const feedMsg = (m, extra) => `<div class="msg ${esc(m.who)}${m.to_user || m.audience === "user" ? " touser" : ""}${extra || ""}" style="--c:${col(m.who)}" data-who="${esc(m.who)}"${m.id != null ? ` data-id="${esc(m.id)}"` : ""}>${msgInner(m)}</div>`;
@@ -921,12 +935,14 @@ function feedEvent(e){
   const items = e.items || [], more = items.length ? `\n${items.map(x => "· " + x).join("\n")}` : "", given = e.given && e.given.length ? `\nwas given: ${e.given.join(", ")}` : "";
   return feedMsg({who: FEED.who || CHATFN, t: e.t, kind: FKIND[e.kind] || e.kind, text: `**${e.title || ""}**${e.text ? "\n" + e.text : ""}${more}${given}`}, ` fev f-${esc(e.kind)}`);
 }
+const feedShown = () => (FEED.found ? FEED.events : []).map((e, i) => [e, i]).filter(([e]) => CHATTHINK || e.kind === "msg");
+const feedCount = () => feedShown().length + 2 * QA.filter(x => x.who === CHATFN).length;
 function renderFeed(){      // its events and this viewer's questions in one order: a question sits after the records there were when it was asked
-  const name = who(CHATFN)[0], qa = QA.filter(x => x.who === CHATFN), ev = FEED.found ? FEED.events : [];
-  if (!ev.length && !qa.length) return `<div class="sys">This run recorded nothing for ${esc(name)} yet.</div>`;
-  const rows = ev.map((e, i) => ({k: i, html: feedEvent(e)}));
+  const name = who(CHATFN)[0], qa = QA.filter(x => x.who === CHATFN), ev = FEED.found ? FEED.events : [], shown = feedShown();
+  if (!shown.length && !qa.length) return `<div class="sys">This run recorded ${CHATTHINK || !ev.length ? "nothing" : "no messages"} for ${esc(name)} yet.</div>`;
+  const rows = shown.map(([e, i]) => ({k: i, html: feedEvent(e)}));
   qa.forEach((x, j) => rows.push({k: Math.min(x.n, ev.length) - 0.5 + j * 1e-6, html: feedMsg({who: "user", t: x.t, text: x.q}, " withyou")
-    + feedMsg({who: CHATFN, t: x.at || x.t, text: x.a == null ? "Thinking…" : x.a, answer: x.a == null ? "" : x.from === "model" ? "AI answer from its records" : "from its records, no AI call"}, " fqa")}));
+    + feedMsg({who: CHATFN, t: x.at || x.t, text: x.a == null ? "Thinking…" : x.a, answer: x.a == null ? "" : x.from === "model" ? "AI answer from its records" : "from its records, no AI call"})}));
   rows.sort((a, b) => a.k - b.k);
   return rows.map(r => r.html).join("");
 }
@@ -963,7 +979,7 @@ function msgEl(m){      // one message as its element (the chat appends it; the 
 function msgInner(m){      // the avatar, the speaker line, the text and the tags of one message
   const to = m.audience || (m.next && !m.to_user ? m.next : "");
   let t = to && m.who !== "user" ? `<span class="tag to">→ ${esc(to === "user" ? "you" : chatName(to))}</span>` : "";
-  if (m.act) t += `<span class="tag ${m.act==="PARK"||m.act==="DISPUTE"?"bad":m.act==="LESSON"?"ok":""}">${m.act}</span>`;
+  if (m.act) t += `<span class="tag ${m.act==="PARK"||m.act==="DISPUTE"?"bad":m.act==="LESSON"?"ok":""}">${m.act[0] + m.act.slice(1).toLowerCase().replace(/_/g, " ")}</span>`;
   if (m.auto) t += `<span class="tag">by code, no AI call</span>`;
   if (m.envelope) t += `<span class="tag ${m.envelope==="allowed"?"ok":"bad"}">limits: ${m.envelope}</span>`;
   if (m.attempt) t += `<span class="tag ${m.agree?"ok":"bad"}">${m.agree?"agrees":"holds position"} · attempt ${m.attempt}/4</span>`;

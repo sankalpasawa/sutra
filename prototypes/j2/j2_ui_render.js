@@ -26,7 +26,7 @@ const out = vm.runInContext(`(s, p, d) => { if (typeof PREVIEWS !== "undefined")
   if (typeof TREE !== "undefined"){ MAPVIEW = d.mapview || "tree"; Object.assign(TREE, {open: "", wf: "", c: null, zoom: null}, d.tree || {}); }
   if (typeof PLAN !== "undefined"){ for (const k of Object.keys(PLAN)) delete PLAN[k]; Object.assign(PLAN, d.plan || {found: false}); }
   if (typeof PLANMAP !== "undefined"){ for (const k of Object.keys(PLANMAP)) delete PLANMAP[k]; Object.assign(PLANMAP, d.planmap || {found: false}); }
-  if (typeof FEED !== "undefined" && d.activity){ Object.assign(FEED, d.activity); CHATFN = d.activity.who || ""; }
+  if (typeof FEED !== "undefined" && d.activity){ Object.assign(FEED, d.activity); CHATFN = d.activity.who || ""; if (typeof CHATTHINK !== "undefined") CHATTHINK = !!d.think; }
   if (typeof ARTS !== "undefined"){ Object.assign(ARTS, d.artifacts || {}); ARTOPEN = d.artopen || ""; Object.assign(ARTTEXT, d.arttext || {}); }
   if (typeof BOARD !== "undefined"){ BOARD.entries.length = 0; BOARD.entries.push(...(d.board || [])); }
   if (typeof STORY !== "undefined" && d.story){ Object.assign(STORY, d.story); RUNLIST = d.runs || []; STORYCMP = d.storycmp || STORYCMP; }
