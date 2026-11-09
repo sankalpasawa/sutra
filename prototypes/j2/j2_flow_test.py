@@ -11182,6 +11182,8 @@ def agent_views():
         return
     tmp = tempfile.mkdtemp(prefix="j2-agent-views-")
     built, seen_kinds = {}, set()
+    keep_lib = os.environ.get("J2_LIBRARY_DIR")
+    os.environ["J2_LIBRARY_DIR"] = os.path.join(here, "library")      # read only: a run's sections are checked against the templates the committed library holds
     try:
         for n in names:
             d = os.path.join(tmp, n)
@@ -11220,6 +11222,9 @@ def agent_views():
                 assert rec["schema"] == "artifact-schema/1" and rec["model"] == x["id"].upper() and rec["valid"] is True and rec["validation"] \
                     and all(v["valid"] for v in rec["validation"].values()) and "sections" in rec, (n, x["id"])      # the data file keeps its keys
                 assert x["views"]["human"] == {"format": "markdown", "file": f"{x['id']}.md"}
+            # the CLI builds the same files (before the planted invalid one below, which it would rebuild)
+            r = subprocess.run([sys.executable, os.path.join(here, "j2_agent_views.py"), "build", d], capture_output=True, text=True, timeout=300)
+            assert r.returncode == 0 and "agent-readable JSON" in r.stdout and "INVALID" not in r.stdout.replace("Invalid", ""), (r.returncode, r.stdout[-300:], r.stderr[-300:])
             # a planted invalid JSON reads invalid, in the data and on the row
             bp = os.path.join(d, "agent", "goal.json")
             bad = json.load(open(bp, encoding="utf-8"))
@@ -11246,12 +11251,14 @@ def agent_views():
                 if audits:
                     out = pane("records", "A-1", "agent/audits/A-1.json")
                     assert "AuditResult" in out and "Valid" in out and "Invalid" not in out, out[-400:]
-            r = subprocess.run([sys.executable, os.path.join(here, "j2_agent_views.py"), "build", d], capture_output=True, text=True, timeout=300)
-            assert r.returncode == 0 and "agent-readable JSON" in r.stdout and "INVALID" not in r.stdout.replace("Invalid", ""), (r.returncode, r.stdout[-300:], r.stderr[-300:])
             if BROWSER and j2.j2_check.find_chrome():
                 agent_views_page(d, n)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+        if keep_lib is None:
+            os.environ.pop("J2_LIBRARY_DIR", None)
+        else:
+            os.environ["J2_LIBRARY_DIR"] = keep_lib
     kinds = sorted(seen_kinds)
     print(f"agent views: {', '.join(f'{n} ({len(built[n])} JSONs, all valid)' for n in names)}; rows with a valid agent JSON: {', '.join(kinds)}; "
           "Documents group and audit rows A-n present; a planted invalid charter reads Invalid, the rest Valid ok")
