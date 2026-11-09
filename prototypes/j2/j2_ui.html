@@ -306,6 +306,8 @@ body.simple #dview{display:none}
 #sview .sdesk.busy .sface::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:2px solid var(--c);border-right-color:transparent;border-bottom-color:transparent;animation:spin 1.6s linear infinite}
 /* the board: parts move from planned to being made to done */
 #sview .sboard{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+#sview .sboard.all{grid-template-columns:minmax(0,1fr)}#sview .sboard.all .scol{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:7px}
+#sview .sboard.all .scol h4{grid-column:1/-1}#sview .sboard.all .scard{margin:0}
 #sview .scol{background:color-mix(in srgb,var(--s-ph) 45%,transparent);border-radius:14px;padding:10px;min-height:90px}
 #sview .scol h4{margin:0 2px 8px;font-size:13px;font-weight:600;color:var(--s-muted);display:flex;justify-content:space-between}
 #sview .scard{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:var(--s-surface);border:1px solid var(--s-line);border-radius:11px;padding:9px 10px;margin-bottom:7px;font-size:13.5px;position:relative;overflow:hidden}
@@ -2248,8 +2250,9 @@ function sTeamwork(s, M){
   h += `<section class="stw-sec"><h3>Who's on what</h3><div class="sdesks">` + SKEYS.map(k => { const t = T[k], p = PEOPLE[k];
     return `<button type="button" class="sdesk${t.busy ? " busy" : ""}" data-mate="${k}" style="--c:var(${p.c})"><span class="sface">${face(k, 44, {label: false})}</span><span><b>${p.name}</b> <span class="srole">· ${p.role}</span><small>${esc(t.line)}${t.busy ? '<span class="stype" aria-hidden="true"><i></i><i></i><i></i></span>' : ""}</small></span></button>`; }).join("") + `</div></section>`;
   if (M.parts.length){
-    const cols = [["Planned", p => p.st === "next" || p.st === "bad"], ["Being made", p => p.st === "doing" || p.st === "ask" || p.st === "fix"], ["Done", p => p.st === "done"]];
-    h += `<section class="stw-sec"><h3>The work</h3><div class="sboard">` + cols.map(([n, f], ci) => { const ps = M.parts.filter(f);
+    const all = M.parts.every(p => p.st === "done"), cols = all ? [[`All ${M.parts.length} parts done`, () => true]]      // finished: one wide grid, no empty columns
+      : [["Planned", p => p.st === "next" || p.st === "bad"], ["Being made", p => p.st === "doing" || p.st === "ask" || p.st === "fix"], ["Done", p => p.st === "done"]];
+    h += `<section class="stw-sec"><h3>The work</h3><div class="sboard${all ? " all" : ""}">` + cols.map(([n, f], ci) => { const ps = M.parts.filter(f);
       return `<div class="scol"><h4><span>${n}</span><span>${ps.length}</span></h4>` + ps.map(p => { const was = SV.cards[p.sec]; SV.cards[p.sec] = ci; const fresh = was !== undefined && was !== ci;
         const note = p.st === "ask" ? "waits on your answer" : p.st === "fix" ? "a fix is coming" : p.st === "doing" ? (p.fixing ? `${PEOPLE[p.person].name} is fixing it` : `${PEOPLE[p.person].name} is on it`) : p.st === "bad" ? "couldn't be made" : p.st === "done" ? `by ${PEOPLE[p.person].name}${p.fixes ? `, fixed ${p.fixes === 1 ? "once" : p.fixes + " times"}` : ""}` : `${PEOPLE[p.person].name} next`;
         return `<button type="button" class="scard ${p.st}${fresh ? " fresh" : ""}" data-part="${esc(p.sec)}" style="--c:var(${PEOPLE[p.person].c})">${face(p.person, 26, {prop: false, label: false})}<span class="nm">${esc(p.name)}<small>${esc(note)}</small></span>${p.st === "done" ? '<span class="ok" aria-label="done">✓</span>' : p.st === "fix" ? '<span class="fx" aria-hidden="true">↻</span>' : ""}</button>`; }).join("") + `</div>`; }).join("") + `</div></section>`;
