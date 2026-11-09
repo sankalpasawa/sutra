@@ -68,7 +68,7 @@ a{color:var(--link);cursor:pointer;text-decoration:underline;text-underline-offs
 </style></head><body>
 <nav class="rail"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i></nav>
 <aside class="fly"><div class="fh"><b>Artifacts</b><span class="s">what was made</span></div><div id="nav"></div><div class="sp"></div><a style="padding:10px 14px">Close</a></aside><div class="page"><div class="box">
- <div class="hd"><div class="hl"><div class="crumb">Artifacts <span>/</span> <b id="crumb"></b></div><div class="tl"><h1 id="ttl">Artifacts</h1><span class="cnt" id="cnt"></span></div><p id="sub"></p></div><div class="sp"></div><button class="ib ic" id="th" title="Switch theme" aria-label="Switch theme"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></button></div>
+ <div class="hd"><div class="hl"><div class="crumb">Artifacts <span>/</span> <b id="crumb"></b></div><div class="tl"><h1 id="ttl">Artifacts</h1><span class="cnt" id="cnt"></span></div><p id="sub"></p></div><div class="sp"></div></div>
  <div class="scroll"><div class="in" id="root"></div></div>
 </div></div>
 <script>
@@ -149,5 +149,5 @@ function show(){const g=G.find(x=>x.k===cur);sel[cur]=sel[cur]||g.rows[0].id;con
  document.getElementById('root').innerHTML=`<div class="two"><div class="list">${g.rows.map(x=>`<div class="row ${x.id===r.id?'on':''}" data-r="${x.id}"><span class="t"><b>${esc(x.t)}</b><span>${x.s}</span></span>${x.m}${x.r}</div>`).join('')}</div><div class="pane">${r.p()}</div></div>`}
 document.addEventListener('click',e=>{const vb=e.target.closest('[data-ver]');if(vb){ver=vb.dataset.ver;show();return}const cp=e.target.closest('[data-copy]');if(cp){const pre=cp.closest('.code').querySelector('pre');navigator.clipboard&&navigator.clipboard.writeText(pre.innerText).catch(()=>{});cp.textContent='Copied';return}const tb=e.target.closest('[data-tab]');if(tb){tab=tb.dataset.tab;show();return}const jp=e.target.closest('[data-jump]');if(jp){tab='doc';show();const el=document.getElementById(jp.dataset.jump);el&&el.scrollIntoView();return}const n=e.target.closest('[data-g]');if(n){cur=n.dataset.g;show();return}const r=e.target.closest('[data-r]');if(r){sel[cur]=r.dataset.r;tab='sum';ver='cur';show()}});
 show();
-document.getElementById('th').onclick=()=>{const d=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=d?'light':'dark'};
+;
 </script></body></html>
