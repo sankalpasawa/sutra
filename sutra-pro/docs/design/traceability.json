@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 125,
+  "decisions": 134,
   "packages": 78,
   "endpoints": 30,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 125,
+ "max_decision": 134,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -314,7 +314,16 @@
     "D122",
     "D123",
     "D124",
-    "D125"
+    "D125",
+    "D126",
+    "D127",
+    "D128",
+    "D129",
+    "D130",
+    "D131",
+    "D132",
+    "D133",
+    "D134"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -2795,6 +2804,125 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "key label \"your folder, your access\", pill on the Chat sessions box."
+  },
+  {
+   "id": "D126",
+   "title": "One engine, extended by capabilities that every agent and every output inherit; nothing is routed in front of it",
+   "packages": [
+    "CT-1",
+    "E0",
+    "E2",
+    "E3",
+    "E4",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"one engine, capabilities add\", pill on the Department runtime box."
+  },
+  {
+   "id": "D127",
+   "title": "The workspace capability: every engine agent call may read the owner's folder, only project builders may change it, the owner's access setting caps both",
+   "packages": [
+    "CN-7",
+    "E0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"agents read your folder\", pill on the Connector router box."
+  },
+  {
+   "id": "D128",
+   "title": "\"Project work\" is an engine output built on the document flow; the one vendored change is patch P14",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key label \"Project work output\", pill on the J2 chips box."
+  },
+  {
+   "id": "D129",
+   "title": "The engine picks the output for a brief itself; `auto` is the default and the owner overrides it anywhere",
+   "packages": [
+    "E0",
+    "E4",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"engine picks the output\", pill on the Department runtime box."
+  },
+  {
+   "id": "D130",
+   "title": "Every agent works in a chat session of its own, new for each run",
+   "packages": [
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-6",
+    "UI-3",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"a chat per agent per run\", pill on the Chat sessions box."
+  },
+  {
+   "id": "D131",
+   "title": "Each agent session has its own provider, model and effort, honoured by the engine through a file the server writes",
+   "packages": [
+    "ABS-1",
+    "ABS-5",
+    "ABS-6",
+    "ABS-7",
+    "ABS-9",
+    "CN-1",
+    "CN-7",
+    "GAP-DEMO",
+    "GAP-E1B",
+    "ORCH-1",
+    "ORCH-6",
+    "UI-0",
+    "UI-3",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"model and effort per agent\", pill on the Connector router box."
+  },
+  {
+   "id": "D132",
+   "title": "The owner steers an agent with a note in its chat, delivered through the engine's node-context file",
+   "packages": [
+    "GAP-E1B",
+    "ORCH-1",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"note to an agent\", pill on the Chat sessions box."
+  },
+  {
+   "id": "D133",
+   "title": "An agent's live work reaches its chat through a published file and `chat.partial`, not a ninth run event",
+   "packages": [
+    "CN-7",
+    "GAP-DEMO",
+    "ORCH-6",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"live agent chats\", pill on the Chat sessions box."
+  },
+  {
+   "id": "D134",
+   "title": "Claude desktop is the reference for the picker: per session, applied next turn, \"Default\" follows the team, subagent equals thread",
+   "packages": [
+    "ABS-9",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"same picker as Claude\", pill on the Chat sessions box."
   }
  ],
  "packages": [

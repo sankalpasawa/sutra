@@ -568,5 +568,50 @@
   "id": "D125",
   "label": "your folder, your access",
   "anchor": "Chat sessions"
+ },
+ {
+  "id": "D126",
+  "label": "one engine, extended by capabilities",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D127",
+  "label": "workspace: every agent reads your folder",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D128",
+  "label": "project work is an engine output",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D129",
+  "label": "the engine picks the output",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D130",
+  "label": "every agent has its own chat session",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D131",
+  "label": "each agent chat has its own model and effort",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D132",
+  "label": "steer an agent from its chat",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D133",
+  "label": "an agent's live work reaches its chat",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D134",
+  "label": "model picker like Claude desktop",
+  "anchor": "Chat sessions"
  }
 ]

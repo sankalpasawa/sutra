@@ -2,9 +2,12 @@
 prompt and no waiting. The host decides once, before J2 is imported, when the owner left the output on `auto`:
 
     1 owner     the owner chose an output (the start page, the team's engine.json, data/engine.json): that one
-    2 followup  `seed_output`: the brief continues a finished run, so the run keeps its output (the design lists this as rule 3: it is
-                looked at first here, because a follow-up to a website that says "fix the bug in the form" must stay a website run)
-    3 project   strong project words (repository, codebase, git, branch, commit, the folder, refactor, bug, ...) -> project work
+    2 project   words that can only mean a project (repository, codebase, git, branch, commit, pull request, CLAUDE.md, the folder, refactor)
+                -> project work, even when the brief continues an earlier run: a team whose first run was a website intake it never needed
+                must not stay a website team for good
+    3 followup  `seed_output`: the brief continues a finished run, so the run keeps its output ("fix the bug in the form" on a website
+                follow-up stays a website run: "bug" and "source" are weak words, looked at after this rule)
+    3b weak     the weak project words (bug, source) -> project work
     4 deliver   a make-a-deliverable phrase (write, draft, build, design ... a PRD, HLD, LLD, website or landing page, or "a website for ...") -> website,
                 J2's default; J2's own `detect_documents` still plans the documents exactly as it does today
     5 folder    a working folder is set and nothing above matched ("check the app and update the J2 prototype") -> project
@@ -22,7 +25,8 @@ from .base import Selection
 
 __all__ = ["choose_output", "RULES", "STRONG_PROJECT_WORDS", "chat_line"]
 
-RULES = ("owner", "followup", "project", "deliver", "folder", "default")
+RULES = ("owner", "project", "followup", "weak", "deliver", "folder", "default")
+WEAK_REASONS = ("a bug", "the source")           # words that name a project only when nothing continues an earlier run
 
 # (pattern, what the owner is told they asked about). Whole words only, any case. The first one that matches names the reason.
 STRONG_PROJECT_WORDS = (
@@ -45,9 +49,10 @@ _THINGS = r"(?:PRDs?|HLDs?|LLDs?|web\s?sites?|sites?|landing\s+pages?|web\s?page
 _DELIVER = re.compile(rf"\b{_VERBS}\b[^.!?\n]{{0,60}}?\b{_THINGS}\b|\b(?:a|an|the|my|our)\s+(?:[\w'-]+\s+){{0,3}}?{_THINGS}\s+(?:for|about|of)\b", re.I)
 
 
-def _project_word(brief: str) -> Optional[str]:
+def _project_word(brief: str, *, weak: bool) -> Optional[str]:
+    """The reason of the first project word of the kind asked for (`weak`: only the weak ones, else only the others)."""
     for pattern, why in _STRONG:
-        if pattern.search(brief):
+        if (why in WEAK_REASONS) == weak and pattern.search(brief):
             return why
     return None
 
@@ -57,12 +62,15 @@ def choose_output(brief: str, has_folder: bool, seed_output: Optional[str] = Non
     output of the finished run this one continues, when there is one."""
     if choice and choice != "auto":
         return Selection(choice, "owner", "you chose it")
-    if seed_output:
-        return Selection(seed_output, "followup", f"this continues an earlier {seed_output} run")
     text = brief or ""
-    why = _project_word(text)
+    why = _project_word(text, weak=False)
     if why:
         return Selection("project", "project", f"you asked about {why}")
+    if seed_output:
+        return Selection(seed_output, "followup", f"this continues an earlier {seed_output} run")
+    why = _project_word(text, weak=True)
+    if why:
+        return Selection("project", "weak", f"you asked about {why}")
     if _DELIVER.search(text):
         return Selection("website", "deliver", "you asked for a document or a site to be made")
     if has_folder:

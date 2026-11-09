@@ -29,3 +29,11 @@ The first version of this fix sorted the owner's words and sent a project reques
 * Codex with "change" was proved against the fake CLI only.
 * Running tests or any command other than the four git reads is refused on purpose; the owner runs them.
 * Teams do not use the folder yet (see "No routing").
+
+
+## What the engine does now (D126 to D134)
+The team's request always starts a department run of the one engine. Nothing is routed in front of it.
+* **Capabilities.** The engine has a capability registry (`engine/capabilities/`). The `workspace` capability gives every agent call of every output the working folder (read; the owner's access setting caps it) and the project's CLAUDE.md. The `project` output (Project work: Findings, Changes, Confirmation, Open items, Outcome) is a normal engine output; builders do the work with tools and Audit checks it in the folder.
+* **The engine chooses the output** (`auto`, the default): words about a repository, code or a folder, or a working folder with nothing else said, give project work; a named site or document gives that; a follow-up keeps its output unless the words name a repository. The owner can override in the start page, in Settings, in `engine.json` or per task. The reason is in `output.json` and in the run's chat.
+* **Every agent has its own chat session** (a new one per run for the five functions, one per builder), each with its own model and effort (cascade: its own choice, the run, the team, the default), honoured by the engine at the agent's next call through `<run>/choices.json`. The owner can steer an agent from its chat; its live work streams there.
+* **Checked live** (real Claude, a copy of the owner's data folder, a scratch clone of the J2 prototype): the sentence that started a website intake now starts a project run (output `project`, Identity does not ask about a website, five sections written, Audit checks the report against the folder); a v3 data folder migrated to v4; picking haiku/low for Identity made its next call `claude-haiku-5-5`.

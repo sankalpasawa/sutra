@@ -883,3 +883,66 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: the folder was only ever given to the direct chat and the org agent, and the owner had no way to let it change files, no way to give it the project's instructions and no clear place to choose it; these are the things a session in a folder has that the app's chat lacked.
 - Rejected: routing by the owner's words (the owner's decision: the one engine gains capabilities, nothing is put in front of it); a per-team mode setting; loading the CLI's own settings and hooks from the folder (a folder's hooks would run arbitrary commands); letting the team run any command (the owner has a terminal; D34's reasoning about what the app installs and runs); making edits default on for a folder chosen before (that is the owner's decision to make, once).
 - Diagram: key label "your folder, your access", pill on the Chat sessions box.
+
+## D126 — One engine, extended by capabilities that every agent and every output inherit; nothing is routed in front of it
+- Sources: owner requirement R1 after the first fix; D125 part (1) (superseded), D121 ("the engine's runs are unchanged", superseded), D13 (the vendored engine is changed only by numbered patches), D14 (one process per run, files only).
+- Decided: Words to a team always start the department run of the one engine. New abilities are added to the engine through a capability registry (`engine/capabilities/`): a capability can add outputs, call-tag fields, prompt addenda, progress sinks and one setting; it cannot replace another's; every agent call of every output runs every hook. The API-level route to "the team's own turn" (`work_route.py` and its parts) is removed.
+- Why: a front door that guesses from words splits the product in two (a document engine and a second path), and every later ability would need a third; one engine with inherited abilities is what the owner asked for and keeps the five-function flow, audit and receipts for project work.
+- Rejected: keeping the route and tuning its words (two flows, wrong whenever the words mislead); asking the owner which mode each time; a plugin system with a manifest and loading from disk (a fixed tuple in code is enough, and nothing is loaded from the owner's folder).
+- Diagram: key label "one engine, capabilities add", pill on the Department runtime box.
+
+## D127 — The workspace capability: every engine agent call may read the owner's folder, only project builders may change it, the owner's access setting caps both
+- Sources: R1, D121, D125 parts (2) and (3), `router.AGENT_FUNCTIONS`.
+- Decided: `CallTag.workspace` ("", read, edit) is set by the capability (five functions and all builders: read; builders of an output whose spec says edit: edit; helper calls: none); `Router.folder_for(tag)` turns it into the folder, capped by the `access` the owner chose, and adds the project's CLAUDE.md and the folder text after the egress check; `AGENT_FUNCTIONS` is deleted (the org agent tags its own calls). `EngineSettings.workspace: auto|off`.
+- Why: the folder and its rules belong to the connector layer, the agent and output belong to the engine; a tag carries one to the other without either learning the other's names, and J2's prompts stay byte for byte.
+- Rejected: a list of function names in the router (what failed); giving the folder from the host to the whole process (no per-call least privilege); appending the folder text through `system_addendum` (it would change every prompt golden and be logged as J2's prompt).
+- Diagram: key label "agents read your folder", pill on the Connector router box.
+
+## D128 — "Project work" is an engine output built on the document flow; the one vendored change is patch P14
+- Sources: R1, engine.md 3.4, `OUTPUTS` in `j2.py`.
+- Decided: `OUTPUTS["project"]` is registered by the capability: sections Findings, Changes, Verification, Open items, Outcome; its own intake, builder, plan, atom rules, rubric, conditions (an absolute path outside the vendored folder), mocks and addenda; builders work with their tools and report, Audit verifies in the folder. `single: True` plus patch P14 (`_plan_stages` returns early) stop named documents from swapping the output. Rates reuse `rates_prd`.
+- Why: the document flow already has intake, planning, building, auditing, three attempts, receipts and nodes; a work report is a document whose sections are done with tools, so almost everything is inherited; one recorded line replaces a runtime patch nobody could verify.
+- Rejected: a second flow beside the document flow; a runtime monkeypatch of `_plan_stages`; editing `conditions/`, `rates.json` or the role files (they are byte-checked); a test-running Bash allow-list (D125 keeps tests for the owner).
+- Diagram: key label "Project work output", pill on the J2 chips box.
+
+## D129 — The engine picks the output for a brief itself; `auto` is the default and the owner overrides it anywhere
+- Sources: R1, PROJECT-WORK root causes 1 and 4, the settings cascade of engine.md 4.4.
+- Decided: `EngineSettings.output` defaults to `auto`; the host decides once, before J2 starts, by a pure rule table (owner's choice, strong project words, a follow-up's own output, a make-a-deliverable phrase, a set folder, else website); the result is written to `settings.json` and `output.json` and, for project work only, said in the run's chat. The start page select gets "Let the team decide" and "Project work".
+- Why: the decision must be inside the engine and before the first prompt (the intake prompt depends on the output); a rule table costs no model call, is testable, and leaves every existing run unchanged.
+- Rejected: Identity choosing in its intake reply (the reply format and prompts are golden); a model call to classify (cost, latency, nondeterminism); no default (the failure the owner hit).
+- Diagram: key label "engine picks the output", pill on the Department runtime box.
+
+## D130 — Every agent works in a chat session of its own, new for each run
+- Sources: R2, I1 (orchestrator.md), D63, D123.
+- Decided: builders already get a step session with their node; function agents' sessions roll at the agent's first event of a run (archive the used one, start the replacement in the same transaction, carry the choice); sessions are stamped with the run, titled by the agent and the task or workflow, and listed per team and run (`GET /api/teams/{dept}/agents`). Past runs' agent chats stay in the archive, read only.
+- Why: the owner wants each working agent to have its own thread like a Claude desktop subagent; the existing one-session-per-node invariant and archive-and-replace machinery do it without a new table.
+- Rejected: one endless session per function (a thread that mixes every run); a new graph node per function per run (breaks the team's fixed five); a separate sessions table.
+- Diagram: key label "a chat per agent per run", pill on the Chat sessions box.
+
+## D131 — Each agent session has its own provider, model and effort, honoured by the engine through a file the server writes
+- Sources: R2, ABS-6/8 (direct chat pill), Claude desktop's per-session picker, ORCH-D5 (SQLite is the server's).
+- Decided: schema v4 stores `pinned_model` and `pinned_effort` beside `pinned`; the cascade is own > run > team > policy default, a whole pick at a time; the server writes `<run>/choices.json` and the engine's router reads it per call (`connectors/agent_picks.py`), applying it from the agent's next call and falling back with a visible note; the pill is the existing one plus "Default".
+- Why: the engine is a separate process that must not open the database; a small file rebuilt from the database survives restarts and is the same pattern as the inbox.
+- Rejected: the engine reading SQLite read-only (two writers' view of one schema, locking, a path the child environment lacks); keeping model and effort only in `session.json` (a temp folder that can vanish and that the engine cannot see); a per-field cascade (hard to explain in one chip).
+- Diagram: key label "model and effort per agent", pill on the Connector router box.
+
+## D132 — The owner steers an agent with a note in its chat, delivered through the engine's node-context file
+- Sources: R2, P9 (`system_addendum`), the `ChatSession` rule that function and step chats are not writable.
+- Decided: `POST /api/chats/{sid}/steer` stores the owner's line and writes the agent's entry of `<run>/node_context.json`; the engine appends it to that agent's system prompt from its next call; the generic message route stays read only for these chats.
+- Why: it uses a seam that exists, needs no new inbox kind and no change to the engine protocol, and says honestly when it applies.
+- Rejected: letting the owner post as a normal message into an agent chat (breaks the record rule and implies the agent answers at once); a new inbox kind that interrupts a running call (cannot be honoured mid-call); sending the note to Identity only.
+- Diagram: key label "note to an agent", pill on the Chat sessions box.
+
+## D133 — An agent's live work reaches its chat through a published file and `chat.partial`, not a ninth run event
+- Sources: R2, engine.md 4.5 (eight event types), D111 (one streaming mechanism).
+- Decided: the engine rewrites `<run>/agent_live.json` (at most four times a second) and the watcher turns it into the existing ephemeral `chat.partial` events for the agent's session; the stored line still comes from the `say` event.
+- Why: partials are many and not durable; the protocol and its contract tests stay as they are; the page already knows `chat.partial`.
+- Rejected: a `partial` event in `events.jsonl` (log growth, contract change); polling the run folder from the page (a second reader of engine files).
+- Diagram: key label "live agent chats", pill on the Chat sessions box.
+
+## D134 — Claude desktop is the reference for the picker: per session, applied next turn, "Default" follows the team, subagent equals thread
+- Sources: R2, `model_catalog.py` (model groups and efforts per model), D111.
+- Decided: the mapping table of 3.3 is the contract; the labels and efforts (low, medium, high, xhigh, max) are the CLI's own; "Default" shows what it resolves to and from where.
+- Why: the owner linked the behaviour to Claude desktop; one table makes it testable.
+- Rejected: a separate "advanced" panel; a global model switch for all agents (that is the team pill).
+- Diagram: key label "same picker as Claude", pill on the Chat sessions box.

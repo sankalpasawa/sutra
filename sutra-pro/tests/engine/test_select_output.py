@@ -30,7 +30,7 @@ TABLE = [
     ("look at the app and tell me what is missing", True, None, "auto", "project", "folder"),
     ("update the J2 prototype", True, None, "auto", "project", "folder"),
     # strong project words, each on its own
-    ("fix the bug in checkout", False, None, "auto", "project", "project"),
+    ("fix the bug in checkout", False, None, "auto", "project", "weak"),
     ("refactor the login module", False, None, "auto", "project", "project"),
     ("what changed in the last commit?", False, None, "auto", "project", "project"),
     ("open a pull request for the rename", False, None, "auto", "project", "project"),
@@ -39,11 +39,13 @@ TABLE = [
     ("summarise the codebase", False, None, "auto", "project", "project"),
     ("list the files in the folder", False, None, "auto", "project", "project"),
     ("check the app's code for TODOs", False, None, "auto", "project", "project"),
-    ("update the Source of truth", False, None, "auto", "project", "project"),
+    ("update the Source of truth", False, None, "auto", "project", "weak"),
     ("GIT status please", False, None, "auto", "project", "project"),
     # a follow-up keeps its output, even when its words are about a bug
     ("make the header blue", False, "website", "auto", "website", "followup"),
-    ("fix the bug in the contact form", True, "website", "auto", "website", "followup"),
+    ("fix the bug in the contact form", True, "website", "auto", "website", "followup"),      # a weak word does not leave a website follow-up
+    ("update the J2 prototype in the repo", True, "website", "auto", "project", "project"),   # a repository word does: a team whose first run was a site intake
+    ("look at the folder and the git log", False, "website", "auto", "project", "project"),
     ("add a section about pricing", True, "prd", "auto", "prd", "followup"),
     ("also check the tests", True, "project", "auto", "project", "followup"),
     ("also check the tests", False, "project", "auto", "project", "followup"),
