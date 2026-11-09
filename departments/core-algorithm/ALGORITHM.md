@@ -62,6 +62,7 @@ Suppose a standing goal is `order_fulfilled(order_7)`. An approved rule provides
 | Provider adapter | Offer actual capabilities with finite commitments | Assert effect success without separate evidence |
 | Learning/formation | Propose reusable Methods, rules or patterns | Promote its own rules, verifier or kernel |
 | J2 adapter | Map proposed plan to J2 atom/map contracts | Claim a projection is executed J2 work |
+| Implementation generator | Turn a plan into a runnable workflow shape (sutra-native user-kit), atoms, a department scaffold and a page | Execute anything, register itself, or mark a step done |
 
 ## Four linked interpretations
 

@@ -67,6 +67,15 @@ def inspect(data):
     check('S28_reflection_no_promotions',all(x['status']=='PROPOSED_ONLY' for x in meta['reflection']['candidates']))
     check('S29_j2_projection_not_closed',all(x['status']=='open' for x in meta['j2_projection']['atoms']))
     check('S30_design_diff',meta['graph_diff_nuance']['added']==['notify-customer@1'])
+    # Implementation versions (rung L1): proposal-only, right shape, hash-stable, never marked executed.
+    for key,label in (('implementation','S32'),('implementation_enquiry','S33')):
+        impl=meta.get(key) or {}
+        wf=impl.get('workflow',{})
+        shape=all(k in wf for k in ('id','name','version','source','trigger','steps','verify','enforcement'))
+        steps_ok=len(wf.get('steps',[]))==len(impl.get('plan',{}).get('actions',[]))+2 and all(s.get('sandbox')=='local-model-only' for s in wf.get('steps',[]) if s.get('method'))
+        proposed=impl.get('status')=='PROPOSED_ONLY' and 'PROPOSED_ONLY' in str(wf.get('enforcement',{}).get('current','')) and all(a.get('status')=='open' and a.get('verify',{}).get('met') is False for a in impl.get('atoms',[]))
+        stable=impl.get('implementation_sha256')==sha({k:v for k,v in impl.items() if k not in ('ui','ui_sha256','implementation_sha256')}) and impl.get('ui_sha256')==sha(impl.get('ui'))
+        check(label+'_'+key+'_proposal_only_right_shape',shape and steps_ok and proposed and stable)
     # Deliberate negative: verifier must reject forged edits without breaking JSON shape.
     test_case=next(x for x in data['cases'] if x['id']=='04_gates')
     forged=json.loads(json.dumps(test_case['outcome']['trace']))

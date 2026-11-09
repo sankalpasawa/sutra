@@ -7,6 +7,7 @@ from tools.run_all import CASES,pack,extra_events
 from extensions.knowledge import compile_pattern,signal_priority
 from extensions.reflection import minimal_graph_diff,reflect
 from extensions.j2_projection import to_j2_proposed_atom_views
+from extensions.implementation import to_implementation,validate_workflow
 
 EXPECTED={
  '00_goal':'SEMANTICS_MISSING','01_meaning':'METHOD_ABSENT',
@@ -134,6 +135,33 @@ class ContractTests(unittest.TestCase):
         c=State.from_packs([pack(n) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission')]);r=Kernel(c).run_standing(execute=True)['runs'][0]
         self.assertTrue(all(x['status']=='LOCAL_ONLY' for x in r['model_receipts']))
         self.assertIn('never external success',r['claim'])
+    # Implementation version (program rung L1): a plan becomes a runnable workflow shape, atoms, a scaffold and a page.
+    ORDER=('00_goal','01_domain','02_methods','03_approval','04_admission','06_notify')
+    def test_implementation_workflow_shape(self):
+        c=State.from_packs([pack(n) for n in self.ORDER]);r=Kernel(c).run_standing()['runs'][0];impl=to_implementation(r,c)
+        self.assertEqual(validate_workflow(impl['workflow']),[])
+        self.assertEqual([s['method'] for s in impl['workflow']['steps'] if s.get('method')],['ship-replacement@1','notify-customer@1'])
+        self.assertEqual(impl['workflow']['steps'][0]['id'],'record-intent');self.assertEqual(impl['workflow']['steps'][-1]['id'],'show-it')
+        self.assertEqual(len(impl['atoms']),2);self.assertIn('order_complete',impl['workflow']['verify'])
+    def test_implementation_is_proposal_only_and_pure(self):
+        c=State.from_packs([pack(n) for n in self.ORDER]);r=Kernel(c).run_standing()['runs'][0]
+        before=(digest(c.evidence),digest(c.methods),sorted(c.grants),dict(c.budget))
+        a=to_implementation(r,c);b=to_implementation(r,c)
+        self.assertEqual(a['implementation_sha256'],b['implementation_sha256']);self.assertEqual(a['ui_sha256'],b['ui_sha256'])
+        self.assertEqual(before,(digest(c.evidence),digest(c.methods),sorted(c.grants),dict(c.budget)))
+        self.assertEqual(a['status'],'PROPOSED_ONLY')
+        self.assertTrue(all(s['sandbox']=='local-model-only' for s in a['workflow']['steps'] if s.get('method')))
+        self.assertTrue(all(x['status']=='open' and x['verify']['met'] is False for x in a['atoms']))
+        self.assertIn('nothing here has run',a['ui'])
+    def test_implementation_scaffold_from_rules_and_grants(self):
+        c=State.from_packs([pack(n) for n in self.ORDER]);r=Kernel(c).run_standing()['runs'][0];impl=to_implementation(r,c)
+        self.assertEqual(len(impl['scaffold']['done_when']),2);self.assertIn('customer_notified is TRUE',impl['scaffold']['done_when'][1])
+        tags={row['line'].split(' ')[0]:row['tag'] for row in impl['scaffold']['rules'] if row['tag'] in ('go','ask')}
+        self.assertEqual(tags['ship-replacement@1'],'go')
+        revoked=State.from_packs([pack(n) for n in self.ORDER+('13_revoke_authority',)]);impl2=to_implementation(r,revoked)
+        tags2={row['line'].split(' ')[0]:row['tag'] for row in impl2['scaffold']['rules'] if row['tag'] in ('go','ask')}
+        self.assertEqual(tags2['ship-replacement@1'],'ask');self.assertEqual(tags2['notify-customer@1'],'go')
+        self.assertTrue(any(row['tag']=='refuse' for row in impl2['scaffold']['rules']))
     def test_hash_chain_valid(self):
         c=State.from_packs([pack(n) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission')]);r=Kernel(c).run_standing(execute=True)['runs'][0]
         for i,x in enumerate(r['trace']):

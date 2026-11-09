@@ -1,6 +1,6 @@
 # Experimental reference — one kernel, 25 extension cases
 
-**Build label:** `sutra-kernel-extensions/0.2.0-experimental`. This is an independent study; do not treat it as a released implementation of production Sutra Core or J2/Native.
+**Build label:** `sutra-kernel-extensions/0.3.0-implementation`. This is an independent study; do not treat it as a released implementation of production Sutra Core or J2/Native. 0.3.0 adds the proposal-only implementation generator (`extensions/implementation.py`, Core Algorithm program rung L1, 2026-11-10); the kernel is unchanged from 0.2.0.
 
 Requirements: Python 3.10+ standard library. From **this `lab/` directory**:
 
@@ -12,7 +12,7 @@ python3 -m unittest discover -s tests -v
 python3 qa/independent_verify.py
 ```
 
-Expected results with the included authored fixture packs: 25 deterministic recorded cases, 54 passing unit tests and 31 independent local checks. `qa/independent_verify.py` **does not import** the resolver and rejects a deliberately altered event chain, but verifies synthetic consistency only. `tools/build_viewer.py` and `qa/browser_test.py` optionally render/check the offline viewer with Playwright and Chromium installed; the earlier archive recorded 21 browser assertions, not rerun for this publication.
+Expected results with the included authored fixture packs: 25 deterministic recorded cases, 57 passing unit tests and 33 independent local checks (0.2.0 had 54 and 31; the three tests and two checks added in 0.3.0 cover the implementation generator). `qa/independent_verify.py` **does not import** the resolver and rejects a deliberately altered event chain, but verifies synthetic consistency only. `tools/build_viewer.py` and `qa/browser_test.py` optionally render/check the offline viewer with Playwright and Chromium installed; the earlier archive recorded 21 browser assertions, not rerun for this publication.
 
 `results/` and `site/` are generated locally, not authoritative external observations. Source integrity of the historical experiment was checked before importing here; commits to this department create new repository object hashes, not a retroactive Core v0.2.2 release.
 
@@ -21,6 +21,7 @@ Expected results with the included authored fixture packs: 25 deterministic reco
 - `kernel/core.py`: bounded recursive resolver and safe local action boundary.
 - `scenarios/`: authored, reviewed-in-fixture JSON packs.
 - `extensions/knowledge.py`, `reflection.py`, `j2_projection.py`: bounded proposal utilities, **not** true external data/model/J2 integration.
+- `extensions/implementation.py`: the implementation generator: from a plan and its state, a workflow in the `sutra-native` user-kit shape, its atoms, the owning department's scaffold and a page; PROPOSED_ONLY, deterministic, writes nothing, runs nothing.
 - `tools/`: fixture, run and static-viewer scripts.
 - `qa/`: independent verifier (does not import kernel), optional browser tests.
 - `tests/`: regression and negative tests.
