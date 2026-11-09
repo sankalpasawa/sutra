@@ -5,12 +5,13 @@ Run:  python j2_server.py                         opens http://127.0.0.1:8773
 Every response goes through redact(): API keys, tokens and .env values never reach the page.
 """
 import argparse
+import html
 import http.server
 import json
 import os
 import re
 import webbrowser
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import j2
 import j2_agent
@@ -245,15 +246,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 data = f.read()
             return self._send(200, data, DOCX, name) if name.endswith(".docx") else \
                 self._send(200, data, "text/markdown")
-        if u.path.startswith("/doc/"):         # the Simple view's document tabs: prd, hld or lld of a run as a page, read-only
-            kind = u.path.rsplit("/", 1)[-1]
+        if u.path.startswith("/doc/") or u.path == "/view":      # the Simple view's output tabs: any file the run's artifact list names, as a readable page
             d = j2.saved_dir(run) if run else RUN.dir
-            p = os.path.join(d or "", f"{kind}.md")
-            if kind not in ("prd", "hld", "lld") or not d or not os.path.isfile(p):
-                return self._send(200, "<p style='font:15px system-ui;color:#667;padding:24px'>This document isn't written yet.</p>",
-                                  "text/html")
-            with open(p, encoding="utf-8") as f:
-                return self._send(200, j2.md_html(f.read(), j2.DOC_NAMES[kind].capitalize()), "text/html")
+            name = f"{u.path.rsplit('/', 1)[-1]}.md" if u.path.startswith("/doc/") else q.get("name")
+            p = j2_artifacts.served(d if d and os.path.isdir(d) else None, name)
+            return self._send(200, view_page(p, name), "text/html")
         if u.path.startswith("/site/") and run:
             d, key = j2.saved_dir(run), u.path.rsplit("/", 1)[-1]
             site = os.path.join(d or "", "site")
@@ -315,6 +312,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, '{"ok": true}')
         self._send(404, "{}")
 
+
+
+def view_page(p, name):
+    """A file from a run's artifact list as a page for the Simple view: markdown rendered, a page as it is, an image shown, anything
+    else (data, code, a script) as readable text. A file not in the list gets a plain "not written yet" line."""
+    if not p:
+        return "<p style='font:15px system-ui;color:#667;padding:24px'>This isn't written yet.</p>"
+    ext = os.path.splitext(p)[1].lower()
+    if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"):
+        return (f"<!doctype html><meta charset='utf-8'><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#f6f3ee'>"
+                f"<img src='/api/artifact?name={quote(name)}' alt='{html.escape(os.path.basename(p))}' style='max-width:100%;height:auto'></body>")
+    with open(p, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    if ext == ".md":
+        return j2.md_html(text, os.path.basename(p))
+    if ext in (".html", ".htm"):
+        return text
+    return (f"<!doctype html><meta charset='utf-8'><title>{html.escape(os.path.basename(p))}</title><body style='margin:0;background:#fbfaf7'>"
+            f"<pre style='margin:0;padding:24px;font:13px/1.55 ui-monospace,Menlo,monospace;color:#1f2421;white-space:pre-wrap;overflow-wrap:anywhere'>"
+            f"{html.escape(text)}</pre></body>")
 
 
 # Run settings' run list (read-only): every saved run, newest first, from its own records. status: summary.json "status" (done and
