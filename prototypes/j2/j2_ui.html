@@ -565,7 +565,7 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 .atbl{overflow-x:auto;margin:6px 0 12px}.amd table{border-collapse:collapse;font-size:12.5px;width:100%}.amd th,.amd td{border:1px solid var(--line);padding:4px 7px;text-align:left;vertical-align:top}.amd th{background:var(--panel)}
 .aas{background:color-mix(in srgb,var(--warm1) 16%,transparent);border-radius:3px;padding:0 2px}
 .anote{font-size:12.5px;margin:0 0 10px}.acode{margin-bottom:14px;min-width:0}.acodehd{display:flex;gap:8px;align-items:baseline;font-size:12px;color:var(--muted);margin-bottom:4px}.acodehd b{color:var(--ink)}
-.acode .codebox{margin:0}.acode pre.code{max-height:none}.astyle h3{display:none}
+.awide{max-width:none}.awide td:nth-child(-n+2),.awide th{white-space:nowrap;overflow-wrap:normal}.ameta{font-size:12.5px;color:var(--muted);margin:0 0 8px}.ameta b{color:var(--ink)}.ameta+.codebox .codecopy{display:none}.asecview{display:block;width:100%;height:62vh;border:1px solid var(--line);border-radius:8px;background:#fff}.acode .codebox{margin:0}.acode pre.code{max-height:none}.astyle h3{display:none}
 .rflyart{display:flex;flex-direction:column;gap:2px}.rfly .rnh{margin:12px 10px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
 @media (max-width:900px){.agwrap{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,34%) minmax(0,1fr);gap:10px}.aglist{align-self:stretch}.agrid{grid-template-columns:minmax(0,1fr)}.agpane{padding:14px}.atoc{columns:1}}
 @media (max-width:600px){.runrow{grid-template-columns:auto minmax(0,1fr);gap:8px 10px;padding:8px 10px}.runrow .rr{grid-column:2}.rtop input{margin-left:0;flex:1 1 140px}.rsec{padding:12px}}
@@ -2156,47 +2156,94 @@ function artWfBody(x){
   return `<div class="agrid"><div class="ablk"><h5>Goal</h5><p>${x.goal ? esc(x.goal) : artNR}</p></div><div class="ablk"><h5>Method</h5><p>${x.method ? esc(x.method) : artNR}</p></div></div>${reuse}`
     + `<div class="agrid"><div class="ablk"><h5>Checked by code</h5>${checks}</div><div class="ablk"><h5>Checked by the audit</h5>${aud}</div></div>`
     + `<div class="ablk"><h5>Versions</h5>${artList(x.versions || [], (v, k) => `<li><span class="mono empty">${esc(v.workflow)}</span><span>${k ? `<b>${esc(artWords(v.label))}:</b> ` : "First version. "}${esc(v.purpose)}</span></li>`)}</div>`; }
-function artGuide(x){
-  const tab = artTab([["sum"], ["doc"]], "sum"), t = x.file ? ARTTEXT[x.file] : null, words = typeof t === "string" ? ` · ${plural(t.split(/\s+/).filter(Boolean).length, "word")}` : "";
-  const top = `<h2>${esc(x.name)}</h2>${artBy(x, x.file, words)}${artTabs([["sum", "Summary"], ["doc", "Read document"]])}`;
-  if (tab === "doc"){ const docs = x.docs || [], f = docs.some(d => d.file === ARTS.ver) ? ARTS.ver : x.file;
-    return top + (docs.length > 1 ? `<div class="avers" role="group" aria-label="Version"><span class="empty">Version</span>${docs.map(d => `<button type="button" data-aver="${esc(d.file)}" aria-pressed="${d.file === f}">${esc(d.label)}${d.workflow ? " · " + esc(d.workflow) : ""}</button>`).join("")}</div>` : "")
-      + (f ? artFile(f) : '<p class="empty">The run kept no copy of this document.</p>'); }
-  const a = typeof t === "string" ? artAsm(t) : [], hs = typeof t === "string" ? artHeads(t) : [];
-  return top + (t === undefined ? '<p class="empty">Loading the document…</p>' : "")
+// Every row has three tabs: Summary, Agent-readable, Human-readable (views in j2_artifacts.groups: views.agent and views.human name the
+// file each one shows, or null when the run saved none). The Agent-readable tab is drawn from views.agent alone, so a JSON saved for any row
+// shows up with no change here.
+const ARTTABS = [["sum", "Summary"], ["agent", "Agent-readable"], ["human", "Human-readable"]];
+const artNotSaved = '<p class="empty">Not saved for this artifact yet.</p>';
+const artWait = (...ts) => ts.some(t => t === undefined) ? '<p class="empty">Loading…</p>' : ts.some(t => t === null) ? '<p class="empty">Could not open this file.</p>' : "";
+function artAgent(x){ const v = (x.views || {}).agent; if (!v) return artNotSaved;
+  if (v.format === "code"){ const site = (ARTS.groups || {}).site || {}, rew = (x.versions || []).slice(1).map(w => w.workflow);
+    return `<p class="empty anote">The code this ${x.kind === "script" ? "script" : "section"} holds in <span class="mono">${esc(v.file)}</span>${site.version != null ? `, as it is in v${esc(site.version)}` : ""}`
+      + `${rew.length ? `, after ${plural(rew.length, "rewrite")} (${esc(rew.join(", "))})` : ""}.</p>` + artCode(x.deck + "|" + x.section); }
+  const t = ARTTEXT[v.file], w = artWait(t); if (w) return w;
+  let txt = t; if (v.format === "json") try { txt = JSON.stringify(JSON.parse(t), null, 2); } catch (e) {}
+  const k = "agent|" + v.file; CODE[k] = txt;
+  const meta = [v.model ? `Model <b>${esc(v.model)}</b>` : "", v.schema ? `Schema <span class="mono">${esc(v.schema)}</span>` : "",
+    v.valid === true || v.valid === false ? `${artMark(v.valid)}${v.valid ? "Valid" : "Invalid"}` : ""].filter(Boolean);
+  return (v.format === "text" && /\.md$/.test(v.file) ? '<p class="empty anote">Source text: no structured form saved yet</p>' : "")
+    + `<div class="ameta">${meta.map(s => s + " · ").join("")}<span class="mono">${esc(v.file)}</span> · <button type="button" class="linkbtn" data-codecopy="${esc(k)}">Copy</button>`
+    + ` · <a href="${artUrl(v.file)}" target="_blank" rel="noopener">Open file</a></div>` + codeView(k, v.format !== "json"); }
+// a website section in the latest page: its first visible element, outlined (the frame runs no script; this page scrolls it)
+const ARTHID = /^(link|meta|title|style|script|noscript|template|base|br)$/i;
+function artTopEls(src){ const html = (artParts(src).find(([n]) => n === "HTML") || [])[1] || "";      // the section's top-level elements, as selectors
+  return [...new DOMParser().parseFromString(html, "text/html").body.children].filter(e => !ARTHID.test(e.tagName))
+    .map(el => el.id ? "#" + CSS.escape(el.id) : el.tagName.toLowerCase() + [...el.classList].map(c => "." + CSS.escape(c)).join("")); }      // ponytail: id, else tag and classes; the first match in the page wins
+const artActsOn = src => { const js = (artParts(src).find(([n]) => n === "JavaScript") || [])[1] || "";
+  return [...new Set([...js.matchAll(/getElementById\(\s*['"`]([^'"`]+)['"`]/g)].map(m => "#" + m[1]).concat([...js.matchAll(/querySelector(?:All)?\(\s*['"`]([^'"`]+)['"`]/g)].map(m => m[1])))]; };
+function artPage(x){ const f = x.views.human.file, src = CODE[x.deck + "|" + x.section], page = ARTTEXT[f], w = artWait(src, page); if (w) return w;
+  const sels = artTopEls(src);
+  if (!sels.length){ const acts = artActsOn(src);
+    return `<p class="empty anote">This section has no visible part; it runs behind the page.</p><div class="ablk"><h5>Elements it acts on (${acts.length})</h5>`
+      + (acts.length ? artList(acts, s => `<li><span class="mono">${esc(s)}</span></li>`) : `<p>${artNR}</p>`) + "</div>"; }
+  let found = []; try { const pd = new DOMParser().parseFromString(page, "text/html"); found = sels.filter(q => pd.querySelector(q)); } catch (e) {}
+  return `<p class="empty anote">The latest page, <span class="mono">${esc(f)}</span>, ${found.length ? `at the section's first visible element, <span class="mono" data-aselname>${esc(found[0])}</span> (outlined).` : "at its top: this section's elements are not in the latest page."}</p>`
+    + `<iframe class="asecview" sandbox="allow-same-origin" data-asel="${esc(JSON.stringify(found))}" title="${esc(x.name)} in the latest page" srcdoc="${esc(page)}"></iframe>`; }
+function artOutline(fr){ try { const doc = fr.contentDocument, w = fr.contentWindow, els = JSON.parse(fr.dataset.asel || "[]").map(q => doc.querySelector(q)).filter(Boolean);
+  const el = els.find(e => { const b = e.getBoundingClientRect(); return b.width > 1 && b.height > 1 && b.bottom + w.scrollY > 0 && b.right > 0; }) || els[0]; if (!el) return;      // a skip link or hidden part is passed over
+  el.style.outline = "3px solid #d9480f"; el.style.outlineOffset = "2px"; w.scrollTo(0, Math.max(0, el.getBoundingClientRect().top + w.scrollY - 16));
+  const nm = fr.parentElement.querySelector("[data-aselname]"), i = els.indexOf(el); if (nm && i >= 0) nm.textContent = JSON.parse(fr.dataset.asel)[i]; } catch (e) {} }
+const artStat = xs => `<div class="astat">${xs.map(([v, k]) => `<div><b>${v === null || v === undefined || v === "" ? "not recorded" : esc(v)}</b><span>${k}</span></div>`).join("")}</div>`;
+const artJson = f => { try { return JSON.parse(ARTTEXT[f]); } catch (e) { return null; } };
+const artTable = (head, rows) => `<div class="amd awide"><div class="atbl"><table><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</table></div></div>`;
+function artGuideSum(x){ const t = x.file ? ARTTEXT[x.file] : null, a = typeof t === "string" ? artAsm(t) : [], hs = typeof t === "string" ? artHeads(t) : [];
+  return (t === undefined ? '<p class="empty">Loading the document…</p>' : "")
     + (a.length ? `<div class="aasm"><h5>Assumptions to confirm (${a.length})</h5><p class="empty">Not given by the charter. The maker chose these; a person should confirm them.</p>${artList(a, s => `<li>${ARTMARK.warn}<span>${esc(s)}</span></li>`)}</div>` : "")
     + (hs.length ? `<div class="ablk atoc"><h5>What is inside (${plural(hs.length, "section")})</h5>${hs.map((h, i) => `<button type="button" class="linkbtn" data-ajump="${i}">${esc(h)}</button>`).join("")}</div>` : "")
     + artWfBody(x); }
-function artSection(x){
-  const script = x.kind === "script", tab = artTab([["sum"], ["code"]], "sum"), site = (ARTS.groups || {}).site || {}, rew = (x.versions || []).slice(1).map(v => v.workflow);
-  const top = `<h2>${esc(x.name)}</h2><div class="aby">${x.maker ? "Made by " + esc(x.maker) : '<span class="empty">Maker not recorded</span>'} · <span class="mono">${esc(x.file || "site/index.html")}</span>${script ? " · a script" : ""} · <span class="mono">${esc(x.id)}</span></div>`
-    + artTabs([["sum", "Summary"], ["code", script ? "Script" : "Code"]]);
-  if (tab !== "code") return top + artWfBody(x);
-  return top + `<p class="empty anote">The code this section holds in <span class="mono">site/index.html</span>${site.version != null ? `, as it is in page v${esc(site.version)}` : ""}`
-    + `${rew.length ? `, after ${plural(rew.length, "rewrite")} (${esc(rew.join(", "))})` : ""}.</p>` + artCode(x.deck + "|" + x.section); }
-function artStyle(x){
-  const tab = x.section ? artTab([["sum"], ["code"]], "sum") : "sum";
-  const top = `<h2>Style guide</h2><div class="aby">${x.maker ? "Made by " + esc(x.maker) + ((x.made_in || []).length ? " in " + esc(x.made_in.join(", ")) : "") : '<span class="empty">Maker not recorded</span>'}`
-    + `${x.file ? ` · <span class="mono">${esc(x.file)}</span>` : ""}${x.read_by != null ? ` · read by ${plural(x.read_by, "workflow")}` : ""}</div>` + (x.section ? artTabs([["sum", "Summary"], ["code", "Code"]]) : "");
-  if (tab === "code") return top + artCode(x.deck + "|" + x.section);
-  const t = x.file ? ARTTEXT[x.file] : null; let g = null; try { g = typeof t === "string" ? JSON.parse(t) : null; } catch (e) {}
-  return top + (t === undefined ? '<p class="empty">Loading…</p>' : g && g.palette ? `<div class="astyle">${renderStyle({style: {fonts: {}, ...g}})}</div>` : '<p class="empty">Could not open the style guide.</p>'); }
-const artStat = xs => `<div class="astat">${xs.map(([v, k]) => `<div><b>${v === null || v === undefined || v === "" ? "not recorded" : esc(v)}</b><span>${k}</span></div>`).join("")}</div>`;
-const ARTPANE = {
-  charter: x => `<h2>Charter</h2>${artBy(x, x.file)}<div class="ablk"><h5>Who it is for</h5><p>${x.audience ? esc(x.audience) : artNR}</p></div>`
-    + `<div class="ablk"><h5>Done when (${(x.done_when || []).length})</h5>${artList(x.done_when || [], (t, i) => `<li><span class="mono empty">#${i + 1}</span><span>${esc(t)}</span></li>`)}</div>`,
-  realization: x => { const tab = x.text ? artTab([["sum"], ["doc"]], "sum") : "sum", top = `<h2>Realization plan</h2>${artBy(x, x.file)}` + (x.text ? artTabs([["sum", "Summary"], ["doc", "Read document"]]) : "");
-    return top + (tab === "doc" ? artFile(x.text) : artStat([[x.zone, "certainty zone"], [x.confidence, "plan confidence"], [(x.stages || []).length, "stages"]])
-      + `<div class="ablk"><h5>Stages</h5>${(x.stages || []).length ? artList(x.stages, (s, i) => `<li><span class="mono empty">${i + 1}</span><span>${esc(s)}</span></li>`) : `<p>${artNR}</p>`}</div>`); },
-  workflows: x => `<h2>Workflows</h2>${artBy(x, x.file)}${artStat([[x.count, "workflows"], [(x.cycles || []).length, "cycles"]])}<div class="ablk"><h5>Workflows per cycle</h5>`
-    + artList(x.cycles || [], c => `<li><span class="mono empty">cycle ${c.cycle == null ? "?" : esc(c.cycle)}</span><span>${plural(c.n, "workflow")}${c.changes.length ? " · change " + esc(c.changes.join(", ")) : ""}${c.fixes.length ? " · fixes " + esc([...new Set(c.fixes)].join(", ")) : ""}</span></li>`) + "</div>",
-  guide: artGuide, section: artSection, script: artSection, style: artStyle,
-  receipts: x => `<h2>Check results</h2>${artBy(x, x.file)}${artStat([[x.count, "checks run"], [x.passed, "passed"], [x.failed, "failed, then retried or fixed"]])}<p class="empty">Each check also appears under the guide or section it checked.</p>`,
-  audits: x => `<h2>Audits</h2>${artBy(x, x.file)}<div class="ablk"><h5>Items passing per audit</h5><div class="abars">${x.audits.map(a => `<div class="abar" title="page v${esc(a.version)}: ${a.passed} of ${a.total}"><span style="height:${a.total ? Math.round(a.passed / a.total * 100) : 0}%"></span></div>`).join("")}</div>`
-    + `<div class="abl">${x.audits.map(a => `<div>page v${esc(a.version)}<br><b>${a.passed}/${a.total}</b></div>`).join("")}</div></div><p class="empty">Item-by-item results appear under the section each one verifies.</p>`,
-  conditions: x => `<h2>Necessary conditions</h2>${artBy(x, x.file)}${artList(x.items || [], c => `<li>${artMark(c.met)}<span class="mono empty">${esc(c.id)}</span><span>${esc(c.text)}</span></li>`)}`,
-  shots: x => `<h2>Audit screenshots</h2>${artBy(x, null, ' · <span class="mono">site/shots/</span>')}<div class="ashots">${x.shots.map(s => `<a class="ashot" href="${artUrl(s.file)}" target="_blank" rel="noopener"><img loading="lazy" alt="Screenshot ${esc(s.file.split("/").pop())}" src="${artUrl(s.file)}">`
-    + `<span class="mono">${esc(s.file.split("/").pop())}${s.total ? ` · ${s.passed}/${s.total}` : ""}</span></a>`).join("")}</div>`};
+function artGuideDoc(x){ const docs = x.docs || [], f = docs.some(d => d.file === ARTS.ver) ? ARTS.ver : x.views.human.file;
+  return (docs.length > 1 ? `<div class="avers" role="group" aria-label="Version"><span class="empty">Version</span>${docs.map(d => `<button type="button" data-aver="${esc(d.file)}" aria-pressed="${d.file === f}">${esc(d.label)}${d.workflow ? " · " + esc(d.workflow) : ""}</button>`).join("")}</div>` : "")
+    + artFile(f); }
+const artBars = x => `<div class="ablk"><h5>Items passing per audit</h5><div class="abars">${x.audits.map(a => `<div class="abar" title="v${esc(a.version)}: ${a.passed} of ${a.total}"><span style="height:${a.total ? Math.round(a.passed / a.total * 100) : 0}%"></span></div>`).join("")}</div>`
+  + `<div class="abl">${x.audits.map(a => `<div>v${esc(a.version)}<br><b>${a.passed}/${a.total}</b></div>`).join("")}</div></div><p class="empty">Item-by-item results appear under the item each one verifies.</p>`;
+const artSecTop = x => `<h2>${esc(x.name)}</h2><div class="aby">${x.maker ? "Made by " + esc(x.maker) : '<span class="empty">Maker not recorded</span>'} · <span class="mono">${esc(x.file || "site/index.html")}</span>${x.kind === "script" ? " · a script" : ""} · <span class="mono">${esc(x.id)}</span></div>`;
+// per kind: the title line (top), the Summary tab (sum) and the Human-readable tab (human); each shows what the pane showed before the tabs
+const ARTKIND = {
+  charter: {sum: x => `<div class="ablk"><h5>Who it is for</h5><p>${x.audience ? esc(x.audience) : artNR}</p></div>` + artStat([[(x.done_when || []).length, "done-when items"]]),
+    human: x => `<div class="ablk"><h5>Done when (${(x.done_when || []).length})</h5>${artList(x.done_when || [], (t, i) => `<li><span class="mono empty">#${i + 1}</span><span>${esc(t)}</span></li>`)}</div>`},
+  realization: {sum: x => artStat([[x.zone, "certainty zone"], [x.confidence, "plan confidence"], [(x.stages || []).length, "stages"]])
+      + `<div class="ablk"><h5>Stages</h5>${(x.stages || []).length ? artList(x.stages, (s, i) => `<li><span class="mono empty">${i + 1}</span><span>${esc(s)}</span></li>`) : `<p>${artNR}</p>`}</div>`,
+    human: x => artFile(x.views.human.file)},
+  workflows: {sum: x => artStat([[x.count, "workflows"], [(x.cycles || []).length, "cycles"]]) + `<div class="ablk"><h5>Workflows per cycle</h5>`
+      + artList(x.cycles || [], c => `<li><span class="mono empty">cycle ${c.cycle == null ? "?" : esc(c.cycle)}</span><span>${plural(c.n, "workflow")}${c.changes.length ? " · change " + esc(c.changes.join(", ")) : ""}${c.fixes.length ? " · fixes " + esc([...new Set(c.fixes)].join(", ")) : ""}</span></li>`) + "</div>",
+    human: x => { const f = x.views.human.file, w = artWait(ARTTEXT[f]); if (w) return w; const ws = artJson(f); if (!Array.isArray(ws)) return '<p class="empty">Could not read this file.</p>';
+      return artTable(["Id", "Name", "Cycle", "Makes", "Purpose"], ws.filter(w => w && typeof w === "object").map(w => [`<span class="mono">${esc(w.id || "")}</span>`, esc(artWords(w.name)),
+        w.cycle == null ? "" : esc(w.cycle), `<span class="mono">${esc((w.outputs || []).join(", "))}</span>`, esc(w.purpose || "")])); }},
+  guide: {top: x => { const t = x.file ? ARTTEXT[x.file] : null; return `<h2>${esc(x.name)}</h2>${artBy(x, x.file, typeof t === "string" ? ` · ${plural(t.split(/\s+/).filter(Boolean).length, "word")}` : "")}`; },
+    sum: artGuideSum, human: artGuideDoc},
+  section: {top: artSecTop, sum: artWfBody, human: artPage},
+  style: {top: x => `<h2>Style guide</h2><div class="aby">${x.maker ? "Made by " + esc(x.maker) + ((x.made_in || []).length ? " in " + esc(x.made_in.join(", ")) : "") : '<span class="empty">Maker not recorded</span>'}`
+      + `${x.file ? ` · <span class="mono">${esc(x.file)}</span>` : ""}${x.read_by != null ? ` · read by ${plural(x.read_by, "workflow")}` : ""}</div>`,
+    sum: x => { const g = x.file ? artJson(x.file) : null; return x.file && ARTTEXT[x.file] === undefined ? '<p class="empty">Loading…</p>'
+      : artStat([[g && g.palette ? Object.keys(g.palette).length : null, "colours"], [g && g.fonts ? Object.keys(g.fonts).length : null, "fonts"], [x.read_by, "workflows read it"]]); },
+    human: x => { const g = artJson(x.views.human.file), w = artWait(ARTTEXT[x.views.human.file]); if (w) return w;
+      return (g && g.palette ? `<div class="astyle">${renderStyle({style: {fonts: {}, ...g}})}</div>` : '<p class="empty">Could not open the style guide.</p>')
+        + (x.section ? `<div class="ablk"><h5>Its code in the page</h5>${artCode(x.deck + "|" + x.section)}</div>` : ""); }},
+  receipts: {sum: x => artStat([[x.count, "checks run"], [x.passed, "passed"], [x.failed, "failed, then retried or fixed"]]) + '<p class="empty">Each check also appears under the item it checked.</p>',
+    human: x => { const f = x.views.human.file, w = artWait(ARTTEXT[f]); if (w) return w;
+      const rs = ARTTEXT[f].split("\n").map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(r => r && typeof r === "object");
+      return artTable(["", "Atom", "Check", "Attempt", "Evidence"], rs.map(r => [artMark(r.pass === true || r.met === true), `<span class="mono">${esc(r.atom || r.id || "")}</span>`, esc(r.check || r.type || ""),
+        r.attempt == null ? "" : esc(r.attempt), esc(r.evidence || "")])); }},
+  audits: {sum: x => { const a = x.audits[x.audits.length - 1] || {}; return artStat([[x.audits.length, "audits"], [a.total ? `${a.passed}/${a.total}` : null, "items passing in the latest"]]); }, human: artBars},
+  conditions: {sum: x => artStat([[(x.items || []).filter(c => c.met).length, "met"], [(x.items || []).filter(c => !c.met).length, "not met"]]),
+    human: x => artList(x.items || [], c => `<li>${artMark(c.met)}<span class="mono empty">${esc(c.id)}</span><span>${esc(c.text)}</span></li>`)},
+  shots: {top: x => `<h2>Audit screenshots</h2>${artBy(x, null, ' · <span class="mono">site/shots/</span>')}`, sum: x => artStat([[x.shots.length, "images"]]),
+    human: x => `<div class="ashots">${x.shots.map(s => `<a class="ashot" href="${artUrl(s.file)}" target="_blank" rel="noopener"><img loading="lazy" alt="Screenshot ${esc(s.file.split("/").pop())}" src="${artUrl(s.file)}">`
+      + `<span class="mono">${esc(s.file.split("/").pop())}${s.total ? ` · ${s.passed}/${s.total}` : ""}</span></a>`).join("")}</div>`}};
+ARTKIND.script = ARTKIND.section;
+function artPane(x){ const k = ARTKIND[x.kind] || {}, v = x.views || {}, tab = artTab(ARTTABS, "sum");
+  return (k.top ? k.top(x) : `<h2>${esc(x.name)}</h2>${artBy(x, x.file)}`) + artTabs(ARTTABS)
+    + (tab === "agent" ? artAgent(x) : tab === "human" ? (v.human && k.human ? k.human(x) : artNotSaved) : k.sum ? k.sum(x) : ""); }
 const artCur = () => { const g = artGroup(ARTS.g), rows = g.rows || []; return rows.find(r => r.id === ARTS.sel[g.id]) || rows[0] || null; };
 function renderArtifacts(){
   if (!ARTS.groups) return '<p class="empty">Loading the artifacts…</p>';
@@ -2204,16 +2251,17 @@ function renderArtifacts(){
   if (!x) return `<div class="agwrap"${g.id === "site" ? ' data-node="work:website" data-art="site/index.html"' : ""}><p class="empty">${g.id === "site" ? ((ARTS.groups || {}).site ? "This run recorded no sections for its website." : "This run built no website.")
     : g.id === "guides" ? "This run wrote no guides." : "Nothing recorded yet."}</p></div>`;
   return `<div class="agwrap" data-agroup="${esc(g.id)}"><div class="aglist" aria-label="${esc(g.label)}"${g.id === "site" ? ' data-node="work:website" data-art="site/index.html"' : ""}>${rows.map(r => artListRow(r, r === x)).join("")}</div>`
-    + `<div class="agpane" data-apane="${esc(x.id)}">${(ARTPANE[x.kind] || (() => ""))(x)}</div></div>`; }
+    + `<div class="agpane" data-apane="${esc(x.id)}">${artPane(x)}</div></div>`; }
 function artHead(){ const g = artGroup(ARTS.g); $("wtitle").textContent = $("wcrumbg").textContent = g.label; $("wsub").textContent = $("wsub").title = artSub(g); $("wcnt").textContent = ARTS.groups ? artCount(g) : ""; $("wcnt").hidden = !ARTS.groups; }
 function artPaint(){ const p = $("pane-artifacts"), l = p.querySelector(".aglist"), top = l ? l.scrollTop : 0;
-  paint(p, renderArtifacts()); const l2 = p.querySelector(".aglist"); if (l2) l2.scrollTop = top; if (!p.hidden) artHead(); railArtCounts(); }
-async function artFetch(){      // the text the open item shows: a guide's document (and the version picked), the plan's text, a section's code; once each
-  const x = artCur(); if (!x) return; const files = [];
+  paint(p, renderArtifacts()); const l2 = p.querySelector(".aglist"); if (l2) l2.scrollTop = top; if (!p.hidden) artHead(); railArtCounts();
+  p.querySelectorAll("iframe.asecview").forEach(f => { if (!f.__out){ f.__out = 1; f.addEventListener("load", () => artOutline(f)); } }); }
+async function artFetch(){      // the text the open tab shows: the file views.agent or views.human names (a guide's picked version), a section's code; once each
+  const x = artCur(); if (!x) return; const files = [], v = x.views || {}, ag = ARTS.tab === "agent" && v.agent, hu = ARTS.tab === "human" && v.human;
   if ((x.kind === "guide" || x.kind === "style") && x.file) files.push(x.file);
-  if (ARTS.tab === "doc" && x.kind === "guide" && ARTS.ver) files.push(ARTS.ver);
-  if (ARTS.tab === "doc" && x.kind === "realization" && x.text) files.push(x.text);
-  const ck = ARTS.tab === "code" && x.section ? x.deck + "|" + x.section : "", want = files.filter(f => ARTTEXT[f] === undefined);
+  if (ag && ag.format !== "code") files.push(ag.file);
+  if (hu && !["list", "chart", "shots"].includes(hu.format)) files.push(x.kind === "guide" && ARTS.ver ? ARTS.ver : hu.file);
+  const ck = x.section && x.deck && ((ag && ag.format === "code") || (hu && ["page", "style"].includes(hu.format))) ? x.deck + "|" + x.section : "", want = files.filter(f => ARTTEXT[f] === undefined);
   if (!want.length && !(ck && CODE[ck] === undefined)) return;
   await Promise.all([...want.map(async f => { try { const r = await fetch(artUrl(f), {cache: "no-store"}); ARTTEXT[f] = r.ok ? await r.text() : null; } catch (e) { ARTTEXT[f] = null; } }),
     ck && CODE[ck] === undefined ? (async () => { try { const r = await fetch(`/api/code?deck=${encodeURIComponent(x.deck)}&section=${encodeURIComponent(x.section)}${runQ()}`, {cache: "no-store"}); CODE[ck] = r.ok ? await r.text() : null; } catch (e) { CODE[ck] = null; } })() : null]);
@@ -2304,7 +2352,7 @@ $("pane-artifacts").addEventListener("click", async e => {
   const r = e.target.closest("[data-agrow]"); if (r){ ARTS.sel[ARTS.g] = r.dataset.agrow; ARTS.tab = "sum"; ARTS.ver = ""; artPaint(); const p = $("pane-artifacts").querySelector(".agpane"); if (p) p.scrollTop = 0; return artFetch(); }
   const t = e.target.closest("[data-atab]"); if (t){ ARTS.tab = t.dataset.atab; artPaint(); return artFetch(); }
   const v = e.target.closest("[data-aver]"); if (v){ ARTS.ver = v.dataset.aver; artPaint(); return artFetch(); }
-  const j = e.target.closest("[data-ajump]"); if (j){ ARTS.tab = "doc"; ARTS.ver = ""; artPaint(); await artFetch(); const h = document.getElementById("ah-" + j.dataset.ajump); if (h) h.scrollIntoView({block: "start"}); } });
+  const j = e.target.closest("[data-ajump]"); if (j){ ARTS.tab = "human"; ARTS.ver = ""; artPaint(); await artFetch(); const h = document.getElementById("ah-" + j.dataset.ajump); if (h) h.scrollIntoView({block: "start"}); } });
 // Map: read-only drawing of a run, from /api/map (map/1). renderMap(map) is one pure function: inline SVG for wide screens and a card
 // list for 600px and under. Status is never colour alone: solid = filed and checked, dashed = left open, double = running now, thick red
 // edge plus "!" = fault or blocked, hollow = not made, thick amber edge plus "?" = waiting (on you, or on another function).
@@ -3452,7 +3500,7 @@ function renderMap(m){
 async function docOpen(k, sid){      // a document, or one section of it (by the heading its section starts with: j2_artifacts.groups' documents), in Documents
   document.querySelectorAll(".dlhit").forEach(x => x.classList.remove("dlhit")); showTab("docs");
   if (!DOCS[k] || !$("docblock-" + k)) await loadDocs(); else paint($("pane-docs"), renderDocs());
-  const head = sid && (((ARTS.groups || {}).documents || {})[k] || {})[sid], block = $("docblock-" + k); if (!block) return null;
+  const head = sid && ((((ARTS.groups || {}).documents || {})[k] || {}).sections || {})[sid], block = $("docblock-" + k); if (!block) return null;
   const el = (head && block.querySelector(`[data-head="${CSS.escape(head)}"]`)) || block; el.classList.add("dlhit"); el.scrollIntoView({block: "start"}); return el; }
 async function openArtifact(f){      // a file from the Map: the item that holds it (a guide on its Read document tab); a PRD, HLD or LLD in Documents
   if (!ARTS.groups) await loadArtifacts();
@@ -3460,7 +3508,7 @@ async function openArtifact(f){      // a file from the Map: the item that holds
   const doc = String(f).replace(/\.md$/, "");
   if (!hit && DOC_KINDS.some(x => x[0] === doc)) return docOpen(doc, "");
   await artOpenGroup(hit ? hit[0] : "plan", hit ? hit[1].id : "");
-  if (hit && hit[1].kind === "guide"){ ARTS.tab = "doc"; ARTS.ver = f; artPaint(); await artFetch(); }
+  if (hit && hit[1].kind === "guide"){ ARTS.tab = "human"; ARTS.ver = f; artPaint(); await artFetch(); }
 }
 // The Open button of a node: where it goes. A node waiting on you goes to its question in the Chat; You goes to the Needs you strip; Client Lead goes
 // to the Chat; Audit to its findings; the other functions to their messages and calls (the tables under the Map, filtered to them); a step to
