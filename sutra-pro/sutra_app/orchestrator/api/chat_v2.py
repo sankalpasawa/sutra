@@ -160,14 +160,23 @@ def build_router() -> APIRouter:
 
         def run() -> Any:
             ref = agent_of(db.conn(), sid)
+            own = ChatChoices(db).pick(sid)
+            kept = body.provider is not None and own.provider == body.provider             # the pill changes one select at a time: the other stays while the provider does
+            model = body.model if body.model is not None else (own.model if kept else None)
+            effort = body.effort if body.effort is not None else (own.effort if kept else None)
             if ref is not None:
                 if session.status != "active":
                     raise AppError("busy", "That chat belongs to a run that is over. Its choice can no longer change.")
                 choice = port.check_choice(body.provider, body.model, body.effort)      # an agent's calls are one-shot: only checked, no router session
+                if body.effort is None and body.model is not None and effort is not None:
+                    try:
+                        port.check_choice(body.provider, model, effort)                  # the kept effort must suit the new model; if it does not, the model's default applies
+                    except ConnectorError:
+                        effort = None
             else:
                 choice = port.choose(sid, body.provider, body.model, body.effort)       # refuses a provider that cannot run, an unknown model or effort (422 below)
             with db.tx() as tx:
-                ChatChoices(db).set_pick(tx, sid, body.provider, body.model, body.effort)
+                ChatChoices(db).set_pick(tx, sid, body.provider, model, effort)
                 shown = effective(tx.conn, sid, _default_of(port))
                 tx.emit("chat.choice", {"session_id": sid, "provider": shown["provider"], "model": shown["model"], "effort": shown["effort"],
                                         "source": shown["source"]})

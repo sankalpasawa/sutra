@@ -221,3 +221,27 @@ def test_the_pill_reads_the_chats_model_and_effort_from_the_database_when_sessio
     assert (by["claude"]["chosen"], by["claude"]["chat_model"], by["claude"]["chat_effort"]) == (True, "haiku", "low")
     assert (by["codex"]["chosen"], by["codex"]["chat_model"]) == (False, None)
     assert got["own"] == {"provider": "claude", "model": "haiku", "effort": "low"} and got["chosen"] == "claude" and got["agent"] == "identity"
+
+
+def test_the_pill_changes_one_select_at_a_time_the_other_is_kept_while_the_provider_is(api, tenv):  # noqa: F811
+    client, _ = api
+    sid = session_of(tenv, "web.identity")
+    put = lambda body: client.put(f"/api/chats/{sid}/choice", json=body, headers=TOKEN)          # noqa: E731
+    put({"provider": "claude", "model": "sonnet", "effort": "high"})
+    assert put({"provider": "claude", "effort": "low"}).json()["effective"] == {"provider": "claude", "model": "sonnet", "effort": "low", "source": "own"}
+    assert put({"provider": "claude", "model": "haiku"}).json()["effective"]["effort"] == "low"           # a model change keeps the effort that suits it
+    assert put({"provider": "claude", "effort": "low", "model": "sonnet"}).status_code == 200
+    from sutra_app.connectors.models import Pick as P
+    assert ChatChoices(tenv.db).pick(sid) == P(provider="claude", model="sonnet", effort="low")
+    real = client.app.state.services.chat_port.check_choice
+
+    def strict(provider, model=None, effort=None):                                 # haiku does not accept the effort high
+        if (model, effort) == ("haiku", "high"):
+            raise InvalidRequestError("haiku does not accept the effort high. Choose one of: low")
+        return real(provider, model, effort)
+
+    client.app.state.services.chat_port.check_choice = strict
+    put({"provider": "claude", "model": "sonnet", "effort": "high"})
+    assert put({"provider": "claude", "model": "haiku"}).json()["effective"] == {"provider": "claude", "model": "haiku", "effort": None, "source": "own"}      # the kept effort did not suit
+    assert code(put({"provider": "claude", "model": "haiku", "effort": "high"}), 422) == "validation"                                                         # the owner's own pair is refused
+    assert put({"provider": None}).json()["source"] == "default" and ChatChoices(tenv.db).pick(sid) == Pick()
