@@ -172,6 +172,7 @@ class EngineSettings(BaseModel):
     force_audit_note: str = Field("", max_length=1000)
     force_question: str = Field("", max_length=1000)
     memory_test_lessons: bool = False
+    workspace: Literal["auto", "off"] = "auto"      # the workspace capability (D127): agents read the owner's working folder; "off" gives them none
 
     def to_env(self) -> dict[str, str]:
         """The J2 environment for these settings: `J2_<FIELD>` with "1"/"0" for flags; empty values (an empty string or

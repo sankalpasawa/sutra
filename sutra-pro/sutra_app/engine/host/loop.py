@@ -125,6 +125,7 @@ class Host:
         self.heartbeat: Optional[Heartbeat] = None
         self.inbox: Optional[Inbox] = None
         self.run = None
+        self.context = None                         # the capabilities' view of the run (EngineContext), made with the run
         self.stopping = threading.Event()          # set before the port is closed (a stop line or SIGTERM)
         self._terminate = threading.Event()
         self._ended = False
@@ -359,10 +360,14 @@ class Host:
     def _make_run(self) -> None:
         from .publisher import HostHooks, StatePublisher           # these import J2: the environment is set by now
         task, paths = self.task, self.paths
+        from .. import capabilities, j2
+        capabilities.register(j2)                                  # D126: the engine's own outputs, before any J2Run exists
+        self.context = capabilities.EngineContext(task=task, settings=self.settings, paths=paths, data_dir=paths.data_dir)
+        capabilities.install(self.context)                         # the tag and progress hooks every model call of this process runs
         self.publisher = StatePublisher(self.writer, paths.run_dir)
-        self.hooks = HostHooks(self._make_hooks(self.publisher.notify), self.publisher)
-        from .. import j2
+        self.hooks = HostHooks(self._make_hooks(self.publisher.notify), self.publisher, self.context)
         self.run = j2.J2Run(run_dir=str(paths.run_dir), run_id=task.run_id[3:], hooks=self.hooks)
+        self.context.run = self.run
         self.publisher.attach(self.run)
         self.hooks.run_started(task.model_dump())
         self.inbox = Inbox(paths.inbox, self.trace)

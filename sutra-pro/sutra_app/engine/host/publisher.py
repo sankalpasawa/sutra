@@ -383,9 +383,10 @@ class HostHooks:
     publishes at once. It remembers the code of the last `run_error` (the `ModelError` code that ends a crashed run). Any
     attribute the wrapped hooks have (`last_error`, `trace`, ...) is read through."""
 
-    def __init__(self, inner, publisher: StatePublisher):
+    def __init__(self, inner, publisher: StatePublisher, context=None):
         self._inner = inner
         self.publisher = publisher
+        self.context = context                       # the capabilities' EngineContext (D126); None: no capability adds text
         self.error_code: Optional[str] = None
         self.error_message: Optional[str] = None
 
@@ -432,4 +433,9 @@ class HostHooks:
         return self._inner.run_error(code, message)
 
     def system_addendum(self, fn: str) -> str:
-        return self._inner.system_addendum(fn)
+        """The inner hooks' node-context text, then every capability's addendum for this agent (D126)."""
+        text = self._inner.system_addendum(fn)
+        if self.context is None:
+            return text
+        from .. import capabilities
+        return (text if isinstance(text, str) else "") + capabilities.addenda(fn, self.context)

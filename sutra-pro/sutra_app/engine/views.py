@@ -30,8 +30,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple, Union
 
 from . import j2, j2_agent, j2_artifacts, j2_map, j2_story, j2_template_lib, llm
+from . import capabilities
 from .paths import pid_alive
 from .spec import EngineSettings
+
+capabilities.register(j2)        # D126: the API process, the stdlib adapter and the tests see the same outputs as the run process
 
 __all__ = ["Reply", "MemoryPaths", "Commands", "RunCtx", "Published", "VIEWS", "HANDLER_COUNT", "DOCX", "PROCESS_GONE",
            "EMPTY_LIVE", "LIVE_VIEWS", "PATCH_VIEWS", "live_state", "read_published", "idle_snapshot", "effective_snapshot"]
