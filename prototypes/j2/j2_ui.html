@@ -331,7 +331,7 @@ body.simple #dview{display:none}
 #sview .sdocs{display:flex;flex-wrap:wrap;gap:8px}
 #sview .sdocs a,#sview .sdocs button{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--s-line);background:var(--s-surface);border-radius:11px;padding:8px 12px;font-size:13.5px;font-weight:600;color:var(--s-ink);text-decoration:none}
 /* inside the frame: the decided-for-you line, the nudge, the finish bar */
-#sview .sdecided{position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:6;background:var(--s-surface);border:1px solid var(--s-line);border-radius:999px;padding:6px 8px 6px 6px;display:flex;align-items:center;gap:8px;font-size:13.5px;box-shadow:0 12px 26px -16px var(--s-shadow);animation:sin .4s ease both;max-width:calc(100% - 24px)}
+#sview .sdecided{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:6;background:var(--s-surface);border:1px solid var(--s-line);border-radius:999px;padding:6px 8px 6px 6px;display:flex;align-items:center;gap:8px;font-size:13.5px;box-shadow:0 12px 26px -16px var(--s-shadow);animation:sin .4s ease both;max-width:calc(100% - 24px)}
 #sview .sdecided span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#sview .sdecided b{font-weight:600}
 #sview .swhochip{position:absolute;left:16px;bottom:16px;z-index:5;display:flex;align-items:center;gap:8px;background:var(--s-surface);color:var(--s-ink);border:1.5px solid var(--c,var(--s-line));border-radius:999px;padding:5px 13px 5px 5px;font-size:13.5px;box-shadow:0 12px 26px -14px var(--s-shadow);transition:transform .35s,opacity .35s;max-width:calc(100% - 32px)}
 #sview .swhochip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#sview .swhochip b{font-weight:600}
@@ -421,7 +421,8 @@ body.simple #dview{display:none}
 /* a laptop narrower than the three columns: the team and the plan move to the dock; Asha keeps her column */
 @media (max-width:1180px){
   #sview .sapp{grid-template-columns:minmax(0,1fr) var(--sasha,330px)}#sview .srail{display:none}
-  #sview .sdock{display:flex}
+  #sview .sdock{display:flex}#sview .smeter{display:none}
+  #sview .sstage{padding-bottom:calc(68px + env(safe-area-inset-bottom,0px))}#sview .sasha{padding-bottom:calc(60px + env(safe-area-inset-bottom,0px))}
 }
 /* a phone: the work fills the screen; the team, the plan and Asha live in the dock and open as sheets */
 @media (max-width:820px){
@@ -1967,6 +1968,9 @@ function renderSimple(s){
   const open = needsYou(s), live = !!s.paused && s.status !== "running" && !s.saved, ready = isReady(s), M = sModel(s), T = sCrew(s, M);
   sChat(s, open, live, M);
   sTop(s, M, open, ready);
+  const doneNow = M.parts.filter(p => p.st === "done").map(p => p.sec), fresh = SV.done ? doneNow.filter(x => !SV.done.has(x)) : [];      // a part just landed: say who made it
+  if (fresh.length && s.status === "running"){ const p = M.parts.find(x => x.sec === fresh[fresh.length - 1]); sToast(`${PEOPLE[p.person].name} finished ${p.name.toLowerCase()}${fresh.length > 1 ? ` and ${fresh.length - 1} more` : ""}`); }
+  SV.done = new Set(doneNow);
   sRail(s, M, T);
   sViews(s, M, ready);
   sInline(s, open, live);
@@ -2236,7 +2240,7 @@ function sWhoChip(asking){      // a part being made that isn't on the page yet:
   const c = $("swhochip"), s = state; if (!c || !c.classList || !s) return;
   const d = SV.view !== "team" && sDoc(), ph = d && d.querySelector("j2-plan"), on = ph && ph.shadowRoot && ph.shadowRoot.querySelector(".ph.doing"), w = d && d.defaultView;
   const vis = on && on.getBoundingClientRect().top < w.innerHeight - 40;
-  if (asking || !on || vis || s.status !== "running"){ c.classList.add("off"); return; }
+  if (asking || !on || vis || s.status !== "running" || !$("sdecided").hidden){ c.classList.add("off"); return; }
   const p = sModel(s).parts.find(x => x.sec === on.dataset.sec); if (!p) return c.classList.add("off");
   const P = PEOPLE[p.person], h = `${face(p.person, 26, {prop: false, label: false})}<span><b>${P.name}</b> is ${p.fixing ? "fixing" : "making"} ${esc(p.name.toLowerCase())}</span><span aria-hidden="true">↓</span>`;
   if (c.__h !== h){ c.__h = h; c.innerHTML = h; c.style.setProperty("--c", `var(${P.c})`); c.dataset.sec = p.sec; }
