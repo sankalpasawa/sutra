@@ -217,3 +217,20 @@ def team_agents(conn: sqlite3.Connection, store: Any, dept_id: str, run_id: str 
     for row in rows:
         del row["_order"]
     return rows
+
+
+# ---- the owner's note to an agent (POST /api/chats/{sid}/steer, D132) ---------------------------------------------------------------------------
+
+NOTE_CHARS = 2000                   # the most the owner can write in one note, and the most of an agent's notes the engine is given
+NOTE_PREFIX = "Owner's note: "
+CONTEXT_FILE = "node_context.json"
+
+
+def compose_notes(old: str, note: str) -> str:
+    """The text of `node_context.json[agent]` after one more note: the notes so far, one per line, newest last, each starting `Owner's note:`; the whole at most
+    2,000 characters (the oldest notes go first; one note longer than that keeps its end). A note's own line breaks become spaces, so a line is a note."""
+    line = NOTE_PREFIX + " ".join(note.split())
+    lines = [kept for kept in (old or "").split("\n") if kept.startswith(NOTE_PREFIX)] + [line]
+    while len(lines) > 1 and len("\n".join(lines)) > NOTE_CHARS:
+        lines.pop(0)
+    return "\n".join(lines)[-NOTE_CHARS:]
