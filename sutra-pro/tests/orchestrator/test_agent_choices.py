@@ -201,6 +201,8 @@ def test_the_run_pick_route_stores_checks_clears_and_refuses_a_finished_run(api,
     r = client.put(f"/api/tasks/{task_id}/choice", json={"provider": "claude", "model": "haiku", "effort": "low"}, headers=TOKEN)
     assert r.status_code == 200 and r.json() == {"task_id": task_id, "own": {"provider": "claude", "model": "haiku", "effort": "low"}}
     assert choices_of(tenv, task_id)["default"] == {"provider": "claude", "model": "haiku", "effort": "low", "from": "run"}
+    said = [e.data for e in tenv.env.events.events if e.type == "chat.choice" and e.data.get("task_id") == task_id]            # one event for the page, the bus's own (D131)
+    assert said == [{"session_id": None, "task_id": task_id, "run_id": tenv.row(task_id).run_id, "provider": "claude", "model": "haiku", "effort": "low", "source": "run"}]
     assert code(client.put(f"/api/tasks/{task_id}/choice", json={"provider": "claude", "model": "opuss"}, headers=TOKEN), 422) == "validation"
     assert code(client.put(f"/api/tasks/{task_id}/choice", json={"provider": "claude"}), 401) == "bad_token"
     assert client.put(f"/api/tasks/{task_id}/choice", json={"provider": None}, headers=TOKEN).json()["own"] is None

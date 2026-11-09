@@ -121,7 +121,8 @@ def build_router() -> APIRouter:
             with service.db.tx() as tx:
                 pick = service.store.set_pick(tx, task_id, Pick(provider=body.provider or "", model=body.model if body.provider else None,
                                                                 effort=body.effort if body.provider else None))
-                tx.emit("task.choice", {"task_id": task_id, "run_id": row.run_id, "provider": pick.provider or None, "model": pick.model, "effort": pick.effort})
+                tx.emit("chat.choice", {"session_id": None, "task_id": task_id, "run_id": row.run_id, "provider": pick.provider or None, "model": pick.model,
+                                        "effort": pick.effort, "source": "run"})
             service.refresh_choices(task_id=task_id)
             return pick
 
