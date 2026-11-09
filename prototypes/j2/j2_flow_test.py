@@ -8670,7 +8670,7 @@ def artifacts_groups():
         return
     g = A.groups(d)
     G = {x["id"]: x for x in g["groups"]}
-    assert [x["id"] for x in g["groups"]] == ["plan", "guides", "site", "records"] and [x["label"] for x in g["groups"]] == ["Run plan", "Guides the makers read", "Website sections", "Run records"]
+    assert [x["id"] for x in g["groups"]] == ["plan", "guides", "site", "documents", "records"] and [x["label"] for x in g["groups"]] == ["Run plan", "Guides the makers read", "Website sections", "Documents", "Run records"]
     wfs = json.load(open(os.path.join(d, "workflows.json")))
     num = lambda w: int(w.split("-")[1])
     secs = json.load(open(os.path.join(d, "sections.json")))

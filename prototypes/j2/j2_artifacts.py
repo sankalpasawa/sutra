@@ -459,10 +459,10 @@ def _wf_row(kind, vs, by, persona, last_audit, file, nodes):
 
 
 def groups(d, m=None):
-    """{"schema": "artifacts-groups/1", "site": {...}, "groups": [{id, label, rows}]} for a run folder (four empty groups when there is none)."""
+    """{"schema": "artifacts-groups/1", "site": {...}, "groups": [{id, label, rows}]} for a run folder (five empty groups when there is none)."""
     import j2_map
     empty = [{"id": k, "label": lab, "rows": []} for k, lab in (("plan", "Run plan"), ("guides", "Guides the makers read"),
-                                                                ("site", "Website sections"), ("records", "Run records"))]
+                                                                ("site", "Website sections"), ("documents", "Documents"), ("records", "Run records"))]
     if not d or not os.path.isdir(d):
         return {"schema": "artifacts-groups/1", "documents": {}, "site": None, "groups": empty}
     m = m or j2_map.build(d)
@@ -588,12 +588,26 @@ def groups(d, m=None):
             hit = re.search(r"^#{1,6}\s+(.+?)\s*$", ((e.get("head") or "") + "\n" + (e.get("body") or "")) if isinstance(e, dict) else "", re.M)
             if hit:
                 documents.setdefault(deck.split(":", 1)[1], {"sections": {}, "file": None, "kind": "document"})["sections"][sid] = hit.group(1)
-    for x in plan + guides + site + rec + list(documents.values()):
+    # 5 Documents: the PRD, HLD and LLD as rows too (agent-views/1), so each has the three tabs; the agent view is the
+    # artifact-schema data beside the document (prd.json), the human view the markdown, the versions the saved copies in site/
+    docs = []
+    for name, info in documents.items():
+        if not info.get("file") or not has(info["file"]):
+            continue
+        st = next((x for x in t["specs"]["items"] if x.get("node") == f"work:{name}"), None)
+        mb = (st or {}).get("made_by") or {}
+        olds = sorted(((int(mm.group(1)), f) for f in _all_files(d) for mm in [re.fullmatch(rf"site/{name}-v(\d+)\.md", f)] if mm))
+        docs.append({"id": name, "kind": "document", "name": name.upper(), "file": info["file"], "maker": mb.get("persona"),
+                     "made_in": mb.get("workflows") or [], "sections": info["sections"], "nodes": [f"work:{name}"] if f"work:{name}" in node_ids else [],
+                     "versions": [{"workflow": None, "cycle": None, "purpose": "", "label": f"v{k}"} for k, _ in olds]
+                                 + [{"workflow": None, "cycle": None, "purpose": "", "label": "current"}],
+                     "docs": [{"label": f"v{k}", "file": f, "workflow": None} for k, f in olds] + [{"label": "current", "file": info["file"], "workflow": None}]})
+    for x in plan + guides + site + docs + rec + list(documents.values()):
         x["views"] = views(d, x)
     return {"schema": "artifacts-groups/1", "documents": documents,
             "site": {"version": (web or {}).get("version"), "audit": {"version": last.get("version"), "passed": sum(1 for r in last.get("results") or [] if isinstance(r, dict) and r.get("pass")),
                                                                      "total": len(last.get("results") or [])} if last else None} if web else None,
-            "groups": [{**e, "rows": r} for e, r in zip(empty, (plan, guides, site, rec))]}
+            "groups": [{**e, "rows": r} for e, r in zip(empty, (plan, guides, site, docs, rec))]}
 
 
 # ------------------------------------------------------------------------------------------------------------- the views
@@ -623,6 +637,8 @@ def agent_view(d, row):
     f, sec = row.get("file"), row.get("section")
     stem = os.path.splitext(f)[0] if f and not (sec and row.get("deck")) else None
     cands = [f"{stem}.json"] if stem and not f.endswith(".json") else []
+    if row.get("kind") == "style":
+        cands.insert(0, "design.json")      # the style guide's own data (Design/1), when the run saved it
     if sec and row.get("deck"):
         cands.append(f"site/sections/{sec}.json")
     if f and f.endswith(".json"):
