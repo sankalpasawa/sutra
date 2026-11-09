@@ -24,7 +24,7 @@ from sutra_app.engine.api import build_router as build_engine_router
 from sutra_app.engine.api import mount as mount_engine
 from sutra_app.ops import api as ops_api
 from sutra_app.ops import attention_api, update_api, welcome
-from sutra_app.orchestrator.api import atoms, chart, chat, departments, events as events_api, graph, insight, limits, recurring, rules_notes, tasks, usage
+from sutra_app.orchestrator.api import agent_chats, atoms, chart, chat, departments, events as events_api, graph, insight, limits, recurring, rules_notes, tasks, usage
 from sutra_app.orchestrator.api.deps import install_error_handlers, redacted_response_class, require_token
 from sutra_app.orchestrator.departments import DepartmentStore
 from sutra_app.orchestrator.redact import Redactor
@@ -88,7 +88,7 @@ def world(tenv) -> Iterator[World]:  # noqa: F811
     install_error_handlers(app, redacted_response_class(redact))
     mount_engine(app, services)
     routers: dict[str, Any] = {"engine": build_engine_router(services)}
-    for name, module in (("attention", attention_api), ("atoms", atoms), ("chart", chart), ("chat", chat), ("departments", departments), ("events", events_api),
+    for name, module in (("agent_chats", agent_chats), ("attention", attention_api), ("atoms", atoms), ("chart", chart), ("chat", chat), ("departments", departments), ("events", events_api),
                          ("graph", graph), ("insight", insight), ("limits", limits), ("recurring", recurring), ("rules_notes", rules_notes), ("tasks", tasks), ("usage", usage), ("welcome", welcome), ("update", update_api)):
         routers[name] = module.build_router()
         app.include_router(routers[name])

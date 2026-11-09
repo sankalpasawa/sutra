@@ -159,6 +159,19 @@ class AgentSessions:
         tx.conn.execute("UPDATE chat_sessions SET run_id = ?, title = ?, updated_at = ? WHERE id = ?", (s.run_id, s.title, s.updated_at, s.id))
 
 
+def session_of(conn: sqlite3.Connection, row: Any, agent: str) -> str | None:
+    """The session an agent of the run of `row` already has (its function node's, or its builder's step node's), else None. Reads only: the live view
+    (`RunWatcher`) asks this at every tick, and opening or rolling a session is the projector's job at the agent's first event."""
+    run = getattr(row, "run_id", None)
+    if not run or not agent:
+        return None
+    found = conn.execute(
+        "SELECT g.chat_session_id AS sid FROM graph_nodes g JOIN chat_sessions s ON s.id = g.chat_session_id "
+        "WHERE s.run_id = ? AND s.status = 'active' AND g.department_id = ? AND (g.id = ? OR g.step_ref = ?) ORDER BY s.created_at DESC LIMIT 1",
+        (run, row.dept_id, f"{row.dept_id}.{agent}", agent)).fetchone()
+    return found["sid"] if found is not None else None
+
+
 # ---- the agents of a team, for the page (GET /api/teams/{dept}/agents) --------------------------------------------------------------------------
 
 def team_agents(conn: sqlite3.Connection, store: Any, dept_id: str, run_id: str | None = None,

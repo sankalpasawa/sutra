@@ -26,6 +26,7 @@ from typing import Any
 import sutra_app
 from sutra_app.config import Settings
 from sutra_app.connectors.chat_port import RouterChatPort
+from sutra_app.orchestrator.agent_sessions import session_of
 from sutra_app.connectors.factory import build_router as build_connector_router
 from sutra_app.connectors.orchestrator_port import AsyncConnector
 from sutra_app.library.gate import GATE
@@ -160,6 +161,8 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     tasks = TaskService(db, store=store, graph=graph, chats=chats, taskgraph=taskgraph, projector=projector, launcher=launcher,
                         settings=settings, watcher=watcher, clock=clock, ids=ids, redact=redactor)
     watcher.after_drain = tasks.start_ready
+    watcher.publish = lambda type_, data: bus.publish_one(type_, data)                                   # an agent's live work reaches its chat (D133)
+    watcher.agent_session = lambda row, agent: session_of(db.conn(), row, agent)
     # the connector layer: the real router reports usage to the ledger, health and mode to the bus, and session ids to the chats
     router_settings = settings if connector is None else settings.model_copy(update={"connector": "stub"})
     # offline (and only offline) the stub answers the chat agent from the message, so a team can be made with no CLI (D97, GAP-DEMO)

@@ -46,11 +46,11 @@ def real(path):
     return os.path.realpath(path)
 
 
-def tag(workspace="", function="identity", purpose="agent_turn"):
+def tag(workspace="none", function="identity", purpose="agent_turn"):
     return CallTag(function=function, stage="website", workspace=workspace, purpose=purpose)
 
 
-def text_req(workspace="", system=J2_SYSTEM, schema=None, function="identity", purpose="agent_turn"):
+def text_req(workspace="none", system=J2_SYSTEM, schema=None, function="identity", purpose="agent_turn"):
     return AskRequest(user="the brief", system=system, kind="text" if schema is None else "json", schema=schema,
                       ctx=RouteContext(tag=tag(workspace, function, purpose)))
 
@@ -94,7 +94,7 @@ def make(fake, tmp_path):
 # ---- the tag ------------------------------------------------------------------------------------------------------------------
 
 def test_a_tag_asks_for_nothing_by_default_and_refuses_a_word_it_does_not_know():
-    assert CallTag().workspace == "" and CallTag(function="audit").workspace == ""
+    assert CallTag().workspace == "none" and CallTag(function="audit").workspace == "none"
     assert CallTag(workspace="read").workspace == "read" and CallTag(workspace="edit").workspace == "edit"
     with pytest.raises(ValidationError):
         CallTag(workspace="write")
@@ -103,7 +103,7 @@ def test_a_tag_asks_for_nothing_by_default_and_refuses_a_word_it_does_not_know()
 # ---- the matrix: tag x access x folder x offline -----------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("workspace,access,expected", [
-    ("", "read", None), ("", "edit", None),
+    ("none", "read", None), ("none", "edit", None),
     ("read", "read", "ro"), ("read", "edit", "ro"),              # a read call never edits, whatever the owner allowed
     ("edit", "read", "ro"),                                      # the owner's access caps what the tag asks for
     ("edit", "edit", "rw"),
@@ -121,7 +121,7 @@ def test_folder_for_the_tag_asked_and_the_owners_access_caps_it(tmp_path, worksp
         assert str(got) == real(tmp_path / "p") and isinstance(got, Folder) and got.edit is (expected == "rw")
 
 
-@pytest.mark.parametrize("workspace", ["", "read", "edit"])
+@pytest.mark.parametrize("workspace", ["none", "read", "edit"])
 def test_no_folder_set_means_none_for_every_tag(tmp_path, workspace):
     cfg = ConnectorConfig(data_dir=tmp_path / "data", work_root=tmp_path / "work")
     router = Router({"stub": StubConnector(cfg)}, policy())
@@ -199,8 +199,8 @@ def test_helper_calls_and_a_tag_with_no_workspace_get_no_folder(make, fake):
     fake.sequence("ok_plain").reply(text="r")
     rig = make("claude")
     rig.choose("edit")
-    rig.router.ask(text_req(""))
-    rig.router.ask(text_req("", function="summariser", purpose="summary"))
+    rig.router.ask(text_req("none"))
+    rig.router.ask(text_req("none", function="summariser", purpose="summary"))
     for call in rig.calls():
         assert call["cwd"] != real(rig.folder) and value(call["argv"], "--tools") == "" and "Working folder" not in value(call["argv"], "--system-prompt")
         assert not {"--allowedTools", "--disallowedTools", "--restricted"} & set(call["argv"])
@@ -298,8 +298,8 @@ def _argv_of_one_call(fake, tmp_path, name, *, folders, set_folder, workspace, s
 def test_the_engines_calls_are_byte_identical_with_no_folder(fake, tmp_path, schema):
     """A router that never heard of folders, one with a store and nothing chosen, one with a folder chosen whose tag asks for none, and one whose tag
     asks while no folder is set all send the same argv and the same stdin."""
-    base = _argv_of_one_call(fake, tmp_path, "a", folders=False, set_folder=False, workspace="", schema=schema)
-    for name, kw in (("b", dict(folders=True, set_folder=False, workspace="")), ("c", dict(folders=True, set_folder=True, workspace="")),
+    base = _argv_of_one_call(fake, tmp_path, "a", folders=False, set_folder=False, workspace="none", schema=schema)
+    for name, kw in (("b", dict(folders=True, set_folder=False, workspace="none")), ("c", dict(folders=True, set_folder=True, workspace="none")),
                      ("d", dict(folders=True, set_folder=False, workspace="read")), ("e", dict(folders=True, set_folder=False, workspace="edit"))):
         argv, stdin, cwd = _argv_of_one_call(fake, tmp_path, name, schema=schema, **kw)
         assert (argv, stdin) == (base[0], base[1]), name
@@ -347,7 +347,7 @@ def test_codex_with_no_folder_keeps_the_policys_sandbox_and_its_own_folder(make,
 
 def test_the_org_chat_agent_tags_itself_edit_and_nobody_else_does():
     assert build_tag("chat_agent", "decide", {"purpose": "chat_plan"}).workspace == "edit"
-    assert build_tag("planner", "decide", {"purpose": "chat_plan"}).workspace == ""
+    assert build_tag("planner", "decide", {"purpose": "chat_plan"}).workspace == "none"
 
 
 @pytest.mark.parametrize("access,tools", [("read", READ), ("edit", EDIT)])

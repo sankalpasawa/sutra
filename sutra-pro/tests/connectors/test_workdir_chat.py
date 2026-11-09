@@ -280,7 +280,7 @@ def test_a_teams_run_and_the_engines_calls_never_get_the_folder(make, fake):
     fake.sequence("ok_structured").reply(json={"answer": "ok"})
     rig = make("claude")
     rig.choose(rig.folder_a)
-    rig.router.call_json(agent_call("planner", workspace=""))
+    rig.router.call_json(agent_call("planner", workspace="none"))
     rig.router.ask(AskRequest(user="hello", kind="text", ctx=RouteContext(tag=CallTag(function="chat_agent"))))      # a text call: the engine's path
     for call in rig.calls("claude"):
         assert call["cwd"] != real(rig.folder_a) and value(call["argv"], "--tools") == ""
