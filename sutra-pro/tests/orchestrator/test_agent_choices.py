@@ -2,6 +2,7 @@
 and at start-up; the routes that change a pick (an agent chat's pill, the run's, the team's) are checked like a chat's pill and rewrite the file."""
 from __future__ import annotations
 
+import sys
 import json
 
 import pytest
@@ -90,7 +91,7 @@ def test_a_run_with_no_picks_starts_with_an_empty_choices_file(tenv):  # noqa: F
     task = tenv.new()
     tenv.run(tenv.service.start_ready())
     body = choices_of(tenv, task.id)
-    assert (body["schema"], body["default"], body["agents"]) == ("agent-choices/1", None, {}) and (tenv.run_dir(task.id) / CHOICES_FILE).stat().st_mode & 0o777 == 0o600
+    assert (body["schema"], body["default"], body["agents"]) == ("agent-choices/1", None, {}) and (sys.platform.startswith("win") or (tenv.run_dir(task.id) / CHOICES_FILE).stat().st_mode & 0o777 == 0o600)
 
 
 def test_the_file_holds_the_team_pick_as_default_and_each_agents_own_pick(tenv):  # noqa: F811

@@ -80,7 +80,7 @@ def test_the_conditions_are_the_capabilitys_own_file_outside_the_vendored_folder
     conds = j2.load_conditions(j2.OUTPUTS["project"]["conditions"])
     assert [(c["id"], c["check"], c.get("severity")) for c in conds] == [
         ("PJ1", "sections-present", None), ("PJ2", "nothing-to-be-confirmed", None), ("PJ3", "facts-present-all", "warn")]
-    assert j2.OUTPUTS["project"]["conditions"] == CONDITIONS_FILE and "/capabilities/data/" in CONDITIONS_FILE
+    assert j2.OUTPUTS["project"]["conditions"] == CONDITIONS_FILE and "/capabilities/data/" in CONDITIONS_FILE.replace("\\", "/")
     import os
     assert os.path.isabs(CONDITIONS_FILE)
     assert sorted(p.name for p in (__import__("pathlib").Path(j2.CONDITIONS_DIR)).iterdir()) == ["hld.json", "lld.json", "prd.json", "website.json"]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 
 import pytest
 from fastapi import FastAPI
@@ -56,7 +57,7 @@ def test_a_note_to_a_function_agent_is_stored_marked_and_written_for_the_engine(
     assert line.model_dump(mode="json")["steer"] is True
     assert context(tenv, task) == {"audit": "Owner's note: Check the footer links too."}
     path = tenv.run_dir(task) / "node_context.json"
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600 and not list(path.parent.glob(".node_context*"))
+    assert (sys.platform.startswith("win") or stat.S_IMODE(path.stat().st_mode) == 0o600) and not list(path.parent.glob(".node_context*"))
     client.post(f"/api/chats/{sid}/steer", json={"text": "And the\nmenu page."}, headers=TOKEN)
     other = client.post(f"/api/chats/{session_of(tenv, 'web.priority')}/steer", json={"text": "Keep prices round."}, headers=TOKEN)
     assert other.status_code == 200
