@@ -603,11 +603,15 @@ def groups(d, m=None):
         st = next((x for x in t["specs"]["items"] if x.get("node") == f"work:{name}"), None)
         mb = (st or {}).get("made_by") or {}
         olds = sorted(((int(mm.group(1)), f) for f in _all_files(d) for mm in [re.fullmatch(rf"site/{name}-v(\d+)\.md", f)] if mm))
-        docs.append({"id": name, "kind": "document", "name": name.upper(), "file": info["file"], "maker": mb.get("persona"),
+        # the row's own file is the latest saved copy when it is the current document byte for byte, else none, and its version list holds
+        # the copies only: the page routes a Map link by the node's file (prd.md), and the PRD's must keep landing on the Documents view;
+        # the human view reads doc_file (the current document), so the text shown is always the current one
+        same = olds and _same_file(d, olds[-1][1], info["file"])
+        docs.append({"id": name, "kind": "document", "name": name.upper(), "file": olds[-1][1] if same else None, "doc_file": info["file"], "maker": mb.get("persona"),
                      "made_in": mb.get("workflows") or [], "sections": info["sections"], "nodes": [],      # no Map node: a PRD / HLD / LLD link keeps landing on the Documents view
                      "versions": [{"workflow": None, "cycle": None, "purpose": "", "label": f"v{k}"} for k, _ in olds]
                                  + [{"workflow": None, "cycle": None, "purpose": "", "label": "current"}],
-                     "docs": [{"label": f"v{k}", "file": f, "workflow": None} for k, f in olds] + [{"label": "current", "file": info["file"], "workflow": None}]})
+                     "docs": [{"label": f"v{k}", "file": f, "workflow": None} for k, f in olds]})      # the saved copies only: naming prd.md here would catch its Map link
         docs[-1]["ok"] = (agent_view(d, docs[-1]) or {}).get("valid") is True      # the row's mark: the document's data file validates (agent-views/1)
     for x in plan + guides + site + docs + rec + list(documents.values()):
         x["views"] = views(d, x)
@@ -624,6 +628,14 @@ def groups(d, m=None):
 #    "human": {"format": "list"|"markdown"|"table"|"page"|"style"|"chart"|"shots", "file"} or None}      what a person reads
 # A view the run did not save is None; the page then says "Not saved for this artifact yet." Every file named here is a file of
 # the run folder, so served() serves it.
+
+def _same_file(d, a, b):
+    try:
+        with open(os.path.join(d, a), "rb") as fa, open(os.path.join(d, b), "rb") as fb:
+            return fa.read() == fb.read()
+    except OSError:
+        return False
+
 
 def _ok(d, f):
     p = os.path.join(d, f) if d and f else ""
@@ -644,6 +656,8 @@ def agent_view(d, row):
     f, sec = row.get("file"), row.get("section")
     stem = os.path.splitext(f)[0] if f and not (sec and row.get("deck")) else None
     cands = [f"{stem}.json"] if stem and not f.endswith(".json") else []
+    if row.get("kind") == "document":
+        cands.insert(0, f"{row.get('id')}.json")      # the document's data file (prd.json), whichever copy of the markdown the row shows
     if stem and row.get("kind") in ("charter", "realization", "workflows", "receipts", "conditions"):
         cands.insert(0, f"agent/{os.path.basename(stem)}.json")      # agent-views/1: the record in the agent's shape, the original untouched
     if row.get("kind") == "style":
@@ -675,7 +689,7 @@ HUMAN = {"charter": "list", "realization": "markdown", "workflows": "table", "gu
 def human_view(d, row):
     """What a person reads: the rendered view the pane drew before the tabs, from the file it was drawn from; None when nothing was saved."""
     k = row.get("kind")
-    f = {"realization": row.get("text"), "shots": ((row.get("shots") or [{}])[0]).get("file")}.get(k, row.get("file"))
+    f = {"realization": row.get("text"), "shots": ((row.get("shots") or [{}])[0]).get("file"), "document": row.get("doc_file")}.get(k, row.get("file"))
     return {"format": HUMAN[k], "file": f} if k in HUMAN and _ok(d, f) else None
 
 

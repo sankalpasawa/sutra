@@ -8237,7 +8237,8 @@ def left_bar_toggle():
                     if id_ == "actions":
                         assert len(p["gos"]) == max(1, len(sends)), (run, w, "each action once, or none in this run", p["gos"])
                     if id_ == "artifacts":      # Preview and Documents, then the four groups of the Artifacts section with their counts
-                        assert [x.split(" ")[0] for x in p["gos"]] == ["Run", "Guides", "Website", "Documents", "Run"] and all(re.search(r"\d|no |nothing|loading", x) for x in p["gos"]), (run, w, p["gos"])
+                        assert len(p["gos"]) == 5 and all(x.startswith(w) for x, w in zip(p["gos"], ["Run plan", "Guides", "Website", "Documents", "Run records"])) \
+                            and all(re.search(r"\d|no |nothing|loading", x) for x in p["gos"]), (run, w, p["gos"])
                 assert set(t_ for p in r["panels"].values() for t_ in p["tabs"]) == {t_ for v in want_tabs.values() for t_ in v}, (run, w, "no tab is lost")
                 assert r["pick"] == [True, True, True] and r["graph"] == [True, "line", True] and r["chat"] is True, (run, w, "a tab opens in the main area; Run graph opens the Map's graph; Chat opens the Simple view", r["pick"], r["graph"], r["chat"])
                 seen += 1
@@ -11222,7 +11223,8 @@ def agent_views():
                 rec = json.load(open(os.path.join(d, x["views"]["agent"]["file"]), encoding="utf-8"))
                 assert rec["schema"] == "artifact-schema/1" and rec["model"] == x["id"].upper() and rec["valid"] is True and rec["validation"] \
                     and all(v["valid"] for v in rec["validation"].values()) and "sections" in rec, (n, x["id"])      # the data file keeps its keys
-                assert x["views"]["human"] == {"format": "markdown", "file": f"{x['id']}.md"}
+                hv = x["views"]["human"]
+                assert hv["format"] == "markdown" and hv["file"].endswith(".md") and open(os.path.join(d, hv["file"]), "rb").read() == open(os.path.join(d, f"{x['id']}.md"), "rb").read(), hv      # the current text, from prd.md or its identical latest copy
             # the CLI builds the same files (before the planted invalid one below, which it would rebuild)
             r = subprocess.run([sys.executable, os.path.join(here, "j2_agent_views.py"), "build", d], capture_output=True, text=True, timeout=300)
             assert r.returncode == 0 and "agent-readable JSON" in r.stdout and "INVALID" not in r.stdout.replace("Invalid", ""), (r.returncode, r.stdout[-300:], r.stderr[-300:])
