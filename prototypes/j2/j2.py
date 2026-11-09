@@ -142,7 +142,7 @@ AUTO_ASK = {"send_confirm"}
 AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
 AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
                "and list them as assumptions I can check later.")
-AUTO_FINISH = re.compile(r"^(?:finish|ship|stop)\b|\bas it is\b", re.I)
+AUTO_FINISH = re.compile(r"^\s*(?:finish|ship|stop)\b", re.I)      # "Finish as it is: ..." (a "leave out" option can say "stays as it is")
 AUTO_SIMPLE = re.compile(r"\bkeep it simple\b|\bwithout\b|\bno extra\b|\bskip\b|\bleave (?:it|this) out\b|^no\b", re.I)
 
 
@@ -3509,7 +3509,8 @@ class J2Run:
             if p["kind"] == "conflict":      # something beyond the agreed plan: stay with the plan (the simpler option)
                 k = next((i + 1 for i, o in enumerate(opts) if AUTO_SIMPLE.search(str(o))), 1)
             if p["kind"] == "limit" and any(a["kind"] == "limit" for a in self.auto_log):
-                k = next((i + 1 for i, o in enumerate(opts) if AUTO_FINISH.search(str(o))), len(opts))
+                k = next((i + 1 for i, o in enumerate(opts) if AUTO_FINISH.search(str(o))),
+                         next((i + 1 for i, o in enumerate(opts) if re.search(r"\bas it is\b", str(o), re.I)), len(opts)))
             return f"Option {k}", str(opts[k - 1]), k
         return AUTO_ASSUME, "Go with sensible choices", None
 

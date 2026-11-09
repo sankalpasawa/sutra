@@ -1326,6 +1326,10 @@ def decide_for_me():
         r4.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Add 30 work credits and keep going", "Leave out item 7",
                                                                                    "Finish as it is: you get the site as it is now"]}], "to": "identity", "handoff": {}, "msg": 1}
         assert r4._auto_pick()[2] == 3 and j2.J2Run()._auto_choice({**r4.paused})[2] == 1, "the first limit keeps going, a second one finishes as it is"
+        r4.paused["questions"][0]["options"] = ["Keep going: you get more of the missing parts built",       # live run j2-20261109-231951: the
+                                                "Leave out item 7: you get the site without it. The form stays as it is, still failing",   # leave-out option
+                                                "Finish as it is: you get the site as it is now"]                 # also says "as it is"
+        assert r4._auto_pick()[2] == 3, "finish as it is, not the leave-out option that also says as it is"
         assert r4._auto_choice({"kind": "approval", "questions": [], "handoff": {}})[0] == "Yes, approve it."
         # the server: /api/settings on the live run, kept across Start over
         srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
