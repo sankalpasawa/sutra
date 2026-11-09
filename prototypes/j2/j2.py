@@ -5295,7 +5295,7 @@ class J2Run:
                                               "it, priced as a fix.", "act": "PROPOSE", "next": "Priority",
                                        "workflows": [{"name": "Visiting hours", "goal_gap": self.feedback,
                                                       "parts": ["fix"], "revises": owner["id"], "covers": [],
-                                                      "outputs": ["index.html"],
+                                                      "outputs": ["index.html"], "estimated_resources": {"money": 10},
                                                       "completion_check": "The visiting hours are in that section"}]})
                 return json.dumps({"say": f"@Priority The Requester asked: \"{self.feedback}\". One workflow covers it.",
                                    "act": "PROPOSE", "next": "Priority",
@@ -5310,10 +5310,11 @@ class J2Run:
                                    "next": "Audit", "dispute": {"with": "Audit", "about": phone["id"],
                                                                 "reason": "Fluid layout, no overflow at 360px"}})
             others = [{"name": f"Cover item {f['item']}", "goal_gap": f["criterion"], "covers": [f["item"]],
-                       "parts": [item_kind(f["criterion"])], "outputs": ["index.html"], "completion_check": f["criterion"]}
+                       "parts": [item_kind(f["criterion"])], "outputs": ["index.html"], "completion_check": f["criterion"],
+                       "estimated_resources": {"money": 10}}
                       if f.get("verdict") == "UNPAID" else
                       {"name": f"Fix item {f['item']}", "goal_gap": f["criterion"], "parts": ["fix"], "revises": "W-2",
-                       "fixes": [f["id"]],
+                       "fixes": [f["id"]], "estimated_resources": {"money": 10},      # the mock's estimate, for runs without a rate card
                        "outputs": ["index.html"], "completion_check": f["criterion"]} for f in fails
                       if f is not phone and f.get("item") and f.get("verdict") != "TO_BE_CONFIRMED"]
             if phone:
@@ -6652,13 +6653,121 @@ class J2Run:
         self.post("system", f"Validator rejected '{name}': {reason}.", rejected=name)
         return f"{name} ({reason})"
 
+    PLAN_NAME = re.compile(r"^Revise W-\d+ |^Fix | \(change \d+(?:, round \d+)?\)$")
+
+    def _plan_name(self, name):
+        """The realization plan's name for a workflow: a fix ("Revise W-6 Board...") or a change's revision ("Board... (change 1)")
+        carries the planned workflow's name inside its own."""
+        return self.PLAN_NAME.sub("", str(name or "")).strip()
+
+    def _place_wf(self, wf, row, src):
+        """A registered workflow's stage and certainty zone, recorded with where they came from: the realization plan when it names
+        the workflow (a first plan, a change plan, or a fix whose name carries the planned one); else inherited from the workflow it
+        revises (a fix, a change's revision, a relay round), then from that workflow's root; else from the plan's workflow that
+        delivers an item it covers (a replacement). A workflow none of those place stays without, and the map says so."""
+        plan = {x.get("name"): x for x in j2_change._wfs((self.real or {}).get("plan") or {})}
+        wfs = self._all_wfs()
+        root = self._wf_any(j2_change._root_id(wfs, src["id"])) if src else None
+        owner = next((x for i in self._covers(row) for x in plan.values() if i in j2_realization.lst(x.get("delivers"))), None)
+        dep = next((d for d in (self._wf_any(x) for x in row.get("dependencies") or []) if d and d.get("stage")), None)      # a new build workflow sits with what it builds on
+        found = [("plan", plan.get(wf["name"]) or plan.get(self._plan_name(wf["name"]))),
+                 (f"inherited from {src['id']}" if src else "", src), (f"inherited from {root['id']}" if root else "", root),
+                 (f"covers as {owner.get('name')}" if owner else "", owner), (f"inherited from {dep['id']}, which it depends on" if dep else "", dep)]
+        for key in ("stage", "certainty"):
+            got = next(((how, x[key]) for how, x in found if x and x.get(key)), None)
+            if got:
+                wf[key] = got[1]
+                wf[key + "_from"] = got[0]
+        if row.get("judge"):
+            wf["judge"] = row["judge"]
+
+    def _late_judge(self, batch):
+        """J2.b for a workflow proposed after the first plan (a fix, a replacement, a change's relay round or a reader's revision):
+        it passes through the certainty and realization axis like a planned one. Its spec is the plan's entry for what it revises
+        (or for itself, when the plan names it) with the row's goal, done-test, dependencies and covers, and the stage and zone it
+        inherits; the judge (confidence-judge.md) scores it against the plan's frozen checklist; below the gate Adaptation improves
+        it once and the judge looks again, and the better done-test and goal are kept; still below, the validator refuses it with
+        the weakest check named, as a first plan holds a not-ready workflow. Every judgement is kept in realization.json under
+        "late" and on the workflow (judge). Rows the plan has already judged are left alone: the first plan's own proposals, and
+        a change plan's rows (j2_change judged them before Priority saw them)."""
+        if self.real is None or not isinstance(self.real.get("plan"), dict) or (self.change and self.change.get("phase") == "plan"):
+            return batch
+        plan = self.real["plan"]
+        names = {x.get("name"): x for x in j2_change._wfs(plan)}
+        checklist = self.real.get("checklist") or []
+        gate = j2_realization.THRESHOLD
+        mock = lambda sp: j2_realization.mock_judge(sp, compare="better")
+        seen = self.__dict__.setdefault("_late_seen", {})      # the same row, resent through Priority's exchanges, is judged once
+        for w in batch:
+            name = w.get("name") or "?"
+            rv = str(w.get("revises") or "").upper()
+            if name in names and not rv:
+                continue
+            key = json.dumps([name, rv, w.get("goal_gap") or w.get("purpose"), w.get("completion_check"), w.get("dependencies"), w.get("covers")], sort_keys=True, default=str)
+            if key in seen:
+                w["judge"] = seen[key]
+                continue
+            src = self._wf_any(rv)
+            base = (names.get(name) or names.get(self._plan_name(name)) or names.get((src or {}).get("name"))
+                    or names.get(self._plan_name((src or {}).get("name"))) or {})
+            deps = [self._plan_name(self._wf_any(d)["name"]) if self._wf_any(d) else str(d) for d in w.get("dependencies") or []]
+            dep = next((d for d in (self._wf_any(x) for x in w.get("dependencies") or []) if d and d.get("stage")), None)
+            spec = {**base, "name": name, "stage": base.get("stage") or (src or {}).get("stage") or (dep or {}).get("stage"),
+                    "certainty": base.get("certainty") or (src or {}).get("certainty") or (dep or {}).get("certainty"),
+                    "approach": base.get("approach") or (f"Revise {src['name']} ({src['id']}): " if src else "") + str(w.get("goal_gap") or w.get("purpose") or ""),
+                    "goal": w.get("goal_gap") or w.get("purpose") or base.get("goal") or "",
+                    "done_test": w.get("completion_check") or base.get("done_test") or "",
+                    "delivers": list(self._covers(w)) or j2_realization.lst(base.get("delivers")),
+                    "inputs_from": [d for d in deps if d in names] or j2_realization.lst(base.get("inputs_from"))}
+            jplan = {**plan, "workflows": [x for x in j2_change._wfs(plan) if x.get("name") != name] + [spec]}
+            s = j2_realization.Session(log=lambda m: None)
+            rounds, note = [], None
+            try:
+                sc = j2_change.judged(s, self.goal, jplan, checklist, mock, [name]).get(name)
+                if sc:
+                    rounds.append(sc["score"])
+                if sc and sc["score"] < gate:
+                    better, lacked = j2_change.improve(s, self.goal, jplan, {name: sc},
+                                                       lambda ns: json.dumps({"workflows": [spec], "changes": []}))
+                    if not lacked:
+                        again = j2_change.judged(s, self.goal, better, checklist, mock, [name],
+                                                 previous={"plan": jplan, "scores": {name: sc}}).get(name)
+                        if again:
+                            rounds.append(again["score"])
+                            if again["score"] >= sc["score"]:
+                                sc = again
+                                new = next((x for x in j2_change._wfs(better) if x.get("name") == name), spec)
+                                if new.get("done_test") and new["done_test"] != spec["done_test"]:
+                                    w["completion_check"] = new["done_test"]
+                                if new.get("goal") and new["goal"] != spec["goal"]:
+                                    w["goal_gap"] = new["goal"]
+            except Exception as e:      # a judge that cannot be reached never blocks a fix: recorded, not judged
+                sc, note = None, f"the judge could not score it: {e}"
+            j = {"score": sc["score"] if sc else None, "weakest": (sc or {}).get("weakest"), "missing": list((sc or {}).get("missing") or [])[:3],
+                 "rounds": rounds, "ready": (sc["score"] >= gate) if sc else None, "zone": spec.get("certainty"), "stage": spec.get("stage"), "note": note}
+            w["judge"] = seen[key] = j
+            self.calls += s.calls
+            self.real.setdefault("late", []).append({"workflow": name, "revises": rv or None, "t": time.strftime("%H:%M:%S"),
+                                                     "cycle": self.cycle, "calls": s.calls, "seconds": round(s.seconds, 1), **j})
+            self.save("realization.json", self.real)
+            self._event("adaptation", "late_judge", f"{name}: {j['score']}")
+            if sc:
+                self.post("system", f"Judge: {name} scored {sc['score']:.2f}" + (" after one improvement" if len(rounds) > 1 else "")
+                          + (f", below the {gate:.2f} gate (weakest: {sc.get('weakest')})" if sc["score"] < gate else f", at or above the {gate:.2f} gate")
+                          + f"; zone {spec.get('certainty') or 'none'}, stage {spec.get('stage') or 'none'}.", judge=name)
+            else:
+                self.post("system", f"Judge: {name} was not scored ({note or 'the reply lacked it'}); registered as proposed.", judge=name)
+        return batch
+
     def _register(self, agreed):
         """J2.e, plain code: every proposal is checked before it is registered, including one from an Identity ruling.
-        Checks: required fields present, priced from the rate card, nothing Priority refused, cost fits what's left."""
+        Checks: required fields present, priced from the rate card, nothing Priority refused, cost fits what's left.
+        With realization on, a proposal the plan has not judged (a fix, a replacement, a relay revision) is judged first
+        (_late_judge), and every workflow is placed in a stage with a certainty zone (_place_wf)."""
         remaining, registered, refused, defaults = self.budget - self.spent, [], [], []
         covered = {i for x in self.workflows if x["status"] in ("registered", "held", "running", "done")
                    for i in self._wf_items(x)}
-        batch = norm(agreed)
+        batch = self._late_judge(norm(agreed))
         # J2_REALIZATION: register in the plan's run order, each under the id of its place in the plan (W-1 is the first
         # to run), even when it is registered later than others; other workflows take ids after the plan's
         plan_ix = {x["name"]: i for i, x in enumerate((self.real_summary or {}).get("proposal_brief") or [])}
@@ -6684,6 +6793,9 @@ class J2Run:
                       else f"{self.p_refused[name]}, so it can't be registered" if name in self.p_refused
                       else "no rate-card parts, so it has no price" if RATES and rc is None
                       else f"unknown rate-card parts {unknown}; allowed: {', '.join(RATES)}" if unknown
+                      else (f"the judge scored it {w['judge']['score']:.2f}, below the {j2_realization.THRESHOLD:.2f} gate"
+                            f" (weakest: {w['judge'].get('weakest')}" + (f": {w['judge']['missing'][0]}" if w['judge'].get('missing') else "") + ")")
+                      if (w.get("judge") or {}).get("ready") is False
                       else "its cost is 0" if c <= 0
                       else self._underpriced(w, rc, covered) if RATES
                       else None) or (f"it costs {c}, over the {remaining} left in the budget" if c > remaining else None)
@@ -6730,10 +6842,8 @@ class J2Run:
                 if src and is_artifact(src) and is_artifact(wf):     # a planning document's revision rewrites its file
                     wf["revises"] = rv
                     wf["kept"] = self._keep_version(artifact_path(src))     # the version a "previous" ruling restores
-            if self.real_summary:       # J2_REALIZATION: the plan's stage (a fix keeps the stage of what it revises)
-                st = {x["name"]: x.get("stage") for x in self.real_summary.get("proposal_brief") or []}.get(wf["name"])
-                if st or (src or {}).get("stage"):
-                    wf["stage"] = st or src["stage"]
+            if self.real is not None:   # J2_REALIZATION: stage and certainty zone, from the plan or inherited (_place_wf); the late judgement stays on it
+                self._place_wf(wf, w, src)
             add_workflow_agent(wf["id"])
             wf["agent"] = NAMES[wf["id"]]
             self._supersede(wf)

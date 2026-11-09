@@ -141,6 +141,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path == "/api/plan":       # the Workflows tab: the stages the Strategist chose and the replans (realization.json)
             d = j2.saved_dir(run) if run else RUN.dir
             return self._send(200, json.dumps(j2_map.plan_view(d if d and os.path.isdir(d) else None), ensure_ascii=False))
+        if u.path == "/api/plan-map":   # Adaptation > Map: the plan as a map (plan-map/1): realization.json, workflows.json, change.json
+            d = j2.saved_dir(run) if run else RUN.dir
+            return self._send(200, json.dumps(j2_map.plan_map(d if d and os.path.isdir(d) else None), ensure_ascii=False))
         if u.path == "/api/library":    # the Templates (this run) tab: every template, grouped by artifact and section (template-library/1)
             return self._send(200, json.dumps(j2_template_lib.library_view(), ensure_ascii=False))
         if u.path == "/api/catalog":    # the /library page: the committed library and the runs that gave it templates (library/ only)
@@ -162,6 +165,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path == "/api/artifacts":  # the Artifacts tab: deliverables, then evidence and records (artifacts/types.json)
             d = j2.saved_dir(run) if run else RUN.dir
             return self._send(200, json.dumps(j2_artifacts.listing(d if d and os.path.isdir(d) else None), ensure_ascii=False))
+        if u.path == "/api/activity":   # one function's feed (activity/1): its messages, AI calls, planning, judging and changes, in order
+            d = j2.saved_dir(run) if run else RUN.dir
+            return self._send(200, json.dumps(j2_agent.activity(d if d and os.path.isdir(d) else None, q.get("who")), ensure_ascii=False))
         if u.path == "/api/agent":      # one agent's conversations and AI calls (agent/1), from the run's chat.jsonl and calls.jsonl
             d = j2.saved_dir(run) if run else RUN.dir
             return self._send(200, json.dumps(j2_agent.view(d if d and os.path.isdir(d) else None, q.get("who")), ensure_ascii=False))
@@ -274,6 +280,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(400, '{"error": "empty"}')
             ok = RUN.user_says(text)
             return self._send(200 if ok else 409, json.dumps({"ok": ok}))
+        if self.path == "/api/ask":              # a question to one function about a run, answered from its records (live or saved); nothing is written
+            run = body.get("run") or None
+            d = j2.saved_dir(run) if run else RUN.dir
+            who = str(body.get("who") or "")
+            if who not in j2_agent.FUNCS:
+                return self._send(400, '{"error": "not a function"}')
+            got = j2_agent.answer(d if d and os.path.isdir(d) else None, who, body.get("q"), ask=None if llm.MOCK else llm.ask)
+            return self._send(200, json.dumps(got, ensure_ascii=False))
         if self.path == "/api/playbooks/clear":    # the Playbooks tab's "Clear playbooks" (the page confirms first)
             return self._send(200, json.dumps({"ok": True, "cleared": j2.clear_playbooks()}))
         if self.path == "/api/lessons/clear":      # the Lessons tab's "Clear memory" (the page confirms first)
