@@ -2248,7 +2248,7 @@ $("pane-story").addEventListener("change", async e => {
 // fills the middle with a list on the left and the chosen item on the right. A file's text is fetched only when its item is opened (/api/artifact,
 // /api/code) and is escaped before it is drawn. What the run did not record says so ("Maker not recorded"); nothing is guessed.
 const artUrl = f => `/api/artifact?name=${encodeURIComponent(f)}${runQ()}`;
-const ARTGROUPS = [["plan", "Run plan"], ["guides", "Guides the makers read"], ["site", "Website sections"], ["records", "Run records"]];
+const ARTGROUPS = [["plan", "Run plan"], ["guides", "Guides the makers read"], ["site", "Website sections"], ["documents", "Documents"], ["records", "Run records"]];
 const ARTMARK = {ok: `<span class="amark am-ok" role="img" aria-label="passed"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></span>`,
   warn: `<span class="amark am-warn" role="img" aria-label="needs a look"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8v3.8M8 11v.4"/></svg></span>`};
 const artMark = ok => ok === undefined || ok === null ? "" : ARTMARK[ok ? "ok" : "warn"];
@@ -2256,11 +2256,13 @@ const artGroup = k => ((ARTS.groups || {}).groups || []).find(g => g.id === k) |
 const artWords = s => String(s || "").replace(/-/g, " ");
 const artNR = '<span class="empty">not recorded</span>';
 function artCount(g){ const r = g.rows || [];
+  if (g.id === "documents") return r.length ? plural(r.length, "document") : "no documents in this run";
   if (g.id === "guides") return r.length ? `${plural(r.length, "guide")} · ${plural(r.reduce((n, x) => n + (x.versions || []).length, 0), "version")}` : "no guides in this run";
   if (g.id === "site"){ const s = r.filter(x => x.kind !== "style"), k = s.filter(x => x.kind === "script").length;
     return s.length ? plural(s.length - k, "section") + (k ? " · " + plural(k, "script") : "") : "no website in this run"; }
   return r.length ? plural(r.length, g.id === "plan" ? "file" : "record") : "nothing recorded"; }
 function artSub(g){
+  if (g.id === "documents") return "The PRD, HLD and LLD: each with its sections, its saved versions and its data file.";
   if (g.id === "plan") return "What the run set out to do and how it planned it.";
   if (g.id === "guides") return "Each guide, who wrote it, and how it was checked.";
   if (g.id === "site"){ const s = (ARTS.groups || {}).site; return !s ? "This run built no website."
@@ -2406,6 +2408,11 @@ const ARTKIND = {
     human: x => `<div class="ashots">${x.shots.map(s => `<a class="ashot" href="${artUrl(s.file)}" target="_blank" rel="noopener"><img loading="lazy" alt="Screenshot ${esc(s.file.split("/").pop())}" src="${artUrl(s.file)}">`
       + `<span class="mono">${esc(s.file.split("/").pop())}${s.total ? ` · ${s.passed}/${s.total}` : ""}</span></a>`).join("")}</div>`}};
 ARTKIND.script = ARTKIND.section;
+ARTKIND.document = ARTKIND.guide;      // agent-views/1: a PRD / HLD / LLD row reads like a guide (the markdown, its saved versions); the data file is its Agent-readable tab
+ARTKIND.audit = {sum: x => artStat([[x.passed, "items passing"], [x.total == null ? null : x.total - x.passed, "items failing"], [x.cycle, "cycle"], [x.version, "version"]]) + (x.all_pass === true ? '<p class="empty">Every item passed.</p>' : ""),
+  human: x => { const f = x.views.human.file, w = artWait(ARTTEXT[f]); if (w) return w; const a = artJson(f), dd = (a || {}).data || {}, fs = dd.findings || [];
+    return !a ? '<p class="empty">Could not read this audit.</p>' : `<div class="ablk"><h5>Goal</h5><p>${esc(dd.goal || "")}</p></div><div class="ablk"><h5>Method</h5><p>${esc(dd.method || "")}</p></div><div class="ablk"><h5>Findings (${fs.length})</h5>`
+      + (fs.length ? artList(fs, r => `<li>${artMark(r.passed)}<span class="mono empty">${esc(r.id || r.item || "")}</span><span>${esc(r.criterion || "")}${r.note ? ` <span class="empty">${esc(r.note)}</span>` : ""}</span></li>`) : `<p>${artNR}</p>`) + `</div>`; }};
 // the Summary tab's Template block (library catalog, part 4): a website section's routing decision is the one its current owner made
 // (the rewriter when one did); the Style guide row shows the design decision. PRD / HLD / LLD sections carry theirs in the Documents view.
 const artTpl = x => x.kind === "section" || x.kind === "script" ? `<div class="ablk"><h5>Template</h5><p>${tplSecLine("website", x.owner || x.section, null)}</p></div>`
