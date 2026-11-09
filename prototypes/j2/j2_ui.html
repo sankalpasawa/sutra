@@ -4383,7 +4383,8 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && RAIL.open)
 document.addEventListener("click", e => { if (RAIL.open && !e.target.closest("#rfly") && !e.target.closest("#rail .ri[data-ri]")) railClose(false); });
 $("rtheme").onclick = () => { THEME = document.documentElement.dataset.theme === "light" ? "dark" : "light"; try { localStorage.setItem("j2theme", THEME); } catch (err) {} themeApply(); sThemeBtn(); };
 railPaint();
-if (!CAT.on) poll();      // the catalog page has no run to follow
+// the catalog page has no run to follow. Keep `poll();` as the script's last statement: the flow test hooks in right after it.
+if (!CAT.on) poll();
 </script>
 </body>
 </html>

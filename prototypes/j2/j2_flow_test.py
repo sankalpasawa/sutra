@@ -5562,7 +5562,8 @@ def artifact_schemas():
         wf = next(w for w in snap["workflows"] if (w.get("atoms") or [{}])[0].get("id") in built)
         card = render_node(snap, docs={"docs": {}})["cards"][wf["id"]]
         order = re.findall(r'data-block="(\w+)"', card)
-        assert order.index("artifact_template") == order.index("expected_output") + 1, order
+        assert order.index("template_line") == order.index("expected_output") + 1, order      # the atom's Template line, then the artifact template
+        assert order.index("artifact_template") == order.index("template_line") + 1, order
         assert order.index("artifact_template") + 1 == order.index("verification"), order
         blk = card.split('data-block="artifact_template"')[1].split('data-block="verification"')[0]
         assert re.findall(r'data-artrow="(\w+)"', blk) == ["template", "schema", "rules", "rendered"], blk[:200]
@@ -5921,7 +5922,7 @@ def docs_views():
         card = out["cards"][w["id"]]
         a = w["atoms"][0]
         card = card[card.index(f'data-key="atom-{a["id"]}"'):].split("Run details")[0]
-        assert re.findall(r'data-block="([a-z_]+)"', card) == ["goal", "how", "constraints", "context", "expected_output",
+        assert re.findall(r'data-block="([a-z_]+)"', card) == ["goal", "how", "constraints", "context", "expected_output", "template_line",
                                                               "verification", "human_output", "agent_output", "result"], w["id"]
         pre = card.split('data-block="result"')[1]
         assert 'data-preview="frame"' in pre and "sandbox" in pre and "srcdoc=" in pre, pre[:200]
@@ -10869,7 +10870,7 @@ def template_library(demo=False):
         ex = L.run_example(r3.dir, tv["template"], L.slug(rs.name))
         assert ex and ex["workflow"] == req["workflow"] and "requirements" in ex["data"], ex
         ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
-        for s_ in ('data-tab="library"', 'id="pane-library"', 'data-tplmode="sum"', 'data-tplmode="agent"', 'data-tplmode="human"',
+        for s_ in ('data-tab="library"', 'id="pane-library"', 'data-tplmode="${k}"', 'TPLTABS = ARTTABS',
                    'data-tplcopy=', 'data-link="tplview"', "/api/run-templates", '$("tab-library").hidden = !s.has_templates;'):
             assert s_ in ui, s_
         if BROWSER and j2.j2_check.find_chrome():
