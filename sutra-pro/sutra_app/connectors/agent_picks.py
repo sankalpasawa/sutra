@@ -103,7 +103,7 @@ class AgentPicks:
             if not isinstance(raw, dict) or raw.get("schema") != SCHEMA:
                 raise ValueError("not an agent-choices/1 file")
             default = raw.get("default")
-            agents = raw.get("agents") or {}
+            agents = raw.get("agents", {})
             if not isinstance(agents, dict):
                 raise ValueError("agents is not an object")
             parsed_default = Pick.model_validate({k: v for k, v in default.items() if k != "from"}) if isinstance(default, dict) else None
