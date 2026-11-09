@@ -2392,9 +2392,10 @@ async function sOpenArt(name){
 }
 // ---- top bar, dock and the rest
 function sToast(t){ const el = $("stoast"); if (!el || !el.classList) return; el.textContent = t; el.classList.add("on"); clearTimeout(sToast.t); sToast.t = setTimeout(() => el.classList.remove("on"), 2800); }
-function sAutoPaint(s){ const on = SV.auto !== null ? SV.auto : !!s.decide_for_me;
-  ["sauto", "sautoland"].forEach(id => { $(id).setAttribute("aria-checked", String(on)); $(id).disabled = !!s.saved; });
-  if (SV.auto !== null && SV.autoAt && Date.now() - SV.autoAt > 4000 && !!s.decide_for_me === SV.auto) SV.auto = null; }
+function sAutoPaint(s){      // your click shows at once; after 4 s the server's setting wins (another tab, or a POST that failed)
+  if (SV.auto !== null && SV.autoAt && Date.now() - SV.autoAt > 4000) SV.auto = null;
+  const on = SV.auto !== null ? SV.auto : !!s.decide_for_me;
+  ["sauto", "sautoland"].forEach(id => { $(id).setAttribute("aria-checked", String(on)); $(id).disabled = !!s.saved; }); }
 async function sAutoSet(on){ SV.auto = on; SV.autoAt = Date.now(); if (state) sAutoPaint(state);
   sToast(on ? "Decide for me is on: the team answers its own questions" : "Decide for me is off: questions come to you");
   try { await fetch("/api/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({decide_for_me: on})}); } catch (e) {} }
