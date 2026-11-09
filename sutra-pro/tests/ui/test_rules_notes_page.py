@@ -64,7 +64,7 @@ def test_a_saved_add_empties_the_field_and_every_opening_reads_the_rules_again()
     assert "rules.error = out.error" in refused and "if (out.data) rules.data = out.data" in refused, "a list another window changed is shown as it is now"
     assert "rules.draft = null" not in refused, "what was typed stays beside the sentence"
     assert "added = text;" in on_rules.split('name === "rules-add"')[1].split("rules-remove")[0]       # only an add empties it: a rule typed and not yet added stays
-    opened = PANEL_JS.split("async function open(nodeId, tab, freshGraph)")[1].split("paintAll();")[0]
+    opened = PANEL_JS.split("async function open(nodeId, tab, freshGraph, forceSid)")[1].split("paintAll();")[0]
     assert 'rules = noRules("");' in opened, "open() must forget the rules an earlier opening read"
 
 

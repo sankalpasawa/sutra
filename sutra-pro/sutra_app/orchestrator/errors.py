@@ -16,7 +16,7 @@ __all__ = [
 
 STATUS_BY_CODE: dict[str, int] = {
     "bad_token": 401, "bad_host": 400, "bad_origin": 403, "validation": 422, "rules": 422, "not_found": 404, "busy": 409,
-    "stale_chart": 409, "already_decided": 409, "read_only": 403, "too_many_pending": 429, "provider_unavailable": 503,
+    "stale_chart": 409, "already_decided": 409, "not_running": 409, "read_only": 403, "too_many_pending": 429, "provider_unavailable": 503,
     "cli_missing": 503, "store_busy": 503, "internal": 500,
 }
 

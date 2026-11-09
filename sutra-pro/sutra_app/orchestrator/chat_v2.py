@@ -3,7 +3,9 @@
     ChatSegments(db).record(tx, sid, "codex", provider_session_id, from_message_id)   # a segment per provider the chat has run on
     ChatSearch(db).search("deploy", scope="dept:web", include_archived=False)          # at most 50 rows, scope applied in SQL
     ChatArchive(db).archive(tx, sid) / .unarchive(tx, sid)                             # a mark, never a delete
-    ChatChoices(db).set(tx, sid, "codex") / .get(sid)                                  # the owner's choice, survives a restart
+    ChatChoices(db).set(tx, sid, "codex") / .get(sid)                                  # the owner's provider choice, survives a restart
+    ChatChoices(db).set_pick(tx, sid, "claude", "sonnet", "high") / .pick(sid)         # the whole triple (D131); null provider clears all three
+    cascade(own, run, team, default) -> (Pick, source)                                 # own session > run > team > policy default, a whole pick at a time
     recover_interrupted(db, chats)                                                    # at start: the direct turns the last process did not finish
 
 There is no delete anywhere in this module. The tables and triggers are created by `schema._v2`.
@@ -15,6 +17,7 @@ import re
 import sqlite3
 from typing import Any
 
+from sutra_app.connectors.models import Pick
 from sutra_app.library.gate import GATE
 from sutra_app.orchestrator import direct_turns
 from sutra_app.orchestrator.db import Database, Tx
@@ -22,7 +25,8 @@ from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.ids import iso_z
 from sutra_app.orchestrator.records import ChatMessage
 
-__all__ = ["ChatSegments", "ChatSearch", "ChatArchive", "ChatChoices", "MAX_RESULTS", "SCOPE_RE", "DIRECT_ASK", "INTERRUPTED", "recover_interrupted"]
+__all__ = ["ChatSegments", "ChatSearch", "ChatArchive", "ChatChoices", "MAX_RESULTS", "SCOPE_RE", "DIRECT_ASK", "INTERRUPTED", "recover_interrupted",
+           "cascade", "SOURCES", "EFFORTS"]
 
 MAX_RESULTS = 50
 SCOPE_RE = re.compile(r"^(all|node:[a-z][a-z0-9_.-]{1,60}|dept:[a-z][a-z0-9_-]{1,40})$")
@@ -132,11 +136,12 @@ class ChatArchive:
         from sutra_app.orchestrator.models import NodeInit
         from sutra_app.orchestrator.nodes import WRITABLE_KINDS, ensure_node
         payload = json.loads(node["body"])
-        title = tx.conn.execute("SELECT title, pinned FROM chat_sessions WHERE id = ?", (row["id"],)).fetchone()
+        title = tx.conn.execute("SELECT title, pinned, pinned_model, pinned_effort FROM chat_sessions WHERE id = ?", (row["id"],)).fetchone()
         out = ensure_node(tx, NodeInit(node=payload, session_title=title["title"], writable=payload["kind"] in WRITABLE_KINDS),
                           graph=self.graph or GraphStore(self.db))
-        if out.chat_session_id and out.chat_session_id != row["id"] and title["pinned"]:
-            tx.conn.execute("UPDATE chat_sessions SET pinned = ? WHERE id = ?", (title["pinned"], out.chat_session_id))
+        if out.chat_session_id and out.chat_session_id != row["id"] and title["pinned"]:         # the whole pick goes with the chat (D131)
+            tx.conn.execute("UPDATE chat_sessions SET pinned = ?, pinned_model = ?, pinned_effort = ? WHERE id = ?",
+                            (title["pinned"], title["pinned_model"], title["pinned_effort"], out.chat_session_id))
 
     def _relink(self, tx: Tx, node_id: str, session_id: str) -> None:
         """The graph node names `session_id` again (its payload and its column)."""
@@ -155,8 +160,8 @@ class ChatArchive:
         row = self._row(tx.conn, session_id)
         if row["status"] == "active":
             return False
-        if row["kind"] == "legacy" or row["filed_under"] is not None:
-            raise AppError("rules", "That chat stays in the archive (it was imported or its team was merged away)")
+        if row["kind"] in ("legacy", "function", "step") or row["filed_under"] is not None:
+            raise AppError("rules", "That chat stays in the archive (it was imported, its team was merged away, or it is a past run's agent chat)")
         taken = tx.conn.execute("SELECT id FROM chat_sessions WHERE node_id = ? AND status = 'active'", (row["node_id"],)).fetchone()
         if taken is not None:
             used = tx.conn.execute("SELECT 1 FROM chat_messages WHERE session_id = ? LIMIT 1", (taken["id"],)).fetchone()
@@ -172,8 +177,22 @@ class ChatArchive:
         return True
 
 
+SOURCES = ("own", "run", "team", "default")
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def cascade(own: Pick | None, run: Pick | None, team: Pick | None, default: Pick | None) -> tuple[Pick, str]:
+    """The pick an agent runs on and where it comes from: its own session's, else the run's, else the team's, else the policy default. A whole pick
+    replaces, never field by field (a model of one provider is meaningless on another). A pick with no provider is "Default": nobody chose. The
+    result is `(Pick(), "default")` when even the default is unknown."""
+    for source, found in (("own", own), ("run", run), ("team", team)):
+        if found is not None and found.provider:
+            return found, source
+    return (default if default is not None else Pick()), "default"
+
+
 class ChatChoices:
-    """The owner's per-chat provider (`chat_sessions.pinned`). '' means the policy decides."""
+    """The owner's per-chat provider, model and effort (`chat_sessions.pinned`, `pinned_model`, `pinned_effort`). '' means the policy decides."""
 
     VALID = ("claude", "codex", "")
 
@@ -185,12 +204,34 @@ class ChatChoices:
         return row["pinned"] if row is not None else ""
 
     def set(self, tx: Tx, session_id: str, provider: str | None) -> None:
+        """The provider only; a model and effort that went with an earlier provider are cleared (a whole pick replaces)."""
+        self.set_pick(tx, session_id, provider, None, None)
+
+    def pick(self, session_id: str) -> Pick:
+        return self.pick_in(self.db.conn(), session_id)
+
+    @staticmethod
+    def pick_in(conn: sqlite3.Connection, session_id: str | None) -> Pick:
+        """The session's own pick; `Pick()` ("Default") when it has none or does not exist."""
+        row = conn.execute("SELECT pinned, pinned_model, pinned_effort FROM chat_sessions WHERE id = ?", (session_id,)).fetchone() if session_id else None
+        if row is None or not row["pinned"]:
+            return Pick()
+        return Pick(provider=row["pinned"], model=row["pinned_model"] or None, effort=row["pinned_effort"] or None)
+
+    def set_pick(self, tx: Tx, session_id: str, provider: str | None, model: str | None = None, effort: str | None = None) -> Pick:
+        """Store the owner's whole choice for one chat. A null provider clears all three; a model or effort without a provider is refused."""
         value = provider or ""
         if value not in self.VALID:
             raise AppError("validation", "the provider is claude or codex")
-        cur = tx.conn.execute("UPDATE chat_sessions SET pinned = ? WHERE id = ?", (value, session_id))
+        if not value and (model or effort):
+            raise AppError("validation", "a model or an effort is chosen together with its provider")
+        if effort and effort not in EFFORTS:
+            raise AppError("validation", f"the effort is one of {', '.join(EFFORTS)}")
+        cur = tx.conn.execute("UPDATE chat_sessions SET pinned = ?, pinned_model = ?, pinned_effort = ? WHERE id = ?",
+                              (value, (model or "") if value else "", (effort or "") if value else "", session_id))
         if cur.rowcount == 0:
             raise NotFound("that chat")
+        return self.pick_in(tx.conn, session_id)
 
 
 # ---- direct turns the last process did not finish ---------------------------------------------------------------------------------------------------

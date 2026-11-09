@@ -18,7 +18,7 @@ from .chat_models import CarryPlan, Choice, ChatEvent, ChatTurnIn, ChatTurnOut, 
 from .errors import InvalidRequestError, NoProviderError
 import re
 
-from .models import SESSION_ID_PATTERN, AskRequest, ConnectorEvent, Message, RouteContext, SessionSpec
+from .models import SESSION_ID_PATTERN, AskRequest, ConnectorEvent, Message, Pick, RouteContext, SessionSpec
 from .health import API_KEY_REFUSED
 from .model_catalog import ModelOption, efforts_of, names_of, options_for
 from .router import TRANSCRIPT_LIMIT, Router
@@ -35,6 +35,8 @@ PROVIDERS = ("claude", "codex")             # the providers a person can choose;
 class ChatPort(Protocol):
     def providers(self, session_id: Optional[str] = None) -> list[ProviderPill]: ...
     def choose(self, session_id: str, provider: Optional[str], model: Optional[str] = None, effort: Optional[str] = None) -> Choice: ...
+    def check_choice(self, provider: Optional[str], model: Optional[str] = None, effort: Optional[str] = None) -> Choice: ...
+    def default_pick(self, function: str = "") -> Pick: ...
     def plan_switch(self, session_id: str, target: str) -> CarryPlan: ...
     def send(self, session_id: str, turn: ChatTurnIn, on_event: Optional[Callable[[ChatEvent], None]] = None) -> ChatTurnOut: ...
     def stream(self, session_id: str, turn: ChatTurnIn) -> Iterator[ChatEvent]: ...
@@ -116,16 +118,44 @@ class RouterChatPort:
                 raise InvalidRequestError(f"{model or current or provider} does not accept the effort {effort}. Choose one of: {', '.join(allowed)}",
                                           detail={"efforts": allowed})
 
+    def _ready(self, provider: str) -> None:
+        """The provider must be one a person can choose and must be able to run now; the refusal says why (a 422 for the pill)."""
+        pill = next((p for p in self.providers() if p.name == provider), None)
+        if pill is None:
+            raise InvalidRequestError(f"{provider} is not a provider you can choose")
+        if not pill.ready:
+            raise InvalidRequestError(f"{provider} cannot run: {pill.why_not}", detail={"why_not": pill.why_not})
+
+    def check_choice(self, provider: Optional[str], model: Optional[str] = None, effort: Optional[str] = None) -> Choice:
+        """The validation of a pick, pure: nothing is started, written or pinned. The provider is ready, the model is one it offers, the effort is one
+        that model accepts (the valid ones are named in the refusal). `provider=None` is "Default" and takes no model or effort. This is what a function or
+        step session's pill is checked with (the engine's calls are one-shot: no router session is made), and what `choose` checks before it pins."""
+        if provider is None:
+            if model is not None or effort is not None:
+                raise InvalidRequestError("a model or an effort can be chosen only together with its provider")
+            return Choice(session_id="")
+        self._ready(provider)
+        self._check_choice(provider, model, effort, self.router.policy.model_for(provider))      # type: ignore[arg-type]
+        return Choice(session_id="", provider=provider, model=model, effort=effort)               # type: ignore[arg-type]
+
+    def default_pick(self, function: str = "") -> Pick:
+        """What an agent runs on when nobody chose: the first enabled provider of the policy's order for `function`'s agent turns, its policy model and the
+        policy's effort. Nothing is asked of a CLI; an empty `Pick` when the policy names no provider a person can choose (the offline stub)."""
+        try:
+            resolved = self.router.policy.resolve_fields(function=function, purpose="agent_turn")
+            name = next((n for n in resolved.order if n in PROVIDERS and n in self.router.connectors and self.router.policy.enabled(n)), None)    # type: ignore[arg-type]
+            if name is None:
+                return Pick()
+            return Pick(provider=name, model=self.router.policy.model_for(name), effort=resolved.effort)         # type: ignore[arg-type]
+        except Exception:                                                                       # noqa: BLE001  (a label for the page must not fail a request)
+            return Pick()
+
     def choose(self, session_id: str, provider: Optional[str], model: Optional[str] = None, effort: Optional[str] = None) -> Choice:
         """Pins the provider for THIS session; `None` clears it. A `model` and an `effort` are per chat as well: both are checked against what
         the provider offers (a typo is refused here, not at the next turn), written to the chat's stored session state, and used from its next
         turn on. The policy default is never touched."""
         if provider is not None:
-            pill = next((p for p in self.providers() if p.name == provider), None)
-            if pill is None:
-                raise InvalidRequestError(f"{provider} is not a provider you can choose")
-            if not pill.ready:
-                raise InvalidRequestError(f"{provider} cannot run: {pill.why_not}", detail={"why_not": pill.why_not})
+            self._ready(provider)
         if model is not None or effort is not None:
             if provider is None:
                 raise InvalidRequestError("a model or an effort can be chosen only together with its provider")

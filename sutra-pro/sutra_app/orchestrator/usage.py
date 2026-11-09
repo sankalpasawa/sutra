@@ -4,7 +4,8 @@
     usage.record(usage_in)               # the connector router's `UsageSink`: one row per model request, returns the row id
     usage.record(usage_in, tx=tx)        # the same inside the Projector's transaction (a transaction cannot nest)
     usage.rows(task_id="tsk_...", ...)   # UsageOut[] plus totals over the same filter
-    usage.summary("atom")                # groups by dept, fn, provider, day or atom
+    usage.summary("atom")                # groups by dept, fn, provider, day, atom or session (a chat session: per agent per run, D130)
+    usage.rows(session_id="cs_...")      # the filter by one chat session; `summary(..., session_id=)` takes it too
 
 `UsageIn` is defined once in `sutra_app.connectors.usage` and imported here, and only here. A row is built from it as a library
 `usage_record`, checked by the gate and stored once: `INSERT ... ON CONFLICT(task_id, call_ref) WHERE call_ref IS NOT NULL DO
@@ -31,12 +32,13 @@ from sutra_app.orchestrator.records import UsageRecord
 __all__ = ["UsageStore", "UsageGroup", "SUMMARY_KEYS", "NO_KEY", "parse_since"]
 
 log = logging.getLogger(__name__)
-SUMMARY_KEYS = ("dept", "fn", "provider", "day", "atom")
+SUMMARY_KEYS = ("dept", "fn", "provider", "day", "atom", "session")
 NO_KEY = "(none)"
 MAX_ROWS = 500
 _COLUMNS = ("id, at, provider, model, purpose, session_id, node_id, task_id, dept_id, fn, step, atom_id, usd, tokens_in, tokens_out, "
             "seconds, ok, how, call_ref, detail_json")
-_GROUP_SQL = {"dept": "dept_id", "fn": "fn", "provider": "provider", "day": "strftime('%Y-%m-%d', at, 'unixepoch')", "atom": "atom_id"}
+_GROUP_SQL = {"dept": "dept_id", "fn": "fn", "provider": "provider", "day": "strftime('%Y-%m-%d', at, 'unixepoch')", "atom": "atom_id",
+              "session": "session_id"}
 _LINKS = (("session_id", "chat_sessions"), ("node_id", "graph_nodes"), ("task_id", "tasks"), ("dept_id", "departments"))
 
 UsageGroup = dict[str, Any]
@@ -145,9 +147,10 @@ class UsageStore:
     # ---- reads -----------------------------------------------------------------------------------------------------
 
     @staticmethod
-    def _where(*, task_id: str | None, dept_id: str | None, fn: str | None, since: int | None, include_stub: bool) -> tuple[str, list[Any]]:
+    def _where(*, task_id: str | None, dept_id: str | None, fn: str | None, since: int | None, include_stub: bool,
+               session_id: str | None = None) -> tuple[str, list[Any]]:
         where, args = [], []
-        for column, value in (("task_id", task_id), ("dept_id", dept_id), ("fn", fn)):
+        for column, value in (("task_id", task_id), ("dept_id", dept_id), ("fn", fn), ("session_id", session_id)):
             if value is not None:
                 where.append(f"{column} = ?")
                 args.append(value)
@@ -159,11 +162,11 @@ class UsageStore:
         return (" WHERE " + " AND ".join(where)) if where else "", args
 
     def rows(self, *, task_id: str | None = None, dept_id: str | None = None, fn: str | None = None, since: int | None = None,
-             include_stub: bool = False, after: int = 0, limit: int = 50) -> tuple[list[UsageOut], UsageTotals]:
+             include_stub: bool = False, after: int = 0, limit: int = 50, session_id: str | None = None) -> tuple[list[UsageOut], UsageTotals]:
         """The matching rows in id order (ids above `after`, at most `limit`) and the totals over ALL matching rows, not just the
         page. Stub rows are left out of both unless `include_stub`."""
         conn = self.db.conn()
-        where, args = self._where(task_id=task_id, dept_id=dept_id, fn=fn, since=since, include_stub=include_stub)
+        where, args = self._where(task_id=task_id, dept_id=dept_id, fn=fn, since=since, include_stub=include_stub, session_id=session_id)
         totals = conn.execute(
             f"SELECT count(*) AS calls, sum(usd) AS usd, sum(tokens_in) AS tin, sum(tokens_out) AS tout FROM usage_ledger{where}", args).fetchone()
         paged = conn.execute(
@@ -171,12 +174,13 @@ class UsageStore:
             (*args, max(0, int(after)), max(1, min(int(limit), MAX_ROWS)))).fetchall()
         return [_out(r) for r in paged], _totals(totals)
 
-    def summary(self, by: Literal["dept", "fn", "provider", "day", "atom"], *, include_stub: bool = False, limit: int = MAX_ROWS) -> list[UsageGroup]:
+    def summary(self, by: Literal["dept", "fn", "provider", "day", "atom", "session"], *, include_stub: bool = False, limit: int = MAX_ROWS,
+                session_id: str | None = None) -> list[UsageGroup]:
         """Calls and sums per `by`, in key order; a row without a key is grouped under `(none)`. A sum is null when every row's
-        part is null. The days are UTC dates."""
+        part is null. The days are UTC dates. `session_id` limits the rows to one chat session first."""
         if by not in _GROUP_SQL:
             raise ValueError(f"usage is grouped by {', '.join(SUMMARY_KEYS)}, not {by!r}")
-        where, args = self._where(task_id=None, dept_id=None, fn=None, since=None, include_stub=include_stub)
+        where, args = self._where(task_id=None, dept_id=None, fn=None, since=None, include_stub=include_stub, session_id=session_id)
         key = _GROUP_SQL[by]
         found = self.db.conn().execute(
             f"SELECT {key} AS k, count(*) AS calls, sum(usd) AS usd, sum(tokens_in) AS tin, sum(tokens_out) AS tout FROM usage_ledger{where}"

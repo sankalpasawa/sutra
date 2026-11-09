@@ -24,8 +24,10 @@ import json
 import logging
 import os
 from sutra_app import oslayer
+import re
 import shutil
 import sqlite3
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -35,13 +37,17 @@ import anyio.from_thread
 from pydantic import ValidationError
 
 from sutra_app.config import Settings
+from sutra_app.connectors.agent_picks import CHOICES_FILE, build_choices, write_choices
 from sutra_app.connectors.egress import scan, scrubbed
+from sutra_app.connectors.models import Pick
 from sutra_app.engine.paths import DataPaths
 from sutra_app.library.gate import GATE, Checked, GateError
 from sutra_app.library.node import StructuralNode, step_node_id
-from sutra_app.library.types import clip, violation, violations_from_validation_error
+from sutra_app.library.types import FUNCTIONS, clip, function_node_id, violation, violations_from_validation_error
 from sutra_app.orchestrator import attempts
+from sutra_app.orchestrator.agent_sessions import AgentSessions
 from sutra_app.orchestrator.attempts import ATTEMPT_KEY
+from sutra_app.orchestrator.chat_v2 import ChatChoices
 from sutra_app.orchestrator.records import WorkTask
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly, from_gate_error, validation_error
@@ -65,13 +71,14 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 SEED_KEY = "_seed_from"
+_BUILDER = re.compile(r"W-[0-9]+")
 OPEN_STATUSES = ("blocked", "queued", "starting", "running", "waiting_user")
 GOOD_END = ("done", "done_with_open_items")
 BAD_END = ("stopped", "crashed", "cancelled")
 OVERRIDE_BUSY_NOTE = "Owner override needs a team that is waiting for you."
 RUN_FOLDER_INTERNALS = frozenset({
     "task.json", "inbox.jsonl", "events.jsonl", "trace.jsonl", "snapshot.json", "live.json", "settings.json", "run.stdout.log",
-    "run.stderr.log",
+    "run.stderr.log", "choices.json", "node_context.json",
 })
 NODE_STATE_OF_TASK = {
     "blocked": "not_made", "queued": "not_made", "cancelled": "not_made", "starting": "running", "running": "running",
@@ -273,6 +280,26 @@ class TaskStore:
                 f" (status IN ({_marks(len(LIVE_STATUSES))})) DESC, created_at DESC, rowid DESC LIMIT 1", (dept_id, *LIVE_STATUSES)).fetchone()
         return self._ref(conn, _row_of(found)) if found is not None else None
 
+    # ---- the run pick (D131) ----------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def pick_in(conn: sqlite3.Connection, task_id: str | None) -> Pick:
+        """The run-level choice for the agents that have none of their own (`tasks.pick_json`); `Pick()` ("Default") when there is none."""
+        found = conn.execute("SELECT pick_json FROM tasks WHERE id = ?", (task_id,)).fetchone() if task_id else None
+        if found is None or not found["pick_json"]:
+            return Pick()
+        try:
+            return Pick.model_validate_json(found["pick_json"])
+        except ValueError:
+            return Pick()
+
+    def set_pick(self, tx: Tx, task_id: str, pick: Pick) -> Pick:
+        """Store the run pick (an empty provider clears it)."""
+        body = "" if not pick.provider else pick.model_dump_json(exclude_none=True)
+        if tx.conn.execute("UPDATE tasks SET pick_json = ? WHERE id = ?", (body, task_id)).rowcount == 0:
+            raise NotFound("that task")
+        return pick if pick.provider else Pick()
+
     # ---- writes ----------------------------------------------------------------------------------------------------------
 
     def insert(self, tx: Tx, checked: Checked[WorkTask], *, seed_from: str | None = None, attempt: int | None = None) -> TaskRow:
@@ -341,10 +368,11 @@ class TaskGraph:
     """The graph side of a task: its step node (`step_ref` 'task', parent: the department or the scoped division) and the builder
     step nodes (`W-<n>`, `team:<role>`) that engine events create. Also the one place that announces `task.updated`."""
 
-    def __init__(self, store: TaskStore, graph: GraphStore, *, ids: IdFactory | None = None) -> None:
+    def __init__(self, store: TaskStore, graph: GraphStore, *, ids: IdFactory | None = None, sessions: AgentSessions | None = None) -> None:
         self.store = store
         self.graph = graph
         self._ids = ids or IdFactory()
+        self.sessions = sessions or AgentSessions(store.db, graph)
 
     def _session_id(self) -> str:
         return self._ids.session_id()
@@ -373,6 +401,7 @@ class TaskGraph:
                 kind="step", id=node_id, label=clip(label or ref, 80), department_id=row.dept_id, state=state or "idle",
                 detail=clip(detail or "", 300), parent_id=parent, task_id=row.id, step_ref=ref, ts_created=now, ts_updated=now)
             ensure_node(tx, node_init(node, title=clip(label or ref, 80)), graph=self.graph, new_session_id=self._session_id)
+            self.sessions.open(tx, row, node_id)                    # the step session is stamped with the run and titled by its agent (D130)
             return node_id
         changes: dict[str, Any] = {}
         if label is not None and clip(label, 80) != existing.label:
@@ -386,6 +415,7 @@ class TaskGraph:
         if changes:
             changes["ts_updated"] = max(existing.ts_updated, now)
             self.graph.put_node(tx, GATE.check("node", existing.evolve(**changes), ctx=tx.ctx))
+        self.sessions.open(tx, row, node_id)                        # a step made before its run, or renamed by its `step` event, is stamped and retitled
         return node_id
 
 
@@ -635,6 +665,7 @@ class TaskService:
             _write_atomic(run_dir / "task.json", spec.model_dump_json(indent=2) + "\n")
             for name in ("inbox.jsonl", "events.jsonl"):
                 os.close(os.open(run_dir / name, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL, 0o600))
+            self.write_choices_in(conn, row.dept_id, row.id, run_dir)            # the engine reads it beside task.json from its first call (D131)
             now = tx.now()
             started = self.store.update(tx, row.id, status="starting", run_id=run_id, started_at=now, last_event_at=now)
             self.taskgraph.sync(tx, started)
@@ -695,6 +726,54 @@ class TaskService:
                 return row is not None and row.live
             self.store.update(tx, task_id, pid=pid if pid and pid > 0 else None)
             return True
+
+    # ---- the picks the engine reads (D131) ------------------------------------------------------------------------------------
+
+    def choices_body(self, conn: sqlite3.Connection, dept_id: str, task_id: str) -> dict[str, Any]:
+        """The body of `<run>/choices.json`, built from the database: `default` is the run pick, else the team's (its chat's pill), else null;
+        `agents` holds the agents with a pick of their own: the five functions' active sessions and this task's builder sessions."""
+        run = self.store.pick_in(conn, task_id)
+        team_node = conn.execute("SELECT chat_session_id FROM graph_nodes WHERE id = ?", (dept_id,)).fetchone()
+        team = ChatChoices.pick_in(conn, team_node["chat_session_id"] if team_node is not None else None)
+        default, source = (run, "run") if run.provider else (team, "team") if team.provider else (None, "")
+        agents: dict[str, Pick] = {}
+        for fn in FUNCTIONS:
+            node = conn.execute("SELECT chat_session_id FROM graph_nodes WHERE id = ?", (function_node_id(dept_id, fn),)).fetchone()
+            own = ChatChoices.pick_in(conn, node["chat_session_id"] if node is not None else None)
+            if own.provider:
+                agents[fn] = own
+        for step in conn.execute("SELECT step_ref, chat_session_id FROM graph_nodes WHERE kind = 'step' AND task_id = ?", (task_id,)):
+            own = ChatChoices.pick_in(conn, step["chat_session_id"])
+            if own.provider and _BUILDER.fullmatch(step["step_ref"] or ""):
+                agents[step["step_ref"]] = own
+        return build_choices(time.time_ns() // 1_000_000, default, agents, default_from=source)
+
+    def write_choices_in(self, conn: sqlite3.Connection, dept_id: str, task_id: str, run_dir: Path) -> bool:
+        """Write the run's `choices.json` (atomic, 0600; nothing when the file already holds this body). Never raises: a model call must not
+        depend on it and a pick change must not fail because a folder is gone."""
+        try:
+            return write_choices(run_dir / CHOICES_FILE, self.choices_body(conn, dept_id, task_id))
+        except OSError as exc:
+            log.warning("could not write the agent choices of task %s: %s", task_id, exc)
+            return False
+
+    def refresh_choices(self, *, task_id: str | None = None, dept_id: str | None = None) -> int:
+        """A pick changed: rewrite the file of the live run it can reach (the task's own, or the team's live task). Returns how many files changed."""
+        conn = self.db.conn()
+        row = self.store.row_in(conn, task_id) if task_id else self.store.live_in(conn, dept_id) if dept_id else None
+        if row is None or not row.live or row.run_id is None:
+            return 0
+        return int(self.write_choices_in(conn, row.dept_id, row.id, self.store.run_dir_of(row)))
+
+    def reconcile_choices(self) -> int:
+        """At start-up: the database is the truth, so every live task's file is rebuilt from it (a restart loses nothing)."""
+        conn = self.db.conn()
+        changed = 0
+        for task_id in self.store.unfinished_ids():
+            row = self.store.row_in(conn, task_id)
+            if row is not None and row.live and row.run_id is not None:
+                changed += int(self.write_choices_in(conn, row.dept_id, row.id, self.store.run_dir_of(row)))
+        return changed
 
     # ---- the owner writes to a department -------------------------------------------------------------------------------------
 

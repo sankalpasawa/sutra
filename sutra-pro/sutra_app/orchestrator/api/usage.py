@@ -1,7 +1,7 @@
 """Usage routes (orchestrator 6.2). Both are reads, so they need no token.
 
-    GET /api/usage?task_id=&dept_id=&fn=&since=&include_stub=&after=&limit=   -> {rows: UsageOut[], totals}
-    GET /api/usage/summary?by=dept|fn|provider|day|atom&include_stub=          -> {groups: [{key, calls, usd, tokens_in, tokens_out}]}
+    GET /api/usage?task_id=&dept_id=&fn=&session_id=&since=&include_stub=&after=&limit=   -> {rows: UsageOut[], totals}
+    GET /api/usage/summary?by=dept|fn|provider|day|atom|session&session_id=&include_stub=   -> {groups: [{key, calls, usd, tokens_in, tokens_out}]}
 
 `totals` cover every matching row, not just the page (`limit` default 50, max 500; `after` is a row id). `since` is epoch
 seconds or an ISO time like 2026-11-04T10:00:06Z. Stub rows are left out of rows, totals and groups unless `include_stub=1`.
@@ -53,6 +53,7 @@ def build_router() -> APIRouter:
         task_id: str | None = Query(None, pattern=ID_PATTERN),
         dept_id: str | None = Query(None, pattern=ID_PATTERN),
         fn: str | None = Query(None, pattern=ID_PATTERN),
+        session_id: str | None = Query(None, pattern=ID_PATTERN),
         since: str | None = Query(None, max_length=40, description="epoch seconds or 2026-11-04T10:00:06Z"),
         include_stub: bool = Query(False),
         after: int = Query(0, ge=0, le=2**53 - 1),
@@ -63,16 +64,17 @@ def build_router() -> APIRouter:
         except ValueError as exc:
             raise validation_error([violation("query.since", "bad_time", str(exc))]) from None
         rows, totals = await run_blocking(lambda: _store(request).rows(
-            task_id=task_id, dept_id=dept_id, fn=fn, since=floor, include_stub=include_stub, after=after, limit=limit))
+            task_id=task_id, dept_id=dept_id, fn=fn, since=floor, include_stub=include_stub, after=after, limit=limit, session_id=session_id))
         return respond(request, UsageList(rows=rows, totals=totals))
 
-    @router.get("/summary", summary="Usage grouped by department, function, provider, day or atom")
+    @router.get("/summary", summary="Usage grouped by department, function, provider, day, atom or chat session")
     async def get_summary(
         request: Request,
-        by: Literal["dept", "fn", "provider", "day", "atom"] = Query("dept"),
+        by: Literal["dept", "fn", "provider", "day", "atom", "session"] = Query("dept"),
+        session_id: str | None = Query(None, pattern=ID_PATTERN),
         include_stub: bool = Query(False),
     ) -> RedactedJSONResponse:
-        groups = await run_blocking(lambda: _store(request).summary(by, include_stub=include_stub))
+        groups = await run_blocking(lambda: _store(request).summary(by, include_stub=include_stub, session_id=session_id))
         return respond(request, UsageSummary(groups=[UsageGroupOut(**g) for g in groups]))
 
     return router

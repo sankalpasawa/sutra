@@ -95,6 +95,7 @@ class Projector:
         self.usage = usage
         self.store = store
         self.taskgraph = taskgraph
+        self.sessions = taskgraph.sessions                   # which chat session an agent's line goes to in this run (D130)
         self.clock = clock or SystemClock()
 
     # =================================================================================================================
@@ -219,7 +220,7 @@ class Projector:
     def _note(self, batch: _Batch, text: str, src_ref: str) -> None:
         """A `note` in Identity's working log (idempotent by `src_ref`). Never raises."""
         tx = batch.tx
-        session = self._session_of(tx, function_node_id(batch.row.dept_id, "identity"))
+        session = self.sessions.open(tx, batch.row, function_node_id(batch.row.dept_id, "identity"))
         if session is None:
             return
         try:
@@ -274,13 +275,13 @@ class Projector:
         if who == "identity" and ev.to_user:
             session = self._session_of(tx, dept)
         elif who in FUNCTIONS:
-            session = self._session_of(tx, function_node_id(dept, who))
+            session = self.sessions.open(tx, row, function_node_id(dept, who))
         elif who == "validator":
-            session = self._session_of(tx, function_node_id(dept, ev.next if ev.next in FUNCTIONS else "identity"))
+            session = self.sessions.open(tx, row, function_node_id(dept, ev.next if ev.next in FUNCTIONS else "identity"))
         elif who == "system":
-            session = self._session_of(tx, identity)
+            session = self.sessions.open(tx, row, identity)
         else:                                                   # W-<n> or team:<role>: that step's own log
-            session = self._session_of(tx, self._step_node(batch, who))
+            session = self.sessions.open(tx, row, self._step_node(batch, who))
         if session is None:
             raise ValueError(f"no chat session for {who}")
         meta = {key: value for key, value in (("act", ev.act), ("pause", ev.pause), ("next", ev.next), ("to_user", ev.to_user or None)) if value is not None}
@@ -332,6 +333,7 @@ class Projector:
         if ev.step is not None:
             self._step_node(batch, ev.step, state=ev.status, detail=clip(ev.detail, 300))
             return
+        self.sessions.open(tx, row, function_node_id(row.dept_id, ev.fn))          # first: a roll changes the node's session, and the node is read after it
         node = self._node(tx, function_node_id(row.dept_id, ev.fn))
         if not isinstance(node, FunctionNode):
             raise ValueError(f"function node {row.dept_id}.{ev.fn} does not exist")
@@ -376,6 +378,7 @@ class Projector:
                 raise ValueError(f"atom {ev.atom.id} names the node {clip(target, 60)}, which is not a node of this run")
         if self._is_replay(tx, ev, row.run_id or ""):
             return
+        self.sessions.open(tx, row, node_id)                    # an atom's card goes to the agent's session of THIS run
         result = self.atoms.apply_transition(tx, node_id, ev, run_id=row.run_id, task_id=row.id)
         if result.status == "rejected":
             self._note(batch, f"Atom {ev.atom.id} was not stored: {result.reason}", f"{batch.run}#atom:{ev.atom.id}:{ev.atom.status}:{ev.atom.attempt}")
@@ -406,6 +409,8 @@ class Projector:
             node_id = step_node_id(row.id, ev.fn)
         elif ev.step and STEP_REF_RE.fullmatch(ev.step) and ev.step != "task":
             node_id = step_node_id(row.id, ev.step)
+        if node_id:
+            self.sessions.open(tx, row, node_id)                 # the row is charged to this run's session of the agent
         node = self._node(tx, node_id) if node_id else None
         atom_id = None
         if ev.atom:

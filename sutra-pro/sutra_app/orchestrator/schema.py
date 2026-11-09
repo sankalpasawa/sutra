@@ -12,7 +12,7 @@ end for the next version; never edit an old one.
 from collections.abc import Callable, Sequence
 from sqlite3 import Connection
 
-__all__ = ["DDL_V1", "DDL_V3_RECURRING", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
+__all__ = ["DDL_V1", "DDL_V3_RECURRING", "DDL_V4_AGENT_SESSIONS", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
 
 DDL_V1: tuple[str, ...] = (
     # schema version = PRAGMA user_version; 'graph_version' and 'bootstrapped_at' live here
@@ -225,8 +225,19 @@ DDL_V3_RECURRING: tuple[str, ...] = (
     "CREATE INDEX recurring_runs_of ON recurring_runs(recurring_id, id)",
 )
 
+# Agent sessions and picks (agent-sessions design 3.2, D130, D131): additive, three ALTER TABLE ... ADD COLUMN on chat_sessions and one on tasks, no rebuild.
+# `pinned_model` / `pinned_effort` are the owner's model and effort beside `pinned` (the provider); `run_id` is the run a function or step session belongs to;
+# `tasks.pick_json` is the run-level choice for the agents that have none of their own. Every old row gets the empty value: nothing is backfilled.
+DDL_V4_AGENT_SESSIONS: tuple[str, ...] = (
+    "ALTER TABLE chat_sessions ADD COLUMN pinned_model TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE chat_sessions ADD COLUMN pinned_effort TEXT NOT NULL DEFAULT '' CHECK (pinned_effort IN ('','low','medium','high','xhigh','max'))",
+    "ALTER TABLE chat_sessions ADD COLUMN run_id TEXT",
+    "CREATE INDEX chat_sessions_run ON chat_sessions(run_id) WHERE run_id IS NOT NULL",
+    "ALTER TABLE tasks ADD COLUMN pick_json TEXT NOT NULL DEFAULT ''",
+)
+
 Migration = Sequence[str] | Callable[[Connection], None]
-MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING)
+MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING, DDL_V4_AGENT_SESSIONS)
 SCHEMA_VERSION = len(MIGRATIONS)
 TABLES = (
     "meta", "org_charts", "chart_changes", "org_nodes", "org_edges", "departments", "tasks", "graph_nodes", "graph_edges",

@@ -205,6 +205,10 @@ class ChatSessionOut(Value):
     last_message_id: Count = 0
     note: Annotated[str, StringConstraints(max_length=500)] = ""
     phase: Literal["reading", "planning", "building", "working", "ready"] | None = None     # the org chat only
+    pinned: Literal["claude", "codex", ""] = ""         # the owner's own choice for this chat: provider, model, effort ("" = none, D131)
+    pinned_model: Annotated[str, StringConstraints(max_length=100)] = ""
+    pinned_effort: Literal["", "low", "medium", "high", "xhigh", "max"] = ""
+    run_id: RunId | None = None             # the run a function or step session belongs to (D130)
     direct_turn: Count | None = None        # the owner's line that a direct turn is answering right now (direct_running.py), else None: any page can offer Stop
 
 
@@ -353,6 +357,7 @@ class ChatMessageOut(Value):
     blocks: Annotated[list[ChatBlock], Field(max_length=500)] = []        # the typed provider blocks of a settled chat turn (ABS-6)
     turn: Annotated[int, Field(ge=1)] | None = None                       # a direct-chat reply: the id of the owner's line it answers
     passed_on: Annotated[int, Field(ge=1)] | None = None                  # the owner's line the org chat passed on to this team: the id of the original in cs_org
+    steer: bool = False                                                    # the owner's note to an agent (POST /api/chats/{sid}/steer, D132): its src_ref is `steer:<id>`
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
@@ -364,6 +369,8 @@ class ChatMessageOut(Value):
             data.pop("turn", None)
         if data.get("passed_on") is None:
             data.pop("passed_on", None)
+        if not data.get("steer"):
+            data.pop("steer", None)
         return data
 
 
