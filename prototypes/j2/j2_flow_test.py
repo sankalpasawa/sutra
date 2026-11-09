@@ -3626,7 +3626,7 @@ def atom_cards_render():
         card = card[card.index(f'data-key="atom-{a["id"]}"'):]
         card = card[:card.index("Run details")]
         blocks = re.findall(r'data-block="([a-z_]+)"', card)
-        assert blocks == ["goal", "how", "constraints", "context", "expected_output", "verification", "human_output",
+        assert blocks == ["goal", "how", "constraints", "context", "expected_output", "template_line", "verification", "human_output",
                           "agent_output", "result"], blocks
         assert all(f"<b>{x}</b>" in card for x in ("Notes", "Workflow output", "Result")) and "<b>Human output</b>" not in card
         assert re.findall(r'<h4 class="agroup">([^<]*)<', card) == ["1. Particles", "2. Defined output and verification",
@@ -9853,7 +9853,7 @@ def map_tab():
     assert top.count("<svg") == 11, "an icon for every rail item"
     dvh = ui[ui.index('<div id="dview">'):ui.index('<dialog id="detail">')]
     panes = re.findall(r'<div class="pane[^"]*" id="pane-(\w+)"( hidden)?', dvh)
-    assert [n for n, h in panes if not h] == ["map"] and {n for n, _ in panes} == set(old_tabs) | {"map", "style"}, "the home shows only the Map pane; every old pane still exists"
+    assert [n for n, h in panes if not h] == ["map"] and {n for n, _ in panes} == set(old_tabs) | {"map", "style", "catalog"}, "the home shows only the Map pane; every old pane still exists (catalog: the shared template library, /library)"
     assert dvh.index('id="needs"') < dvh.index('<section class="work">') < dvh.index('<section class="chat" id="chatp"'), "Needs you, then the Map, then the Chat"
     assert "@media (max-width:900px){#dview .dcol{overflow:auto}#dview main{grid-template-columns:minmax(0,1fr)" in ui and "@media (max-width:600px){.mapsvgwrap{display:none}.mapcards{display:block}}" in ui, "stacked below 900px; map cards at 600px"
     # Needs you: every open question, a plain line each, a button into the Chat; nothing waiting says so
