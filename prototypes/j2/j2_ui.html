@@ -1856,7 +1856,7 @@ const sPartLabel = w => plain(String((w && w.name) || "A part"));
 function sModel(s){ const st = (s && s.studio) || {}, parts = (st.parts || []).map(p => ({...p, name: plain(p.name)}));
   return {parts, done: st.done || 0, total: st.total || 0, qsec: st.qsec || null}; }
 const sAnd = xs => xs.length < 2 ? xs.join("") : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1];
-const sNum = n => n === 1 ? "one part" : `${n} parts`;
+const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);
 function sCrew(s, M){
   const th = s.thinking, live = s.status === "running", open = needsYou(s).length > 0 && !live && !s.saved, t = {};
   SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, line: "", parts: M.parts.filter(p => p.person === k)});
@@ -1874,7 +1874,7 @@ function sCrew(s, M){
     else if (on.length){ m.busy = true; m.line = (on.some(p => p.fixing) ? "Fixing " : "On ") + sAnd(on.slice(0, 2).map(p => p.name)) + (on.length > 2 ? ` and ${on.length - 2} more` : ""); }
     else if (!m.parts.length) m.line = !M.parts.length && !isReady(s) && !s.saved ? "Waiting for the plan" : live ? "Free for the next part" : "Nothing for this project";
     else { const d = m.parts.filter(p => p.st === "done").length, left = m.parts.length - d;
-      m.line = live || open ? (d ? `Finished ${sNum(d)}${left ? `, ${left} to go` : ""}` : `${sNum(left)} coming up`) : `Finished ${sNum(d)}${left ? `, ${left} left open` : ""}`; } });
+      m.line = live || open ? (d ? `Finished ${sNum(d)}${left ? `, ${left} to go` : ""}` : sCap(`${sNum(left)} coming up`)) : `Finished ${sNum(d)}${left ? `, ${left} left open` : ""}`; } });
   return t;
 }
 // ---- what the run is doing, in one line
