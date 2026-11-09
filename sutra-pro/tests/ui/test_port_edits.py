@@ -40,6 +40,7 @@ MODULES = ["sutra_events", "graph_layout", "chart_marks", "graph_render", "graph
 J2_API = {"state", "runs", "call", "preview", "docs", "map", "plan", "library", "run-templates", "artifacts", "artifacts/tree",
           "artifact", "agent", "code", "story", "board", "audits", "refs", "say", "output", "reset", "playbooks/clear",
           "lessons/clear"}
+E19_API = {"engine/settings"}          # edit E19: the start page's output select reads the engine's default (GET /api/engine/settings?dept=)
 P13_API = {"runlist", "changes"}          # patch P13: read-only routes J2's own repository does not have (Run settings' run list)
 EXTERNAL_REF = re.compile(r"""(?:src|href|action|poster|data-src)\s*=\s*["']\s*(?:https?:)?//""", re.IGNORECASE)
 INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.DOTALL)
@@ -111,6 +112,11 @@ CASES = {
              ("const runHref = id =>", 1), ("// Saved runs: the Board story's compare picker (/api/runs).", 1)],
             ['$("runsel")', "Saved runs: pick one to open it read-only"]),
     "E18": ([('runsettings: "How the app looks, and which run you are looking at."', 1)], ["What to build, which run to open"]),
+    "E19a": ([('const OUTS = [["auto", "Let the team decide"], ["website", "Website"], ["prd", "PRD document"], ["project", "Project work"]];', 1)],
+             ['const OUTS = [["website", "Website"], ["prd", "PRD document"]];']),
+    "E19b": ([('let EFFOUT = "", PICKEDOUT = "";', 1), ('fetch("/api/engine/settings"', 1), ("const cur = PICKEDOUT || ", 1)],
+             ['const outOptions = s => OUTS.map(']),
+    "E19c": ([("  PICKEDOUT = e.target.value;\n  await fetch(\"/api/output\"", 1)], []),
     "E13a": ([("How the Prioritiser priced the work each cycle", 1)], ["How the Prioritiser ranked"]),
     "E13b": ([("no pricing records", 2)], ["no ranking records"]),
     "E13c": ([("No pricing records in this run", 1)], ["No ranking records"]),
@@ -134,8 +140,8 @@ def test_edit_is_in_the_committed_page(case):
     check_case(PAGE, case)
 
 
-def test_there_are_eighteen_edits_and_e13_is_four_pairs_with_the_counts_one_two_one_one():
-    assert sorted({re.sub(r"[a-d]$", "", case) for case in CASES}, key=lambda c: int(c[1:])) == [f"E{n}" for n in range(1, 19)]
+def test_there_are_nineteen_edits_and_e13_is_four_pairs_with_the_counts_one_two_one_one():
+    assert sorted({re.sub(r"[a-d]$", "", case) for case in CASES}, key=lambda c: int(c[1:])) == [f"E{n}" for n in range(1, 20)]
     assert [CASES[f"E13{letter}"][0][0][1] for letter in "abcd"] == [1, 2, 1, 1]
 
 
@@ -210,14 +216,14 @@ def fetch_sites(script: str) -> list[str]:
 
 def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_the_whole_page():
     sites = fetch_sites(INLINE_SCRIPT.findall(PAGE)[1])
-    assert len(sites) == 29 and sites.count("artUrl(f)") == 2
+    assert len(sites) == 30 and sites.count("artUrl(f)") == 2
     for site in sites:
         if site == "artUrl(f)":
             continue
         path = re.match(r"[`\"](/[^?$`\"]*)", site)
         assert path, site
         route = path.group(1)
-        assert route.startswith("/api/") and (route[len("/api/"):] in J2_API | P13_API or route == "/api/library/"), site
+        assert route.startswith("/api/") and (route[len("/api/"):] in J2_API | P13_API | E19_API or route == "/api/library/"), site
     assert "const artUrl = f => `/api/artifact?name=${encodeURIComponent(f)}${runQ()}`;" in PAGE
 
 
@@ -298,6 +304,9 @@ document.documentElement.dataset.theme = "dark";</script>
 <script>
 const WHO = {{user: ["Requester (you)", "R"]}};
 const runQ = () => viewRun ? "&run=" + encodeURIComponent(viewRun) : "";
+@@E19A@@
+@@E19B@@
+@@E19C@@
 function renderSimple(s){{
   $("stitle").textContent = s.doc ? "Your document team" : "Your website team";
 }}
@@ -324,7 +333,8 @@ function renderPriorities(s){{
 </html>
 """
 MINI_PAGE = (MINI_PAGE.replace("@@E14@@", port.E14_OLD).replace("@@E15@@", port.E15_OLD).replace("@@E16@@", port.E16_OLD)
-             .replace("@@E17@@", port.E17_OLD))
+             .replace("@@E17@@", port.E17_OLD).replace("@@E19A@@", port.E19A_OLD).replace("@@E19B@@", port.E19B_OLD)
+             .replace("@@E19C@@", port.E19C_OLD))
 MINI_RENDER = r"""// mini render harness
 const fs = require("fs"), vm = require("vm");
 const src = fs.readFileSync(html, "utf8"), scripts = [...src.matchAll(/<script>([\s\S]*?)<\/script>/g)];
@@ -601,6 +611,7 @@ def test_the_edit_table_has_the_design_ids_and_counts():
     counts = {edit.id: edit.count for edit in port.PAGE_EDITS}
     assert list(counts) == ["E1", "E2", "E3", "E4", "E5", "E6a", "E6b", "E7", "E8", "E9", "E10", "E11", "E12",
                             "E13a", "E13b", "E13c", "E13d"]
+    assert [(e.id, e.count) for e in port.OUTPUT_EDITS] == [("E19a", 1), ("E19b", 1), ("E19c", 1)]
     assert counts["E2"] == 2 and [counts[f"E13{x}"] for x in "abcd"] == [1, 2, 1, 1]
     assert all(count == 1 for edit, count in counts.items() if edit not in {"E2", "E13b"})
     assert [(e.id, e.count) for e in port.RENDER_EDITS] == [("H1", 1), ("H2", 1), ("H3", 1)]

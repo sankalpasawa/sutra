@@ -155,9 +155,11 @@ test("with a department and a run the URLs carry the run first and the departmen
 });
 
 test("the page's own first calls reach J2's routes with the department once, with and without a run", () => {
-  assert.deepEqual(dept().fetched, ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", "/api/state?since=0&dept=web"]);
+  // E19: the start page's output select first asks the engine for its own default (GET /api/engine/settings, with the department by hand)
+  assert.deepEqual(dept().fetched, ["/api/engine/settings?dept=web", "/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web",
+    "/api/state?since=0&dept=web"]);
   assert.deepEqual(dept({location: {search: `?run=${RUN}`}}).fetched,
-    ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", `/api/state?since=0&run=${RUN}&dept=web`]);
+    ["/api/engine/settings?dept=web", "/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", `/api/state?since=0&run=${RUN}&dept=web`]);
 });
 
 test("without a department the page is J2's: SutraCtx is there and empty, nothing is wrapped, no dept= anywhere", () => {
@@ -165,7 +167,7 @@ test("without a department the page is J2's: SutraCtx is there and empty, nothin
   assert.equal(plain.run("typeof SutraCtx"), "object");
   assert.equal(plain.run("SutraCtx.dept"), "");
   assert.equal(plain.run("typeof fetch.sutraWrapped"), "undefined");
-  assert.deepEqual(plain.fetched, ["/api/refs", "/api/runs", "/api/runlist", "/api/state?since=0"]);
+  assert.deepEqual(plain.fetched, ["/api/engine/settings", "/api/refs", "/api/runs", "/api/runlist", "/api/state?since=0"]);
   assert.ok(!JSON.stringify(plain.out).includes("dept="));
 });
 

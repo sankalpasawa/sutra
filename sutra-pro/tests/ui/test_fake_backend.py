@@ -662,7 +662,7 @@ def test_engine_settings_follow_the_engine_sections_field_list():
               "force_audit_note", "force_question", "memory_test_lessons"]  # engine.md LOCKED_FIELDS
     assert settings["locked"] == locked
     assert settings["editable"] == [f for f in settings["defaults"] if f not in locked]
-    assert len(settings["defaults"]) == 30
+    assert len(settings["defaults"]) == 31
     assert settings["defaults"]["send_mode"] == "dry-run" and settings["defaults"]["budget"] == 100
     assert settings["defaults"]["delay"] == 0.0 and settings["defaults"]["realization"] is True and settings["defaults"]["board"] is False
     assert settings["effective"] == {**settings["defaults"], **settings["global"], **settings["department"]}
@@ -1261,7 +1261,7 @@ def test_engine_settings_put_sets_unsets_and_answers_like_the_get(fake):
     ("nope", 1, "is not a setting"),
     ("send_mode", "live", "only be changed by hand"),
     ("chrome", "/x", "only be changed by hand"),
-    ("output", "poster", "must be one of website, prd, hld, lld"),
+    ("output", "poster", "must be one of auto, website, prd, hld, lld, project"),
     ("fixes", 2, "must be one of 0, 1"),
     ("fixes", True, "must be one of 0, 1"),
     ("rates", "yes", "must be true or false"),

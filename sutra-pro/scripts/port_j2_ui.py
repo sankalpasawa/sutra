@@ -6,12 +6,12 @@
                                                                           # differ from a fresh port
     scripts/py scripts/port_j2_ui.py --e13-json                            # the E13 wording pairs as JSON (page_render.test.js)
 
-The page is J2's `j2_ui.html` with 18 edits (E1 to E13 and the Run settings edits E14 to E18). Every edit is `Edit(id, old, new, count)`: `old` is a literal or a
+The page is J2's `j2_ui.html` with 19 edits (E1 to E13, the Run settings edits E14 to E18 and E19, the output select). Every edit is `Edit(id, old, new, count)`: `old` is a literal or a
 compiled regex and `count` is the number of places it must match in J2's file. A count that is not met means J2 changed under
 the port: the port stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 18 edits
+    pages/j2_ui.html            the page after the 19 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -189,7 +189,7 @@ RUN_SETTINGS_CSS = r'''/* Run settings (page edits E14 to E18 of scripts/port_j2
 .runrow .rr{display:flex;gap:8px;align-items:center}.runrow .ropen{font-size:12.5px;color:var(--accent);font-weight:600}.runrow.cur .ropen{color:var(--ink)}
 .rst{font-size:11.5px;border-radius:99px;padding:2px 9px;white-space:nowrap}.rst.done{background:color-mix(in srgb,var(--ok) 16%,var(--panel));color:color-mix(in srgb,var(--ok) 55%,var(--ink))}
 .rst.stopped{background:color-mix(in srgb,var(--warm2) 18%,var(--panel));color:color-mix(in srgb,var(--bad) 55%,var(--ink))}.rst.running{background:color-mix(in srgb,var(--accent) 16%,var(--panel));color:color-mix(in srgb,var(--accent) 55%,var(--ink))}
-.rst.running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:5px;animation:rpulse 1.2s infinite}@keyframes rpulse{50%{opacity:.3}}
+.rst.running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:5px;animation:rpulse calc(var(--dur-slow)*4) var(--ease-in-out) infinite}@keyframes rpulse{50%{opacity:.3}}
 .runmore{margin:4px auto 2px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:7px 16px;font:inherit;font-size:13px;cursor:pointer}
 .runnone{color:var(--muted);font-size:13px;padding:8px}
 @media (max-width:600px){.runrow{grid-template-columns:auto minmax(0,1fr);gap:8px 10px;padding:8px 10px}.runrow .rr{grid-column:2}.rtop input{margin-left:0;flex:1 1 140px}.rssec{padding:12px}}
@@ -271,6 +271,27 @@ RUN_SETTINGS_EDITS: tuple[Edit, ...] = (
     Edit("E18", E18_OLD, E18_NEW, 1),          # the tab's hint
 )
 
+# E19: the start page's "What should we make?" select offers the engine's two new kinds (D129). `auto` ("Let the team decide") is the engine's
+# default: the host picks the output for the request when the run starts. The page's state still says `website` for a team with no run, so the
+# select shows `effective.output` of GET /api/engine/settings (no change to /api/state, whose shape the goldens hold) until the owner picks one.
+E19A_OLD = 'const OUTS = [["website", "Website"], ["prd", "PRD document"]];'
+E19A_NEW = ('const OUTS = [["auto", "Let the team decide"], ["website", "Website"], ["prd", "PRD document"], ["project", "Project work"]];')
+E19B_OLD = 'const outOptions = s => OUTS.map(([v, l]) => `<option value="${v}"${s.output === v ? " selected" : ""}>${l}</option>`).join("");'
+E19B_NEW = _lines(
+    'let EFFOUT = "", PICKEDOUT = "";      // E19: the engine\'s own default for this team, and what the owner picked on this page',
+    '(async () => { try { const r = await (await fetch("/api/engine/settings" + (SutraCtx.dept ? "?dept=" + encodeURIComponent(SutraCtx.dept) : ""), {cache: "no-store"})).json(); EFFOUT = String(((r || {}).effective || {}).output || ""); } catch (e) {} })();',
+    'const outOptions = s => { const cur = PICKEDOUT || (s.output && s.output !== "website" ? s.output : "") || EFFOUT || s.output;',
+    '  return OUTS.map(([v, l]) => `<option value="${v}"${cur === v ? " selected" : ""}>${l}</option>`).join(""); };',
+)
+E19C_OLD = '  await fetch("/api/output", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type: e.target.value})}); });'
+E19C_NEW = _lines('  PICKEDOUT = e.target.value;',
+                  '  await fetch("/api/output", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type: e.target.value})}); });')
+OUTPUT_EDITS: tuple[Edit, ...] = (
+    Edit("E19a", E19A_OLD, E19A_NEW, 1),
+    Edit("E19b", E19B_OLD, E19B_NEW, 1),
+    Edit("E19c", E19C_OLD, E19C_NEW, 1),
+)
+
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").
 _CTX_LOAD = _lines(
     'const ctxfile = require("path").join(__dirname, "..", "static", "js", "sutra_ctx.js");'
@@ -304,7 +325,7 @@ def apply_edits(text: str, edits: tuple[Edit, ...], what: str) -> str:
 
 def port_page(page: str) -> tuple[str, str]:
     """(the ported page, j2.css) for J2's page text. j2.css is the inner text of the `<style>` block that E1 removes."""
-    ported = apply_edits(page, PAGE_EDITS + RUN_SETTINGS_EDITS, J2_PAGE)       # E1 matched exactly once, so the block is there
+    ported = apply_edits(page, PAGE_EDITS + RUN_SETTINGS_EDITS + OUTPUT_EDITS, J2_PAGE)       # E1 matched exactly once, so the block is there
     return ported, STYLE_BLOCK.search(page).group("css")
 
 
@@ -390,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
         if problems:
             print(f"The committed files differ from a fresh port of J2 {commit}:\n  " + "\n  ".join(problems), file=sys.stderr)
             return 1
-        print(f"ok: the {len(PAGE_EDITS) + len(RUN_SETTINGS_EDITS)} anchors of the 18 page edits match their counts, and the {len(files)} committed files equal a fresh port of J2 {commit}")
+        print(f"ok: the {len(PAGE_EDITS) + len(RUN_SETTINGS_EDITS) + len(OUTPUT_EDITS)} anchors of the 19 page edits match their counts, and the {len(files)} committed files equal a fresh port of J2 {commit}")
         return 0
     write_files(args.root, files)
     print(f"ported J2 {commit}: wrote {len(files)} files under {UI_DIR}")

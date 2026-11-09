@@ -80,7 +80,7 @@
   /* ---------------------------------------------------------------- the engine fields */
   // [label, hint] for every field of EngineSettings (sutra_app/engine/spec.py). A field this table does not know is shown under its own name.
   const FIELD_TEXT = freeze({
-    output: ["What to build", "The kind of result a new run makes"],
+    output: ["What to build", "The kind of result a new run makes; \"Let the team decide\" picks it from the request"],
     fixes: ["Fix pass", "Let a run make a second pass to repair what the checks refused"],
     budget: ["Budget", "Work credits one run may spend"],
     budget_cap: ["Budget cap", "The most a run may spend; empty means twice the budget"],
@@ -110,8 +110,12 @@
     force_audit_note: ["Forced audit note", "A test switch"],
     force_question: ["Forced question", "A test switch"],
     memory_test_lessons: ["Test lessons", "A test switch"],
+    workspace: ["Working folder for agents", "Let the team's agents look at your working folder (about 3,000 more tokens per call)"],
   });
-  const CHOICES = freeze({output: freeze(["website", "prd", "hld", "lld"])});
+  const CHOICES = freeze({output: freeze(["auto", "website", "prd", "hld", "lld", "project"]), workspace: freeze(["auto", "off"])});
+  // What the owner reads on a choice's option (the value sent stays the engine's own word).
+  const CHOICE_LABELS = freeze({output: freeze({auto: "Let the team decide", project: "Project work"}),
+    workspace: freeze({auto: "Agents read the working folder", off: "Agents do not read it"})});
   const FLAGS01 = freeze(["fixes"]);                   // 0 or 1 on the wire, a toggle on the page
   const FLOATS = freeze(["bargain_minutes", "delay"]); // JSON cannot tell 15.0 from 15, so the float fields are named
   const NULLABLE = freeze(["budget_cap"]);             // empty means "not set" (null)
@@ -237,7 +241,7 @@
     if (kind === "flag") return '<input type="checkbox"' + common + (value === 1 || value === true ? " checked" : "") + ">";
     if (kind === "choice") {
       const options = CHOICES[field].includes(value) ? CHOICES[field] : CHOICES[field].concat(value === undefined || value === null ? [] : [String(value)]);
-      return "<select" + common + ">" + options.map(o => '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + ">" + esc(o) + "</option>").join("") + "</select>";
+      return "<select" + common + ">" + options.map(o => '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + ">" + esc(hasOwn(CHOICE_LABELS, field) && hasOwn(CHOICE_LABELS[field], o) ? CHOICE_LABELS[field][o] : o) + "</option>").join("") + "</select>";
     }
     if (kind === "int" || kind === "nullint") {
       return '<input type="number" step="1" inputmode="numeric"' + common + ' value="' + (value === null || value === undefined ? "" : esc(value)) + '"' +

@@ -85,7 +85,7 @@ HOSTS = ("127.0.0.1", "localhost")
 TASK_STATUS = {"running": "running", "waiting_on_you": "waiting_user", "filed": "done", "left_open": "done_with_open_items",
                "fault": "crashed", "idle": "queued", "not_made": "queued", "waiting": "running", "done_unchecked": "done"}
 SANDBOX = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'"  # generated HTML (S3-web-14)
-ENGINE_ENUMS = {"output": ("website", "prd", "hld", "lld"), "fixes": (0, 1), "send_mode": ("dry-run", "mock", "live")}
+ENGINE_ENUMS = {"output": ("auto", "website", "prd", "hld", "lld", "project"), "workspace": ("auto", "off"), "fixes": (0, 1), "send_mode": ("dry-run", "mock", "live")}
 ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1000, "budget_cap": 1}
 DEFAULT_MESSAGES = {
     400: ("bad_request", "The request is not valid."),

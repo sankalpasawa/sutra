@@ -1,7 +1,7 @@
 {
   "schema": "engine-settings/1",
   "defaults": {
-    "output": "website",
+    "output": "auto",
     "fixes": 0,
     "budget": 100,
     "budget_cap": null,
@@ -30,7 +30,8 @@
     "force_audit_fail": 0,
     "force_audit_note": "",
     "force_question": "",
-    "memory_test_lessons": false
+    "memory_test_lessons": false,
+    "workspace": "auto"
   },
   "global": {
     "budget": 120,
@@ -40,7 +41,7 @@
     "max_cycles": 4
   },
   "effective": {
-    "output": "website",
+    "output": "auto",
     "fixes": 0,
     "budget": 120,
     "budget_cap": null,
@@ -69,7 +70,8 @@
     "force_audit_fail": 0,
     "force_audit_note": "",
     "force_question": "",
-    "memory_test_lessons": false
+    "memory_test_lessons": false,
+    "workspace": "auto"
   },
   "editable": [
     "output",
@@ -91,7 +93,8 @@
     "board",
     "artifact_schema",
     "template_library",
-    "tap_min"
+    "tap_min",
+    "workspace"
   ],
   "locked": [
     "send_mode",
