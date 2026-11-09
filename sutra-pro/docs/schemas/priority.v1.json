@@ -988,7 +988,8 @@
             "website",
             "prd",
             "hld",
-            "lld"
+            "lld",
+            "project"
           ],
           "title": "Output",
           "type": "string"

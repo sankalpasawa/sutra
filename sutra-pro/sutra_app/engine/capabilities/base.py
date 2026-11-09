@@ -7,10 +7,11 @@ text, progress sinks and one setting; it can never replace what another one adde
     Capability.progress(tag, event) sees each progress event of a call
     Capability.addendum(fn, ctx)   system text for agent `fn` (`ctx.output` says which output is running)
     Capability.select(brief, ctx)  a vote on the output when the owner left it on `auto`
+    Capability.force(output)       settings fixed for a run of one output (`{field: value}`)
 
 This module imports nothing of J2 and nothing of the host: `OutputSpec.to_j2()` is the one place that turns a spec into the dict J2 reads.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:       # typing only: the settings module imports the names of the outputs from the package above this file
@@ -65,7 +66,6 @@ class OutputSpec:
     done: str = ""
     single: bool = False
     workspace: str = "read"
-    force_off: tuple = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if self.workspace not in WORKSPACE_LEVELS:
@@ -139,6 +139,11 @@ class Capability:
 
     def select(self, brief: str, ctx: EngineContext) -> Optional[Selection]:
         return None
+
+    def force(self, output: str) -> dict:
+        """Engine settings (field name: value) this capability fixes for a run of `output`, because the output cannot work, or has nothing to
+        use, otherwise. Asked by the host BEFORE J2 is imported, so it cannot depend on the registered outputs."""
+        return {}
 
     def settings(self) -> list:
         """The one engine setting this capability has, if any: `[{"field": "workspace", "values": [...], "default": ...}]`."""

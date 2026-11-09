@@ -228,7 +228,7 @@ class DeptWorkflow(Workflow):
     fixes: Annotated[list[Line40], Field(max_length=20)] = []                       # Audit finding ids
     revises: Line40 | None = None
     estimated_resources: Resources = Field(default_factory=Resources)
-    output: Literal["website", "prd", "hld", "lld"] = "website"
+    output: Literal["website", "prd", "hld", "lld", "project"] = "website"
     # role-file fields (ROLE:adaptation:20-37), absent from J2's reply format
     inputs: Annotated[list[Line200], Field(max_length=10)] = []
     capabilities: Annotated[list[Line200], Field(max_length=10)] = []

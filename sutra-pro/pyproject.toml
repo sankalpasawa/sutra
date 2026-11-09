@@ -50,6 +50,7 @@ sutra_app = [
     "engine/artifacts/**/*",
     "engine/templates/**/*",
     "engine/seed/**/*",
+    "engine/capabilities/data/*",
     "orchestrator/agent/templates/*.md",
     "library/specs/*.json",
     "assets/*",

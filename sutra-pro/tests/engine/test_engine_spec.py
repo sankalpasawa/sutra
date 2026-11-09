@@ -195,7 +195,7 @@ def test_task_spec_does_not_judge_a_path_that_is_the_hosts_job():
 # ---- EngineSettings: J2's defaults ------------------------------------------------------------------------------------
 
 J2_DEFAULTS = {
-    "output": "website",              # j2.py:2333 J2_OUTPUT
+    "output": "auto",                 # J2's default is website; the engine picks the output for the brief itself (D129)
     "fixes": 0,                       # :2837 == "1"
     "budget": 100,                    # :66
     "budget_cap": None,               # :67 default 2 x budget
@@ -332,7 +332,7 @@ def test_to_env_of_the_defaults_leaves_out_the_empty_values():
     env = EngineSettings().to_env()
     assert set(J2_VARIABLES.values()) - set(env) == {"J2_BUDGET_CAP", "J2_TEST_EMAIL", "J2_TEST_SLACK_TARGET", "J2_CHROME",
                                                      "J2_FORCE_AUDIT_NOTE", "J2_FORCE_QUESTION"}
-    assert env == {"J2_OUTPUT": "website", "J2_FIXES": "0", "J2_BUDGET": "100", "J2_MAX_CYCLES": "6", "J2_LIMIT_ADD": "30",
+    assert env == {"J2_OUTPUT": "auto", "J2_FIXES": "0", "J2_BUDGET": "100", "J2_MAX_CYCLES": "6", "J2_LIMIT_ADD": "30",
                    "J2_BARGAIN_MINUTES": "15.0", "J2_BARGAIN_CALLS": "8", "J2_MAX_TURNS": "30", "J2_CHAT_FULL_CHARS": "60000",
                    "J2_DELAY": "0.0", "J2_RATES": "1", "J2_SLIM": "1", "J2_MEMORY": "1", "J2_REALIZATION": "1", "J2_CHANGE": "0",
                    "J2_BOARD": "0", "J2_ARTIFACT_SCHEMA": "0", "J2_TEMPLATE_LIBRARY": "0", "J2_SEND_MODE": "dry-run",

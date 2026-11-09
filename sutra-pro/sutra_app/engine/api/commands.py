@@ -5,7 +5,7 @@ object is `DeptCommands`, which acts through the orchestrator:
 
     say      `deliver_to_department(dept, text, settings=page.next_settings)`; Busy is 409 `{"ok": false}`; the start page's
              output choice is cleared once a delivery created a task
-    output   only while the page has no run: writes `page.json.next_settings.J2_OUTPUT`; otherwise 409 with the run's output
+    output   only while the page has no run: writes `page.json.next_settings.J2_OUTPUT` (`auto`, or any registered output: D129); otherwise 409 with the run's output
     reset    `stop_live(dept)`: False is 409 and touches nothing; True writes `page.json.since_run` (the latest run id)
     playbooks/clear, lessons/clear   the team's memory files (views)
 
@@ -75,9 +75,11 @@ class DeptCommands:
 
 
 def _output_type(out: Any) -> str:
-    """J2's `output_type`: a known type, anything else is the website (the process environment is not consulted)."""
+    """J2's `output_type` and the one the engine adds: `auto` (the engine picks the output for the brief when the run starts, D129) or any
+    registered output; anything else is the website (the process environment is not consulted). `j2.output_type` alone would turn `auto`
+    into the website."""
     name = str(out or "").strip().lower()
-    return name if name in j2.OUTPUTS else "website"
+    return name if name == "auto" or name in j2.OUTPUTS else "website"
 
 
 async def read_json_body(request: Request) -> Optional[dict]:

@@ -445,8 +445,8 @@ def audits(ctx: RunCtx, q: dict) -> Reply:
 def refs(ctx: RunCtx, q: dict) -> Reply:
     """Ids the cards name, with their text: conditions/*.json and every output type's rubric."""
     conds = {}
-    for n in ("website", "prd", "hld", "lld"):
-        conds.update({c["id"]: c["text"] for c in j2.load_conditions(f"{n}.json")})
+    for o in j2.OUTPUTS.values():       # every registered output's conditions file (a capability's is an absolute name: load_conditions joins it as it is)
+        conds.update({c["id"]: c["text"] for c in j2.load_conditions(o["conditions"])})
     rub = {i: t for o in j2.OUTPUTS.values() for i, t in o.get("rubric") or ()}
     return _json({"conditions": conds, "rubric": rub})
 

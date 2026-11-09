@@ -18,11 +18,14 @@ import sys
 from typing import Optional
 
 from .. import llm
+from ..spec import OUTPUT_NAMES      # the ONE list of output names a setting may hold: defined in spec.py, which this package may import and
+#                                      which must not import it back; `auto` leaves the choice to `select_output`
 from .base import Capability, CapabilityConflict, EngineContext, OutputSpec, Selection, SPECS, output_spec
+from .project import ProjectCapability
 from .workspace import WorkspaceCapability
 
-__all__ = ["CAPABILITIES", "Capability", "CapabilityConflict", "EngineContext", "OutputSpec", "Selection", "SPECS", "output_spec",
-           "register", "install", "addenda", "describe", "capability_hooks"]
+__all__ = ["CAPABILITIES", "OUTPUT_NAMES", "Capability", "CapabilityConflict", "EngineContext", "OutputSpec", "Selection", "SPECS",
+           "output_spec", "register", "install", "addenda", "describe", "capability_hooks", "select_output", "forced_settings"]
 
 
 def _agent_capabilities() -> tuple:
@@ -36,7 +39,7 @@ def _agent_capabilities() -> tuple:
     return tuple(cls() for cls in (getattr(agents, name, None) for name in ("AgentPicksCapability", "AgentLiveCapability")) if cls)
 
 
-CAPABILITIES: tuple = (WorkspaceCapability(), *_agent_capabilities())
+CAPABILITIES: tuple = (WorkspaceCapability(), ProjectCapability(), *_agent_capabilities())
 
 
 def _caps(capabilities) -> tuple:
@@ -91,6 +94,26 @@ def install(ctx: EngineContext, capabilities=None) -> None:
     tags, progress = capability_hooks(ctx, caps)
     llm.TAG_HOOKS[:] = [h for h in llm.TAG_HOOKS if not hasattr(h, "capability")] + tags
     llm.PROGRESS_HOOKS[:] = [h for h in llm.PROGRESS_HOOKS if not hasattr(h, "capability")] + progress
+
+
+def select_output(brief: str, ctx: EngineContext, capabilities=None) -> Selection:
+    """The output for this brief: the first capability that votes, else the website (what a team with no folder and no project words
+    always got). `ctx.settings.output` is the choice the owner made (`auto` when they made none)."""
+    for cap in _caps(capabilities):
+        vote = cap.select(brief, ctx)
+        if vote is not None:
+            return vote
+    return Selection("website", "default", "no capability voted for another output")
+
+
+def forced_settings(output: str, capabilities=None) -> dict:
+    """The engine settings (`{field: value}`) fixed for a run of `output`. Asked before J2 is imported. The first capability to name a field
+    wins, so no capability can undo another's."""
+    fixed: dict = {}
+    for cap in _caps(capabilities):
+        for name, value in cap.force(output).items():
+            fixed.setdefault(name, value)
+    return fixed
 
 
 def addenda(fn: str, ctx: EngineContext, capabilities=None) -> str:

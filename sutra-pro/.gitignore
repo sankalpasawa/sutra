@@ -11,6 +11,8 @@ node_modules/
 .idea/
 # runtime data, never committed
 data/
+# the engine's own data files (the project output's conditions): not runtime data
+!sutra_app/engine/capabilities/data/
 runs/
 *.sqlite3
 *.sqlite3-wal
