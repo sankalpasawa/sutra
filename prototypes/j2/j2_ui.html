@@ -535,7 +535,7 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 .runnone{color:var(--muted);font-size:13px;padding:8px}
 #dview:is([data-tab=runsettings],[data-tab=artifacts],[data-tab=catalog]) .dcol{overflow:hidden}#dview:is([data-tab=runsettings],[data-tab=artifacts],[data-tab=catalog]) main{grid-template-rows:minmax(0,1fr);flex:1;min-height:0}
 /* Artifacts: four groups; a list on the left and the chosen item on the right; the page fits the screen, only the list and the item scroll */
-#pane-artifacts,#pane-catalog{overflow:hidden}#dview #pane-artifacts,#dview #pane-catalog{max-width:none}#pane-artifacts:not([hidden]),#pane-catalog:not([hidden]){display:flex;flex-direction:column}#pane-catalog .agwrap{flex:1;min-height:0}.cattools{margin:0 0 12px}.rfly .rfl a.rgo{text-decoration:none}
+#pane-artifacts,#pane-catalog{overflow:hidden}#dview #pane-artifacts,#dview #pane-catalog{max-width:none}#pane-artifacts:not([hidden]),#pane-catalog:not([hidden]){display:flex;flex-direction:column}#pane-catalog .agwrap{flex:1;min-height:0}.cattools{margin:0 0 12px}.tplview h3{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}.tplview .tplmeta{margin:0 0 14px}.rfly .rfl a.rgo{text-decoration:none}
 .agwrap{flex:1;min-height:0;display:grid;grid-template-columns:minmax(240px,340px) minmax(0,1fr);gap:14px}
 .aglist{min-height:0;overflow:auto;align-self:start;max-height:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px}
 .agrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;width:100%;padding:10px 14px;border:0;border-top:1px solid var(--line);background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
@@ -1846,6 +1846,7 @@ const curView = () => document.body.classList.contains("simple") ? "simple" : "d
 function viewHref(run){ const q = new URLSearchParams(); if (run) q.set("run", run); q.set("view", curView()); return "?" + q; }      // a run link that keeps the current view
 function setView(v, keep){ document.body.classList.toggle("simple", v !== "detail"); $("gochat").setAttribute("aria-current", v !== "detail" ? "page" : "false");
   if (keep) try { localStorage.setItem("j2view", v); } catch (e) {}
+  if (location.pathname === "/library") return;      // the catalog page keeps its own ?view= (run | artifact)
   try { const q = new URLSearchParams(location.search); if (q.get("view") !== v){ q.set("view", v); history.replaceState(history.state, "", location.pathname + "?" + q + location.hash); } } catch (e) {} }
 (() => { const q = viewNorm(new URLSearchParams(location.search).get("view")); let pref = ""; try { pref = viewNorm(localStorage.getItem("j2view")); } catch (e) {}
   setView(q || pref || "simple", !!q); })();
@@ -2339,7 +2340,7 @@ function artLocate(id){      // the group and row a Map id lands on: a section's
   return hit ? [hit[0], hit[1].id] : null; }
 // Library (template-library/1, J2_TEMPLATE_LIBRARY=1): every template grouped by artifact and section, this run's
 // routing decisions (templates.json), and a viewer with two modes: the four files as stored, or a readable card.
-const LIB = {loaded: false, groups: {}, dir: "", decisions: [], open: null, mode: "readable", view: null, focus: "",
+const LIB = {loaded: false, groups: {}, dir: "", decisions: [], open: null, mode: "sum", view: null, focus: "",
              pane: () => $("pane-library"), render: () => renderLibrary()};      // the catalog page (/library) points these at itself
 const slugOf = t => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "template";
 async function loadLibrary(){
@@ -2383,44 +2384,53 @@ function renderLibrary(){
   return `<h3>This run's routing decisions</h3>${table}${LIB.open ? renderTplViewer() : ""}<h3>Templates <span class="empty">${esc(LIB.dir)}</span></h3>${groups || '<p class="empty">No templates.</p>'}`;
 }
 const TPLCODE = {};
+// The template viewer (a run's Templates tab and the shared library) has the same three tabs as every Artifacts row, drawn the same way:
+// Summary (name, version, kind, the generic it extends, who made it, who uses it, the business, live or mock, renumbering, and the rules, own
+// vs inherited), Agent-readable (the four stored files, each with Copy) and Human-readable (the fields, added vs generic, and this run's example).
+// Old deep links and buttons still work: "template" opens Agent-readable, "readable" opens Human-readable.
+const TPLTABS = ARTTABS, TPLMODE = {sum: "sum", agent: "agent", human: "human", template: "agent", readable: "human"};
+const tplMode = () => TPLMODE[LIB.mode] || "sum";
+const tplTabs = () => `<div class="atabs" role="tablist">${TPLTABS.map(([k, l]) => `<button type="button" role="tab" data-tplmode="${k}" aria-selected="${tplMode() === k}">${l}</button>`).join("")}</div>`;
+const TPLFILES = ["spec.json", "schema.json", "model.py", "meta.json"];      // the Agent-readable order; anything else (generic.json) follows
 function renderTplViewer(){
-  const v = LIB.view, o = LIB.open;
-  if (!v) return `<section class="artrow" id="tplviewer"><p class="empty">Opening the template…</p></section>`;
-  if (v.error) return `<section class="artrow" id="tplviewer"><p class="empty">${esc(v.error)}</p></section>`;
-  const t = v.template || {}, rd = v.readable || {};
-  const tabs = `<div role="tablist" class="tplmodes"><button type="button" role="tab" data-tplmode="template" aria-selected="${LIB.mode === "template"}">As template</button> <button type="button" role="tab" data-tplmode="readable" aria-selected="${LIB.mode === "readable"}">Readable</button> <button type="button" class="linkbtn" data-tplclose="1">close</button></div>`;
-  const head = `<h3>${esc(t.name)} v${esc(t.version)} <span class="empty">${esc(t.kind)}${t.extends ? " · extends " + esc(t.extends) : ""}${v.source ? " · " + esc(v.source) : ""}</span></h3>`;
-  if (v.source === "not recorded") return `<section class="artrow" id="tplviewer">${head}<p class="empty">not recorded: this run has no copy of this template and the library has no version ${esc(t.version)} of it.</p> <button type="button" class="linkbtn" data-tplclose="1">close</button></section>`;
-  const meta = v.meta || {}, mb = meta.made_by || t.made_by || null, biz = meta.business || null;
-  const nr = '<span class="empty">not recorded</span>';
-  const prov = t.kind === "generic" ? `<div class="tplmeta"><div>The generic layout of every ${esc(String(t.artifact || "").toUpperCase())} · ${esc(t.section)} section, from the code's models and rules; no run made it.</div></div>`
-    : `<div class="tplmeta" data-tplmeta="1">`
-      + `<div><b>Made by</b> ${mb ? `${CAT.on ? `<a href="${runHref(mb.run)}">${esc(mb.run)}</a>` : esc(mb.run)} ${esc(mb.workflow)} ${esc(mb.atom)} (${esc(mb.agent)})${mb.date ? " · " + esc(mb.date) : ""}` : nr} ${"mock" in meta ? libBadge(meta.mock) : ""}</div>`
-      + `<div><b>Business</b> ${biz ? `${esc(biz.name)}${biz.type && biz.type !== "not recorded" ? " (" + esc(biz.type) + ")" : ""}` : nr}</div>`
-      + `<div><b>Extends</b> ${t.extends ? libOpen(t.artifact, t.section, "generic", 1, esc(t.extends)) : nr}</div>`
-      + (meta.renumbered_from ? `<div><b>Renumbered from</b> ${esc(meta.renumbered_from)}</div>` : "")
-      + (meta.collected_from ? `<div><b>Collected from</b> ${esc(meta.collected_from.run)} (${esc(meta.collected_from.where)})</div>` : "")
-      + `<div><b>Used by</b> ${(meta.used_by || []).length ? (meta.used_by || []).map(u => `${CAT.on ? `<a href="${runHref(u.run)}">${esc(u.run)}</a>` : esc(u.run)} ${esc(u.workflow)}${u.action ? " (" + esc(u.action) + ")" : ""}`).join(", ") : '<span class="empty">not used yet</span>'}</div>`
-      + `</div>`;
-  const cross = CAT.on ? "" : `<div><a href="${libHref(o.artifact, t.section || o.section, t.kind === "generic" ? "generic" : t.name, t.kind === "generic" ? 1 : t.version)}" data-link="catalog">Open in the template library</a></div>`;
-  let body;
-  if (LIB.mode === "template"){
-    body = Object.entries(v.files || {}).filter(([n, f]) => f && f.text !== null).map(([n, f]) => { const k = `${o.artifact}/${o.slug}/v${o.version}/${n}`; TPLCODE[k] = f.text;
-      return `<div class="codebox" data-tplfile="${esc(n)}"><b>${esc(n)}</b> <span class="empty">sha ${esc(String(f.sha).slice(0, 12))}</span> <button type="button" class="ghost codecopy" data-tplcopy="${esc(k)}">Copy</button><pre class="code plain">${esc(f.text)}</pre></div>`; }).join("");
+  const v = LIB.view, o = LIB.open, close = `<button type="button" class="linkbtn" data-tplclose="1">close</button>`;
+  if (!v) return `<section class="artrow tplview" id="tplviewer"><p class="empty">Opening the template…</p></section>`;
+  if (v.error) return `<section class="artrow tplview" id="tplviewer"><p class="empty">${esc(v.error)}</p> ${close}</section>`;
+  const t = v.template || {}, rd = v.readable || {}, meta = v.meta || {}, mb = meta.made_by || t.made_by || null, biz = meta.business || null;
+  const nr = '<span class="empty">not recorded</span>', runLink = r => CAT.on ? `<a href="${runHref(r)}">${esc(r)}</a>` : esc(r);
+  const head = `<h3>${esc(t.name)} v${esc(t.version)} <span class="empty">${esc(t.kind)}${t.extends ? " · extends " + esc(t.extends) : ""}${v.source ? " · " + esc(v.source) : ""}</span> ${close}</h3>`;
+  if (v.source === "not recorded") return `<section class="artrow tplview" id="tplviewer">${head}<p class="empty">not recorded: this run has no copy of this template and the library has no version ${esc(t.version)} of it.</p></section>`;
+  const mode = tplMode(); let body;
+  if (mode === "sum"){
+    const row = (k, val) => `<div><b>${k}</b> ${val}</div>`, used = meta.used_by || [];
+    const rules = `<div class="ablk"><h5>Rules</h5><ul class="ackl">${(rd.rules || []).map(r => `<li><span>${esc(r.sentence)}</span><span class="empty">${r.own ? "this template's own" : rd.kind === "specialised" ? "inherited from the generic" + (r.from ? ", " + esc(r.from) : "") : r.from ? esc(r.from) : ""}</span></li>`).join("") || '<li class="empty">none</li>'}</ul></div>`;
+    const cross = CAT.on ? "" : `<div class="ablk"><a href="${libHref(o.artifact, t.section || o.section, t.kind === "generic" ? "generic" : t.name, t.kind === "generic" ? 1 : t.version)}" data-link="catalog">Open in the template library</a></div>`;
+    body = `<div class="tplmeta" data-tplmeta="1">` + row("Name", `<span class="code">${esc(t.name)}</span>`) + row("Version", `v${esc(t.version)}`) + row("Kind", esc(t.kind))
+      + row("Extends", t.extends ? libOpen(t.artifact, t.section, "generic", 1, esc(t.extends)) : t.kind === "generic" ? `<span class="empty">nothing: the generic layout of every ${esc(String(t.artifact || "").toUpperCase())} · ${esc(t.section)} section, from the code's models and rules; no run made it</span>` : nr)
+      + (t.kind === "generic" ? "" : row("Made by", mb ? `${runLink(mb.run)} ${esc(mb.workflow)} ${esc(mb.atom)} (${esc(mb.agent)})${mb.date ? " · " + esc(mb.date) : ""}` : nr)
+        + row("Used by", used.length ? used.map(u => `${runLink(u.run)} ${esc(u.workflow)}${u.action ? " (" + esc(u.action) + ")" : ""}`).join(", ") : '<span class="empty">not used yet</span>')
+        + row("Business", biz ? `${esc(biz.name)}${biz.type && biz.type !== "not recorded" ? " (" + esc(biz.type) + ")" : ""}` : nr)
+        + row("Live or mock", "mock" in meta ? libBadge(meta.mock) : nr)
+        + (meta.renumbered_from ? row("Renumbered from", esc(meta.renumbered_from)) : "")
+        + (meta.collected_from ? row("Collected from", `${esc(meta.collected_from.run)} (${esc(meta.collected_from.where)})`) : ""))
+      + `</div>` + rules + cross;
+  } else if (mode === "agent"){
+    const files = Object.entries(v.files || {}).filter(([n, f]) => f && f.text !== null).sort((a, b) => (TPLFILES.indexOf(a[0]) + 1 || 99) - (TPLFILES.indexOf(b[0]) + 1 || 99));
+    body = files.map(([n, f]) => { const k = `${o.artifact}/${o.slug}/v${o.version}/${n}`; TPLCODE[k] = f.text;
+      return `<div class="codebox" data-tplfile="${esc(n)}"><b>${esc(n)}</b> <span class="empty">sha ${esc(String(f.sha).slice(0, 12))}</span> <button type="button" class="ghost codecopy" data-tplcopy="${esc(k)}">Copy</button><pre class="code plain">${esc(f.text)}</pre></div>`; }).join("") || '<p class="empty">No files stored for this template.</p>';
   } else {
     const chips = l => (l || []).map(x => `<span class="mappill">${esc(x)}</span>`).join(" ");
     const frow = f => `<tr><td><span class="code">${esc(f.name)}</span>${rd.kind === "specialised" ? (f.added ? ' <span class="empty">added</span>' : ' <span class="empty">generic</span>') : ""}</td><td>${esc(f.type)}</td><td>${f.required ? "required" : "optional"}</td><td>${esc(f.description || "")}${f.enum && f.enum.length ? `<div>${chips(f.enum)}</div>` : ""}</td></tr>`;
     const tbl = rows => `<table class="maptable"><thead><tr><th>Field</th><th>Type</th><th></th><th>Description</th></tr></thead><tbody>${rows.map(frow).join("")}</tbody></table>`;
     const ex = v.example ? `<h4>Example from this run (${esc(v.example.workflow)})</h4><pre class="code plain">${esc(JSON.stringify(v.example.data, null, 2))}</pre>` : '<p class="empty">No example: this run did not fill this template.</p>';
     body = `<div class="tplcard" data-tplreadable="1"><p>${esc(rd.description || "")}</p><h4>${esc(String(rd.artifact || "").toUpperCase())} · ${esc(rd.section)}</h4>${tbl(rd.fields || [])}`
-      + (rd.objects || []).map(ob => `<h4>${esc(ob.name)}</h4>${tbl(ob.fields)}`).join("")
-      + `<h4>Rules</h4><ul>${(rd.rules || []).map(r => `<li>${esc(r.sentence)}${r.own ? ' <span class="empty">(this template\'s own)</span>' : rd.kind === "specialised" ? ` <span class="empty">(inherited from the generic${r.from ? ", " + esc(r.from) : ""})</span>` : r.from ? ` <span class="empty">(${esc(r.from)})</span>` : ""}</li>`).join("") || '<li class="empty">none</li>'}</ul>${CAT.on ? "" : ex}</div>`;
+      + (rd.objects || []).map(ob => `<h4>${esc(ob.name)}</h4>${tbl(ob.fields)}`).join("") + (CAT.on ? "" : ex) + `</div>`;
   }
-  return `<section class="artrow" id="tplviewer">${head}${prov.replace(/<\/div>$/, cross + "</div>")}${tabs}${body}</section>`;
+  return `<section class="artrow tplview" id="tplviewer">${head}${tplTabs()}${body}</section>`;
 }
 async function libClick(e){
   const op = e.target.closest("[data-tplopen]"); if (op){ const [a, s, n, v] = op.dataset.tplopen.split("|"); return openTemplate(a, s, n, +v); }
-  const m = e.target.closest("[data-tplmode]"); if (m){ LIB.mode = m.dataset.tplmode; return paint(LIB.pane(), LIB.render()); }
+  const m = e.target.closest("[data-tplmode]"); if (m){ LIB.mode = TPLMODE[m.dataset.tplmode] || "sum"; return paint(LIB.pane(), LIB.render()); }
   if (e.target.closest("[data-tplclose]")){ LIB.open = LIB.view = null; return paint(LIB.pane(), LIB.render()); }
   const c = e.target.closest("[data-tplcopy]"); if (c){ try { await navigator.clipboard.writeText(TPLCODE[c.dataset.tplcopy] || ""); c.textContent = "Copied"; } catch (err) { c.textContent = "Copy failed"; } }
 }
@@ -2507,9 +2517,10 @@ if (CAT.on){
   CAT.q = q.get("business") || q.get("q") || ""; CAT.hideMock = q.get("mock") === "hide"; CAT.view = q.get("view") === "artifact" ? "artifact" : "run";
   const o = (q.get("open") || "").split("/");      // artifact/section-slug/template-slug/vN, as libHref writes it
   if (o.length === 4 && /^v\d+$/.test(o[3])) CAT.open = [o[0], o[1], o[2], +o[3].slice(1)];
+  if (TPLMODE[q.get("tab")]) LIB.mode = TPLMODE[q.get("tab")];      // ?tab=sum|agent|human; the old template / readable still work
   // the detail view with the rail: the Library item is current; every other item, and Chat, go back to the run this page was opened from (?run=), or home
   const back = view => `/?${viewRun ? "run=" + encodeURIComponent(viewRun) + "&" : ""}view=${view}`;
-  setView("detail", false); showTab("catalog");
+  setView("detail", false); showTab("catalog"); $("needs").hidden = true;      // no run here: nothing needs you
   document.querySelectorAll("#rail .ri[data-ri]").forEach(b => { if (b.dataset.ri === "library") b.classList.add("cur"); else b.addEventListener("click", e => { e.stopImmediatePropagation(); location.href = back("detail"); }, true); });
   $("gochat").addEventListener("click", e => { e.stopImmediatePropagation(); location.href = back("simple"); }, true);
   LIB.pane = () => $("catbody"); LIB.render = renderCatBody;

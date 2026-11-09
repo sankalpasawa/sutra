@@ -10869,7 +10869,7 @@ def template_library(demo=False):
         ex = L.run_example(r3.dir, tv["template"], L.slug(rs.name))
         assert ex and ex["workflow"] == req["workflow"] and "requirements" in ex["data"], ex
         ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
-        for s_ in ('data-tab="library"', 'id="pane-library"', 'data-tplmode="template"', 'data-tplmode="readable"',
+        for s_ in ('data-tab="library"', 'id="pane-library"', 'data-tplmode="sum"', 'data-tplmode="agent"', 'data-tplmode="human"',
                    'data-tplcopy=', 'data-link="tplview"', "/api/run-templates", '$("tab-library").hidden = !s.has_templates;'):
             assert s_ in ui, s_
         if BROWSER and j2.j2_check.find_chrome():
@@ -10895,9 +10895,9 @@ def template_library(demo=False):
 
 
 def library_page(run, lib):
-    """--browser: the Library tab on a saved run, in headless Chrome: the routing table, a template opened in both
-    modes (Readable with enum chips and rule sentences; As template with four files, Copy buttons and shas), and the
-    atom card's template line."""
+    """--browser: the Templates (this run) tab on a saved run, in headless Chrome: the routing table, a template opened on its three
+    tabs (Summary with the rules; Human-readable with enum chips and this run's example; Agent-readable with four files, Copy buttons
+    and shas), and the atom card's template line."""
     import html as htmllib
     import shutil
     import socket
@@ -10910,9 +10910,10 @@ def library_page(run, lib):
              " r.tab = !document.getElementById('tab-library').hidden; document.getElementById('tab-library').click(); await wait(1500);"
              " r.rows = q('[data-tplrow]').length; r.reasons = q('[data-tplrow] td:last-child').map(x => x.textContent).slice(0, 3); r.sources = q('[data-tplsource]').map(x => x.dataset.tplsource);"
              " q('[data-tpltable] [data-tplopen]')[0].click(); await wait(1500);"
-             " r.head = (document.querySelector('#tplviewer h3') || {}).textContent || ''; r.readable = !!document.querySelector('[data-tplreadable]'); r.chips = q('#tplviewer .mappill').length; r.rules = q('#tplviewer li').length;"
+             " r.head = (document.querySelector('#tplviewer h3') || {}).textContent || ''; r.tabs = q('#tplviewer [data-tplmode]').map(x => x.dataset.tplmode); r.rules = q('#tplviewer .ackl li').length;"
+             " document.querySelector('[data-tplmode=human]').click(); await wait(300); r.readable = !!document.querySelector('[data-tplreadable]'); r.chips = q('#tplviewer .mappill').length;"
              " r.example = (document.querySelector('#tplviewer pre') || {}).textContent || '';"
-             " document.querySelector('[data-tplmode=template]').click(); await wait(300);"
+             " document.querySelector('[data-tplmode=agent]').click(); await wait(300);"
              " r.files = q('[data-tplfile]').map(x => x.dataset.tplfile); r.copies = q('[data-tplcopy]').length; r.shas = q('[data-tplfile] .empty').map(x => x.textContent);"
              " r.groups = q('[data-libart]').map(x => x.dataset.libart); r.card = typeof renderWorkflows === 'function' && renderWorkflows(state).includes('data-link=\"tplview\"');"
              " r.sw = [document.documentElement.scrollWidth, innerWidth];"
@@ -10940,12 +10941,13 @@ def library_page(run, lib):
     r = json.loads(htmllib.unescape(hit.group(1)))
     assert r["tab"] and r["rows"] >= 5 and all(r["reasons"]), r
     assert len(r["sources"]) == r["rows"] and all(x == "from this run" for x in r["sources"]) and "from this run" in r["head"], (r["sources"], r["head"])
-    assert r["readable"] and r["chips"] >= 1 and r["rules"] >= 1 and '"html"' in r["example"], r
-    assert r["files"] == ["spec.json", "model.py", "schema.json", "meta.json"] and r["copies"] == 4 and all(s.startswith("sha ") for s in r["shas"]), r
+    assert r["tabs"] == ["sum", "agent", "human"] and r["rules"] >= 1, r
+    assert r["readable"] and r["chips"] >= 1 and '"html"' in r["example"], r
+    assert r["files"] == ["spec.json", "schema.json", "model.py", "meta.json"] and r["copies"] == 4 and all(s.startswith("sha ") for s in r["shas"]), r
     assert set(r["groups"]) == {"prd", "hld", "lld", "design", "website"} and r["card"], r
     assert r["sw"][0] <= r["sw"][1], ("no horizontal scroll", r["sw"])
-    print(f"template library page: Library tab shown for a run with decisions, {r['rows']} routing rows with reasons, a template opened Readable "
-          f"({r['chips']} enum chips, {r['rules']} rules, an example from the run) and As template (4 files, Copy and sha each), every row and the viewer say "
+    print(f"template library page: Templates (this run) tab shown for a run with decisions, {r['rows']} routing rows with reasons, a template opened on its "
+          f"three tabs: Summary ({r['rules']} rules), Human-readable ({r['chips']} enum chips, an example from the run), Agent-readable (4 files, Copy and sha each); every row and the viewer say "
           "\"from this run\", the atom card links it ok")
 
 
