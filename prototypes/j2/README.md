@@ -148,6 +148,13 @@ screen; the team is visible; one person talks to you. Light by default, dark wit
 | Finished | A green ring on the work, "Your website is ready", Download (or All files for design documents), Copy share link, Open full view |
 | Phone | The work fills the screen; the five faces, Plan and Chat sit in a dock at the bottom and open as sheets |
 
+**Where it comes from:** `j2_studio.py` (studio/1) builds the studio's model in code, in every state (`studio`) and for saved runs:
+the parts (one per section, a fix stays the same part; each with its document, kind of work and person), the team stream (one plain
+line per function message, written from what the message is, never the agents' words) and the part the open question is about.
+`GET /api/record?sec=<section>` (or `?art=<deliverable name>`) gives one part's (or one deliverable's) goal, method, output and check.
+The output tabs read `/api/artifacts`; `/view?name=<file>` shows any listed file (markdown rendered, a page, an image, or text) and
+`/doc/<prd|hld|lld>` a finished design document. `POST /api/settings` sets Decide for me. The page only draws.
+
 **Plain words at the source:** every Identity prompt says that anything written to you must suit a college student with no
 tech background: no internal terms, at most two short sentences of context, and each option says what you get and what it
 costs. **Word list (fallback only):** a word list in the page rewrites whatever still slips through (function names become

@@ -348,7 +348,7 @@ body.simple #dview{display:none}
 #sview .sfinish .pri{background:var(--s-ink);color:var(--s-bg);border-color:var(--s-ink)}
 /* the drawer: a teammate, a part (goal, method, output, check) or the plan */
 #sview .sdrawer{position:absolute;top:14px;right:16px;bottom:14px;width:min(380px,calc(100% - 32px));background:var(--s-surface);border:1px solid var(--s-line);border-radius:16px;box-shadow:0 30px 60px -30px var(--s-shadow);padding:18px;z-index:10;display:flex;flex-direction:column;gap:10px;transform:translateX(calc(100% + 40px));visibility:hidden;transition:transform .35s ease,visibility 0s .35s;overflow:auto}
-#sview .sdrawer.open{transform:none;visibility:visible;transition:transform .35s ease}
+#sview .sdrawer.open{transform:none;visibility:visible;transition:transform .35s ease}#sview .sdrawer:focus{outline:none}
 #sview .sx{position:absolute;right:10px;top:8px;font-size:22px;line-height:1;color:var(--s-muted);width:32px;height:32px;border:0;background:none;border-radius:8px}
 #sview .sdrawer h4{margin:0;font:600 18px var(--s-display);padding-right:30px}
 #sview .sdhead{display:flex;gap:12px;align-items:center}#sview .sdhead small{color:var(--s-muted);display:block}
