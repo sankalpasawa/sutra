@@ -450,10 +450,12 @@ body.simple #dview{display:none}
 #sview .sdock .pip{position:absolute;right:0;top:0;width:12px;height:12px;border-radius:50%;background:var(--s-ask);border:2px solid var(--s-surface)}
 #sview .sdock .sdk2{margin-left:auto;display:flex;gap:6px}
 #sview .sdock .sdk2 button{border:1px solid var(--s-line);background:var(--s-surface);border-radius:999px;padding:7px 12px;font-weight:600;font-size:13.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+#sview .sdock .sdk2 .spip2{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--s-askline);margin-left:6px;vertical-align:1px}
 #sview .sdock .sdk2 button.on{background:var(--s-ink);color:var(--s-bg);border-color:var(--s-ink)}
 @media (min-width:821px){#sview .sdock .sdkchat{display:none}}
 @media (min-width:1181px){#sview .sdock{display:none}}
-@media (max-width:420px){#sview .sdock .sface .av{width:34px;height:34px}}
+@media (max-width:420px){#sview .sdock .sface .av{width:32px;height:32px}#sview .sdock .sface+.sface{margin-left:-7px}
+  #sview .sdock .sdk2 button{padding:6px 10px;font-size:13px}#sview .sdock{gap:2px}}
 @media (prefers-reduced-motion:reduce){#sview *,#sview *::before,#sview *::after{animation:none!important;transition:none!important}}
 /* Map: calm graph look, details in a click panel */
 .mapviews{display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-left:auto}.mapviews button{border:0;background:transparent;color:var(--ink);padding:2px 12px;font:inherit;font-size:13px;cursor:pointer}.mapviews button[aria-pressed="true"]{background:var(--line);font-weight:600}
@@ -2035,7 +2037,7 @@ function sPlanHTML(s, M){
 function sDock(s, M, T){
   const q = T.asha.ask;
   paint($("sdock"), SKEYS.map(k => `<button type="button" class="sface${T[k].busy ? " busy" : ""}" data-mate="${k}" aria-label="${PEOPLE[k].name}, ${PEOPLE[k].role}: ${esc(T[k].line)}" style="--c:var(${PEOPLE[k].c})">${face(k, 40, {prop: false, label: false})}${k === "asha" && q ? '<span class="pip"></span>' : ""}</button>`).join("")
-    + `<span class="sdk2"><button type="button" data-plan>Plan ${M.total ? `${M.done}/${M.total}` : ""}</button><button type="button" class="sdkchat${$("sapp") && $("sapp").classList.contains("chatopen") ? " on" : ""}" data-chat>Chat${q ? " ·1" : ""}</button></span>`);
+    + `<span class="sdk2"><button type="button" data-plan>Plan ${M.total ? `${M.done}/${M.total}` : ""}</button><button type="button" class="sdkchat${$("sapp") && $("sapp").classList.contains("chatopen") ? " on" : ""}" data-chat${q ? ' aria-label="Chat, 1 question"' : ""}>Chat${q ? '<i class="spip2" aria-hidden="true"></i>' : ""}</button></span>`);
 }
 // ---- the centre: the output tabs (the website, each document) and the team at work
 function sTabs(s){
