@@ -10,7 +10,7 @@
 The tag of a call is built from the arguments, never from the orchestrator's string step:
 
     step              -> tag.stage         (`tag.step` stays the J2 step number, 0 here)
-    function          -> tag.function
+    function          -> tag.function      (the org chat agent also gets tag.workspace = "edit": the router caps it by the owner's access setting)
     context.purpose   -> tag.purpose
     context.task_id   -> tag.task_id
     context.atom_id   -> tag.atom          (the request's overhead key; S4-fnodes-07)
@@ -29,7 +29,9 @@ from .errors import InvalidJsonError, InvalidRequestError
 from .models import JsonRequest, RouteContext
 from .router import Router
 
-__all__ = ["AsyncConnector", "build_tag"]
+__all__ = ["AsyncConnector", "build_tag", "ORG_AGENT"]
+
+ORG_AGENT = "chat_agent"          # the org chat agent: it works in the owner's folder, so its calls tag themselves `workspace="edit"` (D127); the owner's access caps it
 
 
 def build_tag(function: str, step: Optional[str], context: Optional[Mapping[str, Any]]) -> CallTag:
@@ -37,6 +39,8 @@ def build_tag(function: str, step: Optional[str], context: Optional[Mapping[str,
     InvalidRequestError."""
     ctx = context or {}
     fields: dict[str, Any] = {"function": function, "stage": step or None}
+    if function == ORG_AGENT:
+        fields["workspace"] = "edit"
     if ctx.get("purpose"):
         fields["purpose"] = ctx["purpose"]
     if ctx.get("task_id"):

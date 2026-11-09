@@ -29,6 +29,7 @@ from typing import Any, Protocol
 
 from sutra_app.connectors.env import PASS_NAMES, is_secret_name
 from sutra_app.orchestrator.db import run_blocking
+from sutra_app.orchestrator.events import PARTIAL
 from sutra_app.orchestrator.ids import Clock, SystemClock, iso_z
 from sutra_app.orchestrator.models import RunSpec
 from sutra_app.orchestrator.pathwords import machine_roots, shorten
@@ -36,6 +37,7 @@ from sutra_app.orchestrator.pathwords import machine_roots, shorten
 __all__ = [
     "STOP_GRACE_S", "TERM_GRACE_S", "SILENT_AFTER_S", "STDERR_TAIL_BYTES", "EXTRA_PASS_NAMES", "child_environment", "RunLauncher",
     "ProcessLauncher", "RunWatcher", "ReconcileReport", "reconcile", "run_has_ended", "stderr_tail", "inbox_line_count", "append_inbox",
+    "LIVE_FILE", "LIVE_SCHEMA", "live_partials",
 ]
 
 log = logging.getLogger(__name__)
@@ -46,6 +48,9 @@ STDERR_TAIL_BYTES = 2048
 EXTRA_PASS_NAMES = ("SHELL", "TERM", "PYTHONPATH")
 ENGINE_MODULE = "sutra_app.engine"
 _POLL_S = 0.05
+LIVE_FILE = "agent_live.json"          # written by the engine's AgentLiveCapability (D133): who is working now, the text of its reply so far, its last tool
+LIVE_SCHEMA = "agent-live/1"
+LIVE_MAX_AGENTS = 64
 
 
 # ---- the child environment ---------------------------------------------------------------------------------------------
@@ -68,6 +73,64 @@ def child_environment(settings: Mapping[str, str] | None = None, environ: Mappin
             continue
         env[name] = str(value)
     return env
+
+
+# ---- the live view of the agents (D133) --------------------------------------------------------------------------------------
+
+def read_live(run_dir: Path) -> "tuple[tuple[int, int] | None, dict[str, tuple[str, str]]]":
+    """`(stamp, {agent: (text, tool)})` of the run's `agent_live.json`. The stamp is `(mtime_ns, size)`, None when there is no file; a file that is not
+    ours or does not read gives no agents (the stamp is still returned, so a broken file is not parsed again until it changes)."""
+    path = Path(run_dir) / LIVE_FILE
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None, {}
+    stamp = (st.st_mtime_ns, st.st_size)
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return stamp, {}
+    agents = doc.get("agents") if isinstance(doc, dict) and doc.get("schema") == LIVE_SCHEMA else None
+    if not isinstance(agents, dict):
+        return stamp, {}
+    found: dict[str, tuple[str, str]] = {}
+    for who, entry in list(agents.items())[:LIVE_MAX_AGENTS]:
+        if isinstance(who, str) and isinstance(entry, dict):
+            text, tool = entry.get("text"), entry.get("tool")
+            found[who] = (text if isinstance(text, str) else "", tool if isinstance(tool, str) else "")
+    return stamp, found
+
+
+@dataclass
+class LiveView:
+    """What the watcher has shown for one run: the folder, the file's last stamp, the session of each agent, what each agent's chat shows now."""
+
+    run_dir: Path | None = None
+    stamp: "tuple[int, int] | None" = None
+    sessions: dict[str, str] = field(default_factory=dict)
+    shown: dict[str, tuple[str, str]] = field(default_factory=dict)
+
+
+def live_partials(view: LiveView, agents: "dict[str, tuple[str, str]]", session_of: Callable[[str], "str | None"],
+                  redact: Callable[[str], str]) -> list[tuple[str, dict]]:
+    """The `chat.partial` events that bring what the agents' chats show up to `agents` (pure but for `view`, which it updates). An agent whose text or
+    tool changed gets `{session_id, message_id: 0, who, delta: <text so far>, reset: true, tool}`: each one replaces the last, so a lost event costs
+    nothing. An agent that is gone gets `{reset: true, delta: "", done: true}`; the stored line arrives later from its `say` event. An agent with no
+    chat session yet (its first event has not been projected) is skipped and looked for again at the next change."""
+    out: list[tuple[str, dict]] = []
+    for who, (text, tool) in agents.items():
+        if view.shown.get(who) == (text, tool):
+            continue
+        sid = view.sessions.get(who) or session_of(who)
+        if not sid:
+            continue
+        view.sessions[who] = sid
+        view.shown[who] = (text, tool)
+        out.append((PARTIAL, {"session_id": sid, "message_id": 0, "who": who, "delta": redact(text), "reset": True, "tool": redact(tool)}))
+    for who in [name for name in view.shown if name not in agents]:
+        del view.shown[who]
+        out.append((PARTIAL, {"session_id": view.sessions[who], "message_id": 0, "who": who, "delta": "", "reset": True, "done": True}))
+    return out
 
 
 # ---- small file helpers --------------------------------------------------------------------------------------------------
@@ -277,11 +340,17 @@ class RunWatcher:
     drain; a silent but alive process is never touched, only flagged ('no signal for N s') after SILENT_AFTER_S.
 
     `after_drain` is awaited when a drain freed a run slot (a team began waiting for the owner, or a task ended): the
-    TaskService passes `start_ready`."""
+    TaskService passes `start_ready`.
+
+    The live view (D133): when `publish` (the bus's `publish_one`) and `agent_session` are set, each tick also looks at the run's `agent_live.json`, and
+    only when it changed publishes one `chat.partial` per working agent (`live_partials`). `agent_session(row, agent) -> session id | None` is a lookup,
+    never an open: the projector opens or rolls an agent's session at its first event. Both are plain attributes the wiring sets after construction, like
+    `after_drain`; with either unset the watcher does exactly what it did before."""
 
     def __init__(self, projector: Any, tasks: Any, launcher: Any, *, interval: float = 0.4, clock: Clock | None = None,
                  redact: Callable[[str], str] | None = None, after_drain: Callable[[], Awaitable[Any]] | None = None,
-                 silent_after: float = SILENT_AFTER_S) -> None:
+                 silent_after: float = SILENT_AFTER_S, publish: Callable[[str, dict], Any] | None = None,
+                 agent_session: Callable[[Any, str], "str | None"] | None = None) -> None:
         self.projector = projector
         self.tasks = tasks
         self.launcher = launcher
@@ -290,6 +359,9 @@ class RunWatcher:
         self.redact = redact or (lambda text: text)
         self.after_drain = after_drain
         self.silent_after = silent_after
+        self.publish = publish
+        self.agent_session = agent_session
+        self._live: dict[str, LiveView] = {}
         self._jobs: dict[str, asyncio.Task] = {}
         self._wakes: dict[str, asyncio.Event] = {}
         self._retired: set[str] = set()
@@ -351,6 +423,7 @@ class RunWatcher:
                 self._jobs.pop(task_id, None)
                 self._wakes.pop(task_id, None)
             self._retired.discard(task_id)
+            self._live.pop(task_id, None)
 
     async def drain(self, task_id: str, *, notify: bool = True) -> Any:
         """Drain until the file is read to its end; returns the last result (and calls `after_drain` once if a slot was freed)."""
@@ -366,6 +439,48 @@ class RunWatcher:
 
     async def tick(self, task_id: str) -> bool:
         """One look at one task. True when the task is over (stop watching)."""
+        over = await self._look(task_id)
+        if self.publish is not None and self.agent_session is not None:
+            try:
+                await self._live_tick(task_id, over)
+            except Exception:                                  # noqa: BLE001  (a live view that fails is a view that is late, never a run that stops)
+                log.warning("the live view of %s failed", task_id, exc_info=True)
+        return over
+
+    async def _live_tick(self, task_id: str, over: bool) -> None:
+        """Publish the change of `agent_live.json`, if any. A run that is over closes every agent's live row (its stored lines are already in)."""
+        view = self._live.get(task_id)
+        if over:
+            self._live.pop(task_id, None)
+            if view is not None and view.shown:
+                for type_, data in live_partials(view, {}, lambda who: None, self.redact):
+                    self.publish(type_, data)                  # type: ignore[misc]
+            return
+        if view is None:
+            view = self._live[task_id] = LiveView()
+        if view.run_dir is None:
+            view.run_dir = await run_blocking(self._run_dir_of, task_id)
+            if view.run_dir is None:
+                return
+        stamp, agents = read_live(view.run_dir)
+        if stamp == view.stamp:
+            return
+        row = await run_blocking(self.tasks.find_row, task_id) if any(who not in view.sessions for who in agents) else None
+
+        def session_of(who: str) -> "str | None":
+            return self.agent_session(row, who) if row is not None else None                    # type: ignore[misc]
+
+        events = await run_blocking(live_partials, view, agents, session_of, self.redact)
+        # a file with an agent that has no chat session yet is looked at again at the next tick, not only when it changes
+        view.stamp = stamp if all(who in view.sessions for who in agents) else None
+        for type_, data in events:
+            self.publish(type_, data)                          # type: ignore[misc]
+
+    def _run_dir_of(self, task_id: str) -> Path | None:
+        row = self.tasks.find_row(task_id)
+        return self.tasks.run_dir_of(row) if row is not None and row.run_id is not None else None
+
+    async def _look(self, task_id: str) -> bool:
         result = await self.drain(task_id)
         if result.ended:
             return True

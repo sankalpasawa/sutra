@@ -258,9 +258,10 @@ def test_a_codex_thread_does_not_resume_into_another_folder(make, fake):
 
 # ---- the org chat agent and the engine -------------------------------------------------------------------------------------------
 
-def agent_call(function):
+def agent_call(function, workspace="edit"):
+    """The org chat agent tags its own calls `workspace="edit"` (D127); the owner's access setting caps it, as it always did."""
     return JsonRequest(user="plan this", schema={"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]},
-                       ctx=RouteContext(tag=CallTag(function=function, stage="plan")))
+                       ctx=RouteContext(tag=CallTag(function=function, stage="plan", workspace=workspace)))
 
 
 def test_the_org_chat_agents_call_runs_in_the_folder_with_read_only_tools_and_the_grounding(make, fake):
@@ -279,7 +280,7 @@ def test_a_teams_run_and_the_engines_calls_never_get_the_folder(make, fake):
     fake.sequence("ok_structured").reply(json={"answer": "ok"})
     rig = make("claude")
     rig.choose(rig.folder_a)
-    rig.router.call_json(agent_call("planner"))
+    rig.router.call_json(agent_call("planner", workspace=""))
     rig.router.ask(AskRequest(user="hello", kind="text", ctx=RouteContext(tag=CallTag(function="chat_agent"))))      # a text call: the engine's path
     for call in rig.calls("claude"):
         assert call["cwd"] != real(rig.folder_a) and value(call["argv"], "--tools") == ""

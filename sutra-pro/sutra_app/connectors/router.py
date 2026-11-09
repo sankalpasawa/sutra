@@ -33,7 +33,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Optional, Protocol, Sequence
 
-from sutra_app.engine.port import Allowance, CompletionRequest, CompletionResult
+from sutra_app.engine.port import Allowance, CallTag, CompletionRequest, CompletionResult
 
 from .base import ModelConnector, Hooks, CallInfo, CallRecord, prompted_prompt
 from .errors import (
@@ -43,7 +43,7 @@ from .errors import (
 from .health import API_KEY_REFUSED, HealthBook, HealthState
 from .jsonio import parse_reply
 from .models import (
-    AskRequest, ConnectorEvent, JsonRequest, JsonResult, M, Message, Provider, Quota, RouteContext, SESSION_ID_PATTERN,
+    AskRequest, ConnectorEvent, JsonRequest, JsonResult, M, Message, Pick, Provider, Quota, RouteContext, SESSION_ID_PATTERN,
     SessionSpec, SessionState, TurnResult,
 )
 from .policy import Resolved, RoutingPolicy
@@ -54,11 +54,12 @@ from .discover import explain_missing
 from .transcript import render_carry_over
 from .independence import NOT_INDEPENDENT, Independence
 from .usage import Attempt, UsageIn, UsageSink, build_usage_row, load_session_state, new_request_id, save_session_state
-from .workdir import grounding_text
+from .egress import scan
+from .workdir import Folder, grounding_text
 
 __all__ = [
     "Router", "Plan", "RouterStatus", "ProviderStatus", "PolicyInfo", "ModelBrief", "TodayCounts", "TranscriptSource",
-    "mode_from_env", "CONNECTOR_MODES", "TRANSCRIPT_LIMIT", "NEW_MESSAGE_LABEL", "fallback_phrase",
+    "mode_from_env", "CONNECTOR_MODES", "TRANSCRIPT_LIMIT", "NEW_MESSAGE_LABEL", "PICK_PURPOSES", "fallback_phrase", "tool_title",
 ]
 
 log = logging.getLogger("sutra_app.connectors.router")
@@ -67,7 +68,7 @@ CONNECTOR_MODES = ("auto", "claude", "codex", "stub")
 TRANSCRIPT_LIMIT = 20                 # `resume_info` gives at most 20 messages (ORCH 3.4), so the carry-over cap rarely bites
 NEW_MESSAGE_LABEL = "New message:"    # separates the carry-over block from the message in the first prompt of a new session
 _STUB_CONCURRENCY = 64
-AGENT_FUNCTIONS = ("chat_agent",)     # the one-shot calls that get the owner's working folder (the org chat agent); the engine's calls never do
+PICK_PURPOSES = ("agent_turn", "plan", "judge")   # the calls an agent's own pick governs (D131); summary, template, review and change keep the policy
 _SESSION_ID = re.compile(SESSION_ID_PATTERN)
 
 # the words of the note "claude out of quota, answered by codex" (J2 llm.py:173,187)
@@ -112,6 +113,15 @@ class Plan:
     resolved: Resolved
     models: Mapping[str, str]
     tools: tuple[str, ...] = ()
+    pick: Optional[Pick] = None                           # the owner's pick for this agent, as asked (D131); None when nobody chose
+    pick_miss: Optional[tuple[str, str]] = None           # (the picked provider, why it cannot run) when the pick fell back to the policy
+
+    def effort_for(self, provider: str) -> str:
+        """The effort of a call that goes to `provider`: the pick's own, for the picked provider only (another provider's levels differ, so a
+        fallback answers with the policy's effort); else the policy's."""
+        if self.pick is not None and self.pick.effort is not None and provider == self.pick.provider:
+            return self.pick.effort
+        return self.resolved.effort
 
 
 class PolicyInfo(M):
@@ -327,6 +337,8 @@ class Router:
         self._chat_active: dict[str, tuple[ModelConnector, SessionState]] = {}
         self._pins: dict[str, str] = {}
         self.choice_source: Optional[Callable[[str], Optional[str]]] = None      # session id -> the owner's persisted provider choice (ABS-8)
+        self.agent_pick: Optional[Callable[[CallTag], Optional[Pick]]] = None    # call tag -> the owner's pick for that agent (D131); the engine's capability sets it
+        self.finish_hooks: list[Callable[[CallTag], None]] = []              # called with the tag when an engine call (`complete`) ends, ok or not (D133)
         self.egress: Optional[Any] = None                      # an `egress.Egress`, set by the factory (ABS-2); None = no scrub, no row
         self.folders: Optional[Any] = None                     # a `workdir.WorkFolder`, set by the factory (GAP3-workdir); None = no working folder
         self.independence = Independence()                     # who built a run's work, so Audit can go to the other model (off unless the policy says so)
@@ -352,6 +364,27 @@ class Router:
         except Exception:
             log.warning("could not read the working folder", exc_info=True)
             return ""
+
+    def folder_for(self, tag: CallTag) -> "Folder | str":
+        """The working folder ONE call gets (D127), `""` for none. The tag says the most the call may do there (`workspace`: "none", `read`, `edit`);
+        the owner's access setting caps it: a `read` call gets the folder read-only, an `edit` call gets it editable only when the owner chose "read
+        and change". No folder set, or an offline router, is none. A tag is data: no function name is looked at here."""
+        want = getattr(tag, "workspace", "")
+        if want not in ("read", "edit"):
+            return ""
+        grant = self.chat_folder()
+        if not grant:
+            return ""
+        return grant if want == "edit" and getattr(grant, "edit", False) else Folder(str(grant), edit=False)
+
+    @staticmethod
+    def _grounded(system: str, folder: "Folder | str") -> str:
+        """The system text with the folder's grounding after it (where it is, what the tools can do, the project's own instructions), put through the
+        shape scan: a CLAUDE.md that holds a credential does not leave. Added AFTER the egress check, so the caller's own text is untouched; with no
+        folder the text is returned as it came."""
+        if not folder:
+            return system
+        return (system + "\n\n" if system else "") + scan(grounding_text(folder), replace=True)[0]
 
     def _emit(self, type_: str, data: dict) -> None:
         if self._events is None:
@@ -424,10 +457,26 @@ class Router:
             log.warning("could not read the chat choice of %s", sid, exc_info=True)
             return None
 
+    def _pick_for(self, req: Any) -> Optional[Pick]:
+        """The owner's pick for the agent this call is tagged for (D131): only for a call that belongs to no chat session and whose purpose is an
+        agent's own work. Read afresh for every request, so a change applies from the agent's next call, never in the middle of one. Never raises."""
+        ctx = getattr(req, "ctx", None)
+        if self.agent_pick is None or ctx is None or ctx.session_id or ctx.tag.purpose not in PICK_PURPOSES:
+            return None
+        try:
+            pick = self.agent_pick(ctx.tag)
+        except Exception:
+            log.warning("could not read the agent pick of %s", ctx.tag.function, exc_info=True)
+            return None
+        return pick if isinstance(pick, Pick) and pick.provider else None
+
     def _plan(self, resolved: Resolved, req: Any, pinned: Optional[str] = None) -> Plan:
-        chosen = None
+        chosen = pick = None
         if pinned is None:
             pinned = chosen = self._chosen_for(req)
+            if chosen is None:
+                pick = self._pick_for(req)
+                pinned = pick.provider if pick is not None else None
         order = list(resolved.order)
         if self._restrict is not None:
             order = [self._restrict]
@@ -446,8 +495,11 @@ class Router:
         for provider in order:
             reason = self._skip_reason(provider, bool(req.images), bool(tools))
             if reason is None:
+                asked = self.policy.model_for(provider)           # type: ignore[arg-type]
+                if pick is not None and pick.model and provider == pick.provider:
+                    asked = pick.model                            # the owner's model, for the provider the owner chose
                 try:
-                    models[provider] = self._connectors[provider].resolve_model(self.policy.model_for(provider))   # type: ignore[arg-type]
+                    models[provider] = self._connectors[provider].resolve_model(asked)
                 except ConnectorError as e:
                     reason = e.user_message()
             if reason is None:
@@ -459,7 +511,13 @@ class Router:
         if chosen is not None and chosen not in usable:           # the pill said one thing, the policy order decides: say so
             self._emit("connector.choice_unavailable", {"session_id": req.ctx.session_id, "wanted": chosen,
                                                          "reason": dict(skipped).get(chosen, "not usable"), "used": usable[0]})
-        return Plan(order=tuple(usable), skipped=tuple(skipped), resolved=resolved, models=models, tools=tools)
+        miss = None
+        if pick is not None and pick.provider not in usable:      # the owner's pick cannot run: the policy answers, and the usage row says so
+            reason = dict(skipped).get(pick.provider) or (f"this app is set to use only {self._restrict}" if self._restrict else "not configured")
+            miss = (pick.provider, _short(reason))
+            self._emit("connector.choice_unavailable", {"session_id": None, "agent": req.ctx.tag.function, "wanted": pick.provider,
+                                                         "reason": reason, "used": usable[0]})
+        return Plan(order=tuple(usable), skipped=tuple(skipped), resolved=resolved, models=models, tools=tools, pick=pick, pick_miss=miss)
 
     def _skip_reason(self, provider: str, need_images: bool, need_tools: bool) -> Optional[str]:
         connector = self._connectors.get(provider)
@@ -515,6 +573,16 @@ class Router:
             return note
         return f"{note}; {NOT_INDEPENDENT}" if note else NOT_INDEPENDENT
 
+    @staticmethod
+    def _with_pick_note(state: "_Request", plan: Plan, answered_by: str, note: Optional[str]) -> Optional[str]:
+        """When the owner's pick for this agent could not run, the note starts with that: "your choice for identity (codex) could not run: not
+        signed in; claude answered". It rides the usage row and J2's progress line."""
+        if plan.pick_miss is None:
+            return note
+        agent = state.ctx.tag.function or "this agent"
+        mine = f"your choice for {agent} ({plan.pick_miss[0]}) could not run: {plan.pick_miss[1]}; {answered_by} answered"
+        return f"{mine}; {note}" if note else mine
+
     def _note(self, failures: Sequence[tuple[str, ConnectorError]], answered_by: str) -> Optional[str]:
         if not failures:
             return None
@@ -549,7 +617,7 @@ class Router:
                         state.failures.append((provider, err))
                         break
                     raise
-                state.note = self._independence_note(state, provider, self._note(state.failures, provider))
+                state.note = self._independence_note(state, provider, self._with_pick_note(state, plan, provider, self._note(state.failures, provider)))
                 return result
         raise AssertionError("unreachable: the last provider returns or raises")       # pragma: no cover
 
@@ -596,15 +664,20 @@ class Router:
         on_event = _progress(on_progress)
         model = plan.models[provider]
         scripted = req.scripted if provider == "stub" else None
+        folder = self.folder_for(req.ctx.tag)              # the owner's folder when the call's tag asks for it (D127); "" leaves the call as it was
+        system = self._grounded(req.system, folder)
         if req.schema is None:
             kw: dict[str, Any] = {"scripted": scripted} if scripted is not None else {}
-            return connector.call_text(req.user, system=req.system, images=req.images, tools=plan.tools, timeout=state.timeout_s(),
-                                       ctx=state.connector_ctx(), effort=plan.resolved.effort, model=model, hooks=state,
+            if folder:
+                kw["folder"] = folder
+            return connector.call_text(req.user, system=system, images=req.images, tools=plan.tools, timeout=state.timeout_s(),
+                                       ctx=state.connector_ctx(), effort=plan.effort_for(provider), model=model, hooks=state,
                                        on_event=on_event, partials=req.partials, **kw)
-        return self._schema_text(state, plan, req, provider, connector, model, scripted, on_event)
+        return self._schema_text(state, plan, req, provider, connector, model, scripted, on_event, system, folder)
 
     def _schema_text(self, state: _Request, plan: Plan, req: AskRequest, provider: str, connector: ModelConnector, model: str,
-                     scripted: Optional[Callable[[], str]], on_event: Optional[Callable[[ConnectorEvent], None]]) -> TurnResult:
+                     scripted: Optional[Callable[[], str]], on_event: Optional[Callable[[ConnectorEvent], None]],
+                     system: Optional[str] = None, folder: "Folder | str" = "") -> TurnResult:
         """The native step of the JSON strategy and nothing more (`complete()` never repairs, D33): the reply text is returned as
         it came; the engine validates it. A `structured` error on the native path is remembered and the same request goes
         prompted once."""
@@ -613,9 +686,10 @@ class Router:
 
         def plan_for(native_now: bool):
             return connector._oneshot_plan(                           # the base's own plan builder: same checks as call_text
-                req.user if native_now else prompted_prompt(req.user, schema), system=req.system, kind="json", model=model,
-                effort=plan.resolved.effort, timeout=state.timeout_s(), ctx=state.connector_ctx(), images=req.images,
-                tools=plan.tools, schema=connector.transport_schema(schema) if native_now else None, partials=False, spent=0.0)
+                req.user if native_now else prompted_prompt(req.user, schema), system=req.system if system is None else system, kind="json",
+                model=model, effort=plan.effort_for(provider), timeout=state.timeout_s(), ctx=state.connector_ctx(), images=req.images,
+                tools=plan.tools, schema=connector.transport_schema(schema) if native_now else None, partials=False, spent=0.0,
+                folder=folder)
 
         scope = connector._request(schema, scripted) if provider == "stub" else contextlib.nullcontext()   # type: ignore[attr-defined]
         with scope:
@@ -672,12 +746,10 @@ class Router:
         schema = req.schema if req.schema is not None else {"type": "object"}
         force = req.schema is None or self._is_blocked(provider, connector, to_json_schema(schema))
         kw: dict[str, Any] = {"scripted": req.scripted} if provider == "stub" and req.scripted is not None else {}
-        system = req.system
-        folder = self.chat_folder() if req.ctx.tag.function in AGENT_FUNCTIONS else ""      # the org chat agent reads the owner's folder; a team's run never does
-        if folder:
-            system = (system + "\n\n" if system else "") + grounding_text(folder)
+        folder = self.folder_for(req.ctx.tag)              # the call's tag decides (the org chat agent tags itself `edit`); the owner's access caps it
+        system = self._grounded(req.system, folder)
         return connector.call_json_result(
-            req.user, plan.tools, schema, state.timeout_s(), system=system, ctx=state.connector_ctx(), effort=plan.resolved.effort,
+            req.user, plan.tools, schema, state.timeout_s(), system=system, ctx=state.connector_ctx(), effort=plan.effort_for(provider),
             model=plan.models[provider], images=req.images, hooks=state, on_event=_progress(on_progress), force_prompted=force,
             repair_rounds=plan.resolved.repair_rounds, folder=folder, **kw)
 
@@ -690,7 +762,10 @@ class Router:
             kind="json" if (req.json_mode or req.json_schema is not None) else "text", effort=req.effort, images=list(req.images),
             schema=req.json_schema, timeout_s=req.timeout_s, partials=on_progress is not None and req.json_schema is None,
             scripted=req.scripted)
-        turn, state = self._ask(ask, on_progress)
+        try:
+            turn, state = self._ask(ask, on_progress)
+        finally:
+            self._call_finished(req.tag)
         row = state.row
         assert row is not None
         stub = turn.provider == "stub"
@@ -701,6 +776,14 @@ class Router:
             structured={"provider": turn.provider, "subtype": turn.subtype, "present": turn.structured is not None}
             if req.json_schema is not None else None,
             note=state.note, detail=row.detail)
+
+    def _call_finished(self, tag: CallTag) -> None:
+        """Tells whoever watches the engine's calls (the live view of an agent's work, D133) that this one is over, whether it answered or not."""
+        for hook in tuple(self.finish_hooks):
+            try:
+                hook(tag)
+            except Exception:
+                log.warning("a call-finished hook failed", exc_info=True)
 
     # ---- chat sessions -------------------------------------------------------------------------------------------------------------
     def _workdir(self, session_id: str) -> Path:
@@ -999,14 +1082,35 @@ class Router:
         self.drain(2.0)
 
 
+def _short(reason: str) -> str:
+    """A skip reason for a sentence: the first clause, without the advice that follows it ("not signed in: run `codex login`" -> "not signed in")."""
+    return reason.split(": ")[0].split(" (")[0]
+
+
 def _once(fn: Callable[[], Any]) -> Iterator[Any]:
     """A generator that does `fn()` and returns its value: the attempt loop drives generators (chat turns stream events)."""
     return fn()
     yield       # pragma: no cover  (makes this a generator)
 
 
+_TOOL_ARGS = ("file_path", "pattern", "command", "query", "url", "path", "description")      # what a tool call is about, the first one present
+TOOL_TITLE_CHARS = 120
+
+
+def tool_title(data: Mapping[str, Any]) -> str:
+    """One line for a tool call of the model: its name and what it is about ("Read src/app.py", "Grep def main"). Codex names the kind only."""
+    name = str(data.get("name") or data.get("type") or "tool")
+    args = data.get("input")
+    about = ""
+    if isinstance(args, Mapping):
+        about = next((str(args[k]) for k in _TOOL_ARGS if isinstance(args.get(k), str) and args[k].strip()), "")
+    title = " ".join(f"{name} {about}".split())
+    return title if len(title) <= TOOL_TITLE_CHARS else title[:TOOL_TITLE_CHARS - 1] + "…"
+
+
 def _progress(on_progress: Optional[Callable[[dict], None]]) -> Optional[Callable[[ConnectorEvent], None]]:
-    """J2's progress events: `{"chars": n, "text": text so far}` after every piece of the reply."""
+    """J2's progress events: `{"chars": n, "text": text so far}` after every piece of the reply, and `{"tool": title}` for each tool call of the model
+    (what an agent that works in the owner's folder is doing; a consumer that does not know the key ignores it)."""
     if on_progress is None:
         return None
     acc = {"text": "", "sent": None}
@@ -1014,6 +1118,10 @@ def _progress(on_progress: Optional[Callable[[dict], None]]) -> Optional[Callabl
     def on_event(event: ConnectorEvent) -> None:
         if event.kind == "started":
             acc["text"], acc["sent"] = "", None
+            return
+        if event.kind == "tool_call":
+            if event.data.get("name") != "StructuredOutput":       # Claude's own way of handing back the reply of a schema call: not work to show
+                on_progress({"tool": tool_title(event.data)})
             return
         if event.kind == "text_delta":
             acc["text"] += str(event.data.get("text", ""))
