@@ -2169,7 +2169,7 @@ function sLayout(){
     const st = p.st === "ask" ? "ask" : p.st === "doing" ? "doing" : p.st === "fix" && live ? "fix" : "";
     const glow = (SV.glow || []).includes(sid) ? " glow" : "", flash = SV.flash === sid ? " flash" : "";
     h += `<div class="box ${st}${glow}${flash}" data-box="${esc(sid)}" style="--c:${c};top:${(t + y).toFixed(0)}px;left:${(l + w.scrollX).toFixed(0)}px;width:${(r - l).toFixed(0)}px;height:${(b - t).toFixed(0)}px">`
-      + (st === "doing" || st === "ask" ? `<button type="button" class="tag" data-sec="${esc(sid)}" style="--c:${st === "ask" ? "var(--s-ask)" : c}">${face(st === "ask" ? "asha" : p.person, 22, {prop: false, label: false})}${st === "ask" ? "Asha" : P.name}<i>· ${st === "ask" ? "question" : p.fixing ? "fixing" : "on it"}</i></button>` : "")
+      + (st === "doing" || st === "ask" ? `<button type="button" class="tag" data-sec="${esc(sid)}" style="--c:${st === "ask" ? "var(--s-ask)" : c}${t + y < 20 ? ";top:8px" : ""}">${face(st === "ask" ? "asha" : p.person, 22, {prop: false, label: false})}${st === "ask" ? "Asha" : P.name}<i>· ${st === "ask" ? "question" : p.fixing ? "fixing" : "on it"}</i></button>` : "")
       + (p.st === "done" && !fixed ? `<button type="button" class="tick" data-sec="${esc(sid)}" title="Made by ${P.name}. See what went into it" aria-label="${esc(p.name)}: done. See what went into it">✓</button>` : "")
       + (SV.hover === sid && !s.saved && !live ? `<button type="button" class="chg" data-chg="${esc(sid)}">Change this</button>` : "") + `</div>`; });
   const root = layer.shadowRoot.lastElementChild; if (root.__h !== h){ root.__h = h; root.innerHTML = h; }
