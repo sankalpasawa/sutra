@@ -10147,7 +10147,7 @@ def map_tab():
         assert a["home"] == "map" and a["count"] == "1" and "Needs you" in a["needs"] and "Add credits?" in a["needs"] and "Answer in Chat" in a["needs"], a
         assert a["layout"] == [True, True, True] and a["rail"] == ["Map", "Simple view", "Identity", "Adaptation", "Priority", "Coordination", "Audit", "Artifacts", "Actions", "Library", "Settings"] and a["sub"] is True and a["back0"] is True, a      # strip above the map, chat docked on the right, no Back link on the home
         assert a["focus"] == "true|9999", a      # the strip's button focuses the question in the Chat
-        assert a["tabs"] == {t: f"{t}|{str(t == 'artifacts').lower()}|false" for t in old_tabs}, a      # Artifacts has its own header (a breadcrumb, no Back to map)      # every old tab opens from the sections, with a Back to map link
+        assert a["tabs"] == {t: f"{t}|{str(t in ('artifacts', 'planmap')).lower()}|false" for t in old_tabs}, a      # Artifacts and Adaptation > Map have their own header (a breadcrumb, no Back to map)      # every old tab opens from the sections, with a Back to map link
         assert a["back"] == "map|true", a
         sw = by["step:prd>hld"]["workflows"]
         n = a["nodes"]
