@@ -19,13 +19,14 @@ Copied into `sutra_app/engine/` with the same module names; every change to a J2
 | P11 | `J2Run.rehydrate(src_dir)` delegates to `rehydrate.py` | j2.py:3643-3649 |
 | P12 | Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`) | j2_check.py:123-125; j2_check.py:141-143; j2_template_lib.py:29-32; j2_template_lib.py:718-719; j2_template_lib.py:781; j2_template_lib.py:787 |
 | P13 | Run settings' read-only lists (the old Sutra repository's copy of the prototype has them, J2's own repository does not): `run_row(name, runs_dir=None, live_running=False)` and `run_list(runs_dir=None, live="", live_running=False)` (GET /api/runlist: every saved run newest first with id, title, status, output, when, brief) and `run_changes(d)` (GET /api/changes: one stop per change request of `change.json`), placed before `saved_snapshot`; `views.runlist` and `views.changes` and the two routes call them | j2.py:2784-2829 |
+| P14 | `J2Run._plan_stages` returns early for an output that says `single` (`if self.stages or self.goal or self.out.get("single"):`): named documents in a brief ("update the PRD in the repo") do not swap the project output for a PRD stage chain. No other output has `single`, so every other run, prompt and golden is unchanged. The output itself is registered by `sutra_app/engine/capabilities/` (Sutra's own files, not J2's) | j2.py:3844-3846 |
 
 ## Files
 J2 sha256 is the file at the commit above; Vendored sha256 is the copy in this repository (equal when the file is copied unchanged). A vendored file that is not in this table, or whose hash differs, fails `tests/engine/test_engine_vendor.py`.
 
 | Vendored path | J2 path | Patches | J2 sha256 | Vendored sha256 |
 |---|---|---|---|---|
-| `sutra_app/engine/j2.py` | `j2.py` | P1,P2,P3,P4,P5,P7,P8,P9,P11,P13 | `9a76a4ff416875e3ff38a426565c180c690b93fb88a527999f74dbe037015995` | `9b58b1b1f2b331acdb06b5ea884ea4a62a00bb3b0011572e461888f7d5db0bd0` |
+| `sutra_app/engine/j2.py` | `j2.py` | P1,P2,P3,P4,P5,P7,P8,P9,P11,P13,P14 | `9a76a4ff416875e3ff38a426565c180c690b93fb88a527999f74dbe037015995` | `80cd03b436ea32a3d4a53919e54261ff684c2e84fcaf6e5f968a269f3016c720` |
 | `sutra_app/engine/j2_agent.py` | `j2_agent.py` | - | `1594231793d8bab2748cecaf54b702dd1a2a9b8b0dc2db11455397efbeb244c6` | `1594231793d8bab2748cecaf54b702dd1a2a9b8b0dc2db11455397efbeb244c6` |
 | `sutra_app/engine/j2_artifact_models.py` | `j2_artifact_models.py` | P1 | `d535479aa6dbb31bbde9513323f97b016a405eed82b64f0d1cbd8fcbdf76d80f` | `b314170cb7713b7acfc517edac2e350578ae7f75d95822b22f962baa8acb2512` |
 | `sutra_app/engine/j2_artifacts.py` | `j2_artifacts.py` | P1 | `9a39c650afd4f323c317c7ac3c938dc1be36118bf1a805af293600f05292e74d` | `c15234d4d9579af31ef93e47927b451a22d903bc7d19f4226b4b6de37aeff2f2` |

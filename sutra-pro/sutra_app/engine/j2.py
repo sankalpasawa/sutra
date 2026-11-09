@@ -3841,7 +3841,7 @@ class J2Run:
     def _plan_stages(self):
         """Once, before the charter: the documents the brief or the answers ask for by name (detect_documents). None
         asked: nothing changes. The first document's output type is picked here; a site follows only if it was named."""
-        if self.stages or self.goal:
+        if self.stages or self.goal or self.out.get("single"):      # P14: `single` outputs (project work) keep their output
             return
         said = [self.request] + [x["answer"] for x in self.intake]
         docs = detect_documents(*said)
