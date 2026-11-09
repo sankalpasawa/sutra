@@ -1106,6 +1106,8 @@ def simple_redesign():
             assert ("Download" in out["finish"] or "All files" in out["finish"]) and all(w in out["finish"] for w in ("Copy share link", "Open full view")), (label, out["finish"])
             noun = "design documents" if len(s.get("docset") or []) > 1 else "document" if s.get("doc") else str(s.get("output_label") or "website").lower()
             assert f"Your {noun} {'are' if noun.endswith('s') else 'is'} ready" in out["sprog"], (label, "the run's own output type", out["sprog"])
+        talk = re.findall(r'<div class="stalk">(.*?)</div></section>', out["teamwork"])
+        assert not re.search(r"</b> [A-Z][a-z]", "".join(talk)), (label, "a team line follows its name in lower case (\"Mira finished the menu\")", talk[:1])
         team = re.sub(r"<[^>]+>", " ", htmllib.unescape(out["teamwork"]))
         assert "Who's on what" in team and ("The work" in team or not parts), (label, team[:200])
         for p in sorted(parts, key=lambda p: -len(p["name"])):      # a part's own name is the content's words ("Shop identity"), not the team's jargon
