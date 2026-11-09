@@ -535,7 +535,7 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 .runnone{color:var(--muted);font-size:13px;padding:8px}
 #dview:is([data-tab=runsettings],[data-tab=artifacts],[data-tab=catalog]) .dcol{overflow:hidden}#dview:is([data-tab=runsettings],[data-tab=artifacts],[data-tab=catalog]) main{grid-template-rows:minmax(0,1fr);flex:1;min-height:0}
 /* Artifacts: four groups; a list on the left and the chosen item on the right; the page fits the screen, only the list and the item scroll */
-#pane-artifacts,#pane-catalog{overflow:hidden}#dview #pane-artifacts,#dview #pane-catalog{max-width:none}#pane-artifacts:not([hidden]),#pane-catalog:not([hidden]){display:flex;flex-direction:column}#pane-catalog .agwrap{flex:1;min-height:0}.cattools{margin:0 0 12px}.tplview h3{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}.tplview .tplmeta{margin:0 0 14px}.rfly .rfl a.rgo{text-decoration:none}
+#pane-artifacts,#pane-catalog{overflow:hidden}#dview #pane-artifacts,#dview #pane-catalog{max-width:none}#pane-artifacts:not([hidden]),#pane-catalog:not([hidden]){display:flex;flex-direction:column}#pane-catalog .agwrap{flex:1;min-height:0}.cattools{margin:0 0 12px}.tplview h3{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}.tplview .tplmeta{margin:0 0 14px}
 .agwrap{flex:1;min-height:0;display:grid;grid-template-columns:minmax(240px,340px) minmax(0,1fr);gap:14px}
 .aglist{min-height:0;overflow:auto;align-self:start;max-height:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px}
 .agrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;width:100%;padding:10px 14px;border:0;border-top:1px solid var(--line);background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
@@ -4354,7 +4354,7 @@ function railOpen(id){
   else { const mine = new Set(it.secs.flatMap(k => (R.sec[k] || {tabs: []}).tabs.map(t => t.tab))), rank = t => RAILTABS.includes(t) ? RAILTABS.indexOf(t) : 99;
     railTabs().filter(b => mine.has(b.dataset.tab) && !(id === "artifacts" && b.dataset.tab === "artifacts")).sort((a, b) => rank(a.dataset.tab) - rank(b.dataset.tab)).forEach(b => list.appendChild(b));
     if (id === "artifacts"){ list.insertAdjacentHTML("beforeend", '<div class="rflyart" id="rflyart"></div>'); railArtCounts(); if (!ARTS.groups) loadArtifacts(); }
-    if (id === "library") list.insertAdjacentHTML("afterbegin", `<a class="rgo" data-catgo="1" href="/library${viewRun ? "?run=" + encodeURIComponent(viewRun) : ""}" aria-current="${CAT.on}">Shared library<small>every run's templates, from library/</small></a>`); }      // the shared catalog first, then this run's templates
+    if (id === "library") list.insertAdjacentHTML("afterbegin", `<button type="button" class="rgo" data-catgo="/library${viewRun ? "?run=" + encodeURIComponent(viewRun) : ""}" aria-current="${CAT.on}">Shared library<small>every run's templates, from library/</small></button>`); }      // the shared catalog first, then this run's templates
   $("rfly").hidden = false;
   const f = $("rfly").querySelector(".rfl button, .rclose"); if (f) f.focus();
 }
@@ -4373,10 +4373,11 @@ $("rfly").addEventListener("click", e => {
   if (e.target.closest(".rclose")) return railClose(true);
   const mg = e.target.closest("[data-mapgo]"); if (mg){ setView("detail", true); MAPVIEW = mg.dataset.mapgo; try { localStorage.setItem("j2mapview", MAPVIEW); } catch (x) {} showTab("map"); paintMap(); railClose(false); return; }
   const ag = e.target.closest("[data-artgo]"); if (ag){ setView("detail", true); railClose(false); artOpenGroup(ag.dataset.artgo); return; }
+  const cg = e.target.closest("[data-catgo]"); if (cg){ location.href = cg.dataset.catgo; return; }      // the shared template library (/library), remembering this run
   const ac = e.target.closest("[data-railact]"); if (ac){ setView("detail", true); showTab("map"); mapSelect(ac.dataset.railact); railClose(false); return; }
   if (e.target.closest("[data-tab]")) railClose(false); });      // the tab's own handler has opened it in the main area
 $("rfly").addEventListener("keydown", e => {      // the panel keeps the focus until it closes
-  if (e.key !== "Tab") return; const f = [...$("rfly").querySelectorAll("button:not([disabled]), a[href]")].filter(x => x.getClientRects().length); if (!f.length) return;
+  if (e.key !== "Tab") return; const f = [...$("rfly").querySelectorAll("button:not([disabled])")].filter(x => x.getClientRects().length); if (!f.length) return;
   const i = f.indexOf(document.activeElement); if (e.shiftKey && i <= 0){ e.preventDefault(); f[f.length - 1].focus(); } else if (!e.shiftKey && i === f.length - 1){ e.preventDefault(); f[0].focus(); } });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && RAIL.open){ e.stopImmediatePropagation(); railClose(true); } }, true);
 document.addEventListener("click", e => { if (RAIL.open && !e.target.closest("#rfly") && !e.target.closest("#rail .ri[data-ri]")) railClose(false); });
