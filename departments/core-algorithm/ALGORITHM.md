@@ -1,0 +1,74 @@
+# Sutra — Stable Recursive Kernel and Extensions
+
+**Proposal + finite executable reference**, not a ratified production replacement. Public department-facing specification, 8 Nov 2026.
+
+## The stable question
+
+> What should be true, what is adequately evidenced, what is missing, what authorized Method could close the gap, and did the effect actually occur?
+
+The target model is `Resolve(G, K, S, M, P)`:
+
+- **G**: scoped goals and continuing obligations.
+- **K**: applicable accepted domain knowledge, definitions, consequences and rule versions.
+- **S**: observed facts with TRUE/FALSE/UNKNOWN, provenance, scope and dependencies.
+- **M**: Method effects, prerequisites, interfaces, providers and independent checks.
+- **P**: policies, authority grants, nonfungible resources, preferences and limits.
+
+The computation is recursive but *bounded*. A new business requirement should normally change an approved rule, Method or policy pack, **not** this operation. Additional trusted primitives are still possible but require versioned changes and counterexamples.
+
+## Core loop (semantic contract)
+
+1. **Scope and observe.** Match the goal and evidence by tenant, domain, version and validity. Do not confuse execution status with world truth.
+2. **Refine the meaning.** Unify the goal with approved rule heads. Each rule yields alternative sufficient AND-condition sets (OR between sets). No approved meaning => explicit missing-semantics outcome.
+3. **Identify needs.** A need is a required scoped condition that is not currently evidenced TRUE. UNKNOWN yields an information/evidence need; verified FALSE may require a repair or different path. A new event matters only if it affects a standing goal through relevant dependencies.
+4. **Find/construct methods.** Match existing effects to unmet conditions and recursively resolve *method-specific* prerequisites. Where no Method exists, return a missing-capability need; an authorized constructor may produce a candidate with tests, never an approved capability by assertion.
+5. **Compare complete plans.** Consider alternative prerequisite trees, share common subgoals safely, detect cycles, and sum resource vectors componentwise. Retain Pareto-feasible plans and apply an authorized preference; do not invent exchange rates between money, compute and attention.
+6. **Admit and execute.** Recheck provider offers, scope, grants, resources, readiness and idempotency before every real effect. The current reference supports only allowlisted synthetic local actions.
+7. **Independently verify and record.** Accept only independently checked results as achieved; record source versions, decisions, results, event hashes and resource ledgers. Invalidate dependent claims selectively when inputs change.
+8. **Reflect and evolve under governance.** Record candidate reuses/structural patterns after terminal attempts. Treat improvement as another bounded goal, but do not let the candidate promote its own source, authority or verifier.
+
+This sequence is a conceptual contract, not proof that all stages are implemented in the current finite lab.
+
+## Minimal pseudocode
+
+```text
+RESOLVE(goal, knowledge, evidence, methods, policy, limits):
+  if adequately_verified(goal, evidence): return SATISFIED
+  branches = derive_from_approved_rules(goal, knowledge)
+  if no branches: return SEMANTICS_MISSING
+  for branch in branches:
+    recursively find/compose eligible methods for unmet conditions
+    assess alternatives, shared prerequisites, budgets and authority
+  if no eligible plan: return specific WAIT / QUERY / METHOD_ABSENT / BLOCKED
+  choose a permitted Pareto-efficient full plan
+  dispatch admitted effects only through trusted provider boundary
+  independently check effects, update evidence and immutable run
+  optionally PROPOSE bounded improvements; never self-promote
+  return rechecked goal status and replayable receipts
+```
+
+## Why needs can arise without a new human request
+
+Suppose a standing goal is `order_fulfilled(order_7)`. An approved rule provides two alternatives: ship original **OR** ship replacement with applicable approval. A stock-change event invalidates the original path. If replacement customer approval is UNKNOWN, the solver derives an evidence-query need. If reviewed policy adds notification, the planned replacement path gains a notification step. Without the rule, the solver must report missing semantics—it cannot invent business truth from a blank slate.
+
+## Extension slots
+
+| Extension | Can change | Cannot change |
+|---|---|---|
+| Domain pack | Meaning, AND/OR branches, applicability, source | Automatically become approved legal/business truth |
+| Method pack | Candidate effect, preconditions, tools, tests | Grant itself external effects |
+| Evidence adapter | New observations and provenance | Treat a failed check as external FALSE |
+| Planner preference | Choose among authorized non-dominated plans | Bypass hard resource ceilings |
+| Provider adapter | Offer actual capabilities with finite commitments | Assert effect success without separate evidence |
+| Learning/formation | Propose reusable Methods, rules or patterns | Promote its own rules, verifier or kernel |
+| J2 adapter | Map proposed plan to J2 atom/map contracts | Claim a projection is executed J2 work |
+
+## Four linked interpretations
+
+**World:** observed scoped entities, facts, obligations. **Knowledge:** sourced rules and Methods. **Design:** proposed plans and dependency graphs. **Run:** actually observed effects, checks and receipts. A proposed plan edge is neither causal proof nor permission.
+
+## Honest status
+
+Current `lab/` has 25 authored deterministic cases, 54 passing local unit tests and 31 independent trace/fixture checks. It is **not** an independently generalizing agent, full condition theorem prover, autonomous code generator, production J2 adapter, real external action service or Native v1–v5 proof. The original Sutra Core v0.2.2 and separate v0.3.0 candidate remain independent historical tracks.
+
+Read [CHARTER.md](CHARTER.md) for boundaries and [lab/README.md](lab/README.md) for an exact reproducible experiment.

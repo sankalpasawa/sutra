@@ -1,0 +1,57 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "01_domain",
+  "rules": [
+    {
+      "id": "R-ORDER@1",
+      "head": "order_complete",
+      "branches": [
+        [
+          "original_delivered"
+        ],
+        [
+          "replacement_delivered"
+        ]
+      ],
+      "approved": true,
+      "source": "fixture/reviewed-domain-theory"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "original_delivered",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "replacement_delivered",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "original_stock",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "substitute_stock",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "customer_notified",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    }
+  ]
+}

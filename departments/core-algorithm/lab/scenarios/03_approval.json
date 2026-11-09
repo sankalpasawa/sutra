@@ -1,0 +1,13 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "03_approval",
+  "evidence": [
+    {
+      "predicate": "customer_approved",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/customer-approval",
+      "version": "approval-v1"
+    }
+  ]
+}

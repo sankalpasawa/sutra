@@ -428,28 +428,55 @@ def from_model(model):
     return fields, [ObjectSpec(name=n, fields=objects[n]) for n in order]
 
 
+DOCUMENT = "Document"      # agent-views/1: the document-level generic template of a prd / hld / lld (the whole PRD/1, not one section)
+DOCUMENT_ARTIFACTS = ("prd", "hld", "lld")
+
+
+def document_model(artifact):
+    """The whole-document model (PRD, HLD, LLD) when the artifact is a document, else None."""
+    return AM.DOC_MODELS.get(artifact) if artifact in DOCUMENT_ARTIFACTS else None
+
+
+def document_render(artifact):
+    """The human-readable template of a document: how its data renders to markdown, section by section (render_section),
+    as the headings the parsers and conditions read."""
+    model = document_model(artifact)
+    return {"format": "markdown", "file": f"{artifact}.md", "title": f"# {model.template()}" if model else "",
+            "sections": [{"heading": f"## {s}", "template": AM.SECTION_MODELS[artifact][s].template(),
+                          "fields": list(AM.SECTION_MODELS[artifact][s].model_fields)} for s in AM.SECTION_MODELS[artifact]],
+            "from": "j2_artifact_models.render_section(kind, section, data), one section after the other, in this order"}
+
+
 def generic(artifact, section):
-    """The GenericTemplate of one section, built from its model and its rules (None when there is no model)."""
-    model = (AM.SECTION_MODELS.get(artifact) or {}).get(section)
+    """The GenericTemplate of one section, built from its model and its rules (None when there is no model). The section
+    "Document" of a prd / hld / lld is the whole document's model (agent-views/1)."""
+    model = document_model(artifact) if section == DOCUMENT else (AM.SECTION_MODELS.get(artifact) or {}).get(section)
     if model is None:
         return None
     fields, objects = from_model(model)
-    t = GenericTemplate(name=model.template(), artifact=artifact, section=section, version=AM.VERSION,
-                        description=f"The generic {model.template()} template: the fixed layout of every "
-                                    f"{artifact.upper() if artifact in ('prd', 'hld', 'lld') else artifact} "
-                                    f"{section} section, whatever the business",
+    what = artifact.upper() if artifact in ('prd', 'hld', 'lld') else artifact
+    t = GenericTemplate(name=model.template() + (" · " + DOCUMENT if section == DOCUMENT else ""), artifact=artifact, section=section, version=AM.VERSION,
+                        description=(f"The generic {model.template()} document template: the whole {what} as one object, every section in order, "
+                                     f"as the agent reads it and as the renderer writes it" if section == DOCUMENT else
+                                     f"The generic {model.template()} template: the fixed layout of every {what} {section} section, whatever the business"),
                         fields=fields, objects=objects, rules=j2_rules.rules_for(artifact, section))
     t.sha = t.compute_sha()
     return t
 
 
+def generic_sections(artifact):
+    """Every generic section of an artifact, the Document last for a prd / hld / lld."""
+    return list(AM.SECTION_MODELS[artifact]) + ([DOCUMENT] if document_model(artifact) else [])
+
+
 def generic_file(artifact):
     """templates/<artifact>/generic.json as it must be: every section of the artifact, in the models' order."""
-    ts = [generic(artifact, s) for s in AM.SECTION_MODELS[artifact]]
+    ts = [generic(artifact, s) for s in generic_sections(artifact)]
+    model_of = lambda sec: document_model(artifact) if sec == DOCUMENT else AM.SECTION_MODELS[artifact][sec]
     return {"schema": SCHEMA, "artifact": artifact, "kind": "generic", "version": AM.VERSION,
-            "from": "j2_artifact_models.SECTION_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
-            "templates": [{**t.model_dump(exclude_none=True), "schema_sha": sha_of(AM.transport_schema(
-                AM.SECTION_MODELS[artifact][t.section]))} for t in ts]}
+            "from": "j2_artifact_models.SECTION_MODELS, DOC_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
+            "templates": [{**t.model_dump(exclude_none=True), "schema_sha": sha_of(AM.transport_schema(model_of(t.section))),
+                           **({"render": document_render(artifact)} if t.section == DOCUMENT else {})} for t in ts]}
 
 
 def write_generic(root=None):
@@ -1367,7 +1394,7 @@ def library_view():
     """GET /api/library: every template grouped by artifact and section, the generic layer included."""
     groups = {}
     for a in ARTIFACTS:
-        for sec in AM.SECTION_MODELS[a]:
+        for sec in generic_sections(a):
             g = generic(a, sec)
             groups.setdefault(a, {})[sec] = {"generic": {"name": g.name, "version": g.version, "sha": g.sha,
                                                          "description": g.description,
@@ -1414,7 +1441,7 @@ def template_view(artifact, section_slug, tslug, version, run_dir=None):
 
 def _library_view_of(artifact, section_slug, tslug, version):
     if tslug == "generic":
-        sec = next((s for s in AM.SECTION_MODELS.get(artifact, {}) if slug(s) == section_slug), None)
+        sec = next((s for s in generic_sections(artifact) if slug(s) == section_slug), None) if artifact in AM.SECTION_MODELS else None
         if sec is None:
             return None
         t = generic(artifact, sec)
@@ -1424,13 +1451,19 @@ def _library_view_of(artifact, section_slug, tslug, version):
                 gtext = f.read()
         except OSError:
             gtext = None
-        schema = AM.transport_schema(AM.SECTION_MODELS[artifact][sec])
+        model = document_model(artifact) if sec == DOCUMENT else AM.SECTION_MODELS[artifact][sec]
+        schema = AM.transport_schema(model)
         stext = json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
         spec = t.model_dump(exclude_none=True)
         files = {"generic.json": gtext, "spec.json": json.dumps(spec, indent=2, ensure_ascii=False) + "\n",
                  "model.py": codegen_generic(t), "schema.json": stext}
-        return {"template": spec, "meta": {"used_by": [], "kind": "generic"}, "files": _with_sha(files),
-                "readable": readable(t)}
+        rd = readable(t)
+        if sec == DOCUMENT:      # the human-readable template too: how the document renders, section by section
+            render = document_render(artifact)
+            files["render.md"] = (f"{render['title']}\n\n" + "\n".join(f"{x['heading']}\n{x['template']}: {', '.join(x['fields'])}\n" for x in render["sections"])
+                                  + f"\n<!-- {render['from']} -->\n")
+            rd = {**rd, "render": render}
+        return {"template": spec, "meta": {"used_by": [], "kind": "generic"}, "files": _with_sha(files), "readable": rd}
     got = load(artifact, section_slug, tslug, version)
     if not got:
         return None
@@ -1441,7 +1474,7 @@ def _library_view_of(artifact, section_slug, tslug, version):
 
 def codegen_generic(t):
     """The generic template's model listing, from the same codegen (the runtime generic is the model itself)."""
-    head = f"# The generic template is j2_artifact_models.{AM.SECTION_MODELS[t.artifact][t.section].__name__}; this " \
+    head = f"# The generic template is j2_artifact_models.{(document_model(t.artifact) if t.section == DOCUMENT else AM.SECTION_MODELS[t.artifact][t.section]).__name__}; this " \
            "listing is codegen() of its generic.json entry.\n"
     return head + codegen(t)
 

@@ -1,0 +1,7 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "14_remove_capacity",
+  "providers": {
+    "local-provider": 0
+  }
+}

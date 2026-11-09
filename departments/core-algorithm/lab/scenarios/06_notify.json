@@ -1,0 +1,44 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "06_notify",
+  "rules": [
+    {
+      "id": "R-ORDER@2",
+      "head": "order_complete",
+      "branches": [
+        [
+          "original_delivered"
+        ],
+        [
+          "replacement_delivered",
+          "customer_notified"
+        ]
+      ],
+      "approved": true,
+      "source": "fixture/reviewed-domain-theory",
+      "replaces": "R-ORDER@1"
+    }
+  ],
+  "methods": [
+    {
+      "id": "notify-customer@1",
+      "effect": "customer_notified",
+      "requires": [
+        "replacement_delivered"
+      ],
+      "provider": "local-provider",
+      "grant": "action:notify-customer@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "grants": [
+    "action:notify-customer@1"
+  ]
+}

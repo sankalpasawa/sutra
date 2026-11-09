@@ -1,0 +1,35 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "33_bad_constructor",
+  "scope": "orgA/enquiries",
+  "goals": [
+    "capability_candidate_created"
+  ],
+  "evidence": [
+    {
+      "predicate": "source_contract_reviewed",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    }
+  ],
+  "constructors": [
+    {
+      "id": "C-ENQUIRY@1",
+      "target_effect": "record_retrievable",
+      "components": [
+        "validate-field@1",
+        "store-component@1",
+        "read-component@1"
+      ],
+      "required_effects": [
+        "component_validate",
+        "component_store",
+        "component_read",
+        "component_audit"
+      ],
+      "source": "reviewed/contract-template-v2"
+    }
+  ]
+}

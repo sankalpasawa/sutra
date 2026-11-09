@@ -1,0 +1,18 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "00_goal",
+  "scope": "orgA/fulfillment",
+  "goals": [
+    "order_complete"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 3
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ]
+}

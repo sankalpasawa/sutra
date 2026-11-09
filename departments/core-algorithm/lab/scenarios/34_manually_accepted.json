@@ -1,0 +1,42 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "34_manually_accepted",
+  "scope": "orgA/enquiries",
+  "goals": [
+    "enquiry_complete"
+  ],
+  "methods": [
+    {
+      "id": "reviewed-composition@1",
+      "effect": "support_inbox_retrievable",
+      "requires": [
+        "enquiry_valid"
+      ],
+      "provider": "local-provider",
+      "grant": "action:reviewed-composition@1",
+      "cost": {
+        "compute": 1,
+        "money": 2,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "grants": [
+    "action:reviewed-composition@1"
+  ],
+  "providers": {
+    "local-provider": 4
+  },
+  "evidence": [
+    {
+      "predicate": "enquiry_valid",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    }
+  ]
+}

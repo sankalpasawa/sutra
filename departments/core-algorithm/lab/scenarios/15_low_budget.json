@@ -1,0 +1,9 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "15_low_budget",
+  "budget": {
+    "compute": 0,
+    "money": 0,
+    "attention": 0
+  }
+}

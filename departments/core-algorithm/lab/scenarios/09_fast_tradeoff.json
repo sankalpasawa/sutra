@@ -1,0 +1,46 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "09_fast_tradeoff",
+  "methods": [
+    {
+      "id": "ship-fast@1",
+      "effect": "replacement_delivered",
+      "requires": [
+        "substitute_stock",
+        "customer_approved"
+      ],
+      "provider": "local-provider",
+      "grant": "action:ship-fast@1",
+      "cost": {
+        "compute": 1,
+        "money": 4,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ship-economy@1",
+      "effect": "replacement_delivered",
+      "requires": [
+        "substitute_stock",
+        "customer_approved"
+      ],
+      "provider": "local-provider",
+      "grant": "action:ship-economy@1",
+      "cost": {
+        "compute": 3,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "grants": [
+    "action:ship-fast@1",
+    "action:ship-economy@1"
+  ]
+}

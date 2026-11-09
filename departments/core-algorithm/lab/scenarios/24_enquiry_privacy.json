@@ -1,0 +1,26 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "24_enquiry_privacy",
+  "methods": [
+    {
+      "id": "check-privacy@1",
+      "effect": "privacy_checked",
+      "requires": [
+        "enquiry_valid"
+      ],
+      "provider": "local-provider",
+      "grant": "action:check-privacy@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "grants": [
+    "action:check-privacy@1"
+  ]
+}

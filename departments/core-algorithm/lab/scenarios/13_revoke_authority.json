@@ -1,0 +1,7 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "13_revoke_authority",
+  "revoke_grants": [
+    "action:ship-replacement@1"
+  ]
+}

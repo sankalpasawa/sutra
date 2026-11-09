@@ -1,0 +1,21 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "50_unapproved_semantics",
+  "scope": "orgA/enquiries",
+  "goals": [
+    "enquiry_complete"
+  ],
+  "rules": [
+    {
+      "id": "R-ENQUIRY-DRAFT@1",
+      "head": "enquiry_complete",
+      "branches": [
+        [
+          "record_stored"
+        ]
+      ],
+      "approved": false,
+      "source": "LLM/candidate-unreviewed"
+    }
+  ]
+}

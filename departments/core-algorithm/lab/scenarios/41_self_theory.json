@@ -1,0 +1,42 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "41_self_theory",
+  "rules": [
+    {
+      "id": "R-SELF@1",
+      "head": "better_method_candidate",
+      "branches": [
+        [
+          "benchmark_available",
+          "candidate_tested",
+          "review_requested"
+        ]
+      ],
+      "approved": true,
+      "source": "fixture/reviewed-domain-theory"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "benchmark_available",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "candidate_tested",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "review_requested",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    }
+  ]
+}
