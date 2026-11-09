@@ -245,6 +245,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 data = f.read()
             return self._send(200, data, DOCX, name) if name.endswith(".docx") else \
                 self._send(200, data, "text/markdown")
+        if u.path.startswith("/doc/"):         # the Simple view's document tabs: prd, hld or lld of a run as a page, read-only
+            kind = u.path.rsplit("/", 1)[-1]
+            d = j2.saved_dir(run) if run else RUN.dir
+            p = os.path.join(d or "", f"{kind}.md")
+            if kind not in ("prd", "hld", "lld") or not d or not os.path.isfile(p):
+                return self._send(200, "<p style='font:15px system-ui;color:#667;padding:24px'>This document isn't written yet.</p>",
+                                  "text/html")
+            with open(p, encoding="utf-8") as f:
+                return self._send(200, j2.md_html(f.read(), j2.DOC_NAMES[kind].capitalize()), "text/html")
         if u.path.startswith("/site/") and run:
             d, key = j2.saved_dir(run), u.path.rsplit("/", 1)[-1]
             site = os.path.join(d or "", "site")

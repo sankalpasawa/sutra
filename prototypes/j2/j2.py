@@ -3005,7 +3005,10 @@ class J2Run:
                 "turn": self.turn, "cycle_turns": self.cycle_turns, "max_turns": self._turn_cap(),
                 "paused": ({k: self.paused[k] for k in ("kind", "questions", "msg")}
                            | {"label": PAUSES.get(self.paused["kind"], ""),
-                              "choices": self.paused["handoff"].get("choices")}) if self.paused else None,
+                              "choices": self.paused["handoff"].get("choices"),
+                              "suggested": self._auto_choice(self.paused)[2],      # the option Decide for me would take
+                              "auto_waits": self.paused["kind"] in AUTO_ASK,       # a question it never answers for you
+                              "workflow": self.paused["handoff"].get("wid")}) if self.paused else None,
                 "outcome": self.outcome,          # read-only, for the Simple view
                 "decide_for_me": self.auto, "auto_answers": self.auto_log,
                 "style": self.style, "rubric": RUBRIC,
@@ -3476,15 +3479,19 @@ class J2Run:
 
     def _auto_pick(self):
         """Decide for me's answer to the open question: (text sent as your answer, the plain label shown), or None when
-        it must wait for you (switch off, nothing open, a real-world send, or AUTO_CAP answers already given).
-        An option list: the first option; a conflict (asks for more than the plan) takes the simpler option; a second
-        limit question takes "finish as it is". An OK to spend
-        more: yes. A question without options: go on with sensible choices, listed as assumptions."""
+        it must wait for you (switch off, nothing open, a real-world send, or AUTO_CAP answers already given)."""
         p = self.paused
         if not (self.auto and p) or p["kind"] in AUTO_ASK or len(self.auto_log) >= AUTO_CAP:
             return None
+        return self._auto_choice(p)
+
+    def _auto_choice(self, p):
+        """The answer Decide for me gives to pause p, whether or not it is on (the Simple view marks it "Suggested"):
+        an option list takes the first option; a conflict (asks for more than the plan) takes the simpler option; a
+        second limit question takes "finish as it is". An OK to spend more: yes. No options: go on with sensible
+        choices, listed as assumptions. (text sent as the answer, plain label, option number or None)"""
         if p["kind"] in ("approval", "ruling_budget"):
-            return "Yes, approve it.", "Yes, go ahead"
+            return "Yes, approve it.", "Yes, go ahead", None
         qs = p.get("questions") or []
         opts = (qs[0].get("options") or []) if len(qs) == 1 else []
         if opts:
@@ -3493,14 +3500,14 @@ class J2Run:
                 k = next((i + 1 for i, o in enumerate(opts) if AUTO_SIMPLE.search(str(o))), 1)
             if p["kind"] == "limit" and any(a["kind"] == "limit" for a in self.auto_log):
                 k = next((i + 1 for i, o in enumerate(opts) if AUTO_FINISH.search(str(o))), len(opts))
-            return f"Option {k}", str(opts[k - 1])
-        return AUTO_ASSUME, "Go with sensible choices"
+            return f"Option {k}", str(opts[k - 1]), k
+        return AUTO_ASSUME, "Go with sensible choices", None
 
     def _auto_go(self):
         """While Decide for me can answer the open question: post the answer as the Requester's (flagged auto) and
         go on, exactly as a click would."""
         while (pick := self._auto_pick()):
-            text, label = pick
+            text, label, _ = pick
             self.auto_log.append({"kind": self.paused["kind"], "msg": self.paused["msg"], "answer": text, "label": label})
             self._event("requester", "auto_answer", f"{self.paused['kind']}: {label}")
             self.post("user", text, auto=True, auto_label=label)
