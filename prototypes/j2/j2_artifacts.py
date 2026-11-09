@@ -403,3 +403,196 @@ def tree_files(t):
     for g in t.get("groups") or []:
         walk(g["items"])
     return out
+
+
+# ------------------------------------------------------------------------------------------------------------- the groups
+# The Artifacts section as four groups (artifacts-groups/1): Run plan, Guides the makers read, Website sections, Run records. A guide
+# is one row per output file and a website section one row per section in sections.json (its first workflow, then every workflow
+# that rewrote it, as versions). Makers are the Map's (j2_map.build); anything the run did not record is None, never guessed. File
+# contents are not included: the page fetches a file (/api/artifact) or a section's code (/api/code) only when it is opened.
+CHANGE = re.compile(r"\s*\(change (\d+)\)\s*$")
+
+
+def _final_checks(w):
+    """A workflow's checks by code, the last attempt of each atom only: [{check, pass, evidence}]."""
+    out = []
+    for a in w.get("atoms") or []:
+        rs = [r for r in a.get("results") or [] if isinstance(r, dict)]
+        last = max((r.get("attempt") or 1 for r in rs), default=None)
+        out += [{"check": r.get("check") or r.get("type") or "", "pass": bool(r.get("pass")), "evidence": str(r.get("evidence") or "")}
+                for r in rs if (r.get("attempt") or 1) == last]
+    return out
+
+
+def _method(w):
+    """The first sentence of how the workflow's first atom was told to work, else None."""
+    steps = str((((w.get("atoms") or [{}])[0] or {}).get("how") or {}).get("steps") or "").strip()
+    return (re.split(r"(?<=\.)\s", steps)[0].rstrip(".") + ".") if steps else None
+
+
+def _parts(text):
+    """{html, css, js}: non-blank lines of HTML, CSS rules and non-blank lines of JS in a section's code."""
+    css = " ".join(re.findall(r"<style[^>]*>(.*?)</style>", text, re.S | re.I))
+    js = "\n".join(re.findall(r"<script[^>]*>(.*?)</script>", text, re.S | re.I))
+    html = re.sub(r"<(style|script)[^>]*>.*?</\1>", "", text, flags=re.S | re.I)
+    n = lambda s: sum(1 for x in s.splitlines() if x.strip())
+    return {"html": n(html), "css": css.count("{"), "js": n(js)}
+
+
+def _wf_row(kind, vs, by, persona, last_audit, file, nodes):
+    """One guide or section: its first workflow vs[0], every later version, checks (final attempt), the audit of the items it covers."""
+    w0 = by[vs[0]]
+    covers = sorted({i for v in vs for i in by[v].get("covers") or [] if isinstance(i, int)})
+    res = {r.get("item"): r for r in (last_audit or {}).get("results") or [] if isinstance(r, dict)}
+    audit = [{"item": i, "verdict": res[i].get("verdict") or "", "pass": bool(res[i].get("pass")), "note": str(res[i].get("note") or "")}
+             for i in covers if i in res]
+    checks = [{**c, "workflow": v} for v in vs for c in _final_checks(by[v])]
+    versions = []
+    for k, v in enumerate(vs):
+        m = CHANGE.search(str(by[v].get("name") or ""))
+        versions.append({"workflow": v, "cycle": by[v].get("cycle"), "purpose": str(by[v].get("purpose") or ""),
+                         "label": "first version" if k == 0 else f"change {m.group(1)}" if m else str(by[v].get("name") or v)})
+    return {"id": vs[0], "kind": kind, "name": CHANGE.sub("", str(w0.get("name") or vs[0])).replace("-", " "), "maker": persona.get(vs[0]),
+            "file": file, "goal": str(w0.get("purpose") or "") or None, "method": _method(w0), "covers": covers, "audit": audit,
+            "screenshot": (last_audit or {}).get("screenshot") if audit else None, "checks": checks, "versions": versions,
+            "ok": all(a["pass"] for a in audit) and all(c["pass"] for c in checks if c["workflow"] == vs[-1]), "nodes": nodes}      # the latest version's checks
+
+
+def groups(d, m=None):
+    """{"schema": "artifacts-groups/1", "site": {...}, "groups": [{id, label, rows}]} for a run folder (four empty groups when there is none)."""
+    import j2_map
+    empty = [{"id": k, "label": lab, "rows": []} for k, lab in (("plan", "Run plan"), ("guides", "Guides the makers read"),
+                                                                ("site", "Website sections"), ("records", "Run records"))]
+    if not d or not os.path.isdir(d):
+        return {"schema": "artifacts-groups/1", "documents": {}, "site": None, "groups": empty}
+    m = m or j2_map.build(d)
+    t = {g["id"]: g for g in tree(d, m)["groups"]}
+    plan_items = {x["name"]: x for x in t["plan"]["items"]}
+    fn = lambda x: ((x or {}).get("made_by") or {}).get("function")
+    node_ids = {n["id"] for n in m["nodes"]}
+    persona = {}
+    for n in m["nodes"]:
+        if n["kind"] == "engine" and n.get("persona"):
+            for w in n.get("workflows") or []:
+                persona.setdefault(w, n["persona"])
+    wfs = [w for w in _read(d, "workflows.json", []) or [] if isinstance(w, dict) and w.get("id")]
+    by = {w["id"]: w for w in wfs}
+    audits = [a for a in _read(d, "audits.json", []) or [] if isinstance(a, dict)]
+    last = audits[-1] if audits else None
+    has = lambda f: os.path.isfile(os.path.join(d, f))
+    # 1 Run plan
+    plan = []
+    g = _read(d, "goal.json")
+    if isinstance(g, dict):
+        plan.append({"id": "charter", "kind": "charter", "name": "Charter", "file": "goal.json", "maker": fn(plan_items.get("Charter")),
+                     "audience": g.get("audience") or None, "done_when": [str(x) for x in g.get("done_when") or []], "nodes": ["work:charter"]})
+    rz = _read(d, "realization.json")
+    if isinstance(rz, dict):
+        plan.append({"id": "realization", "kind": "realization", "name": "Realization plan", "file": "realization.json",
+                     "maker": fn(plan_items.get("Realization plan")), "text": "realization.md" if has("realization.md") else None,
+                     "zone": (((rz.get("plan") or {}).get("certainty_assessment")) or {}).get("zone"), "confidence": rz.get("plan_confidence"),
+                     "stages": list(rz.get("stages") or {}), "nodes": []})
+    if has("workflows.json"):
+        cyc = {}
+        for w in wfs:
+            c = cyc.setdefault(w.get("cycle"), {"cycle": w.get("cycle"), "n": 0, "changes": set(), "fixes": []})
+            c["n"] += 1
+            mm = CHANGE.search(str(w.get("name") or ""))
+            if mm:
+                c["changes"].add(int(mm.group(1)))
+            c["fixes"] += [str(x) for x in w.get("fixes") or []]
+        cycles = [{**c, "changes": sorted(c["changes"])} for _, c in sorted(cyc.items(), key=lambda kv: (kv[0] is None, kv[0] or 0))]
+        plan.append({"id": "workflows", "kind": "workflows", "name": "Workflows", "file": "workflows.json", "maker": fn(plan_items.get("Workflows")),
+                     "count": len(wfs), "cycles": cycles, "nodes": []})
+    # 2 Guides: the workflows that write a document, one row per output file
+    secs = _read(d, "sections.json")
+    secs = secs if isinstance(secs, dict) else {}
+    out_of = lambda w: str((w.get("outputs") or [""])[0] or "")
+    files, delivered = {}, {t["file"] for t in load_types()["types"] if t["deliverable"]}      # a PRD, HLD or LLD is a deliverable (Documents), not a guide
+    for w in sorted(wfs, key=lambda w: _num(w["id"])):
+        o = out_of(w)
+        if o.endswith(".md") and o not in delivered and w["id"] not in secs:
+            files.setdefault(o, []).append(w["id"])
+    guides = []
+    for o, vs in files.items():
+        rel = f"artifacts/{o}" if has(f"artifacts/{o}") else o if has(o) else None
+        row = _wf_row("guide", vs, by, persona, last, rel, [f"work:{v}" for v in vs if f"work:{v}" in node_ids])
+        base = os.path.splitext(rel or o)[0]
+        olds = sorted(((int(mm.group(1)), f) for f in _all_files(d)
+                       for mm in [re.fullmatch(re.escape(base) + r"\.v(\d+)\.md", f)] if mm))
+        match = len(olds) == len(vs) - 1      # one saved copy per later version: v1 is the first workflow's, and so on
+        row["docs"] = [{"label": f"v{k}", "file": f, "workflow": vs[i] if match else None} for i, (k, f) in enumerate(olds)] + \
+                      ([{"label": "current", "file": rel, "workflow": vs[-1]}] if rel else [])
+        guides.append(row)
+    # 3 Website sections: one row per section (sections.json), its versions the workflows recorded on it; then the style guide
+    site = []
+    web = next((n for n in m["nodes"] if n["id"] == "work:website"), None)
+    if web:
+        for sid in sorted((k for k in secs if k in by), key=_num):
+            e = secs[sid] if isinstance(secs[sid], dict) else {}
+            vs = [sid] + sorted((w["id"] for w in wfs if w.get("section") == sid and w["id"] != sid), key=_num)
+            if len(vs) == 1 and e.get("owner") in by and e["owner"] != sid:
+                vs.append(e["owner"])      # an older run records only the current owner
+            p = _parts((e.get("head") or "") + (e.get("body") or ""))
+            kind = "script" if p["js"] and not p["html"] and not p["css"] else "section"
+            row = _wf_row(kind, vs, by, persona, last, "site/index.html" if has("site/index.html") else None, [])
+            names = {str(by[v].get("name") or "") for v in vs}
+            row.update({"section": sid, "deck": "work:website", "owner": e.get("owner") or sid, "parts": p,
+                        "reused_by": [{"id": w["id"], "name": str(w.get("name") or "")} for w in wfs
+                                      if w["id"] not in vs and names & {str(x) for x in w.get("dependencies") or []}] if kind == "script" else []})
+            site.append(row)
+        st = next((x for x in t["specs"]["items"] if x.get("node") == "work:style"), None)
+        if st or has("style.json"):
+            mb = (st or {}).get("made_by") or {}
+            site.append({"id": "style", "kind": "style", "name": "Style guide", "file": "style.json" if has("style.json") else None,
+                         "maker": mb.get("persona"), "made_in": mb.get("workflows") or [], "read_by": (st or {}).get("read_by"),
+                         "section": "style" if "style" in secs else None, "deck": "work:website", "nodes": ["work:style"] if "work:style" in node_ids else []})
+    # 4 Run records: the check receipts, the audits, the necessary conditions and the screenshots
+    rec = []
+    if has("receipts.jsonl"):
+        rs = []
+        with open(os.path.join(d, "receipts.jsonl"), encoding="utf-8") as fh:
+            for x in fh:
+                try:
+                    rs.append(json.loads(x))
+                except ValueError:
+                    pass
+        ok = sum(1 for r in rs if isinstance(r, dict) and (r.get("pass") is True or r.get("met") is True))
+        rec.append({"id": "receipts", "kind": "receipts", "name": "Check results", "file": "receipts.jsonl", "maker": RECORD_MAKER["receipts.jsonl"],
+                    "count": len(rs), "passed": ok, "failed": len(rs) - ok, "nodes": []})
+    if audits:
+        rec.append({"id": "audits", "kind": "audits", "name": "Audits", "file": "audits.json", "maker": RECORD_MAKER["audits.json"], "nodes": [],
+                    "audits": [{"cycle": a.get("cycle"), "version": a.get("version"), "screenshot": a.get("screenshot"),
+                                "passed": sum(1 for r in a.get("results") or [] if isinstance(r, dict) and r.get("pass")),
+                                "total": len(a.get("results") or [])} for a in audits]})
+    cond = _read(d, "conditions.json")
+    if isinstance(cond, list):
+        rec.append({"id": "conditions", "kind": "conditions", "name": "Necessary conditions", "file": "conditions.json", "maker": "code", "nodes": [],
+                    "items": [{"id": str(c.get("id") or ""), "text": str(c.get("text") or ""), "met": bool(c.get("met"))} for c in cond if isinstance(c, dict)]})
+    shots = sorted((f for f in _all_files(d) if re.fullmatch(r"site/shots/[^/]+\.png", f)), key=_num)
+    if shots:
+        aud = {}
+        for a in audits:
+            aud.setdefault(a.get("screenshot"), a)      # the first audit that took it
+        rec.append({"id": "shots", "kind": "shots", "name": "Audit screenshots", "file": None, "maker": RECORD_MAKER["audits.json"], "nodes": [],
+                    "shots": [{"file": f, "version": (aud.get(f) or {}).get("version"),
+                               "passed": sum(1 for r in (aud.get(f) or {}).get("results") or [] if isinstance(r, dict) and r.get("pass")) if f in aud else None,
+                               "total": len((aud.get(f) or {}).get("results") or []) if f in aud else None} for f in shots]})
+    # the documents (PRD, HLD, LLD) are in Documents, not here: each one's sections with their own heading, so a Map link can land on the heading
+    kinds = [t["name"] for t in load_types()["types"] if t["deliverable"] and t["form"] == "doc"]
+    decks = [n for n in m["nodes"] if n["id"] in {f"work:{k}" for k in kinds}]
+    documents = {}
+    for deck, (_, ss) in sections_of(d, decks).items():
+        for sid, e in (ss or {}).items():
+            hit = re.search(r"^#{1,6}\s+(.+?)\s*$", ((e.get("head") or "") + "\n" + (e.get("body") or "")) if isinstance(e, dict) else "", re.M)
+            if hit:
+                documents.setdefault(deck.split(":", 1)[1], {})[sid] = hit.group(1)
+    return {"schema": "artifacts-groups/1", "documents": documents,
+            "site": {"version": (web or {}).get("version"), "audit": {"version": last.get("version"), "passed": sum(1 for r in last.get("results") or [] if isinstance(r, dict) and r.get("pass")),
+                                                                     "total": len(last.get("results") or [])} if last else None} if web else None,
+            "groups": [{**e, "rows": r} for e, r in zip(empty, (plan, guides, site, rec))]}
+
+
+def _all_files(d):
+    """Every file in a run folder, relative, with forward slashes."""
+    return sorted(os.path.relpath(os.path.join(r, x), d).replace(os.sep, "/") for r, _, fs in os.walk(d) for x in fs if not x.startswith("."))

@@ -380,7 +380,9 @@ body.simple #dview{display:none}
 a{color:var(--accent)}
 .needitem button,.mappanel .gobtn,.treebar .gobtn{border:1px solid var(--vio);background:color-mix(in srgb,var(--vio) 12%,transparent);color:var(--ink);border-radius:8px;padding:5px 11px}
 .msg.flash .bubble{outline:2px solid var(--vio);outline-offset:2px}.msg:focus{outline:none}
-#backmap{display:block;margin:0 0 2px;font-size:13px}#backmap[hidden]{display:none}
+#backmap{display:block;margin:0 0 2px;font-size:13px}.wcrumb{font-size:12px;color:var(--muted);margin:0 0 2px}.wcrumb span{margin:0 3px}.wcrumb b{color:var(--ink);font-weight:500}.wcrumb[hidden],.wcnt[hidden]{display:none}
+.wtl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}.wcnt{font-size:12px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:99px;padding:1px 9px;white-space:nowrap}
+#dview[data-tab=artifacts] .wsub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#backmap[hidden]{display:none}
 /* ---- Detailed view layout: icon rail, one title, two soft cards (message board + output), a collapsed Run details row.
    Everything is scoped to #dview so the Simple view is untouched. System serif for headings, no web fonts. */
 #dview{--serif:ui-serif,Georgia,"Times New Roman",serif;--gut:24px}
@@ -531,7 +533,41 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 .rst.running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:5px;animation:rpulse 1.2s infinite}@keyframes rpulse{50%{opacity:.3}}
 .runmore{margin:4px auto 2px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:7px 16px;font:inherit;font-size:13px;cursor:pointer}
 .runnone{color:var(--muted);font-size:13px;padding:8px}
-#dview[data-tab=runsettings] .dcol{overflow:hidden}#dview[data-tab=runsettings] main{grid-template-rows:minmax(0,1fr);flex:1;min-height:0}
+#dview:is([data-tab=runsettings],[data-tab=artifacts]) .dcol{overflow:hidden}#dview:is([data-tab=runsettings],[data-tab=artifacts]) main{grid-template-rows:minmax(0,1fr);flex:1;min-height:0}
+/* Artifacts: four groups; a list on the left and the chosen item on the right; the page fits the screen, only the list and the item scroll */
+#pane-artifacts{overflow:hidden}#dview #pane-artifacts{max-width:none}#pane-artifacts:not([hidden]){display:flex;flex-direction:column}
+.agwrap{flex:1;min-height:0;display:grid;grid-template-columns:minmax(240px,340px) minmax(0,1fr);gap:14px}
+.aglist{min-height:0;overflow:auto;align-self:start;max-height:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px}
+.agrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;width:100%;padding:10px 14px;border:0;border-top:1px solid var(--line);background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.agrow:first-child{border-top:0}.agrow:hover{background:var(--panel)}.agrow.on{background:var(--panel);box-shadow:inset 3px 0 0 var(--warm1)}
+.agt{min-width:0}.agt b{display:block;font-weight:600;overflow-wrap:anywhere}.agt span{display:block;font-size:12.5px;color:var(--muted)}
+.agpane{min-height:0;min-width:0;overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:18px 22px;overflow-wrap:anywhere}
+.agpane h2{font:600 20px var(--display);margin:0 0 2px}.aby{color:var(--muted);font-size:13px;margin-bottom:14px}
+.mono{font-family:var(--mono);font-size:12px}.agrow .mono{white-space:nowrap}
+.amark{display:inline-flex;width:16px;height:16px;flex:none}.amark svg{width:16px;height:16px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.amark.am-ok svg{stroke:var(--ok)}.amark.am-warn svg{stroke:var(--warm1)}
+.atabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 14px}.atabs button{border:0;border-bottom:2px solid transparent;background:none;font:inherit;font-size:13px;padding:7px 12px;color:var(--muted);cursor:pointer}
+.atabs button[aria-selected=true]{color:var(--ink);border-color:var(--warm1);font-weight:600}
+.ablk{margin-bottom:16px;min-width:0}.ablk h5,.aasm h5{margin:0 0 5px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.ablk p{margin:0}
+.agrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 28px}
+.ackl{margin:0;padding:0;list-style:none}.ackl li{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:flex-start}.ackl li>span:last-child{min-width:0}
+.aev{display:block;color:var(--muted);font-size:12.5px}
+.aasm{border:1px solid var(--warm1);background:color-mix(in srgb,var(--warm1) 9%,var(--panel2));border-radius:10px;padding:10px 12px;margin-bottom:16px}.aasm h5,.aasm .empty{color:var(--ink)}.aasm p{margin:0 0 4px;font-size:12.5px}
+.atoc{columns:2;column-gap:24px}.atoc h5{column-span:all}.atoc .linkbtn{display:block;padding:3px 0;font-size:13px;text-align:left;break-inside:avoid}
+.astat{display:flex;flex-wrap:wrap;gap:12px 28px;margin-bottom:16px}.astat b{display:block;font:600 22px var(--display)}.astat span{font-size:12.5px;color:var(--muted)}
+.abars{display:flex;gap:8px;align-items:flex-end;height:110px}.abar{flex:1;height:100%;background:var(--panel);border:1px solid var(--line);border-radius:5px 5px 0 0;display:flex;align-items:flex-end;overflow:hidden}.abar span{width:100%;background:var(--ok)}
+.abl{display:flex;gap:8px;margin-top:4px}.abl div{flex:1;min-width:0;text-align:center;font-size:11.5px;color:var(--muted)}.abl b{color:var(--ink)}
+.ashots{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}.ashot{display:block;color:var(--ink);text-decoration:none;margin-top:8px}
+.ashot img{display:block;width:100%;max-width:360px;aspect-ratio:16/10;object-fit:cover;object-position:top;border:1px solid var(--line);border-radius:8px;background:var(--panel)}.ashot span{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+.avers{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px}.avers .empty{font-size:12px}.avers button{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:3px 10px;font:inherit;font-size:12px;color:var(--ink);cursor:pointer}
+.avers button[aria-pressed=true]{border-color:var(--warm1);font-weight:600}
+.amd{max-width:76ch;font-size:14px;line-height:1.6}.amd h2{font:600 20px var(--display);margin:0 0 8px}.amd h3{font:600 16px var(--display);margin:22px 0 6px;padding-top:6px;border-top:1px solid var(--line)}.amd h4,.amd h5{font-size:14px;margin:14px 0 4px}
+.amd p{margin:0 0 10px}.amd ul,.amd ol{margin:0 0 10px;padding-left:20px}.amd li{margin:3px 0}.amd code{font-family:var(--mono);font-size:12px;background:var(--panel);padding:1px 4px;border-radius:4px}
+.atbl{overflow-x:auto;margin:6px 0 12px}.amd table{border-collapse:collapse;font-size:12.5px;width:100%}.amd th,.amd td{border:1px solid var(--line);padding:4px 7px;text-align:left;vertical-align:top}.amd th{background:var(--panel)}
+.aas{background:color-mix(in srgb,var(--warm1) 16%,transparent);border-radius:3px;padding:0 2px}
+.anote{font-size:12.5px;margin:0 0 10px}.acode{margin-bottom:14px;min-width:0}.acodehd{display:flex;gap:8px;align-items:baseline;font-size:12px;color:var(--muted);margin-bottom:4px}.acodehd b{color:var(--ink)}
+.acode .codebox{margin:0}.acode pre.code{max-height:none}.astyle h3{display:none}
+.rflyart{display:flex;flex-direction:column;gap:2px}.rfly .rnh{margin:12px 10px 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+@media (max-width:900px){.agwrap{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,34%) minmax(0,1fr);gap:10px}.aglist{align-self:stretch}.agrid{grid-template-columns:minmax(0,1fr)}.agpane{padding:14px}.atoc{columns:1}}
 @media (max-width:600px){.runrow{grid-template-columns:auto minmax(0,1fr);gap:8px 10px;padding:8px 10px}.runrow .rr{grid-column:2}.rtop input{margin-left:0;flex:1 1 140px}.rsec{padding:12px}}
 @media (prefers-reduced-motion:reduce){.rst.running::before{animation:none}}
 @media (prefers-reduced-motion:reduce){#rail *,#rail *::before,.rfly{animation:none!important;transition:none!important}}
@@ -702,7 +738,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <section class="needs" id="needs" aria-label="Needs you" tabindex="-1"></section>
 <main>
   <section class="work">
-    <div class="wbar"><div><button type="button" class="linkbtn" id="backmap" hidden>← Back to map</button><h2 class="wtitle" id="wtitle">Map</h2><span class="wsub" id="wsub"></span></div><select id="ver" aria-label="Version"></select></div>
+    <div class="wbar"><div><button type="button" class="linkbtn" id="backmap" hidden>← Back to map</button><div class="wcrumb" id="wcrumb" hidden>Artifacts <span aria-hidden="true">/</span> <b id="wcrumbg"></b></div><div class="wtl"><h2 class="wtitle" id="wtitle">Map</h2><span class="wcnt" id="wcnt" hidden></span></div><span class="wsub" id="wsub"></span></div><select id="ver" aria-label="Version"></select></div>
     <div class="pane preview" id="pane-preview" hidden><div class="doclinks" id="doclinks" hidden></div><iframe id="frame" title="Website preview" src="/site/latest"></iframe></div>
     <div class="pane" id="pane-goal" hidden></div>
     <div class="pane" id="pane-workflows" hidden></div>
@@ -1102,7 +1138,7 @@ function constraintsHTML(v){
 function docBody(kind, text){
   const seen = {};
   return text.split("\n").map(l => { if (!l.trim()) return "";
-    const h = l.match(/^#{1,6}\s+(.*)$/); if (h) return `<h4>${md(h[1])}</h4>`;
+    const h = l.match(/^#{1,6}\s+(.*)$/); if (h) return `<h4 data-head="${esc(h[1].trim())}">${md(h[1])}</h4>`;
     const id = (l.match(ITEM_AT) || [])[1], first = id && !seen[id]; if (first) seen[id] = 1;
     return `<p class="dl${first && FOCUS.kind === kind && FOCUS.item === id ? " hit" : ""}"${first ? ` id="doc-${kind}-${esc(id)}"` : ""}>${md(l.replace(/^\s*[-*]\s+/, "• ").replace(/`/g, ""))}</p>`; }).join("");
 }
@@ -1908,9 +1944,10 @@ function showTab(name){
   if ($("dview")) $("dview").dataset.tab = name;
   document.querySelectorAll(".tabs [role=tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === name));
   const tb = document.querySelector(`.tabs [data-tab="${name}"]`);
-  $("wtitle").textContent = tb ? tb.textContent.trim() : name; $("wsub").textContent = TABHINT[name] || ""; $("ver").hidden = name !== "preview";
+  $("wtitle").textContent = tb ? tb.textContent.trim() : name; $("wsub").textContent = TABHINT[name] || ""; $("wsub").removeAttribute("title"); $("ver").hidden = name !== "preview"; if (name === "artifacts") try { artHead(); } catch (e) {}      // a ?tab=artifacts link runs before the Artifacts code is set up
   // the Map has its own heading, so the title bar is only for the other views
-  $("backmap").hidden = name === "map"; document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map"); railReveal(name);
+  $("backmap").hidden = name === "map" || name === "artifacts";      // Artifacts has its own header: a breadcrumb and a count chip; the theme lives on the rail
+  ["wcrumb", "wcnt"].forEach(i => $(i).hidden = name !== "artifacts"); document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map"); railReveal(name);
   ["preview","goal","workflows","conflicts","priorities","timeline","audit","charter","docs","artifacts","board","library","story","map","style","lessons","playbooks","report","rundetails","runsettings"].forEach(t => $("pane-"+t).hidden = t !== name);
 }
 document.querySelectorAll(".tabs [role=tab]").forEach(b => b.onclick = () => { if (b.dataset.tab === "workflows" && WFSTEP.length){ WFSTEP = []; if (state) paint($("pane-workflows"), renderWorkflows(state)); } showTab(b.dataset.tab); });
@@ -1923,8 +1960,7 @@ $("gochat").onclick = () => setView("simple", true);      // Chat is the Simple 
 document.querySelectorAll(".rail [role=tab]").forEach(b => b.addEventListener("click", () => setView("detail", true)));
 $("backmap").onclick = () => showTab("map");
 // Artifacts: read-only list driven by artifacts/types.json (/api/artifacts): deliverables, then evidence and records.
-const ARTS = {deliverables: [], records: [], tree: null}, ARTTEXT = {};      // ARTTEXT: file -> text already fetched for an open row
-let ARTOPEN = "";
+const ARTS = {tree: null, groups: null, g: "plan", sel: {}, tab: "sum", ver: ""}, ARTTEXT = {};      // ARTTEXT: file -> text fetched when its item opened (null: could not)
 // Board tab: board/1 entries (j2_board.py), read-only. Shown only when the run has one (tab-board.hidden, set from
 // s.has_board). Recorded data only: every row is a stored board entry, nothing guessed.
 const BOARD = {schema: "board/1", entries: []};
@@ -2043,60 +2079,160 @@ $("pane-story").addEventListener("change", async e => {
   }
   paint($("pane-story"), renderStory());
 });
+// Artifacts (artifacts-groups/1, /api/artifacts/groups, j2_artifacts.groups): Run plan, Guides the makers read, Website sections and Run records. A group
+// fills the middle with a list on the left and the chosen item on the right. A file's text is fetched only when its item is opened (/api/artifact,
+// /api/code) and is escaped before it is drawn. What the run did not record says so ("Maker not recorded"); nothing is guessed.
 const artUrl = f => `/api/artifact?name=${encodeURIComponent(f)}${runQ()}`;
-function artRow(r){
-  const open = ARTOPEN === r.file, made = (r.workflows || []).length ? `made by ${esc(idRuns(r.workflows))}` : "no workflow recorded";
-  const dep = (r.depends_on_labels || []).length ? `depends on ${r.depends_on_labels.map(esc).join(", ")}` : "depends on nothing in this run";
-  const body = !open ? "" : r.open === "image" ? `<img class="artimg" alt="${esc(r.name)}" src="${artUrl(r.file)}">`
-    : r.open === "preview" ? `<iframe class="artframe" sandbox="" title="${esc(r.name)}" src="${artUrl(r.file)}"></iframe>`
-    : `<pre class="arttext">${esc(ARTTEXT[r.file] === undefined ? "Loading..." : ARTTEXT[r.file])}</pre>`;
-  return `<div class="artrow" data-art="${esc(r.file)}"><div><b>${esc(r.name)}</b> <span class="empty">${esc(r.form)}</span> `
-    + `<span class="otag" style="background:var(${esc(r.color)})">${esc(r.tag)}</span> <span class="empty">${made} · ${dep}</span> `
-    + `<button type="button" class="linkbtn" data-artopen="${esc(r.file)}" aria-expanded="${open}">${open ? "Close" : "Open"}</button></div>${body}</div>`;
-}
-// the tree (artifacts-tree/1, /api/artifacts/tree): Plan, Specs, Deliverable, Proof. One line per item: name, maker, one status tag, Open.
-// A group of children (a deliverable's sections, its versions, the run's other records) folds behind "N sections"; Verification proof shows
-// the screenshots as thumbnails. Makers, readers and statuses are the Map's (j2_map.build), so the two agree.
-const artItems = xs => (xs || []).flatMap(x => [x, ...artItems(x.children)]);
-const artFind = f => [...ARTS.deliverables, ...ARTS.records].find(x => x.file === f) || (ARTS.tree ? artItems(ARTS.tree.groups.flatMap(g => g.items)).find(x => x.file === f) : null);
-const artMade = m => !m ? "maker not recorded" : m.function ? esc(m.function) : `${esc(m.persona)} (${esc(idRuns(m.workflows || []))})`;
-const ARTDOT = {plan: "--warm3", specs: "--warm1", deliverables: "--warm2", proof: "--warm3"};
-const artTag = w => `<span class="arttag ${/^(filed|sent|validated|audited, (all pass|0 findings))/.test(w) ? "ok" : /^(failed|fault)/.test(w) ? "bad" : "warn"}">${esc(w)}</span>`;
-function artBody(x, open, ck){
-  if (!open) return "";
-  if (x.code) return codeView(ck, x.open === "codetext");
-  if (x.file === "style.json") return `<div class="artopen">${renderStyle((typeof state !== "undefined" && state) || CTX || {})}</div>`;      // the style guide, drawn as its own swatches
-  return x.open === "image" ? `<img class="artimg" alt="${esc(x.name)}" src="${artUrl(x.file)}">` : x.open === "preview" ? `<iframe class="artframe" sandbox="" title="${esc(x.name)}" src="${artUrl(x.file)}"></iframe>`
-    : `<pre class="arttext">${esc(ARTTEXT[x.file] === undefined ? "Loading..." : ARTTEXT[x.file])}</pre>`;
-}
-function artNode(x, g){
-  const kids = x.children || [];
-  if (x.shots){ const on = kids.find(k => ARTOPEN === k.file);      // Verification proof: the screenshots as thumbnails, one opens below
-    return `<div class="artrow" data-art="${esc(x.name)}"><span class="artdot" style="background:var(${ARTDOT[g]})"></span><div class="artwho"><b>${esc(x.name)}</b><span class="artby">Screenshots taken while checking the result</span></div>`
-      + `<span class="artr">${plural(x.count, "screenshot")}</span></div><div class="artshots">${kids.map(k => `<button type="button" class="artshot" data-artopen="${esc(k.file)}" aria-expanded="${ARTOPEN === k.file}"><img loading="lazy" alt="" src="${artUrl(k.file)}"><span>${esc(k.name)}</span></button>`).join("")}</div>`
-      + (on ? `<div class="artopen"><img class="artimg" alt="${esc(on.name)}" src="${artUrl(on.file)}"></div>` : ""); }
-  if (x.count != null) return `<details class="artfold" data-key="art-${esc(x.name)}-${esc(g)}"${x.collapsed ? "" : " open"}><summary>${plural(x.count, x.name.toLowerCase().replace(/s$/, ""))}</summary>`
-    + `<div class="artsub">${kids.map(k => artNode(k, g)).join("")}</div></details>`;
-  const ck = x.code ? codeKey(x.code) : "", open = x.code ? ARTOPEN === "code:" + ck : !!x.file && ARTOPEN === x.file, big = (x.size || 0) > 2000000;
-  const by = [artMade(x.made_by), ...[x.output, x.version != null ? "v" + x.version : "", x.workflows ? plural(x.workflows, "workflow") : "", x.read_by != null ? `read by ${x.read_by}` : "",
-    x.rewritten ? `rewritten by ${x.rewritten.by} · ${x.rewritten.name}` : "", x.note].filter(Boolean).map(esc)].join(" · ");
-  const btn = x.code ? `<button type="button" class="linkbtn" data-artcode="${esc(ck)}" aria-expanded="${open}">${open ? "Close" : "Open"}</button>`
-    : x.file ? (big ? `<span class="empty">too large to open here</span>` : `<button type="button" class="linkbtn" data-artopen="${esc(x.file)}" aria-expanded="${open}">${open ? "Close" : "Open"}</button>`) : "";
-  return `<div class="artrow" data-art="${esc(x.file || x.name)}"${x.node ? ` data-node="${esc(x.node)}"` : ""}${x.code && x.code.section ? ` data-sec="${esc(x.code.deck)}|${esc(x.code.section)}"` : ""}><span class="artdot" style="background:var(${ARTDOT[g]})"></span><div class="artwho"><b>${esc(x.name)}</b><span class="artby">${by}</span></div>`
-    + `<span class="artr">${artTag(auditWord(x, CTX) || x.status || "")}${btn}</span></div>` + artBody(x, open, ck) + (kids.length ? `<div class="artsub">${kids.map(k => artNode(k, g)).join("")}</div>` : "");
-}
-const renderArtTree = t => t.groups.map(g => `<section class="artgroup" data-group="${esc(g.id)}"><h3 class="arthead">${esc(g.label)} <span class="artcount">${g.count}</span></h3><div class="artcard">`
-  + (g.items.length ? g.items.map(x => artNode(x, g.id)).join("") : `<p class="empty artnone">${g.id === "specs" ? "No spec files in this run." : "Nothing recorded yet."}</p>`) + `</div></section>`).join("");
-const renderArtifacts = () => {
-  if (ARTS.tree && (ARTS.tree.groups || []).length) return renderArtTree(ARTS.tree);
-  const part = (title, rows, none) => `<h3>${title}</h3>` + (rows.length ? rows.map(artRow).join("") : `<p class="empty">${none}</p>`);
-  return part("Deliverables", ARTS.deliverables, "Nothing built yet.") + part("Evidence and records", ARTS.records, "Nothing recorded yet.");
-};
+const ARTGROUPS = [["plan", "Run plan"], ["guides", "Guides the makers read"], ["site", "Website sections"], ["records", "Run records"]];
+const ARTMARK = {ok: `<span class="amark am-ok" role="img" aria-label="passed"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></span>`,
+  warn: `<span class="amark am-warn" role="img" aria-label="needs a look"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8v3.8M8 11v.4"/></svg></span>`};
+const artMark = ok => ok === undefined || ok === null ? "" : ARTMARK[ok ? "ok" : "warn"];
+const artGroup = k => ((ARTS.groups || {}).groups || []).find(g => g.id === k) || {id: k, label: (ARTGROUPS.find(x => x[0] === k) || [k, k])[1], rows: []};
+const artWords = s => String(s || "").replace(/-/g, " ");
+const artNR = '<span class="empty">not recorded</span>';
+function artCount(g){ const r = g.rows || [];
+  if (g.id === "guides") return r.length ? `${plural(r.length, "guide")} · ${plural(r.reduce((n, x) => n + (x.versions || []).length, 0), "version")}` : "no guides in this run";
+  if (g.id === "site"){ const s = r.filter(x => x.kind !== "style"), k = s.filter(x => x.kind === "script").length;
+    return s.length ? plural(s.length - k, "section") + (k ? " · " + plural(k, "script") : "") : "no website in this run"; }
+  return r.length ? plural(r.length, g.id === "plan" ? "file" : "record") : "nothing recorded"; }
+function artSub(g){
+  if (g.id === "plan") return "What the run set out to do and how it planned it.";
+  if (g.id === "guides") return "Each guide, who wrote it, and how it was checked.";
+  if (g.id === "site"){ const s = (ARTS.groups || {}).site; return !s ? "This run built no website."
+    : `Website v${s.version != null ? s.version : "?"}: ` + (s.audit ? `the latest audit passes ${s.audit.passed} of ${s.audit.total} items.` : "no audit recorded."); }
+  return "The raw files behind the other views."; }
+const artEntries = n => `${n} entr${n === 1 ? "y" : "ies"}`;
+function artRowSub(x){ const by = x.maker ? esc(x.maker) : "Maker not recorded";
+  return ({charter: () => `${by} · ${plural((x.done_when || []).length, "done-when item")}`, realization: () => `${by} · ${plural((x.stages || []).length, "stage")}`,
+    workflows: () => `${by} · ${plural(x.count || 0, "workflow")}`, style: () => `${by} · colours, fonts, spacing`,
+    receipts: () => artEntries(x.count || 0), audits: () => plural((x.audits || []).length, "audit"), conditions: () => plural((x.items || []).length, "item"),
+    shots: () => plural((x.shots || []).length, "image")}[x.kind] || (() => `${by} · ${plural((x.versions || []).length, "version")}${x.kind === "script" ? " · a script" : ""}`))(); }
+function artListRow(x, on){
+  const at = (x.nodes || []).length ? ` data-node="${esc(x.nodes.join(" "))}"` : "", file = x.file && !x.section ? ` data-art="${esc(x.file)}"` : "",
+    sec = x.section && x.deck ? ` data-sec="${esc(x.deck + "|" + x.section)}"` : "";
+  const right = x.versions ? `<span class="mono empty">${esc(x.id)}</span>` : x.file ? `<span class="mono empty">${esc(x.file)}</span>` : x.kind === "shots" ? '<span class="mono empty">site/shots/</span>' : "";
+  return `<button type="button" class="agrow${on ? " on" : ""}" data-agrow="${esc(x.id)}"${on ? ' aria-current="true"' : ""}${at}${file}${sec}><span class="agt"><b>${esc(x.name)}</b><span>${artRowSub(x)}</span></span>`
+    + `${x.versions ? artMark(x.ok) : ""}${right}</button>`; }
+const artBy = (x, f, extra) => `<div class="aby">${x.maker ? "Made by " + esc(x.maker) : '<span class="empty">Maker not recorded</span>'}${f ? ` · <span class="mono">${esc(f)}</span>` : ""}${extra || ""}`
+  + `${f ? ` · <a href="${artUrl(f)}" target="_blank" rel="noopener">Open file</a>` : ""}</div>`;
+const artTabs = list => `<div class="atabs" role="tablist">${list.map(([k, l]) => `<button type="button" role="tab" data-atab="${k}" aria-selected="${ARTS.tab === k}">${l}</button>`).join("")}</div>`;
+const artTab = (list, dflt) => list.some(([k]) => k === ARTS.tab) ? ARTS.tab : dflt;
+const artList = (xs, li) => `<ul class="ackl">${xs.map(li).join("")}</ul>`;
+const artFile = f => ARTTEXT[f] === undefined ? '<p class="empty">Loading…</p>' : ARTTEXT[f] === null ? '<p class="empty">Could not open this file.</p>' : `<div class="amd">${artMd(ARTTEXT[f])}</div>`;
+// a small markdown reader: headings, tables, lists, paragraphs, `code` and **bold**; the text is escaped first, so a file never runs as markup
+const artInl = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(Assumption:)/g, '<span class="aas">$1</span>');
+function artMd(src){ const L = String(src).split("\n"); let h = "", i = 0, n2 = 0;
+  while (i < L.length){ const l = L[i];
+    if (/^#{1,4} /.test(l)){ const n = Math.min(l.match(/^#+/)[0].length + 1, 5); h += `<h${n}${n === 3 ? ` id="ah-${n2++}"` : ""}>${artInl(l.replace(/^#+ /, ""))}</h${n}>`; i++; continue; }
+    if (/^\s*\|/.test(l)){ const rows = []; while (i < L.length && /^\s*\|/.test(L[i])) rows.push(L[i++]); const c = r => r.trim().replace(/^\||\|$/g, "").split("|").map(x => x.trim());
+      const body = rows.slice(1).filter(r => !/^\s*\|?[\s:|-]+\|?\s*$/.test(r));
+      h += `<div class="atbl"><table><tr>${c(rows[0]).map(x => `<th>${artInl(x)}</th>`).join("")}</tr>${body.map(r => `<tr>${c(r).map(x => `<td>${artInl(x)}</td>`).join("")}</tr>`).join("")}</table></div>`; continue; }
+    if (/^\s*([-*]|\d+\.) /.test(l)){ const ord = /^\s*\d+\./.test(l); h += ord ? "<ol>" : "<ul>";
+      while (i < L.length && /^\s*([-*]|\d+\.) /.test(L[i])){ const ind = Math.min(L[i].match(/^\s*/)[0].length, 8); h += `<li${ind ? ` style="margin-left:${ind * 7}px"` : ""}>${artInl(L[i].replace(/^\s*([-*]|\d+\.) /, ""))}</li>`; i++; }
+      h += ord ? "</ol>" : "</ul>"; continue; }
+    if (/^```/.test(l)){ const b = []; i++; while (i < L.length && !/^```/.test(L[i])) b.push(L[i++]); i++; h += `<pre class="code plain">${esc(b.join("\n"))}</pre>`; continue; }
+    if (!l.trim() || /^-{3,}\s*$/.test(l)){ i++; continue; }
+    const p = []; while (i < L.length && L[i].trim() && !/^(#{1,4} |\s*\||\s*([-*]|\d+\.) |```)/.test(L[i])) p.push(L[i++]); h += `<p>${artInl(p.join(" "))}</p>`; }
+  return h; }
+const artHeads = src => String(src).split("\n").filter(l => /^## /.test(l)).map(l => l.slice(3).trim());
+const artAsm = src => String(src).split("\n").filter(l => /Assumption:/.test(l)).map(l => l.replace(/^\s*([-*]|\d+\.) /, "").replace(/.*?Assumption:\s*/, "").replace(/[`*]/g, "").trim()).filter(Boolean);
+// a section's code in three blocks, as the page holds it: JavaScript, CSS, HTML
+function artParts(src){ const css = [...src.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(m => m[1].replace(/^\n|\s+$/g, "")).join("\n"),
+    js = [...src.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1].replace(/^\n|\s+$/g, "")).join("\n"),
+    html = src.replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, "").replace(/^\s*\n/gm, "").trim();
+  return [["JavaScript", js], ["CSS", css], ["HTML", html]].filter(([, s]) => s.trim()); }
+function artCode(ck){ const t = CODE[ck]; if (t === undefined) return '<p class="empty">Loading the code…</p>'; if (t === null) return '<p class="empty">Could not open this code.</p>';
+  const ps = artParts(t); if (!ps.length) return '<p class="empty">This section holds no code.</p>';
+  return ps.map(([n, src]) => { const k = ck + "#" + n; CODE[k] = src;
+    return `<div class="acode" data-acode="${n}"><div class="acodehd"><b>${n}</b>${plural(src.split("\n").length, "line")}</div>${codeView(k, false)}</div>`; }).join(""); }
+function artWfBody(x){
+  const multi = (x.versions || []).length > 1;
+  const checks = (x.checks || []).length ? artList(x.checks, c => `<li>${artMark(c.pass)}<span>${esc(c.check)}${multi ? ` <span class="mono empty">${esc(c.workflow)}</span>` : ""}`
+      + `${c.pass ? "" : `<span class="aev">${esc(c.evidence)}</span>`}</span></li>`) : '<p class="empty">No check by code recorded.</p>';
+  const aud = (x.audit || []).length ? artList(x.audit, a => `<li>${artMark(a.pass)}<span><b>#${esc(a.item)}</b> ${esc(a.note)}</span></li>`)
+      + (x.screenshot ? `<a class="ashot" href="${artUrl(x.screenshot)}" target="_blank" rel="noopener"><img loading="lazy" alt="The page as the audit saw it" src="${artUrl(x.screenshot)}"><span class="mono">${esc(x.screenshot)}</span></a>` : "")
+    : `<p class="empty">${x.kind === "guide" ? "Guides are not audited, only checked by code." : (x.covers || []).length ? "No audit result recorded for its items." : "Covers no done-when item."}</p>`;
+  const reuse = (x.reused_by || []).length ? `<div class="ablk"><h5>Reused by</h5>${artList(x.reused_by, r => `<li><span class="mono empty">${esc(r.id)}</span><span>${esc(artWords(r.name))}</span></li>`)}</div>` : "";
+  return `<div class="agrid"><div class="ablk"><h5>Goal</h5><p>${x.goal ? esc(x.goal) : artNR}</p></div><div class="ablk"><h5>Method</h5><p>${x.method ? esc(x.method) : artNR}</p></div></div>${reuse}`
+    + `<div class="agrid"><div class="ablk"><h5>Checked by code</h5>${checks}</div><div class="ablk"><h5>Checked by the audit</h5>${aud}</div></div>`
+    + `<div class="ablk"><h5>Versions</h5>${artList(x.versions || [], (v, k) => `<li><span class="mono empty">${esc(v.workflow)}</span><span>${k ? `<b>${esc(artWords(v.label))}:</b> ` : "First version. "}${esc(v.purpose)}</span></li>`)}</div>`; }
+function artGuide(x){
+  const tab = artTab([["sum"], ["doc"]], "sum"), t = x.file ? ARTTEXT[x.file] : null, words = typeof t === "string" ? ` · ${plural(t.split(/\s+/).filter(Boolean).length, "word")}` : "";
+  const top = `<h2>${esc(x.name)}</h2>${artBy(x, x.file, words)}${artTabs([["sum", "Summary"], ["doc", "Read document"]])}`;
+  if (tab === "doc"){ const docs = x.docs || [], f = docs.some(d => d.file === ARTS.ver) ? ARTS.ver : x.file;
+    return top + (docs.length > 1 ? `<div class="avers" role="group" aria-label="Version"><span class="empty">Version</span>${docs.map(d => `<button type="button" data-aver="${esc(d.file)}" aria-pressed="${d.file === f}">${esc(d.label)}${d.workflow ? " · " + esc(d.workflow) : ""}</button>`).join("")}</div>` : "")
+      + (f ? artFile(f) : '<p class="empty">The run kept no copy of this document.</p>'); }
+  const a = typeof t === "string" ? artAsm(t) : [], hs = typeof t === "string" ? artHeads(t) : [];
+  return top + (t === undefined ? '<p class="empty">Loading the document…</p>' : "")
+    + (a.length ? `<div class="aasm"><h5>Assumptions to confirm (${a.length})</h5><p class="empty">Not given by the charter. The maker chose these; a person should confirm them.</p>${artList(a, s => `<li>${ARTMARK.warn}<span>${esc(s)}</span></li>`)}</div>` : "")
+    + (hs.length ? `<div class="ablk atoc"><h5>What is inside (${plural(hs.length, "section")})</h5>${hs.map((h, i) => `<button type="button" class="linkbtn" data-ajump="${i}">${esc(h)}</button>`).join("")}</div>` : "")
+    + artWfBody(x); }
+function artSection(x){
+  const script = x.kind === "script", tab = artTab([["sum"], ["code"]], "sum"), site = (ARTS.groups || {}).site || {}, rew = (x.versions || []).slice(1).map(v => v.workflow);
+  const top = `<h2>${esc(x.name)}</h2><div class="aby">${x.maker ? "Made by " + esc(x.maker) : '<span class="empty">Maker not recorded</span>'} · <span class="mono">${esc(x.file || "site/index.html")}</span>${script ? " · a script" : ""} · <span class="mono">${esc(x.id)}</span></div>`
+    + artTabs([["sum", "Summary"], ["code", script ? "Script" : "Code"]]);
+  if (tab !== "code") return top + artWfBody(x);
+  return top + `<p class="empty anote">The code this section holds in <span class="mono">site/index.html</span>${site.version != null ? `, as it is in page v${esc(site.version)}` : ""}`
+    + `${rew.length ? `, after ${plural(rew.length, "rewrite")} (${esc(rew.join(", "))})` : ""}.</p>` + artCode(x.deck + "|" + x.section); }
+function artStyle(x){
+  const tab = x.section ? artTab([["sum"], ["code"]], "sum") : "sum";
+  const top = `<h2>Style guide</h2><div class="aby">${x.maker ? "Made by " + esc(x.maker) + ((x.made_in || []).length ? " in " + esc(x.made_in.join(", ")) : "") : '<span class="empty">Maker not recorded</span>'}`
+    + `${x.file ? ` · <span class="mono">${esc(x.file)}</span>` : ""}${x.read_by != null ? ` · read by ${plural(x.read_by, "workflow")}` : ""}</div>` + (x.section ? artTabs([["sum", "Summary"], ["code", "Code"]]) : "");
+  if (tab === "code") return top + artCode(x.deck + "|" + x.section);
+  const t = x.file ? ARTTEXT[x.file] : null; let g = null; try { g = typeof t === "string" ? JSON.parse(t) : null; } catch (e) {}
+  return top + (t === undefined ? '<p class="empty">Loading…</p>' : g && g.palette ? `<div class="astyle">${renderStyle({style: {fonts: {}, ...g}})}</div>` : '<p class="empty">Could not open the style guide.</p>'); }
+const artStat = xs => `<div class="astat">${xs.map(([v, k]) => `<div><b>${v === null || v === undefined || v === "" ? "not recorded" : esc(v)}</b><span>${k}</span></div>`).join("")}</div>`;
+const ARTPANE = {
+  charter: x => `<h2>Charter</h2>${artBy(x, x.file)}<div class="ablk"><h5>Who it is for</h5><p>${x.audience ? esc(x.audience) : artNR}</p></div>`
+    + `<div class="ablk"><h5>Done when (${(x.done_when || []).length})</h5>${artList(x.done_when || [], (t, i) => `<li><span class="mono empty">#${i + 1}</span><span>${esc(t)}</span></li>`)}</div>`,
+  realization: x => { const tab = x.text ? artTab([["sum"], ["doc"]], "sum") : "sum", top = `<h2>Realization plan</h2>${artBy(x, x.file)}` + (x.text ? artTabs([["sum", "Summary"], ["doc", "Read document"]]) : "");
+    return top + (tab === "doc" ? artFile(x.text) : artStat([[x.zone, "certainty zone"], [x.confidence, "plan confidence"], [(x.stages || []).length, "stages"]])
+      + `<div class="ablk"><h5>Stages</h5>${(x.stages || []).length ? artList(x.stages, (s, i) => `<li><span class="mono empty">${i + 1}</span><span>${esc(s)}</span></li>`) : `<p>${artNR}</p>`}</div>`); },
+  workflows: x => `<h2>Workflows</h2>${artBy(x, x.file)}${artStat([[x.count, "workflows"], [(x.cycles || []).length, "cycles"]])}<div class="ablk"><h5>Workflows per cycle</h5>`
+    + artList(x.cycles || [], c => `<li><span class="mono empty">cycle ${c.cycle == null ? "?" : esc(c.cycle)}</span><span>${plural(c.n, "workflow")}${c.changes.length ? " · change " + esc(c.changes.join(", ")) : ""}${c.fixes.length ? " · fixes " + esc([...new Set(c.fixes)].join(", ")) : ""}</span></li>`) + "</div>",
+  guide: artGuide, section: artSection, script: artSection, style: artStyle,
+  receipts: x => `<h2>Check results</h2>${artBy(x, x.file)}${artStat([[x.count, "checks run"], [x.passed, "passed"], [x.failed, "failed, then retried or fixed"]])}<p class="empty">Each check also appears under the guide or section it checked.</p>`,
+  audits: x => `<h2>Audits</h2>${artBy(x, x.file)}<div class="ablk"><h5>Items passing per audit</h5><div class="abars">${x.audits.map(a => `<div class="abar" title="page v${esc(a.version)}: ${a.passed} of ${a.total}"><span style="height:${a.total ? Math.round(a.passed / a.total * 100) : 0}%"></span></div>`).join("")}</div>`
+    + `<div class="abl">${x.audits.map(a => `<div>page v${esc(a.version)}<br><b>${a.passed}/${a.total}</b></div>`).join("")}</div></div><p class="empty">Item-by-item results appear under the section each one verifies.</p>`,
+  conditions: x => `<h2>Necessary conditions</h2>${artBy(x, x.file)}${artList(x.items || [], c => `<li>${artMark(c.met)}<span class="mono empty">${esc(c.id)}</span><span>${esc(c.text)}</span></li>`)}`,
+  shots: x => `<h2>Audit screenshots</h2>${artBy(x, null, ' · <span class="mono">site/shots/</span>')}<div class="ashots">${x.shots.map(s => `<a class="ashot" href="${artUrl(s.file)}" target="_blank" rel="noopener"><img loading="lazy" alt="Screenshot ${esc(s.file.split("/").pop())}" src="${artUrl(s.file)}">`
+    + `<span class="mono">${esc(s.file.split("/").pop())}${s.total ? ` · ${s.passed}/${s.total}` : ""}</span></a>`).join("")}</div>`};
+const artCur = () => { const g = artGroup(ARTS.g), rows = g.rows || []; return rows.find(r => r.id === ARTS.sel[g.id]) || rows[0] || null; };
+function renderArtifacts(){
+  if (!ARTS.groups) return '<p class="empty">Loading the artifacts…</p>';
+  const g = artGroup(ARTS.g), rows = g.rows || [], x = artCur();
+  if (!x) return `<div class="agwrap"${g.id === "site" ? ' data-node="work:website" data-art="site/index.html"' : ""}><p class="empty">${g.id === "site" ? ((ARTS.groups || {}).site ? "This run recorded no sections for its website." : "This run built no website.")
+    : g.id === "guides" ? "This run wrote no guides." : "Nothing recorded yet."}</p></div>`;
+  return `<div class="agwrap" data-agroup="${esc(g.id)}"><div class="aglist" aria-label="${esc(g.label)}"${g.id === "site" ? ' data-node="work:website" data-art="site/index.html"' : ""}>${rows.map(r => artListRow(r, r === x)).join("")}</div>`
+    + `<div class="agpane" data-apane="${esc(x.id)}">${(ARTPANE[x.kind] || (() => ""))(x)}</div></div>`; }
+function artHead(){ const g = artGroup(ARTS.g); $("wtitle").textContent = $("wcrumbg").textContent = g.label; $("wsub").textContent = $("wsub").title = artSub(g); $("wcnt").textContent = ARTS.groups ? artCount(g) : ""; $("wcnt").hidden = !ARTS.groups; }
+function artPaint(){ const p = $("pane-artifacts"), l = p.querySelector(".aglist"), top = l ? l.scrollTop : 0;
+  paint(p, renderArtifacts()); const l2 = p.querySelector(".aglist"); if (l2) l2.scrollTop = top; if (!p.hidden) artHead(); railArtCounts(); }
+async function artFetch(){      // the text the open item shows: a guide's document (and the version picked), the plan's text, a section's code; once each
+  const x = artCur(); if (!x) return; const files = [];
+  if ((x.kind === "guide" || x.kind === "style") && x.file) files.push(x.file);
+  if (ARTS.tab === "doc" && x.kind === "guide" && ARTS.ver) files.push(ARTS.ver);
+  if (ARTS.tab === "doc" && x.kind === "realization" && x.text) files.push(x.text);
+  const ck = ARTS.tab === "code" && x.section ? x.deck + "|" + x.section : "", want = files.filter(f => ARTTEXT[f] === undefined);
+  if (!want.length && !(ck && CODE[ck] === undefined)) return;
+  await Promise.all([...want.map(async f => { try { const r = await fetch(artUrl(f), {cache: "no-store"}); ARTTEXT[f] = r.ok ? await r.text() : null; } catch (e) { ARTTEXT[f] = null; } }),
+    ck && CODE[ck] === undefined ? (async () => { try { const r = await fetch(`/api/code?deck=${encodeURIComponent(x.deck)}&section=${encodeURIComponent(x.section)}${runQ()}`, {cache: "no-store"}); CODE[ck] = r.ok ? await r.text() : null; } catch (e) { CODE[ck] = null; } })() : null]);
+  artPaint(); }
 async function loadArtifacts(){
-  try { const r = await fetch(`/api/artifacts?${runQ().slice(1)}`, {cache:"no-store"}); if (r.ok) Object.assign(ARTS, await r.json()); } catch (e) {}
   try { const r = await fetch(`/api/artifacts/tree?${runQ().slice(1)}`, {cache:"no-store"}); if (r.ok) ARTS.tree = await r.json(); } catch (e) {}
-  paint($("pane-artifacts"), renderArtifacts()); railPaint();
+  try { const r = await fetch(`/api/artifacts/groups?${runQ().slice(1)}`, {cache:"no-store"}); if (r.ok) ARTS.groups = await r.json(); } catch (e) {}
+  artPaint(); railPaint(); await artFetch();
 }
+function railArtCounts(){      // the Artifacts panel of the rail: Preview and Documents, then the four groups with their counts
+  const box = (RAIL || {}).open === "artifacts" && $("rflyart"); if (!box) return; const shown = !$("pane-artifacts").hidden;
+  box.innerHTML = `<p class="rnh">Artifacts</p>` + ARTGROUPS.map(([k, l]) => `<button type="button" class="rgo" data-artgo="${k}" aria-current="${shown && ARTS.g === k}">${esc(l)}<small>${ARTS.groups ? artCount(artGroup(k)) : "loading…"}</small></button>`).join(""); }
+async function artOpenGroup(k, row){ ARTS.g = k; if (row) ARTS.sel[k] = row; ARTS.tab = "sum"; ARTS.ver = ""; showTab("artifacts"); if (!ARTS.groups) await loadArtifacts(); else { artPaint(); await artFetch(); } }
+function artLocate(id){      // the group and row a Map id lands on: a section's own row, else the row that holds the node, else the one with its file
+  const rows = ((ARTS.groups || {}).groups || []).flatMap(g => g.rows.map(x => [g.id, x])), n = mapById(MAP)[id] || {};
+  if (/^sec:/.test(id)){ const key = consParent(id) + "|" + id.split(":").pop(), hit = rows.find(([, x]) => x.section && x.deck + "|" + x.section === key); if (hit) return [hit[0], hit[1].id]; return artLocate(consParent(id)); }
+  const hit = rows.find(([, x]) => (x.nodes || []).includes(id)) || (id === "work:website" ? rows.find(([g]) => g === "site") : null)
+    || rows.find(([, x]) => x.file && (x.file === n.file || (id === "work:charter" && x.file === "goal.json")));
+  return hit ? [hit[0], hit[1].id] : null; }
 // Library (template-library/1, J2_TEMPLATE_LIBRARY=1): every template grouped by artifact and section, this run's
 // routing decisions (templates.json), and a viewer with two modes: the four files as stored, or a readable card.
 const LIB = {loaded: false, groups: {}, dir: "", decisions: [], open: null, mode: "readable", view: null, focus: ""};
@@ -2163,16 +2299,12 @@ $("pane-library").addEventListener("click", async e => {
   const m = e.target.closest("[data-tplmode]"); if (m){ LIB.mode = m.dataset.tplmode; return paint($("pane-library"), renderLibrary()); }
   if (e.target.closest("[data-tplclose]")){ LIB.open = LIB.view = null; return paint($("pane-library"), renderLibrary()); }
   const c = e.target.closest("[data-tplcopy]"); if (c){ try { await navigator.clipboard.writeText(TPLCODE[c.dataset.tplcopy] || ""); c.textContent = "Copied"; } catch (err) { c.textContent = "Copy failed"; } } });
-$("pane-artifacts").addEventListener("click", async e => { const cc = e.target.closest("[data-codecopy]"); if (cc){ e.preventDefault(); try { await navigator.clipboard.writeText(CODE[cc.dataset.codecopy] || ""); cc.textContent = "Copied"; } catch (err) { cc.textContent = "Copy failed"; } return; }
-  const c = e.target.closest("[data-artcode]"); if (c){ e.preventDefault(); const k = c.dataset.artcode, [deck, sec] = k.split("|"); ARTOPEN = ARTOPEN === "code:" + k ? "" : "code:" + k; paint($("pane-artifacts"), renderArtifacts());
-    if (ARTOPEN && CODE[k] === undefined){ try { const x = await fetch(`/api/code?deck=${encodeURIComponent(deck)}${sec ? "&section=" + encodeURIComponent(sec) : ""}${runQ()}`, {cache: "no-store"}); CODE[k] = x.ok ? await x.text() : "Could not open this code."; } catch (err) { CODE[k] = "Could not open this code."; } paint($("pane-artifacts"), renderArtifacts()); }
-    return; }
-  const b = e.target.closest("[data-artopen]"); if (!b) return;
-  const f = b.dataset.artopen; ARTOPEN = ARTOPEN === f ? "" : f;
-  const r = artFind(f);
-  if (ARTOPEN && r && r.open === "text" && ARTTEXT[f] === undefined){ paint($("pane-artifacts"), renderArtifacts());
-    try { const x = await fetch(artUrl(f), {cache:"no-store"}); ARTTEXT[f] = x.ok ? await x.text() : "Could not open this file."; } catch (err) { ARTTEXT[f] = "Could not open this file."; } }
-  paint($("pane-artifacts"), renderArtifacts()); });
+$("pane-artifacts").addEventListener("click", async e => {
+  const cc = e.target.closest("[data-codecopy]"); if (cc){ e.preventDefault(); try { await navigator.clipboard.writeText(CODE[cc.dataset.codecopy] || ""); cc.textContent = "Copied"; } catch (err) { cc.textContent = "Copy failed"; } return; }
+  const r = e.target.closest("[data-agrow]"); if (r){ ARTS.sel[ARTS.g] = r.dataset.agrow; ARTS.tab = "sum"; ARTS.ver = ""; artPaint(); const p = $("pane-artifacts").querySelector(".agpane"); if (p) p.scrollTop = 0; return artFetch(); }
+  const t = e.target.closest("[data-atab]"); if (t){ ARTS.tab = t.dataset.atab; artPaint(); return artFetch(); }
+  const v = e.target.closest("[data-aver]"); if (v){ ARTS.ver = v.dataset.aver; artPaint(); return artFetch(); }
+  const j = e.target.closest("[data-ajump]"); if (j){ ARTS.tab = "doc"; ARTS.ver = ""; artPaint(); await artFetch(); const h = document.getElementById("ah-" + j.dataset.ajump); if (h) h.scrollIntoView({block: "start"}); } });
 // Map: read-only drawing of a run, from /api/map (map/1). renderMap(map) is one pure function: inline SVG for wide screens and a card
 // list for 600px and under. Status is never colour alone: solid = filed and checked, dashed = left open, double = running now, thick red
 // edge plus "!" = fault or blocked, hollow = not made, thick amber edge plus "?" = waiting (on you, or on another function).
@@ -3317,15 +3449,22 @@ function renderMap(m){
   const CG = CONS.id ? consSun(m) : null;      // the solar system, when one is open
   return `<div class="mapwrap">${head}${CG ? consView(m, CG) : `<div class="mapsvgwrap" data-view="${MAPVIEW === "line" ? "line" : "tree"}">${MAPVIEW === "line" ? `<div class="treebar linebar"><button type="button" class="linkbtn" data-linezoom="1.5" aria-label="Zoom in">+</button><button type="button" class="linkbtn" data-linezoom="0.6667" aria-label="Zoom out">&minus;</button><button type="button" class="linkbtn" data-linefit>Fit</button><span class="sub" data-linez></span><span class="sub">Drag to pan, scroll or pinch to zoom.</span></div>` : ""}${MAPVIEW === "line" ? `<div class="linecard">${svg}<details class="maplay" data-key="maplay"${MAPLAY ? " open" : ""}><summary>Legend${gaps.length ? ` · ${gaps.length} not recorded` : ""}</summary><div class="maplaybody">${legList}${nr}</div></details></div>` : svg}${treeHtml(m, MAPVIEW === "line" ? "" : panel)}${MAPVIEW === "line" ? panel : ""}${under}</div>`}${cards}${MAPVIEW === "line" ? `<div class="legnarrow">${legend}${nr}</div>` : legend + nr}</div>`;
 }
-async function openArtifact(f){
-  ARTOPEN = f; showTab("artifacts"); await loadArtifacts();
-  const r = artFind(f);
-  if (r && r.open === "text" && ARTTEXT[f] === undefined){ try { const x = await fetch(artUrl(f), {cache:"no-store"}); ARTTEXT[f] = x.ok ? await x.text() : "Could not open this file."; } catch (err) { ARTTEXT[f] = "Could not open this file."; } }
-  paint($("pane-artifacts"), renderArtifacts());
+async function docOpen(k, sid){      // a document, or one section of it (by the heading its section starts with: j2_artifacts.groups' documents), in Documents
+  document.querySelectorAll(".dlhit").forEach(x => x.classList.remove("dlhit")); showTab("docs");
+  if (!DOCS[k] || !$("docblock-" + k)) await loadDocs(); else paint($("pane-docs"), renderDocs());
+  const head = sid && (((ARTS.groups || {}).documents || {})[k] || {})[sid], block = $("docblock-" + k); if (!block) return null;
+  const el = (head && block.querySelector(`[data-head="${CSS.escape(head)}"]`)) || block; el.classList.add("dlhit"); el.scrollIntoView({block: "start"}); return el; }
+async function openArtifact(f){      // a file from the Map: the item that holds it (a guide on its Read document tab); a PRD, HLD or LLD in Documents
+  if (!ARTS.groups) await loadArtifacts();
+  const hit = ((ARTS.groups || {}).groups || []).flatMap(g => g.rows.map(x => [g.id, x])).find(([, x]) => x.file === f || (x.docs || []).some(d => d.file === f));
+  const doc = String(f).replace(/\.md$/, "");
+  if (!hit && DOC_KINDS.some(x => x[0] === doc)) return docOpen(doc, "");
+  await artOpenGroup(hit ? hit[0] : "plan", hit ? hit[1].id : "");
+  if (hit && hit[1].kind === "guide"){ ARTS.tab = "doc"; ARTS.ver = f; artPaint(); await artFetch(); }
 }
 // The Open button of a node: where it goes. A node waiting on you goes to its question in the Chat; You goes to the Needs you strip; Client Lead goes
 // to the Chat; Audit to its findings; the other functions to their messages and calls (the tables under the Map, filtered to them); a step to
-// its workflows; the Website to the site preview; the Charter to the Charter; any other deliverable to its document in Artifacts.
+// its workflows; the Website to the site preview; the Charter to the Charter; a guide to its item in Artifacts; a PRD, HLD or LLD to Documents.
 function mapGo(id){
   if (CONS.id){ Object.assign(CONS, {id: "", path: [], focus: ""}); paintMap(); }      // going to what an artifact made leaves the solar system
   const n = (MAP.nodes || []).find(x => x.id === id); if (!n) return;
@@ -3691,12 +3830,14 @@ function consClick(e){
 function mapDeepTarget(kind, id){      // the places to look, best first: a section's own row, else its document's
   if (kind === "wf") return [`[data-wfrow="${CSS.escape(id)}"]`];
   if (/^sec:/.test(id)) return [`[data-sec="${CSS.escape(consParent(id) + "|" + id.split(":").pop())}"]`, ...mapDeepTarget("art", consParent(id))];
-  const n = mapById(MAP)[id]; return [`[data-node="${CSS.escape(id)}"]`, n && n.file ? `[data-art="${CSS.escape(n.file)}"]` : "", id === "work:charter" ? '[data-art="goal.json"]' : ""].filter(Boolean);
+  const n = mapById(MAP)[id]; return [`[data-node~="${CSS.escape(id)}"]`, n && n.file ? `[data-art="${CSS.escape(n.file)}"]` : "", id === "work:charter" ? '[data-art="goal.json"]' : ""].filter(Boolean);
 }
 async function mapOpenIn(kind, id){
   document.querySelectorAll(".dlhit").forEach(x => x.classList.remove("dlhit"));
   if (kind === "wf"){ OTAG = ""; WFSTEP.length = 0; showTab("workflows"); if (typeof state !== "undefined" && state) paint($("pane-workflows"), renderWorkflows(state)); }
-  else { showTab("artifacts"); if (!ARTS.tree) await loadArtifacts(); else paint($("pane-artifacts"), renderArtifacts()); }
+  else { if (!ARTS.groups) await loadArtifacts(); const at = artLocate(id), doc = (/^sec:/.test(id) ? consParent(id) : id).replace(/^work:/, "");
+    if (!at && (DOC_KINDS || []).some(x => x[0] === doc)) return docOpen(doc, /^sec:/.test(id) ? id.split(":").pop() : "");      // a PRD, HLD or LLD is in Documents
+    await artOpenGroup(at ? at[0] : "plan", at ? at[1] : ""); }
   const pane = $(kind === "wf" ? "pane-workflows" : "pane-artifacts"), el = mapDeepTarget(kind, id).map(q => pane.querySelector(q)).find(Boolean); if (!el) return null;
   for (let d = el.parentElement.closest("details"); d; d = d.parentElement && d.parentElement.closest("details")) d.open = true;
   el.classList.add("dlhit"); el.scrollIntoView({block: "center"}); return el;
@@ -3869,10 +4010,6 @@ function auditFindings(audits){      // a finding is a check that failed in some
   const seen = {}; [...audits].filter(a => a && a.cycle != null).sort((x, y) => x.cycle - y.cycle).forEach(a => (a.results || []).concat(a.extra_issues || []).forEach((r, i) => { const id = r.id || `x${a.cycle}-${i}`; if (r.pass === false || r.verdict === "FAIL") (seen[id] = seen[id] || {}).failed = true; if (seen[id]) seen[id].last = r.pass !== false && r.verdict !== "FAIL"; }));
   const all = Object.values(seen); return {n: all.length, fixed: all.filter(x => x.last).length, open: all.filter(x => !x.last).length};
 }
-const auditWord = (x, s) => { const pool = [...STAGE_AUDITS, ...((s && s.audits) || [])];      // the Audit status of an artifact row, only where a record names it: the Site and documents by version, the Charter by the validator
-  if (x.version != null){ const a = pool.filter(p => p.version === x.version).sort((p, q) => q.cycle - p.cycle)[0];
-    return a ? (a.all_pass ? "audited, all pass" : `audited, ${plural((a.results || []).concat(a.extra_issues || []).filter(r => r.pass === false).length, "finding")} open`) : ""; }
-  return x.file === "goal.json" && s && s.stamped ? "validated" : ""; };
 const RAILDIM = {goal: s => !s.goal && "no charter recorded", charter: s => !s.goal && "no charter recorded", report: s => !s.report && !s.outcome && "no report yet",
   workflows: s => !(s.workflows || []).length && "no workflows yet", priorities: s => !prioModel(s).has && "no ranking records", timeline: s => !(s.allChat || s.chat || []).length && "no messages recorded",
   audit: s => !(s.audits || []).length && "no audit yet", preview: s => !s.versions && "nothing built yet",
@@ -3987,7 +4124,8 @@ function railOpen(id){
     list.innerHTML = acts.length ? acts.map(a => `<button type="button" class="rgo" data-railact="${esc(a.id)}">${esc(a.label)}<small>${esc(a.state)}</small></button>`).join("")
       : `<div class="rgo off" aria-disabled="true">Actions<small>none in this run</small></div>`; }
   else { const mine = new Set(it.secs.flatMap(k => (R.sec[k] || {tabs: []}).tabs.map(t => t.tab))), rank = t => RAILTABS.includes(t) ? RAILTABS.indexOf(t) : 99;
-    railTabs().filter(b => mine.has(b.dataset.tab)).sort((a, b) => rank(a.dataset.tab) - rank(b.dataset.tab)).forEach(b => list.appendChild(b)); }
+    railTabs().filter(b => mine.has(b.dataset.tab) && !(id === "artifacts" && b.dataset.tab === "artifacts")).sort((a, b) => rank(a.dataset.tab) - rank(b.dataset.tab)).forEach(b => list.appendChild(b));
+    if (id === "artifacts"){ list.insertAdjacentHTML("beforeend", '<div class="rflyart" id="rflyart"></div>'); railArtCounts(); if (!ARTS.groups) loadArtifacts(); } }
   $("rfly").hidden = false;
   const f = $("rfly").querySelector(".rfl button, .rclose"); if (f) f.focus();
 }
@@ -4005,6 +4143,7 @@ document.querySelectorAll("#rail .ri[data-ri]").forEach(b => b.addEventListener(
 $("rfly").addEventListener("click", e => {
   if (e.target.closest(".rclose")) return railClose(true);
   const mg = e.target.closest("[data-mapgo]"); if (mg){ setView("detail", true); MAPVIEW = mg.dataset.mapgo; try { localStorage.setItem("j2mapview", MAPVIEW); } catch (x) {} showTab("map"); paintMap(); railClose(false); return; }
+  const ag = e.target.closest("[data-artgo]"); if (ag){ setView("detail", true); railClose(false); artOpenGroup(ag.dataset.artgo); return; }
   const ac = e.target.closest("[data-railact]"); if (ac){ setView("detail", true); showTab("map"); mapSelect(ac.dataset.railact); railClose(false); return; }
   if (e.target.closest("[data-tab]")) railClose(false); });      // the tab's own handler has opened it in the main area
 $("rfly").addEventListener("keydown", e => {      // the panel keeps the focus until it closes
