@@ -2,9 +2,12 @@
 
     GET  /api/chats/search?q=&scope=&include=archived   -> {results: [{session_id, message_id, title, snippet, at, archived}]}   (at most 50)
     POST /api/chats/{sid}/archive | /unarchive          -> {session_id, archived}      (a mark, never a delete)
-    GET  /api/chats/{sid}/providers                     -> {providers: ProviderPill[], chosen}
-    PUT  /api/chats/{sid}/choice  {provider, model?, effort?} -> {session_id, provider, model, effort}   (null provider clears; the policy default is untouched;
-                                                           a model the provider does not offer is a 422 that names the valid ones)
+    GET  /api/chats/{sid}/providers                     -> {providers: ProviderPill[], chosen, kind, agent, own, effective}   (own: the chat's own pick or null;
+                                                           effective: {provider, model, effort, source: own|run|team|default}, D131)
+    PUT  /api/chats/{sid}/choice  {provider, model?, effort?} -> {session_id, provider, model, effort, source, effective}   (null provider clears; the policy default
+                                                           is untouched; a model the provider does not offer is a 422 that names the valid ones. A function or
+                                                           step chat (an agent's) is only checked, no router session is made, and its triple is stored; the
+                                                           live run's choices.json is rewritten so the agent's NEXT call uses it)
     POST /api/chats/{sid}/attachments {name, content_b64} -> AttachmentRef                (20 MB a file)
     POST /api/chats/{sid}/direct  {text, attachments?, names?} -> 202 {message_id, turn}  (the org, a department or a division chat answered by the chat model)
     POST /api/chats/{sid}/direct/stop                   -> {session_id, stopped}          (ends the turn that is answering; false when none is)
@@ -39,6 +42,7 @@ from sutra_app.library.types import violation
 from sutra_app.orchestrator.api.chat import ID_PATTERN, respond
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
 from sutra_app.orchestrator import direct_running
+from sutra_app.orchestrator.agent_sessions import agent_of, effective, pick_dict
 from sutra_app.orchestrator.chat_ground import ground
 from sutra_app.orchestrator.chat_v2 import DIRECT_ASK, MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
 from sutra_app.orchestrator.db import run_blocking
@@ -84,6 +88,12 @@ def _need(request: Request, name: str) -> Any:
     return found
 
 
+def _default_of(port: Any) -> Any:
+    """The policy default for an agent, from the chat port (a port without one, as a test's stand-in, knows nothing: all fields empty)."""
+    found = getattr(port, "default_pick", None)
+    return found if callable(found) else None
+
+
 def _provider_error(exc: ConnectorError) -> AppError:
     return AppError("provider_unavailable", exc.user_message())
 
@@ -123,27 +133,55 @@ def build_router() -> APIRouter:
     @router.get("/chats/{sid}/providers", summary="The provider pill of a chat")
     async def providers(request: Request, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
         chats, db, port = _need(request, "chats"), _need(request, "db"), _need(request, "chat_port")
-        await run_blocking(chats.session, sid)
-        pills = await run_blocking(lambda: port.providers(sid))
-        chosen = await run_blocking(lambda: ChatChoices(db).get(sid))
-        return respond(request, {"providers": [p.model_dump(mode="json") | {"chosen": p.name == chosen} for p in pills], "chosen": chosen or None})
+        session = await run_blocking(chats.session, sid)
 
-    @router.put("/chats/{sid}/choice", summary="Choose the provider of this chat", dependencies=[Depends(require_token)])
+        def read() -> dict[str, Any]:
+            pills = port.providers(sid)
+            conn = db.conn()
+            own = ChatChoices(db).pick(sid)
+            ref = agent_of(conn, sid)
+            out = []
+            for pill in pills:
+                shown = pill.model_dump(mode="json") | {"chosen": pill.name == own.provider}
+                if pill.name == own.provider:                  # the database has the model and effort when the chat's session.json is gone (a temp folder)
+                    shown["chat_model"] = shown.get("chat_model") or own.model
+                    shown["chat_effort"] = shown.get("chat_effort") or own.effort
+                out.append(shown)
+            return {"providers": out, "chosen": own.provider or None, "kind": session.kind, "agent": ref.agent if ref is not None else None,
+                    "own": pick_dict(own), "effective": effective(conn, sid, _default_of(port))}
+
+        return respond(request, await run_blocking(read))
+
+    @router.put("/chats/{sid}/choice", summary="Choose the provider, model and effort of this chat", dependencies=[Depends(require_token)])
     async def choose(request: Request, body: ChoiceIn, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
         chats, db, port = _need(request, "chats"), _need(request, "db"), _need(request, "chat_port")
-        await run_blocking(chats.session, sid)
+        tasks = getattr(services_of(request), "tasks", None)
+        session = await run_blocking(chats.session, sid)
 
         def run() -> Any:
-            choice = port.choose(sid, body.provider, body.model, body.effort)          # refuses a provider that cannot run, an unknown model or effort (422 below)
+            ref = agent_of(db.conn(), sid)
+            if ref is not None:
+                if session.status != "active":
+                    raise AppError("busy", "That chat belongs to a run that is over. Its choice can no longer change.")
+                choice = port.check_choice(body.provider, body.model, body.effort)      # an agent's calls are one-shot: only checked, no router session
+            else:
+                choice = port.choose(sid, body.provider, body.model, body.effort)       # refuses a provider that cannot run, an unknown model or effort (422 below)
             with db.tx() as tx:
-                ChatChoices(db).set(tx, sid, body.provider)
-            return choice
+                ChatChoices(db).set_pick(tx, sid, body.provider, body.model, body.effort)
+                shown = effective(tx.conn, sid, _default_of(port))
+                tx.emit("chat.choice", {"session_id": sid, "provider": shown["provider"], "model": shown["model"], "effort": shown["effort"],
+                                        "source": shown["source"]})
+            dept = ref.dept_id if ref is not None else (session.node_id if session.kind == "department" else None)
+            if tasks is not None and dept is not None:
+                tasks.refresh_choices(dept_id=dept)                # a live run's agents hear of it from their next call (D131)
+            return choice, shown
 
         try:
-            choice = await run_blocking(run)
+            choice, shown = await run_blocking(run)
         except ConnectorError as exc:
             raise AppError("validation", exc.user_message()) from None
-        return respond(request, {"session_id": sid, "provider": choice.provider, "model": choice.model, "effort": choice.effort})
+        return respond(request, {"session_id": sid, "provider": choice.provider, "model": choice.model, "effort": choice.effort,
+                                 "source": shown["source"], "effective": shown})
 
     @router.post("/chats/{sid}/attachments", summary="Attach a file", dependencies=[Depends(require_token)])
     async def attach(request: Request, body: UploadIn, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:

@@ -134,5 +134,6 @@ def test_an_unwired_service_is_500_internal(tenv):
 def test_post_routes_are_guarded_by_require_token():
     guarded = {(sorted(r.methods)[0], r.path) for r in tasks_api.router.routes
                if any(d.call.__name__ == "require_token" for d in r.dependant.dependencies) or "GET" not in r.methods}
-    assert guarded == {("POST", "/api/tasks"), ("POST", "/api/tasks/{task_id}/stop"), ("POST", "/api/tasks/{task_id}/retry")}
+    assert guarded == {("POST", "/api/tasks"), ("POST", "/api/tasks/{task_id}/stop"), ("POST", "/api/tasks/{task_id}/retry"),
+                       ("PUT", "/api/tasks/{task_id}/choice")}
     assert all(any(d.call.__name__ == "require_token" for d in r.dependant.dependencies) for r in tasks_api.router.routes if "GET" not in r.methods)

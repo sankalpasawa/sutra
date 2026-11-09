@@ -223,6 +223,7 @@ async def start_services(services: AppServices) -> AppServices:
     services.reconciled = await reconcile(
         tasks=services.tasks.store, projector=services.projector, watcher=services.watcher, launcher=services.launcher,
         publish=services.bus.publish_one, clock=services.clock)
+    await run_blocking(services.tasks.reconcile_choices)          # the agents' picks of every live run are rebuilt from the database (D131)
     marked = await run_blocking(recover_interrupted, services.db, services.chats)     # a direct turn the last process did not finish gets its error line
     if marked:
         log.info("%d direct chat turn(s) of the last run were interrupted and are marked", marked)

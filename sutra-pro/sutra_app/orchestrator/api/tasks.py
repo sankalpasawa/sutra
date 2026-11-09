@@ -6,6 +6,8 @@
     GET  /api/tasks/{id}             -> TaskOut     (404)
     GET  /api/runs/{run_id}          -> RunRef      (404)
     POST /api/tasks/{id}/stop        -> 200 TaskOut (the stop ladder; 409 `busy` when the task has ended)
+    PUT  /api/tasks/{id}/choice      {provider, model?, effort?} -> {task_id, own}   (the run's pick for the agents that have none of their own, D131; a null
+                                     provider clears it; checked like a chat's pill; 409 `busy` for a task that has ended)
     POST /api/tasks/{id}/retry       -> 201 TaskOut (a new task, `parent_task_id` = id; it starts fresh, never seeded; 409 unless the task
                                      stopped, crashed or was cancelled)
 
@@ -16,6 +18,10 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from sutra_app.connectors.errors import ConnectorError
+from sutra_app.connectors.models import Pick
+from sutra_app.orchestrator.agent_sessions import pick_dict
+from sutra_app.orchestrator.api.chat_v2 import ChoiceIn
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
 from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
@@ -99,6 +105,31 @@ def build_router() -> APIRouter:
     @router.post("/tasks/{task_id}/stop", summary="Stop a task", dependencies=[Depends(require_token)])
     async def stop_task(request: Request, task_id: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
         return _json(request, _dump(await _service(request).stop(task_id)))
+
+    @router.put("/tasks/{task_id}/choice", summary="Choose the model for the agents of this run", dependencies=[Depends(require_token)])
+    async def choose_for_run(request: Request, body: ChoiceIn, task_id: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
+        service = _service(request)
+        port = getattr(services_of(request), "chat_port", None)
+        if port is None:
+            raise AppError("internal", "the chat port is not wired")
+
+        def run() -> Pick:
+            row = service.store.row(task_id)
+            if not row.live:
+                raise AppError("busy", "That run is over. Its choice can no longer change.")
+            port.check_choice(body.provider, body.model, body.effort)
+            with service.db.tx() as tx:
+                pick = service.store.set_pick(tx, task_id, Pick(provider=body.provider or "", model=body.model if body.provider else None,
+                                                                effort=body.effort if body.provider else None))
+                tx.emit("task.choice", {"task_id": task_id, "run_id": row.run_id, "provider": pick.provider or None, "model": pick.model, "effort": pick.effort})
+            service.refresh_choices(task_id=task_id)
+            return pick
+
+        try:
+            pick = await run_blocking(run)
+        except ConnectorError as exc:
+            raise AppError("validation", exc.user_message()) from None
+        return _json(request, {"task_id": task_id, "own": pick_dict(pick)})
 
     @router.post("/tasks/{task_id}/retry", summary="Try a task again, fresh", dependencies=[Depends(require_token)], status_code=201)
     async def retry_task(request: Request, task_id: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:

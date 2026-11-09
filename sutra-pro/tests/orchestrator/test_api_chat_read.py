@@ -68,7 +68,7 @@ def test_the_session_list_matches_the_model_and_the_org_chat_carries_its_phase(c
     assert len(found) == len(world.session_of) and {s.id: s.phase for s in found}["cs_org"] == "ready"
     assert [s.phase for s in found if s.id != "cs_org"] == [None] * (len(found) - 1)
     assert set(response.json()[0]) == {"id", "node_id", "kind", "title", "writable", "status", "filed_under", "connector", "model",
-                                       "provider_session_id", "last_message_id", "note", "phase", "direct_turn"}
+                                       "provider_session_id", "last_message_id", "note", "phase", "direct_turn", "pinned", "pinned_model", "pinned_effort", "run_id"}
 
 
 def test_the_list_filters_by_node_and_adds_archived_sessions_on_request(client, world):

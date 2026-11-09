@@ -205,6 +205,10 @@ class ChatSessionOut(Value):
     last_message_id: Count = 0
     note: Annotated[str, StringConstraints(max_length=500)] = ""
     phase: Literal["reading", "planning", "building", "working", "ready"] | None = None     # the org chat only
+    pinned: Literal["claude", "codex", ""] = ""         # the owner's own choice for this chat: provider, model, effort ("" = none, D131)
+    pinned_model: Annotated[str, StringConstraints(max_length=100)] = ""
+    pinned_effort: Literal["", "low", "medium", "high", "xhigh", "max"] = ""
+    run_id: RunId | None = None             # the run a function or step session belongs to (D130)
     direct_turn: Count | None = None        # the owner's line that a direct turn is answering right now (direct_running.py), else None: any page can offer Stop
 
 

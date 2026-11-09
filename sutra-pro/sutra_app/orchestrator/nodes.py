@@ -71,9 +71,9 @@ def ensure_node(tx: Tx, spec: NodeInit, *, graph: GraphStore, new_session_id: An
         s = new_session
         conn.execute(
             "INSERT INTO chat_sessions(id, node_id, kind, title, writable, status, filed_under, connector, model, provider_session_id,"
-            " last_message_id, note, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " last_message_id, note, created_at, updated_at, pinned, pinned_model, pinned_effort, run_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (s.id, s.node_id, s.kind, s.title, int(s.writable), s.status, s.filed_under, s.connector, s.model, s.provider_session_id,
-             s.last_message_id, s.note, s.created_at, s.updated_at))
+             s.last_message_id, s.note, s.created_at, s.updated_at, s.pinned, s.pinned_model, s.pinned_effort, s.run_id))
     graph.put_node(tx, checked_node)
     row = conn.execute(f"SELECT {_NODE_COLUMNS} FROM graph_nodes WHERE id = ?", (node_id,)).fetchone()
     return graph._outs(conn, [row], detail=False)[0]

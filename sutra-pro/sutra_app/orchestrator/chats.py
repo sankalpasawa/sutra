@@ -51,7 +51,7 @@ _ANSWERED_BY = ("CASE WHEN kind = 'card' AND json_extract(card_json, '$.type') I
                 " (SELECT id FROM chart_changes WHERE status = 'pending_approval') THEN id END) ELSE answered_by END AS answered_by")
 _MESSAGE_COLUMNS = f"id, session_id, role, who, kind, text, card_json, meta_json, pause, {_ANSWERED_BY}, task_id, src_ref, state, at"
 _SESSION_COLUMNS = ("id, node_id, kind, title, writable, status, filed_under, connector, model, provider_session_id, "
-                    "last_message_id, note, created_at, updated_at, pinned")
+                    "last_message_id, note, created_at, updated_at, pinned, pinned_model, pinned_effort, run_id")
 _OPEN_TASKS = ("blocked", "queued", "starting", "running", "waiting_user")
 _OPTION_LINE = re.compile(r"^[ \t]*Option[ \t]+[0-9]+:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
 _TRANSCRIPT_ROLES = {"user": "user", "agent": "assistant", "system": "system"}
@@ -67,7 +67,8 @@ def _session_out(row: sqlite3.Row, phase: str | None = None) -> ChatSessionOut:
     return ChatSessionOut(
         id=row["id"], node_id=row["node_id"], kind=row["kind"], title=row["title"], writable=bool(row["writable"]), status=row["status"],
         filed_under=row["filed_under"], connector=row["connector"], model=row["model"], provider_session_id=row["provider_session_id"],
-        last_message_id=row["last_message_id"], note=row["note"], phase=phase, direct_turn=direct_running.turn_of(row["id"]))
+        last_message_id=row["last_message_id"], note=row["note"], phase=phase, direct_turn=direct_running.turn_of(row["id"]),
+        pinned=row["pinned"], pinned_model=row["pinned_model"], pinned_effort=row["pinned_effort"], run_id=row["run_id"])
 
 
 def _session_record(row: sqlite3.Row) -> ChatSession:
@@ -75,7 +76,7 @@ def _session_record(row: sqlite3.Row) -> ChatSession:
         kind=row["kind"], id=row["id"], node_id=row["node_id"], title=row["title"], writable=bool(row["writable"]), status=row["status"],
         filed_under=row["filed_under"], connector=row["connector"], model=row["model"], provider_session_id=row["provider_session_id"],
         last_message_id=row["last_message_id"], note=row["note"], created_at=row["created_at"], updated_at=row["updated_at"],
-        pinned=row["pinned"])
+        pinned=row["pinned"], pinned_model=row["pinned_model"], pinned_effort=row["pinned_effort"], run_id=row["run_id"])
 
 
 def _message_out(row: sqlite3.Row) -> ChatMessageOut:
