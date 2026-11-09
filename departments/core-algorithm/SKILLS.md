@@ -10,5 +10,6 @@
 | Adaptation and capability candidates | Missing Method goal, composable candidates, governed registration | Candidate contract, not runnable code synthesis |
 | Reflection and structural reuse | Evidence-backed pattern/reuse proposals | `PROPOSED_ONLY` |
 | J2 projection | Read-only `atom/1`-shaped plan projection | Not a live J2 adapter |
+| Implementation generation | Plan + state to workflow shape (`W-<goal>.json`), atoms, scaffold (done-when lines, go/ask/refuse/always rules, five functions), page | `PROPOSED_ONLY`; deterministic; 3 unit tests + 2 independent checks (0.3.0) |
 
 A skill or domain rule is a versioned extension. It cannot change core authorization or proof semantics by changing its own JSON.
