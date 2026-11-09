@@ -2045,7 +2045,7 @@ function sTabs(s){
     if (!s.doc && s.versions > 0) tabs.push({k: "site", label: "Website", url: `/site/v${s.versions}?x=1${q}`, live: s.status === "running"});
   } else if (s.versions > 0) tabs.push({k: s.doc ? s.output : "site", label: s.doc ? (s.output || "doc").toUpperCase() : "Website", url: `/site/v${s.versions}?x=1${q}`, live: s.status === "running"});
   // any other deliverable the run lists (artifacts/types.json: a page, a document, an image, data, code, a script): a readable view of it
-  (SV.arts.deliverables || []).forEach(d => { const k = "a:" + d.name; if (tabs.some(t => t.k === d.type || t.k === d.name || (t.k === "site" && d.form === "page") || t.k === k)) return;
+  (SV.arts.deliverables || []).forEach(d => { const k = "a:" + d.name; if (d.form === "page" || ["website", "prd", "hld", "lld"].includes(d.type) || tabs.some(t => t.k === d.type || t.k === d.name || t.k === k)) return;      // the site and the design documents have their own live tabs above
     tabs.push({k, label: d.label || d.name, url: `/view?name=${encodeURIComponent(d.file)}${q}`, art: d}); });
   tabs.push({k: "team", label: isReady(s) || s.saved ? "How it was made" : "Team at work", live: s.status === "running" && !tabs.length});
   return tabs;
@@ -2147,7 +2147,7 @@ function sDecorate(){
   if (!layer){ layer = d.createElement("j2-layer"); layer.style.cssText = "position:absolute;top:0;left:0;width:0;height:0;overflow:visible;z-index:2147483000;pointer-events:none;display:block;margin:0;padding:0;border:0";
     const r = layer.attachShadow({mode: "open"}); r.innerHTML = `<style>${sVars(":host")}${SLAYER}</style><div></div>`; r.addEventListener("click", sLayerClick); d.documentElement.appendChild(layer); }
   // the plan: placeholders for the parts still to come, after the last part
-  const todo = mine.filter(p => !secs.has(p.sec) && p.st !== "bad"), pk = JSON.stringify(todo.map(p => [p.sec, p.st, p.person]));
+  const todo = mine.filter(p => !secs.has(p.sec) && p.st !== "bad" && p.st !== "done"), pk = JSON.stringify(todo.map(p => [p.sec, p.st, p.person]));
   let plan = d.querySelector("j2-plan");
   if (todo.length && s.status !== "saved" && !isReady(s)){
     if (!plan){ plan = d.createElement("j2-plan"); plan.style.cssText = "display:block;position:relative;z-index:5"; plan.attachShadow({mode: "open"}); d.body.appendChild(plan); }
